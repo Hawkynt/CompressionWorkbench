@@ -1,0 +1,90 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## NuGet
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nupkg
+**/packages/repositories.config
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## Visual Studio
+.vs/
+*.rsuser
+*.sln.docstates
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+_TeamCity*
+*.dotCover
+*.ncrunch*
+.*crunch*.local.xml
+nCrunchTemp_*
+*.ndproj
+*.VisualState.xml
+TestResult.xml
+[Dd]ebugPublic/
+[Rr]eleases/
+*_i.c
+*_p.c
+*_h.h
+*.ilk
+*.meta
+*.obj
+*.iobj
+*.pch
+*.pdb
+*.ipdb
+*.pgc
+*.pgd
+*.rsp
+*.sbr
+*.tlb
+*.tli
+*.tlh
+*.tmp
+*.tmp_proj
+*_wpftmp.csproj
+*.log
+*.tlog
+*.vspscc
+*.vssscc
+.builds
+*.pidb
+*.svclog
+*.scc
+
+## Rider
+.idea/
+
+## JetBrains
+*.DotSettings
+
+## Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+TestResults/
+
+## OS files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
