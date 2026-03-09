@@ -1,0 +1,333 @@
+using Compression.Core.Entropy.Huffman;
+
+namespace Compression.Core.Entropy.Fse;
+
+/// <summary>
+/// Huffman coding as used by Zstandard, with weight tables optionally transmitted via FSE.
+/// Weights represent the number of bits for each symbol (0 = unused). A weight w means
+/// 2^(w-1) occurrences in the Huffman table for w &gt; 0.
+/// </summary>
+public static class HuffmanFse {
+  /// <summary>Maximum Huffman weight value (bit length).</summary>
+  private const int MaxHuffmanBits = 12;
+
+  /// <summary>
+  /// Compresses data using Huffman coding with direct-encoded weights.
+  /// </summary>
+  /// <param name="data">The data to compress.</param>
+  /// <param name="maxSymbol">The maximum symbol value in the data (default 255).</param>
+  /// <returns>The compressed data including the weight table header.</returns>
+  public static byte[] CompressHuffman(ReadOnlySpan<byte> data, int maxSymbol = 255) {
+    if (data.Length == 0)
+      return [];
+
+    // Build weights from data frequencies
+    int[] weights = BuildWeights(data);
+
+    // Find actual max symbol with non-zero weight
+    int actualMax = 0;
+    for (int i = maxSymbol; i >= 0; --i)
+      if (weights[i] > 0) {
+        actualMax = i;
+        break;
+      }
+
+    // Build canonical Huffman codes from bit lengths
+    int maxBitLen = 0;
+    for (int i = 0; i <= actualMax; ++i)
+      if (weights[i] > maxBitLen)
+        maxBitLen = weights[i];
+
+    // Assign canonical codes (MSB-first)
+    var blCount = new int[maxBitLen + 1];
+    for (int i = 0; i <= actualMax; ++i)
+      if (weights[i] > 0)
+        ++blCount[weights[i]];
+
+    var nextCode = new uint[maxBitLen + 1];
+    uint code = 0;
+    for (int bits = 1; bits <= maxBitLen; ++bits) {
+      code = (code + (uint)blCount[bits - 1]) << 1;
+      nextCode[bits] = code;
+    }
+
+    // Store both MSB-first code and bit-reversed code for encoding
+    var reversedCodes = new uint[actualMax + 1];
+    var codeLengths = new int[actualMax + 1];
+    for (int symbol = 0; symbol <= actualMax; ++symbol) {
+      int len = weights[symbol];
+      if (len > 0) {
+        uint msbCode = nextCode[len]++;
+        reversedCodes[symbol] = ReverseBits(msbCode, len);
+        codeLengths[symbol] = len;
+      }
+    }
+
+    // Output buffer
+    var output = new byte[data.Length + 256];
+    int pos = 0;
+
+    // Write weight table
+    pos += WriteWeights(output, pos, weights, actualMax);
+
+    // Encode data using Huffman with bit-reversed codes (LSB-first in bitstream)
+    ulong bitContainer = 0;
+    int bitCount = 0;
+
+    for (int i = 0; i < data.Length; ++i) {
+      byte symbol = data[i];
+      int len = codeLengths[symbol];
+      uint c = reversedCodes[symbol];
+
+      bitContainer |= (ulong)c << bitCount;
+      bitCount += len;
+
+      while (bitCount >= 8) {
+        output[pos++] = (byte)bitContainer;
+        bitContainer >>= 8;
+        bitCount -= 8;
+      }
+    }
+
+    // Flush remaining bits with sentinel
+    bitContainer |= 1UL << bitCount;
+    ++bitCount;
+
+    while (bitCount > 0) {
+      output[pos++] = (byte)bitContainer;
+      bitContainer >>= 8;
+      bitCount -= 8;
+    }
+
+    return output.AsSpan(0, pos).ToArray();
+  }
+
+  /// <summary>
+  /// Decompresses Huffman-coded data produced by <see cref="CompressHuffman"/>.
+  /// </summary>
+  /// <param name="compressed">The compressed data including the weight table header.</param>
+  /// <param name="decompressedSize">The expected size of the decompressed data.</param>
+  /// <returns>The decompressed byte array.</returns>
+  /// <exception cref="InvalidDataException">The compressed data is malformed.</exception>
+  public static byte[] DecompressHuffman(ReadOnlySpan<byte> compressed, int decompressedSize) {
+    if (decompressedSize == 0)
+      return [];
+
+    // Read weight table
+    int[] weights = ReadWeights(compressed, out int bytesRead);
+
+    // Find max symbol and max bit length
+    int maxSymbol = 0;
+    int maxBitLen = 0;
+    for (int i = weights.Length - 1; i >= 0; --i) {
+      if (weights[i] > 0 && maxSymbol == 0)
+        maxSymbol = i;
+      if (weights[i] > maxBitLen)
+        maxBitLen = weights[i];
+    }
+
+    // Build canonical codes (MSB-first, same assignment as encoder)
+    var blCount = new int[maxBitLen + 1];
+    for (int i = 0; i <= maxSymbol; ++i)
+      if (weights[i] > 0)
+        ++blCount[weights[i]];
+
+    var nextCode = new uint[maxBitLen + 1];
+    uint code = 0;
+    for (int bits = 1; bits <= maxBitLen; ++bits) {
+      code = (code + (uint)blCount[bits - 1]) << 1;
+      nextCode[bits] = code;
+    }
+
+    // Build lookup table using bit-reversed codes (LSB-first, matching the bitstream)
+    int lookupSize = 1 << maxBitLen;
+    var lookupSymbol = new int[lookupSize];
+    var lookupLen = new int[lookupSize];
+    Array.Fill(lookupSymbol, -1);
+
+    for (int symbol = 0; symbol <= maxSymbol; symbol++) {
+      int len = weights[symbol];
+      if (len <= 0) continue;
+
+      uint msbCode = nextCode[len]++;
+      uint lsbCode = ReverseBits(msbCode, len);
+
+      // Fill lookup: lsbCode is `len` bits. Pad with all combinations of
+      // (maxBitLen - len) high bits to fill the lookup table.
+      int shift = maxBitLen - len;
+      int count = 1 << shift;
+      int start = (int)lsbCode;
+      for (int j = 0; j < count; ++j) {
+        int index = start | (j << len);
+        lookupSymbol[index] = symbol;
+        lookupLen[index] = len;
+      }
+    }
+
+    // Decode the bitstream
+    ReadOnlySpan<byte> bitData = compressed.Slice(bytesRead);
+    var output = new byte[decompressedSize];
+    int outputPos = 0;
+
+    int bytePos = 0;
+    ulong bitBuf = 0;
+    int bitsAvailable = 0;
+
+    // Load initial bits
+    while (bitsAvailable <= 56 && bytePos < bitData.Length) {
+      bitBuf |= (ulong)bitData[bytePos++] << bitsAvailable;
+      bitsAvailable += 8;
+    }
+
+    while (outputPos < decompressedSize) {
+      // Ensure we have enough bits
+      while (bitsAvailable < maxBitLen + 8 && bytePos < bitData.Length) {
+        bitBuf |= (ulong)bitData[bytePos++] << bitsAvailable;
+        bitsAvailable += 8;
+      }
+
+      // Read maxBitLen bits and look up directly (codes are LSB-first in bitstream)
+      uint bits = (uint)(bitBuf & ((1UL << maxBitLen) - 1));
+      int sym = lookupSymbol[(int)bits];
+      if (sym < 0)
+        throw new InvalidDataException("Invalid Huffman code in stream.");
+
+      int codeLen = lookupLen[(int)bits];
+      output[outputPos++] = (byte)sym;
+
+      bitBuf >>= codeLen;
+      bitsAvailable -= codeLen;
+    }
+
+    return output;
+  }
+
+  /// <summary>
+  /// Builds Huffman bit-length weights from frequency data.
+  /// Weight w means the symbol has a code of w bits. 0 means unused.
+  /// </summary>
+  /// <param name="data">The data to analyze.</param>
+  /// <returns>An array of weights indexed by symbol value (0..255).</returns>
+  public static int[] BuildWeights(ReadOnlySpan<byte> data) {
+    var freq = new long[256];
+    for (int i = 0; i < data.Length; ++i)
+      ++freq[data[i]];
+
+    int symbolCount = 0;
+    for (int i = 0; i < 256; ++i)
+      if (freq[i] > 0)
+        ++symbolCount;
+
+    if (symbolCount == 0)
+      return new int[256];
+
+    var root = HuffmanTree.BuildFromFrequencies(freq);
+    var codeLengths = HuffmanTree.GetCodeLengths(root, 256);
+
+    HuffmanTree.LimitCodeLengths(codeLengths, MaxHuffmanBits);
+
+    return codeLengths;
+  }
+
+  /// <summary>
+  /// Writes a Huffman weight table to the output buffer using direct representation
+  /// (4 bits per weight, 2 weights per byte).
+  /// </summary>
+  /// <param name="output">The output buffer.</param>
+  /// <param name="pos">The starting position in the output buffer.</param>
+  /// <param name="weights">The weight array (bit lengths per symbol).</param>
+  /// <param name="maxSymbol">The maximum symbol with non-zero weight.</param>
+  /// <returns>The number of bytes written.</returns>
+  public static int WriteWeights(byte[] output, int pos, int[] weights, int maxSymbol) {
+    int startPos = pos;
+    int numSymbols = maxSymbol + 1;
+
+    // Direct representation: header byte >= 128
+    // headerByte = numSymbols + 127
+    int headerByte = numSymbols + 127;
+    if (headerByte > 255) {
+      headerByte = 255;
+      numSymbols = 128;
+    }
+
+    output[pos++] = (byte)headerByte;
+
+    // Pack weights 4 bits each, 2 per byte
+    for (int i = 0; i < numSymbols; i += 2) {
+      int w0 = (i < weights.Length) ? weights[i] : 0;
+      int w1 = (i + 1 < numSymbols && i + 1 < weights.Length) ? weights[i + 1] : 0;
+      output[pos++] = (byte)((w0 & 0x0F) | ((w1 & 0x0F) << 4));
+    }
+
+    return pos - startPos;
+  }
+
+  /// <summary>
+  /// Reads a Huffman weight table from compressed data.
+  /// </summary>
+  /// <param name="input">The input data starting at the weight table header.</param>
+  /// <param name="bytesRead">The number of bytes consumed from the input.</param>
+  /// <returns>An array of weights indexed by symbol value.</returns>
+  /// <exception cref="InvalidDataException">The weight table is malformed.</exception>
+  public static int[] ReadWeights(ReadOnlySpan<byte> input, out int bytesRead) {
+    if (input.Length < 1)
+      throw new InvalidDataException("Huffman weight table too short.");
+
+    int headerByte = input[0];
+    int pos = 1;
+
+    if (headerByte >= 128) {
+      // Direct representation
+      int numSymbols = headerByte - 127;
+      var weights = new int[256];
+      int packedBytes = (numSymbols + 1) / 2;
+
+      if (pos + packedBytes > input.Length)
+        throw new InvalidDataException("Huffman weight table truncated.");
+
+      for (int i = 0; i < numSymbols; i += 2) {
+        byte packed = input[pos++];
+        weights[i] = packed & 0x0F;
+        if (i + 1 < numSymbols)
+          weights[i + 1] = (packed >> 4) & 0x0F;
+      }
+
+      bytesRead = pos;
+      return weights;
+    }
+    else {
+      // FSE-compressed weights
+      int compressedSize = headerByte;
+      if (pos + compressedSize > input.Length)
+        throw new InvalidDataException("FSE-compressed weight table truncated.");
+
+      ReadOnlySpan<byte> fseData = input.Slice(pos, compressedSize);
+      var (normalizedCounts, maxSym, tableLog, headerBytes) = FseDecoder.ReadNormalizedCounts(fseData);
+
+      var decoder = new FseDecoder(normalizedCounts, maxSym, tableLog);
+      ReadOnlySpan<byte> weightStream = fseData.Slice(headerBytes);
+
+      byte[] decoded = decoder.Decode(weightStream, 255);
+
+      var weights = new int[256];
+      for (int i = 0; i < decoded.Length && i < 256; ++i)
+        weights[i] = decoded[i];
+
+      bytesRead = pos + compressedSize;
+      return weights;
+    }
+  }
+
+  /// <summary>
+  /// Reverses the bits in a value within a given bit width.
+  /// </summary>
+  private static uint ReverseBits(uint value, int numBits) {
+    uint result = 0;
+    for (int i = 0; i < numBits; ++i) {
+      result = (result << 1) | (value & 1);
+      value >>= 1;
+    }
+
+    return result;
+  }
+}
