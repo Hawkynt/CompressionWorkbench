@@ -236,7 +236,7 @@ internal abstract class PpmdModelBase {
     this._contexts.Clear();
     this._historyPos = 0;
     this._historyCount = 0;
-    Array.Clear(this._history);
+    this._history.AsSpan().Clear();
   }
 
   /// <summary>
@@ -283,11 +283,11 @@ internal abstract class PpmdModelBase {
     uint foundCumFreq = 0;
 
     for (int s = 0; s < PpmdConstants.NumSymbols; ++s) {
-      byte b = (byte)s;
-      if (excluded != null && excluded.Contains(b))
+      byte symbolByte = (byte)s;
+      if (excluded != null && excluded.Contains(symbolByte))
         continue;
 
-      if (b == symbol) {
+      if (symbolByte == symbol) {
         foundCumFreq = cumFreq;
         found = true;
       }
@@ -325,13 +325,13 @@ internal abstract class PpmdModelBase {
     // Map threshold back to the original symbol
     uint cumFreq = 0;
     for (int s = 0; s < PpmdConstants.NumSymbols; ++s) {
-      byte b = (byte)s;
-      if (excluded != null && excluded.Contains(b))
+      byte symbolByte = (byte)s;
+      if (excluded != null && excluded.Contains(symbolByte))
         continue;
 
       if (threshold == cumFreq) {
         decoder.Decode(cumFreq, 1, (uint)available);
-        return b;
+        return symbolByte;
       }
 
       ++cumFreq;
@@ -342,16 +342,16 @@ internal abstract class PpmdModelBase {
     cumFreq = 0;
     byte lastSymbol = 0;
     for (int s = 0; s < PpmdConstants.NumSymbols; ++s) {
-      byte b = (byte)s;
-      if (excluded != null && excluded.Contains(b))
+      byte symbolByte = (byte)s;
+      if (excluded != null && excluded.Contains(symbolByte))
         continue;
 
       if (threshold < cumFreq + 1) {
         decoder.Decode(cumFreq, 1, (uint)available);
-        return b;
+        return symbolByte;
       }
 
-      lastSymbol = b;
+      lastSymbol = symbolByte;
       ++cumFreq;
     }
 

@@ -1,3 +1,7 @@
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
+
 namespace Compression.Core.Dictionary.Lz77;
 
 /// <summary>
@@ -19,8 +23,7 @@ public static class Lz77Decompressor {
       else {
         int start = output.Count - token.Distance;
         if (start < 0)
-          throw new InvalidDataException(
-            $"Invalid LZ77 back-reference: distance {token.Distance} exceeds output size {output.Count}.");
+          ThrowInvalidBackReference(token.Distance, output.Count);
 
         // Handle overlapping copies correctly
         for (int i = 0; i < token.Length; ++i)
@@ -30,4 +33,9 @@ public static class Lz77Decompressor {
 
     return [.. output];
   }
+
+  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  private static void ThrowInvalidBackReference(int distance, int outputSize) =>
+    throw new InvalidDataException(
+      $"Invalid LZ77 back-reference: distance {distance} exceeds output size {outputSize}.");
 }

@@ -49,13 +49,12 @@ public sealed class FseTable {
 
     // Compute the effective counts (for spreading) and place -1 symbols at the end
     var effectiveCounts = new int[maxSymbol + 1];
-    for (int s = 0; s <= maxSymbol; ++s) {
-      if (normalizedCounts[s] == -1) {
-        table.Symbol[highThreshold--] = (byte)s;
-        effectiveCounts[s] = 1;
-      }
-      else
-        effectiveCounts[s] = normalizedCounts[s];
+    for (int symbol = 0; symbol <= maxSymbol; ++symbol) {
+      if (normalizedCounts[symbol] == -1) {
+        table.Symbol[highThreshold--] = (byte)symbol;
+        effectiveCounts[symbol] = 1;
+      } else
+        effectiveCounts[symbol] = normalizedCounts[symbol];
     }
 
     // Spread remaining symbols using step = (tableSize >> 1) + (tableSize >> 3) + 3
@@ -70,13 +69,13 @@ public sealed class FseTable {
 
     int pos = 0;
 
-    for (int s = 0; s <= maxSymbol; ++s) {
-      int count = normalizedCounts[s];
+    for (int symbol = 0; symbol <= maxSymbol; ++symbol) {
+      int count = normalizedCounts[symbol];
       if (count <= 0)
         continue; // skip -1 (already placed) and 0 (absent)
 
       for (int i = 0; i < count; ++i) {
-        table.Symbol[pos] = (byte)s;
+        table.Symbol[pos] = (byte)symbol;
         // Advance to next position, skipping high-threshold positions
         do {
           pos = (pos + step) & mask;
@@ -88,12 +87,12 @@ public sealed class FseTable {
     // Step 2: Build decoding entries
     // symbolNext[s] starts at the effective count for that symbol
     var symbolNext = new int[maxSymbol + 1];
-    for (int s = 0; s <= maxSymbol; ++s)
-      symbolNext[s] = effectiveCounts[s];
+    for (int symbol = 0; symbol <= maxSymbol; ++symbol)
+      symbolNext[symbol] = effectiveCounts[symbol];
 
     for (int state = 0; state < tableSize; ++state) {
-      byte s = table.Symbol[state];
-      int nextState = symbolNext[s]++;
+      byte symbol = table.Symbol[state];
+      int nextState = symbolNext[symbol]++;
       int numBits = tableLog - BitOperations.Log2((uint)nextState);
       table.NumBits[state] = numBits;
       table.NewStateBase[state] = (nextState << numBits) - tableSize;

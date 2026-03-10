@@ -14,17 +14,17 @@ public static class BurrowsWheelerTransform {
     if (data.Length == 0)
       return ([], 0);
 
-    int n = data.Length;
+    int length = data.Length;
     byte[] input = data.ToArray();
-    int[] suffixArray = BuildRotationSort(input, n);
+    int[] suffixArray = BuildRotationSort(input, length);
 
-    byte[] transformed = new byte[n];
+    byte[] transformed = new byte[length];
     int originalIndex = 0;
 
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < length; ++i) {
       if (suffixArray[i] == 0) {
         originalIndex = i;
-        transformed[i] = input[n - 1];
+        transformed[i] = input[length - 1];
       }
       else
         transformed[i] = input[suffixArray[i] - 1];
@@ -44,14 +44,30 @@ public static class BurrowsWheelerTransform {
     if (data.Length == 0)
       return [];
 
-    int n = data.Length;
+    int length = data.Length;
     ArgumentOutOfRangeException.ThrowIfNegative(originalIndex);
-    ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(originalIndex, n);
+    ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(originalIndex, length);
 
-    // Count occurrences of each byte
+    // Count occurrences of each byte (4-way unrolled to reduce loop overhead)
     int[] count = new int[256];
-    for (int i = 0; i < n; ++i)
-      ++count[data[i]];
+    int[] count1 = new int[256];
+    int[] count2 = new int[256];
+    int[] count3 = new int[256];
+    int i4 = 0;
+    int end4 = length - 3;
+    while (i4 < end4) {
+      ++count[data[i4]];
+      ++count1[data[i4 + 1]];
+      ++count2[data[i4 + 2]];
+      ++count3[data[i4 + 3]];
+      i4 += 4;
+    }
+
+    for (; i4 < length; ++i4)
+      ++count[data[i4]];
+
+    for (int k = 0; k < 256; ++k)
+      count[k] += count1[k] + count2[k] + count3[k];
 
     // Cumulative counts (first occurrence of each byte in sorted first column)
     int[] cumulative = new int[256];
@@ -62,18 +78,18 @@ public static class BurrowsWheelerTransform {
     }
 
     // Build LF-mapping: for each position in the last column, where does it map in the first column?
-    int[] lfMap = new int[n];
+    int[] lfMap = new int[length];
     int[] tempCount = new int[256];
     cumulative.AsSpan().CopyTo(tempCount);
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < length; ++i) {
       lfMap[i] = tempCount[data[i]];
       ++tempCount[data[i]];
     }
 
     // Reconstruct original by following LF pointers
-    byte[] result = new byte[n];
+    byte[] result = new byte[length];
     int idx = originalIndex;
-    for (int i = n - 1; i >= 0; --i) {
+    for (int i = length - 1; i >= 0; --i) {
       result[i] = data[idx];
       idx = lfMap[idx];
     }
@@ -85,19 +101,19 @@ public static class BurrowsWheelerTransform {
   /// Sorts rotation indices using O(n log^2 n) prefix-doubling.
   /// Unlike a suffix array, comparisons wrap around the input cyclically.
   /// </summary>
-  private static int[] BuildRotationSort(byte[] data, int n) {
-    int[] sa = new int[n];
-    int[] rank = new int[n];
-    int[] tmp = new int[n];
+  private static int[] BuildRotationSort(byte[] data, int length) {
+    int[] sa = new int[length];
+    int[] rank = new int[length];
+    int[] tmp = new int[length];
 
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < length; ++i) {
       sa[i] = i;
       rank[i] = data[i];
     }
 
-    for (int gap = 1; gap < n; gap *= 2) {
+    for (int gap = 1; gap < length; gap *= 2) {
       int g = gap;
-      int len = n;
+      int len = length;
       int[] r = rank;
       Array.Sort(sa, (a, b) => {
         if (r[a] != r[b])
@@ -109,17 +125,17 @@ public static class BurrowsWheelerTransform {
       });
 
       tmp[sa[0]] = 0;
-      for (int i = 1; i < n; ++i) {
+      for (int i = 1; i < length; ++i) {
         tmp[sa[i]] = tmp[sa[i - 1]];
-        int prevSecond = rank[(sa[i - 1] + g) % n];
-        int curSecond = rank[(sa[i] + g) % n];
+        int prevSecond = rank[(sa[i - 1] + g) % length];
+        int curSecond = rank[(sa[i] + g) % length];
         if (rank[sa[i]] != rank[sa[i - 1]] || curSecond != prevSecond)
           ++tmp[sa[i]];
       }
 
       tmp.AsSpan().CopyTo(rank);
 
-      if (rank[sa[n - 1]] == n - 1)
+      if (rank[sa[length - 1]] == length - 1)
         break;
     }
 

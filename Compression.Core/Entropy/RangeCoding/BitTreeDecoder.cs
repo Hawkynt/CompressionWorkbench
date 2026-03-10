@@ -66,7 +66,7 @@ public sealed class BitTreeDecoder {
   /// <param name="startIndex">The starting index in the prob array.</param>
   /// <param name="numBits">The number of bits to decode.</param>
   /// <returns>The decoded value.</returns>
-  public static int ReverseDecode(RangeDecoder decoder, int[] probs, int startIndex, int numBits) {
+  public static int ReverseDecode(RangeDecoder decoder, Span<int> probs, int startIndex, int numBits) {
     int index = 1;
     int result = 0;
     for (int i = 0; i < numBits; ++i) {

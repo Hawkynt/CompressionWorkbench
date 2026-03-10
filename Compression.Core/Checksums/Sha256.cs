@@ -141,13 +141,13 @@ public sealed class Sha256 {
 
     // If not enough room for 8-byte length, pad and process
     if (this._bufferLength > 56) {
-      Array.Clear(this._buffer, this._bufferLength, BlockSize - this._bufferLength);
+      this._buffer.AsSpan(this._bufferLength, BlockSize - this._bufferLength).Clear();
       ProcessBlock(this._buffer);
       this._bufferLength = 0;
     }
 
     // Pad with zeros up to length field
-    Array.Clear(this._buffer, this._bufferLength, 56 - this._bufferLength);
+    this._buffer.AsSpan(this._bufferLength, 56 - this._bufferLength).Clear();
 
     // Append length in bits as big-endian 64-bit
     BinaryPrimitives.WriteUInt64BigEndian(this._buffer.AsSpan(56), bitLength);

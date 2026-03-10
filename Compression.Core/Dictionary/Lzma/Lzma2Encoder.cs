@@ -2,9 +2,12 @@ namespace Compression.Core.Dictionary.Lzma;
 
 /// <summary>
 /// LZMA2 encoder that wraps LZMA data in chunked format with control bytes.
+/// Passes historical context to the LZMA encoder for cross-chunk back-references.
 /// </summary>
 public sealed class Lzma2Encoder {
-  private const int MaxUncompressedChunkSize = 1 << 21; // 2 MB
+  private const int MaxLzmaInputChunkSize = 1 << 21; // 2 MB (21-bit unpacked size field)
+  private const int MaxPackedSize = 1 << 16;          // 64 KB (16-bit packed size field)
+  private const int MaxUncompressedChunkSize = 1 << 16; // 64 KB (16-bit size field for uncompressed chunks)
   private readonly int _dictionarySize;
 
   /// <summary>
@@ -36,27 +39,37 @@ public sealed class Lzma2Encoder {
     bool needFullReset = true;
 
     while (offset < data.Length) {
-      int chunkSize = Math.Min(MaxUncompressedChunkSize, data.Length - offset);
-      ReadOnlySpan<byte> chunk = data.Slice(offset, chunkSize);
+      int chunkSize = Math.Min(MaxLzmaInputChunkSize, data.Length - offset);
 
-      // Try LZMA compression
+      // Provide the encoder with historical context (up to dictionary size)
+      int historyStart = Math.Max(0, offset - this._dictionarySize);
+      ReadOnlySpan<byte> contextAndChunk = data.Slice(historyStart, offset - historyStart + chunkSize);
+      int chunkOffset = offset - historyStart;
+
+      // Try LZMA compression with context
       using var lzmaData = new MemoryStream();
       var encoder = new LzmaEncoder(this._dictionarySize);
-      encoder.Encode(lzmaData, chunk, writeEndMarker: false);
+      encoder.Encode(lzmaData, contextAndChunk, chunkOffset, writeEndMarker: false);
       byte[] compressed = lzmaData.ToArray();
 
-      if (compressed.Length < chunkSize) {
-        // LZMA chunk
-        WriteLzmaChunk(output, chunk, compressed, encoder.Properties,
+      if (compressed.Length < chunkSize && compressed.Length <= MaxPackedSize) {
+        // LZMA chunk — fits in the 16-bit packed size field
+        WriteLzmaChunk(output, data.Slice(offset, chunkSize), compressed, encoder.Properties,
           needFullReset);
+        needFullReset = false;
+        offset += chunkSize;
       }
       else {
-        // Uncompressed chunk (LZMA didn't help)
-        WriteUncompressedChunk(output, chunk, needFullReset);
+        // Emit as uncompressed 64KB blocks
+        int remaining = chunkSize;
+        while (remaining > 0) {
+          int blockSize = Math.Min(MaxUncompressedChunkSize, remaining);
+          WriteUncompressedChunk(output, data.Slice(offset, blockSize), needFullReset);
+          needFullReset = false;
+          offset += blockSize;
+          remaining -= blockSize;
+        }
       }
-
-      needFullReset = false;
-      offset += chunkSize;
     }
 
     output.WriteByte(0x00); // End marker

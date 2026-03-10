@@ -23,15 +23,14 @@ internal static class OptimalParser {
     if (data.Length == 0)
       return [];
 
-    int n = data.Length;
-    var dp = new DpNode[n + 1];
+    int length = data.Length;
+    var dp = new DpNode[length + 1];
     dp[0].Cost = 0;
-    for (int i = 1; i <= n; ++i)
-      dp[i].Cost = double.MaxValue;
+    dp.AsSpan(1).Fill(new DpNode { Cost = double.MaxValue });
 
     const double UnseenPenalty = 15.0;
 
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < length; ++i) {
       if (dp[i].Cost >= double.MaxValue)
         continue;
 
@@ -50,7 +49,7 @@ internal static class OptimalParser {
         int len = match.Length;
         int dist = match.Distance;
         int dest = i + len;
-        if (dest > n)
+        if (dest > length)
           continue;
 
         double matchCost = GetMatchCost(len, dist, litLenLengths, distLengths, UnseenPenalty);
@@ -65,7 +64,7 @@ internal static class OptimalParser {
 
     // Traceback
     var symbols = new List<LzSymbol>();
-    int pos = n;
+    int pos = length;
     while (pos > 0) {
       ref var node = ref dp[pos];
       if (node.Distance == 0) {

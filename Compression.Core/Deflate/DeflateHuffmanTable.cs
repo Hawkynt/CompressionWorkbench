@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using Compression.Core.BitIO;
 
 namespace Compression.Core.Deflate;
@@ -31,19 +34,8 @@ public sealed class DeflateHuffmanTable {
     this._maxCodeLength = maxLen;
 
     // Assign canonical codes (MSB-first), then bit-reverse for Deflate
-    // Step 1: Count codes per length
-    Span<int> blCount = stackalloc int[maxLen + 1];
-    for (int i = 0; i < codeLengths.Length; ++i)
-      if (codeLengths[i] > 0)
-        ++blCount[codeLengths[i]];
-
-    // Step 2: Compute first code for each length
     Span<uint> nextCode = stackalloc uint[maxLen + 1];
-    uint code = 0;
-    for (int bits = 1; bits <= maxLen; ++bits) {
-      code = (code + (uint)blCount[bits - 1]) << 1;
-      nextCode[bits] = code;
-    }
+    Entropy.Huffman.CanonicalCodeAssigner.ComputeNextCodes(codeLengths, maxLen, nextCode);
 
     // Step 3: Assign codes and build encode/decode tables
     this._encodeCodes = new uint[codeLengths.Length];
@@ -100,7 +92,7 @@ public sealed class DeflateHuffmanTable {
       int len = this._lengthTable[peek];
 
       if (len == 0)
-        throw new InvalidDataException("Invalid Huffman code encountered.");
+        ThrowInvalidHuffmanCode();
 
       bitBuffer.DropBits(len);
       return symbol;
@@ -109,7 +101,7 @@ public sealed class DeflateHuffmanTable {
     // Slow path: near end of stream, decode bit-by-bit
     int available = bitBuffer.BitsAvailable;
     if (available == 0)
-      throw new EndOfStreamException("No bits available for Huffman decoding.");
+      ThrowNoBitsAvailable();
 
     // Peek what we have, zero-extend to maxCodeLength
     uint partialPeek = bitBuffer.PeekBits(available);
@@ -118,7 +110,7 @@ public sealed class DeflateHuffmanTable {
     int slowLen = this._lengthTable[partialPeek];
 
     if (slowLen == 0 || slowLen > available)
-      throw new InvalidDataException("Invalid or truncated Huffman code at end of stream.");
+      ThrowTruncatedHuffman();
 
     bitBuffer.DropBits(slowLen);
     return slowSymbol;
@@ -139,12 +131,15 @@ public sealed class DeflateHuffmanTable {
   /// <param name="code">The code to reverse.</param>
   /// <param name="length">The number of bits in the code.</param>
   /// <returns>The bit-reversed code.</returns>
-  internal static uint ReverseBits(uint code, int length) {
-    uint result = 0;
-    for (int i = 0; i < length; ++i) {
-      result = (result << 1) | (code & 1);
-      code >>= 1;
-    }
-    return result;
-  }
+  internal static uint ReverseBits(uint code, int length) => BitHelpers.ReverseBits(code, length);
+
+  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  private static void ThrowInvalidHuffmanCode() => throw new InvalidDataException("Invalid Huffman code encountered.");
+
+  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  private static void ThrowNoBitsAvailable() => throw new EndOfStreamException("No bits available for Huffman decoding.");
+
+  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  private static void ThrowTruncatedHuffman() => throw new InvalidDataException("Invalid or truncated Huffman code at end of stream.");
+
 }
