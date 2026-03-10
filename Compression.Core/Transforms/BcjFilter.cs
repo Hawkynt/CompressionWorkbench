@@ -1,4 +1,6 @@
 using System.Buffers.Binary;
+using System.Numerics;
+using System.Runtime.Intrinsics;
 
 namespace Compression.Core.Transforms;
 
@@ -22,17 +24,7 @@ public static class BcjFilter {
     byte[] result = new byte[data.Length];
     data.CopyTo(result);
 
-    int i = 0;
-    while (i < result.Length - 4) {
-      if (result[i] == 0xE8 || result[i] == 0xE9) {
-        int relative = BinaryPrimitives.ReadInt32LittleEndian(result.AsSpan(i + 1));
-        int absolute = relative + (startOffset + i + 5);
-        BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(i + 1), absolute);
-        i += 5;
-      }
-      else
-        ++i;
-    }
+    TransformX86(result, startOffset, encode: true);
 
     return result;
   }
@@ -50,18 +42,71 @@ public static class BcjFilter {
     byte[] result = new byte[data.Length];
     data.CopyTo(result);
 
+    TransformX86(result, startOffset, encode: false);
+
+    return result;
+  }
+
+  private static void TransformX86(byte[] result, int startOffset, bool encode) {
+    int limit = result.Length - 4;
     int i = 0;
-    while (i < result.Length - 4) {
+
+    if (Vector256.IsHardwareAccelerated && limit >= 32) {
+      var e8 = Vector256.Create((byte)0xE8);
+      var e9 = Vector256.Create((byte)0xE9);
+      int simdLimit = limit - 31;
+
+      while (i < simdLimit) {
+        var chunk = Vector256.Create<byte>(result.AsSpan(i));
+        var matchE8 = Vector256.Equals(chunk, e8);
+        var matchE9 = Vector256.Equals(chunk, e9);
+        var match = matchE8 | matchE9;
+
+        uint mask = match.ExtractMostSignificantBits();
+        if (mask == 0) {
+          i += 32;
+          continue;
+        }
+
+        // Process matches within this 32-byte window
+        while (mask != 0) {
+          int offset = BitOperations.TrailingZeroCount(mask);
+          int pos = i + offset;
+          if (pos > limit)
+            break;
+
+          int addr = BinaryPrimitives.ReadInt32LittleEndian(result.AsSpan(pos + 1));
+          if (encode)
+            addr += startOffset + pos + 5;
+          else
+            addr -= startOffset + pos + 5;
+
+          BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(pos + 1), addr);
+
+          // Clear this bit and the next 4 bits (skip the address bytes)
+          // We need to skip to pos+5, clear bits up to offset+4
+          int clearEnd = Math.Min(offset + 5, 32);
+          for (int b = offset; b < clearEnd; ++b)
+            mask &= ~(1u << b);
+        }
+
+        i += 32;
+      }
+    }
+
+    // Scalar tail
+    while (i <= limit) {
       if (result[i] == 0xE8 || result[i] == 0xE9) {
-        int absolute = BinaryPrimitives.ReadInt32LittleEndian(result.AsSpan(i + 1));
-        int relative = absolute - (startOffset + i + 5);
-        BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(i + 1), relative);
+        int addr = BinaryPrimitives.ReadInt32LittleEndian(result.AsSpan(i + 1));
+        if (encode)
+          addr += startOffset + i + 5;
+        else
+          addr -= startOffset + i + 5;
+        BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(i + 1), addr);
         i += 5;
       }
       else
         ++i;
     }
-
-    return result;
   }
 }

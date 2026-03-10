@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace Compression.Core.BitIO;
@@ -32,10 +34,10 @@ public sealed class BitBuffer<TOrder> where TOrder : struct, IBitOrder {
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public bool EnsureBits(int count) {
     while (this._bitsInBuffer < count) {
-      int b = this._stream.ReadByte();
-      if (b < 0)
+      int readByte = this._stream.ReadByte();
+      if (readByte < 0)
         return false;
-      this._buffer = TOrder.InsertByte(this._buffer, this._bitsInBuffer, b);
+      this._buffer = TOrder.InsertByte(this._buffer, this._bitsInBuffer, readByte);
       this._bitsInBuffer += 8;
     }
     return true;
@@ -47,7 +49,7 @@ public sealed class BitBuffer<TOrder> where TOrder : struct, IBitOrder {
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public uint PeekBits(int count) {
     if (!EnsureBits(count))
-      throw new EndOfStreamException("Not enough bits available for peek.");
+      ThrowNotEnoughBits();
     return TOrder.Peek(this._buffer, this._bitsInBuffer, count);
   }
 
@@ -57,7 +59,7 @@ public sealed class BitBuffer<TOrder> where TOrder : struct, IBitOrder {
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public void DropBits(int count) {
     if (count > this._bitsInBuffer)
-      throw new InvalidOperationException("Cannot drop more bits than are available.");
+      ThrowTooManyBitsDrop();
     this._buffer = TOrder.Drop(this._buffer, this._bitsInBuffer, count);
     this._bitsInBuffer -= count;
   }
@@ -80,6 +82,14 @@ public sealed class BitBuffer<TOrder> where TOrder : struct, IBitOrder {
     if (bitsToSkip > 0)
       DropBits(bitsToSkip);
   }
+
+  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  private static void ThrowNotEnoughBits() =>
+    throw new EndOfStreamException("Not enough bits available for peek.");
+
+  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  private static void ThrowTooManyBitsDrop() =>
+    throw new InvalidOperationException("Cannot drop more bits than are available.");
 }
 
 /// <summary>

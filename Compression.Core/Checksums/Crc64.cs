@@ -1,7 +1,7 @@
 namespace Compression.Core.Checksums;
 
 /// <summary>
-/// Table-driven CRC-64 implementation with configurable polynomial.
+/// Table-driven CRC-64 implementation with configurable polynomial and slicing-by-4 acceleration.
 /// </summary>
 public sealed class Crc64 : IChecksum {
   /// <summary>
@@ -9,7 +9,7 @@ public sealed class Crc64 : IChecksum {
   /// </summary>
   public const ulong Ecma182 = 0xC96C5795D7870F42UL;
 
-  private readonly ulong[] _table;
+  private readonly ulong[][] _tables;
   private ulong _crc;
 
   /// <summary>
@@ -17,7 +17,7 @@ public sealed class Crc64 : IChecksum {
   /// </summary>
   /// <param name="polynomial">The reflected polynomial. Defaults to <see cref="Ecma182"/>.</param>
   public Crc64(ulong polynomial = Ecma182) {
-    this._table = GenerateTable(polynomial);
+    this._tables = CrcTableGenerator.GenerateSlicingTables(polynomial);
     this._crc = 0xFFFFFFFFFFFFFFFFUL;
   }
 
@@ -34,13 +34,29 @@ public sealed class Crc64 : IChecksum {
   public void Reset() => this._crc = 0xFFFFFFFFFFFFFFFFUL;
 
   /// <inheritdoc />
-  public void Update(byte b) => this._crc = this._table[(this._crc ^ b) & 0xFF] ^ (this._crc >> 8);
+  public void Update(byte b) => this._crc = this._tables[0][(this._crc ^ b) & 0xFF] ^ (this._crc >> 8);
 
   /// <inheritdoc />
   public void Update(ReadOnlySpan<byte> data) {
     ulong crc = this._crc;
-    for (int i = 0; i < data.Length; ++i)
-      crc = this._table[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
+    var t0 = this._tables[0];
+    var t1 = this._tables[1];
+    var t2 = this._tables[2];
+    var t3 = this._tables[3];
+    int i = 0;
+
+    // Slicing-by-4: process 4 bytes per iteration
+    int end4 = data.Length - 3;
+    while (i < end4) {
+      uint lo = (uint)(crc & 0xFFFFFFFF);
+      lo ^= (uint)(data[i] | (data[i + 1] << 8) | (data[i + 2] << 16) | (data[i + 3] << 24));
+      crc = t3[lo & 0xFF] ^ t2[(lo >> 8) & 0xFF] ^ (crc >> 32) ^ t1[(lo >> 16) & 0xFF] ^ t0[(lo >> 24) & 0xFF];
+      i += 4;
+    }
+
+    // Scalar tail
+    for (; i < data.Length; ++i)
+      crc = t0[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
 
     this._crc = crc;
   }
@@ -54,20 +70,5 @@ public sealed class Crc64 : IChecksum {
     var crc = new Crc64();
     crc.Update(data);
     return crc.Value64;
-  }
-
-  private static ulong[] GenerateTable(ulong polynomial) {
-    var table = new ulong[256];
-    for (uint i = 0; i < 256; ++i) {
-      ulong crc = i;
-      for (int j = 0; j < 8; ++j) {
-        if ((crc & 1) != 0)
-          crc = (crc >> 1) ^ polynomial;
-        else
-          crc >>= 1;
-      }
-      table[i] = crc;
-    }
-    return table;
   }
 }

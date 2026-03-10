@@ -1,7 +1,11 @@
+using System.Buffers;
+using Compression.Core.DataStructures;
+
 namespace Compression.Core.Dictionary.Lzma;
 
 /// <summary>
 /// LZMA2 decoder that reads chunked LZMA2 format data.
+/// Maintains a shared sliding window across chunks for cross-chunk back-references.
 /// </summary>
 public sealed class Lzma2Decoder {
   private readonly Stream _input;
@@ -30,7 +34,19 @@ public sealed class Lzma2Decoder {
   public byte[] Decode() {
     using var output = new MemoryStream();
 
-    byte[]? properties = null;
+    // Reusable properties buffer (5 bytes, filled on resetLevel >= 2)
+    byte[] properties = new byte[5];
+    bool hasProperties = false;
+    // Pre-fill dictionary size bytes (constant across chunks)
+    properties[1] = (byte)this._dictionarySize;
+    properties[2] = (byte)(this._dictionarySize >> 8);
+    properties[3] = (byte)(this._dictionarySize >> 16);
+    properties[4] = (byte)(this._dictionarySize >> 24);
+
+    // Shared window persists across chunks for cross-chunk dictionary references
+    int winSize = Math.Max(this._dictionarySize, 4096);
+    var window = new SlidingWindow(winSize);
+    int[] reps = [0, 0, 0, 0];
 
     while (!this._finished) {
       int controlByte = this._input.ReadByte();
@@ -48,13 +64,19 @@ public sealed class Lzma2Decoder {
         int size = (ReadByte() << 8) | ReadByte();
         ++size; // 0-based to actual size
 
-        byte[] uncompressed = new byte[size];
-        ReadExact(uncompressed, 0, size);
-        output.Write(uncompressed, 0, size);
+        byte[] uncompressed = ArrayPool<byte>.Shared.Rent(size);
+        try {
+          ReadExact(uncompressed, 0, size);
+          output.Write(uncompressed, 0, size);
+          window.WriteBytes(uncompressed.AsSpan(0, size));
+        } finally {
+          ArrayPool<byte>.Shared.Return(uncompressed);
+        }
 
         if (controlByte == 0x01) {
-          // Dictionary reset
-          // (we don't maintain dictionary state across chunks in this implementation)
+          // Dictionary reset — reset window and rep distances
+          window = new SlidingWindow(winSize);
+          reps[0] = reps[1] = reps[2] = reps[3] = 0;
         }
       }
       else if ((controlByte & 0x80) != 0) {
@@ -70,26 +92,33 @@ public sealed class Lzma2Decoder {
 
         if (resetLevel >= 2) {
           // Read properties byte
-          int propByte = ReadByte();
-          properties = new byte[5];
-          properties[0] = (byte)propByte;
-          properties[1] = (byte)this._dictionarySize;
-          properties[2] = (byte)(this._dictionarySize >> 8);
-          properties[3] = (byte)(this._dictionarySize >> 16);
-          properties[4] = (byte)(this._dictionarySize >> 24);
+          properties[0] = (byte)ReadByte();
+          hasProperties = true;
         }
 
-        if (properties == null)
+        if (resetLevel >= 3) {
+          // Full reset: reset window and rep distances
+          window = new SlidingWindow(winSize);
+          reps[0] = reps[1] = reps[2] = reps[3] = 0;
+        } else if (resetLevel == 1) {
+          // State reset but keep dictionary
+          reps[0] = reps[1] = reps[2] = reps[3] = 0;
+        }
+        // resetLevel 0: continue with existing state (dictionary + reps preserved)
+
+        if (!hasProperties)
           throw new InvalidDataException("LZMA2: No properties available for LZMA chunk.");
 
         // Read packed data
-        byte[] packed = new byte[packedSize];
-        ReadExact(packed, 0, packedSize);
-
-        using var packedStream = new MemoryStream(packed);
-        var decoder = new LzmaDecoder(packedStream, properties, unpackedSize);
-        byte[] decoded = decoder.Decode();
-        output.Write(decoded, 0, decoded.Length);
+        byte[] packed = ArrayPool<byte>.Shared.Rent(packedSize);
+        try {
+          ReadExact(packed, 0, packedSize);
+          using var packedStream = new MemoryStream(packed, 0, packedSize);
+          var decoder = new LzmaDecoder(packedStream, properties, unpackedSize);
+          decoder.Decode(output, window, reps);
+        } finally {
+          ArrayPool<byte>.Shared.Return(packed);
+        }
       }
       else
         throw new InvalidDataException($"Invalid LZMA2 control byte: 0x{controlByte:X2}");

@@ -212,10 +212,10 @@ public sealed class DeflateDecompressor {
 
     // Split into literal/length and distance code lengths
     int[] litLenLengths = new int[hlit];
-    Array.Copy(codeLengths, 0, litLenLengths, 0, hlit);
+    codeLengths.AsSpan(0, hlit).CopyTo(litLenLengths);
 
     int[] distLengths = new int[hdist];
-    Array.Copy(codeLengths, hlit, distLengths, 0, hdist);
+    codeLengths.AsSpan(hlit, hdist).CopyTo(distLengths);
 
     litLenTable = new DeflateHuffmanTable(litLenLengths);
     distTable = new DeflateHuffmanTable(distLengths);

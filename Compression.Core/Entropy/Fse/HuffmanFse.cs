@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using Compression.Core.Entropy.Huffman;
 
 namespace Compression.Core.Entropy.Fse;
@@ -39,17 +42,8 @@ public static class HuffmanFse {
         maxBitLen = weights[i];
 
     // Assign canonical codes (MSB-first)
-    var blCount = new int[maxBitLen + 1];
-    for (int i = 0; i <= actualMax; ++i)
-      if (weights[i] > 0)
-        ++blCount[weights[i]];
-
     var nextCode = new uint[maxBitLen + 1];
-    uint code = 0;
-    for (int bits = 1; bits <= maxBitLen; ++bits) {
-      code = (code + (uint)blCount[bits - 1]) << 1;
-      nextCode[bits] = code;
-    }
+    Huffman.CanonicalCodeAssigner.ComputeNextCodes(weights.AsSpan(0, actualMax + 1), maxBitLen, nextCode);
 
     // Store both MSB-first code and bit-reversed code for encoding
     var reversedCodes = new uint[actualMax + 1];
@@ -77,9 +71,9 @@ public static class HuffmanFse {
     for (int i = 0; i < data.Length; ++i) {
       byte symbol = data[i];
       int len = codeLengths[symbol];
-      uint c = reversedCodes[symbol];
+      uint code = reversedCodes[symbol];
 
-      bitContainer |= (ulong)c << bitCount;
+      bitContainer |= (ulong)code << bitCount;
       bitCount += len;
 
       while (bitCount >= 8) {
@@ -127,17 +121,8 @@ public static class HuffmanFse {
     }
 
     // Build canonical codes (MSB-first, same assignment as encoder)
-    var blCount = new int[maxBitLen + 1];
-    for (int i = 0; i <= maxSymbol; ++i)
-      if (weights[i] > 0)
-        ++blCount[weights[i]];
-
     var nextCode = new uint[maxBitLen + 1];
-    uint code = 0;
-    for (int bits = 1; bits <= maxBitLen; ++bits) {
-      code = (code + (uint)blCount[bits - 1]) << 1;
-      nextCode[bits] = code;
-    }
+    Huffman.CanonicalCodeAssigner.ComputeNextCodes(weights.AsSpan(0, maxSymbol + 1), maxBitLen, nextCode);
 
     // Build lookup table using bit-reversed codes (LSB-first, matching the bitstream)
     int lookupSize = 1 << maxBitLen;
@@ -190,7 +175,7 @@ public static class HuffmanFse {
       uint bits = (uint)(bitBuf & ((1UL << maxBitLen) - 1));
       int sym = lookupSymbol[(int)bits];
       if (sym < 0)
-        throw new InvalidDataException("Invalid Huffman code in stream.");
+        ThrowInvalidHuffmanCode();
 
       int codeLen = lookupLen[(int)bits];
       output[outputPos++] = (byte)sym;
@@ -318,16 +303,10 @@ public static class HuffmanFse {
     }
   }
 
-  /// <summary>
-  /// Reverses the bits in a value within a given bit width.
-  /// </summary>
-  private static uint ReverseBits(uint value, int numBits) {
-    uint result = 0;
-    for (int i = 0; i < numBits; ++i) {
-      result = (result << 1) | (value & 1);
-      value >>= 1;
-    }
+  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  private static void ThrowInvalidHuffmanCode() =>
+    throw new InvalidDataException("Invalid Huffman code in stream.");
 
-    return result;
-  }
+  private static uint ReverseBits(uint value, int numBits) =>
+    BitIO.BitHelpers.ReverseBits(value, numBits);
 }

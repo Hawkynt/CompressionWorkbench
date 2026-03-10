@@ -109,9 +109,9 @@ internal sealed class PpmdContext {
       if (excludedSymbols != null && excludedSymbols.Contains(sym))
         continue;
 
-      uint f = (uint)this._frequencies[sym];
-      result.Add((sym, cumFreq, f));
-      cumFreq += f;
+      uint frequency = (uint)this._frequencies[sym];
+      result.Add((sym, cumFreq, frequency));
+      cumFreq += frequency;
       ++includedCount;
     }
 

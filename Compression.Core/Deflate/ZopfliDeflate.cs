@@ -67,7 +67,7 @@ internal static class ZopfliDeflate {
       // Pad to 288 for proper static table compatibility
       if (litLenLengths.Length < 288) {
         var padded = new int[288];
-        Array.Copy(litLenLengths, padded, litLenLengths.Length);
+        litLenLengths.AsSpan().CopyTo(padded);
         litLenLengths = padded;
       }
 

@@ -48,7 +48,19 @@ public sealed class LzmaEncoder {
   /// <param name="output">The output stream.</param>
   /// <param name="data">The data to compress.</param>
   /// <param name="writeEndMarker">Whether to write the end-of-stream marker.</param>
-  public void Encode(Stream output, ReadOnlySpan<byte> data, bool writeEndMarker = true) {
+  public void Encode(Stream output, ReadOnlySpan<byte> data, bool writeEndMarker = true) =>
+    Encode(output, data, 0, writeEndMarker);
+
+  /// <summary>
+  /// Encodes data starting at <paramref name="startOffset"/> within <paramref name="data"/>.
+  /// Bytes before <paramref name="startOffset"/> serve as historical context for the match finder,
+  /// enabling cross-chunk back-references in LZMA2.
+  /// </summary>
+  /// <param name="output">The output stream.</param>
+  /// <param name="data">The data including optional historical prefix.</param>
+  /// <param name="startOffset">The position in <paramref name="data"/> where actual encoding begins.</param>
+  /// <param name="writeEndMarker">Whether to write the end-of-stream marker.</param>
+  internal void Encode(Stream output, ReadOnlySpan<byte> data, int startOffset, bool writeEndMarker = true) {
     var encoder = new RangeEncoder(output);
     var literalEncoder = new LzmaLiteralEncoder(this._lc, this._lp);
     var matchLenEncoder = new LzmaLengthEncoder();
@@ -58,27 +70,27 @@ public sealed class LzmaEncoder {
     int state = 0;
     int[] reps = [0, 0, 0, 0];
 
-    // Probability arrays
-    int[] isMatch = new int[LzmaConstants.NumStates << 4];
-    int[] isRep = new int[LzmaConstants.NumStates];
-    int[] isRepG0 = new int[LzmaConstants.NumStates];
-    int[] isRepG1 = new int[LzmaConstants.NumStates];
-    int[] isRepG2 = new int[LzmaConstants.NumStates];
-    int[] isRep0Long = new int[LzmaConstants.NumStates << 4];
-    Array.Fill(isMatch, RangeEncoder.ProbInitValue);
-    Array.Fill(isRep, RangeEncoder.ProbInitValue);
-    Array.Fill(isRepG0, RangeEncoder.ProbInitValue);
-    Array.Fill(isRepG1, RangeEncoder.ProbInitValue);
-    Array.Fill(isRepG2, RangeEncoder.ProbInitValue);
-    Array.Fill(isRep0Long, RangeEncoder.ProbInitValue);
+    // Probability arrays (stackalloc: 432 ints = 1,728 bytes total)
+    Span<int> isMatch = stackalloc int[LzmaConstants.NumStates << 4];
+    Span<int> isRep = stackalloc int[LzmaConstants.NumStates];
+    Span<int> isRepG0 = stackalloc int[LzmaConstants.NumStates];
+    Span<int> isRepG1 = stackalloc int[LzmaConstants.NumStates];
+    Span<int> isRepG2 = stackalloc int[LzmaConstants.NumStates];
+    Span<int> isRep0Long = stackalloc int[LzmaConstants.NumStates << 4];
+    isMatch.Fill(RangeEncoder.ProbInitValue);
+    isRep.Fill(RangeEncoder.ProbInitValue);
+    isRepG0.Fill(RangeEncoder.ProbInitValue);
+    isRepG1.Fill(RangeEncoder.ProbInitValue);
+    isRepG2.Fill(RangeEncoder.ProbInitValue);
+    isRep0Long.Fill(RangeEncoder.ProbInitValue);
 
     // Distance encoding
     var posSlotEncoder = new BitTreeEncoder[LzmaConstants.NumLenToPosStates];
     for (int i = 0; i < LzmaConstants.NumLenToPosStates; ++i)
       posSlotEncoder[i] = new BitTreeEncoder(6);
 
-    int[] posEncoders = new int[LzmaConstants.NumFullDistances - LzmaConstants.StartPosModelIndex];
-    Array.Fill(posEncoders, RangeEncoder.ProbInitValue);
+    Span<int> posEncoders = stackalloc int[LzmaConstants.NumFullDistances - LzmaConstants.StartPosModelIndex];
+    posEncoders.Fill(RangeEncoder.ProbInitValue);
 
     var alignEncoder = new BitTreeEncoder(LzmaConstants.NumAlignBits);
 
@@ -86,7 +98,11 @@ public sealed class LzmaEncoder {
     int windowSize = Math.Min(this._dictionarySize, data.Length > 0 ? data.Length : 1);
     var matchFinder = new HashChainMatchFinder(Math.Max(windowSize, 4096), 64);
 
-    int pos = 0;
+    // Pre-seed the match finder with historical context positions
+    for (int h = 0; h < startOffset; ++h)
+      matchFinder.InsertPosition(data, h);
+
+    int pos = startOffset;
 
     while (pos < data.Length) {
       int posState = pos & this._posStateMask;
@@ -214,7 +230,7 @@ public sealed class LzmaEncoder {
   }
 
   private static void EncodeDistance(RangeEncoder encoder,
-    BitTreeEncoder[] posSlotEncoder, int[] posEncoders,
+    BitTreeEncoder[] posSlotEncoder, Span<int> posEncoders,
     BitTreeEncoder alignEncoder, long distance, int length) {
     int lenToPosState = LzmaConstants.GetLenToPosState(length);
 

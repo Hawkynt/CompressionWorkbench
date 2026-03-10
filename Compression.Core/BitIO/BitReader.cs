@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
@@ -32,10 +33,10 @@ public sealed class BitReader<TOrder> where TOrder : struct, IBitOrder {
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public int ReadBit() {
     if (this._bitsInBuffer == 0) {
-      int b = this._stream.ReadByte();
-      if (b < 0)
+      int readByte = this._stream.ReadByte();
+      if (readByte < 0)
         ThrowEndOfStream();
-      this._buffer = b;
+      this._buffer = readByte;
       this._bitsInBuffer = 8;
     }
 
@@ -67,7 +68,7 @@ public sealed class BitReader<TOrder> where TOrder : struct, IBitOrder {
     this._buffer = 0;
   }
 
-  [DoesNotReturn]
+  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
   private static void ThrowEndOfStream() =>
     throw new EndOfStreamException("Unexpected end of stream while reading bits.");
 }

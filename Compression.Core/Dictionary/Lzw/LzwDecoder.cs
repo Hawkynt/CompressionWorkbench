@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using Compression.Core.BitIO;
 
 namespace Compression.Core.Dictionary.Lzw;
@@ -94,16 +97,14 @@ public sealed class LzwDecoder {
       if (code < dictionary.Count) {
         // Code is in the dictionary.
         entry = dictionary[code];
-      }
-      else if (code == nextCode && previousEntry != null) {
+      } else if (code == nextCode && previousEntry != null) {
         // KwKwK case: the new entry is previousEntry + previousEntry[0].
         entry = new byte[previousEntry.Length + 1];
         previousEntry.CopyTo(entry, 0);
         entry[^1] = previousEntry[0];
-      }
-      else {
-        throw new InvalidDataException(
-          $"Invalid LZW code {code} encountered (nextCode={nextCode}, dictSize={dictionary.Count}).");
+      } else {
+        entry = default!;
+        ThrowInvalidCode(code, nextCode, dictionary.Count);
       }
 
       output.Write(entry, 0, entry.Length);
@@ -126,6 +127,11 @@ public sealed class LzwDecoder {
 
     return output.ToArray();
   }
+
+  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  private static void ThrowInvalidCode(int code, int nextCode, int dictSize) =>
+    throw new InvalidDataException(
+      $"Invalid LZW code {code} encountered (nextCode={nextCode}, dictSize={dictSize}).");
 
   private static void InitializeDictionary(List<byte[]> dictionary, int clearCode, bool useClearCode, bool useStopCode) {
     for (int i = 0; i < clearCode; ++i)

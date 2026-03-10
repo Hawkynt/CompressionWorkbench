@@ -131,7 +131,7 @@ internal sealed class SubAllocator {
 
     this._loUnit = 0;
     this._hiUnit = this._memorySize;
-    Array.Clear(this._memory);
+    this._memory.AsSpan().Clear();
   }
 
   /// <summary>

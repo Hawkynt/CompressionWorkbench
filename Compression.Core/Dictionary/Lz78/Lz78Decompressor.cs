@@ -1,4 +1,7 @@
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Runtime.CompilerServices;
 
 namespace Compression.Core.Dictionary.Lz78;
 
@@ -26,11 +29,8 @@ public static class Lz78Decompressor {
     using var output = new MemoryStream();
 
     foreach (var token in tokens) {
-      if (token.DictionaryIndex < 0 || token.DictionaryIndex >= dictionary.Count) {
-        throw new InvalidDataException(
-          $"Invalid dictionary index {token.DictionaryIndex} " +
-          $"(dictionary size: {dictionary.Count}).");
-      }
+      if (token.DictionaryIndex < 0 || token.DictionaryIndex >= dictionary.Count)
+        ThrowInvalidDictionaryIndex(token.DictionaryIndex, dictionary.Count);
 
       byte[] prefix = dictionary[token.DictionaryIndex];
 
@@ -57,4 +57,9 @@ public static class Lz78Decompressor {
 
     return output.ToArray();
   }
+
+  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  private static void ThrowInvalidDictionaryIndex(int index, int dictSize) =>
+    throw new InvalidDataException(
+      $"Invalid dictionary index {index} (dictionary size: {dictSize}).");
 }

@@ -66,7 +66,7 @@ public sealed class BitTreeEncoder {
   /// <param name="startIndex">The starting index in the prob array.</param>
   /// <param name="numBits">The number of bits to encode.</param>
   /// <param name="value">The value to encode.</param>
-  public static void ReverseEncode(RangeEncoder encoder, int[] probs, int startIndex, int numBits, int value) {
+  public static void ReverseEncode(RangeEncoder encoder, Span<int> probs, int startIndex, int numBits, int value) {
     int index = 1;
     for (int i = 0; i < numBits; ++i) {
       int bit = value & 1;

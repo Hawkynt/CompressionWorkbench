@@ -47,14 +47,13 @@ public sealed class LzssDecoder {
 
         if ((flagByte & (1 << bit)) != 0) {
           // Literal
-          int b = this._input.ReadByte();
-          if (b < 0)
+          int readByte = this._input.ReadByte();
+          if (readByte < 0)
             return [.. output];
 
-          output.Add((byte)b);
-          window.WriteByte((byte)b);
-        }
-        else {
+          output.Add((byte)readByte);
+          window.WriteByte((byte)readByte);
+        } else {
           // Match
           int b1 = this._input.ReadByte();
           int b2 = this._input.ReadByte();
@@ -73,8 +72,7 @@ public sealed class LzssDecoder {
               output.Add(0);
               window.WriteByte(0);
             }
-          }
-          else {
+          } else {
             var copyBuf = new byte[length];
             window.CopyFromWindow(distance, length, copyBuf);
             output.AddRange(copyBuf);

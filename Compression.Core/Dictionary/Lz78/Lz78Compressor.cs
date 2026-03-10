@@ -35,8 +35,8 @@ public sealed class Lz78Compressor {
     int currentIndex = 0; // current node in the trie (0 = root)
 
     for (int i = 0; i < data.Length; ++i) {
-      byte b = data[i];
-      var key = (currentIndex, b);
+      byte symbol = data[i];
+      var key = (currentIndex, symbol);
 
       if (trie.TryGetValue(key, out int childIndex)) {
         // Extend the current match.
@@ -44,7 +44,7 @@ public sealed class Lz78Compressor {
       }
       else {
         // Mismatch: emit token and add new entry.
-        tokens.Add(new Lz78Token(currentIndex, b));
+        tokens.Add(new Lz78Token(currentIndex, symbol));
         trie[key] = nextIndex;
         ++nextIndex;
         currentIndex = 0;

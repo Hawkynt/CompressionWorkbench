@@ -1,3 +1,7 @@
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
+
 namespace Compression.Core.Entropy.RangeCoding;
 
 /// <summary>
@@ -25,14 +29,14 @@ public sealed class RangeDecoder {
     // Read initial 5 bytes: first byte should be 0x00, next 4 bytes form the initial code
     int firstByte = this._input.ReadByte();
     if (firstByte < 0)
-      throw new EndOfStreamException("Unexpected end of range-coded stream.");
+      ThrowUnexpectedEof();
 
     for (int i = 0; i < 4; ++i) {
-      int b = this._input.ReadByte();
-      if (b < 0)
-        throw new EndOfStreamException("Unexpected end of range-coded stream.");
+      int readByte = this._input.ReadByte();
+      if (readByte < 0)
+        ThrowUnexpectedEof();
 
-      this._code = (this._code << 8) | (uint)b;
+      this._code = (this._code << 8) | (uint)readByte;
     }
   }
 
@@ -73,9 +77,9 @@ public sealed class RangeDecoder {
     int result = 0;
     for (int i = count - 1; i >= 0; --i) {
       this._range >>= 1;
-      uint t = (this._code - this._range) >> 31;
-      this._code -= this._range & (t - 1);
-      result = (result << 1) | (int)(1 - t);
+      uint threshold = (this._code - this._range) >> 31;
+      this._code -= this._range & (threshold - 1);
+      result = (result << 1) | (int)(1 - threshold);
 
       Normalize();
     }
@@ -86,12 +90,16 @@ public sealed class RangeDecoder {
   private void Normalize() {
     if (this._range < TopValue) {
       this._range <<= 8;
-      int b = this._input.ReadByte();
-      if (b < 0) {
+      int readByte = this._input.ReadByte();
+      if (readByte < 0) {
         this._finished = true;
-        b = 0;
+        readByte = 0;
       }
-      this._code = (this._code << 8) | (uint)b;
+      this._code = (this._code << 8) | (uint)readByte;
     }
   }
+
+  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  private static void ThrowUnexpectedEof() =>
+    throw new EndOfStreamException("Unexpected end of range-coded stream.");
 }

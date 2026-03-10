@@ -25,21 +25,20 @@ public sealed class LzmaDecoder {
   public LzmaDecoder(Stream input, byte[] properties, long uncompressedSize = -1) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(properties);
-    if (properties.Length < 5)
-      throw new ArgumentException("Properties must be at least 5 bytes.", nameof(properties));
+    ArgumentOutOfRangeException.ThrowIfLessThan(properties.Length, 5, nameof(properties));
 
     this._input = input;
     this._uncompressedSize = uncompressedSize;
 
     // Parse properties byte
-    int d = properties[0];
-    if (d >= 9 * 5 * 5)
+    int propByte = properties[0];
+    if (propByte >= 9 * 5 * 5)
       throw new InvalidDataException("Invalid LZMA properties byte.");
 
-    this._lc = d % 9;
-    d /= 9;
-    this._lp = d % 5;
-    this._pb = d / 5;
+    this._lc = propByte % 9;
+    propByte /= 9;
+    this._lp = propByte % 5;
+    this._pb = propByte / 5;
 
     this._dictionarySize = properties[1] | (properties[2] << 8) | (properties[3] << 16) | (properties[4] << 24);
     if (this._dictionarySize < 0)
@@ -63,6 +62,22 @@ public sealed class LzmaDecoder {
   /// </summary>
   /// <param name="output">The output stream.</param>
   public void Decode(Stream output) {
+    int winSize = Math.Max(this._dictionarySize, 1);
+    if (winSize < 4096)
+      winSize = 4096;
+
+    var window = new SlidingWindow(winSize);
+    Decode(output, window, null);
+  }
+
+  /// <summary>
+  /// Decodes the compressed stream using a shared sliding window and rep distances.
+  /// Used by LZMA2 for cross-chunk dictionary persistence.
+  /// </summary>
+  /// <param name="output">The output stream.</param>
+  /// <param name="window">The shared sliding window.</param>
+  /// <param name="reps">Rep distances to carry across chunks (4 elements), or null for fresh state.</param>
+  internal void Decode(Stream output, SlidingWindow window, int[]? reps) {
     var decoder = new RangeDecoder(this._input);
     var literalDecoder = new LzmaLiteralDecoder(this._lc, this._lp);
     var matchLenDecoder = new LzmaLengthDecoder();
@@ -70,38 +85,34 @@ public sealed class LzmaDecoder {
 
     // State variables
     int state = 0;
-    int[] reps = [0, 0, 0, 0];
+    reps ??= [0, 0, 0, 0];
 
-    // Probability arrays
-    int[] isMatch = new int[LzmaConstants.NumStates << 4];
-    int[] isRep = new int[LzmaConstants.NumStates];
-    int[] isRepG0 = new int[LzmaConstants.NumStates];
-    int[] isRepG1 = new int[LzmaConstants.NumStates];
-    int[] isRepG2 = new int[LzmaConstants.NumStates];
-    int[] isRep0Long = new int[LzmaConstants.NumStates << 4];
-    Array.Fill(isMatch, RangeEncoder.ProbInitValue);
-    Array.Fill(isRep, RangeEncoder.ProbInitValue);
-    Array.Fill(isRepG0, RangeEncoder.ProbInitValue);
-    Array.Fill(isRepG1, RangeEncoder.ProbInitValue);
-    Array.Fill(isRepG2, RangeEncoder.ProbInitValue);
-    Array.Fill(isRep0Long, RangeEncoder.ProbInitValue);
+    // Probability arrays (stackalloc: 432 ints = 1,728 bytes total)
+    Span<int> isMatch = stackalloc int[LzmaConstants.NumStates << 4];
+    Span<int> isRep = stackalloc int[LzmaConstants.NumStates];
+    Span<int> isRepG0 = stackalloc int[LzmaConstants.NumStates];
+    Span<int> isRepG1 = stackalloc int[LzmaConstants.NumStates];
+    Span<int> isRepG2 = stackalloc int[LzmaConstants.NumStates];
+    Span<int> isRep0Long = stackalloc int[LzmaConstants.NumStates << 4];
+    isMatch.Fill(RangeEncoder.ProbInitValue);
+    isRep.Fill(RangeEncoder.ProbInitValue);
+    isRepG0.Fill(RangeEncoder.ProbInitValue);
+    isRepG1.Fill(RangeEncoder.ProbInitValue);
+    isRepG2.Fill(RangeEncoder.ProbInitValue);
+    isRep0Long.Fill(RangeEncoder.ProbInitValue);
 
     // Distance decoding
     var posSlotDecoder = new BitTreeDecoder[LzmaConstants.NumLenToPosStates];
     for (int i = 0; i < LzmaConstants.NumLenToPosStates; ++i)
       posSlotDecoder[i] = new BitTreeDecoder(6);
 
-    int[] posDecoders = new int[LzmaConstants.NumFullDistances - LzmaConstants.StartPosModelIndex];
-    Array.Fill(posDecoders, RangeEncoder.ProbInitValue);
+    Span<int> posDecoders = stackalloc int[LzmaConstants.NumFullDistances - LzmaConstants.StartPosModelIndex];
+    posDecoders.Fill(RangeEncoder.ProbInitValue);
+
+    // Reusable copy buffer (max match length = 273 bytes)
+    Span<byte> copyBuf = stackalloc byte[LzmaConstants.MatchMaxLen];
 
     var alignDecoder = new BitTreeDecoder(LzmaConstants.NumAlignBits);
-
-    // Dictionary window
-    int winSize = Math.Max(this._dictionarySize, 1);
-    if (winSize < 4096)
-      winSize = 4096;
-
-    var window = new SlidingWindow(winSize);
 
     long outPos = 0;
     byte prevByte = 0;
@@ -150,10 +161,10 @@ public sealed class LzmaDecoder {
             if (decoder.DecodeBit(ref isRep0Long[(state << 4) + posState]) == 0) {
               // Short rep (1 byte)
               state = LzmaConstants.StateUpdateShortRep(state);
-              byte b = window.GetByte(reps[0] + 1);
-              output.WriteByte(b);
-              window.WriteByte(b);
-              prevByte = b;
+              byte previousByte = window.GetByte(reps[0] + 1);
+              output.WriteByte(previousByte);
+              window.WriteByte(previousByte);
+              prevByte = previousByte;
               outPos++;
               continue;
             }
@@ -183,17 +194,17 @@ public sealed class LzmaDecoder {
 
         // Copy from dictionary
         int actualDist = distance + 1;
-        byte[] copyBuf = new byte[len];
-        window.CopyFromWindow(actualDist, len, copyBuf);
-        output.Write(copyBuf, 0, len);
-        prevByte = copyBuf[len - 1];
+        var copySlice = copyBuf.Slice(0, len);
+        window.CopyFromWindow(actualDist, len, copySlice);
+        output.Write(copySlice);
+        prevByte = copySlice[len - 1];
         outPos += len;
       }
     }
   }
 
   private static int DecodeDistance(RangeDecoder decoder,
-    BitTreeDecoder[] posSlotDecoder, int[] posDecoders,
+    BitTreeDecoder[] posSlotDecoder, Span<int> posDecoders,
     BitTreeDecoder alignDecoder, int length) {
     int lenToPosState = LzmaConstants.GetLenToPosState(length);
     int posSlot = posSlotDecoder[lenToPosState].Decode(decoder);

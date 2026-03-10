@@ -131,7 +131,7 @@ public static class HuffmanTree {
     }
 
     // Write back
-    Array.Clear(codeLengths);
+    codeLengths.AsSpan().Clear();
     for (int i = 0; i < symbols.Count; ++i)
       codeLengths[symbols[i].Symbol] = symbols[i].Length;
   }

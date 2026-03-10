@@ -104,9 +104,9 @@ internal sealed class ZopfliHashChain {
     Span<bool> seen = stackalloc bool[256];
     int unique = 0;
     for (int i = 0; i < windowLen; ++i) {
-      byte b = data[position + i];
-      if (!seen[b]) {
-        seen[b] = true;
+      byte dataByte = data[position + i];
+      if (!seen[dataByte]) {
+        seen[dataByte] = true;
         ++unique;
       }
     }

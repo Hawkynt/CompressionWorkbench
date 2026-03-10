@@ -152,16 +152,27 @@ public sealed class DeflateCompressor {
     }
     litLenFreqs[DeflateConstants.EndOfBlock] = 1; // EOB
 
+    // Estimate uncompressed block cost: 3 header bits + 5-byte per sub-block header + raw bytes
+    int numSubBlocks = Math.Max(1, (dataArray.Length + MaxBlockSize - 1) / MaxBlockSize);
+    int uncompressedBits = 3 + numSubBlocks * 5 * 8 + dataArray.Length * 8;
+
     if (this._level == DeflateCompressionLevel.Fast) {
-      // Always use static Huffman for fast mode
-      EmitStaticHuffmanBlock(tokens, isFinal);
+      // Compare static Huffman vs uncompressed
+      int staticSize = EstimateStaticSize(tokens);
+      if (uncompressedBits < staticSize)
+        EmitUncompressedBlock(data, isFinal);
+      else
+        EmitStaticHuffmanBlock(tokens, isFinal);
     }
     else {
-      // Try both static and dynamic, pick smaller
+      // Try static, dynamic, and uncompressed — pick smallest
       int staticSize = EstimateStaticSize(tokens);
       int dynamicSize = EstimateDynamicSize(litLenFreqs, distFreqs, tokens);
+      int bestCompressed = Math.Min(staticSize, dynamicSize);
 
-      if (staticSize <= dynamicSize)
+      if (uncompressedBits < bestCompressed) {
+        EmitUncompressedBlock(data, isFinal);
+      } else if (staticSize <= dynamicSize)
         EmitStaticHuffmanBlock(tokens, isFinal);
       else
         EmitDynamicHuffmanBlock(litLenFreqs, distFreqs, tokens, isFinal);
@@ -269,8 +280,8 @@ public sealed class DeflateCompressor {
 
     // RLE encode combined code lengths
     int[] combinedLengths = new int[hlit + hdist];
-    Array.Copy(litLenLengths, 0, combinedLengths, 0, hlit);
-    Array.Copy(distLengths, 0, combinedLengths, hlit, hdist);
+    litLenLengths.AsSpan(0, hlit).CopyTo(combinedLengths);
+    distLengths.AsSpan(0, hdist).CopyTo(combinedLengths.AsSpan(hlit));
 
     var rleSymbols = RunLengthEncode(combinedLengths);
 
@@ -430,8 +441,8 @@ public sealed class DeflateCompressor {
       --hdist;
 
     int[] combinedLengths = new int[hlit + hdist];
-    Array.Copy(litLenLengths, 0, combinedLengths, 0, hlit);
-    Array.Copy(distLengths, 0, combinedLengths, hlit, hdist);
+    litLenLengths.AsSpan(0, hlit).CopyTo(combinedLengths);
+    distLengths.AsSpan(0, hdist).CopyTo(combinedLengths.AsSpan(hlit));
 
     var rle = RunLengthEncode(combinedLengths);
 

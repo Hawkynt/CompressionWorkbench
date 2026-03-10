@@ -1,3 +1,5 @@
+using System.Runtime.Intrinsics;
+
 namespace Compression.Core.Transforms;
 
 /// <summary>
@@ -28,8 +30,22 @@ public static class DeltaFilter {
     int copyLen = Math.Min(distance, data.Length);
     data.Slice(0, copyLen).CopyTo(result);
 
-    // Encode remaining bytes as differences
-    for (int i = distance; i < data.Length; ++i)
+    int i = distance;
+
+    // SIMD path for distance=1: no cross-iteration dependency in encode
+    if (distance == 1 && Vector256.IsHardwareAccelerated) {
+      int simdEnd = data.Length - 31;
+      while (i < simdEnd) {
+        var curr = Vector256.Create<byte>(data.Slice(i));
+        var prev = Vector256.Create<byte>(data.Slice(i - 1));
+        var diff = curr - prev;
+        diff.CopyTo(result.AsSpan(i));
+        i += 32;
+      }
+    }
+
+    // Scalar tail (or non-SIMD / distance > 1 path)
+    for (; i < data.Length; ++i)
       result[i] = (byte)(data[i] - data[i - distance]);
 
     return result;
@@ -57,7 +73,7 @@ public static class DeltaFilter {
     int copyLen = Math.Min(distance, data.Length);
     data.Slice(0, copyLen).CopyTo(result);
 
-    // Decode remaining bytes by adding back the reference
+    // Decode has cross-iteration dependency for distance=1, so stays scalar
     for (int i = distance; i < data.Length; ++i)
       result[i] = (byte)(data[i] + result[i - distance]);
 

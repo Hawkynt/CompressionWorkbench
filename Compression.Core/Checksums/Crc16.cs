@@ -57,18 +57,6 @@ public sealed class Crc16 : IChecksum {
     return (ushort)crc.Value;
   }
 
-  private static ushort[] GenerateTable(ushort polynomial) {
-    var table = new ushort[256];
-    for (int i = 0; i < 256; ++i) {
-      ushort crc = (ushort)i;
-      for (int j = 0; j < 8; ++j) {
-        if ((crc & 1) != 0)
-          crc = (ushort)((crc >> 1) ^ polynomial);
-        else
-          crc >>= 1;
-      }
-      table[i] = crc;
-    }
-    return table;
-  }
+  private static ushort[] GenerateTable(ushort polynomial) =>
+    CrcTableGenerator.Generate(polynomial);
 }
