@@ -14,12 +14,12 @@ public static class BurrowsWheelerTransform {
     if (data.Length == 0)
       return ([], 0);
 
-    int length = data.Length;
-    byte[] input = data.ToArray();
-    int[] suffixArray = BuildRotationSort(input, length);
+    var length = data.Length;
+    var input = data.ToArray();
+    var suffixArray = BuildRotationSort(input, length);
 
-    byte[] transformed = new byte[length];
-    int originalIndex = 0;
+    var transformed = new byte[length];
+    var originalIndex = 0;
 
     for (int i = 0; i < length; ++i) {
       if (suffixArray[i] == 0) {
@@ -44,17 +44,17 @@ public static class BurrowsWheelerTransform {
     if (data.Length == 0)
       return [];
 
-    int length = data.Length;
+    var length = data.Length;
     ArgumentOutOfRangeException.ThrowIfNegative(originalIndex);
     ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(originalIndex, length);
 
     // Count occurrences of each byte (4-way unrolled to reduce loop overhead)
-    int[] count = new int[256];
-    int[] count1 = new int[256];
-    int[] count2 = new int[256];
-    int[] count3 = new int[256];
-    int i4 = 0;
-    int end4 = length - 3;
+    var count = new int[256];
+    var count1 = new int[256];
+    var count2 = new int[256];
+    var count3 = new int[256];
+    var i4 = 0;
+    var end4 = length - 3;
     while (i4 < end4) {
       ++count[data[i4]];
       ++count1[data[i4 + 1]];
@@ -70,16 +70,16 @@ public static class BurrowsWheelerTransform {
       count[k] += count1[k] + count2[k] + count3[k];
 
     // Cumulative counts (first occurrence of each byte in sorted first column)
-    int[] cumulative = new int[256];
-    int sum = 0;
+    var cumulative = new int[256];
+    var sum = 0;
     for (int c = 0; c < 256; ++c) {
       cumulative[c] = sum;
       sum += count[c];
     }
 
     // Build LF-mapping: for each position in the last column, where does it map in the first column?
-    int[] lfMap = new int[length];
-    int[] tempCount = new int[256];
+    var lfMap = new int[length];
+    var tempCount = new int[256];
     cumulative.AsSpan().CopyTo(tempCount);
     for (int i = 0; i < length; ++i) {
       lfMap[i] = tempCount[data[i]];
@@ -87,7 +87,7 @@ public static class BurrowsWheelerTransform {
     }
 
     // Reconstruct original by following LF pointers
-    byte[] result = new byte[length];
+    var result = new byte[length];
     int idx = originalIndex;
     for (int i = length - 1; i >= 0; --i) {
       result[i] = data[idx];
@@ -102,9 +102,9 @@ public static class BurrowsWheelerTransform {
   /// Unlike a suffix array, comparisons wrap around the input cyclically.
   /// </summary>
   private static int[] BuildRotationSort(byte[] data, int length) {
-    int[] sa = new int[length];
-    int[] rank = new int[length];
-    int[] tmp = new int[length];
+    var sa = new int[length];
+    var rank = new int[length];
+    var tmp = new int[length];
 
     for (int i = 0; i < length; ++i) {
       sa[i] = i;

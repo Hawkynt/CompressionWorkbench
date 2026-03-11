@@ -78,12 +78,12 @@ public sealed class LzwEncoder {
 
     int clearCode = ClearCode;
     int stopCode = StopCode;
-    int currentBits = this._minBits;
-    int maxCode = 1 << this._maxBits;
+    var currentBits = this._minBits;
+    var maxCode = 1 << this._maxBits;
 
     // Track decoder state so we emit codes at the right bit width.
     int nextCode = FirstUsableCode;
-    bool hasPrevious = false;
+    var hasPrevious = false;
 
     if (this._useClearCode)
       writer.WriteBits((uint)clearCode, currentBits);
@@ -118,10 +118,10 @@ public sealed class LzwEncoder {
   private void EncodeFirstMatch(ReadOnlySpan<byte> data) {
     var writer = new BitWriter(this._output, this._bitOrder);
 
-    int clearCode = ClearCode;
-    int stopCode = StopCode;
-    int currentBits = this._minBits;
-    int maxCode = 1 << this._maxBits;
+    var clearCode = ClearCode;
+    var stopCode = StopCode;
+    var currentBits = this._minBits;
+    var maxCode = 1 << this._maxBits;
 
     // Two counters: trieNextCode for assigning trie entries (can be 1 ahead),
     // decoderNextCode for tracking the decoder's nextCode (controls bit width).
@@ -129,7 +129,7 @@ public sealed class LzwEncoder {
     // adds entries when previousEntry is set (i.e., not on the first code after reset).
     int trieNextCode = FirstUsableCode;
     int decoderNextCode = FirstUsableCode;
-    bool hasPrevious = false;
+    var hasPrevious = false;
 
     var trie = new Dictionary<(int ParentCode, byte Child), int>();
 
@@ -145,10 +145,10 @@ public sealed class LzwEncoder {
     }
 
     int currentCode = data[0];
-    int i = 1;
+    var i = 1;
 
     while (i < data.Length) {
-      byte nextByte = data[i];
+      var nextByte = data[i];
       var key = (currentCode, nextByte);
 
       if (trie.TryGetValue(key, out int existingCode)) {
@@ -221,7 +221,7 @@ public sealed class LzwEncoder {
     }
 
     // Try DP encoding.
-    byte[]? dpOutput = DpEncode(data);
+    var dpOutput = DpEncode(data);
 
     // Use whichever is smaller.
     if (dpOutput != null && dpOutput.Length <= greedyOutput.Length)
@@ -231,8 +231,8 @@ public sealed class LzwEncoder {
   }
 
   private byte[]? DpEncode(ReadOnlySpan<byte> data) {
-    int n = data.Length;
-    int maxCode = 1 << this._maxBits;
+    var n = data.Length;
+    var maxCode = 1 << this._maxBits;
     int firstUsable = FirstUsableCode;
 
     // --- Pass 1: Build greedy trie ---
@@ -256,10 +256,10 @@ public sealed class LzwEncoder {
     // --- Precompute bit widths for each code count ---
     // After k codes emitted, decoder's nextCode = firstUsable + max(0, k-1).
     int maxEntries = maxCode - firstUsable + 2;
-    int bitWidthCount = Math.Min(n + 1, maxEntries);
-    int[] bitWidthTable = new int[bitWidthCount];
+    var bitWidthCount = Math.Min(n + 1, maxEntries);
+    var bitWidthTable = new int[bitWidthCount];
     {
-      int cb = this._minBits;
+      var cb = this._minBits;
       int nc = firstUsable;
       for (int k = 0; k < bitWidthCount; ++k) {
         bitWidthTable[k] = cb;
@@ -273,9 +273,9 @@ public sealed class LzwEncoder {
     }
 
     // --- Pass 2: Forward DP ---
-    double[] cost = new double[n + 1];
-    int[] predMatchLen = new int[n + 1];
-    int[] codesOnPath = new int[n + 1];
+    var cost = new double[n + 1];
+    var predMatchLen = new int[n + 1];
+    var codesOnPath = new int[n + 1];
     for (int i = 1; i <= n; ++i)
       cost[i] = double.MaxValue;
 
@@ -328,30 +328,30 @@ public sealed class LzwEncoder {
     // --- Pass 3: Encode with actual trie, guided by DP match lengths ---
     using var ms = new MemoryStream();
     var writer = new BitWriter(ms, this._bitOrder);
-    int clearCode = ClearCode;
-    int stopCode = StopCode;
-    int currentBits = this._minBits;
-    int trieNextCode = firstUsable;
-    int decoderNextCode = firstUsable;
-    bool hasPrevious = false;
+    var clearCode = ClearCode;
+    var stopCode = StopCode;
+    var currentBits = this._minBits;
+    var trieNextCode = firstUsable;
+    var decoderNextCode = firstUsable;
+    var hasPrevious = false;
     var trie = new Dictionary<(int ParentCode, byte Child), int>();
 
     if (this._useClearCode)
       writer.WriteBits((uint)clearCode, currentBits);
 
-    int dataPos = 0;
-    int dpIdx = 0;
+    var dataPos = 0;
+    var dpIdx = 0;
 
     while (dataPos < n) {
       // Get desired match length from DP (or greedy if exhausted).
-      int desiredLen = (dpIdx < matchLengths.Count) ? matchLengths[dpIdx] : int.MaxValue;
+      var desiredLen = (dpIdx < matchLengths.Count) ? matchLengths[dpIdx] : int.MaxValue;
       ++dpIdx;
 
       // Walk actual trie to find all available match lengths.
-      int bestCode = data[dataPos];
-      int bestLen = 1;
-      int cur = bestCode;
-      int desiredCode = (desiredLen == 1) ? bestCode : -1;
+      var bestCode = data[dataPos];
+      var bestLen = 1;
+      var cur = bestCode;
+      var desiredCode = (desiredLen == 1) ? bestCode : -1;
 
       for (int j = 1; dataPos + j < n; j++) {
         if (!trie.TryGetValue((cur, data[dataPos + j]), out int nx))

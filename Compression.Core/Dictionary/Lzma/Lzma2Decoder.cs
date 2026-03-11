@@ -35,8 +35,8 @@ public sealed class Lzma2Decoder {
     using var output = new MemoryStream();
 
     // Reusable properties buffer (5 bytes, filled on resetLevel >= 2)
-    byte[] properties = new byte[5];
-    bool hasProperties = false;
+    var properties = new byte[5];
+    var hasProperties = false;
     // Pre-fill dictionary size bytes (constant across chunks)
     properties[1] = (byte)this._dictionarySize;
     properties[2] = (byte)(this._dictionarySize >> 8);
@@ -44,12 +44,12 @@ public sealed class Lzma2Decoder {
     properties[4] = (byte)(this._dictionarySize >> 24);
 
     // Shared window persists across chunks for cross-chunk dictionary references
-    int winSize = Math.Max(this._dictionarySize, 4096);
+    var winSize = Math.Max(this._dictionarySize, 4096);
     var window = new SlidingWindow(winSize);
     int[] reps = [0, 0, 0, 0];
 
     while (!this._finished) {
-      int controlByte = this._input.ReadByte();
+      var controlByte = this._input.ReadByte();
       if (controlByte < 0)
         throw new EndOfStreamException("Unexpected end of LZMA2 stream.");
 
@@ -128,7 +128,7 @@ public sealed class Lzma2Decoder {
   }
 
   private int ReadByte() {
-    int b = this._input.ReadByte();
+    var b = this._input.ReadByte();
     if (b < 0)
       throw new EndOfStreamException("Unexpected end of LZMA2 stream.");
 
@@ -136,9 +136,9 @@ public sealed class Lzma2Decoder {
   }
 
   private void ReadExact(byte[] buffer, int offset, int count) {
-    int totalRead = 0;
+    var totalRead = 0;
     while (totalRead < count) {
-      int read = this._input.Read(buffer, offset + totalRead, count - totalRead);
+      var read = this._input.Read(buffer, offset + totalRead, count - totalRead);
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of LZMA2 stream.");
 

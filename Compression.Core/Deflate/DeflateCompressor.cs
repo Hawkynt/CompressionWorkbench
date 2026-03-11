@@ -55,7 +55,7 @@ public sealed class DeflateCompressor {
       this._inputBuffer.Add(data[i]);
 
     // Emit blocks when buffer gets large (larger threshold for Maximum level)
-    int blockSize = this._level == DeflateCompressionLevel.Maximum ? DefaultBlockSize * 4 : DefaultBlockSize;
+    var blockSize = this._level == DeflateCompressionLevel.Maximum ? DefaultBlockSize * 4 : DefaultBlockSize;
     while (this._inputBuffer.Count >= blockSize * 2) {
       EmitBlock(this._inputBuffer.GetRange(0, blockSize), isFinal: false);
       this._inputBuffer.RemoveRange(0, blockSize);
@@ -77,7 +77,7 @@ public sealed class DeflateCompressor {
     }
     else {
       // Emit remaining data as final block
-      int blockSize = this._level == DeflateCompressionLevel.Maximum ? DefaultBlockSize * 4 : DefaultBlockSize;
+      var blockSize = this._level == DeflateCompressionLevel.Maximum ? DefaultBlockSize * 4 : DefaultBlockSize;
       while (this._inputBuffer.Count > blockSize) {
         EmitBlock(this._inputBuffer.GetRange(0, blockSize), isFinal: false);
         this._inputBuffer.RemoveRange(0, blockSize);
@@ -100,17 +100,17 @@ public sealed class DeflateCompressor {
 
   private void EmitUncompressedBlock(List<byte> data, bool isFinal) {
     // Uncompressed blocks have max 65535 bytes
-    int offset = 0;
+    var offset = 0;
     while (offset < data.Count) {
-      int chunkSize = Math.Min(data.Count - offset, MaxBlockSize);
+      var chunkSize = Math.Min(data.Count - offset, MaxBlockSize);
       bool isLastChunk = (offset + chunkSize >= data.Count) && isFinal;
 
       this._bitWriter.WriteBits(isLastChunk ? 1u : 0u, 1); // BFINAL
       this._bitWriter.WriteBits(0, 2); // BTYPE=00
       this._bitWriter.FlushBits(); // Align to byte
 
-      ushort len = (ushort)chunkSize;
-      ushort nlen = (ushort)(~len);
+      var len = (ushort)chunkSize;
+      var nlen = (ushort)(~len);
       this._bitWriter.WriteBits(len, 16);
       this._bitWriter.WriteBits(nlen, 16);
 
@@ -137,8 +137,8 @@ public sealed class DeflateCompressor {
     var tokens = FindMatches(dataArray);
 
     // Collect symbol frequencies
-    long[] litLenFreqs = new long[DeflateConstants.LiteralLengthAlphabetSize];
-    long[] distFreqs = new long[DeflateConstants.DistanceAlphabetSize];
+    var litLenFreqs = new long[DeflateConstants.LiteralLengthAlphabetSize];
+    var distFreqs = new long[DeflateConstants.DistanceAlphabetSize];
 
     foreach (var (isLiteral, literal, distance, length) in tokens) {
       if (isLiteral)
@@ -153,7 +153,7 @@ public sealed class DeflateCompressor {
     litLenFreqs[DeflateConstants.EndOfBlock] = 1; // EOB
 
     // Estimate uncompressed block cost: 3 header bits + 5-byte per sub-block header + raw bytes
-    int numSubBlocks = Math.Max(1, (dataArray.Length + MaxBlockSize - 1) / MaxBlockSize);
+    var numSubBlocks = Math.Max(1, (dataArray.Length + MaxBlockSize - 1) / MaxBlockSize);
     int uncompressedBits = 3 + numSubBlocks * 5 * 8 + dataArray.Length * 8;
 
     if (this._level == DeflateCompressionLevel.Fast) {
@@ -168,7 +168,7 @@ public sealed class DeflateCompressor {
       // Try static, dynamic, and uncompressed — pick smallest
       int staticSize = EstimateStaticSize(tokens);
       int dynamicSize = EstimateDynamicSize(litLenFreqs, distFreqs, tokens);
-      int bestCompressed = Math.Min(staticSize, dynamicSize);
+      var bestCompressed = Math.Min(staticSize, dynamicSize);
 
       if (uncompressedBits < bestCompressed) {
         EmitUncompressedBlock(data, isFinal);
@@ -184,14 +184,14 @@ public sealed class DeflateCompressor {
     if (data.Length == 0)
       return result;
 
-    int chainDepth = this._level switch {
+    var chainDepth = this._level switch {
       DeflateCompressionLevel.Fast => 4,
       DeflateCompressionLevel.Best => 4096,
       _ => 128
     };
 
     var matcher = new HashChainMatchFinder(DeflateConstants.WindowSize, chainDepth);
-    int pos = 0;
+    var pos = 0;
 
     while (pos < data.Length) {
       var match = matcher.FindMatch(data, pos, DeflateConstants.WindowSize, 258, 3);
@@ -249,7 +249,7 @@ public sealed class DeflateCompressor {
     List<(bool IsLiteral, byte Literal, int Distance, int Length)> tokens,
     bool isFinal) {
     // Ensure at least one distance code
-    bool hasDistCodes = false;
+    var hasDistCodes = false;
     for (int i = 0; i < distFreqs.Length; ++i)
       if (distFreqs[i] > 0) {
         hasDistCodes = true;
@@ -270,28 +270,28 @@ public sealed class DeflateCompressor {
     HuffmanTree.LimitCodeLengths(distLengths, DeflateConstants.MaxBits);
 
     // Determine HLIT and HDIST (trim trailing zeros)
-    int hlit = litLenLengths.Length;
+    var hlit = litLenLengths.Length;
     while (hlit > 257 && litLenLengths[hlit - 1] == 0)
       --hlit;
 
-    int hdist = distLengths.Length;
+    var hdist = distLengths.Length;
     while (hdist > 1 && distLengths[hdist - 1] == 0)
       --hdist;
 
     // RLE encode combined code lengths
-    int[] combinedLengths = new int[hlit + hdist];
+    var combinedLengths = new int[hlit + hdist];
     litLenLengths.AsSpan(0, hlit).CopyTo(combinedLengths);
     distLengths.AsSpan(0, hdist).CopyTo(combinedLengths.AsSpan(hlit));
 
     var rleSymbols = RunLengthEncode(combinedLengths);
 
     // Build code-length Huffman table
-    long[] clFreqs = new long[DeflateConstants.CodeLengthAlphabetSize];
+    var clFreqs = new long[DeflateConstants.CodeLengthAlphabetSize];
     foreach (var (sym, _, _) in rleSymbols)
       clFreqs[sym]++;
 
     // Ensure at least one non-zero frequency
-    bool hasClCodes = false;
+    var hasClCodes = false;
     for (int i = 0; i < clFreqs.Length; ++i)
       if (clFreqs[i] > 0) {
         hasClCodes = true;
@@ -359,7 +359,7 @@ public sealed class DeflateCompressor {
 
         // Length extra bits
         int lenIdx = lenCode - 257;
-        int lenExtra = DeflateConstants.LengthExtraBits[lenIdx];
+        var lenExtra = DeflateConstants.LengthExtraBits[lenIdx];
         if (lenExtra > 0) {
           int lenExtraValue = length - DeflateConstants.LengthBase[lenIdx];
           this._bitWriter.WriteBits((uint)lenExtraValue, lenExtra);
@@ -382,7 +382,7 @@ public sealed class DeflateCompressor {
 
   private static int EstimateStaticSize(
     List<(bool IsLiteral, byte Literal, int Distance, int Length)> tokens) {
-    int bits = 3; // block header
+    var bits = 3; // block header
     int[] staticLitLenLengths = DeflateConstants.GetStaticLiteralLengths();
     int[] staticDistLengths = DeflateConstants.GetStaticDistanceLengths();
 
@@ -414,7 +414,7 @@ public sealed class DeflateCompressor {
     HuffmanTree.LimitCodeLengths(litLenLengths, DeflateConstants.MaxBits);
 
     // Need at least one distance code
-    bool hasDistCodes = false;
+    var hasDistCodes = false;
     for (int i = 0; i < distFreqs.Length; ++i)
       if (distFreqs[i] > 0) { 
         hasDistCodes = true; 
@@ -432,25 +432,25 @@ public sealed class DeflateCompressor {
     int bits = 3 + 5 + 5 + 4; // block header + HLIT + HDIST + HCLEN
 
     // Estimate code-length table overhead
-    int hlit = litLenLengths.Length;
+    var hlit = litLenLengths.Length;
     while (hlit > 257 && litLenLengths[hlit - 1] == 0)
       --hlit;
 
-    int hdist = distLengths.Length;
+    var hdist = distLengths.Length;
     while (hdist > 1 && distLengths[hdist - 1] == 0)
       --hdist;
 
-    int[] combinedLengths = new int[hlit + hdist];
+    var combinedLengths = new int[hlit + hdist];
     litLenLengths.AsSpan(0, hlit).CopyTo(combinedLengths);
     distLengths.AsSpan(0, hdist).CopyTo(combinedLengths.AsSpan(hlit));
 
     var rle = RunLengthEncode(combinedLengths);
 
-    long[] clFreqs = new long[DeflateConstants.CodeLengthAlphabetSize];
+    var clFreqs = new long[DeflateConstants.CodeLengthAlphabetSize];
     foreach (var (sym, _, _) in rle)
       ++clFreqs[sym];
 
-    bool hasCl = false;
+    var hasCl = false;
     for (int i = 0; i < clFreqs.Length; ++i)
       if (clFreqs[i] > 0) { 
         hasCl = true;
@@ -500,8 +500,8 @@ public sealed class DeflateCompressor {
 
       // Convert LzSymbol[] to token format
       var tokens = new List<(bool IsLiteral, byte Literal, int Distance, int Length)>();
-      long[] litLenFreqs = new long[DeflateConstants.LiteralLengthAlphabetSize];
-      long[] distFreqs = new long[DeflateConstants.DistanceAlphabetSize];
+      var litLenFreqs = new long[DeflateConstants.LiteralLengthAlphabetSize];
+      var distFreqs = new long[DeflateConstants.DistanceAlphabetSize];
 
       foreach (var sym in symbols) {
         if (sym.IsLiteral) {
@@ -519,7 +519,7 @@ public sealed class DeflateCompressor {
       litLenFreqs[DeflateConstants.EndOfBlock] = 1;
 
       // Ensure at least one distance code
-      bool hasDistCodes = false;
+      var hasDistCodes = false;
       for (int j = 0; j < distFreqs.Length; ++j)
         if (distFreqs[j] > 0) {
           hasDistCodes = true;
@@ -541,20 +541,20 @@ public sealed class DeflateCompressor {
 
   private static List<(int Symbol, int ExtraBits, int ExtraValue)> RunLengthEncode(int[] lengths) {
     var result = new List<(int, int, int)>();
-    int i = 0;
+    var i = 0;
 
     while (i < lengths.Length) {
       int value = lengths[i];
 
       if (value == 0) {
         // Count consecutive zeros
-        int count = 1;
+        var count = 1;
         while (i + count < lengths.Length && lengths[i + count] == 0)
           ++count;
 
         while (count > 0) {
           if (count >= 11) {
-            int run = Math.Min(count, 138);
+            var run = Math.Min(count, 138);
             result.Add((18, 7, run - 11));
             count -= run;
           }
@@ -574,12 +574,12 @@ public sealed class DeflateCompressor {
         ++i;
 
         // Count repeats of the same value
-        int count = 0;
+        var count = 0;
         while (i + count < lengths.Length && lengths[i + count] == value)
           ++count;
 
         while (count >= 3) {
-          int run = Math.Min(count, 6);
+          var run = Math.Min(count, 6);
           result.Add((16, 2, run - 3));
           count -= run;
         }
