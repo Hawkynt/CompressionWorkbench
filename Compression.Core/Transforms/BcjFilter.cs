@@ -21,7 +21,7 @@ public static class BcjFilter {
     if (data.Length == 0)
       return [];
 
-    byte[] result = new byte[data.Length];
+    var result = new byte[data.Length];
     data.CopyTo(result);
 
     TransformX86(result, startOffset, encode: true);
@@ -39,7 +39,7 @@ public static class BcjFilter {
     if (data.Length == 0)
       return [];
 
-    byte[] result = new byte[data.Length];
+    var result = new byte[data.Length];
     data.CopyTo(result);
 
     TransformX86(result, startOffset, encode: false);
@@ -48,8 +48,8 @@ public static class BcjFilter {
   }
 
   private static void TransformX86(byte[] result, int startOffset, bool encode) {
-    int limit = result.Length - 4;
-    int i = 0;
+    var limit = result.Length - 4;
+    var i = 0;
 
     if (Vector256.IsHardwareAccelerated && limit >= 32) {
       var e8 = Vector256.Create((byte)0xE8);
@@ -62,7 +62,7 @@ public static class BcjFilter {
         var matchE9 = Vector256.Equals(chunk, e9);
         var match = matchE8 | matchE9;
 
-        uint mask = match.ExtractMostSignificantBits();
+        var mask = match.ExtractMostSignificantBits();
         if (mask == 0) {
           i += 32;
           continue;
@@ -70,12 +70,12 @@ public static class BcjFilter {
 
         // Process matches within this 32-byte window
         while (mask != 0) {
-          int offset = BitOperations.TrailingZeroCount(mask);
+          var offset = BitOperations.TrailingZeroCount(mask);
           int pos = i + offset;
           if (pos > limit)
             break;
 
-          int addr = BinaryPrimitives.ReadInt32LittleEndian(result.AsSpan(pos + 1));
+          var addr = BinaryPrimitives.ReadInt32LittleEndian(result.AsSpan(pos + 1));
           if (encode)
             addr += startOffset + pos + 5;
           else
@@ -85,7 +85,7 @@ public static class BcjFilter {
 
           // Clear this bit and the next 4 bits (skip the address bytes)
           // We need to skip to pos+5, clear bits up to offset+4
-          int clearEnd = Math.Min(offset + 5, 32);
+          var clearEnd = Math.Min(offset + 5, 32);
           for (int b = offset; b < clearEnd; ++b)
             mask &= ~(1u << b);
         }
@@ -97,7 +97,7 @@ public static class BcjFilter {
     // Scalar tail
     while (i <= limit) {
       if (result[i] == 0xE8 || result[i] == 0xE9) {
-        int addr = BinaryPrimitives.ReadInt32LittleEndian(result.AsSpan(i + 1));
+        var addr = BinaryPrimitives.ReadInt32LittleEndian(result.AsSpan(i + 1));
         if (encode)
           addr += startOffset + i + 5;
         else

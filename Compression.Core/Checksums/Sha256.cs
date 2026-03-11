@@ -99,7 +99,7 @@ public sealed class Sha256 {
 
     // Fill partial buffer
     if (this._bufferLength > 0) {
-      int toCopy = Math.Min(BlockSize - this._bufferLength, data.Length);
+      var toCopy = Math.Min(BlockSize - this._bufferLength, data.Length);
       data.Slice(0, toCopy).CopyTo(this._buffer.AsSpan(this._bufferLength));
       this._bufferLength += toCopy;
       offset += toCopy;
@@ -134,7 +134,7 @@ public sealed class Sha256 {
     this._finished = true;
 
     // Compute bit length before padding
-    ulong bitLength = this._totalLength * 8;
+    var bitLength = this._totalLength * 8;
 
     // Append padding byte
     this._buffer[this._bufferLength++] = 0x80;
@@ -197,7 +197,7 @@ public sealed class Sha256 {
 
   private void ProcessBlock(ReadOnlySpan<byte> block) {
     // Message schedule
-    uint[] w = new uint[64];
+    var w = new uint[64];
 
     for (int t = 0; t < 16; ++t)
       w[t] = BinaryPrimitives.ReadUInt32BigEndian(block.Slice(t * 4));
@@ -206,19 +206,19 @@ public sealed class Sha256 {
       w[t] = LittleSigma1(w[t - 2]) + w[t - 7] + LittleSigma0(w[t - 15]) + w[t - 16];
 
     // Initialize working variables
-    uint a = _h0;
-    uint b = _h1;
-    uint c = _h2;
-    uint d = _h3;
-    uint e = _h4;
-    uint f = _h5;
-    uint g = _h6;
-    uint h = _h7;
+    var a = _h0;
+    var b = _h1;
+    var c = _h2;
+    var d = _h3;
+    var e = _h4;
+    var f = _h5;
+    var g = _h6;
+    var h = _h7;
 
     // 64 rounds
     for (int t = 0; t < 64; ++t) {
-      uint t1 = h + Sigma1(e) + Ch(e, f, g) + K[t] + w[t];
-      uint t2 = Sigma0(a) + Maj(a, b, c);
+      var t1 = h + Sigma1(e) + Ch(e, f, g) + K[t] + w[t];
+      var t2 = Sigma0(a) + Maj(a, b, c);
 
       h = g;
       g = f;

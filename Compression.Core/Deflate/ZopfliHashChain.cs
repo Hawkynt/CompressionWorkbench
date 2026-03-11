@@ -37,22 +37,22 @@ internal sealed class ZopfliHashChain {
       return result;
 
     int hash = ComputeHash(data, position);
-    int candidate = this._head[hash];
-    int windowStart = Math.Max(0, position - maxDistance);
+    var candidate = this._head[hash];
+    var windowStart = Math.Max(0, position - maxDistance);
 
     int chainDepth = ComputeChainDepth(data, position);
-    int chainCount = 0;
+    var chainCount = 0;
 
     // Track best distance per length: bestDistByLen[len] = shortest distance
-    int effectiveMaxLen = Math.Min(maxLength, data.Length - position);
-    int[] bestDistByLen = new int[effectiveMaxLen + 1];
+    var effectiveMaxLen = Math.Min(maxLength, data.Length - position);
+    var bestDistByLen = new int[effectiveMaxLen + 1];
     Array.Fill(bestDistByLen, int.MaxValue);
 
     while (candidate >= windowStart && chainCount < chainDepth) {
       int distance = position - candidate;
-      int limit = Math.Min(effectiveMaxLen, data.Length - candidate);
+      var limit = Math.Min(effectiveMaxLen, data.Length - candidate);
 
-      int length = 0;
+      var length = 0;
       while (length < limit && data[candidate + length] == data[position + length])
         ++length;
 
@@ -97,12 +97,12 @@ internal sealed class ZopfliHashChain {
   /// Computes adaptive chain depth based on byte diversity in a 64-byte window.
   /// </summary>
   private static int ComputeChainDepth(ReadOnlySpan<byte> data, int position) {
-    int windowLen = Math.Min(64, data.Length - position);
+    var windowLen = Math.Min(64, data.Length - position);
     if (windowLen <= 0)
       return 512;
 
     Span<bool> seen = stackalloc bool[256];
-    int unique = 0;
+    var unique = 0;
     for (int i = 0; i < windowLen; ++i) {
       byte dataByte = data[position + i];
       if (!seen[dataByte]) {

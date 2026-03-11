@@ -18,14 +18,14 @@ public static class MoveToFrontTransform {
     if (data.Length == 0)
       return [];
 
-    byte[] alphabet = CreateAlphabet();
-    byte[] result = new byte[data.Length];
+    var alphabet = CreateAlphabet();
+    var result = new byte[data.Length];
 
-    for (int i = 0; i < data.Length; ++i) {
-      byte symbol = data[i];
+    for (var i = 0; i < data.Length; ++i) {
+      var symbol = data[i];
 
       // Find position of symbol in alphabet using SIMD
-      int idx = FindIndex(alphabet, symbol);
+      var idx = FindIndex(alphabet, symbol);
 
       result[i] = (byte)idx;
 
@@ -49,7 +49,7 @@ public static class MoveToFrontTransform {
       return [];
 
     byte[] alphabet = CreateAlphabet();
-    byte[] result = new byte[data.Length];
+    var result = new byte[data.Length];
 
     for (int i = 0; i < data.Length; ++i) {
       int idx = data[i];

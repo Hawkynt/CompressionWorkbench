@@ -23,7 +23,7 @@ internal static class ZopfliDeflate {
     int[] distLengths = DeflateConstants.GetStaticDistanceLengths();
 
     LzSymbol[] bestSymbols = [];
-    long prevHash = 0;
+    var prevHash = 0L;
 
     for (int iter = 0; iter < MaxIterations; ++iter) {
       // Fresh hash chain each iteration
@@ -34,8 +34,8 @@ internal static class ZopfliDeflate {
       bestSymbols = symbols;
 
       // Count frequencies
-      long[] litLenFreqs = new long[DeflateConstants.LiteralLengthAlphabetSize];
-      long[] distFreqs = new long[DeflateConstants.DistanceAlphabetSize];
+      var litLenFreqs = new long[DeflateConstants.LiteralLengthAlphabetSize];
+      var distFreqs = new long[DeflateConstants.DistanceAlphabetSize];
 
       foreach (var sym in symbols) {
         if (sym.IsLiteral)
@@ -50,7 +50,7 @@ internal static class ZopfliDeflate {
       litLenFreqs[DeflateConstants.EndOfBlock] = 1;
 
       // Ensure at least one distance code
-      bool hasDist = false;
+      var hasDist = false;
       for (int i = 0; i < distFreqs.Length; ++i)
         if (distFreqs[i] > 0) {
           hasDist = true;
@@ -76,7 +76,7 @@ internal static class ZopfliDeflate {
       HuffmanTree.LimitCodeLengths(distLengths, DeflateConstants.MaxBits);
 
       // Convergence detection via symbol hash
-      long currentHash = ComputeSymbolHash(symbols);
+      var currentHash = ComputeSymbolHash(symbols);
       if (currentHash == prevHash && iter > 0)
         break;
 
@@ -91,8 +91,8 @@ internal static class ZopfliDeflate {
       var blockSymbols = bestSymbols[block.Start..block.End];
 
       // Compute per-block Huffman stats
-      long[] blockLitLenFreqs = new long[DeflateConstants.LiteralLengthAlphabetSize];
-      long[] blockDistFreqs = new long[DeflateConstants.DistanceAlphabetSize];
+      var blockLitLenFreqs = new long[DeflateConstants.LiteralLengthAlphabetSize];
+      var blockDistFreqs = new long[DeflateConstants.DistanceAlphabetSize];
 
       foreach (var sym in blockSymbols) {
         if (sym.IsLiteral)
@@ -106,7 +106,7 @@ internal static class ZopfliDeflate {
       }
       blockLitLenFreqs[DeflateConstants.EndOfBlock] = 1;
 
-      bool hasDist = false;
+      var hasDist = false;
       for (int i = 0; i < blockDistFreqs.Length; ++i)
         if (blockDistFreqs[i] > 0) {
           hasDist = true;
@@ -130,7 +130,7 @@ internal static class ZopfliDeflate {
   }
 
   private static long ComputeSymbolHash(LzSymbol[] symbols) {
-    long hash = 0;
+    var hash = 0L;
     foreach (var sym in symbols) {
       hash = hash * 31 + sym.LitLen;
       hash = hash * 31 + sym.Distance;

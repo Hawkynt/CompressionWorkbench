@@ -24,17 +24,17 @@ public static class DeltaFilter {
     if (data.Length == 0)
       return [];
 
-    byte[] result = new byte[data.Length];
+    var result = new byte[data.Length];
 
     // Copy the first 'distance' bytes unchanged
-    int copyLen = Math.Min(distance, data.Length);
+    var copyLen = Math.Min(distance, data.Length);
     data.Slice(0, copyLen).CopyTo(result);
 
-    int i = distance;
+    var i = distance;
 
     // SIMD path for distance=1: no cross-iteration dependency in encode
     if (distance == 1 && Vector256.IsHardwareAccelerated) {
-      int simdEnd = data.Length - 31;
+      var simdEnd = data.Length - 31;
       while (i < simdEnd) {
         var curr = Vector256.Create<byte>(data.Slice(i));
         var prev = Vector256.Create<byte>(data.Slice(i - 1));
@@ -67,10 +67,10 @@ public static class DeltaFilter {
     if (data.Length == 0)
       return [];
 
-    byte[] result = new byte[data.Length];
+    var result = new byte[data.Length];
 
     // Copy the first 'distance' bytes unchanged
-    int copyLen = Math.Min(distance, data.Length);
+    var copyLen = Math.Min(distance, data.Length);
     data.Slice(0, copyLen).CopyTo(result);
 
     // Decode has cross-iteration dependency for distance=1, so stays scalar

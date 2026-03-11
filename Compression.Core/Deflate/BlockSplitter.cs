@@ -21,14 +21,14 @@ internal static class BlockSplitter {
       return [new BlockRange(0, symbols.Length)];
 
     // Generate candidate split points at regular intervals
-    int interval = Math.Max(symbols.Length / (maxBlocks * 3), 128);
+    var interval = Math.Max(symbols.Length / (maxBlocks * 3), 128);
     var candidates = new List<int> { 0 };
     for (int i = interval; i < symbols.Length; i += interval)
       candidates.Add(i);
 
     candidates.Add(symbols.Length);
 
-    int numCandidates = candidates.Count;
+    var numCandidates = candidates.Count;
 
     // Precompute cost of each candidate range [i..j)
     // cost[i][j] = estimated bits for symbols[candidates[i]..candidates[j])
@@ -72,7 +72,7 @@ internal static class BlockSplitter {
     while (splitPoints.Count - 1 > maxBlocks) {
       // Merge the two adjacent blocks with smallest combined cost increase
       double bestMergeCost = double.MaxValue;
-      int bestMergeIdx = 1;
+      var bestMergeIdx = 1;
 
       for (int i = 1; i < splitPoints.Count - 1; ++i) {
         int a = splitPoints[i - 1];
@@ -108,8 +108,8 @@ internal static class BlockSplitter {
     if (symbols.Length == 0)
       return 0;
 
-    long[] litLenFreqs = new long[DeflateConstants.LiteralLengthAlphabetSize];
-    long[] distFreqs = new long[DeflateConstants.DistanceAlphabetSize];
+    var litLenFreqs = new long[DeflateConstants.LiteralLengthAlphabetSize];
+    var distFreqs = new long[DeflateConstants.DistanceAlphabetSize];
 
     foreach (var sym in symbols) {
       if (sym.IsLiteral)
@@ -124,7 +124,7 @@ internal static class BlockSplitter {
     litLenFreqs[DeflateConstants.EndOfBlock] = 1;
 
     // Ensure at least one distance code
-    bool hasDist = false;
+    var hasDist = false;
     for (int i = 0; i < distFreqs.Length; ++i)
       if (distFreqs[i] > 0) { 
         hasDist = true; 
@@ -146,11 +146,11 @@ internal static class BlockSplitter {
     double bits = 3 + 5 + 5 + 4; // BFINAL + BTYPE + HLIT + HDIST + HCLEN
 
     // Rough code-length table overhead
-    int hlit = litLenLengths.Length;
+    var hlit = litLenLengths.Length;
     while (hlit > 257 && litLenLengths[hlit - 1] == 0)
      --hlit;
 
-    int hdist = distLengths.Length;
+    var hdist = distLengths.Length;
     while (hdist > 1 && distLengths[hdist - 1] == 0)
       --hdist;
 
