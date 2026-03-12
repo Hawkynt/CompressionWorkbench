@@ -143,10 +143,9 @@ public sealed class LzmaDecoder {
           distance = DecodeDistance(decoder, posSlotDecoder, posDecoders,
             alignDecoder, len);
 
-          if (distance == unchecked((int)0xFFFFFFFF)) {
+          if (distance == unchecked((int)0xFFFFFFFF))
             // End marker
             break;
-          }
 
           // Update rep distances
           for (var i = LzmaConstants.NumRepDistances - 1; i > 0; --i)

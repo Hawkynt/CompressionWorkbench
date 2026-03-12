@@ -45,9 +45,9 @@ public sealed partial class LzhEncoder {
 
       for (var i = tokenIdx; i < blockEnd; ++i) {
         var token = tokens[i];
-        if (token.IsLiteral) {
+        if (token.IsLiteral)
           ++codeFreq[token.Value];
-        } else {
+        else {
           var lengthCode = token.Length - LzhConstants.Threshold + LzhConstants.NChar;
           ++codeFreq[lengthCode];
           var posSlot = GetPositionSlot(token.Distance);
@@ -191,9 +191,9 @@ public sealed partial class LzhEncoder {
     stack.Push((root, 0));
     while (stack.Count > 0) {
       var (node, depth) = stack.Pop();
-      if (leftChild[node] == -1) {
+      if (leftChild[node] == -1)
         lengths[nodeSym[node]] = Math.Min(depth, maxBits);
-      } else {
+      else {
         if (leftChild[node] >= 0) stack.Push((leftChild[node], depth + 1));
         if (rightChild[node] >= 0) stack.Push((rightChild[node], depth + 1));
       }
@@ -207,7 +207,7 @@ public sealed partial class LzhEncoder {
     var kraftMax = 1L << maxBits;
     var kraftSum = lengths.Where(code => code > 0).Sum(code => kraftMax >> code);
 
-    while (kraftSum > kraftMax) {
+    while (kraftSum > kraftMax)
       for (var i = lengths.Length - 1; i >= 0; --i) {
         if (lengths[i] <= 0 || lengths[i] >= maxBits)
           continue;
@@ -218,7 +218,6 @@ public sealed partial class LzhEncoder {
         if (kraftSum <= kraftMax) 
           break;
       }
-    }
   }
 
   internal static uint[] BuildCanonicalCodes(int[] lengths) {

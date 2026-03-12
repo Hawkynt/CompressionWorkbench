@@ -17,7 +17,7 @@ public static class Lz77Decompressor {
   public static byte[] Decompress(IReadOnlyList<Lz77Token> tokens) {
     var output = new List<byte>();
 
-    foreach (var token in tokens) {
+    foreach (var token in tokens)
       if (token.IsLiteral)
         output.Add(token.Literal);
       else {
@@ -29,7 +29,6 @@ public static class Lz77Decompressor {
         for (var i = 0; i < token.Length; ++i)
           output.Add(output[start + i]);
       }
-    }
 
     return [.. output];
   }

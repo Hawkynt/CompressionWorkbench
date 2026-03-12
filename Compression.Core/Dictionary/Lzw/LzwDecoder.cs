@@ -94,10 +94,10 @@ public sealed class LzwDecoder {
 
       byte[] entry;
 
-      if (code < dictionary.Count) {
+      if (code < dictionary.Count)
         // Code is in the dictionary.
         entry = dictionary[code];
-      } else if (code == nextCode && previousEntry != null) {
+      else if (code == nextCode && previousEntry != null) {
         // KwKwK case: the new entry is previousEntry + previousEntry[0].
         entry = new byte[previousEntry.Length + 1];
         previousEntry.CopyTo(entry, 0);

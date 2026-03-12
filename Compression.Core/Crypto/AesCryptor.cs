@@ -138,10 +138,9 @@ public static class AesCryptor {
   }
 
   private static void IncrementCounter(byte[] counter) {
-    for (var i = 15; i >= 0; i--) {
+    for (var i = 15; i >= 0; i--)
       if (++counter[i] != 0)
         break;
-    }
   }
 
   private static void ValidateKeyAndIv(ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv) {

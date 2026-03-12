@@ -66,13 +66,13 @@ public sealed class LzssDecoder {
           var distance = encodedDistance + 1; // Convert from 0-based to 1-based
           var length = encodedLength + this._minMatchLength;
 
-          if (distance > window.Count) {
+          if (distance > window.Count)
             // If distance exceeds available data, emit zeros
             for (var i = 0; i < length; ++i) {
               output.Add(0);
               window.WriteByte(0);
             }
-          } else {
+          else {
             var copyBuf = new byte[length];
             window.CopyFromWindow(distance, length, copyBuf);
             output.AddRange(copyBuf);
