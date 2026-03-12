@@ -44,10 +44,10 @@ public sealed class XxHash64 {
   /// Resets the hasher to its initial state.
   /// </summary>
   public void Reset() {
-    this._v1 = this._seed + Prime1 + Prime2;
-    this._v2 = this._seed + Prime2;
+    this._v1 = this._seed + XxHash64.Prime1 + XxHash64.Prime2;
+    this._v2 = this._seed + XxHash64.Prime2;
     this._v3 = this._seed;
-    this._v4 = this._seed - Prime1;
+    this._v4 = this._seed - XxHash64.Prime1;
     this._bufferUsed = 0;
     this._totalLength = 0;
     this._hasProcessedStripe = false;
@@ -101,9 +101,9 @@ public sealed class XxHash64 {
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   private static ulong Round(ulong acc, ulong input) {
-    acc += input * Prime2;
+    acc += input * XxHash64.Prime2;
     acc = BitOperations.RotateLeft(acc, 31);
-    acc *= Prime1;
+    acc *= XxHash64.Prime1;
     return acc;
   }
 
@@ -111,24 +111,24 @@ public sealed class XxHash64 {
   private static ulong MergeAccumulator(ulong acc, ulong val) {
     val = Round(0, val);
     acc ^= val;
-    acc = acc * Prime1 + Prime4;
+    acc = acc * XxHash64.Prime1 + XxHash64.Prime4;
     return acc;
   }
 
   private static ulong Avalanche(ulong hash) {
     hash ^= hash >> 33;
-    hash *= Prime2;
+    hash *= XxHash64.Prime2;
     hash ^= hash >> 29;
-    hash *= Prime3;
+    hash *= XxHash64.Prime3;
     hash ^= hash >> 32;
     return hash;
   }
 
   private static ulong ComputeLarge(ReadOnlySpan<byte> data, ulong seed) {
-    var v1 = seed + Prime1 + Prime2;
-    var v2 = seed + Prime2;
+    var v1 = seed + XxHash64.Prime1 + XxHash64.Prime2;
+    var v2 = seed + XxHash64.Prime2;
     var v3 = seed;
-    var v4 = seed - Prime1;
+    var v4 = seed - XxHash64.Prime1;
 
     var offset = 0;
     while (offset + 32 <= data.Length) {
@@ -152,7 +152,7 @@ public sealed class XxHash64 {
   }
 
   private static ulong ComputeSmall(ReadOnlySpan<byte> data, ulong seed) {
-    var hash = seed + Prime5 + (ulong)data.Length;
+    var hash = seed + XxHash64.Prime5 + (ulong)data.Length;
     return FinalizeTail(hash, data);
   }
 
@@ -162,20 +162,20 @@ public sealed class XxHash64 {
     while (offset + 8 <= remaining.Length) {
       var k1 = Round(0, BinaryPrimitives.ReadUInt64LittleEndian(remaining[offset..]));
       hash ^= k1;
-      hash = BitOperations.RotateLeft(hash, 27) * Prime1 + Prime4;
+      hash = BitOperations.RotateLeft(hash, 27) * XxHash64.Prime1 + XxHash64.Prime4;
       offset += 8;
     }
 
     if (offset + 4 <= remaining.Length) {
       ulong k1 = BinaryPrimitives.ReadUInt32LittleEndian(remaining[offset..]);
-      hash ^= k1 * Prime1;
-      hash = BitOperations.RotateLeft(hash, 23) * Prime2 + Prime3;
+      hash ^= k1 * XxHash64.Prime1;
+      hash = BitOperations.RotateLeft(hash, 23) * XxHash64.Prime2 + XxHash64.Prime3;
       offset += 4;
     }
 
     while (offset < remaining.Length) {
-      hash ^= remaining[offset] * Prime5;
-      hash = BitOperations.RotateLeft(hash, 11) * Prime1;
+      hash ^= remaining[offset] * XxHash64.Prime5;
+      hash = BitOperations.RotateLeft(hash, 11) * XxHash64.Prime1;
       offset++;
     }
 
@@ -201,7 +201,7 @@ public sealed class XxHash64 {
       hash = MergeAccumulator(hash, this._v4);
     }
     else
-      hash = this._seed + Prime5;
+      hash = this._seed + XxHash64.Prime5;
 
     hash += this._totalLength;
 

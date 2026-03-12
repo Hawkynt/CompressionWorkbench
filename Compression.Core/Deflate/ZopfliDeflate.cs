@@ -25,7 +25,7 @@ internal static class ZopfliDeflate {
     LzSymbol[] bestSymbols = [];
     var prevHash = 0L;
 
-    for (var iteration = 0; iteration < MaxIterations; ++iteration) {
+    for (var iteration = 0; iteration < ZopfliDeflate.MaxIterations; ++iteration) {
       // Fresh hash chain each iteration
       var hashChain = new ZopfliHashChain();
 

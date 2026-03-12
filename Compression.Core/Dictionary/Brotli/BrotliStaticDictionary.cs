@@ -45,14 +45,14 @@ internal static class BrotliStaticDictionary {
   /// </summary>
   /// <param name="length">The word length (4-24).</param>
   /// <returns>Number of bits used to index words of this length.</returns>
-  public static int GetNumBits(int length) => length is < MinWordLength or > MaxWordLength ? 0 : NumBitsPerLength[length - MinWordLength];
+  public static int GetNumBits(int length) => length is < BrotliStaticDictionary.MinWordLength or > BrotliStaticDictionary.MaxWordLength ? 0 : BrotliStaticDictionary.NumBitsPerLength[length - BrotliStaticDictionary.MinWordLength];
 
   /// <summary>
   /// Gets the total number of words for a given length.
   /// </summary>
   /// <param name="length">The word length (4-24).</param>
   /// <returns>Number of dictionary words of this length.</returns>
-  public static int GetNumWords(int length) => length is < MinWordLength or > MaxWordLength ? 0 : 1 << NumBitsPerLength[length - MinWordLength];
+  public static int GetNumWords(int length) => length is < BrotliStaticDictionary.MinWordLength or > BrotliStaticDictionary.MaxWordLength ? 0 : 1 << BrotliStaticDictionary.NumBitsPerLength[length - BrotliStaticDictionary.MinWordLength];
 
   /// <summary>
   /// Looks up a word from the static dictionary and applies a transform.
@@ -63,9 +63,9 @@ internal static class BrotliStaticDictionary {
   /// <param name="output">Buffer to write the resulting bytes.</param>
   /// <returns>Number of bytes written to the output, or 0 if not found.</returns>
   public static int GetWord(int length, int wordIndex, int transformIndex, Span<byte> output) {
-    if (length is < MinWordLength or > MaxWordLength)
+    if (length is < BrotliStaticDictionary.MinWordLength or > BrotliStaticDictionary.MaxWordLength)
       return 0;
-    if (transformIndex >= NumTransforms)
+    if (transformIndex >= BrotliStaticDictionary.NumTransforms)
       return 0;
 
     var numWords = GetNumWords(length);
@@ -130,7 +130,7 @@ internal static class BrotliStaticDictionary {
 
       // Transform 4 = omit first character
       case 4 when length > 1:
-        word.Slice(1, length - 1).CopyTo(word);
+        word[1..length].CopyTo(word);
         return length - 1;
 
       // Transform 5 = omit last character
@@ -182,9 +182,9 @@ internal static class BrotliStaticDictionary {
     // Layout: for each length L from 4 to 24:
     //   numWords(L) * NumTransforms entries
 
-    for (var len = MinWordLength; len <= MaxWordLength; ++len) {
+    for (var len = BrotliStaticDictionary.MinWordLength; len <= BrotliStaticDictionary.MaxWordLength; ++len) {
       var numWords = GetNumWords(len);
-      var blockSize = numWords * NumTransforms;
+      var blockSize = numWords * BrotliStaticDictionary.NumTransforms;
       if (offset < blockSize) {
         wordLength = len;
         wordIndex = offset % numWords;

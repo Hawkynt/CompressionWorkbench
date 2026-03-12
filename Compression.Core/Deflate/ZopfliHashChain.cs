@@ -8,8 +8,8 @@ namespace Compression.Core.Deflate;
 /// </summary>
 internal sealed class ZopfliHashChain {
   private const int HashBits = 15;
-  private const int HashSize = 1 << HashBits;
-  private const int HashMask = HashSize - 1;
+  private const int HashSize = 1 << ZopfliHashChain.HashBits;
+  private const int HashMask = ZopfliHashChain.HashSize - 1;
 
   private readonly int[] _head;
   private readonly int[] _prev;
@@ -21,7 +21,7 @@ internal sealed class ZopfliHashChain {
   /// <param name="windowSize">The maximum sliding window size.</param>
   public ZopfliHashChain(int windowSize = 32768) {
     this._windowSize = windowSize;
-    this._head = new int[HashSize];
+    this._head = new int[ZopfliHashChain.HashSize];
     this._prev = new int[windowSize];
     this._head.AsSpan().Fill(-1);
   }
@@ -123,5 +123,5 @@ internal sealed class ZopfliHashChain {
   }
 
   private static int ComputeHash(ReadOnlySpan<byte> data, int position) =>
-    ((data[position] << 10) ^ (data[position + 1] << 5) ^ data[position + 2]) & HashMask;
+    ((data[position] << 10) ^ (data[position + 1] << 5) ^ data[position + 2]) & ZopfliHashChain.HashMask;
 }

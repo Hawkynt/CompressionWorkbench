@@ -55,7 +55,7 @@ public sealed class DeflateCompressor {
       this._inputBuffer.Add(value);
 
     // Emit blocks when buffer gets large (larger threshold for Maximum level)
-    var blockSize = this._level == DeflateCompressionLevel.Maximum ? DefaultBlockSize * 4 : DefaultBlockSize;
+    var blockSize = this._level == DeflateCompressionLevel.Maximum ? DeflateCompressor.DefaultBlockSize * 4 : DeflateCompressor.DefaultBlockSize;
     while (this._inputBuffer.Count >= blockSize * 2) {
       this.EmitBlock(this._inputBuffer.GetRange(0, blockSize), isFinal: false);
       this._inputBuffer.RemoveRange(0, blockSize);
@@ -77,7 +77,7 @@ public sealed class DeflateCompressor {
     }
     else {
       // Emit remaining data as final block
-      var blockSize = this._level == DeflateCompressionLevel.Maximum ? DefaultBlockSize * 4 : DefaultBlockSize;
+      var blockSize = this._level == DeflateCompressionLevel.Maximum ? DeflateCompressor.DefaultBlockSize * 4 : DeflateCompressor.DefaultBlockSize;
       while (this._inputBuffer.Count > blockSize) {
         this.EmitBlock(this._inputBuffer.GetRange(0, blockSize), isFinal: false);
         this._inputBuffer.RemoveRange(0, blockSize);
@@ -107,7 +107,7 @@ public sealed class DeflateCompressor {
     // Uncompressed blocks have max 65535 bytes
     var offset = 0;
     while (offset < data.Count) {
-      var chunkSize = Math.Min(data.Count - offset, MaxBlockSize);
+      var chunkSize = Math.Min(data.Count - offset, DeflateCompressor.MaxBlockSize);
       var isLastChunk = (offset + chunkSize >= data.Count) && isFinal;
 
       this._bitWriter.WriteBits(isLastChunk ? 1u : 0u, 1); // BFINAL
@@ -159,7 +159,7 @@ public sealed class DeflateCompressor {
     litLenFreqs[DeflateConstants.EndOfBlock] = 1; // EOB
 
     // Estimate uncompressed block cost: 3 header bits + 5-byte per sub-block header + raw bytes
-    var numSubBlocks = Math.Max(1, (dataArray.Length + MaxBlockSize - 1) / MaxBlockSize);
+    var numSubBlocks = Math.Max(1, (dataArray.Length + DeflateCompressor.MaxBlockSize - 1) / DeflateCompressor.MaxBlockSize);
     var uncompressedBits = 3 + numSubBlocks * 5 * 8 + dataArray.Length * 8;
 
     if (this._level == DeflateCompressionLevel.Fast) {

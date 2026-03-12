@@ -119,7 +119,7 @@ public static class DeflateConstants {
   /// Returns the fixed distance code lengths as defined in RFC 1951 section 3.2.6.
   /// </summary>
   public static int[] GetStaticDistanceLengths() {
-    var lengths = new int[DistanceAlphabetSize];
+    var lengths = new int[DeflateConstants.DistanceAlphabetSize];
     lengths.AsSpan().Fill(5);
     return lengths;
   }
@@ -136,7 +136,7 @@ public static class DeflateConstants {
     }
 
     // Binary search through LengthBase
-    var bases = LengthBase;
+    var bases = DeflateConstants.LengthBase;
     int lo = 0, hi = bases.Length - 2; // exclude code 285 (handled above)
     while (lo < hi) {
       var mid = (lo + hi + 1) / 2;
@@ -158,7 +158,7 @@ public static class DeflateConstants {
     if (distance is < 1 or > 32768)
       throw new ArgumentOutOfRangeException(nameof(distance), distance, "Distance must be between 1 and 32768.");
 
-    var bases = DistanceBase;
+    var bases = DeflateConstants.DistanceBase;
     int lo = 0, hi = bases.Length - 1;
     while (lo < hi) {
       var mid = (lo + hi + 1) / 2;
