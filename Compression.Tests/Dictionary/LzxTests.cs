@@ -1,0 +1,268 @@
+using System.Text;
+using Compression.Core.Dictionary.Lzx;
+
+namespace Compression.Tests.Dictionary;
+
+[TestFixture]
+public class LzxTests {
+  // -------------------------------------------------------------------------
+  // LzxConstants tests
+  // -------------------------------------------------------------------------
+
+  [Test]
+  public void PositionSlotCount_ReturnsCorrectValues() {
+    Assert.That(LzxConstants.GetPositionSlotCount(15), Is.EqualTo(30));
+    Assert.That(LzxConstants.GetPositionSlotCount(16), Is.EqualTo(32));
+    Assert.That(LzxConstants.GetPositionSlotCount(17), Is.EqualTo(34));
+    Assert.That(LzxConstants.GetPositionSlotCount(18), Is.EqualTo(36));
+    Assert.That(LzxConstants.GetPositionSlotCount(19), Is.EqualTo(38));
+    Assert.That(LzxConstants.GetPositionSlotCount(20), Is.EqualTo(42));
+    Assert.That(LzxConstants.GetPositionSlotCount(21), Is.EqualTo(50));
+  }
+
+  [Test]
+  public void PositionSlotCount_InvalidWindowBits_Throws() {
+    Assert.Throws<ArgumentOutOfRangeException>(() => LzxConstants.GetPositionSlotCount(14));
+    Assert.Throws<ArgumentOutOfRangeException>(() => LzxConstants.GetPositionSlotCount(22));
+  }
+
+  [Test]
+  public void OffsetToSlot_SmallOffsets() {
+    Assert.That(LzxConstants.OffsetToSlot(0), Is.EqualTo(0));
+    Assert.That(LzxConstants.OffsetToSlot(1), Is.EqualTo(1));
+    Assert.That(LzxConstants.OffsetToSlot(2), Is.EqualTo(2));
+    Assert.That(LzxConstants.OffsetToSlot(3), Is.EqualTo(3));
+    Assert.That(LzxConstants.OffsetToSlot(4), Is.EqualTo(4));
+    Assert.That(LzxConstants.OffsetToSlot(5), Is.EqualTo(4));
+    Assert.That(LzxConstants.OffsetToSlot(6), Is.EqualTo(5));
+    Assert.That(LzxConstants.OffsetToSlot(7), Is.EqualTo(5));
+    Assert.That(LzxConstants.OffsetToSlot(8), Is.EqualTo(6));
+  }
+
+  [Test]
+  public void GetSlotInfo_Slot0To3_ZeroFooter() {
+    for (int slot = 0; slot < 4; slot++) {
+      LzxConstants.GetSlotInfo(slot, out int baseOffset, out int footerBits);
+      Assert.That(baseOffset, Is.EqualTo(slot), $"slot {slot} base");
+      Assert.That(footerBits, Is.EqualTo(0), $"slot {slot} footer bits");
+    }
+  }
+
+  [Test]
+  public void GetSlotInfo_Slot4And5_OneFooterBit() {
+    LzxConstants.GetSlotInfo(4, out int base4, out int footer4);
+    Assert.That(base4, Is.EqualTo(4));
+    Assert.That(footer4, Is.EqualTo(1));
+
+    LzxConstants.GetSlotInfo(5, out int base5, out int footer5);
+    Assert.That(base5, Is.EqualTo(6));
+    Assert.That(footer5, Is.EqualTo(1));
+  }
+
+  [Test]
+  public void GetSlotInfo_Slot6And7_TwoFooterBits() {
+    LzxConstants.GetSlotInfo(6, out int base6, out int footer6);
+    Assert.That(base6, Is.EqualTo(8));
+    Assert.That(footer6, Is.EqualTo(2));
+
+    LzxConstants.GetSlotInfo(7, out int base7, out int footer7);
+    Assert.That(base7, Is.EqualTo(12));
+    Assert.That(footer7, Is.EqualTo(2));
+  }
+
+  [Test]
+  public void GetSlotInfo_BaseOffsets_AreMonotonicallyIncreasing() {
+    int prevBase = -1;
+    for (int slot = 0; slot < LzxConstants.PositionSlots21; slot++) {
+      LzxConstants.GetSlotInfo(slot, out int baseOffset, out _);
+      Assert.That(baseOffset, Is.GreaterThan(prevBase), $"slot {slot}");
+      prevBase = baseOffset;
+    }
+  }
+
+  [Test]
+  public void GetSlotInfo_FooterBitsIncrementEveryTwoSlots() {
+    for (int slot = 4; slot < LzxConstants.PositionSlots21 - 1; slot += 2) {
+      LzxConstants.GetSlotInfo(slot, out _, out int footer0);
+      LzxConstants.GetSlotInfo(slot + 1, out _, out int footer1);
+      Assert.That(footer0, Is.EqualTo(footer1), $"pair starting at slot {slot}");
+
+      LzxConstants.GetSlotInfo(slot + 2, out _, out int footerNext);
+      Assert.That(footerNext, Is.EqualTo(footer0 + 1), $"next pair at slot {slot + 2}");
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Round-trip tests (compressor → decompressor)
+  // -------------------------------------------------------------------------
+
+  private static byte[] RoundTrip(byte[] data, int windowBits = 15) {
+    var compressor = new LzxCompressor(windowBits);
+    byte[] compressed = compressor.Compress(data);
+
+    using var ms = new MemoryStream(compressed);
+    var decompressor = new LzxDecompressor(ms, windowBits);
+    return decompressor.Decompress(data.Length);
+  }
+
+  [Test]
+  public void RoundTrip_EmptyData() {
+    byte[] result = RoundTrip([]);
+    Assert.That(result, Is.Empty);
+  }
+
+  [Test]
+  public void RoundTrip_SingleByte() {
+    byte[] data = [0x42];
+    Assert.That(RoundTrip(data), Is.EqualTo(data));
+  }
+
+  [Test]
+  public void RoundTrip_AllSameBytes() {
+    byte[] data = new byte[256];
+    Array.Fill(data, (byte)0xAB);
+    Assert.That(RoundTrip(data), Is.EqualTo(data));
+  }
+
+  [Test]
+  public void RoundTrip_AllByteValues() {
+    byte[] data = new byte[256];
+    for (int i = 0; i < 256; i++) data[i] = (byte)i;
+    Assert.That(RoundTrip(data), Is.EqualTo(data));
+  }
+
+  [Test]
+  public void RoundTrip_ShortAsciiText() {
+    byte[] data = Encoding.ASCII.GetBytes("Hello, LZX!");
+    Assert.That(RoundTrip(data), Is.EqualTo(data));
+  }
+
+  [Test]
+  public void RoundTrip_RepetitiveData() {
+    byte[] data = Encoding.ASCII.GetBytes("ABCABCABCABCABCABC");
+    Assert.That(RoundTrip(data), Is.EqualTo(data));
+  }
+
+  [Test]
+  public void RoundTrip_RepeatedPhrase() {
+    byte[] data = Encoding.ASCII.GetBytes(
+      "The quick brown fox jumps over the lazy dog. " +
+      "The quick brown fox jumps over the lazy dog.");
+    Assert.That(RoundTrip(data), Is.EqualTo(data));
+  }
+
+  [Test]
+  public void RoundTrip_RandomData_Small() {
+    var rng = new Random(42);
+    byte[] data = new byte[256];
+    rng.NextBytes(data);
+    Assert.That(RoundTrip(data), Is.EqualTo(data));
+  }
+
+  [Test]
+  public void RoundTrip_RandomData_1KB() {
+    var rng = new Random(123);
+    byte[] data = new byte[1024];
+    rng.NextBytes(data);
+    Assert.That(RoundTrip(data), Is.EqualTo(data));
+  }
+
+  [Test]
+  public void RoundTrip_RandomData_16KB() {
+    var rng = new Random(456);
+    byte[] data = new byte[16 * 1024];
+    rng.NextBytes(data);
+    Assert.That(RoundTrip(data), Is.EqualTo(data));
+  }
+
+  [Test]
+  public void RoundTrip_RandomData_64KB() {
+    var rng = new Random(789);
+    byte[] data = new byte[64 * 1024];
+    rng.NextBytes(data);
+    Assert.That(RoundTrip(data), Is.EqualTo(data));
+  }
+
+  [Test]
+  public void RoundTrip_Window16Bits() {
+    var rng = new Random(100);
+    byte[] data = new byte[8 * 1024];
+    rng.NextBytes(data);
+    Assert.That(RoundTrip(data, windowBits: 16), Is.EqualTo(data));
+  }
+
+  [Test]
+  public void RoundTrip_Window17Bits() {
+    var rng = new Random(200);
+    byte[] data = new byte[8 * 1024];
+    rng.NextBytes(data);
+    Assert.That(RoundTrip(data, windowBits: 17), Is.EqualTo(data));
+  }
+
+  [Test]
+  public void RoundTrip_SpansMultipleBlocks() {
+    // Force multiple 32 KB blocks
+    var rng = new Random(999);
+    byte[] data = new byte[100 * 1024];
+    rng.NextBytes(data);
+    Assert.That(RoundTrip(data), Is.EqualTo(data));
+  }
+
+  [Test]
+  public void RoundTrip_LongMatch() {
+    // Highly compressible: long runs that force max match lengths
+    var data = new byte[10000];
+    for (int i = 0; i < data.Length; i++)
+      data[i] = (byte)(i % 16);
+    Assert.That(RoundTrip(data), Is.EqualTo(data));
+  }
+
+  // -------------------------------------------------------------------------
+  // Compressor helpers (internal visibility via InternalsVisibleTo)
+  // -------------------------------------------------------------------------
+
+  [Test]
+  public void BuildCodeLengths_AllZeroFrequencies_ReturnsAllZero() {
+    var freq = new int[LzxConstants.NumChars];
+    var lengths = LzxCompressor.BuildCodeLengths(freq, LzxConstants.NumChars, 16);
+    Assert.That(lengths, Is.All.EqualTo(0));
+  }
+
+  [Test]
+  public void BuildCodeLengths_SingleSymbol_LengthOne() {
+    var freq = new int[LzxConstants.NumChars];
+    freq[65] = 10;
+    var lengths = LzxCompressor.BuildCodeLengths(freq, LzxConstants.NumChars, 16);
+    Assert.That(lengths[65], Is.EqualTo(1));
+  }
+
+  [Test]
+  public void BuildCanonicalCodes_TwoSymbols_CorrectCodes() {
+    int[] lengths = [1, 1];
+    var codes = LzxCompressor.BuildCanonicalCodes(lengths);
+    Assert.That(codes[0], Is.EqualTo(0u));
+    Assert.That(codes[1], Is.EqualTo(1u));
+  }
+
+  // -------------------------------------------------------------------------
+  // Decompressor constructor validation
+  // -------------------------------------------------------------------------
+
+  [Test]
+  public void Decompressor_NullStream_Throws() {
+    Assert.Throws<ArgumentNullException>(() => new LzxDecompressor(null!));
+  }
+
+  [Test]
+  public void Decompressor_InvalidWindowBits_Throws() {
+    using var ms = new MemoryStream();
+    Assert.Throws<ArgumentOutOfRangeException>(() => new LzxDecompressor(ms, 14));
+    Assert.Throws<ArgumentOutOfRangeException>(() => new LzxDecompressor(ms, 22));
+  }
+
+  [Test]
+  public void Compressor_InvalidWindowBits_Throws() {
+    Assert.Throws<ArgumentOutOfRangeException>(() => new LzxCompressor(14));
+    Assert.Throws<ArgumentOutOfRangeException>(() => new LzxCompressor(22));
+  }
+}
