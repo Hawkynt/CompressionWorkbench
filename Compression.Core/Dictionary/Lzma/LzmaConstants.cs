@@ -14,7 +14,7 @@ internal static class LzmaConstants {
   public const int NumAlignBits = 4;
 
   /// <summary>Alignment table size (1 &lt;&lt; NumAlignBits).</summary>
-  public const int AlignTableSize = 1 << NumAlignBits;
+  public const int AlignTableSize = 1 << LzmaConstants.NumAlignBits;
 
   /// <summary>First position slot that uses extra bits via bit tree.</summary>
   public const int StartPosModelIndex = 4;
@@ -23,7 +23,7 @@ internal static class LzmaConstants {
   public const int EndPosModelIndex = 14;
 
   /// <summary>Number of full distances (128).</summary>
-  public const int NumFullDistances = 1 << (EndPosModelIndex / 2);
+  public const int NumFullDistances = 1 << (LzmaConstants.EndPosModelIndex / 2);
 
   /// <summary>Number of length-to-position-state mappings.</summary>
   public const int NumLenToPosStates = 4;
@@ -35,14 +35,14 @@ internal static class LzmaConstants {
   public const int NumRepDistances = 4;
 
   /// <summary>Maximum match length (2 + 8 + 8 + 256 - 1 = 273).</summary>
-  public const int MatchMaxLen = MatchMinLen + 8 + 8 + 256 - 1;
+  public const int MatchMaxLen = LzmaConstants.MatchMinLen + 8 + 8 + 256 - 1;
 
   /// <summary>Returns the length-to-position state for a given length.</summary>
   public static int GetLenToPosState(int len) {
-    len -= MatchMinLen;
-    if (len < NumLenToPosStates)
+    len -= LzmaConstants.MatchMinLen;
+    if (len < LzmaConstants.NumLenToPosStates)
       return len;
-    return NumLenToPosStates - 1;
+    return LzmaConstants.NumLenToPosStates - 1;
   }
 
   /// <summary>State transition after encoding a literal.</summary>

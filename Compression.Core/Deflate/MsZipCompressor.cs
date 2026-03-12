@@ -36,15 +36,15 @@ public static class MsZipCompressor {
 
     // Always emit at least one block, even for empty input.
     do {
-      var chunkLen = Math.Min(BlockSize, data.Length - offset);
+      var chunkLen = Math.Min(MsZipCompressor.BlockSize, data.Length - offset);
       var chunk = data.Slice(offset, chunkLen);
 
       // Deflate-compress the chunk.
       var compressed = DeflateCompressor.Compress(chunk, level);
 
       // Write "CK" signature.
-      output.WriteByte(SignatureByte0);
-      output.WriteByte(SignatureByte1);
+      output.WriteByte(MsZipCompressor.SignatureByte0);
+      output.WriteByte(MsZipCompressor.SignatureByte1);
 
       // Write compressed Deflate data.
       output.Write(compressed);
@@ -74,15 +74,15 @@ public static class MsZipCompressor {
     var offset = 0;
 
     do {
-      var chunkLen = Math.Min(BlockSize, data.Length - offset);
+      var chunkLen = Math.Min(MsZipCompressor.BlockSize, data.Length - offset);
       var chunk = data.Slice(offset, chunkLen);
 
       var deflated = DeflateCompressor.Compress(chunk, level);
 
       // Prepend "CK" signature.
       var block = new byte[2 + deflated.Length];
-      block[0] = SignatureByte0;
-      block[1] = SignatureByte1;
+      block[0] = MsZipCompressor.SignatureByte0;
+      block[1] = MsZipCompressor.SignatureByte1;
       deflated.CopyTo(block, 2);
 
       blocks.Add((block, chunkLen));

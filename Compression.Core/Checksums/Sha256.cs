@@ -48,7 +48,7 @@ public sealed class Sha256 {
   ];
 
   private uint _h0, _h1, _h2, _h3, _h4, _h5, _h6, _h7;
-  private readonly byte[] _buffer = new byte[BlockSize];
+  private readonly byte[] _buffer = new byte[Sha256.BlockSize];
   private int _bufferLength;
   private ulong _totalLength;
   private bool _finished;
@@ -71,14 +71,14 @@ public sealed class Sha256 {
   /// Resets the hasher to its initial state.
   /// </summary>
   public void Reset() {
-    this._h0 = H0Init;
-    this._h1 = H1Init;
-    this._h2 = H2Init;
-    this._h3 = H3Init;
-    this._h4 = H4Init;
-    this._h5 = H5Init;
-    this._h6 = H6Init;
-    this._h7 = H7Init;
+    this._h0 = Sha256.H0Init;
+    this._h1 = Sha256.H1Init;
+    this._h2 = Sha256.H2Init;
+    this._h3 = Sha256.H3Init;
+    this._h4 = Sha256.H4Init;
+    this._h5 = Sha256.H5Init;
+    this._h6 = Sha256.H6Init;
+    this._h7 = Sha256.H7Init;
     this._bufferLength = 0;
     this._totalLength = 0;
     this._finished = false;
@@ -99,21 +99,21 @@ public sealed class Sha256 {
 
     // Fill partial buffer
     if (this._bufferLength > 0) {
-      var toCopy = Math.Min(BlockSize - this._bufferLength, data.Length);
+      var toCopy = Math.Min(Sha256.BlockSize - this._bufferLength, data.Length);
       data[..toCopy].CopyTo(this._buffer.AsSpan(this._bufferLength));
       this._bufferLength += toCopy;
       offset += toCopy;
 
-      if (this._bufferLength == BlockSize) {
+      if (this._bufferLength == Sha256.BlockSize) {
         this.ProcessBlock(this._buffer);
         this._bufferLength = 0;
       }
     }
 
     // Process full blocks
-    while (offset + BlockSize <= data.Length) {
-      this.ProcessBlock(data.Slice(offset, BlockSize));
-      offset += BlockSize;
+    while (offset + Sha256.BlockSize <= data.Length) {
+      this.ProcessBlock(data.Slice(offset, Sha256.BlockSize));
+      offset += Sha256.BlockSize;
     }
 
     // Store remaining bytes
@@ -142,7 +142,7 @@ public sealed class Sha256 {
 
     // If not enough room for 8-byte length, pad and process
     if (this._bufferLength > 56) {
-      this._buffer.AsSpan(this._bufferLength, BlockSize - this._bufferLength).Clear();
+      this._buffer.AsSpan(this._bufferLength, Sha256.BlockSize - this._bufferLength).Clear();
       this.ProcessBlock(this._buffer);
       this._bufferLength = 0;
     }
@@ -155,7 +155,7 @@ public sealed class Sha256 {
     this.ProcessBlock(this._buffer);
 
     // Write final hash
-    this.Hash = new byte[HashSize];
+    this.Hash = new byte[Sha256.HashSize];
     BinaryPrimitives.WriteUInt32BigEndian(this.Hash.AsSpan(0), this._h0);
     BinaryPrimitives.WriteUInt32BigEndian(this.Hash.AsSpan(4), this._h1);
     BinaryPrimitives.WriteUInt32BigEndian(this.Hash.AsSpan(8), this._h2);
@@ -218,7 +218,7 @@ public sealed class Sha256 {
 
     // 64 rounds
     for (var t = 0; t < 64; ++t) {
-      var t1 = h + Sigma1(e) + Ch(e, f, g) + K[t] + w[t];
+      var t1 = h + Sigma1(e) + Ch(e, f, g) + Sha256.K[t] + w[t];
       var t2 = Sigma0(a) + Maj(a, b, c);
 
       h = g;

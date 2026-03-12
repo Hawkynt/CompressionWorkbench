@@ -21,7 +21,7 @@ public sealed class Crc32 : IChecksum {
   /// Initializes a new <see cref="Crc32"/> with the specified polynomial.
   /// </summary>
   /// <param name="polynomial">The reflected polynomial. Defaults to <see cref="Ieee"/>.</param>
-  public Crc32(uint polynomial = Ieee) {
+  public Crc32(uint polynomial = Crc32.Ieee) {
     this._tables = CrcTableGenerator.GenerateSlicingTables(polynomial);
     this._crc = 0xFFFFFFFFu;
   }

@@ -603,7 +603,7 @@ public static class BrotliDecompressor {
   /// </summary>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   private static int ComputeLiteralContext(byte p1, byte p2, int contextMode) {
-    var lut = ContextLookup[contextMode];
+    var lut = BrotliDecompressor.ContextLookup[contextMode];
     return contextMode == 0
       ? lut[p1] | ((p2 >> 6) << 6) // LSB6: low 6 bits from p1 LUT, high 2 bits from p2
       : lut[p1];

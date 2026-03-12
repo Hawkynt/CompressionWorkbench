@@ -84,7 +84,7 @@ public static class Deflate64Constants {
     if (distance is < 1 or > 65536)
       throw new ArgumentOutOfRangeException(nameof(distance), distance, "Distance must be between 1 and 65536.");
 
-    var bases = DistanceBase;
+    var bases = Deflate64Constants.DistanceBase;
     int lo = 0, hi = bases.Length - 1;
     while (lo < hi) {
       var mid = (lo + hi + 1) / 2;

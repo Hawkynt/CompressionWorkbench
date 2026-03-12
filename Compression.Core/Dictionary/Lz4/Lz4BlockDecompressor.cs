@@ -56,7 +56,7 @@ public static class Lz4BlockDecompressor {
           throw new InvalidDataException("Unexpected end of LZ4 data in literals.");
         if (dstPos + litLen > dstLen)
           throw new InvalidDataException("LZ4 output buffer overflow in literals.");
-        source.Slice(srcPos, litLen).CopyTo(dest.Slice(dstPos));
+        source.Slice(srcPos, litLen).CopyTo(dest[dstPos..]);
         srcPos += litLen;
         dstPos += litLen;
       }
@@ -68,7 +68,7 @@ public static class Lz4BlockDecompressor {
       // Read match offset (16-bit LE)
       if (srcPos + 1 >= srcLen)
         throw new InvalidDataException("Unexpected end of LZ4 data in match offset.");
-      int offset = BinaryPrimitives.ReadUInt16LittleEndian(source.Slice(srcPos));
+      int offset = BinaryPrimitives.ReadUInt16LittleEndian(source[srcPos..]);
       srcPos += 2;
 
       if (offset == 0)

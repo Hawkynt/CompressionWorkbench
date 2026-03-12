@@ -39,7 +39,7 @@ public sealed class Lzma2Encoder {
     var needFullReset = true;
 
     while (offset < data.Length) {
-      var chunkSize = Math.Min(MaxLzmaInputChunkSize, data.Length - offset);
+      var chunkSize = Math.Min(Lzma2Encoder.MaxLzmaInputChunkSize, data.Length - offset);
 
       // Provide the encoder with historical context (up to dictionary size)
       var historyStart = Math.Max(0, offset - this._dictionarySize);
@@ -52,7 +52,7 @@ public sealed class Lzma2Encoder {
       encoder.Encode(lzmaData, contextAndChunk, chunkOffset, writeEndMarker: false);
       var compressed = lzmaData.ToArray();
 
-      if (compressed.Length < chunkSize && compressed.Length <= MaxPackedSize) {
+      if (compressed.Length < chunkSize && compressed.Length <= Lzma2Encoder.MaxPackedSize) {
         // LZMA chunk — fits in the 16-bit packed size field
         WriteLzmaChunk(output, data.Slice(offset, chunkSize), compressed, encoder.Properties,
           needFullReset);
@@ -62,7 +62,7 @@ public sealed class Lzma2Encoder {
         // Emit as uncompressed 64KB blocks
         var remaining = chunkSize;
         while (remaining > 0) {
-          var blockSize = Math.Min(MaxUncompressedChunkSize, remaining);
+          var blockSize = Math.Min(Lzma2Encoder.MaxUncompressedChunkSize, remaining);
           WriteUncompressedChunk(output, data.Slice(offset, blockSize), needFullReset);
           needFullReset = false;
           offset += blockSize;

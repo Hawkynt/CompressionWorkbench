@@ -92,7 +92,7 @@ public sealed class DeflateDecompressor {
         this.DecompressUncompressedBlock();
         break;
       case DeflateConstants.BlockTypeStaticHuffman:
-        this.DecompressHuffmanBlock(StaticLiteralTable, StaticDistanceTable);
+        this.DecompressHuffmanBlock(DeflateDecompressor.StaticLiteralTable, DeflateDecompressor.StaticDistanceTable);
         break;
       case DeflateConstants.BlockTypeDynamicHuffman:
         this.ReadDynamicTables(out var litLen, out var dist);

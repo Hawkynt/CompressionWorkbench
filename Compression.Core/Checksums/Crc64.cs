@@ -16,7 +16,7 @@ public sealed class Crc64 : IChecksum {
   /// Initializes a new <see cref="Crc64"/> with the specified polynomial.
   /// </summary>
   /// <param name="polynomial">The reflected polynomial. Defaults to <see cref="Ecma182"/>.</param>
-  public Crc64(ulong polynomial = Ecma182) {
+  public Crc64(ulong polynomial = Crc64.Ecma182) {
     this._tables = CrcTableGenerator.GenerateSlicingTables(polynomial);
     this._crc = 0xFFFFFFFFFFFFFFFFUL;
   }

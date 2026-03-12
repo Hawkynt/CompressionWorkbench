@@ -42,7 +42,7 @@ public sealed class Blake2b {
   };
 
   private readonly ulong[] _h = new ulong[8];
-  private readonly byte[] _buffer = new byte[BlockSize];
+  private readonly byte[] _buffer = new byte[Blake2b.BlockSize];
   private int _bufferLength;
   private ulong _totalLen;
   private readonly int _hashSize;
@@ -54,9 +54,9 @@ public sealed class Blake2b {
   /// <exception cref="ArgumentOutOfRangeException">
   /// Thrown when <paramref name="hashSize"/> is outside [1, 64].
   /// </exception>
-  public Blake2b(int hashSize = DefaultHashSize) {
+  public Blake2b(int hashSize = Blake2b.DefaultHashSize) {
     ArgumentOutOfRangeException.ThrowIfLessThan(hashSize, 1);
-    ArgumentOutOfRangeException.ThrowIfGreaterThan(hashSize, MaxHashSize);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(hashSize, Blake2b.MaxHashSize);
     this._hashSize = hashSize;
     this.Reset();
   }
@@ -65,7 +65,7 @@ public sealed class Blake2b {
   /// Resets the hash state for reuse.
   /// </summary>
   public void Reset() {
-    Iv.AsSpan().CopyTo(this._h);
+    Blake2b.Iv.AsSpan().CopyTo(this._h);
     // XOR the first IV word with parameters: fan-out=1, depth=1, hash size
     this._h[0] ^= 0x01010000UL | (uint)this._hashSize;
     this._bufferLength = 0;
@@ -81,8 +81,8 @@ public sealed class Blake2b {
     var remaining = data.Length;
 
     // If buffer has data and we can fill a block, process it
-    if (this._bufferLength > 0 && this._bufferLength + remaining > BlockSize) {
-      var fill = BlockSize - this._bufferLength;
+    if (this._bufferLength > 0 && this._bufferLength + remaining > Blake2b.BlockSize) {
+      var fill = Blake2b.BlockSize - this._bufferLength;
       data.Slice(offset, fill).CopyTo(this._buffer.AsSpan(this._bufferLength));
       this._totalLen += (ulong)fill;
       this.Compress(this._buffer, false);
@@ -92,11 +92,11 @@ public sealed class Blake2b {
     }
 
     // Process full blocks directly from the input
-    while (remaining > BlockSize) {
-      this._totalLen += BlockSize;
-      this.CompressSpan(data.Slice(offset, BlockSize), false);
-      offset += BlockSize;
-      remaining -= BlockSize;
+    while (remaining > Blake2b.BlockSize) {
+      this._totalLen += Blake2b.BlockSize;
+      this.CompressSpan(data.Slice(offset, Blake2b.BlockSize), false);
+      offset += Blake2b.BlockSize;
+      remaining -= Blake2b.BlockSize;
     }
 
     if (remaining <= 0)
@@ -130,7 +130,7 @@ public sealed class Blake2b {
   /// <param name="data">The data to hash.</param>
   /// <param name="hashSize">Desired hash output size in bytes (1–64). Defaults to 32.</param>
   /// <returns>The BLAKE2b hash.</returns>
-  public static byte[] Compute(ReadOnlySpan<byte> data, int hashSize = DefaultHashSize) {
+  public static byte[] Compute(ReadOnlySpan<byte> data, int hashSize = Blake2b.DefaultHashSize) {
     var hasher = new Blake2b(hashSize);
     hasher.Update(data);
     return hasher.Finish();
@@ -138,13 +138,13 @@ public sealed class Blake2b {
 
   // ---- Compression function ----
 
-  private void Compress(byte[] block, bool lastBlock) => this.CompressSpan(block.AsSpan(0, BlockSize), lastBlock);
+  private void Compress(byte[] block, bool lastBlock) => this.CompressSpan(block.AsSpan(0, Blake2b.BlockSize), lastBlock);
 
   private void CompressSpan(ReadOnlySpan<byte> block, bool lastBlock) {
     // Initialise working vector v[0..15]
     Span<ulong> v = stackalloc ulong[16];
     this._h.AsSpan().CopyTo(v);
-    Iv.AsSpan().CopyTo(v[8..]);
+    Blake2b.Iv.AsSpan().CopyTo(v[8..]);
 
     v[12] ^= this._totalLen;         // low 64 bits of counter
     // v[13] ^= 0;                   // high 64 bits (not needed for < 2^64 bytes)
@@ -159,14 +159,14 @@ public sealed class Blake2b {
     // 12 rounds of mixing
     for (var round = 0; round < 12; round++) {
       var s = round % 10;
-      G(ref v[0], ref v[4], ref v[8],  ref v[12], m[Sigma[s, 0]], m[Sigma[s, 1]]);
-      G(ref v[1], ref v[5], ref v[9],  ref v[13], m[Sigma[s, 2]], m[Sigma[s, 3]]);
-      G(ref v[2], ref v[6], ref v[10], ref v[14], m[Sigma[s, 4]], m[Sigma[s, 5]]);
-      G(ref v[3], ref v[7], ref v[11], ref v[15], m[Sigma[s, 6]], m[Sigma[s, 7]]);
-      G(ref v[0], ref v[5], ref v[10], ref v[15], m[Sigma[s, 8]], m[Sigma[s, 9]]);
-      G(ref v[1], ref v[6], ref v[11], ref v[12], m[Sigma[s, 10]], m[Sigma[s, 11]]);
-      G(ref v[2], ref v[7], ref v[8],  ref v[13], m[Sigma[s, 12]], m[Sigma[s, 13]]);
-      G(ref v[3], ref v[4], ref v[9],  ref v[14], m[Sigma[s, 14]], m[Sigma[s, 15]]);
+      G(ref v[0], ref v[4], ref v[8],  ref v[12], m[Blake2b.Sigma[s, 0]], m[Blake2b.Sigma[s, 1]]);
+      G(ref v[1], ref v[5], ref v[9],  ref v[13], m[Blake2b.Sigma[s, 2]], m[Blake2b.Sigma[s, 3]]);
+      G(ref v[2], ref v[6], ref v[10], ref v[14], m[Blake2b.Sigma[s, 4]], m[Blake2b.Sigma[s, 5]]);
+      G(ref v[3], ref v[7], ref v[11], ref v[15], m[Blake2b.Sigma[s, 6]], m[Blake2b.Sigma[s, 7]]);
+      G(ref v[0], ref v[5], ref v[10], ref v[15], m[Blake2b.Sigma[s, 8]], m[Blake2b.Sigma[s, 9]]);
+      G(ref v[1], ref v[6], ref v[11], ref v[12], m[Blake2b.Sigma[s, 10]], m[Blake2b.Sigma[s, 11]]);
+      G(ref v[2], ref v[7], ref v[8],  ref v[13], m[Blake2b.Sigma[s, 12]], m[Blake2b.Sigma[s, 13]]);
+      G(ref v[3], ref v[4], ref v[9],  ref v[14], m[Blake2b.Sigma[s, 14]], m[Blake2b.Sigma[s, 15]]);
     }
 
     // Finalise: h[i] ^= v[i] ^ v[i+8]

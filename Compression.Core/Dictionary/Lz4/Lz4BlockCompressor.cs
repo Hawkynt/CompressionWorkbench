@@ -123,11 +123,11 @@ public static class Lz4BlockCompressor {
     }
 
     // Literal bytes
-    src.Slice(litStart, litLen).CopyTo(dst.Slice(dstPos));
+    src.Slice(litStart, litLen).CopyTo(dst[dstPos..]);
     dstPos += litLen;
 
     // Match offset (16-bit LE)
-    BinaryPrimitives.WriteUInt16LittleEndian(dst.Slice(dstPos), (ushort)matchOffset);
+    BinaryPrimitives.WriteUInt16LittleEndian(dst[dstPos..], (ushort)matchOffset);
     dstPos += 2;
 
     // Match length overflow
@@ -160,7 +160,7 @@ public static class Lz4BlockCompressor {
       dst[dstPos++] = (byte)remaining;
     }
 
-    src.Slice(litStart, litLen).CopyTo(dst.Slice(dstPos));
+    src.Slice(litStart, litLen).CopyTo(dst[dstPos..]);
     dstPos += litLen;
 
     return dstPos;

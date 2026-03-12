@@ -18,7 +18,7 @@ public sealed class Crc16 : IChecksum {
   /// </summary>
   /// <param name="polynomial">The reflected polynomial. Defaults to <see cref="Arc"/>.</param>
   /// <param name="initialValue">The initial CRC value. Defaults to 0.</param>
-  public Crc16(ushort polynomial = Arc, ushort initialValue = 0) {
+  public Crc16(ushort polynomial = Crc16.Arc, ushort initialValue = 0) {
     this._table = GenerateTable(polynomial);
     this._initialValue = initialValue;
     this._crc = initialValue;

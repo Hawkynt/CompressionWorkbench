@@ -23,8 +23,8 @@ public sealed class Adler32 : IChecksum {
 
   /// <inheritdoc />
   public void Update(byte b) {
-    this._a = (this._a + b) % Mod;
-    this._b = (this._b + this._a) % Mod;
+    this._a = (this._a + b) % Adler32.Mod;
+    this._b = (this._b + this._a) % Adler32.Mod;
   }
 
   /// <inheritdoc />
@@ -35,7 +35,7 @@ public sealed class Adler32 : IChecksum {
     var remaining = data.Length;
 
     while (remaining > 0) {
-      var blockLen = Math.Min(remaining, Nmax);
+      var blockLen = Math.Min(remaining, Adler32.Nmax);
 
       if (Vector256.IsHardwareAccelerated && blockLen >= 32) {
         UpdateSimd(data.Slice(offset, blockLen), ref a, ref b);
@@ -46,8 +46,8 @@ public sealed class Adler32 : IChecksum {
         }
       }
 
-      a %= Mod;
-      b %= Mod;
+      a %= Adler32.Mod;
+      b %= Adler32.Mod;
       offset += blockLen;
       remaining -= blockLen;
     }

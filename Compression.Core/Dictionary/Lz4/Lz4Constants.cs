@@ -11,7 +11,7 @@ public static class Lz4Constants {
   public const int HashTableBits = 16;
 
   /// <summary>Hash table size.</summary>
-  public const int HashTableSize = 1 << HashTableBits;
+  public const int HashTableSize = 1 << Lz4Constants.HashTableBits;
 
   /// <summary>Maximum distance for a match (64KB - 1).</summary>
   public const int MaxDistance = 65535;
@@ -20,7 +20,7 @@ public static class Lz4Constants {
   public const int LastLiterals = 5;
 
   /// <summary>Minimum input length that supports match finding.</summary>
-  public const int MfLimit = MinMatch + LastLiterals;
+  public const int MfLimit = Lz4Constants.MinMatch + Lz4Constants.LastLiterals;
 
   /// <summary>Token high nibble limit before overflow encoding.</summary>
   public const int RunMask = 15;
