@@ -18,14 +18,14 @@ public sealed class BitTreeEncoder {
   /// <param name="numBits">The number of bits per symbol (e.g., 8 for a byte).</param>
   public BitTreeEncoder(int numBits) {
     this._numBits = numBits;
-    Probs = new int[1 << numBits];
-    Reset();
+    this.Probs = new int[1 << numBits];
+    this.Reset();
   }
 
   /// <summary>
   /// Resets all probabilities to the midpoint.
   /// </summary>
-  public void Reset() => Array.Fill(Probs, RangeEncoder.ProbInitValue);
+  public void Reset() => this.Probs.AsSpan().Fill(RangeEncoder.ProbInitValue);
 
   /// <summary>
   /// Encodes a value MSB-first using the bit tree.
@@ -33,10 +33,10 @@ public sealed class BitTreeEncoder {
   /// <param name="encoder">The range encoder.</param>
   /// <param name="value">The value to encode (0 to 2^numBits - 1).</param>
   public void Encode(RangeEncoder encoder, int value) {
-    int index = 1;
-    for (int bitIndex = this._numBits - 1; bitIndex >= 0; --bitIndex) {
-      int bit = (value >> bitIndex) & 1;
-      encoder.EncodeBit(ref Probs[index], bit);
+    var index = 1;
+    for (var bitIndex = this._numBits - 1; bitIndex >= 0; --bitIndex) {
+      var bit = (value >> bitIndex) & 1;
+      encoder.EncodeBit(ref this.Probs[index], bit);
       index = (index << 1) | bit;
     }
   }
@@ -48,10 +48,10 @@ public sealed class BitTreeEncoder {
   /// <param name="encoder">The range encoder.</param>
   /// <param name="value">The value to encode.</param>
   public void ReverseEncode(RangeEncoder encoder, int value) {
-    int index = 1;
-    for (int i = 0; i < this._numBits; ++i) {
-      int bit = value & 1;
-      encoder.EncodeBit(ref Probs[index], bit);
+    var index = 1;
+    for (var i = 0; i < this._numBits; ++i) {
+      var bit = value & 1;
+      encoder.EncodeBit(ref this.Probs[index], bit);
       index = (index << 1) | bit;
       value >>= 1;
     }
@@ -67,9 +67,9 @@ public sealed class BitTreeEncoder {
   /// <param name="numBits">The number of bits to encode.</param>
   /// <param name="value">The value to encode.</param>
   public static void ReverseEncode(RangeEncoder encoder, Span<int> probs, int startIndex, int numBits, int value) {
-    int index = 1;
-    for (int i = 0; i < numBits; ++i) {
-      int bit = value & 1;
+    var index = 1;
+    for (var i = 0; i < numBits; ++i) {
+      var bit = value & 1;
       encoder.EncodeBit(ref probs[startIndex + index], bit);
       index = (index << 1) | bit;
       value >>= 1;

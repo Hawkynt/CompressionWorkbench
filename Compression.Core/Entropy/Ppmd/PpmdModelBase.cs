@@ -32,9 +32,8 @@ internal abstract class PpmdModelBase {
   /// </summary>
   /// <param name="maxOrder">Maximum context order (1..16).</param>
   protected PpmdModelBase(int maxOrder) {
-    if (maxOrder < 1 || maxOrder > PpmdConstants.MaxOrder)
-      throw new ArgumentOutOfRangeException(nameof(maxOrder),
-        $"Order must be between 1 and {PpmdConstants.MaxOrder}.");
+    if (maxOrder is < 1 or > PpmdConstants.MaxOrder)
+      throw new ArgumentOutOfRangeException(nameof(maxOrder), $"Order must be between 1 and {PpmdConstants.MaxOrder}.");
 
     this._maxOrder = maxOrder;
     // History buffer needs to hold at least maxOrder bytes
@@ -51,18 +50,18 @@ internal abstract class PpmdModelBase {
     if (order == 0) {
       // Order-0 context: always exists
       var key = new ContextKey(0, 0);
-      if (!this._contexts.TryGetValue(key, out var ctx)) {
-        ctx = new PpmdContext();
-        this._contexts[key] = ctx;
-      }
+      if (this._contexts.TryGetValue(key, out var ctx))
+        return ctx;
 
+      ctx = new();
+      this._contexts[key] = ctx;
       return ctx;
     }
 
     if (order > this._historyCount)
       return null;
 
-    var contextKey = BuildContextKey(order);
+    var contextKey = this.BuildContextKey(order);
     this._contexts.TryGetValue(contextKey, out var context);
     return context;
   }
@@ -75,23 +74,23 @@ internal abstract class PpmdModelBase {
   protected PpmdContext? GetOrCreateContext(int order) {
     if (order == 0) {
       var key = new ContextKey(0, 0);
-      if (!this._contexts.TryGetValue(key, out var ctx)) {
-        ctx = new PpmdContext();
-        this._contexts[key] = ctx;
-      }
+      if (this._contexts.TryGetValue(key, out var ctx))
+        return ctx;
 
+      ctx = new();
+      this._contexts[key] = ctx;
       return ctx;
     }
 
     if (order > this._historyCount)
       return null;
 
-    var contextKey = BuildContextKey(order);
-    if (!this._contexts.TryGetValue(contextKey, out var context)) {
-      context = new PpmdContext();
-      this._contexts[contextKey] = context;
-    }
+    var contextKey = this.BuildContextKey(order);
+    if (this._contexts.TryGetValue(contextKey, out var context))
+      return context;
 
+    context = new();
+    this._contexts[contextKey] = context;
     return context;
   }
 
@@ -104,13 +103,14 @@ internal abstract class PpmdModelBase {
   protected void UpdateModel(byte symbol) {
     // Update contexts BEFORE pushing the symbol onto the history.
     // This ensures context keys represent the preceding context, not the symbol itself.
-    int maxCtxOrder = Math.Min(this._maxOrder, this._historyCount);
-    for (int order = 0; order <= maxCtxOrder; ++order) {
-      var ctx = GetOrCreateContext(order);
-      if (ctx != null) {
-        ctx.IncrementFreq(symbol);
-        MaybeRescale(ctx);
-      }
+    var maxCtxOrder = Math.Min(this._maxOrder, this._historyCount);
+    for (var order = 0; order <= maxCtxOrder; ++order) {
+      var ctx = this.GetOrCreateContext(order);
+      if (ctx == null)
+        continue;
+
+      ctx.IncrementFreq(symbol);
+      this.MaybeRescale(ctx);
     }
 
     // Now push the symbol onto the history
@@ -128,15 +128,15 @@ internal abstract class PpmdModelBase {
   /// <param name="symbol">The byte to encode.</param>
   public void EncodeSymbol(PpmdRangeEncoder encoder, byte symbol) {
     HashSet<byte>? excluded = null;
-    int maxCtxOrder = Math.Min(this._maxOrder, this._historyCount);
+    var maxCtxOrder = Math.Min(this._maxOrder, this._historyCount);
 
-    for (int order = maxCtxOrder; order >= 0; --order) {
-      var ctx = GetContext(order);
+    for (var order = maxCtxOrder; order >= 0; --order) {
+      var ctx = this.GetContext(order);
       if (ctx == null || ctx.SymbolCount == 0)
         continue;
 
       var table = ctx.BuildCodingTable(excluded);
-      uint totalFreq = 0;
+      var totalFreq = 0u;
       foreach (var entry in table)
         totalFreq += entry.Freq;
 
@@ -147,7 +147,7 @@ internal abstract class PpmdModelBase {
       foreach (var entry in table)
         if (entry.Symbol == symbol) {
           encoder.Encode(entry.CumFreq, entry.Freq, totalFreq);
-          UpdateModel(symbol);
+          this.UpdateModel(symbol);
           return;
         }
 
@@ -161,7 +161,7 @@ internal abstract class PpmdModelBase {
       encoder.Encode(escapeEntry.CumFreq, escapeEntry.Freq, totalFreq);
 
       // Add all symbols from this context to the exclusion set
-      excluded ??= new HashSet<byte>();
+      excluded ??= [];
       foreach (var entry in table)
         if (entry.Symbol >= 0)
           excluded.Add((byte)entry.Symbol);
@@ -169,7 +169,7 @@ internal abstract class PpmdModelBase {
 
     // Order -1: encode with flat distribution over all non-excluded symbols
     EncodeOrderMinus1(encoder, symbol, excluded);
-    UpdateModel(symbol);
+    this.UpdateModel(symbol);
   }
 
   /// <summary>
@@ -180,42 +180,41 @@ internal abstract class PpmdModelBase {
   /// <returns>The decoded byte.</returns>
   public byte DecodeSymbol(PpmdRangeDecoder decoder) {
     HashSet<byte>? excluded = null;
-    int maxCtxOrder = Math.Min(this._maxOrder, this._historyCount);
+    var maxCtxOrder = Math.Min(this._maxOrder, this._historyCount);
 
-    for (int order = maxCtxOrder; order >= 0; --order) {
-      var ctx = GetContext(order);
+    for (var order = maxCtxOrder; order >= 0; --order) {
+      var ctx = this.GetContext(order);
       if (ctx == null || ctx.SymbolCount == 0)
         continue;
 
       var table = ctx.BuildCodingTable(excluded);
-      uint totalFreq = 0;
+      var totalFreq = 0u;
       foreach (var entry in table)
         totalFreq += entry.Freq;
 
       if (totalFreq == 0)
         continue;
 
-      uint threshold = decoder.GetThreshold(totalFreq);
+      var threshold = decoder.GetThreshold(totalFreq);
 
       // Find the symbol corresponding to this threshold
-      uint cumFreq = 0;
+      var cumFreq = 0u;
       foreach (var entry in table) {
         if (threshold < cumFreq + entry.Freq) {
           decoder.Decode(entry.CumFreq, entry.Freq, totalFreq);
 
           if (entry.Symbol == -1) {
             // Escape — fall to lower order
-            excluded ??= new HashSet<byte>();
-            foreach (var e in table) {
+            excluded ??= [];
+            foreach (var e in table)
               if (e.Symbol >= 0)
                 excluded.Add((byte)e.Symbol);
-            }
 
             break;
           }
 
-          byte symbol = (byte)entry.Symbol;
-          UpdateModel(symbol);
+          var symbol = (byte)entry.Symbol;
+          this.UpdateModel(symbol);
           return symbol;
         }
 
@@ -224,8 +223,8 @@ internal abstract class PpmdModelBase {
     }
 
     // Order -1: flat distribution
-    byte decoded = DecodeOrderMinus1(decoder, excluded);
-    UpdateModel(decoded);
+    var decoded = DecodeOrderMinus1(decoder, excluded);
+    this.UpdateModel(decoded);
     return decoded;
   }
 
@@ -246,7 +245,7 @@ internal abstract class PpmdModelBase {
   /// </summary>
   /// <param name="ctx">The context to check and possibly rescale.</param>
   protected virtual void MaybeRescale(PpmdContext ctx) {
-    if (ctx.TotalFreq > GetRescaleThreshold())
+    if (ctx.TotalFreq > this.GetRescaleThreshold())
       ctx.Rescale();
   }
 
@@ -262,14 +261,14 @@ internal abstract class PpmdModelBase {
   private ContextKey BuildContextKey(int order) {
     // Compute a deterministic hash of the last 'order' bytes in history
     // Use FNV-1a style hashing for good distribution
-    ulong hash = 14695981039346656037UL;
-    for (int i = order; i >= 1; --i) {
-      int idx = ((this._historyPos - i) % this._history.Length + this._history.Length) % this._history.Length;
+    var hash = 14695981039346656037UL;
+    for (var i = order; i >= 1; --i) {
+      var idx = ((this._historyPos - i) % this._history.Length + this._history.Length) % this._history.Length;
       hash ^= this._history[idx];
       hash *= 1099511628211UL;
     }
 
-    return new ContextKey(order, hash);
+    return new(order, hash);
   }
 
   /// <summary>
@@ -277,13 +276,13 @@ internal abstract class PpmdModelBase {
   /// </summary>
   private static void EncodeOrderMinus1(PpmdRangeEncoder encoder, byte symbol, HashSet<byte>? excluded) {
     // Build a list of available symbols
-    int available = 0;
-    uint cumFreq = 0;
-    bool found = false;
-    uint foundCumFreq = 0;
+    var available = 0;
+    var cumFreq = 0u;
+    var found = false;
+    var foundCumFreq = 0u;
 
-    for (int s = 0; s < PpmdConstants.NumSymbols; ++s) {
-      byte symbolByte = (byte)s;
+    for (var s = 0; s < PpmdConstants.NumSymbols; ++s) {
+      var symbolByte = (byte)s;
       if (excluded != null && excluded.Contains(symbolByte))
         continue;
 
@@ -309,8 +308,8 @@ internal abstract class PpmdModelBase {
   /// Decodes a symbol at order -1 (uniform distribution over non-excluded symbols).
   /// </summary>
   private static byte DecodeOrderMinus1(PpmdRangeDecoder decoder, HashSet<byte>? excluded) {
-    int available = 0;
-    for (int s = 0; s < PpmdConstants.NumSymbols; ++s) {
+    var available = 0;
+    for (var s = 0; s < PpmdConstants.NumSymbols; ++s) {
       if (excluded != null && excluded.Contains((byte)s))
         continue;
 
@@ -320,12 +319,12 @@ internal abstract class PpmdModelBase {
     if (available == 0)
       available = PpmdConstants.NumSymbols; // fallback
 
-    uint threshold = decoder.GetThreshold((uint)available);
+    var threshold = decoder.GetThreshold((uint)available);
 
     // Map threshold back to the original symbol
-    uint cumFreq = 0;
-    for (int s = 0; s < PpmdConstants.NumSymbols; ++s) {
-      byte symbolByte = (byte)s;
+    var cumFreq = 0u;
+    for (var s = 0; s < PpmdConstants.NumSymbols; ++s) {
+      var symbolByte = (byte)s;
       if (excluded != null && excluded.Contains(symbolByte))
         continue;
 
@@ -340,9 +339,9 @@ internal abstract class PpmdModelBase {
     // Fallback: use the last available symbol
     // This handles the edge case where threshold equals cumFreq - 1
     cumFreq = 0;
-    byte lastSymbol = 0;
-    for (int s = 0; s < PpmdConstants.NumSymbols; ++s) {
-      byte symbolByte = (byte)s;
+    var lastSymbol = (byte)0;
+    for (var s = 0; s < PpmdConstants.NumSymbols; ++s) {
+      var symbolByte = (byte)s;
       if (excluded != null && excluded.Contains(symbolByte))
         continue;
 

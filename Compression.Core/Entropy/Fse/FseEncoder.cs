@@ -32,53 +32,54 @@ public sealed class FseEncoder {
     this._tableSize = 1 << tableLog;
 
     var effectiveCounts = new int[maxSymbol + 1];
-    for (int s = 0; s <= maxSymbol; ++s) {
-      if (normalizedCounts[s] == -1)
-        effectiveCounts[s] = 1;
-      else if (normalizedCounts[s] > 0)
-        effectiveCounts[s] = normalizedCounts[s];
-    }
+    for (var s = 0; s <= maxSymbol; ++s)
+      effectiveCounts[s] = normalizedCounts[s] switch {
+        -1 => 1,
+        > 0 => normalizedCounts[s],
+        _ => effectiveCounts[s]
+      };
 
     var decTable = FseTable.Build(normalizedCounts, maxSymbol, tableLog);
 
     // For each symbol, collect decoder table states (sorted)
     var statesForSymbol = new List<int>[maxSymbol + 1];
-    for (int s = 0; s <= maxSymbol; ++s)
-      statesForSymbol[s] = new List<int>();
+    for (var s = 0; s <= maxSymbol; ++s)
+      statesForSymbol[s] = [];
 
-    for (int state = 0; state < this._tableSize; ++state)
+    for (var state = 0; state < this._tableSize; ++state)
       statesForSymbol[decTable.Symbol[state]].Add(state);
 
-    for (int s = 0; s <= maxSymbol; ++s)
+    for (var s = 0; s <= maxSymbol; ++s)
       statesForSymbol[s].Sort();
 
     // Build the O(1) encoding lookup table
-    _encDecoderState = new int[]?[maxSymbol + 1];
-    _encNbBits = new int[]?[maxSymbol + 1];
-    _encBitsOut = new int[]?[maxSymbol + 1];
+    this._encDecoderState = new int[]?[maxSymbol + 1];
+    this._encNbBits = new int[]?[maxSymbol + 1];
+    this._encBitsOut = new int[]?[maxSymbol + 1];
 
-    for (int s = 0; s <= maxSymbol; ++s) {
+    for (var s = 0; s <= maxSymbol; ++s) {
       if (effectiveCounts[s] == 0)
         continue;
 
-      _encDecoderState[s] = new int[this._tableSize];
-      _encNbBits[s] = new int[this._tableSize];
-      _encBitsOut[s] = new int[this._tableSize];
+      this._encDecoderState[s] = new int[this._tableSize];
+      this._encNbBits[s] = new int[this._tableSize];
+      this._encBitsOut[s] = new int[this._tableSize];
 
       // For each decoder state of this symbol, compute which target states it covers
-      foreach (int d in statesForSymbol[s]) {
-        int nbBits = decTable.NumBits[d];
-        int baseVal = decTable.NewStateBase[d];
-        int range = 1 << nbBits;
+      foreach (var d in statesForSymbol[s]) {
+        var nbBits = decTable.NumBits[d];
+        var baseVal = decTable.NewStateBase[d];
+        var range = 1 << nbBits;
 
         // This decoder state covers target states [baseVal, baseVal + range)
-        for (int bits = 0; bits < range; ++bits) {
-          int targetState = baseVal + bits;
-          if (targetState >= 0 && targetState < this._tableSize) {
-            _encDecoderState[s]![targetState] = d;
-            _encNbBits[s]![targetState] = nbBits;
-            _encBitsOut[s]![targetState] = bits;
-          }
+        for (var bits = 0; bits < range; ++bits) {
+          var targetState = baseVal + bits;
+          if (targetState < 0 || targetState >= this._tableSize)
+            continue;
+
+          this._encDecoderState[s]![targetState] = d;
+          this._encNbBits[s]![targetState] = nbBits;
+          this._encBitsOut[s]![targetState] = bits;
         }
       }
     }
@@ -95,15 +96,16 @@ public sealed class FseEncoder {
   /// <returns>Normalized counts array where -1 means sub-probability (1 entry), 0 means absent.</returns>
   /// <exception cref="ArgumentException">No symbols with non-zero frequency.</exception>
   public static short[] NormalizeCounts(int[] counts, int maxSymbol, int tableLog) {
-    int tableSize = 1 << tableLog;
-    long total = 0;
-    int nonZeroCount = 0;
+    var tableSize = 1 << tableLog;
+    var total = 0L;
+    var nonZeroCount = 0;
 
-    for (int s = 0; s <= maxSymbol; ++s) {
-      if (counts[s] > 0) {
-        total += counts[s];
-        nonZeroCount++;
-      }
+    for (var s = 0; s <= maxSymbol; ++s) {
+      if (counts[s] <= 0)
+        continue;
+
+      total += counts[s];
+      nonZeroCount++;
     }
 
     if (total == 0)
@@ -113,18 +115,18 @@ public sealed class FseEncoder {
 
     // Special case: single symbol gets all entries
     if (nonZeroCount == 1)
-      for (int s = 0; s <= maxSymbol; ++s)
+      for (var s = 0; s <= maxSymbol; ++s)
         if (counts[s] > 0) {
           normalized[s] = (short)tableSize;
           return normalized;
         }
 
     // First pass: compute proportional counts
-    int distributed = 0;
-    int largestSymbol = -1;
-    long largestCount = 0;
+    var distributed = 0;
+    var largestSymbol = -1;
+    var largestCount = 0L;
 
-    for (int s = 0; s <= maxSymbol; ++s) {
+    for (var s = 0; s <= maxSymbol; ++s) {
       if (counts[s] == 0) {
         normalized[s] = 0;
         continue;
@@ -136,7 +138,7 @@ public sealed class FseEncoder {
       }
 
       // Proportional scaling with rounding
-      long proportional = ((long)counts[s] * tableSize + total / 2) / total;
+      var proportional = ((long)counts[s] * tableSize + total / 2) / total;
 
       if (proportional < 1) {
         // Sub-probability: gets exactly 1 table slot
@@ -151,16 +153,18 @@ public sealed class FseEncoder {
 
     // Adjust: the sum must equal tableSize
     // Give the remainder to the largest symbol
-    int remainder = tableSize - distributed;
-    if (largestSymbol >= 0) {
-      normalized[largestSymbol] += (short)remainder;
+    var remainder = tableSize - distributed;
+    if (largestSymbol < 0)
+      return normalized;
 
-      // Safety: if the largest symbol ended up at 0 or below, fix it
-      if (normalized[largestSymbol] < 1) {
-        normalized[largestSymbol] = 1;
-        RedistributeExcess(normalized, maxSymbol, tableSize);
-      }
-    }
+    normalized[largestSymbol] += (short)remainder;
+
+    // Safety: if the largest symbol ended up at 0 or below, fix it
+    if (normalized[largestSymbol] >= 1)
+      return normalized;
+
+    normalized[largestSymbol] = 1;
+    RedistributeExcess(normalized, maxSymbol, tableSize);
 
     return normalized;
   }
@@ -177,7 +181,7 @@ public sealed class FseEncoder {
   /// <param name="tableLog">The table log value.</param>
   /// <returns>The number of bytes written.</returns>
   public static int WriteNormalizedCounts(byte[] output, int outputPos, short[] normalizedCounts, int maxSymbol, int tableLog) {
-    int startPos = outputPos;
+    var startPos = outputPos;
 
     // Write header: tableLog (1 byte) + maxSymbol (2 bytes, little-endian)
     output[outputPos++] = (byte)tableLog;
@@ -185,8 +189,8 @@ public sealed class FseEncoder {
     output[outputPos++] = (byte)(maxSymbol >> 8);
 
     // Write each count as a 16-bit signed value (little-endian)
-    for (int s = 0; s <= maxSymbol; ++s) {
-      short value = normalizedCounts[s];
+    for (var s = 0; s <= maxSymbol; ++s) {
+      var value = normalizedCounts[s];
       output[outputPos++] = (byte)value;
       output[outputPos++] = (byte)(value >> 8);
     }
@@ -208,23 +212,23 @@ public sealed class FseEncoder {
 
     var outputBytes = new List<byte>();
     ulong bitContainer = 0;
-    int bitCount = 0;
+    var bitCount = 0;
 
     // Initialize state for the last symbol (which the decoder will output last)
-    byte lastSymbol = data[data.Length - 1];
-    var lastDecState = _encDecoderState[lastSymbol]
+    var lastSymbol = data[^1];
+    var lastDecState = this._encDecoderState[lastSymbol]
       ?? throw new InvalidOperationException($"Cannot encode symbol {lastSymbol} with zero frequency.");
     // Use state 0 as initial target; extract the decoder state from the lookup
-    int state = lastDecState[0];
+    var state = lastDecState[0];
 
     // Encode from second-to-last symbol back to first
-    for (int i = data.Length - 2; i >= 0; --i) {
-      byte symbol = data[i];
-      var decState = _encDecoderState[symbol]
+    for (var i = data.Length - 2; i >= 0; --i) {
+      var symbol = data[i];
+      var decState = this._encDecoderState[symbol]
         ?? throw new InvalidOperationException($"Cannot encode symbol {symbol} with zero frequency.");
 
-      int nbBits = _encNbBits[symbol]![state];
-      int bitsToOutput = _encBitsOut[symbol]![state];
+      var nbBits = this._encNbBits[symbol]![state];
+      var bitsToOutput = this._encBitsOut[symbol]![state];
 
       // Output bits
       if (nbBits > 0) {
@@ -263,19 +267,19 @@ public sealed class FseEncoder {
   /// Redistributes excess counts to ensure the sum equals the table size.
   /// </summary>
   private static void RedistributeExcess(short[] normalized, int maxSymbol, int tableSize) {
-    int sum = 0;
-    for (int s = 0; s <= maxSymbol; ++s)
-      if (normalized[s] == -1)
-        sum += 1;
-      else if (normalized[s] > 0)
-        sum += normalized[s];
+    var sum = 0;
+    for (var s = 0; s <= maxSymbol; ++s)
+      switch (normalized[s]) {
+        case -1: sum += 1; break;
+        case > 0: sum += normalized[s]; break;
+      }
 
-    int diff = tableSize - sum;
+    var diff = tableSize - sum;
     if (diff == 0) return;
 
-    int largest = -1;
+    var largest = -1;
     short largestVal = 0;
-    for (int s = 0; s <= maxSymbol; ++s)
+    for (var s = 0; s <= maxSymbol; ++s)
       if (normalized[s] > largestVal) {
         largestVal = normalized[s];
         largest = s;

@@ -35,8 +35,8 @@ public sealed class HuffmanDecoder<TOrder> where TOrder : struct, IBitOrder {
   /// <returns>An array of decoded symbols.</returns>
   public int[] DecodeSymbols(int count) {
     var result = new int[count];
-    for (int i = 0; i < count; ++i)
-      result[i] = DecodeSymbol();
+    for (var i = 0; i < count; ++i)
+      result[i] = this.DecodeSymbol();
 
     return result;
   }

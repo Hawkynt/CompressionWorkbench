@@ -30,10 +30,11 @@ public static class MoveToFrontTransform {
       result[i] = (byte)idx;
 
       // Move to front: shift [0..idx-1] right by one, place found byte at front
-      if (idx > 0) {
-        alphabet.AsSpan(0, idx).CopyTo(alphabet.AsSpan(1));
-        alphabet[0] = symbol;
-      }
+      if (idx <= 0)
+        continue;
+
+      alphabet.AsSpan(0, idx).CopyTo(alphabet.AsSpan(1));
+      alphabet[0] = symbol;
     }
 
     return result;
@@ -48,19 +49,20 @@ public static class MoveToFrontTransform {
     if (data.Length == 0)
       return [];
 
-    byte[] alphabet = CreateAlphabet();
+    var alphabet = CreateAlphabet();
     var result = new byte[data.Length];
 
-    for (int i = 0; i < data.Length; ++i) {
+    for (var i = 0; i < data.Length; ++i) {
       int idx = data[i];
-      byte symbol = alphabet[idx];
+      var symbol = alphabet[idx];
       result[i] = symbol;
 
+      if (idx <= 0)
+        continue;
+
       // Move to front: shift [0..idx-1] right by one, place decoded byte at front
-      if (idx > 0) {
-        alphabet.AsSpan(0, idx).CopyTo(alphabet.AsSpan(1));
-        alphabet[0] = symbol;
-      }
+      alphabet.AsSpan(0, idx).CopyTo(alphabet.AsSpan(1));
+      alphabet[0] = symbol;
     }
 
     return result;
@@ -73,12 +75,12 @@ public static class MoveToFrontTransform {
         (byte)0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
         16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31);
       var increment = Vector256.Create((byte)32);
-      for (int i = 0; i < 256; i += 32) {
+      for (var i = 0; i < 256; i += 32) {
         indices.CopyTo(alphabet.AsSpan(i));
         indices += increment;
       }
     } else {
-      for (int i = 0; i < 256; ++i)
+      for (var i = 0; i < 256; ++i)
         alphabet[i] = (byte)i;
     }
     return alphabet;
@@ -87,14 +89,14 @@ public static class MoveToFrontTransform {
   private static int FindIndex(byte[] alphabet, byte symbol) {
     if (Vector256.IsHardwareAccelerated) {
       var target = Vector256.Create(symbol);
-      for (int idx = 0; idx < 256; idx += 32) {
+      for (var idx = 0; idx < 256; idx += 32) {
         var chunk = Vector256.Create<byte>(alphabet.AsSpan(idx));
         var eq = Vector256.Equals(chunk, target);
         if (eq != Vector256<byte>.Zero)
           return idx + BitOperations.TrailingZeroCount(eq.ExtractMostSignificantBits());
       }
     } else
-      for (int idx = 0; idx < 256; ++idx)
+      for (var idx = 0; idx < 256; ++idx)
         if (alphabet[idx] == symbol)
           return idx;
 

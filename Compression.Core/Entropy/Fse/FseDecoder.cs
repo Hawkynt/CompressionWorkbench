@@ -7,7 +7,7 @@ namespace Compression.Core.Entropy.Fse;
 /// Reads a backward bitstream produced by <see cref="FseEncoder"/> and recovers
 /// the original symbol sequence.
 /// </summary>
-public sealed class FseDecoder {
+public sealed partial class FseDecoder {
   private readonly FseTable _table;
 
   /// <summary>
@@ -31,12 +31,12 @@ public sealed class FseDecoder {
     if (input.Length < 3)
       throw new InvalidDataException("FSE header too short.");
 
-    int pos = 0;
+    var pos = 0;
 
     int tableLog = input[pos++];
-    int maxSymbol = input[pos++] | (input[pos++] << 8);
+    var maxSymbol = input[pos++] | (input[pos++] << 8);
 
-    if (tableLog < FseConstants.MinTableLog || tableLog > FseConstants.MaxTableLog)
+    if (tableLog is < FseConstants.MinTableLog or > FseConstants.MaxTableLog)
       throw new InvalidDataException($"Invalid FSE table log: {tableLog}.");
 
     if (maxSymbol > FseConstants.MaxSymbolValue)
@@ -44,11 +44,11 @@ public sealed class FseDecoder {
 
     var normalized = new short[maxSymbol + 1];
 
-    int needed = (maxSymbol + 1) * 2;
+    var needed = (maxSymbol + 1) * 2;
     if (pos + needed > input.Length)
       throw new InvalidDataException("FSE normalized counts data truncated.");
 
-    for (int s = 0; s <= maxSymbol; ++s) {
+    for (var s = 0; s <= maxSymbol; ++s) {
       normalized[s] = (short)(input[pos] | (input[pos + 1] << 8));
       pos += 2;
     }
@@ -76,25 +76,25 @@ public sealed class FseDecoder {
 
     // Step 1: Load all bits into a large bit buffer.
     // The total number of valid bits is determined by the sentinel position.
-    int totalBits = FindTotalBits(compressed);
+    var totalBits = FindTotalBits(compressed);
 
     // Step 2: Load all bytes into a contiguous bit buffer.
     // We use a ulong array for large data, or just work byte-by-byte.
     var bitReader = new MsbBitReader(compressed, totalBits);
 
     // Step 3: Read initial state (tableLog bits from the top)
-    int state = bitReader.ReadBitsFromTop(this._table.TableLog);
+    var state = bitReader.ReadBitsFromTop(this._table.TableLog);
 
     // Step 4: Decode symbols
     // The last symbol decoded doesn't need a state transition (no bits to read)
-    for (int i = 0; i < originalSize; ++i) {
+    for (var i = 0; i < originalSize; ++i) {
       output[i] = this._table.Symbol[state];
+      if (i >= originalSize - 1)
+        continue;
 
-      if (i < originalSize - 1) {
-        int nbBits = this._table.NumBits[state];
-        int readBits = nbBits > 0 ? bitReader.ReadBitsFromTop(nbBits) : 0;
-        state = this._table.NewStateBase[state] + readBits;
-      }
+      var nbBits = this._table.NumBits[state];
+      var readBits = nbBits > 0 ? bitReader.ReadBitsFromTop(nbBits) : 0;
+      state = this._table.NewStateBase[state] + readBits;
     }
 
     return output;
@@ -110,7 +110,7 @@ public sealed class FseDecoder {
     // The sentinel is the highest set bit. Data bits are below the sentinel.
 
     // Find the last non-zero byte
-    int lastByteIndex = compressed.Length - 1;
+    var lastByteIndex = compressed.Length - 1;
     while (lastByteIndex > 0 && compressed[lastByteIndex] == 0)
       --lastByteIndex;
 
@@ -118,57 +118,10 @@ public sealed class FseDecoder {
       throw new InvalidDataException("No sentinel bit found in FSE stream.");
 
     int lastByte = compressed[lastByteIndex];
-    int highBit = BitOperations.Log2((uint)lastByte);
+    var highBit = BitOperations.Log2((uint)lastByte);
 
     // Total data bits = position of sentinel bit = lastByteIndex * 8 + highBit
     return lastByteIndex * 8 + highBit;
   }
 
-  /// <summary>
-  /// Reads bits from MSB to LSB of a flat bit buffer. The buffer is stored
-  /// as bytes where byte 0 contains bits 0..7 (LSB first). Reading from the
-  /// top means starting at the highest bit position and working down.
-  /// </summary>
-  private ref struct MsbBitReader {
-    private readonly ReadOnlySpan<byte> _data;
-    private int _bitPos; // next bit position to read (counting down from totalBits-1)
-
-    /// <summary>
-    /// Initializes the reader with the data and the total number of valid data bits.
-    /// </summary>
-    /// <param name="data">The byte array containing the bitstream.</param>
-    /// <param name="totalBits">Total number of data bits (sentinel excluded).</param>
-    public MsbBitReader(ReadOnlySpan<byte> data, int totalBits) {
-      this._data = data;
-      this._bitPos = totalBits - 1; // start from the highest data bit
-    }
-
-    /// <summary>
-    /// Reads nbBits bits from the top of the remaining bitstream.
-    /// Returns the value with the first bit read in the MSB position.
-    /// </summary>
-    /// <param name="nbBits">Number of bits to read.</param>
-    /// <returns>The value read.</returns>
-    public int ReadBitsFromTop(int nbBits) {
-      // Read nbBits starting from _bitPos going down.
-      // The first bit read (at _bitPos) is the MSB of the result.
-      int value = 0;
-      for (int i = nbBits - 1; i >= 0; --i) {
-        int bit = GetBit(this._bitPos);
-        value |= bit << i;
-        --this._bitPos;
-      }
-
-      return value;
-    }
-
-    /// <summary>
-    /// Gets a single bit at the specified position in the flat buffer.
-    /// </summary>
-    private readonly int GetBit(int pos) {
-      int byteIdx = pos >> 3;
-      int bitIdx = pos & 7;
-      return (this._data[byteIdx] >> bitIdx) & 1;
-    }
-  }
 }

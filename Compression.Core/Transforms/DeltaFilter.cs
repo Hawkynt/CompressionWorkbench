@@ -28,7 +28,7 @@ public static class DeltaFilter {
 
     // Copy the first 'distance' bytes unchanged
     var copyLen = Math.Min(distance, data.Length);
-    data.Slice(0, copyLen).CopyTo(result);
+    data[..copyLen].CopyTo(result);
 
     var i = distance;
 
@@ -36,8 +36,8 @@ public static class DeltaFilter {
     if (distance == 1 && Vector256.IsHardwareAccelerated) {
       var simdEnd = data.Length - 31;
       while (i < simdEnd) {
-        var curr = Vector256.Create<byte>(data.Slice(i));
-        var prev = Vector256.Create<byte>(data.Slice(i - 1));
+        var curr = Vector256.Create<byte>(data[i..]);
+        var prev = Vector256.Create<byte>(data[(i - 1)..]);
         var diff = curr - prev;
         diff.CopyTo(result.AsSpan(i));
         i += 32;
@@ -71,10 +71,10 @@ public static class DeltaFilter {
 
     // Copy the first 'distance' bytes unchanged
     var copyLen = Math.Min(distance, data.Length);
-    data.Slice(0, copyLen).CopyTo(result);
+    data[..copyLen].CopyTo(result);
 
     // Decode has cross-iteration dependency for distance=1, so stays scalar
-    for (int i = distance; i < data.Length; ++i)
+    for (var i = distance; i < data.Length; ++i)
       result[i] = (byte)(data[i] + result[i - distance]);
 
     return result;

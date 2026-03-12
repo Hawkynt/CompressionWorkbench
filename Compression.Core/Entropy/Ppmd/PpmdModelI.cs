@@ -30,10 +30,9 @@ internal sealed class PpmdModelI : PpmdModelBase {
   /// Initializes a new PPMd Model I with the specified order and default memory.
   /// </summary>
   /// <param name="order">Maximum context order (1..16).</param>
-  public PpmdModelI(int order)
-    : this(order, PpmdConstants.DefaultMemorySize) {
+  public PpmdModelI(int order) : this(order, PpmdConstants.DefaultMemorySize) {
   }
 
   /// <inheritdoc />
-  protected override int GetRescaleThreshold() => RescaleThreshold;
+  protected override int GetRescaleThreshold() => PpmdModelI.RescaleThreshold;
 }

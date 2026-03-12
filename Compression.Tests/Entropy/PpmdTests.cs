@@ -277,7 +277,7 @@ public class PpmdTests {
     for (int i = 0; i < symbols.Length; i++) {
       uint threshold = decoder.GetThreshold(total);
       // Find symbol
-      int s = 0;
+      var s = 0;
       for (int j = 0; j < cumFreqs.Length; j++) {
         if (threshold >= cumFreqs[j] && (j + 1 >= cumFreqs.Length || threshold < cumFreqs[j + 1])) {
           s = j;

@@ -33,10 +33,10 @@ public class BitBufferTests {
     var stream = new MemoryStream([0xAB, 0xCD]);
     var buffer = new BitBuffer(stream, BitOrder.LsbFirst);
 
-    uint v1 = buffer.ReadBits(8);
+    var v1 = buffer.ReadBits(8);
     Assert.That(v1, Is.EqualTo(0xABu));
 
-    uint v2 = buffer.ReadBits(8);
+    var v2 = buffer.ReadBits(8);
     Assert.That(v2, Is.EqualTo(0xCDu));
   }
 
@@ -45,10 +45,10 @@ public class BitBufferTests {
     var stream = new MemoryStream([0xAB, 0xCD]);
     var buffer = new BitBuffer(stream, BitOrder.MsbFirst);
 
-    uint v1 = buffer.ReadBits(8);
+    var v1 = buffer.ReadBits(8);
     Assert.That(v1, Is.EqualTo(0xABu));
 
-    uint v2 = buffer.ReadBits(8);
+    var v2 = buffer.ReadBits(8);
     Assert.That(v2, Is.EqualTo(0xCDu));
   }
 
@@ -90,7 +90,7 @@ public class BitBufferTests {
     var buffer = new BitBuffer(stream, BitOrder.LsbFirst);
 
     buffer.ReadBits(4); // consume lower 4 bits of first byte (0000)
-    uint cross = buffer.ReadBits(8); // 4 bits from first byte + 4 bits from second byte
+    var cross = buffer.ReadBits(8); // 4 bits from first byte + 4 bits from second byte
     // Upper 4 of first byte = 1111, lower 4 of second byte = 1111
     // LSB first: value = 0xFF
     Assert.That(cross, Is.EqualTo(0xFFu));

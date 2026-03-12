@@ -13,13 +13,13 @@ internal static class CanonicalCodeAssigner {
   internal static void ComputeNextCodes(ReadOnlySpan<int> codeLengths, int maxLen, Span<uint> nextCode) {
     // Step 1: Count codes per length
     Span<int> blCount = stackalloc int[maxLen + 1];
-    for (int i = 0; i < codeLengths.Length; ++i)
-      if (codeLengths[i] > 0)
-        ++blCount[codeLengths[i]];
+    foreach (var value in codeLengths)
+      if (value > 0)
+        ++blCount[value];
 
     // Step 2: Compute first code for each length
-    uint code = 0;
-    for (int bits = 1; bits <= maxLen; ++bits) {
+    var code = 0u;
+    for (var bits = 1; bits <= maxLen; ++bits) {
       code = (code + (uint)blCount[bits - 1]) << 1;
       nextCode[bits] = code;
     }
