@@ -21,14 +21,13 @@ public static class BurrowsWheelerTransform {
     var transformed = new byte[length];
     var originalIndex = 0;
 
-    for (var i = 0; i < length; ++i) {
+    for (var i = 0; i < length; ++i)
       if (suffixArray[i] == 0) {
         originalIndex = i;
         transformed[i] = input[length - 1];
       }
       else
         transformed[i] = input[suffixArray[i] - 1];
-    }
 
     return (transformed, originalIndex);
   }

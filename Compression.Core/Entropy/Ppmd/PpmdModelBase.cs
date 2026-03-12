@@ -153,10 +153,9 @@ internal abstract class PpmdModelBase {
 
       // Symbol not found — encode escape
       var escapeEntry = table[^1]; // last entry is escape
-      if (escapeEntry.Symbol != -1) {
+      if (escapeEntry.Symbol != -1)
         // No escape entry — shouldn't happen, but handle gracefully
         continue;
-      }
 
       encoder.Encode(escapeEntry.CumFreq, escapeEntry.Freq, totalFreq);
 

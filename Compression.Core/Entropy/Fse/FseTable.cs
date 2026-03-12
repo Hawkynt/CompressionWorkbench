@@ -49,13 +49,12 @@ public sealed class FseTable {
 
     // Compute the effective counts (for spreading) and place -1 symbols at the end
     var effectiveCounts = new int[maxSymbol + 1];
-    for (var symbol = 0; symbol <= maxSymbol; ++symbol) {
+    for (var symbol = 0; symbol <= maxSymbol; ++symbol)
       if (normalizedCounts[symbol] == -1) {
         table.Symbol[highThreshold--] = (byte)symbol;
         effectiveCounts[symbol] = 1;
       } else
         effectiveCounts[symbol] = normalizedCounts[symbol];
-    }
 
     // Spread remaining symbols using step = (tableSize >> 1) + (tableSize >> 3) + 3
     // This step is coprime with tableSize for all power-of-2 sizes >= 32
