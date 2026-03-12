@@ -10,12 +10,11 @@ namespace Compression.Core.Dictionary.Lzma;
 public sealed class Lzma2Decoder {
   private readonly Stream _input;
   private readonly int _dictionarySize;
-  private bool _finished;
 
   /// <summary>
   /// Gets whether the stream has been fully decoded.
   /// </summary>
-  public bool IsFinished => this._finished;
+  public bool IsFinished { get; private set; }
 
   /// <summary>
   /// Initializes a new LZMA2 decoder.
@@ -48,61 +47,65 @@ public sealed class Lzma2Decoder {
     var window = new SlidingWindow(winSize);
     int[] reps = [0, 0, 0, 0];
 
-    while (!this._finished) {
+    while (!this.IsFinished) {
       var controlByte = this._input.ReadByte();
       if (controlByte < 0)
         throw new EndOfStreamException("Unexpected end of LZMA2 stream.");
 
       if (controlByte == 0x00) {
         // End marker
-        this._finished = true;
+        this.IsFinished = true;
         break;
       }
 
       if (controlByte <= 0x02) {
         // Uncompressed chunk
-        int size = (ReadByte() << 8) | ReadByte();
+        var size = (this.ReadByte() << 8) | this.ReadByte();
         ++size; // 0-based to actual size
 
-        byte[] uncompressed = ArrayPool<byte>.Shared.Rent(size);
+        var uncompressed = ArrayPool<byte>.Shared.Rent(size);
         try {
-          ReadExact(uncompressed, 0, size);
+          this.ReadExact(uncompressed, 0, size);
           output.Write(uncompressed, 0, size);
           window.WriteBytes(uncompressed.AsSpan(0, size));
         } finally {
           ArrayPool<byte>.Shared.Return(uncompressed);
         }
 
-        if (controlByte == 0x01) {
-          // Dictionary reset — reset window and rep distances
-          window = new SlidingWindow(winSize);
-          reps[0] = reps[1] = reps[2] = reps[3] = 0;
-        }
-      }
-      else if ((controlByte & 0x80) != 0) {
-        // LZMA chunk
-        int resetLevel = (controlByte >> 5) & 0x03;
-        int unpackedSizeHigh = controlByte & 0x1F;
+        if (controlByte != 0x01)
+          continue;
 
-        int unpackedSize = (unpackedSizeHigh << 16) | (ReadByte() << 8) | ReadByte();
+        // Dictionary reset — reset window and rep distances
+        window = new(winSize);
+        reps[0] = reps[1] = reps[2] = reps[3] = 0;
+      } else if ((controlByte & 0x80) != 0) {
+        // LZMA chunk
+        var resetLevel = (controlByte >> 5) & 0x03;
+        var unpackedSizeHigh = controlByte & 0x1F;
+
+        var unpackedSize = (unpackedSizeHigh << 16) | (this.ReadByte() << 8) | this.ReadByte();
         ++unpackedSize; // 0-based to actual size
 
-        int packedSize = (ReadByte() << 8) | ReadByte();
+        var packedSize = (this.ReadByte() << 8) | this.ReadByte();
         ++packedSize; // 0-based to actual size
 
         if (resetLevel >= 2) {
           // Read properties byte
-          properties[0] = (byte)ReadByte();
+          properties[0] = (byte)this.ReadByte();
           hasProperties = true;
         }
 
-        if (resetLevel >= 3) {
-          // Full reset: reset window and rep distances
-          window = new SlidingWindow(winSize);
-          reps[0] = reps[1] = reps[2] = reps[3] = 0;
-        } else if (resetLevel == 1) {
-          // State reset but keep dictionary
-          reps[0] = reps[1] = reps[2] = reps[3] = 0;
+        switch (resetLevel) {
+          case >= 3:
+            // Full reset: reset window and rep distances
+            window = new(winSize);
+            reps[0] = reps[1] = reps[2] = reps[3] = 0;
+            break;
+
+          case 1:
+            // State reset but keep dictionary
+            reps[0] = reps[1] = reps[2] = reps[3] = 0;
+            break;
         }
         // resetLevel 0: continue with existing state (dictionary + reps preserved)
 
@@ -110,9 +113,9 @@ public sealed class Lzma2Decoder {
           throw new InvalidDataException("LZMA2: No properties available for LZMA chunk.");
 
         // Read packed data
-        byte[] packed = ArrayPool<byte>.Shared.Rent(packedSize);
+        var packed = ArrayPool<byte>.Shared.Rent(packedSize);
         try {
-          ReadExact(packed, 0, packedSize);
+          this.ReadExact(packed, 0, packedSize);
           using var packedStream = new MemoryStream(packed, 0, packedSize);
           var decoder = new LzmaDecoder(packedStream, properties, unpackedSize);
           decoder.Decode(output, window, reps);
@@ -129,10 +132,8 @@ public sealed class Lzma2Decoder {
 
   private int ReadByte() {
     var b = this._input.ReadByte();
-    if (b < 0)
-      throw new EndOfStreamException("Unexpected end of LZMA2 stream.");
+    return b < 0 ? throw new EndOfStreamException("Unexpected end of LZMA2 stream.") : b;
 
-    return b;
   }
 
   private void ReadExact(byte[] buffer, int offset, int count) {

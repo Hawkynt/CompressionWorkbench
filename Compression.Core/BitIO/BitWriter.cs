@@ -10,34 +10,32 @@ namespace Compression.Core.BitIO;
 public sealed class BitWriter<TOrder> where TOrder : struct, IBitOrder {
   private readonly Stream _stream;
   private int _buffer;
-  private int _bitsInBuffer;
 
   /// <summary>
   /// Initializes a new <see cref="BitWriter{TOrder}"/> over the specified stream.
   /// </summary>
   /// <param name="stream">The stream to write to.</param>
-  public BitWriter(Stream stream) {
-    this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
-  }
+  public BitWriter(Stream stream) => this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
 
   /// <summary>
   /// Gets the number of bits currently buffered.
   /// </summary>
-  public int BitsInBuffer => this._bitsInBuffer;
+  public int BitsInBuffer { get; private set; }
 
   /// <summary>
   /// Writes a single bit to the stream.
   /// </summary>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public void WriteBit(int bit) {
-    this._buffer = TOrder.PlaceBit(this._buffer, this._bitsInBuffer, bit);
-    ++this._bitsInBuffer;
+    this._buffer = TOrder.PlaceBit(this._buffer, this.BitsInBuffer, bit);
+    ++this.BitsInBuffer;
 
-    if (this._bitsInBuffer == 8) {
-      this._stream.WriteByte((byte)this._buffer);
-      this._buffer = 0;
-      this._bitsInBuffer = 0;
-    }
+    if (this.BitsInBuffer != 8) 
+      return;
+
+    this._stream.WriteByte((byte)this._buffer);
+    this._buffer = 0;
+    this.BitsInBuffer = 0;
   }
 
   /// <summary>
@@ -49,19 +47,20 @@ public sealed class BitWriter<TOrder> where TOrder : struct, IBitOrder {
     ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
     ArgumentOutOfRangeException.ThrowIfGreaterThan(count, 32);
 
-    for (int i = 0; i < count; ++i)
-      WriteBit((int)(value >> TOrder.WriteBitIndex(count, i)) & 1);
+    for (var i = 0; i < count; ++i)
+      this.WriteBit((int)(value >> TOrder.WriteBitIndex(count, i)) & 1);
   }
 
   /// <summary>
   /// Flushes any remaining buffered bits to the stream, padding with zero bits if needed.
   /// </summary>
   public void FlushBits() {
-    if (this._bitsInBuffer > 0) {
-      this._stream.WriteByte((byte)this._buffer);
-      this._buffer = 0;
-      this._bitsInBuffer = 0;
-    }
+    if (this.BitsInBuffer <= 0)
+      return;
+
+    this._stream.WriteByte((byte)this._buffer);
+    this._buffer = 0;
+    this.BitsInBuffer = 0;
   }
 }
 
@@ -80,9 +79,9 @@ public sealed class BitWriter {
   public BitWriter(Stream stream, BitOrder bitOrder = BitOrder.LsbFirst) {
     this._bitOrder = bitOrder;
     if (bitOrder == BitOrder.LsbFirst)
-      this._lsb = new BitWriter<LsbBitOrder>(stream);
+      this._lsb = new(stream);
     else
-      this._msb = new BitWriter<MsbBitOrder>(stream);
+      this._msb = new(stream);
   }
 
   /// <summary>Gets the number of bits currently buffered.</summary>

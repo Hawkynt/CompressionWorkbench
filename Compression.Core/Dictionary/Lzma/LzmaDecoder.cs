@@ -53,7 +53,7 @@ public sealed class LzmaDecoder {
   /// <returns>The decompressed data.</returns>
   public byte[] Decode() {
     using var output = new MemoryStream();
-    Decode(output);
+    this.Decode(output);
     return output.ToArray();
   }
 
@@ -62,12 +62,12 @@ public sealed class LzmaDecoder {
   /// </summary>
   /// <param name="output">The output stream.</param>
   public void Decode(Stream output) {
-    int winSize = Math.Max(this._dictionarySize, 1);
+    var winSize = Math.Max(this._dictionarySize, 1);
     if (winSize < 4096)
       winSize = 4096;
 
     var window = new SlidingWindow(winSize);
-    Decode(output, window, null);
+    this.Decode(output, window, null);
   }
 
   /// <summary>
@@ -84,7 +84,7 @@ public sealed class LzmaDecoder {
     var repLenDecoder = new LzmaLengthDecoder();
 
     // State variables
-    int state = 0;
+    var state = 0;
     reps ??= [0, 0, 0, 0];
 
     // Probability arrays (stackalloc: 432 ints = 1,728 bytes total)
@@ -103,8 +103,8 @@ public sealed class LzmaDecoder {
 
     // Distance decoding
     var posSlotDecoder = new BitTreeDecoder[LzmaConstants.NumLenToPosStates];
-    for (int i = 0; i < LzmaConstants.NumLenToPosStates; ++i)
-      posSlotDecoder[i] = new BitTreeDecoder(6);
+    for (var i = 0; i < LzmaConstants.NumLenToPosStates; ++i)
+      posSlotDecoder[i] = new(6);
 
     Span<int> posDecoders = stackalloc int[LzmaConstants.NumFullDistances - LzmaConstants.StartPosModelIndex];
     posDecoders.Fill(RangeEncoder.ProbInitValue);
@@ -114,18 +114,18 @@ public sealed class LzmaDecoder {
 
     var alignDecoder = new BitTreeDecoder(LzmaConstants.NumAlignBits);
 
-    long outPos = 0;
-    byte prevByte = 0;
+    var outPos = 0L;
+    var prevByte = (byte)0;
 
     while (this._uncompressedSize < 0 || outPos < this._uncompressedSize) {
-      int posState = (int)(outPos & this._posStateMask);
+      var posState = (int)(outPos & this._posStateMask);
 
       if (decoder.DecodeBit(ref isMatch[(state << 4) + posState]) == 0) {
         // Literal
-        byte matchByte = window.Count > 0 && reps[0] < window.Count
+        var matchByte = window.Count > 0 && reps[0] < window.Count
           ? window.GetByte(reps[0] + 1)
           : (byte)0;
-        byte lit = literalDecoder.Decode(decoder, state, matchByte, (int)outPos, prevByte);
+        var lit = literalDecoder.Decode(decoder, state, matchByte, (int)outPos, prevByte);
         output.WriteByte(lit);
         window.WriteByte(lit);
         prevByte = lit;
@@ -149,19 +149,18 @@ public sealed class LzmaDecoder {
           }
 
           // Update rep distances
-          for (int i = LzmaConstants.NumRepDistances - 1; i > 0; --i)
+          for (var i = LzmaConstants.NumRepDistances - 1; i > 0; --i)
             reps[i] = reps[i - 1];
 
           reps[0] = distance;
-        }
-        else {
+        } else {
           // Rep match
           if (decoder.DecodeBit(ref isRepG0[state]) == 0) {
             // Rep0
             if (decoder.DecodeBit(ref isRep0Long[(state << 4) + posState]) == 0) {
               // Short rep (1 byte)
               state = LzmaConstants.StateUpdateShortRep(state);
-              byte previousByte = window.GetByte(reps[0] + 1);
+              var previousByte = window.GetByte(reps[0] + 1);
               output.WriteByte(previousByte);
               window.WriteByte(previousByte);
               prevByte = previousByte;
@@ -169,8 +168,7 @@ public sealed class LzmaDecoder {
               continue;
             }
             // else: long rep0 — distance stays reps[0]
-          }
-          else {
+          } else {
             int dist;
             if (decoder.DecodeBit(ref isRepG1[state]) == 0)
               dist = reps[1];
@@ -193,8 +191,8 @@ public sealed class LzmaDecoder {
         }
 
         // Copy from dictionary
-        int actualDist = distance + 1;
-        var copySlice = copyBuf.Slice(0, len);
+        var actualDist = distance + 1;
+        var copySlice = copyBuf[..len];
         window.CopyFromWindow(actualDist, len, copySlice);
         output.Write(copySlice);
         prevByte = copySlice[len - 1];
@@ -206,21 +204,19 @@ public sealed class LzmaDecoder {
   private static int DecodeDistance(RangeDecoder decoder,
     BitTreeDecoder[] posSlotDecoder, Span<int> posDecoders,
     BitTreeDecoder alignDecoder, int length) {
-    int lenToPosState = LzmaConstants.GetLenToPosState(length);
-    int posSlot = posSlotDecoder[lenToPosState].Decode(decoder);
+    var lenToPosState = LzmaConstants.GetLenToPosState(length);
+    var posSlot = posSlotDecoder[lenToPosState].Decode(decoder);
 
     if (posSlot < LzmaConstants.StartPosModelIndex)
       return posSlot;
 
-    int numDirectBits = (posSlot >> 1) - 1;
-    int result = (2 | (posSlot & 1)) << numDirectBits;
+    var numDirectBits = (posSlot >> 1) - 1;
+    var result = (2 | (posSlot & 1)) << numDirectBits;
 
-    if (posSlot < LzmaConstants.EndPosModelIndex) {
-      result += BitTreeDecoder.ReverseDecode(decoder, posDecoders,
-        result - posSlot - 1, numDirectBits);
-    }
+    if (posSlot < LzmaConstants.EndPosModelIndex)
+      result += BitTreeDecoder.ReverseDecode(decoder, posDecoders, result - posSlot - 1, numDirectBits);
     else {
-      int directBits = numDirectBits - LzmaConstants.NumAlignBits;
+      var directBits = numDirectBits - LzmaConstants.NumAlignBits;
       result += decoder.DecodeDirectBits(directBits) << LzmaConstants.NumAlignBits;
       result += alignDecoder.ReverseDecode(decoder);
     }

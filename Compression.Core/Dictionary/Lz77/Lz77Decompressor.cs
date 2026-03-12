@@ -21,12 +21,12 @@ public static class Lz77Decompressor {
       if (token.IsLiteral)
         output.Add(token.Literal);
       else {
-        int start = output.Count - token.Distance;
+        var start = output.Count - token.Distance;
         if (start < 0)
           ThrowInvalidBackReference(token.Distance, output.Count);
 
         // Handle overlapping copies correctly
-        for (int i = 0; i < token.Length; ++i)
+        for (var i = 0; i < token.Length; ++i)
           output.Add(output[start + i]);
       }
     }
@@ -34,7 +34,7 @@ public static class Lz77Decompressor {
     return [.. output];
   }
 
-  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  [DoesNotReturn][StackTraceHidden][MethodImpl(MethodImplOptions.NoInlining)]
   private static void ThrowInvalidBackReference(int distance, int outputSize) =>
     throw new InvalidDataException(
       $"Invalid LZ77 back-reference: distance {distance} exceeds output size {outputSize}.");

@@ -49,9 +49,9 @@ public sealed class LzwEncoder {
   /// <summary>
   /// Gets the stop code value, or -1 if stop codes are disabled.
   /// </summary>
-  public int StopCode => this._useStopCode ? ClearCode + (this._useClearCode ? 1 : 0) : -1;
+  public int StopCode => this._useStopCode ? this.ClearCode + (this._useClearCode ? 1 : 0) : -1;
 
-  private int FirstUsableCode => ClearCode + (this._useClearCode ? 1 : 0) + (this._useStopCode ? 1 : 0);
+  private int FirstUsableCode => this.ClearCode + (this._useClearCode ? 1 : 0) + (this._useStopCode ? 1 : 0);
 
   /// <summary>
   /// Encodes the input data and writes compressed LZW codes to the output stream.
@@ -60,13 +60,13 @@ public sealed class LzwEncoder {
   public void Encode(ReadOnlySpan<byte> data) {
     switch (this._level) {
       case LzwCompressionLevel.Uncompressed:
-        EncodeUncompressed(data);
+        this.EncodeUncompressed(data);
         break;
       case LzwCompressionLevel.FirstMatch:
-        EncodeFirstMatch(data);
+        this.EncodeFirstMatch(data);
         break;
       case LzwCompressionLevel.Optimal:
-        EncodeOptimal(data);
+        this.EncodeOptimal(data);
         break;
       default:
         throw new ArgumentOutOfRangeException(nameof(this._level), this._level, "Unknown compression level.");
@@ -76,20 +76,20 @@ public sealed class LzwEncoder {
   private void EncodeUncompressed(ReadOnlySpan<byte> data) {
     var writer = new BitWriter(this._output, this._bitOrder);
 
-    int clearCode = ClearCode;
-    int stopCode = StopCode;
+    var clearCode = this.ClearCode;
+    var stopCode = this.StopCode;
     var currentBits = this._minBits;
     var maxCode = 1 << this._maxBits;
 
     // Track decoder state so we emit codes at the right bit width.
-    int nextCode = FirstUsableCode;
+    var nextCode = this.FirstUsableCode;
     var hasPrevious = false;
 
     if (this._useClearCode)
       writer.WriteBits((uint)clearCode, currentBits);
 
-    for (int i = 0; i < data.Length; ++i) {
-      writer.WriteBits(data[i], currentBits);
+    foreach (var value in data) {
+      writer.WriteBits(value, currentBits);
 
       // The decoder adds a new dictionary entry after every code
       // (except the first one after a reset, since previousEntry is null).
@@ -101,12 +101,13 @@ public sealed class LzwEncoder {
       hasPrevious = true;
 
       // If dictionary is full, emit clear code to reset.
-      if (nextCode >= maxCode && this._useClearCode) {
-        writer.WriteBits((uint)clearCode, currentBits);
-        currentBits = this._minBits;
-        nextCode = FirstUsableCode;
-        hasPrevious = false;
-      }
+      if (nextCode < maxCode || !this._useClearCode)
+        continue;
+
+      writer.WriteBits((uint)clearCode, currentBits);
+      currentBits = this._minBits;
+      nextCode = this.FirstUsableCode;
+      hasPrevious = false;
     }
 
     if (this._useStopCode)
@@ -118,8 +119,8 @@ public sealed class LzwEncoder {
   private void EncodeFirstMatch(ReadOnlySpan<byte> data) {
     var writer = new BitWriter(this._output, this._bitOrder);
 
-    var clearCode = ClearCode;
-    var stopCode = StopCode;
+    var clearCode = this.ClearCode;
+    var stopCode = this.StopCode;
     var currentBits = this._minBits;
     var maxCode = 1 << this._maxBits;
 
@@ -127,8 +128,8 @@ public sealed class LzwEncoder {
     // decoderNextCode for tracking the decoder's nextCode (controls bit width).
     // The encoder eagerly adds trie entries for lookup, but the decoder only
     // adds entries when previousEntry is set (i.e., not on the first code after reset).
-    int trieNextCode = FirstUsableCode;
-    int decoderNextCode = FirstUsableCode;
+    var trieNextCode = this.FirstUsableCode;
+    var decoderNextCode = this.FirstUsableCode;
     var hasPrevious = false;
 
     var trie = new Dictionary<(int ParentCode, byte Child), int>();
@@ -151,7 +152,7 @@ public sealed class LzwEncoder {
       var nextByte = data[i];
       var key = (currentCode, nextByte);
 
-      if (trie.TryGetValue(key, out int existingCode)) {
+      if (trie.TryGetValue(key, out var existingCode)) {
         currentCode = existingCode;
         ++i;
       }
@@ -175,8 +176,8 @@ public sealed class LzwEncoder {
             writer.WriteBits((uint)clearCode, currentBits);
             trie.Clear();
             currentBits = this._minBits;
-            trieNextCode = FirstUsableCode;
-            decoderNextCode = FirstUsableCode;
+            trieNextCode = this.FirstUsableCode;
+            decoderNextCode = this.FirstUsableCode;
             hasPrevious = false;
             currentCode = nextByte;
             ++i;
@@ -207,7 +208,7 @@ public sealed class LzwEncoder {
 
   private void EncodeOptimal(ReadOnlySpan<byte> data) {
     if (data.IsEmpty || data.Length <= 2) {
-      EncodeFirstMatch(data);
+      this.EncodeFirstMatch(data);
       return;
     }
 
@@ -221,7 +222,7 @@ public sealed class LzwEncoder {
     }
 
     // Try DP encoding.
-    var dpOutput = DpEncode(data);
+    var dpOutput = this.DpEncode(data);
 
     // Use whichever is smaller.
     if (dpOutput != null && dpOutput.Length <= greedyOutput.Length)
@@ -233,21 +234,22 @@ public sealed class LzwEncoder {
   private byte[]? DpEncode(ReadOnlySpan<byte> data) {
     var n = data.Length;
     var maxCode = 1 << this._maxBits;
-    int firstUsable = FirstUsableCode;
+    var firstUsable = this.FirstUsableCode;
 
     // --- Pass 1: Build greedy trie ---
     var greedyTrie = new Dictionary<(int ParentCode, byte Child), int>();
     {
-      int gNext = firstUsable;
+      var gNext = firstUsable;
       int cur = data[0];
-      for (int i = 1; i < n; ++i) {
-        byte nb = data[i];
+      for (var i = 1; i < n; ++i) {
+        var nb = data[i];
         var key = (cur, nb);
-        if (greedyTrie.TryGetValue(key, out int ex))
+        if (greedyTrie.TryGetValue(key, out var ex))
           cur = ex;
         else {
           if (gNext < maxCode)
             greedyTrie[key] = gNext++;
+
           cur = nb;
         }
       }
@@ -255,20 +257,21 @@ public sealed class LzwEncoder {
 
     // --- Precompute bit widths for each code count ---
     // After k codes emitted, decoder's nextCode = firstUsable + max(0, k-1).
-    int maxEntries = maxCode - firstUsable + 2;
+    var maxEntries = maxCode - firstUsable + 2;
     var bitWidthCount = Math.Min(n + 1, maxEntries);
     var bitWidthTable = new int[bitWidthCount];
     {
       var cb = this._minBits;
-      int nc = firstUsable;
-      for (int k = 0; k < bitWidthCount; ++k) {
+      var nc = firstUsable;
+      for (var k = 0; k < bitWidthCount; ++k) {
         bitWidthTable[k] = cb;
         // After this code, decoder increments (except for the first code).
-        if (k >= 1 && nc < maxCode) {
-          ++nc;
-          if (nc > (1 << cb) && cb < this._maxBits)
-            ++cb;
-        }
+        if (k < 1 || nc >= maxCode)
+          continue;
+
+        ++nc;
+        if (nc > (1 << cb) && cb < this._maxBits)
+          ++cb;
       }
     }
 
@@ -276,16 +279,16 @@ public sealed class LzwEncoder {
     var cost = new double[n + 1];
     var predMatchLen = new int[n + 1];
     var codesOnPath = new int[n + 1];
-    for (int i = 1; i <= n; ++i)
+    for (var i = 1; i <= n; ++i)
       cost[i] = double.MaxValue;
 
-    for (int i = 0; i < n; ++i) {
+    for (var i = 0; i < n; ++i) {
       if (cost[i] == double.MaxValue)
         continue;
 
-      int k = codesOnPath[i];
-      int bits = bitWidthTable[Math.Min(k, bitWidthCount - 1)];
-      double edgeCost = cost[i] + bits;
+      var k = codesOnPath[i];
+      var bits = bitWidthTable[Math.Min(k, bitWidthCount - 1)];
+      var edgeCost = cost[i] + bits;
 
       // Length 1 (single byte, always available).
       if (edgeCost < cost[i + 1]) {
@@ -296,18 +299,19 @@ public sealed class LzwEncoder {
 
       // Longer matches via greedy trie.
       int code = data[i];
-      int p = i + 1;
+      var p = i + 1;
       while (p < n) {
-        if (!greedyTrie.TryGetValue((code, data[p]), out int nx))
+        if (!greedyTrie.TryGetValue((code, data[p]), out var nx))
           break;
 
         code = nx;
         ++p;
-        if (edgeCost < cost[p]) {
-          cost[p] = edgeCost;
-          predMatchLen[p] = p - i;
-          codesOnPath[p] = k + 1;
-        }
+        if (!(edgeCost < cost[p]))
+          continue;
+
+        cost[p] = edgeCost;
+        predMatchLen[p] = p - i;
+        codesOnPath[p] = k + 1;
       }
     }
 
@@ -317,7 +321,7 @@ public sealed class LzwEncoder {
     // --- Traceback: get optimal match lengths ---
     var matchLengths = new List<int>();
     {
-      int pos = n;
+      var pos = n;
       while (pos > 0) {
         matchLengths.Add(predMatchLen[pos]);
         pos -= predMatchLen[pos];
@@ -328,8 +332,8 @@ public sealed class LzwEncoder {
     // --- Pass 3: Encode with actual trie, guided by DP match lengths ---
     using var ms = new MemoryStream();
     var writer = new BitWriter(ms, this._bitOrder);
-    var clearCode = ClearCode;
-    var stopCode = StopCode;
+    var clearCode = this.ClearCode;
+    var stopCode = this.StopCode;
     var currentBits = this._minBits;
     var trieNextCode = firstUsable;
     var decoderNextCode = firstUsable;
@@ -348,13 +352,13 @@ public sealed class LzwEncoder {
       ++dpIdx;
 
       // Walk actual trie to find all available match lengths.
-      var bestCode = data[dataPos];
+      int bestCode = data[dataPos];
       var bestLen = 1;
       var cur = bestCode;
       var desiredCode = (desiredLen == 1) ? bestCode : -1;
 
-      for (int j = 1; dataPos + j < n; j++) {
-        if (!trie.TryGetValue((cur, data[dataPos + j]), out int nx))
+      for (var j = 1; dataPos + j < n; j++) {
+        if (!trie.TryGetValue((cur, data[dataPos + j]), out var nx))
           break;
 
         cur = nx;
@@ -381,10 +385,8 @@ public sealed class LzwEncoder {
       // Add trie entry: (emitted code, next unmatched byte).
       if (trieNextCode < maxCode && dataPos + useLen < n) {
         var entryKey = (useCode, data[dataPos + useLen]);
-        if (!trie.ContainsKey(entryKey)) {
-          trie[entryKey] = trieNextCode;
+        if (trie.TryAdd(entryKey, trieNextCode))
           ++trieNextCode;
-        }
       }
 
       // Mirror decoder's nextCode.
@@ -393,8 +395,8 @@ public sealed class LzwEncoder {
           ++decoderNextCode;
           if (decoderNextCode > (1 << currentBits) && currentBits < this._maxBits)
             ++currentBits;
-        }
-        else if (this._useClearCode) {
+
+        } else if (this._useClearCode) {
           writer.WriteBits((uint)clearCode, currentBits);
           trie.Clear();
           currentBits = this._minBits;
@@ -415,6 +417,7 @@ public sealed class LzwEncoder {
       ++decoderNextCode;
       if (decoderNextCode > (1 << currentBits) && currentBits < this._maxBits)
         ++currentBits;
+
     }
 
     if (this._useStopCode)

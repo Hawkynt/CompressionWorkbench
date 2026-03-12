@@ -5,8 +5,8 @@ namespace Compression.Core.Dictionary.MatchFinders;
 /// </summary>
 public sealed class HashChainMatchFinder : IMatchFinder {
   private const int HashBits = 15;
-  private const int HashSize = 1 << HashBits;
-  private const int HashMask = HashSize - 1;
+  private const int HashSize = 1 << HashChainMatchFinder.HashBits;
+  private const int HashMask = HashChainMatchFinder.HashSize - 1;
 
   private readonly int _maxChainDepth;
   private readonly int[] _head;
@@ -19,9 +19,9 @@ public sealed class HashChainMatchFinder : IMatchFinder {
   /// <param name="maxChainDepth">The maximum hash chain depth to search. Defaults to 128.</param>
   public HashChainMatchFinder(int windowSize, int maxChainDepth = 128) {
     this._maxChainDepth = maxChainDepth;
-    this._head = new int[HashSize];
+    this._head = new int[HashChainMatchFinder.HashSize];
     this._prev = new int[windowSize];
-    Array.Fill(this._head, -1);
+    this._head.AsSpan().Fill(-1);
   }
 
   /// <inheritdoc />
@@ -29,22 +29,22 @@ public sealed class HashChainMatchFinder : IMatchFinder {
     if (position + 2 >= data.Length)
       return default;
 
-    int bestDistance = 0;
-    int bestLength = 0;
+    var bestDistance = 0;
+    var bestLength = 0;
 
-    int hash = ComputeHash(data, position);
-    int candidate = this._head[hash];
-    int chainCount = 0;
+    var hash = ComputeHash(data, position);
+    var candidate = this._head[hash];
+    var chainCount = 0;
 
-    int windowStart = Math.Max(0, position - maxDistance);
+    var windowStart = Math.Max(0, position - maxDistance);
 
     while (candidate >= windowStart && chainCount < this._maxChainDepth) {
-      int distance = position - candidate;
+      var distance = position - candidate;
 
       // Quick check: compare first and last bytes of current best
-      int limit = Math.Min(maxLength, Math.Min(data.Length - position, data.Length - candidate));
+      var limit = Math.Min(maxLength, Math.Min(data.Length - position, data.Length - candidate));
       if (bestLength == 0 || (bestLength < limit && data[candidate + bestLength] == data[position + bestLength])) {
-        int length = 0;
+        var length = 0;
 
         while (length < limit && data[candidate + length] == data[position + length])
           ++length;
@@ -82,11 +82,11 @@ public sealed class HashChainMatchFinder : IMatchFinder {
     if (position + 2 >= data.Length)
       return;
 
-    int hash = ComputeHash(data, position);
+    var hash = ComputeHash(data, position);
     this._prev[position & (this._prev.Length - 1)] = this._head[hash];
     this._head[hash] = position;
   }
 
   private static int ComputeHash(ReadOnlySpan<byte> data, int position) =>
-    ((data[position] << 10) ^ (data[position + 1] << 5) ^ data[position + 2]) & HashMask;
+    ((data[position] << 10) ^ (data[position + 1] << 5) ^ data[position + 2]) & HashChainMatchFinder.HashMask;
 }

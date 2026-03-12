@@ -36,7 +36,7 @@ public sealed class Lz77Compressor {
   /// <returns>A list of LZ77 tokens representing the compressed data.</returns>
   public List<Lz77Token> Compress(ReadOnlySpan<byte> data) {
     var tokens = new List<Lz77Token>();
-    int position = 0;
+    var position = 0;
 
     while (position < data.Length) {
       var match = this._matchFinder.FindMatch(data, position, this._windowSize, this._maxMatchLength, this._minMatchLength);
@@ -45,7 +45,7 @@ public sealed class Lz77Compressor {
         tokens.Add(Lz77Token.CreateMatch(match.Distance, match.Length));
 
         // Insert skipped positions into hash chain
-        for (int i = 1; i < match.Length; ++i)
+        for (var i = 1; i < match.Length; ++i)
           if (this._matchFinder is HashChainMatchFinder hcmf)
             hcmf.InsertPosition(data, position + i);
 

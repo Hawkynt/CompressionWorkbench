@@ -32,13 +32,13 @@ public sealed class XxHash64 {
   /// <param name="seed">The hash seed. Defaults to 0.</param>
   public XxHash64(ulong seed = 0) {
     this._seed = seed;
-    Reset();
+    this.Reset();
   }
 
   /// <summary>
   /// Gets the current hash value. This finalizes the accumulated state without modifying it.
   /// </summary>
-  public ulong Value => FinalizeHash();
+  public ulong Value => this.FinalizeHash();
 
   /// <summary>
   /// Resets the hasher to its initial state.
@@ -60,17 +60,17 @@ public sealed class XxHash64 {
   public void Update(ReadOnlySpan<byte> data) {
     this._totalLength += (ulong)data.Length;
 
-    int offset = 0;
+    var offset = 0;
 
     // Fill partial buffer
     if (this._bufferUsed > 0) {
-      int toCopy = Math.Min(32 - this._bufferUsed, data.Length);
-      data.Slice(0, toCopy).CopyTo(this._buffer.AsSpan(this._bufferUsed));
+      var toCopy = Math.Min(32 - this._bufferUsed, data.Length);
+      data[..toCopy].CopyTo(this._buffer.AsSpan(this._bufferUsed));
       this._bufferUsed += toCopy;
       offset += toCopy;
 
       if (this._bufferUsed == 32) {
-        ProcessStripe(this._buffer);
+        this.ProcessStripe(this._buffer);
         this._bufferUsed = 0;
         this._hasProcessedStripe = true;
       }
@@ -78,16 +78,17 @@ public sealed class XxHash64 {
 
     // Process full 32-byte stripes
     while (offset + 32 <= data.Length) {
-      ProcessStripe(data.Slice(offset, 32));
+      this.ProcessStripe(data.Slice(offset, 32));
       offset += 32;
       this._hasProcessedStripe = true;
     }
 
     // Store remaining bytes
-    if (offset < data.Length) {
-      data.Slice(offset).CopyTo(this._buffer);
-      this._bufferUsed = data.Length - offset;
-    }
+    if (offset >= data.Length)
+      return;
+
+    data[offset..].CopyTo(this._buffer);
+    this._bufferUsed = data.Length - offset;
   }
 
   /// <summary>
@@ -124,21 +125,21 @@ public sealed class XxHash64 {
   }
 
   private static ulong ComputeLarge(ReadOnlySpan<byte> data, ulong seed) {
-    ulong v1 = seed + Prime1 + Prime2;
-    ulong v2 = seed + Prime2;
-    ulong v3 = seed;
-    ulong v4 = seed - Prime1;
+    var v1 = seed + Prime1 + Prime2;
+    var v2 = seed + Prime2;
+    var v3 = seed;
+    var v4 = seed - Prime1;
 
-    int offset = 0;
+    var offset = 0;
     while (offset + 32 <= data.Length) {
-      v1 = Round(v1, BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(offset)));
-      v2 = Round(v2, BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(offset + 8)));
-      v3 = Round(v3, BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(offset + 16)));
-      v4 = Round(v4, BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(offset + 24)));
+      v1 = Round(v1, BinaryPrimitives.ReadUInt64LittleEndian(data[offset..]));
+      v2 = Round(v2, BinaryPrimitives.ReadUInt64LittleEndian(data[(offset + 8)..]));
+      v3 = Round(v3, BinaryPrimitives.ReadUInt64LittleEndian(data[(offset + 16)..]));
+      v4 = Round(v4, BinaryPrimitives.ReadUInt64LittleEndian(data[(offset + 24)..]));
       offset += 32;
     }
 
-    ulong hash = BitOperations.RotateLeft(v1, 1) + BitOperations.RotateLeft(v2, 7) + BitOperations.RotateLeft(v3, 12) + BitOperations.RotateLeft(v4, 18);
+    var hash = BitOperations.RotateLeft(v1, 1) + BitOperations.RotateLeft(v2, 7) + BitOperations.RotateLeft(v3, 12) + BitOperations.RotateLeft(v4, 18);
 
     hash = MergeAccumulator(hash, v1);
     hash = MergeAccumulator(hash, v2);
@@ -147,26 +148,26 @@ public sealed class XxHash64 {
 
     hash += (ulong)data.Length;
 
-    return FinalizeTail(hash, data.Slice(offset));
+    return FinalizeTail(hash, data[offset..]);
   }
 
   private static ulong ComputeSmall(ReadOnlySpan<byte> data, ulong seed) {
-    ulong hash = seed + Prime5 + (ulong)data.Length;
+    var hash = seed + Prime5 + (ulong)data.Length;
     return FinalizeTail(hash, data);
   }
 
   private static ulong FinalizeTail(ulong hash, ReadOnlySpan<byte> remaining) {
-    int offset = 0;
+    var offset = 0;
 
     while (offset + 8 <= remaining.Length) {
-      ulong k1 = Round(0, BinaryPrimitives.ReadUInt64LittleEndian(remaining.Slice(offset)));
+      var k1 = Round(0, BinaryPrimitives.ReadUInt64LittleEndian(remaining[offset..]));
       hash ^= k1;
       hash = BitOperations.RotateLeft(hash, 27) * Prime1 + Prime4;
       offset += 8;
     }
 
     if (offset + 4 <= remaining.Length) {
-      ulong k1 = BinaryPrimitives.ReadUInt32LittleEndian(remaining.Slice(offset));
+      ulong k1 = BinaryPrimitives.ReadUInt32LittleEndian(remaining[offset..]);
       hash ^= k1 * Prime1;
       hash = BitOperations.RotateLeft(hash, 23) * Prime2 + Prime3;
       offset += 4;
@@ -183,9 +184,9 @@ public sealed class XxHash64 {
 
   private void ProcessStripe(ReadOnlySpan<byte> stripe) {
     this._v1 = Round(this._v1, BinaryPrimitives.ReadUInt64LittleEndian(stripe));
-    this._v2 = Round(this._v2, BinaryPrimitives.ReadUInt64LittleEndian(stripe.Slice(8)));
-    this._v3 = Round(this._v3, BinaryPrimitives.ReadUInt64LittleEndian(stripe.Slice(16)));
-    this._v4 = Round(this._v4, BinaryPrimitives.ReadUInt64LittleEndian(stripe.Slice(24)));
+    this._v2 = Round(this._v2, BinaryPrimitives.ReadUInt64LittleEndian(stripe[8..]));
+    this._v3 = Round(this._v3, BinaryPrimitives.ReadUInt64LittleEndian(stripe[16..]));
+    this._v4 = Round(this._v4, BinaryPrimitives.ReadUInt64LittleEndian(stripe[24..]));
   }
 
   private ulong FinalizeHash() {

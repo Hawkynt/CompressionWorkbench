@@ -7,7 +7,7 @@ namespace Compression.Core.Deflate;
 /// <param name="Distance">0 for literals, 1–32768 for back-references.</param>
 internal readonly record struct LzSymbol(ushort LitLen, ushort Distance) {
   /// <summary>Returns <c>true</c> if this symbol is a literal byte.</summary>
-  public bool IsLiteral => Distance == 0;
+  public bool IsLiteral => this.Distance == 0;
 
   /// <summary>Creates a literal symbol.</summary>
   public static LzSymbol Literal(byte value) => new(value, 0);

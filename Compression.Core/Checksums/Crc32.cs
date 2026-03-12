@@ -37,15 +37,15 @@ public sealed class Crc32 : IChecksum {
 
   /// <inheritdoc />
   public void Update(ReadOnlySpan<byte> data) {
-    uint crc = this._crc;
+    var crc = this._crc;
     var t0 = this._tables[0];
     var t1 = this._tables[1];
     var t2 = this._tables[2];
     var t3 = this._tables[3];
-    int i = 0;
+    var i = 0;
 
     // Slicing-by-4: process 4 bytes per iteration
-    int end4 = data.Length - 3;
+    var end4 = data.Length - 3;
     while (i < end4) {
       crc ^= (uint)(data[i] | (data[i + 1] << 8) | (data[i + 2] << 16) | (data[i + 3] << 24));
       crc = t3[crc & 0xFF] ^ t2[(crc >> 8) & 0xFF] ^ t1[(crc >> 16) & 0xFF] ^ t0[(crc >> 24) & 0xFF];

@@ -55,13 +55,13 @@ public sealed class LzwDecoder {
     var reader = new BitReader(this._input, this._bitOrder);
     var output = new MemoryStream();
 
-    int clearCode = 1 << (this._minBits - 1);
-    int stopCode = this._useStopCode ? clearCode + (this._useClearCode ? 1 : 0) : -1;
-    int firstUsableCode = clearCode + (this._useClearCode ? 1 : 0) + (this._useStopCode ? 1 : 0);
+    var clearCode = 1 << (this._minBits - 1);
+    var stopCode = this._useStopCode ? clearCode + (this._useClearCode ? 1 : 0) : -1;
+    var firstUsableCode = clearCode + (this._useClearCode ? 1 : 0) + (this._useStopCode ? 1 : 0);
 
-    int currentBits = this._minBits;
-    int nextCode = firstUsableCode;
-    int maxCode = 1 << this._maxBits;
+    var currentBits = this._minBits;
+    var nextCode = firstUsableCode;
+    var maxCode = 1 << this._maxBits;
 
     // Dictionary: index -> byte sequence.
     var dictionary = new List<byte[]>();
@@ -128,19 +128,19 @@ public sealed class LzwDecoder {
     return output.ToArray();
   }
 
-  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  [DoesNotReturn][StackTraceHidden][MethodImpl(MethodImplOptions.NoInlining)]
   private static void ThrowInvalidCode(int code, int nextCode, int dictSize) =>
     throw new InvalidDataException(
       $"Invalid LZW code {code} encountered (nextCode={nextCode}, dictSize={dictSize}).");
 
   private static void InitializeDictionary(List<byte[]> dictionary, int clearCode, bool useClearCode, bool useStopCode) {
-    for (int i = 0; i < clearCode; ++i)
+    for (var i = 0; i < clearCode; ++i)
       dictionary.Add([(byte)i]);
 
     if (useClearCode)
-      dictionary.Add(Array.Empty<byte>()); // clear code placeholder
+      dictionary.Add([]); // clear code placeholder
 
     if (useStopCode)
-      dictionary.Add(Array.Empty<byte>()); // stop code placeholder
+      dictionary.Add([]); // stop code placeholder
   }
 }

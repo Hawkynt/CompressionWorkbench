@@ -7,7 +7,6 @@ namespace Compression.Core.DataStructures;
 public sealed class SlidingWindow {
   private readonly byte[] _buffer;
   private int _position;
-  private int _count;
 
   /// <summary>
   /// Initializes a new <see cref="SlidingWindow"/> with the specified capacity.
@@ -26,7 +25,7 @@ public sealed class SlidingWindow {
   /// <summary>
   /// Gets the number of bytes currently stored in the window.
   /// </summary>
-  public int Count => this._count;
+  public int Count { get; private set; }
 
   /// <summary>
   /// Writes a single byte into the window.
@@ -35,8 +34,8 @@ public sealed class SlidingWindow {
   public void WriteByte(byte value) {
     this._buffer[this._position] = value;
     this._position = (this._position + 1) % this._buffer.Length;
-    if (this._count < this._buffer.Length)
-      ++this._count;
+    if (this.Count < this._buffer.Length)
+      ++this.Count;
   }
 
   /// <summary>
@@ -50,46 +49,46 @@ public sealed class SlidingWindow {
   /// <exception cref="ArgumentOutOfRangeException">Distance exceeds available data or is &lt; 1.</exception>
   public void CopyFromWindow(int distance, int length, Span<byte> output) {
     ArgumentOutOfRangeException.ThrowIfLessThan(distance, 1);
-    ArgumentOutOfRangeException.ThrowIfGreaterThan(distance, this._count);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(distance, this.Count);
 
-    int winSize = this._buffer.Length;
-    int srcPos = ((this._position - distance) % winSize + winSize) % winSize;
+    var winSize = this._buffer.Length;
+    var srcPos = ((this._position - distance) % winSize + winSize) % winSize;
 
     if (distance >= length) {
       // Non-overlapping: source region doesn't overlap with what we're writing
-      int contiguous = winSize - srcPos;
+      var contiguous = winSize - srcPos;
       if (contiguous >= length) {
         // Single contiguous copy from buffer
         this._buffer.AsSpan(srcPos, length).CopyTo(output);
       } else {
         // Wraps around the circular buffer
         this._buffer.AsSpan(srcPos, contiguous).CopyTo(output);
-        this._buffer.AsSpan(0, length - contiguous).CopyTo(output.Slice(contiguous));
+        this._buffer.AsSpan(0, length - contiguous).CopyTo(output[contiguous..]);
       }
 
       // Write all copied bytes into the window
-      WriteSpan(output.Slice(0, length));
     } else {
       // Overlapping: distance < length — build the repeat pattern then bulk-write
       // First, copy 'distance' bytes (the base pattern)
-      int copied = 0;
+      var copied = 0;
       while (copied < distance) {
-        int toCopy = Math.Min(distance - copied, winSize - srcPos);
-        this._buffer.AsSpan(srcPos, toCopy).CopyTo(output.Slice(copied));
+        var toCopy = Math.Min(distance - copied, winSize - srcPos);
+        this._buffer.AsSpan(srcPos, toCopy).CopyTo(output[copied..]);
         copied += toCopy;
         srcPos = (srcPos + toCopy) % winSize;
       }
 
       // Now double the pattern repeatedly until filled
       while (copied < length) {
-        int toCopy = Math.Min(copied, length - copied);
-        output.Slice(0, toCopy).CopyTo(output.Slice(copied));
+        var toCopy = Math.Min(copied, length - copied);
+        output[..toCopy].CopyTo(output[copied..]);
         copied += toCopy;
       }
 
       // Write into window
-      WriteSpan(output.Slice(0, length));
     }
+
+    this.WriteSpan(output[..length]);
   }
 
   /// <summary>
@@ -97,16 +96,16 @@ public sealed class SlidingWindow {
   /// </summary>
   /// <param name="data">The bytes to write.</param>
   public void WriteBytes(ReadOnlySpan<byte> data) {
-    int winSize = this._buffer.Length;
-    int remaining = data.Length;
-    int offset = 0;
+    var winSize = this._buffer.Length;
+    var remaining = data.Length;
+    var offset = 0;
 
     while (remaining > 0) {
-      int space = winSize - this._position;
-      int toCopy = Math.Min(remaining, space);
+      var space = winSize - this._position;
+      var toCopy = Math.Min(remaining, space);
       data.Slice(offset, toCopy).CopyTo(this._buffer.AsSpan(this._position, toCopy));
       this._position = (this._position + toCopy) % winSize;
-      this._count = Math.Min(this._count + toCopy, winSize);
+      this.Count = Math.Min(this.Count + toCopy, winSize);
       offset += toCopy;
       remaining -= toCopy;
     }
@@ -119,23 +118,23 @@ public sealed class SlidingWindow {
   /// <returns>The byte at that distance.</returns>
   public byte GetByte(int distance) {
     ArgumentOutOfRangeException.ThrowIfLessThan(distance, 1);
-    ArgumentOutOfRangeException.ThrowIfGreaterThan(distance, this._count);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(distance, this.Count);
 
-    int index = ((this._position - distance) % this._buffer.Length + this._buffer.Length) % this._buffer.Length;
+    var index = ((this._position - distance) % this._buffer.Length + this._buffer.Length) % this._buffer.Length;
     return this._buffer[index];
   }
 
   private void WriteSpan(Span<byte> data) {
-    int winSize = this._buffer.Length;
-    int remaining = data.Length;
-    int offset = 0;
+    var winSize = this._buffer.Length;
+    var remaining = data.Length;
+    var offset = 0;
 
     while (remaining > 0) {
-      int space = winSize - this._position;
-      int toCopy = Math.Min(remaining, space);
+      var space = winSize - this._position;
+      var toCopy = Math.Min(remaining, space);
       data.Slice(offset, toCopy).CopyTo(this._buffer.AsSpan(this._position, toCopy));
       this._position = (this._position + toCopy) % winSize;
-      this._count = Math.Min(this._count + toCopy, winSize);
+      this.Count = Math.Min(this.Count + toCopy, winSize);
       offset += toCopy;
       remaining -= toCopy;
     }

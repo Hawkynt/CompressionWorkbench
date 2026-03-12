@@ -18,7 +18,7 @@ public sealed class MinHeap<T> where T : IComparable<T> {
   /// <param name="item">The item to insert.</param>
   public void Insert(T item) {
     this._items.Add(item);
-    SiftUp(this._items.Count - 1);
+    this.SiftUp(this._items.Count - 1);
   }
 
   /// <summary>
@@ -30,13 +30,13 @@ public sealed class MinHeap<T> where T : IComparable<T> {
     if (this._items.Count == 0)
       throw new InvalidOperationException("Heap is empty.");
 
-    T min = this._items[0];
-    int last = this._items.Count - 1;
+    var min = this._items[0];
+    var last = this._items.Count - 1;
     this._items[0] = this._items[last];
     this._items.RemoveAt(last);
 
     if (this._items.Count > 0)
-      SiftDown(0);
+      this.SiftDown(0);
 
     return min;
   }
@@ -46,31 +46,25 @@ public sealed class MinHeap<T> where T : IComparable<T> {
   /// </summary>
   /// <returns>The minimum element.</returns>
   /// <exception cref="InvalidOperationException">The heap is empty.</exception>
-  public T Peek() {
-    if (this._items.Count == 0)
-      throw new InvalidOperationException("Heap is empty.");
-
-    return this._items[0];
-  }
+  public T Peek() => this._items.Count == 0 ? throw new InvalidOperationException("Heap is empty.") : this._items[0];
 
   private void SiftUp(int index) {
     while (index > 0) {
-      int parent = (index - 1) / 2;
+      var parent = (index - 1) / 2;
       if (this._items[index].CompareTo(this._items[parent]) < 0) {
         (this._items[index], this._items[parent]) = (this._items[parent], this._items[index]);
         index = parent;
-      }
-      else
+      } else
         break;
     }
   }
 
   private void SiftDown(int index) {
-    int count = this._items.Count;
+    var count = this._items.Count;
     while (true) {
-      int left = 2 * index + 1;
-      int right = 2 * index + 2;
-      int smallest = index;
+      var left = 2 * index + 1;
+      var right = 2 * index + 2;
+      var smallest = index;
 
       if (left < count && this._items[left].CompareTo(this._items[smallest]) < 0)
         smallest = left;
@@ -80,8 +74,7 @@ public sealed class MinHeap<T> where T : IComparable<T> {
       if (smallest != index) {
         (this._items[index], this._items[smallest]) = (this._items[smallest], this._items[index]);
         index = smallest;
-      }
-      else
+      } else
         break;
     }
   }
