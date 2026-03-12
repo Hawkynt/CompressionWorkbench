@@ -79,10 +79,10 @@ public static class MoveToFrontTransform {
         indices.CopyTo(alphabet.AsSpan(i));
         indices += increment;
       }
-    } else {
+    } else
       for (var i = 0; i < 256; ++i)
         alphabet[i] = (byte)i;
-    }
+
     return alphabet;
   }
 

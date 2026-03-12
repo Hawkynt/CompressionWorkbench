@@ -6,9 +6,7 @@ namespace Compression.Core.Streams;
 /// Subclasses implement the actual compression/decompression logic.
 /// </summary>
 public abstract class CompressionStream : Stream {
-  private readonly Stream _innerStream;
-  private readonly CompressionStreamMode _mode;
-  private readonly bool _leaveOpen;
+    private readonly bool _leaveOpen;
   private bool _disposed;
 
   /// <summary>
@@ -18,26 +16,26 @@ public abstract class CompressionStream : Stream {
   /// <param name="mode">Whether this stream compresses or decompresses.</param>
   /// <param name="leaveOpen">If <c>true</c>, the underlying stream is not closed when this stream is disposed.</param>
   protected CompressionStream(Stream stream, CompressionStreamMode mode, bool leaveOpen = false) {
-    this._innerStream = stream ?? throw new ArgumentNullException(nameof(stream));
-    this._mode = mode;
+    this.InnerStream = stream ?? throw new ArgumentNullException(nameof(stream));
+    this.Mode = mode;
     this._leaveOpen = leaveOpen;
   }
 
   /// <summary>
   /// Gets the underlying stream.
   /// </summary>
-  protected Stream InnerStream => _innerStream;
+  protected Stream InnerStream { get; }
 
   /// <summary>
   /// Gets the compression mode.
   /// </summary>
-  public CompressionStreamMode Mode => this._mode;
+  public CompressionStreamMode Mode { get; }
 
   /// <inheritdoc />
-  public override bool CanRead => this._mode == CompressionStreamMode.Decompress;
+  public override bool CanRead => this.Mode == CompressionStreamMode.Decompress;
 
   /// <inheritdoc />
-  public override bool CanWrite => this._mode == CompressionStreamMode.Compress;
+  public override bool CanWrite => this.Mode == CompressionStreamMode.Compress;
 
   /// <inheritdoc />
   public override bool CanSeek => false;
@@ -55,26 +53,27 @@ public abstract class CompressionStream : Stream {
   public override int Read(byte[] buffer, int offset, int count) {
     ObjectDisposedException.ThrowIf(this._disposed, this);
 
-    if (this._mode != CompressionStreamMode.Decompress)
-      throw new InvalidOperationException("Cannot read from a compression stream in Compress mode.");
+    return this.Mode != CompressionStreamMode.Decompress 
+      ? throw new InvalidOperationException("Cannot read from a compression stream in Compress mode.") 
+      : this.DecompressBlock(buffer, offset, count)
+      ;
 
-    return DecompressBlock(buffer, offset, count);
   }
 
   /// <inheritdoc />
   public override void Write(byte[] buffer, int offset, int count) {
     ObjectDisposedException.ThrowIf(this._disposed, this);
 
-    if (this._mode != CompressionStreamMode.Compress)
+    if (this.Mode != CompressionStreamMode.Compress)
       throw new InvalidOperationException("Cannot write to a compression stream in Decompress mode.");
 
-    CompressBlock(buffer, offset, count);
+    this.CompressBlock(buffer, offset, count);
   }
 
   /// <inheritdoc />
   public override void Flush() {
     ObjectDisposedException.ThrowIf(this._disposed, this);
-    this._innerStream.Flush();
+    this.InnerStream.Flush();
   }
 
   /// <inheritdoc />
@@ -111,11 +110,11 @@ public abstract class CompressionStream : Stream {
   protected override void Dispose(bool disposing) {
     if (!this._disposed) {
       if (disposing) {
-        if (this._mode == CompressionStreamMode.Compress)
-          FinishCompression();
+        if (this.Mode == CompressionStreamMode.Compress)
+          this.FinishCompression();
 
         if (!this._leaveOpen)
-          this._innerStream.Dispose();
+          this.InnerStream.Dispose();
       }
 
       this._disposed = true;
