@@ -30,7 +30,7 @@ public sealed class HuffmanEncoder<TOrder> where TOrder : struct, IBitOrder {
   public void EncodeSymbol(int symbol) {
     var (code, length) = this._table.GetCode(symbol);
     // Write MSB-first: the canonical code must be written from high bit to low bit
-    for (int i = length - 1; i >= 0; --i)
+    for (var i = length - 1; i >= 0; --i)
       this._bitWriter.WriteBit((int)(code >> i) & 1);
   }
 
@@ -39,8 +39,8 @@ public sealed class HuffmanEncoder<TOrder> where TOrder : struct, IBitOrder {
   /// </summary>
   /// <param name="symbols">The symbols to encode.</param>
   public void EncodeSymbols(ReadOnlySpan<int> symbols) {
-    for (int i = 0; i < symbols.Length; ++i)
-      EncodeSymbol(symbols[i]);
+    foreach (var symbol in symbols)
+      this.EncodeSymbol(symbol);
   }
 
   /// <summary>

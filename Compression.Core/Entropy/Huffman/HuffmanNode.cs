@@ -27,7 +27,7 @@ public sealed class HuffmanNode : IComparable<HuffmanNode> {
   /// <summary>
   /// Gets whether this is a leaf node.
   /// </summary>
-  public bool IsLeaf => Left is null && Right is null;
+  public bool IsLeaf => this.Left is null && this.Right is null;
 
   /// <summary>
   /// Creates a leaf node with the specified symbol and frequency.
@@ -35,8 +35,8 @@ public sealed class HuffmanNode : IComparable<HuffmanNode> {
   /// <param name="symbol">The symbol value.</param>
   /// <param name="frequency">The frequency of this symbol.</param>
   public HuffmanNode(int symbol, long frequency) {
-    Symbol = symbol;
-    Frequency = frequency;
+    this.Symbol = symbol;
+    this.Frequency = frequency;
   }
 
   /// <summary>
@@ -45,10 +45,10 @@ public sealed class HuffmanNode : IComparable<HuffmanNode> {
   /// <param name="left">The left child (bit 0).</param>
   /// <param name="right">The right child (bit 1).</param>
   public HuffmanNode(HuffmanNode left, HuffmanNode right) {
-    Symbol = -1;
-    Left = left;
-    Right = right;
-    Frequency = left.Frequency + right.Frequency;
+    this.Symbol = -1;
+    this.Left = left;
+    this.Right = right;
+    this.Frequency = left.Frequency + right.Frequency;
   }
 
   /// <summary>
@@ -58,11 +58,9 @@ public sealed class HuffmanNode : IComparable<HuffmanNode> {
   /// <returns>A negative, zero, or positive value.</returns>
   public int CompareTo(HuffmanNode? other) {
     if (other is null) return 1;
-    int cmp = Frequency.CompareTo(other.Frequency);
-    if (cmp != 0)
-      return cmp;
+    var cmp = this.Frequency.CompareTo(other.Frequency);
 
     // Tie-break: leaves before internal nodes, then by symbol
-    return Symbol.CompareTo(other.Symbol);
+    return cmp != 0 ? cmp : this.Symbol.CompareTo(other.Symbol);
   }
 }

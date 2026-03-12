@@ -46,7 +46,7 @@ public class BitReaderTests {
 
     // Read 4 bits LSB first: bits 0,1,0,0 (from 0xD2 = 11010010)
     // In LSB-first, we read bit0=0, bit1=1, bit2=0, bit3=0 → value = 0b0010 = 2
-    uint value = reader.ReadBits(4);
+    var value = reader.ReadBits(4);
     Assert.That(value, Is.EqualTo(2u)); // lower nibble of 0xD2
 
     // Read next 4 bits: bit4=1, bit5=1, bit6=0, bit7=1 → value = 0b1011 = 0xD = 13
@@ -61,7 +61,7 @@ public class BitReaderTests {
     var reader = new BitReader(stream, BitOrder.MsbFirst);
 
     // Read 4 bits MSB first: 1,1,0,1 → value = 0b1101 = 13
-    uint value = reader.ReadBits(4);
+    var value = reader.ReadBits(4);
     Assert.That(value, Is.EqualTo(13u));
 
     // Read next 4 bits: 0,0,1,0 → value = 0b0010 = 2
@@ -83,7 +83,7 @@ public class BitReaderTests {
     var reader = new BitReader(stream, BitOrder.LsbFirst);
 
     reader.ReadBits(4); // read 4 ones = 0xF
-    uint value = reader.ReadBits(8); // read across boundary: 4 ones + 4 zeros = 0x0F
+    var value = reader.ReadBits(8); // read across boundary: 4 ones + 4 zeros = 0x0F
     Assert.That(value, Is.EqualTo(0x0Fu));
   }
 
@@ -96,7 +96,7 @@ public class BitReaderTests {
     reader.AlignToByte(); // Discard remaining 5 bits
 
     // Next read should come from the second byte
-    uint value = reader.ReadBits(8);
+    var value = reader.ReadBits(8);
     Assert.That(value, Is.EqualTo(0xABu));
   }
 

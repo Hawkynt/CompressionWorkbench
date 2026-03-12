@@ -21,10 +21,10 @@ public sealed class FseTable {
   public int[] NewStateBase { get; }
 
   private FseTable(int tableLog, int tableSize) {
-    TableLog = tableLog;
-    NumBits = new int[tableSize];
-    Symbol = new byte[tableSize];
-    NewStateBase = new int[tableSize];
+    this.TableLog = tableLog;
+    this.NumBits = new int[tableSize];
+    this.Symbol = new byte[tableSize];
+    this.NewStateBase = new int[tableSize];
   }
 
   /// <summary>
@@ -40,16 +40,16 @@ public sealed class FseTable {
   /// <returns>A fully constructed FSE decoding table.</returns>
   /// <exception cref="ArgumentException">The parameters are invalid.</exception>
   public static FseTable Build(short[] normalizedCounts, int maxSymbol, int tableLog) {
-    int tableSize = 1 << tableLog;
+    var tableSize = 1 << tableLog;
     var table = new FseTable(tableLog, tableSize);
 
     // Step 1: Symbol spreading
     // Symbols with count == -1 get placed at high positions first
-    int highThreshold = tableSize - 1;
+    var highThreshold = tableSize - 1;
 
     // Compute the effective counts (for spreading) and place -1 symbols at the end
     var effectiveCounts = new int[maxSymbol + 1];
-    for (int symbol = 0; symbol <= maxSymbol; ++symbol) {
+    for (var symbol = 0; symbol <= maxSymbol; ++symbol) {
       if (normalizedCounts[symbol] == -1) {
         table.Symbol[highThreshold--] = (byte)symbol;
         effectiveCounts[symbol] = 1;
@@ -59,22 +59,22 @@ public sealed class FseTable {
 
     // Spread remaining symbols using step = (tableSize >> 1) + (tableSize >> 3) + 3
     // This step is coprime with tableSize for all power-of-2 sizes >= 32
-    int step = (tableSize >> 1) + (tableSize >> 3) + 3;
-    int mask = tableSize - 1;
+    var step = (tableSize >> 1) + (tableSize >> 3) + 3;
+    var mask = tableSize - 1;
 
     // For very small tables where step might be a multiple of tableSize,
     // fall back to a coprime step
     if ((step & mask) == 0)
       step = (tableSize >> 1) + 1;
 
-    int pos = 0;
+    var pos = 0;
 
-    for (int symbol = 0; symbol <= maxSymbol; ++symbol) {
+    for (var symbol = 0; symbol <= maxSymbol; ++symbol) {
       int count = normalizedCounts[symbol];
       if (count <= 0)
         continue; // skip -1 (already placed) and 0 (absent)
 
-      for (int i = 0; i < count; ++i) {
+      for (var i = 0; i < count; ++i) {
         table.Symbol[pos] = (byte)symbol;
         // Advance to next position, skipping high-threshold positions
         do {
@@ -87,13 +87,13 @@ public sealed class FseTable {
     // Step 2: Build decoding entries
     // symbolNext[s] starts at the effective count for that symbol
     var symbolNext = new int[maxSymbol + 1];
-    for (int symbol = 0; symbol <= maxSymbol; ++symbol)
+    for (var symbol = 0; symbol <= maxSymbol; ++symbol)
       symbolNext[symbol] = effectiveCounts[symbol];
 
-    for (int state = 0; state < tableSize; ++state) {
-      byte symbol = table.Symbol[state];
-      int nextState = symbolNext[symbol]++;
-      int numBits = tableLog - BitOperations.Log2((uint)nextState);
+    for (var state = 0; state < tableSize; ++state) {
+      var symbol = table.Symbol[state];
+      var nextState = symbolNext[symbol]++;
+      var numBits = tableLog - BitOperations.Log2((uint)nextState);
       table.NumBits[state] = numBits;
       table.NewStateBase[state] = (nextState << numBits) - tableSize;
     }

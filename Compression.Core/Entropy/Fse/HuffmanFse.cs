@@ -25,53 +25,53 @@ public static class HuffmanFse {
       return [];
 
     // Build weights from data frequencies
-    int[] weights = BuildWeights(data);
+    var weights = BuildWeights(data);
 
     // Find actual max symbol with non-zero weight
-    int actualMax = 0;
-    for (int i = maxSymbol; i >= 0; --i)
+    var actualMax = 0;
+    for (var i = maxSymbol; i >= 0; --i)
       if (weights[i] > 0) {
         actualMax = i;
         break;
       }
 
     // Build canonical Huffman codes from bit lengths
-    int maxBitLen = 0;
-    for (int i = 0; i <= actualMax; ++i)
+    var maxBitLen = 0;
+    for (var i = 0; i <= actualMax; ++i)
       if (weights[i] > maxBitLen)
         maxBitLen = weights[i];
 
     // Assign canonical codes (MSB-first)
     var nextCode = new uint[maxBitLen + 1];
-    Huffman.CanonicalCodeAssigner.ComputeNextCodes(weights.AsSpan(0, actualMax + 1), maxBitLen, nextCode);
+    CanonicalCodeAssigner.ComputeNextCodes(weights.AsSpan(0, actualMax + 1), maxBitLen, nextCode);
 
     // Store both MSB-first code and bit-reversed code for encoding
     var reversedCodes = new uint[actualMax + 1];
     var codeLengths = new int[actualMax + 1];
-    for (int symbol = 0; symbol <= actualMax; ++symbol) {
-      int len = weights[symbol];
-      if (len > 0) {
-        uint msbCode = nextCode[len]++;
-        reversedCodes[symbol] = ReverseBits(msbCode, len);
-        codeLengths[symbol] = len;
-      }
+    for (var symbol = 0; symbol <= actualMax; ++symbol) {
+      var len = weights[symbol];
+      if (len <= 0)
+        continue;
+
+      var msbCode = nextCode[len]++;
+      reversedCodes[symbol] = ReverseBits(msbCode, len);
+      codeLengths[symbol] = len;
     }
 
     // Output buffer
     var output = new byte[data.Length + 256];
-    int pos = 0;
+    var pos = 0;
 
     // Write weight table
     pos += WriteWeights(output, pos, weights, actualMax);
 
     // Encode data using Huffman with bit-reversed codes (LSB-first in bitstream)
     ulong bitContainer = 0;
-    int bitCount = 0;
+    var bitCount = 0;
 
-    for (int i = 0; i < data.Length; ++i) {
-      byte symbol = data[i];
-      int len = codeLengths[symbol];
-      uint code = reversedCodes[symbol];
+    foreach (var symbol in data) {
+      var len = codeLengths[symbol];
+      var code = reversedCodes[symbol];
 
       bitContainer |= (ulong)code << bitCount;
       bitCount += len;
@@ -108,12 +108,12 @@ public static class HuffmanFse {
       return [];
 
     // Read weight table
-    int[] weights = ReadWeights(compressed, out int bytesRead);
+    var weights = ReadWeights(compressed, out var bytesRead);
 
     // Find max symbol and max bit length
-    int maxSymbol = 0;
-    int maxBitLen = 0;
-    for (int i = weights.Length - 1; i >= 0; --i) {
+    var maxSymbol = 0;
+    var maxBitLen = 0;
+    for (var i = weights.Length - 1; i >= 0; --i) {
       if (weights[i] > 0 && maxSymbol == 0)
         maxSymbol = i;
       if (weights[i] > maxBitLen)
@@ -122,41 +122,41 @@ public static class HuffmanFse {
 
     // Build canonical codes (MSB-first, same assignment as encoder)
     var nextCode = new uint[maxBitLen + 1];
-    Huffman.CanonicalCodeAssigner.ComputeNextCodes(weights.AsSpan(0, maxSymbol + 1), maxBitLen, nextCode);
+    CanonicalCodeAssigner.ComputeNextCodes(weights.AsSpan(0, maxSymbol + 1), maxBitLen, nextCode);
 
     // Build lookup table using bit-reversed codes (LSB-first, matching the bitstream)
-    int lookupSize = 1 << maxBitLen;
+    var lookupSize = 1 << maxBitLen;
     var lookupSymbol = new int[lookupSize];
     var lookupLen = new int[lookupSize];
-    Array.Fill(lookupSymbol, -1);
+    lookupSymbol.AsSpan().Fill(-1);
 
-    for (int symbol = 0; symbol <= maxSymbol; symbol++) {
-      int len = weights[symbol];
+    for (var symbol = 0; symbol <= maxSymbol; symbol++) {
+      var len = weights[symbol];
       if (len <= 0) continue;
 
-      uint msbCode = nextCode[len]++;
-      uint lsbCode = ReverseBits(msbCode, len);
+      var msbCode = nextCode[len]++;
+      var lsbCode = ReverseBits(msbCode, len);
 
       // Fill lookup: lsbCode is `len` bits. Pad with all combinations of
       // (maxBitLen - len) high bits to fill the lookup table.
-      int shift = maxBitLen - len;
-      int count = 1 << shift;
-      int start = (int)lsbCode;
-      for (int j = 0; j < count; ++j) {
-        int index = start | (j << len);
+      var shift = maxBitLen - len;
+      var count = 1 << shift;
+      var start = (int)lsbCode;
+      for (var j = 0; j < count; ++j) {
+        var index = start | (j << len);
         lookupSymbol[index] = symbol;
         lookupLen[index] = len;
       }
     }
 
     // Decode the bitstream
-    ReadOnlySpan<byte> bitData = compressed.Slice(bytesRead);
+    var bitData = compressed[bytesRead..];
     var output = new byte[decompressedSize];
-    int outputPos = 0;
+    var outputPos = 0;
 
-    int bytePos = 0;
+    var bytePos = 0;
     ulong bitBuf = 0;
-    int bitsAvailable = 0;
+    var bitsAvailable = 0;
 
     // Load initial bits
     while (bitsAvailable <= 56 && bytePos < bitData.Length) {
@@ -172,12 +172,12 @@ public static class HuffmanFse {
       }
 
       // Read maxBitLen bits and look up directly (codes are LSB-first in bitstream)
-      uint bits = (uint)(bitBuf & ((1UL << maxBitLen) - 1));
-      int sym = lookupSymbol[(int)bits];
+      var bits = (uint)(bitBuf & ((1UL << maxBitLen) - 1));
+      var sym = lookupSymbol[(int)bits];
       if (sym < 0)
         ThrowInvalidHuffmanCode();
 
-      int codeLen = lookupLen[(int)bits];
+      var codeLen = lookupLen[(int)bits];
       output[outputPos++] = (byte)sym;
 
       bitBuf >>= codeLen;
@@ -195,11 +195,11 @@ public static class HuffmanFse {
   /// <returns>An array of weights indexed by symbol value (0..255).</returns>
   public static int[] BuildWeights(ReadOnlySpan<byte> data) {
     var freq = new long[256];
-    for (int i = 0; i < data.Length; ++i)
-      ++freq[data[i]];
+    foreach (var value in data)
+      ++freq[value];
 
-    int symbolCount = 0;
-    for (int i = 0; i < 256; ++i)
+    var symbolCount = 0;
+    for (var i = 0; i < 256; ++i)
       if (freq[i] > 0)
         ++symbolCount;
 
@@ -209,7 +209,7 @@ public static class HuffmanFse {
     var root = HuffmanTree.BuildFromFrequencies(freq);
     var codeLengths = HuffmanTree.GetCodeLengths(root, 256);
 
-    HuffmanTree.LimitCodeLengths(codeLengths, MaxHuffmanBits);
+    HuffmanTree.LimitCodeLengths(codeLengths, HuffmanFse.MaxHuffmanBits);
 
     return codeLengths;
   }
@@ -224,12 +224,12 @@ public static class HuffmanFse {
   /// <param name="maxSymbol">The maximum symbol with non-zero weight.</param>
   /// <returns>The number of bytes written.</returns>
   public static int WriteWeights(byte[] output, int pos, int[] weights, int maxSymbol) {
-    int startPos = pos;
-    int numSymbols = maxSymbol + 1;
+    var startPos = pos;
+    var numSymbols = maxSymbol + 1;
 
     // Direct representation: header byte >= 128
     // headerByte = numSymbols + 127
-    int headerByte = numSymbols + 127;
+    var headerByte = numSymbols + 127;
     if (headerByte > 255) {
       headerByte = 255;
       numSymbols = 128;
@@ -238,9 +238,9 @@ public static class HuffmanFse {
     output[pos++] = (byte)headerByte;
 
     // Pack weights 4 bits each, 2 per byte
-    for (int i = 0; i < numSymbols; i += 2) {
-      int w0 = (i < weights.Length) ? weights[i] : 0;
-      int w1 = (i + 1 < numSymbols && i + 1 < weights.Length) ? weights[i + 1] : 0;
+    for (var i = 0; i < numSymbols; i += 2) {
+      var w0 = (i < weights.Length) ? weights[i] : 0;
+      var w1 = (i + 1 < numSymbols && i + 1 < weights.Length) ? weights[i + 1] : 0;
       output[pos++] = (byte)((w0 & 0x0F) | ((w1 & 0x0F) << 4));
     }
 
@@ -259,19 +259,19 @@ public static class HuffmanFse {
       throw new InvalidDataException("Huffman weight table too short.");
 
     int headerByte = input[0];
-    int pos = 1;
+    var pos = 1;
 
     if (headerByte >= 128) {
       // Direct representation
-      int numSymbols = headerByte - 127;
+      var numSymbols = headerByte - 127;
       var weights = new int[256];
-      int packedBytes = (numSymbols + 1) / 2;
+      var packedBytes = (numSymbols + 1) / 2;
 
       if (pos + packedBytes > input.Length)
         throw new InvalidDataException("Huffman weight table truncated.");
 
-      for (int i = 0; i < numSymbols; i += 2) {
-        byte packed = input[pos++];
+      for (var i = 0; i < numSymbols; i += 2) {
+        var packed = input[pos++];
         weights[i] = packed & 0x0F;
         if (i + 1 < numSymbols)
           weights[i + 1] = (packed >> 4) & 0x0F;
@@ -282,20 +282,20 @@ public static class HuffmanFse {
     }
     else {
       // FSE-compressed weights
-      int compressedSize = headerByte;
+      var compressedSize = headerByte;
       if (pos + compressedSize > input.Length)
         throw new InvalidDataException("FSE-compressed weight table truncated.");
 
-      ReadOnlySpan<byte> fseData = input.Slice(pos, compressedSize);
+      var fseData = input.Slice(pos, compressedSize);
       var (normalizedCounts, maxSym, tableLog, headerBytes) = FseDecoder.ReadNormalizedCounts(fseData);
 
       var decoder = new FseDecoder(normalizedCounts, maxSym, tableLog);
-      ReadOnlySpan<byte> weightStream = fseData.Slice(headerBytes);
+      var weightStream = fseData[headerBytes..];
 
-      byte[] decoded = decoder.Decode(weightStream, 255);
+      var decoded = decoder.Decode(weightStream, 255);
 
       var weights = new int[256];
-      for (int i = 0; i < decoded.Length && i < 256; ++i)
+      for (var i = 0; i < decoded.Length && i < 256; ++i)
         weights[i] = decoded[i];
 
       bytesRead = pos + compressedSize;
@@ -303,7 +303,7 @@ public static class HuffmanFse {
     }
   }
 
-  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  [DoesNotReturn][StackTraceHidden][MethodImpl(MethodImplOptions.NoInlining)]
   private static void ThrowInvalidHuffmanCode() =>
     throw new InvalidDataException("Invalid Huffman code in stream.");
 

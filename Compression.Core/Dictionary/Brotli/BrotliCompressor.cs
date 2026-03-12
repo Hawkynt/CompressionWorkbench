@@ -180,7 +180,7 @@ public static class BrotliCompressor {
       if (bestMatch.Length >= 4) {
         // Emit command: insert literals, then copy match
         var insertLen = pos - literalStart;
-        commands.Add(new LzCommand(insertLen, bestMatch.Length, bestMatch.Distance));
+        commands.Add(new(insertLen, bestMatch.Length, bestMatch.Distance));
         pos += bestMatch.Length;
         literalStart = pos;
       } else {
@@ -190,7 +190,7 @@ public static class BrotliCompressor {
 
     // Trailing literals
     if (literalStart < data.Length) {
-      commands.Add(new LzCommand(data.Length - literalStart, 0, 0));
+      commands.Add(new(data.Length - literalStart, 0, 0));
     }
 
     return commands;

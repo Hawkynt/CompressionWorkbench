@@ -69,7 +69,7 @@ public class MtfTests {
     byte[] encoded = MoveToFrontTransform.Encode(data);
 
     // First byte is the index of 'a', rest should be 0
-    int zeroCount = encoded.Count(b => b == 0);
+    var zeroCount = encoded.Count(b => b == 0);
     Assert.That(zeroCount, Is.EqualTo(99)); // All but first
   }
 

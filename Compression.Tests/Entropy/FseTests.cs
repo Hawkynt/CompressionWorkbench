@@ -9,7 +9,7 @@ public class FseTests {
     int[] counts = { 100, 50, 25, 25 };
     short[] normalized = FseEncoder.NormalizeCounts(counts, 3, 8); // tableLog=8, tableSize=256
 
-    int sum = 0;
+    var sum = 0;
     for (int i = 0; i <= 3; i++) {
       if (normalized[i] > 0) sum += normalized[i];
       else if (normalized[i] == -1) sum += 1;
@@ -59,7 +59,7 @@ public class FseTests {
 
     int[] counts = new int[256];
     foreach (byte b in data) counts[b]++;
-    int maxSym = 0;
+    var maxSym = 0;
 
     short[] normalized = FseEncoder.NormalizeCounts(counts, maxSym, 8);
     var encoder = new FseEncoder(normalized, maxSym, 8);
@@ -77,7 +77,7 @@ public class FseTests {
 
     int[] counts = new int[256];
     foreach (byte b in data) counts[b]++;
-    int maxSym = 1;
+    var maxSym = 1;
 
     short[] normalized = FseEncoder.NormalizeCounts(counts, maxSym, 6);
     var encoder = new FseEncoder(normalized, maxSym, 6);
@@ -100,7 +100,7 @@ public class FseTests {
 
     int[] counts = new int[256];
     foreach (byte b in data) counts[b]++;
-    int maxSym = 3;
+    var maxSym = 3;
 
     short[] normalized = FseEncoder.NormalizeCounts(counts, maxSym, 6);
     var encoder = new FseEncoder(normalized, maxSym, 6);
@@ -163,7 +163,7 @@ public class FseTests {
 
     int[] counts = new int[256];
     foreach (byte b in data) counts[b]++;
-    int maxSym = 0;
+    var maxSym = 0;
     for (int i = 255; i >= 0; i--) {
       if (counts[i] > 0) { maxSym = i; break; }
     }
@@ -263,7 +263,7 @@ public class FseTests {
     byte[] data = System.Text.Encoding.UTF8.GetBytes("hello world hello hello");
     int[] weights = HuffmanFse.BuildWeights(data);
 
-    int maxSymbol = 0;
+    var maxSymbol = 0;
     for (int i = 255; i >= 0; i--) {
       if (weights[i] > 0) { maxSymbol = i; break; }
     }

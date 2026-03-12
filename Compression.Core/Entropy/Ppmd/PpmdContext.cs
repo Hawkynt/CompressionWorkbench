@@ -23,15 +23,7 @@ internal sealed class PpmdContext {
   /// <summary>
   /// Gets the total frequency across all symbols plus the escape frequency.
   /// </summary>
-  public int TotalFreq {
-    get {
-      int sum = EscapeFreq;
-      foreach (int f in this._frequencies.Values)
-        sum += f;
-
-      return sum;
-    }
-  }
+  public int TotalFreq => this.EscapeFreq + this._frequencies.Values.Sum();
 
   /// <summary>
   /// Gets the number of distinct symbols observed in this context.
@@ -77,15 +69,15 @@ internal sealed class PpmdContext {
     var toRemove = new List<byte>();
     var keys = new List<byte>(this._frequencies.Keys);
 
-    foreach (byte sym in keys) {
-      int newFreq = (this._frequencies[sym] + 1) / 2;
+    foreach (var sym in keys) {
+      var newFreq = (this._frequencies[sym] + 1) / 2;
       if (newFreq <= 0)
         toRemove.Add(sym);
       else
         this._frequencies[sym] = newFreq;
     }
 
-    foreach (byte sym in toRemove)
+    foreach (var sym in toRemove)
       this._frequencies.Remove(sym);
   }
 
@@ -98,25 +90,25 @@ internal sealed class PpmdContext {
   /// <returns>A list of tuples: (symbol or -1 for escape, cumulative frequency, frequency).</returns>
   public List<(int Symbol, uint CumFreq, uint Freq)> BuildCodingTable(HashSet<byte>? excludedSymbols = null) {
     var result = new List<(int Symbol, uint CumFreq, uint Freq)>();
-    uint cumFreq = 0;
-    int includedCount = 0;
+    var cumFreq = 0u;
+    var includedCount = 0;
 
     // Sort symbols for deterministic ordering
     var sortedSymbols = new List<byte>(this._frequencies.Keys);
     sortedSymbols.Sort();
 
-    foreach (byte sym in sortedSymbols) {
+    foreach (var sym in sortedSymbols) {
       if (excludedSymbols != null && excludedSymbols.Contains(sym))
         continue;
 
-      uint frequency = (uint)this._frequencies[sym];
+      var frequency = (uint)this._frequencies[sym];
       result.Add((sym, cumFreq, frequency));
       cumFreq += frequency;
       ++includedCount;
     }
 
     // Escape entry: Method D escape = number of included distinct symbols (min 1)
-    uint escapeFreq = (uint)Math.Max(1, includedCount);
+    var escapeFreq = (uint)Math.Max(1, includedCount);
     result.Add((-1, cumFreq, escapeFreq));
     return result;
   }

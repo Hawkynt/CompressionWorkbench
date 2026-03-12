@@ -25,7 +25,7 @@ public sealed class LzhDecoder {
   /// <param name="input">The stream containing compressed data.</param>
   /// <param name="positionBits">Number of position bits (13 for lh5, 15 for lh6, 16 for lh7).</param>
   public LzhDecoder(Stream input, int positionBits = LzhConstants.Lh5PositionBits) {
-    this._bits = new BitBuffer<MsbBitOrder>(input);
+    this._bits = new(input);
     this._windowSize = 1 << positionBits;
   }
 

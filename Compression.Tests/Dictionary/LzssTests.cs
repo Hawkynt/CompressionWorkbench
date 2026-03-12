@@ -114,8 +114,8 @@ public class LzssTests {
   public void RoundTrip_CustomBitWidths() {
     byte[] input = Encoding.ASCII.GetBytes("AAAAABBBBBAAAAAABBBBB");
 
-    int distanceBits = 10;
-    int lengthBits = 6;
+    var distanceBits = 10;
+    var lengthBits = 6;
 
     var outputStream = new MemoryStream();
     var encoder = new LzssEncoder(outputStream, distanceBits, lengthBits);

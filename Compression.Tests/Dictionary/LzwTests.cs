@@ -256,7 +256,7 @@ public class LzwTests {
     var rng = new Random(99);
 
     // Fill with a mix of patterns and random data.
-    int pos = 0;
+    var pos = 0;
     while (pos < data.Length) {
       if (rng.Next(3) == 0 && pos + 100 <= data.Length) {
         // Write a repetitive pattern.
@@ -352,7 +352,7 @@ public class LzwTests {
     // Mixed patterns and random data.
     var data = new byte[8000];
     var rng = new Random(77);
-    int pos = 0;
+    var pos = 0;
     while (pos < data.Length) {
       if (rng.Next(3) == 0 && pos + 80 <= data.Length) {
         byte[] pattern = Encoding.ASCII.GetBytes("XYZXYZ");

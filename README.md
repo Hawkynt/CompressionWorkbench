@@ -545,6 +545,7 @@ The heart of the project. Every `FileFormat.*` project builds on these primitive
 - **[libxad](https://github.com/ashang/libxad)** — The eXternal Archive Decompressor, an Amiga-origin library supporting 50+ archive formats (ACE, ARC, ARJ, DMS, LZH/LZX, ZOO, and many more). A rich source of format documentation and ideas for exotic/legacy format support.
 - **[XADMaster / The Unarchiver](https://github.com/MacPaw/XADMaster)** — Modern Objective-C continuation of libxad, used by The Unarchiver on macOS
 - **[unar](https://github.com/ashang/unar)** - The Unarchiver unarchiving engine
+- **[libarchive](https://github.com/libarchive/libarchive)** - Multi-Format extractor
 - **[Wikipedia](https://en.wikipedia.org/wiki/List_of_archive_formats)** - A list of known formats
 - **[ArchiveTeam](http://justsolve.archiveteam.org/wiki/Compression)** - Another list of known formats
 - **[ArchiveTeam](http://justsolve.archiveteam.org/wiki/Archiving)** - A list of archivers

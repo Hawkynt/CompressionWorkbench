@@ -30,30 +30,30 @@ internal sealed class PpmdRangeEncoder {
   /// <param name="freq">Frequency of the symbol being encoded.</param>
   /// <param name="totalFreq">Total of all symbol frequencies.</param>
   public void Encode(uint lowCumFreq, uint freq, uint totalFreq) {
-    uint r = this._range / totalFreq;
+    var r = this._range / totalFreq;
     this._low += (ulong)r * lowCumFreq;
     this._range = r * freq;
-    Normalize();
+    this.Normalize();
   }
 
   /// <summary>
   /// Flushes remaining state to the output, completing the encoding.
   /// </summary>
   public void Finish() {
-    for (int i = 0; i < 5; ++i)
-      ShiftLow();
+    for (var i = 0; i < 5; ++i)
+      this.ShiftLow();
   }
 
   private void Normalize() {
-    while (this._range < Top) {
+    while (this._range < PpmdRangeEncoder.Top) {
       this._range <<= 8;
-      ShiftLow();
+      this.ShiftLow();
     }
   }
 
   private void ShiftLow() {
     if ((uint)this._low < 0xFF000000u || (this._low >> 32) != 0) {
-      byte temp = this._cache;
+      var temp = this._cache;
       do {
         this._output.WriteByte((byte)(temp + (byte)(this._low >> 32)));
         temp = 0xFF;
@@ -78,7 +78,6 @@ internal sealed class PpmdRangeDecoder {
   private readonly Stream _input;
   private uint _code;
   private uint _range;
-  private bool _finished;
 
   /// <summary>
   /// Initializes a new <see cref="PpmdRangeDecoder"/> reading from the specified stream.
@@ -90,12 +89,12 @@ internal sealed class PpmdRangeDecoder {
 
     // Read initial 5 bytes: first byte is the leading byte from the cache scheme,
     // next 4 bytes form the initial code value (same protocol as the LZMA range coder)
-    int leadByte = this._input.ReadByte();
+    var leadByte = this._input.ReadByte();
     if (leadByte < 0)
       leadByte = 0;
 
-    for (int i = 0; i < 4; ++i) {
-      int b = this._input.ReadByte();
+    for (var i = 0; i < 4; ++i) {
+      var b = this._input.ReadByte();
       if (b < 0)
         b = 0;
 
@@ -106,7 +105,7 @@ internal sealed class PpmdRangeDecoder {
   /// <summary>
   /// Gets whether the input stream is exhausted.
   /// </summary>
-  public bool IsFinished => this._finished;
+  public bool IsFinished { get; private set; }
 
   /// <summary>
   /// Gets the current cumulative frequency threshold for symbol lookup.
@@ -131,15 +130,15 @@ internal sealed class PpmdRangeDecoder {
     // Note: _range was already divided by totalFreq in GetThreshold
     this._code -= this._range * lowCumFreq;
     this._range *= freq;
-    Normalize();
+    this.Normalize();
   }
 
   private void Normalize() {
-    while (this._range < Top) {
+    while (this._range < PpmdRangeDecoder.Top) {
       this._range <<= 8;
-      int b = this._input.ReadByte();
+      var b = this._input.ReadByte();
       if (b < 0) {
-        this._finished = true;
+        this.IsFinished = true;
         b = 0;
       }
 

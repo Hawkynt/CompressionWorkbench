@@ -11,7 +11,6 @@ namespace Compression.Core.Entropy.Huffman;
 /// </summary>
 public sealed class CanonicalHuffman {
   private readonly (uint Code, int Length)[] _encodeTable;
-  private readonly int _maxCodeLength;
   private readonly int[] _decodeLookup;   // symbol lookup indexed by left-aligned code
   private readonly int[] _decodeLengths;  // code length lookup
 
@@ -22,27 +21,27 @@ public sealed class CanonicalHuffman {
   /// <summary>
   /// Gets the maximum symbol value in this table.
   /// </summary>
-  public int MaxSymbol => _encodeTable.Length;
+  public int MaxSymbol => this._encodeTable.Length;
 
   /// <summary>
   /// Gets the maximum code length in bits.
   /// </summary>
-  public int MaxCodeLength => this._maxCodeLength;
+  public int MaxCodeLength { get; }
 
   /// <summary>
   /// Builds canonical Huffman encode and decode tables from the given code lengths.
   /// </summary>
   /// <param name="codeLengths">Array where index = symbol, value = code length (0 = unused).</param>
   public CanonicalHuffman(int[] codeLengths) {
-    int maxSymbol = codeLengths.Length;
-    _encodeTable = new (uint Code, int Length)[maxSymbol];
-    this._maxCodeLength = 0;
+    var maxSymbol = codeLengths.Length;
+    this._encodeTable = new (uint Code, int Length)[maxSymbol];
+    this.MaxCodeLength = 0;
 
-    for (int i = 0; i < maxSymbol; ++i)
-      if (codeLengths[i] > this._maxCodeLength)
-        this._maxCodeLength = codeLengths[i];
+    for (var i = 0; i < maxSymbol; ++i)
+      if (codeLengths[i] > this.MaxCodeLength)
+        this.MaxCodeLength = codeLengths[i];
 
-    if (this._maxCodeLength == 0) {
+    if (this.MaxCodeLength == 0) {
       this._lookupBits = 0;
       this._lookupTable = [];
       this._decodeLookup = [];
@@ -51,48 +50,49 @@ public sealed class CanonicalHuffman {
     }
 
     // Steps 1-2: Count codes per length and compute first code for each length
-    var nextCode = new uint[this._maxCodeLength + 1];
-    CanonicalCodeAssigner.ComputeNextCodes(codeLengths, this._maxCodeLength, nextCode);
+    var nextCode = new uint[this.MaxCodeLength + 1];
+    CanonicalCodeAssigner.ComputeNextCodes(codeLengths, this.MaxCodeLength, nextCode);
 
     // Step 3: Assign codes to symbols
-    for (int symbol = 0; symbol < maxSymbol; ++symbol) {
-      int len = codeLengths[symbol];
-      if (len > 0) {
-        _encodeTable[symbol] = (nextCode[len], len);
-        ++nextCode[len];
-      }
-    }
-
-    // Step 4: Build lookup table for decoding
-    this._lookupBits = Math.Min(this._maxCodeLength, 10);
-    int lookupSize = 1 << this._lookupBits;
-    this._lookupTable = new int[lookupSize];
-    Array.Fill(this._lookupTable, -1);
-
-    this._decodeLookup = new int[1 << this._maxCodeLength];
-    this._decodeLengths = new int[1 << this._maxCodeLength];
-    Array.Fill(this._decodeLookup, -1);
-
-    for (int symbol = 0; symbol < maxSymbol; ++symbol) {
-      int len = codeLengths[symbol];
+    for (var symbol = 0; symbol < maxSymbol; ++symbol) {
+      var len = codeLengths[symbol];
       if (len <= 0)
         continue;
 
-      uint code = _encodeTable[symbol].Code;
+      this._encodeTable[symbol] = (nextCode[len], len);
+      ++nextCode[len];
+    }
+
+    // Step 4: Build lookup table for decoding
+    this._lookupBits = Math.Min(this.MaxCodeLength, 10);
+    var lookupSize = 1 << this._lookupBits;
+    this._lookupTable = new int[lookupSize];
+    this._lookupTable.AsSpan().Fill(-1);
+    
+    this._decodeLookup = new int[1 << this.MaxCodeLength];
+    this._decodeLengths = new int[1 << this.MaxCodeLength];
+    this._decodeLookup.AsSpan().Fill(-1);
+
+    for (var symbol = 0; symbol < maxSymbol; ++symbol) {
+      var len = codeLengths[symbol];
+      if (len <= 0)
+        continue;
+
+      var code = this._encodeTable[symbol].Code;
 
       if (len <= this._lookupBits) {
         // Fill all entries that share this prefix
-        int shift = this._lookupBits - len;
-        int start = (int)(code << shift);
-        int count = 1 << shift;
+        var shift = this._lookupBits - len;
+        var start = (int)(code << shift);
+        var count = 1 << shift;
         this._lookupTable.AsSpan(start, count).Fill(symbol);
       }
 
       // Full decode table
       {
-        int shift = this._maxCodeLength - len;
-        int start = (int)(code << shift);
-        int count = 1 << shift;
+        var shift = this.MaxCodeLength - len;
+        var start = (int)(code << shift);
+        var count = 1 << shift;
         this._decodeLookup.AsSpan(start, count).Fill(symbol);
         this._decodeLengths.AsSpan(start, count).Fill(len);
       }
@@ -104,7 +104,7 @@ public sealed class CanonicalHuffman {
   /// </summary>
   /// <param name="symbol">The symbol to look up.</param>
   /// <returns>The code and its length in bits.</returns>
-  public (uint Code, int Length) GetCode(int symbol) => _encodeTable[symbol];
+  public (uint Code, int Length) GetCode(int symbol) => this._encodeTable[symbol];
 
   /// <summary>
   /// Decodes a symbol from the bit buffer using the canonical Huffman table.
@@ -114,27 +114,27 @@ public sealed class CanonicalHuffman {
   /// <returns>The decoded symbol.</returns>
   /// <exception cref="InvalidDataException">The bit sequence does not match any symbol.</exception>
   public int DecodeSymbol<TOrder>(BitBuffer<TOrder> bitBuffer) where TOrder : struct, IBitOrder {
-    if (this._maxCodeLength == 0)
+    if (this.MaxCodeLength == 0)
       ThrowEmptyHuffmanTable();
 
-    if (!bitBuffer.EnsureBits(this._maxCodeLength)) {
+    if (!bitBuffer.EnsureBits(this.MaxCodeLength)) {
       // Try with what we have
     }
 
-    uint peekValue = bitBuffer.PeekBits(Math.Min(this._maxCodeLength, bitBuffer.BitsAvailable));
+    var peekValue = bitBuffer.PeekBits(Math.Min(this.MaxCodeLength, bitBuffer.BitsAvailable));
 
-    if (bitBuffer.BitsAvailable >= this._maxCodeLength) {
+    if (bitBuffer.BitsAvailable >= this.MaxCodeLength) {
       // Pad to max code length for lookup
-      int index = (int)peekValue;
+      var index = (int)peekValue;
       if (index < this._decodeLookup.Length && this._decodeLookup[index] >= 0) {
-        int symbol = this._decodeLookup[index];
+        var symbol = this._decodeLookup[index];
         bitBuffer.DropBits(this._decodeLengths[index]);
         return symbol;
       }
     }
 
     ThrowInvalidHuffmanCode();
-    return default; // unreachable
+    return 0; // unreachable
   }
 
   /// <summary>
@@ -146,27 +146,25 @@ public sealed class CanonicalHuffman {
   /// <returns>The decoded symbol.</returns>
   /// <exception cref="InvalidDataException">The bit sequence does not match any symbol.</exception>
   public int DecodeSymbol<TOrder>(BitReader<TOrder> bitReader) where TOrder : struct, IBitOrder {
-    uint code = 0;
+    var code = 0u;
 
-    for (int len = 1; len <= this._maxCodeLength; ++len) {
+    for (var len = 1; len <= this.MaxCodeLength; ++len) {
       code = (code << 1) | (uint)bitReader.ReadBit();
 
       // Check if this code matches any symbol at this length
-      for (int symbol = 0; symbol < _encodeTable.Length; ++symbol) {
-        if (_encodeTable[symbol].Length == len && _encodeTable[symbol].Code == code)
+      for (var symbol = 0; symbol < this._encodeTable.Length; ++symbol)
+        if (this._encodeTable[symbol].Length == len && this._encodeTable[symbol].Code == code)
           return symbol;
-      }
     }
 
     ThrowInvalidHuffmanCode();
-    return default; // unreachable
+    return 0; // unreachable
   }
 
-  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
-  private static void ThrowEmptyHuffmanTable() =>
-    throw new InvalidDataException("Empty Huffman table.");
+  [DoesNotReturn][StackTraceHidden][MethodImpl(MethodImplOptions.NoInlining)]
+  private static void ThrowEmptyHuffmanTable() => throw new InvalidDataException("Empty Huffman table.");
 
-  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
-  private static void ThrowInvalidHuffmanCode() =>
-    throw new InvalidDataException("Invalid Huffman code encountered.");
+  [DoesNotReturn][StackTraceHidden][MethodImpl(MethodImplOptions.NoInlining)]
+  private static void ThrowInvalidHuffmanCode() => throw new InvalidDataException("Invalid Huffman code encountered.");
+
 }

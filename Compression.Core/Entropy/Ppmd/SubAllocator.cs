@@ -14,7 +14,6 @@ internal sealed class SubAllocator {
   private const int NullOffset = -1;
 
   private readonly byte[] _memory;
-  private readonly int _memorySize;
   private readonly int[] _freeList;
   private int _loUnit;
   private int _hiUnit;
@@ -25,25 +24,24 @@ internal sealed class SubAllocator {
   /// <param name="memorySize">Total memory pool size in bytes. Must be at least <see cref="PpmdConstants.MinMemorySize"/>.</param>
   public SubAllocator(int memorySize) {
     if (memorySize < PpmdConstants.MinMemorySize)
-      throw new ArgumentOutOfRangeException(nameof(memorySize),
-        $"Memory size must be at least {PpmdConstants.MinMemorySize} bytes.");
+      throw new ArgumentOutOfRangeException(nameof(memorySize), $"Memory size must be at least {PpmdConstants.MinMemorySize} bytes.");
 
-    this._memorySize = memorySize;
+    this.MemorySize = memorySize;
     this._memory = new byte[memorySize];
-    this._freeList = new int[MaxFreeListBuckets + 1];
-    Reset();
+    this._freeList = new int[SubAllocator.MaxFreeListBuckets + 1];
+    this.Reset();
   }
 
   /// <summary>
   /// Gets the total memory pool size in bytes.
   /// </summary>
-  public int MemorySize => this._memorySize;
+  public int MemorySize { get; }
 
   /// <summary>
   /// Allocates space for a context node (one unit). Returns the offset into memory.
   /// </summary>
   /// <returns>Offset of the allocated context, or <c>-1</c> if allocation failed.</returns>
-  public int AllocContext() => AllocUnits(1);
+  public int AllocContext() => this.AllocUnits(1);
 
   /// <summary>
   /// Allocates the specified number of contiguous units.
@@ -52,43 +50,47 @@ internal sealed class SubAllocator {
   /// <param name="numUnits">Number of units to allocate (1..128).</param>
   /// <returns>Offset of the allocated block, or <c>-1</c> if allocation failed.</returns>
   public int AllocUnits(int numUnits) {
-    if (numUnits < 1 || numUnits > MaxFreeListBuckets)
+    if (numUnits is < 1 or > SubAllocator.MaxFreeListBuckets)
       throw new ArgumentOutOfRangeException(nameof(numUnits));
 
     // Try the free list for this size
-    if (this._freeList[numUnits] != NullOffset) {
-      int offset = this._freeList[numUnits];
-      this._freeList[numUnits] = GetNextFreePointer(offset);
+    if (this._freeList[numUnits] != SubAllocator.NullOffset) {
+      var offset = this._freeList[numUnits];
+      this._freeList[numUnits] = this.GetNextFreePointer(offset);
       return offset;
     }
 
     // Try a larger free list and split
-    for (int i = numUnits + 1; i <= MaxFreeListBuckets; ++i) {
-      if (this._freeList[i] != NullOffset) {
-        int offset = this._freeList[i];
-        this._freeList[i] = GetNextFreePointer(offset);
+    for (var i = numUnits + 1; i <= SubAllocator.MaxFreeListBuckets; ++i) {
+      if (this._freeList[i] == SubAllocator.NullOffset)
+        continue;
 
-        // Return the excess to a smaller free list
-        int excess = i - numUnits;
-        if (excess > 0 && excess <= MaxFreeListBuckets) {
-          int excessOffset = offset + numUnits * PpmdConstants.UnitSize;
-          SetNextFreePointer(excessOffset, this._freeList[excess]);
-          this._freeList[excess] = excessOffset;
-        }
+      var offset = this._freeList[i];
+      this._freeList[i] = this.GetNextFreePointer(offset);
 
+      // Return the excess to a smaller free list
+      var excess = i - numUnits;
+      if (excess is <= 0 or > SubAllocator.MaxFreeListBuckets)
         return offset;
-      }
+
+      var excessOffset = offset + numUnits * PpmdConstants.UnitSize;
+      this.SetNextFreePointer(excessOffset, this._freeList[excess]);
+      this._freeList[excess] = excessOffset;
+
+      return offset;
     }
 
     // Bump allocation from the low end
-    int bytesNeeded = numUnits * PpmdConstants.UnitSize;
-    if (this._loUnit + bytesNeeded <= this._hiUnit) {
-      int offset = this._loUnit;
+    var bytesNeeded = numUnits * PpmdConstants.UnitSize;
+    if (this._loUnit + bytesNeeded > this._hiUnit)
+      return SubAllocator.NullOffset;
+
+    {
+      var offset = this._loUnit;
       this._loUnit += bytesNeeded;
       return offset;
     }
 
-    return NullOffset;
   }
 
   /// <summary>
@@ -97,10 +99,10 @@ internal sealed class SubAllocator {
   /// <param name="offset">Offset of the block to free.</param>
   /// <param name="numUnits">Number of units to free.</param>
   public void FreeUnits(int offset, int numUnits) {
-    if (numUnits < 1 || numUnits > MaxFreeListBuckets)
+    if (numUnits is < 1 or > SubAllocator.MaxFreeListBuckets)
       throw new ArgumentOutOfRangeException(nameof(numUnits));
 
-    SetNextFreePointer(offset, this._freeList[numUnits]);
+    this.SetNextFreePointer(offset, this._freeList[numUnits]);
     this._freeList[numUnits] = offset;
   }
 
@@ -115,22 +117,23 @@ internal sealed class SubAllocator {
     if (newUnits >= oldUnits)
       return;
 
-    int excess = oldUnits - newUnits;
-    if (excess > 0 && excess <= MaxFreeListBuckets) {
-      int excessOffset = offset + newUnits * PpmdConstants.UnitSize;
-      FreeUnits(excessOffset, excess);
-    }
+    var excess = oldUnits - newUnits;
+    if (excess is <= 0 or > SubAllocator.MaxFreeListBuckets)
+      return;
+
+    var excessOffset = offset + newUnits * PpmdConstants.UnitSize;
+    this.FreeUnits(excessOffset, excess);
   }
 
   /// <summary>
   /// Resets the allocator, reclaiming all previously allocated memory.
   /// </summary>
   public void Reset() {
-    for (int i = 0; i <= MaxFreeListBuckets; ++i)
-      this._freeList[i] = NullOffset;
+    for (var i = 0; i <= SubAllocator.MaxFreeListBuckets; ++i)
+      this._freeList[i] = SubAllocator.NullOffset;
 
     this._loUnit = 0;
-    this._hiUnit = this._memorySize;
+    this._hiUnit = this.MemorySize;
     this._memory.AsSpan().Clear();
   }
 
@@ -187,11 +190,11 @@ internal sealed class SubAllocator {
   /// <summary>
   /// Reads the next-free-block pointer stored at the start of a free block.
   /// </summary>
-  private int GetNextFreePointer(int offset) => GetInt(offset);
+  private int GetNextFreePointer(int offset) => this.GetInt(offset);
 
   /// <summary>
   /// Writes the next-free-block pointer at the start of a free block.
   /// </summary>
-  private void SetNextFreePointer(int offset, int nextOffset) => SetInt(offset, nextOffset);
+  private void SetNextFreePointer(int offset, int nextOffset) => this.SetInt(offset, nextOffset);
 
 }

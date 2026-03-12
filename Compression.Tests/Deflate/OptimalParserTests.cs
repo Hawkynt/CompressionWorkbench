@@ -93,7 +93,7 @@ public class OptimalParserTests {
       if (sym.IsLiteral)
         output.Add((byte)sym.LitLen);
       else {
-        int start = output.Count - sym.Distance;
+        var start = output.Count - sym.Distance;
         for (int i = 0; i < sym.LitLen; i++)
           output.Add(output[start + i]);
       }

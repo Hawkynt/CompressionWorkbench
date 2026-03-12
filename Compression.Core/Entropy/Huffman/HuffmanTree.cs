@@ -16,23 +16,23 @@ public static class HuffmanTree {
   public static HuffmanNode BuildFromFrequencies(long[] frequencies) {
     var heap = new MinHeap<HuffmanNode>();
 
-    for (int i = 0; i < frequencies.Length; ++i)
+    for (var i = 0; i < frequencies.Length; ++i)
       if (frequencies[i] > 0)
-        heap.Insert(new HuffmanNode(i, frequencies[i]));
+        heap.Insert(new(i, frequencies[i]));
 
-    if (heap.Count == 0)
-      throw new ArgumentException("At least one symbol must have a non-zero frequency.", nameof(frequencies));
-
-    // Single-symbol tree: create a dummy internal node
-    if (heap.Count == 1) {
-      var single = heap.ExtractMin();
-      return new HuffmanNode(single, new HuffmanNode(-2, 0));
+    switch (heap.Count) {
+      case 0: throw new ArgumentException("At least one symbol must have a non-zero frequency.", nameof(frequencies));
+      // Single-symbol tree: create a dummy internal node
+      case 1: {
+        var single = heap.ExtractMin();
+        return new(single, new(-2, 0));
+      }
     }
 
     while (heap.Count > 1) {
       var left = heap.ExtractMin();
       var right = heap.ExtractMin();
-      heap.Insert(new HuffmanNode(left, right));
+      heap.Insert(new(left, right));
     }
 
     return heap.ExtractMin();
@@ -57,32 +57,26 @@ public static class HuffmanTree {
   /// <param name="codeLengths">The code lengths to limit (modified in place).</param>
   /// <param name="maxLength">The maximum allowed code length.</param>
   public static void LimitCodeLengths(int[] codeLengths, int maxLength) {
-    bool needsAdjustment = false;
-    for (int i = 0; i < codeLengths.Length; ++i)
-      if (codeLengths[i] > maxLength) {
-        needsAdjustment = true;
-        break;
-      }
-
+    var needsAdjustment = codeLengths.Any(t => t > maxLength);
     if (!needsAdjustment)
       return;
 
     // Collect non-zero lengths and sort descending
     var symbols = new List<(int Symbol, int Length)>();
-    for (int i = 0; i < codeLengths.Length; ++i)
+    for (var i = 0; i < codeLengths.Length; ++i)
       if (codeLengths[i] > 0)
         symbols.Add((i, codeLengths[i]));
 
     // Clamp lengths to maxLength
-    for (int i = 0; i < symbols.Count; ++i)
+    for (var i = 0; i < symbols.Count; ++i)
       if (symbols[i].Length > maxLength)
         symbols[i] = (symbols[i].Symbol, maxLength);
 
     // Adjust to satisfy Kraft inequality: sum of 2^(-length) <= 1
     // We work with integer Kraft values: sum of 2^(maxLength - length) <= 2^maxLength
     for (;;) {
-      long kraftSum = 0;
-      long kraftMax = 1L << maxLength;
+      var kraftSum = 0L;
+      var kraftMax = 1L << maxLength;
       for (var i = 0; i < symbols.Count; ++i)
         kraftSum += 1L << (maxLength - symbols[i].Length);
 
@@ -90,7 +84,7 @@ public static class HuffmanTree {
         break;
 
       // Find the longest code and shorten it by 1
-      int longestIdx = 0;
+      var longestIdx = 0;
       for (var i = 1; i < symbols.Count; ++i)
         if (symbols[i].Length > symbols[longestIdx].Length)
           longestIdx = i;
@@ -101,19 +95,19 @@ public static class HuffmanTree {
     // Redistribute excess Kraft space to the shortest codes (make them longer)
     // to keep the tree balanced
     for (;;) {
-      long kraftSum = 0;
-      long kraftMax = 1L << maxLength;
-      for (int i = 0; i < symbols.Count; ++i)
+      var kraftSum = 0L;
+      var kraftMax = 1L << maxLength;
+      for (var i = 0; i < symbols.Count; ++i)
         kraftSum += 1L << (maxLength - symbols[i].Length);
 
-      long excess = kraftMax - kraftSum;
+      var excess = kraftMax - kraftSum;
       if (excess <= 0)
         break;
 
       // Find shortest code that can be lengthened
-      int shortestIdx = -1;
-      int shortestLen = int.MaxValue;
-      for (int i = 0; i < symbols.Count; ++i)
+      var shortestIdx = -1;
+      var shortestLen = int.MaxValue;
+      for (var i = 0; i < symbols.Count; ++i)
         if (symbols[i].Length < maxLength && symbols[i].Length < shortestLen) {
           shortestLen = symbols[i].Length;
           shortestIdx = i;
@@ -122,8 +116,8 @@ public static class HuffmanTree {
       if (shortestIdx < 0)
         break;
 
-      long freed = 1L << (maxLength - symbols[shortestIdx].Length);
-      long needed = 1L << (maxLength - symbols[shortestIdx].Length - 1);
+      var freed = 1L << (maxLength - symbols[shortestIdx].Length);
+      var needed = 1L << (maxLength - symbols[shortestIdx].Length - 1);
       if (freed - needed <= excess)
         symbols[shortestIdx] = (symbols[shortestIdx].Symbol, symbols[shortestIdx].Length + 1);
       else
@@ -132,7 +126,7 @@ public static class HuffmanTree {
 
     // Write back
     codeLengths.AsSpan().Clear();
-    for (int i = 0; i < symbols.Count; ++i)
+    for (var i = 0; i < symbols.Count; ++i)
       codeLengths[symbols[i].Symbol] = symbols[i].Length;
   }
 

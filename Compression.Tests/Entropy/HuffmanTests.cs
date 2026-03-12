@@ -156,8 +156,8 @@ public class HuffmanTests {
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
-    int numSymbols = 16;
-    int dataLength = 500;
+    var numSymbols = 16;
+    var dataLength = 500;
 
     // Generate random frequencies
     var frequencies = new long[numSymbols];

@@ -35,7 +35,7 @@ public class Bzip2PipelineTests {
     mtfData[31] = 3;
     mtfData[32] = 1;
 
-    int eobSymbol = 10;
+    var eobSymbol = 10;
     int[] encoded = Bzip2Compressor.Rle2Encode(mtfData, eobSymbol);
     byte[] decoded = Bzip2Compressor.Rle2Decode(encoded.AsSpan(), eobSymbol);
 
@@ -45,7 +45,7 @@ public class Bzip2PipelineTests {
   [Test]
   public void Rle2_SingleZero() {
     byte[] mtfData = [0];
-    int eobSymbol = 5;
+    var eobSymbol = 5;
     int[] encoded = Bzip2Compressor.Rle2Encode(mtfData, eobSymbol);
     byte[] decoded = Bzip2Compressor.Rle2Decode(encoded.AsSpan(), eobSymbol);
     Assert.That(decoded, Is.EqualTo(mtfData));
@@ -54,7 +54,7 @@ public class Bzip2PipelineTests {
   [Test]
   public void Rle2_MultipleZeroRuns() {
     byte[] mtfData = [0, 0, 0, 5, 0, 0, 3, 0];
-    int eobSymbol = 10;
+    var eobSymbol = 10;
     int[] encoded = Bzip2Compressor.Rle2Encode(mtfData, eobSymbol);
     byte[] decoded = Bzip2Compressor.Rle2Decode(encoded.AsSpan(), eobSymbol);
     Assert.That(decoded, Is.EqualTo(mtfData));

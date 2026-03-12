@@ -32,7 +32,7 @@ public class DeflateConstantsTests {
     ReadOnlySpan<int> extras = DeflateConstants.LengthExtraBits;
 
     for (int i = 0; i < bases.Length; i++) {
-      int range = 1 << extras[i];
+      var range = 1 << extras[i];
       for (int j = 0; j < range; j++)
         reachable.Add(bases[i] + j);
     }
@@ -48,7 +48,7 @@ public class DeflateConstantsTests {
     ReadOnlySpan<int> extras = DeflateConstants.DistanceExtraBits;
 
     for (int i = 0; i < bases.Length; i++) {
-      int range = 1 << extras[i];
+      var range = 1 << extras[i];
       for (int j = 0; j < range; j++)
         reachable.Add(bases[i] + j);
     }
