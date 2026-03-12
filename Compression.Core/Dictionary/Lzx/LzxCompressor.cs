@@ -162,7 +162,7 @@ public sealed partial class LzxCompressor {
     var lengthFreq = new int[LzxConstants.NumLengthSymbols];
     int r0 = this._r0, r1 = this._r1, r2 = this._r2;
 
-    foreach (var tok in blockTokens) {
+    foreach (var tok in blockTokens)
       if (tok.IsLiteral)
         ++mainFreq[tok.Value];
       else {
@@ -176,7 +176,6 @@ public sealed partial class LzxCompressor {
         var extraLen = len - LzxConstants.MinMatch - (LzxConstants.NumLengthHeaders - 1);
         ++lengthFreq[Math.Clamp(extraLen, 0, LzxConstants.NumLengthSymbols - 1)];
       }
-    }
 
     // Build Huffman code lengths and canonical codes
     var mainLengths = BuildCodeLengths(mainFreq, this._numMainSymbols, LzxConstants.MaxHuffmanBits);
@@ -207,7 +206,7 @@ public sealed partial class LzxCompressor {
 
     // Write token stream; restart from pre-block R0/R1/R2 state
     r0 = this._r0; r1 = this._r1; r2 = this._r2;
-    foreach (var tok in blockTokens) {
+    foreach (var tok in blockTokens)
       if (tok.IsLiteral)
         writer.WriteBits(mainCodes[tok.Value], mainLengths[tok.Value]);
       else {
@@ -219,7 +218,7 @@ public sealed partial class LzxCompressor {
 
         if (lengthHeader == LzxConstants.NumLengthHeaders - 1) {
           var extraLen = Math.Clamp(len - LzxConstants.MinMatch - (LzxConstants.NumLengthHeaders - 1),
-                                    0, LzxConstants.NumLengthSymbols - 1);
+            0, LzxConstants.NumLengthSymbols - 1);
           writer.WriteBits(lengthCodes[extraLen], lengthLengths[extraLen]);
         }
 
@@ -236,7 +235,6 @@ public sealed partial class LzxCompressor {
         var footer = formattedOffset - baseOffset;
         writer.WriteBits((uint)footer, footerBits);
       }
-    }
 
     // Update R0/R1/R2 for next block
     this._r0 = r0; this._r1 = r1; this._r2 = r2;
@@ -294,7 +292,7 @@ public sealed partial class LzxCompressor {
         while (di + runLen < count && deltas[di + runLen] == 0)
           runLen++;
 
-        while (runLen > 0) {
+        while (runLen > 0)
           switch (runLen) {
             case >= 20: {
               var thisRun = Math.Min(runLen, 51); // 20 + (max 5-bit value=31)
@@ -318,7 +316,6 @@ public sealed partial class LzxCompressor {
               --runLen;
               break;
           }
-        }
       } else {
         preSymbols.Add((sym, 0, 0));
         ++di;
@@ -420,7 +417,7 @@ public sealed partial class LzxCompressor {
     var kraftMax = 1L << maxBits;
     var kraftSum = lengths.Where(value => value > 0).Sum(value => kraftMax >> value);
 
-    while (kraftSum > kraftMax) {
+    while (kraftSum > kraftMax)
       for (var i = lengths.Length - 1; i >= 0; --i) {
         if (lengths[i] <= 0 || lengths[i] >= maxBits)
           continue;
@@ -431,7 +428,6 @@ public sealed partial class LzxCompressor {
         if (kraftSum <= kraftMax) 
           break;
       }
-    }
   }
 
   /// <summary>

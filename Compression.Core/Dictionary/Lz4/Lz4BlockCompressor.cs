@@ -58,20 +58,19 @@ public static class Lz4BlockCompressor {
         var candidate = hashTable[h];
         hashTable[h] = pos;
 
-        if (candidate >= 0 && pos - candidate <= Lz4Constants.MaxDistance) {
+        if (candidate >= 0 && pos - candidate <= Lz4Constants.MaxDistance)
           // Check if we have a 4-byte match
           if (src[candidate] == src[pos] &&
-              src[candidate + 1] == src[pos + 1] &&
-              src[candidate + 2] == src[pos + 2] &&
-              src[candidate + 3] == src[pos + 3]) {
+            src[candidate + 1] == src[pos + 1] &&
+            src[candidate + 2] == src[pos + 2] &&
+            src[candidate + 3] == src[pos + 3]) {
             matchOffset = pos - candidate;
             matchLength = 4;
             // Extend match
             while (pos + matchLength < srcLen &&
-                   src[candidate + matchLength] == src[pos + matchLength])
+              src[candidate + matchLength] == src[pos + matchLength])
               matchLength++;
           }
-        }
       }
 
       if (matchLength < Lz4Constants.MinMatch) {

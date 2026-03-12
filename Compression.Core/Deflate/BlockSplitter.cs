@@ -45,18 +45,17 @@ internal static class BlockSplitter {
     Array.Fill(dp, double.MaxValue);
     dp[0] = 0;
 
-    for (var j = 1; j < numCandidates; ++j) {
-      for (var i = 0; i < j; ++i) {
-        if (dp[i] >= double.MaxValue)
-          continue;
+    for (var j = 1; j < numCandidates; ++j)
+    for (var i = 0; i < j; ++i) {
+      if (dp[i] >= double.MaxValue)
+        continue;
 
-        var totalCost = dp[i] + cost[i][j];
-        if (!(totalCost < dp[j]))
-          continue;
+      var totalCost = dp[i] + cost[i][j];
+      if (!(totalCost < dp[j]))
+        continue;
 
-        dp[j] = totalCost;
-        prev[j] = i;
-      }
+      dp[j] = totalCost;
+      prev[j] = i;
     }
 
     // Traceback
@@ -113,7 +112,7 @@ internal static class BlockSplitter {
     var litLenFreqs = new long[DeflateConstants.LiteralLengthAlphabetSize];
     var distFreqs = new long[DeflateConstants.DistanceAlphabetSize];
 
-    foreach (var sym in symbols) {
+    foreach (var sym in symbols)
       if (sym.IsLiteral)
         ++litLenFreqs[sym.LitLen];
       else {
@@ -122,7 +121,7 @@ internal static class BlockSplitter {
         var distCode = DeflateConstants.GetDistanceCode(sym.Distance);
         ++distFreqs[distCode];
       }
-    }
+
     litLenFreqs[DeflateConstants.EndOfBlock] = 1;
 
     // Ensure at least one distance code
@@ -154,7 +153,7 @@ internal static class BlockSplitter {
     bits += (hlit + hdist) * 3.0; // rough estimate for code-length table
 
     // Token bits
-    foreach (var sym in symbols) {
+    foreach (var sym in symbols)
       if (sym.IsLiteral)
         bits += litLenLengths[sym.LitLen];
       else {
@@ -166,7 +165,6 @@ internal static class BlockSplitter {
         bits += distLengths[distCode];
         bits += DeflateConstants.DistanceExtraBits[distCode];
       }
-    }
 
     bits += litLenLengths[DeflateConstants.EndOfBlock]; // EOB
     return bits;

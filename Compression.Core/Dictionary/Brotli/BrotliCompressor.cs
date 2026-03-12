@@ -183,15 +183,13 @@ public static class BrotliCompressor {
         commands.Add(new(insertLen, bestMatch.Length, bestMatch.Distance));
         pos += bestMatch.Length;
         literalStart = pos;
-      } else {
+      } else
         ++pos;
-      }
     }
 
     // Trailing literals
-    if (literalStart < data.Length) {
+    if (literalStart < data.Length)
       commands.Add(new(data.Length - literalStart, 0, 0));
-    }
 
     return commands;
   }
@@ -316,15 +314,15 @@ public static class BrotliCompressor {
   }
 
   private static void WriteBlockTypeCount(BrotliBitWriter writer, int count) {
-    if (count == 1) {
+    if (count == 1)
       writer.WriteBits(1, 0); // single block type
-    } else {
+    else {
       writer.WriteBits(1, 1);
       // Encode count - 1 in variable bits
       var n = count - 1;
-      if (n <= 1) {
+      if (n <= 1)
         writer.WriteBits(3, 0);
-      } else {
+      else {
         var bits = 0;
         var v = n - 1;
         while (v > 0) { v >>= 1; ++bits; }
@@ -351,7 +349,7 @@ public static class BrotliCompressor {
 
     // Find copy code
     var copyCode = 0;
-    if (copyLength >= 2) {
+    if (copyLength >= 2)
       for (var i = BrotliConstants.CopyLengthTable.Length - 1; i >= 0; --i) {
         if (copyLength < BrotliConstants.CopyLengthTable[i].BaseValue)
           continue;
@@ -359,7 +357,6 @@ public static class BrotliCompressor {
         copyCode = i;
         break;
       }
-    }
 
     // Combined code: simple mapping
     // For insert codes 0-7 and copy codes 0-7: code = insertCode * 8 + copyCode
@@ -581,10 +578,9 @@ public static class BrotliCompressor {
         codeLengths[usedSymbols[1]] == codeLengths[usedSymbols[2]] &&
         codeLengths[usedSymbols[2]] == codeLengths[usedSymbols[3]];
       writer.WriteBits(1, allEqual ? 1u : 0u);
-    } else {
+    } else
       // Use complex prefix code format
       WriteComplexPrefixCode(writer, codeLengths, numSymbols);
-    }
   }
 
   /// <summary>
@@ -733,11 +729,10 @@ internal sealed class BrotliBitWriter {
   /// </summary>
   /// <param name="value">The byte to write.</param>
   public void WriteByte(byte value) {
-    if (this._bitsUsed == 0) {
+    if (this._bitsUsed == 0)
       this._output.WriteByte(value);
-    } else {
+    else
       this.WriteBits(8, value);
-    }
   }
 
   /// <summary>

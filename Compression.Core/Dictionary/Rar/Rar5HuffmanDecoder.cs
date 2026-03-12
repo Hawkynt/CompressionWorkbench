@@ -188,10 +188,9 @@ internal sealed class Rar5HuffmanDecoder {
       return symbol;
     }
 
-    if (entry != -1 && (entry & unchecked((int)0x80000000)) != 0) {
+    if (entry != -1 && (entry & unchecked((int)0x80000000)) != 0)
       // Slow path: need more bits
       return this.DecodeSlowPath(reader);
-    }
 
     // No valid code found
     reader.DropBits(1);

@@ -57,10 +57,10 @@ public sealed class SlidingWindow {
     if (distance >= length) {
       // Non-overlapping: source region doesn't overlap with what we're writing
       var contiguous = winSize - srcPos;
-      if (contiguous >= length) {
+      if (contiguous >= length)
         // Single contiguous copy from buffer
         this._buffer.AsSpan(srcPos, length).CopyTo(output);
-      } else {
+      else {
         // Wraps around the circular buffer
         this._buffer.AsSpan(srcPos, contiguous).CopyTo(output);
         this._buffer.AsSpan(0, length - contiguous).CopyTo(output[contiguous..]);

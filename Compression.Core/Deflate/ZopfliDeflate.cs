@@ -37,7 +37,7 @@ internal static class ZopfliDeflate {
       var litLenFreqs = new long[DeflateConstants.LiteralLengthAlphabetSize];
       var distFreqs = new long[DeflateConstants.DistanceAlphabetSize];
 
-      foreach (var sym in symbols) {
+      foreach (var sym in symbols)
         if (sym.IsLiteral)
           ++litLenFreqs[sym.LitLen];
         else {
@@ -46,7 +46,7 @@ internal static class ZopfliDeflate {
           var distCode = DeflateConstants.GetDistanceCode(sym.Distance);
           ++distFreqs[distCode];
         }
-      }
+
       litLenFreqs[DeflateConstants.EndOfBlock] = 1;
 
       // Ensure at least one distance code

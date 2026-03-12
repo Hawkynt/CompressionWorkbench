@@ -137,10 +137,9 @@ public sealed class Rar5Decoder {
         }
 
         default: {
-          if (sym == Rar5Constants.EndOfBlock) {
+          if (sym == Rar5Constants.EndOfBlock)
             // End of block — tables need re-reading
             this._tablesRead = false;
-          }
 
           break;
         }

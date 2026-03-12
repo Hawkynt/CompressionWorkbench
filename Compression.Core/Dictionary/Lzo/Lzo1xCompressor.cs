@@ -104,9 +104,8 @@ public static class Lzo1xCompressor {
 
         pos += matchLen;
         anchor = pos;
-      } else {
+      } else
         ++pos;
-      }
     }
 
     // Emit the final literal run (from anchor to end of input).

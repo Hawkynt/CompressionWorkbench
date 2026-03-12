@@ -37,14 +37,13 @@ public sealed class Adler32 : IChecksum {
     while (remaining > 0) {
       var blockLen = Math.Min(remaining, Adler32.Nmax);
 
-      if (Vector256.IsHardwareAccelerated && blockLen >= 32) {
+      if (Vector256.IsHardwareAccelerated && blockLen >= 32)
         UpdateSimd(data.Slice(offset, blockLen), ref a, ref b);
-      } else {
+      else
         for (var i = 0; i < blockLen; ++i) {
           a += data[offset + i];
           b += a;
         }
-      }
 
       a %= Adler32.Mod;
       b %= Adler32.Mod;

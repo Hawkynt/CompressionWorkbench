@@ -85,9 +85,8 @@ internal static class Rar5Filters {
         addr -= i + 5;
         BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(i + 1), addr);
         i += 5;
-      } else {
+      } else
         ++i;
-      }
     }
 
     return result;
