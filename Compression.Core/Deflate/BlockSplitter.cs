@@ -18,12 +18,12 @@ internal static class BlockSplitter {
   /// <returns>A list of contiguous <see cref="BlockRange"/>s covering all symbols.</returns>
   public static List<BlockRange> Split(ReadOnlySpan<LzSymbol> symbols, int maxBlocks = 15) {
     if (symbols.Length < 1024 || maxBlocks <= 1)
-      return [new BlockRange(0, symbols.Length)];
+      return [new(0, symbols.Length)];
 
     // Generate candidate split points at regular intervals
     var interval = Math.Max(symbols.Length / (maxBlocks * 3), 128);
     var candidates = new List<int> { 0 };
-    for (int i = interval; i < symbols.Length; i += interval)
+    for (var i = interval; i < symbols.Length; i += interval)
       candidates.Add(i);
 
     candidates.Add(symbols.Length);
@@ -33,9 +33,9 @@ internal static class BlockSplitter {
     // Precompute cost of each candidate range [i..j)
     // cost[i][j] = estimated bits for symbols[candidates[i]..candidates[j])
     var cost = new double[numCandidates][];
-    for (int i = 0; i < numCandidates; ++i) {
+    for (var i = 0; i < numCandidates; ++i) {
       cost[i] = new double[numCandidates];
-      for (int j = i + 1; j < numCandidates; ++j)
+      for (var j = i + 1; j < numCandidates; ++j)
         cost[i][j] = EstimateBlockBits(symbols[candidates[i]..candidates[j]]);
     }
 
@@ -45,22 +45,23 @@ internal static class BlockSplitter {
     Array.Fill(dp, double.MaxValue);
     dp[0] = 0;
 
-    for (int j = 1; j < numCandidates; ++j) {
-      for (int i = 0; i < j; ++i) {
+    for (var j = 1; j < numCandidates; ++j) {
+      for (var i = 0; i < j; ++i) {
         if (dp[i] >= double.MaxValue)
           continue;
 
-        double totalCost = dp[i] + cost[i][j];
-        if (totalCost < dp[j]) {
-          dp[j] = totalCost;
-          prev[j] = i;
-        }
+        var totalCost = dp[i] + cost[i][j];
+        if (!(totalCost < dp[j]))
+          continue;
+
+        dp[j] = totalCost;
+        prev[j] = i;
       }
     }
 
     // Traceback
     var splitPoints = new List<int>();
-    int idx = numCandidates - 1;
+    var idx = numCandidates - 1;
     while (idx > 0) {
       splitPoints.Add(idx);
       idx = prev[idx];
@@ -71,22 +72,23 @@ internal static class BlockSplitter {
     // Limit to maxBlocks
     while (splitPoints.Count - 1 > maxBlocks) {
       // Merge the two adjacent blocks with smallest combined cost increase
-      double bestMergeCost = double.MaxValue;
+      var bestMergeCost = double.MaxValue;
       var bestMergeIdx = 1;
 
-      for (int i = 1; i < splitPoints.Count - 1; ++i) {
-        int a = splitPoints[i - 1];
-        int b = splitPoints[i];
-        int c = splitPoints[i + 1];
+      for (var i = 1; i < splitPoints.Count - 1; ++i) {
+        var a = splitPoints[i - 1];
+        var b = splitPoints[i];
+        var c = splitPoints[i + 1];
 
-        double before = cost[a][b] + cost[b][c];
-        double after = cost[a][c];
-        double delta = after - before;
+        var before = cost[a][b] + cost[b][c];
+        var after = cost[a][c];
+        var delta = after - before;
 
-        if (delta < bestMergeCost) {
-          bestMergeCost = delta;
-          bestMergeIdx = i;
-        }
+        if (!(delta < bestMergeCost))
+          continue;
+
+        bestMergeCost = delta;
+        bestMergeIdx = i;
       }
 
       splitPoints.RemoveAt(bestMergeIdx);
@@ -94,8 +96,8 @@ internal static class BlockSplitter {
 
     // Build ranges
     var result = new List<BlockRange>();
-    for (int i = 0; i < splitPoints.Count - 1; ++i)
-      result.Add(new BlockRange(candidates[splitPoints[i]], candidates[splitPoints[i + 1]]));
+    for (var i = 0; i < splitPoints.Count - 1; ++i)
+      result.Add(new(candidates[splitPoints[i]], candidates[splitPoints[i + 1]]));
 
     return result;
   }
@@ -115,31 +117,26 @@ internal static class BlockSplitter {
       if (sym.IsLiteral)
         ++litLenFreqs[sym.LitLen];
       else {
-        int lenCode = DeflateConstants.GetLengthCode(sym.LitLen);
+        var lenCode = DeflateConstants.GetLengthCode(sym.LitLen);
         ++litLenFreqs[lenCode];
-        int distCode = DeflateConstants.GetDistanceCode(sym.Distance);
+        var distCode = DeflateConstants.GetDistanceCode(sym.Distance);
         ++distFreqs[distCode];
       }
     }
     litLenFreqs[DeflateConstants.EndOfBlock] = 1;
 
     // Ensure at least one distance code
-    var hasDist = false;
-    for (int i = 0; i < distFreqs.Length; ++i)
-      if (distFreqs[i] > 0) { 
-        hasDist = true; 
-        break; 
-      }
-    
-    if (!hasDist) distFreqs[0] = 1;
+    var hasDist = distFreqs.Any(data => data > 0);
+    if (!hasDist) 
+      distFreqs[0] = 1;
 
     // Build Huffman trees to get code lengths
     var litLenRoot = HuffmanTree.BuildFromFrequencies(litLenFreqs);
-    int[] litLenLengths = HuffmanTree.GetCodeLengths(litLenRoot, DeflateConstants.LiteralLengthAlphabetSize);
+    var litLenLengths = HuffmanTree.GetCodeLengths(litLenRoot, DeflateConstants.LiteralLengthAlphabetSize);
     HuffmanTree.LimitCodeLengths(litLenLengths, DeflateConstants.MaxBits);
 
     var distRoot = HuffmanTree.BuildFromFrequencies(distFreqs);
-    int[] distLengths = HuffmanTree.GetCodeLengths(distRoot, DeflateConstants.DistanceAlphabetSize);
+    var distLengths = HuffmanTree.GetCodeLengths(distRoot, DeflateConstants.DistanceAlphabetSize);
     HuffmanTree.LimitCodeLengths(distLengths, DeflateConstants.MaxBits);
 
     // Estimate bits: header overhead + token bits
@@ -161,11 +158,11 @@ internal static class BlockSplitter {
       if (sym.IsLiteral)
         bits += litLenLengths[sym.LitLen];
       else {
-        int lenCode = DeflateConstants.GetLengthCode(sym.LitLen);
+        var lenCode = DeflateConstants.GetLengthCode(sym.LitLen);
         bits += litLenLengths[lenCode];
         bits += DeflateConstants.LengthExtraBits[lenCode - 257];
 
-        int distCode = DeflateConstants.GetDistanceCode(sym.Distance);
+        var distCode = DeflateConstants.GetDistanceCode(sym.Distance);
         bits += distLengths[distCode];
         bits += DeflateConstants.DistanceExtraBits[distCode];
       }

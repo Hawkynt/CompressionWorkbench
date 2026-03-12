@@ -33,12 +33,13 @@ public sealed class LzmaEncoder {
     this._posStateMask = (1 << pb) - 1;
 
     // Build 5-byte properties header
-    Properties = new byte[5];
-    Properties[0] = (byte)((pb * 5 + lp) * 9 + lc);
-    Properties[1] = (byte)dictionarySize;
-    Properties[2] = (byte)(dictionarySize >> 8);
-    Properties[3] = (byte)(dictionarySize >> 16);
-    Properties[4] = (byte)(dictionarySize >> 24);
+    this.Properties = new byte[5];
+    this.Properties[0] = (byte)((pb * 5 + lp) * 9 + lc);
+    // TODO: write 64 bits at once
+    this.Properties[1] = (byte)dictionarySize;
+    this.Properties[2] = (byte)(dictionarySize >> 8);
+    this.Properties[3] = (byte)(dictionarySize >> 16);
+    this.Properties[4] = (byte)(dictionarySize >> 24);
   }
 
   /// <summary>
@@ -48,8 +49,7 @@ public sealed class LzmaEncoder {
   /// <param name="output">The output stream.</param>
   /// <param name="data">The data to compress.</param>
   /// <param name="writeEndMarker">Whether to write the end-of-stream marker.</param>
-  public void Encode(Stream output, ReadOnlySpan<byte> data, bool writeEndMarker = true) =>
-    Encode(output, data, 0, writeEndMarker);
+  public void Encode(Stream output, ReadOnlySpan<byte> data, bool writeEndMarker = true) => this.Encode(output, data, 0, writeEndMarker);
 
   /// <summary>
   /// Encodes data starting at <paramref name="startOffset"/> within <paramref name="data"/>.
@@ -67,7 +67,7 @@ public sealed class LzmaEncoder {
     var repLenEncoder = new LzmaLengthEncoder();
 
     // State variables
-    int state = 0;
+    var state = 0;
     int[] reps = [0, 0, 0, 0];
 
     // Probability arrays (stackalloc: 432 ints = 1,728 bytes total)
@@ -86,8 +86,8 @@ public sealed class LzmaEncoder {
 
     // Distance encoding
     var posSlotEncoder = new BitTreeEncoder[LzmaConstants.NumLenToPosStates];
-    for (int i = 0; i < LzmaConstants.NumLenToPosStates; ++i)
-      posSlotEncoder[i] = new BitTreeEncoder(6);
+    for (var i = 0; i < LzmaConstants.NumLenToPosStates; ++i)
+      posSlotEncoder[i] = new(6);
 
     Span<int> posEncoders = stackalloc int[LzmaConstants.NumFullDistances - LzmaConstants.StartPosModelIndex];
     posEncoders.Fill(RangeEncoder.ProbInitValue);
@@ -95,36 +95,37 @@ public sealed class LzmaEncoder {
     var alignEncoder = new BitTreeEncoder(LzmaConstants.NumAlignBits);
 
     // Match finder
-    int windowSize = Math.Min(this._dictionarySize, data.Length > 0 ? data.Length : 1);
+    var windowSize = Math.Min(this._dictionarySize, data.Length > 0 ? data.Length : 1);
     var matchFinder = new HashChainMatchFinder(Math.Max(windowSize, 4096), 64);
 
     // Pre-seed the match finder with historical context positions
-    for (int h = 0; h < startOffset; ++h)
+    for (var h = 0; h < startOffset; ++h)
       matchFinder.InsertPosition(data, h);
 
-    int pos = startOffset;
+    var pos = startOffset;
 
     while (pos < data.Length) {
-      int posState = pos & this._posStateMask;
-      byte prevByte = pos > 0 ? data[pos - 1] : (byte)0;
+      var posState = pos & this._posStateMask;
+      var prevByte = pos > 0 ? data[pos - 1] : (byte)0;
 
       // Try rep matches first
-      int bestRepLen = 0;
-      int bestRepIndex = 0;
-      for (int rep = 0; rep < LzmaConstants.NumRepDistances; ++rep) {
+      var bestRepLen = 0;
+      var bestRepIndex = 0;
+      for (var rep = 0; rep < LzmaConstants.NumRepDistances; ++rep) {
         if (reps[rep] >= pos)
           continue;
 
-        int dist = reps[rep] + 1;
-        int len = 0;
-        int maxLen = Math.Min(LzmaConstants.MatchMaxLen, data.Length - pos);
+        var dist = reps[rep] + 1;
+        var len = 0;
+        var maxLen = Math.Min(LzmaConstants.MatchMaxLen, data.Length - pos);
         while (len < maxLen && data[pos - dist + len] == data[pos + len])
           ++len;
 
-        if (len >= LzmaConstants.MatchMinLen && len > bestRepLen) {
-          bestRepLen = len;
-          bestRepIndex = rep;
-        }
+        if (len < LzmaConstants.MatchMinLen || len <= bestRepLen)
+          continue;
+
+        bestRepLen = len;
+        bestRepIndex = rep;
       }
 
       // Try normal match
@@ -147,15 +148,15 @@ public sealed class LzmaEncoder {
             state = LzmaConstants.StateUpdateShortRep(state);
 
             // Insert positions for match finder
-            for (int i = 1; i < 1; i++)
+            for (var i = 1; i < 1; ++i)
               matchFinder.InsertPosition(data, pos + i);
+
             pos += 1;
             continue;
           }
-          else
-            encoder.EncodeBit(ref isRep0Long[(state << 4) + posState], 1);
-        }
-        else {
+
+          encoder.EncodeBit(ref isRep0Long[(state << 4) + posState], 1);
+        } else {
           encoder.EncodeBit(ref isRepG0[state], 1);
           if (bestRepIndex == 1)
             encoder.EncodeBit(ref isRepG1[state], 0);
@@ -165,8 +166,8 @@ public sealed class LzmaEncoder {
           }
 
           // Shift rep distances
-          int dist = reps[bestRepIndex];
-          for (int i = bestRepIndex; i > 0; --i)
+          var dist = reps[bestRepIndex];
+          for (var i = bestRepIndex; i > 0; --i)
             reps[i] = reps[i - 1];
 
           reps[0] = dist;
@@ -178,7 +179,7 @@ public sealed class LzmaEncoder {
         }
 
         // Insert skipped positions
-        for (int i = 1; i < bestRepLen; ++i)
+        for (var i = 1; i < bestRepLen; ++i)
           matchFinder.InsertPosition(data, pos + i);
 
         pos += bestRepLen;
@@ -190,27 +191,26 @@ public sealed class LzmaEncoder {
 
         matchLenEncoder.Encode(encoder, match.Length, posState);
 
-        int distance = match.Distance - 1; // 0-based
+        var distance = match.Distance - 1; // 0-based
         EncodeDistance(encoder, posSlotEncoder, posEncoders, alignEncoder, distance, match.Length);
 
         // Update rep distances
-        for (int i = LzmaConstants.NumRepDistances - 1; i > 0; --i)
+        for (var i = LzmaConstants.NumRepDistances - 1; i > 0; --i)
           reps[i] = reps[i - 1];
 
         reps[0] = distance;
 
         state = LzmaConstants.StateUpdateMatch(state);
 
-        for (int i = 1; i < match.Length; ++i)
+        for (var i = 1; i < match.Length; ++i)
           matchFinder.InsertPosition(data, pos + i);
 
         pos += match.Length;
-      }
-      else {
+      } else {
         // Encode literal
         encoder.EncodeBit(ref isMatch[(state << 4) + posState], 0);
 
-        byte matchByte = (pos > 0 && reps[0] < pos) ? data[pos - reps[0] - 1] : (byte)0;
+        var matchByte = (pos > 0 && reps[0] < pos) ? data[pos - reps[0] - 1] : (byte)0;
         literalEncoder.Encode(encoder, state, data[pos], matchByte, pos, prevByte);
         state = LzmaConstants.StateUpdateLiteral(state);
         ++pos;
@@ -219,7 +219,7 @@ public sealed class LzmaEncoder {
 
     if (writeEndMarker) {
       // Write end marker: match with distance = 0xFFFFFFFF
-      int posState = pos & this._posStateMask;
+      var posState = pos & this._posStateMask;
       encoder.EncodeBit(ref isMatch[(state << 4) + posState], 1);
       encoder.EncodeBit(ref isRep[state], 0);
       matchLenEncoder.Encode(encoder, LzmaConstants.MatchMinLen, posState);
@@ -232,38 +232,32 @@ public sealed class LzmaEncoder {
   private static void EncodeDistance(RangeEncoder encoder,
     BitTreeEncoder[] posSlotEncoder, Span<int> posEncoders,
     BitTreeEncoder alignEncoder, long distance, int length) {
-    int lenToPosState = LzmaConstants.GetLenToPosState(length);
+    var lenToPosState = LzmaConstants.GetLenToPosState(length);
 
     if (distance < LzmaConstants.NumFullDistances) {
-      int posSlot = GetPosSlot((int)distance);
+      var posSlot = GetPosSlot((int)distance);
       posSlotEncoder[lenToPosState].Encode(encoder, posSlot);
 
-      if (posSlot >= LzmaConstants.StartPosModelIndex) {
-        int footerBits = (posSlot >> 1) - 1;
-        int baseVal = (2 | (posSlot & 1)) << footerBits;
-        int posReduced = (int)distance - baseVal;
-        BitTreeEncoder.ReverseEncode(encoder, posEncoders, baseVal - posSlot - 1, footerBits, posReduced);
-      }
-    }
-    else {
-      int posSlot;
-      if (distance >= 0xFFFFFFFF)
-        posSlot = 63;
-      else
-        posSlot = GetPosSlot((int)distance);
+      if (posSlot < LzmaConstants.StartPosModelIndex)
+        return;
 
+      var footerBits = (posSlot >> 1) - 1;
+      var baseVal = (2 | (posSlot & 1)) << footerBits;
+      var posReduced = (int)distance - baseVal;
+      BitTreeEncoder.ReverseEncode(encoder, posEncoders, baseVal - posSlot - 1, footerBits, posReduced);
+    } else {
+      var posSlot = distance >= 0xFFFFFFFF ? 63 : GetPosSlot((int)distance);
       posSlotEncoder[lenToPosState].Encode(encoder, posSlot);
 
-      int footerBits = (posSlot >> 1) - 1;
-      int baseVal = (2 | (posSlot & 1)) << footerBits;
-      int posReduced = (int)((uint)distance - (uint)baseVal);
+      var footerBits = (posSlot >> 1) - 1;
+      var baseVal = (2 | (posSlot & 1)) << footerBits;
+      var posReduced = (int)((uint)distance - (uint)baseVal);
 
       if (posSlot >= LzmaConstants.EndPosModelIndex) {
-        int directBits = footerBits - LzmaConstants.NumAlignBits;
+        var directBits = footerBits - LzmaConstants.NumAlignBits;
         encoder.EncodeDirectBits(posReduced >> LzmaConstants.NumAlignBits, directBits);
         alignEncoder.ReverseEncode(encoder, posReduced & (LzmaConstants.AlignTableSize - 1));
-      }
-      else
+      } else
         BitTreeEncoder.ReverseEncode(encoder, posEncoders, baseVal - posSlot - 1, footerBits, posReduced);
     }
   }
@@ -272,7 +266,7 @@ public sealed class LzmaEncoder {
     if (distance < 4)
       return distance;
 
-    int bitCount = 31 - int.LeadingZeroCount(distance);
+    var bitCount = 31 - int.LeadingZeroCount(distance);
     return (bitCount << 1) + ((distance >> (bitCount - 1)) & 1);
   }
 }

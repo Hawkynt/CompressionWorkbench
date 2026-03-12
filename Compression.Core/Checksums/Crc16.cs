@@ -8,12 +8,7 @@ public sealed class Crc16 : IChecksum {
   /// CRC-16/ARC polynomial (reflected form).
   /// </summary>
   public const ushort Arc = 0xA001;
-
-  /// <summary>
-  /// CRC-16/CCITT polynomial (reflected form, also known as CRC-16/KERMIT).
-  /// </summary>
-  public const ushort Ccitt = 0x8408;
-
+  
   private readonly ushort[] _table;
   private readonly ushort _initialValue;
   private ushort _crc;
@@ -40,9 +35,10 @@ public sealed class Crc16 : IChecksum {
 
   /// <inheritdoc />
   public void Update(ReadOnlySpan<byte> data) {
-    ushort crc = this._crc;
-    for (int i = 0; i < data.Length; ++i)
-      crc = (ushort)((crc >> 8) ^ this._table[(byte)(crc ^ data[i])]);
+    var crc = this._crc;
+    foreach (var value in data)
+      crc = (ushort)((crc >> 8) ^ this._table[(byte)(crc ^ value)]);
+
     this._crc = crc;
   }
 
@@ -57,6 +53,5 @@ public sealed class Crc16 : IChecksum {
     return (ushort)crc.Value;
   }
 
-  private static ushort[] GenerateTable(ushort polynomial) =>
-    CrcTableGenerator.Generate(polynomial);
+  private static ushort[] GenerateTable(ushort polynomial) => CrcTableGenerator.Generate(polynomial);
 }

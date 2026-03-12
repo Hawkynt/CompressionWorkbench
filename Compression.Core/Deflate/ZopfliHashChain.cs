@@ -23,7 +23,7 @@ internal sealed class ZopfliHashChain {
     this._windowSize = windowSize;
     this._head = new int[HashSize];
     this._prev = new int[windowSize];
-    Array.Fill(this._head, -1);
+    this._head.AsSpan().Fill(-1);
   }
 
   /// <summary>
@@ -36,20 +36,20 @@ internal sealed class ZopfliHashChain {
     if (position + 2 >= data.Length)
       return result;
 
-    int hash = ComputeHash(data, position);
+    var hash = ComputeHash(data, position);
     var candidate = this._head[hash];
     var windowStart = Math.Max(0, position - maxDistance);
 
-    int chainDepth = ComputeChainDepth(data, position);
+    var chainDepth = ComputeChainDepth(data, position);
     var chainCount = 0;
 
     // Track best distance per length: bestDistByLen[len] = shortest distance
     var effectiveMaxLen = Math.Min(maxLength, data.Length - position);
     var bestDistByLen = new int[effectiveMaxLen + 1];
-    Array.Fill(bestDistByLen, int.MaxValue);
-
+    bestDistByLen.AsSpan().Fill(int.MaxValue);
+    
     while (candidate >= windowStart && chainCount < chainDepth) {
-      int distance = position - candidate;
+      var distance = position - candidate;
       var limit = Math.Min(effectiveMaxLen, data.Length - candidate);
 
       var length = 0;
@@ -58,7 +58,7 @@ internal sealed class ZopfliHashChain {
 
       // Record best (shortest) distance for each achievable length
       if (length >= 3)
-        for (int l = 3; l <= length; ++l)
+        for (var l = 3; l <= length; ++l)
           if (distance < bestDistByLen[l])
             bestDistByLen[l] = distance;
 
@@ -74,9 +74,9 @@ internal sealed class ZopfliHashChain {
     this._head[hash] = position;
 
     // Collect unique matches sorted by ascending length
-    for (int l = 3; l <= effectiveMaxLen; ++l)
+    for (var l = 3; l <= effectiveMaxLen; ++l)
       if (bestDistByLen[l] < int.MaxValue)
-        result.Add(new Match(bestDistByLen[l], l));
+        result.Add(new(bestDistByLen[l], l));
 
     return result;
   }
@@ -88,7 +88,7 @@ internal sealed class ZopfliHashChain {
     if (position + 2 >= data.Length)
       return;
 
-    int hash = ComputeHash(data, position);
+    var hash = ComputeHash(data, position);
     this._prev[position & (this._windowSize - 1)] = this._head[hash];
     this._head[hash] = position;
   }
@@ -103,22 +103,23 @@ internal sealed class ZopfliHashChain {
 
     Span<bool> seen = stackalloc bool[256];
     var unique = 0;
-    for (int i = 0; i < windowLen; ++i) {
-      byte dataByte = data[position + i];
-      if (!seen[dataByte]) {
-        seen[dataByte] = true;
-        ++unique;
-      }
+    for (var i = 0; i < windowLen; ++i) {
+      var dataByte = data[position + i];
+      if (seen[dataByte])
+        continue;
+
+      seen[dataByte] = true;
+      ++unique;
     }
 
-    double diversity = (double)unique / windowLen;
+    var diversity = (double)unique / windowLen;
+    
+    return diversity switch {
+      < 0.1 => 2048, // Low diversity — search deeper
+      > 0.6 => 128,  // High diversity — search shallower
+      _ => 512
+    };
 
-    if (diversity < 0.1)
-      return 2048; // Low diversity — search deeper
-    if (diversity > 0.6)
-      return 128;  // High diversity — search shallower
-
-    return 512;
   }
 
   private static int ComputeHash(ReadOnlySpan<byte> data, int position) =>

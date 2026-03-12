@@ -23,20 +23,20 @@ internal static class OptimalParser {
     if (data.Length == 0)
       return [];
 
-    int length = data.Length;
+    var length = data.Length;
     var dp = new DpNode[length + 1];
     dp[0].Cost = 0;
-    dp.AsSpan(1).Fill(new DpNode { Cost = double.MaxValue });
+    dp.AsSpan(1).Fill(new() { Cost = double.MaxValue });
 
     const double UnseenPenalty = 15.0;
 
-    for (int i = 0; i < length; ++i) {
+    for (var i = 0; i < length; ++i) {
       if (dp[i].Cost >= double.MaxValue)
         continue;
 
       // Literal edge: i → i+1
-      double litCost = GetLitLenCost(data[i], litLenLengths, UnseenPenalty);
-      double newCost = dp[i].Cost + litCost;
+      var litCost = GetLitLenCost(data[i], litLenLengths, UnseenPenalty);
+      var newCost = dp[i].Cost + litCost;
       if (newCost < dp[i + 1].Cost) {
         dp[i + 1].Cost = newCost;
         dp[i + 1].Length = 1;
@@ -45,26 +45,25 @@ internal static class OptimalParser {
 
       // Match edges from hash chain
       var matches = hashChain.FindAllMatches(data, i, DeflateConstants.WindowSize, 258);
-      foreach (var match in matches) {
-        int len = match.Length;
-        int dist = match.Distance;
-        int dest = i + len;
+      foreach (var (distance, len) in matches) {
+        var dest = i + len;
         if (dest > length)
           continue;
 
-        double matchCost = GetMatchCost(len, dist, litLenLengths, distLengths, UnseenPenalty);
+        var matchCost = GetMatchCost(len, distance, litLenLengths, distLengths, UnseenPenalty);
         newCost = dp[i].Cost + matchCost;
-        if (newCost < dp[dest].Cost) {
-          dp[dest].Cost = newCost;
-          dp[dest].Length = (ushort)len;
-          dp[dest].Distance = (ushort)dist;
-        }
+        if (!(newCost < dp[dest].Cost))
+          continue;
+
+        dp[dest].Cost = newCost;
+        dp[dest].Length = (ushort)len;
+        dp[dest].Distance = (ushort)distance;
       }
     }
 
     // Traceback
     var symbols = new List<LzSymbol>();
-    int pos = length;
+    var pos = length;
     while (pos > 0) {
       ref var node = ref dp[pos];
       if (node.Distance == 0) {
@@ -83,21 +82,21 @@ internal static class OptimalParser {
     return [.. symbols];
   }
 
-  private static double GetLitLenCost(int symbol, ReadOnlySpan<int> litLenLengths, double unseenPenalty) {
-    if (symbol < litLenLengths.Length && litLenLengths[symbol] > 0)
-      return litLenLengths[symbol];
-    return unseenPenalty;
-  }
+  private static double GetLitLenCost(int symbol, ReadOnlySpan<int> litLenLengths, double unseenPenalty) => 
+    symbol < litLenLengths.Length && litLenLengths[symbol] > 0 
+      ? litLenLengths[symbol] 
+      : unseenPenalty
+      ;
 
   private static double GetMatchCost(
     int length, int distance,
     ReadOnlySpan<int> litLenLengths,
     ReadOnlySpan<int> distLengths,
     double unseenPenalty) {
-    int lenCode = DeflateConstants.GetLengthCode(length);
-    int lenIdx = lenCode - 257;
+    var lenCode = DeflateConstants.GetLengthCode(length);
+    var lenIdx = lenCode - 257;
 
-    double cost = 0;
+    var cost = 0.0;
 
     // Length code bits
     if (lenCode < litLenLengths.Length && litLenLengths[lenCode] > 0)
@@ -109,7 +108,7 @@ internal static class OptimalParser {
     cost += DeflateConstants.LengthExtraBits[lenIdx];
 
     // Distance code bits
-    int distCode = DeflateConstants.GetDistanceCode(distance);
+    var distCode = DeflateConstants.GetDistanceCode(distance);
     if (distCode < distLengths.Length && distLengths[distCode] > 0)
       cost += distLengths[distCode];
     else

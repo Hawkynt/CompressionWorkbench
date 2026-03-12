@@ -108,10 +108,10 @@ public static class DeflateConstants {
     // Symbols 286–287 are unused but must be included to produce correct
     // canonical code assignments for the other symbols.
     var lengths = new int[288];
-    for (int i = 0; i <= 143; i++) lengths[i] = 8;
-    for (int i = 144; i <= 255; i++) lengths[i] = 9;
-    for (int i = 256; i <= 279; i++) lengths[i] = 7;
-    for (int i = 280; i <= 287; i++) lengths[i] = 8;
+    lengths.AsSpan(0, 144).Fill(8);
+    lengths.AsSpan(144, 112).Fill(9);
+    lengths.AsSpan(256, 24).Fill(7);
+    lengths.AsSpan(280, 8).Fill(8);
     return lengths;
   }
 
@@ -120,7 +120,7 @@ public static class DeflateConstants {
   /// </summary>
   public static int[] GetStaticDistanceLengths() {
     var lengths = new int[DistanceAlphabetSize];
-    Array.Fill(lengths, 5);
+    lengths.AsSpan().Fill(5);
     return lengths;
   }
 
@@ -130,17 +130,16 @@ public static class DeflateConstants {
   /// <param name="length">The match length (3–258).</param>
   /// <returns>The length code (257–285).</returns>
   public static int GetLengthCode(int length) {
-    if (length < 3 || length > 258)
-      throw new ArgumentOutOfRangeException(nameof(length), length, "Length must be between 3 and 258.");
-
-    if (length == 258)
-      return 285;
+    switch (length) {
+      case < 3 or > 258: throw new ArgumentOutOfRangeException(nameof(length), length, "Length must be between 3 and 258.");
+      case 258: return 285;
+    }
 
     // Binary search through LengthBase
-    ReadOnlySpan<int> bases = LengthBase;
+    var bases = LengthBase;
     int lo = 0, hi = bases.Length - 2; // exclude code 285 (handled above)
     while (lo < hi) {
-      int mid = (lo + hi + 1) / 2;
+      var mid = (lo + hi + 1) / 2;
       if (bases[mid] <= length)
         lo = mid;
       else
@@ -156,13 +155,13 @@ public static class DeflateConstants {
   /// <param name="distance">The match distance (1–32768).</param>
   /// <returns>The distance code (0–29).</returns>
   public static int GetDistanceCode(int distance) {
-    if (distance < 1 || distance > 32768)
+    if (distance is < 1 or > 32768)
       throw new ArgumentOutOfRangeException(nameof(distance), distance, "Distance must be between 1 and 32768.");
 
-    ReadOnlySpan<int> bases = DistanceBase;
+    var bases = DistanceBase;
     int lo = 0, hi = bases.Length - 1;
     while (lo < hi) {
-      int mid = (lo + hi + 1) / 2;
+      var mid = (lo + hi + 1) / 2;
       if (bases[mid] <= distance)
         lo = mid;
       else

@@ -37,17 +37,17 @@ public sealed class LzssDecoder {
     var output = new List<byte>();
 
     while (expectedLength < 0 || output.Count < expectedLength) {
-      int flagByte = this._input.ReadByte();
+      var flagByte = this._input.ReadByte();
       if (flagByte < 0)
         break;
 
-      for (int bit = 0; bit < 8; ++bit) {
+      for (var bit = 0; bit < 8; ++bit) {
         if (expectedLength >= 0 && output.Count >= expectedLength)
           break;
 
         if ((flagByte & (1 << bit)) != 0) {
           // Literal
-          int readByte = this._input.ReadByte();
+          var readByte = this._input.ReadByte();
           if (readByte < 0)
             return [.. output];
 
@@ -55,20 +55,20 @@ public sealed class LzssDecoder {
           window.WriteByte((byte)readByte);
         } else {
           // Match
-          int b1 = this._input.ReadByte();
-          int b2 = this._input.ReadByte();
+          var b1 = this._input.ReadByte();
+          var b2 = this._input.ReadByte();
           if (b1 < 0 || b2 < 0)
             return [.. output];
 
-          int encodedDistance = (b1 << (this._distanceBits - 8)) | (b2 >> this._lengthBits);
-          int encodedLength = b2 & ((1 << this._lengthBits) - 1);
+          var encodedDistance = (b1 << (this._distanceBits - 8)) | (b2 >> this._lengthBits);
+          var encodedLength = b2 & ((1 << this._lengthBits) - 1);
 
-          int distance = encodedDistance + 1; // Convert from 0-based to 1-based
-          int length = encodedLength + this._minMatchLength;
+          var distance = encodedDistance + 1; // Convert from 0-based to 1-based
+          var length = encodedLength + this._minMatchLength;
 
           if (distance > window.Count) {
             // If distance exceeds available data, emit zeros
-            for (int i = 0; i < length; ++i) {
+            for (var i = 0; i < length; ++i) {
               output.Add(0);
               window.WriteByte(0);
             }

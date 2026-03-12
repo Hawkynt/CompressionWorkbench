@@ -13,9 +13,7 @@ public sealed class Lz78Compressor {
   /// Maximum number of bits for dictionary indices. The dictionary resets
   /// when it reaches 2^<paramref name="maxBits"/> entries. Default is 12.
   /// </param>
-  public Lz78Compressor(int maxBits = 12) {
-    this._maxEntries = 1 << maxBits;
-  }
+  public Lz78Compressor(int maxBits = 12) => this._maxEntries = 1 << maxBits;
 
   /// <summary>
   /// Compresses the input data into a sequence of LZ78 tokens.
@@ -31,35 +29,34 @@ public sealed class Lz78Compressor {
     // Trie stored as (parentIndex, childByte) -> entryIndex.
     // Entry 0 is the root (empty string).
     var trie = new Dictionary<(int ParentIndex, byte Child), int>();
-    int nextIndex = 1; // next dictionary entry index to assign
-    int currentIndex = 0; // current node in the trie (0 = root)
+    var nextIndex = 1; // next dictionary entry index to assign
+    var currentIndex = 0; // current node in the trie (0 = root)
 
-    for (int i = 0; i < data.Length; ++i) {
-      byte symbol = data[i];
+    foreach (var symbol in data) {
       var key = (currentIndex, symbol);
 
-      if (trie.TryGetValue(key, out int childIndex)) {
+      if (trie.TryGetValue(key, out var childIndex))
         // Extend the current match.
         currentIndex = childIndex;
-      }
       else {
         // Mismatch: emit token and add new entry.
-        tokens.Add(new Lz78Token(currentIndex, symbol));
+        tokens.Add(new(currentIndex, symbol));
         trie[key] = nextIndex;
         ++nextIndex;
         currentIndex = 0;
 
         // Reset dictionary when it reaches maximum size.
-        if (nextIndex >= this._maxEntries) {
-          trie.Clear();
-          nextIndex = 1;
-        }
+        if (nextIndex < this._maxEntries)
+          continue;
+
+        trie.Clear();
+        nextIndex = 1;
       }
     }
 
     // If we ended mid-match, emit a terminal token.
     if (currentIndex > 0)
-      tokens.Add(new Lz78Token(currentIndex, null));
+      tokens.Add(new(currentIndex, null));
 
     return tokens;
   }

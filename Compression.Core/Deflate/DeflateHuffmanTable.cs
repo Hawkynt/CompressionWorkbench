@@ -14,24 +14,19 @@ public sealed class DeflateHuffmanTable {
   private readonly byte[] _lengthTable;       // lookup: reversed-code → code length
   private readonly uint[] _encodeCodes;       // symbol → reversed code
   private readonly byte[] _encodeLengths;     // symbol → code length
-  private readonly int _maxCodeLength;
 
   /// <summary>
   /// Gets the maximum code length in bits.
   /// </summary>
-  public int MaxCodeLength => this._maxCodeLength;
+  public int MaxCodeLength { get; }
 
   /// <summary>
   /// Builds a Deflate Huffman table from code lengths.
   /// </summary>
   /// <param name="codeLengths">Array where index = symbol, value = code length (0 = unused).</param>
   public DeflateHuffmanTable(int[] codeLengths) {
-    int maxLen = 0;
-    for (int i = 0; i < codeLengths.Length; ++i)
-      if (codeLengths[i] > maxLen)
-        maxLen = codeLengths[i];
-
-    this._maxCodeLength = maxLen;
+    var maxLen = codeLengths.Length > 0 ? codeLengths.Max() : 0;
+    this.MaxCodeLength = maxLen;
 
     // Assign canonical codes (MSB-first), then bit-reverse for Deflate
     Span<uint> nextCode = stackalloc uint[maxLen + 1];
@@ -41,25 +36,25 @@ public sealed class DeflateHuffmanTable {
     this._encodeCodes = new uint[codeLengths.Length];
     this._encodeLengths = new byte[codeLengths.Length];
 
-    int tableSize = maxLen > 0 ? 1 << maxLen : 0;
+    var tableSize = maxLen > 0 ? 1 << maxLen : 0;
     this._symbolTable = new ushort[tableSize];
     this._lengthTable = new byte[tableSize];
 
-    for (int symbol = 0; symbol < codeLengths.Length; symbol++) {
-      int len = codeLengths[symbol];
+    for (var symbol = 0; symbol < codeLengths.Length; symbol++) {
+      var len = codeLengths[symbol];
       if (len == 0)
         continue;
 
-      uint canonical = nextCode[len]++;
-      uint reversed = ReverseBits(canonical, len);
+      var canonical = nextCode[len]++;
+      var reversed = ReverseBits(canonical, len);
 
       this._encodeCodes[symbol] = reversed;
       this._encodeLengths[symbol] = (byte)len;
 
       // Fill all table entries that share this prefix
       // The reversed code occupies the low 'len' bits; we vary the upper bits
-      int fill = 1 << len;
-      for (int entry = (int)reversed; entry < tableSize; entry += fill) {
+      var fill = 1 << len;
+      for (var entry = (int)reversed; entry < tableSize; entry += fill) {
         this._symbolTable[entry] = (ushort)symbol;
         this._lengthTable[entry] = (byte)len;
       }
@@ -70,13 +65,13 @@ public sealed class DeflateHuffmanTable {
   /// Creates the static literal/length Huffman table for Deflate (BTYPE=1).
   /// </summary>
   public static DeflateHuffmanTable CreateStaticLiteralTable() =>
-    new DeflateHuffmanTable(DeflateConstants.GetStaticLiteralLengths());
+    new(DeflateConstants.GetStaticLiteralLengths());
 
   /// <summary>
   /// Creates the static distance Huffman table for Deflate (BTYPE=1).
   /// </summary>
   public static DeflateHuffmanTable CreateStaticDistanceTable() =>
-    new DeflateHuffmanTable(DeflateConstants.GetStaticDistanceLengths());
+    new(DeflateConstants.GetStaticDistanceLengths());
 
   /// <summary>
   /// Decodes a symbol from the bit buffer using lookup-table decoding.
@@ -85,11 +80,11 @@ public sealed class DeflateHuffmanTable {
   /// <param name="bitBuffer">The bit buffer to read from.</param>
   /// <returns>The decoded symbol.</returns>
   public int DecodeSymbol(BitBuffer<LsbBitOrder> bitBuffer) {
-    if (bitBuffer.EnsureBits(this._maxCodeLength)) {
+    if (bitBuffer.EnsureBits(this.MaxCodeLength)) {
       // Fast path: we have enough bits for a direct lookup
-      uint peek = bitBuffer.PeekBits(this._maxCodeLength);
-      int symbol = this._symbolTable[peek];
-      int len = this._lengthTable[peek];
+      var peek = bitBuffer.PeekBits(this.MaxCodeLength);
+      var symbol = this._symbolTable[peek];
+      var len = this._lengthTable[peek];
 
       if (len == 0)
         ThrowInvalidHuffmanCode();
@@ -99,15 +94,15 @@ public sealed class DeflateHuffmanTable {
     }
 
     // Slow path: near end of stream, decode bit-by-bit
-    int available = bitBuffer.BitsAvailable;
+    var available = bitBuffer.BitsAvailable;
     if (available == 0)
       ThrowNoBitsAvailable();
 
     // Peek what we have, zero-extend to maxCodeLength
-    uint partialPeek = bitBuffer.PeekBits(available);
+    var partialPeek = bitBuffer.PeekBits(available);
     // The lookup table works because upper bits are zero
-    int slowSymbol = this._symbolTable[partialPeek];
-    int slowLen = this._lengthTable[partialPeek];
+    var slowSymbol = this._symbolTable[partialPeek];
+    var slowLen = this._lengthTable[partialPeek];
 
     if (slowLen == 0 || slowLen > available)
       ThrowTruncatedHuffman();
@@ -121,9 +116,7 @@ public sealed class DeflateHuffmanTable {
   /// </summary>
   /// <param name="symbol">The symbol to encode.</param>
   /// <returns>The reversed code and its length in bits.</returns>
-  public (uint ReversedCode, int Length) GetCode(int symbol) {
-    return (this._encodeCodes[symbol], this._encodeLengths[symbol]);
-  }
+  public (uint ReversedCode, int Length) GetCode(int symbol) => (this._encodeCodes[symbol], this._encodeLengths[symbol]);
 
   /// <summary>
   /// Reverses the bit order of a code.
@@ -133,13 +126,19 @@ public sealed class DeflateHuffmanTable {
   /// <returns>The bit-reversed code.</returns>
   internal static uint ReverseBits(uint code, int length) => BitHelpers.ReverseBits(code, length);
 
-  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  [DoesNotReturn]
+  [StackTraceHidden]
+  [MethodImpl(MethodImplOptions.NoInlining)]
   private static void ThrowInvalidHuffmanCode() => throw new InvalidDataException("Invalid Huffman code encountered.");
 
-  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  [DoesNotReturn]
+  [StackTraceHidden]
+  [MethodImpl(MethodImplOptions.NoInlining)]
   private static void ThrowNoBitsAvailable() => throw new EndOfStreamException("No bits available for Huffman decoding.");
 
-  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  [DoesNotReturn]
+  [StackTraceHidden]
+  [MethodImpl(MethodImplOptions.NoInlining)]
   private static void ThrowTruncatedHuffman() => throw new InvalidDataException("Invalid or truncated Huffman code at end of stream.");
 
 }

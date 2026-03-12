@@ -57,8 +57,8 @@ public sealed class Sha256 {
   /// Initializes a new <see cref="Sha256"/> instance.
   /// </summary>
   public Sha256() {
-    Reset();
-    Hash = [];
+    this.Reset();
+    this.Hash = [];
   }
 
   /// <summary>
@@ -71,18 +71,18 @@ public sealed class Sha256 {
   /// Resets the hasher to its initial state.
   /// </summary>
   public void Reset() {
-    _h0 = H0Init;
-    _h1 = H1Init;
-    _h2 = H2Init;
-    _h3 = H3Init;
-    _h4 = H4Init;
-    _h5 = H5Init;
-    _h6 = H6Init;
-    _h7 = H7Init;
+    this._h0 = H0Init;
+    this._h1 = H1Init;
+    this._h2 = H2Init;
+    this._h3 = H3Init;
+    this._h4 = H4Init;
+    this._h5 = H5Init;
+    this._h6 = H6Init;
+    this._h7 = H7Init;
     this._bufferLength = 0;
     this._totalLength = 0;
     this._finished = false;
-    Hash = [];
+    this.Hash = [];
   }
 
   /// <summary>
@@ -95,32 +95,33 @@ public sealed class Sha256 {
       throw new InvalidOperationException("Cannot update after Finish() has been called. Call Reset() first.");
 
     this._totalLength += (ulong)data.Length;
-    int offset = 0;
+    var offset = 0;
 
     // Fill partial buffer
     if (this._bufferLength > 0) {
       var toCopy = Math.Min(BlockSize - this._bufferLength, data.Length);
-      data.Slice(0, toCopy).CopyTo(this._buffer.AsSpan(this._bufferLength));
+      data[..toCopy].CopyTo(this._buffer.AsSpan(this._bufferLength));
       this._bufferLength += toCopy;
       offset += toCopy;
 
       if (this._bufferLength == BlockSize) {
-        ProcessBlock(this._buffer);
+        this.ProcessBlock(this._buffer);
         this._bufferLength = 0;
       }
     }
 
     // Process full blocks
     while (offset + BlockSize <= data.Length) {
-      ProcessBlock(data.Slice(offset, BlockSize));
+      this.ProcessBlock(data.Slice(offset, BlockSize));
       offset += BlockSize;
     }
 
     // Store remaining bytes
-    if (offset < data.Length) {
-      data.Slice(offset).CopyTo(this._buffer);
-      this._bufferLength = data.Length - offset;
-    }
+    if (offset >= data.Length)
+      return;
+
+    data[offset..].CopyTo(this._buffer);
+    this._bufferLength = data.Length - offset;
   }
 
   /// <summary>
@@ -142,7 +143,7 @@ public sealed class Sha256 {
     // If not enough room for 8-byte length, pad and process
     if (this._bufferLength > 56) {
       this._buffer.AsSpan(this._bufferLength, BlockSize - this._bufferLength).Clear();
-      ProcessBlock(this._buffer);
+      this.ProcessBlock(this._buffer);
       this._bufferLength = 0;
     }
 
@@ -151,18 +152,18 @@ public sealed class Sha256 {
 
     // Append length in bits as big-endian 64-bit
     BinaryPrimitives.WriteUInt64BigEndian(this._buffer.AsSpan(56), bitLength);
-    ProcessBlock(this._buffer);
+    this.ProcessBlock(this._buffer);
 
     // Write final hash
-    Hash = new byte[HashSize];
-    BinaryPrimitives.WriteUInt32BigEndian(Hash.AsSpan(0), _h0);
-    BinaryPrimitives.WriteUInt32BigEndian(Hash.AsSpan(4), _h1);
-    BinaryPrimitives.WriteUInt32BigEndian(Hash.AsSpan(8), _h2);
-    BinaryPrimitives.WriteUInt32BigEndian(Hash.AsSpan(12), _h3);
-    BinaryPrimitives.WriteUInt32BigEndian(Hash.AsSpan(16), _h4);
-    BinaryPrimitives.WriteUInt32BigEndian(Hash.AsSpan(20), _h5);
-    BinaryPrimitives.WriteUInt32BigEndian(Hash.AsSpan(24), _h6);
-    BinaryPrimitives.WriteUInt32BigEndian(Hash.AsSpan(28), _h7);
+    this.Hash = new byte[HashSize];
+    BinaryPrimitives.WriteUInt32BigEndian(this.Hash.AsSpan(0), this._h0);
+    BinaryPrimitives.WriteUInt32BigEndian(this.Hash.AsSpan(4), this._h1);
+    BinaryPrimitives.WriteUInt32BigEndian(this.Hash.AsSpan(8), this._h2);
+    BinaryPrimitives.WriteUInt32BigEndian(this.Hash.AsSpan(12), this._h3);
+    BinaryPrimitives.WriteUInt32BigEndian(this.Hash.AsSpan(16), this._h4);
+    BinaryPrimitives.WriteUInt32BigEndian(this.Hash.AsSpan(20), this._h5);
+    BinaryPrimitives.WriteUInt32BigEndian(this.Hash.AsSpan(24), this._h6);
+    BinaryPrimitives.WriteUInt32BigEndian(this.Hash.AsSpan(28), this._h7);
   }
 
   /// <summary>
@@ -199,24 +200,24 @@ public sealed class Sha256 {
     // Message schedule
     var w = new uint[64];
 
-    for (int t = 0; t < 16; ++t)
-      w[t] = BinaryPrimitives.ReadUInt32BigEndian(block.Slice(t * 4));
+    for (var t = 0; t < 16; ++t)
+      w[t] = BinaryPrimitives.ReadUInt32BigEndian(block[(t * 4)..]);
 
-    for (int t = 16; t < 64; ++t)
+    for (var t = 16; t < 64; ++t)
       w[t] = LittleSigma1(w[t - 2]) + w[t - 7] + LittleSigma0(w[t - 15]) + w[t - 16];
 
     // Initialize working variables
-    var a = _h0;
-    var b = _h1;
-    var c = _h2;
-    var d = _h3;
-    var e = _h4;
-    var f = _h5;
-    var g = _h6;
-    var h = _h7;
+    var a = this._h0;
+    var b = this._h1;
+    var c = this._h2;
+    var d = this._h3;
+    var e = this._h4;
+    var f = this._h5;
+    var g = this._h6;
+    var h = this._h7;
 
     // 64 rounds
-    for (int t = 0; t < 64; ++t) {
+    for (var t = 0; t < 64; ++t) {
       var t1 = h + Sigma1(e) + Ch(e, f, g) + K[t] + w[t];
       var t2 = Sigma0(a) + Maj(a, b, c);
 
@@ -231,13 +232,13 @@ public sealed class Sha256 {
     }
 
     // Update hash values
-    _h0 += a;
-    _h1 += b;
-    _h2 += c;
-    _h3 += d;
-    _h4 += e;
-    _h5 += f;
-    _h6 += g;
-    _h7 += h;
+    this._h0 += a;
+    this._h1 += b;
+    this._h2 += c;
+    this._h3 += d;
+    this._h4 += e;
+    this._h5 += f;
+    this._h6 += g;
+    this._h7 += h;
   }
 }

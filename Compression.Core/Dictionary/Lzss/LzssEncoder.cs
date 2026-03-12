@@ -41,7 +41,7 @@ public sealed class LzssEncoder {
   /// <param name="data">The input data to compress.</param>
   /// <param name="matchFinder">The match finder to use.</param>
   public void Encode(ReadOnlySpan<byte> data, MatchFinders.IMatchFinder matchFinder) {
-    int position = 0;
+    var position = 0;
     var flagBuffer = new byte[1 + 8 * 3]; // flag byte + up to 8 entries (max 3 bytes each)
     int flagBufPos;
     byte flags;
@@ -53,26 +53,24 @@ public sealed class LzssEncoder {
       flagBufPos = 1; // Leave room for flag byte at index 0
 
       while (flagBit < 8 && position < data.Length) {
-        var match = matchFinder.FindMatch(data, position, MaxDistance, MaxLength, this._minMatchLength);
+        var match = matchFinder.FindMatch(data, position, this.MaxDistance, this.MaxLength, this._minMatchLength);
 
         if (match.Length >= this._minMatchLength) {
           // Match: flag bit = 0 (already 0)
-          int encodedDistance = match.Distance - 1; // 0-based
-          int encodedLength = match.Length - this._minMatchLength;
+          var encodedDistance = match.Distance - 1; // 0-based
+          var encodedLength = match.Length - this._minMatchLength;
 
           // Write distance (high byte first) and length
           flagBuffer[flagBufPos++] = (byte)(encodedDistance >> (this._distanceBits - 8));
           flagBuffer[flagBufPos++] = (byte)((encodedDistance & ((1 << (this._distanceBits - 8)) - 1)) << this._lengthBits | (encodedLength & ((1 << this._lengthBits) - 1)));
 
           // Insert skipped positions
-          if (matchFinder is MatchFinders.HashChainMatchFinder hcmf) {
-            for (int i = 1; i < match.Length; ++i)
+          if (matchFinder is MatchFinders.HashChainMatchFinder hcmf)
+            for (var i = 1; i < match.Length; ++i)
               hcmf.InsertPosition(data, position + i);
-          }
 
           position += match.Length;
-        }
-        else {
+        } else {
           // Literal: flag bit = 1
           flags |= (byte)(1 << flagBit);
           flagBuffer[flagBufPos++] = data[position];

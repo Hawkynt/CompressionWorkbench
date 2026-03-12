@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.IO;
 using System.Runtime.CompilerServices;
 
 namespace Compression.Core.Dictionary.Lz78;
@@ -22,7 +21,7 @@ public static class Lz78Decompressor {
   /// Thrown when a token references an invalid dictionary index.
   /// </exception>
   public static byte[] Decompress(IReadOnlyList<Lz78Token> tokens, int maxBits = 12) {
-    int maxEntries = 1 << maxBits;
+    var maxEntries = 1 << maxBits;
 
     // Dictionary entry 0 = empty byte array (root).
     var dictionary = new List<byte[]> { Array.Empty<byte>() };
@@ -32,9 +31,9 @@ public static class Lz78Decompressor {
       if (token.DictionaryIndex < 0 || token.DictionaryIndex >= dictionary.Count)
         ThrowInvalidDictionaryIndex(token.DictionaryIndex, dictionary.Count);
 
-      byte[] prefix = dictionary[token.DictionaryIndex];
+      var prefix = dictionary[token.DictionaryIndex];
 
-      if (token.NextByte is byte nextByte) {
+      if (token.NextByte is { } nextByte) {
         // Normal token: prefix + next byte.
         var entry = new byte[prefix.Length + 1];
         prefix.CopyTo(entry, 0);
@@ -44,21 +43,20 @@ public static class Lz78Decompressor {
         dictionary.Add(entry);
 
         // Reset dictionary when it reaches maximum size.
-        if (dictionary.Count >= maxEntries) {
-          dictionary.Clear();
-          dictionary.Add(Array.Empty<byte>());
-        }
-      }
-      else {
+        if (dictionary.Count < maxEntries)
+          continue;
+
+        dictionary.Clear();
+        dictionary.Add([]);
+      } else
         // Terminal token: emit prefix only, no new dictionary entry.
         output.Write(prefix);
-      }
     }
 
     return output.ToArray();
   }
 
-  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  [DoesNotReturn][StackTraceHidden][MethodImpl(MethodImplOptions.NoInlining)]
   private static void ThrowInvalidDictionaryIndex(int index, int dictSize) =>
     throw new InvalidDataException(
       $"Invalid dictionary index {index} (dictionary size: {dictSize}).");

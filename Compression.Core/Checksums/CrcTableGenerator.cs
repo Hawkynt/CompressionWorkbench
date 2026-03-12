@@ -11,9 +11,9 @@ internal static class CrcTableGenerator {
   /// </summary>
   internal static T[] Generate<T>(T polynomial) where T : IBinaryInteger<T> {
     var table = new T[256];
-    for (int i = 0; i < 256; ++i) {
+    for (var i = 0; i < 256; ++i) {
       var crc = T.CreateTruncating(i);
-      for (int j = 0; j < 8; ++j)
+      for (var j = 0; j < 8; ++j)
         crc = (crc & T.One) != T.Zero ? (crc >>> 1) ^ polynomial : crc >>> 1;
 
       table[i] = crc;
@@ -29,9 +29,9 @@ internal static class CrcTableGenerator {
     var tables = new T[4][];
     tables[0] = Generate(polynomial);
 
-    for (int t = 1; t < 4; ++t) {
+    for (var t = 1; t < 4; ++t) {
       tables[t] = new T[256];
-      for (int i = 0; i < 256; ++i)
+      for (var i = 0; i < 256; ++i)
         tables[t][i] = (tables[t - 1][i] >>> 8) ^ tables[0][int.CreateTruncating(tables[t - 1][i] & T.CreateTruncating(0xFF))];
     }
 

@@ -12,37 +12,34 @@ namespace Compression.Core.BitIO;
 public sealed class BitReader<TOrder> where TOrder : struct, IBitOrder {
   private readonly Stream _stream;
   private int _buffer;
-  private int _bitsInBuffer;
 
   /// <summary>
   /// Initializes a new <see cref="BitReader{TOrder}"/> over the specified stream.
   /// </summary>
   /// <param name="stream">The stream to read from.</param>
-  public BitReader(Stream stream) {
-    this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
-  }
+  public BitReader(Stream stream) => this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
 
   /// <summary>
   /// Gets the number of bits remaining in the current byte buffer.
   /// </summary>
-  public int BitsInBuffer => this._bitsInBuffer;
+  public int BitsInBuffer { get; private set; }
 
   /// <summary>
   /// Reads a single bit from the stream.
   /// </summary>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public int ReadBit() {
-    if (this._bitsInBuffer == 0) {
-      int readByte = this._stream.ReadByte();
+    if (this.BitsInBuffer == 0) {
+      var readByte = this._stream.ReadByte();
       if (readByte < 0)
         ThrowEndOfStream();
       this._buffer = readByte;
-      this._bitsInBuffer = 8;
+      this.BitsInBuffer = 8;
     }
 
     var (bit, buf) = TOrder.ExtractBit(this._buffer);
     this._buffer = buf;
-    --this._bitsInBuffer;
+    --this.BitsInBuffer;
     return bit;
   }
 
@@ -55,8 +52,9 @@ public sealed class BitReader<TOrder> where TOrder : struct, IBitOrder {
     ArgumentOutOfRangeException.ThrowIfGreaterThan(count, 32);
 
     var result = 0U;
-    for (int i = 0; i < count; ++i)
-      result = TOrder.AccumulateBits(result, ReadBit(), i);
+    for (var i = 0; i < count; ++i)
+      result = TOrder.AccumulateBits(result, this.ReadBit(), i);
+
     return result;
   }
 
@@ -64,11 +62,13 @@ public sealed class BitReader<TOrder> where TOrder : struct, IBitOrder {
   /// Discards any remaining bits in the current byte, aligning to the next byte boundary.
   /// </summary>
   public void AlignToByte() {
-    this._bitsInBuffer = 0;
+    this.BitsInBuffer = 0;
     this._buffer = 0;
   }
 
-  [DoesNotReturn, StackTraceHidden, MethodImpl(MethodImplOptions.NoInlining)]
+  [DoesNotReturn]
+  [StackTraceHidden]
+  [MethodImpl(MethodImplOptions.NoInlining)]
   private static void ThrowEndOfStream() =>
     throw new EndOfStreamException("Unexpected end of stream while reading bits.");
 }
@@ -88,9 +88,9 @@ public sealed class BitReader {
   public BitReader(Stream stream, BitOrder bitOrder = BitOrder.LsbFirst) {
     this._bitOrder = bitOrder;
     if (bitOrder == BitOrder.LsbFirst)
-      this._lsb = new BitReader<LsbBitOrder>(stream);
+      this._lsb = new(stream);
     else
-      this._msb = new BitReader<MsbBitOrder>(stream);
+      this._msb = new(stream);
   }
 
   /// <summary>Gets the number of bits remaining in the current byte buffer.</summary>

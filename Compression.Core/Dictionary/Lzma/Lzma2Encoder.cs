@@ -21,7 +21,7 @@ public sealed class Lzma2Encoder {
   /// <param name="dictionarySize">The dictionary size in bytes.</param>
   public Lzma2Encoder(int dictionarySize = 1 << 23) {
     this._dictionarySize = dictionarySize;
-    DictionarySizeByte = EncodeDictionarySize(dictionarySize);
+    this.DictionarySizeByte = EncodeDictionarySize(dictionarySize);
   }
 
   /// <summary>
@@ -35,22 +35,22 @@ public sealed class Lzma2Encoder {
       return;
     }
 
-    int offset = 0;
-    bool needFullReset = true;
+    var offset = 0;
+    var needFullReset = true;
 
     while (offset < data.Length) {
-      int chunkSize = Math.Min(MaxLzmaInputChunkSize, data.Length - offset);
+      var chunkSize = Math.Min(MaxLzmaInputChunkSize, data.Length - offset);
 
       // Provide the encoder with historical context (up to dictionary size)
-      int historyStart = Math.Max(0, offset - this._dictionarySize);
-      ReadOnlySpan<byte> contextAndChunk = data.Slice(historyStart, offset - historyStart + chunkSize);
-      int chunkOffset = offset - historyStart;
+      var historyStart = Math.Max(0, offset - this._dictionarySize);
+      var contextAndChunk = data.Slice(historyStart, offset - historyStart + chunkSize);
+      var chunkOffset = offset - historyStart;
 
       // Try LZMA compression with context
       using var lzmaData = new MemoryStream();
       var encoder = new LzmaEncoder(this._dictionarySize);
       encoder.Encode(lzmaData, contextAndChunk, chunkOffset, writeEndMarker: false);
-      byte[] compressed = lzmaData.ToArray();
+      var compressed = lzmaData.ToArray();
 
       if (compressed.Length < chunkSize && compressed.Length <= MaxPackedSize) {
         // LZMA chunk — fits in the 16-bit packed size field
@@ -58,12 +58,11 @@ public sealed class Lzma2Encoder {
           needFullReset);
         needFullReset = false;
         offset += chunkSize;
-      }
-      else {
+      } else {
         // Emit as uncompressed 64KB blocks
-        int remaining = chunkSize;
+        var remaining = chunkSize;
         while (remaining > 0) {
-          int blockSize = Math.Min(MaxUncompressedChunkSize, remaining);
+          var blockSize = Math.Min(MaxUncompressedChunkSize, remaining);
           WriteUncompressedChunk(output, data.Slice(offset, blockSize), needFullReset);
           needFullReset = false;
           offset += blockSize;
@@ -85,38 +84,36 @@ public sealed class Lzma2Encoder {
     byte[] data;
     if (length >= 0) {
       data = new byte[length];
-      int totalRead = 0;
+      var totalRead = 0;
       while (totalRead < length) {
-        int read = input.Read(data, totalRead, (int)(length - totalRead));
+        var read = input.Read(data, totalRead, (int)(length - totalRead));
         if (read == 0) break;
         totalRead += read;
       }
       if (totalRead < length)
         Array.Resize(ref data, totalRead);
-    }
-    else {
+    } else {
       using var ms = new MemoryStream();
       input.CopyTo(ms);
       data = ms.ToArray();
     }
 
-    Encode(output, data);
+    this.Encode(output, data);
   }
 
   private static void WriteLzmaChunk(Stream output, ReadOnlySpan<byte> uncompressed,
     byte[] compressed, byte[] properties, bool needFullReset) {
-    int unpackedSize = uncompressed.Length - 1; // 0-based
-    int packedSize = compressed.Length - 1;     // 0-based
+    var unpackedSize = uncompressed.Length - 1; // 0-based
+    var packedSize = compressed.Length - 1;     // 0-based
 
     // Control byte: 0x80 + reset bits
     // Bit 5-6: reset level (3=full reset with props)
     byte control;
     if (needFullReset)
       control = (byte)(0x80 | (3 << 5) | ((unpackedSize >> 16) & 0x1F));
-    else {
+    else
       // State reset (level 2 with properties for simplicity)
       control = (byte)(0x80 | (2 << 5) | ((unpackedSize >> 16) & 0x1F));
-    }
 
     output.WriteByte(control);
     output.WriteByte((byte)(unpackedSize >> 8));
@@ -132,9 +129,9 @@ public sealed class Lzma2Encoder {
 
   private static void WriteUncompressedChunk(Stream output, ReadOnlySpan<byte> data,
     bool needReset) {
-    int size = data.Length - 1; // 0-based
+    var size = data.Length - 1; // 0-based
 
-    byte control = needReset ? (byte)0x01 : (byte)0x02;
+    var control = needReset ? (byte)0x01 : (byte)0x02;
     output.WriteByte(control);
     output.WriteByte((byte)(size >> 8));
     output.WriteByte((byte)size);
@@ -145,13 +142,13 @@ public sealed class Lzma2Encoder {
     if (size <= 4096)
       return 0;
 
-    int bits = 31 - int.LeadingZeroCount(size);
+    var bits = 31 - int.LeadingZeroCount(size);
     if (size == (1 << bits))
       return (byte)((bits - 12) * 2 + 1); // Use odd for exact powers of 2 offset
 
     // For exact powers of 2: result = (bits * 2) - 24 + 1
     // General formula
-    byte result = (byte)(bits * 2 - 24);
+    var result = (byte)(bits * 2 - 24);
     if (size >= (3 << (bits - 1)))
       ++result;
 

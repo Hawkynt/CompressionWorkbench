@@ -23,9 +23,9 @@ public sealed class DeflateDecompressor {
   /// </summary>
   /// <param name="input">The stream containing DEFLATE compressed data.</param>
   public DeflateDecompressor(Stream input) {
-    this._bitBuffer = new BitBuffer<LsbBitOrder>(input);
-    this._window = new SlidingWindow(DeflateConstants.WindowSize);
-    this._output = new List<byte>();
+    this._bitBuffer = new(input);
+    this._window = new(DeflateConstants.WindowSize);
+    this._output = [];
   }
 
   /// <summary>
@@ -34,7 +34,7 @@ public sealed class DeflateDecompressor {
   /// <returns>The decompressed data.</returns>
   public byte[] DecompressAll() {
     while (!this._done)
-      DecompressBlock();
+      this.DecompressBlock();
 
     return [.. this._output];
   }
@@ -64,14 +64,14 @@ public sealed class DeflateDecompressor {
 
     // Decompress blocks until we have enough output or are done
     while (this._output.Count < count && !this._done)
-      DecompressBlock();
+      this.DecompressBlock();
 
     var bytesToCopy = Math.Min(count, this._output.Count);
-    if (bytesToCopy > 0) {
-      this._output.CopyTo(0, output, offset, bytesToCopy);
-      this._output.RemoveRange(0, bytesToCopy);
-    }
+    if (bytesToCopy <= 0)
+      return bytesToCopy;
 
+    this._output.CopyTo(0, output, offset, bytesToCopy);
+    this._output.RemoveRange(0, bytesToCopy);
     return bytesToCopy;
   }
 
@@ -89,14 +89,14 @@ public sealed class DeflateDecompressor {
 
     switch (btype) {
       case DeflateConstants.BlockTypeUncompressed:
-        DecompressUncompressedBlock();
+        this.DecompressUncompressedBlock();
         break;
       case DeflateConstants.BlockTypeStaticHuffman:
-        DecompressHuffmanBlock(StaticLiteralTable, StaticDistanceTable);
+        this.DecompressHuffmanBlock(StaticLiteralTable, StaticDistanceTable);
         break;
       case DeflateConstants.BlockTypeDynamicHuffman:
-        ReadDynamicTables(out var litLen, out var dist);
-        DecompressHuffmanBlock(litLen, dist);
+        this.ReadDynamicTables(out var litLen, out var dist);
+        this.DecompressHuffmanBlock(litLen, dist);
         break;
       default:
         throw new InvalidDataException($"Invalid DEFLATE block type: {btype}");
@@ -115,7 +115,7 @@ public sealed class DeflateDecompressor {
     if ((len ^ nlen) != 0xFFFF)
       throw new InvalidDataException("Invalid uncompressed block: LEN/NLEN mismatch.");
 
-    for (int i = 0; i < (int)len; ++i) {
+    for (var i = 0; i < (int)len; ++i) {
       var b = this._bitBuffer.ReadBits(8);
       var value = (byte)b;
       this._output.Add(value);
@@ -128,35 +128,33 @@ public sealed class DeflateDecompressor {
     var copyBuf = new byte[258];
 
     while (true) {
-      int symbol = litLenTable.DecodeSymbol(this._bitBuffer);
+      var symbol = litLenTable.DecodeSymbol(this._bitBuffer);
 
       if (symbol < DeflateConstants.EndOfBlock) {
         // Literal byte
         var b = (byte)symbol;
         this._output.Add(b);
         this._window.WriteByte(b);
-      }
-      else if (symbol == DeflateConstants.EndOfBlock) {
+      } else if (symbol == DeflateConstants.EndOfBlock)
         // End of block
         break;
-      }
       else {
         // Length/distance pair
-        int lengthIdx = symbol - 257;
+        var lengthIdx = symbol - 257;
         var length = DeflateConstants.LengthBase[lengthIdx];
         var extraBits = DeflateConstants.LengthExtraBits[lengthIdx];
         if (extraBits > 0)
           length += (int)this._bitBuffer.ReadBits(extraBits);
 
-        int distSymbol = distTable.DecodeSymbol(this._bitBuffer);
-        int distance = DeflateConstants.DistanceBase[distSymbol];
-        int distExtraBits = DeflateConstants.DistanceExtraBits[distSymbol];
+        var distSymbol = distTable.DecodeSymbol(this._bitBuffer);
+        var distance = DeflateConstants.DistanceBase[distSymbol];
+        var distExtraBits = DeflateConstants.DistanceExtraBits[distSymbol];
         if (distExtraBits > 0)
           distance += (int)this._bitBuffer.ReadBits(distExtraBits);
 
         // Copy from window
         this._window.CopyFromWindow(distance, length, copyBuf.AsSpan(0, length));
-        for (int i = 0; i < length; ++i)
+        for (var i = 0; i < length; ++i)
           this._output.Add(copyBuf[i]);
       }
     }
@@ -169,45 +167,49 @@ public sealed class DeflateDecompressor {
 
     // Read code-length code lengths in permuted order
     var codeLengthCodeLengths = new int[DeflateConstants.CodeLengthAlphabetSize];
-    for (int i = 0; i < hclen; ++i)
+    for (var i = 0; i < hclen; ++i)
       codeLengthCodeLengths[DeflateConstants.CodeLengthOrder[i]] = (int)this._bitBuffer.ReadBits(3);
 
     var codeLengthTable = new DeflateHuffmanTable(codeLengthCodeLengths);
 
     // Decode literal/length + distance code lengths
-    int totalCodes = hlit + hdist;
+    var totalCodes = hlit + hdist;
     var codeLengths = new int[totalCodes];
     var idx = 0;
 
     while (idx < totalCodes) {
-      int sym = codeLengthTable.DecodeSymbol(this._bitBuffer);
+      var sym = codeLengthTable.DecodeSymbol(this._bitBuffer);
 
-      if (sym <= 15)
-        codeLengths[idx++] = sym;
-      else if (sym == 16) {
-        // Repeat previous length 3–6 times
-        var repeatCount = (int)this._bitBuffer.ReadBits(2) + 3;
-        if (idx == 0)
-          throw new InvalidDataException("Code length 16 at start of table.");
+      switch (sym) {
+        case <= 15: codeLengths[idx++] = sym; 
+          break;
+        case 16: {
+          // Repeat previous length 3–6 times
+          var repeatCount = (int)this._bitBuffer.ReadBits(2) + 3;
+          if (idx == 0)
+            throw new InvalidDataException("Code length 16 at start of table.");
 
-        int prev = codeLengths[idx - 1];
-        for (int i = 0; i < repeatCount; ++i)
-          codeLengths[idx++] = prev;
+          var prev = codeLengths[idx - 1];
+          for (var i = 0; i < repeatCount; ++i)
+            codeLengths[idx++] = prev;
+          break;
+        }
+        case 17: {
+          // Repeat 0 for 3–10 times
+          var repeatCount = (int)this._bitBuffer.ReadBits(3) + 3;
+          for (var i = 0; i < repeatCount; ++i)
+            codeLengths[idx++] = 0;
+          break;
+        }
+        case 18: {
+          // Repeat 0 for 11–138 times
+          var repeatCount = (int)this._bitBuffer.ReadBits(7) + 11;
+          for (var i = 0; i < repeatCount; ++i)
+            codeLengths[idx++] = 0;
+          break;
+        }
+        default: throw new InvalidDataException($"Invalid code length symbol: {sym}");
       }
-      else if (sym == 17) {
-        // Repeat 0 for 3–10 times
-        var repeatCount = (int)this._bitBuffer.ReadBits(3) + 3;
-        for (int i = 0; i < repeatCount; ++i)
-          codeLengths[idx++] = 0;
-      }
-      else if (sym == 18) {
-        // Repeat 0 for 11–138 times
-        var repeatCount = (int)this._bitBuffer.ReadBits(7) + 11;
-        for (int i = 0; i < repeatCount; ++i)
-          codeLengths[idx++] = 0;
-      }
-      else
-        throw new InvalidDataException($"Invalid code length symbol: {sym}");
     }
 
     // Split into literal/length and distance code lengths
@@ -217,7 +219,7 @@ public sealed class DeflateDecompressor {
     var distLengths = new int[hdist];
     codeLengths.AsSpan(hlit, hdist).CopyTo(distLengths);
 
-    litLenTable = new DeflateHuffmanTable(litLenLengths);
-    distTable = new DeflateHuffmanTable(distLengths);
+    litLenTable = new(litLenLengths);
+    distTable = new(distLengths);
   }
 }

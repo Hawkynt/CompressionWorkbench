@@ -19,13 +19,13 @@ internal static class ZopfliDeflate {
       return [([], DeflateConstants.GetStaticLiteralLengths(), DeflateConstants.GetStaticDistanceLengths())];
 
     // Start with static Huffman code lengths
-    int[] litLenLengths = DeflateConstants.GetStaticLiteralLengths();
-    int[] distLengths = DeflateConstants.GetStaticDistanceLengths();
+    var litLenLengths = DeflateConstants.GetStaticLiteralLengths();
+    var distLengths = DeflateConstants.GetStaticDistanceLengths();
 
     LzSymbol[] bestSymbols = [];
     var prevHash = 0L;
 
-    for (int iter = 0; iter < MaxIterations; ++iter) {
+    for (var iteration = 0; iteration < MaxIterations; ++iteration) {
       // Fresh hash chain each iteration
       var hashChain = new ZopfliHashChain();
 
@@ -41,23 +41,18 @@ internal static class ZopfliDeflate {
         if (sym.IsLiteral)
           ++litLenFreqs[sym.LitLen];
         else {
-          int lenCode = DeflateConstants.GetLengthCode(sym.LitLen);
+          var lenCode = DeflateConstants.GetLengthCode(sym.LitLen);
           ++litLenFreqs[lenCode];
-          int distCode = DeflateConstants.GetDistanceCode(sym.Distance);
+          var distCode = DeflateConstants.GetDistanceCode(sym.Distance);
           ++distFreqs[distCode];
         }
       }
       litLenFreqs[DeflateConstants.EndOfBlock] = 1;
 
       // Ensure at least one distance code
-      var hasDist = false;
-      for (int i = 0; i < distFreqs.Length; ++i)
-        if (distFreqs[i] > 0) {
-          hasDist = true;
-          break;
-        }
-
-      if (!hasDist) distFreqs[0] = 1;
+      var hasDist = distFreqs.Any(t => t > 0);
+      if (!hasDist) 
+        distFreqs[0] = 1;
 
       // Build trees and extract code lengths
       var litLenRoot = HuffmanTree.BuildFromFrequencies(litLenFreqs);
@@ -77,7 +72,7 @@ internal static class ZopfliDeflate {
 
       // Convergence detection via symbol hash
       var currentHash = ComputeSymbolHash(symbols);
-      if (currentHash == prevHash && iter > 0)
+      if (currentHash == prevHash && iteration > 0)
         break;
 
       prevHash = currentHash;
@@ -94,33 +89,28 @@ internal static class ZopfliDeflate {
       var blockLitLenFreqs = new long[DeflateConstants.LiteralLengthAlphabetSize];
       var blockDistFreqs = new long[DeflateConstants.DistanceAlphabetSize];
 
-      foreach (var sym in blockSymbols) {
+      foreach (var sym in blockSymbols)
         if (sym.IsLiteral)
           ++blockLitLenFreqs[sym.LitLen];
         else {
-          int lenCode = DeflateConstants.GetLengthCode(sym.LitLen);
+          var lenCode = DeflateConstants.GetLengthCode(sym.LitLen);
           ++blockLitLenFreqs[lenCode];
-          int distCode = DeflateConstants.GetDistanceCode(sym.Distance);
+          var distCode = DeflateConstants.GetDistanceCode(sym.Distance);
           ++blockDistFreqs[distCode];
         }
-      }
+
       blockLitLenFreqs[DeflateConstants.EndOfBlock] = 1;
 
-      var hasDist = false;
-      for (int i = 0; i < blockDistFreqs.Length; ++i)
-        if (blockDistFreqs[i] > 0) {
-          hasDist = true;
-          break;
-        }
-
-      if (!hasDist) blockDistFreqs[0] = 1;
+      var hasDist = blockDistFreqs.Any(t => t > 0);
+      if (!hasDist) 
+        blockDistFreqs[0] = 1;
 
       var blkLitRoot = HuffmanTree.BuildFromFrequencies(blockLitLenFreqs);
-      int[] blkLitLengths = HuffmanTree.GetCodeLengths(blkLitRoot, DeflateConstants.LiteralLengthAlphabetSize);
+      var blkLitLengths = HuffmanTree.GetCodeLengths(blkLitRoot, DeflateConstants.LiteralLengthAlphabetSize);
       HuffmanTree.LimitCodeLengths(blkLitLengths, DeflateConstants.MaxBits);
 
       var blkDistRoot = HuffmanTree.BuildFromFrequencies(blockDistFreqs);
-      int[] blkDistLengths = HuffmanTree.GetCodeLengths(blkDistRoot, DeflateConstants.DistanceAlphabetSize);
+      var blkDistLengths = HuffmanTree.GetCodeLengths(blkDistRoot, DeflateConstants.DistanceAlphabetSize);
       HuffmanTree.LimitCodeLengths(blkDistLengths, DeflateConstants.MaxBits);
 
       result.Add((blockSymbols, blkLitLengths, blkDistLengths));
