@@ -52,13 +52,13 @@ public sealed class BinaryTreeMatchFinder : IMatchFinder {
 
     while (node >= windowStart && node >= 0 && iterations < BinaryTreeMatchFinder.MaxIterations) {
       var nodeIdx = node & this._windowMask;
-      iterations++;
+      ++iterations;
 
       // Compare strings
       var limit = Math.Min(maxLength, Math.Min(data.Length - position, data.Length - node));
       var matchLen = 0;
       while (matchLen < limit && data[position + matchLen] == data[node + matchLen])
-        matchLen++;
+        ++matchLen;
 
       if (matchLen >= minLength && matchLen > bestLength) {
         bestLength = matchLen;

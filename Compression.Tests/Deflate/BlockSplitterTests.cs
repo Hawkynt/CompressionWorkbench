@@ -7,7 +7,7 @@ public class BlockSplitterTests {
   [Test]
   public void Split_SmallInput_SingleBlock() {
     var symbols = new LzSymbol[100];
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 100; ++i)
       symbols[i] = LzSymbol.Literal((byte)(i % 256));
 
     var blocks = BlockSplitter.Split(symbols);
@@ -21,14 +21,14 @@ public class BlockSplitterTests {
   public void Split_ContiguousRanges() {
     // Create enough symbols to potentially get multiple blocks
     var symbols = new LzSymbol[5000];
-    for (int i = 0; i < 5000; i++)
+    for (int i = 0; i < 5000; ++i)
       symbols[i] = LzSymbol.Literal((byte)(i % 256));
 
     var blocks = BlockSplitter.Split(symbols);
 
     // Verify ranges are contiguous
     Assert.That(blocks[0].Start, Is.EqualTo(0));
-    for (int i = 1; i < blocks.Count; i++) {
+    for (int i = 1; i < blocks.Count; ++i) {
       Assert.That(blocks[i].Start, Is.EqualTo(blocks[i - 1].End),
         $"Block {i} start must equal block {i - 1} end");
     }
@@ -41,11 +41,11 @@ public class BlockSplitterTests {
     var symbols = new LzSymbol[4000];
 
     // First half: all literals of 'A'
-    for (int i = 0; i < 2000; i++)
+    for (int i = 0; i < 2000; ++i)
       symbols[i] = LzSymbol.Literal((byte)'A');
 
     // Second half: matches (very different statistics)
-    for (int i = 2000; i < 4000; i++)
+    for (int i = 2000; i < 4000; ++i)
       symbols[i] = LzSymbol.Match(10, 1);
 
     var blocks = BlockSplitter.Split(symbols);
@@ -61,7 +61,7 @@ public class BlockSplitterTests {
   [Test]
   public void Split_RespectsMaxBlocks() {
     var symbols = new LzSymbol[10000];
-    for (int i = 0; i < 10000; i++)
+    for (int i = 0; i < 10000; ++i)
       symbols[i] = LzSymbol.Literal((byte)(i % 256));
 
     var blocks = BlockSplitter.Split(symbols, maxBlocks: 3);

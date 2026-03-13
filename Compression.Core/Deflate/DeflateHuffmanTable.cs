@@ -40,7 +40,7 @@ public sealed class DeflateHuffmanTable {
     this._symbolTable = new ushort[tableSize];
     this._lengthTable = new byte[tableSize];
 
-    for (var symbol = 0; symbol < codeLengths.Length; symbol++) {
+    for (var symbol = 0; symbol < codeLengths.Length; ++symbol) {
       var len = codeLengths[symbol];
       if (len == 0)
         continue;

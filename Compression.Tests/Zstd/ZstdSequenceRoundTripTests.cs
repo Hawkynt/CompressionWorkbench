@@ -22,7 +22,7 @@ public class ZstdSequenceRoundTripTests {
     var decoded = ZstdSequences.DecodeSequences(blockData, ref pos, written, repeatOffsetsDec);
 
     Assert.That(decoded.Length, Is.EqualTo(sequences.Length));
-    for (int i = 0; i < decoded.Length; i++) {
+    for (int i = 0; i < decoded.Length; ++i) {
       Assert.That(decoded[i].LiteralLength, Is.EqualTo(sequences[i].LiteralLength), $"LL mismatch at {i}");
       Assert.That(decoded[i].MatchLength, Is.EqualTo(sequences[i].MatchLength), $"ML mismatch at {i}");
       Assert.That(decoded[i].Offset, Is.EqualTo(sequences[i].Offset), $"OF mismatch at {i}");

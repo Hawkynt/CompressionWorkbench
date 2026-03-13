@@ -13,7 +13,7 @@ namespace Compression.Core.Entropy.Ppmd;
 ///   <item>Different context update exclusion rules compared to Model H.</item>
 /// </list>
 /// </remarks>
-internal sealed class PpmdModelI : PpmdModelBase {
+public sealed class PpmdModelI : PpmdModelBase {
   /// <summary>Frequency total threshold for triggering a rescale in Model I.</summary>
   private const int RescaleThreshold = 1500;
 

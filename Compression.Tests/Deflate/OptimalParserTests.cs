@@ -94,7 +94,7 @@ public class OptimalParserTests {
         output.Add((byte)sym.LitLen);
       else {
         var start = output.Count - sym.Distance;
-        for (int i = 0; i < sym.LitLen; i++)
+        for (int i = 0; i < sym.LitLen; ++i)
           output.Add(output[start + i]);
       }
     }

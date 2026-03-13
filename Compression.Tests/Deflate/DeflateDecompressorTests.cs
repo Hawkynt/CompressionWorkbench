@@ -112,7 +112,7 @@ public class DeflateDecompressorTests {
     // Create highly compressible data with repeated pattern
     byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
     byte[] data = new byte[pattern.Length * 200];
-    for (int i = 0; i < 200; i++)
+    for (int i = 0; i < 200; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
     byte[] compressed = CompressWithSystem(data);
@@ -136,7 +136,7 @@ public class DeflateDecompressorTests {
     // Optimal/SmallestSize tends to produce dynamic Huffman blocks
     byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
     byte[] data = new byte[pattern.Length * 50];
-    for (int i = 0; i < 50; i++)
+    for (int i = 0; i < 50; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
     byte[] compressed = CompressWithSystem(data, System.IO.Compression.CompressionLevel.SmallestSize);
@@ -189,7 +189,7 @@ public class DeflateDecompressorTests {
   public void Decompress_BinaryData() {
     // Data with all byte values 0-255
     byte[] data = new byte[256];
-    for (int i = 0; i < 256; i++)
+    for (int i = 0; i < 256; ++i)
       data[i] = (byte)i;
 
     byte[] compressed = CompressWithSystem(data);

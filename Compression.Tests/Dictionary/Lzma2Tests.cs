@@ -28,7 +28,7 @@ public class Lzma2Tests {
   public void RoundTrip_RepetitiveData() {
     byte[] pattern = "abcdefghij"u8.ToArray();
     byte[] data = new byte[pattern.Length * 200];
-    for (int i = 0; i < 200; i++)
+    for (int i = 0; i < 200; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
     byte[] result = CompressDecompress(data);
@@ -49,7 +49,7 @@ public class Lzma2Tests {
   public void RoundTrip_LargeData() {
     var rng = new Random(123);
     byte[] data = new byte[51200]; // 50KB
-    for (int i = 0; i < data.Length; i++) {
+    for (int i = 0; i < data.Length; ++i) {
       if (i % 100 < 50)
         data[i] = (byte)(i % 26 + 'a');
       else
@@ -91,7 +91,7 @@ public class Lzma2Tests {
     var rng = new Random(456);
     byte[] pattern = "the quick brown fox jumps over the lazy dog. "u8.ToArray();
     byte[] data = new byte[3 * 1024 * 1024]; // 3MB
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (i % 200 < 100) ? pattern[i % pattern.Length] : (byte)rng.Next(256);
 
     byte[] result = CompressDecompress(data);
@@ -116,7 +116,7 @@ public class Lzma2Tests {
     ms.Write(random);
 
     // More compressible data
-    for (int i = 0; i < 50; i++)
+    for (int i = 0; i < 50; ++i)
       ms.Write("pattern_repeat_"u8);
 
     byte[] data = ms.ToArray();
@@ -129,7 +129,7 @@ public class Lzma2Tests {
     // Small dictionary forces more dictionary resets in chunks
     byte[] data = "Small dict LZMA2 round-trip test. "u8.ToArray();
     byte[] bigData = new byte[data.Length * 100];
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 100; ++i)
       data.CopyTo(bigData.AsSpan(i * data.Length));
 
     using var compressed = new MemoryStream();

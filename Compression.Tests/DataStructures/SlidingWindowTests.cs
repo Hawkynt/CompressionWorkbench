@@ -31,7 +31,7 @@ public class SlidingWindowTests {
   public void WrapAround_OverwritesOldData() {
     var window = new SlidingWindow(4);
 
-    for (byte i = 0; i < 6; i++)
+    for (byte i = 0; i < 6; ++i)
       window.WriteByte(i);
 
     // Window should contain [2, 3, 4, 5], count clamped at 4
@@ -105,7 +105,7 @@ public class SlidingWindowTests {
     var window = new SlidingWindow(4);
 
     // Fill: [0, 1, 2, 3]
-    for (byte i = 0; i < 4; i++)
+    for (byte i = 0; i < 4; ++i)
       window.WriteByte(i);
 
     // Overwrite position 0: [4, 1, 2, 3]
@@ -184,7 +184,7 @@ public class SlidingWindowTests {
     window2.WriteBytes(data);
 
     Assert.That(window2.Count, Is.EqualTo(window1.Count));
-    for (int d = 1; d <= window1.Count; d++)
+    for (int d = 1; d <= window1.Count; ++d)
       Assert.That(window2.GetByte(d), Is.EqualTo(window1.GetByte(d)));
   }
 }

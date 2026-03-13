@@ -69,7 +69,7 @@ public static class BrotliDecompressor {
       if (isMetadata) {
         // Metadata block — skip metadata bytes
         reader.AlignToByte();
-        for (var i = 0; i < mlen; i++)
+        for (var i = 0; i < mlen; ++i)
           reader.ReadBits(8);
         continue;
       }
@@ -85,10 +85,10 @@ public static class BrotliDecompressor {
       if (isUncompressed) {
         // Uncompressed meta-block
         reader.AlignToByte();
-        for (var i = 0; i < mlen; i++) {
+        for (var i = 0; i < mlen; ++i) {
           var b = (byte)reader.ReadBits(8);
           ringBuffer[ringPos & ringMask] = b;
-          ringPos++;
+          ++ringPos;
           output.WriteByte(b);
         }
 
@@ -148,7 +148,7 @@ public static class BrotliDecompressor {
 
       // Context modes for literal block types (0-3, one of NumLiteralContextModes)
       var litContextModes = new int[numLitTypes];
-      for (var i = 0; i < numLitTypes; i++) {
+      for (var i = 0; i < numLitTypes; ++i) {
         litContextModes[i] = (int)reader.ReadBits(2);
         if (litContextModes[i] >= BrotliConstants.NumLiteralContextModes)
           ThrowInvalidData("Invalid literal context mode.");
@@ -164,18 +164,18 @@ public static class BrotliDecompressor {
 
       // Read literal prefix code trees
       var litTrees = new int[numLitTrees][];
-      for (var i = 0; i < numLitTrees; i++)
+      for (var i = 0; i < numLitTrees; ++i)
         litTrees[i] = ReadSimplePrefixCode(reader, BrotliConstants.LiteralAlphabetSize);
 
       // Read insert-and-copy prefix code trees
       var iacTrees = new int[numIacTypes][];
-      for (var i = 0; i < numIacTypes; i++)
+      for (var i = 0; i < numIacTypes; ++i)
         iacTrees[i] = ReadSimplePrefixCode(reader, BrotliConstants.NumInsertAndCopyLengthCodes);
 
       // Distance alphabet size = 16 + nDirect + (48 << nPostfix)
       var distAlphabetSize = 16 + nDirect + (48 << nPostfix);
       var distTrees = new int[numDistTrees][];
-      for (var i = 0; i < numDistTrees; i++)
+      for (var i = 0; i < numDistTrees; ++i)
         distTrees[i] = ReadSimplePrefixCode(reader, distAlphabetSize);
 
       // Decompress meta-block
@@ -208,7 +208,7 @@ public static class BrotliDecompressor {
         );
 
         // Insert literals
-        for (var i = 0; i < insertLength && metaBytesRemaining > 0; i++) {
+        for (var i = 0; i < insertLength && metaBytesRemaining > 0; ++i) {
           // Switch literal block type if needed
           if (litBlockRemaining == 0 && numLitTypes > 1)
             SwitchBlockType(
@@ -636,7 +636,7 @@ public static class BrotliDecompressor {
         // RLE of zeros
         var runLen = 1 << sym;
         runLen += (int)reader.ReadBits(sym);
-        for (var j = 0; j < runLen && i < contextMapSize; j++)
+        for (var j = 0; j < runLen && i < contextMapSize; ++j)
           contextMap[i++] = 0;
       } else
         contextMap[i++] = sym - maxRleSymbol;
@@ -654,10 +654,10 @@ public static class BrotliDecompressor {
   /// </summary>
   private static void InverseMtf(int[] data) {
     var mtf = new int[256];
-    for (var i = 0; i < 256; i++)
+    for (var i = 0; i < 256; ++i)
       mtf[i] = i;
 
-    for (var i = 0; i < data.Length; i++) {
+    for (var i = 0; i < data.Length; ++i) {
       var idx = data[i];
       data[i] = mtf[idx];
       if (idx <= 0)
@@ -687,7 +687,7 @@ public static class BrotliDecompressor {
     var numClCodes = hSkip;
     // Read code length code lengths
     var space = 32;
-    for (var i = numClCodes; i < BrotliConstants.NumCodeLengthCodes && space > 0; i++) {
+    for (var i = numClCodes; i < BrotliConstants.NumCodeLengthCodes && space > 0; ++i) {
       int idx = BrotliConstants.CodeLengthCodeOrder[i];
       var len = ReadSmallCodeLength(reader);
       clCodeLengths[idx] = len;
@@ -728,7 +728,7 @@ public static class BrotliDecompressor {
           else
             repeat = 0;
           repeatCodeLen = prevCodeLen;
-          for (var j = 0; j < extra && symbolsRead < alphabetSize; j++) {
+          for (var j = 0; j < extra && symbolsRead < alphabetSize; ++j) {
             codeLengths[symbolsRead++] = prevCodeLen;
             space -= 32768 >> prevCodeLen;
           }
@@ -745,7 +745,7 @@ public static class BrotliDecompressor {
           else
             repeat = 0;
           repeatCodeLen = 0;
-          for (var j = 0; j < extra && symbolsRead < alphabetSize; j++)
+          for (var j = 0; j < extra && symbolsRead < alphabetSize; ++j)
             codeLengths[symbolsRead++] = 0;
           repeat += extra;
           break;
@@ -772,7 +772,7 @@ public static class BrotliDecompressor {
 
     var numSyms = (int)reader.ReadBits(2) + 1;
     var symbols = new int[numSyms];
-    for (var i = 0; i < numSyms; i++) {
+    for (var i = 0; i < numSyms; ++i) {
       symbols[i] = (int)reader.ReadBits(numSymBits);
       if (symbols[i] >= alphabetSize)
         symbols[i] = 0;
@@ -850,10 +850,10 @@ public static class BrotliDecompressor {
     var numUsed = 0;
     var singleSymbol = 0;
 
-    for (var i = 0; i < numSymbols; i++)
+    for (var i = 0; i < numSymbols; ++i)
       if (codeLengths[i] > 0) {
         maxLen = Math.Max(maxLen, codeLengths[i]);
-        numUsed++;
+        ++numUsed;
         singleSymbol = i;
       }
 
@@ -877,25 +877,25 @@ public static class BrotliDecompressor {
 
     // Assign canonical codes
     var blCount = new int[maxLen + 1];
-    for (var i = 0; i < numSymbols; i++)
+    for (var i = 0; i < numSymbols; ++i)
       if (codeLengths[i] > 0 && codeLengths[i] <= maxLen)
         blCount[codeLengths[i]]++;
 
     var nextCode = new int[maxLen + 1];
     var currentCode = 0;
-    for (var bits = 1; bits <= maxLen; bits++) {
+    for (var bits = 1; bits <= maxLen; ++bits) {
       currentCode = (currentCode + blCount[bits - 1]) << 1;
       nextCode[bits] = currentCode;
     }
 
-    for (var sym = 0; sym < numSymbols; sym++) {
+    for (var sym = 0; sym < numSymbols; ++sym) {
       var len = codeLengths[sym];
       if (len == 0 || len > maxLen) continue;
 
       var code = nextCode[len]++;
       // Reverse bits for LSB-first lookup
       var reversed = 0;
-      for (var b = 0; b < len; b++)
+      for (var b = 0; b < len; ++b)
         reversed |= ((code >> (len - 1 - b)) & 1) << b;
 
       var entry = sym | (len << 16);
@@ -916,7 +916,7 @@ public static class BrotliDecompressor {
     var ts = table.Length;
     while (ts > 1) {
       ts >>= 1;
-      tableBits++;
+      ++tableBits;
     }
 
     if (tableBits == 0) tableBits = 1;

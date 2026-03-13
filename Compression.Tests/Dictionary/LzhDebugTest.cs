@@ -31,24 +31,24 @@ public class LzhDebugTest {
     Array.Fill(table, -1);
 
     var blCount = new int[maxLen + 1];
-    for (int i = 0; i < lengths.Length; i++)
+    for (int i = 0; i < lengths.Length; ++i)
       if (lengths[i] > 0) blCount[lengths[i]]++;
 
     var nextCode = new int[maxLen + 1];
     int code = 0;
-    for (int bits = 1; bits <= maxLen; bits++) {
+    for (int bits = 1; bits <= maxLen; ++bits) {
       code = (code + blCount[bits - 1]) << 1;
       nextCode[bits] = code;
     }
 
-    for (int sym = 0; sym < lengths.Length; sym++) {
+    for (int sym = 0; sym < lengths.Length; ++sym) {
       int len = lengths[sym];
       if (len == 0) continue;
       int symCode = nextCode[len]++;
       int fillBits = maxLen - len;
       int baseIdx = symCode << fillBits;
       int packedValue = sym | (len << 16);
-      for (int fill = 0; fill < (1 << fillBits); fill++)
+      for (int fill = 0; fill < (1 << fillBits); ++fill)
         table[baseIdx + fill] = packedValue;
     }
 
@@ -56,7 +56,7 @@ public class LzhDebugTest {
     ms.Position = 0;
     var reader = new BitBuffer<MsbBitOrder>(ms);
     var decoded = new List<int>();
-    for (int i = 0; i < symbols.Length; i++) {
+    for (int i = 0; i < symbols.Length; ++i) {
       reader.EnsureBits(maxLen);
       uint peekBits = reader.PeekBits(maxLen);
       int entry = table[(int)peekBits];
@@ -87,12 +87,12 @@ public class LzhDebugTest {
     int numSymbols = 5;
     int symbolBits = 4;
     writer.WriteBits((uint)numSymbols, symbolBits);
-    for (int i = 0; i < numSymbols; i++) {
+    for (int i = 0; i < numSymbols; ++i) {
       if (lengths[i] < 7)
         writer.WriteBits((uint)lengths[i], 3);
       else {
         writer.WriteBits(7, 3);
-        for (int j = 7; j < lengths[i]; j++) writer.WriteBits(1, 1);
+        for (int j = 7; j < lengths[i]; ++j) writer.WriteBits(1, 1);
         writer.WriteBits(0, 1);
       }
     }
@@ -114,7 +114,7 @@ public class LzhDebugTest {
 
     var readLengths = new int[readNum];
     int readMaxLen = 0;
-    for (int i = 0; i < readNum; i++) {
+    for (int i = 0; i < readNum; ++i) {
       int len = (int)reader.ReadBits(3);
       if (len == 7) {
         while (reader.ReadBits(1) == 1) len++;
@@ -132,30 +132,30 @@ public class LzhDebugTest {
     Array.Fill(table, -1);
 
     var blCount = new int[tableBits + 1];
-    for (int i = 0; i < readLengths.Length; i++)
+    for (int i = 0; i < readLengths.Length; ++i)
       if (readLengths[i] > 0 && readLengths[i] <= tableBits)
         blCount[readLengths[i]]++;
 
     var nextCode = new int[tableBits + 1];
     int code = 0;
-    for (int bits = 1; bits <= tableBits; bits++) {
+    for (int bits = 1; bits <= tableBits; ++bits) {
       code = (code + blCount[bits - 1]) << 1;
       nextCode[bits] = code;
     }
 
-    for (int sym = 0; sym < readLengths.Length; sym++) {
+    for (int sym = 0; sym < readLengths.Length; ++sym) {
       int len = readLengths[sym];
       if (len == 0 || len > tableBits) continue;
       int symCode = nextCode[len]++;
       int fillBits = tableBits - len;
       int baseIdx = symCode << fillBits;
       int packedValue = sym | (len << 16);
-      for (int fill = 0; fill < (1 << fillBits); fill++)
+      for (int fill = 0; fill < (1 << fillBits); ++fill)
         table[baseIdx + fill] = packedValue;
     }
 
     var decoded = new List<int>();
-    for (int i = 0; i < syms.Length; i++) {
+    for (int i = 0; i < syms.Length; ++i) {
       reader.EnsureBits(tableBits);
       uint peekBits = reader.PeekBits(tableBits);
       int entry = table[(int)peekBits];
@@ -182,7 +182,7 @@ public class LzhDebugTest {
   [Test]
   public void Debug_RepeatedWithMatches() {
     byte[] data = new byte[20];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 2);
 
     var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);
@@ -211,8 +211,8 @@ public class LzhDebugTest {
   public void Debug_MatchAtDistance10() {
     // ABCDEFGHIJABCDEFGHIJ - match at distance 10
     byte[] data = new byte[20];
-    for (int i = 0; i < 10; i++) data[i] = (byte)(0x41 + i);
-    for (int i = 10; i < 20; i++) data[i] = (byte)(0x41 + i - 10);
+    for (int i = 0; i < 10; ++i) data[i] = (byte)(0x41 + i);
+    for (int i = 10; i < 20; ++i) data[i] = (byte)(0x41 + i - 10);
 
     var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);
     byte[] compressed = encoder.Encode(data);
@@ -226,7 +226,7 @@ public class LzhDebugTest {
   [Test]
   public void Debug_PositionSlotEncoding() {
     // Verify position slot encode/decode directly
-    for (int dist = 0; dist < 100; dist++) {
+    for (int dist = 0; dist < 100; ++dist) {
       int slot = LzhEncoder.GetPositionSlot(dist);
       int reconstructed;
       if (slot <= 1) {
@@ -258,24 +258,24 @@ public class LzhDebugTest {
     Array.Fill(table, -1);
 
     var blCount = new int[maxLen + 1];
-    for (int i = 0; i < lengths.Length; i++)
+    for (int i = 0; i < lengths.Length; ++i)
       if (lengths[i] > 0) blCount[lengths[i]]++;
 
     var nextCode = new int[maxLen + 1];
     int code = 0;
-    for (int bits = 1; bits <= maxLen; bits++) {
+    for (int bits = 1; bits <= maxLen; ++bits) {
       code = (code + blCount[bits - 1]) << 1;
       nextCode[bits] = code;
     }
 
-    for (int sym = 0; sym < lengths.Length; sym++) {
+    for (int sym = 0; sym < lengths.Length; ++sym) {
       int len = lengths[sym];
       if (len == 0) continue;
       int symCode = nextCode[len]++;
       int fillBits = maxLen - len;
       int baseIdx = symCode << fillBits;
       int packedValue = sym | (len << 16);
-      for (int fill = 0; fill < (1 << fillBits); fill++)
+      for (int fill = 0; fill < (1 << fillBits); ++fill)
         table[baseIdx + fill] = packedValue;
     }
 
@@ -330,7 +330,7 @@ public class LzhDebugTest {
   [Test]
   public void Debug_ManyLiterals() {
     byte[] data = new byte[100];
-    for (int i = 0; i < 100; i++) data[i] = (byte)i;
+    for (int i = 0; i < 100; ++i) data[i] = (byte)i;
 
     var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);
     byte[] compressed = encoder.Encode(data);
@@ -368,7 +368,7 @@ public class LzhDebugTest {
 
     // Write code tree (single-symbol flag=0, multi)
     var codeUsed = new List<(int sym, int len)>();
-    for (int i = 0; i < codeLengths.Length; i++)
+    for (int i = 0; i < codeLengths.Length; ++i)
       if (codeLengths[i] > 0) codeUsed.Add((i, codeLengths[i]));
 
     writer.WriteBits(0, 1); // multi-symbol
@@ -410,8 +410,8 @@ public class LzhDebugTest {
     // 10 literals + 1 match(len=10, dist=9 0-based)
     // Let me verify the encoder output matches what the decoder expects
     byte[] data = new byte[20];
-    for (int i = 0; i < 10; i++) data[i] = (byte)(0x41 + i);
-    for (int i = 10; i < 20; i++) data[i] = (byte)(0x41 + i - 10);
+    for (int i = 0; i < 10; ++i) data[i] = (byte)(0x41 + i);
+    for (int i = 10; i < 20; ++i) data[i] = (byte)(0x41 + i - 10);
 
     var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);
     byte[] compressed = encoder.Encode(data);
@@ -429,7 +429,7 @@ public class LzhDebugTest {
     Assert.That(codeFlag, Is.EqualTo(0u), "Multi-symbol code tree");
     uint codeCount = bits.ReadBits(16);
     var codeEntries = new (int sym, int len)[codeCount];
-    for (int i = 0; i < (int)codeCount; i++) {
+    for (int i = 0; i < (int)codeCount; ++i) {
       int sym = (int)bits.ReadBits(16);
       int len = (int)bits.ReadBits(5);
       codeEntries[i] = (sym, len);
@@ -453,7 +453,7 @@ public class LzhDebugTest {
     var decoder = new LzhDecoder(ms, LzhConstants.Lh5PositionBits);
     byte[] result = decoder.Decode(data.Length);
 
-    for (int i = 0; i < data.Length; i++) {
+    for (int i = 0; i < data.Length; ++i) {
       if (result[i] != data[i]) {
         Assert.Fail($"Mismatch at index {i}: expected {data[i]} (0x{data[i]:X2}), got {result[i]} (0x{result[i]:X2})");
       }
@@ -463,7 +463,7 @@ public class LzhDebugTest {
   [TestCase(30)]
   public void Debug_PatternData_Sizes(int size) {
     byte[] data = new byte[size];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 13);
 
     var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);

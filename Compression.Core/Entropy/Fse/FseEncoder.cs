@@ -105,7 +105,7 @@ public sealed class FseEncoder {
         continue;
 
       total += counts[s];
-      nonZeroCount++;
+      ++nonZeroCount;
     }
 
     if (total == 0)
@@ -251,7 +251,7 @@ public sealed class FseEncoder {
     bitContainer |= (ulong)(state & (this._tableSize - 1)) << bitCount;
     bitCount += this._tableLog;
     bitContainer |= 1UL << bitCount;
-    bitCount++;
+    ++bitCount;
 
     // Flush all remaining bits
     while (bitCount > 0) {

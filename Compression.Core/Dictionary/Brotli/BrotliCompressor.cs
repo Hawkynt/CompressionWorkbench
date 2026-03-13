@@ -685,12 +685,24 @@ public static class BrotliCompressor {
   /// </summary>
   private static void WriteSmallCodeLength(BrotliBitWriter writer, int len) {
     switch (len) {
-      case 0: writer.WriteBits(1, 0); break;
-      case 1: writer.WriteBits(2, 0b10); break;
-      case 2: writer.WriteBits(3, 0b110); break;
-      case 3: writer.WriteBits(4, 0b1110); break;
-      case 4: writer.WriteBits(5, 0b11110); break;
-      case 5: writer.WriteBits(5, 0b11111); break;
+      case 0:
+        writer.WriteBits(1, 0);
+        break;
+      case 1:
+        writer.WriteBits(2, 0b10);
+        break;
+      case 2:
+        writer.WriteBits(3, 0b110);
+        break;
+      case 3:
+        writer.WriteBits(4, 0b1110);
+        break;
+      case 4:
+        writer.WriteBits(5, 0b11110);
+        break;
+      case 5:
+        writer.WriteBits(5, 0b11111);
+        break;
     }
   }
 }

@@ -66,7 +66,7 @@ public static class BrotliConstants {
   /// </summary>
   internal static byte[] BuildLsb6ContextLookup() {
     var lut = new byte[256];
-    for (var i = 0; i < 256; i++)
+    for (var i = 0; i < 256; ++i)
       lut[i] = (byte)(i & 0x3F);
     return lut;
   }
@@ -76,7 +76,7 @@ public static class BrotliConstants {
   /// </summary>
   internal static byte[] BuildMsb6ContextLookup() {
     var lut = new byte[256];
-    for (var i = 0; i < 256; i++)
+    for (var i = 0; i < 256; ++i)
       lut[i] = (byte)(i >> 2);
     return lut;
   }
@@ -88,7 +88,7 @@ public static class BrotliConstants {
     var lut = new byte[256];
     // 0: ASCII control or space
     // 1-3: based on byte categories
-    for (var i = 0; i < 256; i++)
+    for (var i = 0; i < 256; ++i)
       lut[i] = i switch {
         < 0x20 or 0x7F => 0, // control
         < 0x80 => (byte)(i is >= 0x61 and <= 0x7A ? 2 : 1), // alphanumeric
@@ -103,7 +103,7 @@ public static class BrotliConstants {
   /// </summary>
   internal static byte[] BuildSignedContextLookup() {
     var lut = new byte[256];
-    for (var i = 0; i < 256; i++) {
+    for (var i = 0; i < 256; ++i) {
       // The signed context maps byte b to (b < 128) ? (b >> 2) : ((256 - b) >> 2)
       var v = i < 128 ? i : 256 - i;
       lut[i] = (byte)(v >> 2);

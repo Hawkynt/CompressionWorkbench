@@ -82,7 +82,9 @@ public static class SnappyCompressor {
       ReadOnlySpan<byte> src, int start, int length) {
     var n = length - 1; // tag encodes length-1
     switch (n) {
-      case < 60: dst[dstPos++] = (byte)(SnappyConstants.TagLiteral | (n << 2)); break;
+      case < 60:
+        dst[dstPos++] = (byte)(SnappyConstants.TagLiteral | (n << 2));
+        break;
 
       case < 0x100:
         dst[dstPos++] = (byte)(SnappyConstants.TagLiteral | (60 << 2));

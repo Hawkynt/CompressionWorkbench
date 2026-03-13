@@ -16,7 +16,7 @@ public class ContextMixingTests {
   [Test]
   public void ContextModel_Predict_AdaptsToZeros() {
     var model = new ContextModel(8);
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 100; ++i)
       model.Update(0, 0);
     int p = model.Predict(0);
     // After 100 zeros, p(1) should be very low
@@ -26,7 +26,7 @@ public class ContextMixingTests {
   [Test]
   public void ContextModel_Predict_AdaptsToOnes() {
     var model = new ContextModel(8);
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 100; ++i)
       model.Update(0, 1);
     int p = model.Predict(0);
     // After 100 ones, p(1) should be very high
@@ -36,7 +36,7 @@ public class ContextMixingTests {
   [Test]
   public void ContextModel_DifferentContexts_Independent() {
     var model = new ContextModel(8);
-    for (int i = 0; i < 50; i++) {
+    for (int i = 0; i < 50; ++i) {
       model.Update(0, 0); // context 0 sees all zeros
       model.Update(1, 1); // context 1 sees all ones
     }
@@ -103,7 +103,7 @@ public class ContextMixingTests {
   [Test]
   public void CmCompressor_RoundTrip_AllByteValues() {
     var data = new byte[256];
-    for (int i = 0; i < 256; i++)
+    for (int i = 0; i < 256; ++i)
       data[i] = (byte)i;
     var compressed = CmCompressor.Compress(data);
     var decompressed = CmCompressor.Decompress(compressed);

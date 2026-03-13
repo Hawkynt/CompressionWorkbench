@@ -26,7 +26,7 @@ public class Lz4BlockTests {
   [Test]
   public void RoundTrip_PatternData() {
     byte[] data = new byte[2000];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 13);
     byte[] compressed = Lz4BlockCompressor.Compress(data);
     byte[] decompressed = Lz4BlockDecompressor.Decompress(compressed, data.Length);
@@ -60,7 +60,7 @@ public class Lz4BlockTests {
   [Test]
   public void RoundTrip_LongRepeats() {
     byte[] data = new byte[100000];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 3);
     byte[] compressed = Lz4BlockCompressor.Compress(data);
     Assert.That(compressed.Length, Is.LessThan(data.Length / 2));
@@ -85,7 +85,7 @@ public class Lz4FrameTests {
   [Test]
   public void RoundTrip_LargeData() {
     byte[] data = new byte[200000];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 251);
 
     using var ms = new MemoryStream();

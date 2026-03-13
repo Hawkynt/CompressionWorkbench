@@ -118,7 +118,7 @@ public sealed class Blake2b {
     this.Compress(this._buffer, true);
 
     var hash = new byte[this._hashSize];
-    for (var i = 0; i < this._hashSize; i++)
+    for (var i = 0; i < this._hashSize; ++i)
       hash[i] = (byte)(this._h[i / 8] >> (8 * (i % 8)));
 
     return hash;
@@ -153,11 +153,11 @@ public sealed class Blake2b {
 
     // Read message words
     Span<ulong> m = stackalloc ulong[16];
-    for (var i = 0; i < 16; i++)
+    for (var i = 0; i < 16; ++i)
       m[i] = BinaryPrimitives.ReadUInt64LittleEndian(block[(i * 8)..]);
 
     // 12 rounds of mixing
-    for (var round = 0; round < 12; round++) {
+    for (var round = 0; round < 12; ++round) {
       var s = round % 10;
       G(ref v[0], ref v[4], ref v[8],  ref v[12], m[Blake2b.Sigma[s, 0]], m[Blake2b.Sigma[s, 1]]);
       G(ref v[1], ref v[5], ref v[9],  ref v[13], m[Blake2b.Sigma[s, 2]], m[Blake2b.Sigma[s, 3]]);
@@ -170,7 +170,7 @@ public sealed class Blake2b {
     }
 
     // Finalise: h[i] ^= v[i] ^ v[i+8]
-    for (var i = 0; i < 8; i++)
+    for (var i = 0; i < 8; ++i)
       this._h[i] ^= v[i] ^ v[i + 8];
   }
 

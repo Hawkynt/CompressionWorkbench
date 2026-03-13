@@ -163,7 +163,7 @@ public sealed class LzmaDecoder {
               output.WriteByte(previousByte);
               window.WriteByte(previousByte);
               prevByte = previousByte;
-              outPos++;
+              ++outPos;
               continue;
             }
             // else: long rep0 — distance stays reps[0]

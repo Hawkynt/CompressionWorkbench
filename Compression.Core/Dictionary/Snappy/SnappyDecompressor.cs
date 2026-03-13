@@ -48,7 +48,7 @@ public static class SnappyDecompressor {
           if (litLen > 60) {
             var extraBytes = litLen - 60;
             litLen = 1;
-            for (var i = 0; i < extraBytes && srcPos < srcLen; i++)
+            for (var i = 0; i < extraBytes && srcPos < srcLen; ++i)
               litLen += src[srcPos++] << (8 * i);
           }
 
@@ -117,7 +117,7 @@ public static class SnappyDecompressor {
     if (dstPos + length > dstLen)
       throw new InvalidDataException("Snappy: output overflow in match copy.");
 
-    for (var i = 0; i < length; i++)
+    for (var i = 0; i < length; ++i)
       dst[dstPos + i] = dst[matchSrc + i];
     dstPos += length;
     return dstPos;

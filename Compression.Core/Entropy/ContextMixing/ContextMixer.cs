@@ -28,7 +28,7 @@ public sealed class ContextMixer {
     this._weights = new double[models.Length];
     // Start with uniform weights
     var w = 1.0 / models.Length;
-    Array.Fill(this._weights, w);
+    this._weights.AsSpan().Fill(w);
   }
 
   /// <summary>

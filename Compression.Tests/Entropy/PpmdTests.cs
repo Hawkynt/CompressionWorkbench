@@ -21,7 +21,7 @@ public class PpmdTests {
   [Test]
   public void ModelH_RoundTrip_RepetitiveData() {
     byte[] data = new byte[500];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 4);
     byte[] result = CompressDecompressH(data);
     Assert.That(result, Is.EqualTo(data));
@@ -39,7 +39,7 @@ public class PpmdTests {
   public void ModelH_RoundTrip_LargeData() {
     byte[] data = new byte[10240];
     var rng = new Random(123);
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)rng.Next(0, 64); // limited alphabet
     byte[] result = CompressDecompressH(data);
     Assert.That(result, Is.EqualTo(data));
@@ -81,7 +81,7 @@ public class PpmdTests {
   [Test]
   public void ModelH_RoundTrip_AllBytesOnce() {
     byte[] data = new byte[256];
-    for (int i = 0; i < 256; i++)
+    for (int i = 0; i < 256; ++i)
       data[i] = (byte)i;
     byte[] result = CompressDecompressH(data);
     Assert.That(result, Is.EqualTo(data));
@@ -98,7 +98,7 @@ public class PpmdTests {
   [Test]
   public void ModelH_RoundTrip_TwoByteAlternating() {
     byte[] data = new byte[300];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 2 == 0 ? 0x10 : 0x20);
     byte[] result = CompressDecompressH(data);
     Assert.That(result, Is.EqualTo(data));
@@ -121,7 +121,7 @@ public class PpmdTests {
   [Test]
   public void ModelI_RoundTrip_RepetitiveData() {
     byte[] data = new byte[500];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 4);
     byte[] result = CompressDecompressI(data);
     Assert.That(result, Is.EqualTo(data));
@@ -274,11 +274,11 @@ public class PpmdTests {
     var input = new MemoryStream(ms.ToArray());
     var decoder = new PpmdRangeDecoder(input);
     int[] decoded = new int[symbols.Length];
-    for (int i = 0; i < symbols.Length; i++) {
+    for (int i = 0; i < symbols.Length; ++i) {
       uint threshold = decoder.GetThreshold(total);
       // Find symbol
       var s = 0;
-      for (int j = 0; j < cumFreqs.Length; j++) {
+      for (int j = 0; j < cumFreqs.Length; ++j) {
         if (threshold >= cumFreqs[j] && (j + 1 >= cumFreqs.Length || threshold < cumFreqs[j + 1])) {
           s = j;
           break;
@@ -313,7 +313,7 @@ public class PpmdTests {
     var decModel = new PpmdModelH(order, PpmdConstants.DefaultMemorySize);
     var decoder = new PpmdRangeDecoder(inputMs);
     byte[] result = new byte[originalLen];
-    for (int i = 0; i < originalLen; i++)
+    for (int i = 0; i < originalLen; ++i)
       result[i] = decModel.DecodeSymbol(decoder);
 
     return result;
@@ -337,7 +337,7 @@ public class PpmdTests {
     var decModel = new PpmdModelI(order, PpmdConstants.DefaultMemorySize);
     var decoder = new PpmdRangeDecoder(inputMs);
     byte[] result = new byte[originalLen];
-    for (int i = 0; i < originalLen; i++)
+    for (int i = 0; i < originalLen; ++i)
       result[i] = decModel.DecodeSymbol(decoder);
 
     return result;

@@ -93,7 +93,7 @@ public static class Lz4BlockDecompressor {
       if (dstPos + matchLen > dstLen)
         throw new InvalidDataException("LZ4 output buffer overflow in match copy.");
 
-      for (var i = 0; i < matchLen; i++)
+      for (var i = 0; i < matchLen; ++i)
         dest[dstPos + i] = dest[matchSrc + i];
       dstPos += matchLen;
     }

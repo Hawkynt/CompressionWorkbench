@@ -35,11 +35,11 @@ public class BinaryTreeMatchFinderTests {
     var finder = new BinaryTreeMatchFinder(1024);
     byte[] data = new byte[100];
     // Pattern: ABCABC... at start, then repeat
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 10);
 
     // Process first 20 positions
-    for (int i = 0; i < 20; i++)
+    for (int i = 0; i < 20; ++i)
       finder.FindMatch(data, i, 1024, 258, 3);
 
     // At position 20, should find a good match (length 10 pattern repeats)
@@ -94,7 +94,7 @@ public class BinaryTreeMatchFinderTests {
     byte[] data = new byte[2000];
     rng.NextBytes(data);
 
-    for (int i = 0; i < data.Length - 3; i++)
+    for (int i = 0; i < data.Length - 3; ++i)
       finder.FindMatch(data, i, 4096, 258, 3);
 
     Assert.Pass();

@@ -95,7 +95,7 @@ public class CpioTests {
     // Test various sizes that test 4-byte alignment padding
     foreach (int size in new[] { 1, 2, 3, 4, 5, 15, 16, 17 }) {
       byte[] data = new byte[size];
-      for (int i = 0; i < size; i++) data[i] = (byte)(i + 1);
+      for (int i = 0; i < size; ++i) data[i] = (byte)(i + 1);
 
       byte[] archive = CreateArchive([("test", data)]);
       var entries = ReadArchive(archive);

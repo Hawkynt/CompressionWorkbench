@@ -251,7 +251,9 @@ public sealed class LzxDecompressor {
           break;
         }
 
-        default: ThrowInvalidPreTreeSymbol(sym); break;
+        default:
+          ThrowInvalidPreTreeSymbol(sym);
+          break;
       }
     }
   }

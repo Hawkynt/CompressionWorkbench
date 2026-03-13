@@ -31,7 +31,7 @@ public class MtfTests {
   [Test]
   public void Encode_Decode_RoundTrip_Repetitive() {
     byte[] data = new byte[1000];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 3);
 
     byte[] encoded = MoveToFrontTransform.Encode(data);

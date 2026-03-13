@@ -55,7 +55,7 @@ public sealed class BytePredictor {
         continue;
 
       var total = 0;
-      for (var i = 0; i < 256; i++)
+      for (var i = 0; i < 256; ++i)
         total += counts[i];
 
       if (total < BytePredictor.MinCount)

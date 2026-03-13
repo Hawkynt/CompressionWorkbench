@@ -10,7 +10,7 @@ public class FseTests {
     short[] normalized = FseEncoder.NormalizeCounts(counts, 3, 8); // tableLog=8, tableSize=256
 
     var sum = 0;
-    for (int i = 0; i <= 3; i++) {
+    for (int i = 0; i <= 3; ++i) {
       if (normalized[i] > 0) sum += normalized[i];
       else if (normalized[i] == -1) sum += 1;
     }
@@ -24,7 +24,7 @@ public class FseTests {
     short[] normalized = FseEncoder.NormalizeCounts(counts, 3, 8);
 
     // All symbols with count > 0 must have normalizedCount >= -1 (at least 1 table entry)
-    for (int i = 0; i <= 3; i++)
+    for (int i = 0; i <= 3; ++i)
       Assert.That(normalized[i], Is.Not.EqualTo(0), $"Symbol {i} should be preserved");
   }
 
@@ -43,7 +43,7 @@ public class FseTests {
 
     // Each symbol should appear in the table the correct number of times
     var symbolCounts = new int[4];
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < 8; ++i)
       symbolCounts[table.Symbol[i]]++;
 
     Assert.That(symbolCounts[0], Is.EqualTo(4));
@@ -93,10 +93,10 @@ public class FseTests {
   public void EncodeDecode_FourSymbols() {
     // Simple 4-symbol test with known distribution
     byte[] data = new byte[64];
-    for (int i = 0; i < 32; i++) data[i] = 0;      // 50%
-    for (int i = 32; i < 48; i++) data[i] = 1;      // 25%
-    for (int i = 48; i < 56; i++) data[i] = 2;      // 12.5%
-    for (int i = 56; i < 64; i++) data[i] = 3;      // 12.5%
+    for (int i = 0; i < 32; ++i) data[i] = 0;      // 50%
+    for (int i = 32; i < 48; ++i) data[i] = 1;      // 25%
+    for (int i = 48; i < 56; ++i) data[i] = 2;      // 12.5%
+    for (int i = 56; i < 64; ++i) data[i] = 3;      // 12.5%
 
     int[] counts = new int[256];
     foreach (byte b in data) counts[b]++;
@@ -116,9 +116,9 @@ public class FseTests {
   public void EncodeDecode_SkewedDistribution() {
     // 80% 'a', 15% 'b', 5% 'c'
     byte[] data = new byte[1000];
-    for (int i = 0; i < 800; i++) data[i] = (byte)'a';
-    for (int i = 800; i < 950; i++) data[i] = (byte)'b';
-    for (int i = 950; i < 1000; i++) data[i] = (byte)'c';
+    for (int i = 0; i < 800; ++i) data[i] = (byte)'a';
+    for (int i = 800; i < 950; ++i) data[i] = (byte)'b';
+    for (int i = 950; i < 1000; ++i) data[i] = (byte)'c';
 
     int[] counts = new int[256];
     foreach (byte b in data) counts[b]++;
@@ -137,7 +137,7 @@ public class FseTests {
   [Test]
   public void EncodeDecode_UniformDistribution() {
     byte[] data = new byte[256];
-    for (int i = 0; i < 256; i++) data[i] = (byte)i;
+    for (int i = 0; i < 256; ++i) data[i] = (byte)i;
 
     int[] counts = new int[256];
     foreach (byte b in data) counts[b]++;
@@ -158,7 +158,7 @@ public class FseTests {
     byte[] data = new byte[2048];
     var rng = new Random(42);
     // Generate with geometric distribution (more realistic)
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(rng.Next(0, 16) < 8 ? 0 : rng.Next(0, 256));
 
     int[] counts = new int[256];
@@ -182,9 +182,9 @@ public class FseTests {
   public void EncodeDecode_SkewedCompresses() {
     // Highly skewed data should compress significantly
     byte[] data = new byte[1000];
-    for (int i = 0; i < 800; i++) data[i] = (byte)'a';
-    for (int i = 800; i < 950; i++) data[i] = (byte)'b';
-    for (int i = 950; i < 1000; i++) data[i] = (byte)'c';
+    for (int i = 0; i < 800; ++i) data[i] = (byte)'a';
+    for (int i = 800; i < 950; ++i) data[i] = (byte)'b';
+    for (int i = 950; i < 1000; ++i) data[i] = (byte)'c';
 
     int[] counts = new int[256];
     foreach (byte b in data) counts[b]++;
@@ -211,7 +211,7 @@ public class FseTests {
 
     Assert.That(readTableLog, Is.EqualTo(8));
     Assert.That(readMaxSym, Is.EqualTo(4));
-    for (int i = 0; i <= 4; i++)
+    for (int i = 0; i <= 4; ++i)
       Assert.That(readCounts[i], Is.EqualTo(normalized[i]), $"Count mismatch at symbol {i}");
   }
 
@@ -228,7 +228,7 @@ public class FseTests {
       FseDecoder.ReadNormalizedCounts(buffer.AsSpan(0, written));
 
     Assert.That(readTableLog, Is.EqualTo(8));
-    for (int i = 0; i <= 4; i++)
+    for (int i = 0; i <= 4; ++i)
       Assert.That(readCounts[i], Is.EqualTo(normalized[i]), $"Count mismatch at symbol {i}");
   }
 
@@ -274,7 +274,7 @@ public class FseTests {
     int[] readWeights = HuffmanFse.ReadWeights(buffer.AsSpan(0, written), out int bytesRead);
 
     Assert.That(bytesRead, Is.EqualTo(written));
-    for (int i = 0; i <= maxSymbol; i++)
+    for (int i = 0; i <= maxSymbol; ++i)
       Assert.That(readWeights[i], Is.EqualTo(weights[i]), $"Weight mismatch at symbol {i}");
   }
 }

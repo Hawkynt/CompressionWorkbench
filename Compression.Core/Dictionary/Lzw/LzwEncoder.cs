@@ -357,7 +357,7 @@ public sealed class LzwEncoder {
       var cur = bestCode;
       var desiredCode = (desiredLen == 1) ? bestCode : -1;
 
-      for (var j = 1; dataPos + j < n; j++) {
+      for (var j = 1; dataPos + j < n; ++j) {
         if (!trie.TryGetValue((cur, data[dataPos + j]), out var nx))
           break;
 

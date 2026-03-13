@@ -176,7 +176,7 @@ public sealed class XxHash64 {
     while (offset < remaining.Length) {
       hash ^= remaining[offset] * XxHash64.Prime5;
       hash = BitOperations.RotateLeft(hash, 11) * XxHash64.Prime1;
-      offset++;
+      ++offset;
     }
 
     return Avalanche(hash);

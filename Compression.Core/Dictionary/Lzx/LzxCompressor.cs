@@ -91,7 +91,7 @@ public sealed partial class LzxCompressor {
           break;
 
         blockBytes += tokBytes;
-        blockTokenEnd++;
+        ++blockTokenEnd;
         if (blockBytes >= this._blockSize)
           break;
       }
@@ -146,7 +146,7 @@ public sealed partial class LzxCompressor {
       }
 
       tokens.Add(LzxToken.CreateLiteral(data[pos]));
-      pos++;
+      ++pos;
     }
 
     return tokens;
@@ -200,12 +200,13 @@ public sealed partial class LzxCompressor {
     WriteTreeWithPreTree(writer, lengthLengths, 0, LzxConstants.NumLengthSymbols, this._prevLengthLengths);
 
     // Update persisted lengths for next block's delta coding
-    // TODO: span copy?
-    Array.Copy(mainLengths, this._prevMainLengths, this._numMainSymbols);
-    Array.Copy(lengthLengths, this._prevLengthLengths, LzxConstants.NumLengthSymbols);
+    mainLengths.AsSpan(0, this._numMainSymbols).CopyTo(this._prevMainLengths);
+    lengthLengths.AsSpan(0, LzxConstants.NumLengthSymbols).CopyTo(this._prevLengthLengths);
 
     // Write token stream; restart from pre-block R0/R1/R2 state
-    r0 = this._r0; r1 = this._r1; r2 = this._r2;
+    r0 = this._r0;
+    r1 = this._r1;
+    r2 = this._r2;
     foreach (var tok in blockTokens)
       if (tok.IsLiteral)
         writer.WriteBits(mainCodes[tok.Value], mainLengths[tok.Value]);
@@ -237,7 +238,9 @@ public sealed partial class LzxCompressor {
       }
 
     // Update R0/R1/R2 for next block
-    this._r0 = r0; this._r1 = r1; this._r2 = r2;
+    this._r0 = r0;
+    this._r1 = r1;
+    this._r2 = r2;
   }
 
   /// <summary>
@@ -261,7 +264,9 @@ public sealed partial class LzxCompressor {
     // Non-repeat: formatted_offset = distance - 2
     var formattedOffset = distance - 2;
     var slot = LzxConstants.OffsetToSlot(formattedOffset);
-    r2 = r1; r1 = r0; r0 = distance;
+    r2 = r1;
+    r1 = r0;
+    r0 = distance;
     return slot;
   }
 
@@ -277,7 +282,7 @@ public sealed partial class LzxCompressor {
     int[] prevLengths) {
     // Build delta sequence: delta[i] = (prevLen - curLen + 17) mod 17
     var deltas = new int[count];
-    for (var i = 0; i < count; i++)
+    for (var i = 0; i < count; ++i)
       deltas[i] = (prevLengths[start + i] - lengths[start + i] + 17) % 17;
 
     // Run-length encode the delta sequence into pre-tree (sym, extra) pairs
@@ -290,7 +295,7 @@ public sealed partial class LzxCompressor {
         // Count zero run
         var runLen = 0;
         while (di + runLen < count && deltas[di + runLen] == 0)
-          runLen++;
+          ++runLen;
 
         while (runLen > 0)
           switch (runLen) {
@@ -387,8 +392,12 @@ public sealed partial class LzxCompressor {
 
     var nextNode = symbols.Count;
     while (heap.Count > 1) {
-      var key1 = heap.Keys[0]; var node1 = heap.Values[0]; heap.RemoveAt(0);
-      var key2 = heap.Keys[0]; var node2 = heap.Values[0]; heap.RemoveAt(0);
+      var key1 = heap.Keys[0];
+      var node1 = heap.Values[0];
+      heap.RemoveAt(0);
+      var key2 = heap.Keys[0];
+      var node2 = heap.Values[0];
+      heap.RemoveAt(0);
 
       var parent = nextNode++;
       leftChild[parent] = node1;
@@ -434,7 +443,7 @@ public sealed partial class LzxCompressor {
   /// Assigns canonical Huffman codes (MSB-first) to the given code length array.
   /// </summary>
   internal static uint[] BuildCanonicalCodes(int[] lengths) {
-    var maxLen = lengths.Prepend(0).Max();
+    var maxLen = lengths.Length > 0 ? lengths.Max() : 0;
     if (maxLen == 0)
       return new uint[lengths.Length];
 

@@ -5,7 +5,7 @@ namespace Compression.Core.Entropy.Ppmd;
 /// Unlike the LZMA range coder which uses adaptive binary probabilities, this
 /// encoder works with cumulative frequency tables for multi-symbol alphabets.
 /// </summary>
-internal sealed class PpmdRangeEncoder {
+public sealed class PpmdRangeEncoder {
   private const uint Top = 1u << 24;
   private readonly Stream _output;
   private ulong _low;
@@ -73,7 +73,7 @@ internal sealed class PpmdRangeEncoder {
 /// Unlike the LZMA range coder which uses adaptive binary probabilities, this
 /// decoder works with cumulative frequency tables for multi-symbol alphabets.
 /// </summary>
-internal sealed class PpmdRangeDecoder {
+public sealed class PpmdRangeDecoder {
   private const uint Top = 1u << 24;
   private readonly Stream _input;
   private uint _code;

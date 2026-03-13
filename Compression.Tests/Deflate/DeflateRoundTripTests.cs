@@ -77,7 +77,7 @@ public class DeflateRoundTripTests {
   public void RoundTrip_LargeRepetitive() {
     byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
     byte[] data = new byte[pattern.Length * 500];
-    for (int i = 0; i < 500; i++)
+    for (int i = 0; i < 500; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
     byte[] compressed = DeflateCompressor.Compress(data, DeflateCompressionLevel.Default);
@@ -92,7 +92,7 @@ public class DeflateRoundTripTests {
   public void RoundTrip_LargeRepetitive_SystemInterop() {
     byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
     byte[] data = new byte[pattern.Length * 500];
-    for (int i = 0; i < 500; i++)
+    for (int i = 0; i < 500; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
     byte[] compressed = DeflateCompressor.Compress(data, DeflateCompressionLevel.Default);
@@ -118,7 +118,7 @@ public class DeflateRoundTripTests {
   public void RoundTrip_Maximum_LargeRepetitive() {
     byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
     byte[] data = new byte[pattern.Length * 100];
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 100; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
     byte[] compressed = DeflateCompressor.Compress(data, DeflateCompressionLevel.Maximum);

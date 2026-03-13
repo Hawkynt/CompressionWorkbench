@@ -36,7 +36,7 @@ public class LzhTests {
   [Test]
   public void RoundTrip_PatternData_Lh5() {
     byte[] data = new byte[2000];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 13);
 
     var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);

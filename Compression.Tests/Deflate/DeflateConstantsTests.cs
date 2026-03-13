@@ -31,13 +31,13 @@ public class DeflateConstantsTests {
     ReadOnlySpan<int> bases = DeflateConstants.LengthBase;
     ReadOnlySpan<int> extras = DeflateConstants.LengthExtraBits;
 
-    for (int i = 0; i < bases.Length; i++) {
+    for (int i = 0; i < bases.Length; ++i) {
       var range = 1 << extras[i];
-      for (int j = 0; j < range; j++)
+      for (int j = 0; j < range; ++j)
         reachable.Add(bases[i] + j);
     }
 
-    for (int len = 3; len <= 258; len++)
+    for (int len = 3; len <= 258; ++len)
       Assert.That(reachable.Contains(len), Is.True, $"Length {len} not reachable");
   }
 
@@ -47,27 +47,27 @@ public class DeflateConstantsTests {
     ReadOnlySpan<int> bases = DeflateConstants.DistanceBase;
     ReadOnlySpan<int> extras = DeflateConstants.DistanceExtraBits;
 
-    for (int i = 0; i < bases.Length; i++) {
+    for (int i = 0; i < bases.Length; ++i) {
       var range = 1 << extras[i];
-      for (int j = 0; j < range; j++)
+      for (int j = 0; j < range; ++j)
         reachable.Add(bases[i] + j);
     }
 
-    for (int dist = 1; dist <= 32768; dist++)
+    for (int dist = 1; dist <= 32768; ++dist)
       Assert.That(reachable.Contains(dist), Is.True, $"Distance {dist} not reachable");
   }
 
   [Test]
   public void LengthBase_IsMonotonicallyIncreasing() {
     ReadOnlySpan<int> bases = DeflateConstants.LengthBase;
-    for (int i = 1; i < bases.Length; i++)
+    for (int i = 1; i < bases.Length; ++i)
       Assert.That(bases[i], Is.GreaterThan(bases[i - 1]), $"LengthBase[{i}] <= LengthBase[{i - 1}]");
   }
 
   [Test]
   public void DistanceBase_IsMonotonicallyIncreasing() {
     ReadOnlySpan<int> bases = DeflateConstants.DistanceBase;
-    for (int i = 1; i < bases.Length; i++)
+    for (int i = 1; i < bases.Length; ++i)
       Assert.That(bases[i], Is.GreaterThan(bases[i - 1]), $"DistanceBase[{i}] <= DistanceBase[{i - 1}]");
   }
 
@@ -76,13 +76,13 @@ public class DeflateConstantsTests {
     var lengths = DeflateConstants.GetStaticLiteralLengths();
     Assert.That(lengths.Length, Is.EqualTo(288));
 
-    for (int i = 0; i <= 143; i++)
+    for (int i = 0; i <= 143; ++i)
       Assert.That(lengths[i], Is.EqualTo(8), $"Symbol {i}");
-    for (int i = 144; i <= 255; i++)
+    for (int i = 144; i <= 255; ++i)
       Assert.That(lengths[i], Is.EqualTo(9), $"Symbol {i}");
-    for (int i = 256; i <= 279; i++)
+    for (int i = 256; i <= 279; ++i)
       Assert.That(lengths[i], Is.EqualTo(7), $"Symbol {i}");
-    for (int i = 280; i <= 287; i++)
+    for (int i = 280; i <= 287; ++i)
       Assert.That(lengths[i], Is.EqualTo(8), $"Symbol {i}");
   }
 
@@ -102,10 +102,10 @@ public class DeflateConstantsTests {
   public void CodeLengthOrder_ContainsAllValues0To18() {
     var values = new HashSet<int>();
     ReadOnlySpan<int> order = DeflateConstants.CodeLengthOrder;
-    for (int i = 0; i < order.Length; i++)
+    for (int i = 0; i < order.Length; ++i)
       values.Add(order[i]);
 
-    for (int i = 0; i <= 18; i++)
+    for (int i = 0; i <= 18; ++i)
       Assert.That(values.Contains(i), Is.True, $"Value {i} missing from CodeLengthOrder");
   }
 
@@ -132,7 +132,7 @@ public class DeflateConstantsTests {
     ReadOnlySpan<int> bases = DeflateConstants.LengthBase;
     ReadOnlySpan<int> extras = DeflateConstants.LengthExtraBits;
 
-    for (int length = 3; length <= 258; length++) {
+    for (int length = 3; length <= 258; ++length) {
       int code = DeflateConstants.GetLengthCode(length);
       int idx = code - 257;
       int extra = length - bases[idx];
@@ -158,7 +158,7 @@ public class DeflateConstantsTests {
     ReadOnlySpan<int> bases = DeflateConstants.DistanceBase;
     ReadOnlySpan<int> extras = DeflateConstants.DistanceExtraBits;
 
-    for (int distance = 1; distance <= 32768; distance++) {
+    for (int distance = 1; distance <= 32768; ++distance) {
       int code = DeflateConstants.GetDistanceCode(distance);
       int extra = distance - bases[code];
       Assert.That(extra, Is.GreaterThanOrEqualTo(0), $"Distance {distance}: negative extra");

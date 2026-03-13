@@ -22,7 +22,7 @@ internal sealed class LzmaLiteralDecoder {
     this._coders = new int[numCoders][];
     for (var i = 0; i < numCoders; ++i) {
       this._coders[i] = new int[0x300];
-      Array.Fill(this._coders[i], RangeEncoder.ProbInitValue);
+      this._coders[i].AsSpan().Fill(RangeEncoder.ProbInitValue);
     }
   }
 

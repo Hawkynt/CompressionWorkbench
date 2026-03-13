@@ -69,7 +69,7 @@ public static class Lz4BlockCompressor {
             // Extend match
             while (pos + matchLength < srcLen &&
               src[candidate + matchLength] == src[pos + matchLength])
-              matchLength++;
+              ++matchLength;
           }
       }
 

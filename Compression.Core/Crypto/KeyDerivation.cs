@@ -74,7 +74,7 @@ public static class KeyDerivation {
 
     sha256.Initialize();
 
-    for (long i = 0; i < numIterations; i++) {
+    for (long i = 0; i < numIterations; ++i) {
       // Write iteration counter as little-endian 8 bytes
       BitConverter.TryWriteBytes(hashInput.AsSpan(combined.Length), i);
 
