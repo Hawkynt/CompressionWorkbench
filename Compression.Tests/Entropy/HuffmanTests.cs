@@ -97,7 +97,7 @@ public class HuffmanTests {
   public void RoundTrip_UniformDistribution() {
     // Create a uniform frequency distribution
     var frequencies = new long[8];
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < 8; ++i)
       frequencies[i] = 100;
 
     var root = HuffmanTree.BuildFromFrequencies(frequencies);
@@ -161,7 +161,7 @@ public class HuffmanTests {
 
     // Generate random frequencies
     var frequencies = new long[numSymbols];
-    for (int i = 0; i < numSymbols; i++)
+    for (int i = 0; i < numSymbols; ++i)
       frequencies[i] = rng.Next(1, 1000);
 
     var root = HuffmanTree.BuildFromFrequencies(frequencies);
@@ -170,7 +170,7 @@ public class HuffmanTests {
 
     // Generate random data
     int[] symbols = new int[dataLength];
-    for (int i = 0; i < dataLength; i++)
+    for (int i = 0; i < dataLength; ++i)
       symbols[i] = rng.Next(numSymbols);
 
     // Encode
@@ -194,7 +194,7 @@ public class HuffmanTests {
     // Create a very skewed distribution that would produce long codes
     var frequencies = new long[20];
     frequencies[0] = 100000;
-    for (int i = 1; i < 20; i++)
+    for (int i = 1; i < 20; ++i)
       frequencies[i] = 1;
 
     var root = HuffmanTree.BuildFromFrequencies(frequencies);
@@ -202,7 +202,7 @@ public class HuffmanTests {
 
     HuffmanTree.LimitCodeLengths(codeLengths, 7);
 
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < 20; ++i) {
       if (codeLengths[i] > 0)
         Assert.That(codeLengths[i], Is.LessThanOrEqualTo(7));
     }

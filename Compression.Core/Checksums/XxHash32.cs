@@ -154,7 +154,7 @@ public sealed class XxHash32 {
     while (offset < remaining.Length) {
       hash += remaining[offset] * XxHash32.Prime5;
       hash = BitOperations.RotateLeft(hash, 11) * XxHash32.Prime1;
-      offset++;
+      ++offset;
     }
 
     return Avalanche(hash);

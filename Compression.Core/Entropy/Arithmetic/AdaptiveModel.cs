@@ -73,7 +73,7 @@ public sealed class AdaptiveModel {
   /// <param name="symbol">The symbol that was processed.</param>
   public void Update(int symbol) {
     this._freq[symbol]++;
-    this.TotalFrequency++;
+    ++this.TotalFrequency;
 
     if (this.TotalFrequency >= AdaptiveModel.MaxTotalFreq)
       this.Rescale();

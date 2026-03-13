@@ -43,7 +43,7 @@ public class LzmaTests {
   public void RoundTrip_RepetitiveData() {
     byte[] pattern = "the quick brown fox jumps over the lazy dog. "u8.ToArray();
     byte[] data = new byte[pattern.Length * 100];
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 100; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
     byte[] result = CompressDecompress(data);
@@ -72,7 +72,7 @@ public class LzmaTests {
     var rng = new Random(123);
     byte[] data = new byte[10240];
     // Mix of patterns and random
-    for (int i = 0; i < data.Length; i++) {
+    for (int i = 0; i < data.Length; ++i) {
       if (i % 100 < 50)
         data[i] = (byte)(i % 26 + 'a');
       else
@@ -154,7 +154,7 @@ public class LzmaTests {
     // Pattern designed to trigger short rep (1-byte rep0 copies):
     // "ABABABAB..." — each B is a short rep of the previous B at distance 2
     byte[] data = new byte[512];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 2 == 0 ? 'A' : 'B');
 
     byte[] result = CompressDecompress(data);
@@ -206,11 +206,11 @@ public class LzmaTests {
   public void RoundTrip_MaxLengthMatch() {
     // Data with a very long repetition to exercise max match length (273)
     byte[] pattern = new byte[273];
-    for (int i = 0; i < pattern.Length; i++)
+    for (int i = 0; i < pattern.Length; ++i)
       pattern[i] = (byte)(i % 7 + 'a');
 
     byte[] data = new byte[pattern.Length * 20];
-    for (int i = 0; i < 20; i++)
+    for (int i = 0; i < 20; ++i)
       pattern.CopyTo(data.AsSpan(i * pattern.Length));
 
     byte[] result = CompressDecompress(data);
@@ -221,7 +221,7 @@ public class LzmaTests {
   public void RoundTrip_AllByteValues() {
     // All 256 byte values — exercises literal coding with diverse contexts
     byte[] data = new byte[512];
-    for (int i = 0; i < 256; i++)
+    for (int i = 0; i < 256; ++i)
       data[i] = (byte)i;
     // Repeat to give some match opportunities
     Array.Copy(data, 0, data, 256, 256);
@@ -235,7 +235,7 @@ public class LzmaTests {
     // Exercise with a very small dictionary (4KB minimum)
     byte[] data = "Small dictionary test data with some repetition. "u8.ToArray();
     byte[] bigData = new byte[data.Length * 50];
-    for (int i = 0; i < 50; i++)
+    for (int i = 0; i < 50; ++i)
       data.CopyTo(bigData.AsSpan(i * data.Length));
 
     var encoder = new LzmaEncoder(dictionarySize: 4096);
@@ -257,7 +257,7 @@ public class LzmaTests {
     // Unique prefix to start in literal states
     ms.Write("UNIQUE_PREFIX_"u8);
     // Repetitive block to trigger matches
-    for (int i = 0; i < 50; i++)
+    for (int i = 0; i < 50; ++i)
       ms.Write("XYZ"u8);
     // Different pattern for normal match -> literal -> rep transitions
     ms.Write("ABCDEFGH"u8);
@@ -267,7 +267,7 @@ public class LzmaTests {
     ms.Write("ABCDEFGH"u8); // rep match
     ms.Write("R"u8);        // literal after rep
     // Short rep patterns (single-byte from rep0)
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 100; ++i)
       ms.Write("AA"u8);
 
     byte[] data = ms.ToArray();

@@ -18,7 +18,7 @@ public class BytePredictorTests {
   public void PredictByte_AfterTraining_ReturnsMostLikely() {
     var pred = new BytePredictor(1);
     // After 'A', always 'B'
-    for (int i = 0; i < 20; i++)
+    for (int i = 0; i < 20; ++i)
       pred.Update([(byte)'A'], (byte)'B');
 
     byte predicted = pred.PredictByte([(byte)'A']);
@@ -29,7 +29,7 @@ public class BytePredictorTests {
   public void Predict_HigherOrder_MoreSpecific() {
     var pred = new BytePredictor(2);
     // After "AB" → 'C', after "XB" → 'Y'
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < 20; ++i) {
       pred.Update([(byte)'A', (byte)'B'], (byte)'C');
       pred.Update([(byte)'X', (byte)'B'], (byte)'Y');
     }
@@ -44,7 +44,7 @@ public class BytePredictorTests {
   public void Update_RescalesWhenCountsHigh() {
     var pred = new BytePredictor(1);
     // Pump in many updates to trigger rescaling
-    for (int i = 0; i < 5000; i++)
+    for (int i = 0; i < 5000; ++i)
       pred.Update([0], 42);
     // Should still predict correctly
     Assert.That(pred.PredictByte([0]), Is.EqualTo(42));
@@ -60,7 +60,7 @@ public class BytePredictorTests {
   public void Predict_FallsBackToLowerOrder() {
     var pred = new BytePredictor(3);
     // Only train order-1 context (byte 'A')
-    for (int i = 0; i < 20; i++)
+    for (int i = 0; i < 20; ++i)
       pred.Update([(byte)'A'], (byte)'Z');
 
     // Query with order-3 context that includes 'A' as the last byte

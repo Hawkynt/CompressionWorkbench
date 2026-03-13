@@ -24,7 +24,7 @@ public class ArithmeticTests {
   public void BitCoding_RoundTrip_MixedBits() {
     var rng = new Random(42);
     var data = new int[200];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = rng.Next(2);
     var compressed = EncodeBits(data, 32768);
     var decoded = DecodeBits(compressed, 200, 32768);
@@ -36,7 +36,7 @@ public class ArithmeticTests {
     // Mostly zeros with high prob0 — should compress well
     var rng = new Random(7);
     var data = new int[500];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = rng.Next(100) < 5 ? 1 : 0; // 95% zeros
     var compressed = EncodeBits(data, 62259); // prob0 ≈ 0.95
     var decoded = DecodeBits(compressed, 500, 62259);
@@ -50,7 +50,7 @@ public class ArithmeticTests {
     var rng = new Random(99);
     int numSymbols = 8;
     var data = new int[200];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = rng.Next(numSymbols);
 
     var compressed = EncodeSymbols(data, numSymbols);
@@ -63,7 +63,7 @@ public class ArithmeticTests {
     // Data with strong pattern: lots of symbol 0
     var data = new int[500];
     var rng = new Random(42);
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = rng.Next(100) < 80 ? 0 : rng.Next(1, 4);
 
     var compressed = EncodeSymbols(data, 4);
@@ -86,7 +86,7 @@ public class ArithmeticTests {
   public void SymbolCoding_LargeAlphabet() {
     var rng = new Random(11);
     var data = new int[300];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = rng.Next(256);
 
     var compressed = EncodeSymbols(data, 256);
@@ -127,7 +127,7 @@ public class ArithmeticTests {
     using var ms = new MemoryStream(compressed);
     var decoder = new ArithmeticDecoder(ms);
     var result = new int[count];
-    for (int i = 0; i < count; i++)
+    for (int i = 0; i < count; ++i)
       result[i] = decoder.DecodeBit(prob0);
     return result;
   }
@@ -155,7 +155,7 @@ public class ArithmeticTests {
     var model = new AdaptiveModel(numSymbols);
     var result = new int[count];
 
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < count; ++i) {
       uint totalFreq = (uint)model.TotalFrequency;
       uint cumCount = decoder.GetCumulativeCount(totalFreq);
       int sym = model.FindSymbol((int)cumCount);

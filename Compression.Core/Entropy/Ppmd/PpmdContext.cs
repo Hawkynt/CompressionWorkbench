@@ -7,7 +7,7 @@ namespace Compression.Core.Entropy.Ppmd;
 /// Uses PPM Method D escape estimation: the escape frequency equals the number of
 /// distinct symbols observed in this context.
 /// </summary>
-internal sealed class PpmdContext {
+public sealed class PpmdContext {
   /// <summary>Symbol-to-frequency mapping for this context.</summary>
   private readonly Dictionary<byte, int> _frequencies = new();
 

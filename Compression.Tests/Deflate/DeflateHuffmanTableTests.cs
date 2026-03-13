@@ -35,7 +35,7 @@ public class DeflateHuffmanTableTests {
     var table = DeflateHuffmanTable.CreateStaticDistanceTable();
     Assert.That(table.MaxCodeLength, Is.EqualTo(5));
 
-    for (int i = 0; i < 30; i++) {
+    for (int i = 0; i < 30; ++i) {
       var (_, len) = table.GetCode(i);
       Assert.That(len, Is.EqualTo(5), $"Distance code {i}");
     }
@@ -60,7 +60,7 @@ public class DeflateHuffmanTableTests {
     // Decode
     ms.Position = 0;
     var buffer = new BitBuffer<LsbBitOrder>(ms);
-    for (int i = 0; i < symbols.Length; i++) {
+    for (int i = 0; i < symbols.Length; ++i) {
       int decoded = table.DecodeSymbol(buffer);
       Assert.That(decoded, Is.EqualTo(symbols[i]), $"Symbol at index {i}");
     }
@@ -83,7 +83,7 @@ public class DeflateHuffmanTableTests {
 
     ms.Position = 0;
     var buffer = new BitBuffer<LsbBitOrder>(ms);
-    for (int i = 0; i < symbols.Length; i++) {
+    for (int i = 0; i < symbols.Length; ++i) {
       int decoded = table.DecodeSymbol(buffer);
       Assert.That(decoded, Is.EqualTo(symbols[i]), $"Symbol at index {i}");
     }
@@ -96,7 +96,7 @@ public class DeflateHuffmanTableTests {
 
     using var ms = new MemoryStream();
     var writer = new BitWriter<LsbBitOrder>(ms);
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 5; ++i) {
       var (code, len) = table.GetCode(1);
       writer.WriteBits(code, len);
     }
@@ -104,7 +104,7 @@ public class DeflateHuffmanTableTests {
 
     ms.Position = 0;
     var buffer = new BitBuffer<LsbBitOrder>(ms);
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 5; ++i) {
       int decoded = table.DecodeSymbol(buffer);
       Assert.That(decoded, Is.EqualTo(1));
     }
@@ -128,7 +128,7 @@ public class DeflateHuffmanTableTests {
 
     ms.Position = 0;
     var buffer = new BitBuffer<LsbBitOrder>(ms);
-    for (int i = 0; i < symbols.Length; i++) {
+    for (int i = 0; i < symbols.Length; ++i) {
       int decoded = table.DecodeSymbol(buffer);
       Assert.That(decoded, Is.EqualTo(symbols[i]), $"Symbol at index {i}");
     }

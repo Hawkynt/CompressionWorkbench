@@ -11,7 +11,7 @@ public class ZopfliHashChainTests {
     var chain = new ZopfliHashChain();
 
     // Insert positions 0,1,2
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 3; ++i)
       chain.Insert(data, i);
 
     var matches = chain.FindAllMatches(data, 3, 32768, 258);
@@ -23,12 +23,12 @@ public class ZopfliHashChainTests {
     byte[] data = "ABCABCABCABC"u8.ToArray();
     var chain = new ZopfliHashChain();
 
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 3; ++i)
       chain.Insert(data, i);
 
     var matches = chain.FindAllMatches(data, 3, 32768, 258);
 
-    for (int i = 1; i < matches.Count; i++) {
+    for (int i = 1; i < matches.Count; ++i) {
       Assert.That(matches[i].Length, Is.GreaterThan(matches[i - 1].Length),
         "Matches must be sorted by ascending length");
     }
@@ -40,7 +40,7 @@ public class ZopfliHashChainTests {
     byte[] data = "ABABABABAB"u8.ToArray();
     var chain = new ZopfliHashChain();
 
-    for (int i = 0; i < 6; i++)
+    for (int i = 0; i < 6; ++i)
       chain.Insert(data, i);
 
     var matches = chain.FindAllMatches(data, 6, 32768, 258);
@@ -60,7 +60,7 @@ public class ZopfliHashChainTests {
     chain.Insert(data, 0);
 
     // Skip far ahead — insert positions 1-49
-    for (int i = 1; i < 50; i++)
+    for (int i = 1; i < 50; ++i)
       chain.Insert(data, i);
 
     // Position 50 with maxDistance=10 should only find matches within 10 bytes
@@ -81,11 +81,11 @@ public class ZopfliHashChainTests {
   [Test]
   public void FindAllMatches_NoMatchForUniqueData() {
     byte[] data = new byte[256];
-    for (int i = 0; i < 256; i++)
+    for (int i = 0; i < 256; ++i)
       data[i] = (byte)i;
 
     var chain = new ZopfliHashChain();
-    for (int i = 0; i < 200; i++)
+    for (int i = 0; i < 200; ++i)
       chain.Insert(data, i);
 
     var matches = chain.FindAllMatches(data, 200, 32768, 258);

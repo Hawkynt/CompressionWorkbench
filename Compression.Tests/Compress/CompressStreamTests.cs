@@ -33,7 +33,7 @@ public class CompressStreamTests {
   public void RoundTrip_RepetitiveData() {
     byte[] pattern = "ABCDEFGHIJ"u8.ToArray();
     byte[] data = new byte[pattern.Length * 100];
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 100; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
     byte[] compressed = CompressData(data);

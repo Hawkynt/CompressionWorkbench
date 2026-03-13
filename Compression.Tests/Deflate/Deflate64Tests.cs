@@ -81,7 +81,7 @@ public class Deflate64Tests {
     ReadOnlySpan<int> bases = Deflate64Constants.DistanceBase;
     ReadOnlySpan<int> extras = Deflate64Constants.DistanceExtraBits;
 
-    for (int distance = 1; distance <= 65536; distance++) {
+    for (int distance = 1; distance <= 65536; ++distance) {
       int code = Deflate64Constants.GetDistanceCode(distance);
       int extra = distance - bases[code];
       Assert.That(extra, Is.GreaterThanOrEqualTo(0), $"Distance {distance}: negative extra");
@@ -95,20 +95,20 @@ public class Deflate64Tests {
     ReadOnlySpan<int> bases = Deflate64Constants.DistanceBase;
     ReadOnlySpan<int> extras = Deflate64Constants.DistanceExtraBits;
 
-    for (int i = 0; i < bases.Length; i++) {
+    for (int i = 0; i < bases.Length; ++i) {
       var range = 1 << extras[i];
-      for (int j = 0; j < range; j++)
+      for (int j = 0; j < range; ++j)
         reachable.Add(bases[i] + j);
     }
 
-    for (int dist = 1; dist <= 65536; dist++)
+    for (int dist = 1; dist <= 65536; ++dist)
       Assert.That(reachable.Contains(dist), Is.True, $"Distance {dist} not reachable");
   }
 
   [Test]
   public void DistanceBase_IsMonotonicallyIncreasing() {
     ReadOnlySpan<int> bases = Deflate64Constants.DistanceBase;
-    for (int i = 1; i < bases.Length; i++)
+    for (int i = 1; i < bases.Length; ++i)
       Assert.That(bases[i], Is.GreaterThan(bases[i - 1]), $"DistanceBase[{i}] <= DistanceBase[{i - 1}]");
   }
 
@@ -118,7 +118,7 @@ public class Deflate64Tests {
     ReadOnlySpan<int> deflate64Bases = Deflate64Constants.DistanceBase;
     ReadOnlySpan<int> deflateBases = DeflateConstants.DistanceBase;
 
-    for (int i = 0; i < 30; i++)
+    for (int i = 0; i < 30; ++i)
       Assert.That(deflate64Bases[i], Is.EqualTo(deflateBases[i]), $"DistanceBase[{i}] mismatch");
   }
 
@@ -128,7 +128,7 @@ public class Deflate64Tests {
     ReadOnlySpan<int> deflate64Bases = Deflate64Constants.LengthBase;
     ReadOnlySpan<int> deflateBases = DeflateConstants.LengthBase;
 
-    for (int i = 0; i < 28; i++)
+    for (int i = 0; i < 28; ++i)
       Assert.That(deflate64Bases[i], Is.EqualTo(deflateBases[i]), $"LengthBase[{i}] mismatch");
   }
 

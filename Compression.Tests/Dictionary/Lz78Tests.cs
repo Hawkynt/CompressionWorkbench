@@ -56,7 +56,7 @@ public class Lz78Tests {
     var compressor = new Lz78Compressor();
     byte[] pattern = Encoding.ASCII.GetBytes("ABCABC");
     byte[] data = new byte[4096];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = pattern[i % pattern.Length];
 
     var tokens = compressor.Compress(data);

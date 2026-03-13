@@ -136,7 +136,7 @@ public sealed class SuffixArrayMatchFinder {
       });
 
       tmp[sa[0]] = 0;
-      for (var i = 1; i < n; i++) {
+      for (var i = 1; i < n; ++i) {
         tmp[sa[i]] = tmp[sa[i - 1]];
         var prevSecond = sa[i - 1] + g < n ? rank[sa[i - 1] + g] : -1;
         var currSecond = sa[i] + g < n ? rank[sa[i] + g] : -1;
@@ -144,8 +144,7 @@ public sealed class SuffixArrayMatchFinder {
           tmp[sa[i]]++;
       }
 
-      // TODO: span copy
-      Array.Copy(tmp, rank, n);
+      tmp.AsSpan(0, n).CopyTo(rank);
       if (rank[sa[n - 1]] == n - 1)
         break; // all ranks unique, done
     }

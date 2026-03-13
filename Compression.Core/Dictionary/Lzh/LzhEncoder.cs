@@ -138,7 +138,7 @@ public sealed partial class LzhEncoder {
 
     var slot = 1;
     var d = distance;
-    while (d > 1) { d >>= 1; slot++; }
+    while (d > 1) { d >>= 1; ++slot; }
     return slot;
   }
 
@@ -175,8 +175,12 @@ public sealed partial class LzhEncoder {
 
     var nextNode = symbols.Count;
     while (heap.Count > 1) {
-      var key1 = heap.Keys[0]; var node1 = heap.Values[0]; heap.RemoveAt(0);
-      var key2 = heap.Keys[0]; var node2 = heap.Values[0]; heap.RemoveAt(0);
+      var key1 = heap.Keys[0];
+      var node1 = heap.Values[0];
+      heap.RemoveAt(0);
+      var key2 = heap.Keys[0];
+      var node2 = heap.Values[0];
+      heap.RemoveAt(0);
 
       var parent = nextNode++;
       leftChild[parent] = node1;
@@ -221,7 +225,7 @@ public sealed partial class LzhEncoder {
   }
 
   internal static uint[] BuildCanonicalCodes(int[] lengths) {
-    var maxLen = lengths.Prepend(0).Max();
+    var maxLen = lengths.Length > 0 ? lengths.Max() : 0;
     if (maxLen == 0)
       return new uint[lengths.Length];
 

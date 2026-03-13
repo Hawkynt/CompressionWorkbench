@@ -8,7 +8,7 @@ namespace Compression.Core.Entropy.Ppmd;
 /// The model maintains a trie of byte contexts and predicts the next symbol based on
 /// the longest matching context, falling back to shorter contexts via escape coding.
 /// </summary>
-internal abstract class PpmdModelBase {
+public abstract class PpmdModelBase {
   /// <summary>Maximum context order for this model instance.</summary>
   protected readonly int _maxOrder;
 
@@ -117,7 +117,7 @@ internal abstract class PpmdModelBase {
     this._history[this._historyPos] = symbol;
     this._historyPos = (this._historyPos + 1) % this._history.Length;
     if (this._historyCount < this._history.Length)
-      this._historyCount++;
+      ++this._historyCount;
   }
 
   /// <summary>

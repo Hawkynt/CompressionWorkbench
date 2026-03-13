@@ -70,7 +70,7 @@ public class BrotliTests {
   [Test]
   public void RoundTrip_AllByteValues() {
     var data = new byte[256];
-    for (int i = 0; i < 256; i++)
+    for (int i = 0; i < 256; ++i)
       data[i] = (byte)i;
     var compressed = BrotliCompressor.Compress(data);
     var decompressed = BrotliDecompressor.Decompress(compressed);

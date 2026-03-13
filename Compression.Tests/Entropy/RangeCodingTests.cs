@@ -34,7 +34,7 @@ public class RangeCodingTests {
     var decoder = new RangeDecoder(ms);
     int decodeProb = RangeEncoder.ProbInitValue;
     int[] decoded = new int[bits.Length];
-    for (int i = 0; i < bits.Length; i++)
+    for (int i = 0; i < bits.Length; ++i)
       decoded[i] = decoder.DecodeBit(ref decodeProb);
 
     Assert.That(decoded, Is.EqualTo(bits));
@@ -63,7 +63,7 @@ public class RangeCodingTests {
     var encoder = new RangeEncoder(ms);
     var treeEncoder = new BitTreeEncoder(8);
 
-    for (int v = 0; v < 256; v++)
+    for (int v = 0; v < 256; ++v)
       treeEncoder.Encode(encoder, v);
     encoder.Finish();
 
@@ -71,7 +71,7 @@ public class RangeCodingTests {
     var decoder = new RangeDecoder(ms);
     var treeDecoder = new BitTreeDecoder(8);
 
-    for (int v = 0; v < 256; v++) {
+    for (int v = 0; v < 256; ++v) {
       int decoded = treeDecoder.Decode(decoder);
       Assert.That(decoded, Is.EqualTo(v), $"Mismatch at index {v}");
     }
@@ -83,7 +83,7 @@ public class RangeCodingTests {
     var encoder = new RangeEncoder(ms);
     var treeEncoder = new BitTreeEncoder(4);
 
-    for (int v = 0; v < 16; v++)
+    for (int v = 0; v < 16; ++v)
       treeEncoder.ReverseEncode(encoder, v);
     encoder.Finish();
 
@@ -91,7 +91,7 @@ public class RangeCodingTests {
     var decoder = new RangeDecoder(ms);
     var treeDecoder = new BitTreeDecoder(4);
 
-    for (int v = 0; v < 16; v++) {
+    for (int v = 0; v < 16; ++v) {
       int decoded = treeDecoder.ReverseDecode(decoder);
       Assert.That(decoded, Is.EqualTo(v), $"Mismatch at index {v}");
     }
@@ -104,14 +104,14 @@ public class RangeCodingTests {
 
     // Encode mostly 0s — probability should converge toward 0
     int prob = RangeEncoder.ProbInitValue;
-    for (int i = 0; i < 1000; i++)
+    for (int i = 0; i < 1000; ++i)
       encoder.EncodeBit(ref prob, 0);
     encoder.Finish();
 
     ms.Position = 0;
     var decoder = new RangeDecoder(ms);
     int decodeProb = RangeEncoder.ProbInitValue;
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 1000; ++i) {
       int bit = decoder.DecodeBit(ref decodeProb);
       Assert.That(bit, Is.EqualTo(0));
     }
@@ -125,7 +125,7 @@ public class RangeCodingTests {
   public void LargeData_RoundTrip() {
     var rng = new Random(42);
     int[] data = new int[2000];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = rng.Next(2);
 
     using var ms = new MemoryStream();
@@ -138,7 +138,7 @@ public class RangeCodingTests {
     ms.Position = 0;
     var decoder = new RangeDecoder(ms);
     int decodeProb = RangeEncoder.ProbInitValue;
-    for (int i = 0; i < data.Length; i++) {
+    for (int i = 0; i < data.Length; ++i) {
       int bit = decoder.DecodeBit(ref decodeProb);
       Assert.That(bit, Is.EqualTo(data[i]), $"Mismatch at index {i}");
     }

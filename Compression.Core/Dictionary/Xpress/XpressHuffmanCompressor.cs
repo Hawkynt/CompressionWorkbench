@@ -215,7 +215,7 @@ public sealed partial class XpressHuffmanCompressor {
   }
 
   private static uint[] BuildCanonicalCodes(int[] lengths) {
-    var maxLen = lengths.Prepend(0).Max();
+    var maxLen = lengths.Length > 0 ? lengths.Max() : 0;
     if (maxLen == 0)
       return new uint[lengths.Length];
 
@@ -248,7 +248,7 @@ public sealed partial class XpressHuffmanCompressor {
 
   private static uint ReverseBits(uint code, int length) {
     uint result = 0;
-    for (var i = 0; i < length; i++) {
+    for (var i = 0; i < length; ++i) {
       result = (result << 1) | (code & 1);
       code >>= 1;
     }

@@ -93,7 +93,7 @@ public sealed class ArithmeticEncoder {
         this._high -= ArithmeticEncoder.HalfRange;
       } else if (this._low >= ArithmeticEncoder.QuarterRange && this._high < 3 * ArithmeticEncoder.QuarterRange) {
         // Underflow
-        this._pendingBits++;
+        ++this._pendingBits;
         this._low -= ArithmeticEncoder.QuarterRange;
         this._high -= ArithmeticEncoder.QuarterRange;
       } else

@@ -79,7 +79,7 @@ public class SuffixArrayMatchFinderTests {
     new Random(42).NextBytes(data);
     var finder = new SuffixArrayMatchFinder(data);
     // Just ensure it doesn't crash
-    for (int i = 3; i < 100; i++) {
+    for (int i = 3; i < 100; ++i) {
       var match = finder.FindMatch(data, i, maxDistance: 10000, maxLength: 258, minLength: 3);
       // match may or may not exist — just checking no exceptions
       Assert.That(match.Length, Is.GreaterThanOrEqualTo(0));
@@ -104,7 +104,7 @@ public class SuffixArrayMatchFinderTests {
     var hcFinder = new HashChainMatchFinder(data.Length, 128);
 
     // Insert positions for hash chain
-    for (int i = 0; i < data.Length; i++) {
+    for (int i = 0; i < data.Length; ++i) {
       var saMatch = saFinder.FindMatch(data, i, data.Length, 258, 3);
       var hcMatch = hcFinder.FindMatch(data, i, data.Length, 258, 3);
 

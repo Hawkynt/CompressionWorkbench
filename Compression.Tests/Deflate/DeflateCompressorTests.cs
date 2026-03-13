@@ -69,7 +69,7 @@ public class DeflateCompressorTests {
   public void Compress_RoundTrip_RepetitiveData(DeflateCompressionLevel level) {
     byte[] pattern = "ABCABCABCABCABC"u8.ToArray();
     byte[] data = new byte[pattern.Length * 100];
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 100; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
     byte[] compressed = DeflateCompressor.Compress(data, level);
@@ -130,7 +130,7 @@ public class DeflateCompressorTests {
   [Test]
   public void Compress_BinaryData_AllByteValues() {
     byte[] data = new byte[256];
-    for (int i = 0; i < 256; i++)
+    for (int i = 0; i < 256; ++i)
       data[i] = (byte)i;
 
     byte[] compressed = DeflateCompressor.Compress(data, DeflateCompressionLevel.Default);
@@ -158,7 +158,7 @@ public class DeflateCompressorTests {
   public void Compress_Maximum_ProducesSmallerOrEqualOutput() {
     byte[] pattern = "ABCABCABCABCABC"u8.ToArray();
     byte[] data = new byte[pattern.Length * 100];
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 100; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
     byte[] bestCompressed = DeflateCompressor.Compress(data, DeflateCompressionLevel.Best);

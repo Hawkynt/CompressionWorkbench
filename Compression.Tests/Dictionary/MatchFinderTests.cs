@@ -11,7 +11,7 @@ public class MatchFinderTests {
     var finder = new HashChainMatchFinder(32);
 
     // Insert first 3 bytes
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 3; ++i)
       finder.InsertPosition(data, i);
 
     // Find match at position 3
@@ -35,10 +35,10 @@ public class MatchFinderTests {
     var finder = new HashChainMatchFinder(32);
 
     // Insert positions 0-3
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 4; ++i)
       finder.InsertPosition(data, i);
     // Insert positions 4-7
-    for (int i = 4; i < 8; i++)
+    for (int i = 4; i < 8; ++i)
       finder.InsertPosition(data, i);
 
     // At position 8, "ABCDE" matches "ABCD" at position 4 (length 4)
@@ -52,7 +52,7 @@ public class MatchFinderTests {
     byte[] data = Encoding.ASCII.GetBytes("ABC___ABC");
     var finder = new HashChainMatchFinder(32);
 
-    for (int i = 0; i < 6; i++)
+    for (int i = 0; i < 6; ++i)
       finder.InsertPosition(data, i);
 
     // With maxDistance=2, should not find the match at distance 6

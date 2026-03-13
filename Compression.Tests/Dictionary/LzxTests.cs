@@ -41,7 +41,7 @@ public class LzxTests {
 
   [Test]
   public void GetSlotInfo_Slot0To3_ZeroFooter() {
-    for (int slot = 0; slot < 4; slot++) {
+    for (int slot = 0; slot < 4; ++slot) {
       LzxConstants.GetSlotInfo(slot, out int baseOffset, out int footerBits);
       Assert.That(baseOffset, Is.EqualTo(slot), $"slot {slot} base");
       Assert.That(footerBits, Is.EqualTo(0), $"slot {slot} footer bits");
@@ -73,7 +73,7 @@ public class LzxTests {
   [Test]
   public void GetSlotInfo_BaseOffsets_AreMonotonicallyIncreasing() {
     int prevBase = -1;
-    for (int slot = 0; slot < LzxConstants.PositionSlots21; slot++) {
+    for (int slot = 0; slot < LzxConstants.PositionSlots21; ++slot) {
       LzxConstants.GetSlotInfo(slot, out int baseOffset, out _);
       Assert.That(baseOffset, Is.GreaterThan(prevBase), $"slot {slot}");
       prevBase = baseOffset;
@@ -127,7 +127,7 @@ public class LzxTests {
   [Test]
   public void RoundTrip_AllByteValues() {
     byte[] data = new byte[256];
-    for (int i = 0; i < 256; i++) data[i] = (byte)i;
+    for (int i = 0; i < 256; ++i) data[i] = (byte)i;
     Assert.That(RoundTrip(data), Is.EqualTo(data));
   }
 
@@ -212,7 +212,7 @@ public class LzxTests {
   public void RoundTrip_LongMatch() {
     // Highly compressible: long runs that force max match lengths
     var data = new byte[10000];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 16);
     Assert.That(RoundTrip(data), Is.EqualTo(data));
   }

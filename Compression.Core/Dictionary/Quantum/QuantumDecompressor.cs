@@ -125,7 +125,9 @@ public static class QuantumDecompressor {
           break;
         }
 
-        default: ThrowInvalidSelector(); break;
+        default:
+          ThrowInvalidSelector();
+          break;
       }
     }
 

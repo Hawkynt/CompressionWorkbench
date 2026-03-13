@@ -33,7 +33,7 @@ public class Bzip2StreamTests {
   public void RoundTrip_RepetitiveData() {
     byte[] pattern = "the quick brown fox jumps over the lazy dog. "u8.ToArray();
     byte[] data = new byte[pattern.Length * 100];
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 100; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
     byte[] compressed = CompressWithOurs(data);
@@ -65,7 +65,7 @@ public class Bzip2StreamTests {
   public void RoundTrip_LargeData() {
     var rng = new Random(123);
     byte[] data = new byte[51200]; // 50KB
-    for (int i = 0; i < data.Length; i++) {
+    for (int i = 0; i < data.Length; ++i) {
       if (i % 100 < 50)
         data[i] = (byte)(i % 26 + 'a');
       else
@@ -81,7 +81,7 @@ public class Bzip2StreamTests {
   public void RoundTrip_AllBlockSizes() {
     byte[] data = "Testing all block sizes."u8.ToArray();
 
-    for (int blockSize = 1; blockSize <= 9; blockSize++) {
+    for (int blockSize = 1; blockSize <= 9; ++blockSize) {
       byte[] compressed = CompressWithOurs(data, blockSize);
       byte[] result = DecompressWithOurs(compressed);
       Assert.That(result, Is.EqualTo(data), $"Failed for blockSize={blockSize}");

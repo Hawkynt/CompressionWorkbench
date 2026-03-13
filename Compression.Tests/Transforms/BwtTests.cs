@@ -32,7 +32,7 @@ public class BwtTests {
   public void Forward_Inverse_RoundTrip_Repetitive() {
     byte[] pattern = "abcabc"u8.ToArray();
     byte[] data = new byte[pattern.Length * 50];
-    for (int i = 0; i < 50; i++)
+    for (int i = 0; i < 50; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
     var (transformed, index) = BurrowsWheelerTransform.Forward(data);

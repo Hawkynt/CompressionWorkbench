@@ -57,7 +57,7 @@ public sealed class LzhDecoder {
         var position = this.DecodePosition();
 
         var srcPos = (windowPos - position - 1 + this._windowSize) & (this._windowSize - 1);
-        for (var j = 0; j < length && outPos < originalSize; j++) {
+        for (var j = 0; j < length && outPos < originalSize; ++j) {
           var b = window[srcPos];
           output[outPos++] = b;
           window[windowPos] = b;
@@ -94,7 +94,7 @@ public sealed class LzhDecoder {
     var maxSym = 0;
     var entries = new (int sym, int len)[count];
     var maxLen = 0;
-    for (var i = 0; i < count; i++) {
+    for (var i = 0; i < count; ++i) {
       var sym = (int)this._bits.ReadBits(16);
       var len = (int)this._bits.ReadBits(5);
       entries[i] = (sym, len);
@@ -143,21 +143,21 @@ public sealed class LzhDecoder {
   private static int[] BuildDecodeTable(int[] codeLengths, int maxBits) {
     var tableSize = 1 << maxBits;
     var table = new int[tableSize];
-    Array.Fill(table, -1);
+    table.AsSpan().Fill(-1);
 
     var blCount = new int[maxBits + 1];
-    for (var i = 0; i < codeLengths.Length; i++)
-      if (codeLengths[i] > 0 && codeLengths[i] <= maxBits)
-        ++blCount[codeLengths[i]];
+    foreach (var value in codeLengths)
+      if (value > 0 && value <= maxBits)
+        ++blCount[value];
 
     var nextCode = new int[maxBits + 1];
     var code = 0;
-    for (var bits = 1; bits <= maxBits; bits++) {
+    for (var bits = 1; bits <= maxBits; ++bits) {
       code = (code + blCount[bits - 1]) << 1;
       nextCode[bits] = code;
     }
 
-    for (var sym = 0; sym < codeLengths.Length; sym++) {
+    for (var sym = 0; sym < codeLengths.Length; ++sym) {
       var len = codeLengths[sym];
       if (len == 0 || len > maxBits)
         continue;
@@ -166,7 +166,7 @@ public sealed class LzhDecoder {
       var fillBits = maxBits - len;
       var baseIdx = symCode << fillBits;
       var packedValue = sym | (len << 16);
-      for (var fill = 0; fill < (1 << fillBits); fill++)
+      for (var fill = 0; fill < (1 << fillBits); ++fill)
         table[baseIdx + fill] = packedValue;
     }
 

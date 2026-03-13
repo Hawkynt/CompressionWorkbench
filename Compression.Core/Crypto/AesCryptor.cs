@@ -125,7 +125,7 @@ public static class AesCryptor {
       var remaining = data.Length - processed;
       var blockLen = Math.Min(16, remaining);
 
-      for (var i = 0; i < blockLen; i++)
+      for (var i = 0; i < blockLen; ++i)
         result[processed + i] = (byte)(data[processed + i] ^ keystreamBlock[i]);
 
       processed += blockLen;
@@ -138,7 +138,7 @@ public static class AesCryptor {
   }
 
   private static void IncrementCounter(byte[] counter) {
-    for (var i = 15; i >= 0; i--)
+    for (var i = 15; i >= 0; --i)
       if (++counter[i] != 0)
         break;
   }

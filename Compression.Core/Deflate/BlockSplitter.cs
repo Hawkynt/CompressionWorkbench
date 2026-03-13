@@ -42,7 +42,7 @@ internal static class BlockSplitter {
     // DP: dp[j] = min total bits to encode symbols[0..candidates[j])
     var dp = new double[numCandidates];
     var prev = new int[numCandidates];
-    Array.Fill(dp, double.MaxValue);
+    dp.AsSpan().Fill(double.MaxValue);
     dp[0] = 0;
 
     for (var j = 1; j < numCandidates; ++j)

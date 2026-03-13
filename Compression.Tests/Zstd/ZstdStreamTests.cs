@@ -31,7 +31,7 @@ public class ZstdStreamTests {
   [Test]
   public void RoundTrip_RepetitiveData() {
     byte[] data = new byte[5000];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 10);
     byte[] result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
@@ -50,7 +50,7 @@ public class ZstdStreamTests {
     // > 128KB to force multiple blocks
     byte[] data = new byte[200_000];
     var rng = new Random(123);
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(rng.Next(0, 26) + 'a');
     byte[] result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
@@ -79,7 +79,7 @@ public class ZstdStreamTests {
   [Test]
   public void Compress_RepetitiveData_CompressesWell() {
     byte[] data = new byte[10000];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 4);
 
     var ms = new MemoryStream();
@@ -95,7 +95,7 @@ public class ZstdStreamTests {
     // Data with recurring patterns at same offsets
     byte[] pattern = System.Text.Encoding.UTF8.GetBytes("ABCDEF");
     byte[] data = new byte[pattern.Length * 100];
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 100; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
     byte[] result = CompressDecompress(data);

@@ -26,7 +26,7 @@ public class SnappyBlockTests {
   [Test]
   public void RoundTrip_PatternData() {
     byte[] data = new byte[2000];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 17);
     byte[] compressed = SnappyCompressor.Compress(data);
     byte[] decompressed = SnappyDecompressor.Decompress(compressed);
@@ -61,7 +61,7 @@ public class SnappyBlockTests {
   [Test]
   public void RoundTrip_LongRepeats() {
     byte[] data = new byte[50000];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 5);
     byte[] compressed = SnappyCompressor.Compress(data);
     byte[] decompressed = SnappyDecompressor.Decompress(compressed);
@@ -85,7 +85,7 @@ public class SnappyFrameTests {
   [Test]
   public void RoundTrip_LargeData() {
     byte[] data = new byte[200000];
-    for (int i = 0; i < data.Length; i++)
+    for (int i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 251);
 
     using var ms = new MemoryStream();

@@ -130,7 +130,7 @@ public static class HuffmanFse {
     var lookupLen = new int[lookupSize];
     lookupSymbol.AsSpan().Fill(-1);
 
-    for (var symbol = 0; symbol <= maxSymbol; symbol++) {
+    for (var symbol = 0; symbol <= maxSymbol; ++symbol) {
       var len = weights[symbol];
       if (len <= 0) continue;
 

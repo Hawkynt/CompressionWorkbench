@@ -49,7 +49,7 @@ public class LzwTests {
   [Test]
   public void RoundTrip_Uncompressed_RepetitiveData() {
     var sb = new StringBuilder();
-    for (int i = 0; i < 50; i++)
+    for (int i = 0; i < 50; ++i)
       sb.Append("ABCABCABCABC");
 
     byte[] data = Encoding.ASCII.GetBytes(sb.ToString());
@@ -101,7 +101,7 @@ public class LzwTests {
   [Test]
   public void RoundTrip_FirstMatch_RepetitiveData() {
     var sb = new StringBuilder();
-    for (int i = 0; i < 50; i++)
+    for (int i = 0; i < 50; ++i)
       sb.Append("ABCABCABCABC");
 
     byte[] data = Encoding.ASCII.GetBytes(sb.ToString());
@@ -148,7 +148,7 @@ public class LzwTests {
   [Test]
   public void FirstMatch_ProducesFewerCodes() {
     var sb = new StringBuilder();
-    for (int i = 0; i < 50; i++)
+    for (int i = 0; i < 50; ++i)
       sb.Append("ABCABCABCABC");
 
     byte[] data = Encoding.ASCII.GetBytes(sb.ToString());
@@ -261,7 +261,7 @@ public class LzwTests {
       if (rng.Next(3) == 0 && pos + 100 <= data.Length) {
         // Write a repetitive pattern.
         byte[] pattern = Encoding.ASCII.GetBytes("ABCDEFGH");
-        for (int j = 0; j < 100 && pos < data.Length; j++)
+        for (int j = 0; j < 100 && pos < data.Length; ++j)
           data[pos++] = pattern[j % pattern.Length];
       }
       else {
@@ -300,7 +300,7 @@ public class LzwTests {
   [Test]
   public void RoundTrip_Optimal_RepetitiveData() {
     var sb = new StringBuilder();
-    for (int i = 0; i < 50; i++)
+    for (int i = 0; i < 50; ++i)
       sb.Append("ABCABCABCABC");
 
     byte[] data = Encoding.ASCII.GetBytes(sb.ToString());
@@ -356,7 +356,7 @@ public class LzwTests {
     while (pos < data.Length) {
       if (rng.Next(3) == 0 && pos + 80 <= data.Length) {
         byte[] pattern = Encoding.ASCII.GetBytes("XYZXYZ");
-        for (int j = 0; j < 80 && pos < data.Length; j++)
+        for (int j = 0; j < 80 && pos < data.Length; ++j)
           data[pos++] = pattern[j % pattern.Length];
       }
       else

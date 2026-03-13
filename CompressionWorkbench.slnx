@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/Core/">
+    <Project Path="Compression.Core/Compression.Core.csproj" />
+  </Folder>
+  <Folder Name="/FileFormats/">
+
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="Compression.Tests/Compression.Tests.csproj" />
+  </Folder>
+</Solution>
