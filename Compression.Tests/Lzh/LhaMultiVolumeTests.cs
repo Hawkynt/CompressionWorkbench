@@ -1,0 +1,57 @@
+using Compression.Core.Streams;
+using FileFormat.Lzh;
+
+namespace Compression.Tests.Lzh;
+
+[TestFixture]
+public class LhaMultiVolumeTests {
+  [Category("End2End")]
+  [Category("RoundTrip")]
+  [Test]
+  public void SplitArchive_Read_TwoVolumes() {
+    var writer = new LhaWriter();
+    writer.AddFile("a.txt", MakeTestData(100, 0x41));
+    writer.AddFile("b.txt", MakeTestData(200, 0x42));
+    byte[] archive = writer.ToArray();
+
+    int splitPoint = archive.Length / 2;
+    using var cs = new ConcatenatedStream([
+      new MemoryStream(archive[..splitPoint]),
+      new MemoryStream(archive[splitPoint..])
+    ]);
+    using var reader = new LhaReader(cs, leaveOpen: true);
+
+    Assert.That(reader.Entries, Has.Count.EqualTo(2));
+    Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(MakeTestData(100, 0x41)));
+    Assert.That(reader.ExtractEntry(reader.Entries[1]), Is.EqualTo(MakeTestData(200, 0x42)));
+  }
+
+  [Category("End2End")]
+  [Category("RoundTrip")]
+  [Test]
+  public void CreateSplit_Write_Read_RoundTrip() {
+    byte[] data1 = MakeTestData(100, 0x30);
+    byte[] data2 = MakeTestData(200, 0x50);
+
+    byte[][] volumes = LhaWriter.CreateSplit(
+      maxVolumeSize: 200,
+      entries: [("file1.bin", data1), ("file2.bin", data2)]);
+
+    Assert.That(volumes.Length, Is.GreaterThan(1));
+
+    var streams = volumes.Select(v => (Stream)new MemoryStream(v)).ToArray();
+    using var cs = new ConcatenatedStream(streams);
+    using var reader = new LhaReader(cs, leaveOpen: true);
+
+    Assert.That(reader.Entries, Has.Count.EqualTo(2));
+    Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(data1));
+    Assert.That(reader.ExtractEntry(reader.Entries[1]), Is.EqualTo(data2));
+  }
+
+  private static byte[] MakeTestData(int size, byte seed) {
+    var data = new byte[size];
+    for (int i = 0; i < size; ++i)
+      data[i] = (byte)((seed + i) % 256);
+    return data;
+  }
+}
