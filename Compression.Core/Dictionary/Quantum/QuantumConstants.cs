@@ -48,6 +48,13 @@ internal static class QuantumConstants {
     _ => throw new ArgumentOutOfRangeException(nameof(selector))
   };
 
-  /// <summary>Rescale threshold for adaptive frequency models.</summary>
+  /// <summary>Rescale threshold for adaptive frequency models (standard Quantum format).</summary>
   public const int RescaleThreshold = 3800;
+
+  /// <summary>
+  /// Rescale threshold used by the compressor. Must be ≤ 256 (the minimum range
+  /// after normalization in the 16-bit range coder) to prevent zero-width symbol
+  /// ranges that cause encoder/decoder desynchronization.
+  /// </summary>
+  internal const int CompressorRescaleThreshold = 256;
 }

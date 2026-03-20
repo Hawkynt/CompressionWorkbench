@@ -37,10 +37,16 @@ public static class QuantumDecompressor {
   /// Thrown when <paramref name="windowLevel"/> is outside the valid range [1, 7],
   /// or when <paramref name="uncompressedSize"/> is negative.
   /// </exception>
+  /// <param name="rescaleThreshold">
+  /// The adaptive model rescale threshold. Use <see cref="QuantumConstants.RescaleThreshold"/>
+  /// (default) for standard Quantum data, or <see cref="QuantumConstants.CompressorRescaleThreshold"/>
+  /// for data produced by <see cref="QuantumCompressor"/>.
+  /// </param>
   /// <exception cref="InvalidDataException">
   /// Thrown when the compressed data is malformed.
   /// </exception>
-  public static byte[] Decompress(ReadOnlySpan<byte> compressed, int uncompressedSize, int windowLevel) {
+  public static byte[] Decompress(ReadOnlySpan<byte> compressed, int uncompressedSize, int windowLevel,
+    int rescaleThreshold = QuantumConstants.RescaleThreshold) {
     ArgumentOutOfRangeException.ThrowIfNegative(uncompressedSize);
     ArgumentOutOfRangeException.ThrowIfLessThan(windowLevel, QuantumConstants.MinWindowLevel, nameof(windowLevel));
     ArgumentOutOfRangeException.ThrowIfGreaterThan(windowLevel, QuantumConstants.MaxWindowLevel, nameof(windowLevel));
@@ -65,13 +71,13 @@ public static class QuantumDecompressor {
     var decoder = new QuantumRangeDecoder(compressed.ToArray());
 
     // Create adaptive models
-    var selectorModel = new QuantumModel(QuantumConstants.SelectorSymbols);
-    var literalModel = new QuantumModel(QuantumConstants.LiteralSymbols);
-    var lenModel4 = new QuantumModel(QuantumConstants.MatchLengthSymbols);
-    var lenModel5 = new QuantumModel(QuantumConstants.MatchLengthSymbols);
-    var lenModel6 = new QuantumModel(QuantumConstants.MatchLengthSymbols);
-    var lenModel7 = new QuantumModel(QuantumConstants.MatchLengthSymbols);
-    var lenModelLong = new QuantumModel(QuantumConstants.MatchLengthSymbols);
+    var selectorModel = new QuantumModel(QuantumConstants.SelectorSymbols, rescaleThreshold);
+    var literalModel = new QuantumModel(QuantumConstants.LiteralSymbols, rescaleThreshold);
+    var lenModel4 = new QuantumModel(QuantumConstants.MatchLengthSymbols, rescaleThreshold);
+    var lenModel5 = new QuantumModel(QuantumConstants.MatchLengthSymbols, rescaleThreshold);
+    var lenModel6 = new QuantumModel(QuantumConstants.MatchLengthSymbols, rescaleThreshold);
+    var lenModel7 = new QuantumModel(QuantumConstants.MatchLengthSymbols, rescaleThreshold);
+    var lenModelLong = new QuantumModel(QuantumConstants.MatchLengthSymbols, rescaleThreshold);
 
     while (outputPos < uncompressedSize) {
       var selector = decoder.DecodeSymbol(selectorModel);

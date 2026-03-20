@@ -14,6 +14,18 @@ public static class Lzo1xCompressor {
   private const int MaxDistance = 65535; // fits in u16 LE offset field
 
   /// <summary>
+  /// Compresses the given data using LZO1X at the specified level.
+  /// </summary>
+  /// <param name="data">The input data to compress.</param>
+  /// <param name="level">The compression level.</param>
+  /// <returns>A byte array containing the compressed data.</returns>
+  public static byte[] Compress(ReadOnlySpan<byte> data, LzoCompressionLevel level) {
+    if (level == LzoCompressionLevel.Best)
+      return Lzo1x999Compressor.Compress(data);
+    return Compress(data);
+  }
+
+  /// <summary>
   /// Compresses the given data using the LZO1X-1 algorithm.
   /// </summary>
   /// <param name="data">The input data to compress.</param>

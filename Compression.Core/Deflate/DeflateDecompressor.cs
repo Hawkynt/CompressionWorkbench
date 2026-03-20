@@ -29,6 +29,12 @@ public sealed class DeflateDecompressor {
   }
 
   /// <summary>
+  /// Gets the number of whole bytes buffered by the bit reader but not consumed by the decompressor.
+  /// This is needed by container formats (e.g. gzip) to rewind the stream before reading a trailer.
+  /// </summary>
+  public int UnconsumedBytes => this._bitBuffer.BitsAvailable / 8;
+
+  /// <summary>
   /// Decompresses all data from the stream.
   /// </summary>
   /// <returns>The decompressed data.</returns>

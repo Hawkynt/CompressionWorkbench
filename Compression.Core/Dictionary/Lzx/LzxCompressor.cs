@@ -28,6 +28,7 @@ public sealed partial class LzxCompressor {
   private readonly int _numPositionSlots;
   private readonly int _numMainSymbols;
   private readonly int _blockSize;
+  private readonly LzxCompressionLevel _level;
 
   // Repeated match offsets (1-based distances), initialised per LZX spec
   private int _r0 = 1;
@@ -47,10 +48,12 @@ public sealed partial class LzxCompressor {
   /// <param name="blockSize">
   /// The maximum uncompressed bytes per block. Defaults to 32 768.
   /// </param>
+  /// <param name="level">The compression level.</param>
   /// <exception cref="ArgumentOutOfRangeException">
   /// Thrown when <paramref name="windowBits"/> is outside [15, 21] or <paramref name="blockSize"/> ≤ 0.
   /// </exception>
-  public LzxCompressor(int windowBits = 15, int blockSize = LzxConstants.DefaultBlockSize) {
+  public LzxCompressor(int windowBits = 15, int blockSize = LzxConstants.DefaultBlockSize,
+      LzxCompressionLevel level = LzxCompressionLevel.Normal) {
     ArgumentOutOfRangeException.ThrowIfLessThan(windowBits, LzxConstants.MinWindowBits);
     ArgumentOutOfRangeException.ThrowIfGreaterThan(windowBits, LzxConstants.MaxWindowBits);
     ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(blockSize, 0);
@@ -60,6 +63,7 @@ public sealed partial class LzxCompressor {
     this._numPositionSlots = LzxConstants.GetPositionSlotCount(windowBits);
     this._numMainSymbols = LzxConstants.NumChars + this._numPositionSlots * LzxConstants.NumLengthHeaders;
     this._blockSize = blockSize;
+    this._level = level;
 
     this._prevMainLengths = new int[this._numMainSymbols];
     this._prevLengthLengths = new int[LzxConstants.NumLengthSymbols];
@@ -112,7 +116,12 @@ public sealed partial class LzxCompressor {
 
   private List<LzxToken> Tokenise(ReadOnlySpan<byte> data) {
     var tokens = new List<LzxToken>(data.Length / 2 + 16);
-    var finder = new HashChainMatchFinder(this._windowSize, 64);
+    int chainDepth = this._level switch {
+      LzxCompressionLevel.Fast => 16,
+      LzxCompressionLevel.Best => 256,
+      _ => 64
+    };
+    var finder = new HashChainMatchFinder(this._windowSize, chainDepth);
     var pos = 0;
     int r0 = this._r0, r1 = this._r1, r2 = this._r2;
 

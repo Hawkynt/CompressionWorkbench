@@ -12,12 +12,71 @@ namespace Compression.Core.Dictionary.Brotli;
 ///   all meta-block types and context modes.
 /// </remarks>
 public static class BrotliDecompressor {
-  /// <summary>Pre-computed literal context lookup tables, one per context mode.</summary>
-  private static readonly byte[][] ContextLookup = [
-    BrotliConstants.BuildLsb6ContextLookup(),
-    BrotliConstants.BuildMsb6ContextLookup(),
-    BrotliConstants.BuildUtf8ContextLookup(),
-    BrotliConstants.BuildSignedContextLookup()
+  // RFC 7932 Appendix B context lookup tables.
+  // UTF8 mode: context = Utf8Lut0[p1] | Utf8Lut1[p2]  (result 0-63)
+  // Signed mode: context = (SignedLut[p1] << 3) | SignedLut[p2]  (result 0-63)
+  // Tables from Google Brotli reference (c/common/context.h).
+  private static readonly byte[] Utf8Lut0 = [
+    // Lut0[p1]: categorize previous byte (from Google brotli c/common/context.c)
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 4, 4, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    8, 12, 16, 12, 12, 20, 12, 16, 24, 28, 12, 12, 32, 12, 36, 12,
+    44, 44, 44, 44, 44, 44, 44, 44, 44, 44, 32, 32, 24, 40, 28, 12,
+    12, 48, 52, 52, 52, 48, 52, 52, 52, 48, 52, 52, 52, 52, 52, 48,
+    52, 52, 52, 52, 52, 48, 52, 52, 52, 52, 52, 24, 12, 28, 12, 12,
+    12, 56, 60, 60, 60, 56, 60, 60, 60, 56, 60, 60, 60, 60, 60, 56,
+    60, 60, 60, 60, 60, 56, 60, 60, 60, 60, 60, 24, 12, 28, 12, 0,
+    // 128-191: UTF-8 continuation bytes → category varies by position
+    0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
+    0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
+    0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
+    0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
+    // 192-255: UTF-8 lead bytes
+    2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3,
+    2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3,
+    2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3,
+    2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3,
+  ];
+
+  private static readonly byte[] Utf8Lut1 = [
+    // Lut1[p2]: categorize second-previous byte, results are multiples of 4
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1,
+    1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1,
+    1, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 1, 1, 1, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+  ];
+
+  private static readonly byte[] SignedLut = [
+    // Lut2[b]: map byte to 3-bit value (0-7) based on signed magnitude
+    // Symmetric: 0(1), 1(15), 2(48), 3(64), 4(64), 5(48), 6(15), 7(1)
+    0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+    5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+    5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+    6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7,
   ];
   /// <summary>
   ///   Decompresses Brotli-encoded data.
@@ -38,12 +97,10 @@ public static class BrotliDecompressor {
     ringBuffer = new byte[windowSize];
     ringMask = windowSize - 1;
 
-    // Distance ring buffer: last 4 distances
-    int[] distRing = [1, 1, 1, 1]; // RFC 7932 specifies these initial values as implementation-defined but typically 1
-    // Note: per the spec, ring buffer for distances starts at 4,11,15,16 or similar
-    // but in practice implementations use small defaults
-
-    var distRingIdx = 0;
+    // Distance ring buffer: last 4 distances (RFC 7932 Section 4)
+    // Ring index 3 = most recent (4), 2 = second (11), 1 = third (15), 0 = oldest (16)
+    int[] distRing = [16, 15, 11, 4];
+    var distRingIdx = 3;
 
     // Postfix and direct distance parameters (set per meta-block)
     var nPostfix = 0;
@@ -52,6 +109,10 @@ public static class BrotliDecompressor {
     var isLast = false;
 
     while (!isLast) {
+      // Guard: if we've consumed all input, stop
+      if (reader.IsAtEnd)
+        break;
+
       // Read meta-block header
       isLast = reader.ReadBool();
 
@@ -97,13 +158,12 @@ public static class BrotliDecompressor {
 
       // Compressed meta-block
       // Read block type and count descriptors for literal, insert&copy, and distance
-
       // Number of literal block types
       var numLitTypes = DecodeBlockTypeCount(reader);
       int[][] litTypeTrees = null!;
       int[] litTypeCountTree = null!;
       if (numLitTypes > 1) {
-        litTypeTrees = ReadPrefixCode(reader, BrotliConstants.MaxBlockTypeSymbols, numLitTypes + 1);
+        litTypeTrees = ReadPrefixCode(reader, numLitTypes + 2, numLitTypes + 1);
         litTypeCountTree = ReadSimplePrefixCode(reader, BrotliConstants.BlockLengthTable.Length);
       }
 
@@ -116,7 +176,7 @@ public static class BrotliDecompressor {
       int[][] iacTypeTrees = null!;
       int[] iacTypeCountTree = null!;
       if (numIacTypes > 1) {
-        iacTypeTrees = ReadPrefixCode(reader, BrotliConstants.MaxBlockTypeSymbols, numIacTypes + 1);
+        iacTypeTrees = ReadPrefixCode(reader, numIacTypes + 2, numIacTypes + 1);
         iacTypeCountTree = ReadSimplePrefixCode(reader, BrotliConstants.BlockLengthTable.Length);
       }
 
@@ -129,7 +189,7 @@ public static class BrotliDecompressor {
       int[][] distTypeTrees = null!;
       int[] distTypeCountTree = null!;
       if (numDistTypes > 1) {
-        distTypeTrees = ReadPrefixCode(reader, BrotliConstants.MaxBlockTypeSymbols, numDistTypes + 1);
+        distTypeTrees = ReadPrefixCode(reader, numDistTypes + 2, numDistTypes + 1);
         distTypeCountTree = ReadSimplePrefixCode(reader, BrotliConstants.BlockLengthTable.Length);
       }
 
@@ -206,7 +266,6 @@ public static class BrotliDecompressor {
           out var copyLength,
           out var useDistanceZero
         );
-
         // Insert literals
         for (var i = 0; i < insertLength && metaBytesRemaining > 0; ++i) {
           // Switch literal block type if needed
@@ -277,24 +336,23 @@ public static class BrotliDecompressor {
         if (distance <= 0)
           distance = 1; // safety: distance must be positive
 
-        // Check for static dictionary reference
+        // Check for static dictionary reference (RFC 7932 Section 8)
         if (ringPos < distance) {
-          // Reference before the window — may be a static dictionary reference
-          if (BrotliStaticDictionary.TryGetStaticReference(
-              distance,
-              ringPos,
-              out var wordLen,
-              out var wordIdx,
-              out var transformIdx
-            )) {
-            Span<byte> wordBuf = new byte[wordLen + 16]; // extra for transforms
+          // Distance beyond current position — static dictionary reference
+          // copy_length determines the word length class
+          var offset = distance - Math.Max(ringPos, 1) - 1;
+          var nBits = BrotliStaticDictionary.GetNumBits(copyLength);
+          if (nBits > 0) {
+            var wordIdx = offset & ((1 << nBits) - 1);
+            var transformIdx = offset >> nBits;
+            Span<byte> wordBuf = new byte[copyLength + 24]; // extra for transforms
             var wordBytes = BrotliStaticDictionary.GetWord(
-              wordLen,
+              copyLength,
               wordIdx,
               transformIdx,
               wordBuf
             );
-            for (var i = 0; i < copyLength && metaBytesRemaining > 0 && i < wordBytes; ++i) {
+            for (var i = 0; i < wordBytes && metaBytesRemaining > 0; ++i) {
               ringBuffer[ringPos & ringMask] = wordBuf[i];
               ++ringPos;
               output.WriteByte(wordBuf[i]);
@@ -454,9 +512,16 @@ public static class BrotliDecompressor {
   }
 
   /// <summary>
-  ///   Decodes insert and copy lengths from a combined code (RFC 7932 Section 5, Table 8).
-  ///   The 704 insert-and-copy codes are organized as a 24×24 matrix with some cells
-  ///   using implicit distance zero.
+  ///   Range lookup tables for insert-and-copy length decoding (RFC 7932 Table 8).
+  ///   Index = code &gt;&gt; 6 (range 0-10). Values are base offsets into the
+  ///   InsertLengthTable and CopyLengthTable respectively.
+  /// </summary>
+  private static ReadOnlySpan<byte> InsertRangeLut => [0, 0, 0, 0, 8, 8, 0, 16, 8, 16, 16, 0];
+  private static ReadOnlySpan<byte> CopyRangeLut => [0, 8, 0, 8, 0, 8, 16, 0, 16, 8, 16, 0];
+
+  /// <summary>
+  ///   Decodes insert and copy lengths from a combined code (RFC 7932 Table 8).
+  ///   Codes 0-127: use last distance (implicit). Codes 128-703: read explicit distance.
   /// </summary>
   private static void DecodeInsertAndCopyLength(
     int code,
@@ -465,85 +530,23 @@ public static class BrotliDecompressor {
     out int copyLength,
     out bool useDistanceZero
   ) {
-    // RFC 7932 Table 8: 704 = 4 blocks of 64 + 4 blocks of 64 + 8 blocks of 8 + ...
-    // Layout: the code is split into insert_length_code and copy_length_code.
-    //
-    // Codes 0-63: 8 rows × 8 cols
-    //   row = code / 8, col = code % 8
-    //   insertCode = InsertRangeMap[row], copyCode = CopyRangeMap[col]
-    //   useDistanceZero = (col >= 4) for rows 0-3; (col < 4) for rows 4-7
-    //
-    // Codes 64-127: same structure but shifted insert/copy ranges
-    // Codes 128-703: remaining ranges
-    //
-    // Simplified mapping per RFC 7932 Table 8:
+    // Per RFC 7932 Section 5: codes 0-127 use implicit last distance
+    useDistanceZero = code < 128;
 
-    int insertCode;
-    int copyCode;
+    var rangeIdx = code >> 6;
+    var insertCode = (int)InsertRangeLut[rangeIdx] + ((code >> 3) & 7);
+    var copyCode = (int)CopyRangeLut[rangeIdx] + (code & 7);
 
-    if (code < 128) {
-      // First 128 codes: organized as a grid
-      // Insert code from bits [6..3] of code, copy code from bits [2..0] + [6]
-      insertCode = InsertAndCopyInsertCode(code);
-      copyCode = InsertAndCopyCopyCode(code);
-      // Distance zero is used when the insert-and-copy code falls in certain ranges
-      useDistanceZero = code >= 64;
-    } else {
-      // Codes 128-703: extended ranges
-      var adjusted = code - 128;
-      var block = adjusted / 64;
-      var within = adjusted % 64;
-      var row = within / 8;
-      var col = within % 8;
-
-      insertCode = 8 + block * 8 + row;
-      copyCode = col;
-      if (col >= 4) {
-        useDistanceZero = true;
-        copyCode -= 4;
-      } else
-        useDistanceZero = false;
-
-      copyCode += 8 + block * 4;
-
-      if (insertCode >= BrotliConstants.InsertLengthTable.Length)
-        insertCode = BrotliConstants.InsertLengthTable.Length - 1;
-      if (copyCode >= BrotliConstants.CopyLengthTable.Length)
-        copyCode = BrotliConstants.CopyLengthTable.Length - 1;
-    }
+    if (insertCode >= BrotliConstants.InsertLengthTable.Length)
+      insertCode = BrotliConstants.InsertLengthTable.Length - 1;
+    if (copyCode >= BrotliConstants.CopyLengthTable.Length)
+      copyCode = BrotliConstants.CopyLengthTable.Length - 1;
 
     var (insBase, insExtra) = BrotliConstants.InsertLengthTable[insertCode];
     insertLength = insExtra > 0 ? insBase + (int)reader.ReadBits(insExtra) : insBase;
 
     var (cpBase, cpExtra) = BrotliConstants.CopyLengthTable[copyCode];
     copyLength = cpExtra > 0 ? cpBase + (int)reader.ReadBits(cpExtra) : cpBase;
-  }
-
-  /// <summary>
-  ///   Extracts the insert length code from an insert-and-copy code (0-127).
-  ///   RFC 7932 Section 5 Table 8.
-  /// </summary>
-  private static int InsertAndCopyInsertCode(int code) {
-    // Codes 0-63: insertCode in [0..5], codes 64-127: insertCode in [0..5]
-    // Row = code / 8 (within each 64-code block)
-    if (code < 64)
-      return code / 8; // 0-7
-
-    return (code - 64) / 8; // 0-7
-  }
-
-  /// <summary>
-  ///   Extracts the copy length code from an insert-and-copy code (0-127).
-  ///   RFC 7932 Section 5 Table 8.
-  /// </summary>
-  private static int InsertAndCopyCopyCode(int code) {
-    if (code < 64) {
-      var col = code % 8;
-      return col < 4 ? col : col - 4;
-    }
-
-    var col2 = (code - 64) % 8;
-    return col2 < 4 ? col2 + 8 : col2 - 4 + 8;
   }
 
   /// <summary>
@@ -600,14 +603,16 @@ public static class BrotliDecompressor {
 
   /// <summary>
   ///   Computes the literal context ID from the two previous bytes and the context mode.
+  ///   RFC 7932 Section 7.1: context ID is always in range [0, 63].
   /// </summary>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private static int ComputeLiteralContext(byte p1, byte p2, int contextMode) {
-    var lut = BrotliDecompressor.ContextLookup[contextMode];
-    return contextMode == 0
-      ? lut[p1] | ((p2 >> 6) << 6) // LSB6: low 6 bits from p1 LUT, high 2 bits from p2
-      : lut[p1];
-  }
+  private static int ComputeLiteralContext(byte p1, byte p2, int contextMode) =>
+    contextMode switch {
+      0 => p1 & 0x3F,                                          // LSB6
+      1 => p1 >> 2,                                             // MSB6
+      2 => Utf8Lut0[p1] | Utf8Lut1[p2],                        // UTF8: Lut0[p1] | Lut1[p2]
+      _ => (SignedLut[p1] << 3) | SignedLut[p2],                // Signed: (Lut2[p1]<<3) | Lut2[p2]
+    };
 
   /// <summary>
   ///   Reads a context map from the stream (RFC 7932 Section 7.3).
@@ -699,7 +704,7 @@ public static class BrotliDecompressor {
     // Build code length tree
     var clTree = BuildHuffmanTable(clCodeLengths, BrotliConstants.NumCodeLengthCodes);
 
-    // Read actual code lengths
+    // Read actual code lengths (Google brotli ProcessRepeatedCodeLength algorithm)
     var prevCodeLen = 8;
     var repeat = 0;
     var repeatCodeLen = 0;
@@ -708,48 +713,44 @@ public static class BrotliDecompressor {
 
     while (symbolsRead < alphabetSize && space > 0) {
       var sym = DecodeSymbol(reader, clTree);
-      switch (sym) {
-        case < 16: {
-          codeLengths[symbolsRead++] = sym;
-          if (sym > 0) {
-            prevCodeLen = sym;
-            space -= 32768 >> sym;
-          }
+      if (sym < 16) {
+        // Literal code length 0-15
+        repeat = 0;
+        codeLengths[symbolsRead++] = sym;
+        if (sym > 0) {
+          prevCodeLen = sym;
+          space -= 32768 >> sym;
+        }
+      } else {
+        // sym 16: repeat previous code length; sym 17: repeat zero
+        var extraBits = sym == 16 ? 2 : 3;
+        var newLen = sym == 16 ? prevCodeLen : 0;
+        var repeatDelta = (int)reader.ReadBits(extraBits);
 
+        if (repeatCodeLen != newLen) {
           repeat = 0;
-          break;
+          repeatCodeLen = newLen;
         }
 
-        case 16: {
-          // Repeat previous
-          var extra = (int)reader.ReadBits(2) + 3;
-          if (repeat > 0 && repeatCodeLen == prevCodeLen)
-            extra += repeat;
-          else
-            repeat = 0;
-          repeatCodeLen = prevCodeLen;
-          for (var j = 0; j < extra && symbolsRead < alphabetSize; ++j) {
-            codeLengths[symbolsRead++] = prevCodeLen;
-            space -= 32768 >> prevCodeLen;
+        var oldRepeat = repeat;
+        if (repeat > 0) {
+          repeat -= 2;
+          repeat <<= extraBits;
+        }
+
+        repeat += repeatDelta + 3;
+        var fillCount = repeat - oldRepeat;
+
+        if (symbolsRead + fillCount > alphabetSize)
+          fillCount = alphabetSize - symbolsRead;
+
+        if (newLen != 0) {
+          for (var j = 0; j < fillCount; ++j) {
+            codeLengths[symbolsRead++] = newLen;
+            space -= 32768 >> newLen;
           }
-
-          repeat += extra;
-          break;
-        }
-
-        default: {
-          // sym == 17: repeat zero
-          var extra = (int)reader.ReadBits(3) + 3;
-          if (repeat > 0 && repeatCodeLen == 0)
-            extra += repeat;
-          else
-            repeat = 0;
-          repeatCodeLen = 0;
-          for (var j = 0; j < extra && symbolsRead < alphabetSize; ++j)
-            codeLengths[symbolsRead++] = 0;
-          repeat += extra;
-          break;
-        }
+        } else
+          symbolsRead += fillCount; // zeros are already default
       }
     }
 
@@ -760,12 +761,10 @@ public static class BrotliDecompressor {
   ///   Reads a simple direct prefix code (1-4 symbols, fixed lengths).
   /// </summary>
   private static int[] ReadSimpleDirectPrefixCode(BrotliBitReader reader, int alphabetSize) {
-    var numSymBits = 0;
-    var a = alphabetSize;
-    while (a > 1) {
-      a >>= 1;
+    // RFC 7932: symbol values use max(1, ceil(log2(ALPHABET_SIZE))) bits
+    var numSymBits = 1;
+    while ((1 << numSymBits) < alphabetSize)
       ++numSymBits;
-    }
 
     if (numSymBits == 0) 
       numSymBits = 1;
@@ -817,17 +816,20 @@ public static class BrotliDecompressor {
   }
 
   /// <summary>
-  ///   Reads a code length code length (0-5) using the variable-length prefix code
-  ///   from RFC 7932 Section 3.5.
+  ///   Reads a code length code length (0-5) using the fixed prefix code
+  ///   from RFC 7932 Section 3.5. Uses a 4-bit peek table matching the
+  ///   reference brotli decoder.
   /// </summary>
   private static int ReadSmallCodeLength(BrotliBitReader reader) {
-    // Variable-length encoding: 0=0, 10=1, 110=2, 1110=3, 11110=4, 11111=5
-    if (!reader.ReadBool()) return 0;
-    if (!reader.ReadBool()) return 1;
-    if (!reader.ReadBool()) return 2;
-    if (!reader.ReadBool()) return 3;
+    // Fixed 4-bit lookup tables from the reference brotli decoder.
+    // Peek 4 bits, look up symbol value and number of bits to consume.
+    ReadOnlySpan<byte> values =  [0, 4, 3, 2, 0, 4, 3, 1, 0, 4, 3, 2, 0, 4, 3, 5];
+    ReadOnlySpan<byte> lengths = [2, 2, 2, 3, 2, 2, 2, 4, 2, 2, 2, 3, 2, 2, 2, 4];
 
-    return reader.ReadBool() ? 5 : 4;
+    reader.Fill(4);
+    var peek = (int)(reader.PeekBits(4) & 0xF);
+    reader.DropBits(lengths[peek]);
+    return values[peek];
   }
 
   /// <summary>
@@ -861,10 +863,11 @@ public static class BrotliDecompressor {
       // Empty tree — return single-entry table
       case 0: return [0 | (1 << 16)];
       case 1: {
-        // Single symbol — fill all entries
+        // Single symbol — fill all entries with 0 bits consumed
+        // RFC 7932: single-symbol tree needs 0 bits to decode (only 1 possible value)
         var tableSize = 1 << Math.Max(1, maxLen);
         var table = new int[tableSize];
-        var entry = singleSymbol | (maxLen << 16);
+        var entry = singleSymbol; // length = 0 bits in upper 16 bits
         table.AsSpan().Fill(entry);
         return table;
       }

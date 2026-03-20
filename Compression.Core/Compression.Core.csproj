@@ -8,4 +8,8 @@
     <InternalsVisibleTo Include="Compression.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Dictionary\Brotli\brotli-dictionary.bin" LogicalName="brotli-dictionary.bin" />
+  </ItemGroup>
+
 </Project>

@@ -7,7 +7,7 @@ namespace Compression.Core.Dictionary.Lzo;
 /// </summary>
 public static class Lzo1xDecompressor {
   /// <summary>
-  /// Decompresses data that was compressed with <see cref="Lzo1xCompressor.Compress"/>.
+  /// Decompresses data that was compressed with <see cref="Lzo1xCompressor"/>.
   /// </summary>
   /// <param name="data">The compressed data.</param>
   /// <param name="uncompressedSize">The expected size of the decompressed output.</param>

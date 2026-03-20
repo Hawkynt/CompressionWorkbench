@@ -75,6 +75,38 @@ public static class Deflate64Constants {
     16                               // 285
   ];
 
+  /// <summary>Number of literal/length symbols (0–285).</summary>
+  public const int LiteralLengthAlphabetSize = 286;
+
+  /// <summary>
+  /// Maps a match length (3–65538) to the corresponding literal/length code (257–285).
+  /// Lengths 3–258 use codes 257–284 (same as standard Deflate).
+  /// Lengths 259–65538 use code 285 (base 3 + 16 extra bits).
+  /// </summary>
+  /// <param name="length">The match length (3–65538).</param>
+  /// <returns>The length code (257–285).</returns>
+  public static int GetLengthCode(int length) {
+    if (length is < 3 or > 65538)
+      throw new ArgumentOutOfRangeException(nameof(length), length, "Length must be between 3 and 65538.");
+
+    // Lengths > 258 can only use code 285
+    if (length > 258)
+      return 285;
+
+    // Lengths 3-258: binary search through codes 257-284
+    var bases = Deflate64Constants.LengthBase;
+    int lo = 0, hi = bases.Length - 2; // exclude code 285
+    while (lo < hi) {
+      var mid = (lo + hi + 1) / 2;
+      if (bases[mid] <= length)
+        lo = mid;
+      else
+        hi = mid - 1;
+    }
+
+    return 257 + lo;
+  }
+
   /// <summary>
   /// Maps a match distance (1-65536) to the corresponding distance code (0-31).
   /// </summary>

@@ -40,6 +40,16 @@ public sealed class XpressCompressor {
   }
 
   /// <summary>
+  /// Initializes a new <see cref="XpressCompressor"/> with the specified compression level.
+  /// </summary>
+  /// <param name="level">The compression level.</param>
+  public XpressCompressor(XpressCompressionLevel level) : this(level switch {
+    XpressCompressionLevel.Fast => 16,
+    XpressCompressionLevel.Best => 512,
+    _ => 128
+  }) { }
+
+  /// <summary>
   /// Compresses <paramref name="input"/> and returns the compressed bytes.
   /// </summary>
   /// <param name="input">The data to compress.</param>

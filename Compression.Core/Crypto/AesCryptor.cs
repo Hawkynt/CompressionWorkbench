@@ -143,6 +143,48 @@ public static class AesCryptor {
         break;
   }
 
+  /// <summary>
+  /// Encrypts data using AES-CBC with no padding. Accepts 16-byte (AES-128) or 32-byte (AES-256) keys.
+  /// </summary>
+  public static byte[] EncryptCbcNoPaddingAny(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv) {
+    if (key.Length != 16 && key.Length != 32)
+      throw new ArgumentException("Key must be 16 or 32 bytes.", nameof(key));
+    if (iv.Length != 16)
+      throw new ArgumentException("IV must be 16 bytes.", nameof(iv));
+    if (data.Length % 16 != 0)
+      throw new ArgumentException("Data length must be a multiple of 16 bytes.", nameof(data));
+
+    using var aes = Aes.Create();
+    aes.Key = key.ToArray();
+    aes.IV = iv.ToArray();
+    aes.Mode = CipherMode.CBC;
+    aes.Padding = PaddingMode.None;
+
+    using var encryptor = aes.CreateEncryptor();
+    return encryptor.TransformFinalBlock(data.ToArray(), 0, data.Length);
+  }
+
+  /// <summary>
+  /// Decrypts data using AES-CBC with no padding. Accepts 16-byte (AES-128) or 32-byte (AES-256) keys.
+  /// </summary>
+  public static byte[] DecryptCbcNoPaddingAny(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv) {
+    if (key.Length != 16 && key.Length != 32)
+      throw new ArgumentException("Key must be 16 or 32 bytes.", nameof(key));
+    if (iv.Length != 16)
+      throw new ArgumentException("IV must be 16 bytes.", nameof(iv));
+    if (data.Length % 16 != 0)
+      throw new ArgumentException("Data length must be a multiple of 16 bytes.", nameof(data));
+
+    using var aes = Aes.Create();
+    aes.Key = key.ToArray();
+    aes.IV = iv.ToArray();
+    aes.Mode = CipherMode.CBC;
+    aes.Padding = PaddingMode.None;
+
+    using var decryptor = aes.CreateDecryptor();
+    return decryptor.TransformFinalBlock(data.ToArray(), 0, data.Length);
+  }
+
   private static void ValidateKeyAndIv(ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv) {
     if (key.Length != 32)
       throw new ArgumentException("Key must be 32 bytes (256 bits).", nameof(key));
