@@ -1,0 +1,74 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Compression.Lib</RootNamespace>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="cwb" />
+    <InternalsVisibleTo Include="Compression.UI" />
+    <InternalsVisibleTo Include="Compression.Shell" />
+    <InternalsVisibleTo Include="Compression.Tests" />
+    <InternalsVisibleTo Include="sfx-cli" />
+    <InternalsVisibleTo Include="sfx-ui" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Core\Compression.Core.csproj" />
+    <ProjectReference Include="..\FileFormat.Ace\FileFormat.Ace.csproj" />
+    <ProjectReference Include="..\FileFormat.Ar\FileFormat.Ar.csproj" />
+    <ProjectReference Include="..\FileFormat.Arc\FileFormat.Arc.csproj" />
+    <ProjectReference Include="..\FileFormat.Arj\FileFormat.Arj.csproj" />
+    <ProjectReference Include="..\FileFormat.Brotli\FileFormat.Brotli.csproj" />
+    <ProjectReference Include="..\FileFormat.Bzip2\FileFormat.Bzip2.csproj" />
+    <ProjectReference Include="..\FileFormat.Cab\FileFormat.Cab.csproj" />
+    <ProjectReference Include="..\FileFormat.Compress\FileFormat.Compress.csproj" />
+    <ProjectReference Include="..\FileFormat.Cpio\FileFormat.Cpio.csproj" />
+    <ProjectReference Include="..\FileFormat.CramFs\FileFormat.CramFs.csproj" />
+    <ProjectReference Include="..\FileFormat.Deb\FileFormat.Deb.csproj" />
+    <ProjectReference Include="..\FileFormat.Gzip\FileFormat.Gzip.csproj" />
+    <ProjectReference Include="..\FileFormat.Ha\FileFormat.Ha.csproj" />
+    <ProjectReference Include="..\FileFormat.InnoSetup\FileFormat.InnoSetup.csproj" />
+    <ProjectReference Include="..\FileFormat.Kwaj\FileFormat.Kwaj.csproj" />
+    <ProjectReference Include="..\FileFormat.Lz4\FileFormat.Lz4.csproj" />
+    <ProjectReference Include="..\FileFormat.Lzh\FileFormat.Lzh.csproj" />
+    <ProjectReference Include="..\FileFormat.Lzip\FileFormat.Lzip.csproj" />
+    <ProjectReference Include="..\FileFormat.Lzma\FileFormat.Lzma.csproj" />
+    <ProjectReference Include="..\FileFormat.Lzop\FileFormat.Lzop.csproj" />
+    <ProjectReference Include="..\FileFormat.Nsis\FileFormat.Nsis.csproj" />
+    <ProjectReference Include="..\FileFormat.Pak\FileFormat.Pak.csproj" />
+    <ProjectReference Include="..\FileFormat.Rar\FileFormat.Rar.csproj" />
+    <ProjectReference Include="..\FileFormat.Rpm\FileFormat.Rpm.csproj" />
+    <ProjectReference Include="..\FileFormat.SevenZip\FileFormat.SevenZip.csproj" />
+    <ProjectReference Include="..\FileFormat.Shar\FileFormat.Shar.csproj" />
+    <ProjectReference Include="..\FileFormat.Snappy\FileFormat.Snappy.csproj" />
+    <ProjectReference Include="..\FileFormat.Sqx\FileFormat.Sqx.csproj" />
+    <ProjectReference Include="..\FileFormat.SquashFs\FileFormat.SquashFs.csproj" />
+    <ProjectReference Include="..\FileFormat.StuffIt\FileFormat.StuffIt.csproj" />
+    <ProjectReference Include="..\FileFormat.Szdd\FileFormat.Szdd.csproj" />
+    <ProjectReference Include="..\FileFormat.Tar\FileFormat.Tar.csproj" />
+    <ProjectReference Include="..\FileFormat.Wim\FileFormat.Wim.csproj" />
+    <ProjectReference Include="..\FileFormat.Xz\FileFormat.Xz.csproj" />
+    <ProjectReference Include="..\FileFormat.Zip\FileFormat.Zip.csproj" />
+    <ProjectReference Include="..\FileFormat.Zlib\FileFormat.Zlib.csproj" />
+    <ProjectReference Include="..\FileFormat.Zoo\FileFormat.Zoo.csproj" />
+    <ProjectReference Include="..\FileFormat.Zpaq\FileFormat.Zpaq.csproj" />
+    <ProjectReference Include="..\FileFormat.Zstd\FileFormat.Zstd.csproj" />
+    <ProjectReference Include="..\FileFormat.Dms\FileFormat.Dms.csproj" />
+    <ProjectReference Include="..\FileFormat.Lzx\FileFormat.Lzx.csproj" />
+    <ProjectReference Include="..\FileFormat.PowerPacker\FileFormat.PowerPacker.csproj" />
+    <ProjectReference Include="..\FileFormat.CompactPro\FileFormat.CompactPro.csproj" />
+    <ProjectReference Include="..\FileFormat.MacBinary\FileFormat.MacBinary.csproj" />
+    <ProjectReference Include="..\FileFormat.BinHex\FileFormat.BinHex.csproj" />
+    <ProjectReference Include="..\FileFormat.Spark\FileFormat.Spark.csproj" />
+    <ProjectReference Include="..\FileFormat.Lbr\FileFormat.Lbr.csproj" />
+    <ProjectReference Include="..\FileFormat.Squeeze\FileFormat.Squeeze.csproj" />
+    <ProjectReference Include="..\FileFormat.IcePacker\FileFormat.IcePacker.csproj" />
+    <ProjectReference Include="..\FileFormat.Uharc\FileFormat.Uharc.csproj" />
+    <ProjectReference Include="..\FileFormat.Rzip\FileFormat.Rzip.csproj" />
+    <ProjectReference Include="..\FileFormat.Wad\FileFormat.Wad.csproj" />
+  </ItemGroup>
+
+</Project>

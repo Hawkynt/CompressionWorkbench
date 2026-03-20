@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>FileFormat.Deb</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FileFormat.Ar\FileFormat.Ar.csproj" />
+    <ProjectReference Include="..\FileFormat.Tar\FileFormat.Tar.csproj" />
+    <ProjectReference Include="..\FileFormat.Bzip2\FileFormat.Bzip2.csproj" />
+    <ProjectReference Include="..\FileFormat.Gzip\FileFormat.Gzip.csproj" />
+    <ProjectReference Include="..\FileFormat.Xz\FileFormat.Xz.csproj" />
+    <ProjectReference Include="..\FileFormat.Zstd\FileFormat.Zstd.csproj" />
+  </ItemGroup>
+
+</Project>
