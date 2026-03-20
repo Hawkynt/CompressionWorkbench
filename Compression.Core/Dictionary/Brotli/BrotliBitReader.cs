@@ -25,6 +25,12 @@ internal sealed class BrotliBitReader {
   /// <summary>Gets the current byte position in the stream.</summary>
   public int BytePosition => this._bytePos - (this._bitsAvailable >> 3);
 
+  /// <summary>Gets the exact bit position in the stream.</summary>
+  public int BitPosition => this._bytePos * 8 - this._bitsAvailable;
+
+  /// <summary>Debug: dump buffer state.</summary>
+  public string DebugState => $"bytePos={this._bytePos} bitsAvail={this._bitsAvailable} buf=0x{this._bitBuffer:X16} bitPos={this.BitPosition}";
+
   /// <summary>Gets whether the reader has reached the end of the data.</summary>
   public bool IsAtEnd => this._bytePos >= this._data.Length && this._bitsAvailable == 0;
 
@@ -46,8 +52,9 @@ internal sealed class BrotliBitReader {
   public uint ReadBits(int count) {
     this.Fill(count);
     var value = (uint)(this._bitBuffer & ((1UL << count) - 1));
-    this._bitBuffer >>= count;
-    this._bitsAvailable -= count;
+    var consume = Math.Min(count, this._bitsAvailable);
+    this._bitBuffer >>= consume;
+    this._bitsAvailable -= consume;
     return value;
   }
 
@@ -65,6 +72,8 @@ internal sealed class BrotliBitReader {
   /// </summary>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public void DropBits(int count) {
+    if (count <= 0) return;
+    if (count > this._bitsAvailable) count = this._bitsAvailable;
     this._bitBuffer >>= count;
     this._bitsAvailable -= count;
   }

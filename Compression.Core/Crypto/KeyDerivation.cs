@@ -94,4 +94,45 @@ public static class KeyDerivation {
   /// <returns>The 32-byte derived key.</returns>
   public static byte[] Rar5DeriveKey(string password, ReadOnlySpan<byte> salt, int iterations) => Pbkdf2Sha256(password, salt, iterations, 32);
 
+  /// <summary>
+  /// Derives a 16-byte AES-128 key and 16-byte IV for RAR3/4 decryption.
+  /// RAR3 iterates SHA-1 262144 times over (salt + password_utf16le + counter).
+  /// </summary>
+  /// <param name="password">The password string.</param>
+  /// <param name="salt">The 8-byte salt from the file header.</param>
+  /// <returns>A tuple of (16-byte key, 16-byte IV).</returns>
+  public static (byte[] Key, byte[] Iv) Rar3DeriveKey(string password, ReadOnlySpan<byte> salt) {
+    ArgumentNullException.ThrowIfNull(password);
+
+    var passwordBytes = Encoding.Unicode.GetBytes(password); // UTF-16LE
+    var input = new byte[salt.Length + passwordBytes.Length];
+    salt.CopyTo(input);
+    passwordBytes.CopyTo(input.AsSpan(salt.Length));
+
+    const int iterations = 0x40000; // 262144
+    var iv = new byte[16];
+
+    var sha1 = new Checksums.Sha1();
+
+    for (int i = 0; i < iterations; ++i) {
+      sha1.Update(input);
+
+      // Append 3-byte little-endian iteration counter
+      ReadOnlySpan<byte> counter = [(byte)i, (byte)(i >> 8), (byte)(i >> 16)];
+      sha1.Update(counter);
+
+      // Every 0x4000 iterations, clone state and finalize to get IV byte
+      if (i % 0x4000 == 0) {
+        var clone = sha1.Clone();
+        clone.Finish();
+        iv[i / 0x4000] = clone.Hash[19];
+      }
+    }
+
+    sha1.Finish();
+    byte[] key = sha1.Hash[..16];
+
+    return (key, iv);
+  }
+
 }

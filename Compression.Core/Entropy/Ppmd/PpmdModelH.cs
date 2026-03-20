@@ -13,7 +13,7 @@ namespace Compression.Core.Entropy.Ppmd;
 ///   <item>Exclusion of already-coded symbols when falling to lower-order contexts.</item>
 /// </list>
 /// </remarks>
-internal sealed class PpmdModelH : PpmdModelBase {
+public sealed class PpmdModelH : PpmdModelBase {
   /// <summary>Frequency total threshold for triggering a rescale in Model H.</summary>
   private const int RescaleThreshold = 2500;
 

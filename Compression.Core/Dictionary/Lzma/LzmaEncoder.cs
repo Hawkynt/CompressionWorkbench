@@ -12,6 +12,7 @@ public sealed class LzmaEncoder {
   private readonly int _pb;
   private readonly int _dictionarySize;
   private readonly int _posStateMask;
+  private readonly LzmaCompressionLevel _level;
 
   /// <summary>
   /// Gets the 5-byte LZMA properties header (1 byte properties + 4 bytes dictionary size).
@@ -25,12 +26,23 @@ public sealed class LzmaEncoder {
   /// <param name="lc">Literal context bits (0-8). Default 3.</param>
   /// <param name="lp">Literal position bits (0-4). Default 0.</param>
   /// <param name="pb">Position bits (0-4). Default 2.</param>
-  public LzmaEncoder(int dictionarySize = 1 << 23, int lc = 3, int lp = 0, int pb = 2) {
+  /// <param name="level">The compression level.</param>
+  public LzmaEncoder(int dictionarySize = 1 << 23, int lc = 3, int lp = 0, int pb = 2,
+      LzmaCompressionLevel level = LzmaCompressionLevel.Normal) {
+    ArgumentOutOfRangeException.ThrowIfLessThan(lc, 0);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(lc, 8);
+    ArgumentOutOfRangeException.ThrowIfLessThan(lp, 0);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(lp, 4);
+    ArgumentOutOfRangeException.ThrowIfLessThan(pb, 0);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(pb, 4);
+    ArgumentOutOfRangeException.ThrowIfLessThan(dictionarySize, 4096);
+
     this._lc = lc;
     this._lp = lp;
     this._pb = pb;
     this._dictionarySize = dictionarySize;
     this._posStateMask = (1 << pb) - 1;
+    this._level = level;
 
     // Build 5-byte properties header
     this.Properties = new byte[5];
@@ -96,7 +108,12 @@ public sealed class LzmaEncoder {
 
     // Match finder
     var windowSize = Math.Min(this._dictionarySize, data.Length > 0 ? data.Length : 1);
-    var matchFinder = new HashChainMatchFinder(Math.Max(windowSize, 4096), 64);
+    int chainDepth = this._level switch {
+      LzmaCompressionLevel.Fast => 16,
+      LzmaCompressionLevel.Best => 256,
+      _ => 64
+    };
+    var matchFinder = new HashChainMatchFinder(Math.Max(windowSize, 4096), chainDepth);
 
     // Pre-seed the match finder with historical context positions
     for (var h = 0; h < startOffset; ++h)

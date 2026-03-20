@@ -16,6 +16,9 @@ public static class LzhConstants {
   /// <summary>Number of literal/length symbols: 256 literals + (MaxMatch - Threshold + 1) length codes.</summary>
   public const int NumCodes = LzhConstants.NChar + LzhConstants.MaxMatch - LzhConstants.Threshold + 1;
 
+  /// <summary>Maximum number of position (offset) bits for -lh4- (4KB window).</summary>
+  public const int Lh4PositionBits = 12;
+
   /// <summary>Maximum number of position (offset) bits for -lh5- (8KB window).</summary>
   public const int Lh5PositionBits = 13;
 
@@ -48,6 +51,9 @@ public static class LzhConstants {
 
   /// <summary>Special code-length value meaning "next 9 zero-length codes" when encoding code lengths.</summary>
   public const int CodeLengthRepeatZero = 0;
+
+  /// <summary>Window size for -lh4- (4096 bytes).</summary>
+  public const int Lh4WindowSize = 1 << LzhConstants.Lh4PositionBits;
 
   /// <summary>Window size for -lh5- (8192 bytes).</summary>
   public const int Lh5WindowSize = 1 << LzhConstants.Lh5PositionBits;

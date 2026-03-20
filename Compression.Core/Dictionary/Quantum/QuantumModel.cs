@@ -9,6 +9,7 @@ namespace Compression.Core.Dictionary.Quantum;
 internal sealed class QuantumModel {
   private readonly int[] _freq;
   private readonly int[] _cumFreq;
+  private readonly int _rescaleThreshold;
 
   /// <summary>Gets the number of symbols in this model.</summary>
   public int NumSymbols { get; }
@@ -20,8 +21,15 @@ internal sealed class QuantumModel {
   /// Initializes a new <see cref="QuantumModel"/> with uniform initial frequencies.
   /// </summary>
   /// <param name="numSymbols">The number of symbols in the alphabet.</param>
-  public QuantumModel(int numSymbols) {
+  /// <param name="rescaleThreshold">
+  /// The total frequency at which the model rescales. Defaults to
+  /// <see cref="QuantumConstants.RescaleThreshold"/> (3800) for decoding
+  /// real Quantum data. Use a lower value (e.g. 256) when the range coder's
+  /// minimum range is smaller than the threshold to prevent zero-width symbols.
+  /// </param>
+  public QuantumModel(int numSymbols, int rescaleThreshold = QuantumConstants.RescaleThreshold) {
     this.NumSymbols = numSymbols;
+    this._rescaleThreshold = rescaleThreshold;
     this._freq = new int[numSymbols];
     this._cumFreq = new int[numSymbols + 1];
 
@@ -73,7 +81,7 @@ internal sealed class QuantumModel {
     ++this._freq[symbol];
     ++this.TotalFrequency;
 
-    if (this.TotalFrequency >= QuantumConstants.RescaleThreshold)
+    if (this.TotalFrequency >= this._rescaleThreshold)
       this.Rescale();
     else
       this.RebuildCumulative();

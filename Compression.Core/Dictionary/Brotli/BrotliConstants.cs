@@ -53,12 +53,12 @@ public static class BrotliConstants {
     (322, 7), (578, 7), (1090, 8), (2114, 8), (4162, 9), (8258, 9)
   ];
 
-  /// <summary>Lookup table for copy length codes (RFC 7932 Section 5).</summary>
+  /// <summary>Lookup table for copy length codes (RFC 7932 Table 7).</summary>
   internal static readonly (int BaseValue, int ExtraBits)[] CopyLengthTable = [
-    (2, 0), (3, 0), (4, 0), (5, 0), (6, 0), (7, 0),
-    (8, 1), (10, 1), (12, 2), (16, 2), (20, 3), (28, 3),
-    (36, 4), (52, 4), (68, 5), (100, 5), (132, 6), (196, 6),
-    (324, 7), (580, 7), (1092, 8), (2116, 8), (4164, 9), (8260, 9)
+    (2, 0), (3, 0), (4, 0), (5, 0), (6, 0), (7, 0), (8, 0), (9, 0),
+    (10, 1), (12, 1), (14, 2), (18, 2), (22, 3), (30, 3),
+    (38, 4), (54, 4), (70, 5), (102, 5), (134, 6), (198, 7),
+    (326, 8), (582, 9), (1094, 10), (2118, 24)
   ];
 
   /// <summary>

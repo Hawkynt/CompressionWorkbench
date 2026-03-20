@@ -71,6 +71,10 @@ public sealed class Rar5Decoder {
     var output = new byte[uncompressedSize];
     var outputPos = 0;
 
+    // Each compressed block starts with fresh Huffman tables, even in solid mode
+    // (window and repeat offsets persist, but tables are per-block)
+    this._tablesRead = false;
+
     while (outputPos < uncompressedSize && !reader.IsAtEnd) {
       // Read Huffman tables at the start or when flagged
       if (!this._tablesRead) {

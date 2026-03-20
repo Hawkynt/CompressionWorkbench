@@ -4,8 +4,11 @@ namespace Compression.Core.Entropy.Ppmd;
 /// Constants for PPMd (Prediction by Partial Matching, variant d) compression.
 /// </summary>
 internal static class PpmdConstants {
-  /// <summary>Maximum supported model order.</summary>
-  public const int MaxOrder = 16;
+  /// <summary>Maximum supported model order (32 for PPMd-H / 7z, ZIP uses up to 16).</summary>
+  public const int MaxOrder = 32;
+
+  /// <summary>Maximum model order for PPMd variant I (ZIP).</summary>
+  public const int MaxOrderI = 16;
 
   /// <summary>Default model order.</summary>
   public const int DefaultOrder = 6;
@@ -13,8 +16,8 @@ internal static class PpmdConstants {
   /// <summary>Minimum allocator memory size (1 MB).</summary>
   public const int MinMemorySize = 1 << 20;
 
-  /// <summary>Maximum allocator memory size (256 MB).</summary>
-  public const int MaxMemorySize = 256 << 20;
+  /// <summary>Maximum allocator memory size (2 GB for 7z, ZIP uses up to 256 MB).</summary>
+  public const int MaxMemorySize = int.MaxValue; // ~2 GB
 
   /// <summary>Default allocator memory size (16 MB).</summary>
   public const int DefaultMemorySize = 16 << 20;

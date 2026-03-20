@@ -9,6 +9,7 @@ public sealed class Lzma2Encoder {
   private const int MaxPackedSize = 1 << 16;          // 64 KB (16-bit packed size field)
   private const int MaxUncompressedChunkSize = 1 << 16; // 64 KB (16-bit size field for uncompressed chunks)
   private readonly int _dictionarySize;
+  private readonly LzmaCompressionLevel _level;
 
   /// <summary>
   /// Gets the encoded dictionary size byte for XZ headers.
@@ -19,8 +20,11 @@ public sealed class Lzma2Encoder {
   /// Initializes a new LZMA2 encoder.
   /// </summary>
   /// <param name="dictionarySize">The dictionary size in bytes.</param>
-  public Lzma2Encoder(int dictionarySize = 1 << 23) {
+  /// <param name="level">The compression level.</param>
+  public Lzma2Encoder(int dictionarySize = 1 << 23,
+      LzmaCompressionLevel level = LzmaCompressionLevel.Normal) {
     this._dictionarySize = dictionarySize;
+    this._level = level;
     this.DictionarySizeByte = EncodeDictionarySize(dictionarySize);
   }
 
@@ -48,7 +52,7 @@ public sealed class Lzma2Encoder {
 
       // Try LZMA compression with context
       using var lzmaData = new MemoryStream();
-      var encoder = new LzmaEncoder(this._dictionarySize);
+      var encoder = new LzmaEncoder(this._dictionarySize, level: this._level);
       encoder.Encode(lzmaData, contextAndChunk, chunkOffset, writeEndMarker: false);
       var compressed = lzmaData.ToArray();
 

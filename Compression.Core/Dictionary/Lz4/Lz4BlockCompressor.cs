@@ -12,13 +12,19 @@ public static class Lz4BlockCompressor {
   /// Compresses the input data using LZ4 block format.
   /// </summary>
   /// <param name="source">The data to compress.</param>
+  /// <param name="level">The compression level.</param>
   /// <returns>The compressed block data.</returns>
-  public static byte[] Compress(ReadOnlySpan<byte> source) {
+  public static byte[] Compress(ReadOnlySpan<byte> source,
+      Lz4CompressionLevel level = Lz4CompressionLevel.Fast) {
     if (source.Length == 0)
       return [];
 
-    // Worst case: each literal needs 1 token byte + 1 literal byte, plus length overflow
-    var dest = new byte[LZ4_compressBound(source.Length)];
+    if (level != Lz4CompressionLevel.Fast) {
+      int chainDepth = level == Lz4CompressionLevel.Max ? 64 : 16;
+      return Lz4HcCompressor.Compress(source, chainDepth);
+    }
+
+    var dest = new byte[CompressBound(source.Length)];
     var written = CompressCore(source, dest);
     return dest.AsSpan(0, written).ToArray();
   }
@@ -32,7 +38,7 @@ public static class Lz4BlockCompressor {
   public static int Compress(ReadOnlySpan<byte> source, Span<byte> dest) =>
     CompressCore(source, dest);
 
-  private static int LZ4_compressBound(int inputSize) =>
+  internal static int CompressBound(int inputSize) =>
     inputSize + (inputSize / 255) + 16;
 
   private static int CompressCore(ReadOnlySpan<byte> src, Span<byte> dst) {
@@ -101,7 +107,7 @@ public static class Lz4BlockCompressor {
     return dstPos;
   }
 
-  private static int EmitSequence(Span<byte> dst, int dstPos,
+  internal static int EmitSequence(Span<byte> dst, int dstPos,
       ReadOnlySpan<byte> src, int litStart, int litLen,
       int matchOffset, int matchLength) {
     // Token byte: high nibble = literal length, low nibble = match length - 4
@@ -145,7 +151,7 @@ public static class Lz4BlockCompressor {
     return dstPos;
   }
 
-  private static int EmitLastLiterals(Span<byte> dst, int dstPos,
+  internal static int EmitLastLiterals(Span<byte> dst, int dstPos,
       ReadOnlySpan<byte> src, int litStart, int litLen) {
     var tokenLit = Math.Min(litLen, Lz4Constants.RunMask);
     dst[dstPos++] = (byte)(tokenLit << 4); // match length = 0 (no match)

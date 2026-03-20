@@ -46,15 +46,11 @@ internal static class LzmaConstants {
   }
 
   /// <summary>State transition after encoding a literal.</summary>
-  public static int StateUpdateLiteral(int state) => state switch {
-    0 or 1 or 2 or 3 or 4 or 5 or 6 => 0,
-    7 => 4,
-    8 => 5,
-    9 => 6,
-    10 => 4,
-    11 => 5,
-    _ => state,
-  };
+  public static int StateUpdateLiteral(int state) {
+    if (state < 4) return 0;
+    if (state < 10) return state - 3;
+    return state - 6;
+  }
 
   /// <summary>State transition after encoding a match.</summary>
   public static int StateUpdateMatch(int state) => state switch {
