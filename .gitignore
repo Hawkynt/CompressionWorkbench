@@ -83,6 +83,9 @@ TestResult.xml
 [Bb]uild[Ll]og.*
 TestResults/
 
+## SFX stubs (pre-published, large binaries)
+**/stubs/
+
 ## OS files
 .DS_Store
 Thumbs.db

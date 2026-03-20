@@ -605,6 +605,199 @@ dotnet build CompressionWorkbench.slnx
 dotnet test
 ```
 
+---
+
+## Compression.CLI — `cwb` Command-Line Tool
+
+A universal archive tool supporting **40 formats** with smart conversion and optimal re-encoding.
+
+### Installation
+
+```bash
+dotnet run --project Compression.CLI -- <command> [options]
+# Or after publishing:
+cwb <command> [options]
+```
+
+### Commands
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `list <archive>` | `l` | List contents of an archive |
+| `extract <archive> [files...]` | `x` | Extract files from an archive |
+| `create <archive> <files...>` | `c` | Create a new archive |
+| `test <archive>` | `t` | Test archive integrity |
+| `info <archive>` | — | Show detailed archive information |
+| `convert <input> <output>` | — | Convert between archive formats |
+| `optimize <input> <output>` | `opt` | Re-encode with optimal compression |
+| `benchmark <file>` | `bench` | Compare compression across algorithms |
+| `formats` | — | List all supported formats |
+
+### Global Options
+
+| Option | Alias | Description |
+|--------|-------|-------------|
+| `--password <pw>` | `-p` | Password for encrypted archives |
+| `--method <method>` | `-m` | Compression method (see below) |
+
+### Supported Formats (40)
+
+**Archive formats (20):**
+zip, rar, 7z, tar, cab, lzh, arj, arc, zoo, ace, sqx, cpio, ar, wim, rpm, deb, shar, pak, iso\*, udf\*
+
+**Compression formats (14):**
+gzip, bzip2, xz, zstd, lz4, brotli, snappy, lzop, compress (.Z), lzma, lzip, zlib, szdd, kwaj
+
+**Compound formats (6):**
+tar.gz, tar.bz2, tar.xz, tar.zst, tar.lz4, tar.lz
+
+\* = detection only (format recognized but no read/write support yet)
+
+### Compression Methods (`--method` / `-m`)
+
+The `--method` option controls which compression algorithm is used when creating or converting archives. Append `+` to any method name to enable the **optimal encoder** — same decoder compatibility, better compression ratio, slower encoding.
+
+**ZIP methods:**
+
+| Method | Description |
+|--------|-------------|
+| `store` | No compression |
+| `deflate` | Standard Deflate (default) |
+| `deflate+` | Zopfli-optimized Deflate (significantly smaller) |
+| `deflate64` | Enhanced Deflate (64KB window) |
+| `shrink` | LZW with partial clearing (legacy) |
+| `reduce` | Follower sets (legacy) |
+| `implode` | Shannon-Fano trees (legacy) |
+| `bzip2` | BWT + Huffman |
+| `lzma` | LZMA |
+| `ppmd` | PPMd prediction |
+| `zstd` | Zstandard |
+
+**7z methods:**
+
+| Method | Description |
+|--------|-------------|
+| `lzma2` | LZMA2 (default) |
+| `lzma2+` | LZMA2 with larger dictionary (64MB) |
+| `lzma` | LZMA |
+| `deflate` | Deflate |
+| `bzip2` | BZip2 |
+| `ppmd` | PPMd |
+
+**Stream format optimization:**
+
+| Format | Default | With `+` |
+|--------|---------|----------|
+| Gzip / Zlib | Deflate (default level) | Zopfli optimal Deflate |
+| XZ / LZMA / Lzip | LZMA (normal) | LZMA (best) |
+| Zstd | Zstandard (default) | Zstandard (best) |
+| LZ4 | LZ4 (fast) | LZ4 HC (max) |
+| Brotli | Brotli (default) | Brotli (best) |
+| Compress (.Z) | LZW (default) | LZW (optimal) |
+| LZOP | LZO1X (fast) | LZO1X-999 |
+
+### Directory Support
+
+The `create` command accepts both files and directories. When a directory is given, it is recursed and all contents are added with their relative paths preserved:
+
+```bash
+# Add a directory (preserves structure) and standalone files
+cwb create output.zip myDir file1.txt file2.txt
+
+# Wildcards are also supported
+cwb create output.tar.gz *.txt myDir
+```
+
+Formats that support directory entries (ZIP, 7z, TAR, ARJ, CPIO) store them as explicit entries. Flat formats without path support (ARC, ZOO, PAK, Shar) flatten all files to the archive root.
+
+### 3-Tier Conversion Model
+
+When converting between formats (`cwb convert`), the tool automatically selects the most efficient strategy:
+
+**Tier 1 — Bitstream transfer** (zero decompression):
+Raw compressed bytes are moved between containers without any decompression. This is possible when the source and destination use the same compression codec.
+
+```bash
+# Deflate bitstream transferred directly — no decompression needed
+cwb convert archive.gz archive.zlib
+cwb convert archive.zip archive.gz      # single Deflate entry
+cwb convert archive.gz archive.zip
+```
+
+**Tier 2 — Container restream** (decompress + recompress wrapper only):
+The outer compression wrapper is changed, but the inner payload passes through untouched.
+
+```bash
+# Only the outer compression changes — tar data is not parsed
+cwb convert data.tar.gz data.tar.xz
+
+# Strip or add outer compression
+cwb convert data.tar.gz data.tar
+cwb convert data.tar data.tar.zst
+
+# Restream content between different codecs
+cwb convert data.gz data.xz
+```
+
+**Tier 3 — Full recompress** (extract + re-encode):
+All content is extracted and re-encoded. This is the fallback for incompatible formats, and is also used when:
+- Converting between different archive formats (zip → 7z)
+- Changing the compression method within the same format
+- Using `+` optimization (e.g. `--method deflate+`)
+
+```bash
+# Full recompress — different archive formats
+cwb convert archive.zip archive.7z
+
+# Full recompress with optimal encoding
+cwb convert archive.zip optimized.zip --method deflate+
+
+# Method change within same format
+cwb convert archive.zip recompressed.zip --method lzma
+```
+
+### Examples
+
+```bash
+# List contents
+cwb list archive.zip
+cwb l archive.tar.gz
+
+# Extract
+cwb extract archive.7z -o ./output
+cwb x archive.rar -p mypassword
+
+# Create with default method
+cwb create output.zip file1.txt file2.txt
+cwb c output.tar.gz *.txt
+
+# Create with specific method
+cwb create output.zip file.txt --method store
+cwb create output.zip file.txt --method deflate+
+cwb create output.7z file.txt --method lzma2+
+
+# Test integrity
+cwb test archive.zip
+
+# Show info
+cwb info archive.rar
+
+# Convert between formats
+cwb convert input.tar.gz output.tar.xz      # tier 2: fast restream
+cwb convert input.gz output.zlib             # tier 1: bitstream transfer
+cwb convert input.zip output.7z              # tier 3: full recompress
+cwb convert input.zip output.zip -m deflate+ # tier 3: optimize
+
+# Optimize (re-encode with best compression)
+cwb optimize input.zip optimized.zip
+cwb opt input.gz optimized.gz
+
+# Benchmark compression algorithms
+cwb benchmark largefile.bin
+```
+
+---
+
 ## License
 
 LGPL-3

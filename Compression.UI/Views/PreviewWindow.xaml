@@ -1,0 +1,49 @@
+<Window x:Class="Compression.UI.Views.PreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Preview" Width="800" Height="600" MinWidth="400" MinHeight="300"
+        WindowStartupLocation="CenterOwner">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <!-- Toolbar -->
+    <ToolBarTray Grid.Row="0">
+      <ToolBar Band="0" BandIndex="0">
+        <RadioButton x:Name="TextMode" Content="Text" IsChecked="True" GroupName="Mode"
+                     Checked="OnModeChanged" Padding="8,2" />
+        <RadioButton x:Name="HexMode" Content="Hex" GroupName="Mode"
+                     Checked="OnModeChanged" Padding="8,2" />
+        <Separator />
+        <ComboBox x:Name="EncodingBox" Width="120" SelectionChanged="OnEncodingChanged">
+          <ComboBoxItem Content="UTF-8" IsSelected="True" />
+          <ComboBoxItem Content="ASCII" />
+          <ComboBoxItem Content="Latin-1" />
+          <ComboBoxItem Content="UTF-16 LE" />
+        </ComboBox>
+        <Separator />
+        <TextBlock Text="{Binding ElementName=SizeLabel, Path=Text}" VerticalAlignment="Center"
+                   Margin="4,0" x:Name="SizeInfo" />
+      </ToolBar>
+    </ToolBarTray>
+
+    <!-- Content area -->
+    <TextBox Grid.Row="1" x:Name="ContentBox"
+             IsReadOnly="True" AcceptsReturn="True"
+             FontFamily="Cascadia Mono,Consolas,Courier New"
+             FontSize="12"
+             HorizontalScrollBarVisibility="Auto"
+             VerticalScrollBarVisibility="Auto"
+             TextWrapping="NoWrap" />
+
+    <!-- Status -->
+    <StatusBar Grid.Row="2">
+      <StatusBarItem>
+        <TextBlock x:Name="SizeLabel" />
+      </StatusBarItem>
+    </StatusBar>
+  </Grid>
+</Window>
