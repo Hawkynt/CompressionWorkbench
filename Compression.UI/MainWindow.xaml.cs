@@ -48,6 +48,17 @@ public partial class MainWindow : Window {
   }
 
   private void OnEntryDoubleClick(object sender, MouseButtonEventArgs e) {
+    ActivateSelectedEntry();
+  }
+
+  private void OnEntryKeyDown(object sender, System.Windows.Input.KeyEventArgs e) {
+    if (e.Key == Key.Enter && e.KeyboardDevice.Modifiers == ModifierKeys.None) {
+      ActivateSelectedEntry();
+      e.Handled = true;
+    }
+  }
+
+  private void ActivateSelectedEntry() {
     if (EntryList.SelectedItem is not ArchiveEntryViewModel entry) return;
     if (entry.IsParentEntry || entry.IsDirectory)
       ViewModel.NavigateIntoCommand.Execute(entry);

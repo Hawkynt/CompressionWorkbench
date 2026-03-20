@@ -19,6 +19,12 @@ public sealed class SevenZipEntry {
   /// <summary>Gets or sets the creation time in UTC.</summary>
   public DateTime? CreationTime { get; set; }
 
+  /// <summary>Gets or sets the compressed size in bytes (-1 if unknown).</summary>
+  public long CompressedSize { get; set; } = -1;
+
+  /// <summary>Gets or sets the compression method name.</summary>
+  public string Method { get; set; } = "";
+
   /// <summary>Gets or sets the CRC-32 of the uncompressed data.</summary>
   public uint? Crc { get; set; }
 

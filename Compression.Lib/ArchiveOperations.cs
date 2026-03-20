@@ -649,8 +649,8 @@ internal static class ArchiveOperations {
 
   private static List<ArchiveEntry> List7z(Stream s, string? pw) {
     var r = new FileFormat.SevenZip.SevenZipReader(s, password: pw);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.Name, e.Size, -1,
-      "LZMA2", e.IsDirectory, false, e.LastWriteTime)).ToList();
+    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.Name, e.Size, e.CompressedSize,
+      string.IsNullOrEmpty(e.Method) ? "7z" : e.Method, e.IsDirectory, false, e.LastWriteTime)).ToList();
   }
 
   private static void Extract7z(Stream s, string dir, string? pw, string[]? files) {

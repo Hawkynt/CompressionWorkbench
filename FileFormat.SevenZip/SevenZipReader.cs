@@ -129,51 +129,94 @@ public sealed class SevenZipReader : IDisposable {
   private (int FolderIndex, int FileIndex)[] BuildEntries() {
     var mapping = new (int FolderIndex, int FileIndex)[this._fileInfos.Count];
 
-    // Build sub-stream size index per file entry
-    // Non-empty stream entries map to folders sequentially
-    var currentFolder = 0;
-    var currentFileInFolder = 0;
-    var nonEmptyIndex = 0;
+    // Precompute per-folder: total packed size, total unpacked size, method name
+    var folderPackedSize = new long[this._folders.Count];
+    var folderUnpackedTotal = new long[this._folders.Count];
+    var folderMethod = new string[this._folders.Count];
 
-    // Count total non-empty files across all folders
-    var totalNonEmpty = 0;
-    if (this._subStreams.NumUnpackStreams.Length > 0) {
-      foreach (int n in this._subStreams.NumUnpackStreams)
-        totalNonEmpty += n;
+    var packIdx = 0;
+    for (var fi = 0; fi < this._folders.Count; fi++) {
+      var folder = this._folders[fi];
+      var totalIn = folder.Coders.Sum(c => c.NumInStreams);
+      var numPack = totalIn - folder.BindPairs.Count;
+
+      long packed = 0;
+      for (var p = 0; p < numPack && packIdx < this._packInfo.PackSizes.Length; p++)
+        packed += this._packInfo.PackSizes[packIdx++];
+      folderPackedSize[fi] = packed;
+
+      // Total unpacked size for this folder
+      var numStreams = fi < this._subStreams.NumUnpackStreams.Length
+        ? this._subStreams.NumUnpackStreams[fi] : 1;
+      // We'll accumulate while assigning entries below
+      folderUnpackedTotal[fi] = 0;
+
+      // Method name from primary coder (last in chain, or first non-filter)
+      folderMethod[fi] = GetMethodName(folder);
     }
 
+    // First pass: accumulate unpacked totals per folder
+    {
+      var curFolder = 0;
+      var curFile = 0;
+      var ssIdx = 0;
+      for (int i = 0; i < this._fileInfos.Count; ++i) {
+        if (this._fileInfos[i].IsEmptyStream) continue;
+        if (curFolder < this._folders.Count) {
+          if (ssIdx < this._subStreams.UnpackSizes.Length)
+            folderUnpackedTotal[curFolder] += this._subStreams.UnpackSizes[ssIdx];
+          ++ssIdx;
+          ++curFile;
+          if (curFolder < this._subStreams.NumUnpackStreams.Length &&
+              curFile >= this._subStreams.NumUnpackStreams[curFolder]) {
+            ++curFolder;
+            curFile = 0;
+          }
+        }
+      }
+    }
+
+    // Second pass: build entries with proportional compressed sizes
+    var currentFolder = 0;
+    var currentFileInFolder = 0;
     var subStreamSizeIndex = 0;
 
     for (int i = 0; i < this._fileInfos.Count; ++i) {
-      var fi = this._fileInfos[i];
+      var fileInfo = this._fileInfos[i];
       var entry = new SevenZipEntry {
-        Name = fi.Name,
-        IsDirectory = fi.IsDirectory,
-        LastWriteTime = fi.LastWriteTime,
-        CreationTime = fi.CreationTime,
-        Attributes = fi.Attributes,
+        Name = fileInfo.Name,
+        IsDirectory = fileInfo.IsDirectory,
+        LastWriteTime = fileInfo.LastWriteTime,
+        CreationTime = fileInfo.CreationTime,
+        Attributes = fileInfo.Attributes,
       };
 
-      if (fi.IsEmptyStream) {
+      if (fileInfo.IsEmptyStream) {
         entry.Size = 0;
+        entry.CompressedSize = 0;
         mapping[i] = (-1, -1);
       }
       else {
-        // Map to current folder position
         if (currentFolder < this._folders.Count) {
           mapping[i] = (currentFolder, currentFileInFolder);
 
           if (subStreamSizeIndex < this._subStreams.UnpackSizes.Length)
             entry.Size = this._subStreams.UnpackSizes[subStreamSizeIndex];
 
-          // Set CRC from sub-stream digests if available
           if (subStreamSizeIndex < this._subStreams.Digests.Length)
             entry.Crc = this._subStreams.Digests[subStreamSizeIndex];
+
+          // Proportional compressed size
+          var totalUnpacked = folderUnpackedTotal[currentFolder];
+          entry.CompressedSize = totalUnpacked > 0
+            ? (long)(folderPackedSize[currentFolder] * ((double)entry.Size / totalUnpacked))
+            : 0;
+
+          entry.Method = folderMethod[currentFolder];
 
           ++subStreamSizeIndex;
           ++currentFileInFolder;
 
-          // Move to next folder if we've consumed all streams in this one
           if (currentFolder < this._subStreams.NumUnpackStreams.Length &&
             currentFileInFolder >= this._subStreams.NumUnpackStreams[currentFolder]) {
             ++currentFolder;
@@ -182,14 +225,27 @@ public sealed class SevenZipReader : IDisposable {
         }
         else
           mapping[i] = (-1, -1);
-
-        ++nonEmptyIndex;
       }
 
       this._entries.Add(entry);
     }
 
     return mapping;
+  }
+
+  private static string GetMethodName(SevenZipFolder folder) {
+    // Find the primary compression coder (skip filters like BCJ, Delta, AES)
+    foreach (var coder in folder.Coders) {
+      var id = coder.CodecId;
+      if (id.Length == 0) continue;
+      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecLzma2)) return "LZMA2";
+      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecLzma)) return "LZMA";
+      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecDeflate)) return "Deflate";
+      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecBzip2)) return "BZip2";
+      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecPpmd)) return "PPMd";
+      if (id.AsSpan().SequenceEqual(SevenZipConstants.CodecCopy)) return "Copy";
+    }
+    return "7z";
   }
 
   /// <summary>
