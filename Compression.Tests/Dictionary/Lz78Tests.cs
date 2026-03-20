@@ -6,6 +6,8 @@ namespace Compression.Tests.Dictionary;
 
 [TestFixture]
 public class Lz78Tests {
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyData() {
     var compressor = new Lz78Compressor();
@@ -16,6 +18,8 @@ public class Lz78Tests {
     Assert.That(tokens, Is.Empty);
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleByte() {
     var compressor = new Lz78Compressor();
@@ -27,6 +31,8 @@ public class Lz78Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepetitiveData() {
     var compressor = new Lz78Compressor();
@@ -38,6 +44,8 @@ public class Lz78Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData() {
     var compressor = new Lz78Compressor();
@@ -51,6 +59,8 @@ public class Lz78Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_HighlyRepetitive() {
     var compressor = new Lz78Compressor();
@@ -65,6 +75,8 @@ public class Lz78Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_TextData() {
     var compressor = new Lz78Compressor();
@@ -76,6 +88,7 @@ public class Lz78Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Compress_BuildsDictionary() {
     // Input: "ABAB"
@@ -101,6 +114,7 @@ public class Lz78Tests {
     Assert.That(tokens[2].NextByte, Is.EqualTo((byte)'B'));
   }
 
+  [Category("Exception")]
   [Test]
   public void Decompress_InvalidIndex_Throws() {
     var tokens = new List<Lz78Token> {
@@ -113,6 +127,8 @@ public class Lz78Tests {
       Throws.TypeOf<InvalidDataException>());
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_DictionaryReset() {
     // Use maxBits=9 so the dictionary resets at 512 entries.
@@ -129,6 +145,8 @@ public class Lz78Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_TerminalToken() {
     // Input: "AA"

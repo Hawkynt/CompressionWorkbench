@@ -4,26 +4,31 @@ namespace Compression.Tests.Deflate;
 
 [TestFixture]
 public class Deflate64Tests {
+  [Category("ThemVsUs")]
   [Test]
   public void Deflate64Constants_DistanceBase_Has32Entries() {
     Assert.That(Deflate64Constants.DistanceBase.Length, Is.EqualTo(32));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Deflate64Constants_DistanceExtraBits_Has32Entries() {
     Assert.That(Deflate64Constants.DistanceExtraBits.Length, Is.EqualTo(32));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Deflate64Constants_LengthBase_Has29Entries() {
     Assert.That(Deflate64Constants.LengthBase.Length, Is.EqualTo(29));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Deflate64Constants_LengthExtraBits_Has29Entries() {
     Assert.That(Deflate64Constants.LengthExtraBits.Length, Is.EqualTo(29));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Deflate64Constants_Code285_Has16ExtraBits() {
     // Code 285 is index 28 (285-257)
@@ -31,11 +36,13 @@ public class Deflate64Tests {
     Assert.That(Deflate64Constants.LengthBase[28], Is.EqualTo(3));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Deflate64Constants_WindowSize_Is64KB() {
     Assert.That(Deflate64Constants.WindowSize, Is.EqualTo(65536));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Deflate64Constants_DistanceCodes30And31() {
     // Code 30: base=32769, 14 extra bits
@@ -47,16 +54,19 @@ public class Deflate64Tests {
     Assert.That(Deflate64Constants.DistanceExtraBits[31], Is.EqualTo(14));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Deflate64Constants_MaxMatchLength() {
     Assert.That(Deflate64Constants.MaxMatchLength, Is.EqualTo(65538));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Deflate64Constants_DistanceAlphabetSize() {
     Assert.That(Deflate64Constants.DistanceAlphabetSize, Is.EqualTo(32));
   }
 
+  [Category("HappyPath")]
   [TestCase(1, 0)]
   [TestCase(4, 3)]
   [TestCase(5, 4)]
@@ -70,12 +80,14 @@ public class Deflate64Tests {
     Assert.That(Deflate64Constants.GetDistanceCode(distance), Is.EqualTo(expectedCode));
   }
 
+  [Category("Exception")]
   [Test]
   public void GetDistanceCode_ThrowsForInvalidDistance() {
     Assert.Throws<ArgumentOutOfRangeException>(() => Deflate64Constants.GetDistanceCode(0));
     Assert.Throws<ArgumentOutOfRangeException>(() => Deflate64Constants.GetDistanceCode(65537));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void GetDistanceCode_RoundTripsWithBaseAndExtraBits() {
     ReadOnlySpan<int> bases = Deflate64Constants.DistanceBase;
@@ -89,6 +101,7 @@ public class Deflate64Tests {
     }
   }
 
+  [Category("Boundary")]
   [Test]
   public void DistanceTable_CoversAllDistances1To65536() {
     var reachable = new HashSet<int>();
@@ -105,6 +118,7 @@ public class Deflate64Tests {
       Assert.That(reachable.Contains(dist), Is.True, $"Distance {dist} not reachable");
   }
 
+  [Category("HappyPath")]
   [Test]
   public void DistanceBase_IsMonotonicallyIncreasing() {
     ReadOnlySpan<int> bases = Deflate64Constants.DistanceBase;
@@ -112,6 +126,7 @@ public class Deflate64Tests {
       Assert.That(bases[i], Is.GreaterThan(bases[i - 1]), $"DistanceBase[{i}] <= DistanceBase[{i - 1}]");
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void DistanceBase_First30MatchStandardDeflate() {
     // The first 30 distance codes must match standard Deflate exactly
@@ -122,6 +137,7 @@ public class Deflate64Tests {
       Assert.That(deflate64Bases[i], Is.EqualTo(deflateBases[i]), $"DistanceBase[{i}] mismatch");
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void LengthBase_First28MatchStandardDeflate() {
     // Length codes 257-284 (indices 0-27) must match standard Deflate exactly
@@ -132,6 +148,8 @@ public class Deflate64Tests {
       Assert.That(deflate64Bases[i], Is.EqualTo(deflateBases[i]), $"LengthBase[{i}] mismatch");
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompressor_StandardDeflateData_Decompresses() {
     // Standard Deflate data should also work through Deflate64 decompressor
@@ -142,6 +160,8 @@ public class Deflate64Tests {
     Assert.That(result, Is.EqualTo(original));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompressor_EmptyInput_ProducesEmptyOutput() {
     // Compress empty data with standard Deflate and decompress with Deflate64
@@ -150,6 +170,7 @@ public class Deflate64Tests {
     Assert.That(result, Is.Empty);
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Decompressor_UncompressedBlock_Decompresses() {
     // Build a minimal uncompressed Deflate block manually:
@@ -169,6 +190,114 @@ public class Deflate64Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  // -------------------------------------------------------------------------
+  // Deflate64Compressor round-trip tests
+  // -------------------------------------------------------------------------
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Compressor_SmallString_RoundTrip() {
+    var original = "Hello, Deflate64 compressor!"u8.ToArray();
+    var compressed = Deflate64Compressor.Compress(original);
+    var result = Deflate64Decompressor.Decompress(compressed);
+    Assert.That(result, Is.EqualTo(original));
+  }
+
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Compressor_EmptyInput_RoundTrip() {
+    var compressed = Deflate64Compressor.Compress([]);
+    var result = Deflate64Decompressor.Decompress(compressed);
+    Assert.That(result, Is.Empty);
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Compressor_Repetitive_RoundTrip() {
+    var original = new byte[4096];
+    for (var i = 0; i < original.Length; ++i)
+      original[i] = (byte)(i % 13);
+
+    var compressed = Deflate64Compressor.Compress(original);
+    var result = Deflate64Decompressor.Decompress(compressed);
+    Assert.That(result, Is.EqualTo(original));
+    Assert.That(compressed.Length, Is.LessThan(original.Length));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Compressor_RandomData_RoundTrip() {
+    var original = new byte[1000];
+    new Random(42).NextBytes(original);
+
+    var compressed = Deflate64Compressor.Compress(original);
+    var result = Deflate64Decompressor.Decompress(compressed);
+    Assert.That(result, Is.EqualTo(original));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [TestCase(DeflateCompressionLevel.None)]
+  [TestCase(DeflateCompressionLevel.Fast)]
+  [TestCase(DeflateCompressionLevel.Default)]
+  [TestCase(DeflateCompressionLevel.Best)]
+  public void Compressor_AllLevels_RoundTrip(DeflateCompressionLevel level) {
+    var original = "The quick brown fox jumps over the lazy dog. The quick brown fox jumps again!"u8.ToArray();
+    var compressed = Deflate64Compressor.Compress(original, level);
+    var result = Deflate64Decompressor.Decompress(compressed);
+    Assert.That(result, Is.EqualTo(original));
+  }
+
+  [Category("Boundary")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Compressor_LargeData_RoundTrip() {
+    var original = new byte[100_000];
+    for (var i = 0; i < original.Length; ++i)
+      original[i] = (byte)(i % 199);
+
+    var compressed = Deflate64Compressor.Compress(original);
+    var result = Deflate64Decompressor.Decompress(compressed);
+    Assert.That(result, Is.EqualTo(original));
+  }
+
+  [Category("ThemVsUs")]
+  [Test]
+  public void GetLengthCode_ShortLengths_MatchStandard() {
+    // Lengths 3-257 use codes 257-284 identical to standard Deflate.
+    // Length 258: standard maps to code 285 (fixed), Deflate64 maps to code 284
+    // (base 227 + 31 extra) since code 285 has base 3 + 16 extra bits in Deflate64.
+    for (var len = 3; len <= 257; ++len) {
+      var d64Code = Deflate64Constants.GetLengthCode(len);
+      var stdCode = DeflateConstants.GetLengthCode(len);
+      Assert.That(d64Code, Is.EqualTo(stdCode), $"Length {len}");
+    }
+
+    // Length 258 differs: Deflate64 uses code 284, standard uses code 285
+    Assert.That(Deflate64Constants.GetLengthCode(258), Is.EqualTo(284));
+  }
+
+  [Category("Boundary")]
+  [Test]
+  public void GetLengthCode_LongLengths_UseCode285() {
+    Assert.That(Deflate64Constants.GetLengthCode(259), Is.EqualTo(285));
+    Assert.That(Deflate64Constants.GetLengthCode(1000), Is.EqualTo(285));
+    Assert.That(Deflate64Constants.GetLengthCode(65538), Is.EqualTo(285));
+  }
+
+  [Category("Exception")]
+  [Test]
+  public void GetLengthCode_ThrowsForInvalidLength() {
+    Assert.Throws<ArgumentOutOfRangeException>(() => Deflate64Constants.GetLengthCode(2));
+    Assert.Throws<ArgumentOutOfRangeException>(() => Deflate64Constants.GetLengthCode(65539));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompressor_StreamingDecompress_Works() {
     byte[] original = "Streaming decompression test for Deflate64."u8.ToArray();

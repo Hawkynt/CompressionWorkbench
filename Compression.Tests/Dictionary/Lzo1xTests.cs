@@ -5,6 +5,8 @@ namespace Compression.Tests.Dictionary;
 
 [TestFixture]
 public class Lzo1xTests {
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyData() {
     byte[] input = [];
@@ -13,6 +15,8 @@ public class Lzo1xTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleByte() {
     byte[] input = [0x42];
@@ -21,6 +25,8 @@ public class Lzo1xTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SmallText() {
     var input = Encoding.ASCII.GetBytes("Hello, World!");
@@ -29,6 +35,8 @@ public class Lzo1xTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepetitiveData() {
     // Highly repetitive data compresses well with LZO1X
@@ -39,6 +47,8 @@ public class Lzo1xTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
@@ -49,6 +59,8 @@ public class Lzo1xTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeData() {
     // Over one 256 KB LZOP block
@@ -63,6 +75,8 @@ public class Lzo1xTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_AllSameBytes() {
     // Run-length style data (overlapping copy during decompression)
@@ -74,6 +88,8 @@ public class Lzo1xTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_BinaryData() {
     // Data with all 256 byte values
@@ -87,6 +103,8 @@ public class Lzo1xTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LongMatchExtension() {
     // Force a very long match that requires extended match-length encoding (>= 4+15+255 bytes)
@@ -103,6 +121,7 @@ public class Lzo1xTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Compress_ReturnsSmallOutputForRepetitiveInput() {
     var input = new byte[65536];
@@ -110,5 +129,51 @@ public class Lzo1xTests {
     var compressed = Lzo1xCompressor.Compress(input);
     // Should compress dramatically
     Assert.That(compressed.Length, Is.LessThan(input.Length / 10));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Best_RoundTrip_PatternData() {
+    byte[] input = new byte[5000];
+    for (int i = 0; i < input.Length; ++i)
+      input[i] = (byte)(i % 17);
+
+    byte[] compressed = Lzo1xCompressor.Compress(input, LzoCompressionLevel.Best);
+    byte[] result = Lzo1xDecompressor.Decompress(compressed, input.Length);
+    Assert.That(result, Is.EqualTo(input));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Best_RoundTrip_RandomData() {
+    var rng = new Random(42);
+    byte[] input = new byte[10000];
+    rng.NextBytes(input);
+
+    byte[] compressed = Lzo1xCompressor.Compress(input, LzoCompressionLevel.Best);
+    byte[] result = Lzo1xDecompressor.Decompress(compressed, input.Length);
+    Assert.That(result, Is.EqualTo(input));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Best_CompressesBetter_ThanFast() {
+    byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
+    byte[] input = new byte[pattern.Length * 200];
+    for (int i = 0; i < 200; ++i)
+      Array.Copy(pattern, 0, input, i * pattern.Length, pattern.Length);
+
+    byte[] fast = Lzo1xCompressor.Compress(input);
+    byte[] best = Lzo1xCompressor.Compress(input, LzoCompressionLevel.Best);
+
+    Assert.That(best.Length, Is.LessThanOrEqualTo(fast.Length),
+      $"Best ({best.Length}) should be <= Fast ({fast.Length})");
+
+    // Both should decompress correctly
+    Assert.That(Lzo1xDecompressor.Decompress(fast, input.Length), Is.EqualTo(input));
+    Assert.That(Lzo1xDecompressor.Decompress(best, input.Length), Is.EqualTo(input));
   }
 }

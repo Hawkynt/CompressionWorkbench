@@ -4,6 +4,7 @@ namespace Compression.Tests.Dictionary;
 
 [TestFixture]
 public class LzmaTests {
+  [Category("HappyPath")]
   [Test]
   public void Properties_Encode_Decode() {
     var encoder = new LzmaEncoder(dictionarySize: 1 << 20, lc: 3, lp: 0, pb: 2);
@@ -19,12 +20,16 @@ public class LzmaTests {
     Assert.That(dictSize, Is.EqualTo(1 << 20));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyData() {
     byte[] result = CompressDecompress([], useEndMarker: true);
     Assert.That(result, Is.Empty);
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleByte() {
     byte[] data = [42];
@@ -32,6 +37,8 @@ public class LzmaTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_TextData() {
     byte[] data = "Hello, LZMA World! This is a test of the LZMA compression algorithm."u8.ToArray();
@@ -39,6 +46,8 @@ public class LzmaTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepetitiveData() {
     byte[] pattern = "the quick brown fox jumps over the lazy dog. "u8.ToArray();
@@ -50,6 +59,8 @@ public class LzmaTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
@@ -60,6 +71,8 @@ public class LzmaTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_HighlyRepetitive() {
     byte[] data = new byte[4096];
@@ -67,6 +80,8 @@ public class LzmaTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeData() {
     var rng = new Random(123);
@@ -83,6 +98,8 @@ public class LzmaTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_CustomProperties() {
     byte[] data = "Testing with custom LZMA properties."u8.ToArray();
@@ -96,6 +113,7 @@ public class LzmaTests {
     Assert.That(result2, Is.EqualTo(data));
   }
 
+  [Category("Exception")]
   [Test]
   public void Decode_InvalidProperties_Throws() {
     byte[] badProps = [225, 0, 0, 0, 0]; // 225 >= 9*5*5 = 225, so borderline
@@ -106,6 +124,7 @@ public class LzmaTests {
       _ = new LzmaDecoder(ms, badProps));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Compress_RepetitiveData_CompressesWell() {
     byte[] data = new byte[4096];
@@ -119,6 +138,7 @@ public class LzmaTests {
     Assert.That(ratio, Is.LessThan(0.1), $"Compression ratio {ratio:P} too high for repetitive data");
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void StateTransitions_AreCorrect() {
     // After literal from initial state
@@ -142,6 +162,8 @@ public class LzmaTests {
     Assert.That(LzmaConstants.StateIsLiteral(7), Is.False);
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_WithKnownSize() {
     byte[] data = "Known-size LZMA test data."u8.ToArray();
@@ -149,6 +171,8 @@ public class LzmaTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_ShortRepMatches() {
     // Pattern designed to trigger short rep (1-byte rep0 copies):
@@ -161,6 +185,8 @@ public class LzmaTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_MultipleRepDistances() {
     // Build data that exercises rep0/rep1/rep2/rep3 shuffling:
@@ -184,6 +210,8 @@ public class LzmaTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeDistanceMatches() {
     // Place a pattern early, fill with unrelated data, then repeat it
@@ -202,6 +230,8 @@ public class LzmaTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_MaxLengthMatch() {
     // Data with a very long repetition to exercise max match length (273)
@@ -217,6 +247,8 @@ public class LzmaTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_AllByteValues() {
     // All 256 byte values — exercises literal coding with diverse contexts
@@ -230,6 +262,8 @@ public class LzmaTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SmallDictionarySize() {
     // Exercise with a very small dictionary (4KB minimum)
@@ -248,6 +282,8 @@ public class LzmaTests {
     Assert.That(result, Is.EqualTo(bigData));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_AllStateTransitionPaths() {
     // Crafted data to trigger all 12 LZMA states:

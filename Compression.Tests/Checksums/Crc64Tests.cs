@@ -4,12 +4,14 @@ namespace Compression.Tests.Checksums;
 
 [TestFixture]
 public class Crc64Tests {
+  [Category("EdgeCase")]
   [Test]
   public void Compute_EmptyData() {
     ulong result = Crc64.Compute([]);
     Assert.That(result, Is.EqualTo(0UL));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Compute_KnownValues() {
     // "123456789" with ECMA-182 polynomial
@@ -18,6 +20,7 @@ public class Crc64Tests {
     Assert.That(result, Is.EqualTo(0x995DC9BBDF1939FAUL));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Update_Incremental_MatchesBatch() {
     byte[] data = "Hello, World!"u8.ToArray();
@@ -31,6 +34,7 @@ public class Crc64Tests {
     Assert.That(crc.Value64, Is.EqualTo(batchResult));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Reset_ClearsState() {
     var crc = new Crc64();

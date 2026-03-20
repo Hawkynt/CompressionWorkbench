@@ -5,6 +5,8 @@ namespace Compression.Tests.Zstd;
 
 [TestFixture]
 public class ZstdStreamTests {
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyData() {
     byte[] data = [];
@@ -12,6 +14,8 @@ public class ZstdStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleByte() {
     byte[] data = [42];
@@ -19,6 +23,8 @@ public class ZstdStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_TextData() {
     byte[] data = System.Text.Encoding.UTF8.GetBytes(
@@ -28,6 +34,8 @@ public class ZstdStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepetitiveData() {
     byte[] data = new byte[5000];
@@ -37,6 +45,8 @@ public class ZstdStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData() {
     byte[] data = new byte[1024];
@@ -45,6 +55,8 @@ public class ZstdStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeData() {
     // > 128KB to force multiple blocks
@@ -56,6 +68,7 @@ public class ZstdStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void FrameHeader_MagicBytes() {
     byte[] data = [1, 2, 3];
@@ -68,6 +81,8 @@ public class ZstdStreamTests {
     Assert.That(magic, Is.EqualTo(0xFD2FB528u));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void ContentChecksum_Verified() {
     // Compress data with checksum, verify it decompresses correctly
@@ -76,6 +91,7 @@ public class ZstdStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Compress_RepetitiveData_CompressesWell() {
     byte[] data = new byte[10000];
@@ -90,6 +106,8 @@ public class ZstdStreamTests {
     Assert.That(ratio, Is.LessThan(0.5)); // Should compress well
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RepeatOffsets_WorkCorrectly() {
     // Data with recurring patterns at same offsets
@@ -102,6 +120,8 @@ public class ZstdStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RawBlock_Fallback() {
     // Highly random/incompressible data
@@ -111,6 +131,8 @@ public class ZstdStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_AllZeros() {
     byte[] data = new byte[4096]; // all zeros

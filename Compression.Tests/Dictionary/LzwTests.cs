@@ -25,6 +25,8 @@ public class LzwTests {
 
   // ---- Round-trip tests for Uncompressed ----
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Uncompressed_EmptyData() {
     byte[] data = [];
@@ -32,6 +34,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Uncompressed_SingleByte() {
     byte[] data = [0x42];
@@ -39,6 +43,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Uncompressed_TextData() {
     byte[] data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
@@ -46,6 +52,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Uncompressed_RepetitiveData() {
     var sb = new StringBuilder();
@@ -57,6 +65,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Uncompressed_RandomData() {
     var rng = new Random(42);
@@ -67,6 +77,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Uncompressed_HighlyRepetitive() {
     byte[] data = new byte[4096];
@@ -77,6 +89,8 @@ public class LzwTests {
 
   // ---- Round-trip tests for FirstMatch ----
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_FirstMatch_EmptyData() {
     byte[] data = [];
@@ -84,6 +98,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_FirstMatch_SingleByte() {
     byte[] data = [0x42];
@@ -91,6 +107,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_FirstMatch_TextData() {
     byte[] data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
@@ -98,6 +116,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_FirstMatch_RepetitiveData() {
     var sb = new StringBuilder();
@@ -109,6 +129,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_FirstMatch_RandomData() {
     var rng = new Random(42);
@@ -119,6 +141,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_FirstMatch_HighlyRepetitive() {
     byte[] data = new byte[4096];
@@ -129,6 +153,7 @@ public class LzwTests {
 
   // ---- Feature tests ----
 
+  [Category("HappyPath")]
   [Test]
   public void Uncompressed_EmitsOnlyByteCodes() {
     byte[] data = Encoding.ASCII.GetBytes("Hello, World!");
@@ -145,6 +170,7 @@ public class LzwTests {
     Assert.That(ms.Length, Is.EqualTo(expectedSize));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void FirstMatch_ProducesFewerCodes() {
     var sb = new StringBuilder();
@@ -165,6 +191,7 @@ public class LzwTests {
       "FirstMatch should produce smaller output than Uncompressed for repetitive data.");
   }
 
+  [Category("HappyPath")]
   [Test]
   public void ClearCode_Value() {
     var encoder = new LzwEncoder(Stream.Null);
@@ -174,6 +201,7 @@ public class LzwTests {
     Assert.That(encoder10.ClearCode, Is.EqualTo(512)); // 2^(10-1) = 512
   }
 
+  [Category("HappyPath")]
   [Test]
   public void StopCode_Value() {
     var encoder = new LzwEncoder(Stream.Null);
@@ -183,6 +211,8 @@ public class LzwTests {
     Assert.That(encoderNoStop.StopCode, Is.EqualTo(-1));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void CustomBitWidths() {
     byte[] data = Encoding.ASCII.GetBytes("The quick brown fox jumps over the lazy dog. "
@@ -192,6 +222,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void NoClearCode_Works() {
     byte[] data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
@@ -199,6 +231,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void NoStopCode_Works() {
     byte[] data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
@@ -206,6 +240,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void MsbBitOrder_RoundTrips() {
     byte[] data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
@@ -213,6 +249,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void DictionaryReset_MaxBits9() {
     // maxBits=9 means the dictionary fills up very quickly (only 512 - 258 = 254 entries),
@@ -228,6 +266,7 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("Exception")]
   [Test]
   public void Decode_InvalidCode_Throws() {
     // Craft a stream with an invalid code.
@@ -249,6 +288,8 @@ public class LzwTests {
       Throws.TypeOf<InvalidDataException>());
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void LargeData_RoundTrip() {
     // 10KB+ of mixed data: some repetitive patterns interspersed with random bytes.
@@ -276,6 +317,8 @@ public class LzwTests {
 
   // ---- Round-trip tests for Optimal ----
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Optimal_EmptyData() {
     byte[] data = [];
@@ -283,6 +326,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Optimal_SingleByte() {
     byte[] data = [0x42];
@@ -290,6 +335,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Optimal_TextData() {
     byte[] data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
@@ -297,6 +344,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Optimal_RepetitiveData() {
     var sb = new StringBuilder();
@@ -308,6 +357,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Optimal_RandomData() {
     var rng = new Random(42);
@@ -318,6 +369,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Optimal_HighlyRepetitive() {
     byte[] data = new byte[4096];
@@ -326,6 +379,7 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Optimal_NoWorseThanFirstMatch() {
     // Optimal should produce output no larger than FirstMatch on various inputs.
@@ -347,6 +401,8 @@ public class LzwTests {
     }
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Optimal_LargeData_RoundTrip() {
     // Mixed patterns and random data.
@@ -367,6 +423,8 @@ public class LzwTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void Optimal_DictionaryReset_MaxBits9() {
     byte[] data = Encoding.ASCII.GetBytes(

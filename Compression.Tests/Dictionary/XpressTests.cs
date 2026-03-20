@@ -9,6 +9,8 @@ public class XpressTests {
   // Plain XPRESS
   // -----------------------------------------------------------------------
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Plain_RoundTrip_EmptyData() {
     var compressor = new XpressCompressor();
@@ -17,6 +19,8 @@ public class XpressTests {
     Assert.That(result, Is.Empty);
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Plain_RoundTrip_SingleByte() {
     byte[] input = [0x42];
@@ -26,6 +30,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Plain_RoundTrip_ShortText() {
     byte[] input = Encoding.ASCII.GetBytes("Hello, World!");
@@ -35,6 +41,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Plain_RoundTrip_RepetitiveData() {
     byte[] input = Encoding.ASCII.GetBytes("ABCABCABCABCABCABCABCABCABC");
@@ -46,6 +54,8 @@ public class XpressTests {
     Assert.That(compressed.Length, Is.LessThan(input.Length));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Plain_RoundTrip_AllSameByte() {
     byte[] input = new byte[1024];
@@ -56,6 +66,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Plain_RoundTrip_RandomData() {
     var rng = new Random(12345);
@@ -67,6 +79,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Plain_RoundTrip_RepeatedPhrase() {
     var text = "The quick brown fox jumps over the lazy dog. ";
@@ -77,6 +91,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void Plain_RoundTrip_ExactlyOneFlagGroup() {
     // 32 literals — fills exactly one flag group
@@ -88,6 +104,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void Plain_RoundTrip_MultipleFlagGroups() {
     // 200 bytes of sequential values — crosses multiple 32-item flag group boundaries
@@ -100,6 +118,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Plain_RoundTrip_LargeData() {
     var rng = new Random(99);
@@ -111,6 +131,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void Plain_RoundTrip_LongMatch_ExtraLengthByte() {
     // A repeated pattern long enough to require the extra length byte (length > 9)
@@ -123,6 +145,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Plain_CompressToStream_RoundTrip() {
     byte[] input = Encoding.ASCII.GetBytes("Stream compression test. Stream compression test.");
@@ -138,6 +162,8 @@ public class XpressTests {
   // XPRESS Huffman
   // -----------------------------------------------------------------------
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Huffman_RoundTrip_EmptyData() {
     var compressor = new XpressHuffmanCompressor();
@@ -146,6 +172,8 @@ public class XpressTests {
     Assert.That(result, Is.Empty);
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Huffman_RoundTrip_SingleByte() {
     byte[] input = [0x7F];
@@ -155,6 +183,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Huffman_RoundTrip_ShortText() {
     byte[] input = Encoding.ASCII.GetBytes("Hello, World!");
@@ -164,6 +194,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Huffman_RoundTrip_RepetitiveData() {
     byte[] input = Encoding.ASCII.GetBytes("ABCABCABCABCABCABCABCABCABC");
@@ -173,6 +205,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Huffman_RoundTrip_AllSameByte() {
     byte[] input = new byte[512];
@@ -183,6 +217,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Huffman_RoundTrip_RandomData() {
     var rng = new Random(54321);
@@ -194,6 +230,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Huffman_RoundTrip_RepeatedPhrase() {
     var text = "The quick brown fox jumps over the lazy dog. ";
@@ -204,6 +242,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void Huffman_RoundTrip_MultipleChunks() {
     // Exceeds one 64 KiB chunk
@@ -216,6 +256,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void Huffman_RoundTrip_ExactChunkBoundary() {
     // Exactly one full 64 KiB chunk
@@ -228,6 +270,8 @@ public class XpressTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Huffman_RoundTrip_LargeRepetitiveData() {
     // Large highly repetitive input — exercises long-match paths
@@ -241,6 +285,8 @@ public class XpressTests {
     Assert.That(compressed.Length, Is.LessThan(input.Length));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Huffman_CompressToStream_RoundTrip() {
     byte[] input = Encoding.ASCII.GetBytes(

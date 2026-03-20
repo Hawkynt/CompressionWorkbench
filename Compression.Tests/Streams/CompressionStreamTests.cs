@@ -31,6 +31,7 @@ internal sealed class PassthroughCompressionStream : CompressionStream {
 
 [TestFixture]
 public class CompressionStreamTests {
+  [Category("HappyPath")]
   [Test]
   public void DecompressMode_CanRead_NotCanWrite() {
     var inner = new MemoryStream([1, 2, 3]);
@@ -41,6 +42,7 @@ public class CompressionStreamTests {
     Assert.That(stream.CanSeek, Is.False);
   }
 
+  [Category("HappyPath")]
   [Test]
   public void CompressMode_CanWrite_NotCanRead() {
     var inner = new MemoryStream();
@@ -51,6 +53,7 @@ public class CompressionStreamTests {
     Assert.That(stream.CanSeek, Is.False);
   }
 
+  [Category("Exception")]
   [Test]
   public void Read_InCompressMode_Throws() {
     var inner = new MemoryStream();
@@ -59,6 +62,7 @@ public class CompressionStreamTests {
     Assert.Throws<InvalidOperationException>(() => _ = stream.Read(new byte[10], 0, 10));
   }
 
+  [Category("Exception")]
   [Test]
   public void Write_InDecompressMode_Throws() {
     var inner = new MemoryStream([1, 2, 3]);
@@ -67,6 +71,7 @@ public class CompressionStreamTests {
     Assert.Throws<InvalidOperationException>(() => stream.Write(new byte[10], 0, 10));
   }
 
+  [Category("Exception")]
   [Test]
   public void Seek_Throws() {
     var inner = new MemoryStream();
@@ -75,6 +80,7 @@ public class CompressionStreamTests {
     Assert.Throws<NotSupportedException>(() => stream.Seek(0, SeekOrigin.Begin));
   }
 
+  [Category("Exception")]
   [Test]
   public void Length_Throws() {
     var inner = new MemoryStream();
@@ -83,6 +89,7 @@ public class CompressionStreamTests {
     Assert.Throws<NotSupportedException>(() => _ = stream.Length);
   }
 
+  [Category("Exception")]
   [Test]
   public void Position_Get_Throws() {
     var inner = new MemoryStream();
@@ -91,6 +98,7 @@ public class CompressionStreamTests {
     Assert.Throws<NotSupportedException>(() => _ = stream.Position);
   }
 
+  [Category("Exception")]
   [Test]
   public void Position_Set_Throws() {
     var inner = new MemoryStream();
@@ -99,6 +107,7 @@ public class CompressionStreamTests {
     Assert.Throws<NotSupportedException>(() => stream.Position = 0);
   }
 
+  [Category("Exception")]
   [Test]
   public void SetLength_Throws() {
     var inner = new MemoryStream();
@@ -107,6 +116,7 @@ public class CompressionStreamTests {
     Assert.Throws<NotSupportedException>(() => stream.SetLength(10));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void LeaveOpen_False_DisposesInnerStream() {
     var inner = new MemoryStream();
@@ -116,6 +126,7 @@ public class CompressionStreamTests {
     Assert.Throws<ObjectDisposedException>(() => inner.WriteByte(0));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void LeaveOpen_True_DoesNotDisposeInnerStream() {
     var inner = new MemoryStream();
@@ -126,6 +137,7 @@ public class CompressionStreamTests {
     Assert.DoesNotThrow(() => inner.WriteByte(0));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void FinishCompression_CalledOnDispose_InCompressMode() {
     var inner = new MemoryStream();
@@ -135,6 +147,7 @@ public class CompressionStreamTests {
     Assert.That(stream.FinishCalled, Is.True);
   }
 
+  [Category("HappyPath")]
   [Test]
   public void FinishCompression_NotCalledOnDispose_InDecompressMode() {
     var inner = new MemoryStream([1, 2, 3]);
@@ -144,6 +157,8 @@ public class CompressionStreamTests {
     Assert.That(stream.FinishCalled, Is.False);
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Passthrough_RoundTrip() {
     byte[] data = [10, 20, 30, 40, 50];
@@ -164,6 +179,7 @@ public class CompressionStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("Exception")]
   [Test]
   public void Read_AfterDispose_Throws() {
     var inner = new MemoryStream([1, 2, 3]);
@@ -173,6 +189,7 @@ public class CompressionStreamTests {
     Assert.Throws<ObjectDisposedException>(() => _ = stream.Read(new byte[10], 0, 10));
   }
 
+  [Category("Exception")]
   [Test]
   public void Write_AfterDispose_Throws() {
     var inner = new MemoryStream();
@@ -182,6 +199,7 @@ public class CompressionStreamTests {
     Assert.Throws<ObjectDisposedException>(() => stream.Write(new byte[10], 0, 10));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Mode_ReturnsCorrectValue() {
     var inner = new MemoryStream();

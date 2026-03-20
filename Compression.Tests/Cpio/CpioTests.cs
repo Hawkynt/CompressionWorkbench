@@ -4,6 +4,8 @@ namespace Compression.Tests.Cpio;
 
 [TestFixture]
 public class CpioTests {
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyArchive() {
     byte[] archive = CreateArchive([]);
@@ -11,6 +13,8 @@ public class CpioTests {
     Assert.That(entries, Is.Empty);
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleFile() {
     byte[] data = "Hello, cpio!"u8.ToArray();
@@ -22,6 +26,8 @@ public class CpioTests {
     Assert.That(entries[0].Data, Is.EqualTo(data));
   }
 
+  [Category("End2End")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_MultipleFiles() {
     byte[] data1 = "First file"u8.ToArray();
@@ -44,6 +50,8 @@ public class CpioTests {
     Assert.That(entries[2].Data, Is.EqualTo(data3));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyFile() {
     byte[] archive = CreateArchive([("empty.txt", [])]);
@@ -53,6 +61,8 @@ public class CpioTests {
     Assert.That(entries[0].Data, Is.Empty);
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_WithDirectory() {
     byte[] archive;
@@ -72,6 +82,7 @@ public class CpioTests {
     Assert.That(entries[1].Entry.IsRegularFile, Is.True);
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Header_StartsWithMagic() {
     byte[] archive = CreateArchive([("x", [1])]);
@@ -79,6 +90,8 @@ public class CpioTests {
     Assert.That(header, Is.EqualTo("070701"));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeFile() {
     var rng = new Random(42);
@@ -90,6 +103,8 @@ public class CpioTests {
     Assert.That(entries[0].Data, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_DataAlignmentEdgeCases() {
     // Test various sizes that test 4-byte alignment padding

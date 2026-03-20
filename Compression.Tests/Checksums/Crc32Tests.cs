@@ -5,6 +5,7 @@ namespace Compression.Tests.Checksums;
 
 [TestFixture]
 public class Crc32Tests {
+  [Category("ThemVsUs")]
   [Test]
   public void Compute_RfcTestVector_123456789() {
     // CRC-32 of "123456789" = 0xCBF43926 (well-known test vector)
@@ -13,12 +14,14 @@ public class Crc32Tests {
     Assert.That(crc, Is.EqualTo(0xCBF43926u));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Compute_EmptyData_ReturnsZero() {
     uint crc = Crc32.Compute([]);
     Assert.That(crc, Is.EqualTo(0u));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void IncrementalUpdate_MatchesBulk() {
     byte[] data = Encoding.ASCII.GetBytes("Hello, World!");
@@ -32,6 +35,7 @@ public class Crc32Tests {
     Assert.That(crc.Value, Is.EqualTo(bulkCrc));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void IncrementalUpdate_SpanChunks_MatchesBulk() {
     byte[] data = Encoding.ASCII.GetBytes("The quick brown fox jumps over the lazy dog");
@@ -45,6 +49,7 @@ public class Crc32Tests {
     Assert.That(crc.Value, Is.EqualTo(bulkCrc));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Reset_ResetsToInitialState() {
     var crc = new Crc32();
@@ -54,6 +59,7 @@ public class Crc32Tests {
     Assert.That(crc.Value, Is.EqualTo(0u));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void CastagnoliPolynomial_DifferentFromIeee() {
     byte[] data = Encoding.ASCII.GetBytes("123456789");

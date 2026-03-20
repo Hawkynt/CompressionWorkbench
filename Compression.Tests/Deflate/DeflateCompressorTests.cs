@@ -16,6 +16,8 @@ public class DeflateCompressorTests {
     return output.ToArray();
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Compress_None_Empty() {
     byte[] data = [];
@@ -24,6 +26,8 @@ public class DeflateCompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Compress_None_SmallData() {
     byte[] data = "Hello, World!"u8.ToArray();
@@ -32,6 +36,8 @@ public class DeflateCompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [Test]
   public void Compress_None_SystemDecompress() {
     byte[] data = "Hello, World!"u8.ToArray();
@@ -40,6 +46,8 @@ public class DeflateCompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [TestCase(DeflateCompressionLevel.Fast)]
   [TestCase(DeflateCompressionLevel.Default)]
   [TestCase(DeflateCompressionLevel.Best)]
@@ -51,6 +59,8 @@ public class DeflateCompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [TestCase(DeflateCompressionLevel.Fast)]
   [TestCase(DeflateCompressionLevel.Default)]
   [TestCase(DeflateCompressionLevel.Best)]
@@ -62,6 +72,8 @@ public class DeflateCompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [TestCase(DeflateCompressionLevel.Fast)]
   [TestCase(DeflateCompressionLevel.Default)]
   [TestCase(DeflateCompressionLevel.Best)]
@@ -81,6 +93,8 @@ public class DeflateCompressorTests {
       Assert.That(compressed.Length, Is.LessThan(data.Length));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Compress_SingleByte() {
     byte[] data = [0x42];
@@ -89,6 +103,8 @@ public class DeflateCompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [TestCase(DeflateCompressionLevel.Fast)]
   [TestCase(DeflateCompressionLevel.Default)]
   [TestCase(DeflateCompressionLevel.Best)]
@@ -103,6 +119,8 @@ public class DeflateCompressorTests {
     Assert.That(compressed.Length, Is.LessThan(data.Length / 2));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [TestCase(DeflateCompressionLevel.Fast)]
   [TestCase(DeflateCompressionLevel.Default)]
   public void Compress_RandomData(DeflateCompressionLevel level) {
@@ -115,6 +133,8 @@ public class DeflateCompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [TestCase(DeflateCompressionLevel.Fast)]
   [TestCase(DeflateCompressionLevel.Default)]
   public void Compress_SystemInterop_RandomData(DeflateCompressionLevel level) {
@@ -127,6 +147,8 @@ public class DeflateCompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Compress_BinaryData_AllByteValues() {
     byte[] data = new byte[256];
@@ -138,6 +160,8 @@ public class DeflateCompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Compress_Streaming() {
     byte[] data = "Hello, World! This is streaming compression."u8.ToArray();
@@ -154,6 +178,7 @@ public class DeflateCompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Compress_Maximum_ProducesSmallerOrEqualOutput() {
     byte[] pattern = "ABCABCABCABCABC"u8.ToArray();
@@ -168,6 +193,8 @@ public class DeflateCompressorTests {
       $"Maximum ({maxCompressed.Length}) should be <= Best ({bestCompressed.Length})");
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [Test]
   public void Compress_Maximum_SystemInterop() {
     byte[] data = "The quick brown fox jumps over the lazy dog. Repeated for compression."u8.ToArray();

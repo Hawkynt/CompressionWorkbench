@@ -4,6 +4,8 @@ namespace Compression.Tests.Bzip2;
 
 [TestFixture]
 public class Bzip2PipelineTests {
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Rle1_Encode_Decode_RoundTrip() {
     // Data with runs of identical bytes
@@ -18,6 +20,8 @@ public class Bzip2PipelineTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Rle1_NoRuns_Unchanged() {
     byte[] data = [1, 2, 3, 1, 2, 3];
@@ -26,6 +30,8 @@ public class Bzip2PipelineTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Rle2_RunARunB_Encode_Decode_RoundTrip() {
     // MTF data with lots of zeros
@@ -42,6 +48,8 @@ public class Bzip2PipelineTests {
     Assert.That(decoded, Is.EqualTo(mtfData));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Rle2_SingleZero() {
     byte[] mtfData = [0];
@@ -51,6 +59,8 @@ public class Bzip2PipelineTests {
     Assert.That(decoded, Is.EqualTo(mtfData));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Rle2_MultipleZeroRuns() {
     byte[] mtfData = [0, 0, 0, 5, 0, 0, 3, 0];

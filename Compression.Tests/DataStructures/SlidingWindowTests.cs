@@ -4,6 +4,7 @@ namespace Compression.Tests.DataStructures;
 
 [TestFixture]
 public class SlidingWindowTests {
+  [Category("HappyPath")]
   [Test]
   public void WriteByte_IncreasesCount() {
     var window = new SlidingWindow(8);
@@ -15,6 +16,7 @@ public class SlidingWindowTests {
     Assert.That(window.Count, Is.EqualTo(2));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void GetByte_ReturnsCorrectByte() {
     var window = new SlidingWindow(8);
@@ -27,6 +29,7 @@ public class SlidingWindowTests {
     Assert.That(window.GetByte(3), Is.EqualTo(0x10));
   }
 
+  [Category("Boundary")]
   [Test]
   public void WrapAround_OverwritesOldData() {
     var window = new SlidingWindow(4);
@@ -42,6 +45,7 @@ public class SlidingWindowTests {
     Assert.That(window.GetByte(4), Is.EqualTo(2));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void CopyFromWindow_SimpleCopy() {
     var window = new SlidingWindow(32);
@@ -55,6 +59,7 @@ public class SlidingWindowTests {
     Assert.That(output, Is.EqualTo(new byte[] { 0x41, 0x42, 0x43 }));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void CopyFromWindow_OverlappingCopy_RunLengthRepeat() {
     // distance=1, length=5 should repeat the last byte 5 times
@@ -67,6 +72,7 @@ public class SlidingWindowTests {
     Assert.That(output, Is.EqualTo(new byte[] { 0xAA, 0xAA, 0xAA, 0xAA, 0xAA }));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void CopyFromWindow_OverlappingCopy_PatternRepeat() {
     // distance=2, length=6 should repeat a 2-byte pattern 3 times
@@ -80,6 +86,7 @@ public class SlidingWindowTests {
     Assert.That(output, Is.EqualTo(new byte[] { 0xAB, 0xCD, 0xAB, 0xCD, 0xAB, 0xCD }));
   }
 
+  [Category("Exception")]
   [Test]
   public void CopyFromWindow_DistanceExceedsCount_Throws() {
     var window = new SlidingWindow(32);
@@ -90,6 +97,7 @@ public class SlidingWindowTests {
       window.CopyFromWindow(5, 1, output));
   }
 
+  [Category("Exception")]
   [Test]
   public void CopyFromWindow_DistanceZero_Throws() {
     var window = new SlidingWindow(32);
@@ -100,6 +108,7 @@ public class SlidingWindowTests {
       window.CopyFromWindow(0, 1, output));
   }
 
+  [Category("Boundary")]
   [Test]
   public void WrapAround_CopyAcrossWrapBoundary() {
     var window = new SlidingWindow(4);
@@ -119,6 +128,7 @@ public class SlidingWindowTests {
     Assert.That(output, Is.EqualTo(new byte[] { 1, 2 }));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void WriteBytes_BulkWrite() {
     var window = new SlidingWindow(16);
@@ -130,6 +140,7 @@ public class SlidingWindowTests {
     Assert.That(window.GetByte(5), Is.EqualTo(1));
   }
 
+  [Category("Boundary")]
   [Test]
   public void WriteBytes_WrapsAround() {
     var window = new SlidingWindow(4);
@@ -141,6 +152,7 @@ public class SlidingWindowTests {
     Assert.That(window.GetByte(4), Is.EqualTo(3));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void WriteBytes_ThenCopyFromWindow() {
     var window = new SlidingWindow(32);
@@ -153,6 +165,7 @@ public class SlidingWindowTests {
     Assert.That(output, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
   [Test]
   public void WriteBytes_ExactWindowSize() {
     var window = new SlidingWindow(4);
@@ -164,6 +177,7 @@ public class SlidingWindowTests {
     Assert.That(window.GetByte(4), Is.EqualTo(10));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void WriteBytes_EmptySpan() {
     var window = new SlidingWindow(8);
@@ -171,6 +185,7 @@ public class SlidingWindowTests {
     Assert.That(window.Count, Is.EqualTo(0));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void WriteBytes_EquivalentToByteByByte() {
     // Verify bulk write produces identical state as byte-by-byte

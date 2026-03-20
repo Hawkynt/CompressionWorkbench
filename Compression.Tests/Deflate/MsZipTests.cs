@@ -8,6 +8,7 @@ public sealed class MsZipTests {
   // Compressor
   // -------------------------------------------------------------------------
 
+  [Category("EdgeCase")]
   [Test]
   public void Compress_EmptyInput_ProducesSingleBlock() {
     var compressed = MsZipCompressor.Compress([]);
@@ -18,6 +19,7 @@ public sealed class MsZipTests {
     Assert.That(compressed[1], Is.EqualTo(MsZipCompressor.SignatureByte1));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Compress_SmallInput_StartsWithCkSignature() {
     var data       = "Hello, MSZIP!"u8.ToArray();
@@ -27,6 +29,7 @@ public sealed class MsZipTests {
     Assert.That(compressed[1], Is.EqualTo(0x4B), "Expected 'K' signature byte");
   }
 
+  [Category("HappyPath")]
   [Test]
   public void CompressBlocks_SmallInput_OneBlock() {
     var data   = "Hello, world!"u8.ToArray();
@@ -38,6 +41,7 @@ public sealed class MsZipTests {
     Assert.That(blocks[0].CompressedData[1], Is.EqualTo(0x4B));
   }
 
+  [Category("Boundary")]
   [Test]
   public void CompressBlocks_ExactBlockBoundary_TwoBlocks() {
     // Exactly two 32 KB chunks.
@@ -50,6 +54,7 @@ public sealed class MsZipTests {
     Assert.That(blocks[1].UncompressedSize, Is.EqualTo(MsZipCompressor.BlockSize));
   }
 
+  [Category("Boundary")]
   [Test]
   public void CompressBlocks_OverBlockBoundary_MultipleBlocks() {
     var data   = new byte[MsZipCompressor.BlockSize + 100];
@@ -65,12 +70,14 @@ public sealed class MsZipTests {
   // Decompressor – DecompressBlock
   // -------------------------------------------------------------------------
 
+  [Category("Exception")]
   [Test]
   public void DecompressBlock_InvalidSignature_Throws() {
     var bad = new byte[] { 0x00, 0x00, 0xDE, 0xAD };
     Assert.Throws<InvalidDataException>(() => MsZipDecompressor.DecompressBlock(bad));
   }
 
+  [Category("Exception")]
   [Test]
   public void DecompressBlock_TooShort_Throws() {
     Assert.Throws<InvalidDataException>(() => MsZipDecompressor.DecompressBlock([0x43]));
@@ -80,6 +87,8 @@ public sealed class MsZipTests {
   // Round-trip: data smaller than 32 KB
   // -------------------------------------------------------------------------
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SmallData() {
     var original   = "The quick brown fox jumps over the lazy dog."u8.ToArray();
@@ -89,6 +98,8 @@ public sealed class MsZipTests {
     Assert.That(recovered, Is.EqualTo(original));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyData() {
     var compressed = MsZipCompressor.Compress([]);
@@ -97,6 +108,8 @@ public sealed class MsZipTests {
     Assert.That(recovered, Is.Empty);
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_BinaryData() {
     var original = new byte[1024];
@@ -113,6 +126,8 @@ public sealed class MsZipTests {
   // Round-trip: data larger than 32 KB (multiple blocks)
   // -------------------------------------------------------------------------
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_MultiBlock() {
     // 80 KB of compressible data.
@@ -126,6 +141,8 @@ public sealed class MsZipTests {
     Assert.That(recovered, Is.EqualTo(original));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_ExactBlockBoundary() {
     // Exactly 32 KB — should produce one block.
@@ -139,6 +156,8 @@ public sealed class MsZipTests {
     Assert.That(recovered, Is.EqualTo(original));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_TwoExactBlocks() {
     // Exactly 64 KB — should produce two blocks.
@@ -155,6 +174,8 @@ public sealed class MsZipTests {
   // Round-trip via block API (as used by CabWriter/CabReader)
   // -------------------------------------------------------------------------
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_ViaCompressBlocksAndDecompressBlock() {
     var original = "MSZIP block API round-trip test."u8.ToArray();
@@ -166,6 +187,8 @@ public sealed class MsZipTests {
     Assert.That(recovered, Is.EqualTo(original));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_HighlyCompressible() {
     // All-zeros — very high compression ratio.

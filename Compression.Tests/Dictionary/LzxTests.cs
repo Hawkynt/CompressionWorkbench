@@ -9,6 +9,7 @@ public class LzxTests {
   // LzxConstants tests
   // -------------------------------------------------------------------------
 
+  [Category("ThemVsUs")]
   [Test]
   public void PositionSlotCount_ReturnsCorrectValues() {
     Assert.That(LzxConstants.GetPositionSlotCount(15), Is.EqualTo(30));
@@ -20,12 +21,14 @@ public class LzxTests {
     Assert.That(LzxConstants.GetPositionSlotCount(21), Is.EqualTo(50));
   }
 
+  [Category("Exception")]
   [Test]
   public void PositionSlotCount_InvalidWindowBits_Throws() {
     Assert.Throws<ArgumentOutOfRangeException>(() => LzxConstants.GetPositionSlotCount(14));
     Assert.Throws<ArgumentOutOfRangeException>(() => LzxConstants.GetPositionSlotCount(22));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void OffsetToSlot_SmallOffsets() {
     Assert.That(LzxConstants.OffsetToSlot(0), Is.EqualTo(0));
@@ -39,6 +42,7 @@ public class LzxTests {
     Assert.That(LzxConstants.OffsetToSlot(8), Is.EqualTo(6));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void GetSlotInfo_Slot0To3_ZeroFooter() {
     for (int slot = 0; slot < 4; ++slot) {
@@ -48,6 +52,7 @@ public class LzxTests {
     }
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void GetSlotInfo_Slot4And5_OneFooterBit() {
     LzxConstants.GetSlotInfo(4, out int base4, out int footer4);
@@ -59,6 +64,7 @@ public class LzxTests {
     Assert.That(footer5, Is.EqualTo(1));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void GetSlotInfo_Slot6And7_TwoFooterBits() {
     LzxConstants.GetSlotInfo(6, out int base6, out int footer6);
@@ -70,6 +76,7 @@ public class LzxTests {
     Assert.That(footer7, Is.EqualTo(2));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void GetSlotInfo_BaseOffsets_AreMonotonicallyIncreasing() {
     int prevBase = -1;
@@ -80,6 +87,7 @@ public class LzxTests {
     }
   }
 
+  [Category("HappyPath")]
   [Test]
   public void GetSlotInfo_FooterBitsIncrementEveryTwoSlots() {
     for (int slot = 4; slot < LzxConstants.PositionSlots21 - 1; slot += 2) {
@@ -105,18 +113,24 @@ public class LzxTests {
     return decompressor.Decompress(data.Length);
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyData() {
     byte[] result = RoundTrip([]);
     Assert.That(result, Is.Empty);
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleByte() {
     byte[] data = [0x42];
     Assert.That(RoundTrip(data), Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_AllSameBytes() {
     byte[] data = new byte[256];
@@ -124,6 +138,8 @@ public class LzxTests {
     Assert.That(RoundTrip(data), Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_AllByteValues() {
     byte[] data = new byte[256];
@@ -131,18 +147,24 @@ public class LzxTests {
     Assert.That(RoundTrip(data), Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_ShortAsciiText() {
     byte[] data = Encoding.ASCII.GetBytes("Hello, LZX!");
     Assert.That(RoundTrip(data), Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepetitiveData() {
     byte[] data = Encoding.ASCII.GetBytes("ABCABCABCABCABCABC");
     Assert.That(RoundTrip(data), Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepeatedPhrase() {
     byte[] data = Encoding.ASCII.GetBytes(
@@ -151,6 +173,8 @@ public class LzxTests {
     Assert.That(RoundTrip(data), Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData_Small() {
     var rng = new Random(42);
@@ -159,6 +183,8 @@ public class LzxTests {
     Assert.That(RoundTrip(data), Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData_1KB() {
     var rng = new Random(123);
@@ -167,6 +193,8 @@ public class LzxTests {
     Assert.That(RoundTrip(data), Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData_16KB() {
     var rng = new Random(456);
@@ -175,6 +203,8 @@ public class LzxTests {
     Assert.That(RoundTrip(data), Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData_64KB() {
     var rng = new Random(789);
@@ -183,6 +213,8 @@ public class LzxTests {
     Assert.That(RoundTrip(data), Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Window16Bits() {
     var rng = new Random(100);
@@ -191,6 +223,8 @@ public class LzxTests {
     Assert.That(RoundTrip(data, windowBits: 16), Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Window17Bits() {
     var rng = new Random(200);
@@ -199,6 +233,8 @@ public class LzxTests {
     Assert.That(RoundTrip(data, windowBits: 17), Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SpansMultipleBlocks() {
     // Force multiple 32 KB blocks
@@ -208,6 +244,8 @@ public class LzxTests {
     Assert.That(RoundTrip(data), Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LongMatch() {
     // Highly compressible: long runs that force max match lengths
@@ -221,6 +259,7 @@ public class LzxTests {
   // Compressor helpers (internal visibility via InternalsVisibleTo)
   // -------------------------------------------------------------------------
 
+  [Category("EdgeCase")]
   [Test]
   public void BuildCodeLengths_AllZeroFrequencies_ReturnsAllZero() {
     var freq = new int[LzxConstants.NumChars];
@@ -228,6 +267,7 @@ public class LzxTests {
     Assert.That(lengths, Is.All.EqualTo(0));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void BuildCodeLengths_SingleSymbol_LengthOne() {
     var freq = new int[LzxConstants.NumChars];
@@ -236,6 +276,7 @@ public class LzxTests {
     Assert.That(lengths[65], Is.EqualTo(1));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void BuildCanonicalCodes_TwoSymbols_CorrectCodes() {
     int[] lengths = [1, 1];
@@ -248,11 +289,13 @@ public class LzxTests {
   // Decompressor constructor validation
   // -------------------------------------------------------------------------
 
+  [Category("Exception")]
   [Test]
   public void Decompressor_NullStream_Throws() {
     Assert.Throws<ArgumentNullException>(() => new LzxDecompressor(null!));
   }
 
+  [Category("Exception")]
   [Test]
   public void Decompressor_InvalidWindowBits_Throws() {
     using var ms = new MemoryStream();
@@ -260,6 +303,7 @@ public class LzxTests {
     Assert.Throws<ArgumentOutOfRangeException>(() => new LzxDecompressor(ms, 22));
   }
 
+  [Category("Exception")]
   [Test]
   public void Compressor_InvalidWindowBits_Throws() {
     Assert.Throws<ArgumentOutOfRangeException>(() => new LzxCompressor(14));

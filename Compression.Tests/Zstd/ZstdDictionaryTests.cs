@@ -13,6 +13,7 @@ public class ZstdDictionaryTests {
     return data;
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Parse_ValidDictionary_ExtractsDictionaryId() {
     byte[] content = new byte[32];
@@ -24,6 +25,7 @@ public class ZstdDictionaryTests {
     Assert.That(dict.DictionaryId, Is.EqualTo(42u));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Parse_DictionaryId_IsCorrect() {
     uint expectedId = 0xDEADBEEF;
@@ -35,6 +37,7 @@ public class ZstdDictionaryTests {
     Assert.That(dict.DictionaryId, Is.EqualTo(expectedId));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Parse_Content_MatchesPayload() {
     byte[] content = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
@@ -45,6 +48,7 @@ public class ZstdDictionaryTests {
     Assert.That(dict.Content, Is.EqualTo(content));
   }
 
+  [Category("Exception")]
   [Test]
   public void Parse_InvalidMagic_Throws() {
     byte[] data = new byte[16];
@@ -54,6 +58,7 @@ public class ZstdDictionaryTests {
     Assert.That(ex!.Message, Does.Contain("Invalid Zstd dictionary magic"));
   }
 
+  [Category("Exception")]
   [Test]
   public void Parse_TooShort_Throws() {
     byte[] data = [0x37, 0xA4, 0x30, 0xEC, 0x01]; // 5 bytes, magic ok but too short
@@ -61,6 +66,7 @@ public class ZstdDictionaryTests {
     Assert.Throws<InvalidDataException>(() => ZstdDictionary.Parse(data));
   }
 
+  [Category("Boundary")]
   [Test]
   public void Parse_ExactlyMinSize_Succeeds() {
     byte[] data = new byte[8];
@@ -73,6 +79,7 @@ public class ZstdDictionaryTests {
     Assert.That(dict.Content, Is.Empty);
   }
 
+  [Category("HappyPath")]
   [Test]
   public void CreateRaw_StoresContent() {
     byte[] content = [10, 20, 30, 40, 50];
@@ -83,6 +90,7 @@ public class ZstdDictionaryTests {
     Assert.That(dict.Content, Is.EqualTo(content));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void CreateRaw_ShortContent_DefaultRepeatOffsets() {
     byte[] content = [1, 2, 3]; // too short for offset derivation
@@ -92,11 +100,13 @@ public class ZstdDictionaryTests {
     Assert.That(dict.RepeatOffsets, Is.EqualTo(new[] { 1, 4, 8 }));
   }
 
+  [Category("Exception")]
   [Test]
   public void CreateRaw_NullContent_Throws() {
     Assert.Throws<ArgumentNullException>(() => ZstdDictionary.CreateRaw(1, null!));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Parse_RepeatOffsets_DerivedFromContent() {
     // Build content where last 12 bytes encode specific offsets as little-endian uint32
@@ -114,6 +124,7 @@ public class ZstdDictionaryTests {
     Assert.That(dict.RepeatOffsets[2], Is.EqualTo(100));
   }
 
+  [Category("Boundary")]
   [Test]
   public void Parse_RepeatOffsets_ContentExactly8Bytes_ThirdOffsetDefaults() {
     byte[] content = new byte[8];
@@ -128,6 +139,7 @@ public class ZstdDictionaryTests {
     Assert.That(dict.RepeatOffsets[2], Is.EqualTo(8)); // default
   }
 
+  [Category("HappyPath")]
   [Test]
   public void GetContentForWindow_ReturnsContent() {
     byte[] content = [0xAA, 0xBB, 0xCC, 0xDD];
@@ -138,6 +150,7 @@ public class ZstdDictionaryTests {
     Assert.That(window.ToArray(), Is.EqualTo(content));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void ToBytes_RoundTrips() {
     byte[] content = new byte[64];
@@ -151,11 +164,13 @@ public class ZstdDictionaryTests {
     Assert.That(serialized, Is.EqualTo(raw));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void DictionaryMagic_HasExpectedValue() {
     Assert.That(ZstdDictionary.DictionaryMagic, Is.EqualTo(0xEC30A437u));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void CreateRaw_EmptyContent_Succeeds() {
     var dict = ZstdDictionary.CreateRaw(0, []);
@@ -164,6 +179,7 @@ public class ZstdDictionaryTests {
     Assert.That(dict.RepeatOffsets, Is.EqualTo(new[] { 1, 4, 8 }));
   }
 
+  [Category("Boundary")]
   [Test]
   public void Parse_ZeroId_IsValid() {
     byte[] raw = BuildDictionary(0, [1, 2, 3, 4, 5, 6, 7, 8]);
@@ -173,6 +189,7 @@ public class ZstdDictionaryTests {
     Assert.That(dict.DictionaryId, Is.EqualTo(0u));
   }
 
+  [Category("Boundary")]
   [Test]
   public void Parse_MaxId_IsValid() {
     byte[] raw = BuildDictionary(uint.MaxValue, [1, 2, 3, 4, 5, 6, 7, 8]);

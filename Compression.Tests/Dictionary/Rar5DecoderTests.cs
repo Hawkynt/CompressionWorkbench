@@ -6,6 +6,7 @@ namespace Compression.Tests.Dictionary;
 public class Rar5DecoderTests {
   // --- Rar5HuffmanDecoder unit tests ---
 
+  [Category("EdgeCase")]
   [Test]
   public void HuffmanDecoder_Build_SingleSymbol_DecodesCorrectly() {
     var decoder = new Rar5HuffmanDecoder();
@@ -23,6 +24,7 @@ public class Rar5DecoderTests {
     Assert.That(sym, Is.EqualTo(2));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void HuffmanDecoder_Build_TwoSymbols_DecodesCorrectly() {
     var decoder = new Rar5HuffmanDecoder();
@@ -43,6 +45,7 @@ public class Rar5DecoderTests {
     Assert.That(s2, Is.EqualTo(1));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void HuffmanDecoder_Build_ThreeSymbols() {
     var decoder = new Rar5HuffmanDecoder();
@@ -73,6 +76,7 @@ public class Rar5DecoderTests {
     Assert.That(decoder.DecodeSymbol(reader), Is.EqualTo(2));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void HuffmanDecoder_EmptyTable_DoesNotThrow() {
     var decoder = new Rar5HuffmanDecoder();
@@ -89,6 +93,7 @@ public class Rar5DecoderTests {
 
   // --- Rar5BitReader unit tests ---
 
+  [Category("HappyPath")]
   [Test]
   public void BitReader_ReadBits_ReadsCorrectly() {
     var data = new byte[] { 0xAB, 0xCD };
@@ -102,6 +107,7 @@ public class Rar5DecoderTests {
     Assert.That(next4, Is.EqualTo(0xA)); // 1010 = 0xA
   }
 
+  [Category("Boundary")]
   [Test]
   public void BitReader_ReadBits_CrossByteBoundary() {
     var data = new byte[] { 0xFF, 0x00 };
@@ -112,6 +118,7 @@ public class Rar5DecoderTests {
     Assert.That(bits, Is.EqualTo(0x0FF));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void BitReader_PeekBits_DoesNotAdvance() {
     var data = new byte[] { 0xAB };
@@ -122,6 +129,7 @@ public class Rar5DecoderTests {
     Assert.That(peek1, Is.EqualTo(peek2));
   }
 
+  [Category("Boundary")]
   [Test]
   public void BitReader_IsAtEnd_TrueWhenExhausted() {
     var data = new byte[] { 0x42 };
@@ -132,6 +140,8 @@ public class Rar5DecoderTests {
 
   // --- Rar5Filters unit tests ---
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Filter_Delta_RoundTrip() {
     // Create original interleaved data for 2 channels
@@ -157,6 +167,7 @@ public class Rar5DecoderTests {
     Assert.That(decoded, Is.EqualTo(original));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Filter_E8E9_ModifiesCallInstructions() {
     // Create data with an E8 instruction
@@ -170,6 +181,7 @@ public class Rar5DecoderTests {
     Assert.That(addr, Is.EqualTo(10));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Filter_Unknown_PassThrough() {
     var data = new byte[] { 1, 2, 3, 4 };
@@ -179,6 +191,7 @@ public class Rar5DecoderTests {
 
   // --- Rar5Constants unit tests ---
 
+  [Category("ThemVsUs")]
   [Test]
   public void Constants_DistanceBase_SmallSlots() {
     Assert.That(Rar5Constants.DistanceBase(0), Is.EqualTo(0));
@@ -187,6 +200,7 @@ public class Rar5DecoderTests {
     Assert.That(Rar5Constants.DistanceBase(3), Is.EqualTo(3));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Constants_DistanceExtraBits_Growth() {
     Assert.That(Rar5Constants.DistanceExtraBits(0), Is.EqualTo(0));
@@ -198,23 +212,27 @@ public class Rar5DecoderTests {
 
   // --- Rar5Decoder integration test ---
 
+  [Category("HappyPath")]
   [Test]
   public void Decoder_Constructor_ValidDictionarySize() {
     var decoder = new Rar5Decoder(256 * 1024);
     Assert.That(decoder, Is.Not.Null);
   }
 
+  [Category("Boundary")]
   [Test]
   public void Decoder_Constructor_MinDictionarySize() {
     var decoder = new Rar5Decoder(Rar5Constants.MinDictionarySize);
     Assert.That(decoder, Is.Not.Null);
   }
 
+  [Category("Exception")]
   [Test]
   public void Decoder_Constructor_BelowMinSize_Throws() {
     Assert.Throws<ArgumentOutOfRangeException>(() => _ = new Rar5Decoder(1024));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Decoder_Decompress_EmptyInput_ReturnsEmpty() {
     var decoder = new Rar5Decoder(256 * 1024);
@@ -222,6 +240,7 @@ public class Rar5DecoderTests {
     Assert.That(result, Is.Empty);
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Decoder_DecompressLiterals_ValidHuffmanStream() {
     // Construct a minimal valid RAR5 compressed stream:
@@ -244,6 +263,7 @@ public class Rar5DecoderTests {
 
   // --- Filter integration tests ---
 
+  [Category("HappyPath")]
   [Test]
   public void Filter_Delta_SingleChannel() {
     // Single channel: deltas → accumulated values
@@ -252,6 +272,7 @@ public class Rar5DecoderTests {
     Assert.That(result, Is.EqualTo(new byte[] { 5, 8, 10, 20 }));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Filter_Arm_RoundTrip() {
     // Create ARM BL instruction
@@ -272,6 +293,7 @@ public class Rar5DecoderTests {
     Assert.That(decoded[3], Is.EqualTo(0xEB));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Filter_E8E9_NoCallInstructions_Unchanged() {
     var data = new byte[] { 0x90, 0x90, 0x90, 0x90, 0xCC, 0xCC, 0xCC, 0xCC };

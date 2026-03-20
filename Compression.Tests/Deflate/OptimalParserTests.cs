@@ -4,6 +4,7 @@ namespace Compression.Tests.Deflate;
 
 [TestFixture]
 public class OptimalParserTests {
+  [Category("EdgeCase")]
   [Test]
   public void Parse_EmptyInput_ReturnsEmpty() {
     var hashChain = new ZopfliHashChain();
@@ -14,6 +15,7 @@ public class OptimalParserTests {
     Assert.That(symbols, Is.Empty);
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Parse_ShortData_AllLiterals() {
     byte[] data = "AB"u8.ToArray();
@@ -27,6 +29,7 @@ public class OptimalParserTests {
     Assert.That(symbols.All(s => s.IsLiteral), Is.True);
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Parse_RepetitiveData_ContainsMatches() {
     byte[] data = "ABCABCABCABCABCABCABCABC"u8.ToArray();
@@ -42,6 +45,7 @@ public class OptimalParserTests {
     Assert.That(symbols.Length, Is.LessThan(data.Length));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Parse_SymbolsReconstructInput() {
     byte[] data = "ABCABCABCDEF"u8.ToArray();
@@ -56,6 +60,7 @@ public class OptimalParserTests {
     Assert.That(reconstructed, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Parse_SingleByte_OneLiteral() {
     byte[] data = [0x42];
@@ -70,6 +75,7 @@ public class OptimalParserTests {
     Assert.That(symbols[0].LitLen, Is.EqualTo(0x42));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Parse_AllZeros_UsesMatches() {
     byte[] data = new byte[256];

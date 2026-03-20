@@ -16,6 +16,7 @@ public class DeflateDecompressorTests {
     return ms.ToArray();
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Decompress_UncompressedBlock() {
     // Build a hand-crafted uncompressed block:
@@ -42,6 +43,8 @@ public class DeflateDecompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_EmptyData() {
     byte[] data = [];
@@ -51,6 +54,8 @@ public class DeflateDecompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_SingleByte() {
     byte[] data = [0x42];
@@ -60,6 +65,8 @@ public class DeflateDecompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_ShortText() {
     byte[] data = "Hello, World!"u8.ToArray();
@@ -69,6 +76,8 @@ public class DeflateDecompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_RepeatedText() {
     byte[] data = "ABCABCABCABCABCABCABCABCABCABCABCABCABCABCABCABC"u8.ToArray();
@@ -78,6 +87,8 @@ public class DeflateDecompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_AllZeros() {
     byte[] data = new byte[1024];
@@ -87,6 +98,8 @@ public class DeflateDecompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_AllZeros_Large() {
     byte[] data = new byte[65536];
@@ -96,6 +109,8 @@ public class DeflateDecompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_RandomData() {
     var rng = new Random(42);
@@ -107,6 +122,8 @@ public class DeflateDecompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_LargeRepetitive() {
     // Create highly compressible data with repeated pattern
@@ -121,6 +138,8 @@ public class DeflateDecompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_StaticHuffman_FromSystem() {
     // Use Fastest compression level which tends to use static Huffman
@@ -131,6 +150,8 @@ public class DeflateDecompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_DynamicHuffman_FromSystem() {
     // Optimal/SmallestSize tends to produce dynamic Huffman blocks
@@ -145,6 +166,8 @@ public class DeflateDecompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_BoundarySizes() {
     foreach (int size in new[] { 32767, 32768, 32769, 65536 }) {
@@ -158,6 +181,8 @@ public class DeflateDecompressorTests {
     }
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_StreamingApi() {
     byte[] data = "Hello, World! This is a test of the streaming decompression API."u8.ToArray();
@@ -175,6 +200,8 @@ public class DeflateDecompressorTests {
     Assert.That(result.ToArray(), Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_NoCompression_FromSystem() {
     // NoCompression should produce uncompressed blocks
@@ -185,6 +212,8 @@ public class DeflateDecompressorTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_BinaryData() {
     // Data with all byte values 0-255

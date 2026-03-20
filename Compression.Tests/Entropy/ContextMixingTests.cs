@@ -5,6 +5,7 @@ namespace Compression.Tests.Entropy;
 
 [TestFixture]
 public class ContextMixingTests {
+  [Category("HappyPath")]
   [Test]
   public void ContextModel_Predict_InitiallyUniform() {
     var model = new ContextModel(8);
@@ -13,6 +14,7 @@ public class ContextMixingTests {
     Assert.That(p, Is.InRange(2000, 2100));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void ContextModel_Predict_AdaptsToZeros() {
     var model = new ContextModel(8);
@@ -23,6 +25,7 @@ public class ContextMixingTests {
     Assert.That(p, Is.LessThan(200));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void ContextModel_Predict_AdaptsToOnes() {
     var model = new ContextModel(8);
@@ -33,6 +36,7 @@ public class ContextMixingTests {
     Assert.That(p, Is.GreaterThan(3800));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void ContextModel_DifferentContexts_Independent() {
     var model = new ContextModel(8);
@@ -44,6 +48,7 @@ public class ContextMixingTests {
     Assert.That(model.Predict(1), Is.GreaterThan(3500));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void ContextMixer_Predict_CombinesModels() {
     var m1 = new ContextModel(8);
@@ -56,6 +61,8 @@ public class ContextMixingTests {
     Assert.That(p, Is.InRange(30000, 35000));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void CmCompressor_RoundTrip_Empty() {
     var data = Array.Empty<byte>();
@@ -64,6 +71,8 @@ public class ContextMixingTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void CmCompressor_RoundTrip_SingleByte() {
     var data = new byte[] { 42 };
@@ -72,6 +81,8 @@ public class ContextMixingTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void CmCompressor_RoundTrip_ShortText() {
     var data = Encoding.UTF8.GetBytes("Hello, World!");
@@ -80,6 +91,8 @@ public class ContextMixingTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void CmCompressor_RoundTrip_RepetitiveData() {
     var data = new byte[500];
@@ -91,6 +104,8 @@ public class ContextMixingTests {
     Assert.That(compressed.Length, Is.LessThan(data.Length / 2));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void CmCompressor_RoundTrip_RandomData() {
     var data = new byte[500];
@@ -100,6 +115,8 @@ public class ContextMixingTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void CmCompressor_RoundTrip_AllByteValues() {
     var data = new byte[256];
@@ -110,6 +127,7 @@ public class ContextMixingTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void CmCompressor_CompressesTextWell() {
     var data = Encoding.UTF8.GetBytes(

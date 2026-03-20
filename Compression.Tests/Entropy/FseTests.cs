@@ -4,6 +4,7 @@ namespace Compression.Tests.Entropy;
 
 [TestFixture]
 public class FseTests {
+  [Category("HappyPath")]
   [Test]
   public void NormalizeCounts_DistributesCorrectly() {
     int[] counts = { 100, 50, 25, 25 };
@@ -18,6 +19,7 @@ public class FseTests {
     Assert.That(sum, Is.EqualTo(256)); // must sum to tableSize
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void NormalizeCounts_PreservesNonZero() {
     int[] counts = { 1000, 1, 1, 1 };
@@ -28,6 +30,7 @@ public class FseTests {
       Assert.That(normalized[i], Is.Not.EqualTo(0), $"Symbol {i} should be preserved");
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Table_Build_CreatesCorrectSize() {
     short[] counts = { 4, 2, 1, 1 }; // sum = 8, tableLog = 3
@@ -36,6 +39,7 @@ public class FseTests {
     Assert.That(table.Symbol.Length, Is.EqualTo(8));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Table_Build_AllSymbolsPresent() {
     short[] counts = { 4, 2, 1, 1 }; // sum = 8, tableLog = 3
@@ -52,6 +56,8 @@ public class FseTests {
     Assert.That(symbolCounts[3], Is.EqualTo(1));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeDecode_SingleSymbol() {
     // Data with only one unique symbol
@@ -71,6 +77,8 @@ public class FseTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeDecode_TwoSymbols() {
     byte[] data = [0, 1, 0, 1, 0, 1, 0, 0, 1, 1];
@@ -89,6 +97,8 @@ public class FseTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeDecode_FourSymbols() {
     // Simple 4-symbol test with known distribution
@@ -112,6 +122,8 @@ public class FseTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeDecode_SkewedDistribution() {
     // 80% 'a', 15% 'b', 5% 'c'
@@ -134,6 +146,8 @@ public class FseTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeDecode_UniformDistribution() {
     byte[] data = new byte[256];
@@ -152,6 +166,8 @@ public class FseTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeDecode_LargeData() {
     // 2KB of varied data
@@ -178,6 +194,7 @@ public class FseTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void EncodeDecode_SkewedCompresses() {
     // Highly skewed data should compress significantly
@@ -198,6 +215,8 @@ public class FseTests {
       $"Compressed size {compressed.Length} should be less than original {data.Length}");
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void NormalizedCounts_WriteRead_RoundTrips() {
     int[] counts = { 100, 50, 25, 15, 10 };
@@ -215,6 +234,8 @@ public class FseTests {
       Assert.That(readCounts[i], Is.EqualTo(normalized[i]), $"Count mismatch at symbol {i}");
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void NormalizedCounts_WriteRead_WithSubProbability() {
     // Create counts where some symbols will get -1 (sub-probability)
@@ -232,6 +253,8 @@ public class FseTests {
       Assert.That(readCounts[i], Is.EqualTo(normalized[i]), $"Count mismatch at symbol {i}");
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void HuffmanFse_CompressDecompress_RoundTrips() {
     byte[] data = System.Text.Encoding.UTF8.GetBytes(
@@ -246,6 +269,7 @@ public class FseTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void HuffmanFse_BuildWeights_NonZeroForUsedSymbols() {
     byte[] data = { 0, 1, 2, 3, 0, 0, 1, 1, 2 };
@@ -258,6 +282,8 @@ public class FseTests {
     Assert.That(weights[4], Is.EqualTo(0)); // symbol 4 not present
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void HuffmanFse_WriteReadWeights_RoundTrips() {
     byte[] data = System.Text.Encoding.UTF8.GetBytes("hello world hello hello");

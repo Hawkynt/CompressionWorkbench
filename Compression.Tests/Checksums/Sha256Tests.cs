@@ -4,6 +4,7 @@ namespace Compression.Tests.Checksums;
 
 [TestFixture]
 public class Sha256Tests {
+  [Category("ThemVsUs")]
   [Test]
   public void Compute_EmptyString() {
     byte[] hash = Sha256.Compute(ReadOnlySpan<byte>.Empty);
@@ -11,6 +12,7 @@ public class Sha256Tests {
     Assert.That(hex, Is.EqualTo("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Compute_ABC() {
     byte[] hash = Sha256.Compute("abc"u8);
@@ -18,6 +20,7 @@ public class Sha256Tests {
     Assert.That(hex, Is.EqualTo("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Compute_NIST_OneBlockMessage() {
     // NIST test vector: "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
@@ -26,6 +29,7 @@ public class Sha256Tests {
     Assert.That(hex, Is.EqualTo("248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Compute_NIST_TwoBlockMessage() {
     // NIST test vector: "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu"
@@ -35,6 +39,7 @@ public class Sha256Tests {
     Assert.That(hex, Is.EqualTo("cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1"));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Compute_HashSize() {
     byte[] hash = Sha256.Compute("test"u8);
@@ -42,6 +47,7 @@ public class Sha256Tests {
     Assert.That(hash.Length, Is.EqualTo(Sha256.HashSize));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Incremental_MatchesBatch() {
     var data = new byte[1000];
@@ -56,6 +62,7 @@ public class Sha256Tests {
     Assert.That(sha.Hash, Is.EqualTo(batch));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Incremental_SingleByteUpdates() {
     var data = new byte[128];
@@ -70,6 +77,7 @@ public class Sha256Tests {
     Assert.That(sha.Hash, Is.EqualTo(batch));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Incremental_EmptyFinish() {
     var sha = new Sha256();
@@ -78,6 +86,7 @@ public class Sha256Tests {
     Assert.That(sha.Hash, Is.EqualTo(batch));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void LargeData_MatchesSystemSecurity() {
     var data = new byte[10000];
@@ -89,6 +98,7 @@ public class Sha256Tests {
     Assert.That(ours, Is.EqualTo(theirs));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Reset_AllowsReuse() {
     var sha = new Sha256();
@@ -104,6 +114,7 @@ public class Sha256Tests {
     Assert.That(second, Is.EqualTo(first));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Finish_CalledTwice_ReturnsSameHash() {
     var sha = new Sha256();
@@ -117,6 +128,7 @@ public class Sha256Tests {
     Assert.That(second, Is.EqualTo(first));
   }
 
+  [Category("Exception")]
   [Test]
   public void Update_AfterFinish_ThrowsInvalidOperation() {
     var sha = new Sha256();
@@ -126,6 +138,7 @@ public class Sha256Tests {
     Assert.That(() => sha.Update("more"u8), Throws.TypeOf<InvalidOperationException>());
   }
 
+  [Category("Boundary")]
   [Test]
   public void Compute_ExactlyOneBlock() {
     // 55 bytes of data + 1 byte padding + 8 bytes length = 64 bytes = 1 block
@@ -136,6 +149,7 @@ public class Sha256Tests {
     Assert.That(ours, Is.EqualTo(theirs));
   }
 
+  [Category("Boundary")]
   [Test]
   public void Compute_ExactBlockBoundary() {
     // Exactly 64 bytes: needs padding in a second block
@@ -146,6 +160,7 @@ public class Sha256Tests {
     Assert.That(ours, Is.EqualTo(theirs));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Compute_MultipleBlocks() {
     var data = new byte[256];

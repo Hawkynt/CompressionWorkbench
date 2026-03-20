@@ -6,6 +6,8 @@ namespace Compression.Tests.Dictionary;
 
 [TestFixture]
 public class LzssTests {
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyData() {
     var outputStream = new MemoryStream();
@@ -21,6 +23,8 @@ public class LzssTests {
     Assert.That(result, Is.Empty);
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleByte() {
     byte[] input = [0x42];
@@ -38,6 +42,8 @@ public class LzssTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_ShortText() {
     byte[] input = Encoding.ASCII.GetBytes("Hello World!");
@@ -55,6 +61,8 @@ public class LzssTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepetitiveData() {
     byte[] input = Encoding.ASCII.GetBytes("ABCABCABCABCABCABC");
@@ -72,6 +80,8 @@ public class LzssTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
@@ -91,6 +101,8 @@ public class LzssTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepeatedText() {
     byte[] input = Encoding.ASCII.GetBytes(
@@ -110,6 +122,8 @@ public class LzssTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_CustomBitWidths() {
     byte[] input = Encoding.ASCII.GetBytes("AAAAABBBBBAAAAAABBBBB");

@@ -4,6 +4,8 @@ namespace Compression.Tests.Entropy;
 
 [TestFixture]
 public class ArithmeticTests {
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void BitCoding_RoundTrip_AllZeros() {
     var data = new int[100];
@@ -12,6 +14,8 @@ public class ArithmeticTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void BitCoding_RoundTrip_AllOnes() {
     var data = Enumerable.Repeat(1, 100).ToArray();
@@ -20,6 +24,8 @@ public class ArithmeticTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void BitCoding_RoundTrip_MixedBits() {
     var rng = new Random(42);
@@ -31,6 +37,8 @@ public class ArithmeticTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void BitCoding_SkewedProbability() {
     // Mostly zeros with high prob0 — should compress well
@@ -45,6 +53,8 @@ public class ArithmeticTests {
     Assert.That(compressed.Length, Is.LessThan(100));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void SymbolCoding_RoundTrip() {
     var rng = new Random(99);
@@ -58,6 +68,7 @@ public class ArithmeticTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void SymbolCoding_AdaptiveModel_CompressesBetter() {
     // Data with strong pattern: lots of symbol 0
@@ -72,6 +83,8 @@ public class ArithmeticTests {
     Assert.That(compressed.Length, Is.LessThan(125));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void SymbolCoding_SingleSymbol() {
     var data = Enumerable.Repeat(0, 100).ToArray();
@@ -82,6 +95,8 @@ public class ArithmeticTests {
     Assert.That(compressed.Length, Is.LessThan(20));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void SymbolCoding_LargeAlphabet() {
     var rng = new Random(11);
@@ -94,6 +109,7 @@ public class ArithmeticTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void AdaptiveModel_FindSymbol_Correct() {
     var model = new AdaptiveModel(4);
@@ -104,6 +120,7 @@ public class ArithmeticTests {
     Assert.That(model.FindSymbol(3), Is.EqualTo(3));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void AdaptiveModel_Update_IncreasesFrequency() {
     var model = new AdaptiveModel(4);

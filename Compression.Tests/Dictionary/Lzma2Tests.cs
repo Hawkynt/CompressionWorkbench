@@ -4,12 +4,16 @@ namespace Compression.Tests.Dictionary;
 
 [TestFixture]
 public class Lzma2Tests {
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyData() {
     byte[] result = CompressDecompress([]);
     Assert.That(result, Is.Empty);
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleByte() {
     byte[] data = [42];
@@ -17,6 +21,8 @@ public class Lzma2Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_TextData() {
     byte[] data = "Hello, LZMA2 World! Testing the chunked encoding."u8.ToArray();
@@ -24,6 +30,8 @@ public class Lzma2Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepetitiveData() {
     byte[] pattern = "abcdefghij"u8.ToArray();
@@ -35,6 +43,8 @@ public class Lzma2Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
@@ -45,6 +55,8 @@ public class Lzma2Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeData() {
     var rng = new Random(123);
@@ -60,6 +72,8 @@ public class Lzma2Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void UncompressedFallback_RandomData() {
     // Truly random data should use uncompressed chunks
@@ -78,6 +92,7 @@ public class Lzma2Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void DictionarySizeByte_EncodesCorrectly() {
     // 8 MB = 1 << 23
@@ -85,6 +100,8 @@ public class Lzma2Tests {
     Assert.That(encoder.DictionarySizeByte, Is.GreaterThan((byte)0));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_MultiChunk_LargeData() {
     // Data > 2MB to force multiple LZMA2 chunks (MaxUncompressedChunkSize = 2MB)
@@ -98,6 +115,8 @@ public class Lzma2Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_MixedCompressibleAndRandom() {
     // Alternating compressible and incompressible blocks
@@ -124,6 +143,8 @@ public class Lzma2Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SmallDictionary() {
     // Small dictionary forces more dictionary resets in chunks
@@ -142,6 +163,8 @@ public class Lzma2Tests {
     Assert.That(result, Is.EqualTo(bigData));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_StreamOverload() {
     // Exercise the Encode(Stream output, Stream input, long length) overload
@@ -158,6 +181,8 @@ public class Lzma2Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_StreamOverload_UnknownLength() {
     // Exercise the Encode(Stream output, Stream input, -1) path
@@ -174,6 +199,8 @@ public class Lzma2Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_HighlyRepetitive_SmallBlocks() {
     // All-zero data — exercises both short rep and uncompressed fallback paths
@@ -182,6 +209,7 @@ public class Lzma2Tests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("Exception")]
   [Test]
   public void Decode_TruncatedStream_Throws() {
     // LZMA2 stream that ends prematurely (no end marker)
@@ -190,6 +218,7 @@ public class Lzma2Tests {
     Assert.Throws<EndOfStreamException>(() => decoder.Decode());
   }
 
+  [Category("Exception")]
   [Test]
   public void Decode_InvalidControlByte_Throws() {
     // Control byte 0x03-0x7F is invalid
@@ -198,6 +227,7 @@ public class Lzma2Tests {
     Assert.Throws<InvalidDataException>(() => decoder.Decode());
   }
 
+  [Category("Exception")]
   [Test]
   public void Decode_MissingProperties_Throws() {
     // LZMA chunk with resetLevel=0 but no prior properties

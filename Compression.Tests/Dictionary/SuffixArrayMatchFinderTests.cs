@@ -5,11 +5,13 @@ namespace Compression.Tests.Dictionary;
 
 [TestFixture]
 public class SuffixArrayMatchFinderTests {
+  [Category("Exception")]
   [Test]
   public void Constructor_EmptyData_Throws() {
     Assert.Throws<ArgumentException>(() => new SuffixArrayMatchFinder([]));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void FindMatch_NoMatch_ReturnsDefault() {
     var data = new byte[] { 1, 2, 3, 4, 5 };
@@ -18,6 +20,7 @@ public class SuffixArrayMatchFinderTests {
     Assert.That(match.Length, Is.EqualTo(0));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void FindMatch_FindsExactMatch() {
     // "ABCABC" — at position 3, should find match of length 3 at distance 3
@@ -28,6 +31,7 @@ public class SuffixArrayMatchFinderTests {
     Assert.That(match.Distance, Is.EqualTo(3));
   }
 
+  [Category("Boundary")]
   [Test]
   public void FindMatch_RespectsMaxDistance() {
     var data = Encoding.ASCII.GetBytes("ABCXYZABC");
@@ -37,6 +41,7 @@ public class SuffixArrayMatchFinderTests {
     Assert.That(match.Length, Is.EqualTo(0));
   }
 
+  [Category("Boundary")]
   [Test]
   public void FindMatch_RespectsMinLength() {
     var data = Encoding.ASCII.GetBytes("ABABX");
@@ -46,6 +51,7 @@ public class SuffixArrayMatchFinderTests {
     Assert.That(match.Length, Is.EqualTo(0));
   }
 
+  [Category("Boundary")]
   [Test]
   public void FindMatch_RespectsMaxLength() {
     var data = Encoding.ASCII.GetBytes("ABCDEFABCDEF");
@@ -54,6 +60,7 @@ public class SuffixArrayMatchFinderTests {
     Assert.That(match.Length, Is.EqualTo(4));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void FindMatch_FindsLongestMatch() {
     // "ABCDABCXABCD" — at position 8, matches "ABCD" (len 4) at distance 8 and "ABC" (len 3) at distance 4
@@ -63,6 +70,7 @@ public class SuffixArrayMatchFinderTests {
     Assert.That(match.Length, Is.EqualTo(4));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void FindMatch_RepetitiveData() {
     // All same bytes — should find long matches
@@ -73,6 +81,7 @@ public class SuffixArrayMatchFinderTests {
     Assert.That(match.Length, Is.EqualTo(50));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void FindMatch_LargeData_DoesNotThrow() {
     var data = new byte[10000];
@@ -86,6 +95,7 @@ public class SuffixArrayMatchFinderTests {
     }
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void FindMatch_SingleByte_NoMatch() {
     var data = new byte[] { 42 };
@@ -94,6 +104,7 @@ public class SuffixArrayMatchFinderTests {
     Assert.That(match.Length, Is.EqualTo(0));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void FindMatch_AgreesWithHashChain_OnCompressibleData() {
     var data = Encoding.ASCII.GetBytes(

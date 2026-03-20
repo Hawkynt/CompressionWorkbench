@@ -6,6 +6,8 @@ namespace Compression.Tests.Dictionary;
 
 [TestFixture]
 public class Lz77Tests {
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyData() {
     var finder = new HashChainMatchFinder(32768);
@@ -15,6 +17,8 @@ public class Lz77Tests {
     Assert.That(result, Is.Empty);
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleByte() {
     byte[] input = [0x42];
@@ -25,6 +29,8 @@ public class Lz77Tests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepetitiveData() {
     byte[] input = Encoding.ASCII.GetBytes("ABCABCABCABCABCABC");
@@ -35,6 +41,8 @@ public class Lz77Tests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
@@ -48,6 +56,8 @@ public class Lz77Tests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_HighlyRepetitive() {
     // Single byte repeated many times — should produce matches
@@ -64,6 +74,7 @@ public class Lz77Tests {
     Assert.That(tokens.Any(t => !t.IsLiteral), Is.True);
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Compress_ProducesMatchTokens_ForRepeatedSequences() {
     byte[] input = Encoding.ASCII.GetBytes("ABCDEFABCDEF");
@@ -76,6 +87,7 @@ public class Lz77Tests {
     Assert.That(hasMatch, Is.True);
   }
 
+  [Category("Exception")]
   [Test]
   public void Decompress_InvalidBackReference_Throws() {
     var tokens = new List<Lz77Token> {
@@ -85,6 +97,8 @@ public class Lz77Tests {
     Assert.Throws<InvalidDataException>(() => Lz77Decompressor.Decompress(tokens));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_TextData() {
     byte[] input = Encoding.ASCII.GetBytes(

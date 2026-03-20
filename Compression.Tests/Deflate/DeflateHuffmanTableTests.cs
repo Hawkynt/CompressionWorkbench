@@ -5,6 +5,7 @@ namespace Compression.Tests.Deflate;
 
 [TestFixture]
 public class DeflateHuffmanTableTests {
+  [Category("HappyPath")]
   [Test]
   public void ReverseBits_CorrectResults() {
     Assert.That(DeflateHuffmanTable.ReverseBits(0b110, 3), Is.EqualTo(0b011u));
@@ -14,6 +15,7 @@ public class DeflateHuffmanTableTests {
     Assert.That(DeflateHuffmanTable.ReverseBits(0b11001, 5), Is.EqualTo(0b10011u));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void StaticLiteralTable_DecodesCorrectly() {
     var table = DeflateHuffmanTable.CreateStaticLiteralTable();
@@ -30,6 +32,7 @@ public class DeflateHuffmanTableTests {
     Assert.That(len144, Is.EqualTo(9));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void StaticDistanceTable_AllCodesLength5() {
     var table = DeflateHuffmanTable.CreateStaticDistanceTable();
@@ -41,6 +44,8 @@ public class DeflateHuffmanTableTests {
     }
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_ThroughBitWriterAndBitBuffer_LsbFirst() {
     int[] codeLengths = [2, 3, 3, 3, 3, 2];
@@ -66,6 +71,8 @@ public class DeflateHuffmanTableTests {
     }
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_StaticLiteralTable() {
     var table = DeflateHuffmanTable.CreateStaticLiteralTable();
@@ -89,6 +96,8 @@ public class DeflateHuffmanTableTests {
     }
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void SingleSymbol_EncodesAndDecodes() {
     int[] codeLengths = [0, 1, 0]; // only symbol 1 exists
@@ -110,6 +119,8 @@ public class DeflateHuffmanTableTests {
     }
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void AllSameLength_EncodesAndDecodes() {
     // 4 symbols all with length 2
@@ -134,6 +145,7 @@ public class DeflateHuffmanTableTests {
     }
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void StaticLiteralTable_EncodesDeterministicCodes() {
     // Verify the static table produces known canonical codes
