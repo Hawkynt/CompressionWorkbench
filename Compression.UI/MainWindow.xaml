@@ -16,7 +16,6 @@
     <KeyBinding Key="T" Modifiers="Ctrl" Command="{Binding TestCommand}" />
     <KeyBinding Key="N" Modifiers="Ctrl" Command="{Binding CreateCommand}" />
     <KeyBinding Key="Back" Command="{Binding NavigateUpCommand}" />
-    <KeyBinding Key="Return" Command="{Binding ViewAsTextCommand}" />
     <KeyBinding Key="Return" Modifiers="Alt" Command="{Binding PropertiesCommand}" />
   </Window.InputBindings>
 
@@ -128,10 +127,11 @@
     <ListView Grid.Row="3" ItemsSource="{Binding Entries}" x:Name="EntryList"
               SelectionMode="Extended"
               MouseDoubleClick="OnEntryDoubleClick"
+              PreviewKeyDown="OnEntryKeyDown"
               GridViewColumnHeader.Click="OnColumnHeaderClick">
       <ListView.ContextMenu>
         <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-          <MenuItem Header="View as _Text" Command="{Binding ViewAsTextCommand}" InputGestureText="Enter" />
+          <MenuItem Header="View as _Text" Command="{Binding ViewAsTextCommand}" />
           <MenuItem Header="View as _Hex" Command="{Binding ViewAsHexCommand}" />
           <Separator />
           <MenuItem Header="_Extract Selected..." Command="{Binding ExtractSelectedCommand}" />
