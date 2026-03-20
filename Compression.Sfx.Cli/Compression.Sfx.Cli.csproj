@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Compression.Sfx.Cli</RootNamespace>
+    <AssemblyName>sfx-cli</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>CS1591</NoWarn>
+
+    <!--
+      Single-file self-contained stub. Publish with:
+        dotnet publish -r win-x64 -c Release
+      The -r flag implies self-contained. All publish properties below
+      only take effect during 'dotnet publish', not 'dotnet build'.
+    -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- No debug symbols in published stub -->
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
+  </ItemGroup>
+
+</Project>
