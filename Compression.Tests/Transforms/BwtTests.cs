@@ -4,6 +4,8 @@ namespace Compression.Tests.Transforms;
 
 [TestFixture]
 public class BwtTests {
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Forward_Inverse_RoundTrip_EmptyData() {
     byte[] data = [];
@@ -12,6 +14,8 @@ public class BwtTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Forward_Inverse_RoundTrip_SingleByte() {
     byte[] data = [42];
@@ -20,6 +24,8 @@ public class BwtTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Forward_Inverse_RoundTrip_Banana() {
     byte[] data = "banana"u8.ToArray();
@@ -28,6 +34,8 @@ public class BwtTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Forward_Inverse_RoundTrip_Repetitive() {
     byte[] pattern = "abcabc"u8.ToArray();
@@ -40,6 +48,8 @@ public class BwtTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Forward_Inverse_RoundTrip_Random1KB() {
     var rng = new Random(42);
@@ -51,6 +61,8 @@ public class BwtTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Forward_Inverse_RoundTrip_AllZeros() {
     byte[] data = new byte[4096];
@@ -60,6 +72,7 @@ public class BwtTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Forward_AllIdenticalBytes() {
     byte[] data = new byte[100];
@@ -71,6 +84,7 @@ public class BwtTests {
     Assert.That(transformed, Is.All.EqualTo(0x41));
   }
 
+  [Category("Exception")]
   [Test]
   public void Inverse_InvalidIndex_Throws() {
     byte[] data = [1, 2, 3];

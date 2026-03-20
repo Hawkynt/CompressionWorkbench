@@ -4,6 +4,7 @@ namespace Compression.Tests.DataStructures;
 
 [TestFixture]
 public class MinHeapTests {
+  [Category("HappyPath")]
   [Test]
   public void Insert_And_ExtractMin_ReturnsInOrder() {
     var heap = new MinHeap<int>();
@@ -21,6 +22,7 @@ public class MinHeapTests {
     Assert.That(heap.ExtractMin(), Is.EqualTo(8));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Peek_ReturnsMinWithoutRemoving() {
     var heap = new MinHeap<int>();
@@ -32,18 +34,21 @@ public class MinHeapTests {
     Assert.That(heap.Count, Is.EqualTo(3)); // Not removed
   }
 
+  [Category("Exception")]
   [Test]
   public void ExtractMin_EmptyHeap_Throws() {
     var heap = new MinHeap<int>();
     Assert.Throws<InvalidOperationException>(() => heap.ExtractMin());
   }
 
+  [Category("Exception")]
   [Test]
   public void Peek_EmptyHeap_Throws() {
     var heap = new MinHeap<int>();
     Assert.Throws<InvalidOperationException>(() => heap.Peek());
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Count_TracksCorrectly() {
     var heap = new MinHeap<int>();
@@ -57,6 +62,7 @@ public class MinHeapTests {
     Assert.That(heap.Count, Is.EqualTo(1));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void StressTest_SortsRandomData() {
     var heap = new MinHeap<int>();
@@ -75,6 +81,7 @@ public class MinHeapTests {
       Assert.That(heap.ExtractMin(), Is.EqualTo(expected[i]));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void DuplicateValues_HandledCorrectly() {
     var heap = new MinHeap<int>();

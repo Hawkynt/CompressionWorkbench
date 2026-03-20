@@ -5,6 +5,7 @@ namespace Compression.Tests.Dictionary;
 
 [TestFixture]
 public class MatchFinderTests {
+  [Category("HappyPath")]
   [Test]
   public void HashChain_FindsExactMatch() {
     byte[] data = Encoding.ASCII.GetBytes("ABCABC");
@@ -20,6 +21,7 @@ public class MatchFinderTests {
     Assert.That(match.Distance, Is.EqualTo(3));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void HashChain_NoMatch_ReturnsDefault() {
     byte[] data = Encoding.ASCII.GetBytes("ABCDEF");
@@ -29,6 +31,7 @@ public class MatchFinderTests {
     Assert.That(match.Length, Is.EqualTo(0));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void HashChain_FindsLongestMatch() {
     byte[] data = Encoding.ASCII.GetBytes("ABCDABCDABCDE");
@@ -47,6 +50,7 @@ public class MatchFinderTests {
     Assert.That(match.Length, Is.GreaterThanOrEqualTo(4));
   }
 
+  [Category("Boundary")]
   [Test]
   public void HashChain_RespectsMaxDistance() {
     byte[] data = Encoding.ASCII.GetBytes("ABC___ABC");

@@ -4,6 +4,7 @@ namespace Compression.Tests.BitIO;
 
 [TestFixture]
 public class BitWriterTests {
+  [Category("HappyPath")]
   [Test]
   public void WriteBit_LsbFirst_WritesLeastSignificantBitFirst() {
     var stream = new MemoryStream();
@@ -22,6 +23,7 @@ public class BitWriterTests {
     Assert.That(stream.ToArray(), Is.EqualTo(new byte[] { 0xB4 }));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void WriteBit_MsbFirst_WritesMostSignificantBitFirst() {
     var stream = new MemoryStream();
@@ -40,6 +42,7 @@ public class BitWriterTests {
     Assert.That(stream.ToArray(), Is.EqualTo(new byte[] { 0xB4 }));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void WriteBits_LsbFirst_WritesMultipleBits() {
     var stream = new MemoryStream();
@@ -52,6 +55,7 @@ public class BitWriterTests {
     Assert.That(stream.ToArray(), Is.EqualTo(new byte[] { 0x0F }));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void WriteBits_MsbFirst_WritesMultipleBits() {
     var stream = new MemoryStream();
@@ -64,6 +68,7 @@ public class BitWriterTests {
     Assert.That(stream.ToArray(), Is.EqualTo(new byte[] { 0xD2 }));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void FlushBits_PadsWithZeros() {
     var stream = new MemoryStream();
@@ -78,6 +83,7 @@ public class BitWriterTests {
     Assert.That(stream.ToArray(), Is.EqualTo(new byte[] { 0x07 }));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void FlushBits_NoOpWhenAligned() {
     var stream = new MemoryStream();
@@ -89,6 +95,8 @@ public class BitWriterTests {
     Assert.That(stream.ToArray(), Is.EqualTo(new byte[] { 0xFF }));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LsbFirst() {
     var stream = new MemoryStream();
@@ -107,6 +115,8 @@ public class BitWriterTests {
     Assert.That(reader.ReadBits(2), Is.EqualTo(3u));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_MsbFirst() {
     var stream = new MemoryStream();

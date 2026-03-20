@@ -5,6 +5,8 @@ namespace Compression.Tests.Snappy;
 
 [TestFixture]
 public class SnappyBlockTests {
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SmallData() {
     byte[] data = "Hello, Snappy compression!"u8.ToArray();
@@ -13,6 +15,8 @@ public class SnappyBlockTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepeatedData() {
     byte[] data = new byte[1000];
@@ -23,6 +27,8 @@ public class SnappyBlockTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_PatternData() {
     byte[] data = new byte[2000];
@@ -33,6 +39,8 @@ public class SnappyBlockTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
@@ -43,6 +51,7 @@ public class SnappyBlockTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Compress_Empty_ReturnsVarintZero() {
     byte[] compressed = SnappyCompressor.Compress([]);
@@ -50,6 +59,8 @@ public class SnappyBlockTests {
     Assert.That(compressed[0], Is.EqualTo(0));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleByte() {
     byte[] data = [0xFF];
@@ -58,6 +69,8 @@ public class SnappyBlockTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LongRepeats() {
     byte[] data = new byte[50000];
@@ -71,6 +84,8 @@ public class SnappyBlockTests {
 
 [TestFixture]
 public class SnappyFrameTests {
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SmallData() {
     byte[] data = "Hello, Snappy frame format!"u8.ToArray();
@@ -82,6 +97,8 @@ public class SnappyFrameTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeData() {
     byte[] data = new byte[200000];
@@ -96,6 +113,8 @@ public class SnappyFrameTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(99);
@@ -110,6 +129,8 @@ public class SnappyFrameTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Empty() {
     byte[] data = [];

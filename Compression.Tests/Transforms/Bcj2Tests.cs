@@ -4,6 +4,8 @@ namespace Compression.Tests.Transforms;
 
 [TestFixture]
 public class Bcj2Tests {
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SimpleData_NoInstructions() {
     byte[] data = "Hello, BCJ2 World! No x86 instructions here."u8.ToArray();
@@ -12,6 +14,8 @@ public class Bcj2Tests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_WithCallInstructions() {
     byte[] data = new byte[100];
@@ -30,6 +34,8 @@ public class Bcj2Tests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_WithJumpInstructions() {
     byte[] data = new byte[80];
@@ -47,6 +53,8 @@ public class Bcj2Tests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_MixedCallsAndJumps() {
     byte[] data = new byte[200];
@@ -68,6 +76,7 @@ public class Bcj2Tests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Encode_SplitsIntoFourStreams() {
     byte[] data = new byte[50];
@@ -84,6 +93,8 @@ public class Bcj2Tests {
     Assert.That(range.Length, Is.GreaterThan(0));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyData() {
     byte[] data = [];

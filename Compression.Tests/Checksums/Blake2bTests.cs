@@ -5,6 +5,7 @@ namespace Compression.Tests.Checksums;
 [TestFixture]
 public class Blake2bTests {
   // RFC 7693 Appendix A test vector: BLAKE2b-512("")
+  [Category("ThemVsUs")]
   [Test]
   public void Compute_Empty_512() {
     var hash = Blake2b.Compute([], hashSize: 64);
@@ -19,6 +20,7 @@ public class Blake2bTests {
   }
 
   // RFC 7693 Appendix A test vector: BLAKE2b-512("abc")
+  [Category("ThemVsUs")]
   [Test]
   public void Compute_Abc_512() {
     var data = "abc"u8;
@@ -33,24 +35,28 @@ public class Blake2bTests {
     Assert.That(hash[..4], Is.EqualTo(Convert.FromHexString("BA80A53F")));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Compute_DefaultHashSize_Is32() {
     var hash = Blake2b.Compute([]);
     Assert.That(hash.Length, Is.EqualTo(32));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Compute_CustomHashSize_16() {
     var hash = Blake2b.Compute(new byte[] { 1, 2, 3 }, hashSize: 16);
     Assert.That(hash.Length, Is.EqualTo(16));
   }
 
+  [Category("Exception")]
   [Test]
   public void Compute_InvalidHashSize_Throws() {
     Assert.Throws<ArgumentOutOfRangeException>(() => Blake2b.Compute([], hashSize: 0));
     Assert.Throws<ArgumentOutOfRangeException>(() => Blake2b.Compute([], hashSize: 65));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Compute_SameInput_SameOutput() {
     var data = new byte[100];
@@ -60,6 +66,7 @@ public class Blake2bTests {
     Assert.That(hash1, Is.EqualTo(hash2));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Compute_DifferentInput_DifferentOutput() {
     var data1 = new byte[] { 1, 2, 3 };
@@ -69,6 +76,7 @@ public class Blake2bTests {
     Assert.That(hash1, Is.Not.EqualTo(hash2));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Incremental_MatchesBatch() {
     var data = new byte[1024];
@@ -85,6 +93,7 @@ public class Blake2bTests {
     Assert.That(incrementalHash, Is.EqualTo(batchHash));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Incremental_SingleByteFeeding() {
     var data = new byte[] { 0x61, 0x62, 0x63 }; // "abc"
@@ -98,6 +107,7 @@ public class Blake2bTests {
     Assert.That(incrementalHash, Is.EqualTo(batchHash));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Reset_ProducesIdenticalHash() {
     var data = new byte[] { 1, 2, 3, 4, 5 };
@@ -113,6 +123,7 @@ public class Blake2bTests {
     Assert.That(hash1, Is.EqualTo(hash2));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Compute_LargeData_DoesNotThrow() {
     var data = new byte[100_000];
@@ -121,6 +132,7 @@ public class Blake2bTests {
     Assert.That(hash.Length, Is.EqualTo(32));
   }
 
+  [Category("Boundary")]
   [Test]
   public void Compute_ExactBlockSize() {
     // Exactly 128 bytes (one full block)
@@ -130,6 +142,7 @@ public class Blake2bTests {
     Assert.That(hash.Length, Is.EqualTo(32));
   }
 
+  [Category("Boundary")]
   [Test]
   public void Compute_MultipleOfBlockSize() {
     // 256 bytes = 2 full blocks

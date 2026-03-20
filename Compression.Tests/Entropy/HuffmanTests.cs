@@ -5,6 +5,7 @@ namespace Compression.Tests.Entropy;
 
 [TestFixture]
 public class HuffmanTests {
+  [Category("HappyPath")]
   [Test]
   public void BuildFromFrequencies_CreatesValidTree() {
     var frequencies = new long[256];
@@ -21,6 +22,7 @@ public class HuffmanTests {
     Assert.That(root.Frequency, Is.EqualTo(100));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void BuildFromFrequencies_SingleSymbol_CreatesValidTree() {
     var frequencies = new long[256];
@@ -31,6 +33,7 @@ public class HuffmanTests {
     Assert.That(root.IsLeaf, Is.False); // Should have a dummy node
   }
 
+  [Category("Exception")]
   [Test]
   public void BuildFromFrequencies_NoSymbols_Throws() {
     var frequencies = new long[256];
@@ -38,6 +41,7 @@ public class HuffmanTests {
     Assert.Throws<ArgumentException>(() => HuffmanTree.BuildFromFrequencies(frequencies));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void GetCodeLengths_ReturnsCorrectLengths() {
     var frequencies = new long[256];
@@ -66,6 +70,7 @@ public class HuffmanTests {
     Assert.That(lengths[0], Is.EqualTo(0));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void CanonicalHuffman_GetCode_ReturnsValidCodes() {
     int[] codeLengths = new int[4];
@@ -93,6 +98,8 @@ public class HuffmanTests {
     Assert.That(code3, Is.EqualTo(0b111u)); // Second code at length 3: 111
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_UniformDistribution() {
     // Create a uniform frequency distribution
@@ -122,6 +129,8 @@ public class HuffmanTests {
     Assert.That(decoded, Is.EqualTo(symbols));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SkewedDistribution() {
     var frequencies = new long[5];
@@ -153,6 +162,8 @@ public class HuffmanTests {
     Assert.That(decoded, Is.EqualTo(symbols));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
@@ -189,6 +200,7 @@ public class HuffmanTests {
     Assert.That(decoded, Is.EqualTo(symbols));
   }
 
+  [Category("Boundary")]
   [Test]
   public void LimitCodeLengths_ClampsToMaxLength() {
     // Create a very skewed distribution that would produce long codes
@@ -212,6 +224,8 @@ public class HuffmanTests {
     Assert.That(table.MaxCodeLength, Is.LessThanOrEqualTo(7));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleSymbol() {
     var frequencies = new long[256];

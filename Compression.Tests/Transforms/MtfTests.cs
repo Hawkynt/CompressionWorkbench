@@ -4,6 +4,8 @@ namespace Compression.Tests.Transforms;
 
 [TestFixture]
 public class MtfTests {
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Encode_Decode_RoundTrip_EmptyData() {
     byte[] data = [];
@@ -12,6 +14,8 @@ public class MtfTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Encode_Decode_RoundTrip_SingleByte() {
     byte[] data = [42];
@@ -20,6 +24,8 @@ public class MtfTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Encode_Decode_RoundTrip_Text() {
     byte[] data = "Hello, World!"u8.ToArray();
@@ -28,6 +34,8 @@ public class MtfTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Encode_Decode_RoundTrip_Repetitive() {
     byte[] data = new byte[1000];
@@ -39,6 +47,8 @@ public class MtfTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Encode_Decode_RoundTrip_Random() {
     var rng = new Random(42);
@@ -50,6 +60,8 @@ public class MtfTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Encode_Decode_RoundTrip_AllZeros() {
     byte[] data = new byte[1000];
@@ -59,6 +71,7 @@ public class MtfTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Encode_RepetitiveData_ProducesZeros() {
     // After BWT, repetitive data produces runs of same bytes,
@@ -73,6 +86,8 @@ public class MtfTests {
     Assert.That(zeroCount, Is.EqualTo(99)); // All but first
   }
 
+  [Category("End2End")]
+  [Category("RoundTrip")]
   [Test]
   public void BwtThenMtf_RoundTrip() {
     byte[] data = "the quick brown fox jumps over the lazy dog"u8.ToArray();

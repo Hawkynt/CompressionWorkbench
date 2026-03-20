@@ -4,6 +4,8 @@ namespace Compression.Tests.Entropy;
 
 [TestFixture]
 public class PpmdTests {
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_SingleByte() {
     byte[] data = [42];
@@ -11,6 +13,8 @@ public class PpmdTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_TextData() {
     byte[] data = System.Text.Encoding.UTF8.GetBytes("Hello, World! This is a test of PPMd compression.");
@@ -18,6 +22,8 @@ public class PpmdTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_RepetitiveData() {
     byte[] data = new byte[500];
@@ -27,6 +33,8 @@ public class PpmdTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_RandomData() {
     byte[] data = new byte[1024];
@@ -35,6 +43,8 @@ public class PpmdTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_LargeData() {
     byte[] data = new byte[10240];
@@ -45,6 +55,8 @@ public class PpmdTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void ModelH_DifferentOrders() {
     byte[] data = System.Text.Encoding.UTF8.GetBytes("ABCABCABCABCABC");
@@ -54,6 +66,7 @@ public class PpmdTests {
     }
   }
 
+  [Category("HappyPath")]
   [Test]
   public void ModelH_CompressesWellOnText() {
     byte[] data = System.Text.Encoding.UTF8.GetBytes(
@@ -71,6 +84,8 @@ public class PpmdTests {
     Assert.That(ratio, Is.LessThan(0.5));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_EmptyData() {
     byte[] data = [];
@@ -78,6 +93,8 @@ public class PpmdTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_AllBytesOnce() {
     byte[] data = new byte[256];
@@ -87,6 +104,8 @@ public class PpmdTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_AllSameBytes() {
     byte[] data = new byte[200];
@@ -95,6 +114,8 @@ public class PpmdTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_TwoByteAlternating() {
     byte[] data = new byte[300];
@@ -104,6 +125,8 @@ public class PpmdTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void ModelI_RoundTrip_SingleByte() {
     byte[] data = [99];
@@ -111,6 +134,8 @@ public class PpmdTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void ModelI_RoundTrip_TextData() {
     byte[] data = System.Text.Encoding.UTF8.GetBytes("Hello, World! PPMd Model I test.");
@@ -118,6 +143,8 @@ public class PpmdTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void ModelI_RoundTrip_RepetitiveData() {
     byte[] data = new byte[500];
@@ -127,6 +154,8 @@ public class PpmdTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void ModelI_RoundTrip_RandomData() {
     byte[] data = new byte[1024];
@@ -135,6 +164,8 @@ public class PpmdTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void ModelI_RoundTrip_EmptyData() {
     byte[] data = [];
@@ -142,6 +173,7 @@ public class PpmdTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void SubAllocator_AllocFree_Works() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
@@ -155,6 +187,7 @@ public class PpmdTests {
     Assert.That(offset3, Is.GreaterThanOrEqualTo(0));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void SubAllocator_Reset_Works() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
@@ -165,6 +198,7 @@ public class PpmdTests {
     Assert.That(offset2, Is.GreaterThanOrEqualTo(0));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void SubAllocator_AllocContext_ReturnsValidOffset() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
@@ -172,6 +206,7 @@ public class PpmdTests {
     Assert.That(offset, Is.GreaterThanOrEqualTo(0));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void SubAllocator_GetSetByte_RoundTrips() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
@@ -180,6 +215,7 @@ public class PpmdTests {
     Assert.That(alloc.GetByte(offset), Is.EqualTo(0xAB));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void SubAllocator_GetSetInt_RoundTrips() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
@@ -188,6 +224,7 @@ public class PpmdTests {
     Assert.That(alloc.GetInt(offset), Is.EqualTo(0x12345678));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void SubAllocator_GetSetUShort_RoundTrips() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
@@ -196,6 +233,7 @@ public class PpmdTests {
     Assert.That(alloc.GetUShort(offset), Is.EqualTo(0xABCD));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void SubAllocator_ShrinkUnits_FreesExcess() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
@@ -207,6 +245,7 @@ public class PpmdTests {
     Assert.That(offset2, Is.GreaterThanOrEqualTo(0));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void SubAllocator_MultipleAllocationSizes() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
@@ -222,6 +261,7 @@ public class PpmdTests {
     Assert.That(o1, Is.Not.EqualTo(o3));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void SubAllocator_FreeAndReallocate_ReusesMemory() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
@@ -232,6 +272,7 @@ public class PpmdTests {
     Assert.That(offset2, Is.EqualTo(offset1));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void SubAllocator_GetSpan_ReturnsCorrectMemory() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
@@ -242,6 +283,8 @@ public class PpmdTests {
     Assert.That(alloc.GetByte(offset), Is.EqualTo(42));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void PpmdRangeCoder_RoundTrip_SingleSymbol() {
     var ms = new MemoryStream();
@@ -256,6 +299,8 @@ public class PpmdTests {
     decoder.Decode(5, 1, 10);
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void PpmdRangeCoder_RoundTrip_MultipleSymbols() {
     // Encode a sequence of symbols with known frequencies

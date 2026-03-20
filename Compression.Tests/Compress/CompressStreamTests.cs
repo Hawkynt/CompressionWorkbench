@@ -5,6 +5,8 @@ namespace Compression.Tests.Compress;
 
 [TestFixture]
 public class CompressStreamTests {
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyData() {
     byte[] data = [];
@@ -13,6 +15,8 @@ public class CompressStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleByte() {
     byte[] data = [42];
@@ -21,6 +25,8 @@ public class CompressStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_TextData() {
     byte[] data = "Hello, Unix compress (.Z) world!"u8.ToArray();
@@ -29,6 +35,8 @@ public class CompressStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepetitiveData() {
     byte[] pattern = "ABCDEFGHIJ"u8.ToArray();
@@ -41,6 +49,8 @@ public class CompressStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
@@ -52,6 +62,7 @@ public class CompressStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Header_HasMagicBytes() {
     byte[] data = [1, 2, 3];
@@ -61,6 +72,7 @@ public class CompressStreamTests {
     Assert.That(compressed[1], Is.EqualTo(0x9D));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void Header_FlagsContainMaxBitsAndBlockMode() {
     byte[] data = [1, 2, 3];
@@ -71,6 +83,8 @@ public class CompressStreamTests {
     Assert.That(flags & 0x80, Is.EqualTo(0x80)); // block mode flag
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_NoBlockMode() {
     byte[] data = "Testing without block mode."u8.ToArray();
@@ -79,6 +93,7 @@ public class CompressStreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void RepetitiveData_CompressesWell() {
     byte[] data = new byte[4096];

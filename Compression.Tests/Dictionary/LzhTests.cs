@@ -4,6 +4,8 @@ namespace Compression.Tests.Dictionary;
 
 [TestFixture]
 public class LzhTests {
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SmallData_Lh5() {
     byte[] data = "Hello, LZH compression world!"u8.ToArray();
@@ -17,6 +19,8 @@ public class LzhTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepeatedData_Lh5() {
     byte[] data = new byte[1000];
@@ -33,6 +37,8 @@ public class LzhTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_PatternData_Lh5() {
     byte[] data = new byte[2000];
@@ -49,6 +55,8 @@ public class LzhTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData_Lh5() {
     var rng = new Random(42);
@@ -65,6 +73,8 @@ public class LzhTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SmallData_Lh7() {
     byte[] data = "Testing LZH with 64KB window size."u8.ToArray();
@@ -78,6 +88,7 @@ public class LzhTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Encode_EmptyData_ReturnsEmpty() {
     var encoder = new LzhEncoder();
@@ -85,6 +96,8 @@ public class LzhTests {
     Assert.That(compressed, Is.Empty);
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleByte() {
     byte[] data = [42];

@@ -5,6 +5,7 @@ namespace Compression.Tests.Checksums;
 
 [TestFixture]
 public class Adler32Tests {
+  [Category("ThemVsUs")]
   [Test]
   public void Compute_KnownVector_Wikipedia() {
     // Adler-32 of "Wikipedia" = 0x11E60398
@@ -13,6 +14,7 @@ public class Adler32Tests {
     Assert.That(adler, Is.EqualTo(0x11E60398u));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Compute_EmptyData_ReturnsOne() {
     // Adler-32 of empty data = 1 (initial value)
@@ -20,6 +22,7 @@ public class Adler32Tests {
     Assert.That(adler, Is.EqualTo(1u));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void IncrementalUpdate_MatchesBulk() {
     byte[] data = Encoding.ASCII.GetBytes("The quick brown fox jumps over the lazy dog");
@@ -32,6 +35,7 @@ public class Adler32Tests {
     Assert.That(adler.Value, Is.EqualTo(bulkAdler));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void IncrementalUpdate_ByteByByte_MatchesBulk() {
     byte[] data = Encoding.ASCII.GetBytes("Hello");
@@ -44,6 +48,7 @@ public class Adler32Tests {
     Assert.That(adler.Value, Is.EqualTo(bulkAdler));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Reset_ResetsToInitialState() {
     var adler = new Adler32();
@@ -53,6 +58,7 @@ public class Adler32Tests {
     Assert.That(adler.Value, Is.EqualTo(1u));
   }
 
+  [Category("Boundary")]
   [Test]
   public void LargeData_NmaxOptimization_MatchesByteByByte() {
     // Test with data larger than Nmax (5552) to exercise the chunking logic

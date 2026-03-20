@@ -5,6 +5,8 @@ namespace Compression.Tests.Dictionary;
 
 [TestFixture]
 public class LzhDebugTest {
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Verify_CanonicalCodes_RoundTrip() {
     // Test that the canonical Huffman encode/decode round-trips
@@ -70,6 +72,8 @@ public class LzhDebugTest {
     Assert.That(decoded.ToArray(), Is.EqualTo(symbols));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Verify_TreeWriteRead_RoundTrip() {
     // Verify that WriteTree/ReadTree round-trips for a small set
@@ -167,6 +171,8 @@ public class LzhDebugTest {
     Assert.That(decoded.ToArray(), Is.EqualTo(syms));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Debug_FiveDistinctBytes() {
     byte[] data = [0x41, 0x42, 0x43, 0x44, 0x45];
@@ -179,6 +185,8 @@ public class LzhDebugTest {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Debug_RepeatedWithMatches() {
     byte[] data = new byte[20];
@@ -194,6 +202,8 @@ public class LzhDebugTest {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Debug_MatchAtDistance5() {
     // Data: ABCDEABCDE - match at distance 5
@@ -207,6 +217,8 @@ public class LzhDebugTest {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Debug_MatchAtDistance10() {
     // ABCDEFGHIJABCDEFGHIJ - match at distance 10
@@ -223,6 +235,7 @@ public class LzhDebugTest {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Debug_PositionSlotEncoding() {
     // Verify position slot encode/decode directly
@@ -240,6 +253,8 @@ public class LzhDebugTest {
     }
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Debug_HuffmanCodeTable_Verify() {
     // Build a code tree for 11 symbols, verify every entry decodes correctly
@@ -303,6 +318,8 @@ public class LzhDebugTest {
     }
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Debug_ExtraBitsRoundTrip() {
     // Test MSB BitWriter + BitBuffer round-trip for extra bits
@@ -327,6 +344,8 @@ public class LzhDebugTest {
     Assert.That(huff2, Is.EqualTo(0b11u), "Second code");
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Debug_ManyLiterals() {
     byte[] data = new byte[100];
@@ -341,6 +360,8 @@ public class LzhDebugTest {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Debug_ManualEncodeDecode() {
     // Manually create an LZH stream: 3 literals (A, B, C) + match(len=3, dist=2, 0-based)
@@ -404,6 +425,8 @@ public class LzhDebugTest {
     Assert.That(result, Is.EqualTo(new byte[] { 0x41, 0x42, 0x43, 0x41, 0x42, 0x43 }));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Debug_MatchDistance10_Manual() {
     // The encoder produces this for ABCDEFGHIJABCDEFGHIJ:
@@ -460,6 +483,8 @@ public class LzhDebugTest {
     }
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [TestCase(30)]
   public void Debug_PatternData_Sizes(int size) {
     byte[] data = new byte[size];
@@ -475,6 +500,8 @@ public class LzhDebugTest {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [TestCase(100)]
   [TestCase(200)]
   [TestCase(500)]

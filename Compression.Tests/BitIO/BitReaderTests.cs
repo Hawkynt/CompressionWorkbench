@@ -4,6 +4,7 @@ namespace Compression.Tests.BitIO;
 
 [TestFixture]
 public class BitReaderTests {
+  [Category("HappyPath")]
   [Test]
   public void ReadBit_LsbFirst_ReadsLeastSignificantBitFirst() {
     // 0b10110100 = 0xB4
@@ -21,6 +22,7 @@ public class BitReaderTests {
     Assert.That(reader.ReadBit(), Is.EqualTo(1));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void ReadBit_MsbFirst_ReadsMostSignificantBitFirst() {
     // 0b10110100 = 0xB4
@@ -38,6 +40,7 @@ public class BitReaderTests {
     Assert.That(reader.ReadBit(), Is.EqualTo(0));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void ReadBits_LsbFirst_ReadsMultipleBits() {
     // 0b11010010 = 0xD2
@@ -54,6 +57,7 @@ public class BitReaderTests {
     Assert.That(value, Is.EqualTo(13u)); // upper nibble of 0xD2
   }
 
+  [Category("HappyPath")]
   [Test]
   public void ReadBits_MsbFirst_ReadsMultipleBits() {
     // 0b11010010 = 0xD2
@@ -69,6 +73,7 @@ public class BitReaderTests {
     Assert.That(value, Is.EqualTo(2u));
   }
 
+  [Category("Exception")]
   [Test]
   public void ReadBit_ThrowsEndOfStreamException_WhenStreamEnds() {
     var stream = new MemoryStream([]);
@@ -77,6 +82,7 @@ public class BitReaderTests {
     Assert.Throws<EndOfStreamException>(() => reader.ReadBit());
   }
 
+  [Category("Boundary")]
   [Test]
   public void ReadBits_CrossesByteBoundary() {
     var stream = new MemoryStream([0xFF, 0x00]);
@@ -87,6 +93,7 @@ public class BitReaderTests {
     Assert.That(value, Is.EqualTo(0x0Fu));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void AlignToByte_DiscardsRemainingBits() {
     var stream = new MemoryStream([0xFF, 0xAB]);
@@ -100,6 +107,7 @@ public class BitReaderTests {
     Assert.That(value, Is.EqualTo(0xABu));
   }
 
+  [Category("Exception")]
   [TestCase(0)]
   [TestCase(33)]
   public void ReadBits_ThrowsForInvalidCount(int count) {

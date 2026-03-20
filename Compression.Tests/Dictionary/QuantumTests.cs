@@ -8,16 +8,19 @@ public class QuantumTests {
   // QuantumConstants
   // -------------------------------------------------------------------------
 
+  [Category("ThemVsUs")]
   [Test]
   public void WindowSize_Level1_Returns1024() {
     Assert.That(QuantumConstants.WindowSize(1), Is.EqualTo(1024));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void WindowSize_Level7_Returns64KB() {
     Assert.That(QuantumConstants.WindowSize(7), Is.EqualTo(65536));
   }
 
+  [Category("ThemVsUs")]
   [TestCase(1, 1024)]
   [TestCase(2, 2048)]
   [TestCase(3, 4096)]
@@ -29,6 +32,7 @@ public class QuantumTests {
     Assert.That(QuantumConstants.WindowSize(level), Is.EqualTo(expected));
   }
 
+  [Category("ThemVsUs")]
   [TestCase(1, 4)]
   [TestCase(2, 5)]
   [TestCase(3, 6)]
@@ -39,6 +43,7 @@ public class QuantumTests {
     Assert.That(QuantumConstants.BaseMatchLength(selector), Is.EqualTo(expected));
   }
 
+  [Category("Exception")]
   [Test]
   public void BaseMatchLength_InvalidSelector_Throws() {
     Assert.Throws<ArgumentOutOfRangeException>(() => QuantumConstants.BaseMatchLength(0));
@@ -49,6 +54,7 @@ public class QuantumTests {
   // QuantumModel
   // -------------------------------------------------------------------------
 
+  [Category("HappyPath")]
   [Test]
   public void Model_InitialState_UniformFrequencies() {
     var model = new QuantumModel(4);
@@ -60,6 +66,7 @@ public class QuantumTests {
     Assert.That(model.GetFrequency(3), Is.EqualTo(1));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Model_CumulativeFrequencies_AreCorrect() {
     var model = new QuantumModel(4);
@@ -69,6 +76,7 @@ public class QuantumTests {
     Assert.That(model.GetCumulativeFrequency(3), Is.EqualTo(3));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Model_Update_IncrementsFrequency() {
     var model = new QuantumModel(4);
@@ -77,6 +85,7 @@ public class QuantumTests {
     Assert.That(model.TotalFrequency, Is.EqualTo(5));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Model_FindSymbol_ReturnsCorrectSymbol() {
     var model = new QuantumModel(4);
@@ -87,6 +96,7 @@ public class QuantumTests {
     Assert.That(model.FindSymbol(3), Is.EqualTo(3));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Model_FindSymbol_AfterUpdate_ReturnsCorrectSymbol() {
     var model = new QuantumModel(4);
@@ -98,6 +108,7 @@ public class QuantumTests {
     Assert.That(model.FindSymbol(4), Is.EqualTo(3));
   }
 
+  [Category("Boundary")]
   [Test]
   public void Model_Rescale_OccursAtThreshold() {
     var model = new QuantumModel(4);
@@ -114,6 +125,7 @@ public class QuantumTests {
     Assert.That(model.GetFrequency(0), Is.GreaterThan(model.GetFrequency(1)));
   }
 
+  [Category("Boundary")]
   [Test]
   public void Model_Rescale_MinimumFrequencyIsOne() {
     var model = new QuantumModel(4);
@@ -131,6 +143,8 @@ public class QuantumTests {
   // QuantumRangeDecoder
   // -------------------------------------------------------------------------
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RangeDecoder_DecodeSymbol_RoundTripsWithEncoder() {
     // Encode a known sequence of symbols, then decode them
@@ -145,6 +159,8 @@ public class QuantumTests {
     }
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RangeDecoder_DecodeSymbol_LargerAlphabet() {
     // Test with 256-symbol alphabet (like literal model)
@@ -159,6 +175,8 @@ public class QuantumTests {
     }
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RangeDecoder_ReadRawBits_DecodesCorrectly() {
     // Encode a series of raw bit values, then decode
@@ -182,6 +200,8 @@ public class QuantumTests {
     Assert.That(decodedRaw, Is.EqualTo(rawValue));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RangeDecoder_ReadRawBits_SingleBit() {
     int rawValue = 1;
@@ -195,6 +215,7 @@ public class QuantumTests {
   // QuantumDecompressor
   // -------------------------------------------------------------------------
 
+  [Category("Exception")]
   [Test]
   public void Decompress_InvalidWindowLevel_Throws() {
     Assert.Throws<ArgumentOutOfRangeException>(
@@ -203,18 +224,22 @@ public class QuantumTests {
       () => QuantumDecompressor.Decompress([], 0, 8));
   }
 
+  [Category("Exception")]
   [Test]
   public void Decompress_NegativeSize_Throws() {
     Assert.Throws<ArgumentOutOfRangeException>(
       () => QuantumDecompressor.Decompress([], -1, 1));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Decompress_ZeroSize_ReturnsEmpty() {
     var result = QuantumDecompressor.Decompress([], 0, 1);
     Assert.That(result, Is.Empty);
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_SingleLiteral_RoundTrip() {
     // Encode a single literal byte (0x42) through the Quantum format
@@ -224,6 +249,8 @@ public class QuantumTests {
     Assert.That(decompressed, Is.EqualTo(original));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_MultipleLiterals_RoundTrip() {
     byte[] original = [0x48, 0x65, 0x6C, 0x6C, 0x6F]; // "Hello"
@@ -232,6 +259,8 @@ public class QuantumTests {
     Assert.That(decompressed, Is.EqualTo(original));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_WithMatch_RoundTrip() {
     // Data with a repeated pattern that can use match references
@@ -243,6 +272,8 @@ public class QuantumTests {
     Assert.That(decompressed, Is.EqualTo(original));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_AllSameBytes_RoundTrip() {
     byte[] original = new byte[32];
@@ -252,6 +283,8 @@ public class QuantumTests {
     Assert.That(decompressed, Is.EqualTo(original));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void Decompress_LargerWindow_RoundTrip() {
     byte[] original = new byte[100];
@@ -260,6 +293,157 @@ public class QuantumTests {
     var compressed = QuantumCompress(original, 3);
     var decompressed = QuantumDecompressor.Decompress(compressed, original.Length, 3);
     Assert.That(decompressed, Is.EqualTo(original));
+  }
+
+  // -------------------------------------------------------------------------
+  // QuantumCompressor round-trips
+  // -------------------------------------------------------------------------
+
+  [Category("EdgeCase")]
+  [Test]
+  public void Compressor_Empty_ReturnsEmpty() {
+    var compressed = QuantumCompressor.Compress([], 1);
+    Assert.That(compressed, Is.Empty);
+  }
+
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Compressor_SingleByte_RoundTrip() {
+    byte[] data = [0x42];
+    var compressed = QuantumCompressor.Compress(data, 1);
+    var decompressed = QuantumDecompressor.Decompress(compressed, data.Length, 1,
+      QuantumConstants.CompressorRescaleThreshold);
+    Assert.That(decompressed, Is.EqualTo(data));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Compressor_ShortText_RoundTrip() {
+    var data = "Hello, Quantum!"u8.ToArray();
+    var compressed = QuantumCompressor.Compress(data, 1);
+    var decompressed = QuantumDecompressor.Decompress(compressed, data.Length, 1,
+      QuantumConstants.CompressorRescaleThreshold);
+    Assert.That(decompressed, Is.EqualTo(data));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Compressor_RepetitiveData_RoundTrip() {
+    var data = new byte[200];
+    for (var i = 0; i < data.Length; ++i)
+      data[i] = (byte)(i % 10);
+    var compressed = QuantumCompressor.Compress(data, 3);
+    var decompressed = QuantumDecompressor.Decompress(compressed, data.Length, 3,
+      QuantumConstants.CompressorRescaleThreshold);
+    Assert.That(decompressed, Is.EqualTo(data));
+  }
+
+  [Category("HappyPath")]
+  [Test]
+  public void Compressor_RepetitiveData_SmallerThanLiteral() {
+    var data = new byte[200];
+    Array.Fill(data, (byte)0xAA);
+    var compressedLz = QuantumCompressor.Compress(data, 3);
+    // LZ should compress repetitive data well
+    Assert.That(compressedLz.Length, Is.LessThan(data.Length));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [TestCase(50)]
+  [TestCase(100)]
+  [TestCase(200)]
+  [TestCase(300)]
+  [TestCase(500)]
+  public void Compressor_RandomData_RoundTrip(int size) {
+    var data = new byte[size];
+    new Random(42).NextBytes(data);
+    var compressed = QuantumCompressor.Compress(data, 5);
+    var decompressed = QuantumDecompressor.Decompress(compressed, data.Length, 5,
+      QuantumConstants.CompressorRescaleThreshold);
+    Assert.That(decompressed, Is.EqualTo(data));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Compressor_AllByteValues_RoundTrip() {
+    var data = new byte[256];
+    for (var i = 0; i < 256; ++i)
+      data[i] = (byte)i;
+    var compressed = QuantumCompressor.Compress(data, 3);
+    var decompressed = QuantumDecompressor.Decompress(compressed, data.Length, 3,
+      QuantumConstants.CompressorRescaleThreshold);
+    Assert.That(decompressed, Is.EqualTo(data));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [TestCase(1)]
+  [TestCase(3)]
+  [TestCase(5)]
+  [TestCase(7)]
+  public void Compressor_AllWindowLevels_RoundTrip(int level) {
+    var data = "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ"u8.ToArray();
+    var compressed = QuantumCompressor.Compress(data, level);
+    var decompressed = QuantumDecompressor.Decompress(compressed, data.Length, level,
+      QuantumConstants.CompressorRescaleThreshold);
+    Assert.That(decompressed, Is.EqualTo(data));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void RangeEncoder_ManySymbols_RoundTrip() {
+    var rng = new Random(123);
+    var symbols = new int[500];
+    for (var i = 0; i < symbols.Length; ++i)
+      symbols[i] = rng.Next(7);
+
+    const int threshold = QuantumConstants.CompressorRescaleThreshold;
+    using var ms = new MemoryStream();
+    var encoder = new Compression.Core.Dictionary.Quantum.QuantumRangeEncoder(ms);
+    var encModel = new QuantumModel(7, threshold);
+    foreach (var sym in symbols)
+      encoder.EncodeSymbol(encModel, sym);
+    encoder.Finish();
+    var encoded = ms.ToArray();
+
+    var decoder = new QuantumRangeDecoder(encoded);
+    var decModel = new QuantumModel(7, threshold);
+    for (var i = 0; i < symbols.Length; ++i) {
+      var decoded = decoder.DecodeSymbol(decModel);
+      Assert.That(decoded, Is.EqualTo(symbols[i]), $"Mismatch at symbol {i}");
+    }
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void RangeEncoder_LargeAlphabet_ManySymbols_RoundTrip() {
+    var rng = new Random(456);
+    var symbols = new int[1000];
+    for (var i = 0; i < symbols.Length; ++i)
+      symbols[i] = rng.Next(256);
+
+    const int threshold = QuantumConstants.CompressorRescaleThreshold;
+    using var ms = new MemoryStream();
+    var encoder = new Compression.Core.Dictionary.Quantum.QuantumRangeEncoder(ms);
+    var encModel = new QuantumModel(256, threshold);
+    foreach (var sym in symbols)
+      encoder.EncodeSymbol(encModel, sym);
+    encoder.Finish();
+    var encoded = ms.ToArray();
+
+    var decoder = new QuantumRangeDecoder(encoded);
+    var decModel = new QuantumModel(256, threshold);
+    for (var i = 0; i < symbols.Length; ++i) {
+      var decoded = decoder.DecodeSymbol(decModel);
+      Assert.That(decoded, Is.EqualTo(symbols[i]), $"Mismatch at symbol {i}");
+    }
   }
 
   // -------------------------------------------------------------------------

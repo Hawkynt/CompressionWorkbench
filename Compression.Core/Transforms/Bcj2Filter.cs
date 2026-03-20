@@ -169,7 +169,8 @@ public static class Bcj2Filter {
 
     void RcNormalize() {
       while (rcRange < 0x01000000) {
-        rcRange <<= 8; RcShiftLow();
+        rcRange <<= 8;
+        RcShiftLow();
       }
     }
 

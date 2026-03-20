@@ -4,6 +4,8 @@ namespace Compression.Tests.Entropy;
 
 [TestFixture]
 public class RangeCodingTests {
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeDecode_SingleBit_RoundTrips() {
     using var ms = new MemoryStream();
@@ -19,6 +21,8 @@ public class RangeCodingTests {
     Assert.That(bit, Is.EqualTo(1));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeDecode_MultipleBits_RoundTrips() {
     int[] bits = [0, 1, 1, 0, 1, 0, 0, 1, 1, 1, 0, 0];
@@ -40,6 +44,8 @@ public class RangeCodingTests {
     Assert.That(decoded, Is.EqualTo(bits));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeDecode_DirectBits_RoundTrips() {
     using var ms = new MemoryStream();
@@ -56,6 +62,8 @@ public class RangeCodingTests {
     Assert.That(decoder.DecodeDirectBits(4), Is.EqualTo(0));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void BitTree_EncodeDecode_RoundTrips() {
     // Test encoding/decoding all byte values 0..255
@@ -77,6 +85,8 @@ public class RangeCodingTests {
     }
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void BitTree_ReverseEncodeDecode_RoundTrips() {
     using var ms = new MemoryStream();
@@ -97,6 +107,8 @@ public class RangeCodingTests {
     }
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void AdaptiveProbability_ConvergesForBiasedData() {
     using var ms = new MemoryStream();
@@ -121,6 +133,8 @@ public class RangeCodingTests {
     Assert.That(decodeProb, Is.GreaterThan(1900));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void LargeData_RoundTrip() {
     var rng = new Random(42);
@@ -144,6 +158,7 @@ public class RangeCodingTests {
     }
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void EmptyStream_Works() {
     // Encode zero bits (just finish)

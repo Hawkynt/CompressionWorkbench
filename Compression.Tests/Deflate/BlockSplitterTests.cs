@@ -4,6 +4,7 @@ namespace Compression.Tests.Deflate;
 
 [TestFixture]
 public class BlockSplitterTests {
+  [Category("HappyPath")]
   [Test]
   public void Split_SmallInput_SingleBlock() {
     var symbols = new LzSymbol[100];
@@ -17,6 +18,7 @@ public class BlockSplitterTests {
     Assert.That(blocks[0].End, Is.EqualTo(100));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Split_ContiguousRanges() {
     // Create enough symbols to potentially get multiple blocks
@@ -35,6 +37,7 @@ public class BlockSplitterTests {
     Assert.That(blocks[^1].End, Is.EqualTo(5000));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Split_HeterogeneousData_SplitsAtBoundary() {
     // Create data with two very different halves
@@ -58,6 +61,7 @@ public class BlockSplitterTests {
     Assert.That(total, Is.EqualTo(4000));
   }
 
+  [Category("Boundary")]
   [Test]
   public void Split_RespectsMaxBlocks() {
     var symbols = new LzSymbol[10000];
@@ -68,6 +72,7 @@ public class BlockSplitterTests {
     Assert.That(blocks, Has.Count.LessThanOrEqualTo(3));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Split_EmptyInput_SingleBlock() {
     var blocks = BlockSplitter.Split([]);

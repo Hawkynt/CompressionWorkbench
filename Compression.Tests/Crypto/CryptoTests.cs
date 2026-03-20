@@ -6,6 +6,8 @@ namespace Compression.Tests.Crypto;
 public class CryptoTests {
   // AES-256-CBC Tests
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void AesCbc_RoundTrip() {
     byte[] key = new byte[32];
@@ -20,6 +22,8 @@ public class CryptoTests {
     Assert.That(decrypted, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void AesCbc_NoPadding_RoundTrip() {
     byte[] key = new byte[32];
@@ -35,6 +39,7 @@ public class CryptoTests {
     Assert.That(decrypted, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void AesCbc_EncryptedDiffersFromPlaintext() {
     byte[] key = new byte[32];
@@ -48,6 +53,7 @@ public class CryptoTests {
     Assert.That(encrypted, Is.Not.EqualTo(data));
   }
 
+  [Category("Exception")]
   [Test]
   public void AesCbc_WrongKey_Fails() {
     byte[] key1 = new byte[32];
@@ -64,6 +70,7 @@ public class CryptoTests {
       () => AesCryptor.DecryptCbc(encrypted, key2, iv));
   }
 
+  [Category("Exception")]
   [Test]
   public void AesCbc_InvalidKeyLength_Throws() {
     Assert.Throws<ArgumentException>(() =>
@@ -72,6 +79,8 @@ public class CryptoTests {
 
   // AES-256-CTR Tests
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void AesCtr_RoundTrip() {
     byte[] key = new byte[32];
@@ -86,6 +95,8 @@ public class CryptoTests {
     Assert.That(decrypted, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void AesCtr_IsSymmetric() {
     byte[] key = new byte[32];
@@ -103,6 +114,7 @@ public class CryptoTests {
     Assert.That(pass2, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void AesCtr_EmptyData() {
     byte[] key = new byte[32];
@@ -112,6 +124,7 @@ public class CryptoTests {
 
   // PBKDF2 Tests
 
+  [Category("HappyPath")]
   [Test]
   public void Pbkdf2Sha256_DeterministicOutput() {
     byte[] salt = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -120,6 +133,7 @@ public class CryptoTests {
     Assert.That(key1, Is.EqualTo(key2));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Pbkdf2Sha256_DifferentPasswords_DifferentKeys() {
     byte[] salt = [1, 2, 3, 4];
@@ -128,6 +142,7 @@ public class CryptoTests {
     Assert.That(key1, Is.Not.EqualTo(key2));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Pbkdf2Sha256_DifferentSalts_DifferentKeys() {
     byte[] salt1 = [1, 2, 3, 4];
@@ -137,6 +152,7 @@ public class CryptoTests {
     Assert.That(key1, Is.Not.EqualTo(key2));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Pbkdf2Sha1_DeterministicOutput() {
     byte[] salt = [10, 20, 30, 40];
@@ -147,6 +163,7 @@ public class CryptoTests {
 
   // 7z Key Derivation Tests
 
+  [Category("HappyPath")]
   [Test]
   public void SevenZipDeriveKey_ProducesKey() {
     byte[] salt = [0xAA, 0xBB, 0xCC, 0xDD];
@@ -155,6 +172,7 @@ public class CryptoTests {
     Assert.That(key, Is.Not.EqualTo(new byte[32])); // Not all zeros
   }
 
+  [Category("HappyPath")]
   [Test]
   public void SevenZipDeriveKey_Deterministic() {
     byte[] salt = [1, 2, 3, 4];
@@ -163,6 +181,7 @@ public class CryptoTests {
     Assert.That(key1, Is.EqualTo(key2));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void SevenZipDeriveKey_DifferentPassword_DifferentKey() {
     byte[] salt = [1, 2];
@@ -172,6 +191,7 @@ public class CryptoTests {
   }
 
   // RAR5 Key Derivation Test
+  [Category("HappyPath")]
   [Test]
   public void Rar5DeriveKey_ProducesKey() {
     byte[] salt = new byte[16];
@@ -182,6 +202,8 @@ public class CryptoTests {
 
   // Integration: AES + Key Derivation
 
+  [Category("End2End")]
+  [Category("RoundTrip")]
   [Test]
   public void AesCbc_WithDerivedKey_RoundTrip() {
     byte[] salt = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];

@@ -5,6 +5,8 @@ namespace Compression.Tests.Lzop;
 
 [TestFixture]
 public class LzopTests {
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyData() {
     byte[] input = [];
@@ -14,6 +16,8 @@ public class LzopTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SmallData() {
     var input = Encoding.ASCII.GetBytes("Hello, LZOP World!");
@@ -23,6 +27,8 @@ public class LzopTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepetitiveData() {
     var input = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("ABCDEFGHIJKLMNOP", 5000)));
@@ -33,6 +39,8 @@ public class LzopTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(12345);
@@ -44,6 +52,8 @@ public class LzopTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeData_MultipleBlocks() {
     // Larger than one 256 KB block to exercise multi-block handling
@@ -58,6 +68,7 @@ public class LzopTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void OriginalFileName_IsPreserved() {
     var input = Encoding.ASCII.GetBytes("file contents");
@@ -68,6 +79,7 @@ public class LzopTests {
     Assert.That(reader.OriginalFileName, Is.EqualTo(fileName));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void OriginalFileName_NullWhenNotProvided() {
     var input = Encoding.ASCII.GetBytes("no filename here");
@@ -77,6 +89,8 @@ public class LzopTests {
     Assert.That(reader.OriginalFileName, Is.Null);
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_ExactlyOneBlock() {
     // Exactly 256 KB (one full block)
@@ -88,6 +102,7 @@ public class LzopTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  [Category("Exception")]
   [Test]
   public void InvalidMagic_Throws() {
     var bad = new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08 };

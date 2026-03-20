@@ -5,6 +5,7 @@ namespace Compression.Tests.Checksums;
 
 [TestFixture]
 public class Crc16Tests {
+  [Category("ThemVsUs")]
   [Test]
   public void Compute_ARC_KnownVector() {
     // CRC-16/ARC of "123456789" = 0xBB3D
@@ -13,12 +14,14 @@ public class Crc16Tests {
     Assert.That(crc, Is.EqualTo((ushort)0xBB3D));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void Compute_EmptyData_ReturnsZero() {
     ushort crc = Crc16.Compute([]);
     Assert.That(crc, Is.EqualTo((ushort)0));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void IncrementalUpdate_MatchesBulk() {
     byte[] data = Encoding.ASCII.GetBytes("Hello, World!");
@@ -31,6 +34,7 @@ public class Crc16Tests {
     Assert.That((ushort)crc.Value, Is.EqualTo(bulkCrc));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Reset_ResetsToInitialState() {
     var crc = new Crc16();

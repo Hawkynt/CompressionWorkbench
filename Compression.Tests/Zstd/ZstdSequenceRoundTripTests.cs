@@ -5,6 +5,8 @@ namespace Compression.Tests.Zstd;
 
 [TestFixture]
 public class ZstdSequenceRoundTripTests {
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void SequenceEncodeDecodeRoundTrip_Simple() {
     var sequences = new ZstdSequence[] {
@@ -19,7 +21,9 @@ public class ZstdSequenceRoundTripTests {
     var pos = 0;
     int[] repeatOffsetsDec = [1, 4, 8];
     var blockData = output.AsSpan(0, written).ToArray();
-    var decoded = ZstdSequences.DecodeSequences(blockData, ref pos, written, repeatOffsetsDec);
+    FseTable? pll = null, pof = null, pml = null;
+    var decoded = ZstdSequences.DecodeSequences(blockData, ref pos, written, repeatOffsetsDec,
+      ref pll, ref pof, ref pml);
 
     Assert.That(decoded.Length, Is.EqualTo(sequences.Length));
     for (int i = 0; i < decoded.Length; ++i) {
@@ -29,6 +33,8 @@ public class ZstdSequenceRoundTripTests {
     }
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void SequenceEncodeDecodeRoundTrip_SingleSequence() {
     var sequences = new ZstdSequence[] {
@@ -42,7 +48,9 @@ public class ZstdSequenceRoundTripTests {
     var pos = 0;
     int[] repeatOffsetsDec = [1, 4, 8];
     var blockData = output.AsSpan(0, written).ToArray();
-    var decoded = ZstdSequences.DecodeSequences(blockData, ref pos, written, repeatOffsetsDec);
+    FseTable? pll = null, pof = null, pml = null;
+    var decoded = ZstdSequences.DecodeSequences(blockData, ref pos, written, repeatOffsetsDec,
+      ref pll, ref pof, ref pml);
 
     Assert.That(decoded.Length, Is.EqualTo(1));
     Assert.That(decoded[0].LiteralLength, Is.EqualTo(3));

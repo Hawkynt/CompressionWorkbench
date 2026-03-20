@@ -4,6 +4,7 @@ namespace Compression.Tests.Dictionary;
 
 [TestFixture]
 public class BinaryTreeMatchFinderTests {
+  [Category("HappyPath")]
   [Test]
   public void FindMatch_NoMatch_ReturnsDefault() {
     var finder = new BinaryTreeMatchFinder(1024);
@@ -14,6 +15,7 @@ public class BinaryTreeMatchFinderTests {
     Assert.That(match.Length, Is.EqualTo(0));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void FindMatch_SimpleRepeat_FindsMatch() {
     var finder = new BinaryTreeMatchFinder(1024);
@@ -30,6 +32,7 @@ public class BinaryTreeMatchFinderTests {
     Assert.That(match.Distance, Is.GreaterThan(0));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void FindMatch_LongerMatch_Preferred() {
     var finder = new BinaryTreeMatchFinder(1024);
@@ -47,6 +50,7 @@ public class BinaryTreeMatchFinderTests {
     Assert.That(match.Length, Is.GreaterThanOrEqualTo(3));
   }
 
+  [Category("Boundary")]
   [Test]
   public void FindMatch_RespectsMaxLength() {
     var finder = new BinaryTreeMatchFinder(1024);
@@ -60,6 +64,7 @@ public class BinaryTreeMatchFinderTests {
     Assert.That(match.Length, Is.LessThanOrEqualTo(5));
   }
 
+  [Category("Boundary")]
   [Test]
   public void FindMatch_RespectsMinLength() {
     var finder = new BinaryTreeMatchFinder(1024);
@@ -74,6 +79,7 @@ public class BinaryTreeMatchFinderTests {
     Assert.That(match.Length == 0 || match.Length >= 3);
   }
 
+  [Category("HappyPath")]
   [Test]
   public void InsertPosition_DoesNotCrash() {
     var finder = new BinaryTreeMatchFinder(1024);
@@ -87,6 +93,7 @@ public class BinaryTreeMatchFinderTests {
     Assert.Pass();
   }
 
+  [Category("HappyPath")]
   [Test]
   public void FindMatch_ManyPositions_DoesNotCrash() {
     var finder = new BinaryTreeMatchFinder(4096);
@@ -100,6 +107,7 @@ public class BinaryTreeMatchFinderTests {
     Assert.Pass();
   }
 
+  [Category("HappyPath")]
   [Test]
   public void ImplementsIMatchFinder() {
     IMatchFinder finder = new BinaryTreeMatchFinder(1024);

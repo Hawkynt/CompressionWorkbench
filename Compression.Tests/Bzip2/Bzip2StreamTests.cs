@@ -5,6 +5,8 @@ namespace Compression.Tests.Bzip2;
 
 [TestFixture]
 public class Bzip2StreamTests {
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyData() {
     byte[] data = [];
@@ -13,6 +15,8 @@ public class Bzip2StreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleByte() {
     byte[] data = [42];
@@ -21,6 +25,8 @@ public class Bzip2StreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_TextData() {
     byte[] data = "Hello, bzip2 World! Testing the Burrows-Wheeler compression."u8.ToArray();
@@ -29,6 +35,8 @@ public class Bzip2StreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepetitiveData() {
     byte[] pattern = "the quick brown fox jumps over the lazy dog. "u8.ToArray();
@@ -41,6 +49,8 @@ public class Bzip2StreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
@@ -52,6 +62,8 @@ public class Bzip2StreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_HighlyRepetitive() {
     byte[] data = new byte[4096];
@@ -61,6 +73,8 @@ public class Bzip2StreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeData() {
     var rng = new Random(123);
@@ -77,6 +91,8 @@ public class Bzip2StreamTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_AllBlockSizes() {
     byte[] data = "Testing all block sizes."u8.ToArray();
@@ -88,6 +104,7 @@ public class Bzip2StreamTests {
     }
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void StreamHeader_Format() {
     byte[] data = [1, 2, 3];
@@ -99,6 +116,7 @@ public class Bzip2StreamTests {
     Assert.That(compressed[3], Is.EqualTo((byte)'9'));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Compress_RepetitiveData_CompressesWell() {
     byte[] data = new byte[4096];
@@ -109,6 +127,8 @@ public class Bzip2StreamTests {
     Assert.That(ratio, Is.LessThan(0.1), $"Compression ratio {ratio:P} too high");
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void BlockCrc_IsCorrect() {
     // Compress known data — this tests that the compressor computes and writes CRCs

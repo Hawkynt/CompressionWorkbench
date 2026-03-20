@@ -4,6 +4,8 @@ namespace Compression.Tests.Transforms;
 
 [TestFixture]
 public class BcjFilterTests {
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeX86_DecodeX86_RoundTrip_Random() {
     var data = new byte[1024];
@@ -13,6 +15,8 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeX86_DecodeX86_RoundTrip_SimulatedCode() {
     // Create data with E8/E9 bytes
@@ -27,6 +31,7 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void EncodeX86_ConvertsCallAddresses() {
     var data = new byte[10];
@@ -39,6 +44,8 @@ public class BcjFilterTests {
     Assert.That(absAddr, Is.EqualTo(10));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeX86_DecodeX86_Empty() {
     var encoded = BcjFilter.EncodeX86(ReadOnlySpan<byte>.Empty);
@@ -46,6 +53,7 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.Empty);
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void EncodeX86_NoE8E9_DataUnchanged() {
     var data = new byte[] { 0x90, 0x90, 0x90, 0x90, 0xCC, 0xCC, 0xCC, 0xCC };
@@ -53,6 +61,8 @@ public class BcjFilterTests {
     Assert.That(encoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeX86_DecodeX86_RoundTrip_WithStartOffset() {
     var data = new byte[64];
@@ -63,6 +73,7 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
   [Test]
   public void EncodeX86_E8AtEndOfBuffer_NotConverted() {
     // E8 at last position: not enough room for 4-byte address
@@ -74,6 +85,8 @@ public class BcjFilterTests {
     Assert.That(encoded[4], Is.EqualTo(0xE8));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeX86_DecodeX86_ConsecutiveE8() {
     // Two CALL instructions back to back
@@ -88,6 +101,7 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void EncodeX86_E9_ConvertsJmpAddresses() {
     var data = new byte[10];
@@ -100,6 +114,8 @@ public class BcjFilterTests {
     Assert.That(absAddr, Is.EqualTo(15));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeX86_DecodeX86_RoundTrip_LargeRandom() {
     var data = new byte[8192];
@@ -110,6 +126,8 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeX86_NegativeRelativeAddress() {
     // Backward call: relative address = -10
@@ -128,6 +146,8 @@ public class BcjFilterTests {
 
   // ---- ARM ----
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeArm_DecodeArm_RoundTrip_Random() {
     var data = new byte[1024];
@@ -137,6 +157,8 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeArm_DecodeArm_RoundTrip_SimulatedBL() {
     var data = new byte[16];
@@ -147,6 +169,7 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void EncodeArm_NoBlInstructions_DataUnchanged() {
     var data = new byte[] { 0x00, 0x00, 0x00, 0xEA, 0x01, 0x02, 0x03, 0x04 }; // 0xEA not 0xEB
@@ -154,12 +177,16 @@ public class BcjFilterTests {
     Assert.That(encoded, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeArm_DecodeArm_Empty() {
     var encoded = BcjFilter.EncodeArm(ReadOnlySpan<byte>.Empty);
     Assert.That(encoded, Is.Empty);
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeArm_DecodeArm_RoundTrip_WithStartOffset() {
     var data = new byte[256];
@@ -171,6 +198,8 @@ public class BcjFilterTests {
 
   // ---- ARM Thumb ----
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeArmThumb_DecodeArmThumb_RoundTrip_Random() {
     var data = new byte[1024];
@@ -180,6 +209,8 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeArmThumb_DecodeArmThumb_RoundTrip_SimulatedBL() {
     var data = new byte[8];
@@ -191,6 +222,7 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void EncodeArmThumb_NoBlInstructions_DataUnchanged() {
     var data = new byte[] { 0x00, 0xE0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 };
@@ -198,6 +230,8 @@ public class BcjFilterTests {
     Assert.That(encoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeArmThumb_DecodeArmThumb_WithStartOffset() {
     var data = new byte[256];
@@ -209,6 +243,8 @@ public class BcjFilterTests {
 
   // ---- PowerPC ----
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodePowerPC_DecodePowerPC_RoundTrip_Random() {
     var data = new byte[1024];
@@ -218,6 +254,8 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodePowerPC_DecodePowerPC_RoundTrip_SimulatedBL() {
     var data = new byte[8];
@@ -229,6 +267,7 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void EncodePowerPC_NoBranchInstructions_DataUnchanged() {
     // 0x60000000 = nop (ori r0,r0,0)
@@ -237,6 +276,8 @@ public class BcjFilterTests {
     Assert.That(encoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodePowerPC_DecodePowerPC_WithStartOffset() {
     var data = new byte[256];
@@ -248,6 +289,8 @@ public class BcjFilterTests {
 
   // ---- SPARC ----
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeSparc_DecodeSparc_RoundTrip_Random() {
     var data = new byte[1024];
@@ -257,6 +300,8 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeSparc_DecodeSparc_RoundTrip_SimulatedCall() {
     var data = new byte[8];
@@ -268,6 +313,7 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void EncodeSparc_NoCallInstructions_DataUnchanged() {
     // 0x01000000 = nop (sethi %hi(0), %g0) → bits 31-30 = 00, not CALL
@@ -276,6 +322,8 @@ public class BcjFilterTests {
     Assert.That(encoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeSparc_DecodeSparc_WithStartOffset() {
     var data = new byte[256];
@@ -287,6 +335,8 @@ public class BcjFilterTests {
 
   // ---- IA-64 ----
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeIA64_DecodeIA64_RoundTrip_Random() {
     var data = new byte[1024];
@@ -296,6 +346,8 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeIA64_DecodeIA64_RoundTrip_SimulatedBranch() {
     // Build a 16-byte bundle with template 0x16 (BBB — all 3 slots are B-type)
@@ -320,6 +372,7 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void EncodeIA64_NoTransform_DataUnchanged() {
     // Template 0x00 = MII → no branch slots (mask = 0)
@@ -334,12 +387,16 @@ public class BcjFilterTests {
     Assert.That(encoded, Is.EqualTo(data));
   }
 
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeIA64_DecodeIA64_Empty() {
     var encoded = BcjFilter.EncodeIA64(ReadOnlySpan<byte>.Empty);
     Assert.That(encoded, Is.Empty);
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeIA64_DecodeIA64_WithStartOffset() {
     var data = new byte[1024];
@@ -349,6 +406,8 @@ public class BcjFilterTests {
     Assert.That(decoded, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [Test]
   public void EncodeIA64_DecodeIA64_ShortData() {
     // Data shorter than 16 bytes — no bundles to process

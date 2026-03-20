@@ -4,6 +4,7 @@ namespace Compression.Tests.Deflate;
 
 [TestFixture]
 public class ZopfliHashChainTests {
+  [Category("HappyPath")]
   [Test]
   public void FindAllMatches_ReturnsMultipleLengths() {
     // "ABCABCABCABC" — position 3 should match position 0 at lengths 3,4,5,6,7,8,9
@@ -18,6 +19,7 @@ public class ZopfliHashChainTests {
     Assert.That(matches, Has.Count.GreaterThan(1));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void FindAllMatches_AscendingLengthOrder() {
     byte[] data = "ABCABCABCABC"u8.ToArray();
@@ -34,6 +36,7 @@ public class ZopfliHashChainTests {
     }
   }
 
+  [Category("HappyPath")]
   [Test]
   public void FindAllMatches_DeduplicatesByLength() {
     // Multiple candidates at the same length — only one per length (shortest distance)
@@ -50,6 +53,7 @@ public class ZopfliHashChainTests {
     Assert.That(lengths, Is.EqualTo(lengths.Distinct().ToList()));
   }
 
+  [Category("Boundary")]
   [Test]
   public void FindAllMatches_RespectsMaxDistance() {
     byte[] data = new byte[100];
@@ -69,6 +73,7 @@ public class ZopfliHashChainTests {
       Assert.That(m.Distance, Is.LessThanOrEqualTo(10));
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void FindAllMatches_NoMatchForShortData() {
     byte[] data = "AB"u8.ToArray();
@@ -78,6 +83,7 @@ public class ZopfliHashChainTests {
     Assert.That(matches, Is.Empty);
   }
 
+  [Category("EdgeCase")]
   [Test]
   public void FindAllMatches_NoMatchForUniqueData() {
     byte[] data = new byte[256];
@@ -92,6 +98,7 @@ public class ZopfliHashChainTests {
     Assert.That(matches, Is.Empty);
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Insert_DoesNotReturnMatches() {
     byte[] data = "ABCABC"u8.ToArray();

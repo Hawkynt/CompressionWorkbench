@@ -21,6 +21,8 @@ public class DeflateRoundTripTests {
     return output.ToArray();
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
   [TestCase(0)]
   [TestCase(1)]
   [TestCase(100)]
@@ -41,6 +43,8 @@ public class DeflateRoundTripTests {
     }
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [TestCase(0)]
   [TestCase(1)]
   [TestCase(100)]
@@ -57,6 +61,8 @@ public class DeflateRoundTripTests {
     Assert.That(result, Is.EqualTo(data), $"System failed to decompress our output, size {size}");
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [TestCase(0)]
   [TestCase(1)]
   [TestCase(100)]
@@ -73,6 +79,8 @@ public class DeflateRoundTripTests {
     Assert.That(result, Is.EqualTo(data), $"We failed to decompress system output, size {size}");
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeRepetitive() {
     byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
@@ -88,6 +96,8 @@ public class DeflateRoundTripTests {
     Assert.That(compressed.Length, Is.LessThan(data.Length / 10));
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeRepetitive_SystemInterop() {
     byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
@@ -100,6 +110,8 @@ public class DeflateRoundTripTests {
     Assert.That(result, Is.EqualTo(data));
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [TestCase(0)]
   [TestCase(1)]
   [TestCase(100)]
@@ -114,6 +126,8 @@ public class DeflateRoundTripTests {
     Assert.That(result, Is.EqualTo(data), $"System failed to decompress Maximum output, size {size}");
   }
 
+  [Category("ThemVsUs")]
+  [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Maximum_LargeRepetitive() {
     byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();

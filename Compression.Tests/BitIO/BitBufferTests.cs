@@ -4,6 +4,7 @@ namespace Compression.Tests.BitIO;
 
 [TestFixture]
 public class BitBufferTests {
+  [Category("HappyPath")]
   [Test]
   public void PeekBits_LsbFirst_DoesNotConsumeBits() {
     var stream = new MemoryStream([0xAB]);
@@ -16,6 +17,7 @@ public class BitBufferTests {
     Assert.That(peekedAgain, Is.EqualTo(0x0Bu)); // Same value — not consumed
   }
 
+  [Category("HappyPath")]
   [Test]
   public void DropBits_ConsumesSpecifiedBits() {
     var stream = new MemoryStream([0xAB]);
@@ -28,6 +30,7 @@ public class BitBufferTests {
     Assert.That(value, Is.EqualTo(0x0Au)); // upper nibble of 0xAB
   }
 
+  [Category("HappyPath")]
   [Test]
   public void ReadBits_LsbFirst_ConsumesAndReturns() {
     var stream = new MemoryStream([0xAB, 0xCD]);
@@ -40,6 +43,7 @@ public class BitBufferTests {
     Assert.That(v2, Is.EqualTo(0xCDu));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void ReadBits_MsbFirst_ConsumesAndReturns() {
     var stream = new MemoryStream([0xAB, 0xCD]);
@@ -52,6 +56,7 @@ public class BitBufferTests {
     Assert.That(v2, Is.EqualTo(0xCDu));
   }
 
+  [Category("Boundary")]
   [Test]
   public void EnsureBits_ReturnsFalseOnEndOfStream() {
     var stream = new MemoryStream([0xFF]);
@@ -62,6 +67,7 @@ public class BitBufferTests {
     Assert.That(buffer.EnsureBits(1), Is.False);
   }
 
+  [Category("Exception")]
   [Test]
   public void PeekBits_ThrowsOnEndOfStream() {
     var stream = new MemoryStream([]);
@@ -70,6 +76,7 @@ public class BitBufferTests {
     Assert.Throws<EndOfStreamException>(() => buffer.PeekBits(1));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void AlignToByte_DropsRemainderBits() {
     var stream = new MemoryStream([0xFF, 0xAB]);
@@ -84,6 +91,7 @@ public class BitBufferTests {
     Assert.That(buffer.BitsAvailable % 8, Is.EqualTo(0));
   }
 
+  [Category("Boundary")]
   [Test]
   public void ReadBits_CrossesByteBoundary_LsbFirst() {
     var stream = new MemoryStream([0b11110000, 0b00001111]);
@@ -96,6 +104,7 @@ public class BitBufferTests {
     Assert.That(cross, Is.EqualTo(0xFFu));
   }
 
+  [Category("Exception")]
   [Test]
   public void DropBits_ThrowsWhenDroppingMoreThanAvailable() {
     var stream = new MemoryStream([0xFF]);

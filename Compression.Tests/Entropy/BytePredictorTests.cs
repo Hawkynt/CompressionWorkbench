@@ -5,6 +5,7 @@ namespace Compression.Tests.Entropy;
 
 [TestFixture]
 public class BytePredictorTests {
+  [Category("EdgeCase")]
   [Test]
   public void Predict_NoContext_ReturnsUniform() {
     var pred = new BytePredictor(4);
@@ -14,6 +15,7 @@ public class BytePredictorTests {
     Assert.That(probs[0], Is.EqualTo(probs[128]));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void PredictByte_AfterTraining_ReturnsMostLikely() {
     var pred = new BytePredictor(1);
@@ -25,6 +27,7 @@ public class BytePredictorTests {
     Assert.That(predicted, Is.EqualTo((byte)'B'));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Predict_HigherOrder_MoreSpecific() {
     var pred = new BytePredictor(2);
@@ -40,6 +43,7 @@ public class BytePredictorTests {
     Assert.That(afterXB, Is.EqualTo((byte)'Y'));
   }
 
+  [Category("Boundary")]
   [Test]
   public void Update_RescalesWhenCountsHigh() {
     var pred = new BytePredictor(1);
@@ -50,12 +54,14 @@ public class BytePredictorTests {
     Assert.That(pred.PredictByte([0]), Is.EqualTo(42));
   }
 
+  [Category("Exception")]
   [Test]
   public void Constructor_InvalidOrder_Throws() {
     Assert.Throws<ArgumentOutOfRangeException>(() => new BytePredictor(0));
     Assert.Throws<ArgumentOutOfRangeException>(() => new BytePredictor(9));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Predict_FallsBackToLowerOrder() {
     var pred = new BytePredictor(3);
@@ -69,6 +75,7 @@ public class BytePredictorTests {
     Assert.That(predicted, Is.EqualTo((byte)'Z'));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void Predict_TextData_LearnsPatternsCorrectly() {
     var pred = new BytePredictor(4);
@@ -86,6 +93,7 @@ public class BytePredictorTests {
     Assert.That(predicted, Is.EqualTo((byte)'t'));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void MaxOrder_ReturnsConfiguredValue() {
     var pred = new BytePredictor(6);

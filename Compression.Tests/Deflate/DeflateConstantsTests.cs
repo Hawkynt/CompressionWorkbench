@@ -4,26 +4,31 @@ using Compression.Core.Deflate;
 
 [TestFixture]
 public class DeflateConstantsTests {
+  [Category("ThemVsUs")]
   [Test]
   public void LengthBase_Has29Entries() {
     Assert.That(DeflateConstants.LengthBase.Length, Is.EqualTo(29));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void LengthExtraBits_Has29Entries() {
     Assert.That(DeflateConstants.LengthExtraBits.Length, Is.EqualTo(29));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void DistanceBase_Has30Entries() {
     Assert.That(DeflateConstants.DistanceBase.Length, Is.EqualTo(30));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void DistanceExtraBits_Has30Entries() {
     Assert.That(DeflateConstants.DistanceExtraBits.Length, Is.EqualTo(30));
   }
 
+  [Category("Boundary")]
   [Test]
   public void LengthTable_CoversAllLengths3To258() {
     // Every length 3–258 must be reachable via base + extra bits
@@ -41,6 +46,7 @@ public class DeflateConstantsTests {
       Assert.That(reachable.Contains(len), Is.True, $"Length {len} not reachable");
   }
 
+  [Category("Boundary")]
   [Test]
   public void DistanceTable_CoversAllDistances1To32768() {
     var reachable = new HashSet<int>();
@@ -57,6 +63,7 @@ public class DeflateConstantsTests {
       Assert.That(reachable.Contains(dist), Is.True, $"Distance {dist} not reachable");
   }
 
+  [Category("HappyPath")]
   [Test]
   public void LengthBase_IsMonotonicallyIncreasing() {
     ReadOnlySpan<int> bases = DeflateConstants.LengthBase;
@@ -64,6 +71,7 @@ public class DeflateConstantsTests {
       Assert.That(bases[i], Is.GreaterThan(bases[i - 1]), $"LengthBase[{i}] <= LengthBase[{i - 1}]");
   }
 
+  [Category("HappyPath")]
   [Test]
   public void DistanceBase_IsMonotonicallyIncreasing() {
     ReadOnlySpan<int> bases = DeflateConstants.DistanceBase;
@@ -71,6 +79,7 @@ public class DeflateConstantsTests {
       Assert.That(bases[i], Is.GreaterThan(bases[i - 1]), $"DistanceBase[{i}] <= DistanceBase[{i - 1}]");
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void StaticLiteralLengths_MatchRfc1951() {
     var lengths = DeflateConstants.GetStaticLiteralLengths();
@@ -86,6 +95,7 @@ public class DeflateConstantsTests {
       Assert.That(lengths[i], Is.EqualTo(8), $"Symbol {i}");
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void StaticDistanceLengths_AllFive() {
     var lengths = DeflateConstants.GetStaticDistanceLengths();
@@ -93,11 +103,13 @@ public class DeflateConstantsTests {
     Assert.That(lengths, Is.All.EqualTo(5));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void CodeLengthOrder_Has19Entries() {
     Assert.That(DeflateConstants.CodeLengthOrder.Length, Is.EqualTo(19));
   }
 
+  [Category("ThemVsUs")]
   [Test]
   public void CodeLengthOrder_ContainsAllValues0To18() {
     var values = new HashSet<int>();
@@ -109,6 +121,7 @@ public class DeflateConstantsTests {
       Assert.That(values.Contains(i), Is.True, $"Value {i} missing from CodeLengthOrder");
   }
 
+  [Category("HappyPath")]
   [TestCase(3, 257)]
   [TestCase(4, 258)]
   [TestCase(10, 264)]
@@ -127,6 +140,7 @@ public class DeflateConstantsTests {
     Assert.That(DeflateConstants.GetLengthCode(length), Is.EqualTo(expectedCode));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void GetLengthCode_RoundTripsWithBaseAndExtraBits() {
     ReadOnlySpan<int> bases = DeflateConstants.LengthBase;
@@ -141,6 +155,7 @@ public class DeflateConstantsTests {
     }
   }
 
+  [Category("HappyPath")]
   [TestCase(1, 0)]
   [TestCase(2, 1)]
   [TestCase(4, 3)]
@@ -153,6 +168,7 @@ public class DeflateConstantsTests {
     Assert.That(DeflateConstants.GetDistanceCode(distance), Is.EqualTo(expectedCode));
   }
 
+  [Category("HappyPath")]
   [Test]
   public void GetDistanceCode_RoundTripsWithBaseAndExtraBits() {
     ReadOnlySpan<int> bases = DeflateConstants.DistanceBase;
@@ -166,12 +182,14 @@ public class DeflateConstantsTests {
     }
   }
 
+  [Category("Exception")]
   [Test]
   public void GetLengthCode_ThrowsForInvalidLength() {
     Assert.Throws<ArgumentOutOfRangeException>(() => DeflateConstants.GetLengthCode(2));
     Assert.Throws<ArgumentOutOfRangeException>(() => DeflateConstants.GetLengthCode(259));
   }
 
+  [Category("Exception")]
   [Test]
   public void GetDistanceCode_ThrowsForInvalidDistance() {
     Assert.Throws<ArgumentOutOfRangeException>(() => DeflateConstants.GetDistanceCode(0));
