@@ -52,7 +52,7 @@ listCmd.SetAction((ParseResult ctx) => {
 // ── extract ──────────────────────────────────────────────────────────
 
 var extractCmd = new Command("extract", """
-  Extract files from an archive. Supports all 48 formats including SFX executables.
+  Extract files from an archive, including SFX executables.
   Examples:
     cwb extract archive.7z -o output/        Extract all to output/
     cwb extract archive.zip file.txt         Extract specific file
@@ -152,7 +152,7 @@ createCmd.SetAction((ParseResult ctx) => {
   catch (FileNotFoundException ex) { Console.Error.WriteLine(ex.Message); return 1; }
 
   // Detect incompressible files unless --force-compress is set
-  int autoStored = 0;
+  var autoStored = 0;
   if (!forceCompress) {
     foreach (var input in resolved) {
       if (!input.IsDirectory && !string.IsNullOrEmpty(input.FullPath) && EntropyDetector.IsIncompressible(input.FullPath))
@@ -213,7 +213,7 @@ testCmd.SetAction((ParseResult ctx) => {
 
   Console.Write($"Testing {archive.Name}...");
   var sw = Stopwatch.StartNew();
-  bool ok = ArchiveOperations.Test(archive.FullName, password);
+  var ok = ArchiveOperations.Test(archive.FullName, password);
   sw.Stop();
   Console.WriteLine(ok ? $" OK ({sw.ElapsedMilliseconds}ms)" : " FAILED");
   return ok ? 0 : 1;
@@ -238,8 +238,8 @@ infoCmd.SetAction((ParseResult ctx) => {
   Console.WriteLine($"Archive size:  {FormatSize(fi.Length)} ({fi.Length:N0} bytes)");
   Console.WriteLine($"Entries:       {entries.Count}");
 
-  long totalOrig = entries.Sum(e => e.OriginalSize);
-  long totalComp = entries.Where(e => e.CompressedSize >= 0).Sum(e => e.CompressedSize);
+  var totalOrig = entries.Sum(e => e.OriginalSize);
+  var totalComp = entries.Where(e => e.CompressedSize >= 0).Sum(e => e.CompressedSize);
   Console.WriteLine($"Original size: {FormatSize(totalOrig)} ({totalOrig:N0} bytes)");
   if (totalComp > 0) Console.WriteLine($"Ratio:         {(totalOrig > 0 ? 100.0 * totalComp / totalOrig : 0):F1}%");
 
@@ -318,18 +318,20 @@ benchCmd.SetAction((ParseResult ctx) => {
 
 var formatsCmd = new Command("formats", "List all supported formats");
 formatsCmd.SetAction((ParseResult _) => {
-  Console.WriteLine("Supported archive formats (27):");
+  Console.WriteLine("Supported archive formats:");
   Console.WriteLine("  zip, rar, 7z, tar, cab, lzh, arj, arc, zoo, ace, sqx, cpio, ar, wim, rpm, deb,");
-  Console.WriteLine("  shar, pak, dms, lzx(amiga), compact-pro, spark, lbr, uharc, wad, iso(*), udf(*)");
+  Console.WriteLine("  shar, pak, ha, stuffit, zpaq, squashfs, cramfs, nsis(*), innosetup(*),");
+  Console.WriteLine("  dms, lzx(amiga), compact-pro, spark, lbr, uharc, wad, xar, alzip, iso(*), udf(*)");
   Console.WriteLine();
-  Console.WriteLine("Supported compression/stream formats (20):");
+  Console.WriteLine("Supported compression/stream formats:");
   Console.WriteLine("  gzip, bzip2, xz, zstd, lz4, brotli, snappy, lzop, compress(.Z), lzma, lzip, zlib,");
-  Console.WriteLine("  szdd, kwaj, powerpacker, squeeze, ice-packer, rzip, macbinary, binhex");
+  Console.WriteLine("  szdd, kwaj, powerpacker, squeeze, ice-packer, rzip, macbinary, binhex,");
+  Console.WriteLine("  packbits, yaz0, brieflz, rnc, refpack, aplib, lzfse, freeze");
   Console.WriteLine();
-  Console.WriteLine("Compound formats (6):");
+  Console.WriteLine("Compound formats:");
   Console.WriteLine("  tar.gz, tar.bz2, tar.xz, tar.zst, tar.lz4, tar.lz");
   Console.WriteLine();
-  Console.WriteLine("Total: 53 formats. Convert between any pair; (*) = detection only.");
+  Console.WriteLine("Convert between any pair. (*) = detection only.");
   Console.WriteLine("Compound tar conversions use fast restreaming.");
   Console.WriteLine();
   Console.WriteLine("Conversion tiers:");
@@ -413,10 +415,124 @@ optimizeCmd.SetAction((ParseResult ctx) => {
   return 0;
 });
 
+// ── analyze ──────────────────────────────────────────────────────────
+
+var analyzeFileArg = new Argument<FileInfo>("file") { Description = "File to analyze" };
+var deepScanOpt = new Option<bool>("--deep-scan") { Description = "Scan for known format signatures at every offset" };
+var fingerprintOpt = new Option<bool>("--fingerprint") { Description = "Run algorithm fingerprinting heuristics" };
+var trialOpt = new Option<bool>("--trial") { Description = "Try decompressing with all known algorithms" };
+var entropyMapOpt = new Option<bool>("--entropy-map") { Description = "Show per-region entropy map" };
+var chainOpt = new Option<bool>("--chain") { Description = "Attempt chain reconstruction (peel layers)" };
+var allOpt = new Option<bool>("--all") { Description = "Enable all analysis modes" };
+var maxDepthOpt = new Option<int>("--max-depth") { Description = "Chain reconstruction depth limit", DefaultValueFactory = _ => 10 };
+var windowOpt = new Option<int>("--window") { Description = "Entropy map window size", DefaultValueFactory = _ => 256 };
+var analyzeOffsetOpt = new Option<long>("--offset") { Description = "Start analysis at byte offset", DefaultValueFactory = _ => 0L };
+var analyzeLengthOpt = new Option<long>("--length") { Description = "Analyze only N bytes", DefaultValueFactory = _ => 0L };
+
+var analyzeCmd = new Command("analyze", """
+  Analyze binary data: signatures, fingerprinting, entropy map, trial decompression, chain reconstruction.
+  Example: cwb analyze mystery.bin --all
+  """) { analyzeFileArg, deepScanOpt, fingerprintOpt, trialOpt, entropyMapOpt, chainOpt, allOpt, maxDepthOpt, windowOpt, analyzeOffsetOpt, analyzeLengthOpt };
+analyzeCmd.SetAction((ParseResult ctx) => {
+  var file = ctx.GetValue(analyzeFileArg)!;
+  if (!file.Exists) { Console.Error.WriteLine($"File not found: {file.FullName}"); return 1; }
+
+  var options = new Compression.Analysis.AnalysisOptions {
+    DeepScan = ctx.GetValue(deepScanOpt),
+    Fingerprint = ctx.GetValue(fingerprintOpt),
+    Trial = ctx.GetValue(trialOpt),
+    EntropyMap = ctx.GetValue(entropyMapOpt),
+    Chain = ctx.GetValue(chainOpt),
+    All = ctx.GetValue(allOpt),
+    MaxDepth = ctx.GetValue(maxDepthOpt),
+    WindowSize = ctx.GetValue(windowOpt),
+    Offset = ctx.GetValue(analyzeOffsetOpt),
+    Length = ctx.GetValue(analyzeLengthOpt),
+  };
+
+  // If no specific mode selected, enable all
+  if (!options.DeepScan && !options.Fingerprint && !options.Trial && !options.EntropyMap && !options.Chain && !options.All)
+    options = new Compression.Analysis.AnalysisOptions {
+      All = true, MaxDepth = options.MaxDepth, WindowSize = options.WindowSize,
+      Offset = options.Offset, Length = options.Length,
+    };
+
+  var data = File.ReadAllBytes(file.FullName);
+  var analyzer = new Compression.Analysis.BinaryAnalyzer(options);
+  var result = analyzer.Analyze(data);
+
+  Console.WriteLine($"File: {file.Name}  Size: {FormatSize(file.Length)}");
+  Console.WriteLine();
+
+  // Statistics
+  if (result.Statistics != null) {
+    var s = result.Statistics;
+    Console.WriteLine("── Statistics ──");
+    Console.WriteLine($"  Entropy:      {s.Entropy:F4} bits/byte");
+    Console.WriteLine($"  Mean:         {s.Mean:F4}");
+    Console.WriteLine($"  Chi-square:   {s.ChiSquare:F2}  (p={s.PValue:F6})");
+    Console.WriteLine($"  Serial corr:  {s.SerialCorrelation:F6}");
+    Console.WriteLine($"  Unique bytes: {s.UniqueBytesCount}/256");
+    Console.WriteLine();
+  }
+
+  // Signatures
+  if (result.Signatures is { Count: > 0 }) {
+    Console.WriteLine("── Signatures ──");
+    foreach (var sig in result.Signatures.Take(20))
+      Console.WriteLine($"  [{sig.Offset,8}]  {sig.FormatName,-16}  conf={sig.Confidence:F2}  {sig.HeaderPreview}");
+    Console.WriteLine();
+  }
+
+  // Fingerprints
+  if (result.Fingerprints is { Count: > 0 }) {
+    Console.WriteLine("── Fingerprinting ──");
+    foreach (var fp in result.Fingerprints)
+      Console.WriteLine($"  {fp.Algorithm,-20}  conf={fp.Confidence:F2}  {fp.Explanation}");
+    Console.WriteLine();
+  }
+
+  // Entropy map
+  if (result.EntropyMap is { Count: > 0 }) {
+    Console.WriteLine("── Entropy Map ──");
+    foreach (var r in result.EntropyMap.Take(64)) {
+      var bar = new string('#', (int)(r.Entropy / 8.0 * 40));
+      Console.WriteLine($"  [{r.Offset,8}..{r.Offset + r.Length - 1,8}]  {r.Entropy:F2}  {bar,-40}  {r.Classification}");
+    }
+    Console.WriteLine();
+  }
+
+  // Trial results
+  if (result.TrialResults is { Count: > 0 }) {
+    Console.WriteLine("── Trial Decompression ──");
+    foreach (var t in result.TrialResults.Take(10))
+      Console.WriteLine($"  {t.Algorithm,-16}  output={FormatSize(t.OutputSize)}  entropy={t.OutputEntropy:F2}");
+    Console.WriteLine();
+  }
+
+  // Chain
+  if (result.Chain is { Depth: > 0 }) {
+    Console.WriteLine("── Chain Reconstruction ──");
+    for (var i = 0; i < result.Chain.Layers.Count; i++) {
+      var l = result.Chain.Layers[i];
+      Console.WriteLine($"  Layer {i + 1}: {l.Algorithm,-16}  {FormatSize(l.InputSize)} → {FormatSize(l.OutputSize)}  conf={l.Confidence:F2}");
+    }
+    Console.WriteLine($"  Final: {FormatSize(result.Chain.FinalData.Length)}");
+    Console.WriteLine();
+  }
+  else if (result.Chain != null) {
+    Console.WriteLine("── Chain Reconstruction ──");
+    Console.WriteLine("  No compression layers detected.");
+    Console.WriteLine();
+  }
+
+  return 0;
+});
+
 // ── root ─────────────────────────────────────────────────────────────
 
 var root = new RootCommand("""
-  cwb — CompressionWorkbench CLI. A universal archive tool supporting 48 formats.
+  cwb — CompressionWorkbench CLI. A universal archive tool.
 
   Quick examples:
     cwb create backup.7z Documents/           Create 7z from a folder
@@ -430,7 +546,7 @@ var root = new RootCommand("""
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, infoCmd, convertCmd, optimizeCmd, benchCmd, formatsCmd
+  listCmd, extractCmd, createCmd, testCmd, infoCmd, convertCmd, optimizeCmd, benchCmd, formatsCmd, analyzeCmd
 };
 
 return root.Parse(args).Invoke();
@@ -530,7 +646,7 @@ static long ParseSize(string? sizeStr) {
   if (s2.EndsWith('k')) { multiplier = 1024; s2 = s2[..^1]; }
   else if (s2.EndsWith('m')) { multiplier = 1024 * 1024; s2 = s2[..^1]; }
   else if (s2.EndsWith('g')) { multiplier = 1024L * 1024 * 1024; s2 = s2[..^1]; }
-  return long.TryParse(s2, out long val) ? val * multiplier : SolidBlockPlanner.DefaultMaxBlockSize;
+  return long.TryParse(s2, out var val) ? val * multiplier : SolidBlockPlanner.DefaultMaxBlockSize;
 }
 
 static Stream WrapDecompress(Stream s, F format) {

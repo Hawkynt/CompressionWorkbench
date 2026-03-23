@@ -8,7 +8,7 @@ public class Lzma2Tests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyData() {
-    byte[] result = CompressDecompress([]);
+    var result = CompressDecompress([]);
     Assert.That(result, Is.Empty);
   }
 
@@ -17,7 +17,7 @@ public class Lzma2Tests {
   [Test]
   public void RoundTrip_SingleByte() {
     byte[] data = [42];
-    byte[] result = CompressDecompress(data);
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -25,8 +25,8 @@ public class Lzma2Tests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_TextData() {
-    byte[] data = "Hello, LZMA2 World! Testing the chunked encoding."u8.ToArray();
-    byte[] result = CompressDecompress(data);
+    var data = "Hello, LZMA2 World! Testing the chunked encoding."u8.ToArray();
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -34,12 +34,12 @@ public class Lzma2Tests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepetitiveData() {
-    byte[] pattern = "abcdefghij"u8.ToArray();
-    byte[] data = new byte[pattern.Length * 200];
-    for (int i = 0; i < 200; ++i)
+    var pattern = "abcdefghij"u8.ToArray();
+    var data = new byte[pattern.Length * 200];
+    for (var i = 0; i < 200; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
-    byte[] result = CompressDecompress(data);
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -48,10 +48,10 @@ public class Lzma2Tests {
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
-    byte[] data = new byte[1024];
+    var data = new byte[1024];
     rng.NextBytes(data);
 
-    byte[] result = CompressDecompress(data);
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -60,15 +60,15 @@ public class Lzma2Tests {
   [Test]
   public void RoundTrip_LargeData() {
     var rng = new Random(123);
-    byte[] data = new byte[51200]; // 50KB
-    for (int i = 0; i < data.Length; ++i) {
+    var data = new byte[51200]; // 50KB
+    for (var i = 0; i < data.Length; ++i) {
       if (i % 100 < 50)
         data[i] = (byte)(i % 26 + 'a');
       else
         data[i] = (byte)rng.Next(256);
     }
 
-    byte[] result = CompressDecompress(data);
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -78,7 +78,7 @@ public class Lzma2Tests {
   public void UncompressedFallback_RandomData() {
     // Truly random data should use uncompressed chunks
     var rng = new Random(99);
-    byte[] data = new byte[256];
+    var data = new byte[256];
     rng.NextBytes(data);
 
     using var compressed = new MemoryStream();
@@ -88,7 +88,7 @@ public class Lzma2Tests {
     // Should still round-trip
     compressed.Position = 0;
     var decoder = new Lzma2Decoder(compressed, 1 << 16);
-    byte[] result = decoder.Decode();
+    var result = decoder.Decode();
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -106,12 +106,12 @@ public class Lzma2Tests {
   public void RoundTrip_MultiChunk_LargeData() {
     // Data > 2MB to force multiple LZMA2 chunks (MaxUncompressedChunkSize = 2MB)
     var rng = new Random(456);
-    byte[] pattern = "the quick brown fox jumps over the lazy dog. "u8.ToArray();
-    byte[] data = new byte[3 * 1024 * 1024]; // 3MB
-    for (int i = 0; i < data.Length; ++i)
+    var pattern = "the quick brown fox jumps over the lazy dog. "u8.ToArray();
+    var data = new byte[3 * 1024 * 1024]; // 3MB
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (i % 200 < 100) ? pattern[i % pattern.Length] : (byte)rng.Next(256);
 
-    byte[] result = CompressDecompress(data);
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -125,21 +125,21 @@ public class Lzma2Tests {
     var rng = new Random(321);
 
     // Compressible block
-    byte[] repeated = new byte[500];
+    var repeated = new byte[500];
     Array.Fill(repeated, (byte)'Z');
     ms.Write(repeated);
 
     // Random block (likely triggers uncompressed fallback in small sizes)
-    byte[] random = new byte[500];
+    var random = new byte[500];
     rng.NextBytes(random);
     ms.Write(random);
 
     // More compressible data
-    for (int i = 0; i < 50; ++i)
+    for (var i = 0; i < 50; ++i)
       ms.Write("pattern_repeat_"u8);
 
-    byte[] data = ms.ToArray();
-    byte[] result = CompressDecompress(data);
+    var data = ms.ToArray();
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -148,9 +148,9 @@ public class Lzma2Tests {
   [Test]
   public void RoundTrip_SmallDictionary() {
     // Small dictionary forces more dictionary resets in chunks
-    byte[] data = "Small dict LZMA2 round-trip test. "u8.ToArray();
-    byte[] bigData = new byte[data.Length * 100];
-    for (int i = 0; i < 100; ++i)
+    var data = "Small dict LZMA2 round-trip test. "u8.ToArray();
+    var bigData = new byte[data.Length * 100];
+    for (var i = 0; i < 100; ++i)
       data.CopyTo(bigData.AsSpan(i * data.Length));
 
     using var compressed = new MemoryStream();
@@ -159,7 +159,7 @@ public class Lzma2Tests {
 
     compressed.Position = 0;
     var decoder = new Lzma2Decoder(compressed, 4096);
-    byte[] result = decoder.Decode();
+    var result = decoder.Decode();
     Assert.That(result, Is.EqualTo(bigData));
   }
 
@@ -168,7 +168,7 @@ public class Lzma2Tests {
   [Test]
   public void RoundTrip_StreamOverload() {
     // Exercise the Encode(Stream output, Stream input, long length) overload
-    byte[] data = "Stream-based LZMA2 encoding test with known length."u8.ToArray();
+    var data = "Stream-based LZMA2 encoding test with known length."u8.ToArray();
 
     using var input = new MemoryStream(data);
     using var compressed = new MemoryStream();
@@ -177,7 +177,7 @@ public class Lzma2Tests {
 
     compressed.Position = 0;
     var decoder = new Lzma2Decoder(compressed, 1 << 16);
-    byte[] result = decoder.Decode();
+    var result = decoder.Decode();
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -186,7 +186,7 @@ public class Lzma2Tests {
   [Test]
   public void RoundTrip_StreamOverload_UnknownLength() {
     // Exercise the Encode(Stream output, Stream input, -1) path
-    byte[] data = "Unknown-length stream LZMA2 test data."u8.ToArray();
+    var data = "Unknown-length stream LZMA2 test data."u8.ToArray();
 
     using var input = new MemoryStream(data);
     using var compressed = new MemoryStream();
@@ -195,7 +195,7 @@ public class Lzma2Tests {
 
     compressed.Position = 0;
     var decoder = new Lzma2Decoder(compressed, 1 << 16);
-    byte[] result = decoder.Decode();
+    var result = decoder.Decode();
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -204,8 +204,8 @@ public class Lzma2Tests {
   [Test]
   public void RoundTrip_HighlyRepetitive_SmallBlocks() {
     // All-zero data — exercises both short rep and uncompressed fallback paths
-    byte[] data = new byte[8192];
-    byte[] result = CompressDecompress(data);
+    var data = new byte[8192];
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 

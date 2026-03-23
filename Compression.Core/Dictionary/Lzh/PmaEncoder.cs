@@ -22,7 +22,7 @@ public static class PmaEncoder {
     var encoder = new PpmdRangeEncoder(ms);
     var model = new PpmdModelH(order);
 
-    for (int i = 0; i < data.Length; ++i)
+    for (var i = 0; i < data.Length; ++i)
       model.EncodeSymbol(encoder, data[i]);
 
     encoder.Finish();

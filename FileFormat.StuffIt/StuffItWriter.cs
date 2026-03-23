@@ -78,10 +78,10 @@ public sealed class StuffItWriter : IDisposable {
     ArgumentNullException.ThrowIfNull(resourceFork);
 
     byte dataMethod;
-    byte[] compressedData = CompressFork(dataFork, out dataMethod);
+    var compressedData = CompressFork(dataFork, out dataMethod);
 
     byte resMethod;
-    byte[] compressedResource = CompressFork(resourceFork, out resMethod);
+    var compressedResource = CompressFork(resourceFork, out resMethod);
 
     this._entries.Add(new PendingEntry {
       FileName           = fileName,
@@ -117,7 +117,7 @@ public sealed class StuffItWriter : IDisposable {
     // the buffered content.
     using var buffer = new MemoryStream();
 
-    foreach (PendingEntry entry in this._entries)
+    foreach (var entry in this._entries)
       WriteEntry(buffer, entry);
 
     // Write archive header (22 bytes), matching the reader's layout:
@@ -130,7 +130,7 @@ public sealed class StuffItWriter : IDisposable {
     Span<byte> archiveHeader = stackalloc byte[StuffItConstants.ArchiveHeaderSize];
     archiveHeader.Clear();
 
-    uint totalLength = (uint)(StuffItConstants.ArchiveHeaderSize + buffer.Length);
+    var totalLength = (uint)(StuffItConstants.ArchiveHeaderSize + buffer.Length);
 
     BinaryPrimitives.WriteUInt32BigEndian(archiveHeader, StuffItConstants.MagicSit);
     BinaryPrimitives.WriteUInt16BigEndian(archiveHeader[4..], (ushort)this._entries.Count);
@@ -156,8 +156,8 @@ public sealed class StuffItWriter : IDisposable {
     hdr[1] = entry.DataMethod;
 
     // [2] name length, [3..66] filename (Latin-1, null-padded)
-    byte[] nameBytes = Encoding.Latin1.GetBytes(entry.FileName);
-    int nameLen = Math.Min(nameBytes.Length, StuffItConstants.FileNameMaxLength);
+    var nameBytes = Encoding.Latin1.GetBytes(entry.FileName);
+    var nameLen = Math.Min(nameBytes.Length, StuffItConstants.FileNameMaxLength);
     hdr[2] = (byte)nameLen;
     nameBytes.AsSpan(0, nameLen).CopyTo(hdr.Slice(StuffItConstants.FileNameOffset, nameLen));
 
@@ -168,7 +168,7 @@ public sealed class StuffItWriter : IDisposable {
 
     // [74..76] Finder flags — zero
     // [76..80] creation date — use same as modification date
-    uint macTimestamp = ToMacTimestamp(entry.LastModified);
+    var macTimestamp = ToMacTimestamp(entry.LastModified);
     BinaryPrimitives.WriteUInt32BigEndian(hdr[76..], macTimestamp);
     // [80..84] modification date
     BinaryPrimitives.WriteUInt32BigEndian(hdr[80..], macTimestamp);
@@ -183,16 +183,16 @@ public sealed class StuffItWriter : IDisposable {
     BinaryPrimitives.WriteUInt32BigEndian(hdr[96..], (uint)entry.CompressedData.Length);
 
     // [100..102] resource fork CRC-16
-    ushort resCrc = ComputeCrc16(entry.ResourceFork);
+    var resCrc = ComputeCrc16(entry.ResourceFork);
     BinaryPrimitives.WriteUInt16BigEndian(hdr[100..], resCrc);
     // [102..104] data fork CRC-16
-    ushort dataCrc = ComputeCrc16(entry.DataFork);
+    var dataCrc = ComputeCrc16(entry.DataFork);
     BinaryPrimitives.WriteUInt16BigEndian(hdr[102..], dataCrc);
 
     // [104..110] reserved — zeros
 
     // [110..112] header CRC-16 over bytes 0..110
-    ushort headerCrc = ComputeCrc16(hdr[..110]);
+    var headerCrc = ComputeCrc16(hdr[..110]);
     BinaryPrimitives.WriteUInt16BigEndian(hdr[110..], headerCrc);
 
     output.Write(hdr);
@@ -212,7 +212,7 @@ public sealed class StuffItWriter : IDisposable {
       return [];
     }
 
-    byte[] rleEncoded = StuffItRle.Encode(data);
+    var rleEncoded = StuffItRle.Encode(data);
     if (rleEncoded.Length < data.Length) {
       method = StuffItConstants.MethodRle;
       return rleEncoded;
@@ -229,9 +229,9 @@ public sealed class StuffItWriter : IDisposable {
   private static ushort[] BuildCrc16Table() {
     const ushort poly = StuffItConstants.Crc16Polynomial;
     var table = new ushort[256];
-    for (int i = 0; i < 256; ++i) {
-      ushort crc = (ushort)(i << 8);
-      for (int j = 0; j < 8; ++j)
+    for (var i = 0; i < 256; ++i) {
+      var crc = (ushort)(i << 8);
+      for (var j = 0; j < 8; ++j)
         crc = (crc & 0x8000) != 0 ? (ushort)((crc << 1) ^ poly) : (ushort)(crc << 1);
       table[i] = crc;
     }
@@ -240,7 +240,7 @@ public sealed class StuffItWriter : IDisposable {
 
   private static ushort ComputeCrc16(ReadOnlySpan<byte> data) {
     ushort crc = 0;
-    foreach (byte b in data)
+    foreach (var b in data)
       crc = (ushort)((crc << 8) ^ Crc16Table[(byte)(crc >> 8) ^ b]);
     return crc;
   }
@@ -248,19 +248,19 @@ public sealed class StuffItWriter : IDisposable {
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   private static void WriteAscii4(Span<byte> dest, string value) {
-    byte[] bytes = Encoding.ASCII.GetBytes(value);
-    int len = Math.Min(bytes.Length, 4);
+    var bytes = Encoding.ASCII.GetBytes(value);
+    var len = Math.Min(bytes.Length, 4);
     bytes.AsSpan(0, len).CopyTo(dest);
     // Pad with spaces if shorter than 4.
-    for (int i = len; i < 4; ++i)
+    for (var i = len; i < 4; ++i)
       dest[i] = (byte)' ';
   }
 
   private static uint ToMacTimestamp(DateTime dt) {
     if (dt <= StuffItConstants.MacEpoch)
       return 0;
-    TimeSpan diff = dt.ToUniversalTime() - StuffItConstants.MacEpoch;
-    double totalSeconds = diff.TotalSeconds;
+    var diff = dt.ToUniversalTime() - StuffItConstants.MacEpoch;
+    var totalSeconds = diff.TotalSeconds;
     return totalSeconds > uint.MaxValue ? uint.MaxValue : (uint)totalSeconds;
   }
 

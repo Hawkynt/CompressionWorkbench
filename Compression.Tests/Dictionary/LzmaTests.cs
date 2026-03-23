@@ -8,7 +8,7 @@ public class LzmaTests {
   [Test]
   public void Properties_Encode_Decode() {
     var encoder = new LzmaEncoder(dictionarySize: 1 << 20, lc: 3, lp: 0, pb: 2);
-    byte[] props = encoder.Properties;
+    var props = encoder.Properties;
 
     Assert.That(props.Length, Is.EqualTo(5));
 
@@ -16,7 +16,7 @@ public class LzmaTests {
     Assert.That(props[0], Is.EqualTo(93));
 
     // Verify dictionary size (1 << 20 = 1048576 = 0x100000)
-    int dictSize = props[1] | (props[2] << 8) | (props[3] << 16) | (props[4] << 24);
+    var dictSize = props[1] | (props[2] << 8) | (props[3] << 16) | (props[4] << 24);
     Assert.That(dictSize, Is.EqualTo(1 << 20));
   }
 
@@ -24,7 +24,7 @@ public class LzmaTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyData() {
-    byte[] result = CompressDecompress([], useEndMarker: true);
+    var result = CompressDecompress([], useEndMarker: true);
     Assert.That(result, Is.Empty);
   }
 
@@ -33,7 +33,7 @@ public class LzmaTests {
   [Test]
   public void RoundTrip_SingleByte() {
     byte[] data = [42];
-    byte[] result = CompressDecompress(data);
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -41,8 +41,8 @@ public class LzmaTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_TextData() {
-    byte[] data = "Hello, LZMA World! This is a test of the LZMA compression algorithm."u8.ToArray();
-    byte[] result = CompressDecompress(data);
+    var data = "Hello, LZMA World! This is a test of the LZMA compression algorithm."u8.ToArray();
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -50,12 +50,12 @@ public class LzmaTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepetitiveData() {
-    byte[] pattern = "the quick brown fox jumps over the lazy dog. "u8.ToArray();
-    byte[] data = new byte[pattern.Length * 100];
-    for (int i = 0; i < 100; ++i)
+    var pattern = "the quick brown fox jumps over the lazy dog. "u8.ToArray();
+    var data = new byte[pattern.Length * 100];
+    for (var i = 0; i < 100; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
-    byte[] result = CompressDecompress(data);
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -64,10 +64,10 @@ public class LzmaTests {
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
-    byte[] data = new byte[1024];
+    var data = new byte[1024];
     rng.NextBytes(data);
 
-    byte[] result = CompressDecompress(data);
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -75,8 +75,8 @@ public class LzmaTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_HighlyRepetitive() {
-    byte[] data = new byte[4096];
-    byte[] result = CompressDecompress(data);
+    var data = new byte[4096];
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -85,16 +85,16 @@ public class LzmaTests {
   [Test]
   public void RoundTrip_LargeData() {
     var rng = new Random(123);
-    byte[] data = new byte[10240];
+    var data = new byte[10240];
     // Mix of patterns and random
-    for (int i = 0; i < data.Length; ++i) {
+    for (var i = 0; i < data.Length; ++i) {
       if (i % 100 < 50)
         data[i] = (byte)(i % 26 + 'a');
       else
         data[i] = (byte)rng.Next(256);
     }
 
-    byte[] result = CompressDecompress(data);
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -102,14 +102,14 @@ public class LzmaTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_CustomProperties() {
-    byte[] data = "Testing with custom LZMA properties."u8.ToArray();
+    var data = "Testing with custom LZMA properties."u8.ToArray();
 
     // lc=0, lp=0, pb=0
-    byte[] result1 = CompressDecompress(data, lc: 0, lp: 0, pb: 0);
+    var result1 = CompressDecompress(data, lc: 0, lp: 0, pb: 0);
     Assert.That(result1, Is.EqualTo(data));
 
     // lc=4, lp=2, pb=1
-    byte[] result2 = CompressDecompress(data, lc: 4, lp: 2, pb: 1);
+    var result2 = CompressDecompress(data, lc: 4, lp: 2, pb: 1);
     Assert.That(result2, Is.EqualTo(data));
   }
 
@@ -127,14 +127,14 @@ public class LzmaTests {
   [Category("HappyPath")]
   [Test]
   public void Compress_RepetitiveData_CompressesWell() {
-    byte[] data = new byte[4096];
+    var data = new byte[4096];
     Array.Fill(data, (byte)'A');
 
     using var compressed = new MemoryStream();
     var encoder = new LzmaEncoder(dictionarySize: 1 << 16);
     encoder.Encode(compressed, data);
 
-    double ratio = (double)compressed.Length / data.Length;
+    var ratio = (double)compressed.Length / data.Length;
     Assert.That(ratio, Is.LessThan(0.1), $"Compression ratio {ratio:P} too high for repetitive data");
   }
 
@@ -166,8 +166,8 @@ public class LzmaTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_WithKnownSize() {
-    byte[] data = "Known-size LZMA test data."u8.ToArray();
-    byte[] result = CompressDecompress(data, writeEndMarker: false);
+    var data = "Known-size LZMA test data."u8.ToArray();
+    var result = CompressDecompress(data, writeEndMarker: false);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -177,11 +177,11 @@ public class LzmaTests {
   public void RoundTrip_ShortRepMatches() {
     // Pattern designed to trigger short rep (1-byte rep0 copies):
     // "ABABABAB..." — each B is a short rep of the previous B at distance 2
-    byte[] data = new byte[512];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[512];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 2 == 0 ? 'A' : 'B');
 
-    byte[] result = CompressDecompress(data);
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -191,10 +191,10 @@ public class LzmaTests {
   public void RoundTrip_MultipleRepDistances() {
     // Build data that exercises rep0/rep1/rep2/rep3 shuffling:
     // Repeat 4 distinct patterns, then re-reference them in mixed order
-    byte[] p1 = "HELLO WORLD! "u8.ToArray();
-    byte[] p2 = "GOODBYE MOON! "u8.ToArray();
-    byte[] p3 = "TESTING 123! "u8.ToArray();
-    byte[] p4 = "PATTERN FOUR! "u8.ToArray();
+    var p1 = "HELLO WORLD! "u8.ToArray();
+    var p2 = "GOODBYE MOON! "u8.ToArray();
+    var p3 = "TESTING 123! "u8.ToArray();
+    var p4 = "PATTERN FOUR! "u8.ToArray();
 
     using var ms = new MemoryStream();
     // Establish 4 patterns
@@ -205,8 +205,8 @@ public class LzmaTests {
     ms.Write(p2); ms.Write(p4); ms.Write(p1); ms.Write(p3);
     ms.Write(p1); ms.Write(p1); ms.Write(p1); // repeated same (short rep path)
 
-    byte[] data = ms.ToArray();
-    byte[] result = CompressDecompress(data);
+    var data = ms.ToArray();
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -217,16 +217,16 @@ public class LzmaTests {
     // Place a pattern early, fill with unrelated data, then repeat it
     // This exercises large distance encoding (posSlot > EndPosModelIndex)
     var rng = new Random(777);
-    byte[] data = new byte[32768];
+    var data = new byte[32768];
     rng.NextBytes(data);
 
     // Place an identifiable pattern at start and repeat it far away
-    byte[] pattern = "THIS_IS_A_MARKER_PATTERN_FOR_LARGE_DIST"u8.ToArray();
+    var pattern = "THIS_IS_A_MARKER_PATTERN_FOR_LARGE_DIST"u8.ToArray();
     pattern.CopyTo(data.AsSpan(0));
     pattern.CopyTo(data.AsSpan(16384));
     pattern.CopyTo(data.AsSpan(24576));
 
-    byte[] result = CompressDecompress(data);
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -235,15 +235,15 @@ public class LzmaTests {
   [Test]
   public void RoundTrip_MaxLengthMatch() {
     // Data with a very long repetition to exercise max match length (273)
-    byte[] pattern = new byte[273];
-    for (int i = 0; i < pattern.Length; ++i)
+    var pattern = new byte[273];
+    for (var i = 0; i < pattern.Length; ++i)
       pattern[i] = (byte)(i % 7 + 'a');
 
-    byte[] data = new byte[pattern.Length * 20];
-    for (int i = 0; i < 20; ++i)
+    var data = new byte[pattern.Length * 20];
+    for (var i = 0; i < 20; ++i)
       pattern.CopyTo(data.AsSpan(i * pattern.Length));
 
-    byte[] result = CompressDecompress(data);
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -252,13 +252,13 @@ public class LzmaTests {
   [Test]
   public void RoundTrip_AllByteValues() {
     // All 256 byte values — exercises literal coding with diverse contexts
-    byte[] data = new byte[512];
-    for (int i = 0; i < 256; ++i)
+    var data = new byte[512];
+    for (var i = 0; i < 256; ++i)
       data[i] = (byte)i;
     // Repeat to give some match opportunities
     Array.Copy(data, 0, data, 256, 256);
 
-    byte[] result = CompressDecompress(data);
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -267,9 +267,9 @@ public class LzmaTests {
   [Test]
   public void RoundTrip_SmallDictionarySize() {
     // Exercise with a very small dictionary (4KB minimum)
-    byte[] data = "Small dictionary test data with some repetition. "u8.ToArray();
-    byte[] bigData = new byte[data.Length * 50];
-    for (int i = 0; i < 50; ++i)
+    var data = "Small dictionary test data with some repetition. "u8.ToArray();
+    var bigData = new byte[data.Length * 50];
+    for (var i = 0; i < 50; ++i)
       data.CopyTo(bigData.AsSpan(i * data.Length));
 
     var encoder = new LzmaEncoder(dictionarySize: 4096);
@@ -278,7 +278,7 @@ public class LzmaTests {
 
     compressed.Position = 0;
     var decoder = new LzmaDecoder(compressed, encoder.Properties);
-    byte[] result = decoder.Decode();
+    var result = decoder.Decode();
     Assert.That(result, Is.EqualTo(bigData));
   }
 
@@ -293,7 +293,7 @@ public class LzmaTests {
     // Unique prefix to start in literal states
     ms.Write("UNIQUE_PREFIX_"u8);
     // Repetitive block to trigger matches
-    for (int i = 0; i < 50; ++i)
+    for (var i = 0; i < 50; ++i)
       ms.Write("XYZ"u8);
     // Different pattern for normal match -> literal -> rep transitions
     ms.Write("ABCDEFGH"u8);
@@ -303,11 +303,11 @@ public class LzmaTests {
     ms.Write("ABCDEFGH"u8); // rep match
     ms.Write("R"u8);        // literal after rep
     // Short rep patterns (single-byte from rep0)
-    for (int i = 0; i < 100; ++i)
+    for (var i = 0; i < 100; ++i)
       ms.Write("AA"u8);
 
-    byte[] data = ms.ToArray();
-    byte[] result = CompressDecompress(data);
+    var data = ms.ToArray();
+    var result = CompressDecompress(data);
     Assert.That(result, Is.EqualTo(data));
   }
 

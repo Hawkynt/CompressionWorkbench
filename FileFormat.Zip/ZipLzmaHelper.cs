@@ -15,10 +15,10 @@ internal static class ZipLzmaHelper {
       throw new InvalidDataException("ZIP LZMA data too short.");
 
     // Skip 2-byte version major/minor
-    int offset = 2;
+    var offset = 2;
 
     // Read 2-byte properties size (little-endian)
-    int propsSize = compressedData[offset] | (compressedData[offset + 1] << 8);
+    var propsSize = compressedData[offset] | (compressedData[offset + 1] << 8);
     offset += 2;
 
     if (offset + propsSize > compressedData.Length)

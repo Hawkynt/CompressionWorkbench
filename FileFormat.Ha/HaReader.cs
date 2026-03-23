@@ -42,8 +42,8 @@ public sealed class HaReader : IDisposable {
     if (this._stream.Length < 2)
       ThrowInvalidArchive("Stream is too short to be an Ha archive.");
 
-    byte m0 = reader.ReadByte();
-    byte m1 = reader.ReadByte();
+    var m0 = reader.ReadByte();
+    var m1 = reader.ReadByte();
     if (m0 != HaConstants.Magic[0] || m1 != HaConstants.Magic[1])
       ThrowInvalidArchive($"Invalid Ha magic: expected 0x48 0x41, got 0x{m0:X2} 0x{m1:X2}.");
 
@@ -62,17 +62,17 @@ public sealed class HaReader : IDisposable {
       return null;
 
     // Version + method byte: high nibble = version (should be 0), low nibble = method.
-    byte versionMethod = reader.ReadByte();
-    int method = versionMethod & 0x0F;
+    var versionMethod = reader.ReadByte();
+    var method = versionMethod & 0x0F;
 
-    uint compressedSize = reader.ReadUInt32();
-    uint originalSize   = reader.ReadUInt32();
-    uint crc32          = reader.ReadUInt32();
-    uint dosDateTime    = reader.ReadUInt32();
+    var compressedSize = reader.ReadUInt32();
+    var originalSize   = reader.ReadUInt32();
+    var crc32          = reader.ReadUInt32();
+    var dosDateTime    = reader.ReadUInt32();
 
-    string fileName = ReadNullTerminatedString(reader);
+    var fileName = ReadNullTerminatedString(reader);
 
-    long dataOffset = this._stream.Position;
+    var dataOffset = this._stream.Position;
 
     // Skip compressed data to position at the next entry.
     this._stream.Seek(compressedSize, SeekOrigin.Current);
@@ -91,7 +91,7 @@ public sealed class HaReader : IDisposable {
   private static string ReadNullTerminatedString(BinaryReader reader) {
     var sb = new StringBuilder();
     while (true) {
-      byte b = reader.ReadByte();
+      var b = reader.ReadByte();
       if (b == 0)
         break;
       sb.Append((char)b);
@@ -113,7 +113,7 @@ public sealed class HaReader : IDisposable {
     ArgumentNullException.ThrowIfNull(entry);
 
     this._stream.Position = entry.DataOffset;
-    byte[] compressed = new byte[entry.CompressedSize];
+    var compressed = new byte[entry.CompressedSize];
     ReadFully(this._stream, compressed);
 
     byte[] data;
@@ -135,7 +135,7 @@ public sealed class HaReader : IDisposable {
 
     // Directory entries have no data to check.
     if (entry.Method != HaConstants.MethodDirectory && data.Length > 0) {
-      uint computed = Crc32.Compute(data);
+      var computed = Crc32.Compute(data);
       if (computed != entry.Crc32)
         throw new InvalidDataException(
           $"CRC-32 mismatch for '{entry.FileName}': expected 0x{entry.Crc32:X8}, computed 0x{computed:X8}.");
@@ -147,9 +147,9 @@ public sealed class HaReader : IDisposable {
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   private static void ReadFully(Stream stream, byte[] buffer) {
-    int offset = 0;
+    var offset = 0;
     while (offset < buffer.Length) {
-      int read = stream.Read(buffer, offset, buffer.Length - offset);
+      var read = stream.Read(buffer, offset, buffer.Length - offset);
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of Ha archive data.");
       offset += read;

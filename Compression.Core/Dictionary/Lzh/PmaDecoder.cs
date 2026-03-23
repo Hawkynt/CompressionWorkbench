@@ -24,7 +24,7 @@ public static class PmaDecoder {
     var model = new PpmdModelH(order);
 
     var output = new byte[originalSize];
-    for (int i = 0; i < originalSize; ++i)
+    for (var i = 0; i < originalSize; ++i)
       output[i] = model.DecodeSymbol(decoder);
 
     return output;

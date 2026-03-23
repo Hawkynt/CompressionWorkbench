@@ -48,11 +48,11 @@ public sealed class ZooReader : IDisposable {
     // Text (20 bytes) – skip, just for humans.
     reader.ReadBytes(20);
 
-    uint tag = reader.ReadUInt32();
+    var tag = reader.ReadUInt32();
     if (tag != ZooConstants.Magic)
       ThrowInvalidArchive($"Invalid Zoo magic: 0x{tag:X8}.");
 
-    uint firstEntryOffset = reader.ReadUInt32();
+    var firstEntryOffset = reader.ReadUInt32();
     // minus-offset (int32) — skip validation for tolerance.
     reader.ReadInt32();
     // required major/minor version — skip.
@@ -63,7 +63,7 @@ public sealed class ZooReader : IDisposable {
       return; // empty archive
 
     // --- Walk the directory chain ---
-    uint nextOffset = firstEntryOffset;
+    var nextOffset = firstEntryOffset;
 
     while (nextOffset != 0) {
       this._stream.Position = nextOffset;
@@ -86,37 +86,37 @@ public sealed class ZooReader : IDisposable {
   }
 
   private ZooEntry? ReadDirectoryEntry(BinaryReader reader) {
-    long entryStart = this._stream.Position;
+    var entryStart = this._stream.Position;
 
     // Tag
-    uint tag = reader.ReadUInt32();
+    var tag = reader.ReadUInt32();
     if (tag != ZooConstants.Magic)
       ThrowInvalidArchive($"Invalid entry tag at offset {entryStart}: 0x{tag:X8}.");
 
-    byte type       = reader.ReadByte();
-    byte method     = reader.ReadByte();
-    uint nextOff    = reader.ReadUInt32();
-    uint dataOff    = reader.ReadUInt32();
-    ushort dosDate  = reader.ReadUInt16();
-    ushort dosTime  = reader.ReadUInt16();
-    ushort crc16    = reader.ReadUInt16();
-    uint origSize   = reader.ReadUInt32();
-    uint compSize   = reader.ReadUInt32();
-    byte majorVer   = reader.ReadByte();
-    byte minorVer   = reader.ReadByte();
-    byte deleted    = reader.ReadByte();
+    var type       = reader.ReadByte();
+    var method     = reader.ReadByte();
+    var nextOff    = reader.ReadUInt32();
+    var dataOff    = reader.ReadUInt32();
+    var dosDate  = reader.ReadUInt16();
+    var dosTime  = reader.ReadUInt16();
+    var crc16    = reader.ReadUInt16();
+    var origSize   = reader.ReadUInt32();
+    var compSize   = reader.ReadUInt32();
+    var majorVer   = reader.ReadByte();
+    var minorVer   = reader.ReadByte();
+    var deleted    = reader.ReadByte();
     /*byte structure =*/ reader.ReadByte();
     /*uint commentOff =*/ reader.ReadUInt32();
     /*ushort commentLen =*/ reader.ReadUInt16();
     // Total fixed bytes read: 4+1+1+4+4+2+2+2+4+4+1+1+1+1+4+2 = 38
 
     // Short filename: null-terminated, up to 13 bytes.
-    string shortName = ReadNullTerminatedString(reader, 13);
+    var shortName = ReadNullTerminatedString(reader, 13);
 
     string? longName = null;
     if (type == ZooConstants.TypeLongName) {
-      ushort longNameLen = reader.ReadUInt16();
-      byte[] longNameBytes = reader.ReadBytes(longNameLen);
+      var longNameLen = reader.ReadUInt16();
+      var longNameBytes = reader.ReadBytes(longNameLen);
       longName = Encoding.Latin1.GetString(longNameBytes);
     }
 
@@ -141,8 +141,8 @@ public sealed class ZooReader : IDisposable {
 
   private static string ReadNullTerminatedString(BinaryReader reader, int maxBytes) {
     // Always consume exactly maxBytes from the stream.
-    byte[] raw = reader.ReadBytes(maxBytes);
-    int len = Array.IndexOf(raw, (byte)0);
+    var raw = reader.ReadBytes(maxBytes);
+    var len = Array.IndexOf(raw, (byte)0);
     if (len < 0) len = raw.Length;
     return Encoding.Latin1.GetString(raw, 0, len);
   }
@@ -161,7 +161,7 @@ public sealed class ZooReader : IDisposable {
 
     this._stream.Position = entry.DataOffset;
 
-    byte[] compressed = new byte[entry.CompressedSize];
+    var compressed = new byte[entry.CompressedSize];
     ReadFully(this._stream, compressed);
 
     byte[] data;
@@ -187,7 +187,7 @@ public sealed class ZooReader : IDisposable {
         throw new NotSupportedException($"Unsupported Zoo compression method: {(byte)entry.CompressionMethod}.");
     }
 
-    ushort computed = Crc16.Compute(data);
+    var computed = Crc16.Compute(data);
     if (computed != entry.Crc16)
       throw new InvalidDataException(
         $"CRC-16 mismatch for '{entry.EffectiveName}': expected 0x{entry.Crc16:X4}, computed 0x{computed:X4}.");
@@ -198,9 +198,9 @@ public sealed class ZooReader : IDisposable {
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   private static void ReadFully(Stream stream, byte[] buffer) {
-    int offset = 0;
+    var offset = 0;
     while (offset < buffer.Length) {
-      int read = stream.Read(buffer, offset, buffer.Length - offset);
+      var read = stream.Read(buffer, offset, buffer.Length - offset);
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of Zoo archive data.");
       offset += read;

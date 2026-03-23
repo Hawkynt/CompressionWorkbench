@@ -20,7 +20,7 @@ public class BlowfishTests {
   public void Decrypt_RoundTrip() {
     var bf = new Blowfish(new byte[] { 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF });
     byte[] original = [0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10];
-    byte[] block = (byte[])original.Clone();
+    var block = (byte[])original.Clone();
     bf.Encrypt(block);
     Assert.That(block, Is.Not.EqualTo(original));
     bf.Decrypt(block);
@@ -43,9 +43,9 @@ public class BlowfishTests {
   public void Cbc_RoundTrip() {
     var bf = new Blowfish("TestKey!"u8);
     byte[] iv = [1, 2, 3, 4, 5, 6, 7, 8];
-    byte[] data = "Hello, Blowfish CBC mode!"u8.ToArray();
-    byte[] encrypted = bf.EncryptCbc(data, iv);
-    byte[] decrypted = bf.DecryptCbc(encrypted, iv);
+    var data = "Hello, Blowfish CBC mode!"u8.ToArray();
+    var encrypted = bf.EncryptCbc(data, iv);
+    var decrypted = bf.DecryptCbc(encrypted, iv);
     Assert.That(decrypted, Is.EqualTo(data));
   }
 
@@ -54,11 +54,11 @@ public class BlowfishTests {
   [Test]
   public void Cbc_BlockAligned_RoundTrip() {
     var bf = new Blowfish("SecretKy"u8);
-    byte[] iv = new byte[8];
-    byte[] data = new byte[64];
-    for (int i = 0; i < data.Length; i++) data[i] = (byte)(i * 7);
-    byte[] encrypted = bf.EncryptCbc(data, iv);
-    byte[] decrypted = bf.DecryptCbc(encrypted, iv);
+    var iv = new byte[8];
+    var data = new byte[64];
+    for (var i = 0; i < data.Length; i++) data[i] = (byte)(i * 7);
+    var encrypted = bf.EncryptCbc(data, iv);
+    var decrypted = bf.DecryptCbc(encrypted, iv);
     Assert.That(decrypted, Is.EqualTo(data));
   }
 }

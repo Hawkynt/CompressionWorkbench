@@ -1,0 +1,105 @@
+<UserControl x:Class="Compression.UI.Controls.StructureViewControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="180" MinHeight="80" />
+      <RowDefinition Height="4" />
+      <RowDefinition Height="*" MinHeight="120" />
+    </Grid.RowDefinitions>
+
+    <!-- Row 0: Template selector + offset + buttons -->
+    <WrapPanel Grid.Row="0" Margin="0,0,0,4">
+      <TextBlock Text="Template:" VerticalAlignment="Center" Margin="0,0,4,0" />
+      <ComboBox x:Name="TemplateBox" Width="180" Margin="0,0,8,0"
+                SelectionChanged="OnTemplateSelected" />
+      <TextBlock Text="Offset:" VerticalAlignment="Center" Margin="0,0,4,0" />
+      <TextBox x:Name="OffsetBox" Width="70" Text="0" Margin="0,0,2,0"
+               VerticalContentAlignment="Center"
+               PreviewTextInput="OnOffsetPreviewTextInput" TextChanged="OnOffsetChanged" />
+      <StackPanel Orientation="Vertical" Margin="0,0,8,0">
+        <RepeatButton x:Name="OffsetUp" Content="+" FontSize="8" Width="16" Height="12"
+                      Padding="0,-2,0,0" Click="OnOffsetUp" />
+        <RepeatButton x:Name="OffsetDown" Content="-" FontSize="8" Width="16" Height="12"
+                      Padding="0,-2,0,0" Click="OnOffsetDown" />
+      </StackPanel>
+      <Button Content="Parse" Padding="8,2" Click="OnParse" Margin="0,0,4,0" />
+      <Button Content="Save..." Padding="8,2" Click="OnSaveTemplate" Margin="0,0,4,0" />
+      <Button Content="Load..." Padding="8,2" Click="OnLoadTemplate" />
+    </WrapPanel>
+
+    <!-- Row 1: Template editor (left) + Type accordion (right) -->
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="2*" MinWidth="200" />
+        <ColumnDefinition Width="4" />
+        <ColumnDefinition Width="*" MinWidth="120" />
+      </Grid.ColumnDefinitions>
+
+      <TextBox Grid.Column="0" x:Name="TemplateEditor"
+               FontFamily="Cascadia Mono,Consolas,Courier New" FontSize="11"
+               AcceptsReturn="True" AcceptsTab="True"
+               VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+               TextWrapping="NoWrap" BorderBrush="LightGray" BorderThickness="1" />
+
+      <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center"
+                    VerticalAlignment="Stretch" Background="LightGray" Cursor="SizeWE" />
+
+      <Border Grid.Column="2" BorderBrush="LightGray" BorderThickness="1" CornerRadius="2">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="2">
+          <StackPanel x:Name="TypeAccordion" />
+        </ScrollViewer>
+      </Border>
+    </Grid>
+
+    <!-- Row 2: horizontal splitter -->
+    <GridSplitter Grid.Row="2" Height="4" HorizontalAlignment="Stretch"
+                  VerticalAlignment="Center" Background="LightGray" Cursor="SizeNS" />
+
+    <!-- Row 3: hex viewer + parsed tree -->
+    <Grid Grid.Row="3">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" MinWidth="200" />
+        <ColumnDefinition Width="4" />
+        <ColumnDefinition Width="*" MinWidth="200" />
+      </Grid.ColumnDefinitions>
+
+      <!-- Structure hex viewer with field coloring -->
+      <Border Grid.Column="0" BorderBrush="LightGray" BorderThickness="1" CornerRadius="2">
+        <ScrollViewer x:Name="HexScroll" VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Auto">
+          <Canvas x:Name="StructHexCanvas" ClipToBounds="True"
+                  Background="White"
+                  MouseMove="OnHexCanvasMouseMove" MouseLeave="OnHexCanvasMouseLeave"
+                  ToolTipService.InitialShowDelay="0" ToolTipService.ShowDuration="30000">
+            <Canvas.ToolTip>
+              <ToolTip x:Name="HexTooltip" />
+            </Canvas.ToolTip>
+          </Canvas>
+        </ScrollViewer>
+      </Border>
+
+      <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center"
+                    VerticalAlignment="Stretch" Background="LightGray" Cursor="SizeWE" />
+
+      <!-- Parsed results tree -->
+      <TreeView Grid.Column="2" x:Name="ResultTree" FontFamily="Consolas" FontSize="11"
+                SelectedItemChanged="OnTreeSelectionChanged" BorderThickness="1"
+                BorderBrush="LightGray">
+        <TreeView.ItemTemplate>
+          <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+            <StackPanel Orientation="Horizontal">
+              <Border Width="10" Height="10" CornerRadius="2" Margin="0,0,4,0"
+                      Background="{Binding ColorBrush}" />
+              <TextBlock Text="{Binding OffsetDisplay}" Foreground="Gray" Width="70" />
+              <TextBlock Text="{Binding TypeName}" Foreground="#FF4488CC" Width="80" />
+              <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Width="120" />
+              <TextBlock Text="{Binding DisplayValue}" Foreground="#FF228B22" />
+            </StackPanel>
+          </HierarchicalDataTemplate>
+        </TreeView.ItemTemplate>
+      </TreeView>
+    </Grid>
+  </Grid>
+</UserControl>

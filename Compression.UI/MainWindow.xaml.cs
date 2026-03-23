@@ -74,10 +74,8 @@ public partial class MainWindow : Window {
   private void OnExit(object sender, RoutedEventArgs e) => Close();
 
   private void OnAbout(object sender, RoutedEventArgs e) {
-    MessageBox.Show(
-      "CompressionWorkbench\n\nA universal archive tool supporting 50+ formats.\n\nAll compression algorithms implemented from scratch in C#.",
-      "About CompressionWorkbench",
-      MessageBoxButton.OK, MessageBoxImage.Information);
+    var about = new Views.AboutWindow { Owner = this };
+    about.ShowDialog();
   }
 
   // Column sorting

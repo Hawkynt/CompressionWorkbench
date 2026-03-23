@@ -1,3 +1,6 @@
+using System.Windows;
+using System.Windows.Media;
+
 namespace Compression.UI.ViewModels;
 
 /// <summary>
@@ -23,17 +26,16 @@ internal sealed class ArchiveEntryViewModel {
   public string LastModifiedText => IsParentEntry ? "" : (LastModified?.ToString("yyyy-MM-dd HH:mm") ?? "");
   public string MethodText => IsParentEntry ? "" : Method;
 
-  // Icon glyph (Segoe MDL2 Assets)
-  public string Icon => IsParentEntry ? "\uE74A"         // Up arrow
-    : IsDirectory ? "\uE8B7"                              // Folder
-    : IsEncrypted ? "\uE72E"                              // Lock
-    : "\uE8A5";                                           // Document
-
-  // Icon color for visual distinction
-  public string IconColor => IsParentEntry ? "#FF4488CC"  // Steel blue
-    : IsDirectory ? "#FFDAA520"                            // Goldenrod
-    : IsEncrypted ? "#FFCC4444"                            // Red
-    : "#FF6699CC";                                         // Slate blue
+  // Vector icon from resource dictionary
+  public ImageSource? IconImage {
+    get {
+      var key = IsParentEntry ? "UpArrowIcon"
+        : IsDirectory ? "FolderIcon"
+        : IsEncrypted ? "LockedFileIcon"
+        : "FileIcon";
+      return Application.Current?.TryFindResource(key) as ImageSource;
+    }
+  }
 
   private static string FormatSize(long bytes) => bytes switch {
     < 1024 => $"{bytes} B",

@@ -23,7 +23,7 @@ public class RzipTests {
     var block = new byte[1024];
     Random.Shared.NextBytes(block);
     var data = new byte[block.Length * 4];
-    for (int i = 0; i < 4; i++)
+    for (var i = 0; i < 4; i++)
       Buffer.BlockCopy(block, 0, data, i * block.Length, block.Length);
 
     using var compressed = new MemoryStream();

@@ -71,12 +71,12 @@ public sealed class ArjReader : IDisposable {
 
     this._stream.Position = entry.DataOffset;
 
-    byte[] rawData = new byte[entry.CompressedSize];
+    var rawData = new byte[entry.CompressedSize];
     if (entry.CompressedSize > 0)
       ReadExact(this._stream, rawData);
 
     // Degarble if the entry is encrypted
-    bool isGarbled = (entry.Flags & ArjConstants.FlagGarbled) != 0;
+    var isGarbled = (entry.Flags & ArjConstants.FlagGarbled) != 0;
     if (isGarbled) {
       if (this._password == null)
         throw new InvalidOperationException(
@@ -103,7 +103,7 @@ public sealed class ArjReader : IDisposable {
           $"ARJ compression method {entry.Method} is not supported.");
     }
 
-    uint actual = Crc32.Compute(data);
+    var actual = Crc32.Compute(data);
     if (actual != entry.Crc32)
       throw new InvalidDataException(
         $"CRC-32 mismatch for '{entry.FileName}': " +
@@ -149,23 +149,23 @@ public sealed class ArjReader : IDisposable {
       return null;
 
     // --- Header ID (2 bytes, LE) ---
-    int lo = this._stream.ReadByte();
-    int hi = this._stream.ReadByte();
+    var lo = this._stream.ReadByte();
+    var hi = this._stream.ReadByte();
     if (lo < 0 || hi < 0)
       return null;
 
-    ushort headerId = (ushort)(lo | (hi << 8));
+    var headerId = (ushort)(lo | (hi << 8));
     if (headerId != ArjConstants.HeaderId)
       throw new InvalidDataException(
         $"Invalid ARJ header ID 0x{headerId:X4} at stream offset {this._stream.Position - 2}.");
 
     // --- Basic header size (2 bytes, LE) ---
-    int szLo = this._stream.ReadByte();
-    int szHi = this._stream.ReadByte();
+    var szLo = this._stream.ReadByte();
+    var szHi = this._stream.ReadByte();
     if (szLo < 0 || szHi < 0)
       throw new EndOfStreamException("Unexpected end of stream reading ARJ basic header size.");
 
-    ushort basicHeaderSize = (ushort)(szLo | (szHi << 8));
+    var basicHeaderSize = (ushort)(szLo | (szHi << 8));
 
     // A size of 0 is the end-of-archive marker.
     if (basicHeaderSize == 0)
@@ -181,9 +181,9 @@ public sealed class ArjReader : IDisposable {
 
     // --- CRC-32 of the header body (4 bytes, LE) ---
     using var binReader = new BinaryReader(this._stream, Encoding.UTF8, leaveOpen: true);
-    uint storedHeaderCrc = binReader.ReadUInt32();
+    var storedHeaderCrc = binReader.ReadUInt32();
 
-    uint computedHeaderCrc = Crc32.Compute(headerBytes);
+    var computedHeaderCrc = Crc32.Compute(headerBytes);
     if (computedHeaderCrc != storedHeaderCrc)
       throw new InvalidDataException(
         $"ARJ header CRC-32 mismatch: expected 0x{storedHeaderCrc:X8}, " +
@@ -191,7 +191,7 @@ public sealed class ArjReader : IDisposable {
 
     // --- Extended headers (skip) ---
     while (true) {
-      ushort extSize = binReader.ReadUInt16();
+      var extSize = binReader.ReadUInt16();
       if (extSize == 0)
         break;
       // extSize is the count of bytes in the extended header body (not counting the size field).
@@ -200,7 +200,7 @@ public sealed class ArjReader : IDisposable {
     }
 
     // The data for this entry starts at the current stream position.
-    long dataOffset = this._stream.Position;
+    var dataOffset = this._stream.Position;
 
     // Parse the header body into an ArjEntry.
     var entry = ParseHeaderBody(headerBytes);
@@ -237,21 +237,21 @@ public sealed class ArjReader : IDisposable {
     //   [firstHeaderSize..] null-terminated filename
     //   [after filename]    null-terminated comment
 
-    byte firstHeaderSize = h[0];
-    byte hostOs = h[3];
-    byte arjFlags = h[4];
-    byte method = h[5];
-    byte fileType = h[6];
-    uint msdosTimestamp = ReadUInt32Le(h, 8);
-    uint compressedSize = ReadUInt32Le(h, 12);
-    uint originalSize = ReadUInt32Le(h, 16);
-    uint crc32 = ReadUInt32Le(h, 20);
-    ushort fileMode = ReadUInt16Le(h, 26);
+    var firstHeaderSize = h[0];
+    var hostOs = h[3];
+    var arjFlags = h[4];
+    var method = h[5];
+    var fileType = h[6];
+    var msdosTimestamp = ReadUInt32Le(h, 8);
+    var compressedSize = ReadUInt32Le(h, 12);
+    var originalSize = ReadUInt32Le(h, 16);
+    var crc32 = ReadUInt32Le(h, 20);
+    var fileMode = ReadUInt16Le(h, 26);
 
     // Strings follow immediately after the fixed portion.
     int pos = firstHeaderSize;
-    string fileName = ReadNullTerminatedString(h, pos, out pos);
-    string comment = ReadNullTerminatedString(h, pos, out _);
+    var fileName = ReadNullTerminatedString(h, pos, out pos);
+    var comment = ReadNullTerminatedString(h, pos, out _);
 
     return new ArjEntry {
       FileName = fileName,
@@ -278,11 +278,11 @@ public sealed class ArjReader : IDisposable {
       return string.Empty;
     }
 
-    int start = offset;
+    var start = offset;
     while (offset < data.Length && data[offset] != 0)
       ++offset;
 
-    string result = Encoding.ASCII.GetString(data[start..offset]);
+    var result = Encoding.ASCII.GetString(data[start..offset]);
     endOffset = Math.Min(offset + 1, data.Length); // step past null terminator
     return result;
   }
@@ -297,9 +297,9 @@ public sealed class ArjReader : IDisposable {
     (ushort)(data[offset] | (data[offset + 1] << 8));
 
   private static void ReadExact(Stream stream, byte[] buffer) {
-    int total = 0;
+    var total = 0;
     while (total < buffer.Length) {
-      int read = stream.Read(buffer, total, buffer.Length - total);
+      var read = stream.Read(buffer, total, buffer.Length - total);
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of ARJ archive stream.");
       total += read;

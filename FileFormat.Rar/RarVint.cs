@@ -17,7 +17,7 @@ internal static class RarVint {
     bytesRead = 0;
 
     while (true) {
-      int b = stream.ReadByte();
+      var b = stream.ReadByte();
       if (b < 0)
         throw new EndOfStreamException("Unexpected end of RAR vint.");
       ++bytesRead;
@@ -47,7 +47,7 @@ internal static class RarVint {
     bytesRead = 0;
 
     while (bytesRead < data.Length) {
-      byte b = data[bytesRead++];
+      var b = data[bytesRead++];
       result |= (ulong)(b & 0x7F) << shift;
 
       if ((b & 0x80) == 0)
@@ -68,7 +68,7 @@ internal static class RarVint {
   /// <param name="value">The value to encode.</param>
   public static void Write(Stream stream, ulong value) {
     do {
-      byte b = (byte)(value & 0x7F);
+      var b = (byte)(value & 0x7F);
       value >>= 7;
       if (value != 0)
         b |= 0x80;

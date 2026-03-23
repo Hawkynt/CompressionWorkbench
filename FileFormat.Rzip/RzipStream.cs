@@ -41,14 +41,14 @@ public static class RzipStream {
     if (!header[..4].SequenceEqual(RzipConstants.Magic))
       throw new InvalidDataException("Invalid RZIP magic bytes.");
 
-    byte major = header[4];
-    byte minor = header[5];
+    var major = header[4];
+    var minor = header[5];
 
     // We accept version 2.x; warn on mismatch but don't fail for minor differences
     if (major != RzipConstants.VersionMajor)
       throw new InvalidDataException($"Unsupported RZIP version: {major}.{minor}");
 
-    uint originalSize = ReadUInt32BigEndian(header[6..]);
+    var originalSize = ReadUInt32BigEndian(header[6..]);
 
     // Accumulate all output for back-reference resolution
     using var outputBuffer = new MemoryStream((int)originalSize);
@@ -57,16 +57,16 @@ public static class RzipStream {
 
     while (outputBuffer.Length < originalSize) {
       // Read chunk compressed length
-      int bytesRead = ReadBytes(input, chunkLenBuf);
+      var bytesRead = ReadBytes(input, chunkLenBuf);
       if (bytesRead < 4)
         break; // end of stream
 
-      int compressedLen = (int)ReadUInt32BigEndian(chunkLenBuf);
+      var compressedLen = (int)ReadUInt32BigEndian(chunkLenBuf);
       if (compressedLen <= 0)
         break;
 
       // Read compressed chunk data
-      byte[] compressedData = new byte[compressedLen];
+      var compressedData = new byte[compressedLen];
       ReadExactly(input, compressedData);
 
       // Decompress with bzip2
@@ -79,15 +79,15 @@ public static class RzipStream {
       }
 
       // Process tokens
-      int pos = 0;
+      var pos = 0;
       while (pos < tokenData.Length) {
-        byte tag = tokenData[pos++];
+        var tag = tokenData[pos++];
 
         if (tag == RzipConstants.TagLiteral) {
           if (pos + 2 > tokenData.Length)
             throw new InvalidDataException("Truncated literal token.");
 
-          int length = (tokenData[pos] << 8) | tokenData[pos + 1];
+          var length = (tokenData[pos] << 8) | tokenData[pos + 1];
           pos += 2;
 
           if (pos + length > tokenData.Length)
@@ -99,23 +99,23 @@ public static class RzipStream {
           if (pos + 6 > tokenData.Length)
             throw new InvalidDataException("Truncated match token.");
 
-          int length = (tokenData[pos] << 8) | tokenData[pos + 1];
+          var length = (tokenData[pos] << 8) | tokenData[pos + 1];
           pos += 2;
 
-          int offset = (int)ReadUInt32BigEndian(tokenData.AsSpan(pos, 4));
+          var offset = (int)ReadUInt32BigEndian(tokenData.AsSpan(pos, 4));
           pos += 4;
 
           // Copy from already-decompressed output
-          byte[] outputBytes = outputBuffer.GetBuffer();
-          long currentLen = outputBuffer.Length;
+          var outputBytes = outputBuffer.GetBuffer();
+          var currentLen = outputBuffer.Length;
 
           if (offset < 0 || offset + length > currentLen)
             throw new InvalidDataException($"Match offset {offset}+{length} exceeds output size {currentLen}.");
 
           // Must write byte-by-byte in case of overlapping references
-          long savedPos = outputBuffer.Position;
+          var savedPos = outputBuffer.Position;
           outputBuffer.Seek(0, SeekOrigin.End);
-          for (int i = 0; i < length; i++)
+          for (var i = 0; i < length; i++)
             outputBuffer.WriteByte(outputBytes[offset + i]);
         } else {
           throw new InvalidDataException($"Unknown token tag: {tag}");
@@ -159,17 +159,17 @@ public static class RzipStream {
     var matcher = new RollingHashMatcher(hashBlockSize);
     // allPrevious accumulates all data written so far (for long-distance matching)
     using var allPrevious = new MemoryStream();
-    int inputPos = 0;
+    var inputPos = 0;
 
     while (inputPos < inputData.Length) {
-      int chunkLen = Math.Min(blockSize, inputData.Length - inputPos);
-      byte[] chunk = new byte[chunkLen];
+      var chunkLen = Math.Min(blockSize, inputData.Length - inputPos);
+      var chunk = new byte[chunkLen];
       Array.Copy(inputData, inputPos, chunk, 0, chunkLen);
 
       // Build token stream for this chunk
       using var tokenStream = new MemoryStream();
 
-      byte[] previousData = allPrevious.ToArray();
+      var previousData = allPrevious.ToArray();
       if (previousData.Length >= hashBlockSize) {
         // Index all previously written data and find matches
         matcher.Index(previousData);
@@ -178,10 +178,10 @@ public static class RzipStream {
         foreach (var token in tokens) {
           if (token.IsLiteral) {
             // May need to split literals longer than 65535
-            int litPos = token.InputOffset;
-            int remaining = token.Length;
+            var litPos = token.InputOffset;
+            var remaining = token.Length;
             while (remaining > 0) {
-              int segLen = Math.Min(remaining, 65535);
+              var segLen = Math.Min(remaining, 65535);
               tokenStream.WriteByte(RzipConstants.TagLiteral);
               tokenStream.WriteByte((byte)(segLen >> 8));
               tokenStream.WriteByte((byte)(segLen & 0xFF));
@@ -191,11 +191,11 @@ public static class RzipStream {
             }
           } else {
             // Match — also split if longer than 65535
-            int matchRemaining = token.Length;
-            int refOff = token.ReferenceOffset;
-            byte[] offBuf = new byte[4];
+            var matchRemaining = token.Length;
+            var refOff = token.ReferenceOffset;
+            var offBuf = new byte[4];
             while (matchRemaining > 0) {
-              int segLen = Math.Min(matchRemaining, 65535);
+              var segLen = Math.Min(matchRemaining, 65535);
               tokenStream.WriteByte(RzipConstants.TagMatch);
               tokenStream.WriteByte((byte)(segLen >> 8));
               tokenStream.WriteByte((byte)(segLen & 0xFF));
@@ -208,10 +208,10 @@ public static class RzipStream {
         }
       } else {
         // No previous data to match against — emit all as literal
-        int remaining = chunkLen;
-        int litPos = 0;
+        var remaining = chunkLen;
+        var litPos = 0;
         while (remaining > 0) {
-          int segLen = Math.Min(remaining, 65535);
+          var segLen = Math.Min(remaining, 65535);
           tokenStream.WriteByte(RzipConstants.TagLiteral);
           tokenStream.WriteByte((byte)(segLen >> 8));
           tokenStream.WriteByte((byte)(segLen & 0xFF));
@@ -222,7 +222,7 @@ public static class RzipStream {
       }
 
       // Compress token stream with bzip2
-      byte[] tokenData = tokenStream.ToArray();
+      var tokenData = tokenStream.ToArray();
       byte[] compressedData;
       using (var compressedStream = new MemoryStream())
       {
@@ -233,7 +233,7 @@ public static class RzipStream {
       }
 
       // Write chunk: compressed_length (BE) + bzip2 data
-      byte[] lenBuf = new byte[4];
+      var lenBuf = new byte[4];
       WriteUInt32BigEndian(lenBuf, (uint)compressedData.Length);
       output.Write(lenBuf);
       output.Write(compressedData);
@@ -255,9 +255,9 @@ public static class RzipStream {
   }
 
   private static void ReadExactly(Stream stream, Span<byte> buffer) {
-    int offset = 0;
+    var offset = 0;
     while (offset < buffer.Length) {
-      int read = stream.Read(buffer[offset..]);
+      var read = stream.Read(buffer[offset..]);
       if (read == 0)
         throw new InvalidDataException("Unexpected end of stream.");
       offset += read;
@@ -265,9 +265,9 @@ public static class RzipStream {
   }
 
   private static void ReadExactly(Stream stream, byte[] buffer) {
-    int offset = 0;
+    var offset = 0;
     while (offset < buffer.Length) {
-      int read = stream.Read(buffer, offset, buffer.Length - offset);
+      var read = stream.Read(buffer, offset, buffer.Length - offset);
       if (read == 0)
         throw new InvalidDataException("Unexpected end of stream.");
       offset += read;
@@ -275,9 +275,9 @@ public static class RzipStream {
   }
 
   private static int ReadBytes(Stream stream, Span<byte> buffer) {
-    int offset = 0;
+    var offset = 0;
     while (offset < buffer.Length) {
-      int read = stream.Read(buffer[offset..]);
+      var read = stream.Read(buffer[offset..]);
       if (read == 0)
         return offset;
       offset += read;

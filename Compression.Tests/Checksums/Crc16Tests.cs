@@ -9,26 +9,26 @@ public class Crc16Tests {
   [Test]
   public void Compute_ARC_KnownVector() {
     // CRC-16/ARC of "123456789" = 0xBB3D
-    byte[] data = Encoding.ASCII.GetBytes("123456789");
-    ushort crc = Crc16.Compute(data);
+    var data = Encoding.ASCII.GetBytes("123456789");
+    var crc = Crc16.Compute(data);
     Assert.That(crc, Is.EqualTo((ushort)0xBB3D));
   }
 
   [Category("EdgeCase")]
   [Test]
   public void Compute_EmptyData_ReturnsZero() {
-    ushort crc = Crc16.Compute([]);
+    var crc = Crc16.Compute([]);
     Assert.That(crc, Is.EqualTo((ushort)0));
   }
 
   [Category("HappyPath")]
   [Test]
   public void IncrementalUpdate_MatchesBulk() {
-    byte[] data = Encoding.ASCII.GetBytes("Hello, World!");
-    ushort bulkCrc = Crc16.Compute(data);
+    var data = Encoding.ASCII.GetBytes("Hello, World!");
+    var bulkCrc = Crc16.Compute(data);
 
     var crc = new Crc16();
-    foreach (byte b in data)
+    foreach (var b in data)
       crc.Update(b);
 
     Assert.That((ushort)crc.Value, Is.EqualTo(bulkCrc));

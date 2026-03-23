@@ -21,7 +21,7 @@ public static class LzpDecompressor {
     if (compressed.Length < 5)
       throw new InvalidDataException("LZP compressed data is too short (missing header).");
 
-    int originalSize = BitConverter.ToInt32(compressed, 0);
+    var originalSize = BitConverter.ToInt32(compressed, 0);
     int order = compressed[4];
 
     if (originalSize < 0)
@@ -33,17 +33,17 @@ public static class LzpDecompressor {
     var output = new byte[originalSize];
     var hashTable = new byte[HashSize];
 
-    int srcPos = 5; // past header
-    int dstPos = 0;
+    var srcPos = 5; // past header
+    var dstPos = 0;
 
     while (dstPos < originalSize) {
       if (srcPos >= compressed.Length)
         throw new InvalidDataException("Unexpected end of LZP compressed data.");
 
-      byte flags = compressed[srcPos++];
-      int count = Math.Min(8, originalSize - dstPos);
+      var flags = compressed[srcPos++];
+      var count = Math.Min(8, originalSize - dstPos);
 
-      for (int bit = 0; bit < count; bit++) {
+      for (var bit = 0; bit < count; bit++) {
         if (dstPos < order) {
           // Not enough context — must be a literal.
           if (srcPos >= compressed.Length)
@@ -54,8 +54,8 @@ public static class LzpDecompressor {
           continue;
         }
 
-        int hash = ComputeHash(output, dstPos, order);
-        bool isMatch = (flags & (1 << bit)) != 0;
+        var hash = ComputeHash(output, dstPos, order);
+        var isMatch = (flags & (1 << bit)) != 0;
 
         if (isMatch) {
           output[dstPos] = hashTable[hash];
@@ -78,8 +78,8 @@ public static class LzpDecompressor {
   /// Computes a 20-bit FNV-1a hash of the <paramref name="order"/> bytes preceding position <paramref name="pos"/>.
   /// </summary>
   private static int ComputeHash(byte[] data, int pos, int order) {
-    uint h = 2166136261u;
-    for (int i = pos - order; i < pos; i++) {
+    var h = 2166136261u;
+    for (var i = pos - order; i < pos; i++) {
       h ^= data[i];
       h *= 16777619u;
     }

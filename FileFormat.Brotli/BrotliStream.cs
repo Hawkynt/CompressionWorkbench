@@ -42,8 +42,8 @@ public static class BrotliStream {
     if (data.Length < 16)
       return BrotliCompressor.Compress(data);
 
-    byte[] lz77 = BrotliCompressor.CompressLz77(data);
-    byte[] uncomp = BrotliCompressor.Compress(data);
+    var lz77 = BrotliCompressor.CompressLz77(data);
+    var uncomp = BrotliCompressor.Compress(data);
     return lz77.Length < uncomp.Length ? lz77 : uncomp;
   }
 

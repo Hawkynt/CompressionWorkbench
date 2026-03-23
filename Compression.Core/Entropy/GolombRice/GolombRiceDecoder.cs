@@ -32,13 +32,13 @@ public sealed class GolombRiceDecoder {
   /// </summary>
   public int Decode() {
     // Read unary: count 1-bits until 0-bit
-    int q = 0;
+    var q = 0;
     while (ReadBit() != 0)
       ++q;
 
     // Read k-bit remainder (MSB first)
-    int r = 0;
-    for (int i = 0; i < this.K; ++i)
+    var r = 0;
+    for (var i = 0; i < this.K; ++i)
       r = (r << 1) | ReadBit();
 
     return (q << this.K) | r;
@@ -48,15 +48,15 @@ public sealed class GolombRiceDecoder {
   /// Decodes a signed value using zig-zag mapping.
   /// </summary>
   public int DecodeSigned() {
-    int mapped = Decode();
+    var mapped = Decode();
     return (mapped & 1) != 0 ? -((mapped + 1) >> 1) : mapped >> 1;
   }
 
   private int ReadBit() {
-    int byteIdx = this._bitPos >> 3;
+    var byteIdx = this._bitPos >> 3;
     if (byteIdx >= this._data.Length)
       return 0;
-    int bitIdx = 7 - (this._bitPos & 7);
+    var bitIdx = 7 - (this._bitPos & 7);
     ++this._bitPos;
     return (this._data[byteIdx] >> bitIdx) & 1;
   }

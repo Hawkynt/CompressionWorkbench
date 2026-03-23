@@ -26,13 +26,13 @@ internal static class StuffItRle {
       return [];
 
     var output = new List<byte>(data.Length);
-    int i = 0;
+    var i = 0;
 
     while (i < data.Length) {
-      byte current = data[i];
+      var current = data[i];
 
       // Count the run length.
-      int runLength = 1;
+      var runLength = 1;
       while (i + runLength < data.Length && data[i + runLength] == current && runLength < 255)
         ++runLength;
 
@@ -52,7 +52,7 @@ internal static class StuffItRle {
         i += runLength;
       } else {
         // Emit individual bytes, escaping 0x90.
-        for (int r = 0; r < runLength; ++r) {
+        for (var r = 0; r < runLength; ++r) {
           output.Add(current);
           if (current == Marker)
             output.Add(0x00);
@@ -73,10 +73,10 @@ internal static class StuffItRle {
 
     var output = new List<byte>(data.Length * 2);
     byte lastByte = 0;
-    int i = 0;
+    var i = 0;
 
     while (i < data.Length) {
-      byte current = data[i++];
+      var current = data[i++];
 
       if (current != Marker) {
         output.Add(current);
@@ -88,7 +88,7 @@ internal static class StuffItRle {
       if (i >= data.Length)
         throw new InvalidDataException("Unexpected end of StuffIt RLE stream after marker byte.");
 
-      byte count = data[i++];
+      var count = data[i++];
 
       if (count == 0) {
         // Literal 0x90.
@@ -98,7 +98,7 @@ internal static class StuffItRle {
       }
 
       // Repeat lastByte `count` additional times (it was already emitted once).
-      for (int r = 0; r < count; ++r)
+      for (var r = 0; r < count; ++r)
         output.Add(lastByte);
     }
 

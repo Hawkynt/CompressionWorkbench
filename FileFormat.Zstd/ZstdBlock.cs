@@ -15,17 +15,17 @@ internal static class ZstdBlock {
     Span<byte> buf = stackalloc byte[3];
     var read = 0;
     while (read < 3) {
-      int b = stream.ReadByte();
+      var b = stream.ReadByte();
       if (b < 0)
         throw new InvalidDataException("Truncated Zstandard block header.");
       buf[read++] = (byte)b;
     }
 
-    int header = buf[0] | (buf[1] << 8) | (buf[2] << 16);
+    var header = buf[0] | (buf[1] << 8) | (buf[2] << 16);
 
-    bool lastBlock = (header & 1) != 0;
-    byte blockType = (byte)((header >> 1) & 3);
-    int blockSize = header >> 3;
+    var lastBlock = (header & 1) != 0;
+    var blockType = (byte)((header >> 1) & 3);
+    var blockSize = header >> 3;
 
     return (blockType, blockSize, lastBlock);
   }
@@ -38,7 +38,7 @@ internal static class ZstdBlock {
   /// <param name="blockSize">The block size in bytes (up to 21 bits).</param>
   /// <param name="lastBlock">Whether this is the last block in the frame.</param>
   public static void WriteBlockHeader(Stream stream, byte blockType, int blockSize, bool lastBlock) {
-    int header = (lastBlock ? 1 : 0)
+    var header = (lastBlock ? 1 : 0)
           | ((blockType & 3) << 1)
           | (blockSize << 3);
 

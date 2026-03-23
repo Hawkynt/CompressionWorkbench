@@ -52,8 +52,8 @@ public sealed class Rar4Writer : IDisposable {
     ArgumentNullException.ThrowIfNull(fileName);
     EnsureHeader();
 
-    byte[] uncompressed = data.ToArray();
-    uint dataCrc = Crc32.Compute(uncompressed);
+    var uncompressed = data.ToArray();
+    var dataCrc = Crc32.Compute(uncompressed);
 
     byte[] compressed;
     byte actualMethod;
@@ -85,7 +85,7 @@ public sealed class Rar4Writer : IDisposable {
       salt = RandomNumberGenerator.GetBytes(8);
       var (key, iv) = KeyDerivation.Rar3DeriveKey(this._password, salt);
       // Pad to 16-byte boundary for AES
-      int padded = (compressed.Length + 15) & ~15;
+      var padded = (compressed.Length + 15) & ~15;
       if (padded != compressed.Length) {
         var tmp = new byte[padded];
         compressed.CopyTo(tmp, 0);
@@ -95,10 +95,10 @@ public sealed class Rar4Writer : IDisposable {
     }
 
     // Build file header
-    byte[] nameBytes = Encoding.UTF8.GetBytes(fileName);
+    var nameBytes = Encoding.UTF8.GetBytes(fileName);
 
     // File flags
-    ushort fileFlags = RarConstants.Rar4FlagAddSize;
+    var fileFlags = RarConstants.Rar4FlagAddSize;
     if (this._solid && !this._isFirstFile)
       fileFlags |= RarConstants.Rar4FlagSolid;
     if (this._password != null)
@@ -106,24 +106,24 @@ public sealed class Rar4Writer : IDisposable {
     this._isFirstFile = false;
 
     // Determine UnPack version
-    byte unpackVer = actualMethod == RarConstants.Rar4MethodStore ? (byte)20 : (byte)29;
+    var unpackVer = actualMethod == RarConstants.Rar4MethodStore ? (byte)20 : (byte)29;
 
     // Dictionary size shift for header
     // dictSizeShift = windowBits - 16 (0-6), stored in bits 5-7 of flags
-    int dictShift = Math.Clamp(this._windowBits - 16, 0, 7);
+    var dictShift = Math.Clamp(this._windowBits - 16, 0, 7);
     fileFlags |= (ushort)((dictShift & 0x07) << 5);
 
     // MS-DOS date/time
-    uint dosTime = modifiedTime != null ? MsDosDateTime(modifiedTime.Value) : MsDosDateTime(DateTimeOffset.Now);
+    var dosTime = modifiedTime != null ? MsDosDateTime(modifiedTime.Value) : MsDosDateTime(DateTimeOffset.Now);
 
     // Build the file header:
     // HEAD_CRC(2) + HEAD_TYPE(1) + HEAD_FLAGS(2) + HEAD_SIZE(2) + PACK_SIZE(4) + UNP_SIZE(4)
     // + HOST_OS(1) + FILE_CRC(4) + FTIME(4) + UNP_VER(1) + METHOD(1) + NAME_SIZE(2) + ATTR(4)
     // + FILE_NAME(nameSize) [+ SALT(8) if encrypted]
-    int saltSize = salt != null ? 8 : 0;
-    int headerBodySize = 7 + 4 + 4 + 1 + 4 + 4 + 1 + 1 + 2 + 4 + nameBytes.Length + saltSize;
+    var saltSize = salt != null ? 8 : 0;
+    var headerBodySize = 7 + 4 + 4 + 1 + 4 + 4 + 1 + 1 + 2 + 4 + nameBytes.Length + saltSize;
     // HEAD_SIZE includes itself
-    ushort headSize = (ushort)(headerBodySize);
+    var headSize = (ushort)(headerBodySize);
 
     using var headerMs = new MemoryStream();
     using var bw = new BinaryWriter(headerMs, Encoding.ASCII, leaveOpen: true);
@@ -147,11 +147,11 @@ public sealed class Rar4Writer : IDisposable {
       bw.Write(salt); // SALT (8 bytes)
     bw.Flush();
 
-    byte[] headerData = headerMs.ToArray();
+    var headerData = headerMs.ToArray();
 
     // Compute CRC-16 over header from HEAD_TYPE onwards (offset 2)
-    uint headerCrc32 = Crc32.Compute(headerData.AsSpan(2));
-    ushort headerCrc16 = (ushort)(headerCrc32 & 0xFFFF);
+    var headerCrc32 = Crc32.Compute(headerData.AsSpan(2));
+    var headerCrc16 = (ushort)(headerCrc32 & 0xFFFF);
     BinaryPrimitives.WriteUInt16LittleEndian(headerData, headerCrc16);
 
     this._stream.Write(headerData);
@@ -222,9 +222,9 @@ public sealed class Rar4Writer : IDisposable {
     bw.Write(headSize); // HEAD_SIZE
     bw.Flush();
 
-    byte[] headerData = ms.ToArray();
-    uint crc32 = Crc32.Compute(headerData.AsSpan(2));
-    ushort crc16 = (ushort)(crc32 & 0xFFFF);
+    var headerData = ms.ToArray();
+    var crc32 = Crc32.Compute(headerData.AsSpan(2));
+    var crc16 = (ushort)(crc32 & 0xFFFF);
     BinaryPrimitives.WriteUInt16LittleEndian(headerData, crc16);
 
     this._stream.Write(headerData);
@@ -236,8 +236,8 @@ public sealed class Rar4Writer : IDisposable {
 
   private static uint MsDosDateTime(DateTimeOffset dto) {
     var dt = dto.LocalDateTime;
-    int time = (dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2);
-    int date = ((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day;
+    var time = (dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2);
+    var date = ((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day;
     return (uint)((date << 16) | time);
   }
 }

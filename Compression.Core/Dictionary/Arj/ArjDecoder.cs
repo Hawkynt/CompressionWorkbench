@@ -60,28 +60,28 @@ public sealed class ArjDecoder {
     var output = new byte[originalSize];
     var window = new byte[this._windowSize];
     Array.Fill(window, (byte)0x20);
-    int windowPos = 0;
-    int outPos = 0;
+    var windowPos = 0;
+    var outPos = 0;
 
     while (outPos < originalSize) {
       if (this._blockRemaining == 0)
         ReadBlock();
 
-      int code = DecodeCode();
+      var code = DecodeCode();
       --this._blockRemaining;
 
       if (code < NChar) {
-        byte b = (byte)code;
+        var b = (byte)code;
         output[outPos++] = b;
         window[windowPos] = b;
         windowPos = (windowPos + 1) % this._windowSize;
       } else {
-        int length = code - NChar + Threshold;
-        int position = DecodePosition();
+        var length = code - NChar + Threshold;
+        var position = DecodePosition();
 
-        int srcPos = ((windowPos - position - 1) % this._windowSize + this._windowSize) % this._windowSize;
-        for (int j = 0; j < length && outPos < originalSize; ++j) {
-          byte b = window[srcPos];
+        var srcPos = ((windowPos - position - 1) % this._windowSize + this._windowSize) % this._windowSize;
+        for (var j = 0; j < length && outPos < originalSize; ++j) {
+          var b = window[srcPos];
           output[outPos++] = b;
           window[windowPos] = b;
           windowPos = (windowPos + 1) % this._windowSize;
@@ -103,7 +103,7 @@ public sealed class ArjDecoder {
   }
 
   private void ReadCharTree() {
-    int num = (int)this._bits.ReadBits(9);
+    var num = (int)this._bits.ReadBits(9);
     if (num == 0) {
       // Single symbol
       this._singleCodeSymbol = (int)this._bits.ReadBits(9);
@@ -115,18 +115,18 @@ public sealed class ArjDecoder {
     this._singleCodeSymbol = -1;
 
     // Read code-length tree first
-    int[] lenCodeLengths = ReadCodeLengthTree();
+    var lenCodeLengths = ReadCodeLengthTree();
 
     // Use code-length tree to read the actual char/length code lengths
-    int[] codeLengths = new int[NumCodes];
-    (int[] lenTable, int lenBits) = BuildLenDecodeTable(lenCodeLengths);
+    var codeLengths = new int[NumCodes];
+    (var lenTable, var lenBits) = BuildLenDecodeTable(lenCodeLengths);
 
-    int i = 0;
+    var i = 0;
     while (i < num) {
-      int code = DecodeFromTable(lenTable, lenBits);
+      var code = DecodeFromTable(lenTable, lenBits);
       if (code <= 2) {
         // Run of zeros: code 0 = 1 zero, code 1 = 3+next3bits zeros, code 2 = 20+next9bits zeros
-        int runLen = code switch {
+        var runLen = code switch {
           0 => 1,
           1 => (int)this._bits.ReadBits(4) + 3,
           _ => (int)this._bits.ReadBits(9) + 20
@@ -137,13 +137,13 @@ public sealed class ArjDecoder {
       }
     }
 
-    int maxLen = codeLengths.Max();
+    var maxLen = codeLengths.Max();
     this._codeTableBits = Math.Min(maxLen > 0 ? maxLen : 1, 12);
     this._codeTable = BuildDecodeTable(codeLengths, this._codeTableBits);
   }
 
   private void ReadPosTree() {
-    int num = (int)this._bits.ReadBits(5);
+    var num = (int)this._bits.ReadBits(5);
     if (num == 0) {
       this._singlePosSymbol = (int)this._bits.ReadBits(5);
       this._posTable = null;
@@ -152,34 +152,34 @@ public sealed class ArjDecoder {
     }
 
     this._singlePosSymbol = -1;
-    int maxPosBits = this._windowSize <= 2048 ? 11 : 15;
-    int[] posLengths = new int[maxPosBits + 1];
+    var maxPosBits = this._windowSize <= 2048 ? 11 : 15;
+    var posLengths = new int[maxPosBits + 1];
 
-    for (int i = 0; i < num && i <= maxPosBits; ++i) {
-      int len = (int)this._bits.ReadBits(4);
+    for (var i = 0; i < num && i <= maxPosBits; ++i) {
+      var len = (int)this._bits.ReadBits(4);
       posLengths[i] = len;
     }
 
-    int maxLen = posLengths.Max();
+    var maxLen = posLengths.Max();
     this._posTableBits = Math.Min(maxLen > 0 ? maxLen : 1, 12);
     this._posTable = BuildDecodeTable(posLengths, this._posTableBits);
   }
 
   private int[] ReadCodeLengthTree() {
-    int num = (int)this._bits.ReadBits(5);
+    var num = (int)this._bits.ReadBits(5);
     if (num == 0) {
       // Single code-length symbol
-      int single = (int)this._bits.ReadBits(5);
+      var single = (int)this._bits.ReadBits(5);
       return [single]; // Special case handled below
     }
 
-    int[] lengths = new int[NumLenSymbols];
-    for (int i = 0; i < num && i < NumLenSymbols; ++i) {
-      int len = (int)this._bits.ReadBits(3);
+    var lengths = new int[NumLenSymbols];
+    for (var i = 0; i < num && i < NumLenSymbols; ++i) {
+      var len = (int)this._bits.ReadBits(3);
       lengths[i] = len;
       // Special: after symbol 2, skip 'n' symbols (for zero runs in the code-length tree itself)
       if (i == 2) {
-        int skip = (int)this._bits.ReadBits(2);
+        var skip = (int)this._bits.ReadBits(2);
         i += skip;
       }
     }
@@ -194,14 +194,14 @@ public sealed class ArjDecoder {
   }
 
   private int DecodePosition() {
-    int slot = this._singlePosSymbol >= 0
+    var slot = this._singlePosSymbol >= 0
       ? this._singlePosSymbol
       : DecodeFromTable(this._posTable!, this._posTableBits);
 
     if (slot <= 1)
       return slot;
 
-    int extraBits = slot - 1;
+    var extraBits = slot - 1;
     return (1 << extraBits) + (int)this._bits.ReadBits(extraBits);
   }
 
@@ -210,17 +210,17 @@ public sealed class ArjDecoder {
       return 0;
 
     this._bits.EnsureBits(maxBits);
-    uint peekBits = this._bits.PeekBits(maxBits);
+    var peekBits = this._bits.PeekBits(maxBits);
 
-    int entry = table[(int)peekBits];
+    var entry = table[(int)peekBits];
     if (entry < 0) {
       // Slow path: walk the tree bit by bit
       this._bits.DropBits(maxBits);
       return 0;
     }
 
-    int symbol = entry & 0xFFFF;
-    int codeLen = entry >> 16;
+    var symbol = entry & 0xFFFF;
+    var codeLen = entry >> 16;
     this._bits.DropBits(codeLen);
     return symbol;
   }
@@ -228,49 +228,49 @@ public sealed class ArjDecoder {
   private static (int[] Table, int Bits) BuildLenDecodeTable(int[] lengths) {
     if (lengths.Length == 1) {
       // Single symbol - create a table that always returns it
-      int sym = lengths[0];
+      var sym = lengths[0];
       var t = new int[2];
-      int packed = sym | (1 << 16);
+      var packed = sym | (1 << 16);
       t[0] = packed;
       t[1] = packed;
       return (t, 1);
     }
 
-    int maxLen = lengths.Max();
+    var maxLen = lengths.Max();
     if (maxLen == 0) maxLen = 1;
-    int bits = Math.Min(maxLen, 12);
+    var bits = Math.Min(maxLen, 12);
     return (BuildDecodeTable(lengths, bits), bits);
   }
 
   private static int[] BuildDecodeTable(int[] codeLengths, int maxBits) {
-    int tableSize = 1 << maxBits;
+    var tableSize = 1 << maxBits;
     var table = new int[tableSize];
     table.AsSpan().Fill(-1);
 
     var blCount = new int[maxBits + 1];
-    foreach (int v in codeLengths)
+    foreach (var v in codeLengths)
       if (v > 0 && v <= maxBits)
         ++blCount[v];
 
     var nextCode = new int[maxBits + 1];
-    int code = 0;
-    for (int bits = 1; bits <= maxBits; ++bits) {
+    var code = 0;
+    for (var bits = 1; bits <= maxBits; ++bits) {
       code = (code + blCount[bits - 1]) << 1;
       nextCode[bits] = code;
     }
 
-    for (int sym = 0; sym < codeLengths.Length; ++sym) {
-      int len = codeLengths[sym];
+    for (var sym = 0; sym < codeLengths.Length; ++sym) {
+      var len = codeLengths[sym];
       if (len == 0 || len > maxBits)
         continue;
 
-      int symCode = nextCode[len]++;
+      var symCode = nextCode[len]++;
       // ARJ uses LSB-first bit packing, but canonical codes are assigned MSB-first.
       // We need to reverse the code bits for the LSB-first lookup table.
-      int reversed = ReverseBits(symCode, len);
-      int fillBits = maxBits - len;
-      int packedValue = sym | (len << 16);
-      for (int fill = 0; fill < (1 << fillBits); ++fill)
+      var reversed = ReverseBits(symCode, len);
+      var fillBits = maxBits - len;
+      var packedValue = sym | (len << 16);
+      for (var fill = 0; fill < (1 << fillBits); ++fill)
         table[reversed | (fill << len)] = packedValue;
     }
 
@@ -278,8 +278,8 @@ public sealed class ArjDecoder {
   }
 
   private static int ReverseBits(int value, int bits) {
-    int result = 0;
-    for (int i = 0; i < bits; ++i) {
+    var result = 0;
+    for (var i = 0; i < bits; ++i) {
       result = (result << 1) | (value & 1);
       value >>= 1;
     }

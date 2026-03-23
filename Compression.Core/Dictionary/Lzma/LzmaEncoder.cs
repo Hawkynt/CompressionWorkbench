@@ -108,7 +108,7 @@ public sealed class LzmaEncoder {
 
     // Match finder
     var windowSize = Math.Min(this._dictionarySize, data.Length > 0 ? data.Length : 1);
-    int chainDepth = this._level switch {
+    var chainDepth = this._level switch {
       LzmaCompressionLevel.Fast => 16,
       LzmaCompressionLevel.Best => 256,
       _ => 64

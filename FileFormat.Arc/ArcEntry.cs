@@ -40,12 +40,12 @@ public sealed class ArcEntry {
     if (date == 0)
       return DateTimeOffset.MinValue;
 
-    int year = ((date >> 9) & 0x7F) + 1980;
-    int month = (date >> 5) & 0x0F;
-    int day = date & 0x1F;
-    int hour = (time >> 11) & 0x1F;
-    int minute = (time >> 5) & 0x3F;
-    int second = (time & 0x1F) * 2;
+    var year = ((date >> 9) & 0x7F) + 1980;
+    var month = (date >> 5) & 0x0F;
+    var day = date & 0x1F;
+    var hour = (time >> 11) & 0x1F;
+    var minute = (time >> 5) & 0x3F;
+    var second = (time & 0x1F) * 2;
 
     if (month < 1 || month > 12 || day < 1 || day > 31)
       return DateTimeOffset.MinValue;
@@ -62,12 +62,12 @@ public sealed class ArcEntry {
       return (0, 0);
 
     var local = dt.ToLocalTime();
-    int year = local.Year - 1980;
+    var year = local.Year - 1980;
     if (year < 0) year = 0;
     if (year > 127) year = 127;
 
-    ushort date = (ushort)(((year & 0x7F) << 9) | ((local.Month & 0x0F) << 5) | (local.Day & 0x1F));
-    ushort time = (ushort)(((local.Hour & 0x1F) << 11) | ((local.Minute & 0x3F) << 5) | ((local.Second / 2) & 0x1F));
+    var date = (ushort)(((year & 0x7F) << 9) | ((local.Month & 0x0F) << 5) | (local.Day & 0x1F));
+    var time = (ushort)(((local.Hour & 0x1F) << 11) | ((local.Minute & 0x3F) << 5) | ((local.Second / 2) & 0x1F));
     return (date, time);
   }
 }

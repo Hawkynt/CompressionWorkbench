@@ -28,7 +28,7 @@ public static class ShrinkDecoder {
     using var ms = new MemoryStream(compressed);
     var reader = new BitReader(ms, BitOrder.LsbFirst);
     var output = new byte[originalSize];
-    int outputPos = 0;
+    var outputPos = 0;
 
     // Dictionary entries: prefix code + suffix byte
     var prefix = new int[MaxCode];
@@ -36,7 +36,7 @@ public static class ShrinkDecoder {
     var isUsed = new bool[MaxCode];
 
     // Initialize single-byte entries
-    for (int i = 0; i < 256; ++i) {
+    for (var i = 0; i < 256; ++i) {
       prefix[i] = -1;
       suffix[i] = (byte)i;
       isUsed[i] = true;
@@ -45,9 +45,9 @@ public static class ShrinkDecoder {
     // Code 256 is the control code
     isUsed[ControlCode] = true;
 
-    int currentBits = MinBits;
-    int nextCode = 257; // First usable code after 256 (control)
-    int prevCode = -1;
+    var currentBits = MinBits;
+    var nextCode = 257; // First usable code after 256 (control)
+    var prevCode = -1;
     var decodeStack = new byte[MaxCode];
 
     while (outputPos < originalSize) {
@@ -78,8 +78,8 @@ public static class ShrinkDecoder {
       }
 
       // Decode the code to a string
-      int stackPos = 0;
-      int c = code;
+      var stackPos = 0;
+      var c = code;
 
       if (c >= nextCode || (c >= 257 && !isUsed[c])) {
         // KwKwK case: code not yet in dictionary
@@ -97,7 +97,7 @@ public static class ShrinkDecoder {
       decodeStack[stackPos++] = suffix[c]; // single-byte code
 
       // Write in reverse order
-      for (int i = stackPos - 1; i >= 0 && outputPos < originalSize; --i)
+      for (var i = stackPos - 1; i >= 0 && outputPos < originalSize; --i)
         output[outputPos++] = decodeStack[i];
 
       // Add new dictionary entry
@@ -129,13 +129,13 @@ public static class ShrinkDecoder {
   private static void PartialClear(int[] prefix, bool[] isUsed, int nextCode) {
     // Mark codes that are referenced as prefixes
     var isReferenced = new bool[MaxCode];
-    for (int i = 257; i < MaxCode; ++i) {
+    for (var i = 257; i < MaxCode; ++i) {
       if (isUsed[i] && prefix[i] >= 257)
         isReferenced[prefix[i]] = true;
     }
 
     // Clear codes that are not referenced by any other code
-    for (int i = 257; i < MaxCode; ++i) {
+    for (var i = 257; i < MaxCode; ++i) {
       if (isUsed[i] && !isReferenced[i])
         isUsed[i] = false;
     }

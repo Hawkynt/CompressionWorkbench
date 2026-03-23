@@ -34,23 +34,23 @@ public sealed class HaEntry {
     if (dt.Year < 1980)
       dt = new DateTime(1980, 1, 1);
 
-    ushort time = (ushort)((dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2));
-    ushort date = (ushort)(((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day);
+    var time = (ushort)((dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2));
+    var date = (ushort)(((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day);
 
     // Low word = time, high word = date (same layout as ZIP).
     return (uint)((date << 16) | time);
   }
 
   internal static DateTime DecodeMsDosDateTime(uint dosDateTime) {
-    ushort time = (ushort)(dosDateTime & 0xFFFF);
-    ushort date = (ushort)(dosDateTime >> 16);
+    var time = (ushort)(dosDateTime & 0xFFFF);
+    var date = (ushort)(dosDateTime >> 16);
 
-    int year  = ((date >> 9) & 0x7F) + 1980;
-    int month = Math.Clamp((date >> 5) & 0x0F, 1, 12);
-    int day   = Math.Clamp(date & 0x1F, 1, 31);
-    int hour  = Math.Clamp((time >> 11) & 0x1F, 0, 23);
-    int min   = Math.Clamp((time >> 5)  & 0x3F, 0, 59);
-    int sec   = Math.Clamp((time & 0x1F) * 2,   0, 59);
+    var year  = ((date >> 9) & 0x7F) + 1980;
+    var month = Math.Clamp((date >> 5) & 0x0F, 1, 12);
+    var day   = Math.Clamp(date & 0x1F, 1, 31);
+    var hour  = Math.Clamp((time >> 11) & 0x1F, 0, 23);
+    var min   = Math.Clamp((time >> 5)  & 0x3F, 0, 59);
+    var sec   = Math.Clamp((time & 0x1F) * 2,   0, 59);
 
     try {
       return new DateTime(year, month, day, hour, min, sec);

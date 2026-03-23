@@ -20,7 +20,7 @@ public class SqueezeTests {
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void RoundTrip_AllByteValues() {
     var data = new byte[256];
-    for (int i = 0; i < 256; i++)
+    for (var i = 0; i < 256; i++)
       data[i] = (byte)i;
 
     using var compressed = new MemoryStream();

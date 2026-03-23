@@ -20,23 +20,23 @@ public static class ImplodeDecoder {
   /// <param name="is8kDictionary">Whether an 8KB dictionary is used (bit 1 of GP flags).</param>
   /// <returns>The decompressed data.</returns>
   public static byte[] Decode(byte[] compressed, int originalSize, bool hasLiteralTree, bool is8kDictionary) {
-    int bitPos = 0;
-    int distanceBits = is8kDictionary ? 7 : 6;
-    int minMatchLen = hasLiteralTree ? 3 : 2;
+    var bitPos = 0;
+    var distanceBits = is8kDictionary ? 7 : 6;
+    var minMatchLen = hasLiteralTree ? 3 : 2;
 
     // Read Shannon-Fano trees
     int[]? literalTree = null;
     if (hasLiteralTree)
       literalTree = ReadSfTree(compressed, ref bitPos, 256);
 
-    int[] lengthTree = ReadSfTree(compressed, ref bitPos, 64);
-    int[] distanceTree = ReadSfTree(compressed, ref bitPos, 64);
+    var lengthTree = ReadSfTree(compressed, ref bitPos, 64);
+    var distanceTree = ReadSfTree(compressed, ref bitPos, 64);
 
     var output = new byte[originalSize];
-    int outPos = 0;
+    var outPos = 0;
 
     while (outPos < originalSize) {
-      int flag = ReadBit(compressed, ref bitPos);
+      var flag = ReadBit(compressed, ref bitPos);
 
       if (flag == 1) {
         // Literal byte
@@ -51,21 +51,21 @@ public static class ImplodeDecoder {
       }
       else {
         // Length-distance pair
-        int distLow = ReadBitsReversed(compressed, ref bitPos, distanceBits);
-        int distHigh = DecodeSymbol(compressed, ref bitPos, distanceTree);
-        int distance = (distHigh << distanceBits) | distLow;
+        var distLow = ReadBitsReversed(compressed, ref bitPos, distanceBits);
+        var distHigh = DecodeSymbol(compressed, ref bitPos, distanceTree);
+        var distance = (distHigh << distanceBits) | distLow;
 
-        int lenCode = DecodeSymbol(compressed, ref bitPos, lengthTree);
-        int length = lenCode + minMatchLen;
+        var lenCode = DecodeSymbol(compressed, ref bitPos, lengthTree);
+        var length = lenCode + minMatchLen;
 
         if (lenCode == 63) {
           // Extended length
-          int extra = ReadBitsReversed(compressed, ref bitPos, 8);
+          var extra = ReadBitsReversed(compressed, ref bitPos, 8);
           length += extra;
         }
 
-        int srcPos = outPos - distance - 1;
-        for (int i = 0; i < length && outPos < originalSize; ++i) {
+        var srcPos = outPos - distance - 1;
+        for (var i = 0; i < length && outPos < originalSize; ++i) {
           if (srcPos + i >= 0 && srcPos + i < outPos)
             output[outPos] = output[srcPos + i];
           else
@@ -80,15 +80,15 @@ public static class ImplodeDecoder {
 
   private static int[] ReadSfTree(byte[] data, ref int bitPos, int maxSymbol) {
     // Read code lengths via RLE
-    int numEntries = ReadBitsReversed(data, ref bitPos, 8) + 1;
+    var numEntries = ReadBitsReversed(data, ref bitPos, 8) + 1;
     var codeLengths = new int[maxSymbol];
 
-    int idx = 0;
-    for (int i = 0; i < numEntries && idx < maxSymbol; ++i) {
-      int val = ReadBitsReversed(data, ref bitPos, 8);
-      int len = (val & 0x0F) + 1;
-      int count = (val >> 4) + 1;
-      for (int j = 0; j < count && idx < maxSymbol; ++j)
+    var idx = 0;
+    for (var i = 0; i < numEntries && idx < maxSymbol; ++i) {
+      var val = ReadBitsReversed(data, ref bitPos, 8);
+      var len = (val & 0x0F) + 1;
+      var count = (val >> 4) + 1;
+      for (var j = 0; j < count && idx < maxSymbol; ++j)
         codeLengths[idx++] = len;
     }
 
@@ -97,38 +97,38 @@ public static class ImplodeDecoder {
   }
 
   private static int[] BuildDecodeTable(int[] codeLengths, int maxSymbol) {
-    int maxLen = 0;
-    for (int i = 0; i < maxSymbol; ++i)
+    var maxLen = 0;
+    for (var i = 0; i < maxSymbol; ++i)
       if (codeLengths[i] > maxLen) maxLen = codeLengths[i];
 
     if (maxLen == 0) maxLen = 1;
 
     // Build canonical Huffman codes (reversed bit order for Shannon-Fano)
     var blCount = new int[maxLen + 1];
-    for (int i = 0; i < maxSymbol; ++i)
+    for (var i = 0; i < maxSymbol; ++i)
       if (codeLengths[i] > 0) ++blCount[codeLengths[i]];
 
     var nextCode = new int[maxLen + 1];
-    int code = 0;
-    for (int bits = 1; bits <= maxLen; ++bits) {
+    var code = 0;
+    for (var bits = 1; bits <= maxLen; ++bits) {
       code = (code + blCount[bits - 1]) << 1;
       nextCode[bits] = code;
     }
 
     // Build lookup table: indexed by code (up to 2^maxLen entries)
-    int tableSize = 1 << maxLen;
+    var tableSize = 1 << maxLen;
     var table = new int[tableSize];
     Array.Fill(table, -1);
 
-    for (int sym = 0; sym < maxSymbol; ++sym) {
-      int len = codeLengths[sym];
+    for (var sym = 0; sym < maxSymbol; ++sym) {
+      var len = codeLengths[sym];
       if (len == 0) continue;
 
-      int c = nextCode[len]++;
+      var c = nextCode[len]++;
       // Fill all table entries: code in low bits, don't-care bits in high bits
       // (matches LSB-first bit reading order)
-      int fill = 1 << (maxLen - len);
-      for (int j = 0; j < fill; ++j)
+      var fill = 1 << (maxLen - len);
+      for (var j = 0; j < fill; ++j)
         table[c | (j << len)] = sym | (len << 16);
     }
 
@@ -136,17 +136,17 @@ public static class ImplodeDecoder {
   }
 
   private static int DecodeSymbol(byte[] data, ref int bitPos, int[] table) {
-    int tableSize = table.Length;
-    int maxBits = 0;
+    var tableSize = table.Length;
+    var maxBits = 0;
     while ((1 << maxBits) < tableSize) ++maxBits;
 
-    int code = ReadBitsReversed(data, ref bitPos, maxBits);
+    var code = ReadBitsReversed(data, ref bitPos, maxBits);
     if (code >= tableSize || table[code] == -1)
       throw new InvalidDataException($"Invalid Implode Huffman code at bit position {bitPos}.");
 
-    int entry = table[code];
-    int symbol = entry & 0xFFFF;
-    int usedBits = entry >> 16;
+    var entry = table[code];
+    var symbol = entry & 0xFFFF;
+    var usedBits = entry >> 16;
 
     // Return unused bits
     bitPos -= (maxBits - usedBits);
@@ -155,8 +155,8 @@ public static class ImplodeDecoder {
   }
 
   private static int ReadBit(byte[] data, ref int bitPos) {
-    int byteIdx = bitPos / 8;
-    int bitIdx = bitPos % 8;
+    var byteIdx = bitPos / 8;
+    var bitIdx = bitPos % 8;
     if (byteIdx >= data.Length) return 0;
     ++bitPos;
     return (data[byteIdx] >> bitIdx) & 1;
@@ -164,10 +164,10 @@ public static class ImplodeDecoder {
 
   private static int ReadBitsReversed(byte[] data, ref int bitPos, int count) {
     // Read bits LSB-first (natural order)
-    int result = 0;
-    for (int i = 0; i < count; ++i) {
-      int byteIdx = bitPos / 8;
-      int bitIdx = bitPos % 8;
+    var result = 0;
+    for (var i = 0; i < count; ++i) {
+      var byteIdx = bitPos / 8;
+      var bitIdx = bitPos % 8;
       if (byteIdx >= data.Length) break;
       result |= ((data[byteIdx] >> bitIdx) & 1) << i;
       ++bitPos;

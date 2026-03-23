@@ -56,12 +56,12 @@ public sealed class SparkEntry {
     if (date == 0)
       return DateTime.MinValue;
 
-    int year = ((date >> 9) & 0x7F) + 1980;
-    int month = (date >> 5) & 0x0F;
-    int day = date & 0x1F;
-    int hour = (time >> 11) & 0x1F;
-    int minute = (time >> 5) & 0x3F;
-    int second = (time & 0x1F) * 2;
+    var year = ((date >> 9) & 0x7F) + 1980;
+    var month = (date >> 5) & 0x0F;
+    var day = date & 0x1F;
+    var hour = (time >> 11) & 0x1F;
+    var minute = (time >> 5) & 0x3F;
+    var second = (time & 0x1F) * 2;
 
     if (month < 1 || month > 12 || day < 1 || day > 31)
       return DateTime.MinValue;
@@ -77,12 +77,12 @@ public sealed class SparkEntry {
     if (dt == DateTime.MinValue)
       return (0, 0);
 
-    int year = dt.Year - 1980;
+    var year = dt.Year - 1980;
     if (year < 0) year = 0;
     if (year > 127) year = 127;
 
-    ushort date = (ushort)(((year & 0x7F) << 9) | ((dt.Month & 0x0F) << 5) | (dt.Day & 0x1F));
-    ushort time = (ushort)(((dt.Hour & 0x1F) << 11) | ((dt.Minute & 0x3F) << 5) | ((dt.Second / 2) & 0x1F));
+    var date = (ushort)(((year & 0x7F) << 9) | ((dt.Month & 0x0F) << 5) | (dt.Day & 0x1F));
+    var time = (ushort)(((dt.Hour & 0x1F) << 11) | ((dt.Minute & 0x3F) << 5) | ((dt.Second / 2) & 0x1F));
     return (date, time);
   }
 }

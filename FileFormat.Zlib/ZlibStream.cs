@@ -139,20 +139,20 @@ public static class ZlibStream {
 
   private static void WriteHeader(Stream output, int windowBits, DeflateCompressionLevel level) {
     // CMF: method=8 (Deflate), info = windowBits - 8
-    int cmf = ZlibConstants.CompressionMethodDeflate | ((windowBits - 8) << 4);
+    var cmf = ZlibConstants.CompressionMethodDeflate | ((windowBits - 8) << 4);
 
     // FLG: FLEVEL (bits 6-7), FDICT=0 (bit 5), FCHECK (bits 0-4)
-    int flevel = level switch {
+    var flevel = level switch {
       DeflateCompressionLevel.None or DeflateCompressionLevel.Fast
         => ZlibConstants.LevelFastest,
       DeflateCompressionLevel.Default => ZlibConstants.LevelDefault,
       _ => ZlibConstants.LevelMaximum,
     };
 
-    int flg = flevel << 6;
+    var flg = flevel << 6;
 
     // Adjust FCHECK so (CMF*256 + FLG) is a multiple of 31
-    int check = 31 - ((cmf * 256 + flg) % 31);
+    var check = 31 - ((cmf * 256 + flg) % 31);
     flg |= check;
 
     output.WriteByte((byte)cmf);
@@ -168,7 +168,7 @@ public static class ZlibStream {
       throw new InvalidDataException("Invalid zlib header checksum.");
 
     // Verify compression method
-    int method = cmf & 0x0F;
+    var method = cmf & 0x0F;
     if (method != ZlibConstants.CompressionMethodDeflate)
       throw new InvalidDataException($"Unsupported zlib compression method: {method}.");
 

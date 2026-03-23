@@ -75,7 +75,7 @@ public sealed class NsisReader : IDisposable {
           .SequenceEqual(NsisConstants.Signature))
       throw new InvalidDataException("NSIS signature not found at the expected overlay position.");
 
-    int flags = BinaryPrimitives.ReadInt32LittleEndian(hdr);
+    var flags = BinaryPrimitives.ReadInt32LittleEndian(hdr);
     _compressionType = flags & NsisConstants.CompressionMask;
     _isSolid         = (flags & NsisConstants.SolidFlag) != 0;
     _headerDataSize  = BinaryPrimitives.ReadInt32LittleEndian(hdr[20..]);
@@ -105,23 +105,23 @@ public sealed class NsisReader : IDisposable {
         "Extraction of individual entries from solid NSIS installers is not supported. " +
         "Use ExtractSolidStream to obtain the full decompressed stream.");
 
-    int index = _entries.IndexOf(entry);
+    var index = _entries.IndexOf(entry);
     if (index < 0)
       throw new ArgumentException("Entry does not belong to this archive.", nameof(entry));
 
     // Seek to the block
-    long blockPos = GetBlockOffset(index);
+    var blockPos = GetBlockOffset(index);
     _stream.Position = blockPos;
 
     // Read 4-byte length prefix
     Span<byte> lenBuf = stackalloc byte[4];
     ReadExact(_stream, lenBuf);
-    uint word = BinaryPrimitives.ReadUInt32LittleEndian(lenBuf);
+    var word = BinaryPrimitives.ReadUInt32LittleEndian(lenBuf);
 
-    bool stored = (word & NsisConstants.UncompressedFlag) != 0;
-    int  compressedSize = (int)(word & ~NsisConstants.UncompressedFlag);
+    var stored = (word & NsisConstants.UncompressedFlag) != 0;
+    var  compressedSize = (int)(word & ~NsisConstants.UncompressedFlag);
 
-    byte[] compressedData = new byte[compressedSize];
+    var compressedData = new byte[compressedSize];
     ReadExact(_stream, compressedData);
 
     return stored ? compressedData : DecompressBlock(compressedData);
@@ -163,7 +163,7 @@ public sealed class NsisReader : IDisposable {
     _stream.Position = 0;
 
     // Try proper PE parsing first
-    long overlay = TryFindOverlayViaPe();
+    var overlay = TryFindOverlayViaPe();
     if (overlay >= 0) {
       // Confirm there is an NSIS signature at that position
       if (HasNsisSignatureAt(overlay))
@@ -188,21 +188,21 @@ public sealed class NsisReader : IDisposable {
 
       // e_lfanew at offset 0x3C
       _stream.Position = 0x3C;
-      int peOffset = reader.ReadInt32();
+      var peOffset = reader.ReadInt32();
       if (peOffset <= 0 || peOffset + 24 > _stream.Length)
         return -1;
 
       _stream.Position = peOffset;
-      uint peSig = reader.ReadUInt32();
+      var peSig = reader.ReadUInt32();
       if (peSig != 0x00004550) // 'PE\0\0'
         return -1;
 
       reader.ReadUInt16(); // Machine
-      ushort numSections = reader.ReadUInt16();
+      var numSections = reader.ReadUInt16();
       reader.ReadUInt32(); // TimeDateStamp
       reader.ReadUInt32(); // PointerToSymbolTable
       reader.ReadUInt32(); // NumberOfSymbols
-      ushort sizeOfOptionalHeader = reader.ReadUInt16();
+      var sizeOfOptionalHeader = reader.ReadUInt16();
       reader.ReadUInt16(); // Characteristics
 
       long sectionTableOffset = peOffset + 24 + sizeOfOptionalHeader;
@@ -211,7 +211,7 @@ public sealed class NsisReader : IDisposable {
 
       long maxEnd = 0;
       _stream.Position = sectionTableOffset;
-      for (int i = 0; i < numSections; ++i) {
+      for (var i = 0; i < numSections; ++i) {
         // Section header is 40 bytes:
         //   0..7   Name
         //   8      VirtualSize
@@ -219,9 +219,9 @@ public sealed class NsisReader : IDisposable {
         //  16      SizeOfRawData
         //  20      PointerToRawData
         //  24..39  other fields
-        byte[] secHdr = reader.ReadBytes(40);
-        uint rawSize = BinaryPrimitives.ReadUInt32LittleEndian(secHdr.AsSpan(16));
-        uint rawPtr  = BinaryPrimitives.ReadUInt32LittleEndian(secHdr.AsSpan(20));
+        var secHdr = reader.ReadBytes(40);
+        var rawSize = BinaryPrimitives.ReadUInt32LittleEndian(secHdr.AsSpan(16));
+        var rawPtr  = BinaryPrimitives.ReadUInt32LittleEndian(secHdr.AsSpan(20));
         long end = rawPtr + rawSize;
         if (end > maxEnd)
           maxEnd = end;
@@ -248,19 +248,19 @@ public sealed class NsisReader : IDisposable {
   private long ScanForSignature() {
     // Scan in 4-byte steps looking for the first 4 bytes of the signature (0xEFBEADDE)
     const int bufSize = 65536;
-    byte[] buf = new byte[bufSize + NsisConstants.SignatureLength];
+    var buf = new byte[bufSize + NsisConstants.SignatureLength];
     long pos = 0;
 
     _stream.Position = 0;
     while (pos < _stream.Length) {
-      int read = _stream.Read(buf, 0, buf.Length);
+      var read = _stream.Read(buf, 0, buf.Length);
       if (read < NsisConstants.SignatureLength)
         break;
 
-      for (int i = 0; i <= read - NsisConstants.SignatureLength; i++) {
+      for (var i = 0; i <= read - NsisConstants.SignatureLength; i++) {
         if (buf[i]     == 0xEF && buf[i + 1] == 0xBE &&
             buf[i + 2] == 0xAD && buf[i + 3] == 0xDE) {
-          long candidate = pos + i - NsisConstants.SignatureOffset;
+          var candidate = pos + i - NsisConstants.SignatureOffset;
           if (candidate >= 0 && HasNsisSignatureAt(candidate))
             return candidate;
         }
@@ -281,34 +281,34 @@ public sealed class NsisReader : IDisposable {
   private void ScanDataBlocks() {
     if (_isSolid) {
       // Solid: single entry for the whole compressed stream
-      long solidSize = _stream.Length - _dataOffset;
+      var solidSize = _stream.Length - _dataOffset;
       _entries.Add(new NsisEntry("solid_stream", -1, solidSize, false));
       return;
     }
 
     // Non-solid: walk successive 4+N blocks until we run out of data or hit EOF
     _stream.Position = _dataOffset;
-    int index = 0;
-    byte[] lenBufArr = new byte[4];
+    var index = 0;
+    var lenBufArr = new byte[4];
 
     while (_stream.Position + 4 <= _stream.Length) {
       if (!TryReadExact(_stream, lenBufArr))
         break;
       Span<byte> lenBuf = lenBufArr;
 
-      uint word = BinaryPrimitives.ReadUInt32LittleEndian(lenBuf);
+      var word = BinaryPrimitives.ReadUInt32LittleEndian(lenBuf);
 
       // A zero word at the end of the section is the sentinel used by some NSIS versions.
       if (word == 0)
         break;
 
-      bool stored = (word & NsisConstants.UncompressedFlag) != 0;
-      int  compressedSize = (int)(word & ~NsisConstants.UncompressedFlag);
+      var stored = (word & NsisConstants.UncompressedFlag) != 0;
+      var  compressedSize = (int)(word & ~NsisConstants.UncompressedFlag);
 
       if (compressedSize < 0 || _stream.Position + compressedSize > _stream.Length)
         break;
 
-      long uncompressedSize = stored ? compressedSize : -1L;
+      var uncompressedSize = stored ? compressedSize : -1L;
       _entries.Add(new NsisEntry(
         $"block_{index}",
         uncompressedSize,
@@ -326,12 +326,12 @@ public sealed class NsisReader : IDisposable {
   /// </summary>
   private long GetBlockOffset(int targetIndex) {
     _stream.Position = _dataOffset;
-    byte[] lenBufArr = new byte[4];
+    var lenBufArr = new byte[4];
 
-    for (int i = 0; i < targetIndex; ++i) {
+    for (var i = 0; i < targetIndex; ++i) {
       ReadExact(_stream, lenBufArr);
-      uint word = BinaryPrimitives.ReadUInt32LittleEndian(lenBufArr);
-      int  size = (int)(word & ~NsisConstants.UncompressedFlag);
+      var word = BinaryPrimitives.ReadUInt32LittleEndian(lenBufArr);
+      var  size = (int)(word & ~NsisConstants.UncompressedFlag);
       _stream.Position += size;
     }
 
@@ -399,8 +399,8 @@ public sealed class NsisReader : IDisposable {
     Span<byte> lzmaHdr = stackalloc byte[NsisConstants.LzmaHeaderSize];
     ReadExact(s, lzmaHdr);
 
-    byte[] props = lzmaHdr[..NsisConstants.LzmaPropSize].ToArray();
-    long uncompressedSize = BinaryPrimitives.ReadInt64LittleEndian(lzmaHdr[NsisConstants.LzmaPropSize..]);
+    var props = lzmaHdr[..NsisConstants.LzmaPropSize].ToArray();
+    var uncompressedSize = BinaryPrimitives.ReadInt64LittleEndian(lzmaHdr[NsisConstants.LzmaPropSize..]);
 
     var decoder = new LzmaDecoder(s, props, uncompressedSize);
     return decoder.Decode();
@@ -411,9 +411,9 @@ public sealed class NsisReader : IDisposable {
   // -------------------------------------------------------------------------
 
   private static void ReadExact(Stream s, Span<byte> buf) {
-    int total = 0;
+    var total = 0;
     while (total < buf.Length) {
-      int n = s.Read(buf[total..]);
+      var n = s.Read(buf[total..]);
       if (n == 0)
         throw new EndOfStreamException($"Unexpected end of stream while reading {buf.Length} bytes.");
       total += n;
@@ -421,9 +421,9 @@ public sealed class NsisReader : IDisposable {
   }
 
   private static bool TryReadExact(Stream s, Span<byte> buf) {
-    int total = 0;
+    var total = 0;
     while (total < buf.Length) {
-      int n = s.Read(buf[total..]);
+      var n = s.Read(buf[total..]);
       if (n == 0) return false;
       total += n;
     }

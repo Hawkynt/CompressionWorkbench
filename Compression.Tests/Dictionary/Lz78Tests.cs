@@ -36,7 +36,7 @@ public class Lz78Tests {
   [Test]
   public void RoundTrip_RepetitiveData() {
     var compressor = new Lz78Compressor();
-    byte[] data = Encoding.ASCII.GetBytes("AAAAAAA");
+    var data = Encoding.ASCII.GetBytes("AAAAAAA");
 
     var tokens = compressor.Compress(data);
     var result = Lz78Decompressor.Decompress(tokens);
@@ -50,7 +50,7 @@ public class Lz78Tests {
   public void RoundTrip_RandomData() {
     var compressor = new Lz78Compressor();
     var random = new Random(42);
-    byte[] data = new byte[1024];
+    var data = new byte[1024];
     random.NextBytes(data);
 
     var tokens = compressor.Compress(data);
@@ -64,9 +64,9 @@ public class Lz78Tests {
   [Test]
   public void RoundTrip_HighlyRepetitive() {
     var compressor = new Lz78Compressor();
-    byte[] pattern = Encoding.ASCII.GetBytes("ABCABC");
-    byte[] data = new byte[4096];
-    for (int i = 0; i < data.Length; ++i)
+    var pattern = Encoding.ASCII.GetBytes("ABCABC");
+    var data = new byte[4096];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = pattern[i % pattern.Length];
 
     var tokens = compressor.Compress(data);
@@ -80,7 +80,7 @@ public class Lz78Tests {
   [Test]
   public void RoundTrip_TextData() {
     var compressor = new Lz78Compressor();
-    byte[] data = Encoding.ASCII.GetBytes("The quick brown fox jumps over the lazy dog");
+    var data = Encoding.ASCII.GetBytes("The quick brown fox jumps over the lazy dog");
 
     var tokens = compressor.Compress(data);
     var result = Lz78Decompressor.Decompress(tokens);
@@ -98,7 +98,7 @@ public class Lz78Tests {
     // Step 4: current=1, byte='B' -> miss -> emit (1,'B'), add entry 3="AB"
     // Result: [(0,'A'), (0,'B'), (1,'B')]
     var compressor = new Lz78Compressor();
-    byte[] data = Encoding.ASCII.GetBytes("ABAB");
+    var data = Encoding.ASCII.GetBytes("ABAB");
 
     var tokens = compressor.Compress(data);
 
@@ -136,7 +136,7 @@ public class Lz78Tests {
     const int maxBits = 9;
     var compressor = new Lz78Compressor(maxBits);
     var random = new Random(123);
-    byte[] data = new byte[4096];
+    var data = new byte[4096];
     random.NextBytes(data);
 
     var tokens = compressor.Compress(data);
@@ -155,7 +155,7 @@ public class Lz78Tests {
     // End of input: current=1 > 0 -> emit terminal (1, null)
     // Result: [(0,'A'), (1,null)]
     var compressor = new Lz78Compressor();
-    byte[] data = Encoding.ASCII.GetBytes("AA");
+    var data = Encoding.ASCII.GetBytes("AA");
 
     var tokens = compressor.Compress(data);
 

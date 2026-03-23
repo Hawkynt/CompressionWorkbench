@@ -101,14 +101,14 @@ public sealed class SharReader {
     while ((line = reader.ReadLine()) != null) {
       if (line == "end") break;
       if (line.Length == 0) continue;
-      int len = (line[0] - 32) & 0x3F;
+      var len = (line[0] - 32) & 0x3F;
       if (len == 0) continue;
-      int idx = 1;
-      for (int i = 0; i < len; i += 3) {
-        int c0 = idx < line.Length ? (line[idx++] - 32) & 0x3F : 0;
-        int c1 = idx < line.Length ? (line[idx++] - 32) & 0x3F : 0;
-        int c2 = idx < line.Length ? (line[idx++] - 32) & 0x3F : 0;
-        int c3 = idx < line.Length ? (line[idx++] - 32) & 0x3F : 0;
+      var idx = 1;
+      for (var i = 0; i < len; i += 3) {
+        var c0 = idx < line.Length ? (line[idx++] - 32) & 0x3F : 0;
+        var c1 = idx < line.Length ? (line[idx++] - 32) & 0x3F : 0;
+        var c2 = idx < line.Length ? (line[idx++] - 32) & 0x3F : 0;
+        var c3 = idx < line.Length ? (line[idx++] - 32) & 0x3F : 0;
         ms.WriteByte((byte)((c0 << 2) | (c1 >> 4)));
         if (i + 1 < len) ms.WriteByte((byte)(((c1 & 0xF) << 4) | (c2 >> 2)));
         if (i + 2 < len) ms.WriteByte((byte)(((c2 & 0x3) << 6) | c3));

@@ -23,29 +23,29 @@ public static class AceSoundFilter {
     var weights = new int[channels * NumTaps];
     var history = new int[channels * NumTaps];
 
-    for (int i = 0; i < data.Length; ++i) {
-      int ch = i % channels;
-      int whBase = ch * NumTaps;
+    for (var i = 0; i < data.Length; ++i) {
+      var ch = i % channels;
+      var whBase = ch * NumTaps;
 
-      int predicted = 0;
-      for (int t = 0; t < NumTaps; ++t)
+      var predicted = 0;
+      for (var t = 0; t < NumTaps; ++t)
         predicted += weights[whBase + t] * history[whBase + t];
       predicted >>= 4;
 
       int sample = data[i];
-      int residual = (sample - predicted) & 0xFF;
+      var residual = (sample - predicted) & 0xFF;
       result[i] = (byte)residual;
 
       // LMS weight update using signed error
       int error = (sbyte)(byte)residual;
-      for (int t = 0; t < NumTaps; ++t) {
+      for (var t = 0; t < NumTaps; ++t) {
         if (history[whBase + t] > 128)
           weights[whBase + t] += error > 0 ? 1 : (error < 0 ? -1 : 0);
         else if (history[whBase + t] < 128)
           weights[whBase + t] += error > 0 ? -1 : (error < 0 ? 1 : 0);
       }
 
-      for (int t = NumTaps - 1; t > 0; --t)
+      for (var t = NumTaps - 1; t > 0; --t)
         history[whBase + t] = history[whBase + t - 1];
       history[whBase] = sample;
     }
@@ -64,29 +64,29 @@ public static class AceSoundFilter {
     var weights = new int[channels * NumTaps];
     var history = new int[channels * NumTaps];
 
-    for (int i = 0; i < data.Length; ++i) {
-      int ch = i % channels;
-      int whBase = ch * NumTaps;
+    for (var i = 0; i < data.Length; ++i) {
+      var ch = i % channels;
+      var whBase = ch * NumTaps;
 
-      int predicted = 0;
-      for (int t = 0; t < NumTaps; ++t)
+      var predicted = 0;
+      for (var t = 0; t < NumTaps; ++t)
         predicted += weights[whBase + t] * history[whBase + t];
       predicted >>= 4;
 
       int residual = data[i];
-      int sample = (residual + predicted) & 0xFF;
+      var sample = (residual + predicted) & 0xFF;
       result[i] = (byte)sample;
 
       // LMS weight update (must match encoder exactly)
       int error = (sbyte)(byte)residual;
-      for (int t = 0; t < NumTaps; ++t) {
+      for (var t = 0; t < NumTaps; ++t) {
         if (history[whBase + t] > 128)
           weights[whBase + t] += error > 0 ? 1 : (error < 0 ? -1 : 0);
         else if (history[whBase + t] < 128)
           weights[whBase + t] += error > 0 ? -1 : (error < 0 ? 1 : 0);
       }
 
-      for (int t = NumTaps - 1; t > 0; --t)
+      for (var t = NumTaps - 1; t > 0; --t)
         history[whBase + t] = history[whBase + t - 1];
       history[whBase] = sample;
     }

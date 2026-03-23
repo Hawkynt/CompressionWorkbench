@@ -27,28 +27,28 @@ internal readonly record struct ZstdFrameHeader(
     bytesRead = 0;
 
     // Frame_Header_Descriptor
-    int descriptor = stream.ReadByte();
+    var descriptor = stream.ReadByte();
     if (descriptor < 0)
       throw new InvalidDataException("Truncated Zstandard frame header descriptor.");
     ++bytesRead;
 
-    int fcsFlag = (descriptor >> 6) & 3;
-    bool singleSegment = ((descriptor >> 5) & 1) != 0;
+    var fcsFlag = (descriptor >> 6) & 3;
+    var singleSegment = ((descriptor >> 5) & 1) != 0;
     // Bit 4 is reserved (unused)
-    bool contentChecksum = ((descriptor >> 2) & 1) != 0;
-    int dictIdFlag = descriptor & 3;
+    var contentChecksum = ((descriptor >> 2) & 1) != 0;
+    var dictIdFlag = descriptor & 3;
 
     // Window_Descriptor (absent when singleSegment)
     int windowSize;
     if (!singleSegment) {
-      int windowDescriptor = stream.ReadByte();
+      var windowDescriptor = stream.ReadByte();
       if (windowDescriptor < 0)
         throw new InvalidDataException("Truncated Zstandard window descriptor.");
       ++bytesRead;
 
-      int exponent = (windowDescriptor >> 3) & 0x1F;
-      int mantissa = windowDescriptor & 7;
-      int windowLog = 10 + exponent;
+      var exponent = (windowDescriptor >> 3) & 0x1F;
+      var mantissa = windowDescriptor & 7;
+      var windowLog = 10 + exponent;
       windowSize = (1 << windowLog) + ((1 << windowLog) >> 3) * mantissa;
     }
     else {
@@ -57,12 +57,12 @@ internal readonly record struct ZstdFrameHeader(
 
     // Dictionary_ID (0, 1, 2, or 4 bytes)
     var dictionaryId = 0u;
-    int dictIdBytes = dictIdFlag switch { 0 => 0, 1 => 1, 2 => 2, 3 => 4, _ => 0 };
+    var dictIdBytes = dictIdFlag switch { 0 => 0, 1 => 1, 2 => 2, 3 => 4, _ => 0 };
     if (dictIdBytes > 0) {
       Span<byte> dictBuf = stackalloc byte[4];
       dictBuf.Clear();
-      for (int i = 0; i < dictIdBytes; ++i) {
-        int b = stream.ReadByte();
+      for (var i = 0; i < dictIdBytes; ++i) {
+        var b = stream.ReadByte();
         if (b < 0)
           throw new InvalidDataException("Truncated Zstandard dictionary ID.");
         dictBuf[i] = (byte)b;
@@ -74,7 +74,7 @@ internal readonly record struct ZstdFrameHeader(
 
     // Frame_Content_Size (0, 1, 2, 4, or 8 bytes)
     long contentSize = -1;
-    int fcsBytes = fcsFlag switch {
+    var fcsBytes = fcsFlag switch {
       0 => singleSegment ? 1 : 0,
       1 => 2,
       2 => 4,
@@ -85,8 +85,8 @@ internal readonly record struct ZstdFrameHeader(
     if (fcsBytes > 0) {
       Span<byte> fcsBuf = stackalloc byte[8];
       fcsBuf.Clear();
-      for (int i = 0; i < fcsBytes; ++i) {
-        int b = stream.ReadByte();
+      for (var i = 0; i < fcsBytes; ++i) {
+        var b = stream.ReadByte();
         if (b < 0)
           throw new InvalidDataException("Truncated Zstandard frame content size.");
         fcsBuf[i] = (byte)b;
@@ -163,7 +163,7 @@ internal readonly record struct ZstdFrameHeader(
       while ((1 << windowLog) < WindowSize && windowLog < ZstdConstants.MaxWindowLog)
         ++windowLog;
 
-      int exponent = windowLog - 10;
+      var exponent = windowLog - 10;
       stream.WriteByte((byte)(exponent << 3));
     }
 

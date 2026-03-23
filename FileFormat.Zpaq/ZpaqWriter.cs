@@ -160,7 +160,7 @@ public sealed class ZpaqWriter : IDisposable {
     _stream.WriteByte(ZpaqConstants.BlockTypeHeader);
 
     // Windows FILETIME (100-nanosecond intervals since 1601-01-01 UTC).
-    long fileTime = EncodeWindowsFileTime(timestamp);
+    var fileTime = EncodeWindowsFileTime(timestamp);
     Span<byte> ftBytes = stackalloc byte[8];
     BitConverter.TryWriteBytes(ftBytes, fileTime);
     _stream.Write(ftBytes);

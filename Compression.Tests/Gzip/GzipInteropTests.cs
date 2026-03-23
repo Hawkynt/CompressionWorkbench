@@ -12,10 +12,10 @@ public class GzipInteropTests {
   [Category("RoundTrip")]
   [Test]
   public void SystemDecompresses_OurOutput() {
-    byte[] data = "Hello, World! Interop test data."u8.ToArray();
-    byte[] compressed = CompressWithOurs(data);
+    var data = "Hello, World! Interop test data."u8.ToArray();
+    var compressed = CompressWithOurs(data);
 
-    byte[] result = DecompressWithSystem(compressed);
+    var result = DecompressWithSystem(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -23,10 +23,10 @@ public class GzipInteropTests {
   [Category("RoundTrip")]
   [Test]
   public void WeDecompress_SystemOutput() {
-    byte[] data = "Hello, World! Interop test data."u8.ToArray();
-    byte[] compressed = CompressWithSystem(data);
+    var data = "Hello, World! Interop test data."u8.ToArray();
+    var compressed = CompressWithSystem(data);
 
-    byte[] result = DecompressWithOurs(compressed);
+    var result = DecompressWithOurs(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -34,13 +34,13 @@ public class GzipInteropTests {
   [Category("RoundTrip")]
   [Test]
   public void SystemDecompresses_OurOutput_LargeData() {
-    byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
-    byte[] data = new byte[pattern.Length * 200];
-    for (int i = 0; i < 200; ++i)
+    var pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
+    var data = new byte[pattern.Length * 200];
+    for (var i = 0; i < 200; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
-    byte[] compressed = CompressWithOurs(data);
-    byte[] result = DecompressWithSystem(compressed);
+    var compressed = CompressWithOurs(data);
+    var result = DecompressWithSystem(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -48,13 +48,13 @@ public class GzipInteropTests {
   [Category("RoundTrip")]
   [Test]
   public void WeDecompress_SystemOutput_LargeData() {
-    byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
-    byte[] data = new byte[pattern.Length * 200];
-    for (int i = 0; i < 200; ++i)
+    var pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
+    var data = new byte[pattern.Length * 200];
+    for (var i = 0; i < 200; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
-    byte[] compressed = CompressWithSystem(data);
-    byte[] result = DecompressWithOurs(compressed);
+    var compressed = CompressWithSystem(data);
+    var result = DecompressWithOurs(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -63,11 +63,11 @@ public class GzipInteropTests {
   [Test]
   public void SystemDecompresses_OurOutput_RandomData() {
     var rng = new Random(42);
-    byte[] data = new byte[4096];
+    var data = new byte[4096];
     rng.NextBytes(data);
 
-    byte[] compressed = CompressWithOurs(data);
-    byte[] result = DecompressWithSystem(compressed);
+    var compressed = CompressWithOurs(data);
+    var result = DecompressWithSystem(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -76,11 +76,11 @@ public class GzipInteropTests {
   [Test]
   public void WeDecompress_SystemOutput_RandomData() {
     var rng = new Random(42);
-    byte[] data = new byte[4096];
+    var data = new byte[4096];
     rng.NextBytes(data);
 
-    byte[] compressed = CompressWithSystem(data);
-    byte[] result = DecompressWithOurs(compressed);
+    var compressed = CompressWithSystem(data);
+    var result = DecompressWithOurs(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -89,8 +89,8 @@ public class GzipInteropTests {
   [Test]
   public void WeDecompress_SystemOutput_Empty() {
     byte[] data = [];
-    byte[] compressed = CompressWithSystem(data);
-    byte[] result = DecompressWithOurs(compressed);
+    var compressed = CompressWithSystem(data);
+    var result = DecompressWithOurs(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 

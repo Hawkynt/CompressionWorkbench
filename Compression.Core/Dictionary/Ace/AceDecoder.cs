@@ -28,7 +28,7 @@ public sealed class AceDecoder {
   /// <param name="dictBits">Dictionary size in bits (10-22).</param>
   public AceDecoder(int dictBits = AceConstants.DefaultDictBits) {
     this._dictBits = dictBits;
-    int dictSize = 1 << dictBits;
+    var dictSize = 1 << dictBits;
     this._window = new byte[dictSize];
     this._windowMask = dictSize - 1;
     this._repOffsets = new int[AceConstants.NumRepOffsets];
@@ -45,23 +45,23 @@ public sealed class AceDecoder {
   public byte[] Decode(byte[] compressed, int originalSize, int compressionType = AceConstants.CompAce10) {
     var bits = new AceBitReader(compressed);
     var output = new byte[originalSize];
-    int outPos = 0;
+    var outPos = 0;
 
-    bool isAce20 = compressionType == AceConstants.CompAce20;
-    int currentSubMode = SubModeLz77;
-    int segmentStart = 0;
+    var isAce20 = compressionType == AceConstants.CompAce20;
+    var currentSubMode = SubModeLz77;
+    var segmentStart = 0;
 
     while (outPos < originalSize) {
       // Read Huffman trees for this block
-      int[] mainTree = ReadHuffmanTree(bits, AceConstants.MainSymbols);
-      int[] lenTree = ReadHuffmanTree(bits, AceConstants.LenSymbols);
+      var mainTree = ReadHuffmanTree(bits, AceConstants.MainSymbols);
+      var lenTree = ReadHuffmanTree(bits, AceConstants.LenSymbols);
 
       // Decode symbols until end-of-block or output full
       while (outPos < originalSize) {
-        int sym = DecodeSymbol(bits, mainTree);
+        var sym = DecodeSymbol(bits, mainTree);
 
         if (sym < 256) {
-          byte b = (byte)sym;
+          var b = (byte)sym;
           output[outPos++] = b;
           this._window[this._windowPos] = b;
           this._windowPos = (this._windowPos + 1) & this._windowMask;
@@ -71,28 +71,28 @@ public sealed class AceDecoder {
         }
         else if (isAce20 && sym == AceConstants.SymbolModeSwitch) {
           ApplyInverseTransform(output, segmentStart, outPos, currentSubMode);
-          int newMode = (int)bits.ReadBits(3);
+          var newMode = (int)bits.ReadBits(3);
           currentSubMode = newMode;
           segmentStart = outPos;
         }
         else {
           // Match: symbol 257+ encodes length
-          int lenIdx = sym - AceConstants.SymbolMatchBase;
+          var lenIdx = sym - AceConstants.SymbolMatchBase;
           if (lenIdx < 0 || lenIdx >= AceConstants.LengthBase.Length)
             throw new InvalidDataException($"Invalid ACE match symbol: {sym}");
 
-          int length = AceConstants.LengthBase[lenIdx];
-          int extra = AceConstants.LengthExtra[lenIdx];
+          var length = AceConstants.LengthBase[lenIdx];
+          var extra = AceConstants.LengthExtra[lenIdx];
           if (extra > 0)
             length += (int)bits.ReadBits(extra);
 
-          int distance = ReadDistance(bits, this._dictBits, this._repOffsets);
+          var distance = ReadDistance(bits, this._dictBits, this._repOffsets);
           ShiftRepOffsets(this._repOffsets, distance);
 
           // Copy match from window
-          int srcPos = (this._windowPos - distance + this._window.Length) & this._windowMask;
-          for (int j = 0; j < length && outPos < originalSize; ++j) {
-            byte b = this._window[srcPos];
+          var srcPos = (this._windowPos - distance + this._window.Length) & this._windowMask;
+          for (var j = 0; j < length && outPos < originalSize; ++j) {
+            var b = this._window[srcPos];
             output[outPos++] = b;
             this._window[this._windowPos] = b;
             this._windowPos = (this._windowPos + 1) & this._windowMask;
@@ -119,7 +119,7 @@ public sealed class AceDecoder {
   }
 
   private static void ApplyInverseTransform(byte[] output, int start, int end, int subMode) {
-    int length = end - start;
+    var length = end - start;
     if (length <= 0)
       return;
 
@@ -146,7 +146,7 @@ public sealed class AceDecoder {
   }
 
   private static int ReadDistance(AceBitReader bits, int dictBits, int[] repOffsets) {
-    uint mode = bits.ReadBits(2);
+    var mode = bits.ReadBits(2);
 
     if (mode < 4 && mode > 0)
       return repOffsets[(int)mode - 1];
@@ -158,47 +158,47 @@ public sealed class AceDecoder {
   }
 
   private static void ShiftRepOffsets(int[] offsets, int newOffset) {
-    for (int i = offsets.Length - 1; i > 0; --i)
+    for (var i = offsets.Length - 1; i > 0; --i)
       offsets[i] = offsets[i - 1];
     offsets[0] = newOffset;
   }
 
   private static int[] ReadHuffmanTree(AceBitReader bits, int numSymbols) {
-    int numCodes = (int)bits.ReadBits(9);
+    var numCodes = (int)bits.ReadBits(9);
 
     if (numCodes == 0) {
-      int sym = (int)bits.ReadBits(9);
+      var sym = (int)bits.ReadBits(9);
       var table = new int[1 << MaxCodeLength];
       Array.Fill(table, sym | (0 << 16));
       return table;
     }
 
     var preLengths = new int[numCodes];
-    for (int i = 0; i < numCodes; ++i)
+    for (var i = 0; i < numCodes; ++i)
       preLengths[i] = (int)bits.ReadBits(4);
 
-    int[] preTree = BuildDecodeTable(preLengths, numCodes, MaxCodeLength);
+    var preTree = BuildDecodeTable(preLengths, numCodes, MaxCodeLength);
 
     var codeLengths = new int[numSymbols];
-    int idx = 0;
+    var idx = 0;
     while (idx < numSymbols) {
-      int code = DecodeSymbol(bits, preTree);
+      var code = DecodeSymbol(bits, preTree);
 
       if (code < 16) {
         codeLengths[idx++] = code;
       }
       else if (code == 16) {
-        int count = (int)bits.ReadBits(2) + 3;
-        int prev = idx > 0 ? codeLengths[idx - 1] : 0;
-        for (int j = 0; j < count && idx < numSymbols; ++j)
+        var count = (int)bits.ReadBits(2) + 3;
+        var prev = idx > 0 ? codeLengths[idx - 1] : 0;
+        for (var j = 0; j < count && idx < numSymbols; ++j)
           codeLengths[idx++] = prev;
       }
       else if (code == 17) {
-        int count = (int)bits.ReadBits(3) + 3;
+        var count = (int)bits.ReadBits(3) + 3;
         idx += count;
       }
       else if (code == 18) {
-        int count = (int)bits.ReadBits(7) + 11;
+        var count = (int)bits.ReadBits(7) + 11;
         idx += count;
       }
     }
@@ -207,54 +207,54 @@ public sealed class AceDecoder {
   }
 
   private static int DecodeSymbol(AceBitReader bits, int[] table) {
-    int tableBits = 0;
-    int size = table.Length;
+    var tableBits = 0;
+    var size = table.Length;
     while ((1 << tableBits) < size) ++tableBits;
 
-    uint peek = bits.PeekBits(tableBits);
-    int entry = table[(int)peek];
-    int symbol = entry & 0xFFFF;
-    int codeLen = entry >> 16;
+    var peek = bits.PeekBits(tableBits);
+    var entry = table[(int)peek];
+    var symbol = entry & 0xFFFF;
+    var codeLen = entry >> 16;
     if (codeLen > 0)
       bits.DropBits(codeLen);
     return symbol;
   }
 
   private static int[] BuildDecodeTable(int[] codeLengths, int numSymbols, int maxBits) {
-    int maxLen = 0;
-    for (int i = 0; i < numSymbols; ++i)
+    var maxLen = 0;
+    for (var i = 0; i < numSymbols; ++i)
       if (codeLengths[i] > maxLen) maxLen = codeLengths[i];
     if (maxLen == 0) maxLen = 1;
     maxLen = Math.Min(maxLen, maxBits);
 
-    int tableSize = 1 << maxLen;
+    var tableSize = 1 << maxLen;
     var table = new int[tableSize];
     Array.Fill(table, -1);
 
     var blCount = new int[maxLen + 1];
-    for (int i = 0; i < numSymbols; ++i)
+    for (var i = 0; i < numSymbols; ++i)
       if (codeLengths[i] > 0 && codeLengths[i] <= maxLen)
         ++blCount[codeLengths[i]];
 
     var nextCode = new int[maxLen + 1];
-    int code = 0;
-    for (int b = 1; b <= maxLen; ++b) {
+    var code = 0;
+    for (var b = 1; b <= maxLen; ++b) {
       code = (code + blCount[b - 1]) << 1;
       nextCode[b] = code;
     }
 
-    for (int sym = 0; sym < numSymbols; ++sym) {
-      int len = codeLengths[sym];
+    for (var sym = 0; sym < numSymbols; ++sym) {
+      var len = codeLengths[sym];
       if (len == 0 || len > maxLen) continue;
 
-      int c = nextCode[len]++;
-      int fill = 1 << (maxLen - len);
-      int packedValue = sym | (len << 16);
-      for (int j = 0; j < fill; ++j)
+      var c = nextCode[len]++;
+      var fill = 1 << (maxLen - len);
+      var packedValue = sym | (len << 16);
+      for (var j = 0; j < fill; ++j)
         table[(c << (maxLen - len)) + j] = packedValue;
     }
 
-    for (int i = 0; i < tableSize; ++i)
+    for (var i = 0; i < tableSize; ++i)
       if (table[i] == -1)
         table[i] = 0;
 

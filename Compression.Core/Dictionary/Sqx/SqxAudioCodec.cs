@@ -23,31 +23,31 @@ public static class SqxAudioCodec {
     // First pass: compute residuals and estimate optimal k
     var residuals = new int[data.Length];
     var history = new int[PredOrder];
-    int sumAbs = 0;
+    var sumAbs = 0;
 
-    for (int i = 0; i < data.Length; ++i) {
-      int predicted = Predict(history);
+    for (var i = 0; i < data.Length; ++i) {
+      var predicted = Predict(history);
       int sample = (sbyte)data[i];
-      int residual = sample - predicted;
+      var residual = sample - predicted;
       residuals[i] = residual;
       sumAbs += Math.Abs(residual);
 
       // Shift history
-      for (int t = PredOrder - 1; t > 0; --t)
+      for (var t = PredOrder - 1; t > 0; --t)
         history[t] = history[t - 1];
       history[0] = sample;
     }
 
     // Estimate k from average residual magnitude
-    int avgAbs = data.Length > 0 ? sumAbs / data.Length : 0;
-    int k = 0;
+    var avgAbs = data.Length > 0 ? sumAbs / data.Length : 0;
+    var k = 0;
     while ((1 << k) < avgAbs && k < 8) ++k;
 
     // Encode
     var encoder = new GolombRiceEncoder(k);
-    foreach (int r in residuals)
+    foreach (var r in residuals)
       encoder.EncodeSigned(r);
-    byte[] encoded = encoder.ToArray();
+    var encoded = encoder.ToArray();
 
     // Prepend k parameter
     var result = new byte[encoded.Length + 1];
@@ -69,14 +69,14 @@ public static class SqxAudioCodec {
     var result = new byte[originalSize];
     var history = new int[PredOrder];
 
-    for (int i = 0; i < originalSize; ++i) {
-      int predicted = Predict(history);
-      int residual = decoder.DecodeSigned();
-      int sample = predicted + residual;
+    for (var i = 0; i < originalSize; ++i) {
+      var predicted = Predict(history);
+      var residual = decoder.DecodeSigned();
+      var sample = predicted + residual;
 
       result[i] = (byte)sample;
 
-      for (int t = PredOrder - 1; t > 0; --t)
+      for (var t = PredOrder - 1; t > 0; --t)
         history[t] = history[t - 1];
       history[0] = sample;
     }

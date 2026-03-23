@@ -39,9 +39,9 @@ public sealed class LhaReader : IDisposable {
   public byte[] ExtractEntry(LhaEntry entry) {
     this._stream.Position = entry.DataOffset;
     var compressedData = new byte[entry.CompressedSize];
-    int totalRead = 0;
+    var totalRead = 0;
     while (totalRead < compressedData.Length) {
-      int read = this._stream.Read(compressedData, totalRead, compressedData.Length - totalRead);
+      var read = this._stream.Read(compressedData, totalRead, compressedData.Length - totalRead);
       if (read == 0) throw new EndOfStreamException("Unexpected end of LHA data.");
       totalRead += read;
     }
@@ -91,7 +91,7 @@ public sealed class LhaReader : IDisposable {
     }
 
     // Verify CRC-16
-    ushort crc = Crc16.Compute(data);
+    var crc = Crc16.Compute(data);
     if (crc != entry.Crc16)
       throw new InvalidDataException($"CRC-16 mismatch for '{entry.FileName}': expected 0x{entry.Crc16:X4}, computed 0x{crc:X4}.");
 
@@ -126,12 +126,12 @@ public sealed class LhaReader : IDisposable {
 
   private LhaEntry? ReadHeader() {
     // Peek at first byte to determine if we have a valid header
-    int firstByte = this._stream.ReadByte();
+    var firstByte = this._stream.ReadByte();
     if (firstByte <= 0)
       return null;
 
     // Read second byte to check method string position
-    int secondByte = this._stream.ReadByte();
+    var secondByte = this._stream.ReadByte();
     if (secondByte < 0)
       return null;
 
@@ -139,7 +139,7 @@ public sealed class LhaReader : IDisposable {
     var methodBytes = new byte[5];
     if (this._stream.Read(methodBytes, 0, 5) < 5)
       return null;
-    string method = Encoding.ASCII.GetString(methodBytes);
+    var method = Encoding.ASCII.GetString(methodBytes);
 
     // Validate method
     if (!method.StartsWith('-') || !method.EndsWith('-'))
@@ -151,11 +151,11 @@ public sealed class LhaReader : IDisposable {
 
     // Read common fields after method
     var reader = new BinaryReader(this._stream, Encoding.ASCII, leaveOpen: true);
-    uint compressedSize = reader.ReadUInt32();
-    uint originalSize = reader.ReadUInt32();
-    uint timestamp = reader.ReadUInt32();
-    byte reserved = reader.ReadByte(); // attribute (level 0) or reserved (level 1/2)
-    byte level = reader.ReadByte();
+    var compressedSize = reader.ReadUInt32();
+    var originalSize = reader.ReadUInt32();
+    var timestamp = reader.ReadUInt32();
+    var reserved = reader.ReadByte(); // attribute (level 0) or reserved (level 1/2)
+    var level = reader.ReadByte();
 
     var entry = new LhaEntry {
       Method = method,
@@ -183,22 +183,22 @@ public sealed class LhaReader : IDisposable {
   }
 
   private void ReadLevel0Header(BinaryReader reader, LhaEntry entry, int headerSize) {
-    byte nameLength = reader.ReadByte();
+    var nameLength = reader.ReadByte();
     var nameBytes = reader.ReadBytes(nameLength);
     entry.FileName = Encoding.ASCII.GetString(nameBytes);
     entry.Crc16 = reader.ReadUInt16();
 
     // Skip any remaining header bytes
-    long expectedDataStart = this._stream.Position;
+    var expectedDataStart = this._stream.Position;
     // Level 0: headerSize includes everything from offset 2 to end of header
     // Total header = 2 + headerSize bytes, data follows
-    long headerStart = this._stream.Position - 2 - 5 - 4 - 4 - 4 - 1 - 1 - 1 - nameLength - 2;
+    var headerStart = this._stream.Position - 2 - 5 - 4 - 4 - 4 - 1 - 1 - 1 - nameLength - 2;
     entry.DataOffset = headerStart + 2 + headerSize;
     this._stream.Position = entry.DataOffset;
   }
 
   private static void ReadLevel1Header(BinaryReader reader, LhaEntry entry) {
-    byte nameLength = reader.ReadByte();
+    var nameLength = reader.ReadByte();
     var nameBytes = reader.ReadBytes(nameLength);
     entry.FileName = Encoding.ASCII.GetString(nameBytes);
     entry.Crc16 = reader.ReadUInt16();
@@ -206,11 +206,11 @@ public sealed class LhaReader : IDisposable {
 
     // Read extended headers
     while (true) {
-      ushort extSize = reader.ReadUInt16();
+      var extSize = reader.ReadUInt16();
       if (extSize == 0)
         break;
 
-      byte extType = reader.ReadByte();
+      var extType = reader.ReadByte();
       var extData = reader.ReadBytes(extSize - 3);
 
       if (extType == 0x01 && extData.Length > 0)
@@ -225,15 +225,15 @@ public sealed class LhaReader : IDisposable {
     entry.OsId = reader.ReadByte();
 
     // Read extended headers
-    long headerStart = reader.BaseStream.Position - 2 - 5 - 4 - 4 - 4 - 1 - 1 - 2 - 1;
-    long headerEnd = headerStart + totalHeaderSize;
+    var headerStart = reader.BaseStream.Position - 2 - 5 - 4 - 4 - 4 - 1 - 1 - 2 - 1;
+    var headerEnd = headerStart + totalHeaderSize;
 
     while (reader.BaseStream.Position < headerEnd) {
-      ushort extSize = reader.ReadUInt16();
+      var extSize = reader.ReadUInt16();
       if (extSize == 0)
         break;
 
-      byte extType = reader.ReadByte();
+      var extType = reader.ReadByte();
       var extData = reader.ReadBytes(extSize - 3);
 
       if (extType == 0x01 && extData.Length > 0)
@@ -245,8 +245,8 @@ public sealed class LhaReader : IDisposable {
   }
 
   private static DateTime DateTimeFromMsdos(uint timestamp) {
-    int time = (int)(timestamp & 0xFFFF);
-    int date = (int)(timestamp >> 16);
+    var time = (int)(timestamp & 0xFFFF);
+    var date = (int)(timestamp >> 16);
     try {
       return new DateTime(
         ((date >> 9) & 0x7F) + 1980,

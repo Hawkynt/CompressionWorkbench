@@ -86,10 +86,10 @@ public sealed class RarReader : IDisposable {
     this._leaveOpen = leaveOpen;
 
     // Read and validate signature
-    byte[] signature = new byte[8];
+    var signature = new byte[8];
     var sigRead = 0;
     while (sigRead < 8) {
-      int read = this._stream.Read(signature, sigRead, 8 - sigRead);
+      var read = this._stream.Read(signature, sigRead, 8 - sigRead);
       if (read == 0)
         throw new InvalidDataException("Stream too short to contain a RAR signature.");
       sigRead += read;
@@ -157,8 +157,8 @@ public sealed class RarReader : IDisposable {
     this._stream.Position = dataOffset;
 
     // If encrypted, read all data, decrypt, then wrap in a MemoryStream
-    Stream inputStream = this._stream;
-    long effectiveDataSize = dataSize;
+    var inputStream = this._stream;
+    var effectiveDataSize = dataSize;
 
     if (fileHeader.IsEncrypted) {
       if (fileHeader.EncryptionIv == null)
@@ -196,10 +196,10 @@ public sealed class RarReader : IDisposable {
       existingDecoder);
 
     // Read all decompressed data
-    byte[] buffer = new byte[8192];
+    var buffer = new byte[8192];
     var totalWritten = 0L;
     while (!decompressor.IsFinished) {
-      int read = decompressor.Read(buffer, 0, buffer.Length);
+      var read = decompressor.Read(buffer, 0, buffer.Length);
       if (read == 0)
         break;
       output.Write(buffer, 0, read);
@@ -215,8 +215,8 @@ public sealed class RarReader : IDisposable {
     // Verify CRC-32 if present
     if (entry.Crc.HasValue && totalWritten > 0) {
       output.Flush();
-      if (output is MemoryStream ms && ms.TryGetBuffer(out ArraySegment<byte> seg)) {
-        uint computed = Crc32.Compute(seg.AsSpan());
+      if (output is MemoryStream ms && ms.TryGetBuffer(out var seg)) {
+        var computed = Crc32.Compute(seg.AsSpan());
         if (computed != entry.Crc.Value)
           throw new InvalidDataException(
             $"CRC-32 mismatch for '{entry.Name}': expected 0x{entry.Crc.Value:X8}, computed 0x{computed:X8}.");
@@ -239,7 +239,7 @@ public sealed class RarReader : IDisposable {
 
       var (key, iv) = KeyDerivation.Rar3DeriveKey(this._password, detail.Salt);
       // RAR3 pads to 16-byte boundary
-      int alignedLen = (compressed.Length + 15) & ~15;
+      var alignedLen = (compressed.Length + 15) & ~15;
       if (alignedLen > compressed.Length) {
         var padded = new byte[alignedLen];
         compressed.AsSpan().CopyTo(padded);
@@ -281,7 +281,7 @@ public sealed class RarReader : IDisposable {
 
     // Verify CRC-32
     if (entry.Crc.HasValue) {
-      uint computed = Crc32.Compute(decompressed);
+      var computed = Crc32.Compute(decompressed);
       if (computed != entry.Crc.Value)
         throw new InvalidDataException(
           $"CRC-32 mismatch for '{entry.Name}': expected 0x{entry.Crc.Value:X8}, computed 0x{computed:X8}.");
@@ -297,23 +297,23 @@ public sealed class RarReader : IDisposable {
       return false;
 
     // Recovery data covers archive from position 0 to the start of the recovery service header
-    long archiveDataSize = this._recoveryHeaderOffset;
-    int sectorSize = RarConstants.RecoverySectorSize;
-    int dataSectors = (int)((archiveDataSize + sectorSize - 1) / sectorSize);
+    var archiveDataSize = this._recoveryHeaderOffset;
+    var sectorSize = RarConstants.RecoverySectorSize;
+    var dataSectors = (int)((archiveDataSize + sectorSize - 1) / sectorSize);
 
     // Determine parity sector count
-    int paritySectors = (int)(this._recoveryDataSize / sectorSize);
+    var paritySectors = (int)(this._recoveryDataSize / sectorSize);
     if (paritySectors == 0) return false;
 
     // Read all archive data as sectors
     var dataShards = new byte[dataSectors][];
     this._stream.Position = 0;
-    for (int i = 0; i < dataSectors; ++i) {
+    for (var i = 0; i < dataSectors; ++i) {
       dataShards[i] = new byte[sectorSize];
-      int toRead = (int)Math.Min(sectorSize, archiveDataSize - (long)i * sectorSize);
-      int totalRead = 0;
+      var toRead = (int)Math.Min(sectorSize, archiveDataSize - (long)i * sectorSize);
+      var totalRead = 0;
       while (totalRead < toRead) {
-        int n = this._stream.Read(dataShards[i], totalRead, toRead - totalRead);
+        var n = this._stream.Read(dataShards[i], totalRead, toRead - totalRead);
         if (n == 0) break;
         totalRead += n;
       }
@@ -321,20 +321,20 @@ public sealed class RarReader : IDisposable {
 
     // Recompute parity
     var rs = new Compression.Core.Checksums.ReedSolomon(dataSectors, paritySectors);
-    byte[][] computedParity = rs.Encode(dataShards);
+    var computedParity = rs.Encode(dataShards);
 
     // Read stored parity
     this._stream.Position = this._recoveryDataOffset;
-    byte[] storedRecovery = new byte[this._recoveryDataSize];
-    int r = 0;
+    var storedRecovery = new byte[this._recoveryDataSize];
+    var r = 0;
     while (r < storedRecovery.Length) {
-      int n = this._stream.Read(storedRecovery, r, storedRecovery.Length - r);
+      var n = this._stream.Read(storedRecovery, r, storedRecovery.Length - r);
       if (n == 0) break;
       r += n;
     }
 
     // Compare
-    for (int i = 0; i < paritySectors; ++i) {
+    for (var i = 0; i < paritySectors; ++i) {
       if (!computedParity[i].AsSpan().SequenceEqual(
           storedRecovery.AsSpan(i * sectorSize, sectorSize)))
         return false;
@@ -540,7 +540,7 @@ public sealed class RarReader : IDisposable {
   private static bool TryReadExact(Stream stream, byte[] buffer, int offset, int count) {
     var totalRead = 0;
     while (totalRead < count) {
-      int read = stream.Read(buffer, offset + totalRead, count - totalRead);
+      var read = stream.Read(buffer, offset + totalRead, count - totalRead);
       if (read == 0) return false;
       totalRead += read;
     }
@@ -550,7 +550,7 @@ public sealed class RarReader : IDisposable {
   private static void ReadExact(Stream stream, byte[] buffer, int offset, int count) {
     var totalRead = 0;
     while (totalRead < count) {
-      int read = stream.Read(buffer, offset + totalRead, count - totalRead);
+      var read = stream.Read(buffer, offset + totalRead, count - totalRead);
       if (read == 0) throw new EndOfStreamException();
       totalRead += read;
     }
@@ -600,14 +600,14 @@ public sealed class RarReader : IDisposable {
     var offset = 0;
 
     // Skip type + flags vints
-    _ = RarVint.Read(data[offset..], out int consumed); offset += consumed;
+    _ = RarVint.Read(data[offset..], out var consumed); offset += consumed;
     _ = RarVint.Read(data[offset..], out consumed); offset += consumed;
     if (header.HasExtraArea) { _ = RarVint.Read(data[offset..], out consumed); offset += consumed; }
     if (header.HasDataArea) { _ = RarVint.Read(data[offset..], out consumed); offset += consumed; }
 
     // Remaining bytes are the service name
     if (offset < data.Length) {
-      string name = System.Text.Encoding.UTF8.GetString(data[offset..]);
+      var name = System.Text.Encoding.UTF8.GetString(data[offset..]);
       if (name == RarConstants.RecoveryRecordName && header.HasDataArea && header.DataSize > 0) {
         this.HasRecoveryRecord = true;
         this._recoveryHeaderOffset = headerStartPos;
@@ -627,7 +627,7 @@ public sealed class RarReader : IDisposable {
     var offset = 0;
 
     // Skip type + flags vints (already parsed)
-    _ = RarVint.Read(data[offset..], out int consumed); offset += consumed; // type
+    _ = RarVint.Read(data[offset..], out var consumed); offset += consumed; // type
     _ = RarVint.Read(data[offset..], out consumed); offset += consumed; // flags
 
     // Skip extra area size and data area size if present
@@ -635,11 +635,11 @@ public sealed class RarReader : IDisposable {
     if (header.HasDataArea) { _ = RarVint.Read(data[offset..], out consumed); offset += consumed; }
 
     // Encryption version (vint, must be 0 for AES-256)
-    int encVersion = (int)RarVint.Read(data[offset..], out consumed); offset += consumed;
+    var encVersion = (int)RarVint.Read(data[offset..], out consumed); offset += consumed;
     if (encVersion != RarConstants.EncryptionVersionAes256) return;
 
     // Encryption flags (vint)
-    int encFlags = (int)RarVint.Read(data[offset..], out consumed); offset += consumed;
+    var encFlags = (int)RarVint.Read(data[offset..], out consumed); offset += consumed;
 
     // KDF count (1 byte, log2 of iteration count)
     if (offset >= data.Length) return;
@@ -669,7 +669,7 @@ public sealed class RarReader : IDisposable {
   }
 
   private byte[] DecryptData(byte[] encryptedData, byte[] iv) {
-    byte[] key = DeriveKey();
+    var key = DeriveKey();
     // RAR5 uses AES-256-CBC with no padding. Data is padded to 16-byte boundary.
     return AesCryptor.DecryptCbcNoPadding(encryptedData, key, iv);
   }

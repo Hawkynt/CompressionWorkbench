@@ -54,7 +54,7 @@ public sealed class TarWriter : IDisposable {
 
     ArgumentNullException.ThrowIfNull(entry);
 
-    byte[] dataBytes = data.ToArray();
+    var dataBytes = data.ToArray();
     entry.Size = dataBytes.Length;
 
     WriteEntryInternal(entry, dataBytes);
@@ -70,7 +70,7 @@ public sealed class TarWriter : IDisposable {
     this._finished = true;
 
     // Write two 512-byte zero blocks as end-of-archive marker
-    byte[] zeroBlock = new byte[TarConstants.BlockSize];
+    var zeroBlock = new byte[TarConstants.BlockSize];
     this._stream.Write(zeroBlock, 0, TarConstants.BlockSize);
     this._stream.Write(zeroBlock, 0, TarConstants.BlockSize);
     this._stream.Flush();
@@ -91,12 +91,12 @@ public sealed class TarWriter : IDisposable {
     // Collect PAX attributes for fields that can't fit in the standard header
     var paxAttrs = new Dictionary<string, string>();
 
-    byte[] nameUtf8 = Encoding.UTF8.GetBytes(entry.Name);
+    var nameUtf8 = Encoding.UTF8.GetBytes(entry.Name);
     if (nameUtf8.Length > TarConstants.NameLength || !IsAscii(nameUtf8))
       paxAttrs["path"] = entry.Name;
 
     if (!string.IsNullOrEmpty(entry.LinkName)) {
-      byte[] linkUtf8 = Encoding.UTF8.GetBytes(entry.LinkName);
+      var linkUtf8 = Encoding.UTF8.GetBytes(entry.LinkName);
       if (linkUtf8.Length > TarConstants.LinkNameLength || !IsAscii(linkUtf8))
         paxAttrs["linkpath"] = entry.LinkName;
     }
@@ -125,18 +125,18 @@ public sealed class TarWriter : IDisposable {
       this._stream.Write(data, 0, data.Length);
 
       // Pad to 512-byte boundary
-      int padding = (TarConstants.BlockSize - (data.Length % TarConstants.BlockSize)) % TarConstants.BlockSize;
+      var padding = (TarConstants.BlockSize - (data.Length % TarConstants.BlockSize)) % TarConstants.BlockSize;
       if (padding > 0) {
-        byte[] zeroPad = new byte[padding];
+        var zeroPad = new byte[padding];
         this._stream.Write(zeroPad, 0, padding);
       }
     }
   }
 
   private void WriteGnuLongName(string longName) {
-    byte[] nameBytes = Encoding.UTF8.GetBytes(longName);
+    var nameBytes = Encoding.UTF8.GetBytes(longName);
     // Include a null terminator in the data
-    byte[] nameData = new byte[nameBytes.Length + 1];
+    var nameData = new byte[nameBytes.Length + 1];
     nameBytes.AsSpan().CopyTo(nameData);
 
     var longNameEntry = new TarEntry {
@@ -150,16 +150,16 @@ public sealed class TarWriter : IDisposable {
     this._stream.Write(nameData, 0, nameData.Length);
 
     // Pad to 512-byte boundary
-    int padding = (TarConstants.BlockSize - (nameData.Length % TarConstants.BlockSize)) % TarConstants.BlockSize;
+    var padding = (TarConstants.BlockSize - (nameData.Length % TarConstants.BlockSize)) % TarConstants.BlockSize;
     if (padding > 0) {
-      byte[] zeroPad = new byte[padding];
+      var zeroPad = new byte[padding];
       this._stream.Write(zeroPad, 0, padding);
     }
   }
 
   private void WriteGnuLongLink(string longLink) {
-    byte[] linkBytes = Encoding.UTF8.GetBytes(longLink);
-    byte[] linkData = new byte[linkBytes.Length + 1];
+    var linkBytes = Encoding.UTF8.GetBytes(longLink);
+    var linkData = new byte[linkBytes.Length + 1];
     linkBytes.AsSpan().CopyTo(linkData);
 
     var longLinkEntry = new TarEntry {
@@ -172,9 +172,9 @@ public sealed class TarWriter : IDisposable {
     TarHeader.WriteHeader(this._stream, longLinkEntry);
     this._stream.Write(linkData, 0, linkData.Length);
 
-    int padding = (TarConstants.BlockSize - (linkData.Length % TarConstants.BlockSize)) % TarConstants.BlockSize;
+    var padding = (TarConstants.BlockSize - (linkData.Length % TarConstants.BlockSize)) % TarConstants.BlockSize;
     if (padding > 0) {
-      byte[] zeroPad = new byte[padding];
+      var zeroPad = new byte[padding];
       this._stream.Write(zeroPad, 0, padding);
     }
   }
@@ -183,11 +183,11 @@ public sealed class TarWriter : IDisposable {
     // Build PAX data: each record is "<length> <key>=<value>\n"
     using var paxData = new MemoryStream();
     foreach (var (key, value) in attrs) {
-      byte[] record = FormatPaxRecord(key, value);
+      var record = FormatPaxRecord(key, value);
       paxData.Write(record, 0, record.Length);
     }
 
-    byte[] paxBytes = paxData.ToArray();
+    var paxBytes = paxData.ToArray();
 
     var paxEntry = new TarEntry {
       Name = "PaxHeader/pax",
@@ -199,9 +199,9 @@ public sealed class TarWriter : IDisposable {
     TarHeader.WriteHeader(this._stream, paxEntry);
     this._stream.Write(paxBytes, 0, paxBytes.Length);
 
-    int padding = (TarConstants.BlockSize - (paxBytes.Length % TarConstants.BlockSize)) % TarConstants.BlockSize;
+    var padding = (TarConstants.BlockSize - (paxBytes.Length % TarConstants.BlockSize)) % TarConstants.BlockSize;
     if (padding > 0) {
-      byte[] zeroPad = new byte[padding];
+      var zeroPad = new byte[padding];
       this._stream.Write(zeroPad, 0, padding);
     }
   }
@@ -209,12 +209,12 @@ public sealed class TarWriter : IDisposable {
   private static byte[] FormatPaxRecord(string key, string value) {
     // Format: "<length> <key>=<value>\n"
     // Length is in bytes and includes everything (the length digits, space, key, '=', value, '\n')
-    byte[] payload = Encoding.UTF8.GetBytes($" {key}={value}\n");
-    int len = payload.Length + 1; // start assuming 1 digit for length
+    var payload = Encoding.UTF8.GetBytes($" {key}={value}\n");
+    var len = payload.Length + 1; // start assuming 1 digit for length
     while (Encoding.UTF8.GetByteCount(len.ToString()) + payload.Length != len)
       len = Encoding.UTF8.GetByteCount(len.ToString()) + payload.Length;
-    byte[] prefix = Encoding.UTF8.GetBytes(len.ToString());
-    byte[] record = new byte[prefix.Length + payload.Length];
+    var prefix = Encoding.UTF8.GetBytes(len.ToString());
+    var record = new byte[prefix.Length + payload.Length];
     prefix.CopyTo(record, 0);
     payload.CopyTo(record, prefix.Length);
     return record;
@@ -239,7 +239,7 @@ public sealed class TarWriter : IDisposable {
   }
 
   private static bool IsAscii(byte[] data) {
-    foreach (byte b in data) {
+    foreach (var b in data) {
       if (b > 127) return false;
     }
     return true;

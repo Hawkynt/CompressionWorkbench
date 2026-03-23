@@ -46,8 +46,8 @@ public sealed class SharWriter {
   }
 
   private static bool IsBinary(byte[] data) {
-    for (int i = 0; i < Math.Min(data.Length, 8192); ++i) {
-      byte b = data[i];
+    for (var i = 0; i < Math.Min(data.Length, 8192); ++i) {
+      var b = data[i];
       if (b == 0 || (b < 0x20 && b != '\t' && b != '\n' && b != '\r'))
         return true;
     }
@@ -67,16 +67,16 @@ public sealed class SharWriter {
     writer.WriteLine($"uudecode << 'SHAR_UU_EOF'");
     writer.WriteLine($"begin 644 {name}");
 
-    int offset = 0;
+    var offset = 0;
     while (offset < data.Length) {
-      int len = Math.Min(45, data.Length - offset);
+      var len = Math.Min(45, data.Length - offset);
       var sb = new StringBuilder();
       sb.Append((char)(len + 32));
 
-      for (int i = 0; i < len; i += 3) {
-        byte b0 = data[offset + i];
-        byte b1 = (i + 1 < len) ? data[offset + i + 1] : (byte)0;
-        byte b2 = (i + 2 < len) ? data[offset + i + 2] : (byte)0;
+      for (var i = 0; i < len; i += 3) {
+        var b0 = data[offset + i];
+        var b1 = (i + 1 < len) ? data[offset + i + 1] : (byte)0;
+        var b2 = (i + 2 < len) ? data[offset + i + 2] : (byte)0;
         sb.Append(UuChar(b0 >> 2));
         sb.Append(UuChar(((b0 & 0x3) << 4) | (b1 >> 4)));
         sb.Append(UuChar(((b1 & 0xF) << 2) | (b2 >> 6)));

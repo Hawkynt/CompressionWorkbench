@@ -54,8 +54,8 @@ internal sealed class RarDecompressor {
       return 0;
 
     if (this._method == RarConstants.MethodStore) {
-      int toRead = (int)Math.Min(count, this._remaining);
-      int read = this._input.Read(buffer, offset, toRead);
+      var toRead = (int)Math.Min(count, this._remaining);
+      var read = this._input.Read(buffer, offset, toRead);
       this._remaining -= read;
       return read;
     }
@@ -63,10 +63,10 @@ internal sealed class RarDecompressor {
     // Compressed methods: decompress all at once on first read
     if (this._decompressedData == null) {
       // Read only the compressed data for this entry, not the rest of the stream
-      byte[] compressed = new byte[this._compressedSize];
-      int totalRead = 0;
+      var compressed = new byte[this._compressedSize];
+      var totalRead = 0;
       while (totalRead < compressed.Length) {
-        int read = this._input.Read(compressed, totalRead, compressed.Length - totalRead);
+        var read = this._input.Read(compressed, totalRead, compressed.Length - totalRead);
         if (read == 0)
           break;
         totalRead += read;
@@ -78,8 +78,8 @@ internal sealed class RarDecompressor {
       this.Decoder = decoder;
     }
 
-    int available = this._decompressedData.Length - this._decompressedPos;
-    int toCopy = (int)Math.Min(Math.Min(count, available), this._remaining);
+    var available = this._decompressedData.Length - this._decompressedPos;
+    var toCopy = (int)Math.Min(Math.Min(count, available), this._remaining);
     if (toCopy <= 0) {
       this._remaining = 0;
       return 0;

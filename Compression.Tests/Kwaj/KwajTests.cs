@@ -121,9 +121,9 @@ public sealed class KwajTests {
     var xorData    = Compress("a"u8.ToArray(), KwajConstants.MethodXor);
     var mszipData  = Compress("a"u8.ToArray(), KwajConstants.MethodMsZip);
 
-    ushort storeMethod = (ushort)(storeData[8] | (storeData[9] << 8));
-    ushort xorMethod   = (ushort)(xorData[8]   | (xorData[9]   << 8));
-    ushort mszipMethod = (ushort)(mszipData[8]  | (mszipData[9] << 8));
+    var storeMethod = (ushort)(storeData[8] | (storeData[9] << 8));
+    var xorMethod   = (ushort)(xorData[8]   | (xorData[9]   << 8));
+    var mszipMethod = (ushort)(mszipData[8]  | (mszipData[9] << 8));
 
     Assert.That(storeMethod, Is.EqualTo(KwajConstants.MethodStore));
     Assert.That(xorMethod,   Is.EqualTo(KwajConstants.MethodXor));

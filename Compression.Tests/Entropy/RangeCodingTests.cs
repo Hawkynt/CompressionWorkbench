@@ -10,14 +10,14 @@ public class RangeCodingTests {
   public void EncodeDecode_SingleBit_RoundTrips() {
     using var ms = new MemoryStream();
     var encoder = new RangeEncoder(ms);
-    int prob = RangeEncoder.ProbInitValue;
+    var prob = RangeEncoder.ProbInitValue;
     encoder.EncodeBit(ref prob, 1);
     encoder.Finish();
 
     ms.Position = 0;
     var decoder = new RangeDecoder(ms);
-    int decodeProb = RangeEncoder.ProbInitValue;
-    int bit = decoder.DecodeBit(ref decodeProb);
+    var decodeProb = RangeEncoder.ProbInitValue;
+    var bit = decoder.DecodeBit(ref decodeProb);
     Assert.That(bit, Is.EqualTo(1));
   }
 
@@ -29,16 +29,16 @@ public class RangeCodingTests {
 
     using var ms = new MemoryStream();
     var encoder = new RangeEncoder(ms);
-    int prob = RangeEncoder.ProbInitValue;
-    foreach (int bit in bits)
+    var prob = RangeEncoder.ProbInitValue;
+    foreach (var bit in bits)
       encoder.EncodeBit(ref prob, bit);
     encoder.Finish();
 
     ms.Position = 0;
     var decoder = new RangeDecoder(ms);
-    int decodeProb = RangeEncoder.ProbInitValue;
-    int[] decoded = new int[bits.Length];
-    for (int i = 0; i < bits.Length; ++i)
+    var decodeProb = RangeEncoder.ProbInitValue;
+    var decoded = new int[bits.Length];
+    for (var i = 0; i < bits.Length; ++i)
       decoded[i] = decoder.DecodeBit(ref decodeProb);
 
     Assert.That(decoded, Is.EqualTo(bits));
@@ -71,7 +71,7 @@ public class RangeCodingTests {
     var encoder = new RangeEncoder(ms);
     var treeEncoder = new BitTreeEncoder(8);
 
-    for (int v = 0; v < 256; ++v)
+    for (var v = 0; v < 256; ++v)
       treeEncoder.Encode(encoder, v);
     encoder.Finish();
 
@@ -79,8 +79,8 @@ public class RangeCodingTests {
     var decoder = new RangeDecoder(ms);
     var treeDecoder = new BitTreeDecoder(8);
 
-    for (int v = 0; v < 256; ++v) {
-      int decoded = treeDecoder.Decode(decoder);
+    for (var v = 0; v < 256; ++v) {
+      var decoded = treeDecoder.Decode(decoder);
       Assert.That(decoded, Is.EqualTo(v), $"Mismatch at index {v}");
     }
   }
@@ -93,7 +93,7 @@ public class RangeCodingTests {
     var encoder = new RangeEncoder(ms);
     var treeEncoder = new BitTreeEncoder(4);
 
-    for (int v = 0; v < 16; ++v)
+    for (var v = 0; v < 16; ++v)
       treeEncoder.ReverseEncode(encoder, v);
     encoder.Finish();
 
@@ -101,8 +101,8 @@ public class RangeCodingTests {
     var decoder = new RangeDecoder(ms);
     var treeDecoder = new BitTreeDecoder(4);
 
-    for (int v = 0; v < 16; ++v) {
-      int decoded = treeDecoder.ReverseDecode(decoder);
+    for (var v = 0; v < 16; ++v) {
+      var decoded = treeDecoder.ReverseDecode(decoder);
       Assert.That(decoded, Is.EqualTo(v), $"Mismatch at index {v}");
     }
   }
@@ -115,16 +115,16 @@ public class RangeCodingTests {
     var encoder = new RangeEncoder(ms);
 
     // Encode mostly 0s — probability should converge toward 0
-    int prob = RangeEncoder.ProbInitValue;
-    for (int i = 0; i < 1000; ++i)
+    var prob = RangeEncoder.ProbInitValue;
+    for (var i = 0; i < 1000; ++i)
       encoder.EncodeBit(ref prob, 0);
     encoder.Finish();
 
     ms.Position = 0;
     var decoder = new RangeDecoder(ms);
-    int decodeProb = RangeEncoder.ProbInitValue;
-    for (int i = 0; i < 1000; ++i) {
-      int bit = decoder.DecodeBit(ref decodeProb);
+    var decodeProb = RangeEncoder.ProbInitValue;
+    for (var i = 0; i < 1000; ++i) {
+      var bit = decoder.DecodeBit(ref decodeProb);
       Assert.That(bit, Is.EqualTo(0));
     }
 
@@ -138,22 +138,22 @@ public class RangeCodingTests {
   [Test]
   public void LargeData_RoundTrip() {
     var rng = new Random(42);
-    int[] data = new int[2000];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new int[2000];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = rng.Next(2);
 
     using var ms = new MemoryStream();
     var encoder = new RangeEncoder(ms);
-    int prob = RangeEncoder.ProbInitValue;
-    foreach (int bit in data)
+    var prob = RangeEncoder.ProbInitValue;
+    foreach (var bit in data)
       encoder.EncodeBit(ref prob, bit);
     encoder.Finish();
 
     ms.Position = 0;
     var decoder = new RangeDecoder(ms);
-    int decodeProb = RangeEncoder.ProbInitValue;
-    for (int i = 0; i < data.Length; ++i) {
-      int bit = decoder.DecodeBit(ref decodeProb);
+    var decodeProb = RangeEncoder.ProbInitValue;
+    for (var i = 0; i < data.Length; ++i) {
+      var bit = decoder.DecodeBit(ref decodeProb);
       Assert.That(bit, Is.EqualTo(data[i]), $"Mismatch at index {i}");
     }
   }

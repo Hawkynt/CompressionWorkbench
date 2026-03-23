@@ -29,8 +29,8 @@ public static class ShrinkEncoder {
     // Trie for dictionary lookup: (parent code, byte) → child code
     var trie = new Dictionary<(int, byte), int>();
 
-    int currentBits = MinBits;
-    int nextCode = 257;
+    var currentBits = MinBits;
+    var nextCode = 257;
 
     if (data.IsEmpty) {
       writer.FlushBits();
@@ -38,13 +38,13 @@ public static class ShrinkEncoder {
     }
 
     int currentCode = data[0];
-    int i = 1;
+    var i = 1;
 
     while (i < data.Length) {
-      byte nextByte = data[i];
+      var nextByte = data[i];
       var key = (currentCode, nextByte);
 
-      if (trie.TryGetValue(key, out int existingCode)) {
+      if (trie.TryGetValue(key, out var existingCode)) {
         currentCode = existingCode;
         ++i;
       }

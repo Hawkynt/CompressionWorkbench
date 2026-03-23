@@ -65,8 +65,8 @@ public sealed class RarWriter : IDisposable {
 
     EnsureHeader();
 
-    byte[] uncompressed = data.ToArray();
-    uint dataCrc = Crc32.Compute(uncompressed);
+    var uncompressed = data.ToArray();
+    var dataCrc = Crc32.Compute(uncompressed);
 
     byte[] compressed;
     int actualMethod;
@@ -101,7 +101,7 @@ public sealed class RarWriter : IDisposable {
       fileIv = RandomNumberGenerator.GetBytes(16);
 
       // Pad to 16-byte boundary for AES-CBC
-      int paddedLen = (compressed.Length + 15) & ~15;
+      var paddedLen = (compressed.Length + 15) & ~15;
       if (paddedLen != compressed.Length) {
         var padded = new byte[paddedLen];
         compressed.AsSpan().CopyTo(padded);
@@ -112,15 +112,15 @@ public sealed class RarWriter : IDisposable {
     }
 
     // Build compression info field
-    int dictLog = 0;
-    int ds = this._dictionarySize;
+    var dictLog = 0;
+    var ds = this._dictionarySize;
     while (ds > 1) { ds >>= 1; ++dictLog; }
-    int solidBit = (this._solid && !this._isFirstFile) ? 0x40 : 0;
-    int compressionInfo = solidBit | (actualMethod << 7) | ((dictLog - 17) << 10);
+    var solidBit = (this._solid && !this._isFirstFile) ? 0x40 : 0;
+    var compressionInfo = solidBit | (actualMethod << 7) | ((dictLog - 17) << 10);
     this._isFirstFile = false;
 
     // File flags
-    int fileFlags = RarConstants.FileFlagCrc32;
+    var fileFlags = RarConstants.FileFlagCrc32;
     uint mtime = 0;
     if (modifiedTime != null) {
       fileFlags |= RarConstants.FileFlagTimeMtime;
@@ -137,7 +137,7 @@ public sealed class RarWriter : IDisposable {
     RarVint.Write(bodyMs, RarConstants.HeaderTypeFile);
 
     // Header flags: extra area must come before data area in flags and field order
-    int headerFlags = RarConstants.HeaderFlagDataArea;
+    var headerFlags = RarConstants.HeaderFlagDataArea;
     if (extraArea != null)
       headerFlags |= RarConstants.HeaderFlagExtraArea;
     RarVint.Write(bodyMs, (ulong)headerFlags);
@@ -163,7 +163,7 @@ public sealed class RarWriter : IDisposable {
     RarVint.Write(bodyMs, (ulong)compressionInfo);
     RarVint.Write(bodyMs, RarConstants.OsWindows);
 
-    byte[] nameBytes = Encoding.UTF8.GetBytes(fileName);
+    var nameBytes = Encoding.UTF8.GetBytes(fileName);
     RarVint.Write(bodyMs, (ulong)nameBytes.Length);
     bodyMs.Write(nameBytes);
 
@@ -171,18 +171,18 @@ public sealed class RarWriter : IDisposable {
     if (extraArea != null)
       bodyMs.Write(extraArea);
 
-    byte[] body = bodyMs.ToArray();
+    var body = bodyMs.ToArray();
 
     // Size vint
     var sizeMs = new MemoryStream();
     RarVint.Write(sizeMs, (ulong)body.Length);
-    byte[] sizeBytes = sizeMs.ToArray();
+    var sizeBytes = sizeMs.ToArray();
 
     // CRC-32 covers sizeBytes + body
-    byte[] crcData = new byte[sizeBytes.Length + body.Length];
+    var crcData = new byte[sizeBytes.Length + body.Length];
     sizeBytes.AsSpan().CopyTo(crcData);
     body.AsSpan().CopyTo(crcData.AsSpan(sizeBytes.Length));
-    uint headerCrc = Crc32.Compute(crcData);
+    var headerCrc = Crc32.Compute(crcData);
 
     // Write: CRC(vint) + Size(vint) + Body
     RarVint.Write(this._stream, headerCrc);
@@ -264,28 +264,28 @@ public sealed class RarWriter : IDisposable {
     RarVint.Write(bodyMs, RarConstants.HeaderTypeEncryption);
     RarVint.Write(bodyMs, 0UL); // header flags: no data area, no extra area
     RarVint.Write(bodyMs, (ulong)RarConstants.EncryptionVersionAes256);
-    ulong encFlags = this._encryptHeaders ? (ulong)RarConstants.EncryptFlagHeaderEncrypt : 0UL;
+    var encFlags = this._encryptHeaders ? (ulong)RarConstants.EncryptFlagHeaderEncrypt : 0UL;
     RarVint.Write(bodyMs, encFlags); // encryption flags
 
     // KDF count: stored as log2(iterations) - 1
-    int kdfLog = 0;
-    int kdf = this._kdfCount;
+    var kdfLog = 0;
+    var kdf = this._kdfCount;
     while (kdf > 1) { kdf >>= 1; ++kdfLog; }
     bodyMs.WriteByte((byte)(kdfLog - 1));
 
     // Salt (16 bytes)
     bodyMs.Write(this._encryptionSalt);
 
-    byte[] body = bodyMs.ToArray();
+    var body = bodyMs.ToArray();
 
     var sizeMs = new MemoryStream();
     RarVint.Write(sizeMs, (ulong)body.Length);
-    byte[] sizeBytes = sizeMs.ToArray();
+    var sizeBytes = sizeMs.ToArray();
 
-    byte[] crcData = new byte[sizeBytes.Length + body.Length];
+    var crcData = new byte[sizeBytes.Length + body.Length];
     sizeBytes.AsSpan().CopyTo(crcData);
     body.AsSpan().CopyTo(crcData.AsSpan(sizeBytes.Length));
-    uint crc = Crc32.Compute(crcData);
+    var crc = Crc32.Compute(crcData);
 
     RarVint.Write(this._stream, crc);
     this._stream.Write(sizeBytes);
@@ -302,14 +302,14 @@ public sealed class RarWriter : IDisposable {
     RarVint.Write(contentMs, (ulong)RarConstants.EncryptionVersionAes256);
     RarVint.Write(contentMs, 0UL); // flags
 
-    int kdfLog = 0;
-    int kdf = this._kdfCount;
+    var kdfLog = 0;
+    var kdf = this._kdfCount;
     while (kdf > 1) { kdf >>= 1; ++kdfLog; }
     contentMs.WriteByte((byte)(kdfLog - 1));
     contentMs.Write(this._encryptionSalt!);
     contentMs.Write(iv);
 
-    byte[] content = contentMs.ToArray();
+    var content = contentMs.ToArray();
     RarVint.Write(ms, (ulong)content.Length);
     ms.Write(content);
 
@@ -318,23 +318,23 @@ public sealed class RarWriter : IDisposable {
 
   private void WriteRecoveryRecord() {
     // Read all archive data written so far (from start of stream to current position)
-    long archiveDataEnd = this._stream.Position;
-    long archiveDataSize = archiveDataEnd;
+    var archiveDataEnd = this._stream.Position;
+    var archiveDataSize = archiveDataEnd;
 
     // Compute number of recovery sectors based on percentage
-    int sectorSize = RarConstants.RecoverySectorSize;
-    int dataSectors = (int)((archiveDataSize + sectorSize - 1) / sectorSize);
-    int paritySectors = Math.Max(1, dataSectors * this._recoveryPercent / 100);
+    var sectorSize = RarConstants.RecoverySectorSize;
+    var dataSectors = (int)((archiveDataSize + sectorSize - 1) / sectorSize);
+    var paritySectors = Math.Max(1, dataSectors * this._recoveryPercent / 100);
 
     // Read archive data into sector-sized blocks
     var dataShards = new byte[dataSectors][];
     this._stream.Position = 0;
-    for (int i = 0; i < dataSectors; ++i) {
+    for (var i = 0; i < dataSectors; ++i) {
       dataShards[i] = new byte[sectorSize];
-      int toRead = (int)Math.Min(sectorSize, archiveDataSize - (long)i * sectorSize);
-      int totalRead = 0;
+      var toRead = (int)Math.Min(sectorSize, archiveDataSize - (long)i * sectorSize);
+      var totalRead = 0;
       while (totalRead < toRead) {
-        int n = this._stream.Read(dataShards[i], totalRead, toRead - totalRead);
+        var n = this._stream.Read(dataShards[i], totalRead, toRead - totalRead);
         if (n == 0) break;
         totalRead += n;
       }
@@ -342,11 +342,11 @@ public sealed class RarWriter : IDisposable {
 
     // Generate Reed-Solomon parity
     var rs = new Compression.Core.Checksums.ReedSolomon(dataSectors, paritySectors);
-    byte[][] parityShards = rs.Encode(dataShards);
+    var parityShards = rs.Encode(dataShards);
 
     // Flatten parity into single byte array
-    byte[] recoveryData = new byte[paritySectors * sectorSize];
-    for (int i = 0; i < paritySectors; ++i)
+    var recoveryData = new byte[paritySectors * sectorSize];
+    for (var i = 0; i < paritySectors; ++i)
       parityShards[i].AsSpan().CopyTo(recoveryData.AsSpan(i * sectorSize));
 
     // Seek back to where we'll write the recovery header
@@ -354,26 +354,26 @@ public sealed class RarWriter : IDisposable {
 
     // Build service header (type 3) with name "RR"
     // Header body: type(vint) + flags(vint) + extraSize(vint) + dataSize(vint) + name("RR")
-    byte[] nameBytes = System.Text.Encoding.UTF8.GetBytes(RarConstants.RecoveryRecordName);
+    var nameBytes = System.Text.Encoding.UTF8.GetBytes(RarConstants.RecoveryRecordName);
 
     var bodyMs = new MemoryStream();
     RarVint.Write(bodyMs, (ulong)RarConstants.HeaderTypeService);
-    int headerFlags = RarConstants.HeaderFlagDataArea; // has data area
+    var headerFlags = RarConstants.HeaderFlagDataArea; // has data area
     RarVint.Write(bodyMs, (ulong)headerFlags);
     RarVint.Write(bodyMs, (ulong)recoveryData.Length); // data area size
 
     // Service data: just the name "RR" + sector info
     bodyMs.Write(nameBytes);
-    byte[] body = bodyMs.ToArray();
+    var body = bodyMs.ToArray();
 
     var sizeMs = new MemoryStream();
     RarVint.Write(sizeMs, (ulong)body.Length);
-    byte[] sizeBytes = sizeMs.ToArray();
+    var sizeBytes = sizeMs.ToArray();
 
-    byte[] crcData = new byte[sizeBytes.Length + body.Length];
+    var crcData = new byte[sizeBytes.Length + body.Length];
     sizeBytes.AsSpan().CopyTo(crcData);
     body.AsSpan().CopyTo(crcData.AsSpan(sizeBytes.Length));
-    uint crc = Crc32.Compute(crcData);
+    var crc = Crc32.Compute(crcData);
 
     RarVint.Write(this._stream, crc);
     this._stream.Write(sizeBytes);
@@ -387,16 +387,16 @@ public sealed class RarWriter : IDisposable {
     var bodyMs = new MemoryStream();
     RarVint.Write(bodyMs, (ulong)type);
     RarVint.Write(bodyMs, (ulong)flags);
-    byte[] body = bodyMs.ToArray();
+    var body = bodyMs.ToArray();
 
     var sizeMs = new MemoryStream();
     RarVint.Write(sizeMs, (ulong)body.Length);
-    byte[] sizeBytes = sizeMs.ToArray();
+    var sizeBytes = sizeMs.ToArray();
 
-    byte[] crcData = new byte[sizeBytes.Length + body.Length];
+    var crcData = new byte[sizeBytes.Length + body.Length];
     sizeBytes.AsSpan().CopyTo(crcData);
     body.AsSpan().CopyTo(crcData.AsSpan(sizeBytes.Length));
-    uint crc = Crc32.Compute(crcData);
+    var crc = Crc32.Compute(crcData);
 
     RarVint.Write(this._stream, crc);
     this._stream.Write(sizeBytes);

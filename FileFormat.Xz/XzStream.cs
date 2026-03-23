@@ -79,7 +79,7 @@ public sealed class XzStream : CompressionStream {
     }
 
     var available = this._decompressedData.Length - this._decompressPos;
-    int toCopy = Math.Min(available, count);
+    var toCopy = Math.Min(available, count);
     this._decompressedData.AsSpan(this._decompressPos, toCopy).CopyTo(buffer.AsSpan(offset));
     this._decompressPos += toCopy;
     return toCopy;
@@ -92,7 +92,7 @@ public sealed class XzStream : CompressionStream {
 
   /// <inheritdoc />
   protected override void FinishCompression() {
-    byte[] data = this._compressBuffer!.ToArray();
+    var data = this._compressBuffer!.ToArray();
 
     // Write stream header
     var header = new XzStreamHeader(this._checkType);
@@ -105,14 +105,14 @@ public sealed class XzStream : CompressionStream {
       emptyIndex.Write(InnerStream);
       var indexSize = InnerStream.Position - indexStart;
 
-      uint backwardSize = (uint)(indexSize / 4 - 1);
+      var backwardSize = (uint)(indexSize / 4 - 1);
       var footer = new XzStreamFooter(backwardSize, this._checkType);
       footer.Write(InnerStream);
       return;
     }
 
     // Apply pre-filters before LZMA2 compression
-    byte[] filteredData = data;
+    var filteredData = data;
     foreach (var (filterId, props) in this._preFilters)
       filteredData = ApplyForwardFilter(filterId, props, filteredData);
 
@@ -120,7 +120,7 @@ public sealed class XzStream : CompressionStream {
     var lzma2Encoder = new Lzma2Encoder(this._dictionarySize);
     using var compressedBlock = new MemoryStream();
     lzma2Encoder.Encode(compressedBlock, filteredData);
-    byte[] compressedData = compressedBlock.ToArray();
+    var compressedData = compressedBlock.ToArray();
 
     // Write block header
     var blockStartPos = InnerStream.Position;
@@ -144,8 +144,8 @@ public sealed class XzStream : CompressionStream {
 
     // Pad block to 4-byte alignment
     var blockDataSize = InnerStream.Position - blockHeaderEnd;
-    int blockPadding = (int)((4 - (blockDataSize % 4)) % 4);
-    for (int i = 0; i < blockPadding; ++i)
+    var blockPadding = (int)((4 - (blockDataSize % 4)) % 4);
+    for (var i = 0; i < blockPadding; ++i)
       InnerStream.WriteByte(0);
 
     // Calculate unpadded size (block header + compressed data + check, before padding)
@@ -159,7 +159,7 @@ public sealed class XzStream : CompressionStream {
     var indexSize2 = InnerStream.Position - indexStart2;
 
     // Write stream footer
-    uint backwardSize2 = (uint)(indexSize2 / 4 - 1);
+    var backwardSize2 = (uint)(indexSize2 / 4 - 1);
     var footer2 = new XzStreamFooter(backwardSize2, this._checkType);
     footer2.Write(InnerStream);
   }
@@ -169,22 +169,22 @@ public sealed class XzStream : CompressionStream {
       case XzConstants.CheckNone:
         break;
       case XzConstants.CheckCrc32:
-        uint crc32 = Crc32.Compute(data);
+        var crc32 = Crc32.Compute(data);
         InnerStream.WriteByte((byte)crc32);
         InnerStream.WriteByte((byte)(crc32 >> 8));
         InnerStream.WriteByte((byte)(crc32 >> 16));
         InnerStream.WriteByte((byte)(crc32 >> 24));
         break;
       case XzConstants.CheckCrc64:
-        ulong crc64 = Crc64.Compute(data);
-        for (int i = 0; i < 8; ++i)
+        var crc64 = Crc64.Compute(data);
+        for (var i = 0; i < 8; ++i)
           InnerStream.WriteByte((byte)(crc64 >> (i * 8)));
         break;
       case XzConstants.CheckSha256:
         var shaW = new Sha256();
         shaW.Update(data);
         shaW.Finish();
-        byte[] hash = shaW.Hash;
+        var hash = shaW.Hash;
         InnerStream.Write(hash);
         break;
       default:
@@ -195,14 +195,14 @@ public sealed class XzStream : CompressionStream {
   private void DecompressAll() {
     // Read stream header
     var header = XzStreamHeader.Read(InnerStream);
-    byte checkType = header.CheckType;
+    var checkType = header.CheckType;
 
     using var output = new MemoryStream();
 
     // Read blocks until index
     while (true) {
       // Peek at next byte: 0x00 means index
-      int peekByte = InnerStream.ReadByte();
+      var peekByte = InnerStream.ReadByte();
       if (peekByte < 0)
         throw new EndOfStreamException("Unexpected end of XZ stream.");
 
@@ -217,7 +217,7 @@ public sealed class XzStream : CompressionStream {
       var blockHeader = XzBlockHeader.Read(InnerStream);
 
       // Find LZMA2 filter
-      int dictSize = this._dictionarySize;
+      var dictSize = this._dictionarySize;
       foreach (var (filterId, props) in blockHeader.Filters) {
         if (filterId == XzConstants.FilterLzma2 && props.Length > 0)
           dictSize = DecodeDictionarySize(props[0]);
@@ -230,10 +230,10 @@ public sealed class XzStream : CompressionStream {
       else
         throw new NotSupportedException("XZ blocks without compressed size not supported.");
 
-      byte[] compressedData = new byte[compressedSize];
+      var compressedData = new byte[compressedSize];
       var totalRead = 0;
       while (totalRead < compressedSize) {
-        int read = InnerStream.Read(compressedData, totalRead, compressedSize - totalRead);
+        var read = InnerStream.Read(compressedData, totalRead, compressedSize - totalRead);
         if (read == 0) throw new EndOfStreamException("Truncated XZ block.");
         totalRead += read;
       }
@@ -241,12 +241,12 @@ public sealed class XzStream : CompressionStream {
       // Decompress with LZMA2
       using var compressedStream = new MemoryStream(compressedData);
       var lzma2Decoder = new Lzma2Decoder(compressedStream, dictSize);
-      byte[] decompressed = lzma2Decoder.Decode();
+      var decompressed = lzma2Decoder.Decode();
 
       // Apply non-compression filters in reverse order
       // In XZ, filters are listed first-to-last (pre-filters before LZMA2)
       // During decompression, we need to reverse pre-filters after LZMA2 decode
-      for (int fi = blockHeader.Filters.Count - 2; fi >= 0; --fi) {
+      for (var fi = blockHeader.Filters.Count - 2; fi >= 0; --fi) {
         var (filterId, props) = blockHeader.Filters[fi];
         decompressed = ApplyReverseFilter(filterId, props, decompressed);
       }
@@ -258,8 +258,8 @@ public sealed class XzStream : CompressionStream {
 
       // Skip block padding
       long blockDataLen = compressedSize + XzConstants.CheckSize(checkType);
-      int blockPadding = (int)((4 - (blockDataLen % 4)) % 4);
-      for (int i = 0; i < blockPadding; ++i)
+      var blockPadding = (int)((4 - (blockDataLen % 4)) % 4);
+      for (var i = 0; i < blockPadding; ++i)
         InnerStream.ReadByte();
     }
 
@@ -274,27 +274,27 @@ public sealed class XzStream : CompressionStream {
   }
 
   private void VerifyCheck(byte checkType, byte[] data) {
-    int checkSize = XzConstants.CheckSize(checkType);
+    var checkSize = XzConstants.CheckSize(checkType);
     if (checkSize == 0)
       return;
 
-    byte[] checkBuf = new byte[checkSize];
+    var checkBuf = new byte[checkSize];
     if (InnerStream.Read(checkBuf, 0, checkSize) != checkSize)
       throw new EndOfStreamException("Truncated XZ check.");
 
     switch (checkType) {
       case XzConstants.CheckCrc32:
-        uint storedCrc32 = (uint)(checkBuf[0] | (checkBuf[1] << 8) |
+        var storedCrc32 = (uint)(checkBuf[0] | (checkBuf[1] << 8) |
                      (checkBuf[2] << 16) | (checkBuf[3] << 24));
-        uint computedCrc32 = Crc32.Compute(data);
+        var computedCrc32 = Crc32.Compute(data);
         if (storedCrc32 != computedCrc32)
           throw new InvalidDataException("XZ block CRC-32 mismatch.");
         break;
       case XzConstants.CheckCrc64:
         ulong storedCrc64 = 0;
-        for (int i = 0; i < 8; ++i)
+        for (var i = 0; i < 8; ++i)
           storedCrc64 |= (ulong)checkBuf[i] << (i * 8);
-        ulong computedCrc64 = Crc64.Compute(data);
+        var computedCrc64 = Crc64.Compute(data);
         if (storedCrc64 != computedCrc64)
           throw new InvalidDataException("XZ block CRC-64 mismatch.");
         break;
@@ -302,7 +302,7 @@ public sealed class XzStream : CompressionStream {
         var sha2 = new Sha256();
         sha2.Update(data);
         sha2.Finish();
-        byte[] computedHash = sha2.Hash;
+        var computedHash = sha2.Hash;
         if (!checkBuf.AsSpan().SequenceEqual(computedHash))
           throw new InvalidDataException("XZ block SHA-256 mismatch.");
         break;
@@ -341,7 +341,7 @@ public sealed class XzStream : CompressionStream {
     if (encoded == 0)
       return 4096;
 
-    int bits = encoded / 2 + 12;
+    var bits = encoded / 2 + 12;
     if ((encoded & 1) == 0)
       return 1 << bits;
     return (3 << (bits - 1));

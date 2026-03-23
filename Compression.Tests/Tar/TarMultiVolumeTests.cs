@@ -9,9 +9,9 @@ public class TarMultiVolumeTests {
   [Category("RoundTrip")]
   [Test]
   public void SplitArchive_Read_TwoVolumes() {
-    byte[] archive = CreateTestArchive();
+    var archive = CreateTestArchive();
 
-    int splitPoint = archive.Length / 2;
+    var splitPoint = archive.Length / 2;
     using var cs = new ConcatenatedStream([
       new MemoryStream(archive[..splitPoint]),
       new MemoryStream(archive[splitPoint..])
@@ -28,10 +28,10 @@ public class TarMultiVolumeTests {
   [Category("RoundTrip")]
   [Test]
   public void CreateSplit_Write_Read_RoundTrip() {
-    byte[] data1 = MakeTestData(100, 0x30);
-    byte[] data2 = MakeTestData(200, 0x50);
+    var data1 = MakeTestData(100, 0x30);
+    var data2 = MakeTestData(200, 0x50);
 
-    byte[][] volumes = TarWriter.CreateSplit(
+    var volumes = TarWriter.CreateSplit(
       maxVolumeSize: 800,
       entries: [("file1.bin", data1), ("file2.bin", data2)]);
 
@@ -61,7 +61,7 @@ public class TarMultiVolumeTests {
         Offset = 1024,
         RealSize = 4096,
       };
-      byte[] chunkData = MakeTestData(512, 0x55);
+      var chunkData = MakeTestData(512, 0x55);
       writer.AddEntry(contEntry, chunkData.AsSpan());
       writer.Finish();
     }
@@ -76,7 +76,7 @@ public class TarMultiVolumeTests {
     Assert.That(entry.IsFile, Is.True);
 
     using var entryStream = reader.GetEntryStream();
-    byte[] data = new byte[512];
+    var data = new byte[512];
     entryStream.ReadExactly(data);
     Assert.That(data, Is.EqualTo(MakeTestData(512, 0x55)));
   }
@@ -104,7 +104,7 @@ public class TarMultiVolumeTests {
 
   private static byte[] MakeTestData(int size, byte seed) {
     var data = new byte[size];
-    for (int i = 0; i < size; ++i)
+    for (var i = 0; i < size; ++i)
       data[i] = (byte)((seed + i) % 256);
     return data;
   }

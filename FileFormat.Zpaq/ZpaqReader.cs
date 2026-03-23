@@ -82,12 +82,12 @@ public sealed class ZpaqReader : IDisposable {
     var latestByName = new Dictionary<string, ZpaqEntry>(StringComparer.Ordinal);
     // Cumulative data-block bytes associated with the current transaction.
     long txDataBytes    = 0;
-    int  txVersion      = 0;
+    var  txVersion      = 0;
     // Names collected from the current transaction's header block.
     var  txNames        = new List<(string Name, long Size, DateTime? Modified)>();
     // Running block-start position (approximate; only accurate when seekable).
     long blockStart     = 0;
-    bool foundAnyBlock  = false;
+    var foundAnyBlock  = false;
 
     while (true) {
       // Scan forward until we find "zPQ".
@@ -98,9 +98,9 @@ public sealed class ZpaqReader : IDisposable {
       blockStart    = rawBytes.Position - 3; // prefix length
 
       // Read level byte and block-type byte.
-      int lvl  = rawBytes.ReadByte();
+      var lvl  = rawBytes.ReadByte();
       if (lvl < 0) break;
-      int type = rawBytes.ReadByte();
+      var type = rawBytes.ReadByte();
       if (type < 0) break;
 
       switch ((byte)type) {
@@ -187,18 +187,18 @@ public sealed class ZpaqReader : IDisposable {
     if (!reader.TryReadBytes(tsBytes))
       return; // truncated — give up
 
-    long ft = BitConverter.ToInt64(tsBytes);
-    DateTime? txDate = DecodeWindowsFileTime(ft);
+    var ft = BitConverter.ToInt64(tsBytes);
+    var txDate = DecodeWindowsFileTime(ft);
 
     // Read file entries until we hit 0xFF (end-of-block).
     Span<byte> szBytes = stackalloc byte[8]; // moved outside loop to satisfy CA2014
     while (true) {
-      int attr = reader.ReadByte();
+      var attr = reader.ReadByte();
       if (attr < 0 || attr == 0xFF)
         break; // EOF or end-of-block marker
 
       // Read null-terminated UTF-8 filename.
-      string name = reader.ReadNullTerminatedString();
+      var name = reader.ReadNullTerminatedString();
       if (name.Length == 0) {
         // Skip the 8-byte size field and continue.
         reader.Skip(8);
@@ -208,7 +208,7 @@ public sealed class ZpaqReader : IDisposable {
       // Read 8-byte uncompressed size.
       if (!reader.TryReadBytes(szBytes))
         break;
-      long size = BitConverter.ToInt64(szBytes);
+      var size = BitConverter.ToInt64(szBytes);
 
       names.Add((name, size, txDate));
     }
@@ -222,7 +222,7 @@ public sealed class ZpaqReader : IDisposable {
   /// the prefix itself.  Returns the number of payload bytes consumed.
   /// </summary>
   private static long MeasureBlockPayload(RawByteReader reader) {
-    long start = reader.Position;
+    var start = reader.Position;
     reader.SkipToNextBlock();
     return reader.Position - start;
   }
@@ -246,10 +246,10 @@ public sealed class ZpaqReader : IDisposable {
 
     // Distribute the data-block bytes equally across files in the transaction
     // as a rough approximation (ZPAQ doesn't store per-file compressed sizes).
-    long perFile = names.Count > 0 ? dataBytes / names.Count : 0;
+    var perFile = names.Count > 0 ? dataBytes / names.Count : 0;
 
     foreach (var (name, size, modified) in names) {
-      bool isDir = name.EndsWith('/') || name.EndsWith('\\');
+      var isDir = name.EndsWith('/') || name.EndsWith('\\');
       var entry = new ZpaqEntry(
         fileName:       NormalizeName(name),
         size:           size,
@@ -272,7 +272,7 @@ public sealed class ZpaqReader : IDisposable {
       return null;
 
     try {
-      long ticks = ft - ZpaqConstants.WindowsToUnixEpochTicks;
+      var ticks = ft - ZpaqConstants.WindowsToUnixEpochTicks;
       if (ticks < 0)
         return null;
       return new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)
@@ -355,7 +355,7 @@ internal sealed class RawByteReader {
   /// Returns <see langword="false"/> if fewer bytes are available.
   /// </summary>
   internal bool TryReadBytes(Span<byte> dest) {
-    int need = dest.Length;
+    var need = dest.Length;
     if (!EnsureAvailable(need))
       return false;
 
@@ -369,7 +369,7 @@ internal sealed class RawByteReader {
     while (count > 0) {
       if (!EnsureAvailable(1))
         return;
-      int can = Math.Min(count, _len - _pos);
+      var can = Math.Min(count, _len - _pos);
       _pos  += can;
       count -= can;
     }
@@ -380,7 +380,7 @@ internal sealed class RawByteReader {
   internal string ReadNullTerminatedString() {
     var sb = new StringBuilder(32);
     while (true) {
-      int b = ReadByte();
+      var b = ReadByte();
       if (b <= 0) // EOF or null terminator
         break;
       sb.Append((char)b);
@@ -402,10 +402,10 @@ internal sealed class RawByteReader {
     // edge case where 0x00 is valid data and cannot be used as a sentinel.
     //
     // State: how many leading bytes of the prefix we have matched so far.
-    int matched = 0;
+    var matched = 0;
 
     while (true) {
-      int b = ReadByte();
+      var b = ReadByte();
       if (b < 0)
         return false; // end-of-stream
 
@@ -426,7 +426,7 @@ internal sealed class RawByteReader {
   /// The prefix itself is NOT consumed.
   /// </summary>
   internal void SkipToNextBlock() {
-    ReadOnlySpan<byte> prefix = Prefix;
+    var prefix = Prefix;
     // We need to stop before consuming the prefix, so we look-ahead:
     // scan for 'z' then check the following two bytes.
 
@@ -434,10 +434,10 @@ internal sealed class RawByteReader {
       if (!EnsureAvailable(PrefixLen))
         return; // EOF — nothing more to skip
 
-      int available = _len - _pos;
+      var available = _len - _pos;
       var window = _buf.AsSpan(_pos, available);
 
-      for (int i = 0; i < window.Length; i++) {
+      for (var i = 0; i < window.Length; i++) {
         if (window[i] != prefix[0])
           continue;
 
@@ -474,12 +474,12 @@ internal sealed class RawByteReader {
 
   private void Refill() {
     // Copy the tail of the current buffer into the overlap area.
-    int tail = Math.Min(_len - _pos, Overlap);
+    var tail = Math.Min(_len - _pos, Overlap);
     if (tail > 0)
       _buf.AsSpan(_len - tail, tail).CopyTo(_buf.AsSpan(Overlap - tail, tail));
 
     _pos = Overlap - tail; // new read position in the buffer
-    int read = _stream.Read(_buf, Overlap, BufSize);
+    var read = _stream.Read(_buf, Overlap, BufSize);
     _len = Overlap + read;
     _streamOffset += read;
   }

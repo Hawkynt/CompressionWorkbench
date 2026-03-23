@@ -24,7 +24,7 @@ public class DmsTests {
   public void RoundTrip_RleTrack() {
     // Data with repeated bytes (good for RLE)
     var trackData = new byte[5632];
-    for (int i = 0; i < trackData.Length; i++)
+    for (var i = 0; i < trackData.Length; i++)
       trackData[i] = (byte)(i % 3 == 0 ? 0xAA : i & 0xFF);
 
     using var ms = new MemoryStream();
@@ -40,20 +40,20 @@ public class DmsTests {
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void RoundTrip_MultipleTracks() {
     var tracks = new byte[3][];
-    for (int t = 0; t < 3; t++) {
+    for (var t = 0; t < 3; t++) {
       tracks[t] = new byte[5632];
       Random.Shared.NextBytes(tracks[t]);
     }
 
     using var ms = new MemoryStream();
     using (var w = new FileFormat.Dms.DmsWriter(ms, leaveOpen: true))
-      for (int t = 0; t < 3; t++)
+      for (var t = 0; t < 3; t++)
         w.WriteTrack(t, tracks[t], compressionMode: 0);
     ms.Position = 0;
 
     var r = new FileFormat.Dms.DmsReader(ms);
     Assert.That(r.Entries, Has.Count.EqualTo(3));
-    for (int t = 0; t < 3; t++) {
+    for (var t = 0; t < 3; t++) {
       Assert.That(r.Entries[t].TrackNumber, Is.EqualTo(t));
       Assert.That(r.Extract(r.Entries[t]), Is.EqualTo(tracks[t]));
     }

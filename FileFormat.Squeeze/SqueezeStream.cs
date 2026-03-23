@@ -61,7 +61,7 @@ public static class SqueezeStream {
     var left = new short[nodeCount];
     var right = new short[nodeCount];
     Span<byte> nodeBuf = stackalloc byte[4];
-    for (int i = 0; i < nodeCount; i++) {
+    for (var i = 0; i < nodeCount; i++) {
       input.ReadExactly(nodeBuf);
       left[i] = BinaryPrimitives.ReadInt16LittleEndian(nodeBuf);
       right[i] = BinaryPrimitives.ReadInt16LittleEndian(nodeBuf[2..]);
@@ -69,13 +69,13 @@ public static class SqueezeStream {
 
     // Decode bitstream (LSB-first)
     using var result = new MemoryStream();
-    int currentByte = 0;
-    int bitsLeft = 0;
+    var currentByte = 0;
+    var bitsLeft = 0;
     ushort checksum = 0;
 
     while (true) {
       // Walk tree from root (node 0)
-      int node = 0;
+      var node = 0;
       while (true) {
         if (node < 0 || node >= nodeCount)
           throw new InvalidDataException($"Squeeze tree references invalid node index {node}.");
@@ -88,16 +88,16 @@ public static class SqueezeStream {
           bitsLeft = 8;
         }
 
-        int bit = currentByte & 1;
+        var bit = currentByte & 1;
         currentByte >>= 1;
         bitsLeft--;
 
         // Navigate: 0 = left, 1 = right
-        short child = bit == 0 ? left[node] : right[node];
+        var child = bit == 0 ? left[node] : right[node];
 
         if (child < 0) {
           // Leaf: symbol = -(child + 1)
-          int symbol = -(child + 1);
+          var symbol = -(child + 1);
           if (symbol == SqueezeConstants.EofMarker)
             goto done;
           if (symbol is < 0 or > 255)
@@ -136,18 +136,18 @@ public static class SqueezeStream {
 
     // Compute checksum
     ushort checksum = 0;
-    for (int i = 0; i < data.Length; i++)
+    for (var i = 0; i < data.Length; i++)
       checksum += data[i];
 
     // Build frequency table (256 byte symbols + EOF)
     var freq = new long[257];
-    for (int i = 0; i < data.Length; i++)
+    for (var i = 0; i < data.Length; i++)
       freq[data[i]]++;
     freq[SqueezeConstants.EofMarker] = 1;
 
     // Build Huffman tree and serialize to node array
     BuildTree(freq, out var left, out var right, out var codes, out var codeLens);
-    int nodeCount = left.Length;
+    var nodeCount = left.Length;
 
     // Write header
     Span<byte> header = stackalloc byte[2];
@@ -171,17 +171,17 @@ public static class SqueezeStream {
 
     // Write node array
     Span<byte> nodeBuf = stackalloc byte[4];
-    for (int i = 0; i < nodeCount; i++) {
+    for (var i = 0; i < nodeCount; i++) {
       BinaryPrimitives.WriteInt16LittleEndian(nodeBuf, left[i]);
       BinaryPrimitives.WriteInt16LittleEndian(nodeBuf[2..], right[i]);
       output.Write(nodeBuf);
     }
 
     // Encode data + EOF (LSB-first)
-    int bitBuffer = 0;
-    int bitCount = 0;
+    var bitBuffer = 0;
+    var bitCount = 0;
 
-    for (int i = 0; i < data.Length; i++)
+    for (var i = 0; i < data.Length; i++)
       WriteBits(output, codes[data[i]], codeLens[data[i]], ref bitBuffer, ref bitCount);
 
     // Write EOF symbol
@@ -210,8 +210,8 @@ public static class SqueezeStream {
   /// </summary>
   private static void BuildTree(long[] freq, out short[] left, out short[] right, out uint[] codes, out int[] codeLens) {
     // Count active symbols
-    int symbolCount = 0;
-    for (int i = 0; i < freq.Length; i++)
+    var symbolCount = 0;
+    for (var i = 0; i < freq.Length; i++)
       if (freq[i] > 0)
         symbolCount++;
 
@@ -221,8 +221,8 @@ public static class SqueezeStream {
     // Special case: single symbol (only EOF or single byte + EOF)
     if (symbolCount == 1) {
       // Create a minimal tree: one root node with the symbol on both sides
-      int sym = -1;
-      for (int i = 0; i < freq.Length; i++)
+      var sym = -1;
+      for (var i = 0; i < freq.Length; i++)
         if (freq[i] > 0) { sym = i; break; }
 
       left = new short[1];
@@ -245,15 +245,15 @@ public static class SqueezeStream {
     // Priority queue: (frequency, identifier)
     // Identifier < 0: leaf = -(symbol+1), Identifier >= 0: internal node index
     var pq = new PriorityQueue<int, long>();
-    for (int i = 0; i < freq.Length; i++)
+    for (var i = 0; i < freq.Length; i++)
       if (freq[i] > 0)
         pq.Enqueue(-(i + 1), freq[i]);
 
     while (pq.Count > 1) {
-      pq.TryDequeue(out int id1, out long f1);
-      pq.TryDequeue(out int id2, out long f2);
+      pq.TryDequeue(out var id1, out var f1);
+      pq.TryDequeue(out var id2, out var f2);
 
-      int nodeIndex = nodeLeft.Count;
+      var nodeIndex = nodeLeft.Count;
       // Convert identifiers to node-array values:
       // Negative ids are already leaf encodings (-(symbol+1))
       // Non-negative ids are internal node indices
@@ -264,11 +264,11 @@ public static class SqueezeStream {
     }
 
     // The last item in the queue is the root
-    pq.TryDequeue(out int rootId, out _);
+    pq.TryDequeue(out var rootId, out _);
 
     // If the root is a leaf (only possible with 1 symbol, handled above), wrap it
     if (rootId < 0) {
-      int nodeIndex = nodeLeft.Count;
+      var nodeIndex = nodeLeft.Count;
       nodeLeft.Add((short)rootId);
       nodeRight.Add((short)rootId);
       rootId = nodeIndex;
@@ -276,22 +276,22 @@ public static class SqueezeStream {
 
     // The root must be the last node added. The Squeeze format expects node 0 = root.
     // We need to remap so the root is at index 0.
-    int totalNodes = nodeLeft.Count;
+    var totalNodes = nodeLeft.Count;
     left = new short[totalNodes];
     right = new short[totalNodes];
 
     // Build a remapping: root goes to index 0, others shift
     var remap = new int[totalNodes];
     remap[rootId] = 0;
-    int next = 1;
-    for (int i = 0; i < totalNodes; i++) {
+    var next = 1;
+    for (var i = 0; i < totalNodes; i++) {
       if (i == rootId) continue;
       remap[i] = next++;
     }
 
     // Apply remapping
-    for (int i = 0; i < totalNodes; i++) {
-      int newIdx = remap[i];
+    for (var i = 0; i < totalNodes; i++) {
+      var newIdx = remap[i];
       left[newIdx] = RemapChild(nodeLeft[i], remap);
       right[newIdx] = RemapChild(nodeRight[i], remap);
     }
@@ -309,15 +309,15 @@ public static class SqueezeStream {
     child >= 0 ? (short)remap[child] : child;
 
   private static void GenerateCodes(short[] left, short[] right, int node, uint code, int depth, uint[] codes, int[] codeLens) {
-    short l = left[node];
-    short r = right[node];
+    var l = left[node];
+    var r = right[node];
 
     // Going left adds a 0-bit at position 'depth' (code unchanged), going right adds a 1-bit.
     // Each child is one level deeper, so the code length is depth + 1.
 
     if (l < 0) {
-      int sym = -(l + 1);
-      int len = Math.Max(depth + 1, 1);
+      var sym = -(l + 1);
+      var len = Math.Max(depth + 1, 1);
       codes[sym] = code;
       codeLens[sym] = len;
     } else {
@@ -325,8 +325,8 @@ public static class SqueezeStream {
     }
 
     if (r < 0) {
-      int sym = -(r + 1);
-      int len = Math.Max(depth + 1, 1);
+      var sym = -(r + 1);
+      var len = Math.Max(depth + 1, 1);
       codes[sym] = code | (1u << depth);
       codeLens[sym] = len;
     } else {
@@ -337,7 +337,7 @@ public static class SqueezeStream {
   private static string ReadNullTerminatedString(Stream stream) {
     var bytes = new List<byte>();
     while (true) {
-      int b = stream.ReadByte();
+      var b = stream.ReadByte();
       if (b <= 0) break;
       bytes.Add((byte)b);
     }

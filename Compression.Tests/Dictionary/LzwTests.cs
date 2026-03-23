@@ -47,7 +47,7 @@ public class LzwTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Uncompressed_TextData() {
-    byte[] data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
+    var data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
     var result = RoundTrip(data, LzwCompressionLevel.Uncompressed);
     Assert.That(result, Is.EqualTo(data));
   }
@@ -57,10 +57,10 @@ public class LzwTests {
   [Test]
   public void RoundTrip_Uncompressed_RepetitiveData() {
     var sb = new StringBuilder();
-    for (int i = 0; i < 50; ++i)
+    for (var i = 0; i < 50; ++i)
       sb.Append("ABCABCABCABC");
 
-    byte[] data = Encoding.ASCII.GetBytes(sb.ToString());
+    var data = Encoding.ASCII.GetBytes(sb.ToString());
     var result = RoundTrip(data, LzwCompressionLevel.Uncompressed);
     Assert.That(result, Is.EqualTo(data));
   }
@@ -70,7 +70,7 @@ public class LzwTests {
   [Test]
   public void RoundTrip_Uncompressed_RandomData() {
     var rng = new Random(42);
-    byte[] data = new byte[1024];
+    var data = new byte[1024];
     rng.NextBytes(data);
 
     var result = RoundTrip(data, LzwCompressionLevel.Uncompressed);
@@ -81,7 +81,7 @@ public class LzwTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Uncompressed_HighlyRepetitive() {
-    byte[] data = new byte[4096];
+    var data = new byte[4096];
     // All zeros.
     var result = RoundTrip(data, LzwCompressionLevel.Uncompressed);
     Assert.That(result, Is.EqualTo(data));
@@ -111,7 +111,7 @@ public class LzwTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_FirstMatch_TextData() {
-    byte[] data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
+    var data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
     var result = RoundTrip(data, LzwCompressionLevel.FirstMatch);
     Assert.That(result, Is.EqualTo(data));
   }
@@ -121,10 +121,10 @@ public class LzwTests {
   [Test]
   public void RoundTrip_FirstMatch_RepetitiveData() {
     var sb = new StringBuilder();
-    for (int i = 0; i < 50; ++i)
+    for (var i = 0; i < 50; ++i)
       sb.Append("ABCABCABCABC");
 
-    byte[] data = Encoding.ASCII.GetBytes(sb.ToString());
+    var data = Encoding.ASCII.GetBytes(sb.ToString());
     var result = RoundTrip(data, LzwCompressionLevel.FirstMatch);
     Assert.That(result, Is.EqualTo(data));
   }
@@ -134,7 +134,7 @@ public class LzwTests {
   [Test]
   public void RoundTrip_FirstMatch_RandomData() {
     var rng = new Random(42);
-    byte[] data = new byte[1024];
+    var data = new byte[1024];
     rng.NextBytes(data);
 
     var result = RoundTrip(data, LzwCompressionLevel.FirstMatch);
@@ -145,7 +145,7 @@ public class LzwTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_FirstMatch_HighlyRepetitive() {
-    byte[] data = new byte[4096];
+    var data = new byte[4096];
     // All zeros.
     var result = RoundTrip(data, LzwCompressionLevel.FirstMatch);
     Assert.That(result, Is.EqualTo(data));
@@ -156,7 +156,7 @@ public class LzwTests {
   [Category("HappyPath")]
   [Test]
   public void Uncompressed_EmitsOnlyByteCodes() {
-    byte[] data = Encoding.ASCII.GetBytes("Hello, World!");
+    var data = Encoding.ASCII.GetBytes("Hello, World!");
 
     using var ms = new MemoryStream();
     var encoder = new LzwEncoder(ms, level: LzwCompressionLevel.Uncompressed);
@@ -165,8 +165,8 @@ public class LzwTests {
     // With minBits=9, each byte code takes 9 bits. Plus clear code (9 bits) and stop code (9 bits).
     // Total bits = (data.Length + 2) * 9.
     // Compressed size in bytes = ceil(totalBits / 8).
-    int totalBits = (data.Length + 2) * 9; // +2 for clear + stop
-    int expectedSize = (totalBits + 7) / 8;
+    var totalBits = (data.Length + 2) * 9; // +2 for clear + stop
+    var expectedSize = (totalBits + 7) / 8;
     Assert.That(ms.Length, Is.EqualTo(expectedSize));
   }
 
@@ -174,10 +174,10 @@ public class LzwTests {
   [Test]
   public void FirstMatch_ProducesFewerCodes() {
     var sb = new StringBuilder();
-    for (int i = 0; i < 50; ++i)
+    for (var i = 0; i < 50; ++i)
       sb.Append("ABCABCABCABC");
 
-    byte[] data = Encoding.ASCII.GetBytes(sb.ToString());
+    var data = Encoding.ASCII.GetBytes(sb.ToString());
 
     using var msUncompressed = new MemoryStream();
     var encoderUncompressed = new LzwEncoder(msUncompressed, level: LzwCompressionLevel.Uncompressed);
@@ -215,7 +215,7 @@ public class LzwTests {
   [Category("RoundTrip")]
   [Test]
   public void CustomBitWidths() {
-    byte[] data = Encoding.ASCII.GetBytes("The quick brown fox jumps over the lazy dog. "
+    var data = Encoding.ASCII.GetBytes("The quick brown fox jumps over the lazy dog. "
       + "The quick brown fox jumps over the lazy dog.");
 
     var result = RoundTrip(data, LzwCompressionLevel.FirstMatch, minBits: 10, maxBits: 14);
@@ -226,7 +226,7 @@ public class LzwTests {
   [Category("RoundTrip")]
   [Test]
   public void NoClearCode_Works() {
-    byte[] data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
+    var data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
     var result = RoundTrip(data, LzwCompressionLevel.FirstMatch, useClearCode: false);
     Assert.That(result, Is.EqualTo(data));
   }
@@ -235,7 +235,7 @@ public class LzwTests {
   [Category("RoundTrip")]
   [Test]
   public void NoStopCode_Works() {
-    byte[] data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
+    var data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
     var result = RoundTrip(data, LzwCompressionLevel.FirstMatch, useStopCode: false);
     Assert.That(result, Is.EqualTo(data));
   }
@@ -244,7 +244,7 @@ public class LzwTests {
   [Category("RoundTrip")]
   [Test]
   public void MsbBitOrder_RoundTrips() {
-    byte[] data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
+    var data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
     var result = RoundTrip(data, LzwCompressionLevel.FirstMatch, bitOrder: BitOrder.MsbFirst);
     Assert.That(result, Is.EqualTo(data));
   }
@@ -255,7 +255,7 @@ public class LzwTests {
   public void DictionaryReset_MaxBits9() {
     // maxBits=9 means the dictionary fills up very quickly (only 512 - 258 = 254 entries),
     // forcing many dictionary resets.
-    byte[] data = Encoding.ASCII.GetBytes(
+    var data = Encoding.ASCII.GetBytes(
       "The quick brown fox jumps over the lazy dog. " +
       "Pack my box with five dozen liquor jugs. " +
       "How vexingly quick daft zebras jump! " +
@@ -301,8 +301,8 @@ public class LzwTests {
     while (pos < data.Length) {
       if (rng.Next(3) == 0 && pos + 100 <= data.Length) {
         // Write a repetitive pattern.
-        byte[] pattern = Encoding.ASCII.GetBytes("ABCDEFGH");
-        for (int j = 0; j < 100 && pos < data.Length; ++j)
+        var pattern = Encoding.ASCII.GetBytes("ABCDEFGH");
+        for (var j = 0; j < 100 && pos < data.Length; ++j)
           data[pos++] = pattern[j % pattern.Length];
       }
       else {
@@ -339,7 +339,7 @@ public class LzwTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Optimal_TextData() {
-    byte[] data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
+    var data = Encoding.ASCII.GetBytes("Hello, World! Hello, World!");
     var result = RoundTrip(data, LzwCompressionLevel.Optimal);
     Assert.That(result, Is.EqualTo(data));
   }
@@ -349,10 +349,10 @@ public class LzwTests {
   [Test]
   public void RoundTrip_Optimal_RepetitiveData() {
     var sb = new StringBuilder();
-    for (int i = 0; i < 50; ++i)
+    for (var i = 0; i < 50; ++i)
       sb.Append("ABCABCABCABC");
 
-    byte[] data = Encoding.ASCII.GetBytes(sb.ToString());
+    var data = Encoding.ASCII.GetBytes(sb.ToString());
     var result = RoundTrip(data, LzwCompressionLevel.Optimal);
     Assert.That(result, Is.EqualTo(data));
   }
@@ -362,7 +362,7 @@ public class LzwTests {
   [Test]
   public void RoundTrip_Optimal_RandomData() {
     var rng = new Random(42);
-    byte[] data = new byte[1024];
+    var data = new byte[1024];
     rng.NextBytes(data);
 
     var result = RoundTrip(data, LzwCompressionLevel.Optimal);
@@ -373,7 +373,7 @@ public class LzwTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Optimal_HighlyRepetitive() {
-    byte[] data = new byte[4096];
+    var data = new byte[4096];
     // All zeros.
     var result = RoundTrip(data, LzwCompressionLevel.Optimal);
     Assert.That(result, Is.EqualTo(data));
@@ -389,7 +389,7 @@ public class LzwTests {
       new byte[4096], // all zeros
     };
 
-    foreach (byte[] data in inputs) {
+    foreach (var data in inputs) {
       using var msFirstMatch = new MemoryStream();
       new LzwEncoder(msFirstMatch, level: LzwCompressionLevel.FirstMatch).Encode(data);
 
@@ -411,8 +411,8 @@ public class LzwTests {
     var pos = 0;
     while (pos < data.Length) {
       if (rng.Next(3) == 0 && pos + 80 <= data.Length) {
-        byte[] pattern = Encoding.ASCII.GetBytes("XYZXYZ");
-        for (int j = 0; j < 80 && pos < data.Length; ++j)
+        var pattern = Encoding.ASCII.GetBytes("XYZXYZ");
+        for (var j = 0; j < 80 && pos < data.Length; ++j)
           data[pos++] = pattern[j % pattern.Length];
       }
       else
@@ -427,7 +427,7 @@ public class LzwTests {
   [Category("RoundTrip")]
   [Test]
   public void Optimal_DictionaryReset_MaxBits9() {
-    byte[] data = Encoding.ASCII.GetBytes(
+    var data = Encoding.ASCII.GetBytes(
       "The quick brown fox jumps over the lazy dog. " +
       "Pack my box with five dozen liquor jugs. " +
       "How vexingly quick daft zebras jump! " +

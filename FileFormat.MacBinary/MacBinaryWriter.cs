@@ -36,28 +36,28 @@ public sealed class MacBinaryWriter {
     if (fileName.Length < 1 || fileName.Length > 63)
       throw new ArgumentException("Filename must be 1-63 characters.", nameof(fileName));
 
-    byte[] header = new byte[MacBinaryConstants.HeaderSize];
+    var header = new byte[MacBinaryConstants.HeaderSize];
 
     // Byte 0: old version number (always 0).
     header[0] = 0;
 
     // Bytes 1-64: filename length + filename.
-    byte[] nameBytes = Encoding.ASCII.GetBytes(fileName);
-    int nameLen = Math.Min(nameBytes.Length, 63);
+    var nameBytes = Encoding.ASCII.GetBytes(fileName);
+    var nameLen = Math.Min(nameBytes.Length, 63);
     header[1] = (byte)nameLen;
     Buffer.BlockCopy(nameBytes, 0, header, 2, nameLen);
 
     // Bytes 65-68: file type.
     if (fileType != null) {
-      byte[] typeBytes = Encoding.ASCII.GetBytes(fileType);
-      int len = Math.Min(typeBytes.Length, 4);
+      var typeBytes = Encoding.ASCII.GetBytes(fileType);
+      var len = Math.Min(typeBytes.Length, 4);
       Buffer.BlockCopy(typeBytes, 0, header, 65, len);
     }
 
     // Bytes 69-72: file creator.
     if (fileCreator != null) {
-      byte[] creatorBytes = Encoding.ASCII.GetBytes(fileCreator);
-      int len = Math.Min(creatorBytes.Length, 4);
+      var creatorBytes = Encoding.ASCII.GetBytes(fileCreator);
+      var len = Math.Min(creatorBytes.Length, 4);
       Buffer.BlockCopy(creatorBytes, 0, header, 69, len);
     }
 
@@ -68,16 +68,16 @@ public sealed class MacBinaryWriter {
     // Byte 82: zero.
 
     // Bytes 83-86: data fork length (big-endian).
-    uint dataLen = (uint)dataFork.Length;
+    var dataLen = (uint)dataFork.Length;
     WriteUInt32BigEndian(header, 83, dataLen);
 
     // Bytes 87-90: resource fork length (big-endian).
-    uint resLen = resourceFork != null ? (uint)resourceFork.Length : 0;
+    var resLen = resourceFork != null ? (uint)resourceFork.Length : 0;
     WriteUInt32BigEndian(header, 87, resLen);
 
     // Bytes 91-94: creation date (Mac seconds since 1904-01-01).
-    DateTime mod = modified ?? DateTime.UtcNow;
-    uint modSecs = DateTimeToMacSeconds(mod);
+    var mod = modified ?? DateTime.UtcNow;
+    var modSecs = DateTimeToMacSeconds(mod);
     WriteUInt32BigEndian(header, 91, modSecs); // creation = modification for simplicity
     WriteUInt32BigEndian(header, 95, modSecs);
 
@@ -96,7 +96,7 @@ public sealed class MacBinaryWriter {
 
     // MacBinary II+: compute and write CRC-16 of bytes 0-123.
     if (version >= MacBinaryConstants.Version2) {
-      ushort crc = MacBinaryReader.ComputeCrcCcitt(header.AsSpan(0, 124));
+      var crc = MacBinaryReader.ComputeCrcCcitt(header.AsSpan(0, 124));
       WriteUInt16BigEndian(header, MacBinaryConstants.CrcOffset, crc);
     }
 
@@ -122,9 +122,9 @@ public sealed class MacBinaryWriter {
   /// Writes zero-padding to bring the current fork up to a 128-byte boundary.
   /// </summary>
   private static void WritePadding(Stream output, uint forkLength) {
-    int remainder = (int)(forkLength % MacBinaryConstants.PaddingAlignment);
+    var remainder = (int)(forkLength % MacBinaryConstants.PaddingAlignment);
     if (remainder != 0) {
-      byte[] padding = new byte[MacBinaryConstants.PaddingAlignment - remainder];
+      var padding = new byte[MacBinaryConstants.PaddingAlignment - remainder];
       output.Write(padding, 0, padding.Length);
     }
   }
@@ -135,7 +135,7 @@ public sealed class MacBinaryWriter {
   private static uint DateTimeToMacSeconds(DateTime dt) {
     if (dt < MacEpoch)
       return 0;
-    double totalSeconds = (dt.ToUniversalTime() - MacEpoch).TotalSeconds;
+    var totalSeconds = (dt.ToUniversalTime() - MacEpoch).TotalSeconds;
     if (totalSeconds > uint.MaxValue)
       return uint.MaxValue;
     return (uint)totalSeconds;

@@ -30,7 +30,7 @@ internal sealed class AceBitReader {
   }
 
   public uint ReadBits(int count) {
-    uint value = PeekBits(count);
+    var value = PeekBits(count);
     DropBits(count);
     return value;
   }
@@ -40,7 +40,7 @@ internal sealed class AceBitReader {
   private void EnsureBits(int count) {
     while (this._bitsAvailable < count && this._pos + 1 < this._data.Length) {
       // Read 16 bits (LE word) and shift into buffer
-      uint word = (uint)(this._data[this._pos] | (this._data[this._pos + 1] << 8));
+      var word = (uint)(this._data[this._pos] | (this._data[this._pos + 1] << 8));
       this._pos += 2;
       this._buffer |= word << (16 - this._bitsAvailable);
       this._bitsAvailable += 16;

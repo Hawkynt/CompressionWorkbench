@@ -1,0 +1,52 @@
+<UserControl x:Class="Compression.UI.Controls.StringSearchControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <!-- Extraction options -->
+    <WrapPanel Grid.Row="0" Margin="0,0,0,4">
+      <TextBlock Text="Encoding:" VerticalAlignment="Center" Margin="0,0,4,0" />
+      <ComboBox x:Name="EncodingBox" Width="100" Margin="0,0,8,0" SelectedIndex="0"
+                SelectionChanged="OnEncodingChanged">
+        <ComboBoxItem Content="ASCII" />
+        <ComboBoxItem Content="UTF-8" />
+        <ComboBoxItem Content="UTF-16 LE" />
+        <ComboBoxItem Content="UTF-16 BE" />
+      </ComboBox>
+      <TextBlock Text="Min length:" VerticalAlignment="Center" Margin="0,0,4,0" />
+      <Slider x:Name="MinLengthSlider" Width="100" Minimum="4" Maximum="32" Value="6"
+              IsSnapToTickEnabled="True" TickFrequency="1" Margin="0,0,4,0" />
+      <TextBlock x:Name="MinLengthLabel" Text="6" VerticalAlignment="Center" Width="20" Margin="0,0,8,0" />
+      <CheckBox x:Name="BridgeGapsCheck" Content="Bridge gaps" IsChecked="True"
+                VerticalAlignment="Center" Margin="0,0,8,0"
+                ToolTip="Join strings separated by 1 non-printable byte (e.g. path/to/file across NUL)" />
+      <Button Content="Re-extract" Padding="8,2" Click="OnExtractStrings" />
+    </WrapPanel>
+
+    <!-- Filter bar -->
+    <WrapPanel Grid.Row="1" Margin="0,0,0,4">
+      <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="0,0,4,0" />
+      <TextBox x:Name="QueryBox" Width="300" Margin="0,0,8,0" TextChanged="OnQueryChanged"
+               ToolTip="Space = AND, &quot;quoted&quot; = exact match" />
+      <CheckBox x:Name="CaseCheck" Content="Case sensitive" IsChecked="False"
+                VerticalAlignment="Center" Margin="0,0,8,0" Checked="OnQueryChanged" Unchecked="OnQueryChanged" />
+      <TextBlock x:Name="CountLabel" Text="" VerticalAlignment="Center" Foreground="Gray" />
+    </WrapPanel>
+
+    <!-- Results grid -->
+    <DataGrid Grid.Row="2" x:Name="ResultsGrid" AutoGenerateColumns="False" IsReadOnly="True"
+              CanUserSortColumns="True" MouseDoubleClick="OnResultDoubleClick" SelectionMode="Single">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Offset (hex)" Binding="{Binding OffsetHex}" Width="90" />
+        <DataGridTextColumn Header="Offset (dec)" Binding="{Binding Offset}" Width="90" />
+        <DataGridTextColumn Header="Length" Binding="{Binding Length}" Width="60" />
+        <DataGridTextColumn Header="String" Binding="{Binding Text}" Width="*" />
+      </DataGrid.Columns>
+    </DataGrid>
+  </Grid>
+</UserControl>

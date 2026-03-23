@@ -19,11 +19,11 @@ internal static class SevenZipHeaderCodec {
   public static (SevenZipPackInfo PackInfo, List<SevenZipFolder> Folders,
     SevenZipSubStreamsInfo SubStreams, List<SevenZipFileInfo> Files)
     ReadHeader(Stream stream, string? password = null, Stream? archiveStream = null) {
-    byte id = ReadByte(stream);
+    var id = ReadByte(stream);
 
     if (id == SevenZipConstants.IdEncodedHeader) {
       // Decompress the encoded header and parse the result
-      byte[] decodedHeader = DecodeEncodedHeader(stream, password, archiveStream);
+      var decodedHeader = DecodeEncodedHeader(stream, password, archiveStream);
       using var decodedStream = new MemoryStream(decodedHeader);
       return ReadHeader(decodedStream, password, archiveStream);
     }
@@ -106,7 +106,7 @@ internal static class SevenZipHeaderCodec {
     SevenZipSubStreamsInfo? subStreams = null;
 
     while (true) {
-      byte id = ReadByte(stream);
+      var id = ReadByte(stream);
       if (id == SevenZipConstants.IdEnd)
         break;
 
@@ -149,18 +149,18 @@ internal static class SevenZipHeaderCodec {
   private static SevenZipPackInfo ReadPackInfo(Stream stream) {
     var packInfo = new SevenZipPackInfo();
     packInfo.PackPos = (long)SevenZipVarInt.Read(stream);
-    int numPackStreams = (int)SevenZipVarInt.Read(stream);
+    var numPackStreams = (int)SevenZipVarInt.Read(stream);
     packInfo.PackSizes = new long[numPackStreams];
     packInfo.PackCrcs = new uint?[numPackStreams];
 
     while (true) {
-      byte id = ReadByte(stream);
+      var id = ReadByte(stream);
       if (id == SevenZipConstants.IdEnd)
         break;
 
       switch (id) {
         case SevenZipConstants.IdSize:
-          for (int i = 0; i < numPackStreams; ++i)
+          for (var i = 0; i < numPackStreams; ++i)
             packInfo.PackSizes[i] = (long)SevenZipVarInt.Read(stream);
           break;
         case SevenZipConstants.IdCrc:
@@ -183,7 +183,7 @@ internal static class SevenZipHeaderCodec {
 
     // Sizes
     stream.WriteByte(SevenZipConstants.IdSize);
-    for (int i = 0; i < packInfo.PackSizes.Length; ++i)
+    for (var i = 0; i < packInfo.PackSizes.Length; ++i)
       SevenZipVarInt.Write(stream, (ulong)packInfo.PackSizes[i]);
 
     stream.WriteByte(SevenZipConstants.IdEnd);
@@ -192,17 +192,17 @@ internal static class SevenZipHeaderCodec {
   // ---- UnpackInfo (Folders) ----
 
   private static List<SevenZipFolder> ReadUnpackInfo(Stream stream) {
-    byte id = ReadByte(stream);
+    var id = ReadByte(stream);
     if (id != SevenZipConstants.IdFolder)
       throw new InvalidDataException($"Expected IdFolder, got 0x{id:X2}.");
 
-    int numFolders = (int)SevenZipVarInt.Read(stream);
-    byte external = ReadByte(stream);
+    var numFolders = (int)SevenZipVarInt.Read(stream);
+    var external = ReadByte(stream);
     if (external != 0)
       throw new NotSupportedException("External folder references not supported.");
 
     var folders = new List<SevenZipFolder>(numFolders);
-    for (int i = 0; i < numFolders; ++i)
+    for (var i = 0; i < numFolders; ++i)
       folders.Add(ReadFolder(stream));
 
     // Read additional properties
@@ -218,7 +218,7 @@ internal static class SevenZipHeaderCodec {
             foreach (var coder in folder.Coders)
               numOutStreams += coder.NumOutStreams;
             folder.UnpackSizes = new long[numOutStreams];
-            for (int j = 0; j < numOutStreams; ++j)
+            for (var j = 0; j < numOutStreams; ++j)
               folder.UnpackSizes[j] = (long)SevenZipVarInt.Read(stream);
           }
 
@@ -237,16 +237,16 @@ internal static class SevenZipHeaderCodec {
 
   private static SevenZipFolder ReadFolder(Stream stream) {
     var folder = new SevenZipFolder();
-    int numCoders = (int)SevenZipVarInt.Read(stream);
+    var numCoders = (int)SevenZipVarInt.Read(stream);
 
     var totalInStreams = 0;
     var totalOutStreams = 0;
 
-    for (int i = 0; i < numCoders; ++i) {
+    for (var i = 0; i < numCoders; ++i) {
       var coder = new SevenZipCoder();
-      byte flags = ReadByte(stream);
+      var flags = ReadByte(stream);
 
-      int codecIdSize = flags & 0x0F;
+      var codecIdSize = flags & 0x0F;
       coder.CodecId = new byte[codecIdSize];
       ReadExact(stream, coder.CodecId, 0, codecIdSize);
 
@@ -256,7 +256,7 @@ internal static class SevenZipHeaderCodec {
       }
 
       if ((flags & 0x20) != 0) {
-        int propsSize = (int)SevenZipVarInt.Read(stream);
+        var propsSize = (int)SevenZipVarInt.Read(stream);
         coder.Properties = new byte[propsSize];
         ReadExact(stream, coder.Properties, 0, propsSize);
       }
@@ -267,17 +267,17 @@ internal static class SevenZipHeaderCodec {
     }
 
     // Bind pairs
-    int numBindPairs = totalOutStreams - 1;
-    for (int i = 0; i < numBindPairs; ++i) {
-      int inIndex = (int)SevenZipVarInt.Read(stream);
-      int outIndex = (int)SevenZipVarInt.Read(stream);
+    var numBindPairs = totalOutStreams - 1;
+    for (var i = 0; i < numBindPairs; ++i) {
+      var inIndex = (int)SevenZipVarInt.Read(stream);
+      var outIndex = (int)SevenZipVarInt.Read(stream);
       folder.BindPairs.Add((inIndex, outIndex));
     }
 
     // Pack streams (if more than one unbound input stream)
-    int numPackStreams = totalInStreams - numBindPairs;
+    var numPackStreams = totalInStreams - numBindPairs;
     if (numPackStreams > 1) {
-      for (int i = 0; i < numPackStreams; ++i) {
+      for (var i = 0; i < numPackStreams; ++i) {
         _ = SevenZipVarInt.Read(stream); // pack stream index
       }
     }
@@ -298,7 +298,7 @@ internal static class SevenZipHeaderCodec {
     // Coders unpack sizes
     stream.WriteByte(SevenZipConstants.IdCodersUnpackSize);
     foreach (var folder in folders) {
-      foreach (long size in folder.UnpackSizes)
+      foreach (var size in folder.UnpackSizes)
         SevenZipVarInt.Write(stream, (ulong)size);
     }
 
@@ -328,8 +328,8 @@ internal static class SevenZipHeaderCodec {
     SevenZipVarInt.Write(stream, (ulong)folder.Coders.Count);
 
     foreach (var coder in folder.Coders) {
-      byte flags = (byte)(coder.CodecId.Length & 0x0F);
-      bool hasStreamCounts = coder.NumInStreams != 1 || coder.NumOutStreams != 1;
+      var flags = (byte)(coder.CodecId.Length & 0x0F);
+      var hasStreamCounts = coder.NumInStreams != 1 || coder.NumOutStreams != 1;
       if (hasStreamCounts) flags |= 0x10;
       if (coder.Properties != null && coder.Properties.Length > 0) flags |= 0x20;
 
@@ -354,20 +354,20 @@ internal static class SevenZipHeaderCodec {
       totalInStreams += coder.NumInStreams;
       totalOutStreams += coder.NumOutStreams;
     }
-    int numBindPairs = totalOutStreams - 1;
-    for (int i = 0; i < numBindPairs; ++i) {
+    var numBindPairs = totalOutStreams - 1;
+    for (var i = 0; i < numBindPairs; ++i) {
       SevenZipVarInt.Write(stream, (ulong)folder.BindPairs[i].InIndex);
       SevenZipVarInt.Write(stream, (ulong)folder.BindPairs[i].OutIndex);
     }
 
     // Pack stream indices (when more than one unbound input stream)
-    int numPackStreams = totalInStreams - numBindPairs;
+    var numPackStreams = totalInStreams - numBindPairs;
     if (numPackStreams > 1) {
       // Find unbound input streams (not targets of any bind pair)
       var boundIn = new HashSet<int>();
       foreach (var (inIdx, _) in folder.BindPairs)
         boundIn.Add(inIdx);
-      for (int i = 0; i < totalInStreams; ++i) {
+      for (var i = 0; i < totalInStreams; ++i) {
         if (!boundIn.Contains(i))
           SevenZipVarInt.Write(stream, (ulong)i);
       }
@@ -380,25 +380,25 @@ internal static class SevenZipHeaderCodec {
     List<SevenZipFolder> folders) {
     var subStreams = new SevenZipSubStreamsInfo();
     subStreams.NumUnpackStreams = new int[folders.Count];
-    for (int i = 0; i < folders.Count; ++i)
+    for (var i = 0; i < folders.Count; ++i)
       subStreams.NumUnpackStreams[i] = 1; // default
 
     var unpackSizes = new List<long>();
     var digests = new List<uint>();
 
     while (true) {
-      byte id = ReadByte(stream);
+      var id = ReadByte(stream);
       if (id == SevenZipConstants.IdEnd)
         break;
 
       switch (id) {
         case SevenZipConstants.IdNumUnpackStreams:
-          for (int i = 0; i < folders.Count; ++i)
+          for (var i = 0; i < folders.Count; ++i)
             subStreams.NumUnpackStreams[i] = (int)SevenZipVarInt.Read(stream);
           break;
         case SevenZipConstants.IdSize:
-          for (int i = 0; i < folders.Count; ++i) {
-            int numStreams = subStreams.NumUnpackStreams[i];
+          for (var i = 0; i < folders.Count; ++i) {
+            var numStreams = subStreams.NumUnpackStreams[i];
             if (numStreams <= 1) {
               // Single-stream folder: size is implied from folder unpack size
               if (numStreams == 1 && folders[i].UnpackSizes.Length > 0)
@@ -407,14 +407,14 @@ internal static class SevenZipHeaderCodec {
             }
 
             var sum = 0L;
-            for (int j = 0; j < numStreams - 1; ++j) {
-              long size = (long)SevenZipVarInt.Read(stream);
+            for (var j = 0; j < numStreams - 1; ++j) {
+              var size = (long)SevenZipVarInt.Read(stream);
               unpackSizes.Add(size);
               sum += size;
             }
 
             // Last stream size is implied (folder unpack size - sum)
-            SevenZipFolder folder = folders[i];
+            var folder = folders[i];
             var lastSize = folder.UnpackSizes.Length > 0
               ? folder.UnpackSizes[^1] - sum
               : 0;
@@ -424,7 +424,7 @@ internal static class SevenZipHeaderCodec {
           break;
         case SevenZipConstants.IdCrc:
           var totalStreams = 0;
-          for (int i = 0; i < folders.Count; ++i)
+          for (var i = 0; i < folders.Count; ++i)
             totalStreams += subStreams.NumUnpackStreams[i];
           var crcs = new uint?[totalStreams];
           ReadCrcs(stream, totalStreams, crcs);
@@ -442,8 +442,8 @@ internal static class SevenZipHeaderCodec {
 
     // If no explicit sizes were read, derive from folder unpack sizes (1 file per folder)
     if (unpackSizes.Count == 0) {
-      for (int i = 0; i < folders.Count; ++i) {
-        int numStreams = subStreams.NumUnpackStreams[i];
+      for (var i = 0; i < folders.Count; ++i) {
+        var numStreams = subStreams.NumUnpackStreams[i];
         if (numStreams == 1 && folders[i].UnpackSizes.Length > 0)
           unpackSizes.Add(folders[i].UnpackSizes[^1]);
         else if (numStreams == 0) {
@@ -464,12 +464,12 @@ internal static class SevenZipHeaderCodec {
 
     // NumUnpackStreams
     stream.WriteByte(SevenZipConstants.IdNumUnpackStreams);
-    for (int i = 0; i < folders.Count; ++i)
+    for (var i = 0; i < folders.Count; ++i)
       SevenZipVarInt.Write(stream, (ulong)subStreams.NumUnpackStreams[i]);
 
     // Sizes (for folders with more than 1 stream, write all but the last)
     var hasSizes = false;
-    for (int i = 0; i < folders.Count; ++i) {
+    for (var i = 0; i < folders.Count; ++i) {
       if (subStreams.NumUnpackStreams[i] > 1) {
         hasSizes = true;
         break;
@@ -479,9 +479,9 @@ internal static class SevenZipHeaderCodec {
     if (hasSizes) {
       stream.WriteByte(SevenZipConstants.IdSize);
       var sizeIndex = 0;
-      for (int i = 0; i < folders.Count; ++i) {
-        int numStreams = subStreams.NumUnpackStreams[i];
-        for (int j = 0; j < numStreams - 1; ++j) {
+      for (var i = 0; i < folders.Count; ++i) {
+        var numStreams = subStreams.NumUnpackStreams[i];
+        for (var j = 0; j < numStreams - 1; ++j) {
           SevenZipVarInt.Write(stream, (ulong)subStreams.UnpackSizes[sizeIndex]);
           ++sizeIndex;
         }
@@ -495,7 +495,7 @@ internal static class SevenZipHeaderCodec {
       stream.WriteByte(SevenZipConstants.IdCrc);
       // All defined
       WriteBoolVector(stream, subStreams.Digests.Length, _ => true);
-      foreach (uint crc in subStreams.Digests)
+      foreach (var crc in subStreams.Digests)
         WriteUInt32Le(stream, crc);
     }
 
@@ -505,17 +505,17 @@ internal static class SevenZipHeaderCodec {
   // ---- FilesInfo ----
 
   private static List<SevenZipFileInfo> ReadFilesInfo(Stream stream) {
-    int numFiles = (int)SevenZipVarInt.Read(stream);
+    var numFiles = (int)SevenZipVarInt.Read(stream);
     var files = new List<SevenZipFileInfo>(numFiles);
-    for (int i = 0; i < numFiles; ++i)
+    for (var i = 0; i < numFiles; ++i)
       files.Add(new SevenZipFileInfo());
 
     while (true) {
-      byte id = ReadByte(stream);
+      var id = ReadByte(stream);
       if (id == SevenZipConstants.IdEnd)
         break;
 
-      long propSize = (long)SevenZipVarInt.Read(stream);
+      var propSize = (long)SevenZipVarInt.Read(stream);
       var startPos = stream.Position;
 
       switch (id) {
@@ -536,10 +536,10 @@ internal static class SevenZipHeaderCodec {
           // EmptyFile applies only to entries that are EmptyStreams
           var emptyStreamFiles = files.Where(f => f.IsEmptyStream).ToList();
           var emptyFileBits = (byte)0;
-          for (int i = 0; i < emptyStreamFiles.Count; ++i) {
+          for (var i = 0; i < emptyStreamFiles.Count; ++i) {
             if (i % 8 == 0)
               emptyFileBits = ReadByte(stream);
-            bool isEmptyFile = (emptyFileBits & (0x80 >> (i % 8))) != 0;
+            var isEmptyFile = (emptyFileBits & (0x80 >> (i % 8))) != 0;
             if (isEmptyFile) {
               emptyStreamFiles[i].IsEmptyFile = true;
               emptyStreamFiles[i].IsDirectory = false;
@@ -563,7 +563,7 @@ internal static class SevenZipHeaderCodec {
           break;
         default:
           // Skip unknown property
-          long remaining = propSize - (stream.Position - startPos);
+          var remaining = propSize - (stream.Position - startPos);
           if (remaining > 0)
             stream.Position += remaining;
           break;
@@ -579,15 +579,15 @@ internal static class SevenZipHeaderCodec {
   }
 
   private static void ReadNames(Stream stream, List<SevenZipFileInfo> files) {
-    byte external = ReadByte(stream);
+    var external = ReadByte(stream);
     if (external != 0)
       throw new NotSupportedException("External name references not supported.");
 
     foreach (var file in files) {
       var nameBytes = new List<byte>();
       while (true) {
-        int lo = stream.ReadByte();
-        int hi = stream.ReadByte();
+        var lo = stream.ReadByte();
+        var hi = stream.ReadByte();
         if (lo < 0 || hi < 0)
           throw new EndOfStreamException("Unexpected end of stream reading file name.");
         if (lo == 0 && hi == 0)
@@ -603,15 +603,15 @@ internal static class SevenZipHeaderCodec {
   private static void ReadTimes(Stream stream, List<SevenZipFileInfo> files,
     Action<SevenZipFileInfo, DateTime> setter) {
     // "AllDefined" bit + optional bit vector + data
-    bool[] defined = ReadOptionalBoolVector(stream, files.Count);
+    var defined = ReadOptionalBoolVector(stream, files.Count);
 
-    byte external = ReadByte(stream);
+    var external = ReadByte(stream);
     if (external != 0)
       throw new NotSupportedException("External time references not supported.");
 
-    for (int i = 0; i < files.Count; ++i) {
+    for (var i = 0; i < files.Count; ++i) {
       if (defined[i]) {
-        byte[] buf = new byte[8];
+        var buf = new byte[8];
         ReadExact(stream, buf, 0, 8);
         var fileTime = BitConverter.ToInt64(buf, 0);
         setter(files[i], DateTime.FromFileTimeUtc(fileTime));
@@ -620,15 +620,15 @@ internal static class SevenZipHeaderCodec {
   }
 
   private static void ReadAttributes(Stream stream, List<SevenZipFileInfo> files) {
-    bool[] defined = ReadOptionalBoolVector(stream, files.Count);
+    var defined = ReadOptionalBoolVector(stream, files.Count);
 
-    byte external = ReadByte(stream);
+    var external = ReadByte(stream);
     if (external != 0)
       throw new NotSupportedException("External attribute references not supported.");
 
-    for (int i = 0; i < files.Count; ++i) {
+    for (var i = 0; i < files.Count; ++i) {
       if (defined[i]) {
-        byte[] buf = new byte[4];
+        var buf = new byte[4];
         ReadExact(stream, buf, 0, 4);
         files[i].Attributes = BitConverter.ToUInt32(buf, 0);
       }
@@ -643,7 +643,7 @@ internal static class SevenZipHeaderCodec {
     WriteNames(stream, files);
 
     // EmptyStream
-    bool hasEmptyStreams = files.Any(f => f.IsEmptyStream);
+    var hasEmptyStreams = files.Any(f => f.IsEmptyStream);
     if (hasEmptyStreams) {
       using var emptyStreamData = new MemoryStream();
       WriteBoolVectorBits(emptyStreamData, files.Count, i => files[i].IsEmptyStream);
@@ -651,7 +651,7 @@ internal static class SevenZipHeaderCodec {
 
       // EmptyFile (among empty streams, which are empty files vs directories)
       var emptyStreamFiles = files.Where(f => f.IsEmptyStream).ToList();
-      bool hasEmptyFiles = emptyStreamFiles.Any(f => f.IsEmptyFile);
+      var hasEmptyFiles = emptyStreamFiles.Any(f => f.IsEmptyFile);
       if (hasEmptyFiles) {
         using var emptyFileData = new MemoryStream();
         WriteBoolVectorBits(emptyFileData, emptyStreamFiles.Count,
@@ -661,7 +661,7 @@ internal static class SevenZipHeaderCodec {
     }
 
     // MTime
-    bool hasMTimes = files.Any(f => f.LastWriteTime.HasValue);
+    var hasMTimes = files.Any(f => f.LastWriteTime.HasValue);
     if (hasMTimes) {
       using var mtimeData = new MemoryStream();
       WriteTimes(mtimeData, files, f => f.LastWriteTime);
@@ -669,7 +669,7 @@ internal static class SevenZipHeaderCodec {
     }
 
     // CTime
-    bool hasCTimes = files.Any(f => f.CreationTime.HasValue);
+    var hasCTimes = files.Any(f => f.CreationTime.HasValue);
     if (hasCTimes) {
       using var ctimeData = new MemoryStream();
       WriteTimes(ctimeData, files, f => f.CreationTime);
@@ -677,7 +677,7 @@ internal static class SevenZipHeaderCodec {
     }
 
     // Attributes
-    bool hasAttrs = files.Any(f => f.Attributes.HasValue);
+    var hasAttrs = files.Any(f => f.Attributes.HasValue);
     if (hasAttrs) {
       using var attrData = new MemoryStream();
       WriteAttributes(attrData, files);
@@ -692,7 +692,7 @@ internal static class SevenZipHeaderCodec {
     nameData.WriteByte(0); // external = false
 
     foreach (var file in files) {
-      byte[] nameBytes = Encoding.Unicode.GetBytes(file.Name);
+      var nameBytes = Encoding.Unicode.GetBytes(file.Name);
       nameData.Write(nameBytes, 0, nameBytes.Length);
       nameData.WriteByte(0); // null terminator (2 bytes, UTF-16LE)
       nameData.WriteByte(0);
@@ -704,7 +704,7 @@ internal static class SevenZipHeaderCodec {
   private static void WriteTimes(Stream stream, List<SevenZipFileInfo> files,
     Func<SevenZipFileInfo, DateTime?> getter) {
     // Write "AllDefined" or bit vector
-    bool allDefined = files.All(f => getter(f).HasValue);
+    var allDefined = files.All(f => getter(f).HasValue);
     if (allDefined) {
       stream.WriteByte(1); // AllDefined = true
     }
@@ -715,18 +715,18 @@ internal static class SevenZipHeaderCodec {
 
     stream.WriteByte(0); // external = false
 
-    for (int i = 0; i < files.Count; ++i) {
-      DateTime? time = getter(files[i]);
+    for (var i = 0; i < files.Count; ++i) {
+      var time = getter(files[i]);
       if (time.HasValue) {
         var fileTime = time.Value.ToFileTimeUtc();
-        byte[] buf = BitConverter.GetBytes(fileTime);
+        var buf = BitConverter.GetBytes(fileTime);
         stream.Write(buf, 0, 8);
       }
     }
   }
 
   private static void WriteAttributes(Stream stream, List<SevenZipFileInfo> files) {
-    bool allDefined = files.All(f => f.Attributes.HasValue);
+    var allDefined = files.All(f => f.Attributes.HasValue);
     if (allDefined)
       stream.WriteByte(1);
     else {
@@ -736,10 +736,10 @@ internal static class SevenZipHeaderCodec {
 
     stream.WriteByte(0); // external = false
 
-    for (int i = 0; i < files.Count; ++i) {
-      uint? attrs = files[i].Attributes;
+    for (var i = 0; i < files.Count; ++i) {
+      var attrs = files[i].Attributes;
       if (attrs.HasValue) {
-        byte[] buf = BitConverter.GetBytes(attrs.Value);
+        var buf = BitConverter.GetBytes(attrs.Value);
         stream.Write(buf, 0, 4);
       }
     }
@@ -760,7 +760,7 @@ internal static class SevenZipHeaderCodec {
 
     // Read packed data — may be in the archive stream at PackPos, not in the descriptor stream
     var packedSize = packInfo.PackSizes.Length > 0 ? packInfo.PackSizes[0] : 0;
-    byte[] packedData = new byte[packedSize];
+    var packedData = new byte[packedSize];
     if (archiveStream != null) {
       archiveStream.Position = SevenZipConstants.SignatureHeaderSize + packInfo.PackPos;
       ReadExact(archiveStream, packedData, 0, (int)packedSize);
@@ -782,7 +782,7 @@ internal static class SevenZipHeaderCodec {
         aesCoder = c;
     }
 
-    byte[] data = packedData;
+    var data = packedData;
 
     // Decrypt AES if present (outer coder in chain)
     if (aesCoder != null) {
@@ -793,8 +793,8 @@ internal static class SevenZipHeaderCodec {
 
     // Decompress LZMA2 if present
     if (lzma2Coder != null) {
-      byte dictByte = lzma2Coder.Properties is { Length: > 0 } ? lzma2Coder.Properties[0] : (byte)0;
-      int dictSize = DecodeDictionarySize(dictByte);
+      var dictByte = lzma2Coder.Properties is { Length: > 0 } ? lzma2Coder.Properties[0] : (byte)0;
+      var dictSize = DecodeDictionarySize(dictByte);
       using var packedStream = new MemoryStream(data);
       var decoder = new Lzma2Decoder(packedStream, dictSize);
       return decoder.Decode();
@@ -804,7 +804,7 @@ internal static class SevenZipHeaderCodec {
     if (lzmaCoder != null) {
       if (lzmaCoder.Properties == null || lzmaCoder.Properties.Length < 5)
         throw new InvalidDataException("LZMA coder missing properties.");
-      long unpackSize = folder.UnpackSizes.Length > 0 ? folder.UnpackSizes[^1] : -1;
+      var unpackSize = folder.UnpackSizes.Length > 0 ? folder.UnpackSizes[^1] : -1;
       using var packedStream = new MemoryStream(data);
       var decoder = new LzmaDecoder(packedStream, lzmaCoder.Properties, unpackSize);
       return decoder.Decode();
@@ -821,13 +821,13 @@ internal static class SevenZipHeaderCodec {
     var props = aesCoder.Properties ?? throw new InvalidDataException("AES coder missing properties.");
     if (props.Length < 2) throw new InvalidDataException("AES properties too short.");
 
-    byte firstByte = props[0];
-    byte sizesByte = props[1];
-    int numCyclesPower = firstByte & 0x3F;
-    bool hasSalt = (firstByte & 0x40) != 0;
-    bool hasIv = (firstByte & 0x80) != 0;
-    int saltSize = hasSalt ? ((sizesByte >> 4) & 0x0F) + 1 : 0;
-    int ivSize = hasIv ? (sizesByte & 0x0F) + 1 : 0;
+    var firstByte = props[0];
+    var sizesByte = props[1];
+    var numCyclesPower = firstByte & 0x3F;
+    var hasSalt = (firstByte & 0x40) != 0;
+    var hasIv = (firstByte & 0x80) != 0;
+    var saltSize = hasSalt ? ((sizesByte >> 4) & 0x0F) + 1 : 0;
+    var ivSize = hasIv ? (sizesByte & 0x0F) + 1 : 0;
 
     var salt = saltSize > 0 ? props[2..(2 + saltSize)] : [];
     var iv = new byte[16];
@@ -840,7 +840,7 @@ internal static class SevenZipHeaderCodec {
 
   private static int DecodeDictionarySize(byte encoded) {
     if (encoded == 0) return 4096;
-    int bits = encoded / 2 + 12;
+    var bits = encoded / 2 + 12;
     if ((encoded & 1) == 0) return 1 << bits;
     return 3 << (bits - 1);
   }
@@ -848,10 +848,10 @@ internal static class SevenZipHeaderCodec {
   // ---- CRC Helpers ----
 
   private static void ReadCrcs(Stream stream, int count, uint?[] crcs) {
-    bool[] defined = ReadOptionalBoolVector(stream, count);
-    for (int i = 0; i < count; ++i) {
+    var defined = ReadOptionalBoolVector(stream, count);
+    for (var i = 0; i < count; ++i) {
       if (defined[i]) {
-        byte[] buf = new byte[4];
+        var buf = new byte[4];
         ReadExact(stream, buf, 0, 4);
         crcs[i] = BitConverter.ToUInt32(buf, 0);
       }
@@ -859,10 +859,10 @@ internal static class SevenZipHeaderCodec {
   }
 
   private static void ReadFolderCrcs(Stream stream, List<SevenZipFolder> folders) {
-    bool[] defined = ReadOptionalBoolVector(stream, folders.Count);
-    for (int i = 0; i < folders.Count; ++i) {
+    var defined = ReadOptionalBoolVector(stream, folders.Count);
+    for (var i = 0; i < folders.Count; ++i) {
       if (defined[i]) {
-        byte[] buf = new byte[4];
+        var buf = new byte[4];
         ReadExact(stream, buf, 0, 4);
         folders[i].UnpackCrc = BitConverter.ToUInt32(buf, 0);
       }
@@ -875,7 +875,7 @@ internal static class SevenZipHeaderCodec {
     var result = new bool[count];
     var currentByte = (byte)0;
     var bitIndex = 0;
-    for (int i = 0; i < count; ++i) {
+    for (var i = 0; i < count; ++i) {
       if (bitIndex == 0)
         currentByte = ReadByte(stream);
       result[i] = (currentByte & (0x80 >> bitIndex)) != 0;
@@ -886,7 +886,7 @@ internal static class SevenZipHeaderCodec {
   }
 
   private static bool[] ReadOptionalBoolVector(Stream stream, int count) {
-    byte allDefined = ReadByte(stream);
+    var allDefined = ReadByte(stream);
     if (allDefined != 0) {
       var all = new bool[count];
       all.AsSpan().Fill(true);
@@ -900,10 +900,10 @@ internal static class SevenZipHeaderCodec {
     Action<SevenZipFileInfo, bool> setter) {
     var currentByte = (byte)0;
     var bitIndex = 0;
-    for (int i = 0; i < files.Count; ++i) {
+    for (var i = 0; i < files.Count; ++i) {
       if (bitIndex == 0)
         currentByte = ReadByte(stream);
-      bool value = (currentByte & (0x80 >> bitIndex)) != 0;
+      var value = (currentByte & (0x80 >> bitIndex)) != 0;
       setter(files[i], value);
       bitIndex = (bitIndex + 1) % 8;
     }
@@ -912,7 +912,7 @@ internal static class SevenZipHeaderCodec {
   private static void WriteBoolVector(Stream stream, int count, Func<int, bool> predicate) {
     // Check if all are defined
     var allDefined = true;
-    for (int i = 0; i < count; ++i) {
+    for (var i = 0; i < count; ++i) {
       if (!predicate(i)) {
         allDefined = false;
         break;
@@ -931,7 +931,7 @@ internal static class SevenZipHeaderCodec {
   private static void WriteBoolVectorBits(Stream stream, int count, Func<int, bool> predicate) {
     var currentByte = (byte)0;
     var bitIndex = 0;
-    for (int i = 0; i < count; ++i) {
+    for (var i = 0; i < count; ++i) {
       if (predicate(i))
         currentByte |= (byte)(0x80 >> bitIndex);
       ++bitIndex;
@@ -958,7 +958,7 @@ internal static class SevenZipHeaderCodec {
   // ---- I/O Helpers ----
 
   private static byte ReadByte(Stream stream) {
-    int b = stream.ReadByte();
+    var b = stream.ReadByte();
     if (b < 0)
       throw new EndOfStreamException("Unexpected end of 7z stream.");
     return (byte)b;
@@ -967,7 +967,7 @@ internal static class SevenZipHeaderCodec {
   private static void ReadExact(Stream stream, byte[] buffer, int offset, int count) {
     var totalRead = 0;
     while (totalRead < count) {
-      int read = stream.Read(buffer, offset + totalRead, count - totalRead);
+      var read = stream.Read(buffer, offset + totalRead, count - totalRead);
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of 7z stream.");
       totalRead += read;
@@ -975,7 +975,7 @@ internal static class SevenZipHeaderCodec {
   }
 
   private static void SkipData(Stream stream) {
-    long size = (long)SevenZipVarInt.Read(stream);
+    var size = (long)SevenZipVarInt.Read(stream);
     stream.Position += size;
   }
 

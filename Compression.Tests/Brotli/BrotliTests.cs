@@ -86,7 +86,7 @@ public class BrotliTests {
   [Test]
   public void RoundTrip_AllByteValues() {
     var data = new byte[256];
-    for (int i = 0; i < 256; ++i)
+    for (var i = 0; i < 256; ++i)
       data[i] = (byte)i;
     var compressed = BrotliCompressor.Compress(data);
     var decompressed = BrotliDecompressor.Decompress(compressed);
@@ -140,7 +140,7 @@ public class BrotliTests {
   [Test]
   public void Interop_DecompressSystemBrotli_ShortText() {
     var original = Encoding.UTF8.GetBytes("Hello Brotli interop test!");
-    byte[] systemCompressed = CompressWithSystemBrotli(original);
+    var systemCompressed = CompressWithSystemBrotli(original);
     var result = BrotliDecompressor.Decompress(systemCompressed);
     Assert.That(result, Is.EqualTo(original));
   }
@@ -150,7 +150,7 @@ public class BrotliTests {
   [Test]
   public void Interop_DecompressSystemBrotli_RepetitiveData() {
     var original = Encoding.UTF8.GetBytes(new string('A', 100));
-    byte[] systemCompressed = CompressWithSystemBrotli(original);
+    var systemCompressed = CompressWithSystemBrotli(original);
 
     TestContext.Out.WriteLine($"Compressed hex: {BitConverter.ToString(systemCompressed)}");
     TestContext.Out.WriteLine($"Compressed length: {systemCompressed.Length}");
@@ -173,7 +173,7 @@ public class BrotliTests {
     };
     foreach (var text in texts) {
       var original = Encoding.UTF8.GetBytes(text);
-      byte[] systemCompressed = CompressWithSystemBrotli(original);
+      var systemCompressed = CompressWithSystemBrotli(original);
       TestContext.Out.WriteLine($"\n'{text.Substring(0, Math.Min(60, text.Length))}...': {original.Length} → {systemCompressed.Length} bytes");
       TestContext.Out.WriteLine($"  Hex: {BitConverter.ToString(systemCompressed)}");
       try {
@@ -200,7 +200,7 @@ public class BrotliTests {
   [Test]
   public void StaticDictionary_GetNumBits_ValidLengths() {
     // Lengths 4-24 should return positive bit counts
-    for (int len = BrotliStaticDictionary.MinWordLength; len <= BrotliStaticDictionary.MaxWordLength; ++len)
+    for (var len = BrotliStaticDictionary.MinWordLength; len <= BrotliStaticDictionary.MaxWordLength; ++len)
       Assert.That(BrotliStaticDictionary.GetNumBits(len), Is.GreaterThan(0),
         $"Length {len} should have positive bit count");
   }
@@ -217,7 +217,7 @@ public class BrotliTests {
   [Test]
   public void StaticDictionary_GetWord_ReturnsBytes() {
     Span<byte> buf = stackalloc byte[64];
-    int written = BrotliStaticDictionary.GetWord(4, 0, 0, buf);
+    var written = BrotliStaticDictionary.GetWord(4, 0, 0, buf);
     Assert.That(written, Is.EqualTo(4)); // identity transform preserves length
   }
 
@@ -225,8 +225,8 @@ public class BrotliTests {
   [Test]
   public void StaticDictionary_TryGetStaticReference_BeyondWindow() {
     // Distance beyond window size should be a dictionary reference
-    bool found = BrotliStaticDictionary.TryGetStaticReference(
-      100, 10, out int wordLen, out _, out _);
+    var found = BrotliStaticDictionary.TryGetStaticReference(
+      100, 10, out var wordLen, out _, out _);
     // 100 > 10, so it's a static dict reference
     Assert.That(found, Is.True);
     Assert.That(wordLen, Is.GreaterThanOrEqualTo(BrotliStaticDictionary.MinWordLength));
@@ -235,7 +235,7 @@ public class BrotliTests {
   [Category("EdgeCase")]
   [Test]
   public void StaticDictionary_TryGetStaticReference_WithinWindow() {
-    bool found = BrotliStaticDictionary.TryGetStaticReference(5, 10, out _, out _, out _);
+    var found = BrotliStaticDictionary.TryGetStaticReference(5, 10, out _, out _, out _);
     Assert.That(found, Is.False); // within window, not a dict reference
   }
 
@@ -266,7 +266,7 @@ public class BrotliTests {
   [Test]
   public void CompressLz77_RepetitiveData_RoundTrip() {
     var data = new byte[1000];
-    for (int i = 0; i < data.Length; ++i)
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 10);
 
     var compressed = BrotliCompressor.CompressLz77(data);

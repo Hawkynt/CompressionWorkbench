@@ -38,25 +38,25 @@ internal sealed class SevenZipHeader {
   /// <param name="stream">The stream to read from.</param>
   /// <returns>The parsed header.</returns>
   public static SevenZipHeader Read(Stream stream) {
-    byte[] headerBytes = new byte[SevenZipConstants.SignatureHeaderSize];
+    var headerBytes = new byte[SevenZipConstants.SignatureHeaderSize];
     ReadExact(stream, headerBytes, 0, headerBytes.Length);
 
     // Verify signature
     if (!headerBytes.AsSpan().StartsWith(SevenZipConstants.Signature))
       throw new InvalidDataException("Invalid 7z signature.");
 
-    byte majorVersion = headerBytes[6];
-    byte minorVersion = headerBytes[7];
+    var majorVersion = headerBytes[6];
+    var minorVersion = headerBytes[7];
 
     // Verify start header CRC (covers bytes 12..31, which is 20 bytes)
-    uint storedStartCrc = BitConverter.ToUInt32(headerBytes, 8);
-    uint computedStartCrc = Crc32.Compute(headerBytes.AsSpan(12, 20));
+    var storedStartCrc = BitConverter.ToUInt32(headerBytes, 8);
+    var computedStartCrc = Crc32.Compute(headerBytes.AsSpan(12, 20));
     if (storedStartCrc != computedStartCrc)
       throw new InvalidDataException("7z start header CRC mismatch.");
 
     var nextHeaderOffset = BitConverter.ToInt64(headerBytes, 12);
     var nextHeaderSize = BitConverter.ToInt64(headerBytes, 20);
-    uint nextHeaderCrc = BitConverter.ToUInt32(headerBytes, 28);
+    var nextHeaderCrc = BitConverter.ToUInt32(headerBytes, 28);
 
     return new SevenZipHeader {
       MajorVersion = majorVersion,
@@ -72,7 +72,7 @@ internal sealed class SevenZipHeader {
   /// </summary>
   /// <param name="stream">The stream to write to.</param>
   public void Write(Stream stream) {
-    byte[] headerBytes = new byte[SevenZipConstants.SignatureHeaderSize];
+    var headerBytes = new byte[SevenZipConstants.SignatureHeaderSize];
 
     // Signature
     SevenZipConstants.Signature.CopyTo(headerBytes.AsSpan());
@@ -87,7 +87,7 @@ internal sealed class SevenZipHeader {
     BitConverter.TryWriteBytes(headerBytes.AsSpan(28), NextHeaderCrc);
 
     // StartHeaderCRC at offset 8: CRC of bytes 12..31
-    uint startCrc = Crc32.Compute(headerBytes.AsSpan(12, 20));
+    var startCrc = Crc32.Compute(headerBytes.AsSpan(12, 20));
     BitConverter.TryWriteBytes(headerBytes.AsSpan(8), startCrc);
 
     stream.Write(headerBytes, 0, headerBytes.Length);
@@ -96,7 +96,7 @@ internal sealed class SevenZipHeader {
   private static void ReadExact(Stream stream, byte[] buffer, int offset, int count) {
     var totalRead = 0;
     while (totalRead < count) {
-      int read = stream.Read(buffer, offset + totalRead, count - totalRead);
+      var read = stream.Read(buffer, offset + totalRead, count - totalRead);
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of 7z stream.");
       totalRead += read;

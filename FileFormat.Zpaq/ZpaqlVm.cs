@@ -141,8 +141,8 @@ public sealed class ZpaqlVm {
 
     hh = Math.Clamp(hh, 0, 24);
     hm = Math.Clamp(hm, 0, 24);
-    int hSize = 1 << hh;
-    int mSize = 1 << hm;
+    var hSize = 1 << hh;
+    var mSize = 1 << hm;
     _h = new uint[hSize];
     _m = new byte[mSize];
     _hMask = hSize - 1;
@@ -170,21 +170,21 @@ public sealed class ZpaqlVm {
     if (program.Length < 3)
       ThrowMalformed("Program header too short.");
 
-    int hh = Math.Clamp((int)program[0], 0, 24);
-    int hm = Math.Clamp((int)program[1], 0, 24);
+    var hh = Math.Clamp((int)program[0], 0, 24);
+    var hm = Math.Clamp((int)program[1], 0, 24);
     int nComp = program[2];
-    int pos = 3;
+    var pos = 3;
 
     // Parse component descriptors.
     var comps = new List<Component>();
-    for (int i = 0; i < nComp; i++) {
+    for (var i = 0; i < nComp; i++) {
       if (pos >= program.Length)
         ThrowMalformed("Unexpected end of component descriptors.");
 
       var comp = new Component { Type = (ComponentType)program[pos++] };
 
       // Each component type has a fixed number of parameter bytes.
-      int paramCount = GetComponentParamCount(comp.Type);
+      var paramCount = GetComponentParamCount(comp.Type);
       if (pos + paramCount > program.Length)
         ThrowMalformed("Unexpected end of component parameters.");
 
@@ -200,7 +200,7 @@ public sealed class ZpaqlVm {
     // Parse HCOMP bytecode.
     if (pos + 2 > program.Length)
       ThrowMalformed("Missing HCOMP length.");
-    int hcompLen = program[pos] | (program[pos + 1] << 8);
+    var hcompLen = program[pos] | (program[pos + 1] << 8);
     pos += 2;
     if (pos + hcompLen > program.Length)
       ThrowMalformed("HCOMP bytecode truncated.");
@@ -209,7 +209,7 @@ public sealed class ZpaqlVm {
 
     // Parse optional PCOMP bytecode.
     if (pos + 2 <= program.Length) {
-      int pcompLen = program[pos] | (program[pos + 1] << 8);
+      var pcompLen = program[pos] | (program[pos + 1] << 8);
       pos += 2;
       if (pcompLen > 0 && pos + pcompLen <= program.Length) {
         _pcomp = program.Slice(pos, pcompLen).ToArray();
@@ -220,8 +220,8 @@ public sealed class ZpaqlVm {
       _pcomp = [];
     }
 
-    int hSize = 1 << hh;
-    int mSize = 1 << hm;
+    var hSize = 1 << hh;
+    var mSize = 1 << hm;
     _h = new uint[hSize];
     _m = new byte[mSize];
     _hMask = hSize - 1;
@@ -309,9 +309,9 @@ public sealed class ZpaqlVm {
     // A full implementation would use the mixer components (MIX, MIX2)
     // from the COMP section for weighted mixing.
     long sum = 0;
-    int count = 0;
+    var count = 0;
 
-    for (int i = 0; i < _components.Length; i++) {
+    for (var i = 0; i < _components.Length; i++) {
       var comp = _components[i];
       UpdateComponentPrediction(comp, i);
       sum += comp.Prediction;
@@ -326,7 +326,7 @@ public sealed class ZpaqlVm {
   /// </summary>
   /// <param name="bit">The decoded bit (0 or 1).</param>
   public void Update(int bit) {
-    for (int i = 0; i < _components.Length; i++)
+    for (var i = 0; i < _components.Length; i++)
       UpdateComponent(_components[i], bit);
   }
 
@@ -367,8 +367,8 @@ public sealed class ZpaqlVm {
   public void ArithEncode(int bit, int prediction, Action<byte> output) {
     prediction = Math.Clamp(prediction, 1, 65534);
 
-    uint range = _x2 - _x1;
-    uint split = _x1 + (uint)(((ulong)range * (uint)(prediction >> 1)) / 32768);
+    var range = _x2 - _x1;
+    var split = _x1 + (uint)(((ulong)range * (uint)(prediction >> 1)) / 32768);
 
     if (bit != 0)
       _x1 = split + 1;
@@ -393,8 +393,8 @@ public sealed class ZpaqlVm {
   public (int Bit, uint Code) ArithDecode(int prediction, uint code, Func<int> readByte) {
     prediction = Math.Clamp(prediction, 1, 65534);
 
-    uint range = _x2 - _x1;
-    uint split = _x1 + (uint)(((ulong)range * (uint)(prediction >> 1)) / 32768);
+    var range = _x2 - _x1;
+    var split = _x1 + (uint)(((ulong)range * (uint)(prediction >> 1)) / 32768);
 
     int bit;
     if (code <= split) {
@@ -409,7 +409,7 @@ public sealed class ZpaqlVm {
     while ((_x1 ^ _x2) < 0x01000000U) {
       _x1 <<= 8;
       _x2 = (_x2 << 8) | 0xFF;
-      int b = readByte();
+      var b = readByte();
       code = (code << 8) | (uint)(b < 0 ? 0 : b);
     }
 
@@ -425,10 +425,10 @@ public sealed class ZpaqlVm {
     // Place input in A register as per ZPAQL spec.
     _a = (uint)(inputByte & 0xFF);
     _pc = 0;
-    int limit = 1 << 24; // execution limit to prevent infinite loops
+    var limit = 1 << 24; // execution limit to prevent infinite loops
 
     while (_pc < code.Length && --limit > 0) {
-      byte op = code[_pc++];
+      var op = code[_pc++];
 
       switch (op) {
         // 0: ERROR / HALT
@@ -477,7 +477,7 @@ public sealed class ZpaqlVm {
         // 21: A = B / A, F = (remainder == 0). Div by 0 => A = 0.
         case 21:
           if (_a == 0) { _a = 0; _f = true; }
-          else { uint rem = _b % _a; _a = _b / _a; _f = rem == 0; }
+          else { var rem = _b % _a; _a = _b / _a; _f = rem == 0; }
           break;
 
         // 22: A = B % A. Div by 0 => A = 0.
@@ -523,21 +523,21 @@ public sealed class ZpaqlVm {
 
         // 41: JT — jump if F is true (1-byte signed offset follows)
         case 41: {
-          int offset = ReadSignedByte(code, ref _pc);
+          var offset = ReadSignedByte(code, ref _pc);
           if (_f) _pc += offset;
           break;
         }
 
         // 42: JF — jump if F is false (1-byte signed offset follows)
         case 42: {
-          int offset = ReadSignedByte(code, ref _pc);
+          var offset = ReadSignedByte(code, ref _pc);
           if (!_f) _pc += offset;
           break;
         }
 
         // 43: JMP — unconditional jump (1-byte signed offset)
         case 43: {
-          int offset = ReadSignedByte(code, ref _pc);
+          var offset = ReadSignedByte(code, ref _pc);
           _pc += offset;
           break;
         }
@@ -549,21 +549,21 @@ public sealed class ZpaqlVm {
 
         // 47: LJ — long jump (2-byte unsigned absolute target)
         case 47: {
-          int target = ReadUInt16(code, ref _pc);
+          var target = ReadUInt16(code, ref _pc);
           _pc = target;
           break;
         }
 
         // 48: R[imm] = A (immediate register index follows)
         case 48: {
-          int idx = (int)ReadByte(code, ref _pc);
+          var idx = (int)ReadByte(code, ref _pc);
           _r[idx] = _a;
           break;
         }
 
         // 49: A = R[imm]
         case 49: {
-          int idx = (int)ReadByte(code, ref _pc);
+          var idx = (int)ReadByte(code, ref _pc);
           _a = _r[idx];
           break;
         }
@@ -584,14 +584,14 @@ public sealed class ZpaqlVm {
 
         // 59: A /= imm (0 => A=0)
         case 59: {
-          uint imm = ReadByte(code, ref _pc);
+          var imm = ReadByte(code, ref _pc);
           _a = imm == 0 ? 0 : _a / imm;
           break;
         }
 
         // 60: A %= imm (0 => A=0)
         case 60: {
-          uint imm = ReadByte(code, ref _pc);
+          var imm = ReadByte(code, ref _pc);
           _a = imm == 0 ? 0 : _a % imm;
           break;
         }
@@ -632,7 +632,7 @@ public sealed class ZpaqlVm {
 
         // 226: HASHD — H[D] = (H[D] + A + 512) * 773
         case 226: {
-          int idx = (int)(_d & (uint)_hMask);
+          var idx = (int)(_d & (uint)_hMask);
           _h[idx] = (_h[idx] + _a + 512) * 773;
           break;
         }
@@ -658,7 +658,7 @@ public sealed class ZpaqlVm {
     // Opcodes 64..127: the second byte is an immediate operand.
     // We handle a useful subset; unrecognized opcodes skip 1 byte.
 
-    uint imm = ReadByte(code, ref _pc);
+    var imm = ReadByte(code, ref _pc);
 
     switch (op) {
       // 64: A += imm*256 (upper byte add)
@@ -671,10 +671,10 @@ public sealed class ZpaqlVm {
       case 66: _a *= imm << 8; break;
 
       // 67: A /= imm*256 (0 => A=0)
-      case 67: { uint v = imm << 8; _a = v == 0 ? 0 : _a / v; break; }
+      case 67: { var v = imm << 8; _a = v == 0 ? 0 : _a / v; break; }
 
       // 68: A %= imm*256 (0 => A=0)
-      case 68: { uint v = imm << 8; _a = v == 0 ? 0 : _a % v; break; }
+      case 68: { var v = imm << 8; _a = v == 0 ? 0 : _a % v; break; }
 
       // 69: A &= imm*256
       case 69: _a &= imm << 8; break;
@@ -730,7 +730,7 @@ public sealed class ZpaqlVm {
 
   private void Execute3Byte(byte op, byte[] code) {
     // Opcodes 128..223: 2-byte operand follows (little-endian).
-    int imm16 = (int)ReadUInt16(code, ref _pc);
+    var imm16 = (int)ReadUInt16(code, ref _pc);
 
     switch (op) {
       // 128: A = imm16
@@ -799,7 +799,7 @@ public sealed class ZpaqlVm {
       pc = code.Length;
       return 0;
     }
-    int val = code[pc] | (code[pc + 1] << 8);
+    var val = code[pc] | (code[pc + 1] << 8);
     pc += 2;
     return val;
   }
@@ -807,7 +807,7 @@ public sealed class ZpaqlVm {
   // ── Component initialization ───────────────────────────────────────────────
 
   private void InitComponents() {
-    for (int i = 0; i < _components.Length; i++) {
+    for (var i = 0; i < _components.Length; i++) {
       var comp = _components[i];
       comp.Prediction = 32768; // 50%
       comp.Context = 0;
@@ -816,38 +816,38 @@ public sealed class ZpaqlVm {
       switch (comp.Type) {
         case ComponentType.Cm: {
           // 2^Param1 counters, each starts at 32768 (50%).
-          int size = 1 << Math.Clamp(comp.Param1, 0, 24);
+          var size = 1 << Math.Clamp(comp.Param1, 0, 24);
           comp.Memory = new int[size];
-          for (int j = 0; j < size; j++)
+          for (var j = 0; j < size; j++)
             comp.Memory[j] = 32768;
           break;
         }
 
         case ComponentType.Icm: {
           // Indirect context model: 256 byte-history entries + 2^(Param1+10) counters.
-          int histSize = 256;
-          int ctrSize = 1 << Math.Clamp(comp.Param1 + 10, 0, 24);
+          var histSize = 256;
+          var ctrSize = 1 << Math.Clamp(comp.Param1 + 10, 0, 24);
           comp.Memory = new int[histSize + ctrSize];
           // Initialize counters to 50%.
-          for (int j = histSize; j < comp.Memory.Length; j++)
+          for (var j = histSize; j < comp.Memory.Length; j++)
             comp.Memory[j] = 32768;
           break;
         }
 
         case ComponentType.Match: {
           // Match model: buffer of 2^Param1 bytes + 2^Param2 hash entries.
-          int bufSize = 1 << Math.Clamp(comp.Param1, 0, 24);
-          int hashSize = 1 << Math.Clamp(comp.Param2, 0, 24);
+          var bufSize = 1 << Math.Clamp(comp.Param1, 0, 24);
+          var hashSize = 1 << Math.Clamp(comp.Param2, 0, 24);
           comp.Memory = new int[bufSize + hashSize];
           break;
         }
 
         case ComponentType.Sse: {
           // SSE: 2^Param1 * 64 entries.
-          int size = (1 << Math.Clamp(comp.Param1, 0, 20)) * 64;
+          var size = (1 << Math.Clamp(comp.Param1, 0, 20)) * 64;
           comp.Memory = new int[size];
           // Initialize to identity mapping.
-          for (int j = 0; j < size; j++)
+          for (var j = 0; j < size; j++)
             comp.Memory[j] = Squash((j % 64 - 32) * 64);
           break;
         }
@@ -872,15 +872,15 @@ public sealed class ZpaqlVm {
 
       case ComponentType.Cm:
         if (comp.Memory.Length > 0) {
-          int ctx = comp.Context % comp.Memory.Length;
+          var ctx = comp.Context % comp.Memory.Length;
           comp.Prediction = Math.Clamp(comp.Memory[ctx], 0, 65535);
         }
         break;
 
       case ComponentType.Icm:
         if (comp.Memory.Length > 256) {
-          int histIdx = comp.Context & 255;
-          int ctrIdx = 256 + (comp.Memory[histIdx] & (comp.Memory.Length - 257));
+          var histIdx = comp.Context & 255;
+          var ctrIdx = 256 + (comp.Memory[histIdx] & (comp.Memory.Length - 257));
           if (ctrIdx < comp.Memory.Length)
             comp.Prediction = Math.Clamp(comp.Memory[ctrIdx], 0, 65535);
         }
@@ -896,15 +896,15 @@ public sealed class ZpaqlVm {
 
       case ComponentType.Avg:
         if (_components.Length > Math.Max(comp.Param1, comp.Param2)) {
-          int p1 = _components[comp.Param1].Prediction;
-          int p2 = _components[comp.Param2].Prediction;
+          var p1 = _components[comp.Param1].Prediction;
+          var p2 = _components[comp.Param2].Prediction;
           comp.Prediction = (p1 + p2 + 1) >> 1;
         }
         break;
 
       case ComponentType.Sse:
         if (comp.Memory.Length > 0) {
-          int ctx = (comp.Context * 64) % comp.Memory.Length;
+          var ctx = (comp.Context * 64) % comp.Memory.Length;
           comp.Prediction = Math.Clamp(comp.Memory[ctx], 0, 65535);
         }
         break;
@@ -919,22 +919,22 @@ public sealed class ZpaqlVm {
     switch (comp.Type) {
       case ComponentType.Cm:
         if (comp.Memory.Length > 0) {
-          int ctx = comp.Context % comp.Memory.Length;
-          int p = comp.Memory[ctx];
+          var ctx = comp.Context % comp.Memory.Length;
+          var p = comp.Memory[ctx];
           // Adapt towards the observed bit.
-          int target = bit != 0 ? 65535 : 0;
-          int rate = Math.Max(comp.Param2, 2); // learning rate
+          var target = bit != 0 ? 65535 : 0;
+          var rate = Math.Max(comp.Param2, 2); // learning rate
           comp.Memory[ctx] = p + ((target - p) >> rate);
         }
         break;
 
       case ComponentType.Icm:
         if (comp.Memory.Length > 256) {
-          int histIdx = comp.Context & 255;
-          int ctrIdx = 256 + (comp.Memory[histIdx] & (comp.Memory.Length - 257));
+          var histIdx = comp.Context & 255;
+          var ctrIdx = 256 + (comp.Memory[histIdx] & (comp.Memory.Length - 257));
           if (ctrIdx < comp.Memory.Length) {
-            int p = comp.Memory[ctrIdx];
-            int target = bit != 0 ? 65535 : 0;
+            var p = comp.Memory[ctrIdx];
+            var target = bit != 0 ? 65535 : 0;
             comp.Memory[ctrIdx] = p + ((target - p) >> 5);
           }
           // Update byte history: shift in bit.
@@ -946,7 +946,7 @@ public sealed class ZpaqlVm {
         // Update match length tracking.
         if (comp.Aux > 0) {
           // If prediction was wrong, break match.
-          bool predicted1 = comp.Aux > 128;
+          var predicted1 = comp.Aux > 128;
           if ((bit != 0) != predicted1)
             comp.Aux = 0;
         }
@@ -984,9 +984,9 @@ public sealed class ZpaqlVm {
   private static int[] BuildSquashTable() {
     // squash(x) = 65536 / (1 + exp(-x/64))
     var table = new int[4095]; // index 0..4094 maps x = -2047..2047
-    for (int i = 0; i < table.Length; i++) {
-      int x = i - 2047;
-      double p = 65536.0 / (1.0 + Math.Exp(-x / 64.0));
+    for (var i = 0; i < table.Length; i++) {
+      var x = i - 2047;
+      var p = 65536.0 / (1.0 + Math.Exp(-x / 64.0));
       table[i] = Math.Clamp((int)(p + 0.5), 1, 65534);
     }
     return table;
@@ -995,11 +995,11 @@ public sealed class ZpaqlVm {
   private static int[] BuildStretchTable() {
     // Inverse of squash, sampled at 1024 points.
     var table = new int[1024];
-    for (int i = 0; i < 1024; i++) {
-      double p = (i + 0.5) * 64.0; // map to 0..65535 range
+    for (var i = 0; i < 1024; i++) {
+      var p = (i + 0.5) * 64.0; // map to 0..65535 range
       if (p <= 0) p = 1;
       if (p >= 65535) p = 65534;
-      double x = -64.0 * Math.Log(65536.0 / p - 1.0);
+      var x = -64.0 * Math.Log(65536.0 / p - 1.0);
       table[i] = Math.Clamp((int)Math.Round(x), -2047, 2047);
     }
     return table;

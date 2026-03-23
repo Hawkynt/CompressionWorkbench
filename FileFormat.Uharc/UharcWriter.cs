@@ -39,11 +39,11 @@ public sealed class UharcWriter : IDisposable {
     ArgumentNullException.ThrowIfNull(fileName);
     ArgumentNullException.ThrowIfNull(data);
 
-    uint crc = Crc32.Compute(data);
-    uint timestamp = UharcEntry.EncodeUnixTimestamp(lastModified ?? DateTime.UtcNow);
+    var crc = Crc32.Compute(data);
+    var timestamp = UharcEntry.EncodeUnixTimestamp(lastModified ?? DateTime.UtcNow);
 
     // Attempt LZP compression.
-    byte[] compressed = LzpCompressor.Compress(data);
+    var compressed = LzpCompressor.Compress(data);
     byte method;
     byte[] payload;
 
@@ -76,7 +76,7 @@ public sealed class UharcWriter : IDisposable {
   public void AddDirectory(string name, DateTime? lastModified = null) {
     ArgumentNullException.ThrowIfNull(name);
 
-    uint timestamp = UharcEntry.EncodeUnixTimestamp(lastModified ?? DateTime.UtcNow);
+    var timestamp = UharcEntry.EncodeUnixTimestamp(lastModified ?? DateTime.UtcNow);
 
     WriteEntryHeader(
       method: UharcConstants.MethodStore,
@@ -118,11 +118,11 @@ public sealed class UharcWriter : IDisposable {
     writer.Write(crc32);
     writer.Write(timestamp);
 
-    byte[] nameBytes = Encoding.UTF8.GetBytes(fileName);
+    var nameBytes = Encoding.UTF8.GetBytes(fileName);
     writer.Write((ushort)nameBytes.Length);
     writer.Write(nameBytes);
 
-    byte attributes = isDirectory ? (byte)0x01 : (byte)0x00;
+    var attributes = isDirectory ? (byte)0x01 : (byte)0x00;
     writer.Write(attributes);
   }
 

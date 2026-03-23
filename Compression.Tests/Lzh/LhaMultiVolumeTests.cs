@@ -12,9 +12,9 @@ public class LhaMultiVolumeTests {
     var writer = new LhaWriter();
     writer.AddFile("a.txt", MakeTestData(100, 0x41));
     writer.AddFile("b.txt", MakeTestData(200, 0x42));
-    byte[] archive = writer.ToArray();
+    var archive = writer.ToArray();
 
-    int splitPoint = archive.Length / 2;
+    var splitPoint = archive.Length / 2;
     using var cs = new ConcatenatedStream([
       new MemoryStream(archive[..splitPoint]),
       new MemoryStream(archive[splitPoint..])
@@ -30,10 +30,10 @@ public class LhaMultiVolumeTests {
   [Category("RoundTrip")]
   [Test]
   public void CreateSplit_Write_Read_RoundTrip() {
-    byte[] data1 = MakeTestData(100, 0x30);
-    byte[] data2 = MakeTestData(200, 0x50);
+    var data1 = MakeTestData(100, 0x30);
+    var data2 = MakeTestData(200, 0x50);
 
-    byte[][] volumes = LhaWriter.CreateSplit(
+    var volumes = LhaWriter.CreateSplit(
       maxVolumeSize: 200,
       entries: [("file1.bin", data1), ("file2.bin", data2)]);
 
@@ -50,7 +50,7 @@ public class LhaMultiVolumeTests {
 
   private static byte[] MakeTestData(int size, byte seed) {
     var data = new byte[size];
-    for (int i = 0; i < size; ++i)
+    for (var i = 0; i < size; ++i)
       data[i] = (byte)((seed + i) % 256);
     return data;
   }

@@ -177,7 +177,7 @@ internal static class SqxConstants {
   /// Gets the dictionary size flag bits for a given dictionary size.
   /// </summary>
   public static ushort GetDictFlag(int dictSize) {
-    for (int i = DictSizes.Length - 1; i >= 0; --i)
+    for (var i = DictSizes.Length - 1; i >= 0; --i)
       if (dictSize >= DictSizes[i])
         return (ushort)(i << 8);
     return 0;
@@ -187,7 +187,7 @@ internal static class SqxConstants {
   /// Gets the dictionary size from file flags.
   /// </summary>
   public static int GetDictSize(ushort flags) {
-    int idx = (flags >> 8) & 0x0F;
+    var idx = (flags >> 8) & 0x0F;
     return idx < DictSizes.Length ? DictSizes[idx] : DictSizes[0];
   }
 

@@ -69,7 +69,7 @@ public sealed class ZipWriter : IDisposable {
       throw new InvalidOperationException("Cannot add entries after Finish() has been called.");
 
     // Compute CRC
-    uint crc = Crc32.Compute(data);
+    var crc = Crc32.Compute(data);
 
     // Compress if needed
     byte[] compressedData;
@@ -88,7 +88,7 @@ public sealed class ZipWriter : IDisposable {
       case ZipCompressionMethod.Reduce2:
       case ZipCompressionMethod.Reduce3:
       case ZipCompressionMethod.Reduce4: {
-        int factor = (int)method - 1;
+        var factor = (int)method - 1;
         compressedData = ReduceEncoder.Encode(data, factor);
         if (compressedData.Length >= data.Length) {
           compressedData = data;
@@ -151,8 +151,8 @@ public sealed class ZipWriter : IDisposable {
 
     // Apply encryption if password is set
     byte[]? aesExtraField = null;
-    ZipCompressionMethod storedMethod = method;
-    bool encrypted = this._password != null && this._encryptionMethod != ZipEncryptionMethod.None;
+    var storedMethod = method;
+    var encrypted = this._password != null && this._encryptionMethod != ZipEncryptionMethod.None;
 
     if (encrypted) {
       switch (this._encryptionMethod) {
@@ -208,8 +208,8 @@ public sealed class ZipWriter : IDisposable {
       throw new InvalidOperationException("Cannot add entries after Finish() has been called.");
 
     byte[]? aesExtraField = null;
-    ZipCompressionMethod storedMethod = method;
-    bool encrypted = this._password != null && this._encryptionMethod != ZipEncryptionMethod.None;
+    var storedMethod = method;
+    var encrypted = this._password != null && this._encryptionMethod != ZipEncryptionMethod.None;
 
     if (encrypted) {
       switch (this._encryptionMethod) {

@@ -72,7 +72,7 @@ public sealed class DmsWriter : IDisposable {
     BinaryPrimitives.WriteUInt16BigEndian(buf[44..], header.CreatedTick);
 
     // Compute and store CRC of bytes 8..55.
-    ushort crc = DmsReader.ComputeCrc16(buf[8..]);
+    var crc = DmsReader.ComputeCrc16(buf[8..]);
     BinaryPrimitives.WriteUInt16BigEndian(buf[4..], crc);
 
     this._stream.Write(buf);
@@ -93,7 +93,7 @@ public sealed class DmsWriter : IDisposable {
     if (!this._headerWritten)
       WriteHeader(new DmsHeader());
 
-    byte[] compressed = compressionMode switch {
+    var compressed = compressionMode switch {
       DmsConstants.ModeNone      => data,
       DmsConstants.ModeSimpleRle => CompressRle(data),
       DmsConstants.ModeQuick     => CompressQuick(data),
@@ -101,14 +101,14 @@ public sealed class DmsWriter : IDisposable {
     };
 
     // If compression didn't help, fall back to store.
-    byte actualMode = (byte)compressionMode;
+    var actualMode = (byte)compressionMode;
     if (compressionMode != DmsConstants.ModeNone && compressed.Length >= data.Length) {
       compressed = data;
       actualMode = DmsConstants.ModeNone;
     }
 
-    ushort uncompressedCrc = DmsReader.ComputeCrc16(data);
-    ushort compressedCrc   = DmsReader.ComputeCrc16(compressed);
+    var uncompressedCrc = DmsReader.ComputeCrc16(data);
+    var compressedCrc   = DmsReader.ComputeCrc16(compressed);
 
     // Write track header (20 bytes, big-endian).
     Span<byte> hdr = stackalloc byte[DmsConstants.TrackHeaderSize];
@@ -130,7 +130,7 @@ public sealed class DmsWriter : IDisposable {
     this._stream.Write(compressed);
 
     // Track bookkeeping.
-    ushort tn = (ushort)trackNumber;
+    var tn = (ushort)trackNumber;
     if (tn < this._firstTrack) this._firstTrack = tn;
     if (tn > this._lastTrack) this._lastTrack = tn;
     this._totalPacked += (uint)compressed.Length;
@@ -147,7 +147,7 @@ public sealed class DmsWriter : IDisposable {
   public void WriteDisk(byte[] diskImage, int compressionMode = 0, int trackSize = DmsConstants.CylinderSize) {
     ArgumentNullException.ThrowIfNull(diskImage);
 
-    int trackCount = (diskImage.Length + trackSize - 1) / trackSize;
+    var trackCount = (diskImage.Length + trackSize - 1) / trackSize;
 
     WriteHeader(new DmsHeader {
       CompressionMode = (ushort)compressionMode,
@@ -155,10 +155,10 @@ public sealed class DmsWriter : IDisposable {
       HighTrack       = (ushort)(trackCount - 1),
     });
 
-    for (int i = 0; i < trackCount; i++) {
-      int offset = i * trackSize;
-      int length = Math.Min(trackSize, diskImage.Length - offset);
-      byte[] trackData = new byte[length];
+    for (var i = 0; i < trackCount; i++) {
+      var offset = i * trackSize;
+      var length = Math.Min(trackSize, diskImage.Length - offset);
+      var trackData = new byte[length];
       Array.Copy(diskImage, offset, trackData, 0, length);
       WriteTrack(i, trackData, compressionMode);
     }
@@ -169,12 +169,12 @@ public sealed class DmsWriter : IDisposable {
   private static byte[] CompressRle(byte[] data) {
     using var ms = new MemoryStream();
 
-    int i = 0;
+    var i = 0;
     while (i < data.Length) {
-      byte b = data[i];
+      var b = data[i];
 
       // Count run length.
-      int runLen = 1;
+      var runLen = 1;
       while (i + runLen < data.Length && data[i + runLen] == b && runLen < 255)
         runLen++;
 
@@ -216,15 +216,15 @@ public sealed class DmsWriter : IDisposable {
     const int maxLength  = 17; // 4-bit length + 2 = max 17.
     const int minMatch   = 3;  // Only emit match if length >= 3.
 
-    int i = 0;
+    var i = 0;
     while (i < data.Length) {
-      int bestLen    = 0;
-      int bestOffset = 0;
+      var bestLen    = 0;
+      var bestOffset = 0;
 
       // Search for matches in the sliding window.
-      int searchStart = Math.Max(0, i - windowSize);
-      for (int j = searchStart; j < i; j++) {
-        int len = 0;
+      var searchStart = Math.Max(0, i - windowSize);
+      for (var j = searchStart; j < i; j++) {
+        var len = 0;
         while (len < maxLength && i + len < data.Length && data[j + len] == data[i + len])
           len++;
         if (len > bestLen) {
@@ -235,7 +235,7 @@ public sealed class DmsWriter : IDisposable {
 
       if (bestLen >= minMatch) {
         // Emit match token: high nibble = length-2, low 12 bits = offset.
-        int token = ((bestLen - 2) << 12) | (bestOffset & 0x0FFF);
+        var token = ((bestLen - 2) << 12) | (bestOffset & 0x0FFF);
         ms.WriteByte((byte)(token >> 8));
         ms.WriteByte((byte)(token & 0xFF));
         i += bestLen;
@@ -257,7 +257,7 @@ public sealed class DmsWriter : IDisposable {
     if (this._trackCount == 0)
       return;
 
-    long currentPos = this._stream.Position;
+    var currentPos = this._stream.Position;
     this._stream.Position = this._headerPosition;
 
     // Re-read the header to patch it.
@@ -273,7 +273,7 @@ public sealed class DmsWriter : IDisposable {
     BinaryPrimitives.WriteUInt32BigEndian(buf[28..], this._totalUnpacked);
 
     // Recompute header CRC.
-    ushort crc = DmsReader.ComputeCrc16(buf[8..]);
+    var crc = DmsReader.ComputeCrc16(buf[8..]);
     BinaryPrimitives.WriteUInt16BigEndian(buf[4..], crc);
 
     // Write back.
@@ -284,9 +284,9 @@ public sealed class DmsWriter : IDisposable {
   }
 
   private static void ReadFully(Stream stream, Span<byte> buffer) {
-    int offset = 0;
+    var offset = 0;
     while (offset < buffer.Length) {
-      int read = stream.Read(buffer[offset..]);
+      var read = stream.Read(buffer[offset..]);
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of stream while patching DMS header.");
       offset += read;

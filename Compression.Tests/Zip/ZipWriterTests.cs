@@ -9,8 +9,8 @@ public class ZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void SingleEntry_Store_RoundTrips() {
-    byte[] data = "Hello, ZIP!"u8.ToArray();
-    byte[] archive = CreateArchive(("hello.txt", data, ZipCompressionMethod.Store));
+    var data = "Hello, ZIP!"u8.ToArray();
+    var archive = CreateArchive(("hello.txt", data, ZipCompressionMethod.Store));
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
@@ -23,8 +23,8 @@ public class ZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void SingleEntry_Deflate_RoundTrips() {
-    byte[] data = "Hello, ZIP! This is some text that should compress well with Deflate."u8.ToArray();
-    byte[] archive = CreateArchive(("test.txt", data, ZipCompressionMethod.Deflate));
+    var data = "Hello, ZIP! This is some text that should compress well with Deflate."u8.ToArray();
+    var archive = CreateArchive(("test.txt", data, ZipCompressionMethod.Deflate));
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
@@ -35,11 +35,11 @@ public class ZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void MultipleEntries_RoundTrip() {
-    byte[] data1 = "First file"u8.ToArray();
-    byte[] data2 = "Second file with more content for better compression."u8.ToArray();
-    byte[] data3 = new byte[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+    var data1 = "First file"u8.ToArray();
+    var data2 = "Second file with more content for better compression."u8.ToArray();
+    var data3 = new byte[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
 
-    byte[] archive = CreateArchive(
+    var archive = CreateArchive(
       ("file1.txt", data1, ZipCompressionMethod.Store),
       ("subdir/file2.txt", data2, ZipCompressionMethod.Deflate),
       ("binary.dat", data3, ZipCompressionMethod.Store));
@@ -114,10 +114,10 @@ public class ZipWriterTests {
   public void Deflate_FallsBackToStore_WhenLarger() {
     // Random data doesn't compress well
     var rng = new Random(42);
-    byte[] data = new byte[64];
+    var data = new byte[64];
     rng.NextBytes(data);
 
-    byte[] archive = CreateArchive(("random.bin", data, ZipCompressionMethod.Deflate));
+    var archive = CreateArchive(("random.bin", data, ZipCompressionMethod.Deflate));
 
     using var reader = new ZipReader(new MemoryStream(archive));
     // Should have fallen back to Store since random data won't compress
@@ -131,7 +131,7 @@ public class ZipWriterTests {
   public void LastModified_RoundTrips() {
     // MS-DOS time has 2-second resolution
     var dt = new DateTime(2024, 6, 15, 14, 30, 22);
-    byte[] archive = CreateArchive(("file.txt", "data"u8.ToArray(), ZipCompressionMethod.Store, dt));
+    var archive = CreateArchive(("file.txt", "data"u8.ToArray(), ZipCompressionMethod.Store, dt));
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries[0].LastModified, Is.EqualTo(dt));
@@ -187,8 +187,8 @@ public class ZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Utf8FileName_RoundTrips() {
-    byte[] data = "content"u8.ToArray();
-    byte[] archive = CreateArchive(("\u00e9\u00e8\u00ea/caf\u00e9.txt", data, ZipCompressionMethod.Store));
+    var data = "content"u8.ToArray();
+    var archive = CreateArchive(("\u00e9\u00e8\u00ea/caf\u00e9.txt", data, ZipCompressionMethod.Store));
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries[0].FileName, Is.EqualTo("\u00e9\u00e8\u00ea/caf\u00e9.txt"));
@@ -198,8 +198,8 @@ public class ZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void OpenEntry_ReturnsReadableStream() {
-    byte[] data = "stream test"u8.ToArray();
-    byte[] archive = CreateArchive(("file.txt", data, ZipCompressionMethod.Store));
+    var data = "stream test"u8.ToArray();
+    var archive = CreateArchive(("file.txt", data, ZipCompressionMethod.Store));
 
     using var reader = new ZipReader(new MemoryStream(archive));
     using var stream = reader.OpenEntry(reader.Entries[0]);
@@ -227,8 +227,8 @@ public class ZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void BZip2_Writer_RoundTrips() {
-    byte[] data = "Hello BZip2 in ZIP! This data should compress with BZip2."u8.ToArray();
-    byte[] archive = CreateArchive(("test.txt", data, ZipCompressionMethod.BZip2));
+    var data = "Hello BZip2 in ZIP! This data should compress with BZip2."u8.ToArray();
+    var archive = CreateArchive(("test.txt", data, ZipCompressionMethod.BZip2));
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(data));
@@ -238,8 +238,8 @@ public class ZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Lzma_Writer_RoundTrips() {
-    byte[] data = "Hello LZMA in ZIP! This data should compress with LZMA compression."u8.ToArray();
-    byte[] archive = CreateArchive(("test.txt", data, ZipCompressionMethod.Lzma));
+    var data = "Hello LZMA in ZIP! This data should compress with LZMA compression."u8.ToArray();
+    var archive = CreateArchive(("test.txt", data, ZipCompressionMethod.Lzma));
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(data));
@@ -249,8 +249,8 @@ public class ZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Ppmd_Writer_RoundTrips() {
-    byte[] data = "Hello PPMd in ZIP! This data should compress with PPMd version I."u8.ToArray();
-    byte[] archive = CreateArchive(("test.txt", data, ZipCompressionMethod.Ppmd));
+    var data = "Hello PPMd in ZIP! This data should compress with PPMd version I."u8.ToArray();
+    var archive = CreateArchive(("test.txt", data, ZipCompressionMethod.Ppmd));
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(data));
@@ -293,7 +293,7 @@ public class ZipWriterTests {
   [TestCase(DeflateCompressionLevel.Best)]
   [TestCase(DeflateCompressionLevel.Maximum)]
   public void CompressionLevel_RoundTrips(DeflateCompressionLevel level) {
-    byte[] data = "Hello, ZIP with compression level!"u8.ToArray();
+    var data = "Hello, ZIP with compression level!"u8.ToArray();
     byte[] archive;
     using (var ms = new MemoryStream()) {
       using (var writer = new ZipWriter(ms, leaveOpen: true, compressionLevel: level)) {
@@ -310,9 +310,9 @@ public class ZipWriterTests {
   [Category("HappyPath")]
   [Test]
   public void CompressionLevel_Maximum_SmallerThanDefault() {
-    byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
-    byte[] data = new byte[pattern.Length * 100];
-    for (int i = 0; i < 100; ++i)
+    var pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
+    var data = new byte[pattern.Length * 100];
+    for (var i = 0; i < 100; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
     byte[] archiveDefault;

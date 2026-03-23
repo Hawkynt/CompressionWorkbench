@@ -24,7 +24,7 @@ public sealed class Rar5Encoder {
   public Rar5Encoder(int dictionarySize = Rar5Constants.MinDictionarySize) {
     ArgumentOutOfRangeException.ThrowIfLessThan(dictionarySize, Rar5Constants.MinDictionarySize);
     // Round up to power of two
-    int size = 1;
+    var size = 1;
     while (size < dictionarySize && size > 0) size <<= 1;
     this._dictionarySize = size;
     this._window = new byte[size];
@@ -45,10 +45,10 @@ public sealed class Rar5Encoder {
     int dataStart;
 
     if (this._windowPos > 0) {
-      int histLen = Math.Min(this._windowPos, this._dictionarySize);
+      var histLen = Math.Min(this._windowPos, this._dictionarySize);
       workBuffer = new byte[histLen + data.Length];
-      int histStart = (this._windowPos - histLen + this._dictionarySize) & this._windowMask;
-      for (int i = 0; i < histLen; ++i)
+      var histStart = (this._windowPos - histLen + this._dictionarySize) & this._windowMask;
+      for (var i = 0; i < histLen; ++i)
         workBuffer[i] = this._window[(histStart + i) & this._windowMask];
       data.CopyTo(workBuffer.AsSpan(histLen));
       dataStart = histLen;
@@ -62,7 +62,7 @@ public sealed class Rar5Encoder {
     var matchFinder = new HashChainMatchFinder(this._dictionarySize);
 
     // Insert history positions into match finder
-    for (int i = 0; i < dataStart; ++i)
+    for (var i = 0; i < dataStart; ++i)
       matchFinder.InsertPosition(workBuffer, i);
 
     // Collect all tokens in a single block (the decoder stops when output size is reached)
@@ -103,7 +103,7 @@ public sealed class Rar5Encoder {
       EncodeToken(writer, token, mainEnc, offsetEnc, lowOffsetEnc, lengthEnc);
 
     // Update window with new data for solid continuation
-    for (int i = dataStart; i < workBuffer.Length; ++i) {
+    for (var i = dataStart; i < workBuffer.Length; ++i) {
       this._window[this._windowPos] = workBuffer[i];
       this._windowPos = (this._windowPos + 1) & this._windowMask;
     }
@@ -114,14 +114,14 @@ public sealed class Rar5Encoder {
   private List<Rar5Token> CollectTokens(ReadOnlySpan<byte> data, int start, int end,
       HashChainMatchFinder matchFinder, int[] repDist, ref int lastLength) {
     var tokens = new List<Rar5Token>();
-    int pos = start;
+    var pos = start;
 
     while (pos < end) {
       var match = matchFinder.FindMatch(data, pos, this._dictionarySize, 0x101 + 8, 2);
 
       // Repeat offsets disabled for reliability — only use full matches
-      int bestRepIdx = -1;
-      int bestRepLen = 0;
+      var bestRepIdx = -1;
+      var bestRepLen = 0;
 
       if (bestRepIdx >= 0 && bestRepLen >= match.Length - 1 && bestRepLen >= 2) {
         tokens.Add(new Rar5Token {
@@ -131,13 +131,13 @@ public sealed class Rar5Encoder {
         });
 
         // Update repeat offsets: move bestRepIdx to position 0
-        int dist = repDist[bestRepIdx];
-        for (int i = bestRepIdx; i > 0; --i)
+        var dist = repDist[bestRepIdx];
+        for (var i = bestRepIdx; i > 0; --i)
           repDist[i] = repDist[i - 1];
         repDist[0] = dist;
         lastLength = bestRepLen;
 
-        for (int i = 1; i < bestRepLen && pos + i < data.Length; ++i)
+        for (var i = 1; i < bestRepLen && pos + i < data.Length; ++i)
           matchFinder.InsertPosition(data, pos + i);
         pos += bestRepLen;
       }
@@ -155,7 +155,7 @@ public sealed class Rar5Encoder {
         repDist[0] = match.Distance;
         lastLength = match.Length;
 
-        for (int i = 1; i < match.Length && pos + i < data.Length; ++i)
+        for (var i = 1; i < match.Length && pos + i < data.Length; ++i)
           matchFinder.InsertPosition(data, pos + i);
         pos += match.Length;
       }
@@ -173,8 +173,8 @@ public sealed class Rar5Encoder {
 
   private static int MatchLength(ReadOnlySpan<byte> data, int pos, int refPos, int limit) {
     if (refPos < 0) return 0;
-    int len = 0;
-    int maxLen = Math.Min(Rar5Constants.MaxMatchLength, limit - pos);
+    var len = 0;
+    var maxLen = Math.Min(Rar5Constants.MaxMatchLength, limit - pos);
     while (len < maxLen && data[pos + len] == data[refPos + len])
       ++len;
     return len;
@@ -189,7 +189,7 @@ public sealed class Rar5Encoder {
 
       case Rar5TokenType.Match: {
         // Encode match length
-        int length = token.Length;
+        var length = token.Length;
         if (length <= 9) {
           // Direct: symbol 262 + (length - 2)
           ++mainFreq[Rar5Constants.MatchBase + length - 2];
@@ -197,29 +197,29 @@ public sealed class Rar5Encoder {
         else {
           // Extended: symbol 270+, use length table
           ++mainFreq[Rar5Constants.MatchBase + 8]; // Any of 270-277 would work; simplified
-          int lenSym = GetLengthSymbol(length - 8);
+          var lenSym = GetLengthSymbol(length - 8);
           ++lengthFreq[lenSym];
         }
 
         // Encode distance
-        int distSlot = GetDistanceSlot(token.Distance - 1);
+        var distSlot = GetDistanceSlot(token.Distance - 1);
         ++offsetFreq[distSlot];
-        int extraBits = Rar5Constants.DistanceExtraBits(distSlot);
+        var extraBits = Rar5Constants.DistanceExtraBits(distSlot);
         if (extraBits > 4) {
-          int baseDist = Rar5Constants.DistanceBase(distSlot);
-          int extra = (token.Distance - 1) - baseDist;
-          int lowBits = extra & 0xF;
+          var baseDist = Rar5Constants.DistanceBase(distSlot);
+          var extra = (token.Distance - 1) - baseDist;
+          var lowBits = extra & 0xF;
           ++lowOffsetFreq[lowBits];
         }
         break;
       }
 
       case Rar5TokenType.RepeatOffset: {
-        int sym = Rar5Constants.RepeatOffset0 + token.RepeatIndex;
+        var sym = Rar5Constants.RepeatOffset0 + token.RepeatIndex;
         ++mainFreq[sym];
         // For repeat offsets 1-3, the length is encoded via length table
         if (token.RepeatIndex > 0) {
-          int lenSym = GetLengthSymbol(token.Length);
+          var lenSym = GetLengthSymbol(token.Length);
           ++lengthFreq[lenSym];
         }
         break;
@@ -236,7 +236,7 @@ public sealed class Rar5Encoder {
         break;
 
       case Rar5TokenType.Match: {
-        int length = token.Length;
+        var length = token.Length;
         if (length <= 9) {
           mainEnc.EncodeSymbol(writer, Rar5Constants.MatchBase + length - 2);
         }
@@ -244,11 +244,11 @@ public sealed class Rar5Encoder {
           // Extended length: write a match-base symbol in range 270-277
           // The slot 8+ triggers length table lookup in the decoder
           mainEnc.EncodeSymbol(writer, Rar5Constants.MatchBase + 8);
-          int lenSym = GetLengthSymbol(length - 8);
+          var lenSym = GetLengthSymbol(length - 8);
           lengthEnc.EncodeSymbol(writer, lenSym);
-          int extraBits = GetLengthExtraBits(lenSym);
+          var extraBits = GetLengthExtraBits(lenSym);
           if (extraBits > 0) {
-            int baseLen = GetLengthBase(lenSym);
+            var baseLen = GetLengthBase(lenSym);
             writer.WriteBits((uint)(length - 8 - baseLen - 2), extraBits);
           }
         }
@@ -259,15 +259,15 @@ public sealed class Rar5Encoder {
       }
 
       case Rar5TokenType.RepeatOffset: {
-        int sym = Rar5Constants.RepeatOffset0 + token.RepeatIndex;
+        var sym = Rar5Constants.RepeatOffset0 + token.RepeatIndex;
         mainEnc.EncodeSymbol(writer, sym);
 
         if (token.RepeatIndex > 0) {
-          int lenSym = GetLengthSymbol(token.Length);
+          var lenSym = GetLengthSymbol(token.Length);
           lengthEnc.EncodeSymbol(writer, lenSym);
-          int extraBits = GetLengthExtraBits(lenSym);
+          var extraBits = GetLengthExtraBits(lenSym);
           if (extraBits > 0) {
-            int baseLen = GetLengthBase(lenSym);
+            var baseLen = GetLengthBase(lenSym);
             writer.WriteBits((uint)(token.Length - baseLen - 2), extraBits);
           }
         }
@@ -278,18 +278,18 @@ public sealed class Rar5Encoder {
 
   private static void EncodeDistance(Rar5BitWriter writer, int distance,
       Rar5HuffmanEncoder offsetEnc, Rar5HuffmanEncoder lowOffsetEnc) {
-    int dist0 = distance - 1; // 0-based distance
-    int slot = GetDistanceSlot(dist0);
+    var dist0 = distance - 1; // 0-based distance
+    var slot = GetDistanceSlot(dist0);
     offsetEnc.EncodeSymbol(writer, slot);
 
-    int extraBits = Rar5Constants.DistanceExtraBits(slot);
+    var extraBits = Rar5Constants.DistanceExtraBits(slot);
     if (extraBits > 0) {
-      int baseDist = Rar5Constants.DistanceBase(slot);
-      int extra = dist0 - baseDist;
+      var baseDist = Rar5Constants.DistanceBase(slot);
+      var extra = dist0 - baseDist;
 
       if (extraBits > 4) {
-        int highBits = extra >> 4;
-        int lowBits = extra & 0xF;
+        var highBits = extra >> 4;
+        var lowBits = extra & 0xF;
         writer.WriteBits((uint)highBits, extraBits - 4);
         lowOffsetEnc.EncodeSymbol(writer, lowBits);
       }
@@ -320,7 +320,7 @@ public sealed class Rar5Encoder {
     clEncoder.Build(clFreq, Rar5Constants.CodeLengthTableSize);
 
     // Write code-length code lengths (4 bits each, 20 values)
-    for (int i = 0; i < Rar5Constants.CodeLengthTableSize; ++i)
+    for (var i = 0; i < Rar5Constants.CodeLengthTableSize; ++i)
       writer.WriteBits((uint)clEncoder.CodeLengths[i], 4);
 
     // Write each table's RLE-encoded code lengths
@@ -337,17 +337,17 @@ public sealed class Rar5Encoder {
   private static List<(int sym, int extraBits, int extraValue)> ComputeRleSequence(
       int[] codeLengths, int numSymbols) {
     var rle = new List<(int sym, int extraBits, int extraValue)>();
-    int i = 0;
+    var i = 0;
 
     while (i < numSymbols) {
       if (codeLengths[i] == 0) {
-        int run = 1;
+        var run = 1;
         while (i + run < numSymbols && codeLengths[i + run] == 0) ++run;
         i += run;
 
         while (run > 0) {
           if (run >= 11) {
-            int count = Math.Min(run, 138);
+            var count = Math.Min(run, 138);
             rle.Add((18, 7, count - 11));
             run -= count;
           }
@@ -362,18 +362,18 @@ public sealed class Rar5Encoder {
         }
       }
       else {
-        int val = codeLengths[i];
+        var val = codeLengths[i];
         rle.Add((val, 0, 0));
         ++i;
 
-        int rep = 0;
+        var rep = 0;
         while (i < numSymbols && codeLengths[i] == val && rep < 6) {
           ++rep;
           ++i;
         }
 
         while (rep >= 3) {
-          int batch = Math.Min(rep, 6);
+          var batch = Math.Min(rep, 6);
           rle.Add((16, 2, batch - 3));
           rep -= batch;
         }
@@ -404,8 +404,8 @@ public sealed class Rar5Encoder {
   private static int GetDistanceSlot(int distance) {
     // Inverse of Rar5Constants.DistanceBase
     if (distance < 4) return distance;
-    int p = 31 - int.LeadingZeroCount(distance); // highest bit position
-    int secondBit = (distance >> (p - 1)) & 1;
+    var p = 31 - int.LeadingZeroCount(distance); // highest bit position
+    var secondBit = (distance >> (p - 1)) & 1;
     return 2 * p + secondBit;
   }
 
@@ -420,10 +420,10 @@ public sealed class Rar5Encoder {
 
     // For lenSym 8+: DecodeExtraLength = base + readBits + 2
     // So: readBits = value - base - 2, must fit in extraBits
-    for (int sym = 15; sym >= 8; --sym) {
-      int extraBits = sym / 2 - 1;
-      int baseLenDec = (2 + (sym & 1)) << extraBits;
-      int extra = decodeExtraValue - baseLenDec - 2;
+    for (var sym = 15; sym >= 8; --sym) {
+      var extraBits = sym / 2 - 1;
+      var baseLenDec = (2 + (sym & 1)) << extraBits;
+      var extra = decodeExtraValue - baseLenDec - 2;
       if (extra >= 0 && extra < (1 << extraBits))
         return sym;
     }
@@ -444,12 +444,12 @@ public sealed class Rar5Encoder {
   /// </summary>
   private static int GetLengthBase(int sym) {
     if (sym < 8) return sym;
-    int extraBits = sym / 2 - 1;
+    var extraBits = sym / 2 - 1;
     return (2 + (sym & 1)) << extraBits;
   }
 
   private static void EnsureNonEmpty(int[] freq) {
-    for (int i = 0; i < freq.Length; ++i)
+    for (var i = 0; i < freq.Length; ++i)
       if (freq[i] > 0) return;
     freq[0] = 1;
   }

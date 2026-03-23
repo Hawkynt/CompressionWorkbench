@@ -87,8 +87,8 @@ public sealed class CramFsWriter : IDisposable {
     var root = this.BuildTree();
 
     // 2. Count total files (regular files + symlinks) for the superblock.
-    int fileCount = 0;
-    int totalBlocks = 0;
+    var fileCount = 0;
+    var totalBlocks = 0;
     CountFilesAndBlocks(root, ref fileCount, ref totalBlocks);
 
     // 3. Serialise into a MemoryStream so we can compute CRC over the whole image.
@@ -145,14 +145,14 @@ public sealed class CramFsWriter : IDisposable {
     WriteDirData(ms, root, fileDataMap, fileOffsets, dirOffsets);
 
     // 5. Build root inode and patch superblock.
-    int imageSize = (int)ms.Length;
+    var imageSize = (int)ms.Length;
 
     // Root directory info.
     var (rootDirOffset, rootDirSize) = dirOffsets[root];
-    byte[] rootInode = MakeInode(DirMode, 0, 0, rootDirSize, 0, rootDirOffset);
+    var rootInode = MakeInode(DirMode, 0, 0, rootDirSize, 0, rootDirOffset);
 
     // Patch superblock.
-    byte[] image = ms.ToArray();
+    var image = ms.ToArray();
     PatchSuperblock(image, (uint)imageSize, (uint)totalBlocks, (uint)fileCount, rootInode);
 
     // 6. Compute CRC-32 over entire image (with CRC field zeroed) and patch.
@@ -177,7 +177,7 @@ public sealed class CramFsWriter : IDisposable {
     // Insert actual entries.
     foreach (var entry in this._pending) {
       var parent = NavigateToParent(root, entry.Path);
-      string name = GetFileName(entry.Path);
+      var name = GetFileName(entry.Path);
 
       if (entry.Kind == EntryKind.Directory) {
         // May already exist from implicit creation.
@@ -210,7 +210,7 @@ public sealed class CramFsWriter : IDisposable {
     var parts = path.Split('/');
     var current = root;
     // All parts except the last are directory components.
-    for (int i = 0; i < parts.Length - 1; i++) {
+    for (var i = 0; i < parts.Length - 1; i++) {
       var existing = current.Children.FirstOrDefault(
         c => c.Name == parts[i] && c.Kind == EntryKind.Directory);
       if (existing == null) {
@@ -224,7 +224,7 @@ public sealed class CramFsWriter : IDisposable {
   private static TreeNode NavigateToParent(TreeNode root, string path) {
     var parts = path.Split('/');
     var current = root;
-    for (int i = 0; i < parts.Length - 1; i++) {
+    for (var i = 0; i < parts.Length - 1; i++) {
       current = current.Children.First(
         c => c.Name == parts[i] && c.Kind == EntryKind.Directory);
     }
@@ -232,7 +232,7 @@ public sealed class CramFsWriter : IDisposable {
   }
 
   private static string GetFileName(string path) {
-    int idx = path.LastIndexOf('/');
+    var idx = path.LastIndexOf('/');
     return idx < 0 ? path : path[(idx + 1)..];
   }
 
@@ -249,7 +249,7 @@ public sealed class CramFsWriter : IDisposable {
         CountFilesAndBlocks(child, ref fileCount, ref totalBlocks);
       } else {
         fileCount++;
-        int size = child.Data?.Length ?? 0;
+        var size = child.Data?.Length ?? 0;
         if (size > 0)
           totalBlocks += (size + CramFsConstants.PageSize - 1) / CramFsConstants.PageSize;
       }
@@ -263,13 +263,13 @@ public sealed class CramFsWriter : IDisposable {
       if (child.Kind == EntryKind.Directory) {
         CompressAllFiles(child, map);
       } else {
-        byte[] data = child.Data ?? [];
+        var data = child.Data ?? [];
         if (data.Length == 0) {
           map[child] = ([], 0);
           continue;
         }
 
-        int blocks = (data.Length + CramFsConstants.PageSize - 1) / CramFsConstants.PageSize;
+        var blocks = (data.Length + CramFsConstants.PageSize - 1) / CramFsConstants.PageSize;
         // Build block pointer table + compressed blocks into a single blob.
         using var blobStream = new MemoryStream();
 
@@ -278,12 +278,12 @@ public sealed class CramFsWriter : IDisposable {
 
         var endOffsets = new int[blocks];
 
-        for (int i = 0; i < blocks; i++) {
-          int offset = i * CramFsConstants.PageSize;
-          int len = Math.Min(CramFsConstants.PageSize, data.Length - offset);
-          byte[] page = data.AsSpan(offset, len).ToArray();
+        for (var i = 0; i < blocks; i++) {
+          var offset = i * CramFsConstants.PageSize;
+          var len = Math.Min(CramFsConstants.PageSize, data.Length - offset);
+          var page = data.AsSpan(offset, len).ToArray();
 
-          byte[] zlibBlock = CompressZlib(page);
+          var zlibBlock = CompressZlib(page);
           blobStream.Write(zlibBlock);
           // endOffset is relative to the start of this blob in the image,
           // but the reader expects absolute image offsets. We will fix these up
@@ -293,10 +293,10 @@ public sealed class CramFsWriter : IDisposable {
 
         // We store endOffsets relative to blob start for now; they'll be
         // adjusted when writing to the image.
-        byte[] blob = blobStream.ToArray();
+        var blob = blobStream.ToArray();
 
         // Write the (relative) end offsets into the pointer table region.
-        for (int i = 0; i < blocks; i++) {
+        for (var i = 0; i < blocks; i++) {
           BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(i * 4), (uint)endOffsets[i]);
         }
 
@@ -307,9 +307,9 @@ public sealed class CramFsWriter : IDisposable {
 
   private static byte[] CompressZlib(byte[] data) {
     // zlib frame: 2-byte header + deflate + 4-byte Adler-32 (big-endian).
-    byte[] deflated = DeflateCompressor.Compress(data);
+    var deflated = DeflateCompressor.Compress(data);
 
-    byte[] result = new byte[2 + deflated.Length + 4];
+    var result = new byte[2 + deflated.Length + 4];
     // CMF = 0x78 (deflate, window size 7 = 32K)
     // FLG = 0x9C (check bits so that CMF*256+FLG is divisible by 31, level 2)
     result[0] = 0x78;
@@ -342,14 +342,14 @@ public sealed class CramFsWriter : IDisposable {
 
         // CramFS stores offsets in units of 4 bytes, so data must be 4-byte aligned.
         Pad4(ms);
-        int blobStart = (int)ms.Position;
+        var blobStart = (int)ms.Position;
         fileOffsets[child] = blobStart;
 
         // Fix up the block pointer end-offsets: they are currently relative
         // to blob start, but the reader expects absolute image offsets.
-        int blockCount = fileDataMap[child].blockCount;
-        for (int i = 0; i < blockCount; i++) {
-          uint relEnd = BinaryPrimitives.ReadUInt32LittleEndian(blob.AsSpan(i * 4));
+        var blockCount = fileDataMap[child].blockCount;
+        for (var i = 0; i < blockCount; i++) {
+          var relEnd = BinaryPrimitives.ReadUInt32LittleEndian(blob.AsSpan(i * 4));
           BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(i * 4), (uint)(blobStart + relEnd));
         }
 
@@ -380,7 +380,7 @@ public sealed class CramFsWriter : IDisposable {
 
     // CramFS stores offsets in units of 4 bytes, so data must be 4-byte aligned.
     Pad4(ms);
-    int dirStart = (int)ms.Position;
+    var dirStart = (int)ms.Position;
 
     foreach (var child in node.Children) {
       // Determine inode fields.
@@ -404,19 +404,19 @@ public sealed class CramFsWriter : IDisposable {
       }
 
       // Name bytes, null-padded to multiple of 4.
-      byte[] nameBytes = Encoding.UTF8.GetBytes(child.Name);
-      int paddedLen = Align4(nameBytes.Length + 1); // +1 for null terminator, then align
-      byte[] paddedName = new byte[paddedLen]; // zero-filled
+      var nameBytes = Encoding.UTF8.GetBytes(child.Name);
+      var paddedLen = Align4(nameBytes.Length + 1); // +1 for null terminator, then align
+      var paddedName = new byte[paddedLen]; // zero-filled
       nameBytes.CopyTo(paddedName, 0);
 
-      int nameLenField = paddedLen / 4;
+      var nameLenField = paddedLen / 4;
 
-      byte[] inode = MakeInode(mode, 0, 0, size, nameLenField, dataOffset);
+      var inode = MakeInode(mode, 0, 0, size, nameLenField, dataOffset);
       ms.Write(inode);
       ms.Write(paddedName);
     }
 
-    int dirSize = (int)ms.Position - dirStart;
+    var dirSize = (int)ms.Position - dirStart;
     dirOffsets[node] = (dirStart, dirSize);
   }
 
@@ -424,18 +424,18 @@ public sealed class CramFsWriter : IDisposable {
 
   private static byte[] MakeInode(ushort mode, ushort uid, byte gid, int size, int namelen, int dataOffset) {
     // word 0: mode[15:0] | uid[31:16]
-    uint w0 = (uint)mode | ((uint)uid << 16);
+    var w0 = (uint)mode | ((uint)uid << 16);
 
     // word 1: size[23:0] | gid[31:24]
-    uint w1 = ((uint)size & 0x00FFFFFF) | ((uint)gid << 24);
+    var w1 = ((uint)size & 0x00FFFFFF) | ((uint)gid << 24);
 
     // word 2: namelen[5:0] | offset[31:6]
     //   offset field = dataOffset / 4 (stored in bits 6-31)
     //   namelen in bits 0-5
-    uint offsetField = (uint)(dataOffset / 4);
-    uint w2 = ((uint)namelen & 0x3F) | (offsetField << 6);
+    var offsetField = (uint)(dataOffset / 4);
+    var w2 = ((uint)namelen & 0x3F) | (offsetField << 6);
 
-    byte[] buf = new byte[CramFsConstants.InodeSize];
+    var buf = new byte[CramFsConstants.InodeSize];
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0), w0);
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(4), w1);
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(8), w2);
@@ -482,7 +482,7 @@ public sealed class CramFsWriter : IDisposable {
   private static int Align4(int value) => (value + 3) & ~3;
 
   private static void Pad4(MemoryStream ms) {
-    int pad = (4 - (int)(ms.Position % 4)) % 4;
-    for (int i = 0; i < pad; i++) ms.WriteByte(0);
+    var pad = (4 - (int)(ms.Position % 4)) % 4;
+    for (var i = 0; i < pad; i++) ms.WriteByte(0);
   }
 }

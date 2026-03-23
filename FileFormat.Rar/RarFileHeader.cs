@@ -80,7 +80,7 @@ internal sealed class RarFileHeader {
     var offset = 0;
 
     // Skip past Type and Flags vints (already parsed by RarHeader)
-    _ = RarVint.Read(headerData[offset..], out int consumed); // type
+    _ = RarVint.Read(headerData[offset..], out var consumed); // type
     offset += consumed;
     _ = RarVint.Read(headerData[offset..], out consumed); // flags
     offset += consumed;
@@ -136,7 +136,7 @@ internal sealed class RarFileHeader {
     offset += consumed;
 
     // Name length + filename bytes (UTF-8)
-    int nameLength = (int)RarVint.Read(headerData[offset..], out consumed);
+    var nameLength = (int)RarVint.Read(headerData[offset..], out consumed);
     offset += consumed;
 
     if (offset + nameLength > headerData.Length)
@@ -146,7 +146,7 @@ internal sealed class RarFileHeader {
 
     // Parse extra area for encryption record
     if (header.HasExtraArea && header.ExtraSize > 0) {
-      int extraEnd = offset + (int)header.ExtraSize;
+      var extraEnd = offset + (int)header.ExtraSize;
       if (extraEnd > headerData.Length)
         extraEnd = headerData.Length;
       ParseExtraArea(fileHeader, headerData, offset, extraEnd);
@@ -158,12 +158,12 @@ internal sealed class RarFileHeader {
   private static void ParseExtraArea(RarFileHeader fileHeader,
       ReadOnlySpan<byte> headerData, int offset, int end) {
     while (offset < end) {
-      int recordSize = (int)RarVint.Read(headerData[offset..], out int consumed);
+      var recordSize = (int)RarVint.Read(headerData[offset..], out var consumed);
       offset += consumed;
-      int recordEnd = offset + recordSize;
+      var recordEnd = offset + recordSize;
       if (recordEnd > end) break;
 
-      int recordType = (int)RarVint.Read(headerData[offset..], out consumed);
+      var recordType = (int)RarVint.Read(headerData[offset..], out consumed);
       offset += consumed;
 
       if (recordType == RarConstants.FileExtraEncryption) {
@@ -190,7 +190,7 @@ internal sealed class RarFileHeader {
   /// </summary>
   /// <param name="stream">The stream to write to.</param>
   public void WriteTo(Stream stream) {
-    byte[] nameBytes = Encoding.UTF8.GetBytes(FileName);
+    var nameBytes = Encoding.UTF8.GetBytes(FileName);
 
     RarVint.Write(stream, (ulong)FileFlags);
     RarVint.Write(stream, (ulong)UnpackedSize);

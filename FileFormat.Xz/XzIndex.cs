@@ -17,45 +17,45 @@ internal sealed class XzIndex {
   public static XzIndex Read(Stream stream) {
     var startPos = stream.Position;
 
-    int indicator = stream.ReadByte();
+    var indicator = stream.ReadByte();
     if (indicator != 0x00)
       throw new InvalidDataException("Invalid XZ index indicator byte.");
 
     var index = new XzIndex();
-    ulong numRecords = XzVarint.Read(stream);
+    var numRecords = XzVarint.Read(stream);
 
     for (ulong i = 0; i < numRecords; ++i) {
-      long unpaddedSize = (long)XzVarint.Read(stream);
-      long uncompressedSize = (long)XzVarint.Read(stream);
+      var unpaddedSize = (long)XzVarint.Read(stream);
+      var uncompressedSize = (long)XzVarint.Read(stream);
       index.Records.Add((unpaddedSize, uncompressedSize));
     }
 
     // Padding to 4-byte alignment
     var dataSize = stream.Position - startPos;
-    int padding = (int)((4 - (dataSize % 4)) % 4);
-    for (int i = 0; i < padding; ++i) {
-      int b = stream.ReadByte();
+    var padding = (int)((4 - (dataSize % 4)) % 4);
+    for (var i = 0; i < padding; ++i) {
+      var b = stream.ReadByte();
       if (b != 0)
         throw new InvalidDataException("Non-zero padding in XZ index.");
     }
 
     // Read and verify CRC-32
-    byte[] crcBuf = new byte[4];
+    var crcBuf = new byte[4];
     if (stream.Read(crcBuf, 0, 4) != 4)
       throw new EndOfStreamException("Truncated XZ index CRC.");
 
-    uint storedCrc = (uint)(crcBuf[0] | (crcBuf[1] << 8) | (crcBuf[2] << 16) | (crcBuf[3] << 24));
+    var storedCrc = (uint)(crcBuf[0] | (crcBuf[1] << 8) | (crcBuf[2] << 16) | (crcBuf[3] << 24));
 
     // Compute CRC over the index data (indicator + records + padding)
     var endPos = stream.Position - 4; // before CRC
-    long indexDataLen = endPos - startPos;
+    var indexDataLen = endPos - startPos;
 
     stream.Position = startPos;
-    byte[] indexData = new byte[indexDataLen];
+    var indexData = new byte[indexDataLen];
     _ = stream.Read(indexData, 0, (int)indexDataLen);
     stream.Position = endPos + 4; // skip past CRC
 
-    uint computedCrc = Crc32.Compute(indexData);
+    var computedCrc = Crc32.Compute(indexData);
     if (storedCrc != computedCrc)
       throw new InvalidDataException("XZ index CRC mismatch.");
 
@@ -80,15 +80,15 @@ internal sealed class XzIndex {
       XzVarint.Write(ms, (ulong)uncompressedSize);
     }
 
-    byte[] indexData = ms.ToArray();
+    var indexData = ms.ToArray();
 
     // Padding to 4-byte alignment
-    int padding = (int)((4 - (indexData.Length % 4)) % 4);
-    byte[] paddedData = new byte[indexData.Length + padding];
+    var padding = (int)((4 - (indexData.Length % 4)) % 4);
+    var paddedData = new byte[indexData.Length + padding];
     indexData.AsSpan().CopyTo(paddedData);
 
     // CRC-32 over padded data
-    uint crc = Crc32.Compute(paddedData);
+    var crc = Crc32.Compute(paddedData);
 
     stream.Write(paddedData);
     stream.WriteByte((byte)crc);

@@ -8,9 +8,9 @@ public class SzddTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SmallData() {
-    byte[] input = "Hello, SZDD World!"u8.ToArray();
-    byte[] compressed = SzddStream.Compress(input);
-    byte[] result = SzddStream.Decompress(compressed);
+    var input = "Hello, SZDD World!"u8.ToArray();
+    var compressed = SzddStream.Compress(input);
+    var result = SzddStream.Decompress(compressed);
     Assert.That(result, Is.EqualTo(input));
   }
 
@@ -19,10 +19,10 @@ public class SzddTests {
   [Test]
   public void RoundTrip_Empty() {
     byte[] input = [];
-    byte[] compressed = SzddStream.Compress(input);
+    var compressed = SzddStream.Compress(input);
     // Must at minimum contain a valid 14-byte header.
     Assert.That(compressed.Length, Is.GreaterThanOrEqualTo(14));
-    byte[] result = SzddStream.Decompress(compressed);
+    var result = SzddStream.Decompress(compressed);
     Assert.That(result, Is.EqualTo(input));
   }
 
@@ -33,13 +33,13 @@ public class SzddTests {
     // 16 KB of repeating pattern — should compress well.
     var pattern = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"u8.ToArray();
     var input = new byte[16 * 1024];
-    for (int i = 0; i < input.Length; ++i)
+    for (var i = 0; i < input.Length; ++i)
       input[i] = pattern[i % pattern.Length];
 
-    byte[] compressed = SzddStream.Compress(input);
+    var compressed = SzddStream.Compress(input);
     Assert.That(compressed.Length, Is.LessThan(input.Length),
       "Repetitive data should compress to less than the original size.");
-    byte[] result = SzddStream.Decompress(compressed);
+    var result = SzddStream.Decompress(compressed);
     Assert.That(result, Is.EqualTo(input));
   }
 
@@ -50,15 +50,15 @@ public class SzddTests {
     var rng = new Random(42);
     var input = new byte[4096];
     rng.NextBytes(input);
-    byte[] compressed = SzddStream.Compress(input);
-    byte[] result = SzddStream.Decompress(compressed);
+    var compressed = SzddStream.Compress(input);
+    var result = SzddStream.Decompress(compressed);
     Assert.That(result, Is.EqualTo(input));
   }
 
   [Category("Exception")]
   [Test]
   public void Decompress_InvalidMagic_Throws() {
-    byte[] bad = new byte[20];
+    var bad = new byte[20];
     bad[0] = 0xDE; bad[1] = 0xAD; bad[2] = 0xBE; bad[3] = 0xEF;
     Assert.Throws<InvalidDataException>(() => SzddStream.Decompress(bad));
   }
@@ -66,11 +66,11 @@ public class SzddTests {
   [Category("HappyPath")]
   [Test]
   public void GetMissingChar_ReturnsCorrectChar() {
-    byte[] input = "SETUP"u8.ToArray();
+    var input = "SETUP"u8.ToArray();
     // Simulate a .EX_ file — missing char is 'e'.
-    byte[] compressed = SzddStream.Compress(input, missingChar: 'e');
+    var compressed = SzddStream.Compress(input, missingChar: 'e');
     using var ms = new MemoryStream(compressed);
-    char missing = SzddStream.GetMissingChar(ms);
+    var missing = SzddStream.GetMissingChar(ms);
     Assert.That(missing, Is.EqualTo('e'));
   }
 
@@ -78,7 +78,7 @@ public class SzddTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Stream_Overloads() {
-    byte[] input = "Stream overload test."u8.ToArray();
+    var input = "Stream overload test."u8.ToArray();
     using var inputStream = new MemoryStream(input);
     using var compressedStream = new MemoryStream();
     SzddStream.Compress(inputStream, compressedStream, missingChar: 'x');
@@ -93,10 +93,10 @@ public class SzddTests {
   [Category("HappyPath")]
   [Test]
   public void GetMissingChar_DefaultUnderscore() {
-    byte[] input = "test"u8.ToArray();
-    byte[] compressed = SzddStream.Compress(input); // default missingChar = '_'
+    var input = "test"u8.ToArray();
+    var compressed = SzddStream.Compress(input); // default missingChar = '_'
     using var ms = new MemoryStream(compressed);
-    char missing = SzddStream.GetMissingChar(ms);
+    var missing = SzddStream.GetMissingChar(ms);
     Assert.That(missing, Is.EqualTo('_'));
   }
 }

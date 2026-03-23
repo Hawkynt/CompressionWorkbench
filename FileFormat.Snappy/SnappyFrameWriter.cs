@@ -28,9 +28,9 @@ public sealed class SnappyFrameWriter {
   public void Write(ReadOnlySpan<byte> data) {
     WriteStreamIdentifier();
 
-    int offset = 0;
+    var offset = 0;
     while (offset < data.Length) {
-      int blockLen = Math.Min(MaxBlockSize, data.Length - offset);
+      var blockLen = Math.Min(MaxBlockSize, data.Length - offset);
       WriteChunk(data.Slice(offset, blockLen));
       offset += blockLen;
     }
@@ -45,19 +45,19 @@ public sealed class SnappyFrameWriter {
 
   private void WriteChunk(ReadOnlySpan<byte> uncompressed) {
     // CRC-32C (Castagnoli) masked
-    uint crc = MaskChecksum(ComputeCrc32C(uncompressed));
-    byte[] compressed = SnappyCompressor.Compress(uncompressed);
+    var crc = MaskChecksum(ComputeCrc32C(uncompressed));
+    var compressed = SnappyCompressor.Compress(uncompressed);
 
     if (compressed.Length < uncompressed.Length) {
       // Compressed chunk: type 0x00
-      int chunkLen = 4 + compressed.Length; // 4 bytes CRC + compressed data
+      var chunkLen = 4 + compressed.Length; // 4 bytes CRC + compressed data
       this._output.WriteByte(ChunkCompressed);
       WriteLength24(chunkLen);
       WriteCrc(crc);
       this._output.Write(compressed);
     } else {
       // Uncompressed chunk: type 0x01
-      int chunkLen = 4 + uncompressed.Length;
+      var chunkLen = 4 + uncompressed.Length;
       this._output.WriteByte(ChunkUncompressed);
       WriteLength24(chunkLen);
       WriteCrc(crc);

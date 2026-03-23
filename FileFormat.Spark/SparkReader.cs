@@ -56,11 +56,11 @@ public sealed class SparkReader : IDisposable {
       return [];
 
     this._stream.Position = entry.DataOffset;
-    byte[] compressed = ReadExactBytes((int)entry.CompressedSize);
-    byte[] decompressed = Decompress(entry.Method, compressed, (int)entry.OriginalSize);
+    var compressed = ReadExactBytes((int)entry.CompressedSize);
+    var decompressed = Decompress(entry.Method, compressed, (int)entry.OriginalSize);
 
     // Verify CRC-16.
-    ushort actualCrc = Crc16.Compute(decompressed);
+    var actualCrc = Crc16.Compute(decompressed);
     if (actualCrc != entry.Crc16)
       throw new InvalidDataException(
         $"CRC-16 mismatch for '{entry.FileName}': expected 0x{entry.Crc16:X4}, computed 0x{actualCrc:X4}.");
@@ -85,7 +85,7 @@ public sealed class SparkReader : IDisposable {
 
   private void ParseEntries(List<SparkEntry> entries, string prefix) {
     while (true) {
-      int marker = this._stream.ReadByte();
+      var marker = this._stream.ReadByte();
       if (marker == -1)
         return; // EOF — treat as end of archive.
 
@@ -93,7 +93,7 @@ public sealed class SparkReader : IDisposable {
         throw new InvalidDataException(
           $"Expected Spark entry marker 0x{SparkConstants.EntryMarker:X2}, found 0x{marker:X2}.");
 
-      int method = this._stream.ReadByte();
+      var method = this._stream.ReadByte();
       if (method == -1)
         throw new InvalidDataException("Unexpected end of stream reading Spark entry method.");
 
@@ -105,27 +105,27 @@ public sealed class SparkReader : IDisposable {
       if (method == SparkConstants.MethodEndOfDirectory)
         return;
 
-      byte methodByte = (byte)method;
-      bool isSparkExtended = SparkConstants.IsSparkExtended(methodByte);
-      byte baseMethod = SparkConstants.GetBaseMethod(methodByte);
+      var methodByte = (byte)method;
+      var isSparkExtended = SparkConstants.IsSparkExtended(methodByte);
+      var baseMethod = SparkConstants.GetBaseMethod(methodByte);
 
       // Determine header format: method 1 (old stored) has no original-size field.
-      bool hasOriginalSize = baseMethod >= SparkConstants.GetBaseMethod(SparkConstants.MethodStored);
+      var hasOriginalSize = baseMethod >= SparkConstants.GetBaseMethod(SparkConstants.MethodStored);
 
       // Read the fixed header fields after marker+method (already consumed 2 bytes).
       // Filename: 13 bytes.
-      byte[] nameBuf = ReadExactBytes(SparkConstants.FileNameLength);
-      string fileName = ReadNullTerminatedAscii(nameBuf);
+      var nameBuf = ReadExactBytes(SparkConstants.FileNameLength);
+      var fileName = ReadNullTerminatedAscii(nameBuf);
 
       // Compressed size: 4 bytes LE.
-      uint compressedSize = ReadUInt32Le();
+      var compressedSize = ReadUInt32Le();
 
       // Date and time: 2 + 2 bytes LE (MS-DOS format).
-      ushort dosDate = ReadUInt16Le();
-      ushort dosTime = ReadUInt16Le();
+      var dosDate = ReadUInt16Le();
+      var dosTime = ReadUInt16Le();
 
       // CRC-16: 2 bytes LE.
-      ushort crc16 = ReadUInt16Le();
+      var crc16 = ReadUInt16Le();
 
       // Original size: 4 bytes LE (only for methods >= 2).
       uint originalSize;
@@ -145,12 +145,12 @@ public sealed class SparkReader : IDisposable {
         fileAttributes = ReadUInt32Le();
       }
 
-      DateTime lastModified = SparkEntry.DosDateTimeToDateTime(dosDate, dosTime);
-      bool isDirectory = methodByte == SparkConstants.MethodDirectory;
+      var lastModified = SparkEntry.DosDateTimeToDateTime(dosDate, dosTime);
+      var isDirectory = methodByte == SparkConstants.MethodDirectory;
 
-      string fullName = prefix.Length > 0 ? $"{prefix}/{fileName}" : fileName;
+      var fullName = prefix.Length > 0 ? $"{prefix}/{fileName}" : fileName;
 
-      long dataOffset = this._stream.Position;
+      var dataOffset = this._stream.Position;
 
       var entry = new SparkEntry {
         FileName = fullName,
@@ -186,7 +186,7 @@ public sealed class SparkReader : IDisposable {
   }
 
   private static byte[] Decompress(byte method, byte[] compressedData, int originalSize) {
-    byte baseMethod = SparkConstants.GetBaseMethod(method);
+    var baseMethod = SparkConstants.GetBaseMethod(method);
 
     return baseMethod switch {
       0x01 or 0x02 => compressedData, // Stored
@@ -206,10 +206,10 @@ public sealed class SparkReader : IDisposable {
 
     var output = new List<byte>(data.Length * 2);
     byte lastByte = 0;
-    int i = 0;
+    var i = 0;
 
     while (i < data.Length) {
-      byte current = data[i++];
+      var current = data[i++];
 
       if (current != SparkConstants.RleMarker) {
         output.Add(current);
@@ -220,7 +220,7 @@ public sealed class SparkReader : IDisposable {
       if (i >= data.Length)
         throw new InvalidDataException("Unexpected end of Spark RLE stream after marker byte.");
 
-      byte count = data[i++];
+      var count = data[i++];
 
       if (count == 0) {
         // Literal 0x90.
@@ -230,7 +230,7 @@ public sealed class SparkReader : IDisposable {
       }
 
       // Repeat lastByte (count - 1) additional times.
-      for (int r = 1; r < count; r++)
+      for (var r = 1; r < count; r++)
         output.Add(lastByte);
     }
 
@@ -250,11 +250,11 @@ public sealed class SparkReader : IDisposable {
   }
 
   private void SkipBytes(uint count) {
-    byte[] buf = new byte[Math.Min(count, 4096)];
-    uint remaining = count;
+    var buf = new byte[Math.Min(count, 4096)];
+    var remaining = count;
     while (remaining > 0) {
-      int toRead = (int)Math.Min(remaining, (uint)buf.Length);
-      int read = this._stream.Read(buf, 0, toRead);
+      var toRead = (int)Math.Min(remaining, (uint)buf.Length);
+      var read = this._stream.Read(buf, 0, toRead);
       if (read == 0)
         break;
       remaining -= (uint)read;
@@ -262,10 +262,10 @@ public sealed class SparkReader : IDisposable {
   }
 
   private byte[] ReadExactBytes(int count) {
-    byte[] buf = new byte[count];
-    int totalRead = 0;
+    var buf = new byte[count];
+    var totalRead = 0;
     while (totalRead < count) {
-      int read = this._stream.Read(buf, totalRead, count - totalRead);
+      var read = this._stream.Read(buf, totalRead, count - totalRead);
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of stream reading Spark data.");
       totalRead += read;
@@ -275,17 +275,17 @@ public sealed class SparkReader : IDisposable {
   }
 
   private ushort ReadUInt16Le() {
-    byte[] buf = ReadExactBytes(2);
+    var buf = ReadExactBytes(2);
     return (ushort)(buf[0] | (buf[1] << 8));
   }
 
   private uint ReadUInt32Le() {
-    byte[] buf = ReadExactBytes(4);
+    var buf = ReadExactBytes(4);
     return (uint)(buf[0] | (buf[1] << 8) | (buf[2] << 16) | (buf[3] << 24));
   }
 
   private static string ReadNullTerminatedAscii(byte[] buffer) {
-    int end = 0;
+    var end = 0;
     while (end < buffer.Length && buffer[end] != 0)
       end++;
     return Encoding.ASCII.GetString(buffer, 0, end);

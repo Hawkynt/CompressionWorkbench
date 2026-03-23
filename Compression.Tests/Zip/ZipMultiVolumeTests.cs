@@ -9,11 +9,11 @@ public class ZipMultiVolumeTests {
   [Category("RoundTrip")]
   [Test]
   public void SplitArchive_Read_TwoVolumes() {
-    byte[] archive = CreateTestArchive();
+    var archive = CreateTestArchive();
 
-    int splitPoint = archive.Length / 2;
-    byte[] vol1 = archive[..splitPoint];
-    byte[] vol2 = archive[splitPoint..];
+    var splitPoint = archive.Length / 2;
+    var vol1 = archive[..splitPoint];
+    var vol2 = archive[splitPoint..];
 
     using var cs = new ConcatenatedStream([new MemoryStream(vol1), new MemoryStream(vol2)]);
     using var reader = new ZipReader(cs, leaveOpen: true);
@@ -27,10 +27,10 @@ public class ZipMultiVolumeTests {
   [Category("RoundTrip")]
   [Test]
   public void SplitArchive_Read_ThreeVolumes() {
-    byte[] archive = CreateTestArchive();
+    var archive = CreateTestArchive();
 
-    int split1 = archive.Length / 3;
-    int split2 = 2 * archive.Length / 3;
+    var split1 = archive.Length / 3;
+    var split2 = 2 * archive.Length / 3;
 
     using var cs = new ConcatenatedStream([
       new MemoryStream(archive[..split1]),
@@ -48,10 +48,10 @@ public class ZipMultiVolumeTests {
   [Category("RoundTrip")]
   [Test]
   public void CreateSplit_Write_Read_RoundTrip() {
-    byte[] data1 = MakeTestData(100, 0x30);
-    byte[] data2 = MakeTestData(200, 0x50);
+    var data1 = MakeTestData(100, 0x30);
+    var data2 = MakeTestData(200, 0x50);
 
-    byte[][] volumes = ZipWriter.CreateSplit(
+    var volumes = ZipWriter.CreateSplit(
       maxVolumeSize: 200,
       entries: [("file1.bin", data1), ("file2.bin", data2)]);
 
@@ -81,7 +81,7 @@ public class ZipMultiVolumeTests {
 
   private static byte[] MakeTestData(int size, byte seed) {
     var data = new byte[size];
-    for (int i = 0; i < size; ++i)
+    for (var i = 0; i < size; ++i)
       data[i] = (byte)((seed + i) % 256);
     return data;
   }

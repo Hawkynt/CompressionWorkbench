@@ -90,27 +90,27 @@ public sealed class CramFsReader : IDisposable {
   /// adding all children to <see cref="_entries"/> and recursing into subdirs.
   /// </summary>
   private void WalkDirectory((ushort mode, ushort uid, int size, byte gid, int namelen, int offset) dirInode, string parentPath) {
-    int dirDataStart = dirInode.offset * 4;
+    var dirDataStart = dirInode.offset * 4;
     if (dirDataStart == 0 || dirInode.size == 0)
       return;
 
-    int pos = dirDataStart;
-    int end = dirDataStart + dirInode.size;
+    var pos = dirDataStart;
+    var end = dirDataStart + dirInode.size;
 
     while (pos < end && pos + CramFsConstants.InodeSize <= this._image.Length) {
       var inode = this.ReadInode(pos);
       pos += CramFsConstants.InodeSize;
 
       // namelen field is stored as (byte_count / 4), so actual byte count = inode.namelen * 4
-      int nameBytes = inode.namelen * 4;
+      var nameBytes = inode.namelen * 4;
       if (nameBytes == 0 || pos + nameBytes > this._image.Length)
         break;
 
       // Name is null-padded to a multiple of 4 bytes
-      string name = ReadNullTerminatedName(this._image, pos, nameBytes);
+      var name = ReadNullTerminatedName(this._image, pos, nameBytes);
       pos += nameBytes;
 
-      string fullPath = parentPath == "/"
+      var fullPath = parentPath == "/"
         ? "/" + name
         : parentPath + "/" + name;
 
@@ -134,43 +134,43 @@ public sealed class CramFsReader : IDisposable {
   // ── File decompression ───────────────────────────────────────────────────────
 
   private byte[] DecompressFile(CramFsEntry entry) {
-    int size   = entry.Size;
-    int blocks = (size + CramFsConstants.PageSize - 1) / CramFsConstants.PageSize;
+    var size   = entry.Size;
+    var blocks = (size + CramFsConstants.PageSize - 1) / CramFsConstants.PageSize;
 
     // Block pointer table: `blocks` uint32 values starting at entry.DataOffset.
     // Each value is the END byte offset of the corresponding compressed block.
-    int ptrTableStart = entry.DataOffset;
-    int ptrTableSize  = blocks * 4;
+    var ptrTableStart = entry.DataOffset;
+    var ptrTableSize  = blocks * 4;
 
     if (ptrTableStart + ptrTableSize > this._image.Length)
       throw new InvalidDataException(
         $"Block pointer table for '{entry.FullPath}' extends past end of image.");
 
     var result = new byte[size];
-    int outPos = 0;
+    var outPos = 0;
 
-    for (int i = 0; i < blocks; i++) {
-      int endOffset = (int)this.ReadU32(ptrTableStart + i * 4);
+    for (var i = 0; i < blocks; i++) {
+      var endOffset = (int)this.ReadU32(ptrTableStart + i * 4);
 
       // Start of this block's compressed data:
       //   block 0 → right after the pointer table
       //   block i → endOffset of block i-1
-      int startOffset = i == 0
+      var startOffset = i == 0
         ? ptrTableStart + ptrTableSize
         : (int)this.ReadU32(ptrTableStart + (i - 1) * 4);
 
-      int compressedLen = endOffset - startOffset;
+      var compressedLen = endOffset - startOffset;
       if (compressedLen < 0 || startOffset + compressedLen > this._image.Length)
         throw new InvalidDataException(
           $"Block {i} of '{entry.FullPath}' has invalid bounds (start={startOffset}, end={endOffset}).");
 
-      int expectedOut = Math.Min(CramFsConstants.PageSize, size - outPos);
+      var expectedOut = Math.Min(CramFsConstants.PageSize, size - outPos);
 
       // Blocks are zlib-wrapped deflate: strip the 2-byte header and 4-byte Adler-32 trailer.
       var compressed = this._image.AsSpan(startOffset, compressedLen);
-      byte[] decompressed = DecompressZlibBlock(compressed, entry.FullPath, i);
+      var decompressed = DecompressZlibBlock(compressed, entry.FullPath, i);
 
-      int copy = Math.Min(decompressed.Length, expectedOut);
+      var copy = Math.Min(decompressed.Length, expectedOut);
       decompressed.AsSpan(0, copy).CopyTo(result.AsSpan(outPos));
       outPos += copy;
     }
@@ -213,16 +213,16 @@ public sealed class CramFsReader : IDisposable {
       throw new InvalidDataException(
         $"Inode at offset {byteOffset} extends past end of image.");
 
-    uint w0 = this.ReadU32(byteOffset);
-    uint w1 = this.ReadU32(byteOffset + 4);
-    uint w2 = this.ReadU32(byteOffset + 8);
+    var w0 = this.ReadU32(byteOffset);
+    var w1 = this.ReadU32(byteOffset + 4);
+    var w2 = this.ReadU32(byteOffset + 8);
 
-    ushort mode = (ushort)(w0 & 0xFFFF);
-    ushort uid  = (ushort)(w0 >> 16);
-    int    size = (int)(w1 & 0x00FFFFFF);
-    byte   gid  = (byte)(w1 >> 24);
-    int    namelen = (int)(w2 & 0x3F);
-    int    offset  = (int)(w2 >> 6);
+    var mode = (ushort)(w0 & 0xFFFF);
+    var uid  = (ushort)(w0 >> 16);
+    var    size = (int)(w1 & 0x00FFFFFF);
+    var   gid  = (byte)(w1 >> 24);
+    var    namelen = (int)(w2 & 0x3F);
+    var    offset  = (int)(w2 >> 6);
 
     return (mode, uid, size, gid, namelen, offset);
   }
@@ -235,7 +235,7 @@ public sealed class CramFsReader : IDisposable {
   }
 
   private static string ReadNullTerminatedName(byte[] image, int offset, int maxBytes) {
-    int end = offset;
+    var end = offset;
     while (end < offset + maxBytes && end < image.Length && image[end] != 0)
       end++;
     return Encoding.UTF8.GetString(image, offset, end - offset);

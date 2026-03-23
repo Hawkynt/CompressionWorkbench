@@ -11,10 +11,11 @@ internal static class FormatDetector {
     Zip, Rar, SevenZip, Tar, Cab, Lzh, Arj, Arc, Zoo, Ace, Sqx, Cpio, Ar, Wim, Rpm, Deb,
     Shar, Pak, Iso, Udf, Ha, Nsis, InnoSetup, SquashFs, CramFs, StuffIt, Zpaq,
     Sfx,
-    Dms, LzxAmiga, CompactPro, Spark, Lbr, Uharc, Wad,
+    Dms, LzxAmiga, CompactPro, Spark, Lbr, Uharc, Wad, Xar, AlZip,
     // Stream compression formats (18)
     Gzip, Bzip2, Xz, Zstd, Lz4, Brotli, Snappy, Lzop, Compress, Lzma, Lzip, Zlib, Szdd, Kwaj,
     PowerPacker, Squeeze, IcePacker, Rzip,
+    PackBits, Yaz0, BriefLz, Rnc, RefPack, ApLib, Lzfse, Freeze,
     // Wrapper formats (2)
     MacBinary, BinHex,
     // Compound formats (6)
@@ -29,7 +30,7 @@ internal static class FormatDetector {
     Format.Ha or Format.Nsis or Format.InnoSetup or Format.SquashFs or Format.CramFs or
     Format.StuffIt or Format.Zpaq or Format.Sfx or
     Format.Dms or Format.LzxAmiga or Format.CompactPro or Format.Spark or Format.Lbr or
-    Format.Uharc or Format.Wad => true,
+    Format.Uharc or Format.Wad or Format.Xar or Format.AlZip => true,
     Format.TarGz or Format.TarBz2 or Format.TarXz or Format.TarZst or Format.TarLz4 or Format.TarLzip => true,
     _ => false,
   };
@@ -39,6 +40,8 @@ internal static class FormatDetector {
     Format.Snappy or Format.Lzop or Format.Compress or Format.Lzma or Format.Lzip or
     Format.Zlib or Format.Szdd or Format.Kwaj or
     Format.PowerPacker or Format.Squeeze or Format.IcePacker or Format.Rzip or
+    Format.PackBits or Format.Yaz0 or Format.BriefLz or Format.Rnc or
+    Format.RefPack or Format.ApLib or Format.Lzfse or Format.Freeze or
     Format.MacBinary or Format.BinHex => true,
     _ => false,
   };
@@ -130,6 +133,16 @@ internal static class FormatDetector {
       ".uha" => Format.Uharc,
       ".rz" or ".rzip" => Format.Rzip,
       ".wad" => Format.Wad,
+      ".packbits" => Format.PackBits,
+      ".yaz0" or ".szs" => Format.Yaz0,
+      ".blz" => Format.BriefLz,
+      ".rnc" => Format.Rnc,
+      ".qfs" or ".refpack" => Format.RefPack,
+      ".aplib" => Format.ApLib,
+      ".lzfse" => Format.Lzfse,
+      ".f" or ".freeze" => Format.Freeze,
+      ".xar" => Format.Xar,
+      ".alz" => Format.AlZip,
       _ when lower.EndsWith(".sz_") || lower.EndsWith("._") => Format.Szdd,
       _ => Format.Unknown,
     };
@@ -149,7 +162,7 @@ internal static class FormatDetector {
       if (fs.Length > 65536) {
         fs.Seek(-65536, SeekOrigin.End);
         var tail = new byte[65536];
-        int bytesRead = fs.Read(tail, 0, tail.Length);
+        var bytesRead = fs.Read(tail, 0, tail.Length);
         var tailSpan = tail.AsSpan(0, bytesRead);
         if (ContainsBytes(tailSpan, "NullsoftInst"u8)) return Format.Nsis;
         if (ContainsBytes(tailSpan, "Inno Setup"u8)) return Format.InnoSetup;
@@ -240,9 +253,52 @@ internal static class FormatDetector {
     if (header[0] == 0x4B && header[1] == 0x57 && header[2] == 0x41 && header[3] == 0x4A)
       return Format.Kwaj;
 
+    // Yaz0: "Yaz0"
+    if (header[0] == 0x59 && header[1] == 0x61 && header[2] == 0x7A && header[3] == 0x30)
+      return Format.Yaz0;
+
+    // BriefLZ: "blz\x1A"
+    if (header[0] == 0x62 && header[1] == 0x6C && header[2] == 0x7A && header[3] == 0x1A)
+      return Format.BriefLz;
+
+    // RNC: "RNC\x01" or "RNC\x02"
+    if (header[0] == 0x52 && header[1] == 0x4E && header[2] == 0x43 && (header[3] == 0x01 || header[3] == 0x02))
+      return Format.Rnc;
+
+    // LZFSE: "bvx1", "bvx2", "bvxn", "bvx-"
+    if (header[0] == 0x62 && header[1] == 0x76 && header[2] == 0x78 &&
+        (header[3] == 0x31 || header[3] == 0x32 || header[3] == 0x6E || header[3] == 0x2D))
+      return Format.Lzfse;
+
+    // XAR: "xar!"
+    if (header[0] == 0x78 && header[1] == 0x61 && header[2] == 0x72 && header[3] == 0x21)
+      return Format.Xar;
+
+    // ALZip: "ALZ\x01"
+    if (header[0] == 0x41 && header[1] == 0x4C && header[2] == 0x5A && header[3] == 0x01)
+      return Format.AlZip;
+
+    // PackBits: "PKBT"
+    if (header[0] == 0x50 && header[1] == 0x4B && header[2] == 0x42 && header[3] == 0x54)
+      return Format.PackBits;
+
+    // aPLib: "AP32"
+    if (header[0] == 0x41 && header[1] == 0x50 && header[2] == 0x33 && header[3] == 0x32)
+      return Format.ApLib;
+
+    // Freeze: \x1F\x9E or \x1F\x9F
+    if (header[0] == 0x1F && (header[1] == 0x9E || header[1] == 0x9F))
+      return Format.Freeze;
+
+    // RefPack/QFS: 0x10 0xFB or at offset 4 (with compressed size prefix)
+    if (header.Length >= 5 && ((header[0] & 0xFE) == 0x10) && header[1] == 0xFB)
+      return Format.RefPack;
+    if (header.Length >= 9 && ((header[4] & 0xFE) == 0x10) && header[5] == 0xFB)
+      return Format.RefPack;
+
     // LZMA: byte 0 = properties (typically 0x5D), then 4-byte dict size LE
     if (header.Length >= 13 && header[0] < 0xE1 && header[0] % 9 < 9) {
-      uint dictSize = (uint)(header[1] | (header[2] << 8) | (header[3] << 16) | (header[4] << 24));
+      var dictSize = (uint)(header[1] | (header[2] << 8) | (header[3] << 16) | (header[4] << 24));
       if (dictSize > 0 && dictSize <= 0x40000000)
         return Format.Lzma;
     }
@@ -356,7 +412,7 @@ internal static class FormatDetector {
 
     var header = new byte[512];
     using var fs = File.OpenRead(path);
-    int read = fs.Read(header, 0, header.Length);
+    var read = fs.Read(header, 0, header.Length);
     return DetectByMagic(header.AsSpan(0, read));
   }
 
@@ -374,7 +430,7 @@ internal static class FormatDetector {
     // Then check for third-party SFX via PE overlay
     var peInfo = PeOverlay.DetectEmbeddedArchive(path);
     if (peInfo != null) {
-      long fileLen = new FileInfo(path).Length;
+      var fileLen = new FileInfo(path).Length;
       return (peInfo.Value.Format, peInfo.Value.Offset, fileLen - peInfo.Value.Offset);
     }
 
@@ -438,6 +494,16 @@ internal static class FormatDetector {
     Format.Uharc => ".uha",
     Format.Rzip => ".rz",
     Format.Wad => ".wad",
+    Format.PackBits => ".packbits",
+    Format.Yaz0 => ".yaz0",
+    Format.BriefLz => ".blz",
+    Format.Rnc => ".rnc",
+    Format.RefPack => ".qfs",
+    Format.ApLib => ".aplib",
+    Format.Lzfse => ".lzfse",
+    Format.Freeze => ".freeze",
+    Format.Xar => ".xar",
+    Format.AlZip => ".alz",
     _ => "",
   };
 }

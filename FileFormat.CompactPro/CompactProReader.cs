@@ -56,8 +56,8 @@ public sealed class CompactProReader : IDisposable {
       return [];
 
     this._stream.Position = entry.DataOffset;
-    byte[] compressed = this.ReadExact((int)entry.DataForkCompressedSize);
-    byte[] decompressed = Decompress(entry.DataForkMethod, compressed, (int)entry.DataForkSize);
+    var compressed = this.ReadExact((int)entry.DataForkCompressedSize);
+    var decompressed = Decompress(entry.DataForkMethod, compressed, (int)entry.DataForkSize);
 
     VerifyCrc16(decompressed, entry.DataForkCrc, entry.FileName, "data fork");
     return decompressed;
@@ -83,8 +83,8 @@ public sealed class CompactProReader : IDisposable {
       return [];
 
     this._stream.Position = entry.ResourceOffset;
-    byte[] compressed = this.ReadExact((int)entry.ResourceForkCompressedSize);
-    byte[] decompressed = Decompress(entry.ResourceForkMethod, compressed, (int)entry.ResourceForkSize);
+    var compressed = this.ReadExact((int)entry.ResourceForkCompressedSize);
+    var decompressed = Decompress(entry.ResourceForkMethod, compressed, (int)entry.ResourceForkSize);
 
     VerifyCrc16(decompressed, entry.ResourceForkCrc, entry.FileName, "resource fork");
     return decompressed;
@@ -109,7 +109,7 @@ public sealed class CompactProReader : IDisposable {
       throw new InvalidDataException(
         $"Not a Compact Pro archive. Expected magic 0x{CompactProConstants.Magic:X2} at offset 0, found 0x{header[0]:X2}.");
 
-    ushort entryCount = BinaryPrimitives.ReadUInt16BigEndian(header[1..]);
+    var entryCount = BinaryPrimitives.ReadUInt16BigEndian(header[1..]);
 
     // Track where compressed data will start (after all headers).
     // We do a two-pass approach: first read all headers to know sizes,
@@ -118,13 +118,13 @@ public sealed class CompactProReader : IDisposable {
     this.ReadEntries(rawEntries, entryCount);
 
     // Compute data offsets: compressed data follows immediately after all headers.
-    long dataPosition = this._stream.Position;
-    foreach (RawEntry raw in rawEntries) {
+    var dataPosition = this._stream.Position;
+    foreach (var raw in rawEntries) {
       if (raw.IsDirectory)
         continue;
 
-      long dataOffset = dataPosition;
-      long resourceOffset = dataOffset + raw.DataForkCompressedSize;
+      var dataOffset = dataPosition;
+      var resourceOffset = dataOffset + raw.DataForkCompressedSize;
       dataPosition = resourceOffset + raw.ResourceForkCompressedSize;
 
       this._entries.Add(new CompactProEntry {
@@ -149,8 +149,8 @@ public sealed class CompactProReader : IDisposable {
   }
 
   private void ReadEntries(List<RawEntry> entries, int count) {
-    for (int i = 0; i < count; ++i) {
-      byte entryType = this.ReadByte();
+    for (var i = 0; i < count; ++i) {
+      var entryType = this.ReadByte();
 
       switch (entryType) {
         case CompactProConstants.EntryTypeFile:
@@ -173,53 +173,53 @@ public sealed class CompactProReader : IDisposable {
   }
 
   private RawEntry ReadFileEntry() {
-    byte nameLength = this.ReadByte();
+    var nameLength = this.ReadByte();
     if (nameLength > CompactProConstants.FileNameMaxLength)
       nameLength = CompactProConstants.FileNameMaxLength;
 
-    byte[] nameBytes = this.ReadExact(nameLength);
-    string fileName = Encoding.Latin1.GetString(nameBytes);
+    var nameBytes = this.ReadExact(nameLength);
+    var fileName = Encoding.Latin1.GetString(nameBytes);
 
     // Read compression methods.
-    byte dataMethod = this.ReadByte();
-    byte resourceMethod = this.ReadByte();
+    var dataMethod = this.ReadByte();
+    var resourceMethod = this.ReadByte();
 
     // Read sizes and CRCs (all big-endian).
     Span<byte> buf = stackalloc byte[4];
 
     this.ReadExact(buf);
-    uint dataForkSize = BinaryPrimitives.ReadUInt32BigEndian(buf);
+    var dataForkSize = BinaryPrimitives.ReadUInt32BigEndian(buf);
 
     this.ReadExact(buf);
-    uint dataForkCompressedSize = BinaryPrimitives.ReadUInt32BigEndian(buf);
+    var dataForkCompressedSize = BinaryPrimitives.ReadUInt32BigEndian(buf);
 
     Span<byte> crcBuf = stackalloc byte[2];
     this.ReadExact(crcBuf);
-    ushort dataForkCrc = BinaryPrimitives.ReadUInt16BigEndian(crcBuf);
+    var dataForkCrc = BinaryPrimitives.ReadUInt16BigEndian(crcBuf);
 
     this.ReadExact(buf);
-    uint resourceForkSize = BinaryPrimitives.ReadUInt32BigEndian(buf);
+    var resourceForkSize = BinaryPrimitives.ReadUInt32BigEndian(buf);
 
     this.ReadExact(buf);
-    uint resourceForkCompressedSize = BinaryPrimitives.ReadUInt32BigEndian(buf);
+    var resourceForkCompressedSize = BinaryPrimitives.ReadUInt32BigEndian(buf);
 
     this.ReadExact(crcBuf);
-    ushort resourceForkCrc = BinaryPrimitives.ReadUInt16BigEndian(crcBuf);
+    var resourceForkCrc = BinaryPrimitives.ReadUInt16BigEndian(crcBuf);
 
     // File type + creator (4 bytes each).
     this.ReadExact(buf);
-    uint fileType = BinaryPrimitives.ReadUInt32BigEndian(buf);
+    var fileType = BinaryPrimitives.ReadUInt32BigEndian(buf);
 
     this.ReadExact(buf);
-    uint fileCreator = BinaryPrimitives.ReadUInt32BigEndian(buf);
+    var fileCreator = BinaryPrimitives.ReadUInt32BigEndian(buf);
 
     // Creation date (Mac epoch seconds, uint32 BE).
     this.ReadExact(buf);
-    uint createdMac = BinaryPrimitives.ReadUInt32BigEndian(buf);
+    var createdMac = BinaryPrimitives.ReadUInt32BigEndian(buf);
 
     // Modification date (Mac epoch seconds, uint32 BE).
     this.ReadExact(buf);
-    uint modifiedMac = BinaryPrimitives.ReadUInt32BigEndian(buf);
+    var modifiedMac = BinaryPrimitives.ReadUInt32BigEndian(buf);
 
     return new RawEntry {
       FileName                   = fileName,
@@ -240,16 +240,16 @@ public sealed class CompactProReader : IDisposable {
   }
 
   private void ReadFolderEntry(List<RawEntry> entries) {
-    byte nameLength = this.ReadByte();
+    var nameLength = this.ReadByte();
     if (nameLength > CompactProConstants.FileNameMaxLength)
       nameLength = CompactProConstants.FileNameMaxLength;
 
-    byte[] nameBytes = this.ReadExact(nameLength);
+    var nameBytes = this.ReadExact(nameLength);
     // string folderName = Encoding.Latin1.GetString(nameBytes); // Available if needed.
 
     Span<byte> countBuf = stackalloc byte[2];
     this.ReadExact(countBuf);
-    ushort itemCount = BinaryPrimitives.ReadUInt16BigEndian(countBuf);
+    var itemCount = BinaryPrimitives.ReadUInt16BigEndian(countBuf);
 
     // Folders are not added to the flat file list, but we recurse into them.
     this.ReadEntries(entries, itemCount);
@@ -277,7 +277,7 @@ public sealed class CompactProReader : IDisposable {
       return compressed;
 
     // If lengths differ, copy only the expected amount.
-    byte[] result = new byte[uncompressedSize];
+    var result = new byte[uncompressedSize];
     Buffer.BlockCopy(compressed, 0, result, 0, Math.Min(compressed.Length, uncompressedSize));
     return result;
   }
@@ -289,19 +289,19 @@ public sealed class CompactProReader : IDisposable {
   /// - Otherwise → emit byte literally
   /// </summary>
   private static byte[] DecompressRle(byte[] compressed, int uncompressedSize) {
-    byte[] output = new byte[uncompressedSize];
-    int src = 0;
-    int dst = 0;
+    var output = new byte[uncompressedSize];
+    var src = 0;
+    var dst = 0;
     byte lastByte = 0;
 
     while (src < compressed.Length && dst < uncompressedSize) {
-      byte b = compressed[src++];
+      var b = compressed[src++];
 
       if (b == CompactProConstants.RleEscape) {
         if (src >= compressed.Length)
           break;
 
-        byte count = compressed[src++];
+        var count = compressed[src++];
         if (count == 0) {
           // Literal 0x90.
           lastByte = CompactProConstants.RleEscape;
@@ -309,7 +309,7 @@ public sealed class CompactProReader : IDisposable {
             output[dst++] = lastByte;
         } else {
           // Repeat previous byte 'count' times.
-          for (int i = 0; i < count && dst < uncompressedSize; ++i)
+          for (var i = 0; i < count && dst < uncompressedSize; ++i)
             output[dst++] = lastByte;
         }
       } else {
@@ -328,9 +328,9 @@ public sealed class CompactProReader : IDisposable {
   private static ushort[] BuildCrc16Table() {
     const ushort poly = CompactProConstants.Crc16Polynomial;
     var table = new ushort[256];
-    for (int i = 0; i < 256; ++i) {
-      ushort crc = (ushort)(i << 8);
-      for (int j = 0; j < 8; ++j)
+    for (var i = 0; i < 256; ++i) {
+      var crc = (ushort)(i << 8);
+      for (var j = 0; j < 8; ++j)
         crc = (crc & 0x8000) != 0 ? (ushort)((crc << 1) ^ poly) : (ushort)(crc << 1);
       table[i] = crc;
     }
@@ -339,7 +339,7 @@ public sealed class CompactProReader : IDisposable {
 
   private static ushort ComputeCrc16(ReadOnlySpan<byte> data) {
     ushort crc = 0;
-    foreach (byte b in data)
+    foreach (var b in data)
       crc = (ushort)((crc << 8) ^ Crc16Table[(byte)(crc >> 8) ^ b]);
     return crc;
   }
@@ -348,7 +348,7 @@ public sealed class CompactProReader : IDisposable {
     if (expected == 0)
       return; // zero means no checksum stored
 
-    ushort actual = ComputeCrc16(data);
+    var actual = ComputeCrc16(data);
     if (actual != expected)
       throw new InvalidDataException(
         $"CRC-16 mismatch for '{fileName}' ({forkName}): expected 0x{expected:X4}, computed 0x{actual:X4}.");
@@ -362,22 +362,22 @@ public sealed class CompactProReader : IDisposable {
   // ── Stream helpers ─────────────────────────────────────────────────────────────
 
   private byte ReadByte() {
-    int b = this._stream.ReadByte();
+    var b = this._stream.ReadByte();
     if (b < 0)
       throw new EndOfStreamException("Unexpected end of stream reading Compact Pro data.");
     return (byte)b;
   }
 
   private byte[] ReadExact(int count) {
-    byte[] buf = new byte[count];
+    var buf = new byte[count];
     this.ReadExact(buf.AsSpan());
     return buf;
   }
 
   private void ReadExact(Span<byte> buffer) {
-    int total = 0;
+    var total = 0;
     while (total < buffer.Length) {
-      int read = this._stream.Read(buffer[total..]);
+      var read = this._stream.Read(buffer[total..]);
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of stream reading Compact Pro data.");
       total += read;

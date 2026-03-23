@@ -135,12 +135,12 @@ public class Lzo1xTests {
   [Category("RoundTrip")]
   [Test]
   public void Best_RoundTrip_PatternData() {
-    byte[] input = new byte[5000];
-    for (int i = 0; i < input.Length; ++i)
+    var input = new byte[5000];
+    for (var i = 0; i < input.Length; ++i)
       input[i] = (byte)(i % 17);
 
-    byte[] compressed = Lzo1xCompressor.Compress(input, LzoCompressionLevel.Best);
-    byte[] result = Lzo1xDecompressor.Decompress(compressed, input.Length);
+    var compressed = Lzo1xCompressor.Compress(input, LzoCompressionLevel.Best);
+    var result = Lzo1xDecompressor.Decompress(compressed, input.Length);
     Assert.That(result, Is.EqualTo(input));
   }
 
@@ -149,11 +149,11 @@ public class Lzo1xTests {
   [Test]
   public void Best_RoundTrip_RandomData() {
     var rng = new Random(42);
-    byte[] input = new byte[10000];
+    var input = new byte[10000];
     rng.NextBytes(input);
 
-    byte[] compressed = Lzo1xCompressor.Compress(input, LzoCompressionLevel.Best);
-    byte[] result = Lzo1xDecompressor.Decompress(compressed, input.Length);
+    var compressed = Lzo1xCompressor.Compress(input, LzoCompressionLevel.Best);
+    var result = Lzo1xDecompressor.Decompress(compressed, input.Length);
     Assert.That(result, Is.EqualTo(input));
   }
 
@@ -161,13 +161,13 @@ public class Lzo1xTests {
   [Category("RoundTrip")]
   [Test]
   public void Best_CompressesBetter_ThanFast() {
-    byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
-    byte[] input = new byte[pattern.Length * 200];
-    for (int i = 0; i < 200; ++i)
+    var pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
+    var input = new byte[pattern.Length * 200];
+    for (var i = 0; i < 200; ++i)
       Array.Copy(pattern, 0, input, i * pattern.Length, pattern.Length);
 
-    byte[] fast = Lzo1xCompressor.Compress(input);
-    byte[] best = Lzo1xCompressor.Compress(input, LzoCompressionLevel.Best);
+    var fast = Lzo1xCompressor.Compress(input);
+    var best = Lzo1xCompressor.Compress(input, LzoCompressionLevel.Best);
 
     Assert.That(best.Length, Is.LessThanOrEqualTo(fast.Length),
       $"Best ({best.Length}) should be <= Fast ({fast.Length})");

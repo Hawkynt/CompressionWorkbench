@@ -68,10 +68,10 @@ public sealed class ZooWriter : IDisposable {
     var chosenMethod = method ?? this._defaultMethod;
 
     // --- Compute CRC-16 over uncompressed data ---
-    ushort crc = Crc16.Compute(data);
+    var crc = Crc16.Compute(data);
 
     // --- Compress ---
-    byte[] compressed = Compress(data, chosenMethod);
+    var compressed = Compress(data, chosenMethod);
     // Fall back to Store if compression expanded the data.
     if (chosenMethod == ZooCompressionMethod.Lzw && compressed.Length >= data.Length) {
       compressed    = data;
@@ -79,8 +79,8 @@ public sealed class ZooWriter : IDisposable {
     }
 
     // --- Derive short/long names ---
-    string shortName = MakeShortName(fileName);
-    string? longName = NeedsLongName(fileName, shortName) ? fileName : null;
+    var shortName = MakeShortName(fileName);
+    var longName = NeedsLongName(fileName, shortName) ? fileName : null;
 
     var entry = new ZooEntry {
       FileName          = shortName,
@@ -112,7 +112,7 @@ public sealed class ZooWriter : IDisposable {
 
     if (this._pending.Count == 0) {
       // Empty archive: patch firstEntryOffset (at byte 24) to 0.
-      long saved = this._stream.Position;
+      var saved = this._stream.Position;
       this._stream.Position = 24;
       WriteUInt32LE(this._stream, 0u);
       WriteInt32LE(this._stream, 0);
@@ -127,13 +127,13 @@ public sealed class ZooWriter : IDisposable {
       var (entry, _) = this._pending[i];
 
       // The nextOffset field is at bytes 6–9 of the directory entry (after tag(4)+type(1)+method(1)).
-      long fieldPos = entry.HeaderOffset + 4 + 1 + 1; // tag + type + method
+      var fieldPos = entry.HeaderOffset + 4 + 1 + 1; // tag + type + method
 
-      uint nextOffset = (i + 1 < this._pending.Count)
+      var nextOffset = (i + 1 < this._pending.Count)
         ? (uint)this._pending[i + 1].Entry.HeaderOffset
         : 0u;
 
-      long saved = this._stream.Position;
+      var saved = this._stream.Position;
       this._stream.Position = fieldPos;
       WriteUInt32LE(this._stream, nextOffset);
       this._stream.Position = saved;
@@ -146,9 +146,9 @@ public sealed class ZooWriter : IDisposable {
 
   private void WriteArchiveHeader() {
     // 20 bytes: text description (ASCII, padded with nulls).
-    byte[] text = new byte[20];
-    byte[] textBytes = Encoding.ASCII.GetBytes(ZooConstants.DefaultHeaderText);
-    int copyLen = Math.Min(textBytes.Length, 20);
+    var text = new byte[20];
+    var textBytes = Encoding.ASCII.GetBytes(ZooConstants.DefaultHeaderText);
+    var copyLen = Math.Min(textBytes.Length, 20);
     textBytes.AsSpan(0, copyLen).CopyTo(text);
     this._stream.Write(text);
 
@@ -156,7 +156,7 @@ public sealed class ZooWriter : IDisposable {
     WriteUInt32LE(this._stream, ZooConstants.Magic);
 
     // First entry offset (4 bytes) — will be patched in Finish(); write placeholder.
-    long firstEntryOffsetPos = this._stream.Position;
+    var firstEntryOffsetPos = this._stream.Position;
     WriteUInt32LE(this._stream, 0u);          // placeholder
 
     // Minus-offset (4 bytes)
@@ -168,30 +168,30 @@ public sealed class ZooWriter : IDisposable {
 
     // Archive header is exactly 34 bytes.
     // Patch the firstEntryOffset to point to byte 34 (the first entry follows immediately).
-    long headerEnd = this._stream.Position; // should be 34
+    var headerEnd = this._stream.Position; // should be 34
     this._stream.Position = firstEntryOffsetPos;
     WriteUInt32LE(this._stream, (uint)headerEnd);
-    long negOffset = -(long)headerEnd;
+    var negOffset = -(long)headerEnd;
     WriteInt32LE(this._stream, (int)negOffset);
     this._stream.Position = headerEnd;
   }
 
   private void WriteDirectoryEntry(ZooEntry entry, byte[] compressedData) {
-    long headerStart = this._stream.Position;
+    var headerStart = this._stream.Position;
     entry.HeaderOffset = headerStart;
 
     var (dosDate, dosTime) = ZooEntry.ToMsDosDateTime(entry.LastModified);
 
-    byte type = (entry.LongFileName != null) ? ZooConstants.TypeLongName : ZooConstants.TypeFile;
+    var type = (entry.LongFileName != null) ? ZooConstants.TypeLongName : ZooConstants.TypeFile;
 
     // Compute total header size so we can set dataOffset correctly.
-    byte[] shortNameBytes = MakeShortNameBytes(entry.FileName);
-    byte[] longNameBytes  = entry.LongFileName != null
+    var shortNameBytes = MakeShortNameBytes(entry.FileName);
+    var longNameBytes  = entry.LongFileName != null
       ? Encoding.Latin1.GetBytes(entry.LongFileName)
       : [];
 
     // dataOffset = headerStart + fixedSize(38) + shortName(13) + [2 + longNameLen]
-    long dataOffset = headerStart
+    var dataOffset = headerStart
       + ZooConstants.DirectoryEntryFixedSize
       + 13
       + (type == ZooConstants.TypeLongName ? 2 + longNameBytes.Length : 0);
@@ -270,7 +270,7 @@ public sealed class ZooWriter : IDisposable {
 
   private static string MakeShortName(string name) {
     // Strip directory component.
-    int slash = name.LastIndexOfAny(['/', '\\']);
+    var slash = name.LastIndexOfAny(['/', '\\']);
     if (slash >= 0)
       name = name[(slash + 1)..];
 
@@ -283,9 +283,9 @@ public sealed class ZooWriter : IDisposable {
 
   private static byte[] MakeShortNameBytes(string shortName) {
     // 13 bytes: up to 12 chars + null terminator.
-    byte[] buf = new byte[13];
-    byte[] src = Encoding.Latin1.GetBytes(shortName);
-    int len = Math.Min(src.Length, 12);
+    var buf = new byte[13];
+    var src = Encoding.Latin1.GetBytes(shortName);
+    var len = Math.Min(src.Length, 12);
     src.AsSpan(0, len).CopyTo(buf);
     // buf[len] = 0 already (array default).
     return buf;

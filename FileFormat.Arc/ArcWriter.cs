@@ -48,9 +48,9 @@ public sealed class ArcWriter : IDisposable {
     if (lastModified == default)
       lastModified = DateTimeOffset.UtcNow;
 
-    byte method = (byte)this._defaultMethod;
-    byte[] uncompressed = data.ToArray();
-    byte[] compressed = Compress(method, uncompressed);
+    var method = (byte)this._defaultMethod;
+    var uncompressed = data.ToArray();
+    var compressed = Compress(method, uncompressed);
 
     // If compressed data is larger than original, fall back to stored.
     if (compressed.Length > uncompressed.Length && method != ArcConstants.MethodStored && method != ArcConstants.MethodStoredOld) {
@@ -58,7 +58,7 @@ public sealed class ArcWriter : IDisposable {
       compressed = uncompressed;
     }
 
-    ushort crc = Crc16.Compute(uncompressed);
+    var crc = Crc16.Compute(uncompressed);
 
     var entry = new ArcEntry {
       FileName = fileName,
@@ -94,16 +94,16 @@ public sealed class ArcWriter : IDisposable {
     if (lastModified == default)
       lastModified = DateTimeOffset.UtcNow;
 
-    byte methodByte = (byte)method;
-    byte[] uncompressed = data.ToArray();
-    byte[] compressed = Compress(methodByte, uncompressed);
+    var methodByte = (byte)method;
+    var uncompressed = data.ToArray();
+    var compressed = Compress(methodByte, uncompressed);
 
     if (compressed.Length > uncompressed.Length && methodByte != ArcConstants.MethodStored && methodByte != ArcConstants.MethodStoredOld) {
       methodByte = ArcConstants.MethodStored;
       compressed = uncompressed;
     }
 
-    ushort crc = Crc16.Compute(uncompressed);
+    var crc = Crc16.Compute(uncompressed);
 
     var entry = new ArcEntry {
       FileName = fileName,
@@ -158,7 +158,7 @@ public sealed class ArcWriter : IDisposable {
 
   private static byte[] CompressCrunched5(byte[] data) {
     // Method 5: RLE pre-pass then LZW 9-12 bit
-    byte[] rleEncoded = ArcRle.Encode(data);
+    var rleEncoded = ArcRle.Encode(data);
     return CompressLzw12(rleEncoded, useClearCode: true);
   }
 
@@ -191,16 +191,16 @@ public sealed class ArcWriter : IDisposable {
   private void WriteEntryHeader(ArcEntry entry) {
     // Every new-format entry header is 29 bytes: 2 magic+method + 27 remaining.
     // Old stored (method 1) would be 25 bytes, but we always write new format.
-    bool isNewFormat = entry.Method != ArcConstants.MethodStoredOld;
-    int headerSize = isNewFormat ? ArcConstants.NewHeaderSize : ArcConstants.OldHeaderSize;
-    byte[] header = new byte[headerSize];
+    var isNewFormat = entry.Method != ArcConstants.MethodStoredOld;
+    var headerSize = isNewFormat ? ArcConstants.NewHeaderSize : ArcConstants.OldHeaderSize;
+    var header = new byte[headerSize];
 
     header[0] = ArcConstants.Magic;
     header[1] = entry.Method;
 
     // Filename: 13 bytes, null-terminated, ASCII.
-    byte[] nameBytes = Encoding.ASCII.GetBytes(entry.FileName);
-    int nameLen = Math.Min(nameBytes.Length, ArcConstants.FileNameLength - 1);
+    var nameBytes = Encoding.ASCII.GetBytes(entry.FileName);
+    var nameLen = Math.Min(nameBytes.Length, ArcConstants.FileNameLength - 1);
     nameBytes.AsSpan(0, nameLen).CopyTo(header.AsSpan(2));
     // Remaining bytes in the name field stay zero (null-terminated).
 

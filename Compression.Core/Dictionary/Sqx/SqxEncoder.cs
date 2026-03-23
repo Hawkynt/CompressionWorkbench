@@ -40,9 +40,9 @@ public sealed class SqxEncoder {
 
     var output = new SqxBitWriter();
     var matchFinder = new HashChainMatchFinder(this._dictSize);
-    int distSlots = SqxConstants.GetDistSlots(this._dictSize);
+    var distSlots = SqxConstants.GetDistSlots(this._dictSize);
 
-    int pos = 0;
+    var pos = 0;
     while (pos < data.Length) {
       var tokens = CollectBlockTokens(data, ref pos, matchFinder);
       EmitBlock(output, tokens, distSlots);
@@ -68,12 +68,12 @@ public sealed class SqxEncoder {
       var match = matchFinder.FindMatch(data, pos, this._dictSize, 258, SqxConstants.MinMatch);
 
       // Check if a repeated offset gives a useful match
-      int bestRepIdx = -1;
-      int bestRepLen = 0;
-      for (int r = 0; r < 4; ++r) {
-        int dist = this._prevDists[(this._prevDistIndex - r) & 3];
+      var bestRepIdx = -1;
+      var bestRepLen = 0;
+      for (var r = 0; r < 4; ++r) {
+        var dist = this._prevDists[(this._prevDistIndex - r) & 3];
         if (dist == 0 || dist > pos) continue;
-        int len = CountMatch(data, pos, dist);
+        var len = CountMatch(data, pos, dist);
         if (len >= 4 && len > bestRepLen) {
           bestRepLen = len;
           bestRepIdx = r;
@@ -82,7 +82,7 @@ public sealed class SqxEncoder {
 
       if (bestRepLen >= match.Length && bestRepLen >= 4) {
         // Use repeated offset
-        int dist = this._prevDists[(this._prevDistIndex - bestRepIdx) & 3];
+        var dist = this._prevDists[(this._prevDistIndex - bestRepIdx) & 3];
         tokens.Add(new Token(SqxConstants.RepStart + bestRepIdx, bestRepLen, dist));
         this._lastLen = bestRepLen;
         this._lastDist = dist;
@@ -101,7 +101,7 @@ public sealed class SqxEncoder {
       }
       else if (match.Length == 3 && match.Distance <= SqxConstants.MaxDistLen3) {
         // Length-3 match
-        int distCode = SqxConstants.GetLen3DistCode(match.Distance - 1);
+        var distCode = SqxConstants.GetLen3DistCode(match.Distance - 1);
         tokens.Add(new Token(SqxConstants.Len3Start + distCode, 3, match.Distance));
         this._lastLen = 3;
         this._lastDist = match.Distance;
@@ -111,7 +111,7 @@ public sealed class SqxEncoder {
       }
       else if (match.Length == 2 && match.Distance <= SqxConstants.MaxDistLen2) {
         // Length-2 match
-        int distCode = SqxConstants.GetLen2DistCode(match.Distance - 1);
+        var distCode = SqxConstants.GetLen2DistCode(match.Distance - 1);
         tokens.Add(new Token(SqxConstants.Len2Start + distCode, 2, match.Distance));
         this._lastLen = 2;
         this._lastDist = match.Distance;
@@ -130,15 +130,15 @@ public sealed class SqxEncoder {
   }
 
   private static int CountMatch(ReadOnlySpan<byte> data, int pos, int dist) {
-    int len = 0;
-    int maxLen = Math.Min(258, data.Length - pos);
+    var len = 0;
+    var maxLen = Math.Min(258, data.Length - pos);
     while (len < maxLen && data[pos + len] == data[pos - dist + len])
       ++len;
     return len;
   }
 
   private static void AdvanceMatchFinder(ReadOnlySpan<byte> data, HashChainMatchFinder mf, int pos, int len) {
-    for (int i = 1; i < len && pos + i < data.Length; ++i)
+    for (var i = 1; i < len && pos + i < data.Length; ++i)
       mf.InsertPosition(data, pos + i);
   }
 
@@ -159,7 +159,7 @@ public sealed class SqxEncoder {
       else if (t.Symbol >= SqxConstants.RepStart && t.Symbol < SqxConstants.RepStart + SqxConstants.RepCodes) {
         ++mainFreq[t.Symbol];
         // Rep-offset matches also emit a length symbol (adjusted)
-        int lenCode = GetAdjustedLenCode(t.Length, t.Distance);
+        var lenCode = GetAdjustedLenCode(t.Length, t.Distance);
         ++mainFreq[SqxConstants.LenStart + lenCode];
       }
       else if (t.Symbol >= SqxConstants.Len2Start && t.Symbol < SqxConstants.Len2Start + SqxConstants.Len2Codes) {
@@ -170,18 +170,18 @@ public sealed class SqxEncoder {
       }
       else if (t.Symbol == SqxConstants.LenStart) {
         // Length 4+ match: compute adjusted length code
-        int lenCode = GetAdjustedLenCode(t.Length, t.Distance);
+        var lenCode = GetAdjustedLenCode(t.Length, t.Distance);
         ++mainFreq[SqxConstants.LenStart + lenCode];
-        int distSym = GetDistSymbol(t.Distance);
+        var distSym = GetDistSymbol(t.Distance);
         if (distSym < distSlots) ++distFreq[distSym];
       }
     }
 
     // Build Huffman trees
-    int[] mainLens = BuildCodeLengths(mainFreq, SqxConstants.NC, SqxConstants.MainTreeMaxBits);
-    int[] distLens = BuildCodeLengths(distFreq, distSlots, SqxConstants.MainTreeMaxBits);
-    uint[] mainCodes = BuildCanonicalCodes(mainLens);
-    uint[] distCodes = BuildCanonicalCodes(distLens);
+    var mainLens = BuildCodeLengths(mainFreq, SqxConstants.NC, SqxConstants.MainTreeMaxBits);
+    var distLens = BuildCodeLengths(distFreq, distSlots, SqxConstants.MainTreeMaxBits);
+    var mainCodes = BuildCanonicalCodes(mainLens);
+    var distCodes = BuildCanonicalCodes(distLens);
 
     // Encode main+dist tree code lengths via pre-tree
     var mainRle = RunLengthEncode(mainLens);
@@ -191,12 +191,12 @@ public sealed class SqxEncoder {
     var preFreq = new int[SqxConstants.PreTreeSymbols];
     foreach (var (sym, _, _) in mainRle) ++preFreq[sym];
     foreach (var (sym, _, _) in distRle) ++preFreq[sym];
-    int[] preLens = BuildCodeLengths(preFreq, SqxConstants.PreTreeSymbols, SqxConstants.PreTreeMaxBits);
-    uint[] preCodes = BuildCanonicalCodes(preLens);
+    var preLens = BuildCodeLengths(preFreq, SqxConstants.PreTreeSymbols, SqxConstants.PreTreeMaxBits);
+    var preCodes = BuildCanonicalCodes(preLens);
 
     // Write block header (symbol count)
     // Account for extra symbols emitted by rep-offset tokens (length symbol)
-    int totalSymbols = 0;
+    var totalSymbols = 0;
     foreach (var t in tokens) {
       ++totalSymbols;
       if (t.Symbol >= SqxConstants.RepStart && t.Symbol < SqxConstants.RepStart + SqxConstants.RepCodes)
@@ -205,7 +205,7 @@ public sealed class SqxEncoder {
     output.WriteBits(totalSymbols, 16);
 
     // Write pre-tree (19 x 4-bit raw code lengths)
-    for (int i = 0; i < SqxConstants.PreTreeSymbols; ++i)
+    for (var i = 0; i < SqxConstants.PreTreeSymbols; ++i)
       output.WriteBits(preLens[i], 4);
 
     // Write main tree code lengths via pre-tree
@@ -229,36 +229,36 @@ public sealed class SqxEncoder {
       // Emit rep-offset symbol
       output.WriteBits(mainCodes[t.Symbol], mainLens[t.Symbol]);
       // Emit length symbol (uses adjusted length)
-      int lenCode = GetAdjustedLenCode(t.Length, t.Distance);
-      int lenSym = SqxConstants.LenStart + lenCode;
+      var lenCode = GetAdjustedLenCode(t.Length, t.Distance);
+      var lenSym = SqxConstants.LenStart + lenCode;
       output.WriteBits(mainCodes[lenSym], mainLens[lenSym]);
       if (SqxConstants.LenExtraBits[lenCode] > 0) {
-        int adjLen = t.Length - 4;
+        var adjLen = t.Length - 4;
         if (t.Distance > SqxConstants.MaxDistLen3) --adjLen;
         if (t.Distance > SqxConstants.MaxDistLen4) --adjLen;
-        int extra = adjLen - SqxConstants.LenOffsets[lenCode];
+        var extra = adjLen - SqxConstants.LenOffsets[lenCode];
         output.WriteBits(extra, SqxConstants.LenExtraBits[lenCode]);
       }
     }
     else if (t.Symbol >= SqxConstants.Len2Start && t.Symbol < SqxConstants.Len2Start + SqxConstants.Len2Codes) {
       output.WriteBits(mainCodes[t.Symbol], mainLens[t.Symbol]);
-      int idx = t.Symbol - SqxConstants.Len2Start;
+      var idx = t.Symbol - SqxConstants.Len2Start;
       if (SqxConstants.Len2ExtraBits[idx] > 0) {
-        int extra = (t.Distance - 1) - SqxConstants.Len2Offsets[idx];
+        var extra = (t.Distance - 1) - SqxConstants.Len2Offsets[idx];
         output.WriteBits(extra, SqxConstants.Len2ExtraBits[idx]);
       }
     }
     else if (t.Symbol >= SqxConstants.Len3Start && t.Symbol < SqxConstants.Len3Start + SqxConstants.Len3Codes) {
       output.WriteBits(mainCodes[t.Symbol], mainLens[t.Symbol]);
-      int idx = t.Symbol - SqxConstants.Len3Start;
+      var idx = t.Symbol - SqxConstants.Len3Start;
       if (SqxConstants.Len3ExtraBits[idx] > 0) {
-        int extra = (t.Distance - 1) - SqxConstants.Len3Offsets[idx];
+        var extra = (t.Distance - 1) - SqxConstants.Len3Offsets[idx];
         output.WriteBits(extra, SqxConstants.Len3ExtraBits[idx]);
       }
     }
     else if (t.Symbol == SqxConstants.LenStart) {
-      int lenCode = GetAdjustedLenCode(t.Length, t.Distance);
-      int sym = SqxConstants.LenStart + lenCode;
+      var lenCode = GetAdjustedLenCode(t.Length, t.Distance);
+      var sym = SqxConstants.LenStart + lenCode;
       output.WriteBits(mainCodes[sym], mainLens[sym]);
 
       if (lenCode == SqxConstants.LenCodes - 1) {
@@ -266,34 +266,34 @@ public sealed class SqxEncoder {
         output.WriteBits(t.Length - 257, 14);
       }
       else if (SqxConstants.LenExtraBits[lenCode] > 0) {
-        int adjLen = t.Length - 4;
+        var adjLen = t.Length - 4;
         if (t.Distance > SqxConstants.MaxDistLen3) --adjLen;
         if (t.Distance > SqxConstants.MaxDistLen4) --adjLen;
-        int extra = adjLen - SqxConstants.LenOffsets[lenCode];
+        var extra = adjLen - SqxConstants.LenOffsets[lenCode];
         output.WriteBits(extra, SqxConstants.LenExtraBits[lenCode]);
       }
 
       // Emit distance
-      int distSym = GetDistSymbol(t.Distance);
+      var distSym = GetDistSymbol(t.Distance);
       if (distSym >= distSlots) distSym = distSlots - 1;
       output.WriteBits(distCodes[distSym], distLens[distSym]);
       if (distSym >= 2) {
-        int extraBits = distSym - 1;
-        int extraVal = t.Distance - (1 << extraBits);
+        var extraBits = distSym - 1;
+        var extraVal = t.Distance - (1 << extraBits);
         output.WriteBits(extraVal, extraBits);
       }
     }
   }
 
   private static int GetAdjustedLenCode(int length, int distance) {
-    int adjLen = length - 4;
+    var adjLen = length - 4;
     if (distance > SqxConstants.MaxDistLen3) --adjLen;
     if (distance > SqxConstants.MaxDistLen4) --adjLen;
     if (adjLen < 0) adjLen = 0;
     // Code 24 (sym 308) is the escape code for very long lengths (14 raw bits)
     if (adjLen > 224 + (1 << SqxConstants.LenExtraBits[23]) - 1)
       return 24;
-    for (int i = 23; i >= 0; --i) {
+    for (var i = 23; i >= 0; --i) {
       if (adjLen >= SqxConstants.LenOffsets[i])
         return i;
     }
@@ -304,8 +304,8 @@ public sealed class SqxEncoder {
     if (distance <= 0) return 0;
     if (distance == 1) return 0;
     if (distance == 2) return 1;
-    int sym = 1;
-    int d = distance;
+    var sym = 1;
+    var d = distance;
     while (d > 1) { d >>= 1; ++sym; }
     return sym;
   }
@@ -322,19 +322,19 @@ public sealed class SqxEncoder {
 
   private static List<(int Symbol, int ExtraBits, int ExtraValue)> RunLengthEncode(int[] lengths) {
     var result = new List<(int, int, int)>();
-    int i = 0;
+    var i = 0;
 
     while (i < lengths.Length) {
-      int value = lengths[i];
+      var value = lengths[i];
       if (value == 0) {
-        int count = 1;
+        var count = 1;
         while (i + count < lengths.Length && lengths[i + count] == 0)
           ++count;
 
-        int remaining = count;
+        var remaining = count;
         while (remaining > 0) {
           if (remaining >= 11) {
-            int run = Math.Min(remaining, 138);
+            var run = Math.Min(remaining, 138);
             result.Add((18, 7, run - 11));
             remaining -= run;
           }
@@ -353,13 +353,13 @@ public sealed class SqxEncoder {
         result.Add((value, 0, 0));
         ++i;
 
-        int count = 0;
+        var count = 0;
         while (i + count < lengths.Length && lengths[i + count] == value)
           ++count;
 
-        int remaining = count;
+        var remaining = count;
         while (remaining >= 3) {
-          int run = Math.Min(remaining, 6);
+          var run = Math.Min(remaining, 6);
           result.Add((16, 2, run - 3));
           remaining -= run;
         }
@@ -377,7 +377,7 @@ public sealed class SqxEncoder {
   private static int[] BuildCodeLengths(int[] freq, int numSymbols, int maxBits) {
     var lengths = new int[numSymbols];
     var symbols = new List<(int sym, int freq)>();
-    for (int i = 0; i < numSymbols; ++i)
+    for (var i = 0; i < numSymbols; ++i)
       if (freq[i] > 0) symbols.Add((i, freq[i]));
 
     if (symbols.Count == 0) return lengths;
@@ -385,18 +385,18 @@ public sealed class SqxEncoder {
 
     var pq = new PriorityQueue<int, long>();
     var nodes = new List<(long freq, int sym, int left, int right)>();
-    for (int i = 0; i < symbols.Count; ++i) {
+    for (var i = 0; i < symbols.Count; ++i) {
       nodes.Add((symbols[i].freq, symbols[i].sym, -1, -1));
       pq.Enqueue(i, symbols[i].freq);
     }
     while (pq.Count > 1) {
-      pq.TryDequeue(out int a, out long fa);
-      pq.TryDequeue(out int b, out long fb);
-      int newIdx = nodes.Count;
+      pq.TryDequeue(out var a, out var fa);
+      pq.TryDequeue(out var b, out var fb);
+      var newIdx = nodes.Count;
       nodes.Add((fa + fb, -1, a, b));
       pq.Enqueue(newIdx, fa + fb);
     }
-    pq.TryDequeue(out int root, out _);
+    pq.TryDequeue(out var root, out _);
 
     void Walk(int idx, int depth) {
       var node = nodes[idx];
@@ -410,22 +410,22 @@ public sealed class SqxEncoder {
   }
 
   private static uint[] BuildCanonicalCodes(int[] lengths) {
-    int maxLen = 0;
-    foreach (int l in lengths) if (l > maxLen) maxLen = l;
+    var maxLen = 0;
+    foreach (var l in lengths) if (l > maxLen) maxLen = l;
     if (maxLen == 0) return new uint[lengths.Length];
 
     var blCount = new int[maxLen + 1];
-    foreach (int l in lengths) if (l > 0) ++blCount[l];
+    foreach (var l in lengths) if (l > 0) ++blCount[l];
 
     var nextCode = new uint[maxLen + 1];
     uint code = 0;
-    for (int b = 1; b <= maxLen; ++b) {
+    for (var b = 1; b <= maxLen; ++b) {
       code = (code + (uint)blCount[b - 1]) << 1;
       nextCode[b] = code;
     }
 
     var codes = new uint[lengths.Length];
-    for (int i = 0; i < lengths.Length; ++i)
+    for (var i = 0; i < lengths.Length; ++i)
       if (lengths[i] > 0) codes[i] = nextCode[lengths[i]]++;
     return codes;
   }
@@ -439,7 +439,7 @@ internal sealed class SqxBitWriter {
   private byte _current;
 
   public void WriteBits(int value, int count) {
-    for (int i = count - 1; i >= 0; --i) {
+    for (var i = count - 1; i >= 0; --i) {
       if (((value >> i) & 1) != 0)
         this._current |= (byte)(1 << (7 - this._bitPos));
       if (++this._bitPos == 8) {

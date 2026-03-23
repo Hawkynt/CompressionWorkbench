@@ -19,7 +19,7 @@ internal static class ParallelCompression {
       FileFormat.Zip.ZipEncryptionMethod encryptionMethod = FileFormat.Zip.ZipEncryptionMethod.Aes256) {
 
     // Only Deflate/Deflate64/Store benefit from parallel pre-compression
-    bool canParallelCompress = method is FileFormat.Zip.ZipCompressionMethod.Deflate
+    var canParallelCompress = method is FileFormat.Zip.ZipCompressionMethod.Deflate
       or FileFormat.Zip.ZipCompressionMethod.Deflate64
       or FileFormat.Zip.ZipCompressionMethod.Store;
 
@@ -40,7 +40,7 @@ internal static class ParallelCompression {
     Parallel.For(0, files.Count, options, i => {
       var input = files[i];
       var data = File.ReadAllBytes(input.FullPath);
-      uint crc = Crc32.Compute(data);
+      var crc = Crc32.Compute(data);
 
       var entryMethod = incompressible != null && incompressible.Contains(input.FullPath)
         ? FileFormat.Zip.ZipCompressionMethod.Store

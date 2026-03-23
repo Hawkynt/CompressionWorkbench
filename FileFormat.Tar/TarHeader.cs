@@ -37,8 +37,8 @@ internal static class TarHeader {
   /// <param name="isEndOfArchive">Set to <see langword="true"/> if the block is all zeros (end-of-archive marker).</param>
   /// <returns>The parsed entry, or <see langword="null"/> if the block is all zeros.</returns>
   internal static TarEntry? ReadHeader(Stream stream, out bool isEndOfArchive) {
-    byte[] header = new byte[TarConstants.BlockSize];
-    int bytesRead = ReadExact(stream, header, TarConstants.BlockSize);
+    var header = new byte[TarConstants.BlockSize];
+    var bytesRead = ReadExact(stream, header, TarConstants.BlockSize);
 
     if (bytesRead < TarConstants.BlockSize) {
       isEndOfArchive = true;
@@ -54,21 +54,21 @@ internal static class TarHeader {
     isEndOfArchive = false;
 
     // Verify checksum
-    int storedChecksum = (int)ParseOctalLong(header.AsSpan(ChecksumOffset, TarConstants.ChecksumLength));
-    int computedChecksum = ComputeChecksum(header);
+    var storedChecksum = (int)ParseOctalLong(header.AsSpan(ChecksumOffset, TarConstants.ChecksumLength));
+    var computedChecksum = ComputeChecksum(header);
 
     if (storedChecksum != computedChecksum)
       throw new InvalidDataException(
         $"TAR header checksum mismatch: stored {storedChecksum}, computed {computedChecksum}.");
 
     // Parse the prefix and name
-    string prefix = ParseString(header.AsSpan(PrefixOffset, TarConstants.PrefixLength));
-    string name = ParseString(header.AsSpan(NameOffset, TarConstants.NameLength));
+    var prefix = ParseString(header.AsSpan(PrefixOffset, TarConstants.PrefixLength));
+    var name = ParseString(header.AsSpan(NameOffset, TarConstants.NameLength));
 
     if (prefix.Length > 0)
       name = prefix + "/" + name;
 
-    byte typeFlag = header[TypeFlagOffset];
+    var typeFlag = header[TypeFlagOffset];
 
     var entry = new TarEntry {
       Name = name,
@@ -99,11 +99,11 @@ internal static class TarHeader {
   /// <param name="stream">The stream to write to.</param>
   /// <param name="entry">The entry to write a header for.</param>
   internal static void WriteHeader(Stream stream, TarEntry entry) {
-    byte[] header = new byte[TarConstants.BlockSize];
+    var header = new byte[TarConstants.BlockSize];
 
     // Split name into prefix + name if needed
-    string name = entry.Name;
-    string prefix = string.Empty;
+    var name = entry.Name;
+    var prefix = string.Empty;
 
     if (name.Length > TarConstants.NameLength) {
       // Try to split at a '/' where prefix <= 155 and name <= 100
@@ -157,10 +157,10 @@ internal static class TarHeader {
     }
 
     // Compute and write checksum (set checksum field to spaces first)
-    for (int i = 0; i < TarConstants.ChecksumLength; ++i)
+    for (var i = 0; i < TarConstants.ChecksumLength; ++i)
       header[ChecksumOffset + i] = (byte)' ';
 
-    int checksum = ComputeChecksum(header);
+    var checksum = ComputeChecksum(header);
     WriteOctal(header.AsSpan(ChecksumOffset, TarConstants.ChecksumLength), checksum, TarConstants.ChecksumLength);
 
     stream.Write(header, 0, TarConstants.BlockSize);
@@ -173,7 +173,7 @@ internal static class TarHeader {
   /// <returns>The parsed octal string.</returns>
   internal static string ParseOctal(ReadOnlySpan<byte> data) {
     var end = data.Length;
-    for (int i = 0; i < data.Length; ++i) {
+    for (var i = 0; i < data.Length; ++i) {
       if (data[i] == 0 || data[i] == (byte)' ') {
         end = i;
         break;
@@ -189,7 +189,7 @@ internal static class TarHeader {
   /// <param name="data">The raw bytes containing the octal string.</param>
   /// <returns>The parsed value.</returns>
   internal static long ParseOctalLong(ReadOnlySpan<byte> data) {
-    string octalStr = ParseOctal(data);
+    var octalStr = ParseOctal(data);
     if (octalStr.Length == 0)
       return 0;
     return Convert.ToInt64(octalStr, 8);
@@ -204,8 +204,8 @@ internal static class TarHeader {
   internal static void WriteOctal(Span<byte> dest, long value, int fieldLen) {
     // Format: leading-zero-padded octal digits followed by NUL
     // Available digit positions = fieldLen - 1 (last byte is NUL)
-    int digitLen = fieldLen - 1;
-    string octal = Convert.ToString(value, 8);
+    var digitLen = fieldLen - 1;
+    var octal = Convert.ToString(value, 8);
 
     if (octal.Length > digitLen)
       octal = octal[^digitLen..]; // truncate from the left if too long
@@ -213,7 +213,7 @@ internal static class TarHeader {
     // Pad with leading zeros
     octal = octal.PadLeft(digitLen, '0');
 
-    for (int i = 0; i < digitLen; ++i)
+    for (var i = 0; i < digitLen; ++i)
       dest[i] = (byte)octal[i];
 
     dest[digitLen] = 0; // null terminator
@@ -227,7 +227,7 @@ internal static class TarHeader {
   /// <returns>The computed checksum.</returns>
   internal static int ComputeChecksum(ReadOnlySpan<byte> header) {
     var sum = 0;
-    for (int i = 0; i < TarConstants.BlockSize; ++i) {
+    for (var i = 0; i < TarConstants.BlockSize; ++i) {
       if (i >= ChecksumOffset && i < ChecksumOffset + TarConstants.ChecksumLength)
         sum += (byte)' ';
       else
@@ -239,7 +239,7 @@ internal static class TarHeader {
 
   private static string ParseString(ReadOnlySpan<byte> data) {
     var end = data.Length;
-    for (int i = 0; i < data.Length; ++i) {
+    for (var i = 0; i < data.Length; ++i) {
       if (data[i] == 0) {
         end = i;
         break;
@@ -253,17 +253,17 @@ internal static class TarHeader {
     if (string.IsNullOrEmpty(value))
       return;
 
-    int byteCount = Encoding.UTF8.GetByteCount(value);
-    int len = Math.Min(byteCount, dest.Length);
+    var byteCount = Encoding.UTF8.GetByteCount(value);
+    var len = Math.Min(byteCount, dest.Length);
     Encoding.UTF8.GetBytes(value.AsSpan(), dest[..len]);
   }
 
   private static void SplitName(string fullName, out string prefix, out string name) {
     // Try to split at a '/' boundary where prefix <= 155 and name <= 100
-    for (int i = fullName.Length - 1; i >= 0; --i) {
+    for (var i = fullName.Length - 1; i >= 0; --i) {
       if (fullName[i] == '/') {
-        string candidatePrefix = fullName[..i];
-        string candidateName = fullName[(i + 1)..];
+        var candidatePrefix = fullName[..i];
+        var candidateName = fullName[(i + 1)..];
 
         if (candidatePrefix.Length <= TarConstants.PrefixLength &&
           candidateName.Length <= TarConstants.NameLength) {
@@ -280,7 +280,7 @@ internal static class TarHeader {
   }
 
   private static bool IsAllZeros(byte[] data) {
-    for (int i = 0; i < data.Length; ++i) {
+    for (var i = 0; i < data.Length; ++i) {
       if (data[i] != 0)
         return false;
     }
@@ -291,7 +291,7 @@ internal static class TarHeader {
   private static int ReadExact(Stream stream, byte[] buffer, int count) {
     var totalRead = 0;
     while (totalRead < count) {
-      int read = stream.Read(buffer, totalRead, count - totalRead);
+      var read = stream.Read(buffer, totalRead, count - totalRead);
       if (read == 0)
         break;
       totalRead += read;

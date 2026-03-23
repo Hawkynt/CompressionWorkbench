@@ -44,45 +44,45 @@ public sealed class Lh1Decoder {
     var window = new byte[WindowSize];
     // LH1 initializes the window with spaces (0x20)
     Array.Fill(window, (byte)0x20);
-    int windowPos = 0;
-    int outPos = 0;
+    var windowPos = 0;
+    var outPos = 0;
 
     // Frequency table for adaptive Huffman
-    int[] freq = new int[NumCodes];
+    var freq = new int[NumCodes];
     Array.Fill(freq, 1);
-    int symbolCount = 0;
+    var symbolCount = 0;
 
     // Build initial Huffman tree
-    (int[] codeTable, int tableBits) = BuildDecodeTable(freq);
+    (var codeTable, var tableBits) = BuildDecodeTable(freq);
 
     while (outPos < originalSize) {
       // Rebuild tree periodically
       if (symbolCount >= BlockSize) {
         // Halve frequencies to adapt (prevents overflow, forgets old data)
-        for (int i = 0; i < NumCodes; ++i)
+        for (var i = 0; i < NumCodes; ++i)
           freq[i] = (freq[i] + 1) >> 1;
         (codeTable, tableBits) = BuildDecodeTable(freq);
         symbolCount = 0;
       }
 
-      int code = DecodeFromTable(codeTable, tableBits);
+      var code = DecodeFromTable(codeTable, tableBits);
       ++freq[code];
       ++symbolCount;
 
       if (code < NChar) {
-        byte b = (byte)code;
+        var b = (byte)code;
         output[outPos++] = b;
         window[windowPos] = b;
         windowPos = (windowPos + 1) & WindowMask;
       } else {
-        int length = code - NChar + Threshold;
-        int posHigh = (int)this._bits.ReadBits(PositionBits);
-        int posLow = (int)this._bits.ReadBits(6);
-        int position = (posHigh << 6) | posLow;
+        var length = code - NChar + Threshold;
+        var posHigh = (int)this._bits.ReadBits(PositionBits);
+        var posLow = (int)this._bits.ReadBits(6);
+        var position = (posHigh << 6) | posLow;
 
-        int srcPos = (windowPos - position - 1 + WindowSize) & WindowMask;
-        for (int j = 0; j < length && outPos < originalSize; ++j) {
-          byte b = window[srcPos];
+        var srcPos = (windowPos - position - 1 + WindowSize) & WindowMask;
+        for (var j = 0; j < length && outPos < originalSize; ++j) {
+          var b = window[srcPos];
           output[outPos++] = b;
           window[windowPos] = b;
           windowPos = (windowPos + 1) & WindowMask;
@@ -96,25 +96,25 @@ public sealed class Lh1Decoder {
 
   private int DecodeFromTable(int[] table, int maxBits) {
     this._bits.EnsureBits(maxBits);
-    uint peekBits = this._bits.PeekBits(maxBits);
+    var peekBits = this._bits.PeekBits(maxBits);
 
-    int entry = table[(int)peekBits];
+    var entry = table[(int)peekBits];
     if (entry < 0)
       throw new InvalidDataException("Failed to decode Huffman symbol in -lh1- data.");
 
-    int symbol = entry & 0xFFFF;
-    int codeLen = entry >> 16;
+    var symbol = entry & 0xFFFF;
+    var codeLen = entry >> 16;
     this._bits.DropBits(codeLen);
     return symbol;
   }
 
   private static (int[] Table, int TableBits) BuildDecodeTable(int[] freq) {
     // Build canonical Huffman codes from frequencies
-    int n = freq.Length;
-    int[] codeLengths = BuildCodeLengths(freq, n, 16);
+    var n = freq.Length;
+    var codeLengths = BuildCodeLengths(freq, n, 16);
 
-    int maxLen = 0;
-    for (int i = 0; i < n; ++i)
+    var maxLen = 0;
+    for (var i = 0; i < n; ++i)
       if (codeLengths[i] > maxLen)
         maxLen = codeLengths[i];
 
@@ -124,33 +124,33 @@ public sealed class Lh1Decoder {
       codeLengths[0] = 1;
     }
 
-    int tableBits = Math.Min(maxLen, 12);
-    int tableSize = 1 << tableBits;
+    var tableBits = Math.Min(maxLen, 12);
+    var tableSize = 1 << tableBits;
     var table = new int[tableSize];
     table.AsSpan().Fill(-1);
 
     var blCount = new int[maxLen + 1];
-    foreach (int v in codeLengths)
+    foreach (var v in codeLengths)
       if (v > 0 && v <= maxLen)
         ++blCount[v];
 
     var nextCode = new int[maxLen + 1];
-    int code = 0;
-    for (int bits = 1; bits <= maxLen; ++bits) {
+    var code = 0;
+    for (var bits = 1; bits <= maxLen; ++bits) {
       code = (code + blCount[bits - 1]) << 1;
       nextCode[bits] = code;
     }
 
-    for (int sym = 0; sym < n; ++sym) {
-      int len = codeLengths[sym];
+    for (var sym = 0; sym < n; ++sym) {
+      var len = codeLengths[sym];
       if (len == 0 || len > tableBits)
         continue;
 
-      int symCode = nextCode[len]++;
-      int fillBits = tableBits - len;
-      int baseIdx = symCode << fillBits;
-      int packedValue = sym | (len << 16);
-      for (int fill = 0; fill < (1 << fillBits); ++fill)
+      var symCode = nextCode[len]++;
+      var fillBits = tableBits - len;
+      var baseIdx = symCode << fillBits;
+      var packedValue = sym | (len << 16);
+      for (var fill = 0; fill < (1 << fillBits); ++fill)
         table[baseIdx + fill] = packedValue;
     }
 
@@ -163,14 +163,14 @@ public sealed class Lh1Decoder {
     var codeLengths = new int[n];
 
     // Count non-zero
-    int activeCount = 0;
-    for (int i = 0; i < n; ++i)
+    var activeCount = 0;
+    for (var i = 0; i < n; ++i)
       if (freq[i] > 0)
         ++activeCount;
 
     if (activeCount <= 1) {
       // Find the one symbol (or pick 0)
-      for (int i = 0; i < n; ++i)
+      for (var i = 0; i < n; ++i)
         if (freq[i] > 0) {
           codeLengths[i] = 1;
           break;
@@ -181,16 +181,16 @@ public sealed class Lh1Decoder {
     // Build Huffman tree using priority queue
     // Node: (freq, depth, symbol or -1 for internal, left, right)
     var pq = new SortedList<(long Freq, int Order), int>();
-    int order = 0;
-    int nodeCount = 0;
-    int capacity = 2 * n;
-    int[] nodeLeft = new int[capacity];
-    int[] nodeRight = new int[capacity];
-    int[] nodeSymbol = new int[capacity]; // -1 for internal
+    var order = 0;
+    var nodeCount = 0;
+    var capacity = 2 * n;
+    var nodeLeft = new int[capacity];
+    var nodeRight = new int[capacity];
+    var nodeSymbol = new int[capacity]; // -1 for internal
 
-    for (int i = 0; i < n; ++i) {
+    for (var i = 0; i < n; ++i) {
       if (freq[i] > 0) {
-        int idx = nodeCount++;
+        var idx = nodeCount++;
         nodeLeft[idx] = -1;
         nodeRight[idx] = -1;
         nodeSymbol[idx] = i;
@@ -200,14 +200,14 @@ public sealed class Lh1Decoder {
 
     while (pq.Count > 1) {
       var key1 = pq.Keys[0];
-      int n1 = pq[key1];
+      var n1 = pq[key1];
       pq.RemoveAt(0);
 
       var key2 = pq.Keys[0];
-      int n2 = pq[key2];
+      var n2 = pq[key2];
       pq.RemoveAt(0);
 
-      int parent = nodeCount++;
+      var parent = nodeCount++;
       nodeLeft[parent] = n1;
       nodeRight[parent] = n2;
       nodeSymbol[parent] = -1;
@@ -215,7 +215,7 @@ public sealed class Lh1Decoder {
     }
 
     // Assign depths
-    int root = pq.Values[0];
+    var root = pq.Values[0];
     AssignDepths(root, 0, nodeLeft, nodeRight, nodeSymbol, codeLengths, maxBits);
 
     return codeLengths;

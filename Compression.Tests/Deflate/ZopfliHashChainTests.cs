@@ -8,11 +8,11 @@ public class ZopfliHashChainTests {
   [Test]
   public void FindAllMatches_ReturnsMultipleLengths() {
     // "ABCABCABCABC" — position 3 should match position 0 at lengths 3,4,5,6,7,8,9
-    byte[] data = "ABCABCABCABC"u8.ToArray();
+    var data = "ABCABCABCABC"u8.ToArray();
     var chain = new ZopfliHashChain();
 
     // Insert positions 0,1,2
-    for (int i = 0; i < 3; ++i)
+    for (var i = 0; i < 3; ++i)
       chain.Insert(data, i);
 
     var matches = chain.FindAllMatches(data, 3, 32768, 258);
@@ -22,15 +22,15 @@ public class ZopfliHashChainTests {
   [Category("HappyPath")]
   [Test]
   public void FindAllMatches_AscendingLengthOrder() {
-    byte[] data = "ABCABCABCABC"u8.ToArray();
+    var data = "ABCABCABCABC"u8.ToArray();
     var chain = new ZopfliHashChain();
 
-    for (int i = 0; i < 3; ++i)
+    for (var i = 0; i < 3; ++i)
       chain.Insert(data, i);
 
     var matches = chain.FindAllMatches(data, 3, 32768, 258);
 
-    for (int i = 1; i < matches.Count; ++i) {
+    for (var i = 1; i < matches.Count; ++i) {
       Assert.That(matches[i].Length, Is.GreaterThan(matches[i - 1].Length),
         "Matches must be sorted by ascending length");
     }
@@ -40,10 +40,10 @@ public class ZopfliHashChainTests {
   [Test]
   public void FindAllMatches_DeduplicatesByLength() {
     // Multiple candidates at the same length — only one per length (shortest distance)
-    byte[] data = "ABABABABAB"u8.ToArray();
+    var data = "ABABABABAB"u8.ToArray();
     var chain = new ZopfliHashChain();
 
-    for (int i = 0; i < 6; ++i)
+    for (var i = 0; i < 6; ++i)
       chain.Insert(data, i);
 
     var matches = chain.FindAllMatches(data, 6, 32768, 258);
@@ -56,7 +56,7 @@ public class ZopfliHashChainTests {
   [Category("Boundary")]
   [Test]
   public void FindAllMatches_RespectsMaxDistance() {
-    byte[] data = new byte[100];
+    var data = new byte[100];
     Array.Fill(data, (byte)'A');
     var chain = new ZopfliHashChain();
 
@@ -64,7 +64,7 @@ public class ZopfliHashChainTests {
     chain.Insert(data, 0);
 
     // Skip far ahead — insert positions 1-49
-    for (int i = 1; i < 50; ++i)
+    for (var i = 1; i < 50; ++i)
       chain.Insert(data, i);
 
     // Position 50 with maxDistance=10 should only find matches within 10 bytes
@@ -76,7 +76,7 @@ public class ZopfliHashChainTests {
   [Category("EdgeCase")]
   [Test]
   public void FindAllMatches_NoMatchForShortData() {
-    byte[] data = "AB"u8.ToArray();
+    var data = "AB"u8.ToArray();
     var chain = new ZopfliHashChain();
 
     var matches = chain.FindAllMatches(data, 0, 32768, 258);
@@ -86,12 +86,12 @@ public class ZopfliHashChainTests {
   [Category("EdgeCase")]
   [Test]
   public void FindAllMatches_NoMatchForUniqueData() {
-    byte[] data = new byte[256];
-    for (int i = 0; i < 256; ++i)
+    var data = new byte[256];
+    for (var i = 0; i < 256; ++i)
       data[i] = (byte)i;
 
     var chain = new ZopfliHashChain();
-    for (int i = 0; i < 200; ++i)
+    for (var i = 0; i < 200; ++i)
       chain.Insert(data, i);
 
     var matches = chain.FindAllMatches(data, 200, 32768, 258);
@@ -101,7 +101,7 @@ public class ZopfliHashChainTests {
   [Category("HappyPath")]
   [Test]
   public void Insert_DoesNotReturnMatches() {
-    byte[] data = "ABCABC"u8.ToArray();
+    var data = "ABCABC"u8.ToArray();
     var chain = new ZopfliHashChain();
 
     // Insert should not throw and not return anything

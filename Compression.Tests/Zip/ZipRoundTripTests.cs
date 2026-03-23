@@ -43,9 +43,9 @@ public class ZipRoundTripTests {
   [Category("RoundTrip")]
   [Test]
   public void RepeatedText() {
-    byte[] pattern = "ABCDEFGHIJ"u8.ToArray();
-    byte[] data = new byte[pattern.Length * 500];
-    for (int i = 0; i < 500; ++i)
+    var pattern = "ABCDEFGHIJ"u8.ToArray();
+    var data = new byte[pattern.Length * 500];
+    for (var i = 0; i < 500; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
     RoundTrip(data, ZipCompressionMethod.Deflate);
   }
@@ -54,7 +54,7 @@ public class ZipRoundTripTests {
   [Category("RoundTrip")]
   [Test]
   public void AllZeros_32KB() {
-    byte[] data = new byte[32768];
+    var data = new byte[32768];
     RoundTrip(data, ZipCompressionMethod.Deflate);
   }
 
@@ -63,7 +63,7 @@ public class ZipRoundTripTests {
   [Test]
   public void RandomData_4KB() {
     var rng = new Random(123);
-    byte[] data = new byte[4096];
+    var data = new byte[4096];
     rng.NextBytes(data);
     RoundTrip(data, ZipCompressionMethod.Deflate);
   }
@@ -73,7 +73,7 @@ public class ZipRoundTripTests {
   [Test]
   public void BoundarySize_32767() {
     var rng = new Random(1);
-    byte[] data = new byte[32767];
+    var data = new byte[32767];
     rng.NextBytes(data);
     RoundTrip(data, ZipCompressionMethod.Deflate);
   }
@@ -83,7 +83,7 @@ public class ZipRoundTripTests {
   [Test]
   public void BoundarySize_32769() {
     var rng = new Random(2);
-    byte[] data = new byte[32769];
+    var data = new byte[32769];
     rng.NextBytes(data);
     RoundTrip(data, ZipCompressionMethod.Deflate);
   }
@@ -92,9 +92,9 @@ public class ZipRoundTripTests {
   [Category("RoundTrip")]
   [Test]
   public void BoundarySize_65536() {
-    byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
-    byte[] data = new byte[65536];
-    for (int i = 0; i < data.Length; ++i)
+    var pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
+    var data = new byte[65536];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = pattern[i % pattern.Length];
     RoundTrip(data, ZipCompressionMethod.Deflate);
   }
@@ -103,9 +103,9 @@ public class ZipRoundTripTests {
   [Category("RoundTrip")]
   [Test]
   public void MultipleFiles_MixedMethods() {
-    byte[] text = "Compressible text that should work well with deflate compression."u8.ToArray();
-    byte[] binary = new byte[256];
-    for (int i = 0; i < 256; ++i) binary[i] = (byte)i;
+    var text = "Compressible text that should work well with deflate compression."u8.ToArray();
+    var binary = new byte[256];
+    for (var i = 0; i < 256; ++i) binary[i] = (byte)i;
     byte[] empty = [];
 
     byte[] archive;
@@ -140,7 +140,7 @@ public class ZipRoundTripTests {
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
-    byte[] extracted = reader.ExtractEntry(reader.Entries[0]);
+    var extracted = reader.ExtractEntry(reader.Entries[0]);
     Assert.That(extracted, Is.EqualTo(data));
   }
 }

@@ -48,8 +48,8 @@ public sealed class ArjEntry {
   /// </summary>
   public DateTime LastModified {
     get {
-      int time = (int)(this.MsdosTimestamp & 0xFFFF);
-      int date = (int)(this.MsdosTimestamp >> 16);
+      var time = (int)(this.MsdosTimestamp & 0xFFFF);
+      var date = (int)(this.MsdosTimestamp >> 16);
       try {
         return new DateTime(
           ((date >> 9) & 0x7F) + 1980,

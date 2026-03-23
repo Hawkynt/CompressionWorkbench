@@ -45,26 +45,26 @@ public static class LzipStream {
         $"Dictionary size must be between {LzipConstants.MinDictionarySize} and {LzipConstants.MaxDictionarySize}.");
 
     // Read all uncompressed data so we can compute the CRC-32 and size.
-    byte[] uncompressed = ReadFully(input);
+    var uncompressed = ReadFully(input);
 
     // Write the 6-byte header.
-    byte dictSizeByte = EncodeDictionarySize(dictionarySize);
+    var dictSizeByte = EncodeDictionarySize(dictionarySize);
     WriteHeader(output, dictSizeByte);
 
     // Remember where the member starts so we can calculate member size.
-    long memberStart = output.CanSeek ? output.Position - LzipConstants.HeaderSize : -1;
+    var memberStart = output.CanSeek ? output.Position - LzipConstants.HeaderSize : -1;
 
     // Compress with LZMA (lc=3, lp=0, pb=2), writing an end-of-stream marker.
     var encoder = new LzmaEncoder(dictionarySize, lc: 3, lp: 0, pb: 2, level);
     using var lzmaBuffer = new MemoryStream();
     encoder.Encode(lzmaBuffer, uncompressed, writeEndMarker: true);
-    byte[] lzmaBytes = lzmaBuffer.ToArray();
+    var lzmaBytes = lzmaBuffer.ToArray();
     output.Write(lzmaBytes);
 
     // Write the 20-byte trailer.
-    uint crc = Crc32.Compute(uncompressed);
-    ulong uncompressedSize = (ulong)uncompressed.LongLength;
-    ulong memberSize = (ulong)(LzipConstants.HeaderSize + lzmaBytes.LongLength + LzipConstants.TrailerSize);
+    var crc = Crc32.Compute(uncompressed);
+    var uncompressedSize = (ulong)uncompressed.LongLength;
+    var memberSize = (ulong)(LzipConstants.HeaderSize + lzmaBytes.LongLength + LzipConstants.TrailerSize);
 
     WriteTrailer(output, crc, uncompressedSize, memberSize);
   }
@@ -100,26 +100,26 @@ public static class LzipStream {
     if (header[4] != LzipConstants.Version)
       throw new InvalidDataException($"Unsupported Lzip version: {header[4]}.");
 
-    int dictionarySize = DecodeDictionarySize(header[5]);
+    var dictionarySize = DecodeDictionarySize(header[5]);
 
     // Build the 5-byte LZMA properties array (properties byte + dict size LE).
-    byte[] lzmaProperties = BuildLzmaProperties(dictionarySize);
+    var lzmaProperties = BuildLzmaProperties(dictionarySize);
 
     // Decompress LZMA stream (end-of-marker termination: uncompressedSize = -1).
     var decoder = new LzmaDecoder(input, lzmaProperties, uncompressedSize: -1);
     using var decompressedBuffer = new MemoryStream();
     decoder.Decode(decompressedBuffer);
-    byte[] decompressed = decompressedBuffer.ToArray();
+    var decompressed = decompressedBuffer.ToArray();
 
     // Read and verify the 20-byte trailer.
     Span<byte> trailer = stackalloc byte[LzipConstants.TrailerSize];
     input.ReadExactly(trailer);
 
-    uint storedCrc = BinaryPrimitives.ReadUInt32LittleEndian(trailer[..4]);
-    ulong storedUncompressedSize = BinaryPrimitives.ReadUInt64LittleEndian(trailer[4..12]);
+    var storedCrc = BinaryPrimitives.ReadUInt32LittleEndian(trailer[..4]);
+    var storedUncompressedSize = BinaryPrimitives.ReadUInt64LittleEndian(trailer[4..12]);
     // Stored member size is informational; we verify CRC and uncompressed size.
 
-    uint computedCrc = Crc32.Compute(decompressed);
+    var computedCrc = Crc32.Compute(decompressed);
     if (storedCrc != computedCrc)
       throw new InvalidDataException(
         $"Lzip CRC-32 mismatch: expected 0x{storedCrc:X8}, computed 0x{computedCrc:X8}.");
@@ -159,8 +159,8 @@ public static class LzipStream {
   /// </summary>
   private static byte EncodeDictionarySize(int dictionarySize) {
     // Find floor log2 of dictionarySize.
-    int log2 = 0;
-    int v = dictionarySize;
+    var log2 = 0;
+    var v = dictionarySize;
     while (v > 1) {
       v >>= 1;
       ++log2;
@@ -181,10 +181,10 @@ public static class LzipStream {
   /// Formula: (1 &lt;&lt; (b &amp; 0x1F)) | ((1 &lt;&lt; (b &amp; 0x1F)) &gt;&gt; 2) * ((b &gt;&gt; 5) &amp; 0x07).
   /// </summary>
   private static int DecodeDictionarySize(byte b) {
-    int exponent = b & 0x1F;
-    int fraction = (b >> 5) & 0x07;
-    int baseSize = 1 << exponent;
-    int dictSize = baseSize | ((baseSize >> 2) * fraction);
+    var exponent = b & 0x1F;
+    var fraction = (b >> 5) & 0x07;
+    var baseSize = 1 << exponent;
+    var dictSize = baseSize | ((baseSize >> 2) * fraction);
 
     if (dictSize < LzipConstants.MinDictionarySize)
       dictSize = LzipConstants.MinDictionarySize;
@@ -196,7 +196,7 @@ public static class LzipStream {
   /// Builds the 5-byte LZMA properties array for lc=3, lp=0, pb=2 with the given dictionary size.
   /// </summary>
   private static byte[] BuildLzmaProperties(int dictionarySize) {
-    byte[] props = new byte[5];
+    var props = new byte[5];
     props[0] = LzipConstants.LzmaPropertiesByte;
     BinaryPrimitives.WriteInt32LittleEndian(props.AsSpan(1), dictionarySize);
     return props;

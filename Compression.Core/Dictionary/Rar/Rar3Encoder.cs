@@ -104,7 +104,7 @@ public sealed class Rar3Encoder {
       EncodeToken(writer, token, mainEnc, distEnc, lowDistEnc, repLenEnc);
 
     // Update window for solid continuation
-    for (int i = 0; i < workBuffer.Length; ++i) {
+    for (var i = 0; i < workBuffer.Length; ++i) {
       this._window[this._windowPos] = workBuffer[i];
       this._windowPos = (this._windowPos + 1) & this._windowMask;
     }
@@ -114,19 +114,19 @@ public sealed class Rar3Encoder {
 
   private List<Rar3Token> CollectTokens(byte[] data, int start, int end, HashChainMatchFinder matchFinder) {
     var tokens = new List<Rar3Token>();
-    int pos = start;
+    var pos = start;
 
     while (pos < end) {
       var match = matchFinder.FindMatch(data, pos, this._windowSize, MaxMatchLength, 3);
 
       if (match.Length >= 3) {
         // Check if match distance equals a repeated offset — use shorter repeat code
-        int repIdx = -1;
-        for (int r = 0; r < 4; ++r) {
+        var repIdx = -1;
+        for (var r = 0; r < 4; ++r) {
           if (this._rep[r] == match.Distance) { repIdx = r; break; }
         }
 
-        int effectiveLen = match.Length;
+        var effectiveLen = match.Length;
 
         if (repIdx == 0 && effectiveLen == 2) {
           // Symbol 258: repeat last match with length 2 (special case)
@@ -141,8 +141,8 @@ public sealed class Rar3Encoder {
           });
 
           // Rotate rep distances (bring repIdx to front)
-          int dist = this._rep[repIdx];
-          for (int i = repIdx; i > 0; --i)
+          var dist = this._rep[repIdx];
+          for (var i = repIdx; i > 0; --i)
             this._rep[i] = this._rep[i - 1];
           this._rep[0] = dist;
         } else {
@@ -159,7 +159,7 @@ public sealed class Rar3Encoder {
           this._rep[0] = match.Distance;
         }
 
-        for (int i = 1; i < effectiveLen && pos + i < data.Length; ++i)
+        for (var i = 1; i < effectiveLen && pos + i < data.Length; ++i)
           matchFinder.InsertPosition(data, pos + i);
         pos += effectiveLen;
       } else {
@@ -196,30 +196,30 @@ public sealed class Rar3Encoder {
         ++mainFreq[258]; // Symbol 258: repeat last with length 2
         break;
       case TokenType.RepeatOffset: {
-        int mainSym = 259 + token.RepIndex;
+        var mainSym = 259 + token.RepIndex;
         ++mainFreq[mainSym];
         // RepLen table for the length
-        int length = token.Length - 2; // RepLen decoder adds 2
-        int lenSlot = GetLenSlot(length, RepLenTableSize);
+        var length = token.Length - 2; // RepLen decoder adds 2
+        var lenSlot = GetLenSlot(length, RepLenTableSize);
         ++repLenFreq[lenSlot];
         break;
       }
       case TokenType.Match: {
-        int length = token.Length - 3; // Decoder adds 3 for new matches
-        int lenSlot = GetLenSlot(length, 36);
-        int mainSym = 263 + lenSlot;
+        var length = token.Length - 3; // Decoder adds 3 for new matches
+        var lenSlot = GetLenSlot(length, 36);
+        var mainSym = 263 + lenSlot;
         ++mainFreq[mainSym];
 
-        int distSlot = GetDistSlot(token.Distance);
+        var distSlot = GetDistSlot(token.Distance);
         ++distFreq[distSlot];
 
         // LowDist table frequency for distances with bits >= 4
         if (distSlot >= 4) {
-          int bits = distSlot / 2 - 1;
+          var bits = distSlot / 2 - 1;
           if (bits >= 4) {
-            int baseDist = ((2 | (distSlot & 1)) << bits) + 1;
-            int extra = token.Distance - baseDist;
-            int lowBits = extra & 0xF;
+            var baseDist = ((2 | (distSlot & 1)) << bits) + 1;
+            var extra = token.Distance - baseDist;
+            var lowBits = extra & 0xF;
             ++lowDistFreq[lowBits];
           }
         }
@@ -243,35 +243,35 @@ public sealed class Rar3Encoder {
       case TokenType.RepeatOffset: {
         mainEnc.EncodeSymbol(writer, 259 + token.RepIndex);
         // Encode length via RepLen table (28 symbols, decoder adds 2)
-        int length = token.Length - 2;
-        int lenSlot = GetLenSlot(length, RepLenTableSize);
+        var length = token.Length - 2;
+        var lenSlot = GetLenSlot(length, RepLenTableSize);
         repLenEnc.EncodeSymbol(writer, lenSlot);
         if (LenBits[lenSlot] > 0) {
-          int extra = length - LenBase[lenSlot];
+          var extra = length - LenBase[lenSlot];
           writer.WriteBits((uint)extra, LenBits[lenSlot]);
         }
         break;
       }
 
       case TokenType.Match: {
-        int length = token.Length - 3;
-        int lenSlot = GetLenSlot(length, 36);
-        int mainSym = 263 + lenSlot;
+        var length = token.Length - 3;
+        var lenSlot = GetLenSlot(length, 36);
+        var mainSym = 263 + lenSlot;
         mainEnc.EncodeSymbol(writer, mainSym);
 
         if (LenBits[lenSlot] > 0) {
-          int extra = length - LenBase[lenSlot];
+          var extra = length - LenBase[lenSlot];
           writer.WriteBits((uint)extra, LenBits[lenSlot]);
         }
 
         // Encode distance: RAR3 formula
-        int distSlot = GetDistSlot(token.Distance);
+        var distSlot = GetDistSlot(token.Distance);
         distEnc.EncodeSymbol(writer, distSlot);
 
         if (distSlot >= 4) {
-          int bits = distSlot / 2 - 1;
-          int baseDist = ((2 | (distSlot & 1)) << bits) + 1;
-          int extra = token.Distance - baseDist;
+          var bits = distSlot / 2 - 1;
+          var baseDist = ((2 | (distSlot & 1)) << bits) + 1;
+          var extra = token.Distance - baseDist;
           if (bits >= 4) {
             // High bits as raw, low 4 bits via LowDist Huffman
             if (bits > 4)
@@ -308,7 +308,7 @@ public sealed class Rar3Encoder {
     clEnc.Build(clFreq, 20);
 
     // Write code-length code lengths (4 bits each, 20 values)
-    for (int i = 0; i < 20; ++i)
+    for (var i = 0; i < 20; ++i)
       writer.WriteBits((uint)clEnc.CodeLengths[i], 4);
 
     // Write all 4 tables in order: Main, Dist, LowDist, RepLen
@@ -322,19 +322,19 @@ public sealed class Rar3Encoder {
       int[] codeLengths, int[] prevLengths, int numSymbols) {
     var rle = new List<(int sym, int extraBits, int extraValue)>();
 
-    int i = 0;
+    var i = 0;
     while (i < numSymbols) {
-      int delta = (codeLengths[i] - prevLengths[i]) & 0x0F;
+      var delta = (codeLengths[i] - prevLengths[i]) & 0x0F;
 
       if (codeLengths[i] == 0 && delta == 0) {
-        int runStart = i;
+        var runStart = i;
         while (i < numSymbols && codeLengths[i] == 0 && ((codeLengths[i] - prevLengths[i]) & 0x0F) == 0)
           ++i;
-        int run = i - runStart;
+        var run = i - runStart;
 
         while (run > 0) {
           if (run >= 11) {
-            int count = Math.Min(run, 138);
+            var count = Math.Min(run, 138);
             rle.Add((18, 7, count - 11));
             run -= count;
           } else if (run >= 3) {
@@ -347,10 +347,10 @@ public sealed class Rar3Encoder {
         }
       } else if (delta == 0) {
         rle.Add((0, 0, 0));
-        int prevVal = codeLengths[i];
+        var prevVal = codeLengths[i];
         ++i;
 
-        int rep = 0;
+        var rep = 0;
         while (i < numSymbols && codeLengths[i] == prevVal
             && ((codeLengths[i] - prevLengths[i]) & 0x0F) == 0 && rep < 6) {
           ++rep;
@@ -358,7 +358,7 @@ public sealed class Rar3Encoder {
         }
 
         while (rep >= 3) {
-          int batch = Math.Min(rep, 6);
+          var batch = Math.Min(rep, 6);
           rle.Add((16, 2, batch - 3));
           rep -= batch;
         }
@@ -368,22 +368,22 @@ public sealed class Rar3Encoder {
         }
       } else {
         rle.Add((delta, 0, 0));
-        int prevVal = codeLengths[i];
+        var prevVal = codeLengths[i];
         ++i;
 
-        int rep = 0;
+        var rep = 0;
         while (i < numSymbols && codeLengths[i] == prevVal && rep < 6) {
           ++rep;
           ++i;
         }
 
         while (rep >= 3) {
-          int batch = Math.Min(rep, 6);
+          var batch = Math.Min(rep, 6);
           rle.Add((16, 2, batch - 3));
           rep -= batch;
         }
         while (rep > 0) {
-          int nextDelta = (codeLengths[i - rep] - prevLengths[i - rep]) & 0x0F;
+          var nextDelta = (codeLengths[i - rep] - prevLengths[i - rep]) & 0x0F;
           rle.Add((nextDelta, 0, 0));
           --rep;
         }
@@ -403,9 +403,9 @@ public sealed class Rar3Encoder {
   }
 
   private static int GetLenSlot(int length, int maxSlots) {
-    for (int i = Math.Min(maxSlots, LenBase.Length) - 1; i >= 0; --i) {
+    for (var i = Math.Min(maxSlots, LenBase.Length) - 1; i >= 0; --i) {
       if (length >= LenBase[i]) {
-        int maxExtra = LenBits[i] > 0 ? (1 << LenBits[i]) - 1 : 0;
+        var maxExtra = LenBits[i] > 0 ? (1 << LenBits[i]) - 1 : 0;
         if (length <= LenBase[i] + maxExtra)
           return i;
       }
@@ -416,15 +416,15 @@ public sealed class Rar3Encoder {
   private static int GetDistSlot(int distance) {
     if (distance <= 4) return distance - 1;
 
-    int d = distance - 1;
-    int highBit = 31 - int.LeadingZeroCount(d);
-    int bits = highBit - 1;
-    int lowBit = (d >> bits) & 1;
+    var d = distance - 1;
+    var highBit = 31 - int.LeadingZeroCount(d);
+    var bits = highBit - 1;
+    var lowBit = (d >> bits) & 1;
     return bits * 2 + 2 + lowBit;
   }
 
   private static void EnsureNonEmpty(int[] freq) {
-    for (int i = 0; i < freq.Length; ++i)
+    for (var i = 0; i < freq.Length; ++i)
       if (freq[i] > 0) return;
     freq[0] = 1;
   }

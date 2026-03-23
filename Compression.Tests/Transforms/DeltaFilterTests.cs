@@ -62,7 +62,7 @@ public class DeltaFilterTests {
     var encoded = DeltaFilter.Encode(data);
     // First byte unchanged (0), rest should all be 1
     Assert.That(encoded[0], Is.EqualTo(0));
-    for (int i = 1; i < encoded.Length; ++i)
+    for (var i = 1; i < encoded.Length; ++i)
       Assert.That(encoded[i], Is.EqualTo(1));
   }
 
@@ -72,7 +72,7 @@ public class DeltaFilterTests {
     var data = new byte[] { 42, 42, 42, 42, 42 };
     var encoded = DeltaFilter.Encode(data);
     Assert.That(encoded[0], Is.EqualTo(42));
-    for (int i = 1; i < encoded.Length; ++i)
+    for (var i = 1; i < encoded.Length; ++i)
       Assert.That(encoded[i], Is.EqualTo(0));
   }
 

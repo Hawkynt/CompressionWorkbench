@@ -26,19 +26,19 @@ public static class Lz5Decoder {
     var output = new byte[originalSize];
     var window = new byte[WindowSize];
     Array.Fill(window, (byte)0x20);
-    int windowPos = 0;
-    int outPos = 0;
-    int srcPos = 0;
+    var windowPos = 0;
+    var outPos = 0;
+    var srcPos = 0;
 
     while (outPos < originalSize && srcPos < compressed.Length) {
       int flags = compressed[srcPos++];
 
-      for (int bit = 0; bit < 8 && outPos < originalSize; ++bit) {
+      for (var bit = 0; bit < 8 && outPos < originalSize; ++bit) {
         if ((flags & (1 << bit)) != 0) {
           // Literal
           if (srcPos >= compressed.Length)
             return output;
-          byte b = compressed[srcPos++];
+          var b = compressed[srcPos++];
           output[outPos++] = b;
           window[windowPos] = b;
           windowPos = (windowPos + 1) & WindowMask;
@@ -49,11 +49,11 @@ public static class Lz5Decoder {
           int b1 = compressed[srcPos++];
           int b2 = compressed[srcPos++];
 
-          int offset = b1 | ((b2 & 0xF0) << 4);
-          int length = (b2 & 0x0F) + Threshold;
+          var offset = b1 | ((b2 & 0xF0) << 4);
+          var length = (b2 & 0x0F) + Threshold;
 
-          for (int j = 0; j < length && outPos < originalSize; ++j) {
-            byte b = window[(offset + j) & WindowMask];
+          for (var j = 0; j < length && outPos < originalSize; ++j) {
+            var b = window[(offset + j) & WindowMask];
             output[outPos++] = b;
             window[windowPos] = b;
             windowPos = (windowPos + 1) & WindowMask;

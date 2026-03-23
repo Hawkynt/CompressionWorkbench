@@ -45,6 +45,8 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand ViewAsHexCommand { get; }
   public ICommand AddFilesCommand { get; }
   public ICommand PropertiesCommand { get; }
+  public ICommand AnalyzeCommand { get; }
+  public ICommand AnalyzeFileCommand { get; }
 
   public MainViewModel() {
     OpenCommand = new RelayCommand(_ => OpenDialog());
@@ -59,6 +61,8 @@ internal sealed class MainViewModel : ViewModelBase {
     ViewAsHexCommand = new RelayCommand(_ => ViewSelectedAs(hex: true), _ => HasArchive && HasSelectedFile);
     AddFilesCommand = new RelayCommand(_ => AddFilesToArchive(), _ => HasArchive && CanAddFiles);
     PropertiesCommand = new RelayCommand(_ => ShowProperties(), _ => HasArchive && SelectedEntries.Count == 1 && !SelectedEntries[0].IsParentEntry);
+    AnalyzeCommand = new RelayCommand(_ => ShowAnalysis(), _ => HasArchive && HasSelectedFile);
+    AnalyzeFileCommand = new RelayCommand(_ => ShowAnalyzeFile());
   }
 
   private bool HasSelectedFile => SelectedEntries.Any(e => !e.IsDirectory && !e.IsParentEntry);
@@ -94,8 +98,8 @@ internal sealed class MainViewModel : ViewModelBase {
 
       RefreshVisibleEntries();
 
-      long totalOrig = entries.Sum(e => e.OriginalSize);
-      long totalComp = entries.Where(e => e.CompressedSize >= 0).Sum(e => e.CompressedSize);
+      var totalOrig = entries.Sum(e => e.OriginalSize);
+      var totalComp = entries.Where(e => e.CompressedSize >= 0).Sum(e => e.CompressedSize);
       var ratio = totalOrig > 0 ? $" ({100.0 * totalComp / totalOrig:F1}%)" : "";
       StatusText = $"{entries.Count} entries, {FormatSize(totalOrig)}{ratio} \u2014 {format}";
 
@@ -269,7 +273,7 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   private async Task TestArchive() {
-    bool ok = false;
+    var ok = false;
     await RunAsync("Testing archive integrity...", () => {
       ok = ArchiveOperations.Test(ArchivePath, password: null);
     });
@@ -314,6 +318,29 @@ internal sealed class MainViewModel : ViewModelBase {
     var dlg = new Views.PropertiesWindow { Owner = Application.Current.MainWindow };
     dlg.ShowProperties(entry, _allEntries, data);
     dlg.ShowDialog();
+  }
+
+  internal void ShowAnalyzeFile() {
+    var win = new Views.AnalysisWindow { Owner = Application.Current.MainWindow };
+    win.Show();
+  }
+
+  internal void ShowAnalysis() {
+    var entry = SelectedEntries.FirstOrDefault(e => !e.IsDirectory && !e.IsParentEntry);
+    if (entry == null) return;
+
+    try {
+      StatusText = $"Loading {entry.Name}...";
+      var data = ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: null);
+      StatusText = "Ready";
+
+      var win = new Views.AnalysisWindow { Owner = Application.Current.MainWindow };
+      win.RunAnalysis(entry.Path, data);
+      win.Show();
+    }
+    catch (Exception ex) {
+      StatusText = $"Analysis error: {ex.Message}";
+    }
   }
 
   internal void HandleFileDrop(string[] files) {

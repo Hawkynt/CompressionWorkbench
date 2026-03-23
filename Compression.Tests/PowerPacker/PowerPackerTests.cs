@@ -20,7 +20,7 @@ public class PowerPackerTests {
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void RoundTrip_RepetitiveData() {
     var data = new byte[4096];
-    for (int i = 0; i < data.Length; i++)
+    for (var i = 0; i < data.Length; i++)
       data[i] = (byte)(i % 16);
 
     using var compressed = new MemoryStream();

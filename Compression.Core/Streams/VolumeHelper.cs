@@ -17,12 +17,12 @@ public static class VolumeHelper {
     if (data.Length == 0)
       return [[]];
 
-    int volumeCount = (int)((data.Length + maxVolumeSize - 1) / maxVolumeSize);
+    var volumeCount = (int)((data.Length + maxVolumeSize - 1) / maxVolumeSize);
     var volumes = new byte[volumeCount][];
 
-    for (int i = 0; i < volumeCount; ++i) {
-      long offset = i * maxVolumeSize;
-      int length = (int)Math.Min(maxVolumeSize, data.Length - offset);
+    for (var i = 0; i < volumeCount; ++i) {
+      var offset = i * maxVolumeSize;
+      var length = (int)Math.Min(maxVolumeSize, data.Length - offset);
       volumes[i] = new byte[length];
       Array.Copy(data, offset, volumes[i], 0, length);
     }
@@ -37,13 +37,13 @@ public static class VolumeHelper {
   /// <param name="maxVolumeSize">The maximum size of each volume.</param>
   /// <param name="volumeStreams">The output streams for each volume. Must have enough streams.</param>
   public static void WriteVolumes(byte[] data, long maxVolumeSize, Stream[] volumeStreams) {
-    byte[][] volumes = SplitIntoVolumes(data, maxVolumeSize);
+    var volumes = SplitIntoVolumes(data, maxVolumeSize);
     if (volumeStreams.Length < volumes.Length)
       throw new ArgumentException(
         $"Need {volumes.Length} volume streams but only {volumeStreams.Length} provided.",
         nameof(volumeStreams));
 
-    for (int i = 0; i < volumes.Length; ++i)
+    for (var i = 0; i < volumes.Length; ++i)
       volumeStreams[i].Write(volumes[i], 0, volumes[i].Length);
   }
 }

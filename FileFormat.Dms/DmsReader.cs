@@ -46,13 +46,13 @@ public sealed class DmsReader : IDisposable {
     ReadFully(this._stream, headerBuf);
 
     // Verify magic.
-    uint magic = BinaryPrimitives.ReadUInt32BigEndian(headerBuf);
+    var magic = BinaryPrimitives.ReadUInt32BigEndian(headerBuf);
     if (magic != DmsConstants.MagicValue)
       ThrowInvalid($"Invalid DMS magic: expected 0x{DmsConstants.MagicValue:X8}, got 0x{magic:X8}.");
 
     // Verify header CRC (CRC-16 of bytes 8..55).
-    ushort storedCrc = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[4..]);
-    ushort computedCrc = ComputeCrc16(headerBuf[8..]);
+    var storedCrc = BinaryPrimitives.ReadUInt16BigEndian(headerBuf[4..]);
+    var computedCrc = ComputeCrc16(headerBuf[8..]);
     if (storedCrc != computedCrc)
       ThrowInvalid($"DMS header CRC mismatch: expected 0x{storedCrc:X4}, computed 0x{computedCrc:X4}.");
 
@@ -87,26 +87,26 @@ public sealed class DmsReader : IDisposable {
 
   private DmsTrack? TryReadTrack() {
     Span<byte> buf = stackalloc byte[DmsConstants.TrackHeaderSize];
-    int read = this._stream.Read(buf);
+    var read = this._stream.Read(buf);
     if (read < DmsConstants.TrackHeaderSize)
       return null;
 
-    ushort sig = BinaryPrimitives.ReadUInt16BigEndian(buf);
+    var sig = BinaryPrimitives.ReadUInt16BigEndian(buf);
     if (sig != DmsConstants.TrackSignature)
       return null;
 
-    ushort trackNumber     = BinaryPrimitives.ReadUInt16BigEndian(buf[2..]);
+    var trackNumber     = BinaryPrimitives.ReadUInt16BigEndian(buf[2..]);
     // bytes 4-5: reserved
-    ushort compressedSize  = BinaryPrimitives.ReadUInt16BigEndian(buf[6..]);
-    ushort uncompressedSize = BinaryPrimitives.ReadUInt16BigEndian(buf[8..]);
-    byte   mode            = buf[10];
-    byte   flags           = buf[11];
-    ushort compressedCrc   = BinaryPrimitives.ReadUInt16BigEndian(buf[12..]);
+    var compressedSize  = BinaryPrimitives.ReadUInt16BigEndian(buf[6..]);
+    var uncompressedSize = BinaryPrimitives.ReadUInt16BigEndian(buf[8..]);
+    var   mode            = buf[10];
+    var   flags           = buf[11];
+    var compressedCrc   = BinaryPrimitives.ReadUInt16BigEndian(buf[12..]);
     // Note: bytes 12-15 store compressed CRC as 4 bytes in some implementations,
     // but the CRC-16 occupies the first 2 bytes. bytes 14-15 may be padding.
-    ushort uncompressedCrc = BinaryPrimitives.ReadUInt16BigEndian(buf[16..]);
+    var uncompressedCrc = BinaryPrimitives.ReadUInt16BigEndian(buf[16..]);
 
-    long dataOffset = this._stream.Position;
+    var dataOffset = this._stream.Position;
 
     // Skip past the compressed data.
     this._stream.Seek(compressedSize, SeekOrigin.Current);
@@ -137,16 +137,16 @@ public sealed class DmsReader : IDisposable {
     ArgumentNullException.ThrowIfNull(track);
 
     this._stream.Position = track.DataOffset;
-    byte[] compressed = new byte[track.CompressedSize];
+    var compressed = new byte[track.CompressedSize];
     ReadFully(this._stream, compressed);
 
     // Verify compressed data CRC.
-    ushort compCrc = ComputeCrc16(compressed);
+    var compCrc = ComputeCrc16(compressed);
     if (compCrc != track.CompressedCrc)
       ThrowInvalid($"CRC mismatch for compressed data on track {track.TrackNumber}: " +
                    $"expected 0x{track.CompressedCrc:X4}, computed 0x{compCrc:X4}.");
 
-    byte[] data = track.CompressionMode switch {
+    var data = track.CompressionMode switch {
       DmsConstants.ModeNone      => compressed,
       DmsConstants.ModeSimpleRle => DecompressRle(compressed, track.UncompressedSize),
       DmsConstants.ModeQuick     => DecompressQuick(compressed, track.UncompressedSize),
@@ -158,7 +158,7 @@ public sealed class DmsReader : IDisposable {
     };
 
     // Verify decompressed data CRC.
-    ushort dataCrc = ComputeCrc16(data);
+    var dataCrc = ComputeCrc16(data);
     if (dataCrc != track.UncompressedCrc)
       ThrowInvalid($"CRC mismatch for decompressed data on track {track.TrackNumber}: " +
                    $"expected 0x{track.UncompressedCrc:X4}, computed 0x{dataCrc:X4}.");
@@ -173,7 +173,7 @@ public sealed class DmsReader : IDisposable {
   public byte[] ExtractDisk() {
     using var ms = new MemoryStream();
     foreach (var track in this._tracks) {
-      byte[] data = Extract(track);
+      var data = Extract(track);
       ms.Write(data);
     }
     return ms.ToArray();
@@ -182,19 +182,19 @@ public sealed class DmsReader : IDisposable {
   // ── Decompression: Mode 1 (Simple RLE) ──────────────────────────────────
 
   private static byte[] DecompressRle(byte[] compressed, int uncompressedSize) {
-    byte[] output = new byte[uncompressedSize];
-    int srcPos = 0;
-    int dstPos = 0;
+    var output = new byte[uncompressedSize];
+    var srcPos = 0;
+    var dstPos = 0;
 
     while (srcPos < compressed.Length && dstPos < uncompressedSize) {
-      byte b = compressed[srcPos++];
+      var b = compressed[srcPos++];
       if (b != DmsConstants.RleEscape) {
         output[dstPos++] = b;
       } else {
         if (srcPos >= compressed.Length)
           break;
 
-        byte next = compressed[srcPos++];
+        var next = compressed[srcPos++];
         if (next == 0x00) {
           // Literal 0x90.
           output[dstPos++] = DmsConstants.RleEscape;
@@ -202,9 +202,9 @@ public sealed class DmsReader : IDisposable {
           // Run: next = repeat byte, then count byte follows.
           if (srcPos >= compressed.Length)
             break;
-          byte count = compressed[srcPos++];
+          var count = compressed[srcPos++];
           int runLength = count;
-          for (int i = 0; i < runLength && dstPos < uncompressedSize; i++)
+          for (var i = 0; i < runLength && dstPos < uncompressedSize; i++)
             output[dstPos++] = next;
         }
       }
@@ -216,20 +216,20 @@ public sealed class DmsReader : IDisposable {
   // ── Decompression: Mode 2 (Quick — LZ77) ────────────────────────────────
 
   private static byte[] DecompressQuick(byte[] compressed, int uncompressedSize) {
-    byte[] output = new byte[uncompressedSize];
-    int srcPos = 0;
-    int dstPos = 0;
+    var output = new byte[uncompressedSize];
+    var srcPos = 0;
+    var dstPos = 0;
 
     while (srcPos < compressed.Length && dstPos < uncompressedSize) {
       if (srcPos + 1 >= compressed.Length)
         break;
 
       // Read 2-byte token (big-endian).
-      int token = (compressed[srcPos] << 8) | compressed[srcPos + 1];
+      var token = (compressed[srcPos] << 8) | compressed[srcPos + 1];
       srcPos += 2;
 
-      int offset = token & 0x0FFF;  // Low 12 bits = offset.
-      int length = (token >> 12) & 0x0F; // High nibble = length - 2.
+      var offset = token & 0x0FFF;  // Low 12 bits = offset.
+      var length = (token >> 12) & 0x0F; // High nibble = length - 2.
 
       if (offset == 0) {
         // Literal byte: length field is ignored, next byte is literal.
@@ -238,12 +238,12 @@ public sealed class DmsReader : IDisposable {
         output[dstPos++] = compressed[srcPos++];
       } else {
         // Back-reference: copy length+2 bytes from offset back in output.
-        int matchLen = length + 2;
-        int matchPos = dstPos - offset;
+        var matchLen = length + 2;
+        var matchPos = dstPos - offset;
         if (matchPos < 0)
           ThrowInvalid($"Quick decompression: invalid back-reference offset {offset} at position {dstPos}.");
 
-        for (int i = 0; i < matchLen && dstPos < uncompressedSize; i++)
+        for (var i = 0; i < matchLen && dstPos < uncompressedSize; i++)
           output[dstPos++] = output[matchPos + i];
       }
     }
@@ -258,9 +258,9 @@ public sealed class DmsReader : IDisposable {
   private static ushort[] BuildCrc16Table() {
     const ushort poly = DmsConstants.CrcPolynomial;
     var table = new ushort[256];
-    for (int i = 0; i < 256; i++) {
-      ushort crc = (ushort)(i << 8);
-      for (int j = 0; j < 8; j++)
+    for (var i = 0; i < 256; i++) {
+      var crc = (ushort)(i << 8);
+      for (var j = 0; j < 8; j++)
         crc = (crc & 0x8000) != 0 ? (ushort)((crc << 1) ^ poly) : (ushort)(crc << 1);
       table[i] = crc;
     }
@@ -269,7 +269,7 @@ public sealed class DmsReader : IDisposable {
 
   internal static ushort ComputeCrc16(ReadOnlySpan<byte> data) {
     ushort crc = 0;
-    foreach (byte b in data)
+    foreach (var b in data)
       crc = (ushort)((crc << 8) ^ Crc16Table[(byte)(crc >> 8) ^ b]);
     return crc;
   }
@@ -277,9 +277,9 @@ public sealed class DmsReader : IDisposable {
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   private static void ReadFully(Stream stream, Span<byte> buffer) {
-    int offset = 0;
+    var offset = 0;
     while (offset < buffer.Length) {
-      int read = stream.Read(buffer[offset..]);
+      var read = stream.Read(buffer[offset..]);
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of DMS archive data.");
       offset += read;

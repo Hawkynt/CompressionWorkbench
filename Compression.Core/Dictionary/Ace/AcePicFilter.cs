@@ -21,12 +21,12 @@ public static class AcePicFilter {
     if (stride <= 0) stride = EstimateStride(data.Length);
 
     var result = new byte[data.Length];
-    for (int i = 0; i < data.Length; ++i) {
-      int col = i % stride;
-      int a = col > 0 ? data[i - 1] : 0;
-      int b = i >= stride ? data[i - stride] : 0;
-      int c = (col > 0 && i >= stride) ? data[i - stride - 1] : 0;
-      int predicted = PaethPredictor(a, b, c);
+    for (var i = 0; i < data.Length; ++i) {
+      var col = i % stride;
+      var a = col > 0 ? data[i - 1] : 0;
+      var b = i >= stride ? data[i - stride] : 0;
+      var c = (col > 0 && i >= stride) ? data[i - stride - 1] : 0;
+      var predicted = PaethPredictor(a, b, c);
       result[i] = (byte)(data[i] - predicted);
     }
     return result;
@@ -43,29 +43,29 @@ public static class AcePicFilter {
     if (stride <= 0) stride = EstimateStride(data.Length);
 
     var result = new byte[data.Length];
-    for (int i = 0; i < data.Length; ++i) {
-      int col = i % stride;
-      int a = col > 0 ? result[i - 1] : 0;
-      int b = i >= stride ? result[i - stride] : 0;
-      int c = (col > 0 && i >= stride) ? result[i - stride - 1] : 0;
-      int predicted = PaethPredictor(a, b, c);
+    for (var i = 0; i < data.Length; ++i) {
+      var col = i % stride;
+      var a = col > 0 ? result[i - 1] : 0;
+      var b = i >= stride ? result[i - stride] : 0;
+      var c = (col > 0 && i >= stride) ? result[i - stride - 1] : 0;
+      var predicted = PaethPredictor(a, b, c);
       result[i] = (byte)(data[i] + predicted);
     }
     return result;
   }
 
   private static int PaethPredictor(int a, int b, int c) {
-    int p = a + b - c;
-    int pa = Math.Abs(p - a);
-    int pb = Math.Abs(p - b);
-    int pc = Math.Abs(p - c);
+    var p = a + b - c;
+    var pa = Math.Abs(p - a);
+    var pb = Math.Abs(p - b);
+    var pc = Math.Abs(p - c);
     if (pa <= pb && pa <= pc) return a;
     if (pb <= pc) return b;
     return c;
   }
 
   private static int EstimateStride(int length) {
-    int sqrtApprox = (int)Math.Sqrt(length);
+    var sqrtApprox = (int)Math.Sqrt(length);
     return Math.Max(sqrtApprox, 1);
   }
 }

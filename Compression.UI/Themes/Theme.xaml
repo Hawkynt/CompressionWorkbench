@@ -4,6 +4,7 @@
 
   <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
   <local:NonEmptyStringToVisibilityConverter x:Key="NonEmptyToVisibility" />
+  <local:EntropyToColorConverter x:Key="EntropyToColor" />
 
   <!-- Breadcrumb button style: looks like a hyperlink, not a button -->
   <Style x:Key="BreadcrumbButtonStyle" TargetType="Button">

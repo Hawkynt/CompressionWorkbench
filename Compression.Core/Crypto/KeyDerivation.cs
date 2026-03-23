@@ -114,7 +114,7 @@ public static class KeyDerivation {
 
     var sha1 = new Checksums.Sha1();
 
-    for (int i = 0; i < iterations; ++i) {
+    for (var i = 0; i < iterations; ++i) {
       sha1.Update(input);
 
       // Append 3-byte little-endian iteration counter
@@ -130,7 +130,7 @@ public static class KeyDerivation {
     }
 
     sha1.Finish();
-    byte[] key = sha1.Hash[..16];
+    var key = sha1.Hash[..16];
 
     return (key, iv);
   }

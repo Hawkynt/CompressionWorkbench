@@ -26,14 +26,14 @@ public sealed class SnappyFrameReader {
   /// <returns>The decompressed data.</returns>
   public byte[] Read() {
     using var output = new MemoryStream();
-    bool seenStreamId = false;
+    var seenStreamId = false;
 
     while (true) {
-      int chunkType = this._input.ReadByte();
+      var chunkType = this._input.ReadByte();
       if (chunkType < 0)
         break;
 
-      int length = ReadLength24();
+      var length = ReadLength24();
 
       switch (chunkType) {
         case ChunkStreamId:
@@ -51,11 +51,11 @@ public sealed class SnappyFrameReader {
           var chunkData = new byte[length];
           ReadExact(chunkData);
 
-          uint expectedCrc = BinaryPrimitives.ReadUInt32LittleEndian(chunkData.AsSpan(0, 4));
+          var expectedCrc = BinaryPrimitives.ReadUInt32LittleEndian(chunkData.AsSpan(0, 4));
           var compressedData = chunkData.AsSpan(4);
-          byte[] decompressed = SnappyDecompressor.Decompress(compressedData.ToArray());
+          var decompressed = SnappyDecompressor.Decompress(compressedData.ToArray());
 
-          uint actualCrc = MaskChecksum(ComputeCrc32C(decompressed));
+          var actualCrc = MaskChecksum(ComputeCrc32C(decompressed));
           if (expectedCrc != actualCrc)
             throw new InvalidDataException("Snappy chunk CRC mismatch.");
 
@@ -69,10 +69,10 @@ public sealed class SnappyFrameReader {
           var chunkData = new byte[length];
           ReadExact(chunkData);
 
-          uint expectedCrc = BinaryPrimitives.ReadUInt32LittleEndian(chunkData.AsSpan(0, 4));
+          var expectedCrc = BinaryPrimitives.ReadUInt32LittleEndian(chunkData.AsSpan(0, 4));
           var rawData = chunkData.AsSpan(4);
 
-          uint actualCrc = MaskChecksum(ComputeCrc32C(rawData.ToArray()));
+          var actualCrc = MaskChecksum(ComputeCrc32C(rawData.ToArray()));
           if (expectedCrc != actualCrc)
             throw new InvalidDataException("Snappy chunk CRC mismatch.");
 
@@ -95,19 +95,19 @@ public sealed class SnappyFrameReader {
   }
 
   private int ReadLength24() {
-    int b0 = this._input.ReadByte();
-    int b1 = this._input.ReadByte();
-    int b2 = this._input.ReadByte();
+    var b0 = this._input.ReadByte();
+    var b1 = this._input.ReadByte();
+    var b2 = this._input.ReadByte();
     if (b0 < 0 || b1 < 0 || b2 < 0)
       throw new EndOfStreamException("Unexpected end of Snappy stream.");
     return b0 | (b1 << 8) | (b2 << 16);
   }
 
   private void ReadExact(byte[] buffer) {
-    int remaining = buffer.Length;
-    int offset = 0;
+    var remaining = buffer.Length;
+    var offset = 0;
     while (remaining > 0) {
-      int read = this._input.Read(buffer, offset, remaining);
+      var read = this._input.Read(buffer, offset, remaining);
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of Snappy stream data.");
       offset += read;

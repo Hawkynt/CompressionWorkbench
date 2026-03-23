@@ -46,16 +46,16 @@ public sealed class SqxWriter {
   /// </summary>
   public void WriteTo(Stream output) {
     var writer = new BinaryWriter(output, Encoding.ASCII, leaveOpen: true);
-    long dataStartPos = output.Position;
+    var dataStartPos = output.Position;
 
     // Write main header
     WriteMainBlock(writer);
 
     // Shared encoder for solid mode
-    SqxEncoder? solidEncoder = this._solid ? new SqxEncoder(this._dictSize) : null;
+    var solidEncoder = this._solid ? new SqxEncoder(this._dictSize) : null;
 
     // Write file entries
-    bool isFirst = true;
+    var isFirst = true;
     foreach (var (name, data) in this._files) {
       WriteFileEntry(writer, name, data, solidEncoder, isFirst);
       isFirst = false;
@@ -63,7 +63,7 @@ public sealed class SqxWriter {
 
     // Write recovery record if requested
     if (this._recoveryPercent > 0) {
-      long dataEndPos = output.Position;
+      var dataEndPos = output.Position;
       WriteRecoveryBlock(writer, output, dataStartPos, dataEndPos);
     }
 
@@ -102,9 +102,9 @@ public sealed class SqxWriter {
     if (this._solid)
       mainFlags |= SqxConstants.MainFlagSolid;
 
-    byte[] blockData = blockMs.ToArray();
-    ushort blockSize = (ushort)(7 + blockData.Length); // crc(2) + type(1) + flags(2) + size(2) + data
-    ushort blockCrc = ComputeBlockCrc(SqxConstants.BlockMain, mainFlags, blockSize, blockData);
+    var blockData = blockMs.ToArray();
+    var blockSize = (ushort)(7 + blockData.Length); // crc(2) + type(1) + flags(2) + size(2) + data
+    var blockCrc = ComputeBlockCrc(SqxConstants.BlockMain, mainFlags, blockSize, blockData);
 
     writer.Write(blockCrc);
     writer.Write(SqxConstants.BlockMain);
@@ -115,7 +115,7 @@ public sealed class SqxWriter {
 
   private void WriteFileEntry(BinaryWriter writer, string name, byte[] data,
       SqxEncoder? solidEncoder, bool isFirst) {
-    uint dataCrc = Crc32.Compute(data);
+    var dataCrc = Crc32.Compute(data);
 
     byte[] compressed;
     byte method;
@@ -127,7 +127,7 @@ public sealed class SqxWriter {
       method = SqxConstants.MethodStore;
     }
     else {
-      byte internalMethod = this._method;
+      var internalMethod = this._method;
       ReadOnlySpan<byte> toCompress = data;
       byte[] preprocessed;
 
@@ -179,11 +179,11 @@ public sealed class SqxWriter {
     }
 
     // Encrypt if password is set
-    ushort fileFlags = SqxConstants.GetDictFlag(this._dictSize);
+    var fileFlags = SqxConstants.GetDictFlag(this._dictSize);
     if (this._password != null && compressed.Length > 0) {
-      byte[] key = DeriveKey(this._password);
+      var key = DeriveKey(this._password);
       var iv = new byte[16];
-      int paddedLen = (compressed.Length + 15) & ~15;
+      var paddedLen = (compressed.Length + 15) & ~15;
       if (paddedLen != compressed.Length) {
         var padded = new byte[paddedLen];
         compressed.AsSpan().CopyTo(padded);
@@ -201,7 +201,7 @@ public sealed class SqxWriter {
     if (compFlags != 0)
       fileFlags |= SqxConstants.FileFlagNextBlock;
 
-    byte[] nameBytes = Encoding.ASCII.GetBytes(name);
+    var nameBytes = Encoding.ASCII.GetBytes(name);
 
     // Build file header block (spec field order)
     using var blockMs = new MemoryStream();
@@ -220,9 +220,9 @@ public sealed class SqxWriter {
     bw.Write(nameBytes);                          // FILE_NAME
     bw.Flush();
 
-    byte[] blockData = blockMs.ToArray();
-    ushort blockSize = (ushort)(7 + blockData.Length); // crc(2) + type(1) + flags(2) + size(2) + data
-    ushort blockCrc = ComputeBlockCrc(SqxConstants.BlockFile, fileFlags, blockSize, blockData);
+    var blockData = blockMs.ToArray();
+    var blockSize = (ushort)(7 + blockData.Length); // crc(2) + type(1) + flags(2) + size(2) + data
+    var blockCrc = ComputeBlockCrc(SqxConstants.BlockFile, fileFlags, blockSize, blockData);
 
     writer.Write(blockCrc);
     writer.Write(SqxConstants.BlockFile);
@@ -241,39 +241,39 @@ public sealed class SqxWriter {
 
   private static void WriteRecoveryBlock(BinaryWriter writer, Stream output,
       long dataStartPos, long dataEndPos) {
-    long dataSize = dataEndPos - dataStartPos;
+    var dataSize = dataEndPos - dataStartPos;
     if (dataSize <= 0) return;
 
     // Read all archive data for parity computation
-    long savedPos = output.Position;
+    var savedPos = output.Position;
     output.Position = dataStartPos;
-    byte[] archiveData = new byte[dataSize];
-    int totalRead = 0;
+    var archiveData = new byte[dataSize];
+    var totalRead = 0;
     while (totalRead < archiveData.Length) {
-      int read = output.Read(archiveData, totalRead, archiveData.Length - totalRead);
+      var read = output.Read(archiveData, totalRead, archiveData.Length - totalRead);
       if (read == 0) break;
       totalRead += read;
     }
     output.Position = savedPos;
 
-    int sectorSize = SqxConstants.RecoverySectorSize;
-    int fileBlocks = (archiveData.Length + sectorSize - 1) / sectorSize;
+    var sectorSize = SqxConstants.RecoverySectorSize;
+    var fileBlocks = (archiveData.Length + sectorSize - 1) / sectorSize;
 
     // Compute per-block CRC16
     var blockCrcs = new ushort[fileBlocks];
-    for (int i = 0; i < fileBlocks; ++i) {
-      int offset = i * sectorSize;
-      int len = Math.Min(sectorSize, archiveData.Length - offset);
+    for (var i = 0; i < fileBlocks; ++i) {
+      var offset = i * sectorSize;
+      var len = Math.Min(sectorSize, archiveData.Length - offset);
       blockCrcs[i] = Crc16.Compute(archiveData.AsSpan(offset, len));
     }
 
     // Compute XOR parity (single recovery block)
     var parity = new byte[sectorSize];
-    for (int i = 0; i < archiveData.Length; ++i)
+    for (var i = 0; i < archiveData.Length; ++i)
       parity[i % sectorSize] ^= archiveData[i];
 
-    uint rdCrc = Crc32.Compute(parity);
-    uint fdCrc = Crc32.Compute(archiveData);
+    var rdCrc = Crc32.Compute(parity);
+    var fdCrc = Crc32.Compute(archiveData);
 
     // Build recovery header
     using var blockMs = new MemoryStream();
@@ -288,9 +288,9 @@ public sealed class SqxWriter {
     bw.Write(fdCrc);                                                   // FD_CRC (4 bytes)
     bw.Flush();
 
-    byte[] blockData = blockMs.ToArray();
-    ushort blockSize = (ushort)(7 + blockData.Length); // crc(2) + type(1) + flags(2) + size(2) + data
-    ushort blockCrcVal = ComputeBlockCrc(SqxConstants.BlockRecovery, 0, blockSize, blockData);
+    var blockData = blockMs.ToArray();
+    var blockSize = (ushort)(7 + blockData.Length); // crc(2) + type(1) + flags(2) + size(2) + data
+    var blockCrcVal = ComputeBlockCrc(SqxConstants.BlockRecovery, 0, blockSize, blockData);
 
     writer.Write(blockCrcVal);
     writer.Write(SqxConstants.BlockRecovery);
@@ -299,7 +299,7 @@ public sealed class SqxWriter {
     writer.Write(blockData);
 
     // Write per-block CRCs
-    foreach (ushort crc in blockCrcs)
+    foreach (var crc in blockCrcs)
       writer.Write(crc);
 
     // Write parity block
@@ -309,7 +309,7 @@ public sealed class SqxWriter {
   private static void WriteEndBlock(BinaryWriter writer) {
     const ushort blockSize = 7; // spec: always 7 (crc(2) + type(1) + flags(2) + size(2), no body)
     byte[] empty = [];
-    ushort blockCrc = ComputeBlockCrc(SqxConstants.BlockEnd, 0, blockSize, empty);
+    var blockCrc = ComputeBlockCrc(SqxConstants.BlockEnd, 0, blockSize, empty);
     writer.Write(blockCrc);
     writer.Write(SqxConstants.BlockEnd);
     writer.Write((ushort)0); // flags
@@ -320,7 +320,7 @@ public sealed class SqxWriter {
   /// Derives a 16-byte AES-128 key from a password using MD5.
   /// </summary>
   internal static byte[] DeriveKey(string password) {
-    byte[] passBytes = Encoding.UTF8.GetBytes(password);
+    var passBytes = Encoding.UTF8.GetBytes(password);
     return Md5.Compute(passBytes);
   }
 
@@ -349,8 +349,8 @@ public sealed class SqxWriter {
   }
 
   private static uint DosTimestamp(DateTime dt) {
-    int time = (dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2);
-    int date = ((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day;
+    var time = (dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2);
+    var date = ((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day;
     return (uint)((date << 16) | time);
   }
 }

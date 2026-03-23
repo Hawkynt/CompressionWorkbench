@@ -53,8 +53,8 @@ public sealed class StuffItReader : IDisposable {
       return [];
 
     this._stream.Position = entry.DataForkOffset;
-    byte[] compressed = ReadExact((int)entry.CompressedDataSize);
-    byte[] decompressed = Decompress(entry.DataMethod, compressed, (int)entry.DataForkSize);
+    var compressed = ReadExact((int)entry.CompressedDataSize);
+    var decompressed = Decompress(entry.DataMethod, compressed, (int)entry.DataForkSize);
 
     VerifyCrc16(decompressed, entry.DataForkCrc16, entry.FileName, "data fork");
     return decompressed;
@@ -78,8 +78,8 @@ public sealed class StuffItReader : IDisposable {
       return [];
 
     this._stream.Position = entry.ResourceDataOffset;
-    byte[] compressed = ReadExact((int)entry.CompressedResourceSize);
-    byte[] decompressed = Decompress(entry.ResourceMethod, compressed, (int)entry.ResourceForkSize);
+    var compressed = ReadExact((int)entry.CompressedResourceSize);
+    var decompressed = Decompress(entry.ResourceMethod, compressed, (int)entry.ResourceForkSize);
 
     VerifyCrc16(decompressed, entry.ResourceForkCrc16, entry.FileName, "resource fork");
     return decompressed;
@@ -100,21 +100,21 @@ public sealed class StuffItReader : IDisposable {
     Span<byte> archiveHeader = stackalloc byte[StuffItConstants.ArchiveHeaderSize];
     ReadExact(archiveHeader);
 
-    uint magic = BinaryPrimitives.ReadUInt32BigEndian(archiveHeader);
+    var magic = BinaryPrimitives.ReadUInt32BigEndian(archiveHeader);
     if (magic != StuffItConstants.MagicSit)
       throw new InvalidDataException(
         $"Not a StuffIt archive. Expected magic 0x{StuffItConstants.MagicSit:X8}, found 0x{magic:X8}.");
 
-    ushort fileCount = BinaryPrimitives.ReadUInt16BigEndian(archiveHeader[4..]);
+    var fileCount = BinaryPrimitives.ReadUInt16BigEndian(archiveHeader[4..]);
     // archiveHeader[6..10] = total archive length (uint32 BE) — informational only.
-    uint signature = BinaryPrimitives.ReadUInt32BigEndian(archiveHeader[10..]);
+    var signature = BinaryPrimitives.ReadUInt32BigEndian(archiveHeader[10..]);
     if (signature != StuffItConstants.ArchiveSignatureRLau)
       throw new InvalidDataException(
         $"StuffIt archive missing 'rLau' signature (found 0x{signature:X8}).");
 
     // Read each entry header sequentially.
-    for (int i = 0; i < fileCount; ++i) {
-      StuffItEntry entry = ReadEntryHeader();
+    for (var i = 0; i < fileCount; ++i) {
+      var entry = ReadEntryHeader();
       this._entries.Add(entry);
 
       // Skip past the compressed resource fork + data fork so we are positioned
@@ -124,11 +124,11 @@ public sealed class StuffItReader : IDisposable {
   }
 
   private StuffItEntry ReadEntryHeader() {
-    byte[] hdr = ReadExact(StuffItConstants.EntryHeaderSize);
+    var hdr = ReadExact(StuffItConstants.EntryHeaderSize);
 
-    byte resourceMethod = hdr[0];
-    byte dataMethod     = hdr[1];
-    byte nameLength     = hdr[2];
+    var resourceMethod = hdr[0];
+    var dataMethod     = hdr[1];
+    var nameLength     = hdr[2];
 
     // Clamp to max 63 characters.
     if (nameLength > StuffItConstants.FileNameMaxLength)
@@ -136,34 +136,34 @@ public sealed class StuffItReader : IDisposable {
 
     // Mac Roman is not registered by default on .NET Core; Latin-1 (ISO-8859-1) is the
     // closest portable encoding and correctly round-trips all ASCII filenames.
-    string fileName = Encoding.Latin1.GetString(hdr, StuffItConstants.FileNameOffset, nameLength);
+    var fileName = Encoding.Latin1.GetString(hdr, StuffItConstants.FileNameOffset, nameLength);
 
     // hdr[66..70] = file type (4-char Mac code)
-    string fileType    = Encoding.ASCII.GetString(hdr, 66, 4);
+    var fileType    = Encoding.ASCII.GetString(hdr, 66, 4);
     // hdr[70..74] = file creator (4-char Mac code)
-    string fileCreator = Encoding.ASCII.GetString(hdr, 70, 4);
+    var fileCreator = Encoding.ASCII.GetString(hdr, 70, 4);
 
     // hdr[74..76] = Finder flags (big-endian uint16) — not exposed
     // hdr[76..80] = creation date (Mac timestamp, uint32 BE) — not exposed
-    uint modDate = BinaryPrimitives.ReadUInt32BigEndian(hdr.AsSpan(80, 4));
+    var modDate = BinaryPrimitives.ReadUInt32BigEndian(hdr.AsSpan(80, 4));
 
-    uint resourceForkUncompressed = BinaryPrimitives.ReadUInt32BigEndian(hdr.AsSpan(84, 4));
-    uint dataForkUncompressed     = BinaryPrimitives.ReadUInt32BigEndian(hdr.AsSpan(88, 4));
-    uint resourceForkCompressed   = BinaryPrimitives.ReadUInt32BigEndian(hdr.AsSpan(92, 4));
-    uint dataForkCompressed       = BinaryPrimitives.ReadUInt32BigEndian(hdr.AsSpan(96, 4));
+    var resourceForkUncompressed = BinaryPrimitives.ReadUInt32BigEndian(hdr.AsSpan(84, 4));
+    var dataForkUncompressed     = BinaryPrimitives.ReadUInt32BigEndian(hdr.AsSpan(88, 4));
+    var resourceForkCompressed   = BinaryPrimitives.ReadUInt32BigEndian(hdr.AsSpan(92, 4));
+    var dataForkCompressed       = BinaryPrimitives.ReadUInt32BigEndian(hdr.AsSpan(96, 4));
 
-    ushort resourceCrc16 = BinaryPrimitives.ReadUInt16BigEndian(hdr.AsSpan(100, 2));
-    ushort dataCrc16     = BinaryPrimitives.ReadUInt16BigEndian(hdr.AsSpan(102, 2));
+    var resourceCrc16 = BinaryPrimitives.ReadUInt16BigEndian(hdr.AsSpan(100, 2));
+    var dataCrc16     = BinaryPrimitives.ReadUInt16BigEndian(hdr.AsSpan(102, 2));
 
     // hdr[104..110] = reserved (6 bytes)
     // hdr[110..112] = header CRC-16 — not verified here
 
-    DateTime lastModified = modDate == 0
+    var lastModified = modDate == 0
       ? DateTime.MinValue
       : StuffItConstants.MacEpoch.AddSeconds(modDate);
 
-    long resourceDataOffset = this._stream.Position;
-    long dataForkOffset     = resourceDataOffset + resourceForkCompressed;
+    var resourceDataOffset = this._stream.Position;
+    var dataForkOffset     = resourceDataOffset + resourceForkCompressed;
 
     return new StuffItEntry {
       FileName               = fileName,
@@ -200,9 +200,9 @@ public sealed class StuffItReader : IDisposable {
   private static ushort[] BuildCrc16Table() {
     const ushort poly = StuffItConstants.Crc16Polynomial;
     var table = new ushort[256];
-    for (int i = 0; i < 256; ++i) {
-      ushort crc = (ushort)(i << 8);
-      for (int j = 0; j < 8; ++j)
+    for (var i = 0; i < 256; ++i) {
+      var crc = (ushort)(i << 8);
+      for (var j = 0; j < 8; ++j)
         crc = (crc & 0x8000) != 0 ? (ushort)((crc << 1) ^ poly) : (ushort)(crc << 1);
       table[i] = crc;
     }
@@ -211,7 +211,7 @@ public sealed class StuffItReader : IDisposable {
 
   private static ushort ComputeCrc16(ReadOnlySpan<byte> data) {
     ushort crc = 0;
-    foreach (byte b in data)
+    foreach (var b in data)
       crc = (ushort)((crc << 8) ^ Crc16Table[(byte)(crc >> 8) ^ b]);
     return crc;
   }
@@ -220,7 +220,7 @@ public sealed class StuffItReader : IDisposable {
     if (expected == 0)
       return; // zero means no checksum stored
 
-    ushort actual = ComputeCrc16(data);
+    var actual = ComputeCrc16(data);
     if (actual != expected)
       throw new InvalidDataException(
         $"CRC-16 mismatch for '{fileName}' ({forkName}): expected 0x{expected:X4}, computed 0x{actual:X4}.");
@@ -229,15 +229,15 @@ public sealed class StuffItReader : IDisposable {
   // ── Stream helpers ────────────────────────────────────────────────────────────
 
   private byte[] ReadExact(int count) {
-    byte[] buf = new byte[count];
+    var buf = new byte[count];
     ReadExact(buf.AsSpan());
     return buf;
   }
 
   private void ReadExact(Span<byte> buffer) {
-    int total = 0;
+    var total = 0;
     while (total < buffer.Length) {
-      int read = this._stream.Read(buffer[total..]);
+      var read = this._stream.Read(buffer[total..]);
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of stream reading StuffIt data.");
       total += read;

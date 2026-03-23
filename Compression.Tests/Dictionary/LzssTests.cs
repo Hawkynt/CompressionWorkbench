@@ -46,7 +46,7 @@ public class LzssTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_ShortText() {
-    byte[] input = Encoding.ASCII.GetBytes("Hello World!");
+    var input = Encoding.ASCII.GetBytes("Hello World!");
 
     var outputStream = new MemoryStream();
     var encoder = new LzssEncoder(outputStream);
@@ -65,7 +65,7 @@ public class LzssTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepetitiveData() {
-    byte[] input = Encoding.ASCII.GetBytes("ABCABCABCABCABCABC");
+    var input = Encoding.ASCII.GetBytes("ABCABCABCABCABCABC");
 
     var outputStream = new MemoryStream();
     var encoder = new LzssEncoder(outputStream);
@@ -85,7 +85,7 @@ public class LzssTests {
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
-    byte[] input = new byte[500];
+    var input = new byte[500];
     rng.NextBytes(input);
 
     var outputStream = new MemoryStream();
@@ -105,7 +105,7 @@ public class LzssTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepeatedText() {
-    byte[] input = Encoding.ASCII.GetBytes(
+    var input = Encoding.ASCII.GetBytes(
       "The quick brown fox jumps over the lazy dog. " +
       "The quick brown fox jumps over the lazy dog.");
 
@@ -126,7 +126,7 @@ public class LzssTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_CustomBitWidths() {
-    byte[] input = Encoding.ASCII.GetBytes("AAAAABBBBBAAAAAABBBBB");
+    var input = Encoding.ASCII.GetBytes("AAAAABBBBBAAAAAABBBBB");
 
     var distanceBits = 10;
     var lengthBits = 6;

@@ -32,7 +32,7 @@ internal static class SfxBuilder {
     using (var stub = File.OpenRead(stubPath))
       stub.CopyTo(output);
 
-    long archiveOffset = output.Position;
+    var archiveOffset = output.Position;
 
     // 2. Copy archive data
     using (var archive = File.OpenRead(archivePath))
@@ -56,7 +56,7 @@ internal static class SfxBuilder {
     using (var stub = File.OpenRead(stubPath))
       stub.CopyTo(output);
 
-    long archiveOffset = output.Position;
+    var archiveOffset = output.Position;
 
     // 2. Copy archive data
     archiveData.CopyTo(output);
@@ -77,7 +77,7 @@ internal static class SfxBuilder {
     using (var stub = File.OpenRead(stubPath))
       stub.CopyTo(output);
 
-    long archiveOffset = output.Position;
+    var archiveOffset = output.Position;
 
     using (var archive = File.OpenRead(archivePath))
       archive.CopyTo(output);
@@ -109,14 +109,14 @@ internal static class SfxBuilder {
     if (trailer[8] != Magic[0] || trailer[9] != Magic[1] || trailer[10] != Magic[2] || trailer[11] != Magic[3])
       return null;
 
-    long offset = BitConverter.ToInt64(trailer[..8]);
-    long length = fs.Length - 12 - offset;
+    var offset = BitConverter.ToInt64(trailer[..8]);
+    var length = fs.Length - 12 - offset;
     if (offset < 0 || offset >= fs.Length - 12 || length <= 0)
       return null;
 
     fs.Seek(offset, SeekOrigin.Begin);
     var header = new byte[(int)Math.Min(512, length)];
-    int read = fs.Read(header, 0, header.Length);
+    var read = fs.Read(header, 0, header.Length);
     var format = FormatDetector.DetectByMagic(header.AsSpan(0, read));
 
     return (offset, length, format);
@@ -136,10 +136,10 @@ internal static class SfxBuilder {
         fs.Seek(info.Offset, SeekOrigin.Begin);
         using var tempFs = File.Create(tempFile);
         var buf = new byte[81920];
-        long remaining = info.Length;
+        var remaining = info.Length;
         while (remaining > 0) {
-          int toRead = (int)Math.Min(buf.Length, remaining);
-          int read = fs.Read(buf, 0, toRead);
+          var toRead = (int)Math.Min(buf.Length, remaining);
+          var read = fs.Read(buf, 0, toRead);
           if (read == 0) break;
           tempFs.Write(buf, 0, read);
           remaining -= read;

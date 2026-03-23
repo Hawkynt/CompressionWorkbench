@@ -39,9 +39,9 @@ public sealed class Lz4FrameWriter {
   public void Write(ReadOnlySpan<byte> data) {
     WriteFrameHeader(data.Length);
 
-    int offset = 0;
+    var offset = 0;
     while (offset < data.Length) {
-      int blockLen = Math.Min(this._blockMaxSize, data.Length - offset);
+      var blockLen = Math.Min(this._blockMaxSize, data.Length - offset);
       var block = data.Slice(offset, blockLen);
       WriteBlock(block);
       offset += blockLen;
@@ -58,7 +58,7 @@ public sealed class Lz4FrameWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(buf, Lz4Constants.FrameMagic);
 
     // FLG byte
-    int flg = 0;
+    var flg = 0;
     flg |= (1 << 6); // Version = 01
     flg |= (1 << 5); // Block independence = 1 (independent blocks)
     flg |= (this._blockChecksum ? 1 : 0) << 4;
@@ -67,7 +67,7 @@ public sealed class Lz4FrameWriter {
     buf[4] = (byte)flg;
 
     // BD byte - block max size
-    int bdBits = this._blockMaxSize switch {
+    var bdBits = this._blockMaxSize switch {
       65536 => 4,
       262144 => 5,
       1048576 => 6,
@@ -80,14 +80,14 @@ public sealed class Lz4FrameWriter {
 
     // Header checksum: xxHash32 of FLG+BD+content_size, take bits 8..15
     var headerData = buf.Slice(4, 10);
-    uint hc = XxHash32.Compute(headerData);
+    var hc = XxHash32.Compute(headerData);
     buf[14] = (byte)((hc >> 8) & 0xFF);
 
     this._output.Write(buf.Slice(0, 15));
   }
 
   private void WriteBlock(ReadOnlySpan<byte> uncompressed) {
-    byte[] compressed = Lz4BlockCompressor.Compress(uncompressed, this._level);
+    var compressed = Lz4BlockCompressor.Compress(uncompressed, this._level);
     Span<byte> header = stackalloc byte[4];
 
     if (compressed.Length >= uncompressed.Length) {
@@ -98,7 +98,7 @@ public sealed class Lz4FrameWriter {
       this._output.Write(uncompressed);
 
       if (this._blockChecksum) {
-        uint bc = XxHash32.Compute(uncompressed);
+        var bc = XxHash32.Compute(uncompressed);
         BinaryPrimitives.WriteUInt32LittleEndian(header, bc);
         this._output.Write(header);
       }
@@ -108,7 +108,7 @@ public sealed class Lz4FrameWriter {
       this._output.Write(compressed);
 
       if (this._blockChecksum) {
-        uint bc = XxHash32.Compute(compressed);
+        var bc = XxHash32.Compute(compressed);
         BinaryPrimitives.WriteUInt32LittleEndian(header, bc);
         this._output.Write(header);
       }
@@ -121,7 +121,7 @@ public sealed class Lz4FrameWriter {
   }
 
   private void WriteContentChecksum(ReadOnlySpan<byte> data) {
-    uint checksum = XxHash32.Compute(data);
+    var checksum = XxHash32.Compute(data);
     Span<byte> buf = stackalloc byte[4];
     BinaryPrimitives.WriteUInt32LittleEndian(buf, checksum);
     this._output.Write(buf);

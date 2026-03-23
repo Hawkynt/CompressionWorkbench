@@ -49,7 +49,7 @@ public sealed class ArReader : IDisposable {
     // Process entry headers until EOF.
     Span<byte> headerBuf = stackalloc byte[ArConstants.EntryHeaderSize];
     while (true) {
-      int firstByte = this._stream.ReadByte();
+      var firstByte = this._stream.ReadByte();
       if (firstByte < 0)
         break; // clean EOF
 
@@ -62,27 +62,27 @@ public sealed class ArReader : IDisposable {
         ThrowInvalidEntryMagic();
 
       // Parse ASCII fields.
-      string rawName    = ReadField(headerBuf,  0, 16);
-      string rawMtime   = ReadField(headerBuf, 16, 12);
-      string rawUid     = ReadField(headerBuf, 28,  6);
-      string rawGid     = ReadField(headerBuf, 34,  6);
-      string rawMode    = ReadField(headerBuf, 40,  8);
-      string rawSize    = ReadField(headerBuf, 48, 10);
+      var rawName    = ReadField(headerBuf,  0, 16);
+      var rawMtime   = ReadField(headerBuf, 16, 12);
+      var rawUid     = ReadField(headerBuf, 28,  6);
+      var rawGid     = ReadField(headerBuf, 34,  6);
+      var rawMode    = ReadField(headerBuf, 40,  8);
+      var rawSize    = ReadField(headerBuf, 48, 10);
 
-      if (!long.TryParse(rawSize, out long dataSize) || dataSize < 0)
+      if (!long.TryParse(rawSize, out var dataSize) || dataSize < 0)
         ThrowInvalidEntryMagic();
 
-      long.TryParse(rawMtime, out long unixTime);
-      int.TryParse(rawUid, out int uid);
-      int.TryParse(rawGid, out int gid);
+      long.TryParse(rawMtime, out var unixTime);
+      int.TryParse(rawUid, out var uid);
+      int.TryParse(rawGid, out var gid);
 
       // File mode is stored as octal.
-      int fileMode = 0;
+      var fileMode = 0;
       if (!string.IsNullOrEmpty(rawMode))
         fileMode = Convert.ToInt32(rawMode, 8);
 
       // Read entry data.
-      byte[] data = new byte[dataSize];
+      var data = new byte[dataSize];
       this._stream.ReadExactly(data);
 
       // Skip padding byte when data size is odd.
@@ -96,7 +96,7 @@ public sealed class ArReader : IDisposable {
       }
 
       // Resolve the filename.
-      string name = ResolveEntryName(rawName, gnuStringTable);
+      var name = ResolveEntryName(rawName, gnuStringTable);
 
       this._entries.Add(new ArEntry {
         Name         = name,
@@ -118,9 +118,9 @@ public sealed class ArReader : IDisposable {
       if (gnuStringTable == null)
         return rawName; // malformed but tolerate
 
-      if (int.TryParse(rawName[1..], out int offset) && offset < gnuStringTable.Length) {
+      if (int.TryParse(rawName[1..], out var offset) && offset < gnuStringTable.Length) {
         // The name in the string table is terminated by "/\n".
-        int end = gnuStringTable.IndexOf("/\n", offset, StringComparison.Ordinal);
+        var end = gnuStringTable.IndexOf("/\n", offset, StringComparison.Ordinal);
         return end >= 0
           ? gnuStringTable[offset..end]
           : gnuStringTable[offset..].TrimEnd('\n', '/');

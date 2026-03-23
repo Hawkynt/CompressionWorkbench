@@ -31,24 +31,53 @@
     <!-- Menu Bar -->
     <Menu Grid.Row="0">
       <MenuItem Header="_File">
-        <MenuItem Header="_Open..." Command="{Binding OpenCommand}" InputGestureText="Ctrl+O" />
-        <MenuItem Header="_Create..." Command="{Binding CreateCommand}" InputGestureText="Ctrl+N" />
-        <MenuItem Header="_Add Files..." Command="{Binding AddFilesCommand}" />
+        <MenuItem Header="_Open..." Command="{Binding OpenCommand}" InputGestureText="Ctrl+O">
+          <MenuItem.Icon><Image Source="{StaticResource OpenIcon}" Width="16" Height="16" /></MenuItem.Icon>
+        </MenuItem>
+        <MenuItem Header="_Create..." Command="{Binding CreateCommand}" InputGestureText="Ctrl+N">
+          <MenuItem.Icon><Image Source="{StaticResource CreateIcon}" Width="16" Height="16" /></MenuItem.Icon>
+        </MenuItem>
+        <MenuItem Header="_Add Files..." Command="{Binding AddFilesCommand}">
+          <MenuItem.Icon><Image Source="{StaticResource AddIcon}" Width="16" Height="16" /></MenuItem.Icon>
+        </MenuItem>
         <Separator />
-        <MenuItem Header="E_xit" Click="OnExit" />
+        <MenuItem Header="Anal_yze File..." Command="{Binding AnalyzeFileCommand}">
+          <MenuItem.Icon><Image Source="{StaticResource AnalyzeIcon}" Width="16" Height="16" /></MenuItem.Icon>
+        </MenuItem>
+        <Separator />
+        <MenuItem Header="E_xit" Click="OnExit">
+          <MenuItem.Icon><Image Source="{StaticResource ExitIcon}" Width="16" Height="16" /></MenuItem.Icon>
+        </MenuItem>
       </MenuItem>
       <MenuItem Header="_Actions">
-        <MenuItem Header="Extract _All..." Command="{Binding ExtractAllCommand}" InputGestureText="Ctrl+E" />
-        <MenuItem Header="Extract _Selected..." Command="{Binding ExtractSelectedCommand}" />
-        <MenuItem Header="_Test Integrity" Command="{Binding TestCommand}" InputGestureText="Ctrl+T" />
+        <MenuItem Header="Extract _All..." Command="{Binding ExtractAllCommand}" InputGestureText="Ctrl+E">
+          <MenuItem.Icon><Image Source="{StaticResource ExtractIcon}" Width="16" Height="16" /></MenuItem.Icon>
+        </MenuItem>
+        <MenuItem Header="Extract _Selected..." Command="{Binding ExtractSelectedCommand}">
+          <MenuItem.Icon><Image Source="{StaticResource ExtractSelectedIcon}" Width="16" Height="16" /></MenuItem.Icon>
+        </MenuItem>
+        <MenuItem Header="_Test Integrity" Command="{Binding TestCommand}" InputGestureText="Ctrl+T">
+          <MenuItem.Icon><Image Source="{StaticResource TestIcon}" Width="16" Height="16" /></MenuItem.Icon>
+        </MenuItem>
         <Separator />
-        <MenuItem Header="_View as Text" Command="{Binding ViewAsTextCommand}" InputGestureText="Enter" />
-        <MenuItem Header="View as _Hex" Command="{Binding ViewAsHexCommand}" />
+        <MenuItem Header="_View as Text" Command="{Binding ViewAsTextCommand}" InputGestureText="Enter">
+          <MenuItem.Icon><Image Source="{StaticResource ViewTextIcon}" Width="16" Height="16" /></MenuItem.Icon>
+        </MenuItem>
+        <MenuItem Header="View as _Hex" Command="{Binding ViewAsHexCommand}">
+          <MenuItem.Icon><Image Source="{StaticResource ViewHexIcon}" Width="16" Height="16" /></MenuItem.Icon>
+        </MenuItem>
         <Separator />
-        <MenuItem Header="_Properties" Command="{Binding PropertiesCommand}" InputGestureText="Alt+Enter" />
+        <MenuItem Header="_Properties" Command="{Binding PropertiesCommand}" InputGestureText="Alt+Enter">
+          <MenuItem.Icon><Image Source="{StaticResource PropertiesIcon}" Width="16" Height="16" /></MenuItem.Icon>
+        </MenuItem>
+        <MenuItem Header="A_nalyze Entry..." Command="{Binding AnalyzeCommand}">
+          <MenuItem.Icon><Image Source="{StaticResource AnalyzeIcon}" Width="16" Height="16" /></MenuItem.Icon>
+        </MenuItem>
       </MenuItem>
       <MenuItem Header="_Help">
-        <MenuItem Header="_About" Click="OnAbout" />
+        <MenuItem Header="_About" Click="OnAbout">
+          <MenuItem.Icon><Image Source="{StaticResource AboutIcon}" Width="16" Height="16" /></MenuItem.Icon>
+        </MenuItem>
       </MenuItem>
     </Menu>
 
@@ -57,40 +86,47 @@
       <ToolBar Band="0" BandIndex="0">
         <Button Command="{Binding OpenCommand}" ToolTip="Open archive (Ctrl+O)" Padding="8,2">
           <StackPanel Orientation="Horizontal">
-            <TextBlock Text="&#xE8E5;" FontFamily="Segoe MDL2 Assets" VerticalAlignment="Center" Margin="0,0,4,0" />
+            <Image Source="{StaticResource OpenIcon}" Width="16" Height="16" Margin="0,0,4,0" />
             <TextBlock Text="Open" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
         <Button Command="{Binding CreateCommand}" ToolTip="Create archive (Ctrl+N)" Padding="8,2">
           <StackPanel Orientation="Horizontal">
-            <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" VerticalAlignment="Center" Margin="0,0,4,0" />
+            <Image Source="{StaticResource CreateIcon}" Width="16" Height="16" Margin="0,0,4,0" />
             <TextBlock Text="Create" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
         <Separator />
         <Button Command="{Binding ExtractAllCommand}" ToolTip="Extract all (Ctrl+E)" Padding="8,2">
           <StackPanel Orientation="Horizontal">
-            <TextBlock Text="&#xE896;" FontFamily="Segoe MDL2 Assets" VerticalAlignment="Center" Margin="0,0,4,0" />
+            <Image Source="{StaticResource ExtractIcon}" Width="16" Height="16" Margin="0,0,4,0" />
             <TextBlock Text="Extract" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
         <Button Command="{Binding AddFilesCommand}" ToolTip="Add files to archive" Padding="8,2">
           <StackPanel Orientation="Horizontal">
-            <TextBlock Text="&#xE8F4;" FontFamily="Segoe MDL2 Assets" VerticalAlignment="Center" Margin="0,0,4,0" />
+            <Image Source="{StaticResource AddIcon}" Width="16" Height="16" Margin="0,0,4,0" />
             <TextBlock Text="Add" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
         <Button Command="{Binding TestCommand}" ToolTip="Test integrity (Ctrl+T)" Padding="8,2">
           <StackPanel Orientation="Horizontal">
-            <TextBlock Text="&#xE73E;" FontFamily="Segoe MDL2 Assets" VerticalAlignment="Center" Margin="0,0,4,0" />
+            <Image Source="{StaticResource TestIcon}" Width="16" Height="16" Margin="0,0,4,0" />
             <TextBlock Text="Test" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
         <Separator />
         <Button Command="{Binding NavigateUpCommand}" ToolTip="Go up (Backspace)" Padding="8,2">
           <StackPanel Orientation="Horizontal">
-            <TextBlock Text="&#xE74A;" FontFamily="Segoe MDL2 Assets" VerticalAlignment="Center" Margin="0,0,4,0" />
+            <Image Source="{StaticResource NavigateUpIcon}" Width="16" Height="16" Margin="0,0,4,0" />
             <TextBlock Text="Up" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <Separator />
+        <Button Command="{Binding AnalyzeFileCommand}" ToolTip="Analyze binary file" Padding="8,2">
+          <StackPanel Orientation="Horizontal">
+            <Image Source="{StaticResource AnalyzeIcon}" Width="16" Height="16" Margin="0,0,4,0" />
+            <TextBlock Text="Analyze" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
       </ToolBar>
@@ -131,24 +167,38 @@
               GridViewColumnHeader.Click="OnColumnHeaderClick">
       <ListView.ContextMenu>
         <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-          <MenuItem Header="View as _Text" Command="{Binding ViewAsTextCommand}" />
-          <MenuItem Header="View as _Hex" Command="{Binding ViewAsHexCommand}" />
+          <MenuItem Header="View as _Text" Command="{Binding ViewAsTextCommand}">
+            <MenuItem.Icon><Image Source="{StaticResource ViewTextIcon}" Width="16" Height="16" /></MenuItem.Icon>
+          </MenuItem>
+          <MenuItem Header="View as _Hex" Command="{Binding ViewAsHexCommand}">
+            <MenuItem.Icon><Image Source="{StaticResource ViewHexIcon}" Width="16" Height="16" /></MenuItem.Icon>
+          </MenuItem>
           <Separator />
-          <MenuItem Header="_Extract Selected..." Command="{Binding ExtractSelectedCommand}" />
-          <MenuItem Header="Extract _All..." Command="{Binding ExtractAllCommand}" />
+          <MenuItem Header="_Extract Selected..." Command="{Binding ExtractSelectedCommand}">
+            <MenuItem.Icon><Image Source="{StaticResource ExtractSelectedIcon}" Width="16" Height="16" /></MenuItem.Icon>
+          </MenuItem>
+          <MenuItem Header="Extract _All..." Command="{Binding ExtractAllCommand}">
+            <MenuItem.Icon><Image Source="{StaticResource ExtractIcon}" Width="16" Height="16" /></MenuItem.Icon>
+          </MenuItem>
           <Separator />
-          <MenuItem Header="_Add Files..." Command="{Binding AddFilesCommand}" />
+          <MenuItem Header="_Add Files..." Command="{Binding AddFilesCommand}">
+            <MenuItem.Icon><Image Source="{StaticResource AddIcon}" Width="16" Height="16" /></MenuItem.Icon>
+          </MenuItem>
           <Separator />
-          <MenuItem Header="_Properties" Command="{Binding PropertiesCommand}" InputGestureText="Alt+Enter" />
+          <MenuItem Header="A_nalyze..." Command="{Binding AnalyzeCommand}">
+            <MenuItem.Icon><Image Source="{StaticResource AnalyzeIcon}" Width="16" Height="16" /></MenuItem.Icon>
+          </MenuItem>
+          <MenuItem Header="_Properties" Command="{Binding PropertiesCommand}" InputGestureText="Alt+Enter">
+            <MenuItem.Icon><Image Source="{StaticResource PropertiesIcon}" Width="16" Height="16" /></MenuItem.Icon>
+          </MenuItem>
         </ContextMenu>
       </ListView.ContextMenu>
       <ListView.View>
         <GridView>
-          <GridViewColumn Header="" Width="30">
+          <GridViewColumn Header="" Width="24">
             <GridViewColumn.CellTemplate>
               <DataTemplate>
-                <TextBlock Text="{Binding Icon}" FontFamily="Segoe MDL2 Assets" FontSize="14"
-                           Foreground="{Binding IconColor}" />
+                <Image Source="{Binding IconImage}" Width="16" Height="16" />
               </DataTemplate>
             </GridViewColumn.CellTemplate>
           </GridViewColumn>
@@ -184,8 +234,7 @@
     <Border Grid.Row="3" x:Name="DropOverlay" Visibility="Collapsed"
             Background="#80000000" IsHitTestVisible="False">
       <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-        <TextBlock Text="&#xE896;" FontFamily="Segoe MDL2 Assets" FontSize="48" Foreground="White"
-                   HorizontalAlignment="Center" Margin="0,0,0,8" />
+        <Image Source="{StaticResource ExtractIcon}" Width="48" Height="48" Margin="0,0,0,8" />
         <TextBlock x:Name="DropText" Foreground="White" FontSize="18"
                    HorizontalAlignment="Center" />
       </StackPanel>

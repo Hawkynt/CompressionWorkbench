@@ -10,31 +10,31 @@ internal readonly record struct XzStreamHeader(byte CheckType) {
   /// Reads an XZ stream header from the stream.
   /// </summary>
   public static XzStreamHeader Read(Stream stream) {
-    byte[] magic = new byte[6];
+    var magic = new byte[6];
     if (stream.Read(magic, 0, 6) != 6)
       throw new EndOfStreamException("Truncated XZ stream header.");
 
-    for (int i = 0; i < 6; ++i) {
+    for (var i = 0; i < 6; ++i) {
       if (magic[i] != XzConstants.StreamHeaderMagic[i])
         throw new InvalidDataException("Invalid XZ stream header magic.");
     }
 
-    byte[] flags = new byte[2];
+    var flags = new byte[2];
     if (stream.Read(flags, 0, 2) != 2)
       throw new EndOfStreamException("Truncated XZ stream header flags.");
 
     if (flags[0] != 0x00)
       throw new InvalidDataException("Invalid XZ stream flags (first byte must be 0).");
 
-    byte checkType = (byte)(flags[1] & 0x0F);
+    var checkType = (byte)(flags[1] & 0x0F);
 
     // Verify CRC-32 of flags
-    byte[] crcBuf = new byte[4];
+    var crcBuf = new byte[4];
     if (stream.Read(crcBuf, 0, 4) != 4)
       throw new EndOfStreamException("Truncated XZ stream header CRC.");
 
-    uint storedCrc = (uint)(crcBuf[0] | (crcBuf[1] << 8) | (crcBuf[2] << 16) | (crcBuf[3] << 24));
-    uint computedCrc = Crc32.Compute(flags);
+    var storedCrc = (uint)(crcBuf[0] | (crcBuf[1] << 8) | (crcBuf[2] << 16) | (crcBuf[3] << 24));
+    var computedCrc = Crc32.Compute(flags);
 
     if (storedCrc != computedCrc)
       throw new InvalidDataException("XZ stream header CRC mismatch.");
@@ -51,7 +51,7 @@ internal readonly record struct XzStreamHeader(byte CheckType) {
     byte[] flags = [0x00, (byte)(CheckType & 0x0F)];
     stream.Write(flags);
 
-    uint crc = Crc32.Compute(flags);
+    var crc = Crc32.Compute(flags);
     stream.WriteByte((byte)crc);
     stream.WriteByte((byte)(crc >> 8));
     stream.WriteByte((byte)(crc >> 16));

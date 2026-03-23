@@ -47,7 +47,7 @@ public class SevenZipReaderTests {
 
     ms.Position = 0;
     using var reader = new SevenZipReader(ms);
-    byte[] result = reader.Extract(0);
+    var result = reader.Extract(0);
     Assert.That(result, Is.Empty);
   }
 
@@ -55,7 +55,7 @@ public class SevenZipReaderTests {
   [Category("RoundTrip")]
   [Test]
   public void Extract_ToStream() {
-    byte[] data = System.Text.Encoding.UTF8.GetBytes("stream output");
+    var data = System.Text.Encoding.UTF8.GetBytes("stream output");
     var ms = new MemoryStream();
     using (var writer = new SevenZipWriter(ms, leaveOpen: true)) {
       writer.AddEntry(new SevenZipEntry { Name = "out.txt", Size = data.Length }, data);

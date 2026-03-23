@@ -7,7 +7,7 @@ public class Crc64Tests {
   [Category("EdgeCase")]
   [Test]
   public void Compute_EmptyData() {
-    ulong result = Crc64.Compute([]);
+    var result = Crc64.Compute([]);
     Assert.That(result, Is.EqualTo(0UL));
   }
 
@@ -15,20 +15,20 @@ public class Crc64Tests {
   [Test]
   public void Compute_KnownValues() {
     // "123456789" with ECMA-182 polynomial
-    byte[] data = "123456789"u8.ToArray();
-    ulong result = Crc64.Compute(data);
+    var data = "123456789"u8.ToArray();
+    var result = Crc64.Compute(data);
     Assert.That(result, Is.EqualTo(0x995DC9BBDF1939FAUL));
   }
 
   [Category("HappyPath")]
   [Test]
   public void Update_Incremental_MatchesBatch() {
-    byte[] data = "Hello, World!"u8.ToArray();
+    var data = "Hello, World!"u8.ToArray();
 
-    ulong batchResult = Crc64.Compute(data);
+    var batchResult = Crc64.Compute(data);
 
     var crc = new Crc64();
-    foreach (byte b in data)
+    foreach (var b in data)
       crc.Update(b);
 
     Assert.That(crc.Value64, Is.EqualTo(batchResult));
