@@ -202,11 +202,11 @@ Every `FileFormat.*` project builds on these clean-room primitives:
 | LZFSE | `.lzfse` | Yes | Yes |
 | Freeze | `.f`,`.freeze` | Yes | Yes |
 
-### Compound Formats (6)
+### Compound Formats
 
 `tar.gz`, `tar.bz2`, `tar.xz`, `tar.zst`, `tar.lz4`, `tar.lz`
 
-### Detection-Only (2)
+### Detection-Only
 
 ISO 9660, UDF
 
