@@ -376,7 +376,7 @@ formatsCmd.SetAction((ParseResult _) => {
   Console.WriteLine("  No DLLs or runtime required — fully self-contained.");
   Console.WriteLine("  --sfx-target RID  Target platform (default: current platform)");
   Console.WriteLine($"    Supported: {string.Join(", ", SfxBuilder.SupportedTargets)}");
-  Console.WriteLine("  Stubs must be pre-published: dotnet publish Compression.Sfx.Cli -r <rid> -c Release");
+  Console.WriteLine("  SFX stubs are embedded; for dev builds run: .\\publish-sfx-stubs.ps1");
   Console.WriteLine();
   Console.WriteLine("Third-party SFX reading:");
   Console.WriteLine("  cwb can list, extract, and test SFX executables from other tools.");

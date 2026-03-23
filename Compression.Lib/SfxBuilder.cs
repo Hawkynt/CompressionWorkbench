@@ -173,39 +173,39 @@ internal static class SfxBuilder {
   /// <summary>
   /// Finds a published single-file stub for the given type and target RID.
   /// Search order:
-  /// 1. Stubs directory next to running exe: {exeDir}/stubs/{rid}/sfx-cli[.exe]  (deployed layout)
-  /// 2. Pre-published stubs at repo root: {repoRoot}/Compression.CLI/stubs/{rid}/sfx-cli[.exe]
-  /// 3. Published single-file output: {repoRoot}/Compression.Sfx.{Cli|Ui}/bin/{config}/{tfm}/{rid}/publish/sfx-cli[.exe]
-  /// 4. Regular build output (dev fallback): {repoRoot}/Compression.Sfx.{Cli|Ui}/bin/{config}/{tfm}/sfx-cli[.exe]
-  /// 5. Same directory as running exe (flat deployment)
+  /// 1. Embedded resource in Compression.Lib assembly (CI/published builds)
+  /// 2. File system: stubs/{rid}/, repo build output, exe directory (dev builds)
   /// </summary>
   private static string FindStub(StubType stubType, string? targetRid = null) {
     var rid = targetRid ?? CurrentRid();
     var stubName = stubType == StubType.Cli ? "sfx-cli" : "sfx-ui";
     var stubExeName = rid.StartsWith("win") ? $"{stubName}.exe" : stubName;
+
+    // 1. Try embedded resource first (populated by CI or publish-sfx-stubs.ps1)
+    var resourcePath = TryExtractEmbeddedStub(rid, stubExeName);
+    if (resourcePath != null)
+      return resourcePath;
+
+    // 2. File system fallback (development builds)
     var projectFolder = stubType == StubType.Cli ? "Compression.Sfx.Cli" : "Compression.Sfx.Ui";
     var tfms = stubType == StubType.Ui ? new[] { "net10.0-windows", "net10.0" } : new[] { "net10.0" };
 
     var exeDir = Path.GetDirectoryName(Environment.ProcessPath) ?? ".";
     var candidates = new List<string>();
 
-    // 1. Stubs directory next to running exe (deployed layout)
     candidates.Add(Path.Combine(exeDir, "stubs", rid, stubExeName));
 
-    // 2-4. Find repo root by walking up from exeDir looking for the solution file
     var repoRoot = FindRepoRoot(exeDir);
     if (repoRoot != null) {
-      // 2. Pre-published stubs (from publish-sfx-stubs.ps1)
       candidates.Add(Path.Combine(repoRoot, "Compression.CLI", "stubs", rid, stubExeName));
+      candidates.Add(Path.Combine(repoRoot, "Compression.Lib", "stubs", rid, stubExeName));
 
-      // 3. Published single-file output (after dotnet publish -r {rid})
       foreach (var config in new[] { "Release", "Debug" }) {
         foreach (var tfm in tfms) {
           candidates.Add(Path.Combine(repoRoot, projectFolder, "bin", config, tfm, rid, "publish", stubExeName));
         }
       }
 
-      // 4. Regular build output (development fallback, not single-file)
       foreach (var config in new[] { "Release", "Debug" }) {
         foreach (var tfm in tfms) {
           candidates.Add(Path.Combine(repoRoot, projectFolder, "bin", config, tfm, stubExeName));
@@ -213,7 +213,6 @@ internal static class SfxBuilder {
       }
     }
 
-    // 5. Same directory as running exe (flat deployment)
     candidates.Add(Path.Combine(exeDir, stubExeName));
 
     foreach (var candidate in candidates) {
@@ -225,6 +224,37 @@ internal static class SfxBuilder {
       $"SFX stub '{stubExeName}' not found for target '{rid}'. " +
       $"Publish the stub first: dotnet publish {projectFolder} -r {rid} -c Release"
     );
+  }
+
+  /// <summary>
+  /// Tries to extract an SFX stub from embedded resources to a temp file.
+  /// Returns the temp file path if found, null otherwise.
+  /// Resource names follow: stubs/{rid}/sfx-cli[.exe]
+  /// </summary>
+  private static string? TryExtractEmbeddedStub(string rid, string stubExeName) {
+    var assembly = typeof(SfxBuilder).Assembly;
+
+    // Try both separator styles — MSBuild %(RecursiveDir) uses OS separators
+    var resourceName = $"stubs/{rid}/{stubExeName}";
+    var stream = assembly.GetManifestResourceStream(resourceName)
+      ?? assembly.GetManifestResourceStream(resourceName.Replace('/', '\\'))
+      ?? assembly.GetManifestResourceStream($"stubs/{rid}\\{stubExeName}");
+    if (stream == null)
+      return null;
+
+    using (stream) {
+      var tempDir = Path.Combine(Path.GetTempPath(), "cwb-sfx-stubs", rid);
+      Directory.CreateDirectory(tempDir);
+      var tempPath = Path.Combine(tempDir, stubExeName);
+
+      // Only extract if not already cached or size differs
+      if (!File.Exists(tempPath) || new FileInfo(tempPath).Length != stream.Length) {
+        using var fs = File.Create(tempPath);
+        stream.CopyTo(fs);
+      }
+
+      return tempPath;
+    }
   }
 
   /// <summary>

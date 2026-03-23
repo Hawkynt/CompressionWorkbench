@@ -41,7 +41,9 @@ $projects = @(
     @{ Name = "Compression.Sfx.Ui";  Dir = "Compression.Sfx.Ui" }
 )
 
-$stubsDir = Join-Path (Join-Path $root "Compression.CLI") "stubs"
+# Stubs go into Compression.Lib for embedding as resources (and legacy CLI path)
+$stubsDir = Join-Path (Join-Path $root "Compression.Lib") "stubs"
+$legacyStubsDir = Join-Path (Join-Path $root "Compression.CLI") "stubs"
 
 foreach ($rid in $targetRids) {
     foreach ($proj in $projects) {
@@ -70,9 +72,16 @@ foreach ($rid in $targetRids) {
 
         $src = Join-Path $pubDir $exeName
         if (Test-Path $src) {
+            # Primary: Compression.Lib/stubs/ (embedded resources)
             $destDir = Join-Path $stubsDir $rid
             New-Item -ItemType Directory -Path $destDir -Force | Out-Null
             Copy-Item $src $destDir -Force
+
+            # Legacy: Compression.CLI/stubs/ (file-system fallback)
+            $legacyDestDir = Join-Path $legacyStubsDir $rid
+            New-Item -ItemType Directory -Path $legacyDestDir -Force | Out-Null
+            Copy-Item $src $legacyDestDir -Force
+
             $size = [math]::Round((Get-Item $src).Length / 1MB, 1)
             Write-Host "  -> stubs/$rid/$exeName ($size MB)" -ForegroundColor Green
         } else {

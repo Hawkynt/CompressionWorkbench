@@ -8,11 +8,17 @@
     <UseWindowsForms>true</UseWindowsForms>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <NoWarn>CS1591</NoWarn>
+
+    <!-- Single-file self-contained publish (no trimming for WPF) -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
     <ProjectReference Include="..\Compression.Analysis\Compression.Analysis.csproj" />
+    <ProjectReference Include="..\Compression.Shell\Compression.Shell.csproj" />
   </ItemGroup>
 
   <ItemGroup>
