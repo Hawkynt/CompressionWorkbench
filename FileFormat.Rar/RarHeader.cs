@@ -46,14 +46,14 @@ internal sealed class RarHeader {
 
     // 2. Read header size as vint — remember the raw bytes for CRC verification
     var sizeStartPos = stream.Position;
-    header.HeaderSize = (int)RarVint.Read(stream, out int sizeBytesRead);
+    header.HeaderSize = (int)RarVint.Read(stream, out var sizeBytesRead);
     var sizeEndPos = stream.Position;
 
     // 3. Read the header body (headerSize bytes from Type field onward)
-    byte[] body = new byte[header.HeaderSize];
+    var body = new byte[header.HeaderSize];
     var totalRead = 0;
     while (totalRead < body.Length) {
-      int read = stream.Read(body, totalRead, body.Length - totalRead);
+      var read = stream.Read(body, totalRead, body.Length - totalRead);
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of RAR header data.");
       totalRead += read;
@@ -61,17 +61,17 @@ internal sealed class RarHeader {
 
     // 4. Verify CRC-32: covers size vint bytes + body bytes
     // Re-read the size vint bytes
-    byte[] sizeVintBytes = new byte[sizeBytesRead];
+    var sizeVintBytes = new byte[sizeBytesRead];
     var savedPos = stream.Position;
     stream.Position = sizeStartPos;
     _ = stream.Read(sizeVintBytes, 0, sizeBytesRead);
     stream.Position = savedPos;
 
-    byte[] crcData = new byte[sizeVintBytes.Length + body.Length];
+    var crcData = new byte[sizeVintBytes.Length + body.Length];
     sizeVintBytes.AsSpan().CopyTo(crcData);
     body.AsSpan().CopyTo(crcData.AsSpan(sizeVintBytes.Length));
 
-    uint computedCrc = Crc32.Compute(crcData);
+    var computedCrc = Crc32.Compute(crcData);
     if (computedCrc != header.HeaderCrc)
       throw new InvalidDataException(
         $"RAR header CRC mismatch: expected 0x{header.HeaderCrc:X8}, computed 0x{computedCrc:X8}.");
@@ -80,7 +80,7 @@ internal sealed class RarHeader {
     ReadOnlySpan<byte> bodySpan = body;
     var offset = 0;
 
-    header.HeaderType = (int)RarVint.Read(bodySpan[offset..], out int consumed);
+    header.HeaderType = (int)RarVint.Read(bodySpan[offset..], out var consumed);
     offset += consumed;
 
     header.HeaderFlags = (int)RarVint.Read(bodySpan[offset..], out consumed);
@@ -116,19 +116,19 @@ internal sealed class RarHeader {
     if (HasDataArea)
       RarVint.Write(bodyMs, (ulong)DataSize);
 
-    byte[] body = bodyMs.ToArray();
+    var body = bodyMs.ToArray();
 
     // Size vint
     var sizeMs = new MemoryStream();
     RarVint.Write(sizeMs, (ulong)body.Length);
-    byte[] sizeBytes = sizeMs.ToArray();
+    var sizeBytes = sizeMs.ToArray();
 
     // CRC covers sizeBytes + body
-    byte[] crcData = new byte[sizeBytes.Length + body.Length];
+    var crcData = new byte[sizeBytes.Length + body.Length];
     sizeBytes.AsSpan().CopyTo(crcData);
     body.AsSpan().CopyTo(crcData.AsSpan(sizeBytes.Length));
 
-    uint crc = Crc32.Compute(crcData);
+    var crc = Crc32.Compute(crcData);
 
     RarVint.Write(stream, crc);
     stream.Write(crcData);

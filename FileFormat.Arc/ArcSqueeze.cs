@@ -22,18 +22,18 @@ internal static class ArcSqueeze {
     if (compressed.Length < 2)
       throw new InvalidDataException("ARC squeezed data too short.");
 
-    int pos = 0;
-    short nodeCount = BinaryPrimitives.ReadInt16LittleEndian(compressed.AsSpan(pos));
+    var pos = 0;
+    var nodeCount = BinaryPrimitives.ReadInt16LittleEndian(compressed.AsSpan(pos));
     pos += 2;
 
     if (nodeCount < 0 || nodeCount > 32767)
       throw new InvalidDataException($"ARC squeezed: invalid node count {nodeCount}.");
 
     // Read tree nodes: each is 2×int16 (left, right children)
-    short[] left = new short[nodeCount];
-    short[] right = new short[nodeCount];
+    var left = new short[nodeCount];
+    var right = new short[nodeCount];
 
-    for (int i = 0; i < nodeCount; ++i) {
+    for (var i = 0; i < nodeCount; ++i) {
       if (pos + 4 > compressed.Length)
         throw new InvalidDataException("ARC squeezed: tree data truncated.");
       left[i] = BinaryPrimitives.ReadInt16LittleEndian(compressed.AsSpan(pos));
@@ -44,12 +44,12 @@ internal static class ArcSqueeze {
 
     // Decode bits LSB-first
     var output = new byte[originalSize];
-    int outPos = 0;
-    int bitBuf = 0;
-    int bitsLeft = 0;
+    var outPos = 0;
+    var bitBuf = 0;
+    var bitsLeft = 0;
 
     while (outPos < originalSize) {
-      int node = 0; // start at root
+      var node = 0; // start at root
 
       while (node >= 0) {
         if (bitsLeft == 0) {
@@ -59,7 +59,7 @@ internal static class ArcSqueeze {
           bitsLeft = 8;
         }
 
-        int bit = bitBuf & 1;
+        var bit = bitBuf & 1;
         bitBuf >>= 1;
         --bitsLeft;
 
@@ -67,7 +67,7 @@ internal static class ArcSqueeze {
       }
 
       // node is negative: leaf
-      int symbol = -(node + 1);
+      var symbol = -(node + 1);
       if (symbol == 256) // end of data marker
         break;
 
@@ -82,24 +82,24 @@ internal static class ArcSqueeze {
   /// </summary>
   public static byte[] Encode(byte[] data) {
     // Count frequencies
-    int[] freq = new int[257]; // 256 symbols + 1 end marker
-    foreach (byte b in data)
+    var freq = new int[257]; // 256 symbols + 1 end marker
+    foreach (var b in data)
       ++freq[b];
     freq[256] = 1; // end-of-data marker
 
     // Build Huffman tree bottom-up
     // Use a simple priority queue approach
-    int nodeCapacity = 257 * 2;
-    short[] leftNodes = new short[nodeCapacity];
-    short[] rightNodes = new short[nodeCapacity];
-    int nextNode = 0;
+    var nodeCapacity = 257 * 2;
+    var leftNodes = new short[nodeCapacity];
+    var rightNodes = new short[nodeCapacity];
+    var nextNode = 0;
 
     // Create leaf nodes and insert into priority queue
     var pq = new SortedList<(long Freq, int Order), int>(); // freq → node index
-    int order = 0;
-    for (int sym = 0; sym <= 256; ++sym) {
+    var order = 0;
+    for (var sym = 0; sym <= 256; ++sym) {
       if (freq[sym] > 0) {
-        int leaf = -(sym + 1); // encode leaf as negative
+        var leaf = -(sym + 1); // encode leaf as negative
         pq.Add((freq[sym], order++), leaf);
       }
     }
@@ -110,23 +110,23 @@ internal static class ArcSqueeze {
     // Build tree
     while (pq.Count > 1) {
       var key1 = pq.Keys[0];
-      int node1 = pq[key1];
+      var node1 = pq[key1];
       pq.RemoveAt(0);
 
       var key2 = pq.Keys[0];
-      int node2 = pq[key2];
+      var node2 = pq[key2];
       pq.RemoveAt(0);
 
-      int parent = nextNode++;
+      var parent = nextNode++;
       leftNodes[parent] = (short)node1;
       rightNodes[parent] = (short)node2;
 
-      long combinedFreq = key1.Freq + key2.Freq;
+      var combinedFreq = key1.Freq + key2.Freq;
       pq.Add((combinedFreq, order++), parent);
     }
 
-    int root = pq.Count > 0 ? pq.Values[0] : 0;
-    int totalNodes = nextNode;
+    var root = pq.Count > 0 ? pq.Values[0] : 0;
+    var totalNodes = nextNode;
 
     // If only one symbol, create a dummy root
     if (totalNodes == 0) {
@@ -139,10 +139,10 @@ internal static class ArcSqueeze {
     // Remap nodes so root is at index 0 (decoder expects root at 0).
     // Tree was built bottom-up, so root is at totalNodes-1.
     if (root != 0) {
-      short[] newLeft = new short[totalNodes];
-      short[] newRight = new short[totalNodes];
-      for (int i = 0; i < totalNodes; ++i) {
-        int newIdx = totalNodes - 1 - i;
+      var newLeft = new short[totalNodes];
+      var newRight = new short[totalNodes];
+      for (var i = 0; i < totalNodes; ++i) {
+        var newIdx = totalNodes - 1 - i;
         newLeft[newIdx] = leftNodes[i] >= 0
           ? (short)(totalNodes - 1 - leftNodes[i]) : leftNodes[i];
         newRight[newIdx] = rightNodes[i] >= 0
@@ -154,8 +154,8 @@ internal static class ArcSqueeze {
     }
 
     // Build code table by traversing tree
-    int[] codes = new int[257];
-    int[] codeLens = new int[257];
+    var codes = new int[257];
+    var codeLens = new int[257];
     BuildCodes(root, leftNodes, rightNodes, 0, 0, codes, codeLens);
 
     // Write output
@@ -168,15 +168,15 @@ internal static class ArcSqueeze {
 
     // Write tree nodes
     Span<byte> buf4 = stackalloc byte[4];
-    for (int i = 0; i < totalNodes; ++i) {
+    for (var i = 0; i < totalNodes; ++i) {
       BinaryPrimitives.WriteInt16LittleEndian(buf4, leftNodes[i]);
       BinaryPrimitives.WriteInt16LittleEndian(buf4[2..], rightNodes[i]);
       ms.Write(buf4);
     }
 
     // Write encoded data LSB-first
-    int bitBuffer = 0;
-    int bitCount = 0;
+    var bitBuffer = 0;
+    var bitCount = 0;
 
     void WriteBits(int code, int len) {
       bitBuffer |= code << bitCount;
@@ -188,7 +188,7 @@ internal static class ArcSqueeze {
       }
     }
 
-    foreach (byte b in data)
+    foreach (var b in data)
       WriteBits(codes[b], codeLens[b]);
 
     // Write end marker
@@ -204,7 +204,7 @@ internal static class ArcSqueeze {
   private static void BuildCodes(int node, short[] left, short[] right,
       int code, int depth, int[] codes, int[] codeLens) {
     if (node < 0) {
-      int sym = -(node + 1);
+      var sym = -(node + 1);
       if (sym >= 0 && sym <= 256) {
         codes[sym] = code;
         codeLens[sym] = Math.Max(depth, 1);

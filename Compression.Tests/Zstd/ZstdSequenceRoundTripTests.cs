@@ -14,9 +14,9 @@ public class ZstdSequenceRoundTripTests {
       new(2, 3, 5),
     };
 
-    byte[] output = new byte[1024];
+    var output = new byte[1024];
     int[] repeatOffsetsEnc = [1, 4, 8];
-    int written = ZstdSequences.EncodeSequences(sequences, output, 0, repeatOffsetsEnc);
+    var written = ZstdSequences.EncodeSequences(sequences, output, 0, repeatOffsetsEnc);
 
     var pos = 0;
     int[] repeatOffsetsDec = [1, 4, 8];
@@ -26,7 +26,7 @@ public class ZstdSequenceRoundTripTests {
       ref pll, ref pof, ref pml);
 
     Assert.That(decoded.Length, Is.EqualTo(sequences.Length));
-    for (int i = 0; i < decoded.Length; ++i) {
+    for (var i = 0; i < decoded.Length; ++i) {
       Assert.That(decoded[i].LiteralLength, Is.EqualTo(sequences[i].LiteralLength), $"LL mismatch at {i}");
       Assert.That(decoded[i].MatchLength, Is.EqualTo(sequences[i].MatchLength), $"ML mismatch at {i}");
       Assert.That(decoded[i].Offset, Is.EqualTo(sequences[i].Offset), $"OF mismatch at {i}");
@@ -41,9 +41,9 @@ public class ZstdSequenceRoundTripTests {
       new(3, 5, 10),
     };
 
-    byte[] output = new byte[1024];
+    var output = new byte[1024];
     int[] repeatOffsetsEnc = [1, 4, 8];
-    int written = ZstdSequences.EncodeSequences(sequences, output, 0, repeatOffsetsEnc);
+    var written = ZstdSequences.EncodeSequences(sequences, output, 0, repeatOffsetsEnc);
 
     var pos = 0;
     int[] repeatOffsetsDec = [1, 4, 8];

@@ -78,7 +78,7 @@ public sealed class CompressStream : CompressionStream {
     InnerStream.WriteByte(CompressConstants.Magic1);
     InnerStream.WriteByte(CompressConstants.Magic2);
 
-    byte flags = (byte)(this._maxBits & CompressConstants.MaxBitsMask);
+    var flags = (byte)(this._maxBits & CompressConstants.MaxBitsMask);
     if (this._blockMode)
       flags |= CompressConstants.BlockModeFlag;
     InnerStream.WriteByte(flags);
@@ -97,9 +97,9 @@ public sealed class CompressStream : CompressionStream {
 
   private void ReadAndDecompress() {
     // Read header
-    int b1 = InnerStream.ReadByte();
-    int b2 = InnerStream.ReadByte();
-    int flags = InnerStream.ReadByte();
+    var b1 = InnerStream.ReadByte();
+    var b2 = InnerStream.ReadByte();
+    var flags = InnerStream.ReadByte();
 
     if (b1 < 0 || b2 < 0 || flags < 0)
       throw new InvalidDataException("Truncated compress header.");

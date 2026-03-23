@@ -45,7 +45,7 @@ public sealed class ZipReader : IDisposable {
     this._stream.Position = cdOffset;
     var reader = new BinaryReader(this._stream, System.Text.Encoding.Latin1, leaveOpen: true);
 
-    for (int i = 0; i < cdCount; ++i)
+    for (var i = 0; i < cdCount; ++i)
       this._entries.Add(ZipCentralDirectoryEntry.Read(reader));
   }
 
@@ -62,16 +62,16 @@ public sealed class ZipReader : IDisposable {
     var localEntry = ZipLocalFileHeader.Read(reader);
 
     // Read compressed data
-    byte[] compressedData = new byte[entry.CompressedSize];
+    var compressedData = new byte[entry.CompressedSize];
     var totalRead = 0;
     while (totalRead < compressedData.Length) {
-      int read = this._stream.Read(compressedData, totalRead, compressedData.Length - totalRead);
+      var read = this._stream.Read(compressedData, totalRead, compressedData.Length - totalRead);
       if (read == 0) throw new EndOfStreamException("Unexpected end of ZIP data.");
       totalRead += read;
     }
 
     // Handle decryption
-    ZipCompressionMethod effectiveMethod = entry.CompressionMethod;
+    var effectiveMethod = entry.CompressionMethod;
 
     if (entry.CompressionMethod == ZipCompressionMethod.WinZipAes) {
       if (this._password == null)
@@ -98,13 +98,13 @@ public sealed class ZipReader : IDisposable {
       case ZipCompressionMethod.Reduce2:
       case ZipCompressionMethod.Reduce3:
       case ZipCompressionMethod.Reduce4: {
-        int factor = (int)effectiveMethod - 1; // methods 2-5 → factors 1-4
+        var factor = (int)effectiveMethod - 1; // methods 2-5 → factors 1-4
         data = ReduceDecoder.Decode(compressedData, (int)entry.UncompressedSize, factor);
         break;
       }
       case ZipCompressionMethod.Implode: {
-        bool is8k = (entry.GeneralPurposeFlags & 0x0002) != 0;
-        bool hasLitTree = (entry.GeneralPurposeFlags & 0x0004) != 0;
+        var is8k = (entry.GeneralPurposeFlags & 0x0002) != 0;
+        var hasLitTree = (entry.GeneralPurposeFlags & 0x0004) != 0;
         data = ImplodeDecoder.Decode(compressedData, (int)entry.UncompressedSize, hasLitTree, is8k);
         break;
       }
@@ -131,7 +131,7 @@ public sealed class ZipReader : IDisposable {
     }
 
     // Verify CRC
-    uint crc = Crc32.Compute(data);
+    var crc = Crc32.Compute(data);
     if (crc != entry.Crc32)
       throw new InvalidDataException($"CRC-32 mismatch for '{entry.FileName}': expected 0x{entry.Crc32:X8}, computed 0x{crc:X8}.");
 
@@ -150,16 +150,16 @@ public sealed class ZipReader : IDisposable {
     var reader = new BinaryReader(this._stream, System.Text.Encoding.Latin1, leaveOpen: true);
     _ = ZipLocalFileHeader.Read(reader);
 
-    byte[] compressedData = new byte[entry.CompressedSize];
+    var compressedData = new byte[entry.CompressedSize];
     var totalRead = 0;
     while (totalRead < compressedData.Length) {
-      int read = this._stream.Read(compressedData, totalRead, compressedData.Length - totalRead);
+      var read = this._stream.Read(compressedData, totalRead, compressedData.Length - totalRead);
       if (read == 0) throw new EndOfStreamException("Unexpected end of ZIP data.");
       totalRead += read;
     }
 
     // Handle decryption — still needed for raw access
-    ZipCompressionMethod effectiveMethod = entry.CompressionMethod;
+    var effectiveMethod = entry.CompressionMethod;
     if (entry.CompressionMethod == ZipCompressionMethod.WinZipAes) {
       if (this._password == null)
         throw new InvalidOperationException($"Entry '{entry.FileName}' is AES-encrypted but no password was provided.");
@@ -181,7 +181,7 @@ public sealed class ZipReader : IDisposable {
   /// <param name="entry">The entry to open.</param>
   /// <returns>A stream containing the decompressed data.</returns>
   public Stream OpenEntry(ZipEntry entry) {
-    byte[] data = ExtractEntry(entry);
+    var data = ExtractEntry(entry);
     return new MemoryStream(data, writable: false);
   }
 

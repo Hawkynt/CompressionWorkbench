@@ -90,12 +90,12 @@ public class Deflate64Tests {
   [Category("HappyPath")]
   [Test]
   public void GetDistanceCode_RoundTripsWithBaseAndExtraBits() {
-    ReadOnlySpan<int> bases = Deflate64Constants.DistanceBase;
-    ReadOnlySpan<int> extras = Deflate64Constants.DistanceExtraBits;
+    var bases = Deflate64Constants.DistanceBase;
+    var extras = Deflate64Constants.DistanceExtraBits;
 
-    for (int distance = 1; distance <= 65536; ++distance) {
-      int code = Deflate64Constants.GetDistanceCode(distance);
-      int extra = distance - bases[code];
+    for (var distance = 1; distance <= 65536; ++distance) {
+      var code = Deflate64Constants.GetDistanceCode(distance);
+      var extra = distance - bases[code];
       Assert.That(extra, Is.GreaterThanOrEqualTo(0), $"Distance {distance}: negative extra");
       Assert.That(extra, Is.LessThan(1 << extras[code]), $"Distance {distance}: extra out of range");
     }
@@ -105,24 +105,24 @@ public class Deflate64Tests {
   [Test]
   public void DistanceTable_CoversAllDistances1To65536() {
     var reachable = new HashSet<int>();
-    ReadOnlySpan<int> bases = Deflate64Constants.DistanceBase;
-    ReadOnlySpan<int> extras = Deflate64Constants.DistanceExtraBits;
+    var bases = Deflate64Constants.DistanceBase;
+    var extras = Deflate64Constants.DistanceExtraBits;
 
-    for (int i = 0; i < bases.Length; ++i) {
+    for (var i = 0; i < bases.Length; ++i) {
       var range = 1 << extras[i];
-      for (int j = 0; j < range; ++j)
+      for (var j = 0; j < range; ++j)
         reachable.Add(bases[i] + j);
     }
 
-    for (int dist = 1; dist <= 65536; ++dist)
+    for (var dist = 1; dist <= 65536; ++dist)
       Assert.That(reachable.Contains(dist), Is.True, $"Distance {dist} not reachable");
   }
 
   [Category("HappyPath")]
   [Test]
   public void DistanceBase_IsMonotonicallyIncreasing() {
-    ReadOnlySpan<int> bases = Deflate64Constants.DistanceBase;
-    for (int i = 1; i < bases.Length; ++i)
+    var bases = Deflate64Constants.DistanceBase;
+    for (var i = 1; i < bases.Length; ++i)
       Assert.That(bases[i], Is.GreaterThan(bases[i - 1]), $"DistanceBase[{i}] <= DistanceBase[{i - 1}]");
   }
 
@@ -130,10 +130,10 @@ public class Deflate64Tests {
   [Test]
   public void DistanceBase_First30MatchStandardDeflate() {
     // The first 30 distance codes must match standard Deflate exactly
-    ReadOnlySpan<int> deflate64Bases = Deflate64Constants.DistanceBase;
-    ReadOnlySpan<int> deflateBases = DeflateConstants.DistanceBase;
+    var deflate64Bases = Deflate64Constants.DistanceBase;
+    var deflateBases = DeflateConstants.DistanceBase;
 
-    for (int i = 0; i < 30; ++i)
+    for (var i = 0; i < 30; ++i)
       Assert.That(deflate64Bases[i], Is.EqualTo(deflateBases[i]), $"DistanceBase[{i}] mismatch");
   }
 
@@ -141,10 +141,10 @@ public class Deflate64Tests {
   [Test]
   public void LengthBase_First28MatchStandardDeflate() {
     // Length codes 257-284 (indices 0-27) must match standard Deflate exactly
-    ReadOnlySpan<int> deflate64Bases = Deflate64Constants.LengthBase;
-    ReadOnlySpan<int> deflateBases = DeflateConstants.LengthBase;
+    var deflate64Bases = Deflate64Constants.LengthBase;
+    var deflateBases = DeflateConstants.LengthBase;
 
-    for (int i = 0; i < 28; ++i)
+    for (var i = 0; i < 28; ++i)
       Assert.That(deflate64Bases[i], Is.EqualTo(deflateBases[i]), $"LengthBase[{i}] mismatch");
   }
 
@@ -154,9 +154,9 @@ public class Deflate64Tests {
   public void Decompressor_StandardDeflateData_Decompresses() {
     // Standard Deflate data should also work through Deflate64 decompressor
     // (Deflate64 is a superset). Use a simple static Huffman block.
-    byte[] original = "Hello, Deflate64 World!"u8.ToArray();
-    byte[] compressed = DeflateCompressor.Compress(original);
-    byte[] result = Deflate64Decompressor.Decompress(compressed);
+    var original = "Hello, Deflate64 World!"u8.ToArray();
+    var compressed = DeflateCompressor.Compress(original);
+    var result = Deflate64Decompressor.Decompress(compressed);
     Assert.That(result, Is.EqualTo(original));
   }
 
@@ -165,8 +165,8 @@ public class Deflate64Tests {
   [Test]
   public void Decompressor_EmptyInput_ProducesEmptyOutput() {
     // Compress empty data with standard Deflate and decompress with Deflate64
-    byte[] compressed = DeflateCompressor.Compress([]);
-    byte[] result = Deflate64Decompressor.Decompress(compressed);
+    var compressed = DeflateCompressor.Compress([]);
+    var result = Deflate64Decompressor.Decompress(compressed);
     Assert.That(result, Is.Empty);
   }
 
@@ -175,9 +175,9 @@ public class Deflate64Tests {
   public void Decompressor_UncompressedBlock_Decompresses() {
     // Build a minimal uncompressed Deflate block manually:
     // BFINAL=1, BTYPE=00 (uncompressed), LEN=5, NLEN=~5, data="Hello"
-    byte[] data = "Hello"u8.ToArray();
-    int len = data.Length;
-    int nlen = len ^ 0xFFFF;
+    var data = "Hello"u8.ToArray();
+    var len = data.Length;
+    var nlen = len ^ 0xFFFF;
     var compressed = new byte[1 + 4 + len]; // 1 header byte + 2 LEN + 2 NLEN + data
     compressed[0] = 0x01; // BFINAL=1, BTYPE=00
     compressed[1] = (byte)(len & 0xFF);
@@ -186,7 +186,7 @@ public class Deflate64Tests {
     compressed[4] = (byte)((nlen >> 8) & 0xFF);
     Array.Copy(data, 0, compressed, 5, len);
 
-    byte[] result = Deflate64Decompressor.Decompress(compressed);
+    var result = Deflate64Decompressor.Decompress(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -300,16 +300,16 @@ public class Deflate64Tests {
   [Category("RoundTrip")]
   [Test]
   public void Decompressor_StreamingDecompress_Works() {
-    byte[] original = "Streaming decompression test for Deflate64."u8.ToArray();
-    byte[] compressed = DeflateCompressor.Compress(original);
+    var original = "Streaming decompression test for Deflate64."u8.ToArray();
+    var compressed = DeflateCompressor.Compress(original);
 
     using var ms = new MemoryStream(compressed);
     var decompressor = new Deflate64Decompressor(ms);
 
     var output = new byte[original.Length];
-    int totalRead = 0;
+    var totalRead = 0;
     while (totalRead < original.Length) {
-      int read = decompressor.Decompress(output, totalRead, original.Length - totalRead);
+      var read = decompressor.Decompress(output, totalRead, original.Length - totalRead);
       if (read == 0)
         break;
       totalRead += read;

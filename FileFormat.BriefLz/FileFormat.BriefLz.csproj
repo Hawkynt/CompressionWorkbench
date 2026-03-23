@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Core\Compression.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -52,14 +52,14 @@ public sealed class SevenZipReader : IDisposable {
     var sigHeader = SevenZipHeader.Read(this._stream);
 
     // Read next header
-    long nextHeaderPos = SevenZipConstants.SignatureHeaderSize + sigHeader.NextHeaderOffset;
+    var nextHeaderPos = SevenZipConstants.SignatureHeaderSize + sigHeader.NextHeaderOffset;
     this._stream.Position = nextHeaderPos;
 
-    byte[] nextHeaderData = new byte[sigHeader.NextHeaderSize];
+    var nextHeaderData = new byte[sigHeader.NextHeaderSize];
     ReadExact(nextHeaderData, 0, (int)sigHeader.NextHeaderSize);
 
     // Verify next header CRC
-    uint nextHeaderCrc = Crc32.Compute(nextHeaderData);
+    var nextHeaderCrc = Crc32.Compute(nextHeaderData);
     if (nextHeaderCrc != sigHeader.NextHeaderCrc)
       throw new InvalidDataException("7z next header CRC mismatch.");
 
@@ -90,24 +90,24 @@ public sealed class SevenZipReader : IDisposable {
       return [];
 
     // Decompress the entire folder
-    byte[] folderData = DecompressFolder(folderIndex);
+    var folderData = DecompressFolder(folderIndex);
 
     // Extract the file's portion
     var offset = 0L;
     var sizeIndexBase = 0;
-    for (int f = 0; f < folderIndex; ++f)
+    for (var f = 0; f < folderIndex; ++f)
       sizeIndexBase += this._subStreams.NumUnpackStreams[f];
 
-    for (int i = 0; i < fileIndex; ++i)
+    for (var i = 0; i < fileIndex; ++i)
       offset += this._subStreams.UnpackSizes[sizeIndexBase + i];
 
     var size = this._subStreams.UnpackSizes[sizeIndexBase + fileIndex];
-    byte[] result = new byte[size];
+    var result = new byte[size];
     folderData.AsSpan((int)offset, (int)size).CopyTo(result);
 
     // Verify CRC if available
     if (entry.Crc.HasValue) {
-      uint computedCrc = Crc32.Compute(result);
+      var computedCrc = Crc32.Compute(result);
       if (computedCrc != entry.Crc.Value)
         throw new InvalidDataException(
           $"CRC-32 mismatch for '{entry.Name}': expected 0x{entry.Crc.Value:X8}, computed 0x{computedCrc:X8}.");
@@ -122,7 +122,7 @@ public sealed class SevenZipReader : IDisposable {
   /// <param name="entryIndex">The zero-based index of the entry to extract.</param>
   /// <param name="output">The stream to write the decompressed data to.</param>
   public void Extract(int entryIndex, Stream output) {
-    byte[] data = Extract(entryIndex);
+    var data = Extract(entryIndex);
     output.Write(data, 0, data.Length);
   }
 
@@ -160,7 +160,7 @@ public sealed class SevenZipReader : IDisposable {
       var curFolder = 0;
       var curFile = 0;
       var ssIdx = 0;
-      for (int i = 0; i < this._fileInfos.Count; ++i) {
+      for (var i = 0; i < this._fileInfos.Count; ++i) {
         if (this._fileInfos[i].IsEmptyStream) continue;
         if (curFolder < this._folders.Count) {
           if (ssIdx < this._subStreams.UnpackSizes.Length)
@@ -181,7 +181,7 @@ public sealed class SevenZipReader : IDisposable {
     var currentFileInFolder = 0;
     var subStreamSizeIndex = 0;
 
-    for (int i = 0; i < this._fileInfos.Count; ++i) {
+    for (var i = 0; i < this._fileInfos.Count; ++i) {
       var fileInfo = this._fileInfos[i];
       var entry = new SevenZipEntry {
         Name = fileInfo.Name,
@@ -273,7 +273,7 @@ public sealed class SevenZipReader : IDisposable {
     var firstPackIndex = GetFirstPackStreamIndex(folderIndex);
 
     // Calculate base offset for the first pack stream
-    long baseOffset = SevenZipConstants.SignatureHeaderSize + this._packInfo.PackPos;
+    var baseOffset = SevenZipConstants.SignatureHeaderSize + this._packInfo.PackPos;
     for (var i = 0; i < firstPackIndex; ++i)
       baseOffset += this._packInfo.PackSizes[i];
 
@@ -298,7 +298,7 @@ public sealed class SevenZipReader : IDisposable {
     var packStreams = ReadFolderPackStreams(folderIndex);
 
     if (folder.Coders.Count == 1) {
-      long unpackSize = folder.UnpackSizes.Length > 0 ? folder.UnpackSizes[0] : -1;
+      var unpackSize = folder.UnpackSizes.Length > 0 ? folder.UnpackSizes[0] : -1;
       return DecompressSingleCoder(folder.Coders[0], packStreams[0], unpackSize);
     }
 
@@ -318,9 +318,9 @@ public sealed class SevenZipReader : IDisposable {
     var data = packStreams[0];
     var coderOrder = BuildCoderOrder(folder);
 
-    foreach (int coderIdx in coderOrder) {
+    foreach (var coderIdx in coderOrder) {
       // Pass unpack size for the last coder in the chain (the final output)
-      long unpackSize = coderIdx == coderOrder[^1] && folder.UnpackSizes.Length > 0
+      var unpackSize = coderIdx == coderOrder[^1] && folder.UnpackSizes.Length > 0
         ? folder.UnpackSizes[^1] : -1;
       data = DecompressSingleCoder(folder.Coders[coderIdx], data, unpackSize);
     }
@@ -437,8 +437,8 @@ public sealed class SevenZipReader : IDisposable {
 
     // Start with coder whose input comes from the pack stream
     // (the coder whose in-stream is not a bind pair target)
-    int firstCoder = 0;
-    for (int i = 0; i < numCoders; ++i) {
+    var firstCoder = 0;
+    for (var i = 0; i < numCoders; ++i) {
       if (!fedByOtherCoder.Contains(i)) {
         firstCoder = i;
         break;
@@ -451,8 +451,8 @@ public sealed class SevenZipReader : IDisposable {
     // consumes firstCoder's output
     var processed = new HashSet<int> { firstCoder };
     while (order.Count < numCoders) {
-      bool found = false;
-      int lastProcessed = order[^1];
+      var found = false;
+      var lastProcessed = order[^1];
 
       // Find bind pair where outIndex matches the output stream of lastProcessed
       foreach (var (inIndex, outIndex) in folder.BindPairs) {
@@ -469,7 +469,7 @@ public sealed class SevenZipReader : IDisposable {
 
       if (!found) {
         // Add remaining coders in order
-        for (int i = 0; i < numCoders; ++i) {
+        for (var i = 0; i < numCoders; ++i) {
           if (!processed.Contains(i)) {
             order.Add(i);
             processed.Add(i);
@@ -483,13 +483,13 @@ public sealed class SevenZipReader : IDisposable {
   }
 
   private byte[] DecompressSingleCoder(SevenZipCoder coder, byte[] data, long unpackSize = -1) {
-    byte[] codecId = coder.CodecId;
+    var codecId = coder.CodecId;
 
     if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecLzma2)) {
-      byte dictByte = coder.Properties != null && coder.Properties.Length > 0
+      var dictByte = coder.Properties != null && coder.Properties.Length > 0
         ? coder.Properties[0]
         : (byte)0;
-      int dictSize = DecodeDictionarySize(dictByte);
+      var dictSize = DecodeDictionarySize(dictByte);
       using var stream = new MemoryStream(data);
       var decoder = new Lzma2Decoder(stream, dictSize);
       return decoder.Decode();
@@ -519,13 +519,13 @@ public sealed class SevenZipReader : IDisposable {
       if (coder.Properties == null || coder.Properties.Length < 5)
         throw new InvalidDataException("PPMd coder missing properties.");
       int order = coder.Properties[0];
-      int memSize = coder.Properties[1] | (coder.Properties[2] << 8) |
+      var memSize = coder.Properties[1] | (coder.Properties[2] << 8) |
                     (coder.Properties[3] << 16) | (coder.Properties[4] << 24);
       using var stream = new MemoryStream(data);
       var rangeDecoder = new PpmdRangeDecoder(stream);
       var model = new PpmdModelH(order, memSize);
       if (unpackSize >= 0) {
-        byte[] result = new byte[unpackSize];
+        var result = new byte[unpackSize];
         for (long i = 0; i < unpackSize; ++i)
           result[i] = model.DecodeSymbol(rangeDecoder);
         return result;
@@ -557,7 +557,7 @@ public sealed class SevenZipReader : IDisposable {
       return BcjFilter.DecodeSparc(data);
 
     if (codecId.AsSpan().SequenceEqual(SevenZipConstants.CodecDelta)) {
-      int distance = coder.Properties != null && coder.Properties.Length > 0
+      var distance = coder.Properties != null && coder.Properties.Length > 0
         ? coder.Properties[0] + 1
         : 1;
       return DeltaFilter.Decode(data, distance);
@@ -575,7 +575,7 @@ public sealed class SevenZipReader : IDisposable {
 
   private static int DecodeDictionarySize(byte encoded) {
     if (encoded == 0) return 4096;
-    int bits = encoded / 2 + 12;
+    var bits = encoded / 2 + 12;
     if ((encoded & 1) == 0) return 1 << bits;
     return 3 << (bits - 1);
   }
@@ -639,7 +639,7 @@ public sealed class SevenZipReader : IDisposable {
   private void ReadExact(byte[] buffer, int offset, int count) {
     var totalRead = 0;
     while (totalRead < count) {
-      int read = this._stream.Read(buffer, offset + totalRead, count - totalRead);
+      var read = this._stream.Read(buffer, offset + totalRead, count - totalRead);
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of 7z stream.");
       totalRead += read;

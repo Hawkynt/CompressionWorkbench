@@ -89,14 +89,14 @@ public sealed class ArjWriter {
 
     // Write each entry followed by its data.
     foreach (var (name, comment, fileType, data, lastModified) in this._entries) {
-      uint crc32 = data.Length > 0 ? Crc32.Compute(data) : 0u;
-      byte method = this._method;
+      var crc32 = data.Length > 0 ? Crc32.Compute(data) : 0u;
+      var method = this._method;
       byte[] writeData;
 
       if (method is ArjConstants.MethodCompressed1 or ArjConstants.MethodCompressed2
           or ArjConstants.MethodCompressed3 && data.Length > 0) {
         var encoder = new ArjEncoder(method);
-        byte[] compressed = encoder.Encode(data);
+        var compressed = encoder.Encode(data);
         if (compressed.Length < data.Length) {
           writeData = compressed;
         } else {
@@ -183,7 +183,7 @@ public sealed class ArjWriter {
     //   [26..27] fileMode       (uint16 LE) = 0x20 (archive bit)
     //   [28..29] hostData       (2 bytes)   = 0
     //   [30..]   fileName\0 comment\0
-    int bodyLength = firstHeaderSize + nameBytes.Length + 1 + commentBytes.Length + 1;
+    var bodyLength = firstHeaderSize + nameBytes.Length + 1 + commentBytes.Length + 1;
     var body = new byte[bodyLength];
 
     body[0] = firstHeaderSize;
@@ -213,7 +213,7 @@ public sealed class ArjWriter {
     body[pos] = 0; // NUL terminator
 
     // Compute header CRC-32.
-    uint headerCrc = Crc32.Compute(body);
+    var headerCrc = Crc32.Compute(body);
 
     // Write to output stream:
     //   header ID (2 bytes)
@@ -233,8 +233,8 @@ public sealed class ArjWriter {
   // -------------------------------------------------------------------------
 
   private static uint MsdosTimestamp(DateTime dt) {
-    int time = (dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2);
-    int date = ((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day;
+    var time = (dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2);
+    var date = ((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day;
     return (uint)((date << 16) | time);
   }
 
@@ -249,9 +249,9 @@ public sealed class ArjWriter {
     if (data.Length == 0 || string.IsNullOrEmpty(password))
       return data;
 
-    byte[] passwordBytes = Encoding.ASCII.GetBytes(password);
-    byte[] result = new byte[data.Length];
-    for (int i = 0; i < data.Length; ++i)
+    var passwordBytes = Encoding.ASCII.GetBytes(password);
+    var result = new byte[data.Length];
+    for (var i = 0; i < data.Length; ++i)
       result[i] = (byte)(data[i] ^ passwordBytes[i % passwordBytes.Length]);
     return result;
   }

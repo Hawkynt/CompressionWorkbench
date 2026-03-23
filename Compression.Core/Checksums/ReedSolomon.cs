@@ -10,8 +10,8 @@ public sealed class ReedSolomon {
 
   static ReedSolomon() {
     // Build GF(2^8) exp and log tables using polynomial 0x11D
-    int x = 1;
-    for (int i = 0; i < 255; ++i) {
+    var x = 1;
+    for (var i = 0; i < 255; ++i) {
       ExpTable[i] = (byte)x;
       ExpTable[i + 255] = (byte)x; // wrap for easy mod
       LogTable[x] = (byte)i;
@@ -56,8 +56,8 @@ public sealed class ReedSolomon {
     // Build Vandermonde-based encoding matrix
     // Each parity shard i is computed as: sum(data[j] * matrix[i,j]) for all j
     this._matrix = new byte[parityShards, dataShards];
-    for (int i = 0; i < parityShards; ++i) {
-      for (int j = 0; j < dataShards; ++j) {
+    for (var i = 0; i < parityShards; ++i) {
+      for (var j = 0; j < dataShards; ++j) {
         // Vandermonde: matrix[i,j] = α^(i*j), where α = ExpTable[1] = 2
         this._matrix[i, j] = GfPow(ExpTable[j + 1], i + 1);
       }
@@ -73,17 +73,17 @@ public sealed class ReedSolomon {
     if (data.Length != this._dataShards)
       throw new ArgumentException($"Expected {this._dataShards} data shards, got {data.Length}.");
 
-    int shardSize = data[0].Length;
+    var shardSize = data[0].Length;
     var parity = new byte[this._parityShards][];
 
-    for (int i = 0; i < this._parityShards; ++i) {
+    for (var i = 0; i < this._parityShards; ++i) {
       parity[i] = new byte[shardSize];
-      for (int j = 0; j < this._dataShards; ++j) {
-        byte coeff = this._matrix[i, j];
+      for (var j = 0; j < this._dataShards; ++j) {
+        var coeff = this._matrix[i, j];
         if (coeff == 0) continue;
         var src = data[j];
         var dst = parity[i];
-        for (int k = 0; k < shardSize; ++k)
+        for (var k = 0; k < shardSize; ++k)
           dst[k] ^= GfMul(coeff, src[k]);
       }
     }
@@ -104,7 +104,7 @@ public sealed class ReedSolomon {
     var missingIndices = new List<int>();
     var presentIndices = new List<int>();
 
-    for (int i = 0; i < shards.Length; ++i) {
+    for (var i = 0; i < shards.Length; ++i) {
       if (shards[i] == null)
         missingIndices.Add(i);
       else
@@ -116,7 +116,7 @@ public sealed class ReedSolomon {
 
     // We need exactly _dataShards present shards to solve the system
     var usedPresent = presentIndices.GetRange(0, this._dataShards);
-    int shardSize = 0;
+    var shardSize = 0;
     foreach (var idx in usedPresent) {
       if (shards[idx] != null) { shardSize = shards[idx]!.Length; break; }
     }
@@ -124,9 +124,9 @@ public sealed class ReedSolomon {
     // Build sub-matrix from full encoding matrix rows corresponding to usedPresent
     // Full matrix: identity (dataShards×dataShards) stacked with _matrix (parityShards×dataShards)
     var subMatrix = new byte[this._dataShards, this._dataShards];
-    for (int row = 0; row < this._dataShards; ++row) {
-      int srcIdx = usedPresent[row];
-      for (int col = 0; col < this._dataShards; ++col) {
+    for (var row = 0; row < this._dataShards; ++row) {
+      var srcIdx = usedPresent[row];
+      for (var col = 0; col < this._dataShards; ++col) {
         if (srcIdx < this._dataShards) {
           // Identity row
           subMatrix[row, col] = (byte)(srcIdx == col ? 1 : 0);
@@ -143,16 +143,16 @@ public sealed class ReedSolomon {
     if (inverse == null) return false;
 
     // Reconstruct missing data shards
-    foreach (int missingIdx in missingIndices) {
+    foreach (var missingIdx in missingIndices) {
       if (missingIdx >= this._dataShards) continue; // we only need to reconstruct data shards
 
       shards[missingIdx] = new byte[shardSize];
-      for (int j = 0; j < this._dataShards; ++j) {
-        byte coeff = inverse[missingIdx, j];
+      for (var j = 0; j < this._dataShards; ++j) {
+        var coeff = inverse[missingIdx, j];
         if (coeff == 0) continue;
         var src = shards[usedPresent[j]]!;
         var dst = shards[missingIdx]!;
-        for (int k = 0; k < shardSize; ++k)
+        for (var k = 0; k < shardSize; ++k)
           dst[k] ^= GfMul(coeff, src[k]);
       }
     }
@@ -163,17 +163,17 @@ public sealed class ReedSolomon {
   private static byte[,]? InvertMatrix(byte[,] matrix, int n) {
     // Augment with identity
     var aug = new byte[n, 2 * n];
-    for (int i = 0; i < n; ++i) {
-      for (int j = 0; j < n; ++j)
+    for (var i = 0; i < n; ++i) {
+      for (var j = 0; j < n; ++j)
         aug[i, j] = matrix[i, j];
       aug[i, n + i] = 1;
     }
 
     // Forward elimination
-    for (int col = 0; col < n; ++col) {
+    for (var col = 0; col < n; ++col) {
       // Find pivot
-      int pivotRow = -1;
-      for (int row = col; row < n; ++row) {
+      var pivotRow = -1;
+      for (var row = col; row < n; ++row) {
         if (aug[row, col] != 0) { pivotRow = row; break; }
       }
 
@@ -181,30 +181,30 @@ public sealed class ReedSolomon {
 
       // Swap rows
       if (pivotRow != col) {
-        for (int j = 0; j < 2 * n; ++j)
+        for (var j = 0; j < 2 * n; ++j)
           (aug[col, j], aug[pivotRow, j]) = (aug[pivotRow, j], aug[col, j]);
       }
 
       // Scale pivot row
-      byte pivotVal = aug[col, col];
-      byte pivotInv = GfDiv(1, pivotVal);
-      for (int j = 0; j < 2 * n; ++j)
+      var pivotVal = aug[col, col];
+      var pivotInv = GfDiv(1, pivotVal);
+      for (var j = 0; j < 2 * n; ++j)
         aug[col, j] = GfMul(aug[col, j], pivotInv);
 
       // Eliminate column
-      for (int row = 0; row < n; ++row) {
+      for (var row = 0; row < n; ++row) {
         if (row == col) continue;
-        byte factor = aug[row, col];
+        var factor = aug[row, col];
         if (factor == 0) continue;
-        for (int j = 0; j < 2 * n; ++j)
+        for (var j = 0; j < 2 * n; ++j)
           aug[row, j] ^= GfMul(factor, aug[col, j]);
       }
     }
 
     // Extract inverse
     var inv = new byte[n, n];
-    for (int i = 0; i < n; ++i)
-      for (int j = 0; j < n; ++j)
+    for (var i = 0; i < n; ++i)
+      for (var j = 0; j < n; ++j)
         inv[i, j] = aug[i, n + j];
 
     return inv;

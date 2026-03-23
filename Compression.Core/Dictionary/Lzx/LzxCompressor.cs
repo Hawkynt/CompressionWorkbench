@@ -116,7 +116,7 @@ public sealed partial class LzxCompressor {
 
   private List<LzxToken> Tokenise(ReadOnlySpan<byte> data) {
     var tokens = new List<LzxToken>(data.Length / 2 + 16);
-    int chainDepth = this._level switch {
+    var chainDepth = this._level switch {
       LzxCompressionLevel.Fast => 16,
       LzxCompressionLevel.Best => 256,
       _ => 64

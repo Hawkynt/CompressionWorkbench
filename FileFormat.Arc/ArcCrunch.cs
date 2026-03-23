@@ -19,7 +19,7 @@ internal static class ArcCrunch {
   /// </summary>
   public static byte[] DecodeCrunched5(byte[] compressed, int originalSize) {
     // First decompress LZW, then undo RLE
-    byte[] lzwDecoded = DecodeLzw(compressed, useClearCode: true);
+    var lzwDecoded = DecodeLzw(compressed, useClearCode: true);
     return ArcRle.Decode(lzwDecoded);
   }
 

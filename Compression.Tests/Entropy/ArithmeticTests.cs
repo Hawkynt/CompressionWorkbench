@@ -30,7 +30,7 @@ public class ArithmeticTests {
   public void BitCoding_RoundTrip_MixedBits() {
     var rng = new Random(42);
     var data = new int[200];
-    for (int i = 0; i < data.Length; ++i)
+    for (var i = 0; i < data.Length; ++i)
       data[i] = rng.Next(2);
     var compressed = EncodeBits(data, 32768);
     var decoded = DecodeBits(compressed, 200, 32768);
@@ -44,7 +44,7 @@ public class ArithmeticTests {
     // Mostly zeros with high prob0 — should compress well
     var rng = new Random(7);
     var data = new int[500];
-    for (int i = 0; i < data.Length; ++i)
+    for (var i = 0; i < data.Length; ++i)
       data[i] = rng.Next(100) < 5 ? 1 : 0; // 95% zeros
     var compressed = EncodeBits(data, 62259); // prob0 ≈ 0.95
     var decoded = DecodeBits(compressed, 500, 62259);
@@ -58,9 +58,9 @@ public class ArithmeticTests {
   [Test]
   public void SymbolCoding_RoundTrip() {
     var rng = new Random(99);
-    int numSymbols = 8;
+    var numSymbols = 8;
     var data = new int[200];
-    for (int i = 0; i < data.Length; ++i)
+    for (var i = 0; i < data.Length; ++i)
       data[i] = rng.Next(numSymbols);
 
     var compressed = EncodeSymbols(data, numSymbols);
@@ -74,7 +74,7 @@ public class ArithmeticTests {
     // Data with strong pattern: lots of symbol 0
     var data = new int[500];
     var rng = new Random(42);
-    for (int i = 0; i < data.Length; ++i)
+    for (var i = 0; i < data.Length; ++i)
       data[i] = rng.Next(100) < 80 ? 0 : rng.Next(1, 4);
 
     var compressed = EncodeSymbols(data, 4);
@@ -101,7 +101,7 @@ public class ArithmeticTests {
   public void SymbolCoding_LargeAlphabet() {
     var rng = new Random(11);
     var data = new int[300];
-    for (int i = 0; i < data.Length; ++i)
+    for (var i = 0; i < data.Length; ++i)
       data[i] = rng.Next(256);
 
     var compressed = EncodeSymbols(data, 256);
@@ -134,7 +134,7 @@ public class ArithmeticTests {
   private static byte[] EncodeBits(int[] bits, int prob0) {
     using var ms = new MemoryStream();
     var encoder = new ArithmeticEncoder(ms);
-    foreach (int bit in bits)
+    foreach (var bit in bits)
       encoder.EncodeBit(bit, prob0);
     encoder.Finish();
     return ms.ToArray();
@@ -144,7 +144,7 @@ public class ArithmeticTests {
     using var ms = new MemoryStream(compressed);
     var decoder = new ArithmeticDecoder(ms);
     var result = new int[count];
-    for (int i = 0; i < count; ++i)
+    for (var i = 0; i < count; ++i)
       result[i] = decoder.DecodeBit(prob0);
     return result;
   }
@@ -154,10 +154,10 @@ public class ArithmeticTests {
     var encoder = new ArithmeticEncoder(ms);
     var model = new AdaptiveModel(numSymbols);
 
-    foreach (int sym in symbols) {
-      uint cumFreq = (uint)model.GetCumulativeFrequency(sym);
-      uint symFreq = (uint)model.GetFrequency(sym);
-      uint totalFreq = (uint)model.TotalFrequency;
+    foreach (var sym in symbols) {
+      var cumFreq = (uint)model.GetCumulativeFrequency(sym);
+      var symFreq = (uint)model.GetFrequency(sym);
+      var totalFreq = (uint)model.TotalFrequency;
       encoder.EncodeSymbol(cumFreq, symFreq, totalFreq);
       model.Update(sym);
     }
@@ -172,12 +172,12 @@ public class ArithmeticTests {
     var model = new AdaptiveModel(numSymbols);
     var result = new int[count];
 
-    for (int i = 0; i < count; ++i) {
-      uint totalFreq = (uint)model.TotalFrequency;
-      uint cumCount = decoder.GetCumulativeCount(totalFreq);
-      int sym = model.FindSymbol((int)cumCount);
-      uint cumFreq = (uint)model.GetCumulativeFrequency(sym);
-      uint symFreq = (uint)model.GetFrequency(sym);
+    for (var i = 0; i < count; ++i) {
+      var totalFreq = (uint)model.TotalFrequency;
+      var cumCount = decoder.GetCumulativeCount(totalFreq);
+      var sym = model.FindSymbol((int)cumCount);
+      var cumFreq = (uint)model.GetCumulativeFrequency(sym);
+      var symFreq = (uint)model.GetFrequency(sym);
       decoder.UpdateSymbol(cumFreq, symFreq, totalFreq);
       model.Update(sym);
       result[i] = sym;

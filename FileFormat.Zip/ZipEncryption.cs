@@ -52,22 +52,22 @@ internal static class ZipAesEncryption {
   /// <param name="password">The password.</param>
   /// <returns>Encrypted payload: salt(16) + passwordVerify(2) + ciphertext + authCode(10).</returns>
   public static byte[] Encrypt(byte[] data, string password) {
-    byte[] salt = RandomNumberGenerator.GetBytes(SaltLength);
+    var salt = RandomNumberGenerator.GetBytes(SaltLength);
 
     // PBKDF2-HMAC-SHA1: derive 66 bytes = AES key(32) + HMAC key(32) + verify(2)
-    byte[] derived = KeyDerivation.Pbkdf2Sha1(password, salt, Pbkdf2Iterations, 66);
-    byte[] aesKey = derived[..32];
-    byte[] hmacKey = derived[32..64];
-    byte[] passwordVerify = derived[64..66];
+    var derived = KeyDerivation.Pbkdf2Sha1(password, salt, Pbkdf2Iterations, 66);
+    var aesKey = derived[..32];
+    var hmacKey = derived[32..64];
+    var passwordVerify = derived[64..66];
 
     // Encrypt with AES-CTR (WinZip uses LE counter starting at 1)
-    byte[] ciphertext = AesCtrWinZip(data, aesKey);
+    var ciphertext = AesCtrWinZip(data, aesKey);
 
     // Compute HMAC-SHA1 over ciphertext, truncated to 10 bytes
-    byte[] authCode = ComputeHmacSha1(hmacKey, ciphertext);
+    var authCode = ComputeHmacSha1(hmacKey, ciphertext);
 
     // Build output: salt + verify + ciphertext + authCode
-    byte[] result = new byte[SaltLength + PasswordVerifyLength + ciphertext.Length + AuthCodeLength];
+    var result = new byte[SaltLength + PasswordVerifyLength + ciphertext.Length + AuthCodeLength];
     salt.CopyTo(result.AsSpan());
     passwordVerify.CopyTo(result.AsSpan(SaltLength));
     ciphertext.CopyTo(result.AsSpan(SaltLength + PasswordVerifyLength));
@@ -85,25 +85,25 @@ internal static class ZipAesEncryption {
     if (encryptedPayload.Length < SaltLength + PasswordVerifyLength + AuthCodeLength)
       throw new InvalidDataException("Encrypted data too short for WinZip AES.");
 
-    byte[] salt = encryptedPayload[..SaltLength];
+    var salt = encryptedPayload[..SaltLength];
 
-    byte[] derived = KeyDerivation.Pbkdf2Sha1(password, salt, Pbkdf2Iterations, 66);
-    byte[] aesKey = derived[..32];
-    byte[] hmacKey = derived[32..64];
-    byte[] expectedVerify = derived[64..66];
+    var derived = KeyDerivation.Pbkdf2Sha1(password, salt, Pbkdf2Iterations, 66);
+    var aesKey = derived[..32];
+    var hmacKey = derived[32..64];
+    var expectedVerify = derived[64..66];
 
     // Verify password
-    byte[] actualVerify = encryptedPayload[SaltLength..(SaltLength + PasswordVerifyLength)];
+    var actualVerify = encryptedPayload[SaltLength..(SaltLength + PasswordVerifyLength)];
     if (!actualVerify.AsSpan().SequenceEqual(expectedVerify))
       throw new InvalidDataException("Wrong password (verification bytes mismatch).");
 
-    int ciphertextStart = SaltLength + PasswordVerifyLength;
-    int ciphertextLen = encryptedPayload.Length - ciphertextStart - AuthCodeLength;
-    byte[] ciphertext = encryptedPayload[ciphertextStart..(ciphertextStart + ciphertextLen)];
+    var ciphertextStart = SaltLength + PasswordVerifyLength;
+    var ciphertextLen = encryptedPayload.Length - ciphertextStart - AuthCodeLength;
+    var ciphertext = encryptedPayload[ciphertextStart..(ciphertextStart + ciphertextLen)];
 
     // Verify HMAC
-    byte[] expectedAuth = encryptedPayload[(ciphertextStart + ciphertextLen)..];
-    byte[] actualAuth = ComputeHmacSha1(hmacKey, ciphertext);
+    var expectedAuth = encryptedPayload[(ciphertextStart + ciphertextLen)..];
+    var actualAuth = ComputeHmacSha1(hmacKey, ciphertext);
     if (!expectedAuth.AsSpan().SequenceEqual(actualAuth.AsSpan(0, AuthCodeLength)))
       throw new InvalidDataException("Authentication code mismatch (data corrupted or wrong password).");
 
@@ -133,10 +133,10 @@ internal static class ZipAesEncryption {
     if (extraField == null)
       return ZipCompressionMethod.Store;
 
-    int pos = 0;
+    var pos = 0;
     while (pos + 4 <= extraField.Length) {
-      ushort tag = BitConverter.ToUInt16(extraField, pos);
-      ushort size = BitConverter.ToUInt16(extraField, pos + 2);
+      var tag = BitConverter.ToUInt16(extraField, pos);
+      var size = BitConverter.ToUInt16(extraField, pos + 2);
       pos += 4;
 
       if (tag == ExtraFieldTag && size >= 7 && pos + size <= extraField.Length) {
@@ -167,18 +167,18 @@ internal static class ZipAesEncryption {
     var counter = new byte[16];
     counter[0] = 1; // LE counter starts at 1
     var keystreamBlock = new byte[16];
-    int processed = 0;
+    var processed = 0;
 
     while (processed < data.Length) {
       encryptor.TransformBlock(counter, 0, 16, keystreamBlock, 0);
 
-      int blockLen = Math.Min(16, data.Length - processed);
-      for (int i = 0; i < blockLen; ++i)
+      var blockLen = Math.Min(16, data.Length - processed);
+      for (var i = 0; i < blockLen; ++i)
         result[processed + i] = (byte)(data[processed + i] ^ keystreamBlock[i]);
       processed += blockLen;
 
       // Increment counter in little-endian order
-      for (int i = 0; i < 16; ++i)
+      for (var i = 0; i < 16; ++i)
         if (++counter[i] != 0)
           break;
     }
@@ -213,26 +213,26 @@ internal static class ZipTraditionalEncryption {
     uint key0 = 0x12345678, key1 = 0x23456789, key2 = 0x34567890;
 
     // Initialize keys with password
-    foreach (char c in password)
+    foreach (var c in password)
       UpdateKeys(ref key0, ref key1, ref key2, (byte)c);
 
-    byte[] result = new byte[HeaderSize + data.Length];
+    var result = new byte[HeaderSize + data.Length];
 
     // Generate random encryption header (12 bytes)
-    byte[] header = RandomNumberGenerator.GetBytes(HeaderSize);
+    var header = RandomNumberGenerator.GetBytes(HeaderSize);
     // Last byte of header must be high byte of CRC for verification
     header[HeaderSize - 1] = (byte)(crc >> 24);
 
     // Encrypt header
-    for (int i = 0; i < HeaderSize; ++i) {
-      byte keyByte = DecryptByte(key2);
+    for (var i = 0; i < HeaderSize; ++i) {
+      var keyByte = DecryptByte(key2);
       result[i] = (byte)(header[i] ^ keyByte);
       UpdateKeys(ref key0, ref key1, ref key2, header[i]);
     }
 
     // Encrypt data
-    for (int i = 0; i < data.Length; ++i) {
-      byte keyByte = DecryptByte(key2);
+    for (var i = 0; i < data.Length; ++i) {
+      var keyByte = DecryptByte(key2);
       result[HeaderSize + i] = (byte)(data[i] ^ keyByte);
       UpdateKeys(ref key0, ref key1, ref key2, data[i]);
     }
@@ -254,14 +254,14 @@ internal static class ZipTraditionalEncryption {
     uint key0 = 0x12345678, key1 = 0x23456789, key2 = 0x34567890;
 
     // Initialize keys with password
-    foreach (char c in password)
+    foreach (var c in password)
       UpdateKeys(ref key0, ref key1, ref key2, (byte)c);
 
     // Decrypt header
     byte lastHeaderByte = 0;
-    for (int i = 0; i < HeaderSize; ++i) {
-      byte keyByte = DecryptByte(key2);
-      byte plain = (byte)(encryptedPayload[i] ^ keyByte);
+    for (var i = 0; i < HeaderSize; ++i) {
+      var keyByte = DecryptByte(key2);
+      var plain = (byte)(encryptedPayload[i] ^ keyByte);
       UpdateKeys(ref key0, ref key1, ref key2, plain);
       if (i == HeaderSize - 1)
         lastHeaderByte = plain;
@@ -272,9 +272,9 @@ internal static class ZipTraditionalEncryption {
       throw new InvalidDataException("Wrong password (PKZIP header check byte mismatch).");
 
     // Decrypt data
-    byte[] result = new byte[encryptedPayload.Length - HeaderSize];
-    for (int i = 0; i < result.Length; ++i) {
-      byte keyByte = DecryptByte(key2);
+    var result = new byte[encryptedPayload.Length - HeaderSize];
+    for (var i = 0; i < result.Length; ++i) {
+      var keyByte = DecryptByte(key2);
       result[i] = (byte)(encryptedPayload[HeaderSize + i] ^ keyByte);
       UpdateKeys(ref key0, ref key1, ref key2, result[i]);
     }
@@ -283,7 +283,7 @@ internal static class ZipTraditionalEncryption {
   }
 
   private static byte DecryptByte(uint key2) {
-    ushort temp = (ushort)((key2 & 0xFFFF) | 2);
+    var temp = (ushort)((key2 & 0xFFFF) | 2);
     return (byte)((temp * (temp ^ 1)) >> 8);
   }
 
@@ -302,8 +302,8 @@ internal static class ZipTraditionalEncryption {
   private static uint[] BuildCrcTable() {
     var table = new uint[256];
     for (uint i = 0; i < 256; ++i) {
-      uint crc = i;
-      for (int j = 0; j < 8; ++j)
+      var crc = i;
+      for (var j = 0; j < 8; ++j)
         crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
       table[i] = crc;
     }

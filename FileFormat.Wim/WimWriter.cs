@@ -80,17 +80,17 @@ public sealed class WimWriter {
     }
 
     // Write the flat resource table.
-    long offsetTableOffset = this._output.Position;
-    long offsetTableSize   = WriteResourceTable(entries);
+    var offsetTableOffset = this._output.Position;
+    var offsetTableSize   = WriteResourceTable(entries);
 
     // Write minimal XML metadata.
-    long xmlOffset     = this._output.Position;
-    long xmlSize       = WriteXmlMetadata(resources.Count);
-    long xmlOffsetEnd  = this._output.Position;
+    var xmlOffset     = this._output.Position;
+    var xmlSize       = WriteXmlMetadata(resources.Count);
+    var xmlOffsetEnd  = this._output.Position;
     _ = xmlOffsetEnd; // suppress unused warning
 
     // Determine compression flags for the header.
-    uint wimFlags = this._compressionType switch {
+    var wimFlags = this._compressionType switch {
       WimConstants.CompressionXpress         => WimConstants.FlagXpressCompression,
       WimConstants.CompressionLzx            => WimConstants.FlagLzxCompression,
       WimConstants.CompressionLzms           => WimConstants.FlagLzmsCompression,
@@ -129,7 +129,7 @@ public sealed class WimWriter {
   /// Returns the resource table entry describing the written payload.
   /// </summary>
   private WimResourceEntry WriteResource(byte[] data) {
-    long resourceOffset = this._output.Position;
+    var resourceOffset = this._output.Position;
 
     if (data.Length == 0 || this._compressionType == WimConstants.CompressionNone) {
       // Write raw, uncompressed.
@@ -142,16 +142,16 @@ public sealed class WimWriter {
     }
 
     // Split data into chunks and compress each independently.
-    int chunkCount = (data.Length + this._chunkSize - 1) / this._chunkSize;
+    var chunkCount = (data.Length + this._chunkSize - 1) / this._chunkSize;
 
     // The chunk table holds (chunkCount - 1) entries, each an 8-byte LE compressed size.
     // The last chunk's size is implicit (total compressed size minus sum of others).
     // We write a placeholder chunk table, then fill it in after compressing.
-    long chunkTableOffset = this._output.Position;
-    int chunkTableBytes   = (chunkCount - 1) * 8;
+    var chunkTableOffset = this._output.Position;
+    var chunkTableBytes   = (chunkCount - 1) * 8;
 
     if (chunkTableBytes > 0) {
-      Span<byte> chunkTablePlaceholder = chunkTableBytes <= 512
+      var chunkTablePlaceholder = chunkTableBytes <= 512
         ? stackalloc byte[chunkTableBytes]
         : new byte[chunkTableBytes];
       chunkTablePlaceholder.Clear();
@@ -159,15 +159,15 @@ public sealed class WimWriter {
     }
 
     // Compress each chunk and remember their compressed sizes.
-    long firstChunkDataOffset = this._output.Position;
+    var firstChunkDataOffset = this._output.Position;
     var compressedSizes = new long[chunkCount];
 
-    for (int i = 0; i < chunkCount; ++i) {
-      int chunkStart  = i * this._chunkSize;
-      int chunkLength = Math.Min(this._chunkSize, data.Length - chunkStart);
+    for (var i = 0; i < chunkCount; ++i) {
+      var chunkStart  = i * this._chunkSize;
+      var chunkLength = Math.Min(this._chunkSize, data.Length - chunkStart);
       var chunkData   = data.AsSpan(chunkStart, chunkLength);
 
-      byte[] compressed = this.CompressChunk(chunkData);
+      var compressed = this.CompressChunk(chunkData);
 
       // If compression expanded the data, store the chunk uncompressed.
       // (WIM readers are expected to handle this, but for simplicity we always
@@ -176,17 +176,17 @@ public sealed class WimWriter {
       compressedSizes[i] = compressed.Length;
     }
 
-    long resourceEnd     = this._output.Position;
-    long totalCompressed = resourceEnd - chunkTableOffset;
+    var resourceEnd     = this._output.Position;
+    var totalCompressed = resourceEnd - chunkTableOffset;
 
     // Seek back and write the real chunk table (all but the last entry).
     if (chunkTableBytes > 0) {
       this._output.Seek(chunkTableOffset, SeekOrigin.Begin);
       Span<byte> entry = stackalloc byte[8];
-      long runningOffset = firstChunkDataOffset - chunkTableOffset; // offset of first chunk data relative to resource start
+      var runningOffset = firstChunkDataOffset - chunkTableOffset; // offset of first chunk data relative to resource start
       // The chunk table stores the compressed offset of each chunk except the first.
       // More precisely: the chunk table stores compressed sizes of chunks 0..N-2.
-      for (int i = 0; i < chunkCount - 1; ++i) {
+      for (var i = 0; i < chunkCount - 1; ++i) {
         BinaryPrimitives.WriteInt64LittleEndian(entry, compressedSizes[i]);
         this._output.Write(entry);
       }
@@ -222,7 +222,7 @@ public sealed class WimWriter {
   /// Writes the flat resource table to the output and returns the number of bytes written.
   /// </summary>
   private long WriteResourceTable(List<WimResourceEntry> entries) {
-    long start = this._output.Position;
+    var start = this._output.Position;
     Span<byte> buf = stackalloc byte[WimConstants.ResourceEntrySize];
 
     foreach (var e in entries) {
@@ -245,11 +245,11 @@ public sealed class WimWriter {
   /// Writes a minimal XML metadata block and returns its byte length.
   /// </summary>
   private long WriteXmlMetadata(int imageCount) {
-    long start = this._output.Position;
+    var start = this._output.Position;
 
     var sb = new StringBuilder();
     sb.Append("<WIM>");
-    for (int i = 1; i <= imageCount; ++i) {
+    for (var i = 1; i <= imageCount; ++i) {
       sb.Append($"<IMAGE Index=\"{i}\"><NAME>Data</NAME></IMAGE>");
     }
     sb.Append("</WIM>");

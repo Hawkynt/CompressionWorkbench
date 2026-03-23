@@ -47,7 +47,7 @@ public class TarCompoundFormatTests {
     Assert.That(readEntry.Size, Is.EqualTo(TestData.Length));
 
     using var entryStream = tr.GetEntryStream();
-    byte[] readData = new byte[readEntry.Size];
+    var readData = new byte[readEntry.Size];
     _ = entryStream.Read(readData, 0, readData.Length);
     Assert.That(readData, Is.EqualTo(TestData));
   }
@@ -89,7 +89,7 @@ public class TarCompoundFormatTests {
     Assert.That(readEntry.Size, Is.EqualTo(TestData.Length));
 
     using var entryStream = tr.GetEntryStream();
-    byte[] readData = new byte[readEntry.Size];
+    var readData = new byte[readEntry.Size];
     _ = entryStream.Read(readData, 0, readData.Length);
     Assert.That(readData, Is.EqualTo(TestData));
   }
@@ -131,7 +131,7 @@ public class TarCompoundFormatTests {
     Assert.That(readEntry.Size, Is.EqualTo(TestData.Length));
 
     using var entryStream = tr.GetEntryStream();
-    byte[] readData = new byte[readEntry.Size];
+    var readData = new byte[readEntry.Size];
     _ = entryStream.Read(readData, 0, readData.Length);
     Assert.That(readData, Is.EqualTo(TestData));
   }

@@ -46,7 +46,7 @@ internal sealed class ZstdDecompressor {
     // Read frame header
     var header = ZstdFrameHeader.Read(input, out _);
 
-    int windowSize = Math.Max(header.WindowSize, 1024);
+    var windowSize = Math.Max(header.WindowSize, 1024);
     this._verifyChecksum = header.ContentChecksum;
 
     this._window = new SlidingWindow(windowSize);
@@ -58,7 +58,7 @@ internal sealed class ZstdDecompressor {
 
     // Apply dictionary: prepopulate window and set repeat offsets
     if (dictionary != null) {
-      foreach (byte b in dictionary.Content)
+      foreach (var b in dictionary.Content)
         this._window.WriteByte(b);
       if (dictionary.RepeatOffsets.Length >= 3)
         this._repeatOffsets = [dictionary.RepeatOffsets[0],
@@ -88,7 +88,7 @@ internal sealed class ZstdDecompressor {
     while (totalRead < count) {
       // Serve from buffer first
       if (this._outputPos < this._outputAvailable) {
-        int toCopy = Math.Min(count - totalRead, this._outputAvailable - this._outputPos);
+        var toCopy = Math.Min(count - totalRead, this._outputAvailable - this._outputPos);
         this._outputBuffer.AsSpan(this._outputPos, toCopy).CopyTo(buffer.AsSpan(offset + totalRead));
         this._outputPos += toCopy;
         totalRead += toCopy;
@@ -120,24 +120,24 @@ internal sealed class ZstdDecompressor {
         blockOutput = new byte[blockSize];
         ReadExact(blockOutput);
         // Add raw block bytes to window
-        for (int i = 0; i < blockOutput.Length; ++i)
+        for (var i = 0; i < blockOutput.Length; ++i)
           this._window.WriteByte(blockOutput[i]);
         break;
 
       case ZstdConstants.BlockTypeRle: {
-        int b = this._input.ReadByte();
+        var b = this._input.ReadByte();
         if (b < 0)
           throw new InvalidDataException("Truncated RLE block data.");
         blockOutput = new byte[blockSize];
         blockOutput.AsSpan().Fill((byte)b);
         // Add RLE block bytes to window
-        for (int i = 0; i < blockOutput.Length; ++i)
+        for (var i = 0; i < blockOutput.Length; ++i)
           this._window.WriteByte(blockOutput[i]);
         break;
       }
 
       case ZstdConstants.BlockTypeCompressed: {
-        byte[] compressedBlock = new byte[blockSize];
+        var compressedBlock = new byte[blockSize];
         ReadExact(compressedBlock);
         blockOutput = DecompressBlock(compressedBlock);
         break;
@@ -162,7 +162,7 @@ internal sealed class ZstdDecompressor {
         Span<byte> checksumBuf = stackalloc byte[4];
         ReadExact(checksumBuf);
         var expectedChecksum = BinaryPrimitives.ReadUInt32LittleEndian(checksumBuf);
-        uint actualChecksum = (uint)(this._hasher.Value & 0xFFFFFFFF);
+        var actualChecksum = (uint)(this._hasher.Value & 0xFFFFFFFF);
 
         if (expectedChecksum != actualChecksum)
           throw new InvalidDataException(
@@ -179,17 +179,17 @@ internal sealed class ZstdDecompressor {
     var pos = 0;
 
     // Decode literals section
-    byte[] literals = ZstdLiterals.DecompressLiterals(blockData, ref pos, ref this._huffmanWeights);
+    var literals = ZstdLiterals.DecompressLiterals(blockData, ref pos, ref this._huffmanWeights);
 
     // Decode sequences section
     var remainingSize = compressedBlock.Length - pos;
-    ZstdSequence[] sequences = ZstdSequences.DecodeSequences(blockData, ref pos,
+    var sequences = ZstdSequences.DecodeSequences(blockData, ref pos,
       remainingSize, this._repeatOffsets,
       ref this._prevLlTable, ref this._prevOfTable, ref this._prevMlTable);
 
     if (sequences.Length == 0) {
       // No sequences -- output is just literals
-      for (int i = 0; i < literals.Length; ++i)
+      for (var i = 0; i < literals.Length; ++i)
         this._window.WriteByte(literals[i]);
       return literals;
     }
@@ -224,7 +224,7 @@ internal sealed class ZstdDecompressor {
       // Copy literal bytes
       if (seq.LiteralLength > 0) {
         literals.AsSpan(litPos, seq.LiteralLength).CopyTo(output.AsSpan(outPos));
-        for (int i = 0; i < seq.LiteralLength; ++i)
+        for (var i = 0; i < seq.LiteralLength; ++i)
           this._window.WriteByte(literals[litPos + i]);
         litPos += seq.LiteralLength;
         outPos += seq.LiteralLength;
@@ -232,7 +232,7 @@ internal sealed class ZstdDecompressor {
 
       // Execute match copy from window
       if (seq.MatchLength > 0 && seq.Offset > 0) {
-        Span<byte> matchOutput = output.AsSpan(outPos, seq.MatchLength);
+        var matchOutput = output.AsSpan(outPos, seq.MatchLength);
         this._window.CopyFromWindow(seq.Offset, seq.MatchLength, matchOutput);
         outPos += seq.MatchLength;
       }
@@ -242,7 +242,7 @@ internal sealed class ZstdDecompressor {
     if (litPos < literals.Length) {
       var remaining = literals.Length - litPos;
       literals.AsSpan(litPos, remaining).CopyTo(output.AsSpan(outPos));
-      for (int i = 0; i < remaining; ++i)
+      for (var i = 0; i < remaining; ++i)
         this._window.WriteByte(literals[litPos + i]);
     }
 
@@ -255,7 +255,7 @@ internal sealed class ZstdDecompressor {
   private void ReadExact(Span<byte> buffer) {
     var offset = 0;
     while (offset < buffer.Length) {
-      int b = this._input.ReadByte();
+      var b = this._input.ReadByte();
       if (b < 0)
         throw new InvalidDataException("Unexpected end of Zstandard stream.");
       buffer[offset++] = (byte)b;

@@ -98,8 +98,8 @@ public sealed class RpmHeader {
       throw new InvalidDataException(
         $"Unsupported RPM header version: {preamble[3]}.");
 
-    int nindex = BinaryPrimitives.ReadInt32BigEndian(preamble[8..]);
-    int hsize  = BinaryPrimitives.ReadInt32BigEndian(preamble[12..]);
+    var nindex = BinaryPrimitives.ReadInt32BigEndian(preamble[8..]);
+    var hsize  = BinaryPrimitives.ReadInt32BigEndian(preamble[12..]);
 
     if (nindex < 0)
       throw new InvalidDataException($"Invalid RPM header: negative index entry count {nindex}.");
@@ -109,17 +109,17 @@ public sealed class RpmHeader {
     // Read index entries
     var entries = new List<RpmHeaderEntry>(nindex);
     Span<byte> entryBuf = stackalloc byte[RpmConstants.IndexEntrySize];
-    for (int i = 0; i < nindex; ++i) {
+    for (var i = 0; i < nindex; ++i) {
       stream.ReadExactly(entryBuf);
-      int tag    = BinaryPrimitives.ReadInt32BigEndian(entryBuf);
-      int type   = BinaryPrimitives.ReadInt32BigEndian(entryBuf[4..]);
-      int offset = BinaryPrimitives.ReadInt32BigEndian(entryBuf[8..]);
-      int count  = BinaryPrimitives.ReadInt32BigEndian(entryBuf[12..]);
+      var tag    = BinaryPrimitives.ReadInt32BigEndian(entryBuf);
+      var type   = BinaryPrimitives.ReadInt32BigEndian(entryBuf[4..]);
+      var offset = BinaryPrimitives.ReadInt32BigEndian(entryBuf[8..]);
+      var count  = BinaryPrimitives.ReadInt32BigEndian(entryBuf[12..]);
       entries.Add(new RpmHeaderEntry(tag, type, offset, count));
     }
 
     // Read store
-    byte[] store = new byte[hsize];
+    var store = new byte[hsize];
     if (hsize > 0)
       stream.ReadExactly(store);
 
@@ -142,7 +142,7 @@ public sealed class RpmHeader {
     if (offset < 0 || offset >= store.Length)
       return string.Empty;
 
-    int end = offset;
+    var end = offset;
     while (end < store.Length && store[end] != 0)
       ++end;
 

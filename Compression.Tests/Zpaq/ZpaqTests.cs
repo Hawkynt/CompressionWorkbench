@@ -89,7 +89,7 @@ public class ZpaqTests {
   [Test]
   public void SingleFile_ParsedCorrectly() {
     var ts   = new DateTime(2023, 6, 15, 12, 0, 0, DateTimeKind.Utc);
-    long ft  = ToFileTime(ts);
+    var ft  = ToFileTime(ts);
 
     using var ms = new MemoryStream();
     WriteBlockHeader(ms, ZpaqConstants.BlockTypeHeader);
@@ -316,7 +316,7 @@ public class ZpaqTests {
     WriteBlockHeader(ms, ZpaqConstants.BlockTypeHeader);
 
     // Build a payload that embeds "zPQ" inside a filename.
-    long ft = ToFileTime(DateTime.UtcNow);
+    var ft = ToFileTime(DateTime.UtcNow);
     ms.Write(BitConverter.GetBytes(ft));
     ms.WriteByte(0x20);                      // attr
     ms.Write("file_zPQ_name.txt"u8);

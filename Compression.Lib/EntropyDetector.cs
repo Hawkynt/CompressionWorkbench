@@ -26,7 +26,7 @@ internal static class EntropyDetector {
     if (data.Length < 64) return false; // too small to tell
 
     var sample = GetSample(data);
-    double chiSquare = ComputeChiSquare(sample);
+    var chiSquare = ComputeChiSquare(sample);
 
     // Low chi-square = uniform distribution = incompressible
     return chiSquare < ChiSquareThreshold;
@@ -48,14 +48,14 @@ internal static class EntropyDetector {
       // Sample head + tail for better coverage
       sample = new byte[MaxSampleSize];
       using var fs = File.OpenRead(filePath);
-      int headSize = MaxSampleSize / 2;
-      int tailSize = MaxSampleSize - headSize;
+      var headSize = MaxSampleSize / 2;
+      var tailSize = MaxSampleSize - headSize;
       fs.ReadExactly(sample, 0, headSize);
       fs.Seek(-tailSize, SeekOrigin.End);
       fs.ReadExactly(sample, headSize, tailSize);
     }
 
-    double chiSquare = ComputeChiSquare(sample);
+    var chiSquare = ComputeChiSquare(sample);
     return chiSquare < ChiSquareThreshold;
   }
 
@@ -73,13 +73,13 @@ internal static class EntropyDetector {
     Span<int> counts = stackalloc int[256];
     counts.Clear();
 
-    for (int i = 0; i < data.Length; i++)
+    for (var i = 0; i < data.Length; i++)
       counts[data[i]]++;
 
-    double expected = data.Length / 256.0;
+    var expected = data.Length / 256.0;
     double chiSquare = 0;
-    for (int i = 0; i < 256; i++) {
-      double diff = counts[i] - expected;
+    for (var i = 0; i < 256; i++) {
+      var diff = counts[i] - expected;
       chiSquare += diff * diff / expected;
     }
 

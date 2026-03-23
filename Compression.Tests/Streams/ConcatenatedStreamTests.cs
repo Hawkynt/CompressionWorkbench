@@ -12,7 +12,7 @@ public class ConcatenatedStreamTests {
 
     Assert.That(cs.Length, Is.EqualTo(5));
     var buf = new byte[5];
-    int read = cs.Read(buf, 0, 5);
+    var read = cs.Read(buf, 0, 5);
     Assert.That(read, Is.EqualTo(5));
     Assert.That(buf, Is.EqualTo(data));
   }
@@ -29,7 +29,7 @@ public class ConcatenatedStreamTests {
 
     Assert.That(cs.Length, Is.EqualTo(9));
     var buf = new byte[9];
-    int read = cs.Read(buf, 0, 9);
+    var read = cs.Read(buf, 0, 9);
     Assert.That(read, Is.EqualTo(9));
     Assert.That(buf, Is.EqualTo(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 }));
   }
@@ -45,7 +45,7 @@ public class ConcatenatedStreamTests {
 
     cs.Position = 2;
     var buf = new byte[3];
-    int read = cs.Read(buf, 0, 3);
+    var read = cs.Read(buf, 0, 3);
     Assert.That(read, Is.EqualTo(3));
     Assert.That(buf, Is.EqualTo(new byte[] { 3, 4, 5 }));
   }

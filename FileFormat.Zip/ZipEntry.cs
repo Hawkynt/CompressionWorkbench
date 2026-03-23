@@ -56,8 +56,8 @@ public sealed class ZipEntry {
     if (dt.Year < 1980)
       dt = new DateTime(1980, 1, 1);
 
-    ushort date = (ushort)(((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day);
-    ushort time = (ushort)((dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2));
+    var date = (ushort)(((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day);
+    var time = (ushort)((dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2));
     return (date, time);
   }
 
@@ -65,12 +65,12 @@ public sealed class ZipEntry {
   /// Converts MS-DOS date/time to DateTime.
   /// </summary>
   internal static DateTime FromMsDosDateTime(ushort date, ushort time) {
-    int year = ((date >> 9) & 0x7F) + 1980;
-    int month = Math.Clamp((date >> 5) & 0x0F, 1, 12);
-    int day = Math.Clamp(date & 0x1F, 1, 31);
-    int hour = Math.Clamp((time >> 11) & 0x1F, 0, 23);
-    int minute = Math.Clamp((time >> 5) & 0x3F, 0, 59);
-    int second = Math.Clamp((time & 0x1F) * 2, 0, 59);
+    var year = ((date >> 9) & 0x7F) + 1980;
+    var month = Math.Clamp((date >> 5) & 0x0F, 1, 12);
+    var day = Math.Clamp(date & 0x1F, 1, 31);
+    var hour = Math.Clamp((time >> 11) & 0x1F, 0, 23);
+    var minute = Math.Clamp((time >> 5) & 0x3F, 0, 59);
+    var second = Math.Clamp((time & 0x1F) * 2, 0, 59);
 
     try {
       return new DateTime(year, month, day, hour, minute, second);

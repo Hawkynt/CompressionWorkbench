@@ -317,7 +317,7 @@ public sealed class Rar3Decoder {
   }
 
   private static uint ComputeVmCrc(byte[] data) {
-    uint crc = 0xFFFFFFFF;
+    var crc = 0xFFFFFFFF;
     foreach (var b in data) {
       crc ^= b;
       for (var i = 0; i < 8; ++i)

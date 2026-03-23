@@ -8,7 +8,7 @@ public class SevenZipRoundTripTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleFile() {
-    byte[] data = System.Text.Encoding.UTF8.GetBytes("Hello, 7z World!");
+    var data = System.Text.Encoding.UTF8.GetBytes("Hello, 7z World!");
     var ms = new MemoryStream();
     using (var writer = new SevenZipWriter(ms, leaveOpen: true)) {
       writer.AddEntry(new SevenZipEntry { Name = "test.txt", Size = data.Length }, data);
@@ -19,7 +19,7 @@ public class SevenZipRoundTripTests {
     using var reader = new SevenZipReader(ms);
     Assert.That(reader.Entries.Count, Is.EqualTo(1));
     Assert.That(reader.Entries[0].Name, Is.EqualTo("test.txt"));
-    byte[] extracted = reader.Extract(0);
+    var extracted = reader.Extract(0);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -27,9 +27,9 @@ public class SevenZipRoundTripTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_MultipleFiles() {
-    byte[] data1 = System.Text.Encoding.UTF8.GetBytes("File one content");
-    byte[] data2 = System.Text.Encoding.UTF8.GetBytes("File two has different content");
-    byte[] data3 = new byte[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+    var data1 = System.Text.Encoding.UTF8.GetBytes("File one content");
+    var data2 = System.Text.Encoding.UTF8.GetBytes("File two has different content");
+    var data3 = new byte[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
 
     var ms = new MemoryStream();
     using (var writer = new SevenZipWriter(ms, leaveOpen: true)) {
@@ -61,7 +61,7 @@ public class SevenZipRoundTripTests {
     using var reader = new SevenZipReader(ms);
     Assert.That(reader.Entries.Count, Is.EqualTo(1));
     Assert.That(reader.Entries[0].Size, Is.EqualTo(0));
-    byte[] extracted = reader.Extract(0);
+    var extracted = reader.Extract(0);
     Assert.That(extracted, Is.Empty);
   }
 
@@ -69,9 +69,9 @@ public class SevenZipRoundTripTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeFile() {
-    byte[] data = new byte[50_000];
+    var data = new byte[50_000];
     var rng = new Random(42);
-    for (int i = 0; i < data.Length; ++i)
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(rng.Next(26) + 'a');
 
     var ms = new MemoryStream();
@@ -118,8 +118,8 @@ public class SevenZipRoundTripTests {
     using var reader = new SevenZipReader(ms);
     Assert.That(reader.Entries.Count, Is.EqualTo(3));
     // Find the file entry and extract
-    int fileIndex = -1;
-    for (int i = 0; i < reader.Entries.Count; ++i)
+    var fileIndex = -1;
+    for (var i = 0; i < reader.Entries.Count; ++i)
       if (!reader.Entries[i].IsDirectory) {
         fileIndex = i;
         break;
@@ -159,8 +159,8 @@ public class SevenZipRoundTripTests {
   [Test]
   public void RoundTrip_SolidArchive() {
     // Multiple files packed in single solid folder
-    byte[] d1 = new byte[1000];
-    byte[] d2 = new byte[2000];
+    var d1 = new byte[1000];
+    var d2 = new byte[2000];
     Array.Fill(d1, (byte)'A');
     Array.Fill(d2, (byte)'B');
 
@@ -188,7 +188,7 @@ public class SevenZipRoundTripTests {
     }
 
     ms.Position = 0;
-    byte[] sig = new byte[6];
+    var sig = new byte[6];
     _ = ms.Read(sig, 0, 6);
     Assert.That(sig.AsSpan().SequenceEqual(SevenZipConstants.Signature), Is.True);
   }
@@ -212,8 +212,8 @@ public class SevenZipRoundTripTests {
   [Category("HappyPath")]
   [Test]
   public void Compress_RepetitiveData_CompressesWell() {
-    byte[] data = new byte[10000];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[10000];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 4);
 
     var ms = new MemoryStream();
@@ -222,14 +222,14 @@ public class SevenZipRoundTripTests {
       writer.Finish();
     }
 
-    double ratio = (double)ms.Length / data.Length;
+    var ratio = (double)ms.Length / data.Length;
     Assert.That(ratio, Is.LessThan(0.5));
   }
 
   [Category("HappyPath")]
   [Test]
   public void Entries_ReportCorrectSizes() {
-    byte[] data = new byte[12345];
+    var data = new byte[12345];
     new Random(42).NextBytes(data);
 
     var ms = new MemoryStream();

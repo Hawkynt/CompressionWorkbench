@@ -51,11 +51,11 @@ public sealed class AceEncoder {
 
     if (this._windowPos > 0 && this._matchFinder != null) {
       // Solid continuation: prepend up to dictSize bytes of history
-      int histLen = Math.Min(this._windowPos, this._dictSize);
+      var histLen = Math.Min(this._windowPos, this._dictSize);
       workBuffer = new byte[histLen + data.Length];
       // Copy history from window
-      int histStart = (this._windowPos - histLen + this._dictSize) & this._windowMask;
-      for (int i = 0; i < histLen; ++i)
+      var histStart = (this._windowPos - histLen + this._dictSize) & this._windowMask;
+      for (var i = 0; i < histLen; ++i)
         workBuffer[i] = this._window[(histStart + i) & this._windowMask];
       data.CopyTo(workBuffer.AsSpan(histLen));
       dataStart = histLen;
@@ -69,10 +69,10 @@ public sealed class AceEncoder {
     this._matchFinder = new HashChainMatchFinder(this._dictSize);
 
     // Insert history positions into match finder
-    for (int i = 0; i < dataStart; ++i)
+    for (var i = 0; i < dataStart; ++i)
       this._matchFinder.InsertPosition(workBuffer, i);
 
-    int pos = dataStart;
+    var pos = dataStart;
 
     while (pos < workBuffer.Length) {
       var tokens = new List<(int sym, int length, int distance)>();
@@ -80,9 +80,9 @@ public sealed class AceEncoder {
       while (pos < workBuffer.Length && tokens.Count < BlockSize) {
         var match = this._matchFinder.FindMatch(workBuffer, pos, this._dictSize, 1032, 2);
         if (match.Length >= 2) {
-          int lenSym = GetLengthSymbol(match.Length);
+          var lenSym = GetLengthSymbol(match.Length);
           tokens.Add((lenSym, match.Length, match.Distance));
-          for (int i = 1; i < match.Length && pos + i < workBuffer.Length; ++i)
+          for (var i = 1; i < match.Length && pos + i < workBuffer.Length; ++i)
             this._matchFinder.InsertPosition(workBuffer, pos + i);
           pos += match.Length;
         }
@@ -102,11 +102,11 @@ public sealed class AceEncoder {
       }
 
       // Build Huffman trees
-      int[] mainLengths = BuildCodeLengths(mainFreq, AceConstants.MainSymbols, MaxCodeLength);
-      int[] lenLengths = BuildCodeLengths(lenFreq, AceConstants.LenSymbols, MaxCodeLength);
+      var mainLengths = BuildCodeLengths(mainFreq, AceConstants.MainSymbols, MaxCodeLength);
+      var lenLengths = BuildCodeLengths(lenFreq, AceConstants.LenSymbols, MaxCodeLength);
 
-      uint[] mainCodes = BuildCanonicalCodes(mainLengths);
-      uint[] lenCodes = BuildCanonicalCodes(lenLengths);
+      var mainCodes = BuildCanonicalCodes(mainLengths);
+      var lenCodes = BuildCanonicalCodes(lenLengths);
 
       // Write trees
       WriteHuffmanTree(output, mainLengths, AceConstants.MainSymbols);
@@ -119,10 +119,10 @@ public sealed class AceEncoder {
         }
         else {
           output.WriteBits(mainCodes[sym], mainLengths[sym]);
-          int lenIdx = sym - AceConstants.SymbolMatchBase;
-          int extra = AceConstants.LengthExtra[lenIdx];
+          var lenIdx = sym - AceConstants.SymbolMatchBase;
+          var extra = AceConstants.LengthExtra[lenIdx];
           if (extra > 0) {
-            int extraVal = length - AceConstants.LengthBase[lenIdx];
+            var extraVal = length - AceConstants.LengthBase[lenIdx];
             output.WriteBits((uint)extraVal, extra);
           }
           output.WriteBits(0, 2);
@@ -136,7 +136,7 @@ public sealed class AceEncoder {
     }
 
     // Update window with the new data for solid continuation
-    for (int i = dataStart; i < workBuffer.Length; ++i) {
+    for (var i = dataStart; i < workBuffer.Length; ++i) {
       this._window[this._windowPos] = workBuffer[i];
       this._windowPos = (this._windowPos + 1) & this._windowMask;
     }
@@ -159,16 +159,16 @@ public sealed class AceEncoder {
       return [];
 
     // Apply forward transform
-    byte[] transformed = ApplyForwardTransform(data, subMode, soundChannels, picWidth, picBytesPerPixel);
+    var transformed = ApplyForwardTransform(data, subMode, soundChannels, picWidth, picBytesPerPixel);
 
     // For solid mode, prepend recent window data
     byte[] workBuffer;
     int dataStart;
     if (this._windowPos > 0 && this._matchFinder != null) {
-      int histLen = Math.Min(this._windowPos, this._dictSize);
+      var histLen = Math.Min(this._windowPos, this._dictSize);
       workBuffer = new byte[histLen + transformed.Length];
-      int histStart = (this._windowPos - histLen + this._dictSize) & this._windowMask;
-      for (int i = 0; i < histLen; ++i)
+      var histStart = (this._windowPos - histLen + this._dictSize) & this._windowMask;
+      for (var i = 0; i < histLen; ++i)
         workBuffer[i] = this._window[(histStart + i) & this._windowMask];
       transformed.AsSpan().CopyTo(workBuffer.AsSpan(histLen));
       dataStart = histLen;
@@ -179,11 +179,11 @@ public sealed class AceEncoder {
 
     var output = new AceBitWriter();
     this._matchFinder = new HashChainMatchFinder(this._dictSize);
-    for (int i = 0; i < dataStart; ++i)
+    for (var i = 0; i < dataStart; ++i)
       this._matchFinder.InsertPosition(workBuffer, i);
 
-    int pos = dataStart;
-    bool modeSwitchWritten = false;
+    var pos = dataStart;
+    var modeSwitchWritten = false;
 
     while (pos < workBuffer.Length) {
       var tokens = new List<(int sym, int length, int distance)>();
@@ -197,9 +197,9 @@ public sealed class AceEncoder {
       while (pos < workBuffer.Length && tokens.Count < BlockSize) {
         var match = this._matchFinder.FindMatch(workBuffer, pos, this._dictSize, 1032, 2);
         if (match.Length >= 2) {
-          int lenSym = GetLengthSymbol(match.Length);
+          var lenSym = GetLengthSymbol(match.Length);
           tokens.Add((lenSym, match.Length, match.Distance));
-          for (int i = 1; i < match.Length && pos + i < workBuffer.Length; ++i)
+          for (var i = 1; i < match.Length && pos + i < workBuffer.Length; ++i)
             this._matchFinder.InsertPosition(workBuffer, pos + i);
           pos += match.Length;
         } else {
@@ -214,9 +214,9 @@ public sealed class AceEncoder {
       foreach (var (sym, _, _) in tokens)
         ++mainFreq[sym];
 
-      int[] mainLengths = BuildCodeLengths(mainFreq, AceConstants.MainSymbols, MaxCodeLength);
-      int[] lenLengths = BuildCodeLengths(lenFreq, AceConstants.LenSymbols, MaxCodeLength);
-      uint[] mainCodes = BuildCanonicalCodes(mainLengths);
+      var mainLengths = BuildCodeLengths(mainFreq, AceConstants.MainSymbols, MaxCodeLength);
+      var lenLengths = BuildCodeLengths(lenFreq, AceConstants.LenSymbols, MaxCodeLength);
+      var mainCodes = BuildCanonicalCodes(mainLengths);
 
       WriteHuffmanTree(output, mainLengths, AceConstants.MainSymbols);
       WriteHuffmanTree(output, lenLengths, AceConstants.LenSymbols);
@@ -229,10 +229,10 @@ public sealed class AceEncoder {
           output.WriteBits(mainCodes[sym], mainLengths[sym]);
         } else {
           output.WriteBits(mainCodes[sym], mainLengths[sym]);
-          int lenIdx = sym - AceConstants.SymbolMatchBase;
-          int extra = AceConstants.LengthExtra[lenIdx];
+          var lenIdx = sym - AceConstants.SymbolMatchBase;
+          var extra = AceConstants.LengthExtra[lenIdx];
           if (extra > 0) {
-            int extraVal = length - AceConstants.LengthBase[lenIdx];
+            var extraVal = length - AceConstants.LengthBase[lenIdx];
             output.WriteBits((uint)extraVal, extra);
           }
           output.WriteBits(0, 2);
@@ -244,7 +244,7 @@ public sealed class AceEncoder {
         mainLengths[AceConstants.SymbolEndOfBlock]);
     }
 
-    for (int i = dataStart; i < workBuffer.Length; ++i) {
+    for (var i = dataStart; i < workBuffer.Length; ++i) {
       this._window[this._windowPos] = workBuffer[i];
       this._windowPos = (this._windowPos + 1) & this._windowMask;
     }
@@ -282,7 +282,7 @@ public sealed class AceEncoder {
   }
 
   private static int GetLengthSymbol(int length) {
-    for (int i = AceConstants.LengthBase.Length - 1; i >= 0; --i) {
+    for (var i = AceConstants.LengthBase.Length - 1; i >= 0; --i) {
       if (length >= AceConstants.LengthBase[i])
         return AceConstants.SymbolMatchBase + i;
     }
@@ -290,8 +290,8 @@ public sealed class AceEncoder {
   }
 
   private static void WriteHuffmanTree(AceBitWriter output, int[] codeLengths, int numSymbols) {
-    int usedCount = 0;
-    for (int i = 0; i < numSymbols; ++i)
+    var usedCount = 0;
+    for (var i = 0; i < numSymbols; ++i)
       if (codeLengths[i] > 0) ++usedCount;
 
     if (usedCount == 0) {
@@ -302,7 +302,7 @@ public sealed class AceEncoder {
 
     if (usedCount == 1) {
       output.WriteBits(0, 9);
-      for (int i = 0; i < numSymbols; ++i) {
+      for (var i = 0; i < numSymbols; ++i) {
         if (codeLengths[i] > 0) {
           output.WriteBits((uint)i, 9);
           break;
@@ -313,12 +313,12 @@ public sealed class AceEncoder {
 
     // RLE encode the code lengths
     var rle = new List<int>();
-    int idx = 0;
+    var idx = 0;
     while (idx < numSymbols) {
       if (codeLengths[idx] == 0) {
-        int run = 1;
+        var run = 1;
         while (idx + run < numSymbols && codeLengths[idx + run] == 0) ++run;
-        int totalRun = run;
+        var totalRun = run;
         while (run > 0) {
           if (run >= 11) {
             rle.Add(18);
@@ -339,9 +339,9 @@ public sealed class AceEncoder {
       }
       else {
         rle.Add(codeLengths[idx]);
-        int prev = codeLengths[idx];
+        var prev = codeLengths[idx];
         ++idx;
-        int rep = 0;
+        var rep = 0;
         while (idx < numSymbols && codeLengths[idx] == prev && rep < 6) {
           ++rep;
           ++idx;
@@ -360,23 +360,23 @@ public sealed class AceEncoder {
 
     // Build pre-tree from RLE symbols (0-18)
     var preFreq = new int[19];
-    for (int i = 0; i < rle.Count; ++i) {
-      int sym = rle[i];
+    for (var i = 0; i < rle.Count; ++i) {
+      var sym = rle[i];
       if (sym <= 18) ++preFreq[sym];
       if (sym >= 16 && sym <= 18) ++i; // skip extra data
     }
 
-    int[] preLengths = BuildCodeLengths(preFreq, 19, MaxCodeLength);
-    uint[] preCodes = BuildCanonicalCodes(preLengths);
+    var preLengths = BuildCodeLengths(preFreq, 19, MaxCodeLength);
+    var preCodes = BuildCanonicalCodes(preLengths);
 
-    int preCount = 19;
+    var preCount = 19;
     while (preCount > 0 && preLengths[preCount - 1] == 0) --preCount;
     output.WriteBits((uint)preCount, 9);
-    for (int i = 0; i < preCount; ++i)
+    for (var i = 0; i < preCount; ++i)
       output.WriteBits((uint)preLengths[i], 4);
 
-    for (int i = 0; i < rle.Count; ++i) {
-      int sym = rle[i];
+    for (var i = 0; i < rle.Count; ++i) {
+      var sym = rle[i];
       if (sym <= 15) {
         output.WriteBits(preCodes[sym], preLengths[sym]);
       }
@@ -399,7 +399,7 @@ public sealed class AceEncoder {
     var lengths = new int[numSymbols];
     var symbols = new List<(int sym, int freq)>();
 
-    for (int i = 0; i < numSymbols; ++i)
+    for (var i = 0; i < numSymbols; ++i)
       if (freq[i] > 0)
         symbols.Add((i, freq[i]));
 
@@ -412,20 +412,20 @@ public sealed class AceEncoder {
     var pq = new PriorityQueue<int, long>();
     var nodes = new List<(long freq, int sym, int left, int right)>();
 
-    for (int i = 0; i < symbols.Count; ++i) {
+    for (var i = 0; i < symbols.Count; ++i) {
       nodes.Add((symbols[i].freq, symbols[i].sym, -1, -1));
       pq.Enqueue(i, symbols[i].freq);
     }
 
     while (pq.Count > 1) {
-      pq.TryDequeue(out int a, out long fa);
-      pq.TryDequeue(out int b, out long fb);
-      int newIdx = nodes.Count;
+      pq.TryDequeue(out var a, out var fa);
+      pq.TryDequeue(out var b, out var fb);
+      var newIdx = nodes.Count;
       nodes.Add((fa + fb, -1, a, b));
       pq.Enqueue(newIdx, fa + fb);
     }
 
-    pq.TryDequeue(out int root, out _);
+    pq.TryDequeue(out var root, out _);
 
     void Walk(int nodeIdx, int depth) {
       var node = nodes[nodeIdx];
@@ -438,18 +438,18 @@ public sealed class AceEncoder {
     }
     Walk(root, 0);
 
-    for (int i = 0; i < numSymbols; ++i)
+    for (var i = 0; i < numSymbols; ++i)
       if (lengths[i] > maxBits)
         lengths[i] = maxBits;
 
-    long kraftMax = 1L << maxBits;
+    var kraftMax = 1L << maxBits;
     long kraftSum = 0;
-    for (int i = 0; i < numSymbols; ++i)
+    for (var i = 0; i < numSymbols; ++i)
       if (lengths[i] > 0)
         kraftSum += kraftMax >> lengths[i];
 
     while (kraftSum > kraftMax) {
-      for (int i = numSymbols - 1; i >= 0; --i) {
+      for (var i = numSymbols - 1; i >= 0; --i) {
         if (lengths[i] > 0 && lengths[i] < maxBits) {
           kraftSum -= kraftMax >> lengths[i];
           ++lengths[i];
@@ -463,24 +463,24 @@ public sealed class AceEncoder {
   }
 
   private static uint[] BuildCanonicalCodes(int[] lengths) {
-    int maxLen = 0;
-    foreach (int l in lengths)
+    var maxLen = 0;
+    foreach (var l in lengths)
       if (l > maxLen) maxLen = l;
     if (maxLen == 0) return new uint[lengths.Length];
 
     var blCount = new int[maxLen + 1];
-    foreach (int l in lengths)
+    foreach (var l in lengths)
       if (l > 0) ++blCount[l];
 
     var nextCode = new uint[maxLen + 1];
     uint code = 0;
-    for (int b = 1; b <= maxLen; ++b) {
+    for (var b = 1; b <= maxLen; ++b) {
       code = (code + (uint)blCount[b - 1]) << 1;
       nextCode[b] = code;
     }
 
     var codes = new uint[lengths.Length];
-    for (int i = 0; i < lengths.Length; ++i)
+    for (var i = 0; i < lengths.Length; ++i)
       if (lengths[i] > 0)
         codes[i] = nextCode[lengths[i]]++;
 
@@ -497,7 +497,7 @@ internal sealed class AceBitWriter {
   private int _bitsUsed;
 
   public void WriteBits(uint value, int count) {
-    for (int i = count - 1; i >= 0; --i) {
+    for (var i = count - 1; i >= 0; --i) {
       this._buffer = (this._buffer << 1) | ((value >> i) & 1);
       if (++this._bitsUsed == 16) {
         this._output.Add((byte)(this._buffer & 0xFF));

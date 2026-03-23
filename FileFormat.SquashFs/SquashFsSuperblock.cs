@@ -33,7 +33,7 @@ internal sealed class SquashFsSuperblock {
     Span<byte> buf = stackalloc byte[SquashFsConstants.SuperblockSize];
     var read = 0;
     while (read < buf.Length) {
-      int n = stream.Read(buf[read..]);
+      var n = stream.Read(buf[read..]);
       if (n == 0) throw new EndOfStreamException("Truncated SquashFS superblock.");
       read += n;
     }

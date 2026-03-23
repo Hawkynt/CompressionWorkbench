@@ -27,8 +27,8 @@ public sealed class RollingHashMatcher {
   /// <param name="data">The reference data to index.</param>
   public void Index(byte[] data) {
     _hashTable.Clear();
-    for (int i = 0; i + _blockSize <= data.Length; i += _blockSize) {
-      uint hash = ComputeHash(data, i, _blockSize);
+    for (var i = 0; i + _blockSize <= data.Length; i += _blockSize) {
+      var hash = ComputeHash(data, i, _blockSize);
       if (!_hashTable.TryGetValue(hash, out var list)) {
         list = new List<int>();
         _hashTable[hash] = list;
@@ -47,17 +47,17 @@ public sealed class RollingHashMatcher {
   /// <returns>A list of <see cref="RzipToken"/> instances describing literals and matches.</returns>
   public List<RzipToken> FindMatches(byte[] input, byte[] reference) {
     var tokens = new List<RzipToken>();
-    int pos = 0;
-    int literalStart = 0;
+    var pos = 0;
+    var literalStart = 0;
 
     while (pos + _blockSize <= input.Length) {
-      uint hash = ComputeHash(input, pos, _blockSize);
+      var hash = ComputeHash(input, pos, _blockSize);
       if (_hashTable.TryGetValue(hash, out var candidates)) {
         // Verify match against each candidate
-        foreach (int refPos in candidates) {
+        foreach (var refPos in candidates) {
           if (VerifyMatch(input, pos, reference, refPos, _blockSize)) {
             // Extend match forward beyond the initial block
-            int matchLen = _blockSize;
+            var matchLen = _blockSize;
             while (pos + matchLen < input.Length && refPos + matchLen < reference.Length &&
                    input[pos + matchLen] == reference[refPos + matchLen])
               matchLen++;
@@ -87,9 +87,9 @@ public sealed class RollingHashMatcher {
 
   private static uint ComputeHash(byte[] data, int offset, int length) {
     // FNV-1a hash
-    uint h = 2166136261u;
-    int end = offset + length;
-    for (int i = offset; i < end; i++) {
+    var h = 2166136261u;
+    var end = offset + length;
+    for (var i = offset; i < end; i++) {
       h ^= data[i];
       h *= 16777619u;
     }
@@ -98,7 +98,7 @@ public sealed class RollingHashMatcher {
   }
 
   private static bool VerifyMatch(byte[] a, int aOff, byte[] b, int bOff, int len) {
-    for (int i = 0; i < len; i++) {
+    for (var i = 0; i < len; i++) {
       if (a[aOff + i] != b[bOff + i])
         return false;
     }

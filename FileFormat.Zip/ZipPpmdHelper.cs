@@ -17,14 +17,14 @@ internal static class ZipPpmdHelper {
 
     int order = compressedData[0];
     int memSizeMB = compressedData[1];
-    int memorySize = memSizeMB * (1 << 20);
+    var memorySize = memSizeMB * (1 << 20);
 
     using var input = new MemoryStream(compressedData, 2, compressedData.Length - 2);
     var rangeDecoder = new PpmdRangeDecoder(input);
     var model = new PpmdModelI(order, memorySize);
 
     var output = new byte[uncompressedSize];
-    for (int i = 0; i < uncompressedSize; ++i)
+    for (var i = 0; i < uncompressedSize; ++i)
       output[i] = model.DecodeSymbol(rangeDecoder);
 
     return output;
@@ -51,7 +51,7 @@ internal static class ZipPpmdHelper {
     var rangeEncoder = new PpmdRangeEncoder(output);
     var model = new PpmdModelI(order, memSizeMB * (1 << 20));
 
-    for (int i = 0; i < data.Length; ++i)
+    for (var i = 0; i < data.Length; ++i)
       model.EncodeSymbol(rangeEncoder, data[i]);
 
     rangeEncoder.Finish();

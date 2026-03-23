@@ -12,6 +12,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
+    <ProjectReference Include="..\Compression.Analysis\Compression.Analysis.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\README.md" Link="README.md" LogicalName="README.md" />
   </ItemGroup>
 
 </Project>

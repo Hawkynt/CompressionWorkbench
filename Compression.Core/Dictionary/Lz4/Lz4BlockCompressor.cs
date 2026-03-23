@@ -20,7 +20,7 @@ public static class Lz4BlockCompressor {
       return [];
 
     if (level != Lz4CompressionLevel.Fast) {
-      int chainDepth = level == Lz4CompressionLevel.Max ? 64 : 16;
+      var chainDepth = level == Lz4CompressionLevel.Max ? 64 : 16;
       return Lz4HcCompressor.Compress(source, chainDepth);
     }
 

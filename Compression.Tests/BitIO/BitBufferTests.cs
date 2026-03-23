@@ -10,10 +10,10 @@ public class BitBufferTests {
     var stream = new MemoryStream([0xAB]);
     var buffer = new BitBuffer(stream, BitOrder.LsbFirst);
 
-    uint peeked = buffer.PeekBits(4);
+    var peeked = buffer.PeekBits(4);
     Assert.That(peeked, Is.EqualTo(0x0Bu)); // lower nibble of 0xAB
 
-    uint peekedAgain = buffer.PeekBits(4);
+    var peekedAgain = buffer.PeekBits(4);
     Assert.That(peekedAgain, Is.EqualTo(0x0Bu)); // Same value — not consumed
   }
 
@@ -26,7 +26,7 @@ public class BitBufferTests {
     buffer.PeekBits(4);
     buffer.DropBits(4);
 
-    uint value = buffer.PeekBits(4);
+    var value = buffer.PeekBits(4);
     Assert.That(value, Is.EqualTo(0x0Au)); // upper nibble of 0xAB
   }
 

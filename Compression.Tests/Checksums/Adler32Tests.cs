@@ -9,8 +9,8 @@ public class Adler32Tests {
   [Test]
   public void Compute_KnownVector_Wikipedia() {
     // Adler-32 of "Wikipedia" = 0x11E60398
-    byte[] data = Encoding.ASCII.GetBytes("Wikipedia");
-    uint adler = Adler32.Compute(data);
+    var data = Encoding.ASCII.GetBytes("Wikipedia");
+    var adler = Adler32.Compute(data);
     Assert.That(adler, Is.EqualTo(0x11E60398u));
   }
 
@@ -18,15 +18,15 @@ public class Adler32Tests {
   [Test]
   public void Compute_EmptyData_ReturnsOne() {
     // Adler-32 of empty data = 1 (initial value)
-    uint adler = Adler32.Compute([]);
+    var adler = Adler32.Compute([]);
     Assert.That(adler, Is.EqualTo(1u));
   }
 
   [Category("HappyPath")]
   [Test]
   public void IncrementalUpdate_MatchesBulk() {
-    byte[] data = Encoding.ASCII.GetBytes("The quick brown fox jumps over the lazy dog");
-    uint bulkAdler = Adler32.Compute(data);
+    var data = Encoding.ASCII.GetBytes("The quick brown fox jumps over the lazy dog");
+    var bulkAdler = Adler32.Compute(data);
 
     var adler = new Adler32();
     adler.Update(data.AsSpan(0, 10));
@@ -38,11 +38,11 @@ public class Adler32Tests {
   [Category("HappyPath")]
   [Test]
   public void IncrementalUpdate_ByteByByte_MatchesBulk() {
-    byte[] data = Encoding.ASCII.GetBytes("Hello");
-    uint bulkAdler = Adler32.Compute(data);
+    var data = Encoding.ASCII.GetBytes("Hello");
+    var bulkAdler = Adler32.Compute(data);
 
     var adler = new Adler32();
-    foreach (byte b in data)
+    foreach (var b in data)
       adler.Update(b);
 
     Assert.That(adler.Value, Is.EqualTo(bulkAdler));
@@ -62,15 +62,15 @@ public class Adler32Tests {
   [Test]
   public void LargeData_NmaxOptimization_MatchesByteByByte() {
     // Test with data larger than Nmax (5552) to exercise the chunking logic
-    byte[] data = new byte[10000];
+    var data = new byte[10000];
     var rng = new Random(42);
     rng.NextBytes(data);
 
     var byByte = new Adler32();
-    foreach (byte b in data)
+    foreach (var b in data)
       byByte.Update(b);
 
-    uint bulk = Adler32.Compute(data);
+    var bulk = Adler32.Compute(data);
 
     Assert.That(bulk, Is.EqualTo(byByte.Value));
   }

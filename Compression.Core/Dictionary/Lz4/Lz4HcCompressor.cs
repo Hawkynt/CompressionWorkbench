@@ -15,12 +15,12 @@ internal static class Lz4HcCompressor {
       return [];
 
     var dest = new byte[Lz4BlockCompressor.CompressBound(source.Length)];
-    int written = CompressCore(source, dest, maxChainDepth);
+    var written = CompressCore(source, dest, maxChainDepth);
     return dest.AsSpan(0, written).ToArray();
   }
 
   private static int CompressCore(ReadOnlySpan<byte> src, Span<byte> dst, int maxChainDepth) {
-    int srcLen = src.Length;
+    var srcLen = src.Length;
     if (srcLen == 0)
       return 0;
 
@@ -32,34 +32,34 @@ internal static class Lz4HcCompressor {
     var chainTable = new int[srcLen];
     chainTable.AsSpan().Fill(-1);
 
-    int dstPos = 0;
-    int anchor = 0;
-    int pos = 0;
-    int matchLimit = srcLen - Lz4Constants.MfLimit;
+    var dstPos = 0;
+    var anchor = 0;
+    var pos = 0;
+    var matchLimit = srcLen - Lz4Constants.MfLimit;
 
     while (pos < matchLimit) {
-      int bestOffset = 0;
-      int bestLength = 0;
+      var bestOffset = 0;
+      var bestLength = 0;
 
       if (pos + 3 < srcLen) {
-        int h = Hash4(src, pos);
+        var h = Hash4(src, pos);
 
         // Insert current position into chain
-        int prev = hashTable[h];
+        var prev = hashTable[h];
         hashTable[h] = pos;
         if (prev >= 0)
           chainTable[pos] = prev;
 
         // Walk the chain to find the best match
-        int candidate = prev;
-        int depth = maxChainDepth;
+        var candidate = prev;
+        var depth = maxChainDepth;
         while (candidate >= 0 && depth-- > 0 && pos - candidate <= Lz4Constants.MaxDistance) {
           // Check 4-byte prefix
           if (src[candidate] == src[pos] &&
               src[candidate + 1] == src[pos + 1] &&
               src[candidate + 2] == src[pos + 2] &&
               src[candidate + 3] == src[pos + 3]) {
-            int len = 4;
+            var len = 4;
             while (pos + len < srcLen && src[candidate + len] == src[pos + len])
               ++len;
 
@@ -80,20 +80,20 @@ internal static class Lz4HcCompressor {
 
       // Lazy matching: check if next position has a better match
       if (pos + 1 < matchLimit && bestLength < srcLen - pos - 1) {
-        int h2 = Hash4(src, pos + 1);
-        int prev2 = hashTable[h2];
+        var h2 = Hash4(src, pos + 1);
+        var prev2 = hashTable[h2];
         hashTable[h2] = pos + 1;
         if (prev2 >= 0)
           chainTable[pos + 1] = prev2;
 
-        int candidate = prev2;
-        int depth = maxChainDepth;
-        int lazyBest = 0;
+        var candidate = prev2;
+        var depth = maxChainDepth;
+        var lazyBest = 0;
         while (candidate >= 0 && depth-- > 0 && (pos + 1) - candidate <= Lz4Constants.MaxDistance) {
           if (src[candidate] == src[pos + 1] &&
               src[candidate + 1] == src[pos + 2] &&
               src[candidate + 2] == src[pos + 3]) {
-            int len = 3;
+            var len = 3;
             while (pos + 1 + len < srcLen && src[candidate + len] == src[pos + 1 + len])
               ++len;
             if (len > lazyBest)
@@ -110,15 +110,15 @@ internal static class Lz4HcCompressor {
       }
 
       // Emit sequence
-      int litLen = pos - anchor;
+      var litLen = pos - anchor;
       dstPos = Lz4BlockCompressor.EmitSequence(dst, dstPos, src, anchor, litLen, bestOffset, bestLength);
 
       // Insert hash entries for all positions in the match
-      int end = pos + bestLength;
+      var end = pos + bestLength;
       pos += 2; // Already inserted pos and pos+1
       while (pos < end && pos + 3 < srcLen) {
-        int h = Hash4(src, pos);
-        int prev = hashTable[h];
+        var h = Hash4(src, pos);
+        var prev = hashTable[h];
         hashTable[h] = pos;
         if (prev >= 0)
           chainTable[pos] = prev;
@@ -129,7 +129,7 @@ internal static class Lz4HcCompressor {
     }
 
     // Emit last literals
-    int lastLitLen = srcLen - anchor;
+    var lastLitLen = srcLen - anchor;
     dstPos = Lz4BlockCompressor.EmitLastLiterals(dst, dstPos, src, anchor, lastLitLen);
 
     return dstPos;

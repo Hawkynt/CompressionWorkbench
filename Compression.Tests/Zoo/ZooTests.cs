@@ -20,10 +20,10 @@ public class ZooTests {
   }
 
   private static void RoundTrip(byte[] data, ZooCompressionMethod method, string fileName = "test.dat") {
-    byte[] archive = CreateArchive(w => w.AddEntry(fileName, data, method));
+    var archive = CreateArchive(w => w.AddEntry(fileName, data, method));
     using var reader = new ZooReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
-    byte[] extracted = reader.ExtractEntry(reader.Entries[0]);
+    var extracted = reader.ExtractEntry(reader.Entries[0]);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -49,8 +49,8 @@ public class ZooTests {
   [Category("RoundTrip")]
   [Test]
   public void Store_BinaryData_256Bytes() {
-    byte[] data = new byte[256];
-    for (int i = 0; i < 256; ++i) data[i] = (byte)i;
+    var data = new byte[256];
+    for (var i = 0; i < 256; ++i) data[i] = (byte)i;
     RoundTrip(data, ZooCompressionMethod.Store);
   }
 
@@ -76,9 +76,9 @@ public class ZooTests {
   [Category("RoundTrip")]
   [Test]
   public void Lzw_RepetitiveData() {
-    byte[] pattern = "ABCDEFGHIJ"u8.ToArray();
-    byte[] data = new byte[pattern.Length * 200];
-    for (int i = 0; i < 200; ++i)
+    var pattern = "ABCDEFGHIJ"u8.ToArray();
+    var data = new byte[pattern.Length * 200];
+    for (var i = 0; i < 200; ++i)
       pattern.CopyTo(data, i * pattern.Length);
     RoundTrip(data, ZooCompressionMethod.Lzw);
   }
@@ -94,7 +94,7 @@ public class ZooTests {
   [Test]
   public void Lzw_RandomData_2KB() {
     var rng = new Random(42);
-    byte[] data = new byte[2048];
+    var data = new byte[2048];
     rng.NextBytes(data);
     RoundTrip(data, ZooCompressionMethod.Lzw);
   }
@@ -105,10 +105,10 @@ public class ZooTests {
   public void Lzw_FallsBackToStore_WhenLarger() {
     // Random data compresses poorly; writer should fall back to Store.
     var rng = new Random(99);
-    byte[] data = new byte[512];
+    var data = new byte[512];
     rng.NextBytes(data);
 
-    byte[] archive = CreateArchive(w => w.AddEntry("rand.bin", data, ZooCompressionMethod.Lzw));
+    var archive = CreateArchive(w => w.AddEntry("rand.bin", data, ZooCompressionMethod.Lzw));
     using var reader = new ZooReader(new MemoryStream(archive));
     Assert.That(reader.Entries[0].CompressionMethod, Is.EqualTo(ZooCompressionMethod.Store));
     Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(data));
@@ -120,12 +120,12 @@ public class ZooTests {
   [Category("RoundTrip")]
   [Test]
   public void MultipleFiles_StoreAndLzw() {
-    byte[] text   = "Compressible text that repeats again and again and again."u8.ToArray();
-    byte[] binary = new byte[256];
-    for (int i = 0; i < 256; ++i) binary[i] = (byte)i;
+    var text   = "Compressible text that repeats again and again and again."u8.ToArray();
+    var binary = new byte[256];
+    for (var i = 0; i < 256; ++i) binary[i] = (byte)i;
     byte[] empty  = [];
 
-    byte[] archive = CreateArchive(w => {
+    var archive = CreateArchive(w => {
       w.AddEntry("text.txt",   text,   ZooCompressionMethod.Lzw);
       w.AddEntry("binary.dat", binary, ZooCompressionMethod.Store);
       w.AddEntry("empty.txt",  empty,  ZooCompressionMethod.Store);
@@ -150,14 +150,14 @@ public class ZooTests {
       ("e.txt", "Epsilon"u8.ToArray()),
     };
 
-    byte[] archive = CreateArchive(w => {
+    var archive = CreateArchive(w => {
       foreach (var (name, data) in entries)
         w.AddEntry(name, data, ZooCompressionMethod.Store);
     });
 
     using var reader = new ZooReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(5));
-    for (int i = 0; i < entries.Length; ++i)
+    for (var i = 0; i < entries.Length; ++i)
       Assert.That(reader.ExtractEntry(reader.Entries[i]), Is.EqualTo(entries[i].Data));
   }
 
@@ -167,7 +167,7 @@ public class ZooTests {
   [Category("RoundTrip")]
   [Test]
   public void EmptyFile_Store_IsExtractedCorrectly() {
-    byte[] archive = CreateArchive(w => w.AddEntry("empty.dat", [], ZooCompressionMethod.Store));
+    var archive = CreateArchive(w => w.AddEntry("empty.dat", [], ZooCompressionMethod.Store));
     using var reader = new ZooReader(new MemoryStream(archive));
     Assert.That(reader.Entries[0].OriginalSize, Is.EqualTo(0u));
     Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.Empty);
@@ -177,7 +177,7 @@ public class ZooTests {
   [Category("RoundTrip")]
   [Test]
   public void EmptyFile_Lzw_IsExtractedCorrectly() {
-    byte[] archive = CreateArchive(w => w.AddEntry("empty.dat", [], ZooCompressionMethod.Lzw));
+    var archive = CreateArchive(w => w.AddEntry("empty.dat", [], ZooCompressionMethod.Lzw));
     using var reader = new ZooReader(new MemoryStream(archive));
     Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.Empty);
   }
@@ -189,9 +189,9 @@ public class ZooTests {
   [Test]
   public void LongFilename_IsStoredAndRetrieved() {
     const string longName = "this_is_a_very_long_filename_that_exceeds_12_chars.txt";
-    byte[] data = "Some content"u8.ToArray();
+    var data = "Some content"u8.ToArray();
 
-    byte[] archive = CreateArchive(w => w.AddEntry(longName, data, ZooCompressionMethod.Store));
+    var archive = CreateArchive(w => w.AddEntry(longName, data, ZooCompressionMethod.Store));
     using var reader = new ZooReader(new MemoryStream(archive));
 
     var entry = reader.Entries[0];
@@ -205,9 +205,9 @@ public class ZooTests {
   [Test]
   public void LongFilename_WithPathSeparator_ShortNameIsDerived() {
     const string fullPath = "subdir/nested/file.txt";
-    byte[] data = "Nested"u8.ToArray();
+    var data = "Nested"u8.ToArray();
 
-    byte[] archive = CreateArchive(w => w.AddEntry(fullPath, data, ZooCompressionMethod.Store));
+    var archive = CreateArchive(w => w.AddEntry(fullPath, data, ZooCompressionMethod.Store));
     using var reader = new ZooReader(new MemoryStream(archive));
 
     var entry = reader.Entries[0];
@@ -223,9 +223,9 @@ public class ZooTests {
   [Test]
   public void ShortFilename_WithinLimit_NoLongName() {
     const string name = "short.txt"; // 9 chars, within 12
-    byte[] data = "Short"u8.ToArray();
+    var data = "Short"u8.ToArray();
 
-    byte[] archive = CreateArchive(w => w.AddEntry(name, data, ZooCompressionMethod.Store));
+    var archive = CreateArchive(w => w.AddEntry(name, data, ZooCompressionMethod.Store));
     using var reader = new ZooReader(new MemoryStream(archive));
 
     var entry = reader.Entries[0];
@@ -240,7 +240,7 @@ public class ZooTests {
   [Test]
   public void LastModified_IsRoundTripped() {
     var ts = new DateTime(2001, 9, 11, 8, 46, 0);
-    byte[] archive = CreateArchive(w => w.AddEntry("f.txt", [1, 2, 3], ZooCompressionMethod.Store, ts));
+    var archive = CreateArchive(w => w.AddEntry("f.txt", [1, 2, 3], ZooCompressionMethod.Store, ts));
     using var reader = new ZooReader(new MemoryStream(archive));
 
     var lm = reader.Entries[0].LastModified;
@@ -255,8 +255,8 @@ public class ZooTests {
   [Category("RoundTrip")]
   [Test]
   public void Crc16_IsComputedAndStored() {
-    byte[] data = "CRC check"u8.ToArray();
-    byte[] archive = CreateArchive(w => w.AddEntry("crc.txt", data, ZooCompressionMethod.Store));
+    var data = "CRC check"u8.ToArray();
+    var archive = CreateArchive(w => w.AddEntry("crc.txt", data, ZooCompressionMethod.Store));
     using var reader = new ZooReader(new MemoryStream(archive));
     // If the CRC were wrong, ExtractEntry would throw — so just extract successfully.
     Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(data));
@@ -266,7 +266,7 @@ public class ZooTests {
   [Category("EdgeCase")]
   [Test]
   public void EntryCount_IsCorrectForEmptyArchive() {
-    byte[] archive = CreateArchive(_ => { });
+    var archive = CreateArchive(_ => { });
     using var reader = new ZooReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Is.Empty);
   }
@@ -276,7 +276,7 @@ public class ZooTests {
   [Category("Exception")]
   [Test]
   public void InvalidMagic_ThrowsInvalidDataException() {
-    byte[] archive = CreateArchive(w => w.AddEntry("f.txt", [1], ZooCompressionMethod.Store));
+    var archive = CreateArchive(w => w.AddEntry("f.txt", [1], ZooCompressionMethod.Store));
     // Corrupt the archive magic at offset 20.
     archive[20] = 0xFF;
 
@@ -288,7 +288,7 @@ public class ZooTests {
   [Category("Exception")]
   [Test]
   public void CrcMismatch_ThrowsInvalidDataException() {
-    byte[] archive = CreateArchive(w => w.AddEntry("f.txt", [1, 2, 3], ZooCompressionMethod.Store));
+    var archive = CreateArchive(w => w.AddEntry("f.txt", [1, 2, 3], ZooCompressionMethod.Store));
 
     // Corrupt a byte of the compressed (stored) data — last byte of archive.
     archive[^1] ^= 0xFF;

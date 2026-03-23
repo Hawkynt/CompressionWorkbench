@@ -9,7 +9,7 @@ public class PpmdTests {
   [Test]
   public void ModelH_RoundTrip_SingleByte() {
     byte[] data = [42];
-    byte[] result = CompressDecompressH(data);
+    var result = CompressDecompressH(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -17,8 +17,8 @@ public class PpmdTests {
   [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_TextData() {
-    byte[] data = System.Text.Encoding.UTF8.GetBytes("Hello, World! This is a test of PPMd compression.");
-    byte[] result = CompressDecompressH(data);
+    var data = System.Text.Encoding.UTF8.GetBytes("Hello, World! This is a test of PPMd compression.");
+    var result = CompressDecompressH(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -26,10 +26,10 @@ public class PpmdTests {
   [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_RepetitiveData() {
-    byte[] data = new byte[500];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[500];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 4);
-    byte[] result = CompressDecompressH(data);
+    var result = CompressDecompressH(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -37,9 +37,9 @@ public class PpmdTests {
   [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_RandomData() {
-    byte[] data = new byte[1024];
+    var data = new byte[1024];
     new Random(42).NextBytes(data);
-    byte[] result = CompressDecompressH(data);
+    var result = CompressDecompressH(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -47,11 +47,11 @@ public class PpmdTests {
   [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_LargeData() {
-    byte[] data = new byte[10240];
+    var data = new byte[10240];
     var rng = new Random(123);
-    for (int i = 0; i < data.Length; ++i)
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)rng.Next(0, 64); // limited alphabet
-    byte[] result = CompressDecompressH(data);
+    var result = CompressDecompressH(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -59,9 +59,9 @@ public class PpmdTests {
   [Category("RoundTrip")]
   [Test]
   public void ModelH_DifferentOrders() {
-    byte[] data = System.Text.Encoding.UTF8.GetBytes("ABCABCABCABCABC");
-    foreach (int order in new[] { 2, 4, 6, 8 }) {
-      byte[] result = CompressDecompressH(data, order);
+    var data = System.Text.Encoding.UTF8.GetBytes("ABCABCABCABCABC");
+    foreach (var order in new[] { 2, 4, 6, 8 }) {
+      var result = CompressDecompressH(data, order);
       Assert.That(result, Is.EqualTo(data), $"Failed at order {order}");
     }
   }
@@ -69,18 +69,18 @@ public class PpmdTests {
   [Category("HappyPath")]
   [Test]
   public void ModelH_CompressesWellOnText() {
-    byte[] data = System.Text.Encoding.UTF8.GetBytes(
+    var data = System.Text.Encoding.UTF8.GetBytes(
       string.Concat(Enumerable.Repeat(
         "The quick brown fox jumps over the lazy dog. ", 20)));
 
     var ms = new MemoryStream();
     var model = new PpmdModelH(6, PpmdConstants.DefaultMemorySize);
     var encoder = new PpmdRangeEncoder(ms);
-    foreach (byte b in data)
+    foreach (var b in data)
       model.EncodeSymbol(encoder, b);
     encoder.Finish();
 
-    double ratio = (double)ms.Length / data.Length;
+    var ratio = (double)ms.Length / data.Length;
     Assert.That(ratio, Is.LessThan(0.5));
   }
 
@@ -89,7 +89,7 @@ public class PpmdTests {
   [Test]
   public void ModelH_RoundTrip_EmptyData() {
     byte[] data = [];
-    byte[] result = CompressDecompressH(data);
+    var result = CompressDecompressH(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -97,10 +97,10 @@ public class PpmdTests {
   [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_AllBytesOnce() {
-    byte[] data = new byte[256];
-    for (int i = 0; i < 256; ++i)
+    var data = new byte[256];
+    for (var i = 0; i < 256; ++i)
       data[i] = (byte)i;
-    byte[] result = CompressDecompressH(data);
+    var result = CompressDecompressH(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -108,9 +108,9 @@ public class PpmdTests {
   [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_AllSameBytes() {
-    byte[] data = new byte[200];
+    var data = new byte[200];
     Array.Fill(data, (byte)0xAA);
-    byte[] result = CompressDecompressH(data);
+    var result = CompressDecompressH(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -118,10 +118,10 @@ public class PpmdTests {
   [Category("RoundTrip")]
   [Test]
   public void ModelH_RoundTrip_TwoByteAlternating() {
-    byte[] data = new byte[300];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[300];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 2 == 0 ? 0x10 : 0x20);
-    byte[] result = CompressDecompressH(data);
+    var result = CompressDecompressH(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -130,7 +130,7 @@ public class PpmdTests {
   [Test]
   public void ModelI_RoundTrip_SingleByte() {
     byte[] data = [99];
-    byte[] result = CompressDecompressI(data);
+    var result = CompressDecompressI(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -138,8 +138,8 @@ public class PpmdTests {
   [Category("RoundTrip")]
   [Test]
   public void ModelI_RoundTrip_TextData() {
-    byte[] data = System.Text.Encoding.UTF8.GetBytes("Hello, World! PPMd Model I test.");
-    byte[] result = CompressDecompressI(data);
+    var data = System.Text.Encoding.UTF8.GetBytes("Hello, World! PPMd Model I test.");
+    var result = CompressDecompressI(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -147,10 +147,10 @@ public class PpmdTests {
   [Category("RoundTrip")]
   [Test]
   public void ModelI_RoundTrip_RepetitiveData() {
-    byte[] data = new byte[500];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[500];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 4);
-    byte[] result = CompressDecompressI(data);
+    var result = CompressDecompressI(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -158,9 +158,9 @@ public class PpmdTests {
   [Category("RoundTrip")]
   [Test]
   public void ModelI_RoundTrip_RandomData() {
-    byte[] data = new byte[1024];
+    var data = new byte[1024];
     new Random(42).NextBytes(data);
-    byte[] result = CompressDecompressI(data);
+    var result = CompressDecompressI(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -169,7 +169,7 @@ public class PpmdTests {
   [Test]
   public void ModelI_RoundTrip_EmptyData() {
     byte[] data = [];
-    byte[] result = CompressDecompressI(data);
+    var result = CompressDecompressI(data);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -177,13 +177,13 @@ public class PpmdTests {
   [Test]
   public void SubAllocator_AllocFree_Works() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
-    int offset1 = alloc.AllocUnits(1);
-    int offset2 = alloc.AllocUnits(1);
+    var offset1 = alloc.AllocUnits(1);
+    var offset2 = alloc.AllocUnits(1);
     Assert.That(offset1, Is.Not.EqualTo(offset2));
     Assert.That(offset1, Is.GreaterThanOrEqualTo(0));
     Assert.That(offset2, Is.GreaterThanOrEqualTo(0));
     alloc.FreeUnits(offset1, 1);
-    int offset3 = alloc.AllocUnits(1);
+    var offset3 = alloc.AllocUnits(1);
     Assert.That(offset3, Is.GreaterThanOrEqualTo(0));
   }
 
@@ -191,10 +191,10 @@ public class PpmdTests {
   [Test]
   public void SubAllocator_Reset_Works() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
-    int offset1 = alloc.AllocUnits(10);
+    var offset1 = alloc.AllocUnits(10);
     Assert.That(offset1, Is.GreaterThanOrEqualTo(0));
     alloc.Reset();
-    int offset2 = alloc.AllocUnits(10);
+    var offset2 = alloc.AllocUnits(10);
     Assert.That(offset2, Is.GreaterThanOrEqualTo(0));
   }
 
@@ -202,7 +202,7 @@ public class PpmdTests {
   [Test]
   public void SubAllocator_AllocContext_ReturnsValidOffset() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
-    int offset = alloc.AllocContext();
+    var offset = alloc.AllocContext();
     Assert.That(offset, Is.GreaterThanOrEqualTo(0));
   }
 
@@ -210,7 +210,7 @@ public class PpmdTests {
   [Test]
   public void SubAllocator_GetSetByte_RoundTrips() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
-    int offset = alloc.AllocUnits(1);
+    var offset = alloc.AllocUnits(1);
     alloc.SetByte(offset, 0xAB);
     Assert.That(alloc.GetByte(offset), Is.EqualTo(0xAB));
   }
@@ -219,7 +219,7 @@ public class PpmdTests {
   [Test]
   public void SubAllocator_GetSetInt_RoundTrips() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
-    int offset = alloc.AllocUnits(1);
+    var offset = alloc.AllocUnits(1);
     alloc.SetInt(offset, 0x12345678);
     Assert.That(alloc.GetInt(offset), Is.EqualTo(0x12345678));
   }
@@ -228,7 +228,7 @@ public class PpmdTests {
   [Test]
   public void SubAllocator_GetSetUShort_RoundTrips() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
-    int offset = alloc.AllocUnits(1);
+    var offset = alloc.AllocUnits(1);
     alloc.SetUShort(offset, 0xABCD);
     Assert.That(alloc.GetUShort(offset), Is.EqualTo(0xABCD));
   }
@@ -237,11 +237,11 @@ public class PpmdTests {
   [Test]
   public void SubAllocator_ShrinkUnits_FreesExcess() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
-    int offset = alloc.AllocUnits(4);
+    var offset = alloc.AllocUnits(4);
     Assert.That(offset, Is.GreaterThanOrEqualTo(0));
     alloc.ShrinkUnits(offset, 4, 2);
     // The freed 2 units should now be reusable
-    int offset2 = alloc.AllocUnits(2);
+    var offset2 = alloc.AllocUnits(2);
     Assert.That(offset2, Is.GreaterThanOrEqualTo(0));
   }
 
@@ -249,9 +249,9 @@ public class PpmdTests {
   [Test]
   public void SubAllocator_MultipleAllocationSizes() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
-    int o1 = alloc.AllocUnits(1);
-    int o2 = alloc.AllocUnits(3);
-    int o3 = alloc.AllocUnits(5);
+    var o1 = alloc.AllocUnits(1);
+    var o2 = alloc.AllocUnits(3);
+    var o3 = alloc.AllocUnits(5);
     Assert.That(o1, Is.GreaterThanOrEqualTo(0));
     Assert.That(o2, Is.GreaterThanOrEqualTo(0));
     Assert.That(o3, Is.GreaterThanOrEqualTo(0));
@@ -265,9 +265,9 @@ public class PpmdTests {
   [Test]
   public void SubAllocator_FreeAndReallocate_ReusesMemory() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
-    int offset1 = alloc.AllocUnits(2);
+    var offset1 = alloc.AllocUnits(2);
     alloc.FreeUnits(offset1, 2);
-    int offset2 = alloc.AllocUnits(2);
+    var offset2 = alloc.AllocUnits(2);
     // Should reuse the freed memory
     Assert.That(offset2, Is.EqualTo(offset1));
   }
@@ -276,7 +276,7 @@ public class PpmdTests {
   [Test]
   public void SubAllocator_GetSpan_ReturnsCorrectMemory() {
     var alloc = new SubAllocator(PpmdConstants.MinMemorySize);
-    int offset = alloc.AllocUnits(1);
+    var offset = alloc.AllocUnits(1);
     var span = alloc.GetSpan(offset, PpmdConstants.UnitSize);
     Assert.That(span.Length, Is.EqualTo(PpmdConstants.UnitSize));
     span[0] = 42;
@@ -294,7 +294,7 @@ public class PpmdTests {
 
     var input = new MemoryStream(ms.ToArray());
     var decoder = new PpmdRangeDecoder(input);
-    uint threshold = decoder.GetThreshold(10);
+    var threshold = decoder.GetThreshold(10);
     Assert.That(threshold, Is.EqualTo(5));
     decoder.Decode(5, 1, 10);
   }
@@ -312,18 +312,18 @@ public class PpmdTests {
 
     var ms = new MemoryStream();
     var encoder = new PpmdRangeEncoder(ms);
-    foreach (int sym in symbols)
+    foreach (var sym in symbols)
       encoder.Encode(cumFreqs[sym], freqs[sym], total);
     encoder.Finish();
 
     var input = new MemoryStream(ms.ToArray());
     var decoder = new PpmdRangeDecoder(input);
-    int[] decoded = new int[symbols.Length];
-    for (int i = 0; i < symbols.Length; ++i) {
-      uint threshold = decoder.GetThreshold(total);
+    var decoded = new int[symbols.Length];
+    for (var i = 0; i < symbols.Length; ++i) {
+      var threshold = decoder.GetThreshold(total);
       // Find symbol
       var s = 0;
-      for (int j = 0; j < cumFreqs.Length; ++j) {
+      for (var j = 0; j < cumFreqs.Length; ++j) {
         if (threshold >= cumFreqs[j] && (j + 1 >= cumFreqs.Length || threshold < cumFreqs[j + 1])) {
           s = j;
           break;
@@ -345,20 +345,20 @@ public class PpmdTests {
 
     var encModel = new PpmdModelH(order, PpmdConstants.DefaultMemorySize);
     var encoder = new PpmdRangeEncoder(compressedMs);
-    foreach (byte b in data)
+    foreach (var b in data)
       encModel.EncodeSymbol(encoder, b);
     encoder.Finish();
 
     // Decompress
     var inputMs = new MemoryStream(compressedMs.ToArray());
-    byte[] lenBytes = new byte[4];
+    var lenBytes = new byte[4];
     _ = inputMs.Read(lenBytes, 0, 4);
-    int originalLen = BitConverter.ToInt32(lenBytes);
+    var originalLen = BitConverter.ToInt32(lenBytes);
 
     var decModel = new PpmdModelH(order, PpmdConstants.DefaultMemorySize);
     var decoder = new PpmdRangeDecoder(inputMs);
-    byte[] result = new byte[originalLen];
-    for (int i = 0; i < originalLen; ++i)
+    var result = new byte[originalLen];
+    for (var i = 0; i < originalLen; ++i)
       result[i] = decModel.DecodeSymbol(decoder);
 
     return result;
@@ -370,19 +370,19 @@ public class PpmdTests {
 
     var encModel = new PpmdModelI(order, PpmdConstants.DefaultMemorySize);
     var encoder = new PpmdRangeEncoder(compressedMs);
-    foreach (byte b in data)
+    foreach (var b in data)
       encModel.EncodeSymbol(encoder, b);
     encoder.Finish();
 
     var inputMs = new MemoryStream(compressedMs.ToArray());
-    byte[] lenBytes = new byte[4];
+    var lenBytes = new byte[4];
     _ = inputMs.Read(lenBytes, 0, 4);
-    int originalLen = BitConverter.ToInt32(lenBytes);
+    var originalLen = BitConverter.ToInt32(lenBytes);
 
     var decModel = new PpmdModelI(order, PpmdConstants.DefaultMemorySize);
     var decoder = new PpmdRangeDecoder(inputMs);
-    byte[] result = new byte[originalLen];
-    for (int i = 0; i < originalLen; ++i)
+    var result = new byte[originalLen];
+    for (var i = 0; i < originalLen; ++i)
       result[i] = decModel.DecodeSymbol(decoder);
 
     return result;

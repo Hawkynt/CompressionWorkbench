@@ -18,24 +18,24 @@ public static class Lz5Encoder {
   public static byte[] Encode(byte[] data) {
     var window = new byte[WindowSize];
     Array.Fill(window, (byte)0x20);
-    int windowPos = 0;
+    var windowPos = 0;
 
     using var output = new MemoryStream();
-    int srcPos = 0;
+    var srcPos = 0;
 
     while (srcPos < data.Length) {
-      int flagPos = (int)output.Position;
+      var flagPos = (int)output.Position;
       output.WriteByte(0); // placeholder for flag byte
-      int flags = 0;
+      var flags = 0;
 
-      for (int bit = 0; bit < 8 && srcPos < data.Length; ++bit) {
+      for (var bit = 0; bit < 8 && srcPos < data.Length; ++bit) {
         // Find best match in window
-        int bestLen = 0;
-        int bestOff = 0;
+        var bestLen = 0;
+        var bestOff = 0;
 
-        for (int off = 1; off < WindowSize && off <= srcPos; ++off) {
-          int matchPos = (windowPos - off) & WindowMask;
-          int len = 0;
+        for (var off = 1; off < WindowSize && off <= srcPos; ++off) {
+          var matchPos = (windowPos - off) & WindowMask;
+          var len = 0;
           while (len < MaxMatch && srcPos + len < data.Length
               && window[(matchPos + len) & WindowMask] == data[srcPos + len])
             ++len;
@@ -48,12 +48,12 @@ public static class Lz5Encoder {
 
         if (bestLen >= Threshold) {
           // Match: encode offset + length
-          int b1 = bestOff & 0xFF;
-          int b2 = ((bestOff >> 4) & 0xF0) | ((bestLen - Threshold) & 0x0F);
+          var b1 = bestOff & 0xFF;
+          var b2 = ((bestOff >> 4) & 0xF0) | ((bestLen - Threshold) & 0x0F);
           output.WriteByte((byte)b1);
           output.WriteByte((byte)b2);
 
-          for (int j = 0; j < bestLen; ++j) {
+          for (var j = 0; j < bestLen; ++j) {
             window[windowPos] = data[srcPos++];
             windowPos = (windowPos + 1) & WindowMask;
           }
@@ -67,7 +67,7 @@ public static class Lz5Encoder {
       }
 
       // Patch flag byte
-      long savedPos = output.Position;
+      var savedPos = output.Position;
       output.Position = flagPos;
       output.WriteByte((byte)flags);
       output.Position = savedPos;

@@ -32,15 +32,15 @@ internal sealed class SubStream : Stream {
 
   public override int Read(byte[] buffer, int offset, int count) {
     if (_position >= _length) return 0;
-    int toRead = (int)Math.Min(count, _length - _position);
+    var toRead = (int)Math.Min(count, _length - _position);
     _inner.Position = _offset + _position;
-    int read = _inner.Read(buffer, offset, toRead);
+    var read = _inner.Read(buffer, offset, toRead);
     _position += read;
     return read;
   }
 
   public override long Seek(long offset, SeekOrigin origin) {
-    long newPos = origin switch {
+    var newPos = origin switch {
       SeekOrigin.Begin => offset,
       SeekOrigin.Current => _position + offset,
       SeekOrigin.End => _length + offset,

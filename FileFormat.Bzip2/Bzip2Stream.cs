@@ -78,10 +78,10 @@ public sealed class Bzip2Stream : CompressionStream {
   }
 
   private void ReadHeader() {
-    int b1 = InnerStream.ReadByte();
-    int b2 = InnerStream.ReadByte();
-    int version = InnerStream.ReadByte();
-    int level = InnerStream.ReadByte();
+    var b1 = InnerStream.ReadByte();
+    var b2 = InnerStream.ReadByte();
+    var version = InnerStream.ReadByte();
+    var level = InnerStream.ReadByte();
 
     if (b1 < 0 || b2 < 0 || version < 0 || level < 0)
       throw new InvalidDataException("Truncated bzip2 header.");

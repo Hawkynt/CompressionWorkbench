@@ -10,47 +10,47 @@ public class LzhDebugTest {
   [Test]
   public void Verify_CanonicalCodes_RoundTrip() {
     // Test that the canonical Huffman encode/decode round-trips
-    int[] freq = new int[8];
+    var freq = new int[8];
     freq[0] = 10; freq[1] = 5; freq[2] = 3; freq[3] = 1;
     freq[4] = 1;  freq[5] = 1; freq[6] = 1; freq[7] = 1;
 
-    int[] lengths = LzhEncoder.BuildCodeLengths(freq, 16);
-    uint[] codes = LzhEncoder.BuildCanonicalCodes(lengths);
+    var lengths = LzhEncoder.BuildCodeLengths(freq, 16);
+    var codes = LzhEncoder.BuildCanonicalCodes(lengths);
 
     // Write each symbol using its code, then decode
     using var ms = new MemoryStream();
     var writer = new BitWriter<MsbBitOrder>(ms);
 
     int[] symbols = [0, 1, 2, 3, 4, 5, 6, 7, 0, 0, 1, 2];
-    foreach (int sym in symbols)
+    foreach (var sym in symbols)
       writer.WriteBits(codes[sym], lengths[sym]);
     writer.FlushBits();
 
     // Build decode table
-    int maxLen = lengths.Max();
-    int tableSize = 1 << maxLen;
+    var maxLen = lengths.Max();
+    var tableSize = 1 << maxLen;
     var table = new int[tableSize];
     Array.Fill(table, -1);
 
     var blCount = new int[maxLen + 1];
-    for (int i = 0; i < lengths.Length; ++i)
+    for (var i = 0; i < lengths.Length; ++i)
       if (lengths[i] > 0) blCount[lengths[i]]++;
 
     var nextCode = new int[maxLen + 1];
-    int code = 0;
-    for (int bits = 1; bits <= maxLen; ++bits) {
+    var code = 0;
+    for (var bits = 1; bits <= maxLen; ++bits) {
       code = (code + blCount[bits - 1]) << 1;
       nextCode[bits] = code;
     }
 
-    for (int sym = 0; sym < lengths.Length; ++sym) {
-      int len = lengths[sym];
+    for (var sym = 0; sym < lengths.Length; ++sym) {
+      var len = lengths[sym];
       if (len == 0) continue;
-      int symCode = nextCode[len]++;
-      int fillBits = maxLen - len;
-      int baseIdx = symCode << fillBits;
-      int packedValue = sym | (len << 16);
-      for (int fill = 0; fill < (1 << fillBits); ++fill)
+      var symCode = nextCode[len]++;
+      var fillBits = maxLen - len;
+      var baseIdx = symCode << fillBits;
+      var packedValue = sym | (len << 16);
+      for (var fill = 0; fill < (1 << fillBits); ++fill)
         table[baseIdx + fill] = packedValue;
     }
 
@@ -58,13 +58,13 @@ public class LzhDebugTest {
     ms.Position = 0;
     var reader = new BitBuffer<MsbBitOrder>(ms);
     var decoded = new List<int>();
-    for (int i = 0; i < symbols.Length; ++i) {
+    for (var i = 0; i < symbols.Length; ++i) {
       reader.EnsureBits(maxLen);
-      uint peekBits = reader.PeekBits(maxLen);
-      int entry = table[(int)peekBits];
+      var peekBits = reader.PeekBits(maxLen);
+      var entry = table[(int)peekBits];
       Assert.That(entry, Is.GreaterThanOrEqualTo(0), $"Table entry at {peekBits} is -1");
-      int decodedSym = entry & 0xFFFF;
-      int codeLen = entry >> 16;
+      var decodedSym = entry & 0xFFFF;
+      var codeLen = entry >> 16;
       reader.DropBits(codeLen);
       decoded.Add(decodedSym);
     }
@@ -77,33 +77,33 @@ public class LzhDebugTest {
   [Test]
   public void Verify_TreeWriteRead_RoundTrip() {
     // Verify that WriteTree/ReadTree round-trips for a small set
-    int[] freq = new int[5];
+    var freq = new int[5];
     freq[0] = 3; freq[1] = 2; freq[2] = 1; freq[3] = 1; freq[4] = 5;
 
-    int[] lengths = LzhEncoder.BuildCodeLengths(freq, 16);
-    uint[] codes = LzhEncoder.BuildCanonicalCodes(lengths);
+    var lengths = LzhEncoder.BuildCodeLengths(freq, 16);
+    var codes = LzhEncoder.BuildCanonicalCodes(lengths);
 
     // Write tree + some symbols
     using var ms = new MemoryStream();
     var writer = new BitWriter<MsbBitOrder>(ms);
 
     // WriteTree format: [numSymbols : symbolBits] [code lengths...]
-    int numSymbols = 5;
-    int symbolBits = 4;
+    var numSymbols = 5;
+    var symbolBits = 4;
     writer.WriteBits((uint)numSymbols, symbolBits);
-    for (int i = 0; i < numSymbols; ++i) {
+    for (var i = 0; i < numSymbols; ++i) {
       if (lengths[i] < 7)
         writer.WriteBits((uint)lengths[i], 3);
       else {
         writer.WriteBits(7, 3);
-        for (int j = 7; j < lengths[i]; ++j) writer.WriteBits(1, 1);
+        for (var j = 7; j < lengths[i]; ++j) writer.WriteBits(1, 1);
         writer.WriteBits(0, 1);
       }
     }
 
     // Write some symbols
     int[] syms = [4, 0, 1, 2, 3, 0, 4];
-    foreach (int s in syms) {
+    foreach (var s in syms) {
       Assert.That(lengths[s], Is.GreaterThan(0), $"Symbol {s} has zero length");
       writer.WriteBits(codes[s], lengths[s]);
     }
@@ -113,13 +113,13 @@ public class LzhDebugTest {
     ms.Position = 0;
     var reader = new BitBuffer<MsbBitOrder>(ms);
 
-    int readNum = (int)reader.ReadBits(symbolBits);
+    var readNum = (int)reader.ReadBits(symbolBits);
     Assert.That(readNum, Is.EqualTo(numSymbols));
 
     var readLengths = new int[readNum];
-    int readMaxLen = 0;
-    for (int i = 0; i < readNum; ++i) {
-      int len = (int)reader.ReadBits(3);
+    var readMaxLen = 0;
+    for (var i = 0; i < readNum; ++i) {
+      var len = (int)reader.ReadBits(3);
       if (len == 7) {
         while (reader.ReadBits(1) == 1) len++;
       }
@@ -130,39 +130,39 @@ public class LzhDebugTest {
     Assert.That(readLengths, Is.EqualTo(lengths.Take(numSymbols).ToArray()));
 
     // Build decode table and decode symbols
-    int tableBits = readMaxLen;
-    int tableSize = 1 << tableBits;
+    var tableBits = readMaxLen;
+    var tableSize = 1 << tableBits;
     var table = new int[tableSize];
     Array.Fill(table, -1);
 
     var blCount = new int[tableBits + 1];
-    for (int i = 0; i < readLengths.Length; ++i)
+    for (var i = 0; i < readLengths.Length; ++i)
       if (readLengths[i] > 0 && readLengths[i] <= tableBits)
         blCount[readLengths[i]]++;
 
     var nextCode = new int[tableBits + 1];
-    int code = 0;
-    for (int bits = 1; bits <= tableBits; ++bits) {
+    var code = 0;
+    for (var bits = 1; bits <= tableBits; ++bits) {
       code = (code + blCount[bits - 1]) << 1;
       nextCode[bits] = code;
     }
 
-    for (int sym = 0; sym < readLengths.Length; ++sym) {
-      int len = readLengths[sym];
+    for (var sym = 0; sym < readLengths.Length; ++sym) {
+      var len = readLengths[sym];
       if (len == 0 || len > tableBits) continue;
-      int symCode = nextCode[len]++;
-      int fillBits = tableBits - len;
-      int baseIdx = symCode << fillBits;
-      int packedValue = sym | (len << 16);
-      for (int fill = 0; fill < (1 << fillBits); ++fill)
+      var symCode = nextCode[len]++;
+      var fillBits = tableBits - len;
+      var baseIdx = symCode << fillBits;
+      var packedValue = sym | (len << 16);
+      for (var fill = 0; fill < (1 << fillBits); ++fill)
         table[baseIdx + fill] = packedValue;
     }
 
     var decoded = new List<int>();
-    for (int i = 0; i < syms.Length; ++i) {
+    for (var i = 0; i < syms.Length; ++i) {
       reader.EnsureBits(tableBits);
-      uint peekBits = reader.PeekBits(tableBits);
-      int entry = table[(int)peekBits];
+      var peekBits = reader.PeekBits(tableBits);
+      var entry = table[(int)peekBits];
       Assert.That(entry, Is.GreaterThanOrEqualTo(0));
       decoded.Add(entry & 0xFFFF);
       reader.DropBits(entry >> 16);
@@ -177,11 +177,11 @@ public class LzhDebugTest {
   public void Debug_FiveDistinctBytes() {
     byte[] data = [0x41, 0x42, 0x43, 0x44, 0x45];
     var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);
-    byte[] compressed = encoder.Encode(data);
+    var compressed = encoder.Encode(data);
 
     using var ms = new MemoryStream(compressed);
     var decoder = new LzhDecoder(ms, LzhConstants.Lh5PositionBits);
-    byte[] result = decoder.Decode(data.Length);
+    var result = decoder.Decode(data.Length);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -189,16 +189,16 @@ public class LzhDebugTest {
   [Category("RoundTrip")]
   [Test]
   public void Debug_RepeatedWithMatches() {
-    byte[] data = new byte[20];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[20];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 2);
 
     var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);
-    byte[] compressed = encoder.Encode(data);
+    var compressed = encoder.Encode(data);
 
     using var ms = new MemoryStream(compressed);
     var decoder = new LzhDecoder(ms, LzhConstants.Lh5PositionBits);
-    byte[] result = decoder.Decode(data.Length);
+    var result = decoder.Decode(data.Length);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -209,11 +209,11 @@ public class LzhDebugTest {
     // Data: ABCDEABCDE - match at distance 5
     byte[] data = [0x41, 0x42, 0x43, 0x44, 0x45, 0x41, 0x42, 0x43, 0x44, 0x45];
     var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);
-    byte[] compressed = encoder.Encode(data);
+    var compressed = encoder.Encode(data);
 
     using var ms = new MemoryStream(compressed);
     var decoder = new LzhDecoder(ms, LzhConstants.Lh5PositionBits);
-    byte[] result = decoder.Decode(data.Length);
+    var result = decoder.Decode(data.Length);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -222,16 +222,16 @@ public class LzhDebugTest {
   [Test]
   public void Debug_MatchAtDistance10() {
     // ABCDEFGHIJABCDEFGHIJ - match at distance 10
-    byte[] data = new byte[20];
-    for (int i = 0; i < 10; ++i) data[i] = (byte)(0x41 + i);
-    for (int i = 10; i < 20; ++i) data[i] = (byte)(0x41 + i - 10);
+    var data = new byte[20];
+    for (var i = 0; i < 10; ++i) data[i] = (byte)(0x41 + i);
+    for (var i = 10; i < 20; ++i) data[i] = (byte)(0x41 + i - 10);
 
     var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);
-    byte[] compressed = encoder.Encode(data);
+    var compressed = encoder.Encode(data);
 
     using var ms = new MemoryStream(compressed);
     var decoder = new LzhDecoder(ms, LzhConstants.Lh5PositionBits);
-    byte[] result = decoder.Decode(data.Length);
+    var result = decoder.Decode(data.Length);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -239,14 +239,14 @@ public class LzhDebugTest {
   [Test]
   public void Debug_PositionSlotEncoding() {
     // Verify position slot encode/decode directly
-    for (int dist = 0; dist < 100; ++dist) {
-      int slot = LzhEncoder.GetPositionSlot(dist);
+    for (var dist = 0; dist < 100; ++dist) {
+      var slot = LzhEncoder.GetPositionSlot(dist);
       int reconstructed;
       if (slot <= 1) {
         reconstructed = slot;
       } else {
-        int extraBits = slot - 1;
-        int extraValue = dist - (1 << extraBits);
+        var extraBits = slot - 1;
+        var extraValue = dist - (1 << extraBits);
         reconstructed = (1 << extraBits) + extraValue;
       }
       Assert.That(reconstructed, Is.EqualTo(dist), $"Distance {dist} -> slot {slot} -> reconstructed {reconstructed}");
@@ -258,39 +258,39 @@ public class LzhDebugTest {
   [Test]
   public void Debug_HuffmanCodeTable_Verify() {
     // Build a code tree for 11 symbols, verify every entry decodes correctly
-    int[] freq = new int[300];
+    var freq = new int[300];
     freq[0x41] = 1; freq[0x42] = 1; freq[0x43] = 1; freq[0x44] = 1; freq[0x45] = 1;
     freq[0x46] = 1; freq[0x47] = 1; freq[0x48] = 1; freq[0x49] = 1; freq[0x4A] = 1;
     freq[263] = 1; // length code for match length 10
 
-    int[] lengths = LzhEncoder.BuildCodeLengths(freq, 16);
-    uint[] codes = LzhEncoder.BuildCanonicalCodes(lengths);
+    var lengths = LzhEncoder.BuildCodeLengths(freq, 16);
+    var codes = LzhEncoder.BuildCanonicalCodes(lengths);
 
     // Verify all codes are unique and decodable
-    int maxLen = lengths.Max();
-    int tableSize = 1 << maxLen;
+    var maxLen = lengths.Max();
+    var tableSize = 1 << maxLen;
     var table = new int[tableSize];
     Array.Fill(table, -1);
 
     var blCount = new int[maxLen + 1];
-    for (int i = 0; i < lengths.Length; ++i)
+    for (var i = 0; i < lengths.Length; ++i)
       if (lengths[i] > 0) blCount[lengths[i]]++;
 
     var nextCode = new int[maxLen + 1];
-    int code = 0;
-    for (int bits = 1; bits <= maxLen; ++bits) {
+    var code = 0;
+    for (var bits = 1; bits <= maxLen; ++bits) {
       code = (code + blCount[bits - 1]) << 1;
       nextCode[bits] = code;
     }
 
-    for (int sym = 0; sym < lengths.Length; ++sym) {
-      int len = lengths[sym];
+    for (var sym = 0; sym < lengths.Length; ++sym) {
+      var len = lengths[sym];
       if (len == 0) continue;
-      int symCode = nextCode[len]++;
-      int fillBits = maxLen - len;
-      int baseIdx = symCode << fillBits;
-      int packedValue = sym | (len << 16);
-      for (int fill = 0; fill < (1 << fillBits); ++fill)
+      var symCode = nextCode[len]++;
+      var fillBits = maxLen - len;
+      var baseIdx = symCode << fillBits;
+      var packedValue = sym | (len << 16);
+      for (var fill = 0; fill < (1 << fillBits); ++fill)
         table[baseIdx + fill] = packedValue;
     }
 
@@ -298,7 +298,7 @@ public class LzhDebugTest {
     using var ms = new MemoryStream();
     var writer = new BitWriter<MsbBitOrder>(ms);
     int[] syms = [0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 263];
-    foreach (int sym in syms) {
+    foreach (var sym in syms) {
       Assert.That(lengths[sym], Is.GreaterThan(0), $"Symbol {sym} has no code");
       writer.WriteBits(codes[sym], lengths[sym]);
     }
@@ -306,13 +306,13 @@ public class LzhDebugTest {
 
     ms.Position = 0;
     var reader = new BitBuffer<MsbBitOrder>(ms);
-    foreach (int expectedSym in syms) {
+    foreach (var expectedSym in syms) {
       reader.EnsureBits(maxLen);
-      uint peek = reader.PeekBits(maxLen);
-      int entry = table[(int)peek];
+      var peek = reader.PeekBits(maxLen);
+      var entry = table[(int)peek];
       Assert.That(entry, Is.GreaterThanOrEqualTo(0), $"No table entry for peek={peek}");
-      int decodedSym = entry & 0xFFFF;
-      int codeLen = entry >> 16;
+      var decodedSym = entry & 0xFFFF;
+      var codeLen = entry >> 16;
       reader.DropBits(codeLen);
       Assert.That(decodedSym, Is.EqualTo(expectedSym), $"Expected sym {expectedSym}, got {decodedSym}");
     }
@@ -335,9 +335,9 @@ public class LzhDebugTest {
     ms.Position = 0;
     var reader = new BitBuffer<MsbBitOrder>(ms);
 
-    uint huff = reader.ReadBits(3);
-    uint extra = reader.ReadBits(3);
-    uint huff2 = reader.ReadBits(2);
+    var huff = reader.ReadBits(3);
+    var extra = reader.ReadBits(3);
+    var huff2 = reader.ReadBits(2);
 
     Assert.That(huff, Is.EqualTo(0b101u), "Huffman code");
     Assert.That(extra, Is.EqualTo(4u), "Extra bits");
@@ -348,15 +348,15 @@ public class LzhDebugTest {
   [Category("RoundTrip")]
   [Test]
   public void Debug_ManyLiterals() {
-    byte[] data = new byte[100];
-    for (int i = 0; i < 100; ++i) data[i] = (byte)i;
+    var data = new byte[100];
+    for (var i = 0; i < 100; ++i) data[i] = (byte)i;
 
     var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);
-    byte[] compressed = encoder.Encode(data);
+    var compressed = encoder.Encode(data);
 
     using var ms = new MemoryStream(compressed);
     var decoder = new LzhDecoder(ms, LzhConstants.Lh5PositionBits);
-    byte[] result = decoder.Decode(data.Length);
+    var result = decoder.Decode(data.Length);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -369,16 +369,16 @@ public class LzhDebugTest {
 
     // Code symbols: 0x41(A), 0x42(B), 0x43(C), 256(len=3, code=3-3+256=256)
     // Position: dist=2, slot=GetPositionSlot(2)=2, extraBits=1, extraValue=2-(1<<1)=0
-    int[] codeFreq = new int[LzhConstants.NumCodes];
+    var codeFreq = new int[LzhConstants.NumCodes];
     codeFreq[0x41] = 1; codeFreq[0x42] = 1; codeFreq[0x43] = 1; codeFreq[256] = 1;
 
-    int[] posFreq = new int[3]; // slots 0,1,2
+    var posFreq = new int[3]; // slots 0,1,2
     posFreq[2] = 1;
 
-    int[] codeLengths = LzhEncoder.BuildCodeLengths(codeFreq, 16);
-    int[] posLengths = LzhEncoder.BuildCodeLengths(posFreq, 17);
-    uint[] codeCodes = LzhEncoder.BuildCanonicalCodes(codeLengths);
-    uint[] posCodes = LzhEncoder.BuildCanonicalCodes(posLengths);
+    var codeLengths = LzhEncoder.BuildCodeLengths(codeFreq, 16);
+    var posLengths = LzhEncoder.BuildCodeLengths(posFreq, 17);
+    var codeCodes = LzhEncoder.BuildCanonicalCodes(codeLengths);
+    var posCodes = LzhEncoder.BuildCanonicalCodes(posLengths);
 
     // Write the stream
     using var ms = new MemoryStream();
@@ -389,7 +389,7 @@ public class LzhDebugTest {
 
     // Write code tree (single-symbol flag=0, multi)
     var codeUsed = new List<(int sym, int len)>();
-    for (int i = 0; i < codeLengths.Length; ++i)
+    for (var i = 0; i < codeLengths.Length; ++i)
       if (codeLengths[i] > 0) codeUsed.Add((i, codeLengths[i]));
 
     writer.WriteBits(0, 1); // multi-symbol
@@ -420,7 +420,7 @@ public class LzhDebugTest {
     // Decode
     ms.Position = 0;
     var decoder = new LzhDecoder(ms, LzhConstants.Lh5PositionBits);
-    byte[] result = decoder.Decode(6); // A,B,C,B,C,B
+    var result = decoder.Decode(6); // A,B,C,B,C,B
 
     Assert.That(result, Is.EqualTo(new byte[] { 0x41, 0x42, 0x43, 0x41, 0x42, 0x43 }));
   }
@@ -432,40 +432,40 @@ public class LzhDebugTest {
     // The encoder produces this for ABCDEFGHIJABCDEFGHIJ:
     // 10 literals + 1 match(len=10, dist=9 0-based)
     // Let me verify the encoder output matches what the decoder expects
-    byte[] data = new byte[20];
-    for (int i = 0; i < 10; ++i) data[i] = (byte)(0x41 + i);
-    for (int i = 10; i < 20; ++i) data[i] = (byte)(0x41 + i - 10);
+    var data = new byte[20];
+    for (var i = 0; i < 10; ++i) data[i] = (byte)(0x41 + i);
+    for (var i = 10; i < 20; ++i) data[i] = (byte)(0x41 + i - 10);
 
     var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);
-    byte[] compressed = encoder.Encode(data);
+    var compressed = encoder.Encode(data);
 
     // Manually read the stream to trace
     using var ms = new MemoryStream(compressed);
     var bits = new BitBuffer<MsbBitOrder>(ms);
 
     // Block size
-    uint blockSize = bits.ReadBits(16);
+    var blockSize = bits.ReadBits(16);
     Assert.That(blockSize, Is.EqualTo(11u), "Should be 11 tokens (10 lit + 1 match)");
 
     // Code tree
-    uint codeFlag = bits.ReadBits(1);
+    var codeFlag = bits.ReadBits(1);
     Assert.That(codeFlag, Is.EqualTo(0u), "Multi-symbol code tree");
-    uint codeCount = bits.ReadBits(16);
+    var codeCount = bits.ReadBits(16);
     var codeEntries = new (int sym, int len)[codeCount];
-    for (int i = 0; i < (int)codeCount; ++i) {
-      int sym = (int)bits.ReadBits(16);
-      int len = (int)bits.ReadBits(5);
+    for (var i = 0; i < (int)codeCount; ++i) {
+      var sym = (int)bits.ReadBits(16);
+      var len = (int)bits.ReadBits(5);
       codeEntries[i] = (sym, len);
     }
 
     // Position tree
-    uint posFlag = bits.ReadBits(1);
+    var posFlag = bits.ReadBits(1);
     // Could be single or multi, let's check
     int posSlot;
     if (posFlag == 1) {
       posSlot = (int)bits.ReadBits(16);
     } else {
-      uint posCount = bits.ReadBits(16);
+      var posCount = bits.ReadBits(16);
       posSlot = -1;
       // Read pos tree entries and build table...
       // Skip for now
@@ -474,9 +474,9 @@ public class LzhDebugTest {
     // Now we know the structure. Let's use the actual decoder instead.
     ms.Position = 0;
     var decoder = new LzhDecoder(ms, LzhConstants.Lh5PositionBits);
-    byte[] result = decoder.Decode(data.Length);
+    var result = decoder.Decode(data.Length);
 
-    for (int i = 0; i < data.Length; ++i) {
+    for (var i = 0; i < data.Length; ++i) {
       if (result[i] != data[i]) {
         Assert.Fail($"Mismatch at index {i}: expected {data[i]} (0x{data[i]:X2}), got {result[i]} (0x{result[i]:X2})");
       }
@@ -487,16 +487,16 @@ public class LzhDebugTest {
   [Category("RoundTrip")]
   [TestCase(30)]
   public void Debug_PatternData_Sizes(int size) {
-    byte[] data = new byte[size];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[size];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 13);
 
     var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);
-    byte[] compressed = encoder.Encode(data);
+    var compressed = encoder.Encode(data);
 
     using var ms = new MemoryStream(compressed);
     var decoder = new LzhDecoder(ms, LzhConstants.Lh5PositionBits);
-    byte[] result = decoder.Decode(data.Length);
+    var result = decoder.Decode(data.Length);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -507,15 +507,15 @@ public class LzhDebugTest {
   [TestCase(500)]
   public void Debug_RandomData_Sizes(int size) {
     var rng = new Random(42);
-    byte[] data = new byte[size];
+    var data = new byte[size];
     rng.NextBytes(data);
 
     var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);
-    byte[] compressed = encoder.Encode(data);
+    var compressed = encoder.Encode(data);
 
     using var ms = new MemoryStream(compressed);
     var decoder = new LzhDecoder(ms, LzhConstants.Lh5PositionBits);
-    byte[] result = decoder.Decode(data.Length);
+    var result = decoder.Decode(data.Length);
     Assert.That(result, Is.EqualTo(data));
   }
 }

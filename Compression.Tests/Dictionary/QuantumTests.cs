@@ -114,7 +114,7 @@ public class QuantumTests {
     var model = new QuantumModel(4);
     // Each update adds 1 to total. Start at 4, threshold at 3800.
     // Need 3796 updates to reach threshold.
-    for (int i = 0; i < 3796; ++i)
+    for (var i = 0; i < 3796; ++i)
       model.Update(0);
 
     // After rescale, frequencies should be roughly halved
@@ -130,7 +130,7 @@ public class QuantumTests {
   public void Model_Rescale_MinimumFrequencyIsOne() {
     var model = new QuantumModel(4);
     // Update only symbol 0 until rescale
-    for (int i = 0; i < 3796; ++i)
+    for (var i = 0; i < 3796; ++i)
       model.Update(0);
 
     // All symbols that were at freq 1 should still be at freq 1 after rescale
@@ -153,8 +153,8 @@ public class QuantumTests {
     var decoder = new QuantumRangeDecoder(encoded);
     var model = new QuantumModel(4);
 
-    foreach (int expected in symbols) {
-      int decoded = decoder.DecodeSymbol(model);
+    foreach (var expected in symbols) {
+      var decoded = decoder.DecodeSymbol(model);
       Assert.That(decoded, Is.EqualTo(expected));
     }
   }
@@ -169,8 +169,8 @@ public class QuantumTests {
     var decoder = new QuantumRangeDecoder(encoded);
     var model = new QuantumModel(256);
 
-    foreach (int expected in symbols) {
-      int decoded = decoder.DecodeSymbol(model);
+    foreach (var expected in symbols) {
+      var decoded = decoder.DecodeSymbol(model);
       Assert.That(decoded, Is.EqualTo(expected));
     }
   }
@@ -183,20 +183,20 @@ public class QuantumTests {
     // Use a model-based encode to set up state, then decode raw bits
     // For simplicity, just encode a few symbols then read raw bits
     var symbols = new[] { 0, 1 };
-    int rawValue = 42; // 6 bits: 101010
-    int numBits = 6;
+    var rawValue = 42; // 6 bits: 101010
+    var numBits = 6;
     var encoded = QuantumRangeEncodeWithRawBits(symbols, 4, rawValue, numBits);
     var decoder = new QuantumRangeDecoder(encoded);
     var model = new QuantumModel(4);
 
     // Decode symbols first
-    foreach (int expected in symbols) {
-      int decoded = decoder.DecodeSymbol(model);
+    foreach (var expected in symbols) {
+      var decoded = decoder.DecodeSymbol(model);
       Assert.That(decoded, Is.EqualTo(expected));
     }
 
     // Then decode raw bits
-    int decodedRaw = decoder.ReadRawBits(numBits);
+    var decodedRaw = decoder.ReadRawBits(numBits);
     Assert.That(decodedRaw, Is.EqualTo(rawValue));
   }
 
@@ -204,10 +204,10 @@ public class QuantumTests {
   [Category("RoundTrip")]
   [Test]
   public void RangeDecoder_ReadRawBits_SingleBit() {
-    int rawValue = 1;
+    var rawValue = 1;
     var encoded = QuantumRangeEncodeWithRawBits([], 4, rawValue, 1);
     var decoder = new QuantumRangeDecoder(encoded);
-    int decoded = decoder.ReadRawBits(1);
+    var decoded = decoder.ReadRawBits(1);
     Assert.That(decoded, Is.EqualTo(rawValue));
   }
 
@@ -264,8 +264,8 @@ public class QuantumTests {
   [Test]
   public void Decompress_WithMatch_RoundTrip() {
     // Data with a repeated pattern that can use match references
-    byte[] original = new byte[20];
-    for (int i = 0; i < 20; ++i)
+    var original = new byte[20];
+    for (var i = 0; i < 20; ++i)
       original[i] = (byte)(i % 4 + 0x41); // ABCDABCDABCD...
     var compressed = QuantumCompress(original, 1);
     var decompressed = QuantumDecompressor.Decompress(compressed, original.Length, 1);
@@ -276,7 +276,7 @@ public class QuantumTests {
   [Category("RoundTrip")]
   [Test]
   public void Decompress_AllSameBytes_RoundTrip() {
-    byte[] original = new byte[32];
+    var original = new byte[32];
     Array.Fill(original, (byte)0xAA);
     var compressed = QuantumCompress(original, 1);
     var decompressed = QuantumDecompressor.Decompress(compressed, original.Length, 1);
@@ -287,8 +287,8 @@ public class QuantumTests {
   [Category("RoundTrip")]
   [Test]
   public void Decompress_LargerWindow_RoundTrip() {
-    byte[] original = new byte[100];
-    for (int i = 0; i < original.Length; ++i)
+    var original = new byte[100];
+    for (var i = 0; i < original.Length; ++i)
       original[i] = (byte)(i * 7 + 3);
     var compressed = QuantumCompress(original, 3);
     var decompressed = QuantumDecompressor.Decompress(compressed, original.Length, 3);
@@ -457,7 +457,7 @@ public class QuantumTests {
     var state = new EncoderState();
     var model = new QuantumModel(numSymbols);
 
-    foreach (int sym in symbols)
+    foreach (var sym in symbols)
       EncodeSymbol(state, model, sym);
 
     // Flush
@@ -475,14 +475,14 @@ public class QuantumTests {
     var state = new EncoderState();
     var model = new QuantumModel(numSymbols);
 
-    foreach (int sym in symbols)
+    foreach (var sym in symbols)
       EncodeSymbol(state, model, sym);
 
     // Encode raw bits (MSB first)
-    for (int i = numBits - 1; i >= 0; --i) {
-      int bit = (rawValue >> i) & 1;
-      int range = state.High - state.Low + 1;
-      int mid = state.Low + (range >> 1) - 1;
+    for (var i = numBits - 1; i >= 0; --i) {
+      var bit = (rawValue >> i) & 1;
+      var range = state.High - state.Low + 1;
+      var mid = state.Low + (range >> 1) - 1;
       if (bit == 0)
         state.High = mid;
       else
@@ -507,7 +507,7 @@ public class QuantumTests {
     var selectorModel = new QuantumModel(QuantumConstants.SelectorSymbols);
     var literalModel = new QuantumModel(QuantumConstants.LiteralSymbols);
 
-    foreach (byte b in data) {
+    foreach (var b in data) {
       // Encode selector 0 (literal)
       EncodeSymbol(state, selectorModel, 0);
       // Encode literal value
@@ -536,9 +536,9 @@ public class QuantumTests {
   }
 
   private static void EncodeSymbol(EncoderState state, QuantumModel model, int symbol) {
-    int range = state.High - state.Low + 1;
-    int symLow = model.GetCumulativeFrequency(symbol);
-    int symHigh = symLow + model.GetFrequency(symbol);
+    var range = state.High - state.Low + 1;
+    var symLow = model.GetCumulativeFrequency(symbol);
+    var symHigh = symLow + model.GetFrequency(symbol);
 
     state.High = state.Low + (int)((long)range * symHigh / model.TotalFrequency) - 1;
     state.Low = state.Low + (int)((long)range * symLow / model.TotalFrequency);

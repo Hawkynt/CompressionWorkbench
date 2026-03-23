@@ -48,7 +48,7 @@ internal static class ZstdSequences {
     if (pos >= blockData.Length)
       return [];
 
-    int numSequences = ReadSequenceCount(blockData, ref pos);
+    var numSequences = ReadSequenceCount(blockData, ref pos);
     if (numSequences == 0)
       return [];
 
@@ -56,9 +56,9 @@ internal static class ZstdSequences {
       throw new InvalidDataException("Truncated sequence compression modes.");
 
     int modesByte = blockData[pos++];
-    int llMode = (modesByte >> 6) & 3;
-    int ofMode = (modesByte >> 4) & 3;
-    int mlMode = (modesByte >> 2) & 3;
+    var llMode = (modesByte >> 6) & 3;
+    var ofMode = (modesByte >> 4) & 3;
+    var mlMode = (modesByte >> 2) & 3;
 
     var llTable = BuildDecodingTable(blockData, ref pos, llMode, prevLlTable,
       ZstdConstants.DefaultLiteralLengthCounts, ZstdConstants.DefaultLiteralLengthCounts.Length - 1,
@@ -74,7 +74,7 @@ internal static class ZstdSequences {
     prevOfTable = ofTable;
     prevMlTable = mlTable;
 
-    ReadOnlySpan<byte> bitstream = blockData.Slice(pos);
+    var bitstream = blockData.Slice(pos);
     pos = blockData.Length;
 
     return DecodeSequenceBitstream(bitstream, numSequences, llTable, ofTable, mlTable, repeatOffsets);
@@ -90,7 +90,7 @@ internal static class ZstdSequences {
   /// <returns>The number of bytes written.</returns>
   public static int EncodeSequences(ZstdSequence[] sequences, byte[] output, int outputPos,
     int[] repeatOffsets) {
-    int startPos = outputPos;
+    var startPos = outputPos;
 
     if (sequences.Length == 0) {
       output[outputPos++] = 0;
@@ -115,7 +115,7 @@ internal static class ZstdSequences {
       ZstdConstants.DefaultMatchLengthCounts.Length - 1,
       ZstdConstants.MatchLengthDefaultTableLog);
 
-    byte[] bitstream = EncodeSequenceBitstream(sequences, llTable, ofTable, mlTable, repeatOffsets);
+    var bitstream = EncodeSequenceBitstream(sequences, llTable, ofTable, mlTable, repeatOffsets);
     bitstream.CopyTo(output.AsSpan(outputPos));
     outputPos += bitstream.Length;
 
@@ -160,7 +160,7 @@ internal static class ZstdSequences {
     }
 
     output[pos] = 255;
-    int adjusted = count - 0x7F00;
+    var adjusted = count - 0x7F00;
     output[pos + 1] = (byte)(adjusted & 0xFF);
     output[pos + 2] = (byte)((adjusted >> 8) & 0xFF);
     return 3;
@@ -177,8 +177,8 @@ internal static class ZstdSequences {
       case ModeRle:
         if (pos >= data.Length)
           throw new InvalidDataException("Truncated RLE sequence mode data.");
-        byte rleSymbol = data[pos++];
-        short[] rleCounts = new short[rleSymbol + 1];
+        var rleSymbol = data[pos++];
+        var rleCounts = new short[rleSymbol + 1];
         rleCounts[rleSymbol] = (short)(1 << defaultTableLog);
         return FseTable.Build(rleCounts, rleSymbol, defaultTableLog);
       case ModeFseCompressed:
@@ -202,14 +202,14 @@ internal static class ZstdSequences {
     int numSequences, FseTable llTable, FseTable ofTable, FseTable mlTable,
     int[] repeatOffsets) {
     var sequences = new ZstdSequence[numSequences];
-    int totalBits = FindTotalBits(bitstream);
+    var totalBits = FindTotalBits(bitstream);
     var reader = new BackwardBitReader(bitstream, totalBits);
 
-    int llState = reader.ReadBits(llTable.TableLog);
-    int ofState = reader.ReadBits(ofTable.TableLog);
-    int mlState = reader.ReadBits(mlTable.TableLog);
+    var llState = reader.ReadBits(llTable.TableLog);
+    var ofState = reader.ReadBits(ofTable.TableLog);
+    var mlState = reader.ReadBits(mlTable.TableLog);
 
-    for (int i = 0; i < numSequences; ++i) {
+    for (var i = 0; i < numSequences; ++i) {
       int ofCode = ofTable.Symbol[ofState];
       int llCode = llTable.Symbol[llState];
       int mlCode = mlTable.Symbol[mlState];
@@ -217,36 +217,36 @@ internal static class ZstdSequences {
       // Offset extra bits
       int offset;
       if (ofCode > 0) {
-        int ofExtra = reader.ReadBits(ofCode);
+        var ofExtra = reader.ReadBits(ofCode);
         offset = (1 << ofCode) | ofExtra;
       }
       else
         offset = 1;
 
       // Match length extra bits
-      int mlExtraBits = ZstdConstants.MatchLengthExtraBits[mlCode];
-      int matchLength = ZstdConstants.MatchLengthBase[mlCode];
+      var mlExtraBits = ZstdConstants.MatchLengthExtraBits[mlCode];
+      var matchLength = ZstdConstants.MatchLengthBase[mlCode];
       if (mlExtraBits > 0)
         matchLength += reader.ReadBits(mlExtraBits);
 
       // Literal length extra bits
-      int llExtraBits = ZstdConstants.LitLengthExtraBits[llCode];
-      int litLength = ZstdConstants.LitLengthBase[llCode];
+      var llExtraBits = ZstdConstants.LitLengthExtraBits[llCode];
+      var litLength = ZstdConstants.LitLengthBase[llCode];
       if (llExtraBits > 0)
         litLength += reader.ReadBits(llExtraBits);
 
-      int resolvedOffset = ResolveOffset(offset, litLength, repeatOffsets);
+      var resolvedOffset = ResolveOffset(offset, litLength, repeatOffsets);
       sequences[i] = new ZstdSequence(litLength, matchLength, resolvedOffset);
 
       // State updates (except for last sequence)
       if (i < numSequences - 1) {
-        int llBits = llTable.NumBits[llState];
+        var llBits = llTable.NumBits[llState];
         llState = llTable.NewStateBase[llState] + (llBits > 0 ? reader.ReadBits(llBits) : 0);
 
-        int mlBits = mlTable.NumBits[mlState];
+        var mlBits = mlTable.NumBits[mlState];
         mlState = mlTable.NewStateBase[mlState] + (mlBits > 0 ? reader.ReadBits(mlBits) : 0);
 
-        int ofBits = ofTable.NumBits[ofState];
+        var ofBits = ofTable.NumBits[ofState];
         ofState = ofTable.NewStateBase[ofState] + (ofBits > 0 ? reader.ReadBits(ofBits) : 0);
       }
     }
@@ -275,7 +275,7 @@ internal static class ZstdSequences {
     var mlExtraNBits = new int[sequences.Length];
     var ofExtraNBits = new int[sequences.Length];
 
-    for (int i = 0; i < sequences.Length; ++i) {
+    for (var i = 0; i < sequences.Length; ++i) {
       var seq = sequences[i];
 
       llCodes[i] = (byte)ZstdConstants.GetLitLengthCode(seq.LiteralLength);
@@ -287,7 +287,7 @@ internal static class ZstdSequences {
       mlExtraNBits[i] = ZstdConstants.MatchLengthExtraBits[mlCodes[i]];
       mlExtraVals[i] = seq.MatchLength - ZstdConstants.MatchLengthBase[mlCodes[i]];
 
-      int encodedOffset = EncodeOffset(seq.Offset, seq.LiteralLength, encRepeatOffsets);
+      var encodedOffset = EncodeOffset(seq.Offset, seq.LiteralLength, encRepeatOffsets);
       ofCodes[i] = (byte)ZstdConstants.GetOffsetCode(encodedOffset);
       ofExtraNBits[i] = ofCodes[i];
       ofExtraVals[i] = encodedOffset - (1 << ofCodes[i]);
@@ -325,7 +325,7 @@ internal static class ZstdSequences {
     mlTargetStates[sequences.Length - 1] = mlStatesForSymbol[mlCodes[sequences.Length - 1]][0];
 
     // Work backward to find source states that can transition to each target
-    for (int i = sequences.Length - 2; i >= 0; --i) {
+    for (var i = sequences.Length - 2; i >= 0; --i) {
       llTargetStates[i] = FindSourceState(llTable, llCodes[i], llTargetStates[i + 1],
         llStatesForSymbol, llTableSize);
       ofTargetStates[i] = FindSourceState(ofTable, ofCodes[i], ofTargetStates[i + 1],
@@ -353,7 +353,7 @@ internal static class ZstdSequences {
 
     // 1. Start with what the decoder reads LAST: extra bits of the last sequence
     //    and state transitions, working from last seq backward.
-    for (int i = sequences.Length - 1; i >= 0; --i) {
+    for (var i = sequences.Length - 1; i >= 0; --i) {
       // For non-first sequences, the decoder reads state transition bits
       // AFTER the previous sequence's extra bits. In reverse (bottom-up) these
       // come BEFORE the previous sequence's extra bits.
@@ -361,24 +361,24 @@ internal static class ZstdSequences {
         // State transition bits for going from seq i to seq i+1
         // Decoder reads: LL bits, ML bits, OF bits (in that order, from top to bottom)
         // We add in reverse: OF bits, ML bits, LL bits (bottom to top)
-        int sourceOf = ofTargetStates[i];
-        int ofTransBits = ofTable.NumBits[sourceOf];
+        var sourceOf = ofTargetStates[i];
+        var ofTransBits = ofTable.NumBits[sourceOf];
         if (ofTransBits > 0) {
-          int ofVal = ofTargetStates[i + 1] - ofTable.NewStateBase[sourceOf];
+          var ofVal = ofTargetStates[i + 1] - ofTable.NewStateBase[sourceOf];
           acc.AddBits(ofVal, ofTransBits);
         }
 
-        int sourceMl = mlTargetStates[i];
-        int mlTransBits = mlTable.NumBits[sourceMl];
+        var sourceMl = mlTargetStates[i];
+        var mlTransBits = mlTable.NumBits[sourceMl];
         if (mlTransBits > 0) {
-          int mlVal = mlTargetStates[i + 1] - mlTable.NewStateBase[sourceMl];
+          var mlVal = mlTargetStates[i + 1] - mlTable.NewStateBase[sourceMl];
           acc.AddBits(mlVal, mlTransBits);
         }
 
-        int sourceLL = llTargetStates[i];
-        int llTransBits = llTable.NumBits[sourceLL];
+        var sourceLL = llTargetStates[i];
+        var llTransBits = llTable.NumBits[sourceLL];
         if (llTransBits > 0) {
-          int llVal = llTargetStates[i + 1] - llTable.NewStateBase[sourceLL];
+          var llVal = llTargetStates[i + 1] - llTable.NewStateBase[sourceLL];
           acc.AddBits(llVal, llTransBits);
         }
       }
@@ -413,16 +413,16 @@ internal static class ZstdSequences {
   private static List<int>[] BuildSymbolStates(FseTable table, int tableSize) {
     // Find max symbol
     var maxSymbol = 0;
-    for (int s = 0; s < tableSize; ++s) {
+    for (var s = 0; s < tableSize; ++s) {
       if (table.Symbol[s] > maxSymbol)
         maxSymbol = table.Symbol[s];
     }
 
     var result = new List<int>[maxSymbol + 1];
-    for (int i = 0; i <= maxSymbol; ++i)
+    for (var i = 0; i <= maxSymbol; ++i)
       result[i] = [];
 
-    for (int s = 0; s < tableSize; ++s)
+    for (var s = 0; s < tableSize; ++s)
       result[table.Symbol[s]].Add(s);
 
     return result;
@@ -438,11 +438,11 @@ internal static class ZstdSequences {
     // 1. table.Symbol[S] == symbol
     // 2. nextTargetState is reachable: nextTargetState = NewStateBase[S] + bits,
     //    where 0 <= bits < (1 << NumBits[S])
-    foreach (int s in statesForSymbol[symbol]) {
-      int nbBits = table.NumBits[s];
-      int baseVal = table.NewStateBase[s];
+    foreach (var s in statesForSymbol[symbol]) {
+      var nbBits = table.NumBits[s];
+      var baseVal = table.NewStateBase[s];
       var range = 1 << nbBits;
-      int bitsNeeded = nextTargetState - baseVal;
+      var bitsNeeded = nextTargetState - baseVal;
       if (bitsNeeded >= 0 && bitsNeeded < range)
         return s;
     }
@@ -576,11 +576,11 @@ internal static class ZstdSequences {
       if (nbBits == 0) return 0;
 
       var value = 0;
-      for (int i = nbBits - 1; i >= 0; --i) {
+      for (var i = nbBits - 1; i >= 0; --i) {
         if (this._bitPos < 0) return value;
-        int byteIdx = this._bitPos >> 3;
-        int bitIdx = this._bitPos & 7;
-        int bit = (this._data[byteIdx] >> bitIdx) & 1;
+        var byteIdx = this._bitPos >> 3;
+        var bitIdx = this._bitPos & 7;
+        var bit = (this._data[byteIdx] >> bitIdx) & 1;
         value |= bit << i;
         --this._bitPos;
       }

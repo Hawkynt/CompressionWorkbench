@@ -36,7 +36,7 @@ public static class LzmaStream {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
 
-    byte[] data = ReadAllBytes(input);
+    var data = ReadAllBytes(input);
 
     var encoder = new LzmaEncoder(dictionarySize, lc, lp, pb, level);
 
@@ -80,11 +80,11 @@ public static class LzmaStream {
           $"Invalid LZMA properties byte 0x{header[0]:X2}: value must be less than 225.");
 
     // Extract the 5-byte properties block (properties byte + dict size)
-    byte[] properties = new byte[5];
+    var properties = new byte[5];
     header[..5].CopyTo(properties);
 
     // Read uncompressed size (-1 = unknown, use end-marker)
-    long uncompressedSize = BinaryPrimitives.ReadInt64LittleEndian(header[5..]);
+    var uncompressedSize = BinaryPrimitives.ReadInt64LittleEndian(header[5..]);
 
     var decoder = new LzmaDecoder(input, properties, uncompressedSize);
     decoder.Decode(output);

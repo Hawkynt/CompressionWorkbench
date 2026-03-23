@@ -62,10 +62,10 @@ public sealed class AceWriter {
 
     // Write file entries, collecting compressed data for recovery
     var compressedBlocks = this._recoveryRecord ? new List<byte[]>() : null;
-    AceEncoder? solidEncoder = this._solid ? new AceEncoder(this._dictBits) : null;
-    bool isFirstFile = true;
+    var solidEncoder = this._solid ? new AceEncoder(this._dictBits) : null;
+    var isFirstFile = true;
     foreach (var (name, data) in this._files) {
-      byte[]? compData = WriteFileEntry(writer, name, data, solidEncoder, isFirstFile);
+      var compData = WriteFileEntry(writer, name, data, solidEncoder, isFirstFile);
       compressedBlocks?.Add(compData ?? []);
       isFirstFile = false;
     }
@@ -104,17 +104,17 @@ public sealed class AceWriter {
     hw.Write(new byte[8]); // reserved
 
     // Comment
-    byte[]? commentBytes = this.Comment != null ? Encoding.ASCII.GetBytes(this.Comment) : null;
+    var commentBytes = this.Comment != null ? Encoding.ASCII.GetBytes(this.Comment) : null;
     hw.Write((ushort)(commentBytes?.Length ?? 0));
     if (commentBytes != null)
       hw.Write(commentBytes);
 
     hw.Flush();
-    byte[] headerPayload = headerMs.ToArray();
+    var headerPayload = headerMs.ToArray();
 
     // CRC-16 of header payload (lower 16 bits of CRC-32)
-    uint crc32 = Crc32.Compute(headerPayload);
-    ushort crc16 = (ushort)(crc32 & 0xFFFF);
+    var crc32 = Crc32.Compute(headerPayload);
+    var crc16 = (ushort)(crc32 & 0xFFFF);
 
     writer.Write(crc16);
     writer.Write((ushort)headerPayload.Length);
@@ -123,7 +123,7 @@ public sealed class AceWriter {
 
   private byte[] WriteFileEntry(BinaryWriter writer, string name, byte[] data,
       AceEncoder? solidEncoder, bool isFirstFile) {
-    uint dataCrc = Crc32.Compute(data);
+    var dataCrc = Crc32.Compute(data);
 
     byte[] compressed;
     byte compType;
@@ -156,7 +156,7 @@ public sealed class AceWriter {
       fileFlags |= AceConstants.FileFlagEncrypted;
     }
 
-    byte[] nameBytes = Encoding.ASCII.GetBytes(name);
+    var nameBytes = Encoding.ASCII.GetBytes(name);
 
     // Build file header payload
     using var headerMs = new MemoryStream();
@@ -179,10 +179,10 @@ public sealed class AceWriter {
     hw.Write(nameBytes);
 
     hw.Flush();
-    byte[] headerPayload = headerMs.ToArray();
+    var headerPayload = headerMs.ToArray();
 
-    uint headerCrc32 = Crc32.Compute(headerPayload);
-    ushort headerCrc16 = (ushort)(headerCrc32 & 0xFFFF);
+    var headerCrc32 = Crc32.Compute(headerPayload);
+    var headerCrc16 = (ushort)(headerCrc32 & 0xFFFF);
 
     writer.Write(headerCrc16);
     writer.Write((ushort)headerPayload.Length);
@@ -196,13 +196,13 @@ public sealed class AceWriter {
 
   private void WriteRecoveryBlock(BinaryWriter writer, List<byte[]> compressedBlocks) {
     // Compute XOR parity across all compressed blocks
-    int maxLen = 0;
+    var maxLen = 0;
     foreach (var block in compressedBlocks)
       maxLen = Math.Max(maxLen, block.Length);
 
-    byte[] parity = new byte[maxLen];
+    var parity = new byte[maxLen];
     foreach (var block in compressedBlocks) {
-      for (int i = 0; i < block.Length; ++i)
+      for (var i = 0; i < block.Length; ++i)
         parity[i] ^= block[i];
     }
 
@@ -216,10 +216,10 @@ public sealed class AceWriter {
     hw.Write((uint)compressedBlocks.Count); // number of sectors (file count)
 
     hw.Flush();
-    byte[] headerPayload = headerMs.ToArray();
+    var headerPayload = headerMs.ToArray();
 
-    uint headerCrc32 = Crc32.Compute(headerPayload);
-    ushort headerCrc16 = (ushort)(headerCrc32 & 0xFFFF);
+    var headerCrc32 = Crc32.Compute(headerPayload);
+    var headerCrc16 = (ushort)(headerCrc32 & 0xFFFF);
 
     writer.Write(headerCrc16);
     writer.Write((ushort)headerPayload.Length);
@@ -230,11 +230,11 @@ public sealed class AceWriter {
   }
 
   private byte[] EncryptData(byte[] data) {
-    byte[] key = DeriveKey(this._password!);
+    var key = DeriveKey(this._password!);
     var bf = new Blowfish(key);
     var iv = new byte[8]; // ACE uses zero IV
     // Blowfish CBC requires 8-byte aligned data
-    int paddedLen = (data.Length + 7) & ~7;
+    var paddedLen = (data.Length + 7) & ~7;
     byte[] padded;
     if (paddedLen != data.Length) {
       padded = new byte[paddedLen];
@@ -248,8 +248,8 @@ public sealed class AceWriter {
 
   internal static byte[] DeriveKey(string password) {
     // ACE key derivation: SHA-1 of the password bytes, take first 16 bytes as Blowfish key
-    byte[] passBytes = Encoding.ASCII.GetBytes(password);
-    byte[] hash = Sha1.Compute(passBytes);
+    var passBytes = Encoding.ASCII.GetBytes(password);
+    var hash = Sha1.Compute(passBytes);
     return hash[..16];
   }
 
@@ -270,8 +270,8 @@ public sealed class AceWriter {
   }
 
   private static uint DosTimestamp(DateTime dt) {
-    int time = (dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2);
-    int date = ((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day;
+    var time = (dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2);
+    var date = ((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day;
     return (uint)((date << 16) | time);
   }
 }

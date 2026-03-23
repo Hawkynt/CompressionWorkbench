@@ -42,7 +42,7 @@ internal sealed class Bzip2Decompressor {
       // If we have remaining data in current block, return it
       if (this._currentBlock != null && this._currentBlockPos < this._currentBlock.Length) {
         var available = this._currentBlock.Length - this._currentBlockPos;
-        int toCopy = Math.Min(available, count - totalRead);
+        var toCopy = Math.Min(available, count - totalRead);
         this._currentBlock.AsSpan(this._currentBlockPos, toCopy).CopyTo(buffer.AsSpan(offset + totalRead));
         this._currentBlockPos += toCopy;
         totalRead += toCopy;
@@ -64,7 +64,7 @@ internal sealed class Bzip2Decompressor {
     // Read 48-bit magic
     var high = this._bits.ReadBits(24);
     var low = this._bits.ReadBits(24);
-    long magic = ((long)high << 24) | low;
+    var magic = ((long)high << 24) | low;
 
     if (magic == Bzip2Constants.BlockEndMagic) {
       // End of stream — read combined CRC
@@ -88,28 +88,28 @@ internal sealed class Bzip2Decompressor {
       throw new InvalidDataException("Randomized bzip2 blocks are not supported.");
 
     // BWT original pointer (24 bits)
-    int bwtIndex = (int)this._bits.ReadBits(24);
+    var bwtIndex = (int)this._bits.ReadBits(24);
 
     // Read symbol bitmap
-    bool[] symbolUsed = ReadSymbolBitmap();
+    var symbolUsed = ReadSymbolBitmap();
 
     // Count symbols in use
     var numSymbolsInUse = 0;
-    for (int i = 0; i < 256; ++i)
+    for (var i = 0; i < 256; ++i)
       if (symbolUsed[i]) ++numSymbolsInUse;
 
-    int eobSymbol = numSymbolsInUse + 1;
-    int alphaSize = eobSymbol + 1;
+    var eobSymbol = numSymbolsInUse + 1;
+    var alphaSize = eobSymbol + 1;
 
     // Number of trees (3 bits)
-    int numTrees = (int)this._bits.ReadBits(3);
+    var numTrees = (int)this._bits.ReadBits(3);
 
     // Number of selectors (15 bits)
-    int numSelectors = (int)this._bits.ReadBits(15);
+    var numSelectors = (int)this._bits.ReadBits(15);
 
     // Read selectors (unary coded, MTF encoded)
-    int[] selectorsMtf = new int[numSelectors];
-    for (int i = 0; i < numSelectors; ++i) {
+    var selectorsMtf = new int[numSelectors];
+    for (var i = 0; i < numSelectors; ++i) {
       var v = 0;
       while (this._bits.ReadBits(1) == 1)
         ++v;
@@ -117,14 +117,14 @@ internal sealed class Bzip2Decompressor {
     }
 
     // Undo MTF on selectors
-    int[] selectors = new int[numSelectors];
-    byte[] selectorAlpha = new byte[numTrees];
-    for (int i = 0; i < numTrees; ++i)
+    var selectors = new int[numSelectors];
+    var selectorAlpha = new byte[numTrees];
+    for (var i = 0; i < numTrees; ++i)
       selectorAlpha[i] = (byte)i;
 
-    for (int i = 0; i < numSelectors; ++i) {
-      int idx = selectorsMtf[i];
-      byte val = selectorAlpha[idx];
+    for (var i = 0; i < numSelectors; ++i) {
+      var idx = selectorsMtf[i];
+      var val = selectorAlpha[idx];
       if (idx > 0) {
         selectorAlpha.AsSpan(0, idx).CopyTo(selectorAlpha.AsSpan(1));
         selectorAlpha[0] = val;
@@ -134,10 +134,10 @@ internal sealed class Bzip2Decompressor {
 
     // Read Huffman tables (delta-encoded code lengths)
     var huffTables = new CanonicalHuffman[numTrees];
-    for (int t = 0; t < numTrees; ++t) {
-      int[] codeLens = new int[alphaSize];
-      int currentLen = (int)this._bits.ReadBits(5);
-      for (int s = 0; s < alphaSize; ++s) {
+    for (var t = 0; t < numTrees; ++t) {
+      var codeLens = new int[alphaSize];
+      var currentLen = (int)this._bits.ReadBits(5);
+      for (var s = 0; s < alphaSize; ++s) {
         while (this._bits.ReadBits(1) == 1) {
           if (this._bits.ReadBits(1) == 0)
             --currentLen;
@@ -160,8 +160,8 @@ internal sealed class Bzip2Decompressor {
         symbolInGroup = 0;
       }
 
-      int tableIdx = selectors[Math.Min(groupIndex, numSelectors - 1)];
-      int sym = huffTables[tableIdx].DecodeSymbol(this._bits);
+      var tableIdx = selectors[Math.Min(groupIndex, numSelectors - 1)];
+      var sym = huffTables[tableIdx].DecodeSymbol(this._bits);
       ++symbolInGroup;
 
       if (sym == eobSymbol)
@@ -171,28 +171,28 @@ internal sealed class Bzip2Decompressor {
     }
 
     // RLE2 decode
-    byte[] mtfData = Bzip2Compressor.Rle2Decode(symbols.ToArray().AsSpan(), eobSymbol);
+    var mtfData = Bzip2Compressor.Rle2Decode(symbols.ToArray().AsSpan(), eobSymbol);
 
     // MTF decode
     // Build the MTF alphabet from symbols in use
-    byte[] mtfAlphabet = new byte[numSymbolsInUse];
+    var mtfAlphabet = new byte[numSymbolsInUse];
     var idx2 = 0;
-    for (int i = 0; i < 256; ++i) {
+    for (var i = 0; i < 256; ++i) {
       if (symbolUsed[i])
         mtfAlphabet[idx2++] = (byte)i;
     }
 
     // Apply MTF decode with the correct alphabet
-    byte[] bwtData = MtfDecodeWithAlphabet(mtfData, mtfAlphabet);
+    var bwtData = MtfDecodeWithAlphabet(mtfData, mtfAlphabet);
 
     // BWT inverse
-    byte[] rle1Data = BurrowsWheelerTransform.Inverse(bwtData, bwtIndex);
+    var rle1Data = BurrowsWheelerTransform.Inverse(bwtData, bwtIndex);
 
     // RLE1 decode
-    byte[] blockData = Bzip2Compressor.Rle1Decode(rle1Data);
+    var blockData = Bzip2Compressor.Rle1Decode(rle1Data);
 
     // Verify block CRC
-    uint computedCrc = Crc32Bzip2(blockData);
+    var computedCrc = Crc32Bzip2(blockData);
     if (computedCrc != blockCrc)
       throw new InvalidDataException(
         $"Bzip2 block CRC mismatch: expected 0x{blockCrc:X8}, computed 0x{computedCrc:X8}.");
@@ -205,13 +205,13 @@ internal sealed class Bzip2Decompressor {
   }
 
   private bool[] ReadSymbolBitmap() {
-    bool[] used = new bool[256];
+    var used = new bool[256];
     var inUse16 = this._bits.ReadBits(16);
 
-    for (int i = 0; i < 16; ++i) {
+    for (var i = 0; i < 16; ++i) {
       if ((inUse16 & (1u << (15 - i))) != 0) {
         var bits = this._bits.ReadBits(16);
-        for (int j = 0; j < 16; ++j) {
+        for (var j = 0; j < 16; ++j) {
           if ((bits & (1u << (15 - j))) != 0)
             used[i * 16 + j] = true;
         }
@@ -222,12 +222,12 @@ internal sealed class Bzip2Decompressor {
   }
 
   private static byte[] MtfDecodeWithAlphabet(ReadOnlySpan<byte> data, byte[] alphabet) {
-    byte[] alpha = (byte[])alphabet.Clone();
-    byte[] result = new byte[data.Length];
+    var alpha = (byte[])alphabet.Clone();
+    var result = new byte[data.Length];
 
-    for (int i = 0; i < data.Length; ++i) {
+    for (var i = 0; i < data.Length; ++i) {
       int idx = data[i];
-      byte b = alpha[idx];
+      var b = alpha[idx];
       result[i] = b;
 
       if (idx > 0) {
@@ -240,10 +240,10 @@ internal sealed class Bzip2Decompressor {
   }
 
   private static uint Crc32Bzip2(ReadOnlySpan<byte> data) {
-    uint crc = 0xFFFFFFFF;
-    for (int i = 0; i < data.Length; ++i) {
+    var crc = 0xFFFFFFFF;
+    for (var i = 0; i < data.Length; ++i) {
       crc ^= (uint)data[i] << 24;
-      for (int j = 0; j < 8; ++j) {
+      for (var j = 0; j < 8; ++j) {
         if ((crc & 0x80000000) != 0)
           crc = (crc << 1) ^ 0x04C11DB7;
         else

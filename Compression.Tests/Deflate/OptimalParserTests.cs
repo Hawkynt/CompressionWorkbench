@@ -8,8 +8,8 @@ public class OptimalParserTests {
   [Test]
   public void Parse_EmptyInput_ReturnsEmpty() {
     var hashChain = new ZopfliHashChain();
-    int[] litLenLengths = DeflateConstants.GetStaticLiteralLengths();
-    int[] distLengths = DeflateConstants.GetStaticDistanceLengths();
+    var litLenLengths = DeflateConstants.GetStaticLiteralLengths();
+    var distLengths = DeflateConstants.GetStaticDistanceLengths();
 
     var symbols = OptimalParser.Parse([], hashChain, litLenLengths, distLengths);
     Assert.That(symbols, Is.Empty);
@@ -18,10 +18,10 @@ public class OptimalParserTests {
   [Category("EdgeCase")]
   [Test]
   public void Parse_ShortData_AllLiterals() {
-    byte[] data = "AB"u8.ToArray();
+    var data = "AB"u8.ToArray();
     var hashChain = new ZopfliHashChain();
-    int[] litLenLengths = DeflateConstants.GetStaticLiteralLengths();
-    int[] distLengths = DeflateConstants.GetStaticDistanceLengths();
+    var litLenLengths = DeflateConstants.GetStaticLiteralLengths();
+    var distLengths = DeflateConstants.GetStaticDistanceLengths();
 
     var symbols = OptimalParser.Parse(data, hashChain, litLenLengths, distLengths);
 
@@ -32,10 +32,10 @@ public class OptimalParserTests {
   [Category("HappyPath")]
   [Test]
   public void Parse_RepetitiveData_ContainsMatches() {
-    byte[] data = "ABCABCABCABCABCABCABCABC"u8.ToArray();
+    var data = "ABCABCABCABCABCABCABCABC"u8.ToArray();
     var hashChain = new ZopfliHashChain();
-    int[] litLenLengths = DeflateConstants.GetStaticLiteralLengths();
-    int[] distLengths = DeflateConstants.GetStaticDistanceLengths();
+    var litLenLengths = DeflateConstants.GetStaticLiteralLengths();
+    var distLengths = DeflateConstants.GetStaticDistanceLengths();
 
     var symbols = OptimalParser.Parse(data, hashChain, litLenLengths, distLengths);
 
@@ -48,15 +48,15 @@ public class OptimalParserTests {
   [Category("HappyPath")]
   [Test]
   public void Parse_SymbolsReconstructInput() {
-    byte[] data = "ABCABCABCDEF"u8.ToArray();
+    var data = "ABCABCABCDEF"u8.ToArray();
     var hashChain = new ZopfliHashChain();
-    int[] litLenLengths = DeflateConstants.GetStaticLiteralLengths();
-    int[] distLengths = DeflateConstants.GetStaticDistanceLengths();
+    var litLenLengths = DeflateConstants.GetStaticLiteralLengths();
+    var distLengths = DeflateConstants.GetStaticDistanceLengths();
 
     var symbols = OptimalParser.Parse(data, hashChain, litLenLengths, distLengths);
 
     // Reconstruct data from symbols
-    byte[] reconstructed = ReconstructFromSymbols(symbols, data);
+    var reconstructed = ReconstructFromSymbols(symbols, data);
     Assert.That(reconstructed, Is.EqualTo(data));
   }
 
@@ -65,8 +65,8 @@ public class OptimalParserTests {
   public void Parse_SingleByte_OneLiteral() {
     byte[] data = [0x42];
     var hashChain = new ZopfliHashChain();
-    int[] litLenLengths = DeflateConstants.GetStaticLiteralLengths();
-    int[] distLengths = DeflateConstants.GetStaticDistanceLengths();
+    var litLenLengths = DeflateConstants.GetStaticLiteralLengths();
+    var distLengths = DeflateConstants.GetStaticDistanceLengths();
 
     var symbols = OptimalParser.Parse(data, hashChain, litLenLengths, distLengths);
 
@@ -78,10 +78,10 @@ public class OptimalParserTests {
   [Category("EdgeCase")]
   [Test]
   public void Parse_AllZeros_UsesMatches() {
-    byte[] data = new byte[256];
+    var data = new byte[256];
     var hashChain = new ZopfliHashChain();
-    int[] litLenLengths = DeflateConstants.GetStaticLiteralLengths();
-    int[] distLengths = DeflateConstants.GetStaticDistanceLengths();
+    var litLenLengths = DeflateConstants.GetStaticLiteralLengths();
+    var distLengths = DeflateConstants.GetStaticDistanceLengths();
 
     var symbols = OptimalParser.Parse(data, hashChain, litLenLengths, distLengths);
 
@@ -89,7 +89,7 @@ public class OptimalParserTests {
     Assert.That(symbols.Length, Is.LessThan(data.Length));
 
     // Verify reconstruction
-    byte[] reconstructed = ReconstructFromSymbols(symbols, data);
+    var reconstructed = ReconstructFromSymbols(symbols, data);
     Assert.That(reconstructed, Is.EqualTo(data));
   }
 
@@ -100,7 +100,7 @@ public class OptimalParserTests {
         output.Add((byte)sym.LitLen);
       else {
         var start = output.Count - sym.Distance;
-        for (int i = 0; i < sym.LitLen; ++i)
+        for (var i = 0; i < sym.LitLen; ++i)
           output.Add(output[start + i]);
       }
     }

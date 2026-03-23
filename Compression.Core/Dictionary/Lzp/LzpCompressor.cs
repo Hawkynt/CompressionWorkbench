@@ -43,14 +43,14 @@ public static class LzpCompressor {
     ms.Write(BitConverter.GetBytes(input.Length));
     ms.WriteByte((byte)order);
 
-    int pos = 0;
+    var pos = 0;
     while (pos < input.Length) {
       // Collect up to 8 decisions in a group.
       byte flags = 0;
       var literals = new MemoryStream();
-      int count = Math.Min(8, input.Length - pos);
+      var count = Math.Min(8, input.Length - pos);
 
-      for (int bit = 0; bit < count; bit++) {
+      for (var bit = 0; bit < count; bit++) {
         if (pos < order) {
           // Not enough context yet — always a literal.
           literals.WriteByte(input[pos]);
@@ -58,8 +58,8 @@ public static class LzpCompressor {
           continue;
         }
 
-        int hash = ComputeHash(input, pos, order);
-        byte predicted = hashTable[hash];
+        var hash = ComputeHash(input, pos, order);
+        var predicted = hashTable[hash];
 
         if (predicted == input[pos]) {
           // Match — set bit.
@@ -84,8 +84,8 @@ public static class LzpCompressor {
   /// Computes a 20-bit FNV-1a hash of the <paramref name="order"/> bytes preceding position <paramref name="pos"/>.
   /// </summary>
   internal static int ComputeHash(byte[] data, int pos, int order) {
-    uint h = 2166136261u;
-    for (int i = pos - order; i < pos; i++) {
+    var h = 2166136261u;
+    for (var i = pos - order; i < pos; i++) {
       h ^= data[i];
       h *= 16777619u;
     }

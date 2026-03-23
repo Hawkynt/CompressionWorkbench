@@ -53,7 +53,7 @@ public sealed class SqxReader : IDisposable {
     ReadFully(this._stream, compressed);
 
     if (entry.IsEncrypted) {
-      byte[] key = SqxWriter.DeriveKey(this._password!);
+      var key = SqxWriter.DeriveKey(this._password!);
       var iv = new byte[16];
       compressed = AesCryptor.DecryptCbcNoPaddingAny(compressed, key, iv);
     }
@@ -69,11 +69,11 @@ public sealed class SqxReader : IDisposable {
 
     SqxDecoder? solidDecoder = null;
     if (this._isSolid) {
-      int dictSize = this._entries.Count > 0 ? this._entries[0].DictionarySize : SqxConstants.GetDictSize(0);
+      var dictSize = this._entries.Count > 0 ? this._entries[0].DictionarySize : SqxConstants.GetDictSize(0);
       solidDecoder = new SqxDecoder(dictSize);
     }
 
-    for (int i = 0; i < this._entries.Count; ++i) {
+    for (var i = 0; i < this._entries.Count; ++i) {
       var entry = this._entries[i];
 
       this._stream.Position = entry.DataOffset;
@@ -81,7 +81,7 @@ public sealed class SqxReader : IDisposable {
       ReadFully(this._stream, compressed);
 
       if (entry.IsEncrypted) {
-        byte[] key = SqxWriter.DeriveKey(this._password!);
+        var key = SqxWriter.DeriveKey(this._password!);
         var iv = new byte[16];
         compressed = AesCryptor.DecryptCbcNoPaddingAny(compressed, key, iv);
       }
@@ -97,7 +97,7 @@ public sealed class SqxReader : IDisposable {
         data = DecompressEntry(entry, compressed);
       }
 
-      uint crc = Crc32.Compute(data);
+      var crc = Crc32.Compute(data);
       if (crc != entry.Crc32)
         throw new InvalidDataException(
           $"CRC-32 mismatch for '{entry.FileName}': expected 0x{entry.Crc32:X8}, computed 0x{crc:X8}.");
@@ -120,27 +120,27 @@ public sealed class SqxReader : IDisposable {
     var archiveData = new byte[this._recoveryDataSize];
     ReadFully(this._stream, archiveData);
 
-    uint computedFdCrc = Crc32.Compute(archiveData);
+    var computedFdCrc = Crc32.Compute(archiveData);
     if (computedFdCrc != this._recoveryFdCrc) return false;
 
     // Also verify per-block parity
-    int sectorSize = SqxConstants.RecoverySectorSize;
+    var sectorSize = SqxConstants.RecoverySectorSize;
     this._stream.Position = this._recoveryDataOffset;
     var reader = new BinaryReader(this._stream, Encoding.ASCII, leaveOpen: true);
 
     // Skip block CRCs
-    for (int i = 0; i < this._recoveryFileBlocks; ++i)
+    for (var i = 0; i < this._recoveryFileBlocks; ++i)
       reader.ReadUInt16();
 
     // Read parity
     var parity = reader.ReadBytes(sectorSize);
-    uint rdCrc = Crc32.Compute(parity);
+    var rdCrc = Crc32.Compute(parity);
     return rdCrc == this._recoveryRdCrc;
   }
 
   private byte[] DecompressEntry(SqxEntry entry, byte[] compressed) {
     byte[] data;
-    int dictSize = entry.DictionarySize;
+    var dictSize = entry.DictionarySize;
 
     switch (entry.Method) {
       case SqxConstants.MethodStore:
@@ -169,12 +169,12 @@ public sealed class SqxReader : IDisposable {
         data = SqxMultimediaCodec.Decode(compressed, (int)entry.OriginalSize);
         break;
       case SqxConstants.MethodLzhBcj: {
-        byte[] lzhDecoded = SqxDecoder.Decode(compressed, (int)entry.OriginalSize, dictSize);
+        var lzhDecoded = SqxDecoder.Decode(compressed, (int)entry.OriginalSize, dictSize);
         data = Compression.Core.Transforms.BcjFilter.DecodeX86(lzhDecoded);
         break;
       }
       case SqxConstants.MethodLzhDelta: {
-        byte[] lzhDecoded = SqxDecoder.Decode(compressed, (int)entry.OriginalSize, dictSize);
+        var lzhDecoded = SqxDecoder.Decode(compressed, (int)entry.OriginalSize, dictSize);
         data = Compression.Core.Transforms.DeltaFilter.Decode(lzhDecoded);
         break;
       }
@@ -182,7 +182,7 @@ public sealed class SqxReader : IDisposable {
         throw new NotSupportedException($"Unsupported SQX method: {entry.Method}");
     }
 
-    uint crc = Crc32.Compute(data);
+    var crc = Crc32.Compute(data);
     if (crc != entry.Crc32)
       throw new InvalidDataException(
         $"CRC-32 mismatch for '{entry.FileName}': expected 0x{entry.Crc32:X8}, computed 0x{crc:X8}.");
@@ -194,16 +194,16 @@ public sealed class SqxReader : IDisposable {
     var reader = new BinaryReader(this._stream, Encoding.ASCII, leaveOpen: true);
 
     while (this._stream.Position + 7 <= this._stream.Length) {
-      ushort blockCrc = reader.ReadUInt16();
-      byte blockType = reader.ReadByte();
-      ushort blockFlags = reader.ReadUInt16();
-      ushort blockSize = reader.ReadUInt16();
+      var blockCrc = reader.ReadUInt16();
+      var blockType = reader.ReadByte();
+      var blockFlags = reader.ReadUInt16();
+      var blockSize = reader.ReadUInt16();
 
       // blockSize includes crc(2) + type(1) + flags(2) + size(2) + data = 7 + data
-      int dataLen = blockSize - 7;
+      var dataLen = blockSize - 7;
       if (dataLen < 0) dataLen = 0;
 
-      long blockDataStart = this._stream.Position;
+      var blockDataStart = this._stream.Position;
 
       switch (blockType) {
         case SqxConstants.BlockEnd:
@@ -230,30 +230,30 @@ public sealed class SqxReader : IDisposable {
   }
 
   private void ReadMainBlock(BinaryReader reader, ushort flags, int dataLen) {
-    byte[] magicBytes = reader.ReadBytes(5);
-    string magic = Encoding.ASCII.GetString(magicBytes);
+    var magicBytes = reader.ReadBytes(5);
+    var magic = Encoding.ASCII.GetString(magicBytes);
     if (magic != SqxConstants.Magic)
       throw new InvalidDataException("Invalid SQX magic signature.");
 
     this._isSolid = (flags & SqxConstants.MainFlagSolid) != 0;
 
     // Skip remaining header fields (ARC_VER, reserved)
-    int remaining = dataLen - 5;
+    var remaining = dataLen - 5;
     if (remaining > 0)
       this._stream.Position += remaining;
   }
 
   private void ReadFileEntry(BinaryReader reader, long blockDataStart, int dataLen, ushort flags) {
-    byte compFlags = reader.ReadByte();       // COMP_FLAGS
+    var compFlags = reader.ReadByte();       // COMP_FLAGS
     reader.ReadUInt16();                       // EXTRA_FLAGS (reserved)
     reader.ReadByte();                         // OS_FILE_SYS
-    byte arcVer = reader.ReadByte();          // ARC_VER
-    byte method = reader.ReadByte();          // ARC_METHOD
-    uint crc32 = reader.ReadUInt32();          // FILE_CRC32
-    uint attributes = reader.ReadUInt32();     // FILE_ATTR
-    uint timestamp = reader.ReadUInt32();      // FILE_TIME
-    uint compressedSize = reader.ReadUInt32(); // COMP_SIZE
-    uint originalSize = reader.ReadUInt32();   // ORIG_SIZE
+    var arcVer = reader.ReadByte();          // ARC_VER
+    var method = reader.ReadByte();          // ARC_METHOD
+    var crc32 = reader.ReadUInt32();          // FILE_CRC32
+    var attributes = reader.ReadUInt32();     // FILE_ATTR
+    var timestamp = reader.ReadUInt32();      // FILE_TIME
+    var compressedSize = reader.ReadUInt32(); // COMP_SIZE
+    var originalSize = reader.ReadUInt32();   // ORIG_SIZE
 
     // 64-bit sizes
     long comp64 = compressedSize;
@@ -263,8 +263,8 @@ public sealed class SqxReader : IDisposable {
       orig64 |= (long)reader.ReadUInt32() << 32;
     }
 
-    ushort nameLen = reader.ReadUInt16();       // NAME_LEN
-    byte[] nameBytes = reader.ReadBytes(nameLen); // FILE_NAME
+    var nameLen = reader.ReadUInt16();       // NAME_LEN
+    var nameBytes = reader.ReadBytes(nameLen); // FILE_NAME
 
     // Position to end of block header
     this._stream.Position = blockDataStart + dataLen;
@@ -299,13 +299,13 @@ public sealed class SqxReader : IDisposable {
   private void ReadRecoveryBlock(BinaryReader reader, int dataLen) {
     if (dataLen < 42) return;
 
-    byte[] sig = reader.ReadBytes(5);
+    var sig = reader.ReadBytes(5);
     if (Encoding.ASCII.GetString(sig) != SqxConstants.RecoverySignature)
       return;
 
     this._recoveryPercent = reader.ReadInt32();  // R_LEVEL
     this._recoveryFileBlocks = (int)reader.ReadInt64(); // FILE_BLOCKS
-    long rdBlocks = reader.ReadInt64();            // RD_BLOCKS
+    var rdBlocks = reader.ReadInt64();            // RD_BLOCKS
     reader.ReadByte();                             // ARC_VER
     this._recoveryDataSize = reader.ReadInt64();   // DATA_SIZE
     this._recoveryRdCrc = reader.ReadUInt32();     // RD_CRC
@@ -315,8 +315,8 @@ public sealed class SqxReader : IDisposable {
   }
 
   private static DateTime DateTimeFromDos(uint timestamp) {
-    int time = (int)(timestamp & 0xFFFF);
-    int date = (int)(timestamp >> 16);
+    var time = (int)(timestamp & 0xFFFF);
+    var date = (int)(timestamp >> 16);
     try {
       return new DateTime(
         ((date >> 9) & 0x7F) + 1980,
@@ -332,9 +332,9 @@ public sealed class SqxReader : IDisposable {
   }
 
   private static void ReadFully(Stream stream, byte[] buffer) {
-    int totalRead = 0;
+    var totalRead = 0;
     while (totalRead < buffer.Length) {
-      int read = stream.Read(buffer, totalRead, buffer.Length - totalRead);
+      var read = stream.Read(buffer, totalRead, buffer.Length - totalRead);
       if (read == 0) throw new EndOfStreamException("Unexpected end of SQX data.");
       totalRead += read;
     }

@@ -8,7 +8,7 @@ public class CpioTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyArchive() {
-    byte[] archive = CreateArchive([]);
+    var archive = CreateArchive([]);
     var entries = ReadArchive(archive);
     Assert.That(entries, Is.Empty);
   }
@@ -17,8 +17,8 @@ public class CpioTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleFile() {
-    byte[] data = "Hello, cpio!"u8.ToArray();
-    byte[] archive = CreateArchive([("test.txt", data)]);
+    var data = "Hello, cpio!"u8.ToArray();
+    var archive = CreateArchive([("test.txt", data)]);
 
     var entries = ReadArchive(archive);
     Assert.That(entries, Has.Count.EqualTo(1));
@@ -30,11 +30,11 @@ public class CpioTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_MultipleFiles() {
-    byte[] data1 = "First file"u8.ToArray();
-    byte[] data2 = "Second file with more content"u8.ToArray();
+    var data1 = "First file"u8.ToArray();
+    var data2 = "Second file with more content"u8.ToArray();
     byte[] data3 = [0, 1, 2, 3, 4, 5];
 
-    byte[] archive = CreateArchive([
+    var archive = CreateArchive([
       ("file1.txt", data1),
       ("subdir/file2.txt", data2),
       ("binary.dat", data3),
@@ -54,7 +54,7 @@ public class CpioTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_EmptyFile() {
-    byte[] archive = CreateArchive([("empty.txt", [])]);
+    var archive = CreateArchive([("empty.txt", [])]);
     var entries = ReadArchive(archive);
     Assert.That(entries, Has.Count.EqualTo(1));
     Assert.That(entries[0].Entry.Name, Is.EqualTo("empty.txt"));
@@ -85,8 +85,8 @@ public class CpioTests {
   [Category("HappyPath")]
   [Test]
   public void Header_StartsWithMagic() {
-    byte[] archive = CreateArchive([("x", [1])]);
-    string header = System.Text.Encoding.ASCII.GetString(archive, 0, 6);
+    var archive = CreateArchive([("x", [1])]);
+    var header = System.Text.Encoding.ASCII.GetString(archive, 0, 6);
     Assert.That(header, Is.EqualTo("070701"));
   }
 
@@ -95,10 +95,10 @@ public class CpioTests {
   [Test]
   public void RoundTrip_LargeFile() {
     var rng = new Random(42);
-    byte[] data = new byte[10000];
+    var data = new byte[10000];
     rng.NextBytes(data);
 
-    byte[] archive = CreateArchive([("large.bin", data)]);
+    var archive = CreateArchive([("large.bin", data)]);
     var entries = ReadArchive(archive);
     Assert.That(entries[0].Data, Is.EqualTo(data));
   }
@@ -108,11 +108,11 @@ public class CpioTests {
   [Test]
   public void RoundTrip_DataAlignmentEdgeCases() {
     // Test various sizes that test 4-byte alignment padding
-    foreach (int size in new[] { 1, 2, 3, 4, 5, 15, 16, 17 }) {
-      byte[] data = new byte[size];
-      for (int i = 0; i < size; ++i) data[i] = (byte)(i + 1);
+    foreach (var size in new[] { 1, 2, 3, 4, 5, 15, 16, 17 }) {
+      var data = new byte[size];
+      for (var i = 0; i < size; ++i) data[i] = (byte)(i + 1);
 
-      byte[] archive = CreateArchive([("test", data)]);
+      var archive = CreateArchive([("test", data)]);
       var entries = ReadArchive(archive);
       Assert.That(entries[0].Data, Is.EqualTo(data), $"Failed for size {size}");
     }

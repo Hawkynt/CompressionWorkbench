@@ -43,14 +43,14 @@ public sealed class UharcReader : IDisposable {
     if (this._stream.Length < UharcConstants.HeaderSize)
       ThrowInvalidArchive("Stream is too short to be a UHARC archive.");
 
-    byte m0 = reader.ReadByte();
-    byte m1 = reader.ReadByte();
-    byte m2 = reader.ReadByte();
+    var m0 = reader.ReadByte();
+    var m1 = reader.ReadByte();
+    var m2 = reader.ReadByte();
     if (m0 != UharcConstants.Magic[0] || m1 != UharcConstants.Magic[1] || m2 != UharcConstants.Magic[2])
       ThrowInvalidArchive($"Invalid UHARC magic: expected 0x55 0x48 0x41, got 0x{m0:X2} 0x{m1:X2} 0x{m2:X2}.");
 
     // Version byte.
-    byte version = reader.ReadByte();
+    var version = reader.ReadByte();
     if (version > UharcConstants.Version)
       ThrowInvalidArchive($"Unsupported UHARC version: {version} (max supported: {UharcConstants.Version}).");
 
@@ -82,24 +82,24 @@ public sealed class UharcReader : IDisposable {
     //   N bytes: filename (UTF-8)
     //   1 byte:  attributes (bit 0 = directory)
 
-    long remaining = this._stream.Length - this._stream.Position;
+    var remaining = this._stream.Length - this._stream.Position;
     if (remaining < 20) // minimum entry header without filename
       return null;
 
-    byte method = reader.ReadByte();
-    uint originalSize = reader.ReadUInt32();
-    uint compressedSize = reader.ReadUInt32();
-    uint crc32 = reader.ReadUInt32();
-    uint timestamp = reader.ReadUInt32();
-    ushort nameLength = reader.ReadUInt16();
+    var method = reader.ReadByte();
+    var originalSize = reader.ReadUInt32();
+    var compressedSize = reader.ReadUInt32();
+    var crc32 = reader.ReadUInt32();
+    var timestamp = reader.ReadUInt32();
+    var nameLength = reader.ReadUInt16();
 
-    byte[] nameBytes = reader.ReadBytes(nameLength);
-    string fileName = Encoding.UTF8.GetString(nameBytes);
+    var nameBytes = reader.ReadBytes(nameLength);
+    var fileName = Encoding.UTF8.GetString(nameBytes);
 
-    byte attributes = reader.ReadByte();
-    bool isDirectory = (attributes & 0x01) != 0;
+    var attributes = reader.ReadByte();
+    var isDirectory = (attributes & 0x01) != 0;
 
-    long dataOffset = this._stream.Position;
+    var dataOffset = this._stream.Position;
 
     // Skip compressed data to position at the next entry.
     this._stream.Seek(compressedSize, SeekOrigin.Current);
@@ -133,10 +133,10 @@ public sealed class UharcReader : IDisposable {
       return [];
 
     this._stream.Position = entry.DataOffset;
-    byte[] compressed = new byte[entry.CompressedSize];
+    var compressed = new byte[entry.CompressedSize];
     ReadFully(this._stream, compressed);
 
-    byte[] data = entry.Method switch {
+    var data = entry.Method switch {
       UharcConstants.MethodStore => compressed,
       UharcConstants.MethodLzp => LzpDecompressor.Decompress(compressed),
       _ => throw new NotSupportedException($"Unsupported UHARC compression method: {entry.Method}."),
@@ -144,7 +144,7 @@ public sealed class UharcReader : IDisposable {
 
     // Verify CRC-32.
     if (data.Length > 0) {
-      uint computed = Crc32.Compute(data);
+      var computed = Crc32.Compute(data);
       if (computed != entry.Crc32)
         throw new InvalidDataException(
           $"CRC-32 mismatch for '{entry.FileName}': expected 0x{entry.Crc32:X8}, computed 0x{computed:X8}.");
@@ -156,9 +156,9 @@ public sealed class UharcReader : IDisposable {
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   private static void ReadFully(Stream stream, byte[] buffer) {
-    int offset = 0;
+    var offset = 0;
     while (offset < buffer.Length) {
-      int read = stream.Read(buffer, offset, buffer.Length - offset);
+      var read = stream.Read(buffer, offset, buffer.Length - offset);
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of UHARC archive data.");
       offset += read;

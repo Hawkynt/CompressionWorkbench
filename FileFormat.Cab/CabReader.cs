@@ -177,7 +177,7 @@ public sealed class CabReader : IDisposable {
         }
 
         case CabCompressionType.Quantum: {
-          int windowLevel = (folder.RawCompressionType >> 8) & 0x1F;
+          var windowLevel = (folder.RawCompressionType >> 8) & 0x1F;
           if (windowLevel < 1) windowLevel = 4;
           var decompressed = QuantumDecompressor.Decompress(abData, cbUncomp, windowLevel,
             this._quantumRescaleThreshold);
@@ -186,7 +186,7 @@ public sealed class CabReader : IDisposable {
         }
 
         case CabCompressionType.Lzx: {
-          int windowBits = (folder.RawCompressionType >> 8) & 0x1F;
+          var windowBits = (folder.RawCompressionType >> 8) & 0x1F;
           if (windowBits < 15) windowBits = 15;
           using var lzxStream = new MemoryStream(abData);
           var lzxDecomp = new LzxDecompressor(lzxStream, windowBits);

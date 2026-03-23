@@ -11,8 +11,8 @@ public class ZipInteropTests {
   [Category("RoundTrip")]
   [Test]
   public void SystemReads_OurArchive_Store() {
-    byte[] data = "Hello from our ZIP writer!"u8.ToArray();
-    byte[] archive = CreateOurArchive("test.txt", data, ZipCompressionMethod.Store);
+    var data = "Hello from our ZIP writer!"u8.ToArray();
+    var archive = CreateOurArchive("test.txt", data, ZipCompressionMethod.Store);
 
     using var ms = new MemoryStream(archive);
     using var sysZip = new SysZipArchive(ms, SysZipArchiveMode.Read);
@@ -29,8 +29,8 @@ public class ZipInteropTests {
   [Category("RoundTrip")]
   [Test]
   public void SystemReads_OurArchive_Deflate() {
-    byte[] data = "Compressible text for interop testing with system ZIP implementation."u8.ToArray();
-    byte[] archive = CreateOurArchive("test.txt", data, ZipCompressionMethod.Deflate);
+    var data = "Compressible text for interop testing with system ZIP implementation."u8.ToArray();
+    var archive = CreateOurArchive("test.txt", data, ZipCompressionMethod.Deflate);
 
     using var ms = new MemoryStream(archive);
     using var sysZip = new SysZipArchive(ms, SysZipArchiveMode.Read);
@@ -46,8 +46,8 @@ public class ZipInteropTests {
   [Category("RoundTrip")]
   [Test]
   public void WeRead_SystemArchive_Store() {
-    byte[] data = "Hello from System.IO.Compression!"u8.ToArray();
-    byte[] archive = CreateSystemArchive("test.txt", data, SysCompressionLevel.NoCompression);
+    var data = "Hello from System.IO.Compression!"u8.ToArray();
+    var archive = CreateSystemArchive("test.txt", data, SysCompressionLevel.NoCompression);
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
@@ -59,8 +59,8 @@ public class ZipInteropTests {
   [Category("RoundTrip")]
   [Test]
   public void WeRead_SystemArchive_Deflate() {
-    byte[] data = "Hello from System.IO.Compression with deflate!"u8.ToArray();
-    byte[] archive = CreateSystemArchive("test.txt", data, SysCompressionLevel.Optimal);
+    var data = "Hello from System.IO.Compression with deflate!"u8.ToArray();
+    var archive = CreateSystemArchive("test.txt", data, SysCompressionLevel.Optimal);
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
@@ -71,8 +71,8 @@ public class ZipInteropTests {
   [Category("RoundTrip")]
   [Test]
   public void SystemReads_OurArchive_MultipleEntries() {
-    byte[] data1 = "First file content"u8.ToArray();
-    byte[] data2 = "Second file with more content for testing multiple entries."u8.ToArray();
+    var data1 = "First file content"u8.ToArray();
+    var data2 = "Second file with more content for testing multiple entries."u8.ToArray();
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -104,9 +104,9 @@ public class ZipInteropTests {
   [Category("RoundTrip")]
   [Test]
   public void WeRead_SystemArchive_MultipleEntries() {
-    byte[] data1 = "First"u8.ToArray();
-    byte[] data2 = "Second"u8.ToArray();
-    byte[] data3 = "Third"u8.ToArray();
+    var data1 = "First"u8.ToArray();
+    var data2 = "Second"u8.ToArray();
+    var data3 = "Third"u8.ToArray();
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -129,12 +129,12 @@ public class ZipInteropTests {
   [Category("RoundTrip")]
   [Test]
   public void SystemReads_OurArchive_LargeData() {
-    byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
-    byte[] data = new byte[pattern.Length * 500];
-    for (int i = 0; i < 500; ++i)
+    var pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
+    var data = new byte[pattern.Length * 500];
+    for (var i = 0; i < 500; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
-    byte[] archive = CreateOurArchive("large.txt", data, ZipCompressionMethod.Deflate);
+    var archive = CreateOurArchive("large.txt", data, ZipCompressionMethod.Deflate);
 
     using var ms = new MemoryStream(archive);
     using var sysZip = new SysZipArchive(ms, SysZipArchiveMode.Read);
@@ -148,12 +148,12 @@ public class ZipInteropTests {
   [Category("RoundTrip")]
   [Test]
   public void WeRead_SystemArchive_LargeData() {
-    byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
-    byte[] data = new byte[pattern.Length * 500];
-    for (int i = 0; i < 500; ++i)
+    var pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
+    var data = new byte[pattern.Length * 500];
+    for (var i = 0; i < 500; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
-    byte[] archive = CreateSystemArchive("large.txt", data, SysCompressionLevel.Optimal);
+    var archive = CreateSystemArchive("large.txt", data, SysCompressionLevel.Optimal);
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(data));
@@ -181,7 +181,7 @@ public class ZipInteropTests {
   [Category("RoundTrip")]
   [Test]
   public void WeRead_SystemArchive_Utf8Names() {
-    byte[] data = "content"u8.ToArray();
+    var data = "content"u8.ToArray();
     byte[] archive;
     using (var ms = new MemoryStream()) {
       using (var sysZip = new SysZipArchive(ms, SysZipArchiveMode.Create, leaveOpen: true)) {

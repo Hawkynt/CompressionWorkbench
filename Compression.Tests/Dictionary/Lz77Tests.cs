@@ -33,7 +33,7 @@ public class Lz77Tests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_RepetitiveData() {
-    byte[] input = Encoding.ASCII.GetBytes("ABCABCABCABCABCABC");
+    var input = Encoding.ASCII.GetBytes("ABCABCABCABCABCABC");
     var finder = new HashChainMatchFinder(32768);
     var compressor = new Lz77Compressor(finder);
     var tokens = compressor.Compress(input);
@@ -46,7 +46,7 @@ public class Lz77Tests {
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
-    byte[] input = new byte[1000];
+    var input = new byte[1000];
     rng.NextBytes(input);
 
     var finder = new HashChainMatchFinder(32768);
@@ -61,7 +61,7 @@ public class Lz77Tests {
   [Test]
   public void RoundTrip_HighlyRepetitive() {
     // Single byte repeated many times — should produce matches
-    byte[] input = new byte[500];
+    var input = new byte[500];
     Array.Fill(input, (byte)0xAA);
 
     var finder = new HashChainMatchFinder(32768);
@@ -77,13 +77,13 @@ public class Lz77Tests {
   [Category("HappyPath")]
   [Test]
   public void Compress_ProducesMatchTokens_ForRepeatedSequences() {
-    byte[] input = Encoding.ASCII.GetBytes("ABCDEFABCDEF");
+    var input = Encoding.ASCII.GetBytes("ABCDEFABCDEF");
     var finder = new HashChainMatchFinder(32768);
     var compressor = new Lz77Compressor(finder);
     var tokens = compressor.Compress(input);
 
     // Should have some match tokens
-    bool hasMatch = tokens.Any(t => !t.IsLiteral);
+    var hasMatch = tokens.Any(t => !t.IsLiteral);
     Assert.That(hasMatch, Is.True);
   }
 
@@ -101,7 +101,7 @@ public class Lz77Tests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_TextData() {
-    byte[] input = Encoding.ASCII.GetBytes(
+    var input = Encoding.ASCII.GetBytes(
       "The quick brown fox jumps over the lazy dog. " +
       "The quick brown fox jumps over the lazy dog.");
 

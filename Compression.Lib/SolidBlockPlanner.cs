@@ -137,7 +137,7 @@ internal static class SolidBlockPlanner {
   /// </summary>
   private static List<(int GroupIndex, List<ArchiveInput> Files)> GroupByExtension(List<ArchiveInput> files) {
     var extToGroup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-    for (int g = 0; g < ExtensionGroups.Length; g++)
+    for (var g = 0; g < ExtensionGroups.Length; g++)
       foreach (var ext in ExtensionGroups[g])
         extToGroup[ext] = g;
 
@@ -146,7 +146,7 @@ internal static class SolidBlockPlanner {
 
     foreach (var f in files) {
       var ext = Path.GetExtension(f.EntryName);
-      if (!string.IsNullOrEmpty(ext) && extToGroup.TryGetValue(ext, out int groupIdx)) {
+      if (!string.IsNullOrEmpty(ext) && extToGroup.TryGetValue(ext, out var groupIdx)) {
         if (!buckets.TryGetValue(groupIdx, out var list)) {
           list = [];
           buckets[groupIdx] = list;

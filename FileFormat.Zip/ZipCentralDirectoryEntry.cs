@@ -31,10 +31,10 @@ internal static class ZipCentralDirectoryEntry {
     var externalAttrs = reader.ReadUInt32();
     var localHeaderOffset = reader.ReadUInt32();
 
-    Encoding encoding = (flags & ZipConstants.FlagUtf8) != 0 ? Encoding.UTF8 : Encoding.Latin1;
-    string fileName = encoding.GetString(reader.ReadBytes(fileNameLen));
-    byte[]? extra = extraLen > 0 ? reader.ReadBytes(extraLen) : null;
-    string? comment = commentLen > 0 ? encoding.GetString(reader.ReadBytes(commentLen)) : null;
+    var encoding = (flags & ZipConstants.FlagUtf8) != 0 ? Encoding.UTF8 : Encoding.Latin1;
+    var fileName = encoding.GetString(reader.ReadBytes(fileNameLen));
+    var extra = extraLen > 0 ? reader.ReadBytes(extraLen) : null;
+    var comment = commentLen > 0 ? encoding.GetString(reader.ReadBytes(commentLen)) : null;
 
     var entry = new ZipEntry {
       FileName = fileName,
@@ -63,9 +63,9 @@ internal static class ZipCentralDirectoryEntry {
   /// </summary>
   public static void Write(BinaryWriter writer, ZipEntry entry) {
     var (date, time) = ZipEntry.ToMsDosDateTime(entry.LastModified);
-    byte[] fileNameBytes = Encoding.UTF8.GetBytes(entry.FileName);
-    byte[]? commentBytes = entry.Comment != null ? Encoding.UTF8.GetBytes(entry.Comment) : null;
-    ushort flags = ZipConstants.FlagUtf8;
+    var fileNameBytes = Encoding.UTF8.GetBytes(entry.FileName);
+    var commentBytes = entry.Comment != null ? Encoding.UTF8.GetBytes(entry.Comment) : null;
+    var flags = ZipConstants.FlagUtf8;
 
     // Set encrypted flag
     if (entry.IsEncrypted)
@@ -75,9 +75,9 @@ internal static class ZipCentralDirectoryEntry {
       flags |= (ushort)(entry.GeneralPurposeFlags & 0x0006);
 
     byte[]? zip64Extra = null;
-    uint compSize = (uint)Math.Min(entry.CompressedSize, uint.MaxValue);
-    uint uncompSize = (uint)Math.Min(entry.UncompressedSize, uint.MaxValue);
-    uint localOffset = (uint)Math.Min(entry.LocalHeaderOffset, uint.MaxValue);
+    var compSize = (uint)Math.Min(entry.CompressedSize, uint.MaxValue);
+    var uncompSize = (uint)Math.Min(entry.UncompressedSize, uint.MaxValue);
+    var localOffset = (uint)Math.Min(entry.LocalHeaderOffset, uint.MaxValue);
 
     if (entry.IsZip64) {
       compSize = ZipConstants.Zip64Sentinel32;
@@ -87,11 +87,11 @@ internal static class ZipCentralDirectoryEntry {
     }
 
     // Merge all extra field data
-    int totalExtraLen = (zip64Extra?.Length ?? 0) + (entry.ExtraField?.Length ?? 0);
+    var totalExtraLen = (zip64Extra?.Length ?? 0) + (entry.ExtraField?.Length ?? 0);
     byte[]? combinedExtra = null;
     if (totalExtraLen > 0) {
       combinedExtra = new byte[totalExtraLen];
-      int pos = 0;
+      var pos = 0;
       if (zip64Extra != null) {
         zip64Extra.CopyTo(combinedExtra, pos);
         pos += zip64Extra.Length;
@@ -100,9 +100,9 @@ internal static class ZipCentralDirectoryEntry {
         entry.ExtraField.CopyTo(combinedExtra, pos);
     }
 
-    ushort commentLen = (ushort)(commentBytes?.Length ?? 0);
+    var commentLen = (ushort)(commentBytes?.Length ?? 0);
 
-    ushort versionNeeded = entry.IsZip64 ? ZipConstants.VersionNeeded45
+    var versionNeeded = entry.IsZip64 ? ZipConstants.VersionNeeded45
       : entry.CompressionMethod == ZipCompressionMethod.WinZipAes ? ZipConstants.VersionNeeded51
       : ZipConstants.VersionNeeded20;
 
@@ -133,12 +133,12 @@ internal static class ZipCentralDirectoryEntry {
   private static void ReadZip64ExtraField(ZipEntry entry, byte[] extra, uint compSize32, uint uncompSize32, uint offset32) {
     var pos = 0;
     while (pos + 4 <= extra.Length) {
-      ushort tag = BitConverter.ToUInt16(extra, pos);
-      ushort size = BitConverter.ToUInt16(extra, pos + 2);
+      var tag = BitConverter.ToUInt16(extra, pos);
+      var size = BitConverter.ToUInt16(extra, pos + 2);
       pos += 4;
 
       if (tag == ZipConstants.Zip64ExtraFieldTag && pos + size <= extra.Length) {
-        int fieldPos = pos;
+        var fieldPos = pos;
         if (uncompSize32 == ZipConstants.Zip64Sentinel32 && fieldPos + 8 <= pos + size) {
           entry.UncompressedSize = BitConverter.ToInt64(extra, fieldPos);
           fieldPos += 8;

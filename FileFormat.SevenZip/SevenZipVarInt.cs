@@ -21,12 +21,12 @@ internal static class SevenZipVarInt {
   /// <param name="stream">The stream to read from.</param>
   /// <returns>The decoded value.</returns>
   public static ulong Read(Stream stream) {
-    int firstByte = stream.ReadByte();
+    var firstByte = stream.ReadByte();
     if (firstByte < 0)
       throw new EndOfStreamException("Unexpected end of stream reading 7z varint.");
 
     // Count leading 1-bits
-    int mask = 0x80;
+    var mask = 0x80;
     var extraBytes = 0;
     while (extraBytes < 8 && (firstByte & mask) != 0) {
       ++extraBytes;
@@ -36,8 +36,8 @@ internal static class SevenZipVarInt {
     // Special case: all 8 bits are leading 1s (0xFF prefix) means read 8 more bytes
     if (extraBytes == 8) {
       ulong value = 0;
-      for (int i = 0; i < 8; ++i) {
-        int b = stream.ReadByte();
+      for (var i = 0; i < 8; ++i) {
+        var b = stream.ReadByte();
         if (b < 0)
           throw new EndOfStreamException("Unexpected end of stream reading 7z varint.");
         value |= (ulong)b << (i * 8);
@@ -48,15 +48,15 @@ internal static class SevenZipVarInt {
 
     // Read extraBytes additional bytes in little-endian order (low bytes first)
     ulong result = 0;
-    for (int i = 0; i < extraBytes; ++i) {
-      int b = stream.ReadByte();
+    for (var i = 0; i < extraBytes; ++i) {
+      var b = stream.ReadByte();
       if (b < 0)
         throw new EndOfStreamException("Unexpected end of stream reading 7z varint.");
       result |= (ulong)b << (i * 8);
     }
 
     // Add the remaining data bits of the first byte as the high part
-    ulong highPart = (ulong)(firstByte & (mask - 1));
+    var highPart = (ulong)(firstByte & (mask - 1));
     result += highPart << (extraBytes * 8);
 
     return result;
@@ -84,7 +84,7 @@ internal static class SevenZipVarInt {
 
     // Find the number of extra bytes needed
     var extraBytes = 1;
-    ulong limit = 1UL << 14; // 2 bytes: 14 bits
+    var limit = 1UL << 14; // 2 bytes: 14 bits
     while (extraBytes < 8 && value >= limit) {
       ++extraBytes;
       if (extraBytes < 8)
@@ -94,23 +94,23 @@ internal static class SevenZipVarInt {
     if (extraBytes >= 8) {
       // Write 0xFF followed by 8 raw bytes
       stream.WriteByte(0xFF);
-      for (int i = 0; i < 8; ++i)
+      for (var i = 0; i < 8; ++i)
         stream.WriteByte((byte)(value >> (i * 8)));
 
       return;
     }
 
     // Build the first byte: leading 1-bits followed by high bits of value
-    int dataBitsInFirstByte = 7 - extraBytes;
+    var dataBitsInFirstByte = 7 - extraBytes;
     var firstByte = 0;
-    for (int i = 0; i < extraBytes; ++i)
+    for (var i = 0; i < extraBytes; ++i)
       firstByte |= 0x80 >> i;
 
     firstByte |= (int)(value >> (extraBytes * 8)) & ((1 << dataBitsInFirstByte) - 1);
     stream.WriteByte((byte)firstByte);
 
     // Write remaining bytes in little-endian
-    for (int i = 0; i < extraBytes; ++i)
+    for (var i = 0; i < extraBytes; ++i)
       stream.WriteByte((byte)(value >> (i * 8)));
   }
 }

@@ -8,7 +8,7 @@ public class RarWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Store_RoundTrip_SingleFile() {
-    byte[] data = "Hello, RAR writer!"u8.ToArray();
+    var data = "Hello, RAR writer!"u8.ToArray();
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -27,8 +27,8 @@ public class RarWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Store_RoundTrip_MultipleFiles() {
-    byte[] d1 = "First file"u8.ToArray();
-    byte[] d2 = "Second file content"u8.ToArray();
+    var d1 = "First file"u8.ToArray();
+    var d2 = "Second file content"u8.ToArray();
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -66,15 +66,15 @@ public class RarWriterTests {
   [Test]
   public void Encoder_Decoder_DirectRoundTrip() {
     // Test encoder/decoder at the core level, bypassing archive format
-    byte[] data = new byte[200];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[200];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 10);
 
     var encoder = new Compression.Core.Dictionary.Rar.Rar5Encoder();
-    byte[] compressed = encoder.Compress(data);
+    var compressed = encoder.Compress(data);
 
     var decoder = new Compression.Core.Dictionary.Rar.Rar5Decoder(128 * 1024);
-    byte[] decompressed = decoder.Decompress(compressed, data.Length);
+    var decompressed = decoder.Decompress(compressed, data.Length);
 
     Assert.That(decompressed, Is.EqualTo(data));
   }
@@ -87,10 +87,10 @@ public class RarWriterTests {
     byte[] data = [1, 2, 3, 4, 5];
 
     var encoder = new Compression.Core.Dictionary.Rar.Rar5Encoder();
-    byte[] compressed = encoder.Compress(data);
+    var compressed = encoder.Compress(data);
 
     var decoder = new Compression.Core.Dictionary.Rar.Rar5Decoder(128 * 1024);
-    byte[] decompressed = decoder.Decompress(compressed, data.Length);
+    var decompressed = decoder.Decompress(compressed, data.Length);
 
     Assert.That(decompressed, Is.EqualTo(data));
   }
@@ -100,8 +100,8 @@ public class RarWriterTests {
   [Test]
   public void Compressed_RoundTrip() {
     // Repetitive data that compresses well
-    byte[] data = new byte[4096];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[4096];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 10);
 
     byte[] archive;
@@ -119,12 +119,12 @@ public class RarWriterTests {
 
     // Also verify direct decompression of the compressed payload
     var encoder = new Compression.Core.Dictionary.Rar.Rar5Encoder();
-    byte[] compressed = encoder.Compress(data);
+    var compressed = encoder.Compress(data);
     var decoder = new Compression.Core.Dictionary.Rar.Rar5Decoder(128 * 1024);
-    byte[] directDecoded = decoder.Decompress(compressed, data.Length);
+    var directDecoded = decoder.Decompress(compressed, data.Length);
     Assert.That(directDecoded, Is.EqualTo(data), "Direct encode/decode failed");
 
-    byte[] extracted = reader.Extract(0);
+    var extracted = reader.Extract(0);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -133,7 +133,7 @@ public class RarWriterTests {
   [Test]
   public void Compressed_FallsBackToStoreForIncompressible() {
     // Random data won't compress
-    byte[] data = new byte[256];
+    var data = new byte[256];
     new Random(42).NextBytes(data);
 
     byte[] archive;
@@ -153,7 +153,7 @@ public class RarWriterTests {
   [Test]
   public void Timestamp_Preserved() {
     var time = new DateTimeOffset(2025, 1, 15, 10, 30, 0, TimeSpan.Zero);
-    byte[] data = "timestamped"u8.ToArray();
+    var data = "timestamped"u8.ToArray();
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -173,17 +173,17 @@ public class RarWriterTests {
   [TestCase(50000)]
   [TestCase(100000)]
   public void Encoder_Decoder_LargeRepetitive(int size) {
-    byte[] data = new byte[size];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[size];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 26 + 'A');
 
     var encoder = new Compression.Core.Dictionary.Rar.Rar5Encoder(1 << 18);
-    byte[] compressed = encoder.Compress(data);
+    var compressed = encoder.Compress(data);
 
     var decoder = new Compression.Core.Dictionary.Rar.Rar5Decoder(1 << 18);
-    byte[] decompressed = decoder.Decompress(compressed, data.Length);
+    var decompressed = decoder.Decompress(compressed, data.Length);
 
-    for (int i = 0; i < data.Length; ++i) {
+    for (var i = 0; i < data.Length; ++i) {
       if (decompressed[i] != data[i]) {
         Assert.Fail($"Mismatch at index {i}/{size}: expected {data[i]}, got {decompressed[i]}");
         break;
@@ -196,16 +196,16 @@ public class RarWriterTests {
   [Test]
   public void Encoder_Decoder_LargeRandom() {
     // Random data — mostly literals, no matches. Tests Huffman table encoding for large data.
-    byte[] data = new byte[50000];
+    var data = new byte[50000];
     new Random(42).NextBytes(data);
 
     var encoder = new Compression.Core.Dictionary.Rar.Rar5Encoder(1 << 18);
-    byte[] compressed = encoder.Compress(data);
+    var compressed = encoder.Compress(data);
 
     var decoder = new Compression.Core.Dictionary.Rar.Rar5Decoder(1 << 18);
-    byte[] decompressed = decoder.Decompress(compressed, data.Length);
+    var decompressed = decoder.Decompress(compressed, data.Length);
 
-    for (int i = 0; i < data.Length; ++i) {
+    for (var i = 0; i < data.Length; ++i) {
       if (decompressed[i] != data[i]) {
         Assert.Fail($"Mismatch at index {i}: expected {data[i]}, got {decompressed[i]}");
         break;
@@ -220,18 +220,18 @@ public class RarWriterTests {
   [Test]
   public void Encoder_Decoder_Solid_DirectRoundTrip() {
     // Test solid encoder/decoder directly, bypassing the archive format
-    byte[] d1 = new byte[200];
-    byte[] d2 = new byte[200];
-    for (int i = 0; i < 200; ++i) { d1[i] = (byte)(i % 10); d2[i] = (byte)(i % 10); }
+    var d1 = new byte[200];
+    var d2 = new byte[200];
+    for (var i = 0; i < 200; ++i) { d1[i] = (byte)(i % 10); d2[i] = (byte)(i % 10); }
 
     var encoder = new Compression.Core.Dictionary.Rar.Rar5Encoder(128 * 1024);
-    byte[] c1 = encoder.Compress(d1);
-    byte[] c2 = encoder.Compress(d2); // solid: encoder preserves window
+    var c1 = encoder.Compress(d1);
+    var c2 = encoder.Compress(d2); // solid: encoder preserves window
 
     // Decoder: first file fresh, second file reuses decoder
     var decoder = new Compression.Core.Dictionary.Rar.Rar5Decoder(128 * 1024);
-    byte[] r1 = decoder.Decompress(c1, d1.Length);
-    byte[] r2 = decoder.Decompress(c2, d2.Length);
+    var r1 = decoder.Decompress(c1, d1.Length);
+    var r2 = decoder.Decompress(c2, d2.Length);
 
     Assert.That(r1, Is.EqualTo(d1), "First file mismatch");
     Assert.That(r2, Is.EqualTo(d2), "Second file mismatch (solid)");
@@ -241,8 +241,8 @@ public class RarWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Solid_Store_RoundTrip() {
-    byte[] d1 = "First solid file"u8.ToArray();
-    byte[] d2 = "Second solid file"u8.ToArray();
+    var d1 = "First solid file"u8.ToArray();
+    var d2 = "Second solid file"u8.ToArray();
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -263,10 +263,10 @@ public class RarWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Solid_Compressed_RoundTrip() {
-    byte[] d1 = new byte[2000];
-    byte[] d2 = new byte[2000];
-    for (int i = 0; i < d1.Length; ++i) d1[i] = (byte)(i % 10);
-    for (int i = 0; i < d2.Length; ++i) d2[i] = (byte)(i % 10);
+    var d1 = new byte[2000];
+    var d2 = new byte[2000];
+    for (var i = 0; i < d1.Length; ++i) d1[i] = (byte)(i % 10);
+    for (var i = 0; i < d2.Length; ++i) d2[i] = (byte)(i % 10);
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -288,10 +288,10 @@ public class RarWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Solid_ThreeFiles_RoundTrip() {
-    byte[] d1 = new byte[1000];
-    byte[] d2 = new byte[1000];
-    byte[] d3 = new byte[1000];
-    for (int i = 0; i < 1000; ++i) {
+    var d1 = new byte[1000];
+    var d2 = new byte[1000];
+    var d3 = new byte[1000];
+    for (var i = 0; i < 1000; ++i) {
       d1[i] = (byte)(i % 26 + 'A');
       d2[i] = (byte)(i % 26 + 'A'); // same pattern — solid benefits
       d3[i] = (byte)(i % 10 + '0');
@@ -320,7 +320,7 @@ public class RarWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Encrypted_Store_RoundTrip() {
-    byte[] data = "Secret RAR data!"u8.ToArray();
+    var data = "Secret RAR data!"u8.ToArray();
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -339,8 +339,8 @@ public class RarWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Encrypted_Compressed_RoundTrip() {
-    byte[] data = new byte[1000];
-    for (int i = 0; i < data.Length; ++i) data[i] = (byte)(i % 10);
+    var data = new byte[1000];
+    for (var i = 0; i < data.Length; ++i) data[i] = (byte)(i % 10);
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -358,8 +358,8 @@ public class RarWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Encrypted_MultipleFiles_RoundTrip() {
-    byte[] d1 = "first"u8.ToArray();
-    byte[] d2 = "second file content"u8.ToArray();
+    var d1 = "first"u8.ToArray();
+    var d2 = "second file content"u8.ToArray();
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -382,8 +382,8 @@ public class RarWriterTests {
   public void Compressed_LargerFile() {
     // Test with a file large enough to exercise the dictionary well
     // Use dictionarySizeLog=18 (256KB) for the 200KB data
-    byte[] data = new byte[200_000];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[200_000];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 26 + 'A');
 
     byte[] archive;
@@ -395,7 +395,7 @@ public class RarWriterTests {
     }
 
     using var reader = new RarReader(new MemoryStream(archive));
-    byte[] extracted = reader.Extract(0);
+    var extracted = reader.Extract(0);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -403,10 +403,10 @@ public class RarWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void RecoveryRecord_RoundTrip() {
-    byte[] data1 = new byte[100];
-    byte[] data2 = new byte[200];
-    for (int i = 0; i < data1.Length; ++i) data1[i] = (byte)(i % 10);
-    for (int i = 0; i < data2.Length; ++i) data2[i] = (byte)(i % 7);
+    var data1 = new byte[100];
+    var data2 = new byte[200];
+    for (var i = 0; i < data1.Length; ++i) data1[i] = (byte)(i % 10);
+    for (var i = 0; i < data2.Length; ++i) data2[i] = (byte)(i % 7);
 
     byte[] archive;
     using (var ms = new MemoryStream()) {

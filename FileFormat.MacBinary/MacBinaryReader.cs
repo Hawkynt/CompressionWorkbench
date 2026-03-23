@@ -15,12 +15,12 @@ public sealed class MacBinaryReader {
   /// <param name="input">The stream to check. Position is restored on return.</param>
   /// <returns><c>true</c> if the header appears to be valid MacBinary.</returns>
   public static bool IsMacBinary(Stream input) {
-    long originalPosition = input.Position;
+    var originalPosition = input.Position;
     try {
       if (input.Length - input.Position < MacBinaryConstants.HeaderSize)
         return false;
 
-      byte[] header = new byte[MacBinaryConstants.HeaderSize];
+      var header = new byte[MacBinaryConstants.HeaderSize];
       if (ReadExact(input, header) < MacBinaryConstants.HeaderSize)
         return false;
 
@@ -38,10 +38,10 @@ public sealed class MacBinaryReader {
         return false;
 
       // If MacBinary II or III, verify CRC.
-      byte minVersion = header[122];
+      var minVersion = header[122];
       if (minVersion >= MacBinaryConstants.Version2) {
-        ushort storedCrc = ReadUInt16BigEndian(header, MacBinaryConstants.CrcOffset);
-        ushort computedCrc = ComputeCrcCcitt(header.AsSpan(0, 124));
+        var storedCrc = ReadUInt16BigEndian(header, MacBinaryConstants.CrcOffset);
+        var computedCrc = ComputeCrcCcitt(header.AsSpan(0, 124));
         if (storedCrc != computedCrc)
           return false;
       }
@@ -58,7 +58,7 @@ public sealed class MacBinaryReader {
   /// <param name="input">The input stream positioned at the start of the header.</param>
   /// <returns>The parsed <see cref="MacBinaryHeader"/>.</returns>
   public static MacBinaryHeader ReadHeader(Stream input) {
-    byte[] header = new byte[MacBinaryConstants.HeaderSize];
+    var header = new byte[MacBinaryConstants.HeaderSize];
     if (ReadExact(input, header) < MacBinaryConstants.HeaderSize)
       throw new InvalidDataException("Stream too short for MacBinary header.");
 
@@ -69,27 +69,27 @@ public sealed class MacBinaryReader {
     if (nameLen < 1 || nameLen > 63)
       throw new InvalidDataException($"Invalid MacBinary filename length: {nameLen}.");
 
-    string fileName = Encoding.ASCII.GetString(header, 2, nameLen);
+    var fileName = Encoding.ASCII.GetString(header, 2, nameLen);
 
-    byte[] fileType = new byte[4];
-    byte[] fileCreator = new byte[4];
+    var fileType = new byte[4];
+    var fileCreator = new byte[4];
     Buffer.BlockCopy(header, 65, fileType, 0, 4);
     Buffer.BlockCopy(header, 69, fileCreator, 0, 4);
 
-    byte finderFlags = header[73];
-    uint dataForkLen = ReadUInt32BigEndian(header, 83);
-    uint resForkLen = ReadUInt32BigEndian(header, 87);
-    uint createdSecs = ReadUInt32BigEndian(header, 91);
-    uint modifiedSecs = ReadUInt32BigEndian(header, 95);
+    var finderFlags = header[73];
+    var dataForkLen = ReadUInt32BigEndian(header, 83);
+    var resForkLen = ReadUInt32BigEndian(header, 87);
+    var createdSecs = ReadUInt32BigEndian(header, 91);
+    var modifiedSecs = ReadUInt32BigEndian(header, 95);
 
-    DateTime created = MacEpoch.AddSeconds(createdSecs);
-    DateTime modified = MacEpoch.AddSeconds(modifiedSecs);
+    var created = MacEpoch.AddSeconds(createdSecs);
+    var modified = MacEpoch.AddSeconds(modifiedSecs);
 
     // Determine version from minimum version field and signature.
-    byte minVersion = header[122];
+    var minVersion = header[122];
     byte version;
     if (minVersion >= MacBinaryConstants.Version3) {
-      uint sig = ReadUInt32BigEndian(header, MacBinaryConstants.SignatureOffset);
+      var sig = ReadUInt32BigEndian(header, MacBinaryConstants.SignatureOffset);
       version = sig == MacBinaryConstants.Signature
         ? MacBinaryConstants.Version3
         : MacBinaryConstants.Version2;
@@ -99,11 +99,11 @@ public sealed class MacBinaryReader {
       version = MacBinaryConstants.Version1;
     }
 
-    ushort headerCrc = ReadUInt16BigEndian(header, MacBinaryConstants.CrcOffset);
+    var headerCrc = ReadUInt16BigEndian(header, MacBinaryConstants.CrcOffset);
 
     // Verify CRC for MacBinary II+.
     if (version >= MacBinaryConstants.Version2) {
-      ushort computedCrc = ComputeCrcCcitt(header.AsSpan(0, 124));
+      var computedCrc = ComputeCrcCcitt(header.AsSpan(0, 124));
       if (headerCrc != computedCrc)
         throw new InvalidDataException(
           $"MacBinary header CRC mismatch: stored 0x{headerCrc:X4}, computed 0x{computedCrc:X4}.");
@@ -129,10 +129,10 @@ public sealed class MacBinaryReader {
   /// <param name="input">The input stream positioned at offset 0 of the MacBinary file.</param>
   /// <returns>The data fork bytes.</returns>
   public static byte[] ReadDataFork(Stream input) {
-    MacBinaryHeader header = ReadHeader(input);
+    var header = ReadHeader(input);
 
     // Stream is now at offset 128 (right after the header).
-    byte[] data = new byte[header.DataForkLength];
+    var data = new byte[header.DataForkLength];
     if (header.DataForkLength > 0 && ReadExact(input, data) < data.Length)
       throw new InvalidDataException("Stream too short for data fork.");
 
@@ -145,13 +145,13 @@ public sealed class MacBinaryReader {
   /// <param name="input">The input stream positioned at offset 0 of the MacBinary file.</param>
   /// <returns>The resource fork bytes.</returns>
   public static byte[] ReadResourceFork(Stream input) {
-    MacBinaryHeader header = ReadHeader(input);
+    var header = ReadHeader(input);
 
     // Skip past data fork (padded to 128-byte boundary).
-    long dataForkPadded = RoundUp(header.DataForkLength, MacBinaryConstants.PaddingAlignment);
+    var dataForkPadded = RoundUp(header.DataForkLength, MacBinaryConstants.PaddingAlignment);
     input.Position = MacBinaryConstants.HeaderSize + dataForkPadded;
 
-    byte[] resource = new byte[header.ResourceForkLength];
+    var resource = new byte[header.ResourceForkLength];
     if (header.ResourceForkLength > 0 && ReadExact(input, resource) < resource.Length)
       throw new InvalidDataException("Stream too short for resource fork.");
 
@@ -180,9 +180,9 @@ public sealed class MacBinaryReader {
   /// Reads exactly <paramref name="buffer"/>.Length bytes from the stream.
   /// </summary>
   private static int ReadExact(Stream stream, byte[] buffer) {
-    int totalRead = 0;
+    var totalRead = 0;
     while (totalRead < buffer.Length) {
-      int bytesRead = stream.Read(buffer, totalRead, buffer.Length - totalRead);
+      var bytesRead = stream.Read(buffer, totalRead, buffer.Length - totalRead);
       if (bytesRead == 0)
         break;
       totalRead += bytesRead;
@@ -196,9 +196,9 @@ public sealed class MacBinaryReader {
   /// </summary>
   internal static ushort ComputeCrcCcitt(ReadOnlySpan<byte> data) {
     ushort crc = 0;
-    foreach (byte b in data) {
+    foreach (var b in data) {
       crc ^= (ushort)(b << 8);
-      for (int i = 0; i < 8; i++) {
+      for (var i = 0; i < 8; i++) {
         if ((crc & 0x8000) != 0)
           crc = (ushort)((crc << 1) ^ 0x1021);
         else

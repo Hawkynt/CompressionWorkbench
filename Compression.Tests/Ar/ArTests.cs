@@ -20,7 +20,7 @@ public class ArTests {
   }
 
   private static IReadOnlyList<ArEntry> RoundTrip(IReadOnlyList<ArEntry> entries) {
-    byte[] archive = WriteArchive(entries);
+    var archive = WriteArchive(entries);
     return ReadArchive(archive);
   }
 
@@ -30,7 +30,7 @@ public class ArTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleFile() {
-    byte[] data = "Hello, ar!"u8.ToArray();
+    var data = "Hello, ar!"u8.ToArray();
     var entries = new List<ArEntry> {
       new() { Name = "hello.txt", Data = data },
     };
@@ -77,7 +77,7 @@ public class ArTests {
   public void RoundTrip_LongFilename() {
     // Name longer than 15 chars triggers GNU extended filename table.
     const string longName = "this_is_a_very_long_filename.txt";
-    byte[] data = "content"u8.ToArray();
+    var data = "content"u8.ToArray();
     var entries = new List<ArEntry> {
       new() { Name = longName, Data = data },
     };
@@ -132,7 +132,7 @@ public class ArTests {
   [Category("Exception")]
   [Test]
   public void Reader_InvalidMagic_Throws() {
-    byte[] badData = "NOT_ARCH\ngarbage"u8.ToArray();
+    var badData = "NOT_ARCH\ngarbage"u8.ToArray();
 
     Assert.Throws<InvalidDataException>(() => {
       using var _ = new ArReader(new MemoryStream(badData));
@@ -161,7 +161,7 @@ public class ArTests {
     var result = RoundTrip(entries);
 
     Assert.That(result, Has.Count.EqualTo(4));
-    for (int i = 0; i < entries.Count; ++i) {
+    for (var i = 0; i < entries.Count; ++i) {
       Assert.That(result[i].Name, Is.EqualTo(entries[i].Name));
       Assert.That(result[i].Data, Is.EqualTo(entries[i].Data));
     }

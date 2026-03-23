@@ -9,9 +9,9 @@ public class SevenZipCodecTests {
   [Test]
   public void RoundTrip_Lzma2_StillWorks() {
     // Basic sanity — existing LZMA2 round-trip shouldn't break
-    byte[] data = "Hello, 7z multi-coder world!"u8.ToArray();
-    byte[] archive = CreateArchive(data, SevenZipCodec.Lzma2);
-    byte[] extracted = ExtractFirst(archive);
+    var data = "Hello, 7z multi-coder world!"u8.ToArray();
+    var archive = CreateArchive(data, SevenZipCodec.Lzma2);
+    var extracted = ExtractFirst(archive);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -19,8 +19,8 @@ public class SevenZipCodecTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_MultipleFiles_Lzma2() {
-    byte[] data1 = "First file content."u8.ToArray();
-    byte[] data2 = "Second file content, a bit longer."u8.ToArray();
+    var data1 = "First file content."u8.ToArray();
+    var data2 = "Second file content, a bit longer."u8.ToArray();
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -41,9 +41,9 @@ public class SevenZipCodecTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Lzma_SingleFile() {
-    byte[] data = "Hello from LZMA codec in 7z!"u8.ToArray();
-    byte[] archive = CreateArchive(data, SevenZipCodec.Lzma);
-    byte[] extracted = ExtractFirst(archive);
+    var data = "Hello from LZMA codec in 7z!"u8.ToArray();
+    var archive = CreateArchive(data, SevenZipCodec.Lzma);
+    var extracted = ExtractFirst(archive);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -51,10 +51,10 @@ public class SevenZipCodecTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Lzma_MultipleFiles() {
-    byte[] data1 = "LZMA file one."u8.ToArray();
-    byte[] data2 = "LZMA file two with more content."u8.ToArray();
+    var data1 = "LZMA file one."u8.ToArray();
+    var data2 = "LZMA file two with more content."u8.ToArray();
 
-    byte[] archive = CreateMultiFileArchive(SevenZipCodec.Lzma, data1, data2);
+    var archive = CreateMultiFileArchive(SevenZipCodec.Lzma, data1, data2);
     using var reader = new SevenZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(2));
     Assert.That(reader.Extract(0), Is.EqualTo(data1));
@@ -65,9 +65,9 @@ public class SevenZipCodecTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Deflate_SingleFile() {
-    byte[] data = "Deflate compressed inside 7z!"u8.ToArray();
-    byte[] archive = CreateArchive(data, SevenZipCodec.Deflate);
-    byte[] extracted = ExtractFirst(archive);
+    var data = "Deflate compressed inside 7z!"u8.ToArray();
+    var archive = CreateArchive(data, SevenZipCodec.Deflate);
+    var extracted = ExtractFirst(archive);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -75,10 +75,10 @@ public class SevenZipCodecTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Deflate_MultipleFiles() {
-    byte[] data1 = "Deflate file one."u8.ToArray();
-    byte[] data2 = "Deflate file two content."u8.ToArray();
+    var data1 = "Deflate file one."u8.ToArray();
+    var data2 = "Deflate file two content."u8.ToArray();
 
-    byte[] archive = CreateMultiFileArchive(SevenZipCodec.Deflate, data1, data2);
+    var archive = CreateMultiFileArchive(SevenZipCodec.Deflate, data1, data2);
     using var reader = new SevenZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(2));
     Assert.That(reader.Extract(0), Is.EqualTo(data1));
@@ -89,9 +89,9 @@ public class SevenZipCodecTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_BZip2_SingleFile() {
-    byte[] data = "BZip2 compressed inside 7z!"u8.ToArray();
-    byte[] archive = CreateArchive(data, SevenZipCodec.BZip2);
-    byte[] extracted = ExtractFirst(archive);
+    var data = "BZip2 compressed inside 7z!"u8.ToArray();
+    var archive = CreateArchive(data, SevenZipCodec.BZip2);
+    var extracted = ExtractFirst(archive);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -99,10 +99,10 @@ public class SevenZipCodecTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_BZip2_MultipleFiles() {
-    byte[] data1 = "BZip2 file one."u8.ToArray();
-    byte[] data2 = "BZip2 file two with more data."u8.ToArray();
+    var data1 = "BZip2 file one."u8.ToArray();
+    var data2 = "BZip2 file two with more data."u8.ToArray();
 
-    byte[] archive = CreateMultiFileArchive(SevenZipCodec.BZip2, data1, data2);
+    var archive = CreateMultiFileArchive(SevenZipCodec.BZip2, data1, data2);
     using var reader = new SevenZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(2));
     Assert.That(reader.Extract(0), Is.EqualTo(data1));
@@ -113,9 +113,9 @@ public class SevenZipCodecTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_PPMd_SingleFile() {
-    byte[] data = "PPMd compressed inside 7z!"u8.ToArray();
-    byte[] archive = CreateArchive(data, SevenZipCodec.PPMd);
-    byte[] extracted = ExtractFirst(archive);
+    var data = "PPMd compressed inside 7z!"u8.ToArray();
+    var archive = CreateArchive(data, SevenZipCodec.PPMd);
+    var extracted = ExtractFirst(archive);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -123,10 +123,10 @@ public class SevenZipCodecTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_PPMd_MultipleFiles() {
-    byte[] data1 = "PPMd file one."u8.ToArray();
-    byte[] data2 = "PPMd file two with more data."u8.ToArray();
+    var data1 = "PPMd file one."u8.ToArray();
+    var data2 = "PPMd file two with more data."u8.ToArray();
 
-    byte[] archive = CreateMultiFileArchive(SevenZipCodec.PPMd, data1, data2);
+    var archive = CreateMultiFileArchive(SevenZipCodec.PPMd, data1, data2);
     using var reader = new SevenZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(2));
     Assert.That(reader.Extract(0), Is.EqualTo(data1));
@@ -137,12 +137,12 @@ public class SevenZipCodecTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Lzma_LargeRepetitiveData() {
-    byte[] data = new byte[10_000];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[10_000];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 7);
 
-    byte[] archive = CreateArchive(data, SevenZipCodec.Lzma);
-    byte[] extracted = ExtractFirst(archive);
+    var archive = CreateArchive(data, SevenZipCodec.Lzma);
+    var extracted = ExtractFirst(archive);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -150,12 +150,12 @@ public class SevenZipCodecTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Deflate_LargeRepetitiveData() {
-    byte[] data = new byte[10_000];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[10_000];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 7);
 
-    byte[] archive = CreateArchive(data, SevenZipCodec.Deflate);
-    byte[] extracted = ExtractFirst(archive);
+    var archive = CreateArchive(data, SevenZipCodec.Deflate);
+    var extracted = ExtractFirst(archive);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -163,12 +163,12 @@ public class SevenZipCodecTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_BZip2_LargeRepetitiveData() {
-    byte[] data = new byte[10_000];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[10_000];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 7);
 
-    byte[] archive = CreateArchive(data, SevenZipCodec.BZip2);
-    byte[] extracted = ExtractFirst(archive);
+    var archive = CreateArchive(data, SevenZipCodec.BZip2);
+    var extracted = ExtractFirst(archive);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -176,12 +176,12 @@ public class SevenZipCodecTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_PPMd_LargeRepetitiveData() {
-    byte[] data = new byte[10_000];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[10_000];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 7);
 
-    byte[] archive = CreateArchive(data, SevenZipCodec.PPMd);
-    byte[] extracted = ExtractFirst(archive);
+    var archive = CreateArchive(data, SevenZipCodec.PPMd);
+    var extracted = ExtractFirst(archive);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -190,7 +190,7 @@ public class SevenZipCodecTests {
   [Test]
   public void DefaultConstructor_UsesLzma2() {
     // The default constructor (no codec parameter) should still produce valid LZMA2 archives
-    byte[] data = "default codec test"u8.ToArray();
+    var data = "default codec test"u8.ToArray();
     using var ms = new MemoryStream();
     using (var writer = new SevenZipWriter(ms, leaveOpen: true)) {
       writer.AddEntry(new SevenZipEntry { Name = "test.dat" }, data);
@@ -217,8 +217,8 @@ public class SevenZipCodecTests {
 
     using var reader = new SevenZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(2));
-    int fileIndex = -1;
-    for (int i = 0; i < reader.Entries.Count; ++i)
+    var fileIndex = -1;
+    for (var i = 0; i < reader.Entries.Count; ++i)
       if (!reader.Entries[i].IsDirectory) { fileIndex = i; break; }
     Assert.That(fileIndex, Is.GreaterThanOrEqualTo(0));
     Assert.That(reader.Extract(fileIndex), Is.EqualTo(data));

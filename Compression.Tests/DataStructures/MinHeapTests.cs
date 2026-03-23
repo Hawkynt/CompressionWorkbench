@@ -69,15 +69,15 @@ public class MinHeapTests {
     var rng = new Random(42);
     var expected = new List<int>();
 
-    for (int i = 0; i < 1000; ++i) {
-      int value = rng.Next(10000);
+    for (var i = 0; i < 1000; ++i) {
+      var value = rng.Next(10000);
       heap.Insert(value);
       expected.Add(value);
     }
 
     expected.Sort();
 
-    for (int i = 0; i < 1000; ++i)
+    for (var i = 0; i < 1000; ++i)
       Assert.That(heap.ExtractMin(), Is.EqualTo(expected[i]));
   }
 

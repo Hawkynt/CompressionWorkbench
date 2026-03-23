@@ -45,8 +45,8 @@ public sealed class CompactProWriter : IDisposable {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
 
-    byte[] resFork = resourceFork ?? [];
-    DateTime mod = modified ?? DateTime.UtcNow;
+    var resFork = resourceFork ?? [];
+    var mod = modified ?? DateTime.UtcNow;
 
     this._items.Add(new PendingItem {
       Type          = PendingItemType.File,
@@ -80,9 +80,9 @@ public sealed class CompactProWriter : IDisposable {
     if (this._folderStarts.Count == 0)
       throw new InvalidOperationException("No open directory to end.");
 
-    int startIndex = this._folderStarts.Pop();
+    var startIndex = this._folderStarts.Pop();
     // Count items between folder start and this end marker (exclusive of both).
-    int itemCount = this._items.Count - startIndex - 1;
+    var itemCount = this._items.Count - startIndex - 1;
     this._items[startIndex].FolderItemCount = itemCount;
 
     this._items.Add(new PendingItem {
@@ -108,13 +108,13 @@ public sealed class CompactProWriter : IDisposable {
       this.EndDirectory();
 
     // Count top-level entries for the volume header.
-    int topLevelCount = CountTopLevelEntries();
+    var topLevelCount = CountTopLevelEntries();
 
     // Build the header table and the data blocks separately.
     using var headerStream = new MemoryStream();
     using var dataStream = new MemoryStream();
 
-    foreach (PendingItem item in this._items) {
+    foreach (var item in this._items) {
       switch (item.Type) {
         case PendingItemType.File:
           WriteFileHeader(headerStream, item, dataStream);
@@ -146,9 +146,9 @@ public sealed class CompactProWriter : IDisposable {
   }
 
   private int CountTopLevelEntries() {
-    int count = 0;
-    int depth = 0;
-    foreach (PendingItem item in this._items) {
+    var count = 0;
+    var depth = 0;
+    foreach (var item in this._items) {
       switch (item.Type) {
         case PendingItemType.File:
           if (depth == 0) ++count;
@@ -170,8 +170,8 @@ public sealed class CompactProWriter : IDisposable {
     headerStream.WriteByte(CompactProConstants.EntryTypeFile);
 
     // Filename (Pascal-style: length byte + name bytes).
-    byte[] nameBytes = Encoding.Latin1.GetBytes(item.FileName);
-    int nameLen = Math.Min(nameBytes.Length, CompactProConstants.FileNameMaxLength);
+    var nameBytes = Encoding.Latin1.GetBytes(item.FileName);
+    var nameLen = Math.Min(nameBytes.Length, CompactProConstants.FileNameMaxLength);
     headerStream.WriteByte((byte)nameLen);
     headerStream.Write(nameBytes, 0, nameLen);
 
@@ -191,7 +191,7 @@ public sealed class CompactProWriter : IDisposable {
     headerStream.Write(buf4);
 
     // Data fork CRC-16.
-    ushort dataCrc = ComputeCrc16(item.DataFork);
+    var dataCrc = ComputeCrc16(item.DataFork);
     BinaryPrimitives.WriteUInt16BigEndian(buf2, dataCrc);
     headerStream.Write(buf2);
 
@@ -204,7 +204,7 @@ public sealed class CompactProWriter : IDisposable {
     headerStream.Write(buf4);
 
     // Resource fork CRC-16.
-    ushort resCrc = ComputeCrc16(item.ResourceFork);
+    var resCrc = ComputeCrc16(item.ResourceFork);
     BinaryPrimitives.WriteUInt16BigEndian(buf2, resCrc);
     headerStream.Write(buf2);
 
@@ -217,12 +217,12 @@ public sealed class CompactProWriter : IDisposable {
     headerStream.Write(buf4);
 
     // Creation date (Mac epoch).
-    uint createdMac = ToMacTimestamp(item.CreatedDate);
+    var createdMac = ToMacTimestamp(item.CreatedDate);
     BinaryPrimitives.WriteUInt32BigEndian(buf4, createdMac);
     headerStream.Write(buf4);
 
     // Modification date (Mac epoch).
-    uint modifiedMac = ToMacTimestamp(item.ModifiedDate);
+    var modifiedMac = ToMacTimestamp(item.ModifiedDate);
     BinaryPrimitives.WriteUInt32BigEndian(buf4, modifiedMac);
     headerStream.Write(buf4);
 
@@ -238,8 +238,8 @@ public sealed class CompactProWriter : IDisposable {
     headerStream.WriteByte(CompactProConstants.EntryTypeFolder);
 
     // Filename (Pascal-style).
-    byte[] nameBytes = Encoding.Latin1.GetBytes(item.FileName);
-    int nameLen = Math.Min(nameBytes.Length, CompactProConstants.FileNameMaxLength);
+    var nameBytes = Encoding.Latin1.GetBytes(item.FileName);
+    var nameLen = Math.Min(nameBytes.Length, CompactProConstants.FileNameMaxLength);
     headerStream.WriteByte((byte)nameLen);
     headerStream.Write(nameBytes, 0, nameLen);
 
@@ -260,9 +260,9 @@ public sealed class CompactProWriter : IDisposable {
   private static ushort[] BuildCrc16Table() {
     const ushort poly = CompactProConstants.Crc16Polynomial;
     var table = new ushort[256];
-    for (int i = 0; i < 256; ++i) {
-      ushort crc = (ushort)(i << 8);
-      for (int j = 0; j < 8; ++j)
+    for (var i = 0; i < 256; ++i) {
+      var crc = (ushort)(i << 8);
+      for (var j = 0; j < 8; ++j)
         crc = (crc & 0x8000) != 0 ? (ushort)((crc << 1) ^ poly) : (ushort)(crc << 1);
       table[i] = crc;
     }
@@ -271,7 +271,7 @@ public sealed class CompactProWriter : IDisposable {
 
   private static ushort ComputeCrc16(ReadOnlySpan<byte> data) {
     ushort crc = 0;
-    foreach (byte b in data)
+    foreach (var b in data)
       crc = (ushort)((crc << 8) ^ Crc16Table[(byte)(crc >> 8) ^ b]);
     return crc;
   }
@@ -281,8 +281,8 @@ public sealed class CompactProWriter : IDisposable {
   private static uint ToMacTimestamp(DateTime dt) {
     if (dt <= CompactProConstants.MacEpoch)
       return 0;
-    TimeSpan diff = dt.ToUniversalTime() - CompactProConstants.MacEpoch;
-    double totalSeconds = diff.TotalSeconds;
+    var diff = dt.ToUniversalTime() - CompactProConstants.MacEpoch;
+    var totalSeconds = diff.TotalSeconds;
     return totalSeconds > uint.MaxValue ? uint.MaxValue : (uint)totalSeconds;
   }
 

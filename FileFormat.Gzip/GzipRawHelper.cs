@@ -18,15 +18,15 @@ public static class GzipRawHelper {
     // Parse header to find where Deflate data starts
     using var ms = new MemoryStream(gzipData.ToArray(), writable: false);
     _ = GzipHeader.Read(ms);
-    int headerEnd = (int)ms.Position;
+    var headerEnd = (int)ms.Position;
 
     // Trailer is last 8 bytes: CRC32 (4) + ISIZE (4), both little-endian
     if (gzipData.Length < headerEnd + 8)
       throw new InvalidDataException("Gzip data too short for trailer.");
 
     var trailerStart = gzipData.Length - 8;
-    uint crc32 = BitConverter.ToUInt32(gzipData[trailerStart..]);
-    uint originalSize = BitConverter.ToUInt32(gzipData[(trailerStart + 4)..]);
+    var crc32 = BitConverter.ToUInt32(gzipData[trailerStart..]);
+    var originalSize = BitConverter.ToUInt32(gzipData[(trailerStart + 4)..]);
 
     // Raw Deflate is everything between header and trailer
     var deflateData = gzipData[headerEnd..trailerStart].ToArray();

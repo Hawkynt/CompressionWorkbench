@@ -14,7 +14,7 @@ public class LzpTests {
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void RoundTrip_RepetitiveData() {
     var data = new byte[4096];
-    for (int i = 0; i < data.Length; i++)
+    for (var i = 0; i < data.Length; i++)
       data[i] = (byte)("ABCDEFGHIJ"[i % 10]);
 
     var compressed = Compression.Core.Dictionary.Lzp.LzpCompressor.Compress(data);

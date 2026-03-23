@@ -132,7 +132,7 @@ public static class SqxConstants {
   /// Gets the number of distance tree symbols for a given dictionary size.
   /// </summary>
   public static int GetDistSlots(int dictSize) {
-    int kb = dictSize >> 10;
+    var kb = dictSize >> 10;
     if (kb <= 1024) return DistCodes1M;
     if (kb <= 2048) return DistCodes2M;
     return DistCodes4M;
@@ -143,12 +143,12 @@ public static class SqxConstants {
   /// </summary>
   /// <returns>Index into LenOffsets/LenExtraBits (0-23). Returns 24 for lengths requiring code 308 (14-bit escape).</returns>
   public static int GetLenCode(int length) {
-    int rawLen = length - 4; // subtract base of 4
+    var rawLen = length - 4; // subtract base of 4
     // Code 24 (sym 308) is the escape code for lengths > 224+max_extra
     // Normal codes are 0-23; code 24 uses 14 raw bits
     if (rawLen > 224 + (1 << LenExtraBits[23]) - 1)
       return 24; // escape: 14 raw bits + 257
-    for (int i = 23; i >= 0; --i) {
+    for (var i = 23; i >= 0; --i) {
       if (rawLen >= LenOffsets[i])
         return i;
     }
@@ -159,7 +159,7 @@ public static class SqxConstants {
   /// Gets the length-2 distance code index.
   /// </summary>
   public static int GetLen2DistCode(int distance) {
-    for (int i = Len2Codes - 1; i >= 0; --i) {
+    for (var i = Len2Codes - 1; i >= 0; --i) {
       if (distance >= Len2Offsets[i])
         return i;
     }
@@ -170,7 +170,7 @@ public static class SqxConstants {
   /// Gets the length-3 distance code index.
   /// </summary>
   public static int GetLen3DistCode(int distance) {
-    for (int i = Len3Codes - 1; i >= 0; --i) {
+    for (var i = Len3Codes - 1; i >= 0; --i) {
       if (distance >= Len3Offsets[i])
         return i;
     }

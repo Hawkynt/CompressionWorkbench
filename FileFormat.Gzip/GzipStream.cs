@@ -87,7 +87,7 @@ public sealed class GzipStream : CompressionStream {
       this._trailerVerified = false;
     }
 
-    int bytesRead = this._decompressor!.Decompress(buffer, offset, count);
+    var bytesRead = this._decompressor!.Decompress(buffer, offset, count);
 
     if (bytesRead > 0) {
       this._crc.Update(buffer.AsSpan(offset, bytesRead));
@@ -117,15 +117,15 @@ public sealed class GzipStream : CompressionStream {
 
   private bool HasNextMember() {
     // After the trailer, check if another gzip member follows (magic 1F 8B)
-    int unconsumed = this._decompressor?.UnconsumedBytes ?? 0;
+    var unconsumed = this._decompressor?.UnconsumedBytes ?? 0;
     // The trailer has already been consumed by ReadAndVerifyTrailer,
     // but the decompressor may have been rewound there. Check current position.
 
     if (!InnerStream.CanSeek) {
       // For non-seekable streams, try to peek two bytes
-      int b1 = InnerStream.ReadByte();
+      var b1 = InnerStream.ReadByte();
       if (b1 < 0) return false;
-      int b2 = InnerStream.ReadByte();
+      var b2 = InnerStream.ReadByte();
       if (b2 < 0) return false;
       if (b1 == GzipConstants.Magic1 && b2 == GzipConstants.Magic2) {
         // Push back by seeking (non-seekable can't do this — just return true
@@ -137,12 +137,12 @@ public sealed class GzipStream : CompressionStream {
       return false;
     }
 
-    long pos = InnerStream.Position;
+    var pos = InnerStream.Position;
     if (pos + 2 > InnerStream.Length)
       return false;
 
-    int m1 = InnerStream.ReadByte();
-    int m2 = InnerStream.ReadByte();
+    var m1 = InnerStream.ReadByte();
+    var m2 = InnerStream.ReadByte();
 
     if (m1 == GzipConstants.Magic1 && m2 == GzipConstants.Magic2) {
       // Rewind so GzipHeader.Read can consume the full header
@@ -190,7 +190,7 @@ public sealed class GzipStream : CompressionStream {
 
   private void FlushDeflateBuffer() {
     if (this._deflateBuffer!.Position > 0) {
-      byte[] data = this._deflateBuffer.ToArray();
+      var data = this._deflateBuffer.ToArray();
       InnerStream.Write(data);
       this._deflateBuffer.SetLength(0);
       this._deflateBuffer.Position = 0;
@@ -200,7 +200,7 @@ public sealed class GzipStream : CompressionStream {
   private void ReadAndVerifyTrailer() {
     // The Deflate decompressor's BitBuffer may have read bytes past the deflate
     // stream end. Rewind the inner stream so we can read the 8-byte gzip trailer.
-    int unconsumed = this._decompressor!.UnconsumedBytes;
+    var unconsumed = this._decompressor!.UnconsumedBytes;
     if (unconsumed > 0 && InnerStream.CanSeek)
       InnerStream.Seek(-unconsumed, SeekOrigin.Current);
 

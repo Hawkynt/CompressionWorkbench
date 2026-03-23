@@ -20,7 +20,7 @@ public class Rar5DecoderTests {
     // With only one symbol, any bit pattern should decode to symbol 2
     var data = new byte[] { 0xFF, 0xFF, 0xFF, 0xFF };
     var reader = new Rar5BitReader(data);
-    int sym = decoder.DecodeSymbol(reader);
+    var sym = decoder.DecodeSymbol(reader);
     Assert.That(sym, Is.EqualTo(2));
   }
 
@@ -38,8 +38,8 @@ public class Rar5DecoderTests {
     var data = new byte[] { 0b00000010, 0, 0, 0 };
     var reader = new Rar5BitReader(data);
 
-    int s1 = decoder.DecodeSymbol(reader); // should read bit 0 → symbol 0
-    int s2 = decoder.DecodeSymbol(reader); // should read bit 1 → symbol 1
+    var s1 = decoder.DecodeSymbol(reader); // should read bit 0 → symbol 0
+    var s2 = decoder.DecodeSymbol(reader); // should read bit 1 → symbol 1
 
     Assert.That(s1, Is.EqualTo(0));
     Assert.That(s2, Is.EqualTo(1));
@@ -87,7 +87,7 @@ public class Rar5DecoderTests {
     var data = new byte[] { 0xFF, 0xFF, 0xFF, 0xFF };
     var reader = new Rar5BitReader(data);
     // Should not throw, returns 0 for invalid codes
-    int sym = decoder.DecodeSymbol(reader);
+    var sym = decoder.DecodeSymbol(reader);
     Assert.That(sym, Is.GreaterThanOrEqualTo(0));
   }
 
@@ -100,10 +100,10 @@ public class Rar5DecoderTests {
     var reader = new Rar5BitReader(data);
 
     // LSB first: 0xAB = 10101011, first 4 bits (LSB) = 1011 = 11
-    uint first4 = reader.ReadBits(4);
+    var first4 = reader.ReadBits(4);
     Assert.That(first4, Is.EqualTo(0xB)); // 1011 = 0xB
 
-    uint next4 = reader.ReadBits(4);
+    var next4 = reader.ReadBits(4);
     Assert.That(next4, Is.EqualTo(0xA)); // 1010 = 0xA
   }
 
@@ -114,7 +114,7 @@ public class Rar5DecoderTests {
     var reader = new Rar5BitReader(data);
 
     // Read 12 bits: first 8 are 0xFF, next 4 are 0
-    uint bits = reader.ReadBits(12);
+    var bits = reader.ReadBits(12);
     Assert.That(bits, Is.EqualTo(0x0FF));
   }
 
@@ -124,8 +124,8 @@ public class Rar5DecoderTests {
     var data = new byte[] { 0xAB };
     var reader = new Rar5BitReader(data);
 
-    uint peek1 = reader.PeekBits(4);
-    uint peek2 = reader.PeekBits(4);
+    var peek1 = reader.PeekBits(4);
+    var peek2 = reader.PeekBits(4);
     Assert.That(peek1, Is.EqualTo(peek2));
   }
 
@@ -148,15 +148,15 @@ public class Rar5DecoderTests {
     var original = new byte[] { 10, 20, 30, 40, 50, 60, 70, 80 };
 
     // Manually create delta-encoded data (channel-separated, delta format)
-    int channels = 2;
-    int channelSize = original.Length / channels;
+    var channels = 2;
+    var channelSize = original.Length / channels;
 
     // Separate channels
     var encoded = new byte[original.Length];
-    for (int ch = 0; ch < channels; ++ch) {
+    for (var ch = 0; ch < channels; ++ch) {
       byte prev = 0;
-      for (int i = 0; i < channelSize; ++i) {
-        byte val = original[i * channels + ch];
+      for (var i = 0; i < channelSize; ++i) {
+        var val = original[i * channels + ch];
         encoded[ch * channelSize + i] = unchecked((byte)(val - prev));
         prev = val;
       }
@@ -177,7 +177,7 @@ public class Rar5DecoderTests {
 
     var result = Rar5Filters.Apply(Rar5Constants.FilterE8E9, data);
     // After filter: addr = 15 - (0 + 5) = 10
-    int addr = BitConverter.ToInt32(result, 1);
+    var addr = BitConverter.ToInt32(result, 1);
     Assert.That(addr, Is.EqualTo(10));
   }
 
@@ -281,9 +281,9 @@ public class Rar5DecoderTests {
 
     // The ARM filter converts absolute→relative on decode
     // First make it look absolute (as if encoder already converted relative→absolute)
-    int offset = 0x10; // original relative offset
-    int wordAddr = 0 >> 2; // at position 0
-    int absOffset = offset + wordAddr;
+    var offset = 0x10; // original relative offset
+    var wordAddr = 0 >> 2; // at position 0
+    var absOffset = offset + wordAddr;
     original[0] = (byte)(absOffset & 0xFF);
     original[1] = (byte)((absOffset >> 8) & 0xFF);
     original[2] = (byte)((absOffset >> 16) & 0xFF);

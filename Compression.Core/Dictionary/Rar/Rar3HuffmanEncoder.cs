@@ -32,7 +32,7 @@ internal sealed class Rar3HuffmanEncoder {
     var lengths = new int[numSymbols];
     var symbols = new List<(int sym, int freq)>();
 
-    for (int i = 0; i < numSymbols; ++i)
+    for (var i = 0; i < numSymbols; ++i)
       if (freq[i] > 0)
         symbols.Add((i, freq[i]));
 
@@ -45,20 +45,20 @@ internal sealed class Rar3HuffmanEncoder {
     var pq = new PriorityQueue<int, long>();
     var nodes = new List<(long freq, int sym, int left, int right)>();
 
-    for (int i = 0; i < symbols.Count; ++i) {
+    for (var i = 0; i < symbols.Count; ++i) {
       nodes.Add((symbols[i].freq, symbols[i].sym, -1, -1));
       pq.Enqueue(i, symbols[i].freq);
     }
 
     while (pq.Count > 1) {
-      pq.TryDequeue(out int a, out long fa);
-      pq.TryDequeue(out int b, out long fb);
-      int newIdx = nodes.Count;
+      pq.TryDequeue(out var a, out var fa);
+      pq.TryDequeue(out var b, out var fb);
+      var newIdx = nodes.Count;
       nodes.Add((fa + fb, -1, a, b));
       pq.Enqueue(newIdx, fa + fb);
     }
 
-    pq.TryDequeue(out int root, out _);
+    pq.TryDequeue(out var root, out _);
 
     void Walk(int idx, int depth) {
       var node = nodes[idx];
@@ -76,16 +76,16 @@ internal sealed class Rar3HuffmanEncoder {
   }
 
   private static void ClampAndFix(int[] lengths, int numSymbols, int maxBits) {
-    for (int i = 0; i < numSymbols; ++i)
+    for (var i = 0; i < numSymbols; ++i)
       if (lengths[i] > maxBits) lengths[i] = maxBits;
 
-    long kraftMax = 1L << maxBits;
+    var kraftMax = 1L << maxBits;
     long kraftSum = 0;
-    for (int i = 0; i < numSymbols; ++i)
+    for (var i = 0; i < numSymbols; ++i)
       if (lengths[i] > 0) kraftSum += kraftMax >> lengths[i];
 
     while (kraftSum > kraftMax) {
-      for (int i = numSymbols - 1; i >= 0; --i) {
+      for (var i = numSymbols - 1; i >= 0; --i) {
         if (lengths[i] > 0 && lengths[i] < maxBits) {
           kraftSum -= kraftMax >> lengths[i];
           ++lengths[i];
@@ -100,25 +100,25 @@ internal sealed class Rar3HuffmanEncoder {
   /// Builds canonical Huffman codes (MSB-first, no bit reversal).
   /// </summary>
   private static uint[] BuildCanonicalCodes(int[] lengths, int numSymbols) {
-    int maxLen = 0;
-    foreach (int l in lengths)
+    var maxLen = 0;
+    foreach (var l in lengths)
       if (l > maxLen) maxLen = l;
     if (maxLen == 0) return new uint[numSymbols];
 
     var blCount = new int[maxLen + 1];
-    foreach (int l in lengths)
+    foreach (var l in lengths)
       if (l > 0) ++blCount[l];
 
     var nextCode = new uint[maxLen + 1];
     uint code = 0;
-    for (int b = 1; b <= maxLen; ++b) {
+    for (var b = 1; b <= maxLen; ++b) {
       code = (code + (uint)blCount[b - 1]) << 1;
       nextCode[b] = code;
     }
 
     // MSB-first: no bit reversal needed
     var codes = new uint[numSymbols];
-    for (int i = 0; i < numSymbols; ++i)
+    for (var i = 0; i < numSymbols; ++i)
       if (lengths[i] > 0)
         codes[i] = nextCode[lengths[i]]++;
 

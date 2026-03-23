@@ -33,12 +33,12 @@ public class DeflateRoundTripTests {
   [TestCase(65536)]
   public void RoundTrip_VariousSizes_RandomData(int size) {
     var rng = new Random(size + 1);
-    byte[] data = new byte[size];
+    var data = new byte[size];
     rng.NextBytes(data);
 
     foreach (var level in new[] { DeflateCompressionLevel.None, DeflateCompressionLevel.Fast, DeflateCompressionLevel.Default, DeflateCompressionLevel.Maximum }) {
-      byte[] compressed = DeflateCompressor.Compress(data, level);
-      byte[] result = DeflateDecompressor.Decompress(compressed);
+      var compressed = DeflateCompressor.Compress(data, level);
+      var result = DeflateDecompressor.Decompress(compressed);
       Assert.That(result, Is.EqualTo(data), $"Round-trip failed for size {size}, level {level}");
     }
   }
@@ -53,11 +53,11 @@ public class DeflateRoundTripTests {
   [TestCase(65536)]
   public void CrossInterop_OursToSystem(int size) {
     var rng = new Random(size + 1);
-    byte[] data = new byte[size];
+    var data = new byte[size];
     rng.NextBytes(data);
 
-    byte[] compressed = DeflateCompressor.Compress(data, DeflateCompressionLevel.Default);
-    byte[] result = DecompressWithSystem(compressed);
+    var compressed = DeflateCompressor.Compress(data, DeflateCompressionLevel.Default);
+    var result = DecompressWithSystem(compressed);
     Assert.That(result, Is.EqualTo(data), $"System failed to decompress our output, size {size}");
   }
 
@@ -71,11 +71,11 @@ public class DeflateRoundTripTests {
   [TestCase(65536)]
   public void CrossInterop_SystemToOurs(int size) {
     var rng = new Random(size + 1);
-    byte[] data = new byte[size];
+    var data = new byte[size];
     rng.NextBytes(data);
 
-    byte[] compressed = CompressWithSystem(data);
-    byte[] result = DeflateDecompressor.Decompress(compressed);
+    var compressed = CompressWithSystem(data);
+    var result = DeflateDecompressor.Decompress(compressed);
     Assert.That(result, Is.EqualTo(data), $"We failed to decompress system output, size {size}");
   }
 
@@ -83,13 +83,13 @@ public class DeflateRoundTripTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeRepetitive() {
-    byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
-    byte[] data = new byte[pattern.Length * 500];
-    for (int i = 0; i < 500; ++i)
+    var pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
+    var data = new byte[pattern.Length * 500];
+    for (var i = 0; i < 500; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
-    byte[] compressed = DeflateCompressor.Compress(data, DeflateCompressionLevel.Default);
-    byte[] result = DeflateDecompressor.Decompress(compressed);
+    var compressed = DeflateCompressor.Compress(data, DeflateCompressionLevel.Default);
+    var result = DeflateDecompressor.Decompress(compressed);
     Assert.That(result, Is.EqualTo(data));
 
     // Verify good compression ratio
@@ -100,13 +100,13 @@ public class DeflateRoundTripTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeRepetitive_SystemInterop() {
-    byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
-    byte[] data = new byte[pattern.Length * 500];
-    for (int i = 0; i < 500; ++i)
+    var pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
+    var data = new byte[pattern.Length * 500];
+    for (var i = 0; i < 500; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
-    byte[] compressed = DeflateCompressor.Compress(data, DeflateCompressionLevel.Default);
-    byte[] result = DecompressWithSystem(compressed);
+    var compressed = DeflateCompressor.Compress(data, DeflateCompressionLevel.Default);
+    var result = DecompressWithSystem(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -118,11 +118,11 @@ public class DeflateRoundTripTests {
   [TestCase(1000)]
   public void CrossInterop_Maximum_OursToSystem(int size) {
     var rng = new Random(size + 1);
-    byte[] data = new byte[size];
+    var data = new byte[size];
     rng.NextBytes(data);
 
-    byte[] compressed = DeflateCompressor.Compress(data, DeflateCompressionLevel.Maximum);
-    byte[] result = DecompressWithSystem(compressed);
+    var compressed = DeflateCompressor.Compress(data, DeflateCompressionLevel.Maximum);
+    var result = DecompressWithSystem(compressed);
     Assert.That(result, Is.EqualTo(data), $"System failed to decompress Maximum output, size {size}");
   }
 
@@ -130,16 +130,16 @@ public class DeflateRoundTripTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Maximum_LargeRepetitive() {
-    byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
-    byte[] data = new byte[pattern.Length * 100];
-    for (int i = 0; i < 100; ++i)
+    var pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
+    var data = new byte[pattern.Length * 100];
+    for (var i = 0; i < 100; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
-    byte[] compressed = DeflateCompressor.Compress(data, DeflateCompressionLevel.Maximum);
-    byte[] result = DeflateDecompressor.Decompress(compressed);
+    var compressed = DeflateCompressor.Compress(data, DeflateCompressionLevel.Maximum);
+    var result = DeflateDecompressor.Decompress(compressed);
     Assert.That(result, Is.EqualTo(data));
 
-    byte[] resultSys = DecompressWithSystem(compressed);
+    var resultSys = DecompressWithSystem(compressed);
     Assert.That(resultSys, Is.EqualTo(data));
   }
 }

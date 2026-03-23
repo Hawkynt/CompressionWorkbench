@@ -121,7 +121,7 @@ internal static class ZstdConstants {
       return litLength;
 
     // Search the base table for the correct code
-    for (int code = LitLengthBase.Length - 1; code >= 16; --code) {
+    for (var code = LitLengthBase.Length - 1; code >= 16; --code) {
       if (litLength >= LitLengthBase[code])
         return code;
     }
@@ -140,7 +140,7 @@ internal static class ZstdConstants {
       return matchLength - 3;
 
     // Search the base table for the correct code
-    for (int code = MatchLengthBase.Length - 1; code >= 32; --code) {
+    for (var code = MatchLengthBase.Length - 1; code >= 32; --code) {
       if (matchLength >= MatchLengthBase[code])
         return code;
     }
@@ -157,7 +157,7 @@ internal static class ZstdConstants {
   public static int GetOffsetCode(int offset) {
     // offset code = highest bit position
     var code = 0;
-    int v = offset;
+    var v = offset;
     while (v > 1) {
       v >>= 1;
       ++code;

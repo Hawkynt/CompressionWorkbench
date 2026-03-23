@@ -50,7 +50,7 @@ public class SlidingWindowTests {
   public void CopyFromWindow_SimpleCopy() {
     var window = new SlidingWindow(32);
     byte[] data = [0x41, 0x42, 0x43];
-    foreach (byte b in data)
+    foreach (var b in data)
       window.WriteByte(b);
 
     var output = new byte[3];
@@ -194,12 +194,12 @@ public class SlidingWindowTests {
 
     byte[] data = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
-    foreach (byte b in data)
+    foreach (var b in data)
       window1.WriteByte(b);
     window2.WriteBytes(data);
 
     Assert.That(window2.Count, Is.EqualTo(window1.Count));
-    for (int d = 1; d <= window1.Count; ++d)
+    for (var d = 1; d <= window1.Count; ++d)
       Assert.That(window2.GetByte(d), Is.EqualTo(window1.GetByte(d)));
   }
 }

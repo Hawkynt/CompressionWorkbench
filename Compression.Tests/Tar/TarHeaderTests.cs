@@ -15,7 +15,7 @@ public class TarHeaderTests {
     };
 
     TarHeader.WriteHeader(ms, entry);
-    byte[] header = ms.ToArray();
+    var header = ms.ToArray();
 
     Assert.That(header.Length, Is.EqualTo(TarConstants.BlockSize));
 
@@ -23,7 +23,7 @@ public class TarHeaderTests {
     var storedChecksum = TarHeader.ParseOctalLong(header.AsSpan(148, 8));
 
     // Compute the checksum independently
-    int computed = TarHeader.ComputeChecksum(header);
+    var computed = TarHeader.ComputeChecksum(header);
 
     Assert.That(storedChecksum, Is.EqualTo(computed));
   }
@@ -33,7 +33,7 @@ public class TarHeaderTests {
   [Test]
   public void Header_OctalEncoding() {
     // Test encoding various values
-    byte[] buffer = new byte[8];
+    var buffer = new byte[8];
 
     TarHeader.WriteOctal(buffer.AsSpan(), 0, 8);
     Assert.That(TarHeader.ParseOctalLong(buffer), Is.EqualTo(0));
@@ -44,7 +44,7 @@ public class TarHeaderTests {
     TarHeader.WriteOctal(buffer.AsSpan(), 493, 8); // 0755
     Assert.That(TarHeader.ParseOctalLong(buffer), Is.EqualTo(493));
 
-    byte[] largeBuffer = new byte[12];
+    var largeBuffer = new byte[12];
     TarHeader.WriteOctal(largeBuffer.AsSpan(), 1048576, 12); // 1 MB
     Assert.That(TarHeader.ParseOctalLong(largeBuffer), Is.EqualTo(1048576));
   }
@@ -53,7 +53,7 @@ public class TarHeaderTests {
   [Test]
   public void Reader_DetectsEndOfArchive() {
     // An empty archive consists of two 512-byte zero blocks
-    byte[] emptyArchive = new byte[TarConstants.BlockSize * 2];
+    var emptyArchive = new byte[TarConstants.BlockSize * 2];
 
     using var tr = new TarReader(new MemoryStream(emptyArchive));
     var entry = tr.GetNextEntry();
@@ -64,8 +64,8 @@ public class TarHeaderTests {
   [Test]
   public void Writer_PadsTo512ByteBoundary() {
     // Write a file with a non-512-aligned size
-    byte[] data = new byte[700]; // 700 bytes, needs padding to 1024 (2 blocks)
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[700]; // 700 bytes, needs padding to 1024 (2 blocks)
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i & 0xFF);
 
     using var ms = new MemoryStream();
@@ -74,7 +74,7 @@ public class TarHeaderTests {
       tw.AddEntry(entry, data);
     }
 
-    byte[] archive = ms.ToArray();
+    var archive = ms.ToArray();
 
     // Total should be: 1 header block (512) + 2 data blocks (1024) + 2 end blocks (1024) = 2560
     Assert.That(archive.Length % TarConstants.BlockSize, Is.EqualTo(0));

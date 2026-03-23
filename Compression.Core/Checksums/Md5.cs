@@ -12,14 +12,14 @@ public static class Md5 {
   /// <returns>The 16-byte MD5 hash.</returns>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     uint a0 = 0x67452301;
-    uint b0 = 0xEFCDAB89;
-    uint c0 = 0x98BADCFE;
+    var b0 = 0xEFCDAB89;
+    var c0 = 0x98BADCFE;
     uint d0 = 0x10325476;
 
-    long bitLen = (long)data.Length * 8;
+    var bitLen = (long)data.Length * 8;
 
     // Pad: append 0x80, then zeros, then 64-bit length (LE)
-    int padLen = (56 - (data.Length + 1) % 64 + 64) % 64 + 1;
+    var padLen = (56 - (data.Length + 1) % 64 + 64) % 64 + 1;
     var padded = new byte[data.Length + padLen + 8];
     data.CopyTo(padded);
     padded[data.Length] = 0x80;
@@ -33,45 +33,45 @@ public static class Md5 {
     padded[padded.Length - 1] = (byte)(bitLen >> 56);
 
     // Process each 64-byte block
-    for (int offset = 0; offset < padded.Length; offset += 64) {
+    for (var offset = 0; offset < padded.Length; offset += 64) {
       var m = new uint[16];
-      for (int i = 0; i < 16; ++i)
+      for (var i = 0; i < 16; ++i)
         m[i] = BitConverter.ToUInt32(padded, offset + i * 4);
 
       uint a = a0, b = b0, c = c0, d = d0;
 
       // Round 1
-      for (int i = 0; i < 16; ++i) {
-        uint f = (b & c) | (~b & d);
-        uint g = (uint)i;
-        uint temp = d; d = c; c = b;
+      for (var i = 0; i < 16; ++i) {
+        var f = (b & c) | (~b & d);
+        var g = (uint)i;
+        var temp = d; d = c; c = b;
         b += RotateLeft(a + f + K[i] + m[g], S1[i]);
         a = temp;
       }
 
       // Round 2
-      for (int i = 16; i < 32; ++i) {
-        uint f = (d & b) | (~d & c);
-        uint g = (uint)((5 * (i - 16) + 1) % 16);
-        uint temp = d; d = c; c = b;
+      for (var i = 16; i < 32; ++i) {
+        var f = (d & b) | (~d & c);
+        var g = (uint)((5 * (i - 16) + 1) % 16);
+        var temp = d; d = c; c = b;
         b += RotateLeft(a + f + K[i] + m[g], S2[i - 16]);
         a = temp;
       }
 
       // Round 3
-      for (int i = 32; i < 48; ++i) {
-        uint f = b ^ c ^ d;
-        uint g = (uint)((3 * (i - 32) + 5) % 16);
-        uint temp = d; d = c; c = b;
+      for (var i = 32; i < 48; ++i) {
+        var f = b ^ c ^ d;
+        var g = (uint)((3 * (i - 32) + 5) % 16);
+        var temp = d; d = c; c = b;
         b += RotateLeft(a + f + K[i] + m[g], S3[i - 32]);
         a = temp;
       }
 
       // Round 4
-      for (int i = 48; i < 64; ++i) {
-        uint f = c ^ (b | ~d);
-        uint g = (uint)((7 * (i - 48)) % 16);
-        uint temp = d; d = c; c = b;
+      for (var i = 48; i < 64; ++i) {
+        var f = c ^ (b | ~d);
+        var g = (uint)((7 * (i - 48)) % 16);
+        var temp = d; d = c; c = b;
         b += RotateLeft(a + f + K[i] + m[g], S4[i - 48]);
         a = temp;
       }

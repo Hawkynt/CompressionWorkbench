@@ -31,17 +31,17 @@ public sealed class GolombRiceEncoder {
   /// </summary>
   /// <param name="value">The value to encode (must be &gt;= 0).</param>
   public void Encode(int value) {
-    int q = value >> this.K;
-    int r = value & ((1 << this.K) - 1);
+    var q = value >> this.K;
+    var r = value & ((1 << this.K) - 1);
 
     // Write q unary 1-bits
-    for (int i = 0; i < q; ++i)
+    for (var i = 0; i < q; ++i)
       WriteBit(1);
     // Write terminating 0-bit
     WriteBit(0);
 
     // Write k-bit remainder (MSB first)
-    for (int i = this.K - 1; i >= 0; --i)
+    for (var i = this.K - 1; i >= 0; --i)
       WriteBit((r >> i) & 1);
   }
 
@@ -50,7 +50,7 @@ public sealed class GolombRiceEncoder {
   /// </summary>
   /// <param name="value">The signed value.</param>
   public void EncodeSigned(int value) {
-    int mapped = value >= 0 ? value * 2 : (-value) * 2 - 1;
+    var mapped = value >= 0 ? value * 2 : (-value) * 2 - 1;
     Encode(mapped);
   }
 

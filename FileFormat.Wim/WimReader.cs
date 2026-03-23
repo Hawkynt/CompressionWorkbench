@@ -82,12 +82,12 @@ public sealed class WimReader : IDisposable {
 
     this._stream.Seek(tableInfo.Offset, SeekOrigin.Begin);
 
-    long tableSize  = tableInfo.CompressedSize; // offset table is always stored uncompressed
-    int entryCount  = (int)(tableSize / WimConstants.ResourceEntrySize);
+    var tableSize  = tableInfo.CompressedSize; // offset table is always stored uncompressed
+    var entryCount  = (int)(tableSize / WimConstants.ResourceEntrySize);
     var entries     = new List<WimResourceEntry>(entryCount);
 
     Span<byte> buf = stackalloc byte[WimConstants.ResourceEntrySize];
-    for (int i = 0; i < entryCount; ++i) {
+    for (var i = 0; i < entryCount; ++i) {
       this._stream.ReadExactly(buf);
       var compressedSize = BinaryPrimitives.ReadInt64LittleEndian(buf);
       var originalSize   = BinaryPrimitives.ReadInt64LittleEndian(buf[8..]);
@@ -117,29 +117,29 @@ public sealed class WimReader : IDisposable {
     }
 
     // Compressed: read the chunk table then decompress chunk-by-chunk.
-    int chunkSize  = (int)this._header.ChunkSize;
-    long origSize  = entry.OriginalSize;
-    int chunkCount = (int)((origSize + chunkSize - 1) / chunkSize);
+    var chunkSize  = (int)this._header.ChunkSize;
+    var origSize  = entry.OriginalSize;
+    var chunkCount = (int)((origSize + chunkSize - 1) / chunkSize);
 
     // Read chunk table: (chunkCount - 1) × 8-byte compressed sizes.
     // The chunk table is stored at the beginning of the resource payload.
-    int chunkTableBytes = (chunkCount - 1) * 8;
-    long[] compressedSizes = new long[chunkCount];
+    var chunkTableBytes = (chunkCount - 1) * 8;
+    var compressedSizes = new long[chunkCount];
 
     if (chunkTableBytes > 0) {
       var chunkTableBuf = new byte[chunkTableBytes];
       this._stream.ReadExactly(chunkTableBuf);
 
-      for (int i = 0; i < chunkCount - 1; ++i)
+      for (var i = 0; i < chunkCount - 1; ++i)
         compressedSizes[i] = BinaryPrimitives.ReadInt64LittleEndian(
           chunkTableBuf.AsSpan(i * 8, 8));
 
       // Compute the last chunk's compressed size from the total.
       long sumOfOthers = 0;
-      for (int i = 0; i < chunkCount - 1; ++i)
+      for (var i = 0; i < chunkCount - 1; ++i)
         sumOfOthers += compressedSizes[i];
 
-      long totalChunkData = entry.CompressedSize - chunkTableBytes;
+      var totalChunkData = entry.CompressedSize - chunkTableBytes;
       compressedSizes[chunkCount - 1] = totalChunkData - sumOfOthers;
     } else {
       // Single chunk: its compressed size is the entire payload.
@@ -148,11 +148,11 @@ public sealed class WimReader : IDisposable {
 
     // Decompress each chunk and assemble the output.
     var output = new byte[origSize];
-    int outPos = 0;
+    var outPos = 0;
 
-    for (int i = 0; i < chunkCount; ++i) {
-      int uncompressedChunkSize = (int)Math.Min(chunkSize, origSize - (long)i * chunkSize);
-      long compSize = compressedSizes[i];
+    for (var i = 0; i < chunkCount; ++i) {
+      var uncompressedChunkSize = (int)Math.Min(chunkSize, origSize - (long)i * chunkSize);
+      var compSize = compressedSizes[i];
 
       if (compSize <= 0)
         ThrowInvalidChunkSize(i);
@@ -160,7 +160,7 @@ public sealed class WimReader : IDisposable {
       var compBuf = new byte[compSize];
       this._stream.ReadExactly(compBuf);
 
-      byte[] decompressed = this.DecompressChunk(compBuf, uncompressedChunkSize);
+      var decompressed = this.DecompressChunk(compBuf, uncompressedChunkSize);
       decompressed.CopyTo(output, outPos);
       outPos += decompressed.Length;
     }

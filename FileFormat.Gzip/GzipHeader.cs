@@ -39,8 +39,8 @@ public sealed class GzipHeader {
   public static GzipHeader Read(Stream stream) {
     var reader = new BinaryReader(stream, System.Text.Encoding.Latin1, leaveOpen: true);
 
-    byte magic1 = reader.ReadByte();
-    byte magic2 = reader.ReadByte();
+    var magic1 = reader.ReadByte();
+    var magic2 = reader.ReadByte();
     if (magic1 != GzipConstants.Magic1 || magic2 != GzipConstants.Magic2)
       throw new InvalidDataException($"Invalid GZIP magic: 0x{magic1:X2} 0x{magic2:X2}");
 
@@ -88,7 +88,7 @@ public sealed class GzipHeader {
     writer.Write(Method);
 
     // Compute flags from properties
-    byte flags = Flags;
+    var flags = Flags;
     if (ExtraField != null) flags |= GzipConstants.FlagExtra;
     if (FileName != null) flags |= GzipConstants.FlagName;
     if (Comment != null) flags |= GzipConstants.FlagComment;
@@ -131,7 +131,7 @@ public sealed class GzipHeader {
   }
 
   private static void WriteNullTerminatedString(Stream stream, string value) {
-    byte[] bytes = System.Text.Encoding.Latin1.GetBytes(value);
+    var bytes = System.Text.Encoding.Latin1.GetBytes(value);
     stream.Write(bytes);
     stream.WriteByte(0);
   }

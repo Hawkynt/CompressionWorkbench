@@ -24,7 +24,7 @@ internal static class ZipEndOfCentralDirectory {
     var cdSize = reader.ReadUInt32();
     var cdOffset = reader.ReadUInt32();
     var commentLen = reader.ReadUInt16();
-    string? comment = commentLen > 0 ? System.Text.Encoding.UTF8.GetString(reader.ReadBytes(commentLen)) : null;
+    var comment = commentLen > 0 ? System.Text.Encoding.UTF8.GetString(reader.ReadBytes(commentLen)) : null;
 
     long actualOffset = cdOffset;
     long actualSize = cdSize;
@@ -41,9 +41,9 @@ internal static class ZipEndOfCentralDirectory {
   /// Writes the end of central directory (and ZIP64 if needed).
   /// </summary>
   public static void Write(BinaryWriter writer, long cdOffset, long cdSize, int count, string? comment) {
-    byte[]? commentBytes = comment != null ? System.Text.Encoding.UTF8.GetBytes(comment) : null;
+    var commentBytes = comment != null ? System.Text.Encoding.UTF8.GetBytes(comment) : null;
 
-    bool needZip64 = cdOffset > uint.MaxValue || cdSize > uint.MaxValue || count > ushort.MaxValue;
+    var needZip64 = cdOffset > uint.MaxValue || cdSize > uint.MaxValue || count > ushort.MaxValue;
 
     if (needZip64) {
       // ZIP64 EOCD
@@ -84,17 +84,17 @@ internal static class ZipEndOfCentralDirectory {
     var searchLen = Math.Min(stream.Length, 65557);
     var searchStart = stream.Length - searchLen;
 
-    byte[] buffer = new byte[searchLen];
+    var buffer = new byte[searchLen];
     stream.Position = searchStart;
     var bytesRead = 0;
     while (bytesRead < buffer.Length) {
-      int read = stream.Read(buffer, bytesRead, buffer.Length - bytesRead);
+      var read = stream.Read(buffer, bytesRead, buffer.Length - bytesRead);
       if (read == 0) break;
       bytesRead += read;
     }
 
     // Scan from the end backwards for the signature
-    for (int i = bytesRead - 22; i >= 0; --i) {
+    for (var i = bytesRead - 22; i >= 0; --i) {
       if (buffer[i] == 0x50 && buffer[i + 1] == 0x4B &&
         buffer[i + 2] == 0x05 && buffer[i + 3] == 0x06) {
         return searchStart + i;

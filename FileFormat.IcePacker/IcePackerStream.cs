@@ -66,22 +66,22 @@ public static class IcePackerStream {
       throw new InvalidDataException("Input is shorter than the ICE header.");
 
     // Read and validate magic.
-    uint magic = BinaryPrimitives.ReadUInt32BigEndian(data);
+    var magic = BinaryPrimitives.ReadUInt32BigEndian(data);
     if (magic != IcePackerConstants.Magic1 && magic != IcePackerConstants.Magic2)
       throw new InvalidDataException(
         $"Invalid ICE magic: 0x{magic:X8}. Expected 'Ice!' or 'ICE!'.");
 
-    uint packedSize = BinaryPrimitives.ReadUInt32BigEndian(data[4..]);
-    uint originalSize = BinaryPrimitives.ReadUInt32BigEndian(data[8..]);
+    var packedSize = BinaryPrimitives.ReadUInt32BigEndian(data[4..]);
+    var originalSize = BinaryPrimitives.ReadUInt32BigEndian(data[8..]);
 
     if (data.Length < IcePackerConstants.HeaderSize + (int)packedSize)
       throw new InvalidDataException(
         $"Packed data truncated: expected {packedSize} bytes but only {data.Length - IcePackerConstants.HeaderSize} available.");
 
-    ReadOnlySpan<byte> packed = data.Slice(IcePackerConstants.HeaderSize, (int)packedSize);
+    var packed = data.Slice(IcePackerConstants.HeaderSize, (int)packedSize);
 
     var output = new byte[originalSize];
-    int dstPos = (int)originalSize;
+    var dstPos = (int)originalSize;
 
     // Backward bit reader state.
     var reader = new BackwardBitReader(packed);
@@ -89,11 +89,11 @@ public static class IcePackerStream {
     while (dstPos > 0) {
       if (reader.ReadBit() == 1) {
         // Match
-        int length = DecodeMatchLength(ref reader);
-        int offset = DecodeMatchOffset(ref reader, length);
+        var length = DecodeMatchLength(ref reader);
+        var offset = DecodeMatchOffset(ref reader, length);
 
         // Copy from already-decompressed data (ahead in output buffer).
-        for (int i = 0; i < length && dstPos > 0; i++) {
+        for (var i = 0; i < length && dstPos > 0; i++) {
           dstPos--;
           output[dstPos] = output[dstPos + offset];
         }
@@ -190,23 +190,23 @@ public static class IcePackerStream {
 
     // Pack bits into bytes, filling from end. The decompressor reads from the
     // last byte backward, MSB first. So bits[0] goes to the MSB of the last byte.
-    int byteCount = (bits.Count + 7) / 8;
+    var byteCount = (bits.Count + 7) / 8;
     var packed = new byte[byteCount];
-    int padBits = byteCount * 8 - bits.Count; // unused bits at the start of byte 0
+    var padBits = byteCount * 8 - bits.Count; // unused bits at the start of byte 0
 
-    for (int i = 0; i < bits.Count; i++) {
+    for (var i = 0; i < bits.Count; i++) {
       if (bits[i] != 0) {
         // Map bit i (in read order) to its byte/bit position.
         // Bit 0 → last byte MSB, bit 1 → last byte bit 6, etc.
-        int globalBitPos = padBits + i; // position from start of packed (padded)
+        var globalBitPos = padBits + i; // position from start of packed (padded)
         // We want: decompressor reads from end, MSB first, so bit 0 in read-order
         // is the MSB of the last byte. Reverse the byte order:
-        int reversedPos = (byteCount * 8 - 1) - globalBitPos + padBits;
+        var reversedPos = (byteCount * 8 - 1) - globalBitPos + padBits;
         // Actually simpler: bit i in read-order = position counting from end.
-        int fromEnd = i; // 0-based position reading from end
-        int byteFromEnd = fromEnd / 8;
-        int bitInByte = 7 - (fromEnd % 8); // MSB first
-        int byteIndex = byteCount - 1 - byteFromEnd;
+        var fromEnd = i; // 0-based position reading from end
+        var byteFromEnd = fromEnd / 8;
+        var bitInByte = 7 - (fromEnd % 8); // MSB first
+        var byteIndex = byteCount - 1 - byteFromEnd;
         if (byteIndex >= 0)
           packed[byteIndex] |= (byte)(1 << bitInByte);
       }
@@ -234,7 +234,7 @@ public static class IcePackerStream {
       windowSize: IcePackerConstants.MaxOffsetLong,
       maxChainDepth: 64);
 
-    int pos = 0;
+    var pos = 0;
     while (pos < input.Length) {
       // Determine the max offset allowed based on minimum possible match length.
       var best = matchFinder.FindMatch(
@@ -248,7 +248,7 @@ public static class IcePackerStream {
           IsValidIceMatch(best.Length, best.Distance)) {
         tokens.Add(Token.CreateMatch(best.Length, best.Distance));
         // Insert skipped positions into the hash chain.
-        for (int i = 1; i < best.Length; i++)
+        for (var i = 1; i < best.Length; i++)
           matchFinder.InsertPosition(input, pos + i);
         pos += best.Length;
       } else {
@@ -286,7 +286,7 @@ public static class IcePackerStream {
   /// Encodes <paramref name="value"/> as <paramref name="numBits"/> bits into the list, MSB first.
   /// </summary>
   private static void EncodeBitsMsb(List<int> bits, int value, int numBits) {
-    for (int i = numBits - 1; i >= 0; i--)
+    for (var i = numBits - 1; i >= 0; i--)
       bits.Add((value >> i) & 1);
   }
 
@@ -339,7 +339,7 @@ public static class IcePackerStream {
         _bitsRemaining = 8;
       }
 
-      int bit = (_bitBuffer >> 7) & 1;
+      var bit = (_bitBuffer >> 7) & 1;
       _bitBuffer <<= 1;
       _bitsRemaining--;
       return bit;
@@ -347,8 +347,8 @@ public static class IcePackerStream {
 
     /// <summary>Reads <paramref name="count"/> bits, MSB first.</summary>
     public int ReadBits(int count) {
-      int value = 0;
-      for (int i = 0; i < count; i++)
+      var value = 0;
+      for (var i = 0; i < count; i++)
         value = (value << 1) | ReadBit();
       return value;
     }

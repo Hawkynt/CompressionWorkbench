@@ -27,7 +27,7 @@ internal static class ArcRle {
     var i = 0;
 
     while (i < data.Length) {
-      byte value = data[i];
+      var value = data[i];
 
       if (value == Marker) {
         // Literal 0x90: emit marker followed by 0x00.
@@ -38,11 +38,11 @@ internal static class ArcRle {
       }
 
       // Count how long this run is (max 255).
-      int runEnd = i + 1;
+      var runEnd = i + 1;
       while (runEnd < data.Length && data[runEnd] == value && runEnd - i < 255)
         ++runEnd;
 
-      int runLength = runEnd - i;
+      var runLength = runEnd - i;
       output.Add(value);
 
       if (runLength >= 2) {
@@ -72,7 +72,7 @@ internal static class ArcRle {
     var i = 0;
 
     while (i < data.Length) {
-      byte current = data[i++];
+      var current = data[i++];
 
       if (current != Marker) {
         output.Add(current);
@@ -84,7 +84,7 @@ internal static class ArcRle {
       if (i >= data.Length)
         throw new InvalidDataException("Unexpected end of ARC RLE stream after marker byte.");
 
-      byte count = data[i++];
+      var count = data[i++];
 
       if (count == 0) {
         // Literal 0x90.
@@ -97,7 +97,7 @@ internal static class ArcRle {
         throw new InvalidDataException($"Invalid ARC RLE count {count}; minimum is 2.");
 
       // Repeat lastByte (count - 1) additional times (it was already emitted once).
-      for (int r = 1; r < count; ++r)
+      for (var r = 1; r < count; ++r)
         output.Add(lastByte);
     }
 

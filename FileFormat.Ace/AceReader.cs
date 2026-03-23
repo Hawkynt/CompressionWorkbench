@@ -60,16 +60,16 @@ public sealed class AceReader : IDisposable {
 
     this._stream.Position = entry.DataOffset;
     var compressed = new byte[entry.CompressedSize];
-    int totalRead = 0;
+    var totalRead = 0;
     while (totalRead < compressed.Length) {
-      int read = this._stream.Read(compressed, totalRead, compressed.Length - totalRead);
+      var read = this._stream.Read(compressed, totalRead, compressed.Length - totalRead);
       if (read == 0) throw new EndOfStreamException("Unexpected end of ACE data.");
       totalRead += read;
     }
 
     // Decrypt if encrypted
     if (entry.IsEncrypted) {
-      byte[] key = AceWriter.DeriveKey(this._password!);
+      var key = AceWriter.DeriveKey(this._password!);
       var bf = new Blowfish(key);
       var iv = new byte[8];
       compressed = bf.DecryptCbc(compressed, iv);
@@ -97,7 +97,7 @@ public sealed class AceReader : IDisposable {
     }
 
     // Verify CRC-32
-    uint crc = Crc32.Compute(data);
+    var crc = Crc32.Compute(data);
     if (crc != entry.Crc32)
       throw new InvalidDataException(
         $"CRC-32 mismatch for '{entry.FileName}': expected 0x{entry.Crc32:X8}, computed 0x{crc:X8}.");
@@ -160,19 +160,19 @@ public sealed class AceReader : IDisposable {
     // offset 18: 4 bytes timestamp
     // offset 22: rest depends on flags
 
-    ushort headerCrc = reader.ReadUInt16();
-    ushort headerSize = reader.ReadUInt16();
+    var headerCrc = reader.ReadUInt16();
+    var headerSize = reader.ReadUInt16();
 
-    long headerStart = this._stream.Position;
-    byte headerType = reader.ReadByte();
+    var headerStart = this._stream.Position;
+    var headerType = reader.ReadByte();
     if (headerType != AceConstants.HeaderTypeArchive)
       throw new InvalidDataException($"Expected ACE archive header (type 0), got type {headerType}.");
 
-    ushort flags = reader.ReadUInt16();
+    var flags = reader.ReadUInt16();
     this.IsSolid = (flags & AceConstants.FlagSolid) != 0;
     this.HasRecoveryRecord = (flags & AceConstants.FlagRecovery) != 0;
 
-    byte[] magic = reader.ReadBytes(7);
+    var magic = reader.ReadBytes(7);
     if (Encoding.ASCII.GetString(magic) != AceConstants.Magic)
       throw new InvalidDataException("Invalid ACE magic signature.");
 
@@ -187,14 +187,14 @@ public sealed class AceReader : IDisposable {
 
     // AV string size
     if ((flags & AceConstants.FlagAvString) != 0) {
-      byte avSize = reader.ReadByte();
+      var avSize = reader.ReadByte();
       reader.ReadBytes(avSize);
     }
 
     // Comment
-    ushort commentSize = reader.ReadUInt16();
+    var commentSize = reader.ReadUInt16();
     if (commentSize > 0) {
-      byte[] commentBytes = reader.ReadBytes(commentSize);
+      var commentBytes = reader.ReadBytes(commentSize);
       this.Comment = Encoding.ASCII.GetString(commentBytes);
     }
 
@@ -206,14 +206,14 @@ public sealed class AceReader : IDisposable {
     if (this._stream.Position + 4 > this._stream.Length)
       return null;
 
-    ushort headerCrc = reader.ReadUInt16();
-    ushort headerSize = reader.ReadUInt16();
+    var headerCrc = reader.ReadUInt16();
+    var headerSize = reader.ReadUInt16();
     if (headerSize == 0)
       return null;
 
-    long headerStart = this._stream.Position;
-    byte headerType = reader.ReadByte();
-    ushort flags = reader.ReadUInt16();
+    var headerStart = this._stream.Position;
+    var headerType = reader.ReadByte();
+    var flags = reader.ReadUInt16();
 
     long dataSize = 0;
     if (headerType == AceConstants.HeaderTypeFile) {
@@ -231,28 +231,28 @@ public sealed class AceReader : IDisposable {
   }
 
   private AceEntry ReadFileEntry(BinaryReader reader, BlockHeader header) {
-    uint packSize = reader.ReadUInt32();
-    uint origSize = reader.ReadUInt32();
-    uint timestamp = reader.ReadUInt32();
-    uint attributes = reader.ReadUInt32();
-    uint crc32 = reader.ReadUInt32();
+    var packSize = reader.ReadUInt32();
+    var origSize = reader.ReadUInt32();
+    var timestamp = reader.ReadUInt32();
+    var attributes = reader.ReadUInt32();
+    var crc32 = reader.ReadUInt32();
 
     // TECH_INFO
-    byte compType = reader.ReadByte();
-    byte quality = reader.ReadByte();
-    ushort techParams = reader.ReadUInt16();
+    var compType = reader.ReadByte();
+    var quality = reader.ReadByte();
+    var techParams = reader.ReadUInt16();
 
-    int dictBits = (techParams & 0x0F) + CoreAceConstants.MinDictBits;
+    var dictBits = (techParams & 0x0F) + CoreAceConstants.MinDictBits;
     if (dictBits > CoreAceConstants.MaxDictBits)
       dictBits = CoreAceConstants.DefaultDictBits;
 
-    ushort fileNameLen = reader.ReadUInt16();
-    byte[] nameBytes = reader.ReadBytes(fileNameLen);
-    string fileName = Encoding.ASCII.GetString(nameBytes);
+    var fileNameLen = reader.ReadUInt16();
+    var nameBytes = reader.ReadBytes(fileNameLen);
+    var fileName = Encoding.ASCII.GetString(nameBytes);
 
     // Skip any remaining header bytes
-    long currentPos = this._stream.Position;
-    long expectedEnd = header.HeaderStart + header.Size;
+    var currentPos = this._stream.Position;
+    var expectedEnd = header.HeaderStart + header.Size;
     if (currentPos < expectedEnd)
       this._stream.Position = expectedEnd;
 
@@ -279,7 +279,7 @@ public sealed class AceReader : IDisposable {
     this._recoverySectorCount = (int)reader.ReadUInt32();
 
     // Skip remaining header bytes
-    long headerEnd = header.HeaderStart + header.Size;
+    var headerEnd = header.HeaderStart + header.Size;
     if (this._stream.Position < headerEnd)
       this._stream.Position = headerEnd;
 
@@ -297,27 +297,27 @@ public sealed class AceReader : IDisposable {
 
     // Read stored parity
     this._stream.Position = this._recoveryDataOffset;
-    byte[] storedParity = new byte[this._recoveryDataSize];
-    int totalRead = 0;
+    var storedParity = new byte[this._recoveryDataSize];
+    var totalRead = 0;
     while (totalRead < storedParity.Length) {
-      int read = this._stream.Read(storedParity, totalRead, storedParity.Length - totalRead);
+      var read = this._stream.Read(storedParity, totalRead, storedParity.Length - totalRead);
       if (read == 0) break;
       totalRead += read;
     }
 
     // Recompute parity from file compressed data
-    byte[] computedParity = new byte[this._recoveryDataSize];
+    var computedParity = new byte[this._recoveryDataSize];
     foreach (var entry in this._entries) {
       this._stream.Position = entry.DataOffset;
       var compressed = new byte[entry.CompressedSize];
-      int r = 0;
+      var r = 0;
       while (r < compressed.Length) {
-        int n = this._stream.Read(compressed, r, compressed.Length - r);
+        var n = this._stream.Read(compressed, r, compressed.Length - r);
         if (n == 0) break;
         r += n;
       }
 
-      for (int i = 0; i < compressed.Length && i < computedParity.Length; ++i)
+      for (var i = 0; i < compressed.Length && i < computedParity.Length; ++i)
         computedParity[i] ^= compressed[i];
     }
 
@@ -325,8 +325,8 @@ public sealed class AceReader : IDisposable {
   }
 
   private static DateTime DateTimeFromDos(uint timestamp) {
-    int time = (int)(timestamp & 0xFFFF);
-    int date = (int)(timestamp >> 16);
+    var time = (int)(timestamp & 0xFFFF);
+    var date = (int)(timestamp >> 16);
     try {
       return new DateTime(
         ((date >> 9) & 0x7F) + 1980,

@@ -26,19 +26,19 @@ internal sealed class SubStream : Stream {
   }
 
   public override int Read(byte[] buffer, int offset, int count) {
-    long remaining = _length - _position;
+    var remaining = _length - _position;
     if (remaining <= 0) return 0;
-    int toRead = (int)Math.Min(count, remaining);
-    int n = _inner.Read(buffer, offset, toRead);
+    var toRead = (int)Math.Min(count, remaining);
+    var n = _inner.Read(buffer, offset, toRead);
     _position += n;
     return n;
   }
 
   public override int Read(Span<byte> buffer) {
-    long remaining = _length - _position;
+    var remaining = _length - _position;
     if (remaining <= 0) return 0;
     var slice = buffer.Length <= remaining ? buffer : buffer[..(int)remaining];
-    int n = _inner.Read(slice);
+    var n = _inner.Read(slice);
     _position += n;
     return n;
   }

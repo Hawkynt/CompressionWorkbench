@@ -217,10 +217,10 @@ public sealed class RpmReader : IDisposable {
       return;
     }
 
-    long pos = stream.Position;
-    long rem = pos % 8;
+    var pos = stream.Position;
+    var rem = pos % 8;
     if (rem != 0) {
-      long pad = 8 - rem;
+      var pad = 8 - rem;
       stream.Seek(pad, SeekOrigin.Current);
     }
   }

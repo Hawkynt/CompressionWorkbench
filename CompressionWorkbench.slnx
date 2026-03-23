@@ -2,6 +2,7 @@
   <Folder Name="/Core/">
     <Project Path="Compression.Core/Compression.Core.csproj" />
     <Project Path="Compression.Lib/Compression.Lib.csproj" />
+    <Project Path="Compression.Analysis/Compression.Analysis.csproj" />
   </Folder>
   <Folder Name="/FileFormats/">
     <Project Path="FileFormat.Bzip2/FileFormat.Bzip2.csproj" />
@@ -56,6 +57,16 @@
     <Project Path="FileFormat.Uharc/FileFormat.Uharc.csproj" />
     <Project Path="FileFormat.Rzip/FileFormat.Rzip.csproj" />
     <Project Path="FileFormat.Wad/FileFormat.Wad.csproj" />
+    <Project Path="FileFormat.PackBits/FileFormat.PackBits.csproj" />
+    <Project Path="FileFormat.Yaz0/FileFormat.Yaz0.csproj" />
+    <Project Path="FileFormat.BriefLz/FileFormat.BriefLz.csproj" />
+    <Project Path="FileFormat.RefPack/FileFormat.RefPack.csproj" />
+    <Project Path="FileFormat.ApLib/FileFormat.ApLib.csproj" />
+    <Project Path="FileFormat.Rnc/FileFormat.Rnc.csproj" />
+    <Project Path="FileFormat.Freeze/FileFormat.Freeze.csproj" />
+    <Project Path="FileFormat.Lzfse/FileFormat.Lzfse.csproj" />
+    <Project Path="FileFormat.Xar/FileFormat.Xar.csproj" />
+    <Project Path="FileFormat.AlZip/FileFormat.AlZip.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />

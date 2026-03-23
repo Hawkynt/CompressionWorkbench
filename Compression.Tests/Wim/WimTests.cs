@@ -37,7 +37,7 @@ public class WimTests {
     using var reader = new WimReader(ms);
     Assert.That(reader.Resources.Count, Is.EqualTo(resources.Count));
 
-    for (int i = 0; i < resources.Count; ++i) {
+    for (var i = 0; i < resources.Count; ++i) {
       var result = reader.ReadResource(i);
       Assert.That(result, Is.EqualTo(resources[i]),
         $"Resource {i} did not round-trip correctly.");
@@ -121,7 +121,7 @@ public class WimTests {
   public void RoundTrip_LargeResource() {
     // 96 KB of patterned data: forces at least 3 chunks with default 32 KB chunk size.
     var data = new byte[96 * 1024];
-    for (int i = 0; i < data.Length; ++i)
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 251);
 
     var result = RoundTrip([data], WimConstants.CompressionXpress);
@@ -137,7 +137,7 @@ public class WimTests {
   [Test]
   public void RoundTrip_ResourceLargerThanChunk() {
     // Use a small chunk size to force multiple chunks on modest data.
-    int chunkSize = 1024;
+    var chunkSize = 1024;
     var rng = new Random(42);
     var data = new byte[4 * 1024];
     rng.NextBytes(data);
@@ -248,7 +248,7 @@ public class WimTests {
   [Test]
   public void RoundTrip_LargeResource_XpressHuffman() {
     var data = new byte[70 * 1024];
-    for (int i = 0; i < data.Length; ++i)
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 128);
 
     var result = RoundTrip([data], WimConstants.CompressionXpressHuffman);
@@ -273,7 +273,7 @@ public class WimTests {
   [Test]
   public void RoundTrip_LargeResource_Lzms() {
     var data = new byte[64 * 1024 + 7];
-    for (int i = 0; i < data.Length; ++i)
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 200);
 
     var result = RoundTrip([data], WimConstants.CompressionLzms);

@@ -34,33 +34,33 @@ public sealed class Lh1Encoder {
 
     var window = new byte[WindowSize];
     Array.Fill(window, (byte)0x20);
-    int windowPos = 0;
+    var windowPos = 0;
 
-    int[] freq = new int[NumCodes];
+    var freq = new int[NumCodes];
     Array.Fill(freq, 1);
-    int symbolCount = 0;
+    var symbolCount = 0;
 
     var (codeLengths, codes) = BuildHuffmanTable(freq);
 
-    int i = 0;
+    var i = 0;
     while (i < data.Length) {
       // Rebuild tree periodically
       if (symbolCount >= BlockSize) {
-        for (int s = 0; s < NumCodes; ++s)
+        for (var s = 0; s < NumCodes; ++s)
           freq[s] = (freq[s] + 1) >> 1;
         (codeLengths, codes) = BuildHuffmanTable(freq);
         symbolCount = 0;
       }
 
       // Find best match in window
-      int bestLen = 0;
-      int bestPos = 0;
+      var bestLen = 0;
+      var bestPos = 0;
 
-      for (int j = 1; j < WindowSize && j <= i; ++j) {
-        int srcIdx = (windowPos - j + WindowSize) & WindowMask;
-        int len = 0;
+      for (var j = 1; j < WindowSize && j <= i; ++j) {
+        var srcIdx = (windowPos - j + WindowSize) & WindowMask;
+        var len = 0;
         while (len < MaxMatch && i + len < data.Length) {
-          int wIdx = (srcIdx + len) & WindowMask;
+          var wIdx = (srcIdx + len) & WindowMask;
           if (window[wIdx] != data[i + len])
             break;
           ++len;
@@ -72,25 +72,25 @@ public sealed class Lh1Encoder {
       }
 
       if (bestLen >= Threshold) {
-        int code = NChar + bestLen - Threshold;
+        var code = NChar + bestLen - Threshold;
         bits.WriteBits(codes[code], codeLengths[code]);
         ++freq[code];
         ++symbolCount;
 
         // Write position: 6 high bits + 6 low bits
-        int posHigh = bestPos >> 6;
-        int posLow = bestPos & 0x3F;
+        var posHigh = bestPos >> 6;
+        var posLow = bestPos & 0x3F;
         bits.WriteBits((uint)posHigh, PositionBits);
         bits.WriteBits((uint)posLow, 6);
 
-        for (int k = 0; k < bestLen; ++k) {
+        for (var k = 0; k < bestLen; ++k) {
           window[windowPos] = data[i + k];
           windowPos = (windowPos + 1) & WindowMask;
         }
         i += bestLen;
       }
       else {
-        byte b = data[i];
+        var b = data[i];
         bits.WriteBits(codes[b], codeLengths[b]);
         ++freq[b];
         ++symbolCount;
@@ -106,8 +106,8 @@ public sealed class Lh1Encoder {
   }
 
   private static (int[] Lengths, uint[] Codes) BuildHuffmanTable(int[] freq) {
-    int[] lengths = LzhEncoder.BuildCodeLengths(freq, 16);
-    uint[] codes = LzhEncoder.BuildCanonicalCodes(lengths);
+    var lengths = LzhEncoder.BuildCodeLengths(freq, 16);
+    var codes = LzhEncoder.BuildCanonicalCodes(lengths);
     return (lengths, codes);
   }
 }

@@ -172,8 +172,8 @@ public class CompressionStreamTests {
     // Decompress
     compressed.Position = 0;
     using var ds = new PassthroughCompressionStream(compressed, CompressionStreamMode.Decompress);
-    byte[] result = new byte[data.Length];
-    int bytesRead = ds.Read(result, 0, result.Length);
+    var result = new byte[data.Length];
+    var bytesRead = ds.Read(result, 0, result.Length);
 
     Assert.That(bytesRead, Is.EqualTo(data.Length));
     Assert.That(result, Is.EqualTo(data));

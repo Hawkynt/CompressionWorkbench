@@ -57,13 +57,13 @@ internal sealed class CompressionOptions {
   internal static int NormalizeDictSize(int size) {
     if (size <= 4096) return 4096;
     // Find the two candidate sizes: 2^n and 3×2^(n-1)
-    int bits = 31 - int.LeadingZeroCount(size);
-    int pow2 = 1 << bits;             // e.g. for 5MB → 4MB
-    int pow2Next = 1 << (bits + 1);   // e.g. for 5MB → 8MB
-    int threeHalf = 3 << (bits - 1);  // e.g. for 5MB → 6MB
+    var bits = 31 - int.LeadingZeroCount(size);
+    var pow2 = 1 << bits;             // e.g. for 5MB → 4MB
+    var pow2Next = 1 << (bits + 1);   // e.g. for 5MB → 8MB
+    var threeHalf = 3 << (bits - 1);  // e.g. for 5MB → 6MB
 
     // Pick the closest that's >= size (round up to next valid)
-    int best = pow2Next; // worst case
+    var best = pow2Next; // worst case
     if (pow2 >= size) best = pow2;
     if (threeHalf >= size && threeHalf < best) best = threeHalf;
     if (pow2Next < best) best = pow2Next;

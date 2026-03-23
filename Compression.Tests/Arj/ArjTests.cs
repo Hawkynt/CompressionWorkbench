@@ -119,7 +119,7 @@ public sealed class ArjTests {
 
     // The archive ends with: [data bytes] [end-of-archive: 4 bytes].
     // Corrupt the last byte of the actual file data.
-    int dataEnd = archive.Length - 4; // 4 = end-of-archive marker (2-byte ID + 2-byte size 0)
+    var dataEnd = archive.Length - 4; // 4 = end-of-archive marker (2-byte ID + 2-byte size 0)
     archive[dataEnd - 1] ^= 0xFF;
 
     // Re-open so the reader sees the intact headers but corrupted data.
@@ -254,17 +254,17 @@ public sealed class ArjTests {
   [Category("RoundTrip")]
   [Test]
   public void Compressed_Method1_RoundTrip() {
-    byte[] data = new byte[2000];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[2000];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 13);
 
     var writer = new ArjWriter(ArjConstants.MethodCompressed1);
     writer.AddFile("compressed.bin", data);
-    byte[] archive = writer.ToArray();
+    var archive = writer.ToArray();
 
     using var reader = OpenArj(archive);
     Assert.That(reader.Entries[0].Method, Is.EqualTo(ArjConstants.MethodCompressed1));
-    byte[] extracted = reader.ExtractEntry(reader.Entries[0]);
+    var extracted = reader.ExtractEntry(reader.Entries[0]);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -272,16 +272,16 @@ public sealed class ArjTests {
   [Category("RoundTrip")]
   [Test]
   public void Compressed_Method2_RoundTrip() {
-    byte[] data = new byte[1000];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[1000];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 7);
 
     var writer = new ArjWriter(ArjConstants.MethodCompressed2);
     writer.AddFile("m2.bin", data);
-    byte[] archive = writer.ToArray();
+    var archive = writer.ToArray();
 
     using var reader = OpenArj(archive);
-    byte[] extracted = reader.ExtractEntry(reader.Entries[0]);
+    var extracted = reader.ExtractEntry(reader.Entries[0]);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -289,14 +289,14 @@ public sealed class ArjTests {
   [Category("RoundTrip")]
   [Test]
   public void Compressed_Text_RoundTrip() {
-    byte[] data = "Hello, ARJ compression! This text should compress well with LZSS and Huffman."u8.ToArray();
+    var data = "Hello, ARJ compression! This text should compress well with LZSS and Huffman."u8.ToArray();
 
     var writer = new ArjWriter(ArjConstants.MethodCompressed1);
     writer.AddFile("text.txt", data);
-    byte[] archive = writer.ToArray();
+    var archive = writer.ToArray();
 
     using var reader = OpenArj(archive);
-    byte[] extracted = reader.ExtractEntry(reader.Entries[0]);
+    var extracted = reader.ExtractEntry(reader.Entries[0]);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -305,17 +305,17 @@ public sealed class ArjTests {
   [Test]
   public void Compressed_FallsBackToStore_WhenNotSmaller() {
     var rng = new Random(42);
-    byte[] data = new byte[32];
+    var data = new byte[32];
     rng.NextBytes(data);
 
     var writer = new ArjWriter(ArjConstants.MethodCompressed1);
     writer.AddFile("random.bin", data);
-    byte[] archive = writer.ToArray();
+    var archive = writer.ToArray();
 
     using var reader = OpenArj(archive);
     // Random data shouldn't compress, so method should fall back to Store
     Assert.That(reader.Entries[0].Method, Is.EqualTo(ArjConstants.MethodStore));
-    byte[] extracted = reader.ExtractEntry(reader.Entries[0]);
+    var extracted = reader.ExtractEntry(reader.Entries[0]);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -332,12 +332,12 @@ public sealed class ArjTests {
 
     var writer = new ArjWriter(ArjConstants.MethodStore, password);
     writer.AddFile("secret.txt", data);
-    byte[] archive = writer.ToArray();
+    var archive = writer.ToArray();
 
     using var reader = new ArjReader(new MemoryStream(archive), password);
     Assert.That(reader.Entries.Count, Is.EqualTo(1));
     Assert.That((reader.Entries[0].Flags & ArjConstants.FlagGarbled), Is.Not.EqualTo(0));
-    byte[] extracted = reader.ExtractEntry(reader.Entries[0]);
+    var extracted = reader.ExtractEntry(reader.Entries[0]);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -345,17 +345,17 @@ public sealed class ArjTests {
   [Category("RoundTrip")]
   [Test]
   public void Garble_Compressed_RoundTrip() {
-    byte[] data = new byte[2000];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[2000];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 13);
     const string password = "p@ss!";
 
     var writer = new ArjWriter(ArjConstants.MethodCompressed1, password);
     writer.AddFile("comp.bin", data);
-    byte[] archive = writer.ToArray();
+    var archive = writer.ToArray();
 
     using var reader = new ArjReader(new MemoryStream(archive), password);
-    byte[] extracted = reader.ExtractEntry(reader.Entries[0]);
+    var extracted = reader.ExtractEntry(reader.Entries[0]);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -366,7 +366,7 @@ public sealed class ArjTests {
 
     var writer = new ArjWriter(ArjConstants.MethodStore, "correct");
     writer.AddFile("x.txt", data);
-    byte[] archive = writer.ToArray();
+    var archive = writer.ToArray();
 
     using var reader = new ArjReader(new MemoryStream(archive), "wrong");
     // CRC-32 should fail because the wrong password produces wrong data
@@ -380,7 +380,7 @@ public sealed class ArjTests {
 
     var writer = new ArjWriter(ArjConstants.MethodStore, "secret");
     writer.AddFile("x.txt", data);
-    byte[] archive = writer.ToArray();
+    var archive = writer.ToArray();
 
     // Open without password
     using var reader = new ArjReader(new MemoryStream(archive));
@@ -397,13 +397,13 @@ public sealed class ArjTests {
     var archive = WriteArj(w => w.AddFile("x.txt", "x"u8.ToArray()));
 
     // The last four bytes must be the ARJ header ID followed by 0x0000.
-    byte eaLo = archive[^4];
-    byte eaHi = archive[^3];
-    byte szLo = archive[^2];
-    byte szHi = archive[^1];
+    var eaLo = archive[^4];
+    var eaHi = archive[^3];
+    var szLo = archive[^2];
+    var szHi = archive[^1];
 
-    ushort id = (ushort)(eaLo | (eaHi << 8));
-    ushort sz = (ushort)(szLo | (szHi << 8));
+    var id = (ushort)(eaLo | (eaHi << 8));
+    var sz = (ushort)(szLo | (szHi << 8));
 
     Assert.That(id, Is.EqualTo(ArjConstants.HeaderId));
     Assert.That(sz, Is.EqualTo(0));

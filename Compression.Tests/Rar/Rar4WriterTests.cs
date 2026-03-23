@@ -9,15 +9,15 @@ public class Rar4WriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Rar3Codec_Direct_RoundTrip() {
-    byte[] data = new byte[1000];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[1000];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 10);
 
     var encoder = new Rar3Encoder(20);
-    byte[] compressed = encoder.Compress(data);
+    var compressed = encoder.Compress(data);
 
     var decoder = new Rar3Decoder();
-    byte[] decompressed = decoder.Decompress(compressed, data.Length, 20);
+    var decompressed = decoder.Decompress(compressed, data.Length, 20);
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
@@ -25,7 +25,7 @@ public class Rar4WriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Store_RoundTrip() {
-    byte[] data = "Hello, RAR4 Store!"u8.ToArray();
+    var data = "Hello, RAR4 Store!"u8.ToArray();
 
     using var ms = new MemoryStream();
     using (var writer = new Rar4Writer(ms, leaveOpen: true, method: RarConstants.Rar4MethodStore))
@@ -37,7 +37,7 @@ public class Rar4WriterTests {
     Assert.That(reader.IsRar4, Is.True);
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
     Assert.That(reader.Entries[0].Name, Is.EqualTo("test.txt"));
-    byte[] extracted = reader.Extract(0);
+    var extracted = reader.Extract(0);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -45,8 +45,8 @@ public class Rar4WriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Compressed_RoundTrip() {
-    byte[] data = new byte[1000];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[1000];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 10);
 
     using var ms = new MemoryStream();
@@ -58,7 +58,7 @@ public class Rar4WriterTests {
 
     Assert.That(reader.IsRar4, Is.True);
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
-    byte[] extracted = reader.Extract(0);
+    var extracted = reader.Extract(0);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -66,9 +66,9 @@ public class Rar4WriterTests {
   [Category("RoundTrip")]
   [Test]
   public void MultipleFiles_RoundTrip() {
-    byte[] d1 = "First file data"u8.ToArray();
-    byte[] d2 = new byte[500];
-    for (int i = 0; i < d2.Length; ++i) d2[i] = (byte)(i % 13);
+    var d1 = "First file data"u8.ToArray();
+    var d2 = new byte[500];
+    for (var i = 0; i < d2.Length; ++i) d2[i] = (byte)(i % 13);
 
     using var ms = new MemoryStream();
     using (var writer = new Rar4Writer(ms, leaveOpen: true)) {
@@ -105,9 +105,9 @@ public class Rar4WriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Solid_RoundTrip() {
-    byte[] d1 = new byte[300];
-    byte[] d2 = new byte[300];
-    for (int i = 0; i < 300; ++i) { d1[i] = (byte)(i % 10); d2[i] = (byte)(i % 10); }
+    var d1 = new byte[300];
+    var d2 = new byte[300];
+    for (var i = 0; i < 300; ++i) { d1[i] = (byte)(i % 10); d2[i] = (byte)(i % 10); }
 
     using var ms = new MemoryStream();
     using (var writer = new Rar4Writer(ms, leaveOpen: true, solid: true)) {
@@ -128,7 +128,7 @@ public class Rar4WriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Encrypted_Store_RoundTrip() {
-    byte[] data = "RAR4 encrypted store test"u8.ToArray();
+    var data = "RAR4 encrypted store test"u8.ToArray();
 
     using var ms = new MemoryStream();
     using (var writer = new Rar4Writer(ms, leaveOpen: true,
@@ -141,7 +141,7 @@ public class Rar4WriterTests {
     Assert.That(reader.IsRar4, Is.True);
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
     Assert.That(reader.Entries[0].IsEncrypted, Is.True);
-    byte[] extracted = reader.Extract(0);
+    var extracted = reader.Extract(0);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -149,8 +149,8 @@ public class Rar4WriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Encrypted_Compressed_RoundTrip() {
-    byte[] data = new byte[500];
-    for (int i = 0; i < data.Length; ++i) data[i] = (byte)(i % 10);
+    var data = new byte[500];
+    for (var i = 0; i < data.Length; ++i) data[i] = (byte)(i % 10);
 
     using var ms = new MemoryStream();
     using (var writer = new Rar4Writer(ms, leaveOpen: true,
@@ -163,7 +163,7 @@ public class Rar4WriterTests {
     Assert.That(reader.IsRar4, Is.True);
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
     Assert.That(reader.Entries[0].IsEncrypted, Is.True);
-    byte[] extracted = reader.Extract(0);
+    var extracted = reader.Extract(0);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -171,9 +171,9 @@ public class Rar4WriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Encrypted_MultipleFiles_RoundTrip() {
-    byte[] d1 = "File one"u8.ToArray();
-    byte[] d2 = new byte[300];
-    for (int i = 0; i < d2.Length; ++i) d2[i] = (byte)(i % 7);
+    var d1 = "File one"u8.ToArray();
+    var d2 = new byte[300];
+    for (var i = 0; i < d2.Length; ++i) d2[i] = (byte)(i % 7);
 
     using var ms = new MemoryStream();
     using (var writer = new Rar4Writer(ms, leaveOpen: true, password: "test")) {
@@ -194,12 +194,12 @@ public class Rar4WriterTests {
   [Category("RoundTrip")]
   [Test]
   public void CreateSplit_RoundTrip() {
-    byte[] d1 = new byte[100];
-    byte[] d2 = new byte[200];
-    for (int i = 0; i < d1.Length; ++i) d1[i] = (byte)(i % 10);
-    for (int i = 0; i < d2.Length; ++i) d2[i] = (byte)(i % 7);
+    var d1 = new byte[100];
+    var d2 = new byte[200];
+    for (var i = 0; i < d1.Length; ++i) d1[i] = (byte)(i % 10);
+    for (var i = 0; i < d2.Length; ++i) d2[i] = (byte)(i % 7);
 
-    byte[][] volumes = Rar4Writer.CreateSplit(
+    var volumes = Rar4Writer.CreateSplit(
       maxVolumeSize: 150,
       entries: [("a.bin", d1), ("b.bin", d2)],
       method: RarConstants.Rar4MethodStore);

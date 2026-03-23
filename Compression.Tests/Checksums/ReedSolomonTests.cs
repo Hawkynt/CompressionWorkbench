@@ -16,7 +16,7 @@ public class ReedSolomonTests {
       [13, 14, 15, 16]
     ];
 
-    byte[][] parity = rs.Encode(data);
+    var parity = rs.Encode(data);
     Assert.That(parity, Has.Length.EqualTo(2));
 
     // Simulate losing data shard 1
@@ -28,7 +28,7 @@ public class ReedSolomonTests {
     shards[4] = parity[0];
     shards[5] = parity[1];
 
-    bool ok = rs.Reconstruct(shards);
+    var ok = rs.Reconstruct(shards);
     Assert.That(ok, Is.True);
     Assert.That(shards[1], Is.EqualTo(data[1]));
   }
@@ -45,7 +45,7 @@ public class ReedSolomonTests {
       [130, 140, 150, 160]
     ];
 
-    byte[][] parity = rs.Encode(data);
+    var parity = rs.Encode(data);
 
     // Simulate losing data shards 0 and 2
     var shards = new byte[]?[6];
@@ -56,7 +56,7 @@ public class ReedSolomonTests {
     shards[4] = parity[0];
     shards[5] = parity[1];
 
-    bool ok = rs.Reconstruct(shards);
+    var ok = rs.Reconstruct(shards);
     Assert.That(ok, Is.True);
     Assert.That(shards[0], Is.EqualTo(data[0]));
     Assert.That(shards[2], Is.EqualTo(data[2]));
@@ -68,8 +68,8 @@ public class ReedSolomonTests {
     var rs = new ReedSolomon(3, 1);
     byte[][] data = [[1, 2], [3, 4], [5, 6]];
 
-    byte[][] parity1 = rs.Encode(data);
-    byte[][] parity2 = rs.Encode(data);
+    var parity1 = rs.Encode(data);
+    var parity2 = rs.Encode(data);
 
     Assert.That(parity1[0], Is.EqualTo(parity2[0]));
   }
@@ -79,7 +79,7 @@ public class ReedSolomonTests {
   public void TooManyErasures_ReturnsFalse() {
     var rs = new ReedSolomon(4, 1);
     byte[][] data = [[1], [2], [3], [4]];
-    byte[][] parity = rs.Encode(data);
+    var parity = rs.Encode(data);
 
     // Lose 2 data shards but only have 1 parity
     var shards = new byte[]?[5];
@@ -89,7 +89,7 @@ public class ReedSolomonTests {
     shards[3] = data[3];
     shards[4] = parity[0];
 
-    bool ok = rs.Reconstruct(shards);
+    var ok = rs.Reconstruct(shards);
     Assert.That(ok, Is.False);
   }
 }

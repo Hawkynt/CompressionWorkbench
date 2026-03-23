@@ -183,7 +183,7 @@ public sealed class CabWriter {
     // -----------------------------------------------------------------------
     writer.Write((uint)coffDataSection);        // coffCabStart
     writer.Write((ushort)dataBlocks.Count);     // cCFData
-    ushort typeCompress = this._compressionType switch {
+    var typeCompress = this._compressionType switch {
       CabCompressionType.Lzx     => (ushort)((this._lzxWindowBits << 8) | (ushort)CabCompressionType.Lzx),
       CabCompressionType.Quantum => (ushort)((this._quantumWindowLevel << 8) | (ushort)CabCompressionType.Quantum),
       _                          => (ushort)this._compressionType,
@@ -245,13 +245,13 @@ public sealed class CabWriter {
 
     if (this._compressionType == CabCompressionType.Lzx) {
       var blocks = new List<(byte[], int)>();
-      int offset = 0;
+      var offset = 0;
       var compressor = new LzxCompressor(this._lzxWindowBits);
 
       while (offset < data.Length) {
-        int len = Math.Min(MsZipCompressor.BlockSize, data.Length - offset);
+        var len = Math.Min(MsZipCompressor.BlockSize, data.Length - offset);
         var chunk = data.AsSpan(offset, len);
-        byte[] compressed = compressor.Compress(chunk);
+        var compressed = compressor.Compress(chunk);
         blocks.Add((compressed, len));
         offset += len;
       }
@@ -264,12 +264,12 @@ public sealed class CabWriter {
 
     if (this._compressionType == CabCompressionType.Quantum) {
       var blocks = new List<(byte[], int)>();
-      int offset = 0;
+      var offset = 0;
 
       while (offset < data.Length) {
-        int len = Math.Min(MsZipCompressor.BlockSize, data.Length - offset);
+        var len = Math.Min(MsZipCompressor.BlockSize, data.Length - offset);
         var chunk = data.AsSpan(offset, len);
-        byte[] compressed = QuantumCompressor.Compress(chunk, this._quantumWindowLevel);
+        var compressed = QuantumCompressor.Compress(chunk, this._quantumWindowLevel);
         blocks.Add((compressed, len));
         offset += len;
       }

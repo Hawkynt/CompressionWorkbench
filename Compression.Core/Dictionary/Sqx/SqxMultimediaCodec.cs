@@ -19,8 +19,8 @@ public static class SqxMultimediaCodec {
     if (data.Length == 0)
       return [];
 
-    int bestOrder = SelectDeltaOrder(data);
-    byte[] residuals = ApplyDelta(data, bestOrder);
+    var bestOrder = SelectDeltaOrder(data);
+    var residuals = ApplyDelta(data, bestOrder);
 
     using var ms = new MemoryStream();
     ms.WriteByte((byte)bestOrder);
@@ -28,11 +28,11 @@ public static class SqxMultimediaCodec {
     var encoder = new ArithmeticEncoder(ms);
     var model = new AdaptiveModel(256);
 
-    for (int i = 0; i < residuals.Length; ++i) {
+    for (var i = 0; i < residuals.Length; ++i) {
       int sym = residuals[i];
-      uint cumFreq = (uint)model.GetCumulativeFrequency(sym);
-      uint symFreq = (uint)model.GetFrequency(sym);
-      uint totalFreq = (uint)model.TotalFrequency;
+      var cumFreq = (uint)model.GetCumulativeFrequency(sym);
+      var symFreq = (uint)model.GetFrequency(sym);
+      var totalFreq = (uint)model.TotalFrequency;
 
       encoder.EncodeSymbol(cumFreq, symFreq, totalFreq);
       model.Update(sym);
@@ -50,19 +50,19 @@ public static class SqxMultimediaCodec {
       return new byte[originalSize];
 
     using var ms = new MemoryStream(compressed);
-    int deltaOrder = ms.ReadByte();
+    var deltaOrder = ms.ReadByte();
 
     var decoder = new ArithmeticDecoder(ms);
     var model = new AdaptiveModel(256);
 
     var residuals = new byte[originalSize];
-    for (int i = 0; i < originalSize; ++i) {
-      uint totalFreq = (uint)model.TotalFrequency;
-      uint count = decoder.GetCumulativeCount(totalFreq);
-      int sym = model.FindSymbol((int)count);
+    for (var i = 0; i < originalSize; ++i) {
+      var totalFreq = (uint)model.TotalFrequency;
+      var count = decoder.GetCumulativeCount(totalFreq);
+      var sym = model.FindSymbol((int)count);
 
-      uint cumFreq = (uint)model.GetCumulativeFrequency(sym);
-      uint symFreq = (uint)model.GetFrequency(sym);
+      var cumFreq = (uint)model.GetCumulativeFrequency(sym);
+      var symFreq = (uint)model.GetFrequency(sym);
       decoder.UpdateSymbol(cumFreq, symFreq, totalFreq);
 
       residuals[i] = (byte)sym;
@@ -73,13 +73,13 @@ public static class SqxMultimediaCodec {
   }
 
   private static int SelectDeltaOrder(ReadOnlySpan<byte> data) {
-    int testLen = Math.Min(data.Length, 1024);
-    long bestScore = long.MaxValue;
-    int bestOrder = 0;
+    var testLen = Math.Min(data.Length, 1024);
+    var bestScore = long.MaxValue;
+    var bestOrder = 0;
 
-    for (int order = 0; order <= 4; ++order) {
-      byte[] residuals = ApplyDelta(data[..testLen], order);
-      long score = EstimateEntropyScore(residuals);
+    for (var order = 0; order <= 4; ++order) {
+      var residuals = ApplyDelta(data[..testLen], order);
+      var score = EstimateEntropyScore(residuals);
       if (score < bestScore) {
         bestScore = score;
         bestOrder = order;
@@ -92,19 +92,19 @@ public static class SqxMultimediaCodec {
   private static long EstimateEntropyScore(byte[] data) {
     // Use sum of absolute deviations from mean as proxy for entropy
     long sum = 0;
-    foreach (byte b in data) sum += b;
-    long mean = sum / Math.Max(data.Length, 1);
+    foreach (var b in data) sum += b;
+    var mean = sum / Math.Max(data.Length, 1);
     long dev = 0;
-    foreach (byte b in data) dev += Math.Abs(b - mean);
+    foreach (var b in data) dev += Math.Abs(b - mean);
     return dev;
   }
 
   private static byte[] ApplyDelta(ReadOnlySpan<byte> data, int order) {
     var result = data.ToArray();
-    for (int pass = 0; pass < order; ++pass) {
+    for (var pass = 0; pass < order; ++pass) {
       byte prev = 0;
-      for (int i = 0; i < result.Length; ++i) {
-        byte cur = result[i];
+      for (var i = 0; i < result.Length; ++i) {
+        var cur = result[i];
         result[i] = (byte)(cur - prev);
         prev = cur;
       }
@@ -114,9 +114,9 @@ public static class SqxMultimediaCodec {
 
   private static byte[] InverseDelta(byte[] residuals, int order) {
     var result = (byte[])residuals.Clone();
-    for (int pass = 0; pass < order; ++pass) {
+    for (var pass = 0; pass < order; ++pass) {
       byte prev = 0;
-      for (int i = 0; i < result.Length; ++i) {
+      for (var i = 0; i < result.Length; ++i) {
         result[i] = (byte)(result[i] + prev);
         prev = result[i];
       }

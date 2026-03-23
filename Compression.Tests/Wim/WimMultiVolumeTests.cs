@@ -9,9 +9,9 @@ public class WimMultiVolumeTests {
   [Category("RoundTrip")]
   [Test]
   public void SplitArchive_Read_TwoVolumes() {
-    byte[] wim = CreateTestWim();
+    var wim = CreateTestWim();
 
-    int splitPoint = wim.Length / 2;
+    var splitPoint = wim.Length / 2;
     using var cs = new ConcatenatedStream([
       new MemoryStream(wim[..splitPoint]),
       new MemoryStream(wim[splitPoint..])
@@ -27,10 +27,10 @@ public class WimMultiVolumeTests {
   [Category("RoundTrip")]
   [Test]
   public void CreateSplit_Write_Read_RoundTrip() {
-    byte[] data1 = MakeTestData(100, 0x30);
-    byte[] data2 = MakeTestData(200, 0x50);
+    var data1 = MakeTestData(100, 0x30);
+    var data2 = MakeTestData(200, 0x50);
 
-    byte[][] volumes = WimWriter.CreateSplit(
+    var volumes = WimWriter.CreateSplit(
       maxVolumeSize: 200,
       resources: [data1, data2]);
 
@@ -54,7 +54,7 @@ public class WimMultiVolumeTests {
 
   private static byte[] MakeTestData(int size, byte seed) {
     var data = new byte[size];
-    for (int i = 0; i < size; ++i)
+    for (var i = 0; i < size; ++i)
       data[i] = (byte)((seed + i) % 256);
     return data;
   }

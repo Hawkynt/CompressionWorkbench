@@ -199,10 +199,10 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
   }
 
   private (long compress, long decompress) EstimateMemoryBytes() {
-    string method = ResolveMethodName();
-    long dict = GetEffectiveDictSize(method);
-    int threads = ParseThreads();
-    long solidBlock = GetEffectiveSolidBlock();
+    var method = ResolveMethodName();
+    var dict = GetEffectiveDictSize(method);
+    var threads = ParseThreads();
+    var solidBlock = GetEffectiveSolidBlock();
 
     // For 7z: each thread works on one solid block simultaneously.
     // Encoder state (dict-dependent) + solid block data buffer per thread.
@@ -253,7 +253,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
   }
 
   private long GetEffectiveSolidBlock() {
-    long solidBytes = ParseSolidSizeBytes(SelectedSolidSize);
+    var solidBytes = ParseSolidSizeBytes(SelectedSolidSize);
     if (solidBytes == SmartSolidSentinel) return SolidBlockPlanner.DefaultMaxBlockSize;
     if (solidBytes <= 0) return 4L * 1024 * 1024 * 1024; // "Solid (single block)" — assume large
     if (solidBytes == 1) return 0; // "Non-solid" — no buffering
@@ -261,7 +261,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
   }
 
   private long GetEffectiveDictSize(string method) {
-    long parsed = ParseDictSizeBytes(SelectedDictSize);
+    var parsed = ParseDictSizeBytes(SelectedDictSize);
     if (parsed > 0) return parsed;
     return (_format, method) switch {
       (F.SevenZip, "lzma" or "lzma2") => 8L * 1024 * 1024,
@@ -277,7 +277,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
   }
 
   private long GetEffectiveBzip2Block() {
-    long parsed = ParseDictSizeBytes(SelectedDictSize);
+    var parsed = ParseDictSizeBytes(SelectedDictSize);
     return parsed > 0 ? parsed : 900 * 1024;
   }
 
@@ -297,7 +297,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
 
   public string HintText {
     get {
-      string method = ResolveMethodName();
+      var method = ResolveMethodName();
       return (_format, method) switch {
         // 7z
         (F.SevenZip, "lzma" or "lzma2") =>
@@ -611,7 +611,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
   }
 
   private void PopulateLevels() {
-    string effectiveMethod = ResolveMethodName();
+    var effectiveMethod = ResolveMethodName();
     LevelOptions = (_format, effectiveMethod) switch {
       // 7z — all levels 0-9
       (F.SevenZip, "ppmd") => [
@@ -664,9 +664,9 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
   // 2^n and 2^n * 1.5 series matching 7-Zip
   private static string[] DictSizeSeries(long min, long max) {
     var list = new List<string>();
-    for (long pow2 = min; pow2 <= max; pow2 *= 2) {
+    for (var pow2 = min; pow2 <= max; pow2 *= 2) {
       list.Add(FormatByteSize(pow2));
-      long half = pow2 + pow2 / 2; // 1.5x
+      var half = pow2 + pow2 / 2; // 1.5x
       if (half <= max && half > pow2)
         list.Add(FormatByteSize(half));
     }
@@ -674,7 +674,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
   }
 
   private void PopulateDictSizes() {
-    string effectiveMethod = ResolveMethodName();
+    var effectiveMethod = ResolveMethodName();
 
     // Set label
     DictSizeLabel = (_format, effectiveMethod) switch {
@@ -743,7 +743,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
     "Default (8)", "2", "3", "4", "5", "6", "7", "8", "10", "12", "16"];
 
   private void PopulateWordSizes() {
-    string effectiveMethod = ResolveMethodName();
+    var effectiveMethod = ResolveMethodName();
     WordSizeOptions = (_format, effectiveMethod) switch {
       (F.SevenZip, "ppmd") => PpmdOrders7z,
       (F.SevenZip, "lzma" or "lzma2") => LzmaWordSizes,
@@ -785,9 +785,9 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
   }
 
   private void PopulateThreads() {
-    int cores = Environment.ProcessorCount;
+    var cores = Environment.ProcessorCount;
     var opts = new List<string> { $"Auto ({cores} cores)" };
-    for (int i = 1; i <= cores; i++)
+    for (var i = 1; i <= cores; i++)
       opts.Add(i.ToString());
     ThreadOptions = [.. opts];
     SelectedThreads = ThreadOptions[0];
@@ -805,7 +805,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
   }
 
   private static string[] BuildSfxTargets() {
-    string current = GetCurrentRid();
+    var current = GetCurrentRid();
     return [
       $"Current platform ({current})",
       "win-x64", "win-x86", "win-arm64",
@@ -851,11 +851,11 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
 
   internal CompressionOptions ToOptions() {
     var method = ResolveMethodSpec();
-    int? level = ParseLeadingInt(SelectedLevel);
-    int? wordSize = ParseLeadingInt(SelectedWordSize);
-    int threads = ParseThreads();
-    long dictSize = ParseDictSizeBytes(SelectedDictSize);
-    long solidSize = ParseSolidSizeBytes(SelectedSolidSize);
+    var level = ParseLeadingInt(SelectedLevel);
+    var wordSize = ParseLeadingInt(SelectedWordSize);
+    var threads = ParseThreads();
+    var dictSize = ParseDictSizeBytes(SelectedDictSize);
+    var solidSize = ParseSolidSizeBytes(SelectedSolidSize);
 
     return new CompressionOptions {
       Method = method,
@@ -912,7 +912,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
     var end = s.IndexOfAny([' ', '(']);
     if (end > 0) s = s[..end];
     s = s.Trim();
-    bool optimize = s.EndsWith('+');
+    var optimize = s.EndsWith('+');
     if (optimize) s = s[..^1];
     s = s.ToLowerInvariant();
     if (s is "default" or "n/a" or "lz+huffman" or "lz77+huffman" or "lzh" or "ha" or "rar5")
@@ -927,7 +927,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
         s.StartsWith("N/A", StringComparison.OrdinalIgnoreCase) ||
         s.StartsWith("Auto", StringComparison.OrdinalIgnoreCase))
       return null;
-    int i = 0;
+    var i = 0;
     while (i < s.Length && char.IsDigit(s[i])) i++;
     if (i > 0 && int.TryParse(s[..i], out var val)) return val;
     return null;
@@ -987,14 +987,14 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
   private static string FormatByteSize(long bytes) {
     if (bytes < 1024) return $"{bytes} B";
     if (bytes < 1024 * 1024) {
-      long kb = bytes / 1024;
+      var kb = bytes / 1024;
       return $"{kb} KB";
     }
     if (bytes < 1024L * 1024 * 1024) {
-      double mb = bytes / (1024.0 * 1024);
+      var mb = bytes / (1024.0 * 1024);
       return mb == Math.Floor(mb) ? $"{(long)mb} MB" : $"{mb:0.#} MB";
     }
-    double gb = bytes / (1024.0 * 1024 * 1024);
+    var gb = bytes / (1024.0 * 1024 * 1024);
     return gb == Math.Floor(gb) ? $"{(long)gb} GB" : $"{gb:0.#} GB";
   }
 

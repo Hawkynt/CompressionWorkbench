@@ -38,8 +38,8 @@ internal sealed class Bzip2Compressor {
   public void Write(ReadOnlySpan<byte> data) {
     var offset = 0;
     while (offset < data.Length) {
-      int remaining = this._blockSize - this._blockLength;
-      int toCopy = Math.Min(remaining, data.Length - offset);
+      var remaining = this._blockSize - this._blockLength;
+      var toCopy = Math.Min(remaining, data.Length - offset);
       data.Slice(offset, toCopy).CopyTo(this._blockBuffer.AsSpan(this._blockLength));
       this._blockLength += toCopy;
       offset += toCopy;
@@ -71,35 +71,35 @@ internal sealed class Bzip2Compressor {
     this._blockLength = 0;
 
     // Compute block CRC
-    uint blockCrc = Crc32Bzip2(blockData);
+    var blockCrc = Crc32Bzip2(blockData);
     this._combinedCrc = ((this._combinedCrc << 1) | (this._combinedCrc >> 31)) ^ blockCrc;
 
     // Step 1: RLE1 — run-length encode runs of 4+ identical bytes
-    byte[] rle1Data = Rle1Encode(blockData);
+    var rle1Data = Rle1Encode(blockData);
 
     // Step 2: BWT
     var (bwtData, bwtIndex) = BurrowsWheelerTransform.Forward(rle1Data);
 
     // Step 3: Determine in-use symbols and MTF with compact alphabet
-    bool[] symbolUsed = new bool[256];
-    for (int i = 0; i < bwtData.Length; ++i)
+    var symbolUsed = new bool[256];
+    for (var i = 0; i < bwtData.Length; ++i)
       symbolUsed[bwtData[i]] = true;
 
     var numSymbolsInUse = 0;
-    byte[] mtfAlphabet = new byte[256];
-    for (int i = 0; i < 256; ++i) {
+    var mtfAlphabet = new byte[256];
+    for (var i = 0; i < 256; ++i) {
       if (symbolUsed[i])
         mtfAlphabet[numSymbolsInUse++] = (byte)i;
     }
 
     // MTF encode using only the in-use alphabet
-    byte[] mtfData = MtfEncodeWithAlphabet(bwtData, mtfAlphabet.AsSpan(0, numSymbolsInUse));
+    var mtfData = MtfEncodeWithAlphabet(bwtData, mtfAlphabet.AsSpan(0, numSymbolsInUse));
 
     // EOB symbol is numSymbolsInUse + 1 (RUNA=0, RUNB=1, then symbols 2..numSymbolsInUse, then EOB)
-    int eobSymbol = numSymbolsInUse + 1;
-    int alphaSize = eobSymbol + 1;
+    var eobSymbol = numSymbolsInUse + 1;
+    var alphaSize = eobSymbol + 1;
 
-    int[] rle2Symbols = Rle2Encode(mtfData, eobSymbol);
+    var rle2Symbols = Rle2Encode(mtfData, eobSymbol);
 
     // Step 5: Build Huffman tables
     WriteBlock(blockCrc, bwtIndex, symbolUsed, alphaSize, rle2Symbols);
@@ -122,11 +122,11 @@ internal sealed class Bzip2Compressor {
     // Symbol bitmap: 16 segments of 16 bits each
     WriteSymbolBitmap(symbolUsed);
 
-    int numGroups = (symbols.Length + Bzip2Constants.GroupSize - 1) / Bzip2Constants.GroupSize;
+    var numGroups = (symbols.Length + Bzip2Constants.GroupSize - 1) / Bzip2Constants.GroupSize;
     if (numGroups == 0) numGroups = 1;
 
     // Choose number of tables based on data size
-    int numTrees = numGroups < 2 ? 1
+    var numTrees = numGroups < 2 ? 1
       : numGroups < 8 ? 2
       : numGroups < 100 ? 3
       : numGroups < 600 ? 4
@@ -137,7 +137,7 @@ internal sealed class Bzip2Compressor {
     // Build per-table code lengths and selectors
     var (tableLengths, selectors) = BuildMultiTable(symbols, alphaSize, numTrees, numGroups);
 
-    int numSelectors = selectors.Length;
+    var numSelectors = selectors.Length;
 
     // Number of trees (3 bits)
     this._bitWriter.WriteBits((uint)numTrees, 3);
@@ -146,27 +146,27 @@ internal sealed class Bzip2Compressor {
     this._bitWriter.WriteBits((uint)numSelectors, 15);
 
     // Write selectors (MTF-encoded, then unary-coded)
-    byte[] selectorMtf = MtfEncodeSelectors(selectors, numTrees);
-    for (int i = 0; i < numSelectors; ++i) {
+    var selectorMtf = MtfEncodeSelectors(selectors, numTrees);
+    for (var i = 0; i < numSelectors; ++i) {
       int v = selectorMtf[i];
-      for (int j = 0; j < v; ++j)
+      for (var j = 0; j < v; ++j)
         this._bitWriter.WriteBit(1);
       this._bitWriter.WriteBit(0);
     }
 
     // Write code lengths for each table (delta-encoded)
-    for (int t = 0; t < numTrees; ++t)
+    for (var t = 0; t < numTrees; ++t)
       WriteCodeLengths(tableLengths[t], alphaSize);
 
     // Write Huffman-coded symbols using the selected table per group
     var canonicals = new CanonicalHuffman[numTrees];
-    for (int t = 0; t < numTrees; ++t)
+    for (var t = 0; t < numTrees; ++t)
       canonicals[t] = new CanonicalHuffman(tableLengths[t]);
 
-    int symIdx = 0;
-    for (int g = 0; g < numGroups; ++g) {
+    var symIdx = 0;
+    for (var g = 0; g < numGroups; ++g) {
       var huff = canonicals[selectors[g]];
-      int groupEnd = Math.Min(symIdx + Bzip2Constants.GroupSize, symbols.Length);
+      var groupEnd = Math.Min(symIdx + Bzip2Constants.GroupSize, symbols.Length);
       while (symIdx < groupEnd) {
         var (code, len) = huff.GetCode(symbols[symIdx]);
         this._bitWriter.WriteBits(code, len);
@@ -179,21 +179,21 @@ internal sealed class Bzip2Compressor {
       int[] symbols, int alphaSize, int numTrees, int numGroups) {
     // Initialize tables by dividing symbols roughly equally among tables
     // Each table is initially optimized for a different frequency distribution
-    int[][] tableLengths = new int[numTrees][];
-    byte[] selectors = new byte[numGroups];
+    var tableLengths = new int[numTrees][];
+    var selectors = new byte[numGroups];
 
     // Build initial frequency counts per group
-    long[][] groupFreqs = new long[numGroups][];
-    for (int g = 0; g < numGroups; ++g) {
+    var groupFreqs = new long[numGroups][];
+    for (var g = 0; g < numGroups; ++g) {
       groupFreqs[g] = new long[alphaSize];
-      int start = g * Bzip2Constants.GroupSize;
-      int end = Math.Min(start + Bzip2Constants.GroupSize, symbols.Length);
-      for (int i = start; i < end; ++i)
+      var start = g * Bzip2Constants.GroupSize;
+      var end = Math.Min(start + Bzip2Constants.GroupSize, symbols.Length);
+      for (var i = start; i < end; ++i)
         ++groupFreqs[g][symbols[i]];
     }
 
     // Initialize tables: assign groups evenly to tables
-    for (int g = 0; g < numGroups; ++g)
+    for (var g = 0; g < numGroups; ++g)
       selectors[g] = (byte)(g * numTrees / numGroups);
 
     // Build initial tables from assigned groups
@@ -201,15 +201,15 @@ internal sealed class Bzip2Compressor {
 
     // Iterate: reassign groups to best table, rebuild tables
     const int maxIterations = 4;
-    for (int iter = 0; iter < maxIterations; ++iter) {
-      bool changed = false;
-      for (int g = 0; g < numGroups; ++g) {
+    for (var iter = 0; iter < maxIterations; ++iter) {
+      var changed = false;
+      for (var g = 0; g < numGroups; ++g) {
         // Find the table with minimum coded bits for this group
-        int bestTable = 0;
-        long bestCost = long.MaxValue;
-        for (int t = 0; t < numTrees; ++t) {
+        var bestTable = 0;
+        var bestCost = long.MaxValue;
+        for (var t = 0; t < numTrees; ++t) {
           long cost = 0;
-          for (int s = 0; s < alphaSize; ++s)
+          for (var s = 0; s < alphaSize; ++s)
             cost += groupFreqs[g][s] * tableLengths[t][s];
           if (cost < bestCost) {
             bestCost = cost;
@@ -230,15 +230,15 @@ internal sealed class Bzip2Compressor {
 
   private static void RebuildTables(int[][] tableLengths, byte[] selectors,
       long[][] groupFreqs, int alphaSize, int numTrees, int numGroups) {
-    for (int t = 0; t < numTrees; ++t) {
-      long[] freq = new long[alphaSize];
-      for (int g = 0; g < numGroups; ++g)
+    for (var t = 0; t < numTrees; ++t) {
+      var freq = new long[alphaSize];
+      for (var g = 0; g < numGroups; ++g)
         if (selectors[g] == t)
-          for (int s = 0; s < alphaSize; ++s)
+          for (var s = 0; s < alphaSize; ++s)
             freq[s] += groupFreqs[g][s];
 
       // Ensure all symbols have at least frequency 1
-      for (int s = 0; s < alphaSize; ++s)
+      for (var s = 0; s < alphaSize; ++s)
         if (freq[s] == 0) freq[s] = 1;
 
       var root = HuffmanTree.BuildFromFrequencies(freq);
@@ -248,17 +248,17 @@ internal sealed class Bzip2Compressor {
   }
 
   private static byte[] MtfEncodeSelectors(byte[] selectors, int numTrees) {
-    byte[] alpha = new byte[numTrees];
-    for (int i = 0; i < numTrees; ++i) alpha[i] = (byte)i;
+    var alpha = new byte[numTrees];
+    for (var i = 0; i < numTrees; ++i) alpha[i] = (byte)i;
 
-    byte[] result = new byte[selectors.Length];
-    for (int i = 0; i < selectors.Length; ++i) {
-      byte val = selectors[i];
-      int idx = 0;
+    var result = new byte[selectors.Length];
+    for (var i = 0; i < selectors.Length; ++i) {
+      var val = selectors[i];
+      var idx = 0;
       while (alpha[idx] != val) ++idx;
       result[i] = (byte)idx;
       if (idx > 0) {
-        byte tmp = alpha[idx];
+        var tmp = alpha[idx];
         Array.Copy(alpha, 0, alpha, 1, idx);
         alpha[0] = tmp;
       }
@@ -269,9 +269,9 @@ internal sealed class Bzip2Compressor {
   private void WriteSymbolBitmap(bool[] symbolUsed) {
     // Which 16-byte groups are used?
     var inUse16 = 0;
-    for (int i = 0; i < 16; ++i) {
+    for (var i = 0; i < 16; ++i) {
       var groupUsed = false;
-      for (int j = 0; j < 16; ++j) {
+      for (var j = 0; j < 16; ++j) {
         if (symbolUsed[i * 16 + j]) {
           groupUsed = true;
           break;
@@ -284,10 +284,10 @@ internal sealed class Bzip2Compressor {
     this._bitWriter.WriteBits((uint)inUse16, 16);
 
     // For each used group, write 16 bits
-    for (int i = 0; i < 16; ++i) {
+    for (var i = 0; i < 16; ++i) {
       if ((inUse16 & (1 << (15 - i))) != 0) {
         var bits = 0;
-        for (int j = 0; j < 16; ++j) {
+        for (var j = 0; j < 16; ++j) {
           if (symbolUsed[i * 16 + j])
             bits |= 1 << (15 - j);
         }
@@ -297,11 +297,11 @@ internal sealed class Bzip2Compressor {
   }
 
   private void WriteCodeLengths(int[] codeLengths, int alphaSize) {
-    int currentLen = codeLengths[0];
+    var currentLen = codeLengths[0];
     this._bitWriter.WriteBits((uint)currentLen, 5);
 
-    for (int i = 0; i < alphaSize; ++i) {
-      int targetLen = codeLengths[i];
+    for (var i = 0; i < alphaSize; ++i) {
+      var targetLen = codeLengths[i];
       while (currentLen != targetLen) {
         this._bitWriter.WriteBit(1); // More changes
         if (currentLen < targetLen) {
@@ -323,11 +323,11 @@ internal sealed class Bzip2Compressor {
   }
 
   private static byte[] MtfEncodeWithAlphabet(ReadOnlySpan<byte> data, ReadOnlySpan<byte> alphabet) {
-    byte[] alpha = alphabet.ToArray();
-    byte[] result = new byte[data.Length];
+    var alpha = alphabet.ToArray();
+    var result = new byte[data.Length];
 
-    for (int i = 0; i < data.Length; ++i) {
-      byte b = data[i];
+    for (var i = 0; i < data.Length; ++i) {
+      var b = data[i];
       var idx = 0;
       while (alpha[idx] != b)
         ++idx;
@@ -335,7 +335,7 @@ internal sealed class Bzip2Compressor {
       result[i] = (byte)idx;
 
       if (idx > 0) {
-        byte val = alpha[idx];
+        var val = alpha[idx];
         alpha.AsSpan(0, idx).CopyTo(alpha.AsSpan(1));
         alpha[0] = val;
       }
@@ -354,7 +354,7 @@ internal sealed class Bzip2Compressor {
     var result = new List<byte>(data.Length);
     var i = 0;
     while (i < data.Length) {
-      byte b = data[i];
+      var b = data[i];
       var runLength = 1;
       while (i + runLength < data.Length && data[i + runLength] == b && runLength < 259)
         ++runLength;
@@ -387,7 +387,7 @@ internal sealed class Bzip2Compressor {
     var result = new List<byte>(data.Length);
     var i = 0;
     while (i < data.Length) {
-      byte b = data[i++];
+      var b = data[i++];
       result.Add(b);
 
       var runCount = 1;
@@ -403,7 +403,7 @@ internal sealed class Bzip2Compressor {
         // Next byte is the extra count
         if (i < data.Length) {
           int extra = data[i++];
-          for (int j = 0; j < extra; ++j)
+          for (var j = 0; j < extra; ++j)
             result.Add(b);
         }
       }
@@ -467,7 +467,7 @@ internal sealed class Bzip2Compressor {
           ++i;
         }
 
-        for (int j = 0; j < zeroCount; ++j)
+        for (var j = 0; j < zeroCount; ++j)
           result.Add(0);
       }
       else {
@@ -499,10 +499,10 @@ internal sealed class Bzip2Compressor {
   /// </summary>
   private static uint Crc32Bzip2(ReadOnlySpan<byte> data) {
     // Bzip2 uses unreflected CRC-32 (big-endian)
-    uint crc = 0xFFFFFFFF;
-    for (int i = 0; i < data.Length; ++i) {
+    var crc = 0xFFFFFFFF;
+    for (var i = 0; i < data.Length; ++i) {
       crc ^= (uint)data[i] << 24;
-      for (int j = 0; j < 8; ++j) {
+      for (var j = 0; j < 8; ++j) {
         if ((crc & 0x80000000) != 0)
           crc = (crc << 1) ^ 0x04C11DB7;
         else

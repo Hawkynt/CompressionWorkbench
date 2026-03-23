@@ -11,8 +11,8 @@ public class GzipStreamTests {
   [Test]
   public void RoundTrip_EmptyData() {
     byte[] data = [];
-    byte[] compressed = CompressWithOurs(data);
-    byte[] result = DecompressWithOurs(compressed);
+    var compressed = CompressWithOurs(data);
+    var result = DecompressWithOurs(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -20,9 +20,9 @@ public class GzipStreamTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SmallText() {
-    byte[] data = "Hello, World!"u8.ToArray();
-    byte[] compressed = CompressWithOurs(data);
-    byte[] result = DecompressWithOurs(compressed);
+    var data = "Hello, World!"u8.ToArray();
+    var compressed = CompressWithOurs(data);
+    var result = DecompressWithOurs(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -30,13 +30,13 @@ public class GzipStreamTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeRepetitive() {
-    byte[] pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
-    byte[] data = new byte[pattern.Length * 200];
-    for (int i = 0; i < 200; ++i)
+    var pattern = "The quick brown fox jumps over the lazy dog. "u8.ToArray();
+    var data = new byte[pattern.Length * 200];
+    for (var i = 0; i < 200; ++i)
       Array.Copy(pattern, 0, data, i * pattern.Length, pattern.Length);
 
-    byte[] compressed = CompressWithOurs(data);
-    byte[] result = DecompressWithOurs(compressed);
+    var compressed = CompressWithOurs(data);
+    var result = DecompressWithOurs(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -45,19 +45,19 @@ public class GzipStreamTests {
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
-    byte[] data = new byte[8192];
+    var data = new byte[8192];
     rng.NextBytes(data);
 
-    byte[] compressed = CompressWithOurs(data);
-    byte[] result = DecompressWithOurs(compressed);
+    var compressed = CompressWithOurs(data);
+    var result = DecompressWithOurs(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 
   [Category("Exception")]
   [Test]
   public void CrcVerification_CorruptedData_Throws() {
-    byte[] data = "Hello, World!"u8.ToArray();
-    byte[] compressed = CompressWithOurs(data);
+    var data = "Hello, World!"u8.ToArray();
+    var compressed = CompressWithOurs(data);
 
     // Corrupt the CRC in the trailer (last 8 bytes: CRC32 + ISIZE)
     compressed[^8] ^= 0xFF; // Flip a CRC byte
@@ -68,8 +68,8 @@ public class GzipStreamTests {
   [Category("Exception")]
   [Test]
   public void SizeVerification_CorruptedSize_Throws() {
-    byte[] data = "Hello, World!"u8.ToArray();
-    byte[] compressed = CompressWithOurs(data);
+    var data = "Hello, World!"u8.ToArray();
+    var compressed = CompressWithOurs(data);
 
     // Corrupt the ISIZE in the trailer
     compressed[^1] ^= 0xFF;
@@ -80,7 +80,7 @@ public class GzipStreamTests {
   [Category("HappyPath")]
   [Test]
   public void LeaveOpen_True_InnerStreamRemains() {
-    byte[] data = "test"u8.ToArray();
+    var data = "test"u8.ToArray();
     using var ms = new MemoryStream();
 
     using (var gz = new GzipStream(ms, CompressionStreamMode.Compress, leaveOpen: true)) {
@@ -96,7 +96,7 @@ public class GzipStreamTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_WithHeader() {
-    byte[] data = "Hello!"u8.ToArray();
+    var data = "Hello!"u8.ToArray();
     using var ms = new MemoryStream();
 
     using (var gz = new GzipStream(ms, CompressionStreamMode.Compress, leaveOpen: true)) {
@@ -121,19 +121,19 @@ public class GzipStreamTests {
   [Category("RoundTrip")]
   [Test]
   public void MultiMember_TwoMembers_DecompressesAll() {
-    byte[] part1 = "Hello, "u8.ToArray();
-    byte[] part2 = "World!"u8.ToArray();
+    var part1 = "Hello, "u8.ToArray();
+    var part2 = "World!"u8.ToArray();
 
-    byte[] member1 = CompressWithOurs(part1);
-    byte[] member2 = CompressWithOurs(part2);
+    var member1 = CompressWithOurs(part1);
+    var member2 = CompressWithOurs(part2);
 
     // Concatenate two gzip members
-    byte[] combined = new byte[member1.Length + member2.Length];
+    var combined = new byte[member1.Length + member2.Length];
     member1.CopyTo(combined, 0);
     member2.CopyTo(combined, member1.Length);
 
-    byte[] result = DecompressWithOurs(combined);
-    byte[] expected = new byte[part1.Length + part2.Length];
+    var result = DecompressWithOurs(combined);
+    var expected = new byte[part1.Length + part2.Length];
     part1.CopyTo(expected, 0);
     part2.CopyTo(expected, part1.Length);
 
@@ -144,16 +144,16 @@ public class GzipStreamTests {
   [Category("RoundTrip")]
   [Test]
   public void MultiMember_ThreeMembers_DecompressesAll() {
-    byte[] p1 = "A"u8.ToArray();
-    byte[] p2 = "B"u8.ToArray();
-    byte[] p3 = "C"u8.ToArray();
+    var p1 = "A"u8.ToArray();
+    var p2 = "B"u8.ToArray();
+    var p3 = "C"u8.ToArray();
 
     using var ms = new MemoryStream();
     ms.Write(CompressWithOurs(p1));
     ms.Write(CompressWithOurs(p2));
     ms.Write(CompressWithOurs(p3));
 
-    byte[] result = DecompressWithOurs(ms.ToArray());
+    var result = DecompressWithOurs(ms.ToArray());
     Assert.That(result, Is.EqualTo("ABC"u8.ToArray()));
   }
 
@@ -161,15 +161,15 @@ public class GzipStreamTests {
   [Category("RoundTrip")]
   [Test]
   public void MultiMember_EmptyMember_IsHandled() {
-    byte[] empty = CompressWithOurs([]);
-    byte[] data = CompressWithOurs("data"u8.ToArray());
+    var empty = CompressWithOurs([]);
+    var data = CompressWithOurs("data"u8.ToArray());
 
     using var ms = new MemoryStream();
     ms.Write(data);
     ms.Write(empty);
 
     // The second member is empty — total result should be "data"
-    byte[] result = DecompressWithOurs(ms.ToArray());
+    var result = DecompressWithOurs(ms.ToArray());
     Assert.That(result, Is.EqualTo("data"u8.ToArray()));
   }
 
@@ -178,9 +178,9 @@ public class GzipStreamTests {
   [Test]
   public void SingleMember_StillWorks() {
     // Ensure single-member gzip still works
-    byte[] data = "single member"u8.ToArray();
-    byte[] compressed = CompressWithOurs(data);
-    byte[] result = DecompressWithOurs(compressed);
+    var data = "single member"u8.ToArray();
+    var compressed = CompressWithOurs(data);
+    var result = DecompressWithOurs(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 

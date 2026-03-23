@@ -10,11 +10,11 @@ public class XzFilterChainTests {
   [Test]
   public void RoundTrip_WithBcjX86Filter() {
     // Simulate x86-ish data with E8/E9 bytes
-    byte[] data = new byte[1024];
+    var data = new byte[1024];
     var rng = new Random(42);
     rng.NextBytes(data);
     // Sprinkle in some CALL/JMP instructions
-    for (int i = 0; i < data.Length - 5; i += 20) {
+    for (var i = 0; i < data.Length - 5; i += 20) {
       data[i] = 0xE8;
       data[i + 1] = (byte)(i & 0xFF);
       data[i + 2] = (byte)((i >> 8) & 0xFF);
@@ -26,8 +26,8 @@ public class XzFilterChainTests {
       (XzConstants.FilterBcjX86, [])
     };
 
-    byte[] compressed = CompressWithFilters(data, preFilters);
-    byte[] result = DecompressWithOurs(compressed);
+    var compressed = CompressWithFilters(data, preFilters);
+    var result = DecompressWithOurs(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -36,16 +36,16 @@ public class XzFilterChainTests {
   [Test]
   public void RoundTrip_WithDeltaFilter() {
     // Slowly varying data — ideal for delta filter
-    byte[] data = new byte[500];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[500];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i / 3);
 
     var preFilters = new List<(ulong, byte[])> {
       (XzConstants.FilterDelta, [0]) // distance = 0 + 1 = 1
     };
 
-    byte[] compressed = CompressWithFilters(data, preFilters);
-    byte[] result = DecompressWithOurs(compressed);
+    var compressed = CompressWithFilters(data, preFilters);
+    var result = DecompressWithOurs(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 
@@ -53,9 +53,9 @@ public class XzFilterChainTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_NoFilters_StillWorks() {
-    byte[] data = "Hello, XZ filter chain!"u8.ToArray();
-    byte[] compressed = CompressWithFilters(data, []);
-    byte[] result = DecompressWithOurs(compressed);
+    var data = "Hello, XZ filter chain!"u8.ToArray();
+    var compressed = CompressWithFilters(data, []);
+    var result = DecompressWithOurs(compressed);
     Assert.That(result, Is.EqualTo(data));
   }
 

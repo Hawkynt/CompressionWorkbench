@@ -46,9 +46,9 @@ public static class ZlibRawHelper {
     // Default header: method=8, window=15 (32KB), level=Default
     // CMF = 0x78 (method 8, info 7 → 32KB window)
     // FLG = adjusted so (CMF*256+FLG) % 31 == 0
-    int cmf = 0x78;
-    int flg = 0x01; // level bits = 0 (default)
-    int check = 31 - ((cmf * 256 + flg) % 31);
+    var cmf = 0x78;
+    var flg = 0x01; // level bits = 0 (default)
+    var check = 31 - ((cmf * 256 + flg) % 31);
     if (check == 31) check = 0;
     flg |= check;
     ms.WriteByte((byte)cmf);

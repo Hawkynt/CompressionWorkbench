@@ -75,7 +75,7 @@ public class RpmTests {
 
     // Package name: up to 65 null-terminated bytes at offset 10
     var nameBytes = Encoding.ASCII.GetBytes(name);
-    int copyLen   = Math.Min(nameBytes.Length, 65);
+    var copyLen   = Math.Min(nameBytes.Length, 65);
     nameBytes.AsSpan(0, copyLen).CopyTo(lead[10..]);
 
     // OS = 1, big-endian uint16
@@ -95,13 +95,13 @@ public class RpmTests {
     // Build store: concatenate NUL-terminated UTF-8 strings
     using var storeMs = new MemoryStream();
     var offsets = new int[tags.Count];
-    for (int i = 0; i < tags.Count; ++i) {
+    for (var i = 0; i < tags.Count; ++i) {
       offsets[i] = (int)storeMs.Position;
       var b = Encoding.UTF8.GetBytes(tags[i].Value);
       storeMs.Write(b);
       storeMs.WriteByte(0); // NUL terminator
     }
-    byte[] store = storeMs.ToArray();
+    var store = storeMs.ToArray();
 
     // Preamble: magic(3) + version(1) + reserved(4) + nindex(4BE) + hsize(4BE) = 16 bytes
     Span<byte> preamble = stackalloc byte[16];
@@ -114,7 +114,7 @@ public class RpmTests {
 
     // Index entries: tag(4BE) + type(4BE) + offset(4BE) + count(4BE)
     Span<byte> entry = stackalloc byte[16];
-    for (int i = 0; i < tags.Count; ++i) {
+    for (var i = 0; i < tags.Count; ++i) {
       BinaryPrimitives.WriteInt32BigEndian(entry,       tags[i].Tag);
       BinaryPrimitives.WriteInt32BigEndian(entry[4..],  6);          // type = STRING
       BinaryPrimitives.WriteInt32BigEndian(entry[8..],  offsets[i]);
@@ -127,9 +127,9 @@ public class RpmTests {
   }
 
   private static void AlignTo8(Stream s) {
-    long rem = s.Position % 8;
+    var rem = s.Position % 8;
     if (rem != 0) {
-      int pad = (int)(8 - rem);
+      var pad = (int)(8 - rem);
       Span<byte> zeros = stackalloc byte[pad];
       zeros.Clear();
       s.Write(zeros);
@@ -141,7 +141,7 @@ public class RpmTests {
   [Category("Exception")]
   [Test]
   public void Reader_InvalidMagic_Throws() {
-    byte[] rpm = BuildRpm();
+    var rpm = BuildRpm();
     // Corrupt the first magic byte
     rpm[0] = 0x00;
 
@@ -153,7 +153,7 @@ public class RpmTests {
   [Category("Exception")]
   [Test]
   public void Reader_InvalidMagic_SecondByte_Throws() {
-    byte[] rpm = BuildRpm();
+    var rpm = BuildRpm();
     rpm[1] = 0x00;
 
     Assert.Throws<InvalidDataException>(() => {
@@ -165,8 +165,8 @@ public class RpmTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SyntheticRpm_HeaderFields() {
-    byte[] payload = "synthetic-payload"u8.ToArray();
-    byte[] rpm = BuildRpm(
+    var payload = "synthetic-payload"u8.ToArray();
+    var rpm = BuildRpm(
       name:       "mypkg",
       version:    "2.3.4",
       release:    "5",
@@ -187,7 +187,7 @@ public class RpmTests {
   [Test]
   public void Reader_DefaultCompressor_WhenTagAbsent() {
     // Build without a PAYLOADCOMPRESSOR tag
-    byte[] rpm = BuildRpm(compressor: null);
+    var rpm = BuildRpm(compressor: null);
 
     using var reader = new RpmReader(new MemoryStream(rpm));
     Assert.That(reader.PayloadCompressor, Is.EqualTo("gzip"));
@@ -197,7 +197,7 @@ public class RpmTests {
   [Test]
   public void Reader_HeaderParsing_EntryCount() {
     // 4 mandatory tags + 1 compressor tag = 5 entries in main header
-    byte[] rpm = BuildRpm(
+    var rpm = BuildRpm(
       name:       "pkg",
       version:    "1.0",
       release:    "1",
@@ -211,7 +211,7 @@ public class RpmTests {
   [Category("HappyPath")]
   [Test]
   public void Reader_HeaderParsing_TagValues() {
-    byte[] rpm = BuildRpm(
+    var rpm = BuildRpm(
       name:       "querypkg",
       version:    "9.9",
       release:    "rc1",
@@ -231,7 +231,7 @@ public class RpmTests {
   [Category("EdgeCase")]
   [Test]
   public void Reader_HeaderParsing_MissingTag_ReturnsNull() {
-    byte[] rpm = BuildRpm();
+    var rpm = BuildRpm();
 
     using var reader = new RpmReader(new MemoryStream(rpm));
     // Tag 9999 does not exist
@@ -243,7 +243,7 @@ public class RpmTests {
   [Test]
   public void Reader_SignatureHeader_HasZeroEntries() {
     // Our builder writes an empty signature (0 index entries)
-    byte[] rpm = BuildRpm();
+    var rpm = BuildRpm();
 
     using var reader = new RpmReader(new MemoryStream(rpm));
     Assert.That(reader.SignatureHeader.Entries, Is.Empty);
@@ -254,12 +254,12 @@ public class RpmTests {
   [Test]
   public void GetPayloadStream_ReturnsCorrectData() {
     byte[] payload = [0x01, 0x02, 0x03, 0x04, 0x05];
-    byte[] rpm = BuildRpm(payload: payload);
+    var rpm = BuildRpm(payload: payload);
 
     using var reader = new RpmReader(new MemoryStream(rpm));
     using var payloadStream = reader.GetPayloadStream();
 
-    byte[] read = new byte[payload.Length];
+    var read = new byte[payload.Length];
     payloadStream.ReadExactly(read);
     Assert.That(read, Is.EqualTo(payload));
   }
@@ -267,34 +267,34 @@ public class RpmTests {
   [Category("EdgeCase")]
   [Test]
   public void GetPayloadStream_EmptyPayload_ReturnsStreamAtEnd() {
-    byte[] rpm = BuildRpm(payload: null);
+    var rpm = BuildRpm(payload: null);
 
     using var reader = new RpmReader(new MemoryStream(rpm));
     using var payloadStream = reader.GetPayloadStream();
 
     // Nothing to read — stream should be at its end
-    int b = payloadStream.ReadByte();
+    var b = payloadStream.ReadByte();
     Assert.That(b, Is.EqualTo(-1));
   }
 
   [Category("HappyPath")]
   [Test]
   public void GetPayloadStream_IsCallableTwice_SeekableStream() {
-    byte[] payload = "hello rpm payload"u8.ToArray();
-    byte[] rpm = BuildRpm(payload: payload);
+    var payload = "hello rpm payload"u8.ToArray();
+    var rpm = BuildRpm(payload: payload);
 
     using var reader = new RpmReader(new MemoryStream(rpm));
 
     // First call
     using (var s1 = reader.GetPayloadStream()) {
-      byte[] buf = new byte[payload.Length];
+      var buf = new byte[payload.Length];
       s1.ReadExactly(buf);
       Assert.That(buf, Is.EqualTo(payload));
     }
 
     // Second call should reposition to the same payload start
     using (var s2 = reader.GetPayloadStream()) {
-      byte[] buf = new byte[payload.Length];
+      var buf = new byte[payload.Length];
       s2.ReadExactly(buf);
       Assert.That(buf, Is.EqualTo(payload));
     }
@@ -305,7 +305,7 @@ public class RpmTests {
   public void Reader_LongPackageName_IsReadCorrectly() {
     // Names up to 65 bytes are stored in the lead; the main header has no length limit.
     const string name = "a-package-with-a-rather-long-name-indeed";
-    byte[] rpm = BuildRpm(name: name);
+    var rpm = BuildRpm(name: name);
 
     using var reader = new RpmReader(new MemoryStream(rpm));
     Assert.That(reader.Name, Is.EqualTo(name));
@@ -314,8 +314,8 @@ public class RpmTests {
   [Category("HappyPath")]
   [Test]
   public void Reader_CompressorVariants_AreReadBack() {
-    foreach (string comp in new[] { "gzip", "bzip2", "xz", "lzma", "zstd" }) {
-      byte[] rpm = BuildRpm(compressor: comp);
+    foreach (var comp in new[] { "gzip", "bzip2", "xz", "lzma", "zstd" }) {
+      var rpm = BuildRpm(compressor: comp);
       using var reader = new RpmReader(new MemoryStream(rpm));
       Assert.That(reader.PayloadCompressor, Is.EqualTo(comp), $"Compressor: {comp}");
     }
@@ -344,7 +344,7 @@ public class RpmTests {
     }
 
     // Build synthetic RPM with gzip-compressed cpio payload
-    byte[] rpm = BuildRpm(compressor: "gzip", payload: gzipPayload);
+    var rpm = BuildRpm(compressor: "gzip", payload: gzipPayload);
 
     using var reader = new RpmReader(new MemoryStream(rpm));
     var files = reader.ExtractFiles();
@@ -361,7 +361,7 @@ public class RpmTests {
   [Category("Exception")]
   [Test]
   public void ExtractFiles_UnsupportedCompressor_Throws() {
-    byte[] rpm = BuildRpm(compressor: "unknown", payload: [0x00]);
+    var rpm = BuildRpm(compressor: "unknown", payload: [0x00]);
 
     using var reader = new RpmReader(new MemoryStream(rpm));
     Assert.Throws<NotSupportedException>(() => reader.ExtractFiles());
@@ -382,7 +382,7 @@ public class RpmTests {
     };
     writer.AddFile("usr/bin/hello", "Hello World!"u8.ToArray());
 
-    byte[] rpmBytes = writer.ToArray();
+    var rpmBytes = writer.ToArray();
 
     using var reader = new RpmReader(new MemoryStream(rpmBytes));
     Assert.That(reader.Name, Is.EqualTo("testpkg"));
@@ -405,7 +405,7 @@ public class RpmTests {
     writer.AddFile("file1.txt", "First"u8.ToArray());
     writer.AddFile("file2.txt", "Second"u8.ToArray());
 
-    byte[] rpmBytes = writer.ToArray();
+    var rpmBytes = writer.ToArray();
 
     using var reader = new RpmReader(new MemoryStream(rpmBytes));
     var files = reader.ExtractFiles();
@@ -424,7 +424,7 @@ public class RpmTests {
     };
     writer.AddFile("data.bin", "bzip2 test"u8.ToArray());
 
-    byte[] rpmBytes = writer.ToArray();
+    var rpmBytes = writer.ToArray();
 
     using var reader = new RpmReader(new MemoryStream(rpmBytes));
     Assert.That(reader.PayloadCompressor, Is.EqualTo("bzip2"));
@@ -443,7 +443,7 @@ public class RpmTests {
     };
     writer.AddFile("data.bin", "xz test"u8.ToArray());
 
-    byte[] rpmBytes = writer.ToArray();
+    var rpmBytes = writer.ToArray();
 
     using var reader = new RpmReader(new MemoryStream(rpmBytes));
     Assert.That(reader.PayloadCompressor, Is.EqualTo("xz"));
@@ -462,7 +462,7 @@ public class RpmTests {
     };
     writer.AddFile("data.bin", "zstd test"u8.ToArray());
 
-    byte[] rpmBytes = writer.ToArray();
+    var rpmBytes = writer.ToArray();
 
     using var reader = new RpmReader(new MemoryStream(rpmBytes));
     Assert.That(reader.PayloadCompressor, Is.EqualTo("zstd"));
@@ -481,7 +481,7 @@ public class RpmTests {
     };
     writer.AddFile("data.bin", "lzma test"u8.ToArray());
 
-    byte[] rpmBytes = writer.ToArray();
+    var rpmBytes = writer.ToArray();
 
     using var reader = new RpmReader(new MemoryStream(rpmBytes));
     Assert.That(reader.PayloadCompressor, Is.EqualTo("lzma"));
@@ -505,7 +505,7 @@ public class RpmTests {
   [Test]
   public void Writer_EmptyPackage_RoundTrips() {
     var writer = new RpmWriter { Name = "empty" };
-    byte[] rpmBytes = writer.ToArray();
+    var rpmBytes = writer.ToArray();
 
     using var reader = new RpmReader(new MemoryStream(rpmBytes));
     Assert.That(reader.Name, Is.EqualTo("empty"));

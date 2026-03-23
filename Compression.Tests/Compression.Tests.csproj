@@ -56,6 +56,7 @@
     <ProjectReference Include="..\FileFormat.Shar\FileFormat.Shar.csproj" />
     <ProjectReference Include="..\FileFormat.Pak\FileFormat.Pak.csproj" />
     <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
+    <ProjectReference Include="..\Compression.Analysis\Compression.Analysis.csproj" />
     <ProjectReference Include="..\FileFormat.Dms\FileFormat.Dms.csproj" />
     <ProjectReference Include="..\FileFormat.Lzx\FileFormat.Lzx.csproj" />
     <ProjectReference Include="..\FileFormat.PowerPacker\FileFormat.PowerPacker.csproj" />
@@ -69,6 +70,14 @@
     <ProjectReference Include="..\FileFormat.Uharc\FileFormat.Uharc.csproj" />
     <ProjectReference Include="..\FileFormat.Rzip\FileFormat.Rzip.csproj" />
     <ProjectReference Include="..\FileFormat.Wad\FileFormat.Wad.csproj" />
+    <ProjectReference Include="..\FileFormat.PackBits\FileFormat.PackBits.csproj" />
+    <ProjectReference Include="..\FileFormat.Yaz0\FileFormat.Yaz0.csproj" />
+    <ProjectReference Include="..\FileFormat.BriefLz\FileFormat.BriefLz.csproj" />
+    <ProjectReference Include="..\FileFormat.RefPack\FileFormat.RefPack.csproj" />
+    <ProjectReference Include="..\FileFormat.ApLib\FileFormat.ApLib.csproj" />
+    <ProjectReference Include="..\FileFormat.Freeze\FileFormat.Freeze.csproj" />
+    <ProjectReference Include="..\FileFormat.Rnc\FileFormat.Rnc.csproj" />
+    <ProjectReference Include="..\FileFormat.Lzfse\FileFormat.Lzfse.csproj" />
   </ItemGroup>
 
 </Project>

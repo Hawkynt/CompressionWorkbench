@@ -33,16 +33,16 @@ public class DeflateConstantsTests {
   public void LengthTable_CoversAllLengths3To258() {
     // Every length 3–258 must be reachable via base + extra bits
     var reachable = new HashSet<int>();
-    ReadOnlySpan<int> bases = DeflateConstants.LengthBase;
-    ReadOnlySpan<int> extras = DeflateConstants.LengthExtraBits;
+    var bases = DeflateConstants.LengthBase;
+    var extras = DeflateConstants.LengthExtraBits;
 
-    for (int i = 0; i < bases.Length; ++i) {
+    for (var i = 0; i < bases.Length; ++i) {
       var range = 1 << extras[i];
-      for (int j = 0; j < range; ++j)
+      for (var j = 0; j < range; ++j)
         reachable.Add(bases[i] + j);
     }
 
-    for (int len = 3; len <= 258; ++len)
+    for (var len = 3; len <= 258; ++len)
       Assert.That(reachable.Contains(len), Is.True, $"Length {len} not reachable");
   }
 
@@ -50,32 +50,32 @@ public class DeflateConstantsTests {
   [Test]
   public void DistanceTable_CoversAllDistances1To32768() {
     var reachable = new HashSet<int>();
-    ReadOnlySpan<int> bases = DeflateConstants.DistanceBase;
-    ReadOnlySpan<int> extras = DeflateConstants.DistanceExtraBits;
+    var bases = DeflateConstants.DistanceBase;
+    var extras = DeflateConstants.DistanceExtraBits;
 
-    for (int i = 0; i < bases.Length; ++i) {
+    for (var i = 0; i < bases.Length; ++i) {
       var range = 1 << extras[i];
-      for (int j = 0; j < range; ++j)
+      for (var j = 0; j < range; ++j)
         reachable.Add(bases[i] + j);
     }
 
-    for (int dist = 1; dist <= 32768; ++dist)
+    for (var dist = 1; dist <= 32768; ++dist)
       Assert.That(reachable.Contains(dist), Is.True, $"Distance {dist} not reachable");
   }
 
   [Category("HappyPath")]
   [Test]
   public void LengthBase_IsMonotonicallyIncreasing() {
-    ReadOnlySpan<int> bases = DeflateConstants.LengthBase;
-    for (int i = 1; i < bases.Length; ++i)
+    var bases = DeflateConstants.LengthBase;
+    for (var i = 1; i < bases.Length; ++i)
       Assert.That(bases[i], Is.GreaterThan(bases[i - 1]), $"LengthBase[{i}] <= LengthBase[{i - 1}]");
   }
 
   [Category("HappyPath")]
   [Test]
   public void DistanceBase_IsMonotonicallyIncreasing() {
-    ReadOnlySpan<int> bases = DeflateConstants.DistanceBase;
-    for (int i = 1; i < bases.Length; ++i)
+    var bases = DeflateConstants.DistanceBase;
+    for (var i = 1; i < bases.Length; ++i)
       Assert.That(bases[i], Is.GreaterThan(bases[i - 1]), $"DistanceBase[{i}] <= DistanceBase[{i - 1}]");
   }
 
@@ -85,13 +85,13 @@ public class DeflateConstantsTests {
     var lengths = DeflateConstants.GetStaticLiteralLengths();
     Assert.That(lengths.Length, Is.EqualTo(288));
 
-    for (int i = 0; i <= 143; ++i)
+    for (var i = 0; i <= 143; ++i)
       Assert.That(lengths[i], Is.EqualTo(8), $"Symbol {i}");
-    for (int i = 144; i <= 255; ++i)
+    for (var i = 144; i <= 255; ++i)
       Assert.That(lengths[i], Is.EqualTo(9), $"Symbol {i}");
-    for (int i = 256; i <= 279; ++i)
+    for (var i = 256; i <= 279; ++i)
       Assert.That(lengths[i], Is.EqualTo(7), $"Symbol {i}");
-    for (int i = 280; i <= 287; ++i)
+    for (var i = 280; i <= 287; ++i)
       Assert.That(lengths[i], Is.EqualTo(8), $"Symbol {i}");
   }
 
@@ -113,11 +113,11 @@ public class DeflateConstantsTests {
   [Test]
   public void CodeLengthOrder_ContainsAllValues0To18() {
     var values = new HashSet<int>();
-    ReadOnlySpan<int> order = DeflateConstants.CodeLengthOrder;
-    for (int i = 0; i < order.Length; ++i)
+    var order = DeflateConstants.CodeLengthOrder;
+    for (var i = 0; i < order.Length; ++i)
       values.Add(order[i]);
 
-    for (int i = 0; i <= 18; ++i)
+    for (var i = 0; i <= 18; ++i)
       Assert.That(values.Contains(i), Is.True, $"Value {i} missing from CodeLengthOrder");
   }
 
@@ -143,13 +143,13 @@ public class DeflateConstantsTests {
   [Category("HappyPath")]
   [Test]
   public void GetLengthCode_RoundTripsWithBaseAndExtraBits() {
-    ReadOnlySpan<int> bases = DeflateConstants.LengthBase;
-    ReadOnlySpan<int> extras = DeflateConstants.LengthExtraBits;
+    var bases = DeflateConstants.LengthBase;
+    var extras = DeflateConstants.LengthExtraBits;
 
-    for (int length = 3; length <= 258; ++length) {
-      int code = DeflateConstants.GetLengthCode(length);
-      int idx = code - 257;
-      int extra = length - bases[idx];
+    for (var length = 3; length <= 258; ++length) {
+      var code = DeflateConstants.GetLengthCode(length);
+      var idx = code - 257;
+      var extra = length - bases[idx];
       Assert.That(extra, Is.GreaterThanOrEqualTo(0), $"Length {length}: negative extra");
       Assert.That(extra, Is.LessThan(1 << extras[idx]), $"Length {length}: extra out of range");
     }
@@ -171,12 +171,12 @@ public class DeflateConstantsTests {
   [Category("HappyPath")]
   [Test]
   public void GetDistanceCode_RoundTripsWithBaseAndExtraBits() {
-    ReadOnlySpan<int> bases = DeflateConstants.DistanceBase;
-    ReadOnlySpan<int> extras = DeflateConstants.DistanceExtraBits;
+    var bases = DeflateConstants.DistanceBase;
+    var extras = DeflateConstants.DistanceExtraBits;
 
-    for (int distance = 1; distance <= 32768; ++distance) {
-      int code = DeflateConstants.GetDistanceCode(distance);
-      int extra = distance - bases[code];
+    for (var distance = 1; distance <= 32768; ++distance) {
+      var code = DeflateConstants.GetDistanceCode(distance);
+      var extra = distance - bases[code];
       Assert.That(extra, Is.GreaterThanOrEqualTo(0), $"Distance {distance}: negative extra");
       Assert.That(extra, Is.LessThan(1 << extras[code]), $"Distance {distance}: extra out of range");
     }

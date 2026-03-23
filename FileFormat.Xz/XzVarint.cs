@@ -11,8 +11,8 @@ internal static class XzVarint {
     ulong result = 0;
     var shift = 0;
 
-    for (int i = 0; i < 9; ++i) {
-      int b = stream.ReadByte();
+    for (var i = 0; i < 9; ++i) {
+      var b = stream.ReadByte();
       if (b < 0)
         throw new EndOfStreamException("Unexpected end of stream reading varint.");
 

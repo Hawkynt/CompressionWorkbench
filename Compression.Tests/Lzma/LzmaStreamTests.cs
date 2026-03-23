@@ -10,10 +10,10 @@ public class LzmaStreamTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SmallData() {
-    byte[] data = System.Text.Encoding.UTF8.GetBytes("Hello, LZMA alone!");
+    var data = System.Text.Encoding.UTF8.GetBytes("Hello, LZMA alone!");
 
-    byte[] compressed = Compress(data);
-    byte[] result = Decompress(compressed);
+    var compressed = Compress(data);
+    var result = Decompress(compressed);
 
     Assert.That(result, Is.EqualTo(data));
   }
@@ -24,8 +24,8 @@ public class LzmaStreamTests {
   public void RoundTrip_Empty() {
     byte[] data = [];
 
-    byte[] compressed = Compress(data);
-    byte[] result = Decompress(compressed);
+    var compressed = Compress(data);
+    var result = Decompress(compressed);
 
     Assert.That(result, Is.EqualTo(data));
   }
@@ -34,13 +34,13 @@ public class LzmaStreamTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_LargeRepetitive() {
-    byte[] pattern = System.Text.Encoding.UTF8.GetBytes("ABCDEFGH");
-    byte[] data = new byte[65536];
-    for (int i = 0; i < data.Length; ++i)
+    var pattern = System.Text.Encoding.UTF8.GetBytes("ABCDEFGH");
+    var data = new byte[65536];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = pattern[i % pattern.Length];
 
-    byte[] compressed = Compress(data);
-    byte[] result = Decompress(compressed);
+    var compressed = Compress(data);
+    var result = Decompress(compressed);
 
     Assert.That(result, Is.EqualTo(data));
   }
@@ -50,11 +50,11 @@ public class LzmaStreamTests {
   [Test]
   public void RoundTrip_RandomData() {
     var rng = new Random(42);
-    byte[] data = new byte[4096];
+    var data = new byte[4096];
     rng.NextBytes(data);
 
-    byte[] compressed = Compress(data);
-    byte[] result = Decompress(compressed);
+    var compressed = Compress(data);
+    var result = Decompress(compressed);
 
     Assert.That(result, Is.EqualTo(data));
   }
@@ -63,7 +63,7 @@ public class LzmaStreamTests {
   [Test]
   public void Decompress_InvalidHeader_Throws() {
     // Construct a header with a properties byte of 225 (>= 9*5*5), which is invalid
-    byte[] bad = new byte[FmtConstants.HeaderSize];
+    var bad = new byte[FmtConstants.HeaderSize];
     bad[0] = 225;
 
     using var input = new MemoryStream(bad);
@@ -76,12 +76,12 @@ public class LzmaStreamTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_CustomProperties() {
-    byte[] data = System.Text.Encoding.UTF8.GetBytes(
+    var data = System.Text.Encoding.UTF8.GetBytes(
         "Custom lc/lp/pb properties test: the quick brown fox jumps over the lazy dog.");
 
     // Use non-default lc=2, lp=1, pb=1
-    byte[] compressed = Compress(data, lc: 2, lp: 1, pb: 1);
-    byte[] result = Decompress(compressed);
+    var compressed = Compress(data, lc: 2, lp: 1, pb: 1);
+    var result = Decompress(compressed);
 
     Assert.That(result, Is.EqualTo(data));
   }
@@ -89,8 +89,8 @@ public class LzmaStreamTests {
   [Category("ThemVsUs")]
   [Test]
   public void Header_Size_IsThirteenBytes() {
-    byte[] data = System.Text.Encoding.UTF8.GetBytes("header size test");
-    byte[] compressed = Compress(data);
+    var data = System.Text.Encoding.UTF8.GetBytes("header size test");
+    var compressed = Compress(data);
 
     Assert.That(compressed.Length, Is.GreaterThan(FmtConstants.HeaderSize));
   }
@@ -98,11 +98,11 @@ public class LzmaStreamTests {
   [Category("ThemVsUs")]
   [Test]
   public void Header_UncompressedSize_IsCorrect() {
-    byte[] data = System.Text.Encoding.UTF8.GetBytes("uncompressed size field test");
-    byte[] compressed = Compress(data);
+    var data = System.Text.Encoding.UTF8.GetBytes("uncompressed size field test");
+    var compressed = Compress(data);
 
     // Bytes 5-12 in the output are the little-endian int64 uncompressed size
-    long storedSize = System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(
+    var storedSize = System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(
         compressed.AsSpan(5, 8));
 
     Assert.That(storedSize, Is.EqualTo(data.LongLength));

@@ -25,15 +25,15 @@ public sealed class Lz4FrameReader {
     using var output = new MemoryStream(header.ContentSize > 0 ? (int)header.ContentSize : 4096);
 
     while (true) {
-      int blockSize = ReadBlock(output, header);
+      var blockSize = ReadBlock(output, header);
       if (blockSize == 0)
         break;
     }
 
     if (header.ContentChecksum) {
-      byte[] data = output.ToArray();
-      uint expected = ReadUInt32();
-      uint actual = XxHash32.Compute(data);
+      var data = output.ToArray();
+      var expected = ReadUInt32();
+      var actual = XxHash32.Compute(data);
       if (expected != actual)
         throw new InvalidDataException("LZ4 frame content checksum mismatch.");
       return data;
@@ -43,25 +43,25 @@ public sealed class Lz4FrameReader {
   }
 
   private FrameHeader ReadFrameHeader() {
-    uint magic = ReadUInt32();
+    var magic = ReadUInt32();
     if (magic != Lz4Constants.FrameMagic && magic != Lz4Constants.LegacyMagic)
       throw new InvalidDataException($"Invalid LZ4 frame magic: 0x{magic:X8}");
 
     if (magic == Lz4Constants.LegacyMagic)
       throw new NotSupportedException("LZ4 legacy frame format is not supported.");
 
-    int flg = this._input.ReadByte();
-    int bd = this._input.ReadByte();
+    var flg = this._input.ReadByte();
+    var bd = this._input.ReadByte();
     if (flg < 0 || bd < 0)
       throw new EndOfStreamException();
 
-    bool blockIndependence = ((flg >> 5) & 1) == 1;
-    bool blockChecksum = ((flg >> 4) & 1) == 1;
-    bool contentSizePresent = ((flg >> 3) & 1) == 1;
-    bool contentChecksum = ((flg >> 2) & 1) == 1;
+    var blockIndependence = ((flg >> 5) & 1) == 1;
+    var blockChecksum = ((flg >> 4) & 1) == 1;
+    var contentSizePresent = ((flg >> 3) & 1) == 1;
+    var contentChecksum = ((flg >> 2) & 1) == 1;
 
-    int blockMaxSizeBits = (bd >> 4) & 0x07;
-    int blockMaxSize = blockMaxSizeBits switch {
+    var blockMaxSizeBits = (bd >> 4) & 0x07;
+    var blockMaxSize = blockMaxSizeBits switch {
       4 => 65536,
       5 => 262144,
       6 => 1048576,
@@ -81,11 +81,11 @@ public sealed class Lz4FrameReader {
     }
 
     // Read and verify header checksum (second byte of xxHash32 of descriptor)
-    int hc = this._input.ReadByte();
+    var hc = this._input.ReadByte();
     if (hc < 0)
       throw new EndOfStreamException();
 
-    byte expectedHc = (byte)((XxHash32.Compute(headerData) >> 8) & 0xFF);
+    var expectedHc = (byte)((XxHash32.Compute(headerData) >> 8) & 0xFF);
     if ((byte)hc != expectedHc)
       throw new InvalidDataException("LZ4 frame header checksum mismatch.");
 
@@ -99,19 +99,19 @@ public sealed class Lz4FrameReader {
   }
 
   private int ReadBlock(MemoryStream output, FrameHeader header) {
-    uint blockHeader = ReadUInt32();
+    var blockHeader = ReadUInt32();
     if (blockHeader == 0)
       return 0; // End mark
 
-    bool isUncompressed = (blockHeader & 0x80000000u) != 0;
-    int dataSize = (int)(blockHeader & 0x7FFFFFFFu);
+    var isUncompressed = (blockHeader & 0x80000000u) != 0;
+    var dataSize = (int)(blockHeader & 0x7FFFFFFFu);
 
     var blockData = new byte[dataSize];
     ReadExact(blockData);
 
     if (header.BlockChecksum) {
-      uint expectedBc = ReadUInt32();
-      uint actualBc = XxHash32.Compute(blockData);
+      var expectedBc = ReadUInt32();
+      var actualBc = XxHash32.Compute(blockData);
       if (expectedBc != actualBc)
         throw new InvalidDataException("LZ4 block checksum mismatch.");
     }
@@ -120,10 +120,10 @@ public sealed class Lz4FrameReader {
       output.Write(blockData);
     } else {
       // Need to know uncompressed size. We'll decompress incrementally.
-      int existingLen = (int)output.Length;
+      var existingLen = (int)output.Length;
       // Use a large enough buffer — worst case is blockMaxSize
       var decompBuf = new byte[header.BlockMaxSize];
-      int written = Lz4BlockDecompressor.Decompress(blockData, decompBuf);
+      var written = Lz4BlockDecompressor.Decompress(blockData, decompBuf);
       output.Write(decompBuf, 0, written);
     }
 
@@ -137,10 +137,10 @@ public sealed class Lz4FrameReader {
   }
 
   private void ReadExact(Span<byte> buffer) {
-    int remaining = buffer.Length;
-    int offset = 0;
+    var remaining = buffer.Length;
+    var offset = 0;
     while (remaining > 0) {
-      int read = this._input.Read(buffer.Slice(offset, remaining));
+      var read = this._input.Read(buffer.Slice(offset, remaining));
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of LZ4 frame data.");
       offset += read;

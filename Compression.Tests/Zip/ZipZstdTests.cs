@@ -9,11 +9,11 @@ public class ZipZstdTests {
   [Test]
   public void RoundTrip_Zstd_SmallData() {
     // Use repetitive data so Zstd can actually compress it below the original size
-    byte[] data = new byte[256];
-    for (int i = 0; i < data.Length; i++)
+    var data = new byte[256];
+    for (var i = 0; i < data.Length; i++)
       data[i] = (byte)(i % 4);
 
-    byte[] archive = CreateArchive("test.txt", data);
+    var archive = CreateArchive("test.txt", data);
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
@@ -25,12 +25,12 @@ public class ZipZstdTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Zstd_LargeRepetitive() {
-    byte[] pattern = "ABCDEFGHIJKLMNOP"u8.ToArray();
-    byte[] data = new byte[8192];
-    for (int i = 0; i < data.Length; i++)
+    var pattern = "ABCDEFGHIJKLMNOP"u8.ToArray();
+    var data = new byte[8192];
+    for (var i = 0; i < data.Length; i++)
       data[i] = pattern[i % pattern.Length];
 
-    byte[] archive = CreateArchive("large.bin", data);
+    var archive = CreateArchive("large.bin", data);
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
@@ -44,7 +44,7 @@ public class ZipZstdTests {
   [Test]
   public void RoundTrip_Zstd_FallsBackToStore() {
     byte[] data = [0x42];
-    byte[] archive = CreateArchive("tiny.bin", data);
+    var archive = CreateArchive("tiny.bin", data);
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(1));

@@ -9,7 +9,7 @@ public class XxHashTests {
   [Category("ThemVsUs")]
   [Test]
   public void XxHash64_EmptyData() {
-    ulong hash = XxHash64.Compute(ReadOnlySpan<byte>.Empty);
+    var hash = XxHash64.Compute(ReadOnlySpan<byte>.Empty);
     Assert.That(hash, Is.EqualTo(0xEF46DB3751D8E999UL));
   }
 
@@ -17,23 +17,23 @@ public class XxHashTests {
   [Test]
   public void XxHash64_SingleByte() {
     // Verify single-byte hashing works (short path, < 32 bytes)
-    ulong hash = XxHash64.Compute([0]);
+    var hash = XxHash64.Compute([0]);
     Assert.That(hash, Is.Not.EqualTo(0UL));
   }
 
   [Category("HappyPath")]
   [Test]
   public void XxHash64_DifferentInputs_DifferentHashes() {
-    ulong hash1 = XxHash64.Compute("Hello"u8);
-    ulong hash2 = XxHash64.Compute("World"u8);
+    var hash1 = XxHash64.Compute("Hello"u8);
+    var hash2 = XxHash64.Compute("World"u8);
     Assert.That(hash1, Is.Not.EqualTo(hash2));
   }
 
   [Category("HappyPath")]
   [Test]
   public void XxHash64_SameInput_SameHash() {
-    ulong hash1 = XxHash64.Compute("Hello, World!"u8);
-    ulong hash2 = XxHash64.Compute("Hello, World!"u8);
+    var hash1 = XxHash64.Compute("Hello, World!"u8);
+    var hash2 = XxHash64.Compute("Hello, World!"u8);
     Assert.That(hash1, Is.EqualTo(hash2));
   }
 
@@ -43,15 +43,15 @@ public class XxHashTests {
     // Input >= 32 bytes exercises the 4-accumulator path
     var data = new byte[128];
     new Random(42).NextBytes(data);
-    ulong hash = XxHash64.Compute(data);
+    var hash = XxHash64.Compute(data);
     Assert.That(hash, Is.Not.EqualTo(0UL));
   }
 
   [Category("HappyPath")]
   [Test]
   public void XxHash64_WithSeed() {
-    ulong hash0 = XxHash64.Compute("test"u8, 0);
-    ulong hash1 = XxHash64.Compute("test"u8, 1);
+    var hash0 = XxHash64.Compute("test"u8, 0);
+    var hash1 = XxHash64.Compute("test"u8, 1);
     Assert.That(hash0, Is.Not.EqualTo(hash1));
   }
 
@@ -61,7 +61,7 @@ public class XxHashTests {
     var data = new byte[1000];
     new Random(42).NextBytes(data);
 
-    ulong batch = XxHash64.Compute(data);
+    var batch = XxHash64.Compute(data);
 
     var hasher = new XxHash64();
     hasher.Update(data.AsSpan(0, 100));
@@ -77,10 +77,10 @@ public class XxHashTests {
     var data = new byte[64];
     new Random(99).NextBytes(data);
 
-    ulong batch = XxHash64.Compute(data);
+    var batch = XxHash64.Compute(data);
 
     var hasher = new XxHash64();
-    foreach (byte b in data)
+    foreach (var b in data)
       hasher.Update([b]);
 
     Assert.That(hasher.Value, Is.EqualTo(batch));
@@ -93,7 +93,7 @@ public class XxHashTests {
     hasher.Update(ReadOnlySpan<byte>.Empty);
     hasher.Update(ReadOnlySpan<byte>.Empty);
 
-    ulong batch = XxHash64.Compute(ReadOnlySpan<byte>.Empty);
+    var batch = XxHash64.Compute(ReadOnlySpan<byte>.Empty);
     Assert.That(hasher.Value, Is.EqualTo(batch));
   }
 
@@ -105,11 +105,11 @@ public class XxHashTests {
 
     var hasher = new XxHash64();
     hasher.Update(data);
-    ulong first = hasher.Value;
+    var first = hasher.Value;
 
     hasher.Reset();
     hasher.Update(data);
-    ulong second = hasher.Value;
+    var second = hasher.Value;
 
     Assert.That(second, Is.EqualTo(first));
   }
@@ -121,7 +121,7 @@ public class XxHashTests {
     var data = new byte[33];
     new Random(55).NextBytes(data);
 
-    ulong batch = XxHash64.Compute(data);
+    var batch = XxHash64.Compute(data);
 
     var hasher = new XxHash64();
     hasher.Update(data.AsSpan(0, 10));
@@ -135,30 +135,30 @@ public class XxHashTests {
   [Category("ThemVsUs")]
   [Test]
   public void XxHash32_EmptyData() {
-    uint hash = XxHash32.Compute(ReadOnlySpan<byte>.Empty);
+    var hash = XxHash32.Compute(ReadOnlySpan<byte>.Empty);
     Assert.That(hash, Is.EqualTo(0x02CC5D05u));
   }
 
   [Category("EdgeCase")]
   [Test]
   public void XxHash32_SingleByte() {
-    uint hash = XxHash32.Compute([0]);
+    var hash = XxHash32.Compute([0]);
     Assert.That(hash, Is.Not.EqualTo(0u));
   }
 
   [Category("HappyPath")]
   [Test]
   public void XxHash32_DifferentInputs_DifferentHashes() {
-    uint hash1 = XxHash32.Compute("Hello"u8);
-    uint hash2 = XxHash32.Compute("World"u8);
+    var hash1 = XxHash32.Compute("Hello"u8);
+    var hash2 = XxHash32.Compute("World"u8);
     Assert.That(hash1, Is.Not.EqualTo(hash2));
   }
 
   [Category("HappyPath")]
   [Test]
   public void XxHash32_SameInput_SameHash() {
-    uint hash1 = XxHash32.Compute("Hello, World!"u8);
-    uint hash2 = XxHash32.Compute("Hello, World!"u8);
+    var hash1 = XxHash32.Compute("Hello, World!"u8);
+    var hash2 = XxHash32.Compute("Hello, World!"u8);
     Assert.That(hash1, Is.EqualTo(hash2));
   }
 
@@ -167,15 +167,15 @@ public class XxHashTests {
   public void XxHash32_LargeInput() {
     var data = new byte[128];
     new Random(42).NextBytes(data);
-    uint hash = XxHash32.Compute(data);
+    var hash = XxHash32.Compute(data);
     Assert.That(hash, Is.Not.EqualTo(0u));
   }
 
   [Category("HappyPath")]
   [Test]
   public void XxHash32_WithSeed() {
-    uint hash0 = XxHash32.Compute("test"u8, 0);
-    uint hash1 = XxHash32.Compute("test"u8, 1);
+    var hash0 = XxHash32.Compute("test"u8, 0);
+    var hash1 = XxHash32.Compute("test"u8, 1);
     Assert.That(hash0, Is.Not.EqualTo(hash1));
   }
 
@@ -185,7 +185,7 @@ public class XxHashTests {
     var data = new byte[1000];
     new Random(42).NextBytes(data);
 
-    uint batch = XxHash32.Compute(data);
+    var batch = XxHash32.Compute(data);
 
     var hasher = new XxHash32();
     hasher.Update(data.AsSpan(0, 100));
@@ -201,10 +201,10 @@ public class XxHashTests {
     var data = new byte[32];
     new Random(99).NextBytes(data);
 
-    uint batch = XxHash32.Compute(data);
+    var batch = XxHash32.Compute(data);
 
     var hasher = new XxHash32();
-    foreach (byte b in data)
+    foreach (var b in data)
       hasher.Update([b]);
 
     Assert.That(hasher.Value, Is.EqualTo(batch));
@@ -217,7 +217,7 @@ public class XxHashTests {
     hasher.Update(ReadOnlySpan<byte>.Empty);
     hasher.Update(ReadOnlySpan<byte>.Empty);
 
-    uint batch = XxHash32.Compute(ReadOnlySpan<byte>.Empty);
+    var batch = XxHash32.Compute(ReadOnlySpan<byte>.Empty);
     Assert.That(hasher.Value, Is.EqualTo(batch));
   }
 
@@ -229,11 +229,11 @@ public class XxHashTests {
 
     var hasher = new XxHash32();
     hasher.Update(data);
-    uint first = hasher.Value;
+    var first = hasher.Value;
 
     hasher.Reset();
     hasher.Update(data);
-    uint second = hasher.Value;
+    var second = hasher.Value;
 
     Assert.That(second, Is.EqualTo(first));
   }
@@ -245,7 +245,7 @@ public class XxHashTests {
     var data = new byte[17];
     new Random(55).NextBytes(data);
 
-    uint batch = XxHash32.Compute(data);
+    var batch = XxHash32.Compute(data);
 
     var hasher = new XxHash32();
     hasher.Update(data.AsSpan(0, 5));

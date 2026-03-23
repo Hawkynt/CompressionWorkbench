@@ -109,8 +109,8 @@ public sealed class RpmWriter {
     // Architecture = generic
     lead[8] = 0; lead[9] = 1;
     // Name (up to 65 bytes)
-    byte[] nameBytes = Encoding.ASCII.GetBytes(this._name);
-    int copyLen = Math.Min(nameBytes.Length, 65);
+    var nameBytes = Encoding.ASCII.GetBytes(this._name);
+    var copyLen = Math.Min(nameBytes.Length, 65);
     nameBytes.AsSpan(0, copyLen).CopyTo(lead[10..]);
     // OS = 1
     lead[76] = 0; lead[77] = 1;
@@ -139,14 +139,14 @@ public sealed class RpmWriter {
   private static void WriteHeaderStructure(Stream output, IList<(int Tag, string Value)> tags) {
     // Build store
     using var storeMs = new MemoryStream();
-    int[] offsets = new int[tags.Count];
-    for (int i = 0; i < tags.Count; ++i) {
+    var offsets = new int[tags.Count];
+    for (var i = 0; i < tags.Count; ++i) {
       offsets[i] = (int)storeMs.Position;
-      byte[] b = Encoding.UTF8.GetBytes(tags[i].Value);
+      var b = Encoding.UTF8.GetBytes(tags[i].Value);
       storeMs.Write(b);
       storeMs.WriteByte(0);
     }
-    byte[] store = storeMs.ToArray();
+    var store = storeMs.ToArray();
 
     // Preamble
     Span<byte> preamble = stackalloc byte[RpmConstants.HeaderPreambleSize];
@@ -159,7 +159,7 @@ public sealed class RpmWriter {
 
     // Index entries
     Span<byte> entry = stackalloc byte[RpmConstants.IndexEntrySize];
-    for (int i = 0; i < tags.Count; ++i) {
+    for (var i = 0; i < tags.Count; ++i) {
       BinaryPrimitives.WriteInt32BigEndian(entry, tags[i].Tag);
       BinaryPrimitives.WriteInt32BigEndian(entry[4..], RpmConstants.TypeString);
       BinaryPrimitives.WriteInt32BigEndian(entry[8..], offsets[i]);
@@ -218,9 +218,9 @@ public sealed class RpmWriter {
 
   private static void AlignTo8(Stream s) {
     if (!s.CanSeek) return;
-    long rem = s.Position % 8;
+    var rem = s.Position % 8;
     if (rem != 0) {
-      int pad = (int)(8 - rem);
+      var pad = (int)(8 - rem);
       Span<byte> zeros = stackalloc byte[pad];
       zeros.Clear();
       s.Write(zeros);

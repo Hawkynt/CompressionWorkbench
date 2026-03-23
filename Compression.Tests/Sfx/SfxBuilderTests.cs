@@ -79,9 +79,9 @@ public class SfxBuilderTests {
     var sfxPath = Path.Combine(_tempDir, "sized.exe");
     SfxBuilder.Create(zipPath, sfxPath, _stubPath);
 
-    long stubSize = new FileInfo(_stubPath).Length;
-    long archiveSize = new FileInfo(zipPath).Length;
-    long sfxSize = new FileInfo(sfxPath).Length;
+    var stubSize = new FileInfo(_stubPath).Length;
+    var archiveSize = new FileInfo(zipPath).Length;
+    var sfxSize = new FileInfo(sfxPath).Length;
 
     Assert.That(sfxSize, Is.EqualTo(stubSize + archiveSize + 12)); // 12 = trailer
   }
@@ -217,7 +217,7 @@ public class SfxBuilderTests {
     Directory.CreateDirectory(srcDir);
     File.WriteAllText(Path.Combine(srcDir, "notes.txt"), "Seven-Zip end-to-end");
     var binaryData = new byte[256];
-    for (int i = 0; i < binaryData.Length; i++) binaryData[i] = (byte)(i & 0xFF);
+    for (var i = 0; i < binaryData.Length; i++) binaryData[i] = (byte)(i & 0xFF);
     File.WriteAllBytes(Path.Combine(srcDir, "sequence.bin"), binaryData);
 
     // 2. Create 7z archive
@@ -247,7 +247,7 @@ public class SfxBuilderTests {
   public void EndToEnd_LargeFile_RoundTrip() {
     // Create a large-ish file (64KB of pattern data)
     var largeData = new byte[65536];
-    for (int i = 0; i < largeData.Length; i++)
+    for (var i = 0; i < largeData.Length; i++)
       largeData[i] = (byte)(i % 251); // prime modulus for non-trivial pattern
 
     var zipPath = CreateZipArchive("large.bin", largeData);
@@ -367,7 +367,7 @@ public class SfxBuilderTests {
     SfxBuilder.Create(zipPath, sfxPath, _stubPath);
 
     // Overwrite archive magic bytes (right after stub) with garbage
-    long stubLen = new FileInfo(_stubPath).Length;
+    var stubLen = new FileInfo(_stubPath).Length;
     using (var fs = File.Open(sfxPath, FileMode.Open, FileAccess.Write)) {
       fs.Seek(stubLen, SeekOrigin.Begin);
       fs.Write(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF });
@@ -402,8 +402,8 @@ public class SfxBuilderTests {
       fs.ReadExactly(trailer);
 
       // Truncate: keep stub + half of archive data + trailer
-      long archiveLen = sfxSize - stubLen - 12;
-      long truncatedLen = stubLen + archiveLen / 2 + 12;
+      var archiveLen = sfxSize - stubLen - 12;
+      var truncatedLen = stubLen + archiveLen / 2 + 12;
       fs.SetLength(truncatedLen);
 
       // Re-write trailer at new end (original offset is still valid but data is short)
@@ -593,7 +593,7 @@ public class SfxBuilderTests {
     var withOverlay = new byte[peData.Length + 100];
     peData.CopyTo(withOverlay, 0);
     using var ms = new MemoryStream(withOverlay);
-    long overlay = PeOverlay.FindOverlayOffset(ms);
+    var overlay = PeOverlay.FindOverlayOffset(ms);
     Assert.That(overlay, Is.GreaterThan(0));
     Assert.That(overlay, Is.LessThanOrEqualTo(peData.Length));
   }
@@ -602,7 +602,7 @@ public class SfxBuilderTests {
   [Category("Unit")]
   public void PeOverlay_FindOverlayOffset_NotPe_ReturnsNegative() {
     using var ms = new MemoryStream(new byte[256]);
-    long overlay = PeOverlay.FindOverlayOffset(ms);
+    var overlay = PeOverlay.FindOverlayOffset(ms);
     Assert.That(overlay, Is.EqualTo(-1));
   }
 
@@ -658,7 +658,7 @@ public class SfxBuilderTests {
   [Category("Unit")]
   public void SubStream_PositionAndSeek_WorkCorrectly() {
     var data = new byte[100];
-    for (int i = 0; i < 100; i++) data[i] = (byte)i;
+    for (var i = 0; i < 100; i++) data[i] = (byte)i;
 
     using var inner = new MemoryStream(data);
     using var sub = new SubStream(inner, 20, 50);
@@ -668,7 +668,7 @@ public class SfxBuilderTests {
 
     // Read from start of sub (should be byte 20 of inner)
     var buf = new byte[10];
-    int read = sub.Read(buf, 0, 10);
+    var read = sub.Read(buf, 0, 10);
     Assert.That(read, Is.EqualTo(10));
     Assert.That(buf[0], Is.EqualTo(20));
     Assert.That(buf[9], Is.EqualTo(29));
@@ -733,12 +733,12 @@ public class SfxBuilderTests {
     // Optional Header at 0x58 (112 bytes for PE32)
     pe[0x58] = 0x0B; pe[0x59] = 0x01; // Magic = PE32
     // SizeOfHeaders at 0x94 (offset 0x3C from opt header start)
-    int sizeOfHeaders = sectionEnd;
+    var sizeOfHeaders = sectionEnd;
     pe[0x94] = (byte)(sizeOfHeaders & 0xFF);
     pe[0x95] = (byte)((sizeOfHeaders >> 8) & 0xFF);
 
     // Section Table at 0x58 + 0x70 = 0xC8 (40 bytes per entry)
-    int secTableOff = 0xC8;
+    var secTableOff = 0xC8;
     // Section name: ".text"
     pe[secTableOff] = (byte)'.'; pe[secTableOff + 1] = (byte)'t';
     pe[secTableOff + 2] = (byte)'e'; pe[secTableOff + 3] = (byte)'x';
@@ -748,7 +748,7 @@ public class SfxBuilderTests {
     // VirtualAddress at +12
     pe[secTableOff + 12] = 0x00; pe[secTableOff + 13] = 0x10; // 0x1000
     // SizeOfRawData at +16: section occupies from 0x200 to sectionEnd
-    int rawSize = sectionEnd - 0x200;
+    var rawSize = sectionEnd - 0x200;
     if (rawSize < 0) rawSize = 0;
     pe[secTableOff + 16] = (byte)(rawSize & 0xFF);
     pe[secTableOff + 17] = (byte)((rawSize >> 8) & 0xFF);

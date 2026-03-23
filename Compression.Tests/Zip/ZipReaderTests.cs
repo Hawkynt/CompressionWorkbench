@@ -10,8 +10,8 @@ public class ZipReaderTests {
   [Category("ThemVsUs")]
   [Test]
   public void ReadsSystemArchive_SingleEntry_Store() {
-    byte[] data = "Stored content"u8.ToArray();
-    byte[] archive = CreateSystemArchive(("file.txt", data, SysCompressionLevel.NoCompression));
+    var data = "Stored content"u8.ToArray();
+    var archive = CreateSystemArchive(("file.txt", data, SysCompressionLevel.NoCompression));
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
@@ -23,8 +23,8 @@ public class ZipReaderTests {
   [Category("ThemVsUs")]
   [Test]
   public void ReadsSystemArchive_SingleEntry_Deflate() {
-    byte[] data = "Deflated content for testing the reader implementation."u8.ToArray();
-    byte[] archive = CreateSystemArchive(("file.txt", data, SysCompressionLevel.Optimal));
+    var data = "Deflated content for testing the reader implementation."u8.ToArray();
+    var archive = CreateSystemArchive(("file.txt", data, SysCompressionLevel.Optimal));
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
@@ -35,10 +35,10 @@ public class ZipReaderTests {
   [Category("ThemVsUs")]
   [Test]
   public void ReadsSystemArchive_MultipleEntries() {
-    byte[] d1 = "Alpha"u8.ToArray();
-    byte[] d2 = "Bravo"u8.ToArray();
-    byte[] d3 = "Charlie"u8.ToArray();
-    byte[] archive = CreateSystemArchive(
+    var d1 = "Alpha"u8.ToArray();
+    var d2 = "Bravo"u8.ToArray();
+    var d3 = "Charlie"u8.ToArray();
+    var archive = CreateSystemArchive(
       ("alpha.txt", d1, SysCompressionLevel.NoCompression),
       ("bravo.txt", d2, SysCompressionLevel.Optimal),
       ("charlie.txt", d3, SysCompressionLevel.Fastest));
@@ -53,8 +53,8 @@ public class ZipReaderTests {
   [Category("ThemVsUs")]
   [Test]
   public void ReadsSystemArchive_Utf8FileNames() {
-    byte[] data = "unicode content"u8.ToArray();
-    byte[] archive = CreateSystemArchive(
+    var data = "unicode content"u8.ToArray();
+    var archive = CreateSystemArchive(
       ("\u00fc\u00f6\u00e4/\u00df.txt", data, SysCompressionLevel.NoCompression));
 
     using var reader = new ZipReader(new MemoryStream(archive));
@@ -65,7 +65,7 @@ public class ZipReaderTests {
   [Category("EdgeCase")]
   [Test]
   public void ReadsSystemArchive_EmptyFile() {
-    byte[] archive = CreateSystemArchive(("empty.txt", [], SysCompressionLevel.NoCompression));
+    var archive = CreateSystemArchive(("empty.txt", [], SysCompressionLevel.NoCompression));
 
     using var reader = new ZipReader(new MemoryStream(archive));
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
@@ -75,12 +75,12 @@ public class ZipReaderTests {
   [Category("Exception")]
   [Test]
   public void CrcMismatch_ThrowsInvalidDataException() {
-    byte[] data = "Valid data"u8.ToArray();
-    byte[] archive = CreateSystemArchive(("file.txt", data, SysCompressionLevel.NoCompression));
+    var data = "Valid data"u8.ToArray();
+    var archive = CreateSystemArchive(("file.txt", data, SysCompressionLevel.NoCompression));
 
     // Corrupt the stored data (it starts after the local file header)
     // Find the data by looking for "Valid data" in the archive
-    int dataPos = FindPattern(archive, data);
+    var dataPos = FindPattern(archive, data);
     Assert.That(dataPos, Is.GreaterThan(0), "Could not find data in archive");
     archive[dataPos] ^= 0xFF; // Corrupt first byte
 
@@ -104,7 +104,7 @@ public class ZipReaderTests {
   [Category("HappyPath")]
   [Test]
   public void Dispose_ClosesStream() {
-    byte[] archive = CreateSystemArchive(("file.txt", "data"u8.ToArray(), SysCompressionLevel.NoCompression));
+    var archive = CreateSystemArchive(("file.txt", "data"u8.ToArray(), SysCompressionLevel.NoCompression));
     var ms = new MemoryStream(archive);
 
     var reader = new ZipReader(ms);
@@ -116,7 +116,7 @@ public class ZipReaderTests {
   [Category("HappyPath")]
   [Test]
   public void Dispose_LeaveOpen_KeepsStreamOpen() {
-    byte[] archive = CreateSystemArchive(("file.txt", "data"u8.ToArray(), SysCompressionLevel.NoCompression));
+    var archive = CreateSystemArchive(("file.txt", "data"u8.ToArray(), SysCompressionLevel.NoCompression));
     var ms = new MemoryStream(archive);
 
     var reader = new ZipReader(ms, leaveOpen: true);
@@ -130,8 +130,8 @@ public class ZipReaderTests {
   [Category("HappyPath")]
   [Test]
   public void OpenEntry_ReturnsNonWritableStream() {
-    byte[] data = "test"u8.ToArray();
-    byte[] archive = CreateSystemArchive(("file.txt", data, SysCompressionLevel.NoCompression));
+    var data = "test"u8.ToArray();
+    var archive = CreateSystemArchive(("file.txt", data, SysCompressionLevel.NoCompression));
 
     using var reader = new ZipReader(new MemoryStream(archive));
     using var stream = reader.OpenEntry(reader.Entries[0]);
@@ -152,9 +152,9 @@ public class ZipReaderTests {
   }
 
   private static int FindPattern(byte[] haystack, byte[] needle) {
-    for (int i = 0; i <= haystack.Length - needle.Length; ++i) {
+    for (var i = 0; i <= haystack.Length - needle.Length; ++i) {
       var match = true;
-      for (int j = 0; j < needle.Length; ++j) {
+      for (var j = 0; j < needle.Length; ++j) {
         if (haystack[i + j] != needle[j]) {
           match = false;
           break;

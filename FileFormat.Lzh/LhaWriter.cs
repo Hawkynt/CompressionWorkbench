@@ -123,14 +123,14 @@ public sealed class LhaWriter {
       }
     }
 
-    ushort crc = Crc16.Compute(data);
+    var crc = Crc16.Compute(data);
     var nameBytes = Encoding.ASCII.GetBytes(name);
 
     // Write level 1 header
     // Header size: from checksum byte to end of name (before CRC)
     // = 1(checksum) + 5(method) + 4(compressed) + 4(original) + 4(timestamp) + 1(reserved) + 1(level)
     //   + 1(nameLen) + nameLen + 2(crc) + 1(osId) + 2(nextExtSize=0)
-    int headerPayloadSize = 5 + 4 + 4 + 4 + 1 + 1 + 1 + nameBytes.Length + 2 + 1 + 2;
+    var headerPayloadSize = 5 + 4 + 4 + 4 + 1 + 1 + 1 + nameBytes.Length + 2 + 1 + 2;
 
     // Build header payload bytes for checksum computation
     using var headerMs = new MemoryStream();
@@ -148,9 +148,9 @@ public sealed class LhaWriter {
     hw.Write((ushort)0); // no extended headers
     hw.Flush();
 
-    byte[] headerPayload = headerMs.ToArray();
+    var headerPayload = headerMs.ToArray();
     byte checksum = 0;
-    foreach (byte b in headerPayload)
+    foreach (var b in headerPayload)
       checksum += b;
 
     using var writer = new BinaryWriter(output, Encoding.ASCII, leaveOpen: true);
@@ -179,8 +179,8 @@ public sealed class LhaWriter {
   }
 
   private static uint MsdosTimestamp(DateTime dt) {
-    int time = (dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2);
-    int date = ((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day;
+    var time = (dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2);
+    var date = ((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day;
     return (uint)((date << 16) | time);
   }
 }

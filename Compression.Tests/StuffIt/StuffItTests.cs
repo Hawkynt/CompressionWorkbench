@@ -21,12 +21,12 @@ public class StuffItTests {
     uint resourceForkOriginalSize,
     uint macModDate = 0) {
 
-    byte[] nameBytes = Encoding.ASCII.GetBytes(fileName);
+    var nameBytes = Encoding.ASCII.GetBytes(fileName);
     if (nameBytes.Length > 63)
       Array.Resize(ref nameBytes, 63);
 
     // ── Entry header (112 bytes) ──────────────────────────────────────────────
-    byte[] entryHeader = new byte[112];
+    var entryHeader = new byte[112];
     entryHeader[0] = 0;                          // resource method = Store
     entryHeader[1] = dataMethod;                 // data method
     entryHeader[2] = (byte)nameBytes.Length;     // name length
@@ -52,10 +52,10 @@ public class StuffItTests {
     // [110..112] header CRC-16 = 0 (not verified by reader)
 
     // ── Archive header (22 bytes) ─────────────────────────────────────────────
-    byte[] archiveHeader = new byte[22];
+    var archiveHeader = new byte[22];
     BinaryPrimitives.WriteUInt32BigEndian(archiveHeader.AsSpan(0, 4), 0x53495421); // "SIT!"
     BinaryPrimitives.WriteUInt16BigEndian(archiveHeader.AsSpan(4, 2), 1);           // file count = 1
-    uint totalSize = (uint)(22 + 112 + resourceForkCompressed.Length + dataForkCompressed.Length);
+    var totalSize = (uint)(22 + 112 + resourceForkCompressed.Length + dataForkCompressed.Length);
     BinaryPrimitives.WriteUInt32BigEndian(archiveHeader.AsSpan(6, 4), totalSize);
     BinaryPrimitives.WriteUInt32BigEndian(archiveHeader.AsSpan(10, 4), 0x724C6175); // "rLau"
     archiveHeader[14] = 1; // version 1
@@ -78,8 +78,8 @@ public class StuffItTests {
   [Category("HappyPath")]
   [Test]
   public void Parse_ValidHeader_ReadsOneEntry() {
-    byte[] data = "hello"u8.ToArray();
-    byte[] archive = BuildStoredArchive("hello.txt", data);
+    var data = "hello"u8.ToArray();
+    var archive = BuildStoredArchive("hello.txt", data);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
@@ -90,7 +90,7 @@ public class StuffItTests {
   [Category("HappyPath")]
   [Test]
   public void Parse_Entry_FileName() {
-    byte[] archive = BuildStoredArchive("readme.txt", "x"u8.ToArray());
+    var archive = BuildStoredArchive("readme.txt", "x"u8.ToArray());
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
@@ -101,8 +101,8 @@ public class StuffItTests {
   [Category("HappyPath")]
   [Test]
   public void Parse_Entry_FileSizes() {
-    byte[] original = new byte[100];
-    byte[] archive = BuildStoredArchive("data.bin", original);
+    var original = new byte[100];
+    var archive = BuildStoredArchive("data.bin", original);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
@@ -115,7 +115,7 @@ public class StuffItTests {
   [Category("HappyPath")]
   [Test]
   public void Parse_Entry_FileTypeAndCreator() {
-    byte[] archive = BuildStoredArchive("doc.txt", [0x41]);
+    var archive = BuildStoredArchive("doc.txt", [0x41]);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
@@ -131,7 +131,7 @@ public class StuffItTests {
     // Mac epoch seconds for 1970-01-01 = 66 years (some leap years) past 1904-01-01
     // Offset = (1970-1904) years in seconds ≈ 2082844800
     const uint macDate = 2082844800u;
-    byte[] archive = BuildSitArchive("f.txt", 0, [0x41], 1, [], 0, macDate);
+    var archive = BuildSitArchive("f.txt", 0, [0x41], 1, [], 0, macDate);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
@@ -144,7 +144,7 @@ public class StuffItTests {
   [Category("EdgeCase")]
   [Test]
   public void Parse_Entry_ZeroModDate_GivesMinValue() {
-    byte[] archive = BuildSitArchive("f.txt", 0, [0x41], 1, [], 0, 0);
+    var archive = BuildSitArchive("f.txt", 0, [0x41], 1, [], 0, 0);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
@@ -155,7 +155,7 @@ public class StuffItTests {
   [Category("ErrorHandling")]
   [Test]
   public void Ctor_WrongMagic_Throws() {
-    byte[] bad = new byte[22];
+    var bad = new byte[22];
     bad[0] = 0x00; bad[1] = 0x01; bad[2] = 0x02; bad[3] = 0x03;
 
     using var ms = new MemoryStream(bad);
@@ -165,7 +165,7 @@ public class StuffItTests {
   [Category("ErrorHandling")]
   [Test]
   public void Ctor_MissingRlauSignature_Throws() {
-    byte[] archive = BuildStoredArchive("f.txt", [0x41]);
+    var archive = BuildStoredArchive("f.txt", [0x41]);
     // Corrupt the "rLau" signature at offset 10.
     archive[10] = 0xFF;
 
@@ -179,12 +179,12 @@ public class StuffItTests {
   [Category("RoundTrip")]
   [Test]
   public void Store_Extract_SmallText() {
-    byte[] original = "Hello, StuffIt!"u8.ToArray();
-    byte[] archive = BuildStoredArchive("hello.txt", original);
+    var original = "Hello, StuffIt!"u8.ToArray();
+    var archive = BuildStoredArchive("hello.txt", original);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
-    byte[] result = reader.Extract(reader.Entries[0]);
+    var result = reader.Extract(reader.Entries[0]);
 
     Assert.That(result, Is.EqualTo(original));
   }
@@ -193,15 +193,15 @@ public class StuffItTests {
   [Category("RoundTrip")]
   [Test]
   public void Store_Extract_BinaryData() {
-    byte[] original = new byte[256];
-    for (int i = 0; i < 256; ++i)
+    var original = new byte[256];
+    for (var i = 0; i < 256; ++i)
       original[i] = (byte)i;
 
-    byte[] archive = BuildStoredArchive("bin.dat", original);
+    var archive = BuildStoredArchive("bin.dat", original);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
-    byte[] result = reader.Extract(reader.Entries[0]);
+    var result = reader.Extract(reader.Entries[0]);
 
     Assert.That(result, Is.EqualTo(original));
   }
@@ -210,11 +210,11 @@ public class StuffItTests {
   [Category("RoundTrip")]
   [Test]
   public void Store_Extract_EmptyDataFork() {
-    byte[] archive = BuildStoredArchive("empty.txt", []);
+    var archive = BuildStoredArchive("empty.txt", []);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
-    byte[] result = reader.Extract(reader.Entries[0]);
+    var result = reader.Extract(reader.Entries[0]);
 
     Assert.That(result, Is.Empty);
   }
@@ -227,19 +227,19 @@ public class StuffItTests {
   /// </summary>
   private static byte[] RleEncode(byte[] data) {
     var output = new List<byte>(data.Length);
-    int i = 0;
+    var i = 0;
     while (i < data.Length) {
-      byte value = data[i];
+      var value = data[i];
       if (value == 0x90) {
         output.Add(0x90);
         output.Add(0x00);
         ++i;
         continue;
       }
-      int runEnd = i + 1;
+      var runEnd = i + 1;
       while (runEnd < data.Length && data[runEnd] == value && runEnd - i < 255)
         ++runEnd;
-      int runLength = runEnd - i;
+      var runLength = runEnd - i;
       output.Add(value);
       if (runLength >= 2) {
         output.Add(0x90);
@@ -254,15 +254,15 @@ public class StuffItTests {
   [Category("RoundTrip")]
   [Test]
   public void Rle_Extract_RepetitiveData() {
-    byte[] original = new byte[100];
+    var original = new byte[100];
     Array.Fill(original, (byte)'A');
-    byte[] compressed = RleEncode(original);
+    var compressed = RleEncode(original);
 
-    byte[] archive = BuildSitArchive("rle.txt", 1, compressed, (uint)original.Length, [], 0);
+    var archive = BuildSitArchive("rle.txt", 1, compressed, (uint)original.Length, [], 0);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
-    byte[] result = reader.Extract(reader.Entries[0]);
+    var result = reader.Extract(reader.Entries[0]);
 
     Assert.That(result, Is.EqualTo(original));
   }
@@ -275,11 +275,11 @@ public class StuffItTests {
     byte[] original = [0x90, 0x41, 0x90];
     byte[] compressed = [0x90, 0x00, 0x41, 0x90, 0x00];
 
-    byte[] archive = BuildSitArchive("esc.bin", 1, compressed, (uint)original.Length, [], 0);
+    var archive = BuildSitArchive("esc.bin", 1, compressed, (uint)original.Length, [], 0);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
-    byte[] result = reader.Extract(reader.Entries[0]);
+    var result = reader.Extract(reader.Entries[0]);
 
     Assert.That(result, Is.EqualTo(original));
   }
@@ -289,13 +289,13 @@ public class StuffItTests {
   [Test]
   public void Rle_Extract_MixedRunsAndLiterals() {
     byte[] original = [0x41, 0x41, 0x41, 0x42, 0x43, 0x43];
-    byte[] compressed = RleEncode(original);
+    var compressed = RleEncode(original);
 
-    byte[] archive = BuildSitArchive("mixed.bin", 1, compressed, (uint)original.Length, [], 0);
+    var archive = BuildSitArchive("mixed.bin", 1, compressed, (uint)original.Length, [], 0);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
-    byte[] result = reader.Extract(reader.Entries[0]);
+    var result = reader.Extract(reader.Entries[0]);
 
     Assert.That(result, Is.EqualTo(original));
   }
@@ -305,15 +305,15 @@ public class StuffItTests {
   [Category("HappyPath")]
   [Test]
   public void ExtractResourceFork_Stored_ReturnsData() {
-    byte[] resource = "resource data"u8.ToArray();
-    byte[] dataFork = "data fork"u8.ToArray();
+    var resource = "resource data"u8.ToArray();
+    var dataFork = "data fork"u8.ToArray();
 
-    byte[] archive = BuildSitArchive("mac.txt", 0, dataFork, (uint)dataFork.Length,
+    var archive = BuildSitArchive("mac.txt", 0, dataFork, (uint)dataFork.Length,
                                      resource, (uint)resource.Length);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
-    byte[] result = reader.ExtractResourceFork(reader.Entries[0]);
+    var result = reader.ExtractResourceFork(reader.Entries[0]);
 
     Assert.That(result, Is.EqualTo(resource));
   }
@@ -321,11 +321,11 @@ public class StuffItTests {
   [Category("EdgeCase")]
   [Test]
   public void ExtractResourceFork_Empty_ReturnsEmpty() {
-    byte[] archive = BuildStoredArchive("norc.txt", "data"u8.ToArray());
+    var archive = BuildStoredArchive("norc.txt", "data"u8.ToArray());
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
-    byte[] result = reader.ExtractResourceFork(reader.Entries[0]);
+    var result = reader.ExtractResourceFork(reader.Entries[0]);
 
     Assert.That(result, Is.Empty);
   }
@@ -335,23 +335,23 @@ public class StuffItTests {
   [Category("HappyPath")]
   [Test]
   public void MultiEntry_AllEntriesListed() {
-    byte[] data1 = "first"u8.ToArray();
-    byte[] data2 = "second"u8.ToArray();
-    byte[] data3 = "third"u8.ToArray();
+    var data1 = "first"u8.ToArray();
+    var data2 = "second"u8.ToArray();
+    var data3 = "third"u8.ToArray();
 
     // Build the headers and data sequentially into one archive with fileCount=3.
     var ms = new MemoryStream();
 
     // Reserve space for the archive header; we'll write it last.
-    long headerPos = ms.Position;
+    var headerPos = ms.Position;
     ms.Write(new byte[22]);
 
-    long entriesStart = ms.Position;
+    var entriesStart = ms.Position;
     WriteEntry(ms, "first.txt",  0, data1, [], data1.Length,  0);
     WriteEntry(ms, "second.txt", 0, data2, [], data2.Length,  0);
     WriteEntry(ms, "third.txt",  0, data3, [], data3.Length,  0);
 
-    long totalSize = ms.Length;
+    var totalSize = ms.Length;
 
     // Write archive header.
     ms.Position = headerPos;
@@ -376,14 +376,14 @@ public class StuffItTests {
   [Category("RoundTrip")]
   [Test]
   public void MultiEntry_ExtractEachEntry() {
-    byte[] data1 = "Hello"u8.ToArray();
-    byte[] data2 = "World"u8.ToArray();
+    var data1 = "Hello"u8.ToArray();
+    var data2 = "World"u8.ToArray();
 
     var ms = new MemoryStream();
     ms.Write(new byte[22]);
     WriteEntry(ms, "a.txt", 0, data1, [], data1.Length, 0);
     WriteEntry(ms, "b.txt", 0, data2, [], data2.Length, 0);
-    long totalSize = ms.Length;
+    var totalSize = ms.Length;
 
     ms.Position = 0;
     Span<byte> ah = stackalloc byte[22];
@@ -407,7 +407,7 @@ public class StuffItTests {
   [Test]
   public void Extract_UnsupportedMethod_Throws() {
     // Method 2 = LZC — not supported.
-    byte[] archive = BuildSitArchive("f.bin", 2, [0xAB, 0xCD], 100, [], 0);
+    var archive = BuildSitArchive("f.bin", 2, [0xAB, 0xCD], 100, [], 0);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
@@ -418,7 +418,7 @@ public class StuffItTests {
   [Category("ErrorHandling")]
   [Test]
   public void Extract_NullEntry_Throws() {
-    byte[] archive = BuildStoredArchive("f.txt", [0x41]);
+    var archive = BuildStoredArchive("f.txt", [0x41]);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
@@ -431,7 +431,7 @@ public class StuffItTests {
   public void Rle_TruncatedAfterMarker_Throws() {
     // Compressed data ends immediately after the 0x90 escape marker.
     byte[] badRle = [0x41, 0x90]; // 0x90 with no following count byte
-    byte[] archive = BuildSitArchive("bad.bin", 1, badRle, 10, [], 0);
+    var archive = BuildSitArchive("bad.bin", 1, badRle, 10, [], 0);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
@@ -444,7 +444,7 @@ public class StuffItTests {
   [Category("HappyPath")]
   [Test]
   public void Entry_IsDirectory_AlwaysFalse() {
-    byte[] archive = BuildStoredArchive("myfile.txt", [0x41]);
+    var archive = BuildStoredArchive("myfile.txt", [0x41]);
 
     using var ms = new MemoryStream(archive);
     using var reader = new StuffItReader(ms, leaveOpen: true);
@@ -458,7 +458,7 @@ public class StuffItTests {
   [Category("RoundTrip")]
   [Test]
   public void Writer_RoundTrip_SingleFile() {
-    byte[] data = "Hello, StuffIt Writer!"u8.ToArray();
+    var data = "Hello, StuffIt Writer!"u8.ToArray();
     using var ms = new MemoryStream();
     using (var w = new StuffItWriter(ms, leaveOpen: true))
       w.AddFile("hello.txt", data);
@@ -474,8 +474,8 @@ public class StuffItTests {
   [Category("RoundTrip")]
   [Test]
   public void Writer_RoundTrip_MultipleFiles() {
-    byte[] data1 = new byte[256];
-    byte[] data2 = new byte[128];
+    var data1 = new byte[256];
+    var data2 = new byte[128];
     Random.Shared.NextBytes(data1);
     Random.Shared.NextBytes(data2);
 
@@ -543,10 +543,10 @@ public class StuffItTests {
     int dataForkOrigSize,
     uint macModDate) {
 
-    byte[] nameBytes = Encoding.ASCII.GetBytes(fileName);
+    var nameBytes = Encoding.ASCII.GetBytes(fileName);
     if (nameBytes.Length > 63) Array.Resize(ref nameBytes, 63);
 
-    byte[] hdr = new byte[112];
+    var hdr = new byte[112];
     hdr[0] = 0;                       // resource method = Store
     hdr[1] = dataMethod;
     hdr[2] = (byte)nameBytes.Length;

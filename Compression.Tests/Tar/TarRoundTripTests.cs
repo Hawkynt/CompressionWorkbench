@@ -9,7 +9,7 @@ public class TarRoundTripTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_SingleFile() {
-    byte[] data = "Hello, World!"u8.ToArray();
+    var data = "Hello, World!"u8.ToArray();
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -28,7 +28,7 @@ public class TarRoundTripTests {
     Assert.That(readEntry.Size, Is.EqualTo(data.Length));
 
     using var entryStream = tr.GetEntryStream();
-    byte[] readData = new byte[readEntry.Size];
+    var readData = new byte[readEntry.Size];
     _ = entryStream.Read(readData, 0, readData.Length);
     Assert.That(readData, Is.EqualTo(data));
 
@@ -39,9 +39,9 @@ public class TarRoundTripTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_MultipleFiles() {
-    byte[] data1 = "First file content"u8.ToArray();
-    byte[] data2 = "Second file with different content"u8.ToArray();
-    byte[] data3 = "Third file data"u8.ToArray();
+    var data1 = "First file content"u8.ToArray();
+    var data2 = "Second file with different content"u8.ToArray();
+    var data3 = "Third file data"u8.ToArray();
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -60,7 +60,7 @@ public class TarRoundTripTests {
     Assert.That(entry1, Is.Not.Null);
     Assert.That(entry1!.Name, Is.EqualTo("file1.txt"));
     using (var s1 = tr.GetEntryStream()) {
-      byte[] read1 = new byte[entry1.Size];
+      var read1 = new byte[entry1.Size];
       _ = s1.Read(read1, 0, read1.Length);
       Assert.That(read1, Is.EqualTo(data1));
     }
@@ -69,7 +69,7 @@ public class TarRoundTripTests {
     Assert.That(entry2, Is.Not.Null);
     Assert.That(entry2!.Name, Is.EqualTo("subdir/file2.txt"));
     using (var s2 = tr.GetEntryStream()) {
-      byte[] read2 = new byte[entry2.Size];
+      var read2 = new byte[entry2.Size];
       _ = s2.Read(read2, 0, read2.Length);
       Assert.That(read2, Is.EqualTo(data2));
     }
@@ -78,7 +78,7 @@ public class TarRoundTripTests {
     Assert.That(entry3, Is.Not.Null);
     Assert.That(entry3!.Name, Is.EqualTo("file3.dat"));
     using (var s3 = tr.GetEntryStream()) {
-      byte[] read3 = new byte[entry3.Size];
+      var read3 = new byte[entry3.Size];
       _ = s3.Read(read3, 0, read3.Length);
       Assert.That(read3, Is.EqualTo(data3));
     }
@@ -114,9 +114,9 @@ public class TarRoundTripTests {
   [Test]
   public void RoundTrip_LargeFile() {
     // Create a file larger than 512 bytes to test padding
-    byte[] pattern = "ABCDEFGHIJKLMNOP"u8.ToArray();
-    byte[] data = new byte[2048];
-    for (int i = 0; i < data.Length; ++i)
+    var pattern = "ABCDEFGHIJKLMNOP"u8.ToArray();
+    var data = new byte[2048];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = pattern[i % pattern.Length];
 
     byte[] archive;
@@ -136,7 +136,7 @@ public class TarRoundTripTests {
     Assert.That(readEntry.Size, Is.EqualTo(2048));
 
     using var entryStream = tr.GetEntryStream();
-    byte[] readData = new byte[readEntry.Size];
+    var readData = new byte[readEntry.Size];
     _ = entryStream.Read(readData, 0, readData.Length);
     Assert.That(readData, Is.EqualTo(data));
   }
@@ -177,7 +177,7 @@ public class TarRoundTripTests {
     var longName = "very/long/path/to/a/deeply/nested/directory/structure/that/exceeds/one/hundred/characters/in/total/length/file.txt";
     Assert.That(longName.Length, Is.GreaterThan(100));
 
-    byte[] data = "Long name file content"u8.ToArray();
+    var data = "Long name file content"u8.ToArray();
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -196,7 +196,7 @@ public class TarRoundTripTests {
     Assert.That(readEntry.Size, Is.EqualTo(data.Length));
 
     using var entryStream = tr.GetEntryStream();
-    byte[] readData = new byte[readEntry.Size];
+    var readData = new byte[readEntry.Size];
     _ = entryStream.Read(readData, 0, readData.Length);
     Assert.That(readData, Is.EqualTo(data));
   }
@@ -233,7 +233,7 @@ public class TarRoundTripTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_Permissions() {
-    byte[] data = "Executable script"u8.ToArray();
+    var data = "Executable script"u8.ToArray();
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -260,7 +260,7 @@ public class TarRoundTripTests {
   public void RoundTrip_Timestamps() {
     // Use a specific timestamp (TAR stores Unix seconds, so sub-second precision is lost)
     var timestamp = new DateTimeOffset(2024, 6, 15, 12, 30, 45, TimeSpan.Zero);
-    byte[] data = "Timestamped file"u8.ToArray();
+    var data = "Timestamped file"u8.ToArray();
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -287,8 +287,8 @@ public class TarRoundTripTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_PaxHeader_NonAsciiName() {
-    byte[] data = "PAX test data"u8.ToArray();
-    string name = "日本語/テスト.txt";
+    var data = "PAX test data"u8.ToArray();
+    var name = "日本語/テスト.txt";
 
     byte[] archive;
     using (var ms = new MemoryStream()) {
@@ -306,7 +306,7 @@ public class TarRoundTripTests {
     Assert.That(readEntry.Size, Is.EqualTo(data.Length));
 
     using var entryStream = tr.GetEntryStream();
-    byte[] extracted = new byte[readEntry.Size];
+    var extracted = new byte[readEntry.Size];
     entryStream.ReadExactly(extracted);
     Assert.That(extracted, Is.EqualTo(data));
   }
@@ -315,8 +315,8 @@ public class TarRoundTripTests {
   [Category("RoundTrip")]
   [Test]
   public void RoundTrip_PaxHeader_NonAsciiLinkName() {
-    string name = "link.txt";
-    string linkTarget = "ターゲット/ファイル.txt";
+    var name = "link.txt";
+    var linkTarget = "ターゲット/ファイル.txt";
 
     byte[] archive;
     using (var ms = new MemoryStream()) {

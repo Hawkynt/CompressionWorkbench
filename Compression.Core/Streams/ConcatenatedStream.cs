@@ -28,7 +28,7 @@ public sealed class ConcatenatedStream : Stream {
     this._offsets = new long[segments.Length];
 
     long cumulative = 0;
-    for (int i = 0; i < segments.Length; ++i) {
+    for (var i = 0; i < segments.Length; ++i) {
       this._offsets[i] = cumulative;
       cumulative += segments[i].Length;
     }
@@ -62,22 +62,22 @@ public sealed class ConcatenatedStream : Stream {
   /// <inheritdoc />
   public override int Read(byte[] buffer, int offset, int count) {
     ObjectDisposedException.ThrowIf(this._disposed, this);
-    int totalRead = 0;
+    var totalRead = 0;
 
     while (count > 0 && this._position < this._totalLength) {
       UpdateCurrentSegment();
       var seg = this._segments[this._currentSegment];
-      long segOffset = this._position - this._offsets[this._currentSegment];
-      long segRemaining = seg.Length - segOffset;
+      var segOffset = this._position - this._offsets[this._currentSegment];
+      var segRemaining = seg.Length - segOffset;
 
       if (segRemaining <= 0) {
         this._currentSegment++;
         continue;
       }
 
-      int toRead = (int)Math.Min(count, segRemaining);
+      var toRead = (int)Math.Min(count, segRemaining);
       seg.Position = segOffset;
-      int read = seg.Read(buffer, offset, toRead);
+      var read = seg.Read(buffer, offset, toRead);
       if (read == 0) break;
 
       totalRead += read;
@@ -91,7 +91,7 @@ public sealed class ConcatenatedStream : Stream {
 
   /// <inheritdoc />
   public override long Seek(long offset, SeekOrigin origin) {
-    long newPos = origin switch {
+    var newPos = origin switch {
       SeekOrigin.Begin => offset,
       SeekOrigin.Current => this._position + offset,
       SeekOrigin.End => this._totalLength + offset,
@@ -132,7 +132,7 @@ public sealed class ConcatenatedStream : Stream {
     // Binary search for the segment containing _position
     int lo = 0, hi = this._segments.Length - 1;
     while (lo < hi) {
-      int mid = (lo + hi + 1) / 2;
+      var mid = (lo + hi + 1) / 2;
       if (this._offsets[mid] <= this._position)
         lo = mid;
       else

@@ -36,8 +36,8 @@ public sealed class HaWriter : IDisposable {
     ArgumentNullException.ThrowIfNull(fileName);
     ArgumentNullException.ThrowIfNull(data);
 
-    uint crc         = Crc32.Compute(data);
-    uint dosDateTime = HaEntry.EncodeMsDosDateTime(lastModified ?? DateTime.Now);
+    var crc         = Crc32.Compute(data);
+    var dosDateTime = HaEntry.EncodeMsDosDateTime(lastModified ?? DateTime.Now);
 
     WriteEntryHeader(
       method:         HaConstants.MethodStore,
@@ -59,7 +59,7 @@ public sealed class HaWriter : IDisposable {
   public void AddDirectory(string name, DateTime? lastModified = null) {
     ArgumentNullException.ThrowIfNull(name);
 
-    uint dosDateTime = HaEntry.EncodeMsDosDateTime(lastModified ?? DateTime.Now);
+    var dosDateTime = HaEntry.EncodeMsDosDateTime(lastModified ?? DateTime.Now);
 
     WriteEntryHeader(
       method:         HaConstants.MethodDirectory,
@@ -102,7 +102,7 @@ public sealed class HaWriter : IDisposable {
     writer.Write(dosDateTime);
 
     // Null-terminated filename.
-    byte[] nameBytes = Encoding.Latin1.GetBytes(fileName);
+    var nameBytes = Encoding.Latin1.GetBytes(fileName);
     writer.Write(nameBytes);
     writer.Write((byte)0); // null terminator
   }

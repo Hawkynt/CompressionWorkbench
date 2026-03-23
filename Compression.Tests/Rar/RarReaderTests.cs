@@ -17,7 +17,7 @@ public class RarReaderTests {
   [Category("HappyPath")]
   [Test]
   public void ReadEntries_SingleFile_Store() {
-    byte[] data = System.Text.Encoding.UTF8.GetBytes("Hello RAR!");
+    var data = System.Text.Encoding.UTF8.GetBytes("Hello RAR!");
     var ms = CreateStoreArchive("hello.txt", data);
     ms.Position = 0;
 
@@ -31,12 +31,12 @@ public class RarReaderTests {
   [Category("RoundTrip")]
   [Test]
   public void Extract_SingleFile_Store() {
-    byte[] data = System.Text.Encoding.UTF8.GetBytes("Hello RAR!");
+    var data = System.Text.Encoding.UTF8.GetBytes("Hello RAR!");
     var ms = CreateStoreArchive("hello.txt", data);
     ms.Position = 0;
 
     using var reader = new RarReader(ms);
-    byte[] extracted = reader.Extract(0);
+    var extracted = reader.Extract(0);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -87,14 +87,14 @@ public class RarReaderTests {
   [Category("RoundTrip")]
   [Test]
   public void Vint_EncodeDecode_RoundTrips() {
-    foreach (ulong value in new ulong[] {
+    foreach (var value in new ulong[] {
           0, 1, 127, 128, 255, 256, 16383, 16384,
           1_000_000, ulong.MaxValue >> 8
         }) {
       var ms = new MemoryStream();
       RarVint.Write(ms, value);
       ms.Position = 0;
-      ulong decoded = RarVint.Read(ms, out int bytesRead);
+      var decoded = RarVint.Read(ms, out var bytesRead);
       Assert.That(decoded, Is.EqualTo(value), $"Failed for value {value}");
       Assert.That(bytesRead, Is.EqualTo(ms.Length));
     }
@@ -125,7 +125,7 @@ public class RarReaderTests {
   [Category("HappyPath")]
   [Test]
   public void Entry_ReportsCorrectSizes() {
-    byte[] data = new byte[1234];
+    var data = new byte[1234];
     new Random(42).NextBytes(data);
     var ms = CreateStoreArchive("sized.bin", data);
     ms.Position = 0;
@@ -158,12 +158,12 @@ public class RarReaderTests {
 
     // Corrupt the data area (last 3 bytes before end header)
     // Find the data and flip a byte
-    byte[] archiveBytes = ms.ToArray();
+    var archiveBytes = ms.ToArray();
     // The data is somewhere after the file header. We'll corrupt it.
     // Find "bad.bin" in the archive to locate the file header, then the data follows.
-    int nameIdx = -1;
-    byte[] nameBytes = System.Text.Encoding.UTF8.GetBytes("bad.bin");
-    for (int i = 0; i < archiveBytes.Length - nameBytes.Length; ++i) {
+    var nameIdx = -1;
+    var nameBytes = System.Text.Encoding.UTF8.GetBytes("bad.bin");
+    for (var i = 0; i < archiveBytes.Length - nameBytes.Length; ++i) {
       if (archiveBytes.AsSpan(i, nameBytes.Length).SequenceEqual(nameBytes)) {
         nameIdx = i;
         break;
@@ -173,7 +173,7 @@ public class RarReaderTests {
     Assert.That(nameIdx, Is.GreaterThan(0), "Could not find filename in archive");
 
     // Data starts right after the filename in the header
-    int dataStart = nameIdx + nameBytes.Length;
+    var dataStart = nameIdx + nameBytes.Length;
     archiveBytes[dataStart] ^= 0xFF; // flip first data byte
 
     var corruptMs = new MemoryStream(archiveBytes);
@@ -224,13 +224,13 @@ public class RarReaderTests {
   [Category("RoundTrip")]
   [Test]
   public void Vint_Span_ReadMatchesStreamRead() {
-    foreach (ulong value in new ulong[] { 0, 42, 128, 65535, 1_000_000 }) {
+    foreach (var value in new ulong[] { 0, 42, 128, 65535, 1_000_000 }) {
       var ms = new MemoryStream();
       RarVint.Write(ms, value);
-      byte[] bytes = ms.ToArray();
+      var bytes = ms.ToArray();
 
-      ulong fromStream = RarVint.Read(new MemoryStream(bytes), out int streamBytesRead);
-      ulong fromSpan = RarVint.Read(bytes.AsSpan(), out int spanBytesRead);
+      var fromStream = RarVint.Read(new MemoryStream(bytes), out var streamBytesRead);
+      var fromSpan = RarVint.Read(bytes.AsSpan(), out var spanBytesRead);
 
       Assert.That(fromSpan, Is.EqualTo(fromStream));
       Assert.That(spanBytesRead, Is.EqualTo(streamBytesRead));
@@ -242,13 +242,13 @@ public class RarReaderTests {
   [Test]
   public void Extract_LargerFile_Store() {
     // Test with a larger file to exercise the buffer loop
-    byte[] data = new byte[32768];
+    var data = new byte[32768];
     new Random(123).NextBytes(data);
     var ms = CreateStoreArchive("large.bin", data);
     ms.Position = 0;
 
     using var reader = new RarReader(ms);
-    byte[] extracted = reader.Extract(0);
+    var extracted = reader.Extract(0);
     Assert.That(extracted, Is.EqualTo(data));
   }
 
@@ -267,7 +267,7 @@ public class RarReaderTests {
   [Category("RoundTrip")]
   [Test]
   public void Extract_ToOutputStream() {
-    byte[] data = System.Text.Encoding.UTF8.GetBytes("stream output test");
+    var data = System.Text.Encoding.UTF8.GetBytes("stream output test");
     var ms = CreateStoreArchive("stream.txt", data);
     ms.Position = 0;
 
@@ -406,7 +406,7 @@ public class RarReaderTests {
 
   private static void WriteFileHeader(MemoryStream ms, string fileName, ReadOnlySpan<byte> data,
     bool isDirectory, DateTimeOffset? mtime = null, bool solid = false) {
-    byte[] nameBytes = System.Text.Encoding.UTF8.GetBytes(fileName);
+    var nameBytes = System.Text.Encoding.UTF8.GetBytes(fileName);
     var crc = data.Length > 0 ? Compression.Core.Checksums.Crc32.Compute(data) : 0;
 
     var headerBody = new MemoryStream();
@@ -437,7 +437,7 @@ public class RarReaderTests {
 
     // Mtime (4 bytes, uint32, Unix timestamp) if flagged
     if (mtime.HasValue) {
-      uint unixTime = (uint)mtime.Value.ToUnixTimeSeconds();
+      var unixTime = (uint)mtime.Value.ToUnixTimeSeconds();
       headerBody.Write(BitConverter.GetBytes(unixTime));
     }
 
@@ -446,7 +446,7 @@ public class RarReaderTests {
       headerBody.Write(BitConverter.GetBytes(crc));
 
     // Compression info: version(bits 0-5)=0, solid(bit 6), method(bits 7-9)=Store(0), dictSizeLog(bits 10-13)=0
-    int compressionInfo = solid ? 0x40 : 0;
+    var compressionInfo = solid ? 0x40 : 0;
     RarVint.Write(headerBody, (ulong)compressionInfo);
 
     // Host OS
@@ -480,14 +480,14 @@ public class RarReaderTests {
 
     var sizeMs = new MemoryStream();
     RarVint.Write(sizeMs, (ulong)headerBody.Length);
-    byte[] sizeBytes = sizeMs.ToArray();
+    var sizeBytes = sizeMs.ToArray();
 
     // CRC covers sizeBytes + headerBody
-    byte[] crcData = new byte[sizeBytes.Length + headerBody.Length];
+    var crcData = new byte[sizeBytes.Length + headerBody.Length];
     Array.Copy(sizeBytes, 0, crcData, 0, sizeBytes.Length);
     Array.Copy(headerBody, 0, crcData, sizeBytes.Length, headerBody.Length);
 
-    uint headerCrc = Compression.Core.Checksums.Crc32.Compute(crcData);
+    var headerCrc = Compression.Core.Checksums.Crc32.Compute(crcData);
 
     RarVint.Write(ms, headerCrc);
     ms.Write(crcData);

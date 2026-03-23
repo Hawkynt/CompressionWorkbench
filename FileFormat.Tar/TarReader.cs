@@ -35,12 +35,12 @@ public sealed class TarReader : IDisposable {
     SkipRemainingEntryData();
 
     // Read the header
-    var entry = TarHeader.ReadHeader(this._stream, out bool isEndOfArchive);
+    var entry = TarHeader.ReadHeader(this._stream, out var isEndOfArchive);
 
     if (entry == null || isEndOfArchive) {
       // Try reading another block to confirm end-of-archive (two zero blocks)
       if (isEndOfArchive) {
-        byte[] secondBlock = new byte[TarConstants.BlockSize];
+        var secondBlock = new byte[TarConstants.BlockSize];
         _ = this._stream.Read(secondBlock, 0, TarConstants.BlockSize);
       }
 
@@ -51,7 +51,7 @@ public sealed class TarReader : IDisposable {
 
     // Handle GNU long name extension
     if (entry.TypeFlag == TarConstants.TypeGnuLongName) {
-      string longName = ReadEntryDataAsString(entry.Size);
+      var longName = ReadEntryDataAsString(entry.Size);
       SkipPadding(entry.Size);
 
       // Read the next header and apply the long name
@@ -64,7 +64,7 @@ public sealed class TarReader : IDisposable {
     }
     // Handle GNU long link extension
     else if (entry.TypeFlag == TarConstants.TypeGnuLongLink) {
-      string longLink = ReadEntryDataAsString(entry.Size);
+      var longLink = ReadEntryDataAsString(entry.Size);
       SkipPadding(entry.Size);
 
       // Read the next header and apply the long link
@@ -83,7 +83,7 @@ public sealed class TarReader : IDisposable {
     }
     // Handle PAX extended header
     else if (entry.TypeFlag == TarConstants.TypePaxHeader) {
-      byte[] paxData = ReadEntryDataBytes(entry.Size);
+      var paxData = ReadEntryDataBytes(entry.Size);
       SkipPadding(entry.Size);
       var attributes = ParsePaxAttributes(paxData);
 
@@ -113,7 +113,7 @@ public sealed class TarReader : IDisposable {
     if (this._currentEntry == null)
       throw new InvalidOperationException("No current entry. Call GetNextEntry() first.");
 
-    byte[] data = ReadEntryDataBytes(this._remainingEntryBytes);
+    var data = ReadEntryDataBytes(this._remainingEntryBytes);
     this._remainingEntryBytes = 0;
 
     // Skip padding to next 512-byte boundary after reading data
@@ -157,7 +157,7 @@ public sealed class TarReader : IDisposable {
   }
 
   private void SkipPadding(long dataSize) {
-    long padding = (TarConstants.BlockSize - (dataSize % TarConstants.BlockSize)) % TarConstants.BlockSize;
+    var padding = (TarConstants.BlockSize - (dataSize % TarConstants.BlockSize)) % TarConstants.BlockSize;
     if (padding > 0)
       SkipBytes(padding);
   }
@@ -166,10 +166,10 @@ public sealed class TarReader : IDisposable {
     if (this._stream.CanSeek)
       this._stream.Position += count;
     else {
-      byte[] buffer = new byte[Math.Min(count, 4096)];
+      var buffer = new byte[Math.Min(count, 4096)];
       while (count > 0) {
-        int toRead = (int)Math.Min(count, buffer.Length);
-        int read = this._stream.Read(buffer, 0, toRead);
+        var toRead = (int)Math.Min(count, buffer.Length);
+        var read = this._stream.Read(buffer, 0, toRead);
         if (read == 0) break;
         count -= read;
       }
@@ -177,7 +177,7 @@ public sealed class TarReader : IDisposable {
   }
 
   private string ReadEntryDataAsString(long size) {
-    byte[] data = ReadEntryDataBytes(size);
+    var data = ReadEntryDataBytes(size);
     // Trim trailing null bytes
     var end = data.Length;
     while (end > 0 && data[end - 1] == 0)
@@ -189,10 +189,10 @@ public sealed class TarReader : IDisposable {
     if (size == 0)
       return [];
 
-    byte[] data = new byte[size];
+    var data = new byte[size];
     var totalRead = 0;
     while (totalRead < size) {
-      int read = this._stream.Read(data, totalRead, (int)(size - totalRead));
+      var read = this._stream.Read(data, totalRead, (int)(size - totalRead));
       if (read == 0)
         throw new EndOfStreamException("Unexpected end of TAR data.");
       totalRead += read;
@@ -207,23 +207,23 @@ public sealed class TarReader : IDisposable {
 
     while (pos < data.Length) {
       // Format: "length key=value\n"
-      int spaceIdx = Array.IndexOf(data, (byte)' ', pos);
+      var spaceIdx = Array.IndexOf(data, (byte)' ', pos);
       if (spaceIdx < 0) break;
 
-      string lengthStr = Encoding.UTF8.GetString(data, pos, spaceIdx - pos);
-      if (!int.TryParse(lengthStr, out int recordLength) || recordLength <= 0)
+      var lengthStr = Encoding.UTF8.GetString(data, pos, spaceIdx - pos);
+      if (!int.TryParse(lengthStr, out var recordLength) || recordLength <= 0)
         break;
 
-      int keyStart = spaceIdx + 1;
-      int equalsIdx = Array.IndexOf(data, (byte)'=', keyStart);
+      var keyStart = spaceIdx + 1;
+      var equalsIdx = Array.IndexOf(data, (byte)'=', keyStart);
       if (equalsIdx < 0) break;
 
-      string key = Encoding.UTF8.GetString(data, keyStart, equalsIdx - keyStart);
-      int valueStart = equalsIdx + 1;
-      int valueEnd = pos + recordLength - 1; // -1 for the trailing newline
+      var key = Encoding.UTF8.GetString(data, keyStart, equalsIdx - keyStart);
+      var valueStart = equalsIdx + 1;
+      var valueEnd = pos + recordLength - 1; // -1 for the trailing newline
       if (valueEnd > data.Length) valueEnd = data.Length;
 
-      string value = Encoding.UTF8.GetString(data, valueStart, valueEnd - valueStart);
+      var value = Encoding.UTF8.GetString(data, valueStart, valueEnd - valueStart);
       attributes[key] = value;
 
       pos += recordLength;
@@ -233,29 +233,29 @@ public sealed class TarReader : IDisposable {
   }
 
   private static void ApplyPaxAttributes(TarEntry entry, Dictionary<string, string> attributes) {
-    if (attributes.TryGetValue("path", out string? path))
+    if (attributes.TryGetValue("path", out var path))
       entry.Name = path;
 
-    if (attributes.TryGetValue("linkpath", out string? linkPath))
+    if (attributes.TryGetValue("linkpath", out var linkPath))
       entry.LinkName = linkPath;
 
-    if (attributes.TryGetValue("size", out string? sizeStr) && long.TryParse(sizeStr, out long size))
+    if (attributes.TryGetValue("size", out var sizeStr) && long.TryParse(sizeStr, out var size))
       entry.Size = size;
 
-    if (attributes.TryGetValue("mtime", out string? mtimeStr) && double.TryParse(mtimeStr,
-        System.Globalization.CultureInfo.InvariantCulture, out double mtime))
+    if (attributes.TryGetValue("mtime", out var mtimeStr) && double.TryParse(mtimeStr,
+        System.Globalization.CultureInfo.InvariantCulture, out var mtime))
       entry.ModifiedTime = DateTimeOffset.FromUnixTimeSeconds((long)mtime);
 
-    if (attributes.TryGetValue("uid", out string? uidStr) && int.TryParse(uidStr, out int uid))
+    if (attributes.TryGetValue("uid", out var uidStr) && int.TryParse(uidStr, out var uid))
       entry.Uid = uid;
 
-    if (attributes.TryGetValue("gid", out string? gidStr) && int.TryParse(gidStr, out int gid))
+    if (attributes.TryGetValue("gid", out var gidStr) && int.TryParse(gidStr, out var gid))
       entry.Gid = gid;
 
-    if (attributes.TryGetValue("uname", out string? uname))
+    if (attributes.TryGetValue("uname", out var uname))
       entry.UserName = uname;
 
-    if (attributes.TryGetValue("gname", out string? gname))
+    if (attributes.TryGetValue("gname", out var gname))
       entry.GroupName = gname;
   }
 }

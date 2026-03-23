@@ -42,11 +42,11 @@ internal sealed class ZstdCompressor {
     if (this._finished) return;
     this._finished = true;
 
-    byte[] allData = this._pendingData.ToArray();
+    var allData = this._pendingData.ToArray();
 
     // Compute content checksum (XXH64 lower 32 bits)
-    ulong hash = XxHash64.Compute(allData);
-    uint contentChecksum = (uint)(hash & 0xFFFFFFFF);
+    var hash = XxHash64.Compute(allData);
+    var contentChecksum = (uint)(hash & 0xFFFFFFFF);
 
     // Write frame header
     var header = new ZstdFrameHeader(
@@ -63,8 +63,8 @@ internal sealed class ZstdCompressor {
     else {
       var offset = 0;
       while (offset < allData.Length) {
-        int blockSize = Math.Min(ZstdConstants.MaxBlockSize, allData.Length - offset);
-        bool lastBlock = offset + blockSize >= allData.Length;
+        var blockSize = Math.Min(ZstdConstants.MaxBlockSize, allData.Length - offset);
+        var lastBlock = offset + blockSize >= allData.Length;
         ReadOnlySpan<byte> blockData = allData.AsSpan(offset, blockSize);
 
         WriteBlock(blockData, lastBlock);
@@ -93,7 +93,7 @@ internal sealed class ZstdCompressor {
     }
 
     // Try to create a compressed block
-    byte[]? compressedBlock = TryCompressBlock(blockData);
+    var compressedBlock = TryCompressBlock(blockData);
 
     if (compressedBlock != null && compressedBlock.Length < blockData.Length) {
       ZstdBlock.WriteBlockHeader(this._output, ZstdConstants.BlockTypeCompressed,
@@ -112,8 +112,8 @@ internal sealed class ZstdCompressor {
   /// </summary>
   private static bool IsAllSameByte(ReadOnlySpan<byte> data) {
     if (data.Length <= 1) return true;
-    byte first = data[0];
-    for (int i = 1; i < data.Length; ++i) {
+    var first = data[0];
+    for (var i = 1; i < data.Length; ++i) {
       if (data[i] != first) return false;
     }
 
@@ -129,7 +129,7 @@ internal sealed class ZstdCompressor {
       return null;
 
     // Find matches using hash chain
-    int maxChainDepth = this._compressionLevel switch {
+    var maxChainDepth = this._compressionLevel switch {
       <= 1 => 4,
       <= 3 => 16,
       <= 6 => 64,
@@ -153,10 +153,10 @@ internal sealed class ZstdCompressor {
       var match = matchFinder.FindMatch(blockData, pos, pos, 258, ZstdConstants.MinMatch);
 
       if (match.Length >= ZstdConstants.MinMatch) {
-        int litLength = pos - litStart;
+        var litLength = pos - litStart;
         sequences.Add(new ZstdSequence(litLength, match.Length, match.Distance));
 
-        for (int i = 1; i < match.Length && pos + i + 2 < blockData.Length; ++i)
+        for (var i = 1; i < match.Length && pos + i + 2 < blockData.Length; ++i)
           matchFinder.InsertPosition(blockData, pos + i);
 
         pos += match.Length;
@@ -182,10 +182,10 @@ internal sealed class ZstdCompressor {
     if (trailingLiterals > 0)
       allLiterals.Write(blockData.Slice(litRunStart, trailingLiterals));
 
-    byte[] allLiteralBytes = allLiterals.ToArray();
+    var allLiteralBytes = allLiterals.ToArray();
 
     // Output buffer
-    byte[] output = new byte[blockData.Length * 2 + 1024];
+    var output = new byte[blockData.Length * 2 + 1024];
     var outputPos = 0;
 
     // Write literals section (Raw encoding)
@@ -195,7 +195,7 @@ internal sealed class ZstdCompressor {
     int[] repeatOffsets = [1, 4, 8];
     outputPos += ZstdSequences.EncodeSequences(sequences.ToArray(), output, outputPos, repeatOffsets);
 
-    byte[] result = new byte[outputPos];
+    var result = new byte[outputPos];
     output.AsSpan(0, outputPos).CopyTo(result);
     return result;
   }

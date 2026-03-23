@@ -40,7 +40,7 @@ public class BcjFilterTests {
 
     var encoded = BcjFilter.EncodeX86(data);
     // At position 0, with startOffset=0: absolute = 5 + (0 + 0 + 5) = 10
-    int absAddr = BitConverter.ToInt32(encoded, 1);
+    var absAddr = BitConverter.ToInt32(encoded, 1);
     Assert.That(absAddr, Is.EqualTo(10));
   }
 
@@ -109,7 +109,7 @@ public class BcjFilterTests {
     data[1] = 0x0A; data[2] = 0x00; data[3] = 0x00; data[4] = 0x00; // JMP +10
 
     var encoded = BcjFilter.EncodeX86(data);
-    int absAddr = BitConverter.ToInt32(encoded, 1);
+    var absAddr = BitConverter.ToInt32(encoded, 1);
     // absolute = 10 + (0 + 0 + 5) = 15
     Assert.That(absAddr, Is.EqualTo(15));
   }
@@ -136,7 +136,7 @@ public class BcjFilterTests {
     BitConverter.GetBytes(-10).CopyTo(data, 1);
 
     var encoded = BcjFilter.EncodeX86(data);
-    int absAddr = BitConverter.ToInt32(encoded, 1);
+    var absAddr = BitConverter.ToInt32(encoded, 1);
     // absolute = -10 + (0 + 0 + 5) = -5
     Assert.That(absAddr, Is.EqualTo(-5));
 
@@ -380,8 +380,8 @@ public class BcjFilterTests {
     data[0] = 0x00; // template MII
     data[16] = 0x08; // template MMI
     // Fill remaining bytes with non-zero data
-    for (int i = 1; i < 16; ++i) data[i] = (byte)(i * 3);
-    for (int i = 17; i < 32; ++i) data[i] = (byte)(i * 7);
+    for (var i = 1; i < 16; ++i) data[i] = (byte)(i * 3);
+    for (var i = 17; i < 32; ++i) data[i] = (byte)(i * 7);
 
     var encoded = BcjFilter.EncodeIA64(data);
     Assert.That(encoded, Is.EqualTo(data));

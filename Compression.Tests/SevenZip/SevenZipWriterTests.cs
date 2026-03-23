@@ -48,7 +48,7 @@ public class SevenZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void AddEntry_FromStream() {
-    byte[] data = System.Text.Encoding.UTF8.GetBytes("from stream");
+    var data = System.Text.Encoding.UTF8.GetBytes("from stream");
     var ms = new MemoryStream();
     using (var writer = new SevenZipWriter(ms, leaveOpen: true)) {
       using var dataStream = new MemoryStream(data);
@@ -84,7 +84,7 @@ public class SevenZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Filter_Copy_RoundTrip() {
-    byte[] data = "Copy filter test"u8.ToArray();
+    var data = "Copy filter test"u8.ToArray();
     var ms = new MemoryStream();
     using (var writer = new SevenZipWriter(ms, SevenZipCodec.Lzma2, leaveOpen: true,
         filter: SevenZipFilter.Copy))
@@ -100,11 +100,11 @@ public class SevenZipWriterTests {
   [Test]
   public void Filter_BcjX86_RoundTrip() {
     // Create data with some E8/E9 instructions to exercise BCJ
-    byte[] data = new byte[1024];
+    var data = new byte[1024];
     var rng = new Random(42);
     rng.NextBytes(data);
     // Scatter some E8 (CALL) instructions
-    for (int i = 0; i < data.Length - 5; i += 20)
+    for (var i = 0; i < data.Length - 5; i += 20)
       data[i] = 0xE8;
 
     var ms = new MemoryStream();
@@ -122,8 +122,8 @@ public class SevenZipWriterTests {
   [Test]
   public void Filter_Delta_RoundTrip() {
     // Data with correlated values (good for delta)
-    byte[] data = new byte[256];
-    for (int i = 0; i < data.Length; ++i)
+    var data = new byte[256];
+    for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i * 3);
 
     var ms = new MemoryStream();
@@ -140,7 +140,7 @@ public class SevenZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Filter_BcjArm_RoundTrip() {
-    byte[] data = new byte[512];
+    var data = new byte[512];
     new Random(123).NextBytes(data);
 
     var ms = new MemoryStream();
@@ -157,7 +157,7 @@ public class SevenZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Filter_WithDeflateCodec_RoundTrip() {
-    byte[] data = "Filter + Deflate combo"u8.ToArray();
+    var data = "Filter + Deflate combo"u8.ToArray();
     var ms = new MemoryStream();
     using (var writer = new SevenZipWriter(ms, SevenZipCodec.Deflate, leaveOpen: true,
         filter: SevenZipFilter.BcjX86))
@@ -172,8 +172,8 @@ public class SevenZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Filter_MultipleFiles_RoundTrip() {
-    byte[] f1 = "file1 data"u8.ToArray();
-    byte[] f2 = "file2 data"u8.ToArray();
+    var f1 = "file1 data"u8.ToArray();
+    var f2 = "file2 data"u8.ToArray();
 
     var ms = new MemoryStream();
     using (var writer = new SevenZipWriter(ms, SevenZipCodec.Lzma2, leaveOpen: true,
@@ -196,10 +196,10 @@ public class SevenZipWriterTests {
   [Test]
   public void Filter_Bcj2_RoundTrip() {
     // Create data with E8/E9 instructions to exercise BCJ2
-    byte[] data = new byte[2048];
+    var data = new byte[2048];
     var rng = new Random(99);
     rng.NextBytes(data);
-    for (int i = 0; i < data.Length - 5; i += 30)
+    for (var i = 0; i < data.Length - 5; i += 30)
       data[i] = 0xE8;
 
     var ms = new MemoryStream();
@@ -216,12 +216,12 @@ public class SevenZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Filter_Bcj2_MultipleFiles_RoundTrip() {
-    byte[] f1 = new byte[1024];
+    var f1 = new byte[1024];
     new Random(42).NextBytes(f1);
-    for (int i = 0; i < f1.Length - 5; i += 20)
+    for (var i = 0; i < f1.Length - 5; i += 20)
       f1[i] = 0xE8;
 
-    byte[] f2 = "Some text data for BCJ2 test"u8.ToArray();
+    var f2 = "Some text data for BCJ2 test"u8.ToArray();
 
     var ms = new MemoryStream();
     using (var writer = new SevenZipWriter(ms, SevenZipCodec.Lzma2, leaveOpen: true,
@@ -243,7 +243,7 @@ public class SevenZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Encrypt_Aes256_RoundTrip() {
-    byte[] data = "Secret 7z content with AES-256!"u8.ToArray();
+    var data = "Secret 7z content with AES-256!"u8.ToArray();
     var ms = new MemoryStream();
     using (var writer = new SevenZipWriter(ms, SevenZipCodec.Lzma2, leaveOpen: true,
         password: "test123"))
@@ -258,8 +258,8 @@ public class SevenZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Encrypt_Aes256_WithFilter_RoundTrip() {
-    byte[] data = new byte[512];
-    for (int i = 0; i < data.Length; ++i) data[i] = (byte)(i * 3);
+    var data = new byte[512];
+    for (var i = 0; i < data.Length; ++i) data[i] = (byte)(i * 3);
 
     var ms = new MemoryStream();
     using (var writer = new SevenZipWriter(ms, SevenZipCodec.Lzma2, leaveOpen: true,
@@ -275,9 +275,9 @@ public class SevenZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void Encrypt_Aes256_MultipleFiles_RoundTrip() {
-    byte[] f1 = "first encrypted file"u8.ToArray();
-    byte[] f2 = new byte[200];
-    for (int i = 0; i < f2.Length; ++i) f2[i] = (byte)(i % 13);
+    var f1 = "first encrypted file"u8.ToArray();
+    var f2 = new byte[200];
+    for (var i = 0; i < f2.Length; ++i) f2[i] = (byte)(i % 13);
 
     var ms = new MemoryStream();
     using (var writer = new SevenZipWriter(ms, SevenZipCodec.Lzma2, leaveOpen: true,
@@ -297,9 +297,9 @@ public class SevenZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void EncryptHeaders_RoundTrip() {
-    byte[] f1 = "header encryption test"u8.ToArray();
-    byte[] f2 = new byte[100];
-    for (int i = 0; i < f2.Length; ++i) f2[i] = (byte)(i % 7);
+    var f1 = "header encryption test"u8.ToArray();
+    var f2 = new byte[100];
+    for (var i = 0; i < f2.Length; ++i) f2[i] = (byte)(i % 7);
 
     var ms = new MemoryStream();
     using (var writer = new SevenZipWriter(ms, SevenZipCodec.Lzma2, leaveOpen: true,
@@ -322,7 +322,7 @@ public class SevenZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void CopyCodec_SingleBlock_RoundTrip() {
-    byte[] data = new byte[256];
+    var data = new byte[256];
     new Random(42).NextBytes(data);
 
     var ms = new MemoryStream();
@@ -351,9 +351,9 @@ public class SevenZipWriterTests {
   public void FinishWithBlocks_TwoCodecs_RoundTrip() {
     // Block 0: text files → LZMA2
     // Block 1: binary data → Copy (store)
-    byte[] text1 = "Hello world, this is text data for LZMA2 compression."u8.ToArray();
-    byte[] text2 = "Another text file with similar content patterns."u8.ToArray();
-    byte[] binary = new byte[256];
+    var text1 = "Hello world, this is text data for LZMA2 compression."u8.ToArray();
+    var text2 = "Another text file with similar content patterns."u8.ToArray();
+    var binary = new byte[256];
     new Random(42).NextBytes(binary);
 
     var ms = new MemoryStream();
@@ -390,9 +390,9 @@ public class SevenZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void FinishWithBlocks_ThreeCodecs_RoundTrip() {
-    byte[] src = "int main() { return 0; }"u8.ToArray();
-    byte[] xml = "<root><item>value</item></root>"u8.ToArray();
-    byte[] jpg = new byte[128];
+    var src = "int main() { return 0; }"u8.ToArray();
+    var xml = "<root><item>value</item></root>"u8.ToArray();
+    var jpg = new byte[128];
     new Random(99).NextBytes(jpg);
 
     var ms = new MemoryStream();
@@ -430,7 +430,7 @@ public class SevenZipWriterTests {
   [Category("RoundTrip")]
   [Test]
   public void FinishWithBlocks_WithDirectories_RoundTrip() {
-    byte[] data = "File inside directory"u8.ToArray();
+    var data = "File inside directory"u8.ToArray();
 
     var ms = new MemoryStream();
     using (var writer = new SevenZipWriter(ms, SevenZipCodec.Lzma2, leaveOpen: true)) {

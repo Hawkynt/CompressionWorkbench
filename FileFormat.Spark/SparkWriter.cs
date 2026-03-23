@@ -46,14 +46,14 @@ public sealed class SparkWriter : IDisposable {
     if (name.Length == 0)
       throw new ArgumentException("File name must not be empty.", nameof(name));
 
-    DateTime timestamp = lastModified ?? DateTime.UtcNow;
-    bool hasRiscOs = loadAddress != 0 || execAddress != 0 || fileAttributes != 0;
-    byte method = hasRiscOs ? SparkConstants.MethodStored : SparkConstants.MethodStored;
+    var timestamp = lastModified ?? DateTime.UtcNow;
+    var hasRiscOs = loadAddress != 0 || execAddress != 0 || fileAttributes != 0;
+    var method = hasRiscOs ? SparkConstants.MethodStored : SparkConstants.MethodStored;
     // When RISC OS metadata is present, use Spark extended stored (0x82).
     if (hasRiscOs)
       method = (byte)(SparkConstants.MethodStored | 0x80);
 
-    ushort crc = Crc16.Compute(data);
+    var crc = Crc16.Compute(data);
 
     WriteEntryHeader(name, method, (uint)data.Length, (uint)data.Length, crc, timestamp,
       loadAddress, execAddress, fileAttributes);
@@ -78,7 +78,7 @@ public sealed class SparkWriter : IDisposable {
     if (name.Length == 0)
       throw new ArgumentException("Directory name must not be empty.", nameof(name));
 
-    DateTime timestamp = lastModified ?? DateTime.UtcNow;
+    var timestamp = lastModified ?? DateTime.UtcNow;
 
     // Directory entry: method 0x82, zero compressed/original size, zero CRC.
     WriteEntryHeader(name, SparkConstants.MethodDirectory, compressedSize: 0, originalSize: 0,
@@ -138,29 +138,29 @@ public sealed class SparkWriter : IDisposable {
 
   private void WriteEntryHeader(string name, byte method, uint compressedSize, uint originalSize,
       ushort crc16, DateTime timestamp, uint loadAddress, uint execAddress, uint fileAttributes) {
-    bool isSparkExtended = SparkConstants.IsSparkExtended(method);
-    byte baseMethod = SparkConstants.GetBaseMethod(method);
-    bool hasOriginalSize = baseMethod >= SparkConstants.GetBaseMethod(SparkConstants.MethodStored);
+    var isSparkExtended = SparkConstants.IsSparkExtended(method);
+    var baseMethod = SparkConstants.GetBaseMethod(method);
+    var hasOriginalSize = baseMethod >= SparkConstants.GetBaseMethod(SparkConstants.MethodStored);
 
     // Calculate header size: 2 (marker+method) + 13 (name) + 4 (compSize) + 2 (date) + 2 (time) + 2 (crc)
     // = 25 for old format; + 4 (origSize) = 29 for new format; + 12 (RISC OS) = 41 if Spark extended.
-    int headerSize = 2 + SparkConstants.FileNameLength + 4 + 2 + 2 + 2;
+    var headerSize = 2 + SparkConstants.FileNameLength + 4 + 2 + 2 + 2;
     if (hasOriginalSize)
       headerSize += 4;
     if (isSparkExtended)
       headerSize += SparkConstants.RiscOsExtensionSize;
 
-    byte[] header = new byte[headerSize];
-    int offset = 0;
+    var header = new byte[headerSize];
+    var offset = 0;
 
     // Marker + method.
     header[offset++] = SparkConstants.EntryMarker;
     header[offset++] = method;
 
     // Filename: 13 bytes, null-terminated.
-    string truncatedName = name.Length > 12 ? name[..12] : name;
-    byte[] nameBytes = Encoding.ASCII.GetBytes(truncatedName);
-    int nameLen = Math.Min(nameBytes.Length, SparkConstants.FileNameLength - 1);
+    var truncatedName = name.Length > 12 ? name[..12] : name;
+    var nameBytes = Encoding.ASCII.GetBytes(truncatedName);
+    var nameLen = Math.Min(nameBytes.Length, SparkConstants.FileNameLength - 1);
     Array.Copy(nameBytes, 0, header, offset, nameLen);
     // Remaining bytes in name field stay zero (null-terminated + zero-padded).
     offset += SparkConstants.FileNameLength;

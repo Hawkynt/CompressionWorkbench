@@ -36,11 +36,11 @@ public sealed class ArWriter : IDisposable {
     this._stream.Write(ArConstants.GlobalMagic);
 
     // Build GNU string table for names that exceed the inline limit.
-    string gnuStringTable = BuildGnuStringTable(entries);
-    bool needsStringTable = gnuStringTable.Length > 0;
+    var gnuStringTable = BuildGnuStringTable(entries);
+    var needsStringTable = gnuStringTable.Length > 0;
 
     if (needsStringTable) {
-      byte[] tableData = Encoding.ASCII.GetBytes(gnuStringTable);
+      var tableData = Encoding.ASCII.GetBytes(gnuStringTable);
       WriteEntryHeader(this._stream, ArConstants.GnuStringTableName, DateTimeOffset.UnixEpoch,
         0, 0, 0, tableData.Length);
       this._stream.Write(tableData);
@@ -50,7 +50,7 @@ public sealed class ArWriter : IDisposable {
 
     // Compute per-entry name fields.
     // For GNU long names, track their offset in the string table.
-    int tableOffset = 0;
+    var tableOffset = 0;
     foreach (var entry in entries) {
       string nameField;
       if (entry.Name.Length > ArConstants.MaxInlineNameLength) {
@@ -119,8 +119,8 @@ public sealed class ArWriter : IDisposable {
     header.Slice(offset, length).Fill((byte)' ');
 
     // Write value bytes, truncated to field width.
-    byte[] valueBytes = Encoding.ASCII.GetBytes(value);
-    int copyLen = Math.Min(valueBytes.Length, length);
+    var valueBytes = Encoding.ASCII.GetBytes(value);
+    var copyLen = Math.Min(valueBytes.Length, length);
     valueBytes.AsSpan(0, copyLen).CopyTo(header.Slice(offset, copyLen));
   }
 
