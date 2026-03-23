@@ -1,7 +1,7 @@
 <Window x:Class="Compression.UI.Views.PropertiesWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Properties" Width="520" Height="680" MinWidth="440" MinHeight="520"
+        Title="Properties" Width="520" Height="780" MinWidth="440" MinHeight="520"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip"
         ShowInTaskbar="False">
   <Grid Margin="0">
@@ -77,19 +77,15 @@
 
         <!-- Statistics section (only for files with data) -->
         <StackPanel x:Name="StatisticsPanel" Visibility="Collapsed">
-          <TextBlock Text="Data Statistics" FontWeight="SemiBold" FontSize="12" Foreground="#FF4466AA" Margin="0,0,0,6" />
 
+          <!-- Randomness tests -->
+          <TextBlock Text="Randomness Tests" FontWeight="SemiBold" FontSize="12" Foreground="#FF4466AA" Margin="0,0,0,6" />
           <Grid Margin="8,0,0,0">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="130" />
               <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
-              <RowDefinition Height="22" />
-              <RowDefinition Height="22" />
-              <RowDefinition Height="22" />
-              <RowDefinition Height="22" />
-              <RowDefinition Height="22" />
               <RowDefinition Height="22" />
               <RowDefinition Height="22" />
               <RowDefinition Height="22" />
@@ -111,42 +107,124 @@
 
             <TextBlock Grid.Row="4" Grid.Column="0" Text="Monte Carlo Pi:" />
             <TextBlock Grid.Row="4" Grid.Column="1" x:Name="MonteCarloPiText" />
+          </Grid>
 
-            <TextBlock Grid.Row="5" Grid.Column="0" Text="Unique bytes:" />
-            <TextBlock Grid.Row="5" Grid.Column="1" x:Name="UniqueBytesText" />
+          <Separator Margin="0,8,0,8" />
 
-            <TextBlock Grid.Row="6" Grid.Column="0" Text="Most common:" />
-            <TextBlock Grid.Row="6" Grid.Column="1" x:Name="MostCommonText" />
+          <!-- Byte distribution -->
+          <TextBlock Text="Byte Distribution" FontWeight="SemiBold" FontSize="12" Foreground="#FF4466AA" Margin="0,0,0,6" />
+          <Grid Margin="8,0,0,0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="130" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="22" />
+              <RowDefinition Height="22" />
+              <RowDefinition Height="22" />
+              <RowDefinition Height="22" />
+              <RowDefinition Height="22" />
+            </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="7" Grid.Column="0" Text="Least common:" />
-            <TextBlock Grid.Row="7" Grid.Column="1" x:Name="LeastCommonText" />
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Unique bytes:" />
+            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="UniqueBytesText" />
 
-            <TextBlock Grid.Row="8" Grid.Column="0" Text="Ideal size:" />
-            <TextBlock Grid.Row="8" Grid.Column="1" x:Name="IdealSizeText" Foreground="Gray" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Most common:" />
+            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="MostCommonText" />
 
-            <TextBlock Grid.Row="9" Grid.Column="0" Text="Assessment:" />
-            <TextBlock Grid.Row="9" Grid.Column="1" x:Name="AssessmentText" FontWeight="SemiBold" />
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Least common:" />
+            <TextBlock Grid.Row="2" Grid.Column="1" x:Name="LeastCommonText" />
+
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Ideal size:" />
+            <TextBlock Grid.Row="3" Grid.Column="1" x:Name="IdealSizeText" Foreground="Gray" />
+
+            <TextBlock Grid.Row="4" Grid.Column="0" Text="Assessment:" />
+            <TextBlock Grid.Row="4" Grid.Column="1" x:Name="AssessmentText" FontWeight="SemiBold" />
+          </Grid>
+
+          <Separator Margin="0,8,0,8" />
+
+          <!-- N-gram and character class analysis -->
+          <TextBlock Text="Content Analysis" FontWeight="SemiBold" FontSize="12" Foreground="#FF4466AA" Margin="0,0,0,6" />
+          <Grid Margin="8,0,0,0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="130" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="22" />
+              <RowDefinition Height="22" />
+              <RowDefinition Height="22" />
+              <RowDefinition Height="22" />
+              <RowDefinition Height="22" />
+              <RowDefinition Height="22" />
+              <RowDefinition Height="22" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Printable ASCII:" />
+            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="PrintableAsciiText" />
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Control bytes:" />
+            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="ControlBytesText" />
+
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="High bytes:" />
+            <TextBlock Grid.Row="2" Grid.Column="1" x:Name="HighBytesText" />
+
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Null bytes:" />
+            <TextBlock Grid.Row="3" Grid.Column="1" x:Name="NullBytesText" />
+
+            <TextBlock Grid.Row="4" Grid.Column="0" Text="Unique 2-grams:" />
+            <TextBlock Grid.Row="4" Grid.Column="1" x:Name="Bigram2Text" />
+
+            <TextBlock Grid.Row="5" Grid.Column="0" Text="Unique 3-grams:" />
+            <TextBlock Grid.Row="5" Grid.Column="1" x:Name="Bigram3Text" />
+
+            <TextBlock Grid.Row="6" Grid.Column="0" Text="Unique 4-grams:" />
+            <TextBlock Grid.Row="6" Grid.Column="1" x:Name="Bigram4Text" />
           </Grid>
 
           <!-- Byte frequency histogram -->
           <TextBlock Text="Byte Frequency Distribution" FontWeight="SemiBold" FontSize="12"
                      Foreground="#FF4466AA" Margin="0,12,0,6" />
 
-          <Border Margin="8,0,0,0" Background="#FFF8F8F8" BorderBrush="#FFDDDDDD"
-                  BorderThickness="1" CornerRadius="3" Padding="4">
+          <Border Margin="8,0,0,0" BorderBrush="#FFDDDDDD" BorderThickness="1" CornerRadius="3"
+                  ClipToBounds="True">
             <Canvas x:Name="HistogramCanvas" Height="100" ClipToBounds="True" />
           </Border>
 
           <!-- Histogram legend -->
           <Grid Margin="8,4,0,0">
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="8" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="8" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="8" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="8" />
+              <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="0x00" FontSize="10" Foreground="Gray" HorizontalAlignment="Left" />
-            <TextBlock Grid.Column="1" Text="0x80" FontSize="10" Foreground="Gray" HorizontalAlignment="Center" />
-            <TextBlock Grid.Column="2" Text="0xFF" FontSize="10" Foreground="Gray" HorizontalAlignment="Right" />
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+              <Border Width="10" Height="10" Background="#FFE06060" CornerRadius="1" Margin="0,0,3,0" />
+              <TextBlock Text="Most" FontSize="10" Foreground="Gray" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+              <Border Width="10" Height="10" Background="#FF4CAF50" CornerRadius="1" Margin="0,0,3,0" />
+              <TextBlock Text="Least" FontSize="10" Foreground="Gray" />
+            </StackPanel>
+            <StackPanel Grid.Column="4" Orientation="Horizontal">
+              <Border Width="10" Height="10" Background="#30FF9800" CornerRadius="1" Margin="0,0,3,0" />
+              <TextBlock Text="Ctrl" FontSize="10" Foreground="Gray" />
+            </StackPanel>
+            <StackPanel Grid.Column="6" Orientation="Horizontal">
+              <Border Width="10" Height="10" Background="#303399FF" CornerRadius="1" Margin="0,0,3,0" />
+              <TextBlock Text="ASCII" FontSize="10" Foreground="Gray" />
+            </StackPanel>
+            <StackPanel Grid.Column="8" Orientation="Horizontal">
+              <Border Width="10" Height="10" Background="#309C27B0" CornerRadius="1" Margin="0,0,3,0" />
+              <TextBlock Text="High" FontSize="10" Foreground="Gray" />
+            </StackPanel>
           </Grid>
 
           <Separator Margin="0,10,0,8" />
