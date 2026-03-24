@@ -11,6 +11,7 @@
     <InternalsVisibleTo Include="Compression.UI" />
     <InternalsVisibleTo Include="Compression.Shell" />
     <InternalsVisibleTo Include="Compression.Tests" />
+    <InternalsVisibleTo Include="Compression.Analysis" />
     <InternalsVisibleTo Include="sfx-cli" />
     <InternalsVisibleTo Include="sfx-ui" />
   </ItemGroup>
@@ -23,6 +24,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Compression.Core\Compression.Core.csproj" />
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\Compression.Registry.Generator\Compression.Registry.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormat.Ar\FileFormat.Ar.csproj" />
     <ProjectReference Include="..\FileFormat.Arc\FileFormat.Arc.csproj" />

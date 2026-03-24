@@ -2,4 +2,7 @@
   <PropertyGroup>
     <NoWarn>CS1591</NoWarn>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+  </ItemGroup>
 </Project>

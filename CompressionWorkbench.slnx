@@ -1,6 +1,8 @@
 <Solution>
   <Folder Name="/Core/">
     <Project Path="Compression.Core/Compression.Core.csproj" />
+    <Project Path="Compression.Registry/Compression.Registry.csproj" />
+    <Project Path="Compression.Registry.Generator/Compression.Registry.Generator.csproj" />
     <Project Path="Compression.Lib/Compression.Lib.csproj" />
     <Project Path="Compression.Analysis/Compression.Analysis.csproj" />
   </Folder>

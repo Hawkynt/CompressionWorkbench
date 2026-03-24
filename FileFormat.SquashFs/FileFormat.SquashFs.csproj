@@ -8,6 +8,7 @@
     <ProjectReference Include="..\Compression.Core\Compression.Core.csproj" />
     <ProjectReference Include="..\FileFormat.Xz\FileFormat.Xz.csproj" />
     <ProjectReference Include="..\FileFormat.Zstd\FileFormat.Zstd.csproj" />
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
   </ItemGroup>
 
 </Project>

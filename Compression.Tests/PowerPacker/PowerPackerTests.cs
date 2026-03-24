@@ -53,7 +53,7 @@ public class PowerPackerTests {
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void RoundTrip_RandomData() {
     var data = new byte[8192];
-    Random.Shared.NextBytes(data);
+    new Random(42).NextBytes(data);
 
     using var compressed = new MemoryStream();
     using (var input = new MemoryStream(data))

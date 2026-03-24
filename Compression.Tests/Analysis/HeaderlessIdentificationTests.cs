@@ -68,7 +68,7 @@ public class HeaderlessIdentificationTests {
     data[20] = 0x50; data[21] = 0x4B; data[22] = 0x03; data[23] = 0x04;
 
     var results = SignatureScanner.Scan(data);
-    var zip = results.FirstOrDefault(r => r.FormatName == "ZIP");
+    var zip = results.FirstOrDefault(r => r.FormatName == "Zip");
     Assert.That(zip, Is.Not.Null);
     Assert.That(zip!.Offset, Is.EqualTo(20));
   }
@@ -137,7 +137,7 @@ public class HeaderlessIdentificationTests {
     data[83] = 0xAF; data[84] = 0x27; data[85] = 0x1C;
 
     var results = SignatureScanner.Scan(data);
-    var sevenZ = results.FirstOrDefault(r => r.FormatName == "7z");
+    var sevenZ = results.FirstOrDefault(r => r.FormatName == "SevenZip");
     Assert.That(sevenZ, Is.Not.Null);
     Assert.That(sevenZ!.Offset, Is.EqualTo(80));
   }
@@ -207,7 +207,7 @@ public class HeaderlessIdentificationTests {
     var result = analyzer.Analyze(data);
 
     Assert.That(result.Signatures!.Any(s => s.FormatName == "Gzip"), Is.True);
-    Assert.That(result.Signatures!.Any(s => s.FormatName == "ZIP"), Is.True);
+    Assert.That(result.Signatures!.Any(s => s.FormatName == "Zip"), Is.True);
     Assert.That(result.Signatures!.Any(s => s.FormatName == "Bzip2"), Is.True);
   }
 }

@@ -4,4 +4,9 @@
     <RootNamespace>FileFormat.Shar</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+  </ItemGroup>
+
+  
 </Project>

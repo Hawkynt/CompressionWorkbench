@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Diagnostics;
 using Compression.Lib;
+using Compression.Registry;
 using F = Compression.Lib.FormatDetector.Format;
 
 var archiveArg = new Argument<FileInfo>("archive") { Description = "Path to the archive file" };
@@ -318,20 +319,22 @@ benchCmd.SetAction((ParseResult ctx) => {
 
 var formatsCmd = new Command("formats", "List all supported formats");
 formatsCmd.SetAction((ParseResult _) => {
+  FormatRegistration.EnsureInitialized();
+
+  var archives = FormatRegistry.GetByCategory(FormatCategory.Archive).Select(d => d.DisplayName.ToLowerInvariant());
+  var streams = FormatRegistry.GetByCategory(FormatCategory.Stream)
+    .Concat(FormatRegistry.GetByCategory(FormatCategory.Wrapper))
+    .Select(d => d.DisplayName.ToLowerInvariant());
+  var compounds = FormatRegistry.GetByCategory(FormatCategory.CompoundTar).Select(d => d.DisplayName.ToLowerInvariant());
+
   Console.WriteLine("Supported archive formats:");
-  Console.WriteLine("  zip, rar, 7z, tar, cab, lzh, arj, arc, zoo, ace, sqx, cpio, ar, wim, rpm, deb,");
-  Console.WriteLine("  shar, pak, ha, stuffit, zpaq, squashfs, cramfs, nsis(*), innosetup(*),");
-  Console.WriteLine("  dms, lzx(amiga), compact-pro, spark, lbr, uharc, wad, xar, alzip,");
-  Console.WriteLine("  vpk, bsa/ba2, mpq(*), iso(*), udf(*)");
+  Console.WriteLine("  " + string.Join(", ", archives));
   Console.WriteLine();
   Console.WriteLine("Supported compression/stream formats:");
-  Console.WriteLine("  gzip, bzip2, xz, zstd, lz4, brotli, snappy, lzop, compress(.Z), lzma, lzip, zlib,");
-  Console.WriteLine("  szdd, kwaj, powerpacker, squeeze, ice-packer, rzip, macbinary, binhex,");
-  Console.WriteLine("  packbits, yaz0, brieflz, rnc, refpack, aplib, lzfse, freeze,");
-  Console.WriteLine("  uuencoding, yenc, density");
+  Console.WriteLine("  " + string.Join(", ", streams));
   Console.WriteLine();
   Console.WriteLine("Compound formats:");
-  Console.WriteLine("  tar.gz, tar.bz2, tar.xz, tar.zst, tar.lz4, tar.lz, tar.br");
+  Console.WriteLine("  " + string.Join(", ", compounds));
   Console.WriteLine();
   Console.WriteLine("Convert between any pair. (*) = detection only.");
   Console.WriteLine("Compound tar conversions use fast restreaming.");
@@ -563,81 +566,30 @@ static string FormatSize(long bytes) => bytes switch {
 };
 
 static void BenchmarkFormat(string name, byte[] data, F format) {
+  FormatRegistration.EnsureInitialized();
+  var ops = FormatRegistry.GetStreamOps(format.ToString());
+  if (ops == null) { Console.WriteLine($"{name,-16} {"N/A",-12}"); return; }
+
   try {
     // Compress
     using var compMs = new MemoryStream();
     var compSw = Stopwatch.StartNew();
-
-    if (format == F.Lz4) {
-      var w = new FileFormat.Lz4.Lz4FrameWriter(compMs);
-      w.Write(data);
-    }
-    else if (format == F.Brotli) {
-      var compressed = FileFormat.Brotli.BrotliStream.Compress(data);
-      compMs.Write(compressed);
-    }
-    else if (format == F.Snappy) {
-      var w = new FileFormat.Snappy.SnappyFrameWriter(compMs);
-      w.Write(data);
-    }
-    else if (format == F.Lzma) {
-      FileFormat.Lzma.LzmaStream.Compress(new MemoryStream(data), compMs);
-    }
-    else if (format == F.Lzip) {
-      FileFormat.Lzip.LzipStream.Compress(new MemoryStream(data), compMs);
-    }
-    else {
-      using var cs = WrapCompress(compMs, format);
-      cs.Write(data);
-    }
+    ops.Compress(new MemoryStream(data), compMs);
     compSw.Stop();
 
-    var compressed2 = compMs.ToArray();
+    var compressed = compMs.ToArray();
 
     // Decompress
     var decompSw = Stopwatch.StartNew();
-    if (format == F.Lz4) {
-      var r = new FileFormat.Lz4.Lz4FrameReader(new MemoryStream(compressed2));
-      _ = r.Read();
-    }
-    else if (format == F.Brotli) {
-      _ = FileFormat.Brotli.BrotliStream.Decompress(compressed2);
-    }
-    else if (format == F.Snappy) {
-      var r = new FileFormat.Snappy.SnappyFrameReader(new MemoryStream(compressed2));
-      _ = r.Read();
-    }
-    else if (format == F.Lzma) {
-      FileFormat.Lzma.LzmaStream.Decompress(new MemoryStream(compressed2), new MemoryStream());
-    }
-    else if (format == F.Lzip) {
-      FileFormat.Lzip.LzipStream.Decompress(new MemoryStream(compressed2), new MemoryStream());
-    }
-    else {
-      using var ds = WrapDecompress(new MemoryStream(compressed2), format);
-      using var outMs = new MemoryStream();
-      ds.CopyTo(outMs);
-    }
+    ops.Decompress(new MemoryStream(compressed), new MemoryStream());
     decompSw.Stop();
 
-    var ratio = data.Length > 0 ? 100.0 * compressed2.Length / data.Length : 0;
-    Console.WriteLine($"{name,-16} {FormatSize(compressed2.Length),12} {ratio:F1}%{"",4} {compSw.ElapsedMilliseconds,7}ms {decompSw.ElapsedMilliseconds,9}ms");
+    var ratio = data.Length > 0 ? 100.0 * compressed.Length / data.Length : 0;
+    Console.WriteLine($"{name,-16} {FormatSize(compressed.Length),12} {ratio:F1}%{"",4} {compSw.ElapsedMilliseconds,7}ms {decompSw.ElapsedMilliseconds,9}ms");
   }
   catch (Exception ex) {
     Console.WriteLine($"{name,-16} {"FAILED",-12} {ex.Message}");
   }
-}
-
-static Stream WrapCompress(Stream s, F format) {
-  var mode = Compression.Core.Streams.CompressionStreamMode.Compress;
-  return format switch {
-    F.Gzip => new FileFormat.Gzip.GzipStream(s, mode, leaveOpen: true),
-    F.Bzip2 => new FileFormat.Bzip2.Bzip2Stream(s, mode, leaveOpen: true),
-    F.Xz => new FileFormat.Xz.XzStream(s, mode, leaveOpen: true),
-    F.Zstd => new FileFormat.Zstd.ZstdStream(s, mode, leaveOpen: true),
-    F.Compress => new FileFormat.Compress.CompressStream(s, mode, leaveOpen: true),
-    _ => throw new NotSupportedException($"No compressor for: {format}"),
-  };
 }
 
 static long ParseSize(string? sizeStr) {
@@ -651,14 +603,3 @@ static long ParseSize(string? sizeStr) {
   return long.TryParse(s2, out var val) ? val * multiplier : SolidBlockPlanner.DefaultMaxBlockSize;
 }
 
-static Stream WrapDecompress(Stream s, F format) {
-  var mode = Compression.Core.Streams.CompressionStreamMode.Decompress;
-  return format switch {
-    F.Gzip => new FileFormat.Gzip.GzipStream(s, mode, leaveOpen: true),
-    F.Bzip2 => new FileFormat.Bzip2.Bzip2Stream(s, mode, leaveOpen: true),
-    F.Xz => new FileFormat.Xz.XzStream(s, mode, leaveOpen: true),
-    F.Zstd => new FileFormat.Zstd.ZstdStream(s, mode, leaveOpen: true),
-    F.Compress => new FileFormat.Compress.CompressStream(s, mode, leaveOpen: true),
-    _ => throw new NotSupportedException($"No decompressor for: {format}"),
-  };
-}

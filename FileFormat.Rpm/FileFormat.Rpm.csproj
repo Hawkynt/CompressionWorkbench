@@ -11,6 +11,7 @@
     <ProjectReference Include="..\FileFormat.Zstd\FileFormat.Zstd.csproj" />
     <ProjectReference Include="..\FileFormat.Lzma\FileFormat.Lzma.csproj" />
     <ProjectReference Include="..\FileFormat.Cpio\FileFormat.Cpio.csproj" />
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
   </ItemGroup>
 
 </Project>
