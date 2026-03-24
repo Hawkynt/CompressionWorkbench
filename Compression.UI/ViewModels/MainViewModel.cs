@@ -522,8 +522,7 @@ internal sealed class MainViewModel : ViewModelBase {
   private static string BuildCreateFilter() {
     FormatRegistration.EnsureInitialized();
     var entries = new List<string>();
-    foreach (var desc in FormatRegistry.All.OrderBy(d => d.DisplayName, StringComparer.OrdinalIgnoreCase)) {
-      if (!desc.Capabilities.HasFlag(FormatCapabilities.CanCreate)) continue;
+    foreach (var desc in FormatRegistry.All.Where(d=>d.Capabilities.HasFlag(FormatCapabilities.CanCreate)).OrderBy(d => d.DisplayName, StringComparer.OrdinalIgnoreCase)) {
       var ext = desc.DefaultExtension;
       entries.Add($"{desc.DisplayName} (*{ext})|*{ext}");
     }
