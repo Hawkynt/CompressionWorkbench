@@ -209,8 +209,6 @@ public sealed class DeflateCompressor {
           result.Add((true, data[pos], 0, 0));
           ++pos;
           match = nextMatch;
-          // Re-find at current position to update hash chain
-          match = matcher.FindMatch(data, pos, DeflateConstants.WindowSize, 258, 3);
         }
       }
 
