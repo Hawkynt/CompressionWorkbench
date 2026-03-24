@@ -81,6 +81,17 @@ public static class SignatureDatabase {
     Add("aPLib",      [0x41, 0x50, 0x33, 0x32], 0, 0.85);
     Add("PackBits",   [0x50, 0x4B, 0x42, 0x54], 0, 0.85);
 
+    // Game archives
+    Add("VPK",        [0x34, 0x12, 0xAA, 0x55], 0, 0.92);
+    Add("BSA",        [0x42, 0x53, 0x41, 0x00], 0, 0.88);
+    Add("BA2",        [0x42, 0x54, 0x44, 0x58], 0, 0.90);
+    Add("MPQ",        [0x4D, 0x50, 0x51, 0x1A], 0, 0.95);
+
+    // Encoding formats
+    Add("UUEncoding", [(byte)'b', (byte)'e', (byte)'g', (byte)'i', (byte)'n', (byte)' '], 0, 0.70);
+    Add("yEnc",       [(byte)'=', (byte)'y', (byte)'b', (byte)'e', (byte)'g', (byte)'i', (byte)'n', (byte)' '], 0, 0.85);
+    Add("Density",    [(byte)'D', (byte)'E', (byte)'N', (byte)'S'], 0, 0.85);
+
     // Text-based
     Add("Shar",        [(byte)'#', (byte)'!', (byte)'/', (byte)'b', (byte)'i', (byte)'n', (byte)'/'], 0, 0.75);
     Add("BinHex",      [(byte)'(', (byte)'T', (byte)'h', (byte)'i'], 0, 0.70);

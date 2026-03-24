@@ -7,19 +7,21 @@ internal static class FormatDetector {
 
   internal enum Format {
     Unknown,
-    // Archive formats (35)
+    // Archive formats (38)
     Zip, Rar, SevenZip, Tar, Cab, Lzh, Arj, Arc, Zoo, Ace, Sqx, Cpio, Ar, Wim, Rpm, Deb,
     Shar, Pak, Iso, Udf, Ha, Nsis, InnoSetup, SquashFs, CramFs, StuffIt, Zpaq,
     Sfx,
     Dms, LzxAmiga, CompactPro, Spark, Lbr, Uharc, Wad, Xar, AlZip,
-    // Stream compression formats (18)
+    Vpk, Bsa, Mpq,
+    // Stream compression formats (21)
     Gzip, Bzip2, Xz, Zstd, Lz4, Brotli, Snappy, Lzop, Compress, Lzma, Lzip, Zlib, Szdd, Kwaj,
     PowerPacker, Squeeze, IcePacker, Rzip,
     PackBits, Yaz0, BriefLz, Rnc, RefPack, ApLib, Lzfse, Freeze,
+    UuEncoding, YEnc, Density,
     // Wrapper formats (2)
     MacBinary, BinHex,
-    // Compound formats (6)
-    TarGz, TarBz2, TarXz, TarZst, TarLz4, TarLzip,
+    // Compound formats (7)
+    TarGz, TarBz2, TarXz, TarZst, TarLz4, TarLzip, TarBr,
   }
 
   internal static bool IsArchive(Format f) => f switch {
@@ -30,8 +32,9 @@ internal static class FormatDetector {
     Format.Ha or Format.Nsis or Format.InnoSetup or Format.SquashFs or Format.CramFs or
     Format.StuffIt or Format.Zpaq or Format.Sfx or
     Format.Dms or Format.LzxAmiga or Format.CompactPro or Format.Spark or Format.Lbr or
-    Format.Uharc or Format.Wad or Format.Xar or Format.AlZip => true,
-    Format.TarGz or Format.TarBz2 or Format.TarXz or Format.TarZst or Format.TarLz4 or Format.TarLzip => true,
+    Format.Uharc or Format.Wad or Format.Xar or Format.AlZip or
+    Format.Vpk or Format.Bsa or Format.Mpq => true,
+    Format.TarGz or Format.TarBz2 or Format.TarXz or Format.TarZst or Format.TarLz4 or Format.TarLzip or Format.TarBr => true,
     _ => false,
   };
 
@@ -42,12 +45,13 @@ internal static class FormatDetector {
     Format.PowerPacker or Format.Squeeze or Format.IcePacker or Format.Rzip or
     Format.PackBits or Format.Yaz0 or Format.BriefLz or Format.Rnc or
     Format.RefPack or Format.ApLib or Format.Lzfse or Format.Freeze or
+    Format.UuEncoding or Format.YEnc or Format.Density or
     Format.MacBinary or Format.BinHex => true,
     _ => false,
   };
 
   internal static bool IsCompoundTar(Format f) => f is
-    Format.TarGz or Format.TarBz2 or Format.TarXz or Format.TarZst or Format.TarLz4 or Format.TarLzip;
+    Format.TarGz or Format.TarBz2 or Format.TarXz or Format.TarZst or Format.TarLz4 or Format.TarLzip or Format.TarBr;
 
   /// <summary>Returns the stream compression format wrapping a compound tar, or null if not compound.</summary>
   internal static Format? GetTarCompression(Format f) => f switch {
@@ -57,6 +61,7 @@ internal static class FormatDetector {
     Format.TarZst => Format.Zstd,
     Format.TarLz4 => Format.Lz4,
     Format.TarLzip => Format.Lzip,
+    Format.TarBr => Format.Brotli,
     _ => null,
   };
 
@@ -68,6 +73,7 @@ internal static class FormatDetector {
     Format.Zstd => Format.TarZst,
     Format.Lz4 => Format.TarLz4,
     Format.Lzip => Format.TarLzip,
+    Format.Brotli => Format.TarBr,
     _ => null,
   };
 
@@ -81,6 +87,7 @@ internal static class FormatDetector {
     if (lower.EndsWith(".tar.zst") || lower.EndsWith(".tzst")) return Format.TarZst;
     if (lower.EndsWith(".tar.lz4")) return Format.TarLz4;
     if (lower.EndsWith(".tar.lz") || lower.EndsWith(".tar.lzip")) return Format.TarLzip;
+    if (lower.EndsWith(".tar.br") || lower.EndsWith(".tbr")) return Format.TarBr;
 
     return Path.GetExtension(lower) switch {
       ".zip" or ".jar" or ".war" or ".ear" or ".apk" or ".ipa" or ".xpi" or ".nupkg" or ".epub" => Format.Zip,
@@ -143,6 +150,12 @@ internal static class FormatDetector {
       ".f" or ".freeze" => Format.Freeze,
       ".xar" => Format.Xar,
       ".alz" => Format.AlZip,
+      ".vpk" => Format.Vpk,
+      ".bsa" or ".ba2" => Format.Bsa,
+      ".mpq" => Format.Mpq,
+      ".uue" or ".uu" => Format.UuEncoding,
+      ".yenc" => Format.YEnc,
+      ".density" => Format.Density,
       _ when lower.EndsWith(".sz_") || lower.EndsWith("._") => Format.Szdd,
       _ => Format.Unknown,
     };
@@ -295,6 +308,39 @@ internal static class FormatDetector {
       return Format.RefPack;
     if (header.Length >= 9 && ((header[4] & 0xFE) == 0x10) && header[5] == 0xFB)
       return Format.RefPack;
+
+    // VPK: 0x55AA1234 (LE)
+    if (header[0] == 0x34 && header[1] == 0x12 && header[2] == 0xAA && header[3] == 0x55)
+      return Format.Vpk;
+
+    // BSA TES4+: "BSA\0"
+    if (header[0] == 0x42 && header[1] == 0x53 && header[2] == 0x41 && header[3] == 0x00)
+      return Format.Bsa;
+
+    // BA2: "BTDX"
+    if (header[0] == 0x42 && header[1] == 0x54 && header[2] == 0x44 && header[3] == 0x58)
+      return Format.Bsa;
+
+    // MPQ: "MPQ\x1A"
+    if (header[0] == 0x4D && header[1] == 0x50 && header[2] == 0x51 && header[3] == 0x1A)
+      return Format.Mpq;
+    // MPQ user data: "MPQ\x1B"
+    if (header[0] == 0x4D && header[1] == 0x50 && header[2] == 0x51 && header[3] == 0x1B)
+      return Format.Mpq;
+
+    // Density: "DENS"
+    if (header[0] == 'D' && header[1] == 'E' && header[2] == 'N' && header[3] == 'S')
+      return Format.Density;
+
+    // UUEncoding: "begin "
+    if (header.Length >= 6 && header[0] == 'b' && header[1] == 'e' && header[2] == 'g' &&
+        header[3] == 'i' && header[4] == 'n' && header[5] == ' ')
+      return Format.UuEncoding;
+
+    // yEnc: "=ybegin "
+    if (header.Length >= 8 && header[0] == '=' && header[1] == 'y' && header[2] == 'b' &&
+        header[3] == 'e' && header[4] == 'g' && header[5] == 'i' && header[6] == 'n' && header[7] == ' ')
+      return Format.YEnc;
 
     // LZMA: byte 0 = properties (typically 0x5D), then 4-byte dict size LE
     if (header.Length >= 13 && header[0] < 0xE1 && header[0] % 9 < 9) {
@@ -504,6 +550,15 @@ internal static class FormatDetector {
     Format.Freeze => ".freeze",
     Format.Xar => ".xar",
     Format.AlZip => ".alz",
+    Format.TarLz4 => ".tar.lz4",
+    Format.TarLzip => ".tar.lz",
+    Format.TarBr => ".tar.br",
+    Format.Vpk => ".vpk",
+    Format.Bsa => ".bsa",
+    Format.Mpq => ".mpq",
+    Format.UuEncoding => ".uue",
+    Format.YEnc => ".yenc",
+    Format.Density => ".density",
     _ => "",
   };
 }

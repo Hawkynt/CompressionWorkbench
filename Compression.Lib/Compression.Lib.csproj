@@ -85,6 +85,12 @@
     <ProjectReference Include="..\FileFormat.Lzfse\FileFormat.Lzfse.csproj" />
     <ProjectReference Include="..\FileFormat.Xar\FileFormat.Xar.csproj" />
     <ProjectReference Include="..\FileFormat.AlZip\FileFormat.AlZip.csproj" />
+    <ProjectReference Include="..\FileFormat.UuEncoding\FileFormat.UuEncoding.csproj" />
+    <ProjectReference Include="..\FileFormat.YEnc\FileFormat.YEnc.csproj" />
+    <ProjectReference Include="..\FileFormat.Vpk\FileFormat.Vpk.csproj" />
+    <ProjectReference Include="..\FileFormat.Bsa\FileFormat.Bsa.csproj" />
+    <ProjectReference Include="..\FileFormat.Mpq\FileFormat.Mpq.csproj" />
+    <ProjectReference Include="..\FileFormat.Density\FileFormat.Density.csproj" />
   </ItemGroup>
 
 </Project>
