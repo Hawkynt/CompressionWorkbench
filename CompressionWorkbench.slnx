@@ -67,6 +67,12 @@
     <Project Path="FileFormat.Lzfse/FileFormat.Lzfse.csproj" />
     <Project Path="FileFormat.Xar/FileFormat.Xar.csproj" />
     <Project Path="FileFormat.AlZip/FileFormat.AlZip.csproj" />
+    <Project Path="FileFormat.UuEncoding/FileFormat.UuEncoding.csproj" />
+    <Project Path="FileFormat.YEnc/FileFormat.YEnc.csproj" />
+    <Project Path="FileFormat.Vpk/FileFormat.Vpk.csproj" />
+    <Project Path="FileFormat.Bsa/FileFormat.Bsa.csproj" />
+    <Project Path="FileFormat.Mpq/FileFormat.Mpq.csproj" />
+    <Project Path="FileFormat.Density/FileFormat.Density.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />

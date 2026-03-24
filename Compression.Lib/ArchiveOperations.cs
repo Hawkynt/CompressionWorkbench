@@ -33,6 +33,12 @@ internal static class ArchiveOperations {
       F.TarBz2 => ListTarCompressed(fs, F.Bzip2),
       F.TarXz => ListTarCompressed(fs, F.Xz),
       F.TarZst => ListTarCompressed(fs, F.Zstd),
+      F.TarLz4 => ListTarLz4(fs),
+      F.TarLzip => ListTarLzip(fs),
+      F.TarBr => ListTarBr(fs),
+      F.Vpk => ListVpk(fs),
+      F.Bsa => ListBsa(fs),
+      F.Mpq => ListMpq(fs),
       F.Cab => ListCab(fs),
       F.Lzh => ListLzh(fs),
       F.Arj => ListArj(fs, password),
@@ -102,6 +108,12 @@ internal static class ArchiveOperations {
       case F.TarBz2: ExtractTarCompressed(fs, outputDir, F.Bzip2, files); break;
       case F.TarXz: ExtractTarCompressed(fs, outputDir, F.Xz, files); break;
       case F.TarZst: ExtractTarCompressed(fs, outputDir, F.Zstd, files); break;
+      case F.TarLz4: ExtractTarLz4(fs, outputDir, files); break;
+      case F.TarLzip: ExtractTarLzip(fs, outputDir, files); break;
+      case F.TarBr: ExtractTarBr(fs, outputDir, files); break;
+      case F.Vpk: ExtractVpk(fs, outputDir, files); break;
+      case F.Bsa: ExtractBsa(fs, outputDir, files); break;
+      case F.Mpq: ExtractMpq(fs, outputDir, files); break;
       case F.Cab: ExtractCab(fs, outputDir, files); break;
       case F.Lzh: ExtractLzh(fs, outputDir, files); break;
       case F.Arj: ExtractArj(fs, outputDir, password, files); break;
@@ -170,6 +182,9 @@ internal static class ArchiveOperations {
       case F.TarBz2: CreateTarBz2(outFs, inputs); break;
       case F.TarXz: CreateTarXz(outFs, inputs); break;
       case F.TarZst: CreateTarZst(outFs, inputs); break;
+      case F.TarLz4: CreateTarLz4(outFs, inputs); break;
+      case F.TarLzip: CreateTarLzip(outFs, inputs); break;
+      case F.TarBr: CreateTarBr(outFs, inputs); break;
       case F.SevenZip: Create7z(outFs, inputs, password, opts); break;
       case F.Lzh: CreateLzh(outFs, inputs, opts); break;
       case F.Arj: CreateArj(outFs, inputs, opts); break;
@@ -196,6 +211,8 @@ internal static class ArchiveOperations {
       case F.Wad: CreateWad(outFs, inputs); break;
       case F.Xar: CreateXar(outFs, inputs); break;
       case F.AlZip: CreateAlZip(outFs, inputs); break;
+      case F.Vpk: CreateVpk(outFs, inputs); break;
+      case F.Bsa: CreateBsa(outFs, inputs); break;
       default: throw new NotSupportedException($"Cannot create format: {format}");
     }
   }
@@ -1397,6 +1414,9 @@ internal static class ArchiveOperations {
       case F.ApLib: FileFormat.ApLib.ApLibStream.Decompress(input, output); break;
       case F.Lzfse: FileFormat.Lzfse.LzfseStream.Decompress(input, output); break;
       case F.Freeze: FileFormat.Freeze.FreezeStream.Decompress(input, output); break;
+      case F.UuEncoding: { var (_, _, data) = FileFormat.UuEncoding.UuEncoder.Decode(input); output.Write(data); break; }
+      case F.YEnc: { var (_, _, _, data) = FileFormat.YEnc.YEncDecoder.Decode(input); output.Write(data); break; }
+      case F.Density: FileFormat.Density.DensityStream.Decompress(input, output); break;
       default: throw new NotSupportedException($"No decompressor for: {format}");
     }
   }
@@ -1431,6 +1451,9 @@ internal static class ArchiveOperations {
       case F.ApLib: FileFormat.ApLib.ApLibStream.Compress(input, output); break;
       case F.Lzfse: FileFormat.Lzfse.LzfseStream.Compress(input, output); break;
       case F.Freeze: FileFormat.Freeze.FreezeStream.Compress(input, output); break;
+      case F.UuEncoding: { using var ms = new MemoryStream(); input.CopyTo(ms); ms.Position = 0; FileFormat.UuEncoding.UuEncoder.Encode(ms, output, "data"); break; }
+      case F.YEnc: { using var ms = new MemoryStream(); input.CopyTo(ms); FileFormat.YEnc.YEncEncoder.Encode(output, "data", ms.ToArray()); break; }
+      case F.Density: FileFormat.Density.DensityStream.Compress(input, output); break;
       default: throw new NotSupportedException($"No compressor for: {format}");
     }
   }
@@ -1469,6 +1492,7 @@ internal static class ArchiveOperations {
     return ext is ".gz" or ".bz2" or ".xz" or ".zst" or ".lz4" or ".br" or ".sz" or ".lzo" or ".z" or ".lzma" or ".lz" or ".zlib"
         or ".pp" or ".sqz" or ".ice" or ".rz" or ".hqx" or ".bin"
         or ".packbits" or ".yaz0" or ".szs" or ".blz" or ".rnc" or ".qfs" or ".refpack" or ".aplib" or ".lzfse" or ".freeze"
+        or ".uue" or ".uu" or ".yenc" or ".density"
       ? Path.GetFileNameWithoutExtension(name)
       : name;
   }
@@ -1655,6 +1679,137 @@ internal static class ArchiveOperations {
     using var w = new FileFormat.Xar.XarWriter(outFs);
     foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
       w.AddFile(name, data);
+  }
+
+  // ── Compound Tar: LZ4 ──────────────────────────────────────────────
+
+  private static List<ArchiveEntry> ListTarLz4(Stream s) {
+    var r = new FileFormat.Lz4.Lz4FrameReader(s);
+    using var decompressed = new MemoryStream(r.Read());
+    return ListTar(decompressed);
+  }
+
+  private static void ExtractTarLz4(Stream s, string dir, string[]? files) {
+    var r = new FileFormat.Lz4.Lz4FrameReader(s);
+    using var decompressed = new MemoryStream(r.Read());
+    ExtractTar(decompressed, dir, files);
+  }
+
+  private static void CreateTarLz4(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
+    using var tarMs = new MemoryStream();
+    CreateTar(tarMs, inputs);
+    tarMs.Position = 0;
+    var w = new FileFormat.Lz4.Lz4FrameWriter(outFs);
+    w.Write(tarMs.ToArray());
+  }
+
+  // ── Compound Tar: Lzip ────────────────────────────────────────────
+
+  private static List<ArchiveEntry> ListTarLzip(Stream s) {
+    using var decompressed = new MemoryStream();
+    FileFormat.Lzip.LzipStream.Decompress(s, decompressed);
+    decompressed.Position = 0;
+    return ListTar(decompressed);
+  }
+
+  private static void ExtractTarLzip(Stream s, string dir, string[]? files) {
+    using var decompressed = new MemoryStream();
+    FileFormat.Lzip.LzipStream.Decompress(s, decompressed);
+    decompressed.Position = 0;
+    ExtractTar(decompressed, dir, files);
+  }
+
+  private static void CreateTarLzip(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
+    using var tarMs = new MemoryStream();
+    CreateTar(tarMs, inputs);
+    tarMs.Position = 0;
+    FileFormat.Lzip.LzipStream.Compress(tarMs, outFs);
+  }
+
+  // ── Compound Tar: Brotli ──────────────────────────────────────────
+
+  private static List<ArchiveEntry> ListTarBr(Stream s) {
+    var decompressed = FileFormat.Brotli.BrotliStream.Decompress(s);
+    using var ms = new MemoryStream(decompressed);
+    return ListTar(ms);
+  }
+
+  private static void ExtractTarBr(Stream s, string dir, string[]? files) {
+    var decompressed = FileFormat.Brotli.BrotliStream.Decompress(s);
+    using var ms = new MemoryStream(decompressed);
+    ExtractTar(ms, dir, files);
+  }
+
+  private static void CreateTarBr(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
+    using var tarMs = new MemoryStream();
+    CreateTar(tarMs, inputs);
+    var compressed = FileFormat.Brotli.BrotliStream.Compress(tarMs.ToArray());
+    outFs.Write(compressed);
+  }
+
+  // ── VPK (Valve Pak) ───────────────────────────────────────────────
+
+  private static List<ArchiveEntry> ListVpk(Stream s) {
+    var r = new FileFormat.Vpk.VpkReader(s);
+    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FullPath,
+      e.PreloadBytes.Length + e.Length, e.PreloadBytes.Length + e.Length,
+      "Stored", false, false, null)).ToList();
+  }
+
+  private static void ExtractVpk(Stream s, string dir, string[]? files) {
+    var r = new FileFormat.Vpk.VpkReader(s);
+    foreach (var e in r.Entries) {
+      if (files != null && !MatchesFilter(e.FullPath, files)) continue;
+      WriteFile(dir, e.FullPath, r.Extract(e));
+    }
+  }
+
+  private static void CreateVpk(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
+    using var w = new FileFormat.Vpk.VpkWriter(outFs, leaveOpen: true);
+    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
+      w.AddFile(name, data);
+    w.Finish();
+  }
+
+  // ── BSA (Bethesda) ────────────────────────────────────────────────
+
+  private static List<ArchiveEntry> ListBsa(Stream s) {
+    var r = new FileFormat.Bsa.BsaReader(s);
+    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FullPath, e.OriginalSize,
+      e.CompressedSize < 0 ? -1 : e.CompressedSize,
+      e.IsCompressed ? "zlib" : "Stored", false, false, null)).ToList();
+  }
+
+  private static void ExtractBsa(Stream s, string dir, string[]? files) {
+    var r = new FileFormat.Bsa.BsaReader(s);
+    foreach (var e in r.Entries) {
+      if (files != null && !MatchesFilter(e.FullPath, files)) continue;
+      WriteFile(dir, e.FullPath, r.Extract(e));
+    }
+  }
+
+  private static void CreateBsa(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
+    using var w = new FileFormat.Bsa.BsaWriter(outFs, leaveOpen: true);
+    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
+      w.AddFile(name, data);
+    w.Finish();
+  }
+
+  // ── MPQ (Blizzard) ────────────────────────────────────────────────
+
+  private static List<ArchiveEntry> ListMpq(Stream s) {
+    var r = new FileFormat.Mpq.MpqReader(s);
+    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.OriginalSize, e.CompressedSize,
+      e.IsCompressed ? "Compressed" : "Stored", false, e.IsEncrypted, null)).ToList();
+  }
+
+  private static void ExtractMpq(Stream s, string dir, string[]? files) {
+    var r = new FileFormat.Mpq.MpqReader(s);
+    foreach (var e in r.Entries) {
+      if (!e.Exists) continue;
+      if (files != null && !MatchesFilter(e.FileName, files)) continue;
+      try { WriteFile(dir, e.FileName, r.Extract(e)); } catch { /* skip entries that can't be decompressed */ }
+    }
   }
 
   // ── ALZip ──────────────────────────────────────────────────────────
