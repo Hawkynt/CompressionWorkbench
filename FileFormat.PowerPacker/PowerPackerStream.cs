@@ -315,7 +315,9 @@ public static class PowerPackerStream {
         pos += matchLen;
       } else {
         pendingLiterals.Add(scanInput[pos]);
-        matchFinder.InsertPosition(scanInput, pos);
+        // Only insert manually for pos < 2 — FindMatch already inserted for pos >= 2
+        if (pos < 2)
+          matchFinder.InsertPosition(scanInput, pos);
         ++pos;
       }
     }
@@ -447,7 +449,7 @@ public static class PowerPackerStream {
 
     // Offset bits
     var maxOffset = (1 << efficiency[match.OffsetClass]) - 1;
-    if (match.OffsetClass == 3 && match.Offset > maxOffset) {
+    if (match.OffsetClass == 3 && match.Offset >= maxOffset) {
       writer.WriteBits(maxOffset, efficiency[3]);
       writer.WriteBits(match.Offset - maxOffset, 7);
     } else {

@@ -6,7 +6,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Compression.Core\Compression.Core.csproj" />
-  </ItemGroup>
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+</ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="Compression.Tests" />

@@ -4,6 +4,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using Compression.Lib;
+using Compression.Registry;
 
 namespace Compression.UI.ViewModels;
 
@@ -222,7 +223,7 @@ internal sealed class MainViewModel : ViewModelBase {
   private void OpenDialog() {
     var dlg = new Microsoft.Win32.OpenFileDialog {
       Title = "Open Archive",
-      Filter = "All Archives|*.zip;*.rar;*.7z;*.tar;*.tar.gz;*.tgz;*.tar.bz2;*.tar.xz;*.tar.zst;*.cab;*.lzh;*.arj;*.arc;*.zoo;*.ace;*.sqx;*.cpio;*.ar;*.wim;*.rpm;*.deb;*.gz;*.bz2;*.xz;*.zst;*.lz4;*.br;*.lzo;*.lzma;*.lz;*.zlib;*.sz;*.shar;*.pak;*.dms;*.lzx;*.pp;*.pp20;*.cpt;*.bin;*.macbin;*.hqx;*.spk;*.spark;*.lbr;*.sqz;*.ice;*.uha;*.rz;*.rzip;*.wad|All Files|*.*",
+      Filter = BuildOpenFilter(),
     };
     if (dlg.ShowDialog() == true)
       Open(dlg.FileName);
@@ -441,42 +442,7 @@ internal sealed class MainViewModel : ViewModelBase {
   private void CreateDialog() {
     var dlg = new Microsoft.Win32.SaveFileDialog {
       Title = "Create Archive",
-      Filter = string.Join("|",
-        "7z Archive (*.7z)|*.7z",
-        "ACE Archive (*.ace)|*.ace",
-        "AR Archive (*.ar)|*.ar",
-        "ARC Archive (*.arc)|*.arc",
-        "ARJ Archive (*.arj)|*.arj",
-        "Brotli (*.br)|*.br",
-        "Bzip2 (*.bz2)|*.bz2",
-        "CAB Cabinet (*.cab)|*.cab",
-        "Compress (*.Z)|*.Z",
-        "CPIO (*.cpio)|*.cpio",
-        "Gzip (*.gz)|*.gz",
-        "HA Archive (*.ha)|*.ha",
-        "LHA Archive (*.lzh)|*.lzh",
-        "LZ4 (*.lz4)|*.lz4",
-        "LZMA (*.lzma)|*.lzma",
-        "LZOP (*.lzo)|*.lzo",
-        "Lzip (*.lz)|*.lz",
-        "PAK Archive (*.pak)|*.pak",
-        "RAR Archive (*.rar)|*.rar",
-        "Shar (*.shar)|*.shar",
-        "Snappy (*.sz)|*.sz",
-        "SQX Archive (*.sqx)|*.sqx",
-        "TAR (*.tar)|*.tar",
-        "TAR.BZ2 (*.tar.bz2)|*.tar.bz2",
-        "TAR.GZ (*.tar.gz)|*.tar.gz",
-        "TAR.LZ (*.tar.lz)|*.tar.lz",
-        "TAR.LZ4 (*.tar.lz4)|*.tar.lz4",
-        "TAR.XZ (*.tar.xz)|*.tar.xz",
-        "TAR.ZST (*.tar.zst)|*.tar.zst",
-        "WIM Image (*.wim)|*.wim",
-        "XZ (*.xz)|*.xz",
-        "Zlib (*.zlib)|*.zlib",
-        "ZIP Archive (*.zip)|*.zip",
-        "Zoo Archive (*.zoo)|*.zoo",
-        "Zstd (*.zst)|*.zst"),
+      Filter = BuildCreateFilter(),
     };
     if (dlg.ShowDialog() != true) return;
 
@@ -542,6 +508,27 @@ internal sealed class MainViewModel : ViewModelBase {
     < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024):F1} MB",
     _ => $"{bytes / (1024.0 * 1024 * 1024):F2} GB",
   };
+
+  private static string BuildOpenFilter() {
+    FormatRegistration.EnsureInitialized();
+    var exts = new List<string>();
+    foreach (var desc in FormatRegistry.All) {
+      foreach (var ext in desc.CompoundExtensions) exts.Add("*" + ext);
+      foreach (var ext in desc.Extensions) exts.Add("*" + ext);
+    }
+    return $"All Archives|{string.Join(";", exts.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(e => e))}|All Files|*.*";
+  }
+
+  private static string BuildCreateFilter() {
+    FormatRegistration.EnsureInitialized();
+    var entries = new List<string>();
+    foreach (var desc in FormatRegistry.All.OrderBy(d => d.DisplayName, StringComparer.OrdinalIgnoreCase)) {
+      if (!desc.Capabilities.HasFlag(FormatCapabilities.CanCreate)) continue;
+      var ext = desc.DefaultExtension;
+      entries.Add($"{desc.DisplayName} (*{ext})|*{ext}");
+    }
+    return string.Join("|", entries);
+  }
 }
 
 /// <summary>

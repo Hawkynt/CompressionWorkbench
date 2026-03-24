@@ -4,6 +4,7 @@ namespace Compression.Lib;
 
 /// <summary>
 /// Unified operations across all archive and stream formats.
+/// Dispatches to format descriptors via the FormatRegistry.
 /// </summary>
 internal static class ArchiveOperations {
 
@@ -24,55 +25,17 @@ internal static class ArchiveOperations {
   }
 
   private static List<ArchiveEntry> ListArchiveStream(F format, Stream fs, string? password, string? pathHint = null) {
-    return format switch {
-      F.Zip => ListZip(fs, password),
-      F.Rar => ListRar(fs, password),
-      F.SevenZip => List7z(fs, password),
-      F.Tar => ListTar(fs),
-      F.TarGz => ListTarCompressed(fs, F.Gzip),
-      F.TarBz2 => ListTarCompressed(fs, F.Bzip2),
-      F.TarXz => ListTarCompressed(fs, F.Xz),
-      F.TarZst => ListTarCompressed(fs, F.Zstd),
-      F.TarLz4 => ListTarLz4(fs),
-      F.TarLzip => ListTarLzip(fs),
-      F.TarBr => ListTarBr(fs),
-      F.Vpk => ListVpk(fs),
-      F.Bsa => ListBsa(fs),
-      F.Mpq => ListMpq(fs),
-      F.Cab => ListCab(fs),
-      F.Lzh => ListLzh(fs),
-      F.Arj => ListArj(fs, password),
-      F.Arc => ListArc(fs),
-      F.Zoo => ListZoo(fs),
-      F.Ace => ListAce(fs, password),
-      F.Sqx => ListSqx(fs, password),
-      F.Cpio => ListCpio(fs),
-      F.Ar => ListAr(fs),
-      F.Wim => ListWim(fs),
-      F.Deb => ListDeb(fs),
-      F.Shar => ListShar(fs),
-      F.Pak => ListPak(fs),
-      F.Ha => ListHa(fs),
-      F.SquashFs => ListSquashFs(fs),
-      F.CramFs => ListCramFs(fs),
-      F.StuffIt => ListStuffIt(fs),
-      F.Zpaq => ListZpaq(fs),
-      F.Nsis => ListNsis(fs),
-      F.InnoSetup => ListInnoSetup(fs),
-      F.Dms => ListDms(fs),
-      F.LzxAmiga => ListLzxAmiga(fs),
-      F.CompactPro => ListCompactPro(fs),
-      F.Spark => ListSpark(fs),
-      F.Lbr => ListLbr(fs),
-      F.Uharc => ListUharc(fs),
-      F.Wad => ListWad(fs),
-      F.Xar => ListXar(fs),
-      F.AlZip => ListAlZip(fs),
-      F.Rpm => [new(0, "payload.cpio", 0, 0, "cpio", false, false, null)],
-      _ when pathHint != null && FormatDetector.IsStreamFormat(format) =>
-        [new(0, StripCompressionExtension(pathHint), new FileInfo(pathHint).Length, new FileInfo(pathHint).Length, format.ToString(), false, false, null)],
-      _ => throw new NotSupportedException($"Cannot list format: {format}"),
-    };
+    FormatRegistration.EnsureInitialized();
+    var ops = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
+    if (ops != null)
+      return ops.List(fs, password).Select(e =>
+        new ArchiveEntry(e.Index, e.Name, e.OriginalSize, e.CompressedSize, e.Method, e.IsDirectory, e.IsEncrypted, e.LastModified)).ToList();
+
+    // Stream formats show as a single entry
+    if (pathHint != null && FormatDetector.IsStreamFormat(format))
+      return [new(0, StripCompressionExtension(pathHint), new FileInfo(pathHint).Length, new FileInfo(pathHint).Length, format.ToString(), false, false, null)];
+
+    throw new NotSupportedException($"Cannot list format: {format}");
   }
 
   internal static void Extract(string path, string outputDir, string? password, string[]? files) {
@@ -99,53 +62,11 @@ internal static class ArchiveOperations {
   }
 
   private static void ExtractWithStream(F format, Stream fs, string outputDir, string? password, string[]? files) {
-    switch (format) {
-      case F.Zip: ExtractZip(fs, outputDir, password, files); break;
-      case F.Rar: ExtractRar(fs, outputDir, password, files); break;
-      case F.SevenZip: Extract7z(fs, outputDir, password, files); break;
-      case F.Tar: ExtractTar(fs, outputDir, files); break;
-      case F.TarGz: ExtractTarCompressed(fs, outputDir, F.Gzip, files); break;
-      case F.TarBz2: ExtractTarCompressed(fs, outputDir, F.Bzip2, files); break;
-      case F.TarXz: ExtractTarCompressed(fs, outputDir, F.Xz, files); break;
-      case F.TarZst: ExtractTarCompressed(fs, outputDir, F.Zstd, files); break;
-      case F.TarLz4: ExtractTarLz4(fs, outputDir, files); break;
-      case F.TarLzip: ExtractTarLzip(fs, outputDir, files); break;
-      case F.TarBr: ExtractTarBr(fs, outputDir, files); break;
-      case F.Vpk: ExtractVpk(fs, outputDir, files); break;
-      case F.Bsa: ExtractBsa(fs, outputDir, files); break;
-      case F.Mpq: ExtractMpq(fs, outputDir, files); break;
-      case F.Cab: ExtractCab(fs, outputDir, files); break;
-      case F.Lzh: ExtractLzh(fs, outputDir, files); break;
-      case F.Arj: ExtractArj(fs, outputDir, password, files); break;
-      case F.Arc: ExtractArc(fs, outputDir, files); break;
-      case F.Zoo: ExtractZoo(fs, outputDir, files); break;
-      case F.Ace: ExtractAce(fs, outputDir, password, files); break;
-      case F.Sqx: ExtractSqx(fs, outputDir, password, files); break;
-      case F.Cpio: ExtractCpio(fs, outputDir, files); break;
-      case F.Ar: ExtractAr(fs, outputDir, files); break;
-      case F.Wim: ExtractWim(fs, outputDir, files); break;
-      case F.Deb: ExtractDeb(fs, outputDir, files); break;
-      case F.Shar: ExtractShar(fs, outputDir, files); break;
-      case F.Pak: ExtractPak(fs, outputDir, files); break;
-      case F.Ha: ExtractHa(fs, outputDir, files); break;
-      case F.SquashFs: ExtractSquashFs(fs, outputDir, files); break;
-      case F.CramFs: ExtractCramFs(fs, outputDir, files); break;
-      case F.StuffIt: ExtractStuffIt(fs, outputDir, files); break;
-      case F.Zpaq: ExtractZpaq(fs, outputDir, files); break;
-      case F.Nsis: ExtractNsis(fs, outputDir, files); break;
-      case F.InnoSetup: ExtractInnoSetup(fs, outputDir, files); break;
-      case F.Dms: ExtractDms(fs, outputDir, files); break;
-      case F.LzxAmiga: ExtractLzxAmiga(fs, outputDir, files); break;
-      case F.CompactPro: ExtractCompactPro(fs, outputDir, files); break;
-      case F.Spark: ExtractSpark(fs, outputDir, files); break;
-      case F.Lbr: ExtractLbr(fs, outputDir, files); break;
-      case F.Uharc: ExtractUharc(fs, outputDir, files); break;
-      case F.Wad: ExtractWad(fs, outputDir, files); break;
-      case F.Xar: ExtractXar(fs, outputDir, files); break;
-      case F.AlZip: ExtractAlZip(fs, outputDir, files); break;
-      case F.Rpm: ExtractRpm(fs, outputDir); break;
-      default: throw new NotSupportedException($"Cannot extract format: {format}");
-    }
+    FormatRegistration.EnsureInitialized();
+    var ops = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
+    if (ops != null) { ops.Extract(fs, outputDir, password, files); return; }
+
+    throw new NotSupportedException($"Cannot extract format: {format}");
   }
 
   internal static void Create(string outputPath, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts) {
@@ -175,46 +96,39 @@ internal static class ArchiveOperations {
     }
 
     using var outFs = File.Create(outputPath);
+
+    // Complex formats that depend on Compression.Lib internals (MethodSpec, SolidBlockPlanner, etc.)
     switch (format) {
-      case F.Zip: CreateZip(outFs, inputs, password, method, incompressible, opts); break;
-      case F.Tar: CreateTar(outFs, inputs); break;
-      case F.TarGz: CreateTarGz(outFs, inputs, method); break;
-      case F.TarBz2: CreateTarBz2(outFs, inputs); break;
-      case F.TarXz: CreateTarXz(outFs, inputs); break;
-      case F.TarZst: CreateTarZst(outFs, inputs); break;
-      case F.TarLz4: CreateTarLz4(outFs, inputs); break;
-      case F.TarLzip: CreateTarLzip(outFs, inputs); break;
-      case F.TarBr: CreateTarBr(outFs, inputs); break;
-      case F.SevenZip: Create7z(outFs, inputs, password, opts); break;
-      case F.Lzh: CreateLzh(outFs, inputs, opts); break;
-      case F.Arj: CreateArj(outFs, inputs, opts); break;
-      case F.Arc: CreateArc(outFs, inputs, opts); break;
-      case F.Zoo: CreateZoo(outFs, inputs, opts); break;
-      case F.Ace: CreateAce(outFs, inputs, opts); break;
-      case F.Sqx: CreateSqx(outFs, inputs, opts); break;
-      case F.Cpio: CreateCpio(outFs, inputs); break;
-      case F.Cab: CreateCab(outFs, inputs, opts); break;
-      case F.Shar: CreateShar(outFs, inputs); break;
-      case F.Pak: CreatePak(outFs, inputs); break;
-      case F.Rar: CreateRar(outFs, inputs, opts); break;
-      case F.Ha: CreateHa(outFs, inputs); break;
-      case F.SquashFs: CreateSquashFs(outFs, inputs); break;
-      case F.CramFs: CreateCramFs(outFs, inputs); break;
-      case F.StuffIt: CreateStuffIt(outFs, inputs); break;
-      case F.Zpaq: CreateZpaq(outFs, inputs); break;
-      case F.Dms: CreateDms(outFs, inputs); break;
-      case F.LzxAmiga: CreateLzxAmiga(outFs, inputs); break;
-      case F.CompactPro: CreateCompactPro(outFs, inputs); break;
-      case F.Spark: CreateSpark(outFs, inputs); break;
-      case F.Lbr: CreateLbr(outFs, inputs); break;
-      case F.Uharc: CreateUharc(outFs, inputs); break;
-      case F.Wad: CreateWad(outFs, inputs); break;
-      case F.Xar: CreateXar(outFs, inputs); break;
-      case F.AlZip: CreateAlZip(outFs, inputs); break;
-      case F.Vpk: CreateVpk(outFs, inputs); break;
-      case F.Bsa: CreateBsa(outFs, inputs); break;
-      default: throw new NotSupportedException($"Cannot create format: {format}");
+      case F.Zip: CreateZip(outFs, inputs, password, method, incompressible, opts); return;
+      case F.SevenZip: Create7z(outFs, inputs, password, opts); return;
+      case F.Rar: CreateRar(outFs, inputs, opts); return;
     }
+
+    // All other formats dispatch through the registry
+    FormatRegistration.EnsureInitialized();
+    var ops = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
+    if (ops != null) {
+      var registryInputs = inputs.Select(i =>
+        new Compression.Registry.ArchiveInputInfo(i.FullPath, i.EntryName, i.IsDirectory)).ToList();
+      var registryOpts = new Compression.Registry.FormatCreateOptions {
+        Password = opts.Password,
+        MethodName = opts.Method.Name,
+        Optimize = opts.Method.Optimize,
+        Level = opts.Level,
+        DictSize = opts.DictSize,
+        WordSize = opts.WordSize,
+        Threads = opts.Threads,
+        SolidSize = opts.SolidSize,
+        ForceCompress = opts.ForceCompress,
+        EncryptFilenames = opts.EncryptFilenames,
+        EncryptionMethod = opts.ZipEncryption,
+        IncompressiblePaths = incompressible,
+      };
+      ops.Create(outFs, registryInputs, registryOpts);
+      return;
+    }
+
+    throw new NotSupportedException($"Cannot create format: {format}");
   }
 
   /// <summary>
@@ -547,42 +461,69 @@ internal static class ArchiveOperations {
     return optimized;
   }
 
+  // ── Stream compression dispatch (registry-only) ─────────────────
+
+  private static void DecompressStreamPair(Stream input, Stream output, F format) {
+    FormatRegistration.EnsureInitialized();
+    var ops = Compression.Registry.FormatRegistry.GetStreamOps(format.ToString())
+      ?? throw new NotSupportedException($"No decompressor for: {format}");
+    ops.Decompress(input, output);
+  }
+
+  private static void CompressStreamPair(Stream input, Stream output, F format) {
+    FormatRegistration.EnsureInitialized();
+    var ops = Compression.Registry.FormatRegistry.GetStreamOps(format.ToString())
+      ?? throw new NotSupportedException($"No compressor for: {format}");
+    ops.Compress(input, output);
+  }
+
   private static void CompressStreamPairOptimal(Stream input, Stream output, F format) {
-    var mode = Compression.Core.Streams.CompressionStreamMode.Compress;
-    switch (format) {
-      case F.Gzip: {
-        using var cs = new FileFormat.Gzip.GzipStream(output, mode,
-          Compression.Core.Deflate.DeflateCompressionLevel.Maximum, leaveOpen: true);
-        input.CopyTo(cs);
-        break;
-      }
-      case F.Bzip2: { using var cs = new FileFormat.Bzip2.Bzip2Stream(output, mode, leaveOpen: true); input.CopyTo(cs); break; }
-      case F.Xz: { using var cs = new FileFormat.Xz.XzStream(output, mode, leaveOpen: true); input.CopyTo(cs); break; }
-      case F.Zstd: { using var cs = new FileFormat.Zstd.ZstdStream(output, mode, leaveOpen: true); input.CopyTo(cs); break; }
-      case F.Compress: { using var cs = new FileFormat.Compress.CompressStream(output, mode, leaveOpen: true); input.CopyTo(cs); break; }
-      case F.Lzma: FileFormat.Lzma.LzmaStream.Compress(input, output); break;
-      case F.Lzip: FileFormat.Lzip.LzipStream.Compress(input, output); break;
-      case F.Zlib: FileFormat.Zlib.ZlibStream.Compress(input, output, Compression.Core.Deflate.DeflateCompressionLevel.Maximum); break;
-      default: CompressStreamPair(input, output, format); break;
+    FormatRegistration.EnsureInitialized();
+    var ops = Compression.Registry.FormatRegistry.GetStreamOps(format.ToString())
+      ?? throw new NotSupportedException($"No compressor for: {format}");
+    ops.CompressOptimal(input, output);
+  }
+
+  private static Stream WrapDecompressStream(Stream s, F format) {
+    FormatRegistration.EnsureInitialized();
+    var ops = Compression.Registry.FormatRegistry.GetStreamOps(format.ToString());
+    if (ops != null) {
+      var wrapped = ops.WrapDecompress(s);
+      if (wrapped != null) return wrapped;
     }
+    throw new NotSupportedException($"No stream decompressor for: {format}");
   }
 
-  // ── ZIP ────────────────────────────────────────────────────────────
+  // ── Stream helpers ──────────────────────────────────────────────
 
-  private static List<ArchiveEntry> ListZip(Stream s, string? pw) {
-    var r = new FileFormat.Zip.ZipReader(s, password: pw);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.UncompressedSize, e.CompressedSize,
-      e.CompressionMethod.ToString(), e.IsDirectory, e.IsEncrypted, e.LastModified)).ToList();
+  private static void ExtractStream(string inputPath, string outputDir, F format) {
+    var data = DecompressFile(inputPath, format);
+    var outputName = StripCompressionExtension(inputPath);
+    File.WriteAllBytes(Path.Combine(outputDir, Path.GetFileName(outputName)), data);
   }
 
-  private static void ExtractZip(Stream s, string dir, string? pw, string[]? files) {
-    var r = new FileFormat.Zip.ZipReader(s, password: pw);
-    foreach (var e in r.Entries) {
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(dir, e.FileName)); continue; }
-      WriteFile(dir, e.FileName, r.ExtractEntry(e));
-    }
+  private static void CompressStream(string inputPath, string outputPath, F format, MethodSpec method = default) {
+    using var inFs = File.OpenRead(inputPath);
+    using var outFs = File.Create(outputPath);
+    if (method.Optimize)
+      CompressStreamPairOptimal(inFs, outFs, format);
+    else
+      CompressStreamPair(inFs, outFs, format);
   }
+
+  internal static byte[] DecompressFile(string path, F format) {
+    using var fs = File.OpenRead(path);
+    using var ms = new MemoryStream();
+    DecompressStreamPair(fs, ms, format);
+    return ms.ToArray();
+  }
+
+  private static void DecompressToNull(Stream input, F format) {
+    using var ms = new MemoryStream();
+    DecompressStreamPair(input, ms, format);
+  }
+
+  // ── Complex Create methods (depend on Compression.Lib internals) ─
 
   private static void CreateZip(Stream s, IReadOnlyList<ArchiveInput> inputs, string? pw,
       MethodSpec method, HashSet<string>? incompressible, CompressionOptions opts) {
@@ -620,24 +561,6 @@ internal static class ArchiveOperations {
     w.Finish();
   }
 
-  // ── RAR ────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListRar(Stream s, string? pw) {
-    var r = new FileFormat.Rar.RarReader(s, password: pw);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.Name, e.Size, e.CompressedSize,
-      $"Method {e.CompressionMethod}", e.IsDirectory, e.IsEncrypted, e.ModifiedTime?.DateTime)).ToList();
-  }
-
-  private static void ExtractRar(Stream s, string dir, string? pw, string[]? files) {
-    var r = new FileFormat.Rar.RarReader(s, password: pw);
-    for (var i = 0; i < r.Entries.Count; ++i) {
-      var e = r.Entries[i];
-      if (files != null && !MatchesFilter(e.Name, files)) continue;
-      if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(dir, e.Name)); continue; }
-      WriteFile(dir, e.Name, r.Extract(i));
-    }
-  }
-
   private static void CreateRar(Stream s, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts) {
     var pw = opts.Password;
     var useRar4 = opts.Method.Name == "rar4";
@@ -665,24 +588,6 @@ internal static class ArchiveOperations {
       foreach (var (name, data) in ArchiveInput.FilesOnly(inputs))
         w.AddFile(name, data);
       w.Finish();
-    }
-  }
-
-  // ── 7z ─────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> List7z(Stream s, string? pw) {
-    var r = new FileFormat.SevenZip.SevenZipReader(s, password: pw);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.Name, e.Size, e.CompressedSize,
-      string.IsNullOrEmpty(e.Method) ? "7z" : e.Method, e.IsDirectory, false, e.LastWriteTime)).ToList();
-  }
-
-  private static void Extract7z(Stream s, string dir, string? pw, string[]? files) {
-    var r = new FileFormat.SevenZip.SevenZipReader(s, password: pw);
-    for (var i = 0; i < r.Entries.Count; ++i) {
-      var e = r.Entries[i];
-      if (files != null && !MatchesFilter(e.Name, files)) continue;
-      if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(dir, e.Name)); continue; }
-      WriteFile(dir, e.Name, r.Extract(i));
     }
   }
 
@@ -748,728 +653,6 @@ internal static class ArchiveOperations {
     }
   }
 
-  // ── TAR ────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListTar(Stream s) {
-    var r = new FileFormat.Tar.TarReader(s);
-    var entries = new List<ArchiveEntry>();
-    var i = 0;
-    while (r.GetNextEntry() is { } e) {
-      entries.Add(new ArchiveEntry(i++, e.Name, e.Size, e.Size, "tar", e.IsDirectory, false, e.ModifiedTime.DateTime));
-      r.Skip();
-    }
-    return entries;
-  }
-
-  private static void ExtractTar(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Tar.TarReader(s);
-    while (r.GetNextEntry() is { } e) {
-      if (files != null && !MatchesFilter(e.Name, files)) { r.Skip(); continue; }
-      if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(dir, e.Name)); r.Skip(); continue; }
-      using var es = r.GetEntryStream();
-      var data = new byte[e.Size];
-      es.ReadExactly(data);
-      WriteFile(dir, e.Name, data);
-    }
-  }
-
-  private static void CreateTar(Stream s, IReadOnlyList<ArchiveInput> inputs) {
-    var w = new FileFormat.Tar.TarWriter(s);
-    foreach (var i in inputs) {
-      if (i.IsDirectory) {
-        w.AddEntry(new FileFormat.Tar.TarEntry { Name = i.EntryName, Size = 0, TypeFlag = (byte)'5' }, []);
-      }
-      else {
-        var data = File.ReadAllBytes(i.FullPath);
-        w.AddEntry(new FileFormat.Tar.TarEntry { Name = i.EntryName, Size = data.Length }, data);
-      }
-    }
-    w.Finish();
-  }
-
-  private static List<ArchiveEntry> ListTarCompressed(Stream s, F compression) {
-    using var ds = WrapDecompressStream(s, compression);
-    return ListTar(ds);
-  }
-
-  private static void ExtractTarCompressed(Stream s, string dir, F compression, string[]? files) {
-    using var ds = WrapDecompressStream(s, compression);
-    ExtractTar(ds, dir, files);
-  }
-
-  private static void CreateTarGz(Stream outFs, IReadOnlyList<ArchiveInput> inputs, MethodSpec method = default) {
-    var level = method.ResolveDeflateLevel();
-    using var cs = new FileFormat.Gzip.GzipStream(outFs, Core.Streams.CompressionStreamMode.Compress, level, leaveOpen: true);
-    CreateTar(cs, inputs);
-  }
-
-  private static void CreateTarBz2(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var cs = new FileFormat.Bzip2.Bzip2Stream(outFs, Core.Streams.CompressionStreamMode.Compress, leaveOpen: true);
-    CreateTar(cs, inputs);
-  }
-
-  private static void CreateTarXz(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var cs = new FileFormat.Xz.XzStream(outFs, Core.Streams.CompressionStreamMode.Compress, leaveOpen: true);
-    CreateTar(cs, inputs);
-  }
-
-  private static void CreateTarZst(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var cs = new FileFormat.Zstd.ZstdStream(outFs, Core.Streams.CompressionStreamMode.Compress, leaveOpen: true);
-    CreateTar(cs, inputs);
-  }
-
-  // ── CAB ────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListCab(Stream s) {
-    var r = new FileFormat.Cab.CabReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.UncompressedSize, -1,
-      "CAB", false, false, e.LastModified)).ToList();
-  }
-
-  private static void ExtractCab(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Cab.CabReader(s);
-    foreach (var e in r.Entries) {
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.ExtractEntry(e));
-    }
-  }
-
-  private static void CreateCab(Stream outFs, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts) {
-    var method = opts.Method.Name;
-    var compType = method switch {
-      "lzx" => FileFormat.Cab.CabCompressionType.Lzx,
-      "quantum" => FileFormat.Cab.CabCompressionType.Quantum,
-      "none" or "store" => FileFormat.Cab.CabCompressionType.None,
-      _ => FileFormat.Cab.CabCompressionType.MsZip,
-    };
-    var lzxWindow = opts.Level.HasValue ? Math.Clamp(opts.Level.Value, 15, 21) : 15;
-    var quantumLevel = opts.Level.HasValue ? Math.Clamp(opts.Level.Value, 1, 7) : 4;
-    var w = new FileFormat.Cab.CabWriter(compType, lzxWindowBits: lzxWindow, quantumWindowLevel: quantumLevel);
-    foreach (var (name, data) in ArchiveInput.FilesOnly(inputs))
-      w.AddFile(name, data);
-    w.WriteTo(outFs);
-  }
-
-  // ── LZH ────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListLzh(Stream s) {
-    var r = new FileFormat.Lzh.LhaReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.OriginalSize, e.CompressedSize,
-      e.Method, false, false, e.LastModified)).ToList();
-  }
-
-  private static void ExtractLzh(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Lzh.LhaReader(s);
-    foreach (var e in r.Entries) {
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.ExtractEntry(e));
-    }
-  }
-
-  private static void CreateLzh(Stream outFs, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts) {
-    var lzhMethod = opts.Method.Name switch {
-      "lh0" or "store" => FileFormat.Lzh.LhaConstants.MethodLh0,
-      "lh1" => FileFormat.Lzh.LhaConstants.MethodLh1,
-      "lh2" => FileFormat.Lzh.LhaConstants.MethodLh2,
-      "lh3" => FileFormat.Lzh.LhaConstants.MethodLh3,
-      "lh4" => FileFormat.Lzh.LhaConstants.MethodLh4,
-      "lh6" => FileFormat.Lzh.LhaConstants.MethodLh6,
-      "lh7" => FileFormat.Lzh.LhaConstants.MethodLh7,
-      "lzs" => FileFormat.Lzh.LhaConstants.MethodLzs,
-      "lz5" => FileFormat.Lzh.LhaConstants.MethodLz5,
-      "pm0" => FileFormat.Lzh.LhaConstants.MethodPm0,
-      "pm1" => FileFormat.Lzh.LhaConstants.MethodPm1,
-      "pm2" => FileFormat.Lzh.LhaConstants.MethodPm2,
-      _ => FileFormat.Lzh.LhaConstants.MethodLh5,
-    };
-    var w = new FileFormat.Lzh.LhaWriter(lzhMethod);
-    foreach (var (name, data) in ArchiveInput.FilesOnly(inputs))
-      w.AddFile(name, data);
-    w.WriteTo(outFs);
-  }
-
-  // ── ARJ ────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListArj(Stream s, string? pw) {
-    var r = new FileFormat.Arj.ArjReader(s, pw);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.OriginalSize, e.CompressedSize,
-      $"Method {e.Method}", e.IsDirectory, false, e.LastModified)).ToList();
-  }
-
-  private static void ExtractArj(Stream s, string dir, string? pw, string[]? files) {
-    var r = new FileFormat.Arj.ArjReader(s, pw);
-    foreach (var e in r.Entries) {
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(dir, e.FileName)); continue; }
-      WriteFile(dir, e.FileName, r.ExtractEntry(e));
-    }
-  }
-
-  private static void CreateArj(Stream outFs, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts) {
-    // ARJ methods: 0=Store, 1=Compressed (best), 2=Compressed2, 3=Compressed3 (fastest), 4=StoreFast
-    byte arjMethod = opts.Method.Name switch {
-      "store" => 0,
-      "1" or "compressed" => 1,
-      "2" => 2,
-      "3" or "fastest" => 3,
-      _ => opts.Level switch {
-        0 => (byte)0,
-        >= 7 => (byte)1,
-        >= 4 => (byte)2,
-        _ => (byte)1,
-      },
-    };
-    var w = new FileFormat.Arj.ArjWriter(arjMethod, password: opts.Password);
-    foreach (var i in inputs) {
-      if (i.IsDirectory) w.AddDirectory(i.EntryName);
-      else w.AddFile(i.EntryName, File.ReadAllBytes(i.FullPath));
-    }
-    w.WriteTo(outFs);
-  }
-
-  // ── ARC ────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListArc(Stream s) {
-    var r = new FileFormat.Arc.ArcReader(s);
-    var entries = new List<ArchiveEntry>();
-    var i = 0;
-    while (r.GetNextEntry() is { } e)
-      entries.Add(new ArchiveEntry(i++, e.FileName, e.OriginalSize, e.CompressedSize,
-        $"Method {e.Method}", false, false, e.LastModified.DateTime));
-    return entries;
-  }
-
-  private static void ExtractArc(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Arc.ArcReader(s);
-    while (r.GetNextEntry() is { } e) {
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.ReadEntryData());
-    }
-  }
-
-  private static void CreateArc(Stream outFs, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts) {
-    var arcMethod = opts.Method.Name switch {
-      "store" => FileFormat.Arc.ArcCompressionMethod.Stored,
-      "pack" or "packed" => FileFormat.Arc.ArcCompressionMethod.Packed,
-      "squeeze" or "squeezed" => FileFormat.Arc.ArcCompressionMethod.Squeezed,
-      "crunch5" => FileFormat.Arc.ArcCompressionMethod.Crunched5,
-      "crunch6" => FileFormat.Arc.ArcCompressionMethod.Crunched6,
-      "crunch7" => FileFormat.Arc.ArcCompressionMethod.Crunched7,
-      "crunch" or "crunch8" => FileFormat.Arc.ArcCompressionMethod.Crunched,
-      "squash" or "squashed" => FileFormat.Arc.ArcCompressionMethod.Squashed,
-      _ => FileFormat.Arc.ArcCompressionMethod.Crunched,
-    };
-    var w = new FileFormat.Arc.ArcWriter(outFs, arcMethod);
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddEntry(name, data);
-    w.Finish();
-  }
-
-  // ── ZOO ────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListZoo(Stream s) {
-    var r = new FileFormat.Zoo.ZooReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.EffectiveName, e.OriginalSize, e.CompressedSize,
-      e.CompressionMethod.ToString(), false, false, e.LastModified)).ToList();
-  }
-
-  private static void ExtractZoo(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Zoo.ZooReader(s);
-    foreach (var e in r.Entries) {
-      if (files != null && !MatchesFilter(e.EffectiveName, files)) continue;
-      WriteFile(dir, e.EffectiveName, r.ExtractEntry(e));
-    }
-  }
-
-  private static void CreateZoo(Stream outFs, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts) {
-    var zooMethod = opts.Method.Name switch {
-      "store" => FileFormat.Zoo.ZooCompressionMethod.Store,
-      _ => FileFormat.Zoo.ZooCompressionMethod.Lzw,
-    };
-    var w = new FileFormat.Zoo.ZooWriter(outFs, defaultMethod: zooMethod);
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddEntry(name, data);
-    w.Finish();
-  }
-
-  // ── ACE ────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListAce(Stream s, string? pw) {
-    var r = new FileFormat.Ace.AceReader(s, password: pw);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.OriginalSize, e.CompressedSize,
-      $"ACE {e.CompressionType}", false, e.IsEncrypted, e.LastModified)).ToList();
-  }
-
-  private static void ExtractAce(Stream s, string dir, string? pw, string[]? files) {
-    var r = new FileFormat.Ace.AceReader(s, password: pw);
-    foreach (var e in r.Entries) {
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.ExtractEntry(e));
-    }
-  }
-
-  private static void CreateAce(Stream outFs, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts) {
-    var dictBits = opts.DictSize > 0
-      ? Math.Clamp((int)Math.Log2(opts.DictSize), 10, 22) : 15;
-    var solid = opts.SolidSize == 0;
-    var compType = opts.Method.Name switch {
-      "store" => 0,
-      "ace20" or "ace2" => 2,
-      _ => 1,
-    };
-    var w = new FileFormat.Ace.AceWriter(dictionaryBits: dictBits, password: opts.Password,
-      solid: solid, compressionType: compType);
-    foreach (var (name, data) in ArchiveInput.FilesOnly(inputs))
-      w.AddFile(name, data);
-    w.WriteTo(outFs);
-  }
-
-  // ── SQX ────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListSqx(Stream s, string? pw) {
-    var r = new FileFormat.Sqx.SqxReader(s, password: pw);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.OriginalSize, e.CompressedSize,
-      $"SQX {e.Method}", false, e.IsEncrypted, e.LastModified)).ToList();
-  }
-
-  private static void ExtractSqx(Stream s, string dir, string? pw, string[]? files) {
-    var r = new FileFormat.Sqx.SqxReader(s, password: pw);
-    foreach (var e in r.Entries) {
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.ExtractEntry(e));
-    }
-  }
-
-  private static void CreateSqx(Stream outFs, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts) {
-    var solid = opts.SolidSize == 0;
-    var dictSize = opts.DictSize > 0 ? (int)Math.Min(opts.DictSize, 4 * 1024 * 1024) : 256 * 1024;
-    var w = new FileFormat.Sqx.SqxWriter(password: opts.Password, solid: solid,
-      dictSize: dictSize);
-    foreach (var (name, data) in ArchiveInput.FilesOnly(inputs))
-      w.AddFile(name, data);
-    w.WriteTo(outFs);
-  }
-
-  // ── CPIO ───────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListCpio(Stream s) {
-    var r = new FileFormat.Cpio.CpioReader(s);
-    var all = r.ReadAll();
-    return all.Select((x, i) => new ArchiveEntry(i, x.Entry.Name, x.Entry.FileSize, x.Entry.FileSize,
-      "cpio", x.Entry.IsDirectory, false, DateTimeOffset.FromUnixTimeSeconds(x.Entry.ModificationTime).DateTime)).ToList();
-  }
-
-  private static void ExtractCpio(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Cpio.CpioReader(s);
-    foreach (var (entry, data) in r.ReadAll()) {
-      if (files != null && !MatchesFilter(entry.Name, files)) continue;
-      if (entry.IsDirectory) { Directory.CreateDirectory(Path.Combine(dir, entry.Name)); continue; }
-      WriteFile(dir, entry.Name, data);
-    }
-  }
-
-  private static void CreateCpio(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    var w = new FileFormat.Cpio.CpioWriter(outFs);
-    foreach (var i in inputs) {
-      if (i.IsDirectory) w.AddDirectory(i.EntryName);
-      else w.AddFile(i.EntryName, File.ReadAllBytes(i.FullPath));
-    }
-    w.Finish();
-  }
-
-  // ── AR ─────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListAr(Stream s) {
-    var r = new FileFormat.Ar.ArReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.Name, e.Data.Length, e.Data.Length,
-      "ar", false, false, e.ModifiedTime.DateTime)).ToList();
-  }
-
-  private static void ExtractAr(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Ar.ArReader(s);
-    foreach (var e in r.Entries) {
-      if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(dir, e.Name, e.Data);
-    }
-  }
-
-  // ── WIM ────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListWim(Stream s) {
-    var r = new FileFormat.Wim.WimReader(s);
-    return r.Resources.Select((e, i) => new ArchiveEntry(i, $"resource_{i}", e.OriginalSize, e.CompressedSize,
-      e.IsCompressed ? "LZX" : "Store", false, false, null)).ToList();
-  }
-
-  private static void ExtractWim(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Wim.WimReader(s);
-    for (var i = 0; i < r.Resources.Count; ++i) {
-      var name = $"resource_{i}";
-      if (files != null && !MatchesFilter(name, files)) continue;
-      WriteFile(dir, name, r.ReadResource(i));
-    }
-  }
-
-  // ── DEB ────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListDeb(Stream s) {
-    var r = new FileFormat.Deb.DebReader(s);
-    var data = r.ReadDataEntries();
-    return data.Select((e, i) => new ArchiveEntry(i, e.Path, e.Data.Length, e.Data.Length,
-      "deb", e.IsDirectory, false, null)).ToList();
-  }
-
-  private static void ExtractDeb(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Deb.DebReader(s);
-    foreach (var e in r.ReadDataEntries()) {
-      if (files != null && !MatchesFilter(e.Path, files)) continue;
-      if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(dir, e.Path)); continue; }
-      WriteFile(dir, e.Path, e.Data);
-    }
-  }
-
-  // ── SHAR ───────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListShar(Stream s) {
-    var r = new FileFormat.Shar.SharReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.Data.Length, e.Data.Length,
-      "shar", false, false, null)).ToList();
-  }
-
-  private static void ExtractShar(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Shar.SharReader(s);
-    foreach (var e in r.Entries) {
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, e.Data);
-    }
-  }
-
-  private static void CreateShar(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    var w = new FileFormat.Shar.SharWriter();
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddFile(name, data);
-    w.WriteTo(outFs);
-  }
-
-  // ── PAK ─────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListPak(Stream s) {
-    var r = new FileFormat.Pak.PakReader(s);
-    var entries = new List<ArchiveEntry>();
-    var i = 0;
-    while (r.GetNextEntry() is { } e)
-      entries.Add(new ArchiveEntry(i++, e.FileName, e.OriginalSize, e.CompressedSize,
-        $"Method {e.Method}", false, false, e.LastModified.DateTime));
-    return entries;
-  }
-
-  private static void ExtractPak(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Pak.PakReader(s);
-    while (r.GetNextEntry() is { } e) {
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.ReadEntryData());
-    }
-  }
-
-  private static void CreatePak(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    var w = new FileFormat.Pak.PakWriter(outFs);
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddEntry(name, data);
-    w.Finish();
-  }
-
-  // ── RPM ────────────────────────────────────────────────────────────
-
-  private static void ExtractRpm(Stream s, string dir) {
-    var r = new FileFormat.Rpm.RpmReader(s);
-    using var payload = r.GetPayloadStream();
-    ExtractCpio(payload, dir, null);
-  }
-
-  // ── Ha ──────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListHa(Stream s) {
-    var r = new FileFormat.Ha.HaReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.OriginalSize, e.CompressedSize,
-      $"Method {e.Method}", e.IsDirectory, false, e.LastModified)).ToList();
-  }
-
-  private static void ExtractHa(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Ha.HaReader(s);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.Extract(e));
-    }
-  }
-
-  private static void CreateHa(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var w = new FileFormat.Ha.HaWriter(outFs, leaveOpen: true);
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddFile(name, data, DateTime.Now);
-  }
-
-  // ── SquashFS ───────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListSquashFs(Stream s) {
-    var r = new FileFormat.SquashFs.SquashFsReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FullPath, e.Size, -1,
-      "squashfs", e.IsDirectory, false, e.ModifiedTime)).ToList();
-  }
-
-  private static void ExtractSquashFs(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.SquashFs.SquashFsReader(s);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.FullPath, files)) continue;
-      WriteFile(dir, e.FullPath, r.Extract(e));
-    }
-  }
-
-  private static void CreateSquashFs(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var w = new FileFormat.SquashFs.SquashFsWriter(outFs, leaveOpen: true);
-    foreach (var input in inputs) {
-      if (input.IsDirectory) {
-        w.AddDirectory(input.EntryName.TrimEnd('/'));
-      } else {
-        var data = File.ReadAllBytes(input.FullPath);
-        w.AddFile(input.EntryName, data);
-      }
-    }
-  }
-
-  // ── CramFS ─────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListCramFs(Stream s) {
-    var r = new FileFormat.CramFs.CramFsReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FullPath, e.Size, -1,
-      "cramfs", e.IsDirectory, false, null)).ToList();
-  }
-
-  private static void ExtractCramFs(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.CramFs.CramFsReader(s);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.FullPath, files)) continue;
-      WriteFile(dir, e.FullPath, r.Extract(e));
-    }
-  }
-
-  private static void CreateCramFs(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var w = new FileFormat.CramFs.CramFsWriter(outFs, leaveOpen: true);
-    foreach (var input in inputs) {
-      if (input.IsDirectory) {
-        w.AddDirectory(input.EntryName.TrimEnd('/'));
-      } else {
-        var data = File.ReadAllBytes(input.FullPath);
-        w.AddFile(input.EntryName, data);
-      }
-    }
-  }
-
-  // ── StuffIt ────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListStuffIt(Stream s) {
-    var r = new FileFormat.StuffIt.StuffItReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.DataForkSize,
-      e.CompressedDataSize, $"Method {e.DataMethod}", false, false, e.LastModified)).ToList();
-  }
-
-  private static void ExtractStuffIt(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.StuffIt.StuffItReader(s);
-    foreach (var e in r.Entries) {
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.Extract(e));
-    }
-  }
-
-  private static void CreateStuffIt(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var w = new FileFormat.StuffIt.StuffItWriter(outFs, leaveOpen: true);
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddFile(name, data);
-  }
-
-  // ── ZPAQ ───────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListZpaq(Stream s) {
-    var r = new FileFormat.Zpaq.ZpaqReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.Size, e.CompressedSize,
-      "zpaq", e.IsDirectory, false, e.LastModified)).ToList();
-  }
-
-  private static void ExtractZpaq(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Zpaq.ZpaqReader(s);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      using var es = r.Extract(e);
-      using var ms = new MemoryStream();
-      es.CopyTo(ms);
-      WriteFile(dir, e.FileName, ms.ToArray());
-    }
-  }
-
-  private static void CreateZpaq(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var w = new FileFormat.Zpaq.ZpaqWriter(outFs, leaveOpen: true);
-    foreach (var input in inputs) {
-      if (input.IsDirectory) {
-        w.AddDirectory(input.EntryName);
-      } else {
-        var data = File.ReadAllBytes(input.FullPath);
-        w.AddFile(input.EntryName, data);
-      }
-    }
-  }
-
-  // ── NSIS ───────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListNsis(Stream s) {
-    var r = new FileFormat.Nsis.NsisReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.Size, e.CompressedSize,
-      "nsis", e.IsDirectory, false, null)).ToList();
-  }
-
-  private static void ExtractNsis(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Nsis.NsisReader(s);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.Extract(e));
-    }
-  }
-
-  // ── InnoSetup ──────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListInnoSetup(Stream s) {
-    var r = new FileFormat.InnoSetup.InnoSetupReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.Size, e.CompressedSize,
-      "innosetup", e.IsDirectory, false, null)).ToList();
-  }
-
-  private static void ExtractInnoSetup(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.InnoSetup.InnoSetupReader(s);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.Extract(e));
-    }
-  }
-
-  // ── Stream compression helpers ─────────────────────────────────────
-
-  private static void ExtractStream(string inputPath, string outputDir, F format) {
-    var data = DecompressFile(inputPath, format);
-    var outputName = StripCompressionExtension(inputPath);
-    File.WriteAllBytes(Path.Combine(outputDir, Path.GetFileName(outputName)), data);
-  }
-
-  private static void CompressStream(string inputPath, string outputPath, F format, MethodSpec method = default) {
-    using var inFs = File.OpenRead(inputPath);
-    using var outFs = File.Create(outputPath);
-    if (method.Optimize)
-      CompressStreamPairOptimal(inFs, outFs, format);
-    else
-      CompressStreamPair(inFs, outFs, format);
-  }
-
-  internal static byte[] DecompressFile(string path, F format) {
-    using var fs = File.OpenRead(path);
-    using var ms = new MemoryStream();
-    DecompressStreamPair(fs, ms, format);
-    return ms.ToArray();
-  }
-
-  private static void DecompressToNull(Stream input, F format) {
-    using var ms = new MemoryStream();
-    DecompressStreamPair(input, ms, format);
-  }
-
-  private static void DecompressStreamPair(Stream input, Stream output, F format) {
-    switch (format) {
-      case F.Gzip: { using var ds = new FileFormat.Gzip.GzipStream(input, Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true); ds.CopyTo(output); break; }
-      case F.Bzip2: { using var ds = new FileFormat.Bzip2.Bzip2Stream(input, Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true); ds.CopyTo(output); break; }
-      case F.Xz: { using var ds = new FileFormat.Xz.XzStream(input, Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true); ds.CopyTo(output); break; }
-      case F.Zstd: { using var ds = new FileFormat.Zstd.ZstdStream(input, Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true); ds.CopyTo(output); break; }
-      case F.Compress: { using var ds = new FileFormat.Compress.CompressStream(input, Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true); ds.CopyTo(output); break; }
-      case F.Lzma: FileFormat.Lzma.LzmaStream.Decompress(input, output); break;
-      case F.Lzip: FileFormat.Lzip.LzipStream.Decompress(input, output); break;
-      case F.Zlib: FileFormat.Zlib.ZlibStream.Decompress(input, output); break;
-      case F.Szdd: FileFormat.Szdd.SzddStream.Decompress(input, output); break;
-      case F.Kwaj: FileFormat.Kwaj.KwajStream.Decompress(input, output); break;
-      case F.Lz4: { var r = new FileFormat.Lz4.Lz4FrameReader(input); output.Write(r.Read()); break; }
-      case F.Brotli: { var d = FileFormat.Brotli.BrotliStream.Decompress(input); output.Write(d); break; }
-      case F.Snappy: { var r = new FileFormat.Snappy.SnappyFrameReader(input); output.Write(r.Read()); break; }
-      case F.Lzop: { var r = new FileFormat.Lzop.LzopReader(input); output.Write(r.Decompress()); break; }
-      case F.PowerPacker: FileFormat.PowerPacker.PowerPackerStream.Decompress(input, output); break;
-      case F.Squeeze: FileFormat.Squeeze.SqueezeStream.Decompress(input, output); break;
-      case F.IcePacker: FileFormat.IcePacker.IcePackerStream.Decompress(input, output); break;
-      case F.Rzip: FileFormat.Rzip.RzipStream.Decompress(input, output); break;
-      case F.MacBinary: { var data = FileFormat.MacBinary.MacBinaryReader.ReadDataFork(input); output.Write(data); break; }
-      case F.BinHex: { var result = FileFormat.BinHex.BinHexReader.Decode(input); output.Write(result.DataFork); break; }
-      case F.PackBits: FileFormat.PackBits.PackBitsStream.Decompress(input, output); break;
-      case F.Yaz0: FileFormat.Yaz0.Yaz0Stream.Decompress(input, output); break;
-      case F.BriefLz: FileFormat.BriefLz.BriefLzStream.Decompress(input, output); break;
-      case F.Rnc: FileFormat.Rnc.RncStream.Decompress(input, output); break;
-      case F.RefPack: FileFormat.RefPack.RefPackStream.Decompress(input, output); break;
-      case F.ApLib: FileFormat.ApLib.ApLibStream.Decompress(input, output); break;
-      case F.Lzfse: FileFormat.Lzfse.LzfseStream.Decompress(input, output); break;
-      case F.Freeze: FileFormat.Freeze.FreezeStream.Decompress(input, output); break;
-      case F.UuEncoding: { var (_, _, data) = FileFormat.UuEncoding.UuEncoder.Decode(input); output.Write(data); break; }
-      case F.YEnc: { var (_, _, _, data) = FileFormat.YEnc.YEncDecoder.Decode(input); output.Write(data); break; }
-      case F.Density: FileFormat.Density.DensityStream.Decompress(input, output); break;
-      default: throw new NotSupportedException($"No decompressor for: {format}");
-    }
-  }
-
-  private static void CompressStreamPair(Stream input, Stream output, F format) {
-    switch (format) {
-      case F.Gzip: { using var cs = new FileFormat.Gzip.GzipStream(output, Core.Streams.CompressionStreamMode.Compress, leaveOpen: true); input.CopyTo(cs); break; }
-      case F.Bzip2: { using var cs = new FileFormat.Bzip2.Bzip2Stream(output, Core.Streams.CompressionStreamMode.Compress, leaveOpen: true); input.CopyTo(cs); break; }
-      case F.Xz: { using var cs = new FileFormat.Xz.XzStream(output, Core.Streams.CompressionStreamMode.Compress, leaveOpen: true); input.CopyTo(cs); break; }
-      case F.Zstd: { using var cs = new FileFormat.Zstd.ZstdStream(output, Core.Streams.CompressionStreamMode.Compress, leaveOpen: true); input.CopyTo(cs); break; }
-      case F.Compress: { using var cs = new FileFormat.Compress.CompressStream(output, Core.Streams.CompressionStreamMode.Compress, leaveOpen: true); input.CopyTo(cs); break; }
-      case F.Lzma: FileFormat.Lzma.LzmaStream.Compress(input, output); break;
-      case F.Lzip: FileFormat.Lzip.LzipStream.Compress(input, output); break;
-      case F.Zlib: FileFormat.Zlib.ZlibStream.Compress(input, output); break;
-      case F.Szdd: FileFormat.Szdd.SzddStream.Compress(input, output); break;
-      case F.Kwaj: FileFormat.Kwaj.KwajStream.Compress(input, output); break;
-      case F.Lz4: { using var ms = new MemoryStream(); input.CopyTo(ms); var w = new FileFormat.Lz4.Lz4FrameWriter(output); w.Write(ms.ToArray()); break; }
-      case F.Brotli: { var c = FileFormat.Brotli.BrotliStream.Compress(input); output.Write(c); break; }
-      case F.Snappy: { using var ms = new MemoryStream(); input.CopyTo(ms); var w = new FileFormat.Snappy.SnappyFrameWriter(output); w.Write(ms.ToArray()); break; }
-      case F.Lzop: { using var ms = new MemoryStream(); input.CopyTo(ms); output.Write(FileFormat.Lzop.LzopWriter.Compress(ms.ToArray())); break; }
-      case F.PowerPacker: FileFormat.PowerPacker.PowerPackerStream.Compress(input, output); break;
-      case F.Squeeze: FileFormat.Squeeze.SqueezeStream.Compress(input, output); break;
-      case F.IcePacker: FileFormat.IcePacker.IcePackerStream.Compress(input, output); break;
-      case F.Rzip: FileFormat.Rzip.RzipStream.Compress(input, output); break;
-      case F.MacBinary: { using var ms = new MemoryStream(); input.CopyTo(ms); FileFormat.MacBinary.MacBinaryWriter.Write(output, "data", ms.ToArray()); break; }
-      case F.BinHex: { using var ms = new MemoryStream(); input.CopyTo(ms); FileFormat.BinHex.BinHexWriter.Write(output, "data", ms.ToArray()); break; }
-      case F.PackBits: FileFormat.PackBits.PackBitsStream.Compress(input, output); break;
-      case F.Yaz0: FileFormat.Yaz0.Yaz0Stream.Compress(input, output); break;
-      case F.BriefLz: FileFormat.BriefLz.BriefLzStream.Compress(input, output); break;
-      case F.Rnc: FileFormat.Rnc.RncStream.Compress(input, output); break;
-      case F.RefPack: FileFormat.RefPack.RefPackStream.Compress(input, output); break;
-      case F.ApLib: FileFormat.ApLib.ApLibStream.Compress(input, output); break;
-      case F.Lzfse: FileFormat.Lzfse.LzfseStream.Compress(input, output); break;
-      case F.Freeze: FileFormat.Freeze.FreezeStream.Compress(input, output); break;
-      case F.UuEncoding: { using var ms = new MemoryStream(); input.CopyTo(ms); ms.Position = 0; FileFormat.UuEncoding.UuEncoder.Encode(ms, output, "data"); break; }
-      case F.YEnc: { using var ms = new MemoryStream(); input.CopyTo(ms); FileFormat.YEnc.YEncEncoder.Encode(output, "data", ms.ToArray()); break; }
-      case F.Density: FileFormat.Density.DensityStream.Compress(input, output); break;
-      default: throw new NotSupportedException($"No compressor for: {format}");
-    }
-  }
-
-  private static Stream WrapDecompressStream(Stream s, F format) {
-    var mode = Core.Streams.CompressionStreamMode.Decompress;
-    return format switch {
-      F.Gzip => new FileFormat.Gzip.GzipStream(s, mode, leaveOpen: true),
-      F.Bzip2 => new FileFormat.Bzip2.Bzip2Stream(s, mode, leaveOpen: true),
-      F.Xz => new FileFormat.Xz.XzStream(s, mode, leaveOpen: true),
-      F.Zstd => new FileFormat.Zstd.ZstdStream(s, mode, leaveOpen: true),
-      F.Compress => new FileFormat.Compress.CompressStream(s, mode, leaveOpen: true),
-      _ => throw new NotSupportedException($"No stream decompressor for: {format}"),
-    };
-  }
-
   // ── Helpers ────────────────────────────────────────────────────────
 
   private static void WriteFile(string baseDir, string entryName, byte[] data) {
@@ -1488,351 +671,8 @@ internal static class ArchiveOperations {
 
   private static string StripCompressionExtension(string path) {
     var name = Path.GetFileName(path);
-    var ext = Path.GetExtension(name).ToLowerInvariant();
-    return ext is ".gz" or ".bz2" or ".xz" or ".zst" or ".lz4" or ".br" or ".sz" or ".lzo" or ".z" or ".lzma" or ".lz" or ".zlib"
-        or ".pp" or ".sqz" or ".ice" or ".rz" or ".hqx" or ".bin"
-        or ".packbits" or ".yaz0" or ".szs" or ".blz" or ".rnc" or ".qfs" or ".refpack" or ".aplib" or ".lzfse" or ".freeze"
-        or ".uue" or ".uu" or ".yenc" or ".density"
-      ? Path.GetFileNameWithoutExtension(name)
-      : name;
-  }
-
-  // ── DMS (Disk Masher System) ──────────────────────────────────────
-
-  private static List<ArchiveEntry> ListDms(Stream s) {
-    var r = new FileFormat.Dms.DmsReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, $"track_{e.TrackNumber:D3}.bin",
-      e.UncompressedSize, e.CompressedSize, $"Mode {e.CompressionMode}", false, false, null)).ToList();
-  }
-
-  private static void ExtractDms(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Dms.DmsReader(s);
-    // Extract as a single disk image
-    var disk = r.ExtractDisk();
-    WriteFile(dir, "disk.adf", disk);
-  }
-
-  private static void CreateDms(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    // DMS wraps a single disk image
-    var fileInputs = inputs.Where(i => !i.IsDirectory).ToArray();
-    if (fileInputs.Length != 1)
-      throw new ArgumentException("DMS format requires exactly one input file (disk image).");
-    var data = File.ReadAllBytes(fileInputs[0].FullPath);
-    using var w = new FileFormat.Dms.DmsWriter(outFs, leaveOpen: true);
-    w.WriteDisk(data, compressionMode: 0);
-  }
-
-  // ── LZX (Amiga) ──────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListLzxAmiga(Stream s) {
-    var r = new FileFormat.Lzx.LzxAmigaReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.OriginalSize, e.CompressedSize,
-      e.Method == 0 ? "Stored" : "LZX", false, false, e.LastModified)).ToList();
-  }
-
-  private static void ExtractLzxAmiga(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Lzx.LzxAmigaReader(s);
-    foreach (var e in r.Entries) {
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.Extract(e));
-    }
-  }
-
-  private static void CreateLzxAmiga(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var w = new FileFormat.Lzx.LzxAmigaWriter(outFs, leaveOpen: true);
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddFile(name, data, DateTime.Now);
-  }
-
-  // ── Compact Pro ───────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListCompactPro(Stream s) {
-    var r = new FileFormat.CompactPro.CompactProReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.DataForkSize,
-      e.DataForkCompressedSize, $"Method {e.DataForkMethod}", e.IsDirectory, false, e.ModifiedDate)).ToList();
-  }
-
-  private static void ExtractCompactPro(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.CompactPro.CompactProReader(s);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.Extract(e));
-    }
-  }
-
-  private static void CreateCompactPro(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var w = new FileFormat.CompactPro.CompactProWriter(outFs, leaveOpen: true);
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddFile(name, data);
-  }
-
-  // ── Spark ─────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListSpark(Stream s) {
-    var r = new FileFormat.Spark.SparkReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.OriginalSize,
-      e.CompressedSize, $"Method {e.Method:X2}", e.IsDirectory, false, e.LastModified)).ToList();
-  }
-
-  private static void ExtractSpark(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Spark.SparkReader(s);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.Extract(e));
-    }
-  }
-
-  private static void CreateSpark(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var w = new FileFormat.Spark.SparkWriter(outFs, leaveOpen: true);
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddFile(name, data, DateTime.Now);
-  }
-
-  // ── LBR ───────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListLbr(Stream s) {
-    var r = new FileFormat.Lbr.LbrReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName,
-      (long)e.SectorCount * 128, (long)e.SectorCount * 128, "Stored", false, false, null)).ToList();
-  }
-
-  private static void ExtractLbr(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Lbr.LbrReader(s);
-    foreach (var e in r.Entries) {
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.Extract(e));
-    }
-  }
-
-  private static void CreateLbr(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var w = new FileFormat.Lbr.LbrWriter(outFs, leaveOpen: true);
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddFile(name, data);
-  }
-
-  // ── UHARC ─────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListUharc(Stream s) {
-    var r = new FileFormat.Uharc.UharcReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.OriginalSize,
-      e.CompressedSize, e.Method == 255 ? "Store" : "LZP", e.IsDirectory, false, e.LastModified)).ToList();
-  }
-
-  private static void ExtractUharc(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Uharc.UharcReader(s);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.Extract(e));
-    }
-  }
-
-  private static void CreateUharc(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var w = new FileFormat.Uharc.UharcWriter(outFs, leaveOpen: true);
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddFile(name, data, DateTime.Now);
-  }
-
-  // ── WAD ───────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListWad(Stream s) {
-    var r = new FileFormat.Wad.WadReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.Name, e.Size, e.Size,
-      "Stored", e.IsMarker, false, null)).ToList();
-  }
-
-  private static void ExtractWad(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Wad.WadReader(s);
-    foreach (var e in r.Entries) {
-      if (e.IsMarker) continue;
-      if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(dir, e.Name, r.Extract(e));
-    }
-  }
-
-  private static void CreateWad(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var w = new FileFormat.Wad.WadWriter(outFs, leaveOpen: true);
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddLump(name, data);
-  }
-
-  // ── XAR ────────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListXar(Stream s) {
-    var r = new FileFormat.Xar.XarReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.OriginalSize, e.CompressedSize,
-      e.Method, e.IsDirectory, false, e.LastModified)).ToList();
-  }
-
-  private static void ExtractXar(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Xar.XarReader(s);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.Extract(e));
-    }
-  }
-
-  private static void CreateXar(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var w = new FileFormat.Xar.XarWriter(outFs);
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddFile(name, data);
-  }
-
-  // ── Compound Tar: LZ4 ──────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListTarLz4(Stream s) {
-    var r = new FileFormat.Lz4.Lz4FrameReader(s);
-    using var decompressed = new MemoryStream(r.Read());
-    return ListTar(decompressed);
-  }
-
-  private static void ExtractTarLz4(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Lz4.Lz4FrameReader(s);
-    using var decompressed = new MemoryStream(r.Read());
-    ExtractTar(decompressed, dir, files);
-  }
-
-  private static void CreateTarLz4(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var tarMs = new MemoryStream();
-    CreateTar(tarMs, inputs);
-    tarMs.Position = 0;
-    var w = new FileFormat.Lz4.Lz4FrameWriter(outFs);
-    w.Write(tarMs.ToArray());
-  }
-
-  // ── Compound Tar: Lzip ────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListTarLzip(Stream s) {
-    using var decompressed = new MemoryStream();
-    FileFormat.Lzip.LzipStream.Decompress(s, decompressed);
-    decompressed.Position = 0;
-    return ListTar(decompressed);
-  }
-
-  private static void ExtractTarLzip(Stream s, string dir, string[]? files) {
-    using var decompressed = new MemoryStream();
-    FileFormat.Lzip.LzipStream.Decompress(s, decompressed);
-    decompressed.Position = 0;
-    ExtractTar(decompressed, dir, files);
-  }
-
-  private static void CreateTarLzip(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var tarMs = new MemoryStream();
-    CreateTar(tarMs, inputs);
-    tarMs.Position = 0;
-    FileFormat.Lzip.LzipStream.Compress(tarMs, outFs);
-  }
-
-  // ── Compound Tar: Brotli ──────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListTarBr(Stream s) {
-    var decompressed = FileFormat.Brotli.BrotliStream.Decompress(s);
-    using var ms = new MemoryStream(decompressed);
-    return ListTar(ms);
-  }
-
-  private static void ExtractTarBr(Stream s, string dir, string[]? files) {
-    var decompressed = FileFormat.Brotli.BrotliStream.Decompress(s);
-    using var ms = new MemoryStream(decompressed);
-    ExtractTar(ms, dir, files);
-  }
-
-  private static void CreateTarBr(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var tarMs = new MemoryStream();
-    CreateTar(tarMs, inputs);
-    var compressed = FileFormat.Brotli.BrotliStream.Compress(tarMs.ToArray());
-    outFs.Write(compressed);
-  }
-
-  // ── VPK (Valve Pak) ───────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListVpk(Stream s) {
-    var r = new FileFormat.Vpk.VpkReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FullPath,
-      e.PreloadBytes.Length + e.Length, e.PreloadBytes.Length + e.Length,
-      "Stored", false, false, null)).ToList();
-  }
-
-  private static void ExtractVpk(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Vpk.VpkReader(s);
-    foreach (var e in r.Entries) {
-      if (files != null && !MatchesFilter(e.FullPath, files)) continue;
-      WriteFile(dir, e.FullPath, r.Extract(e));
-    }
-  }
-
-  private static void CreateVpk(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var w = new FileFormat.Vpk.VpkWriter(outFs, leaveOpen: true);
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddFile(name, data);
-    w.Finish();
-  }
-
-  // ── BSA (Bethesda) ────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListBsa(Stream s) {
-    var r = new FileFormat.Bsa.BsaReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FullPath, e.OriginalSize,
-      e.CompressedSize < 0 ? -1 : e.CompressedSize,
-      e.IsCompressed ? "zlib" : "Stored", false, false, null)).ToList();
-  }
-
-  private static void ExtractBsa(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Bsa.BsaReader(s);
-    foreach (var e in r.Entries) {
-      if (files != null && !MatchesFilter(e.FullPath, files)) continue;
-      WriteFile(dir, e.FullPath, r.Extract(e));
-    }
-  }
-
-  private static void CreateBsa(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var w = new FileFormat.Bsa.BsaWriter(outFs, leaveOpen: true);
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddFile(name, data);
-    w.Finish();
-  }
-
-  // ── MPQ (Blizzard) ────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListMpq(Stream s) {
-    var r = new FileFormat.Mpq.MpqReader(s);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.OriginalSize, e.CompressedSize,
-      e.IsCompressed ? "Compressed" : "Stored", false, e.IsEncrypted, null)).ToList();
-  }
-
-  private static void ExtractMpq(Stream s, string dir, string[]? files) {
-    var r = new FileFormat.Mpq.MpqReader(s);
-    foreach (var e in r.Entries) {
-      if (!e.Exists) continue;
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      try { WriteFile(dir, e.FileName, r.Extract(e)); } catch { /* skip entries that can't be decompressed */ }
-    }
-  }
-
-  // ── ALZip ──────────────────────────────────────────────────────────
-
-  private static List<ArchiveEntry> ListAlZip(Stream s) {
-    using var r = new FileFormat.AlZip.AlZipReader(s, leaveOpen: true);
-    return r.Entries.Select((e, i) => new ArchiveEntry(i, e.FileName, e.OriginalSize, e.CompressedSize,
-      e.MethodName, e.IsDirectory, false, e.LastModified)).ToList();
-  }
-
-  private static void ExtractAlZip(Stream s, string dir, string[]? files) {
-    using var r = new FileFormat.AlZip.AlZipReader(s, leaveOpen: true);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.FileName, files)) continue;
-      WriteFile(dir, e.FileName, r.Extract(e));
-    }
-  }
-
-  private static void CreateAlZip(Stream outFs, IReadOnlyList<ArchiveInput> inputs) {
-    using var w = new FileFormat.AlZip.AlZipWriter(outFs);
-    foreach (var (name, data) in ArchiveInput.FlatFiles(inputs))
-      w.AddFile(name, data);
+    var ext = Path.GetExtension(name);
+    return FormatDetector.IsStreamExtension(ext) ? Path.GetFileNameWithoutExtension(name) : name;
   }
 
   /// <summary>
