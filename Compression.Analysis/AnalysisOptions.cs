@@ -40,6 +40,15 @@ public sealed class AnalysisOptions {
   /// <summary>Enable chain reconstruction (default false).</summary>
   public bool Chain { get; init; }
 
+  /// <summary>Enable deep format probing (header/structure/integrity validation).</summary>
+  public bool Probe { get; init; }
+
+  /// <summary>Maximum validation depth for format probing.</summary>
+  public Compression.Registry.ValidationLevel ProbeMaxLevel { get; init; } = Compression.Registry.ValidationLevel.Integrity;
+
+  /// <summary>Timeout for integrity validation in milliseconds (default 2000).</summary>
+  public int ProbeIntegrityTimeoutMs { get; init; } = 2000;
+
   /// <summary>Enable all analysis modes.</summary>
   public bool All { get; init; }
 }

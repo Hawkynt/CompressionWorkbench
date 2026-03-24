@@ -3,6 +3,7 @@ using Compression.Analysis.Fingerprinting;
 using Compression.Analysis.Scanning;
 using Compression.Analysis.Statistics;
 using Compression.Analysis.TrialDecompression;
+using FormatProber = Compression.Analysis.Scanning.FormatProber;
 
 namespace Compression.Analysis;
 
@@ -48,6 +49,11 @@ public sealed class BinaryAnalyzer {
 
     if (_options.Chain || _options.All)
       result.Chain = new ChainReconstructor(_options.MaxDepth, _options.PerTrialTimeoutMs).Reconstruct(slice);
+
+    if ((_options.Probe || _options.All) && result.Signatures is { Count: > 0 }) {
+      var prober = new FormatProber(_options.ProbeMaxLevel, _options.ProbeIntegrityTimeoutMs);
+      result.ProbeResults = prober.Probe(slice, result.Signatures);
+    }
 
     return result;
   }

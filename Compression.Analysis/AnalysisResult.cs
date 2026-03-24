@@ -27,4 +27,7 @@ public sealed class AnalysisResult {
 
   /// <summary>Reconstructed compression chain.</summary>
   public CompressionChain? Chain { get; set; }
+
+  /// <summary>Deep-probed format validation results (confidence + health).</summary>
+  public List<Scanning.ProbeResult>? ProbeResults { get; set; }
 }
