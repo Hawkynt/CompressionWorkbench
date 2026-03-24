@@ -24,8 +24,8 @@ public class SquashFsTests {
   public void RoundTrip_MultipleFiles() {
     var data1 = new byte[1024];
     var data2 = new byte[512];
-    Random.Shared.NextBytes(data1);
-    Random.Shared.NextBytes(data2);
+    new Random(42).NextBytes(data1);
+    new Random(42).NextBytes(data2);
 
     using var ms = new MemoryStream();
     using (var w = new SquashFsWriter(ms, leaveOpen: true)) {
@@ -92,7 +92,7 @@ public class SquashFsTests {
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void RoundTrip_LargeFile() {
     var data = new byte[200_000];
-    Random.Shared.NextBytes(data);
+    new Random(42).NextBytes(data);
 
     using var ms = new MemoryStream();
     using (var w = new SquashFsWriter(ms, leaveOpen: true))

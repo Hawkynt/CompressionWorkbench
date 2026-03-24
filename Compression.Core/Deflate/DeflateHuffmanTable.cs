@@ -116,7 +116,12 @@ public sealed class DeflateHuffmanTable {
   /// </summary>
   /// <param name="symbol">The symbol to encode.</param>
   /// <returns>The reversed code and its length in bits.</returns>
-  public (uint ReversedCode, int Length) GetCode(int symbol) => (this._encodeCodes[symbol], this._encodeLengths[symbol]);
+  public (uint ReversedCode, int Length) GetCode(int symbol) {
+    if ((uint)symbol >= (uint)this._encodeCodes.Length)
+      throw new ArgumentOutOfRangeException(nameof(symbol), symbol,
+        $"Symbol {symbol} is outside the Huffman table range [0, {this._encodeCodes.Length}).");
+    return (this._encodeCodes[symbol], this._encodeLengths[symbol]);
+  }
 
   /// <summary>
   /// Reverses the bit order of a code.

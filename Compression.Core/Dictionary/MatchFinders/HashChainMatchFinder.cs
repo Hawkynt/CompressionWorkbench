@@ -39,6 +39,7 @@ public sealed class HashChainMatchFinder : IMatchFinder {
     var windowStart = Math.Max(0, position - maxDistance);
 
     while (candidate >= windowStart && chainCount < this._maxChainDepth) {
+      if (candidate == position) { candidate = this._prev[candidate & (this._prev.Length - 1)]; ++chainCount; continue; }
       var distance = position - candidate;
 
       // Quick check: compare first and last bytes of current best

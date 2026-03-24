@@ -61,50 +61,31 @@ public static class HuffmanTree {
     if (!needsAdjustment)
       return;
 
-    // Collect non-zero lengths and sort descending
+    // Collect non-zero lengths
     var symbols = new List<(int Symbol, int Length)>();
     for (var i = 0; i < codeLengths.Length; ++i)
       if (codeLengths[i] > 0)
         symbols.Add((i, codeLengths[i]));
 
-    // Clamp lengths to maxLength
+    // Clamp lengths to maxLength — this shortens over-long codes, increasing
+    // their Kraft contribution and potentially pushing the sum over budget.
     for (var i = 0; i < symbols.Count; ++i)
       if (symbols[i].Length > maxLength)
         symbols[i] = (symbols[i].Symbol, maxLength);
 
-    // Adjust to satisfy Kraft inequality: sum of 2^(-length) <= 1
-    // We work with integer Kraft values: sum of 2^(maxLength - length) <= 2^maxLength
+    // Fix Kraft overflow: lengthening a short code (L → L+1) halves its Kraft
+    // contribution, reducing the sum. Pick the shortest code each iteration
+    // for maximum reduction.
+    var kraftMax = 1L << maxLength;
     for (;;) {
       var kraftSum = 0L;
-      var kraftMax = 1L << maxLength;
       for (var i = 0; i < symbols.Count; ++i)
         kraftSum += 1L << (maxLength - symbols[i].Length);
 
       if (kraftSum <= kraftMax)
         break;
 
-      // Find the longest code and shorten it by 1
-      var longestIdx = 0;
-      for (var i = 1; i < symbols.Count; ++i)
-        if (symbols[i].Length > symbols[longestIdx].Length)
-          longestIdx = i;
-
-      symbols[longestIdx] = (symbols[longestIdx].Symbol, symbols[longestIdx].Length - 1);
-    }
-
-    // Redistribute excess Kraft space to the shortest codes (make them longer)
-    // to keep the tree balanced
-    for (;;) {
-      var kraftSum = 0L;
-      var kraftMax = 1L << maxLength;
-      for (var i = 0; i < symbols.Count; ++i)
-        kraftSum += 1L << (maxLength - symbols[i].Length);
-
-      var excess = kraftMax - kraftSum;
-      if (excess <= 0)
-        break;
-
-      // Find shortest code that can be lengthened
+      // Find the shortest code that can be lengthened
       var shortestIdx = -1;
       var shortestLen = int.MaxValue;
       for (var i = 0; i < symbols.Count; ++i)
@@ -114,12 +95,39 @@ public static class HuffmanTree {
         }
 
       if (shortestIdx < 0)
+        break; // all at maxLength — can't improve
+
+      symbols[shortestIdx] = (symbols[shortestIdx].Symbol, symbols[shortestIdx].Length + 1);
+    }
+
+    // Redistribute excess Kraft space: shorten the longest codes to use up
+    // remaining budget and keep the tree balanced. Shortening from L to L-1
+    // doubles the symbol's Kraft contribution (adds 2^(maxLength-L) to sum).
+    for (;;) {
+      var kraftSum = 0L;
+      for (var i = 0; i < symbols.Count; ++i)
+        kraftSum += 1L << (maxLength - symbols[i].Length);
+
+      var excess = kraftMax - kraftSum;
+      if (excess <= 0)
         break;
 
-      var freed = 1L << (maxLength - symbols[shortestIdx].Length);
-      var needed = 1L << (maxLength - symbols[shortestIdx].Length - 1);
-      if (freed - needed <= excess)
-        symbols[shortestIdx] = (symbols[shortestIdx].Symbol, symbols[shortestIdx].Length + 1);
+      // Find the longest code that can be shortened
+      var longestIdx = -1;
+      var longestLen = 0;
+      for (var i = 0; i < symbols.Count; ++i)
+        if (symbols[i].Length > longestLen) {
+          longestLen = symbols[i].Length;
+          longestIdx = i;
+        }
+
+      if (longestIdx < 0 || longestLen <= 1)
+        break;
+
+      // Shortening adds 2^(maxLength - longestLen) to the sum
+      var added = 1L << (maxLength - longestLen);
+      if (added <= excess)
+        symbols[longestIdx] = (symbols[longestIdx].Symbol, longestLen - 1);
       else
         break;
     }

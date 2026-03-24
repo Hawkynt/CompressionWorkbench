@@ -142,4 +142,28 @@ public class DeflateRoundTripTests {
     var resultSys = DecompressWithSystem(compressed);
     Assert.That(resultSys, Is.EqualTo(data));
   }
+
+  [Category("Boundary")]
+  [Category("RoundTrip")]
+  [Test]
+  public void RoundTrip_SkewedData_ForcesCodeLengthLimiting() {
+    // Create data with extremely skewed byte distribution.
+    // One dominant byte value with rare occurrences of many others.
+    // This produces a deep Huffman tree that exceeds the 15-bit limit,
+    // exercising the LimitCodeLengths fix-up path.
+    var data = new byte[32768];
+    Array.Fill(data, (byte)0x00);
+    var rng = new Random(99);
+    for (var i = 0; i < 256; ++i)
+      data[rng.Next(data.Length)] = (byte)i; // sprinkle in rare values
+
+    foreach (var level in new[] { DeflateCompressionLevel.Fast, DeflateCompressionLevel.Default, DeflateCompressionLevel.Best }) {
+      var compressed = DeflateCompressor.Compress(data, level);
+      var result = DeflateDecompressor.Decompress(compressed);
+      Assert.That(result, Is.EqualTo(data), $"Skewed round-trip failed for level {level}");
+
+      var resultSys = DecompressWithSystem(compressed);
+      Assert.That(resultSys, Is.EqualTo(data), $"System interop failed for level {level}");
+    }
+  }
 }

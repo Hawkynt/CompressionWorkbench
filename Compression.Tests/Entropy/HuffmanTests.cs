@@ -224,6 +224,72 @@ public class HuffmanTests {
     Assert.That(table.MaxCodeLength, Is.LessThanOrEqualTo(7));
   }
 
+  [Category("Boundary")]
+  [Test]
+  public void LimitCodeLengths_KraftInequality_Satisfied() {
+    // Power-of-2 frequency distribution forces a degenerate tree.
+    // Each pairing creates a value just below the next symbol's frequency,
+    // producing maximum depth. 17 symbols → depth 16 → exceeds limit of 15.
+    var frequencies = new long[286];
+    for (var i = 0; i < 17; ++i)
+      frequencies[i] = 1L << i; // 1, 2, 4, 8, ..., 65536
+
+    var root = HuffmanTree.BuildFromFrequencies(frequencies);
+    var codeLengths = HuffmanTree.GetCodeLengths(root, 286);
+
+    // Original tree should exceed 15 bits for some symbols
+    Assert.That(codeLengths.Max(), Is.GreaterThan(15),
+      $"Max code length was {codeLengths.Max()}, expected > 15");
+
+    HuffmanTree.LimitCodeLengths(codeLengths, 15);
+
+    // All lengths must be <= 15
+    for (var i = 0; i < 286; ++i)
+      if (codeLengths[i] > 0)
+        Assert.That(codeLengths[i], Is.LessThanOrEqualTo(15));
+
+    // Kraft inequality: sum of 2^(maxLen - L_i) <= 2^maxLen
+    var kraftSum = 0L;
+    for (var i = 0; i < 286; ++i)
+      if (codeLengths[i] > 0)
+        kraftSum += 1L << (15 - codeLengths[i]);
+    Assert.That(kraftSum, Is.LessThanOrEqualTo(1L << 15),
+      $"Kraft inequality violated: {kraftSum} > {1L << 15}");
+
+    // All symbols with non-zero frequency should still have codes
+    for (var i = 0; i < 17; ++i)
+      Assert.That(codeLengths[i], Is.GreaterThan(0), $"Symbol {i} lost its code");
+
+    // Must build a valid DeflateHuffmanTable without crashing
+    var table = new Compression.Core.Deflate.DeflateHuffmanTable(codeLengths[..17]);
+    Assert.That(table.MaxCodeLength, Is.LessThanOrEqualTo(15));
+  }
+
+  [Category("Boundary")]
+  [Test]
+  public void LimitCodeLengths_CodeLengthAlphabet_MaxSeven() {
+    // Simulate the code-length alphabet (19 symbols) with skewed distribution
+    var frequencies = new long[19];
+    frequencies[0] = 10000;
+    frequencies[8] = 5000;
+    for (var i = 1; i < 19; ++i)
+      if (frequencies[i] == 0) frequencies[i] = 1;
+
+    var root = HuffmanTree.BuildFromFrequencies(frequencies);
+    var codeLengths = HuffmanTree.GetCodeLengths(root, 19);
+    HuffmanTree.LimitCodeLengths(codeLengths, 7);
+
+    for (var i = 0; i < 19; ++i)
+      if (codeLengths[i] > 0)
+        Assert.That(codeLengths[i], Is.LessThanOrEqualTo(7));
+
+    var kraftSum = 0L;
+    for (var i = 0; i < 19; ++i)
+      if (codeLengths[i] > 0)
+        kraftSum += 1L << (7 - codeLengths[i]);
+    Assert.That(kraftSum, Is.LessThanOrEqualTo(1L << 7));
+  }
+
   [Category("EdgeCase")]
   [Category("RoundTrip")]
   [Test]
