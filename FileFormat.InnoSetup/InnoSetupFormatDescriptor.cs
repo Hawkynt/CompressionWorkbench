@@ -17,6 +17,8 @@ public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveForma
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("innosetup", "Inno Setup")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Inno Setup installer archive";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new InnoSetupReader(stream);

@@ -17,6 +17,8 @@ public sealed class SqxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'S', (byte)'Q', (byte)'X', 0x01], Confidence: 0.95)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("sqx", "SQX")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "SQX archive with multiple compression algorithms";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SqxReader(stream, password: password);

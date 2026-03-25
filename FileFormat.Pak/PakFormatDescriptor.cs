@@ -17,6 +17,8 @@ public sealed class PakFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("pak", "PAK")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Quake PAK game resource archive";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new PakReader(stream);

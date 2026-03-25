@@ -20,6 +20,8 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("squashfs", "SquashFS")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Linux compressed read-only filesystem";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SquashFsReader(stream);

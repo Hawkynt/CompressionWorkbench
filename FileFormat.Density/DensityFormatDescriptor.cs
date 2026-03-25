@@ -19,6 +19,8 @@ public sealed class DensityFormatDescriptor : IFormatDescriptor, IStreamFormatOp
     new("lion", "Lion"),
   ];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Classic;
+  public string Description => "Chameleon/Cheetah/Lion algorithms, tuned for speed tiers";
 
   public void Decompress(Stream input, Stream output) => DensityStream.Decompress(input, output);
   public void Compress(Stream input, Stream output) => DensityStream.Compress(input, output);

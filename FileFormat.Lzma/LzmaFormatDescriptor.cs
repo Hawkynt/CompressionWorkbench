@@ -16,6 +16,8 @@ public sealed class LzmaFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("lzma", "LZMA", SupportsOptimize: true)];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public string Description => "LZMA range-coded LZ77 with large dictionaries, high compression";
 
   public void Decompress(Stream input, Stream output) => LzmaStream.Decompress(input, output);
   public void Compress(Stream input, Stream output) => LzmaStream.Compress(input, output);

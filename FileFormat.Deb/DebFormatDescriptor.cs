@@ -17,6 +17,8 @@ public sealed class DebFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("deb", "DEB")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Debian package archive (ar + tar.gz/xz)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new DebReader(stream);

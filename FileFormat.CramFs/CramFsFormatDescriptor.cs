@@ -17,6 +17,8 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x45, 0x3D, 0xCD, 0x28], Confidence: 0.95)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("cramfs", "CramFS")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Linux Compressed ROM filesystem";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new CramFsReader(stream);

@@ -16,6 +16,8 @@ public sealed class BinHexFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("binhex", "BinHex")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Encoding;
+  public string Description => "Macintosh BinHex 4.0, binary-to-text with CRC";
 
   public void Decompress(Stream input, Stream output) {
     var result = BinHexReader.Decode(input);

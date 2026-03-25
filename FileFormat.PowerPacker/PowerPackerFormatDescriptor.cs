@@ -16,6 +16,8 @@ public sealed class PowerPackerFormatDescriptor : IFormatDescriptor, IStreamForm
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("powerpacker", "PowerPacker")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Classic;
+  public string Description => "Amiga PowerPacker LZ77, classic retro format";
 
   public void Decompress(Stream input, Stream output) => PowerPackerStream.Decompress(input, output);
   public void Compress(Stream input, Stream output) => PowerPackerStream.Compress(input, output);

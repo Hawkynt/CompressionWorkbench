@@ -34,4 +34,10 @@ public interface IFormatDescriptor {
 
   /// <summary>For compound tar formats: the ID of the outer stream compression format. Null for non-compound formats.</summary>
   string? TarCompressionFormatId { get; }
+
+  /// <summary>Algorithmic family for grouping and display. Defaults to <see cref="AlgorithmFamily.Other"/>.</summary>
+  AlgorithmFamily Family => AlgorithmFamily.Other;
+
+  /// <summary>Short human-readable description of the algorithm. Defaults to <see cref="DisplayName"/>.</summary>
+  string Description => DisplayName;
 }

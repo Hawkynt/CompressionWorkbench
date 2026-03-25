@@ -16,6 +16,8 @@ public sealed class ZstdFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x28, 0xB5, 0x2F, 0xFD], Confidence: 0.95)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("zstd", "Zstd", SupportsOptimize: true)];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public string Description => "Facebook's modern codec, excellent speed/ratio tradeoff with dictionary support";
 
   public void Decompress(Stream input, Stream output) {
     using var ds = new ZstdStream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);

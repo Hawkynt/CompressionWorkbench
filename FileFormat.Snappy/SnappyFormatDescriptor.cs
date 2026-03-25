@@ -16,6 +16,8 @@ public sealed class SnappyFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0xFF, 0x06, 0x00, 0x00, 0x73, 0x4E, 0x61, 0x50], Confidence: 0.90)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("snappy", "Snappy")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public string Description => "Google's fast compressor, designed for speed over ratio";
 
   public void Decompress(Stream input, Stream output) {
     var r = new SnappyFrameReader(input);

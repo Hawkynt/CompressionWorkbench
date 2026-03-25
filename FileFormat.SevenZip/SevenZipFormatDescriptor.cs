@@ -21,6 +21,8 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
     new("bzip2", "BZip2"), new("deflate", "Deflate"), new("copy", "Store")
   ];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "7-Zip archive with LZMA2, high compression ratio";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SevenZipReader(stream, password: password);

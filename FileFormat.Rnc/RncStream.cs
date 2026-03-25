@@ -284,14 +284,29 @@ public static class RncStream {
   }
 
   /// <summary>
+  /// Maximum number of chunks allowed (header stores pack-chunks as a single byte).
+  /// </summary>
+  private const int MaxChunks = 255;
+
+  /// <summary>
   /// Builds chunks from input data. Uses greedy LZSS matching. When no match
   /// can be found and raw count would exceed MaxHuffSymbol, starts a new chunk.
+  /// Limits total chunks to MaxChunks (255) to fit the header byte. When the
+  /// limit is approaching, forces matches via brute-force scan to keep data
+  /// within the current chunk rather than creating new ones.
   /// </summary>
   private static List<Chunk> BuildChunks(ReadOnlySpan<byte> data) {
     var chunks = new List<Chunk>();
     var pos = 0;
     var maxDist = (MaxHuffSymbol << 8) | 0xFF;
     var maxMatchLen = MaxHuffSymbol + MinMatchLength;
+
+    // Hash chain: hashHead[hash] = most recent position with that 2-byte prefix
+    // hashPrev[pos] = previous position in the chain for the same hash
+    var hashHead = new int[65536];
+    Array.Fill(hashHead, -1);
+    var hashPrev = new int[data.Length > 0 ? data.Length : 1];
+    Array.Fill(hashPrev, -1);
 
     var currentChunk = new Chunk();
 
@@ -302,9 +317,10 @@ public static class RncStream {
       // Collect raw bytes until we find a match or hit the limit
       while (pos < data.Length && rawCount < MaxHuffSymbol) {
         if (pos >= MinMatchLength) {
-          var (_, ml) = FindMatch(data, pos, maxDist, Math.Min(maxMatchLen, data.Length - pos));
+          var (_, ml) = FindMatch(data, pos, maxDist, Math.Min(maxMatchLen, data.Length - pos), hashHead, hashPrev);
           if (ml >= MinMatchLength) break;
         }
+        HashInsert(data, pos, hashHead, hashPrev);
         rawCount++; pos++;
       }
 
@@ -315,16 +331,35 @@ public static class RncStream {
         currentChunk = new Chunk();
       } else {
         // Check if we found a match or just hit maxRaw
-        var (dist, len) = FindMatch(data, pos, maxDist, Math.Min(maxMatchLen, data.Length - pos));
+        var (dist, len) = FindMatch(data, pos, maxDist, Math.Min(maxMatchLen, data.Length - pos), hashHead, hashPrev);
         if (len >= MinMatchLength) {
           // Found a match: add tuple with match
           currentChunk.Tuples.Add(new ChunkTuple(data.Slice(rawStart, rawCount).ToArray(), dist, len));
+          for (var i = 0; i < len; i++)
+            HashInsert(data, pos + i, hashHead, hashPrev);
           pos += len;
-        } else {
-          // No match and rawCount = maxRaw. End this chunk with this tuple.
+        } else if (chunks.Count < MaxChunks - 1) {
+          // No match and rawCount = maxRaw. Safe to start a new chunk.
           currentChunk.Tuples.Add(new ChunkTuple(data.Slice(rawStart, rawCount).ToArray(), 0, 0));
           chunks.Add(currentChunk);
           currentChunk = new Chunk();
+        } else {
+          // Approaching chunk limit: force a match via brute-force scan to stay
+          // in the current chunk. Search all positions in the window for any
+          // 2-byte match at the current position.
+          var (fd, fl) = ForceMatch(data, pos, maxDist);
+          if (fl >= MinMatchLength) {
+            currentChunk.Tuples.Add(new ChunkTuple(data.Slice(rawStart, rawCount).ToArray(), fd, fl));
+            for (var i = 0; i < fl; i++)
+              HashInsert(data, pos + i, hashHead, hashPrev);
+            pos += fl;
+          } else {
+            // Extremely unlikely: no 2-byte match found at all.
+            // Fall back to creating a new chunk anyway (will truncate in header).
+            currentChunk.Tuples.Add(new ChunkTuple(data.Slice(rawStart, rawCount).ToArray(), 0, 0));
+            chunks.Add(currentChunk);
+            currentChunk = new Chunk();
+          }
         }
       }
     }
@@ -345,6 +380,28 @@ public static class RncStream {
     }
 
     return chunks;
+  }
+
+  /// <summary>
+  /// Brute-force scan for any match of at least MinMatchLength bytes at <paramref name="pos"/>.
+  /// Used when the chunk limit is approaching and we must avoid creating a new chunk.
+  /// Scans the entire valid window (up to maxDist back) checking every position.
+  /// </summary>
+  private static (int Distance, int Length) ForceMatch(ReadOnlySpan<byte> data, int pos, int maxDist) {
+    if (pos + MinMatchLength > data.Length) return (0, 0);
+    var maxLen = Math.Min(MaxHuffSymbol + MinMatchLength, data.Length - pos);
+    var minPos = Math.Max(0, pos - maxDist);
+    var bestDist = 0; var bestLen = 0;
+    for (var s = pos - 1; s >= minPos; s--) {
+      if (data[s] != data[pos]) continue;
+      var len = 0;
+      while (len < maxLen && pos + len < data.Length && data[s + len] == data[pos + len]) len++;
+      if (len >= MinMatchLength && len > bestLen) {
+        bestLen = len; bestDist = pos - s;
+        if (len >= maxLen) break;
+      }
+    }
+    return (bestDist, bestLen);
   }
 
   // ── Event-based encoding ──────────────────────────────────────────────────
@@ -531,19 +588,38 @@ public static class RncStream {
     return lengths;
   }
 
-  private static (int Distance, int Length) FindMatch(ReadOnlySpan<byte> data, int pos, int maxDist, int maxLen) {
-    if (maxLen < MinMatchLength) return (0, 0);
+  private const int MaxChainSteps = 64;
+
+  private static (int Distance, int Length) FindMatch(
+    ReadOnlySpan<byte> data, int pos, int maxDist, int maxLen,
+    int[] hashHead, int[] hashPrev
+  ) {
+    if (maxLen < MinMatchLength || pos + 1 >= data.Length) return (0, 0);
     var bestDist = 0; var bestLen = 0;
-    var searchStart = Math.Max(0, pos - maxDist);
-    for (var s = pos - 1; s >= searchStart; s--) {
-      var len = 0;
-      while (len < maxLen && pos + len < data.Length && data[s + len] == data[pos + len]) len++;
-      if (len >= MinMatchLength && len > bestLen) {
-        bestLen = len; bestDist = pos - s;
-        if (len >= maxLen) break;
+    var minPos = Math.Max(0, pos - maxDist);
+    var hash = (data[pos] << 8) | data[pos + 1];
+    var s = hashHead[hash];
+    var steps = 0;
+    while (s >= 0 && s >= minPos && steps < MaxChainSteps) {
+      if (data[s] == data[pos]) {
+        var len = 0;
+        while (len < maxLen && pos + len < data.Length && data[s + len] == data[pos + len]) len++;
+        if (len >= MinMatchLength && len > bestLen) {
+          bestLen = len; bestDist = pos - s;
+          if (len >= maxLen) break;
+        }
       }
+      s = hashPrev[s];
+      steps++;
     }
     return (bestDist, bestLen);
+  }
+
+  private static void HashInsert(ReadOnlySpan<byte> data, int pos, int[] hashHead, int[] hashPrev) {
+    if (pos + 1 >= data.Length) return;
+    var hash = (data[pos] << 8) | data[pos + 1];
+    hashPrev[pos] = hashHead[hash];
+    hashHead[hash] = pos;
   }
 
   // ── Header ────────────────────────────────────────────────────────────────

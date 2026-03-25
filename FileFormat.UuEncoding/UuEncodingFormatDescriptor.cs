@@ -15,6 +15,8 @@ public sealed class UuEncodingFormatDescriptor : IFormatDescriptor, IStreamForma
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("uuencode", "UUEncode")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Encoding;
+  public string Description => "Unix-to-Unix encoding, binary-to-text for email";
 
   public void Decompress(Stream input, Stream output) {
     var (_, _, data) = UuEncoder.Decode(input);

@@ -17,6 +17,8 @@ public sealed class NsisFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("nsis", "NSIS")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "NSIS installer archive (Nullsoft Scriptable Install System)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new NsisReader(stream);

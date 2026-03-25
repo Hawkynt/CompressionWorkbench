@@ -17,6 +17,8 @@ public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'*', (byte)'*', (byte)'A', (byte)'C', (byte)'E', (byte)'*', (byte)'*'], Offset: 7, Confidence: 0.95)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("ace1", "ACE 1"), new("ace2", "ACE 2"), new("store", "Store")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "ACE archive, proprietary high-ratio compressor";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new AceReader(stream, password: password);

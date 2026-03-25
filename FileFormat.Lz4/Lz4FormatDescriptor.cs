@@ -17,6 +17,8 @@ public sealed class Lz4FormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x04, 0x22, 0x4D, 0x18], Confidence: 0.95)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("lz4", "LZ4", SupportsOptimize: true)];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public string Description => "Extremely fast LZ77 with byte-aligned tokens, optimized for speed";
 
   public void Decompress(Stream input, Stream output) {
     var r = new Lz4FrameReader(input);

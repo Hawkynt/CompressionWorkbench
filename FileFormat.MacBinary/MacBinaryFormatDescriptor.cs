@@ -16,6 +16,8 @@ public sealed class MacBinaryFormatDescriptor : IFormatDescriptor, IStreamFormat
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("macbinary", "MacBinary")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Encoding;
+  public string Description => "Macintosh resource+data fork container encoding";
 
   public void Decompress(Stream input, Stream output) {
     var data = MacBinaryReader.ReadDataFork(input);

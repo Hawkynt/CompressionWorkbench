@@ -16,6 +16,8 @@ public sealed class LzopFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x89, 0x4C, 0x5A, 0x4F], Confidence: 0.90)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("lzo", "LZO", SupportsOptimize: true)];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public string Description => "LZO-based, optimized for real-time compression speed";
 
   public void Decompress(Stream input, Stream output) {
     var r = new LzopReader(input);

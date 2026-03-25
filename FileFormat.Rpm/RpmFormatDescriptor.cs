@@ -16,6 +16,8 @@ public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0xED, 0xAB, 0xEE, 0xDB], Confidence: 0.95)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("rpm", "RPM")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Red Hat Package Manager archive";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     [new(0, "payload.cpio", 0, 0, "cpio", false, false, null)];

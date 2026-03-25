@@ -16,6 +16,8 @@ public sealed class CompressFormatDescriptor : IFormatDescriptor, IStreamFormatO
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x1F, 0x9D], Confidence: 0.85)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("lzw", "LZW", SupportsOptimize: true)];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public string Description => "Unix compress, LZW adaptive dictionary";
 
   public void Decompress(Stream input, Stream output) {
     using var ds = new CompressStream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);

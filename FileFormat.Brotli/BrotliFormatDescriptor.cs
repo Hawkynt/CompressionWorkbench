@@ -16,6 +16,8 @@ public sealed class BrotliFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("brotli", "Brotli", SupportsOptimize: true)];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public string Description => "Google's modern LZ77+Huffman with static dictionary, great for web content";
 
   public void Decompress(Stream input, Stream output) {
     var d = BrotliStream.Decompress(input);

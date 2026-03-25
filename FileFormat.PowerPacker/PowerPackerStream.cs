@@ -200,7 +200,8 @@ public static class PowerPackerStream {
 
     // Class 3 has extended offsets: max = (1 << eff[3]) - 1 + 127
     var maxDistance = maxDistances[3] + 127;
-    var windowSize = maxDistance + 1;
+    // Round up to power of 2 — HashChainMatchFinder uses bitmask indexing
+    var windowSize = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)(maxDistance + 1));
 
     // PP20 decompresses backward (output filled from end to start), so matches
     // reference data at higher indices. Reverse the input so that a forward LZ77
@@ -264,7 +265,7 @@ public static class PowerPackerStream {
             // Try a lower class or emit literal
             var found = false;
             for (var c = offsetClass - 1; c >= 0; --c) {
-              if (matchLen >= c + 2) {
+              if (matchLen >= c + 2 && encodedOffset <= maxDistances[c]) {
                 offsetClass = c;
                 matchLen = c + 2;
                 found = true;

@@ -17,6 +17,8 @@ public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'z', (byte)'P', (byte)'Q'], Confidence: 0.90)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("zpaq", "ZPAQ")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "ZPAQ journaling archive with deduplication";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ZpaqReader(stream);

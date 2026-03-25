@@ -20,6 +20,8 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("cpio", "CPIO")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Unix copy-in/copy-out archive format";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new CpioReader(stream);

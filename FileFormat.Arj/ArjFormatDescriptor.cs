@@ -20,6 +20,8 @@ public sealed class ArjFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new("1", "Compressed"), new("store", "Store"), new("2", "Method 2"), new("3", "Fastest")
   ];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "ARJ archive, popular DOS-era multi-volume compressor";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ArjReader(stream, password);

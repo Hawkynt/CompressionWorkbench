@@ -16,6 +16,8 @@ public sealed class FreezeFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x1F, 0x9E], Confidence: 0.80)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("freeze", "Freeze")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public string Description => "LZ77+Huffman, classic Unix compressor";
 
   public void Decompress(Stream input, Stream output) => FreezeStream.Decompress(input, output);
   public void Compress(Stream input, Stream output) => FreezeStream.Compress(input, output);

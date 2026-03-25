@@ -21,6 +21,8 @@ public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new("pm0", "PM0"), new("pm1", "PM1"), new("pm2", "PM2")
   ];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "LHA/LZH archive, popular in Japan, Amiga";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new LhaReader(stream);

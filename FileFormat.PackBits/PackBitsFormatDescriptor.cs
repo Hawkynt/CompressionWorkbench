@@ -17,6 +17,8 @@ public sealed class PackBitsFormatDescriptor : IFormatDescriptor, IStreamFormatO
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x50, 0x4B, 0x42, 0x54], Confidence: 0.85)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("packbits", "PackBits")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Transform;
+  public string Description => "Apple PackBits RLE, used in TIFF/Macintosh";
 
   public void Decompress(Stream input, Stream output) => PackBitsStream.Decompress(input, output);
   public void Compress(Stream input, Stream output) => PackBitsStream.Compress(input, output);

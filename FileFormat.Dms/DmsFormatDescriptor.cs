@@ -17,6 +17,8 @@ public sealed class DmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'D', (byte)'M', (byte)'S', (byte)'!'], Confidence: 0.95)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("dms", "DMS")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Amiga Disk Masher System, floppy disk archiver";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new DmsReader(stream);

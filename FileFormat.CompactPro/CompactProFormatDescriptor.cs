@@ -17,6 +17,8 @@ public sealed class CompactProFormatDescriptor : IFormatDescriptor, IArchiveForm
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x01], Confidence: 0.20)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("compactpro", "Compact Pro")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Macintosh Compact Pro archive";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new CompactProReader(stream);

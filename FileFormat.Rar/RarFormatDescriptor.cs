@@ -23,6 +23,8 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new("rar5", "RAR 5"), new("rar4", "RAR 4"), new("store", "Store")
   ];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "RAR archive with solid compression and recovery records";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new RarReader(stream, password: password);

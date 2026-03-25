@@ -17,6 +17,8 @@ public sealed class SparkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("spark", "Spark")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "RISC OS Spark archive (Acorn/ARM)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SparkReader(stream);

@@ -17,6 +17,8 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'U', (byte)'H', (byte)'A'], Confidence: 0.90)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("uharc", "UHARC")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "UHARC high-compression archive (PPM/LZP/delta)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new UharcReader(stream);

@@ -16,6 +16,8 @@ public sealed class XzFormatDescriptor : IFormatDescriptor, IStreamFormatOperati
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00], Confidence: 0.98)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("lzma", "LZMA", SupportsOptimize: true)];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public string Description => "LZMA2 container with SHA-256 integrity checks";
 
   public void Decompress(Stream input, Stream output) {
     using var ds = new XzStream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);

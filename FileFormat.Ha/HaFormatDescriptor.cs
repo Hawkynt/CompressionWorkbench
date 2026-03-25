@@ -17,6 +17,8 @@ public sealed class HaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'H', (byte)'A'], Confidence: 0.60)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("ha", "HA")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "HA archive with arithmetic coding, ASC/HSC methods";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new HaReader(stream);

@@ -25,6 +25,8 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new("bzip2", "BZip2"), new("lzma", "LZMA"), new("zstd", "Zstandard"), new("ppmd", "PPMd")
   ];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Universal archive with multiple compression methods";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ZipReader(stream, password: password);

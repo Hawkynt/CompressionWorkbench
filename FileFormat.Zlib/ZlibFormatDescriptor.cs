@@ -16,6 +16,8 @@ public sealed class ZlibFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate", SupportsOptimize: true)];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public string Description => "Deflate with Adler32 checksum, foundational compression library";
 
   public void Decompress(Stream input, Stream output) => ZlibStream.Decompress(input, output);
   public void Compress(Stream input, Stream output) => ZlibStream.Compress(input, output);
