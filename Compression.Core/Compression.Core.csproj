@@ -9,6 +9,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Dictionary\Brotli\brotli-dictionary.bin" LogicalName="brotli-dictionary.bin" />
   </ItemGroup>
 
