@@ -95,7 +95,7 @@ public sealed class LzwEncoder {
       // (except the first one after a reset, since previousEntry is null).
       if (hasPrevious && nextCode < maxCode) {
         ++nextCode;
-        if (nextCode > (1 << currentBits) && currentBits < this._maxBits)
+        if (nextCode >= (1 << currentBits) && currentBits < this._maxBits)
           ++currentBits;
       }
       hasPrevious = true;
@@ -169,7 +169,7 @@ public sealed class LzwEncoder {
         if (hasPrevious) {
           if (decoderNextCode < maxCode) {
             ++decoderNextCode;
-            if (decoderNextCode > (1 << currentBits) && currentBits < this._maxBits)
+            if (decoderNextCode >= (1 << currentBits) && currentBits < this._maxBits)
               ++currentBits;
           }
           else if (this._useClearCode) {
@@ -196,7 +196,7 @@ public sealed class LzwEncoder {
     // The decoder adds one more entry after the final data code.
     if (hasPrevious && decoderNextCode < maxCode) {
       ++decoderNextCode;
-      if (decoderNextCode > (1 << currentBits) && currentBits < this._maxBits)
+      if (decoderNextCode >= (1 << currentBits) && currentBits < this._maxBits)
         ++currentBits;
     }
 
@@ -393,7 +393,7 @@ public sealed class LzwEncoder {
       if (hasPrevious) {
         if (decoderNextCode < maxCode) {
           ++decoderNextCode;
-          if (decoderNextCode > (1 << currentBits) && currentBits < this._maxBits)
+          if (decoderNextCode >= (1 << currentBits) && currentBits < this._maxBits)
             ++currentBits;
 
         } else if (this._useClearCode) {
@@ -415,7 +415,7 @@ public sealed class LzwEncoder {
     // Account for decoder adding one more entry after the final code.
     if (hasPrevious && decoderNextCode < maxCode) {
       ++decoderNextCode;
-      if (decoderNextCode > (1 << currentBits) && currentBits < this._maxBits)
+      if (decoderNextCode >= (1 << currentBits) && currentBits < this._maxBits)
         ++currentBits;
 
     }
