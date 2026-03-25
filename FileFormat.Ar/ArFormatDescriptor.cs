@@ -17,6 +17,8 @@ public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'!', (byte)'<', (byte)'a', (byte)'r', (byte)'c', (byte)'h', (byte)'>', (byte)'\n'], Confidence: 0.95)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("ar", "AR")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Unix ar archive, used for static libraries (.a files)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ArReader(stream);

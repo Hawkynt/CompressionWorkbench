@@ -19,6 +19,8 @@ public sealed class CabFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new("mszip", "MS-ZIP"), new("lzx", "LZX"), new("quantum", "Quantum"), new("none", "Store")
   ];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Microsoft Cabinet archive, used in Windows installers";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new CabReader(stream);

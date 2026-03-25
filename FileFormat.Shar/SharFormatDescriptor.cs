@@ -17,6 +17,8 @@ public sealed class SharFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'#', (byte)'!', (byte)' ', (byte)'/', (byte)'b', (byte)'i', (byte)'n', (byte)'/', (byte)'s', (byte)'h'], Confidence: 0.50)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("shar", "SHAR")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Shell archive, self-extracting Unix script";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SharReader(stream);

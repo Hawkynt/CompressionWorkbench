@@ -17,6 +17,8 @@ public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'M', (byte)'S', (byte)'W', (byte)'I', (byte)'M', 0x00, 0x00, 0x00], Confidence: 0.95)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("wim", "WIM")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Windows Imaging Format, file-based disk image";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new WimReader(stream);

@@ -17,6 +17,8 @@ public sealed class GzipFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x1F, 0x8B], Confidence: 0.80)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate", SupportsOptimize: true)];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public string Description => "Deflate with CRC32, the ubiquitous HTTP/file compression standard";
 
   public void Decompress(Stream input, Stream output) {
     using var ds = new GzipStream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);

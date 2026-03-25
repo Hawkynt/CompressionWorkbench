@@ -17,6 +17,8 @@ public sealed class ZooFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'Z', (byte)'O', (byte)'O'], Confidence: 0.80)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("lzw", "LZW"), new("store", "Store")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Zoo archive, early DOS compressor by Rahul Dhesi";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ZooReader(stream);

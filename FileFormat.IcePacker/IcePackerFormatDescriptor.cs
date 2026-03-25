@@ -16,6 +16,8 @@ public sealed class IcePackerFormatDescriptor : IFormatDescriptor, IStreamFormat
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("ice", "ICE")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Classic;
+  public string Description => "Atari ST/Amiga Ice Packer, demoscene LZ77";
 
   public void Decompress(Stream input, Stream output) => IcePackerStream.Decompress(input, output);
   public void Compress(Stream input, Stream output) => IcePackerStream.Compress(input, output);

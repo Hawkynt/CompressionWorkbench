@@ -16,6 +16,8 @@ public sealed class Bzip2FormatDescriptor : IFormatDescriptor, IStreamFormatOper
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x42, 0x5A, 0x68], Confidence: 0.85)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("bzip2", "BZip2")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Classic;
+  public string Description => "BWT + MTF + Huffman, good ratio for text data";
 
   public void Decompress(Stream input, Stream output) {
     using var ds = new Bzip2Stream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);

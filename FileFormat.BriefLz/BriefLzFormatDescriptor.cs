@@ -16,6 +16,8 @@ public sealed class BriefLzFormatDescriptor : IFormatDescriptor, IStreamFormatOp
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x62, 0x6C, 0x7A, 0x1A], Confidence: 0.90)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("brieflz", "BriefLZ")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public string Description => "Compact LZ77 with optimal parsing option";
 
   public void Decompress(Stream input, Stream output) => BriefLzStream.Decompress(input, output);
   public void Compress(Stream input, Stream output) => BriefLzStream.Compress(input, output);

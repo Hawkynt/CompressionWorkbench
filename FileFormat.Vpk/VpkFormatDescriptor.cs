@@ -17,6 +17,8 @@ public sealed class VpkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x34, 0x12, 0xAA, 0x55], Confidence: 0.90)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("vpk", "VPK")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Valve Pak game resource archive";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new VpkReader(stream);

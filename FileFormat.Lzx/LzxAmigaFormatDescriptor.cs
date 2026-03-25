@@ -17,6 +17,8 @@ public sealed class LzxAmigaFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'L', (byte)'Z', (byte)'X'], Confidence: 0.80)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("lzx", "LZX")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Amiga LZX archive with LZ+Huffman";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new LzxAmigaReader(stream);

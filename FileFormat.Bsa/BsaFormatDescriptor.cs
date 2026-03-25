@@ -21,6 +21,8 @@ public sealed class BsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("bsa", "BSA")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Bethesda Softworks Archive (Elder Scrolls/Fallout)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new BsaReader(stream);

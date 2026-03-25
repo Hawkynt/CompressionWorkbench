@@ -17,6 +17,8 @@ public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'S', (byte)'I', (byte)'T', (byte)'!'], Confidence: 0.95)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stuffit", "StuffIt")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Macintosh StuffIt archive, classic Mac compression";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new StuffItReader(stream);

@@ -20,6 +20,8 @@ public sealed class WadFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("wad", "WAD")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Doom WAD game data archive";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new WadReader(stream);

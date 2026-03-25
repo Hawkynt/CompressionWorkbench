@@ -17,6 +17,8 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x75, 0x73, 0x74, 0x61, 0x72], Offset: 257, Confidence: 0.95)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("tar", "TAR")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Unix tape archive, no compression, container only";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new TarReader(stream);

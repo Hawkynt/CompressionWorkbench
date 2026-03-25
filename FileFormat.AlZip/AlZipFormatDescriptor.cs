@@ -17,6 +17,8 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'A', (byte)'L', (byte)'Z', 0x01], Confidence: 0.95)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("alzip", "ALZip")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Korean ALZip archive format";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new AlZipReader(stream, leaveOpen: true);

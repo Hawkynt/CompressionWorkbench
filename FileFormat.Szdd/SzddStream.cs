@@ -97,6 +97,22 @@ public static class SzddStream {
     window.AsSpan().Fill(SzddConstants.WindowFill);
     var wpos = SzddConstants.WindowInitPos;
 
+    // Hash chain for fast match finding.
+    // head[hash] = most recent window position with that hash, or -1.
+    // prev[wpos] = previous window position in the same hash chain, or -1.
+    var head = new int[SzddConstants.WindowSize];
+    var prev = new int[SzddConstants.WindowSize];
+    Array.Fill(head, -1);
+    Array.Fill(prev, -1);
+
+    // Seed the hash chains for the initial window content (all spaces).
+    // The initial window is filled with 0x20 so every 3-byte hash is the same.
+    var initHash = ((SzddConstants.WindowFill << 4) ^ (SzddConstants.WindowFill << 2) ^ SzddConstants.WindowFill) & 0xFFF;
+    for (var i = 0; i < SzddConstants.WindowSize; ++i) {
+      prev[i] = head[initHash];
+      head[initHash] = i;
+    }
+
     using var body = new MemoryStream();
 
     // Process input in groups of up to 8 items per flag byte.
@@ -117,7 +133,7 @@ public static class SzddStream {
         // going backwards through the window.
         var bestLen = 0;
         var bestOff = 0;
-        FindLongestMatch(input, srcPos, srcLen, window, wpos, ref bestLen, ref bestOff);
+        FindLongestMatch(input, srcPos, srcLen, window, wpos, head, prev, ref bestLen, ref bestOff);
 
         if (bestLen >= SzddConstants.MinMatchLength) {
           // Back-reference: encode as 2 bytes.
@@ -127,19 +143,22 @@ public static class SzddStream {
           body.WriteByte((byte)(bestOff & 0xFF));
           body.WriteByte((byte)(((bestOff >> 4) & 0xF0) | (encLen & 0x0F)));
 
-          // Copy matched bytes into ring buffer and advance.
+          // Copy matched bytes into ring buffer and advance, updating hash chains.
           for (var i = 0; i < bestLen; ++i) {
             window[wpos] = input[srcPos];
+            UpdateHashChain(input, srcPos, srcLen, wpos, head, prev);
             wpos = (wpos + 1) & (SzddConstants.WindowSize - 1);
             ++srcPos;
           }
           // flag bit stays 0 — already the default
         } else {
           // Literal byte.
-          var b = input[srcPos++];
+          var b = input[srcPos];
           body.WriteByte(b);
           window[wpos] = b;
+          UpdateHashChain(input, srcPos, srcLen, wpos, head, prev);
           wpos = (wpos + 1) & (SzddConstants.WindowSize - 1);
+          ++srcPos;
           flagByte |= (byte)(1 << itemCount); // bit = 1 for literal
         }
 
@@ -170,21 +189,33 @@ public static class SzddStream {
   }
 
   /// <summary>
-  /// Greedy longest-match search in the ring buffer.
-  /// Scans all <see cref="SzddConstants.WindowSize"/> positions for the longest
-  /// match of at least <see cref="SzddConstants.MinMatchLength"/> bytes,
-  /// up to <see cref="SzddConstants.MaxMatchLength"/> bytes.
+  /// Hash-chain accelerated longest-match search in the ring buffer.
+  /// Hashes the first 3 bytes at the current source position and walks the
+  /// chain (up to 32 steps) to find the longest match of at least
+  /// <see cref="SzddConstants.MinMatchLength"/> bytes, up to
+  /// <see cref="SzddConstants.MaxMatchLength"/> bytes.
   /// </summary>
   private static void FindLongestMatch(
     ReadOnlySpan<byte> input, int srcPos, int srcLen,
     byte[] window, int wpos,
+    int[] head, int[] prev,
     ref int bestLen, ref int bestOff) {
 
     var maxMatch = Math.Min(SzddConstants.MaxMatchLength, srcLen - srcPos);
     if (maxMatch < SzddConstants.MinMatchLength)
       return;
 
-    for (var candidate = 0; candidate < SzddConstants.WindowSize; ++candidate) {
+    var hash = ((input[srcPos] << 4) ^ (input[srcPos + 1] << 2) ^ input[srcPos + 2]) & 0xFFF;
+    var candidate = head[hash];
+    const int maxChainSteps = 32;
+
+    for (var step = 0; step < maxChainSteps && candidate >= 0; ++step) {
+      // Skip the current write position — it has not been filled with new data yet.
+      if (candidate == wpos) {
+        candidate = prev[candidate];
+        continue;
+      }
+
       // How many bytes match starting at window[candidate]?
       var matchLen = 0;
       while (matchLen < maxMatch &&
@@ -198,7 +229,29 @@ public static class SzddStream {
         if (bestLen == maxMatch)
           break; // can't do better
       }
+
+      candidate = prev[candidate];
     }
+  }
+
+  /// <summary>
+  /// Inserts the current window position into the hash chain. Uses input
+  /// lookahead bytes so the hash matches what <see cref="FindLongestMatch"/>
+  /// will compute when searching for these bytes later.
+  /// </summary>
+  private static void UpdateHashChain(
+    ReadOnlySpan<byte> input, int srcPos, int srcLen,
+    int wpos, int[] head, int[] prev) {
+    // Need at least 3 bytes of lookahead (current + 2 more) to form a valid hash.
+    if (srcPos + 2 >= srcLen)
+      return;
+
+    var b0 = input[srcPos];
+    var b1 = input[srcPos + 1];
+    var b2 = input[srcPos + 2];
+    var hash = ((b0 << 4) ^ (b1 << 2) ^ b2) & 0xFFF;
+    prev[wpos] = head[hash];
+    head[hash] = wpos;
   }
 
   // ── Core decompression ──────────────────────────────────────────────────────

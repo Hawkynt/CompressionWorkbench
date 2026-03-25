@@ -17,6 +17,8 @@ public sealed class XarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'x', (byte)'a', (byte)'r', (byte)'!'], Confidence: 0.95)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("xar", "XAR")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "eXtensible ARchive format (Apple pkg)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new XarReader(stream);

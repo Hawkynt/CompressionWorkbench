@@ -17,6 +17,8 @@ public sealed class LbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("lbr", "LBR")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "CP/M LBR library archive format";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new LbrReader(stream);

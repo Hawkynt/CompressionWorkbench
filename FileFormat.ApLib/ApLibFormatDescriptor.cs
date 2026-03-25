@@ -16,6 +16,8 @@ public sealed class ApLibFormatDescriptor : IFormatDescriptor, IStreamFormatOper
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x41, 0x50, 0x33, 0x32], Confidence: 0.85)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("aplib", "aPLib")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  public string Description => "aPLib LZ77 with sophisticated match encoding for demos/intros";
 
   public void Decompress(Stream input, Stream output) => ApLibStream.Decompress(input, output);
   public void Compress(Stream input, Stream output) => ApLibStream.Compress(input, output);

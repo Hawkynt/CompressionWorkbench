@@ -20,6 +20,8 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("mpq", "MPQ")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Blizzard MPQ game archive (Diablo/StarCraft/WoW)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new MpqReader(stream);

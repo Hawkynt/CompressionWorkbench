@@ -15,6 +15,8 @@ public sealed class YEncFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("yenc", "yEnc")];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Encoding;
+  public string Description => "Binary-to-text for Usenet, minimal overhead (~1-2%)";
 
   public void Decompress(Stream input, Stream output) {
     var (_, _, _, data) = YEncDecoder.Decode(input);

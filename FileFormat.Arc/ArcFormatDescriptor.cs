@@ -20,6 +20,8 @@ public sealed class ArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new("squeeze", "Squeezed"), new("squash", "Squashed")
   ];
   public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "ARC archive, one of the first PC compression formats";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ArcReader(stream);
