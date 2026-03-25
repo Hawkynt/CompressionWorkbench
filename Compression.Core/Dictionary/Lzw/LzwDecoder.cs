@@ -118,7 +118,7 @@ public sealed class LzwDecoder {
         ++nextCode;
 
         // Check if we need to widen the code width.
-        if (nextCode > (1 << currentBits) && currentBits < this._maxBits)
+        if (nextCode >= (1 << currentBits) && currentBits < this._maxBits)
           ++currentBits;
       }
 

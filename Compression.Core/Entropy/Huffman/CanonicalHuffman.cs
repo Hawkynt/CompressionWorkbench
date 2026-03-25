@@ -117,19 +117,21 @@ public sealed class CanonicalHuffman {
     if (this.MaxCodeLength == 0)
       ThrowEmptyHuffmanTable();
 
-    if (!bitBuffer.EnsureBits(this.MaxCodeLength)) {
-      // Try with what we have
-    }
+    bitBuffer.EnsureBits(this.MaxCodeLength);
 
-    var peekValue = bitBuffer.PeekBits(Math.Min(this.MaxCodeLength, bitBuffer.BitsAvailable));
+    var bitsAvailable = Math.Min(this.MaxCodeLength, bitBuffer.BitsAvailable);
+    var peekValue = bitBuffer.PeekBits(bitsAvailable);
 
-    if (bitBuffer.BitsAvailable >= this.MaxCodeLength) {
-      // Pad to max code length for lookup
-      var index = (int)peekValue;
-      if (index < this._decodeLookup.Length && this._decodeLookup[index] >= 0) {
-        var symbol = this._decodeLookup[index];
-        bitBuffer.DropBits(this._decodeLengths[index]);
-        return symbol;
+    // Left-align the peeked value to MaxCodeLength bits for decode table lookup
+    if (bitsAvailable < this.MaxCodeLength)
+      peekValue <<= (this.MaxCodeLength - bitsAvailable);
+
+    var index = (int)peekValue;
+    if (index < this._decodeLookup.Length && this._decodeLookup[index] >= 0) {
+      var codeLen = this._decodeLengths[index];
+      if (codeLen <= bitsAvailable) {
+        bitBuffer.DropBits(codeLen);
+        return this._decodeLookup[index];
       }
     }
 
