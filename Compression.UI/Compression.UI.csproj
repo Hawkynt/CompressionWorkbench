@@ -18,7 +18,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
     <ProjectReference Include="..\Compression.Analysis\Compression.Analysis.csproj" />
-    <ProjectReference Include="..\Compression.Shell\Compression.Shell.csproj" />
   </ItemGroup>
 
   <ItemGroup>

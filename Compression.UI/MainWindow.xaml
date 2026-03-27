@@ -74,6 +74,15 @@
           <MenuItem.Icon><Image Source="{StaticResource AnalyzeIcon}" Width="16" Height="16" /></MenuItem.Icon>
         </MenuItem>
       </MenuItem>
+      <MenuItem Header="_Tools">
+        <MenuItem Header="_Benchmark..." Command="{Binding BenchmarkCommand}">
+          <MenuItem.Icon><Image Source="{StaticResource TestIcon}" Width="16" Height="16" /></MenuItem.Icon>
+        </MenuItem>
+        <Separator />
+        <MenuItem Header="_File Associations..." Command="{Binding FileAssociationsCommand}">
+          <MenuItem.Icon><Image Source="{StaticResource PropertiesIcon}" Width="16" Height="16" /></MenuItem.Icon>
+        </MenuItem>
+      </MenuItem>
       <MenuItem Header="_Help">
         <MenuItem Header="_About" Click="OnAbout">
           <MenuItem.Icon><Image Source="{StaticResource AboutIcon}" Width="16" Height="16" /></MenuItem.Icon>
