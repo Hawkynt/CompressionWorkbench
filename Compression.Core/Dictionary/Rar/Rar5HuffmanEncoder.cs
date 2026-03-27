@@ -184,23 +184,13 @@ internal sealed class Rar5HuffmanEncoder {
       nextCode[b] = code;
     }
 
-    // Build codes and reverse bits for LSB-first output
+    // Build canonical codes (MSB-first — no bit reversal needed)
     var codes = new uint[numSymbols];
     for (var i = 0; i < numSymbols; ++i) {
       if (lengths[i] <= 0) continue;
-      var c = nextCode[lengths[i]]++;
-      codes[i] = ReverseBits(c, lengths[i]);
+      codes[i] = nextCode[lengths[i]]++;
     }
 
     return codes;
-  }
-
-  private static uint ReverseBits(uint value, int numBits) {
-    uint result = 0;
-    for (var i = 0; i < numBits; ++i) {
-      result = (result << 1) | (value & 1);
-      value >>= 1;
-    }
-    return result;
   }
 }

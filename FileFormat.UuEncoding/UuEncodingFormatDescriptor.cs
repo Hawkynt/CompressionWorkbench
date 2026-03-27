@@ -7,8 +7,7 @@ public sealed class UuEncodingFormatDescriptor : IFormatDescriptor, IStreamForma
   public string DisplayName => "UUEncoding";
   public FormatCategory Category => FormatCategory.Wrapper;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".uue";
   public IReadOnlyList<string> Extensions => [".uue", ".uu"];
   public IReadOnlyList<string> CompoundExtensions => [];

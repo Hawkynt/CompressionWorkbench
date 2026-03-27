@@ -6,9 +6,9 @@ namespace Compression.Lib;
 /// Unified operations across all archive and stream formats.
 /// Dispatches to format descriptors via the FormatRegistry.
 /// </summary>
-internal static class ArchiveOperations {
+public static class ArchiveOperations {
 
-  internal static List<ArchiveEntry> List(string path, string? password) {
+  public static List<ArchiveEntry> List(string path, string? password) {
     var format = FormatDetector.Detect(path);
 
     // Handle SFX: extract embedded archive info and delegate to the inner format
@@ -38,7 +38,7 @@ internal static class ArchiveOperations {
     throw new NotSupportedException($"Cannot list format: {format}");
   }
 
-  internal static void Extract(string path, string outputDir, string? password, string[]? files) {
+  public static void Extract(string path, string outputDir, string? password, string[]? files) {
     var format = FormatDetector.Detect(path);
     Directory.CreateDirectory(outputDir);
 
@@ -69,7 +69,7 @@ internal static class ArchiveOperations {
     throw new NotSupportedException($"Cannot extract format: {format}");
   }
 
-  internal static void Create(string outputPath, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts) {
+  public static void Create(string outputPath, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts) {
     var method = opts.Method.Name == null ? MethodSpec.Default : opts.Method;
     var password = opts.Password;
     var format = FormatDetector.DetectByExtension(outputPath);
@@ -141,7 +141,7 @@ internal static class ArchiveOperations {
   /// Tier 3 is also used when the method is changed (e.g. store→deflate+) or when "+" is requested.
   /// </summary>
   /// <returns>A (strategy description, tier number) tuple.</returns>
-  internal static (string Strategy, int Tier) Convert(string inputPath, string outputPath,
+  public static (string Strategy, int Tier) Convert(string inputPath, string outputPath,
       string? password, MethodSpec method = default) {
     if (method.Name == null) method = MethodSpec.Default;
     var srcFormat = FormatDetector.Detect(inputPath);
@@ -246,7 +246,7 @@ internal static class ArchiveOperations {
     return (label, 3);
   }
 
-  internal static bool Test(string path, string? password) {
+  public static bool Test(string path, string? password) {
     try {
       var format = FormatDetector.Detect(path);
       using var fs = File.OpenRead(path);
@@ -372,7 +372,7 @@ internal static class ArchiveOperations {
   /// Best for LZMA/LZX/etc. The output is fully compatible with standard decoders.
   /// </summary>
   /// <returns>(originalSize, optimizedSize, entriesOptimized)</returns>
-  internal static (long OriginalSize, long OptimizedSize, int EntriesOptimized) Optimize(
+  public static (long OriginalSize, long OptimizedSize, int EntriesOptimized) Optimize(
       string inputPath, string outputPath, string? password) {
     var format = FormatDetector.Detect(inputPath);
     var originalSize = new FileInfo(inputPath).Length;
@@ -511,7 +511,7 @@ internal static class ArchiveOperations {
       CompressStreamPair(inFs, outFs, format);
   }
 
-  internal static byte[] DecompressFile(string path, F format) {
+  public static byte[] DecompressFile(string path, F format) {
     using var fs = File.OpenRead(path);
     using var ms = new MemoryStream();
     DecompressStreamPair(fs, ms, format);
@@ -564,8 +564,9 @@ internal static class ArchiveOperations {
   private static void CreateRar(Stream s, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts) {
     var pw = opts.Password;
     var useRar4 = opts.Method.Name == "rar4";
+    var useStore = opts.Method.Name is "store" or "copy";
     // RAR method levels: 0=Store,1=Fastest,2=Fast,3=Normal,4=Good,5=Best
-    var rarLevel = opts.Level switch {
+    var rarLevel = useStore ? 0 : opts.Level switch {
       0 => 0, 1 => 1, 2 => 2, 3 or 4 => 3, 5 or 6 => 4, >= 7 => 5, _ => 3,
     };
 
@@ -678,7 +679,7 @@ internal static class ArchiveOperations {
   /// <summary>
   /// Extracts a single entry from an archive and returns its contents as a byte array.
   /// </summary>
-  internal static byte[] ExtractEntry(string archivePath, string entryPath, string? password) {
+  public static byte[] ExtractEntry(string archivePath, string entryPath, string? password) {
     var tempDir = Path.Combine(Path.GetTempPath(), "cwb_preview_" + Guid.NewGuid().ToString("N")[..8]);
     try {
       Directory.CreateDirectory(tempDir);

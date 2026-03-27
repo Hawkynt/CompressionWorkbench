@@ -3,7 +3,7 @@ namespace Compression.Lib;
 /// <summary>
 /// Normalized entry for display across all archive formats.
 /// </summary>
-internal sealed record ArchiveEntry(
+public sealed record ArchiveEntry(
   int Index,
   string Name,
   long OriginalSize,
@@ -13,5 +13,5 @@ internal sealed record ArchiveEntry(
   bool IsEncrypted,
   DateTime? LastModified
 ) {
-  internal double Ratio => OriginalSize > 0 ? 100.0 * CompressedSize / OriginalSize : 0;
+  public double Ratio => OriginalSize > 0 ? 100.0 * CompressedSize / OriginalSize : 0;
 }

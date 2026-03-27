@@ -305,11 +305,11 @@ internal sealed class Bzip2Compressor {
       while (currentLen != targetLen) {
         this._bitWriter.WriteBit(1); // More changes
         if (currentLen < targetLen) {
-          this._bitWriter.WriteBit(1); // Increment
+          this._bitWriter.WriteBit(0); // Increment
           ++currentLen;
         }
         else {
-          this._bitWriter.WriteBit(0); // Decrement
+          this._bitWriter.WriteBit(1); // Decrement
           --currentLen;
         }
       }

@@ -109,6 +109,23 @@ public class RncTests {
     Assert.That(decompressed.ToArray(), Is.EqualTo(data));
   }
 
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void RoundTrip_256KB_Random() {
+    var rng = new Random(42);
+    var data = new byte[256 * 1024];
+    rng.NextBytes(data);
+
+    using var compressed = new MemoryStream();
+    using (var input = new MemoryStream(data))
+      FileFormat.Rnc.RncStream.Compress(input, compressed);
+
+    compressed.Position = 0;
+    using var decompressed = new MemoryStream();
+    FileFormat.Rnc.RncStream.Decompress(compressed, decompressed);
+
+    Assert.That(decompressed.ToArray(), Is.EqualTo(data));
+  }
+
   [Test, Category("HappyPath")]
   public void Crc16_KnownValue() {
     // Verify CRC-16 produces consistent results

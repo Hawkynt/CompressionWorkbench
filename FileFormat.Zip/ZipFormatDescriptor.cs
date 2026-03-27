@@ -11,7 +11,7 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries |
-    FormatCapabilities.SupportsDirectories | FormatCapabilities.SupportsBenchmark | FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.SupportsDirectories | FormatCapabilities.SupportsOptimize;
   public string DefaultExtension => ".zip";
   public IReadOnlyList<string> Extensions => [".zip", ".zipx", ".jar", ".war", ".ear", ".xpi", ".odt", ".ods", ".odp", ".docx", ".xlsx", ".pptx", ".apk", ".ipa", ".nupkg", ".epub", ".cbz"];
   public IReadOnlyList<string> CompoundExtensions => [];

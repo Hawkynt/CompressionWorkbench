@@ -8,8 +8,7 @@ public sealed class LzfseFormatDescriptor : IFormatDescriptor, IStreamFormatOper
   public string DisplayName => "LZFSE";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".lzfse";
   public IReadOnlyList<string> Extensions => [".lzfse"];
   public IReadOnlyList<string> CompoundExtensions => [];

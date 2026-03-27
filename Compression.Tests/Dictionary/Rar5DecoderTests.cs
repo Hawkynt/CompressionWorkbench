@@ -29,17 +29,17 @@ public class Rar5DecoderTests {
   public void HuffmanDecoder_Build_TwoSymbols_DecodesCorrectly() {
     var decoder = new Rar5HuffmanDecoder();
     var lengths = new int[4];
-    lengths[0] = 1; // symbol 0, code 0 (1 bit)
-    lengths[1] = 1; // symbol 1, code 1 (1 bit)
+    lengths[0] = 1; // symbol 0, canonical code 0 (1 bit)
+    lengths[1] = 1; // symbol 1, canonical code 1 (1 bit)
 
     decoder.Build(lengths, 4);
 
-    // Byte 0b10 = bits: 0, 1 (LSB first)
-    var data = new byte[] { 0b00000010, 0, 0, 0 };
+    // MSB-first: byte 0b01_000000 = sym0(0), sym1(1), padding
+    var data = new byte[] { 0b01_000000, 0, 0, 0 };
     var reader = new Rar5BitReader(data);
 
-    var s1 = decoder.DecodeSymbol(reader); // should read bit 0 → symbol 0
-    var s2 = decoder.DecodeSymbol(reader); // should read bit 1 → symbol 1
+    var s1 = decoder.DecodeSymbol(reader); // should read MSB bit 0 → symbol 0
+    var s2 = decoder.DecodeSymbol(reader); // should read MSB bit 1 → symbol 1
 
     Assert.That(s1, Is.EqualTo(0));
     Assert.That(s2, Is.EqualTo(1));
@@ -50,25 +50,15 @@ public class Rar5DecoderTests {
   public void HuffmanDecoder_Build_ThreeSymbols() {
     var decoder = new Rar5HuffmanDecoder();
     var lengths = new int[3];
-    lengths[0] = 1; // symbol 0: code 0 (1 bit)
-    lengths[1] = 2; // symbol 1: code 10 → reversed 01 (2 bits)
-    lengths[2] = 2; // symbol 2: code 11 → reversed 11 (2 bits)
+    lengths[0] = 1; // symbol 0: canonical code 0 (1 bit)
+    lengths[1] = 2; // symbol 1: canonical code 10 (2 bits)
+    lengths[2] = 2; // symbol 2: canonical code 11 (2 bits)
 
     decoder.Build(lengths, 3);
 
-    // Encode: symbol 0 (0), symbol 1 (01 reversed = 10), symbol 2 (11 reversed = 11)
-    // Bit stream: 0, 10, 11 → 0 01 11 (pad) = 0b11_10_0 in LSB order
-    // Byte: bits[0]=0 (sym0), bits[1..2]=10 (sym1), bits[3..4]=11 (sym2)
-    // = 0b_11_10_0 = bit layout 0, 0, 1, 1, 1 → byte 0b00011100 = 0x1C? No...
-    // LSB first: bit0=0, bit1=0, bit2=1, bit3=1, bit4=1 → byte = 0b00011100 = 0x1C
-    // Wait, reversed codes:
-    // sym0: canonical=0 (1 bit), reversed=0
-    // sym1: canonical=10 (2 bit), reversed=01
-    // sym2: canonical=11 (2 bit), reversed=11
-    // Stream: sym0→bit0=0, sym1→bit1..2=01, sym2→bit3..4=11
-    // byte = 0b_11_01_0 as bits 4..0 = 0b11010 = 0x1A
-
-    var data = new byte[] { 0x1A, 0, 0, 0 };
+    // MSB-first: sym0=0(1bit), sym1=10(2bits), sym2=11(2bits)
+    // Bit stream: 0_10_11_000 = 0b01011000 = 0x58
+    var data = new byte[] { 0x58, 0, 0, 0 };
     var reader = new Rar5BitReader(data);
 
     Assert.That(decoder.DecodeSymbol(reader), Is.EqualTo(0));
@@ -99,12 +89,12 @@ public class Rar5DecoderTests {
     var data = new byte[] { 0xAB, 0xCD };
     var reader = new Rar5BitReader(data);
 
-    // LSB first: 0xAB = 10101011, first 4 bits (LSB) = 1011 = 11
+    // MSB first: 0xAB = 10101011, first 4 bits (MSB) = 1010 = 0xA
     var first4 = reader.ReadBits(4);
-    Assert.That(first4, Is.EqualTo(0xB)); // 1011 = 0xB
+    Assert.That(first4, Is.EqualTo(0xA)); // 1010 = 0xA
 
     var next4 = reader.ReadBits(4);
-    Assert.That(next4, Is.EqualTo(0xA)); // 1010 = 0xA
+    Assert.That(next4, Is.EqualTo(0xB)); // 1011 = 0xB
   }
 
   [Category("Boundary")]
@@ -113,9 +103,9 @@ public class Rar5DecoderTests {
     var data = new byte[] { 0xFF, 0x00 };
     var reader = new Rar5BitReader(data);
 
-    // Read 12 bits: first 8 are 0xFF, next 4 are 0
+    // MSB first: read 12 bits from 0xFF 0x00 = 1111_1111_0000 = 0xFF0
     var bits = reader.ReadBits(12);
-    Assert.That(bits, Is.EqualTo(0x0FF));
+    Assert.That(bits, Is.EqualTo(0xFF0));
   }
 
   [Category("HappyPath")]

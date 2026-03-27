@@ -6,16 +6,16 @@ namespace Compression.Lib;
 /// Creates self-extracting archives by concatenating a stub executable with archive data.
 /// Layout: [stub.exe][archive data][8-byte archive offset (int64 LE)][4-byte magic "SFX!"]
 /// </summary>
-internal static class SfxBuilder {
+public static class SfxBuilder {
 
   private static readonly byte[] Magic = [(byte)'S', (byte)'F', (byte)'X', (byte)'!'];
 
-  internal enum StubType { Cli, Ui }
+  public enum StubType { Cli, Ui }
 
   /// <summary>
   /// Known runtime identifiers for cross-platform stub publishing.
   /// </summary>
-  internal static readonly string[] SupportedTargets = [
+  public static readonly string[] SupportedTargets = [
     "win-x64", "win-x86", "win-arm64",
     "linux-x64", "linux-arm64", "linux-musl-x64", "linux-musl-arm64",
     "osx-x64", "osx-arm64",
@@ -24,7 +24,7 @@ internal static class SfxBuilder {
   /// <summary>
   /// Creates a self-extracting archive by combining a stub with an archive file.
   /// </summary>
-  internal static void Create(string archivePath, string outputExePath, StubType stubType, string? targetRid = null) {
+  public static void Create(string archivePath, string outputExePath, StubType stubType, string? targetRid = null) {
     var stubPath = FindStub(stubType, targetRid);
     using var output = File.Create(outputExePath);
 
@@ -48,7 +48,7 @@ internal static class SfxBuilder {
   /// <summary>
   /// Creates a self-extracting archive from an in-memory archive stream.
   /// </summary>
-  internal static void Create(Stream archiveData, string outputExePath, StubType stubType, string? targetRid = null) {
+  public static void Create(Stream archiveData, string outputExePath, StubType stubType, string? targetRid = null) {
     var stubPath = FindStub(stubType, targetRid);
     using var output = File.Create(outputExePath);
 
@@ -71,7 +71,7 @@ internal static class SfxBuilder {
   /// <summary>
   /// Creates a self-extracting archive using a custom stub file (for testing).
   /// </summary>
-  internal static void Create(string archivePath, string outputExePath, string stubPath) {
+  public static void Create(string archivePath, string outputExePath, string stubPath) {
     using var output = File.Create(outputExePath);
 
     using (var stub = File.OpenRead(stubPath))
@@ -91,14 +91,14 @@ internal static class SfxBuilder {
   /// <summary>
   /// Wraps an existing archive into an SFX without recompressing.
   /// </summary>
-  internal static void WrapExisting(string existingArchive, string outputExe, StubType stubType, string? targetRid = null)
+  public static void WrapExisting(string existingArchive, string outputExe, StubType stubType, string? targetRid = null)
     => Create(existingArchive, outputExe, stubType, targetRid);
 
   /// <summary>
   /// Reads the SFX trailer from a file and returns (archiveOffset, archiveLength, format).
   /// Returns null if the file does not contain a valid SFX trailer.
   /// </summary>
-  internal static (long Offset, long Length, FormatDetector.Format Format)? ReadTrailer(string sfxPath) {
+  public static (long Offset, long Length, FormatDetector.Format Format)? ReadTrailer(string sfxPath) {
     using var fs = File.OpenRead(sfxPath);
     if (fs.Length < 12) return null;
 
@@ -125,7 +125,7 @@ internal static class SfxBuilder {
   /// <summary>
   /// Extracts the archive portion from an SFX file to a directory.
   /// </summary>
-  internal static void Extract(string sfxPath, string outputDir, string? password = null) {
+  public static void Extract(string sfxPath, string outputDir, string? password = null) {
     var info = ReadTrailer(sfxPath) ?? throw new InvalidOperationException("Not a valid SFX file.");
 
     // Extract archive portion to temp file, then use ArchiveOperations
@@ -156,7 +156,7 @@ internal static class SfxBuilder {
   /// <summary>
   /// Returns the current platform's runtime identifier.
   /// </summary>
-  internal static string CurrentRid() {
+  public static string CurrentRid() {
     var arch = RuntimeInformation.OSArchitecture switch {
       Architecture.X64 => "x64",
       Architecture.X86 => "x86",

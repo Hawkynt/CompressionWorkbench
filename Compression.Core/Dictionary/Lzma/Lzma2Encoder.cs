@@ -146,16 +146,18 @@ public sealed class Lzma2Encoder {
     if (size <= 4096)
       return 0;
 
+    // XZ LZMA2 dictionary size encoding:
+    // even values: 2^(encoded/2 + 12)
+    // odd values:  3 * 2^((encoded-1)/2 + 11) = 3 << ((encoded/2) + 11)
     var bits = 31 - int.LeadingZeroCount(size);
     if (size == (1 << bits))
-      return (byte)((bits - 12) * 2 + 1); // Use odd for exact powers of 2 offset
+      return (byte)((bits - 12) * 2);
 
-    // For exact powers of 2: result = (bits * 2) - 24 + 1
-    // General formula
-    var result = (byte)(bits * 2 - 24);
-    if (size >= (3 << (bits - 1)))
-      ++result;
+    // 3 << (bits-1) pattern
+    if (size == (3 << (bits - 1)))
+      return (byte)((bits - 12) * 2 + 1);
 
-    return result;
+    // Round up to next valid size
+    return (byte)((bits - 12) * 2 + 1);
   }
 }

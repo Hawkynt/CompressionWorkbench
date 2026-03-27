@@ -26,10 +26,10 @@ Umbrella library that re-exports all `FileFormat.*` projects and provides a unif
 ## Format Categories
 
 - **Archive formats**: ZIP, RAR, 7z, TAR, CAB, LZH, ARJ, ARC, ZOO, ACE, SQX, CPIO, AR, WIM, RPM, DEB, Shar, PAK, HA, ZPAQ, StuffIt, SquashFS, CramFS, NSIS, Inno Setup, DMS, LZX, Compact Pro, Spark, LBR, UHARC, WAD, XAR, ALZip
-- **Compression streams**: Gzip, BZip2, XZ, Zstd, LZ4, Brotli, Snappy, LZOP, Compress(.Z), LZMA, Lzip, Zlib, SZDD, KWAJ, PowerPacker, Squeeze, ICE Packer, RZIP, MacBinary, BinHex, PackBits, Yaz0, BriefLZ, RNC, RefPack, aPLib, LZFSE, Freeze
-- **Compound**: tar.gz, tar.bz2, tar.xz, tar.zst, tar.lz4, tar.lz
+- **Compression streams**: Gzip, BZip2, XZ, Zstd, LZ4, Brotli, Snappy, LZOP, Compress(.Z), LZMA, Lzip, Zlib, SZDD, KWAJ, PowerPacker, Squeeze, ICE Packer, RZIP, MacBinary, BinHex, PackBits, Yaz0, BriefLZ, RNC, RefPack, aPLib, LZFSE, Freeze, UuEncoding, YEnc, Density, LZG, BCM, BSC, BALZ, CSC, Zling, Lizard, QuickLZ, cmix, MCM, PAQ8
+- **Compound**: tar.gz, tar.bz2, tar.xz, tar.zst, tar.lz4, tar.lz, tar.br
 - **Detection-only**: ISO 9660, UDF
 
 ## Visibility
 
-All types are `internal` with `InternalsVisibleTo` for: `Compression.CLI`, `Compression.UI`, `Compression.Shell`, `Compression.Tests`, and the SFX stubs.
+All API types are `public`. `InternalsVisibleTo` is only used for `Compression.Tests`.

@@ -8,8 +8,7 @@ public sealed class SqueezeFormatDescriptor : IFormatDescriptor, IStreamFormatOp
   public string DisplayName => "Squeeze";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".sqz";
   public IReadOnlyList<string> Extensions => [".sqz"];
   public IReadOnlyList<string> CompoundExtensions => [];

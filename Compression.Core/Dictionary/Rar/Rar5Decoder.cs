@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
-using Compression.Core.DataStructures;
 
 namespace Compression.Core.Dictionary.Rar;
 
@@ -42,7 +41,6 @@ public sealed class Rar5Decoder {
   public Rar5Decoder(int dictionarySize) {
     ArgumentOutOfRangeException.ThrowIfLessThan(dictionarySize, Rar5Constants.MinDictionarySize);
 
-    // Round up to power of two
     var size = 1;
     while (size < dictionarySize && size > 0)
       size <<= 1;
@@ -71,23 +69,34 @@ public sealed class Rar5Decoder {
     var output = new byte[uncompressedSize];
     var outputPos = 0;
 
-    // Each compressed block starts with fresh Huffman tables, even in solid mode
-    // (window and repeat offsets persist, but tables are per-block)
     this._tablesRead = false;
 
     while (outputPos < uncompressedSize && !reader.IsAtEnd) {
-      // Read Huffman tables at the start or when flagged
       if (!this._tablesRead) {
-        this.ReadTables(reader);
+        // Byte-aligned block header
+        reader.AlignToByte();
+
+        var blockFlags = (int)reader.ReadBits(8);
+        reader.ReadBits(8); // checksum byte (0x5A ^ flags ^ XOR(size bytes))
+
+        var byteCount = ((blockFlags >> 3) & 3) + 1;
+        if (byteCount == 4)
+          ThrowInvalidData("Invalid RAR5 block header byte count.");
+
+        var blockSize = 0;
+        for (var b = 0; b < byteCount; ++b)
+          blockSize += (int)reader.ReadBits(8) << (b * 8);
+
+        var tablePresent = (blockFlags & 0x80) != 0;
+        if (tablePresent)
+          this.ReadTables(reader);
         this._tablesRead = true;
       }
 
-      // Decode symbols
       var sym = this._mainDecoder.DecodeSymbol(reader);
 
       switch (sym) {
         case < Rar5Constants.LiteralCount:
-          // Literal byte
           output[outputPos] = (byte)sym;
           this._window[this._windowPos & this._windowMask] = (byte)sym;
           ++this._windowPos;
@@ -95,44 +104,37 @@ public sealed class Rar5Decoder {
           break;
 
         case >= Rar5Constants.MatchBase and < Rar5Constants.MainTableSize: {
-          // Match: decode length and distance
           var lengthSlot = sym - Rar5Constants.MatchBase;
-          var matchLength = this.DecodeMatchLength(reader, lengthSlot);
+          var matchLength = SlotToLength(reader, lengthSlot);
           var distance = this.DecodeDistance(reader);
 
           if (distance < 0)
             distance = 0;
 
-          // Update repeated offsets
+          matchLength += Rar5Constants.LengthBonus(distance);
+
           this.ShiftRepeatOffsets(distance);
           this._lastLength = matchLength;
-
-          // Copy match from window
           outputPos += this.CopyMatch(output, outputPos, uncompressedSize, distance, matchLength);
           break;
         }
 
         case >= Rar5Constants.RepeatOffset0 and <= Rar5Constants.RepeatOffset3: {
-          // Repeated offset
           var repIdx = sym - Rar5Constants.RepeatOffset0;
           var distance = this._repDist[repIdx];
 
-          // Move this offset to position 0
           for (var i = repIdx; i > 0; --i)
             this._repDist[i] = this._repDist[i - 1];
           this._repDist[0] = distance;
 
-          // Decode match length for repeated offset
           int matchLength;
           if (sym == Rar5Constants.RepeatOffset0) {
-            // Same offset, same length as last match
             matchLength = this._lastLength;
             if (matchLength == 0)
               matchLength = 2;
           } else {
-            // Read length from main code extension
-            var lenSym = this._lengthDecoder.DecodeSymbol(reader);
-            matchLength = DecodeExtraLength(reader, lenSym);
+            var lenSlot = this._lengthDecoder.DecodeSymbol(reader);
+            matchLength = SlotToLength(reader, lenSlot);
           }
 
           this._lastLength = matchLength;
@@ -142,17 +144,13 @@ public sealed class Rar5Decoder {
 
         default: {
           if (sym == Rar5Constants.EndOfBlock)
-            // End of block — tables need re-reading
             this._tablesRead = false;
-
           break;
         }
       }
     }
 
-    // Apply pending filters
     output = this.ApplyFilters(output);
-
     return output;
   }
 
@@ -160,37 +158,45 @@ public sealed class Rar5Decoder {
   /// Reads the Huffman tables from the bit stream.
   /// </summary>
   private void ReadTables(Rar5BitReader reader) {
-    // Read code lengths for all four tables packed sequentially.
-    // First read the code-length code lengths (up to 20 symbols)
     var clLengths = new int[Rar5Constants.CodeLengthTableSize];
 
-    // Each code-length code length is 4 bits
-    for (var i = 0; i < Rar5Constants.CodeLengthTableSize; ++i)
-      clLengths[i] = (int)reader.ReadBits(4);
+    // Read pre-code lengths with special value-15 handling (matching 7-Zip/UnRAR):
+    // If value == 15 and next 4 bits (count) > 0, fill count+2 zeros instead.
+    // If value == 15 and next 4 bits == 0, store 15 as the code length.
+    for (var i = 0; i < Rar5Constants.CodeLengthTableSize;) {
+      var len = (int)reader.ReadBits(4);
+      if (len == 15) {
+        var count = (int)reader.ReadBits(4);
+        if (count != 0) {
+          for (var j = 0; j < count + 2 && i < Rar5Constants.CodeLengthTableSize; ++j)
+            clLengths[i++] = 0;
+          continue;
+        }
+      }
+      clLengths[i++] = len;
+    }
 
     var clDecoder = new Rar5HuffmanDecoder();
     clDecoder.Build(clLengths, Rar5Constants.CodeLengthTableSize);
 
-    // Read main table
     var mainLengths = ReadCodeLengths(reader, clDecoder, Rar5Constants.MainTableSize);
     this._mainDecoder.Build(mainLengths, Rar5Constants.MainTableSize);
 
-    // Read offset table
     var offsetLengths = ReadCodeLengths(reader, clDecoder, Rar5Constants.OffsetTableSize);
     this._offsetDecoder.Build(offsetLengths, Rar5Constants.OffsetTableSize);
 
-    // Read low-offset table
     var lowOffsetLengths = ReadCodeLengths(reader, clDecoder, Rar5Constants.LowOffsetTableSize);
     this._lowOffsetDecoder.Build(lowOffsetLengths, Rar5Constants.LowOffsetTableSize);
 
-    // Read length table
     var lengthLengths = ReadCodeLengths(reader, clDecoder, Rar5Constants.LengthTableSize);
     this._lengthDecoder.Build(lengthLengths, Rar5Constants.LengthTableSize);
   }
 
   /// <summary>
   /// Reads Huffman code lengths using the code-length decoder.
-  /// Supports repeat codes (16, 17, 18).
+  /// RAR5 RLE:
+  /// 16 repeat prev (3 bits +3), 17 repeat prev (7 bits +11),
+  /// 18 fill zeros (3 bits +3), 19 fill zeros (7 bits +11).
   /// </summary>
   private static int[] ReadCodeLengths(Rar5BitReader reader, Rar5HuffmanDecoder clDecoder, int count) {
     var lengths = new int[count];
@@ -200,38 +206,38 @@ public sealed class Rar5Decoder {
       var sym = clDecoder.DecodeSymbol(reader);
       switch (sym) {
         case < 16:
-          // Direct code length
           lengths[i++] = sym;
           break;
 
         case 16: {
-          // Repeat previous length 3-6 times
-          if (i == 0) 
-            ThrowInvalidData("Code length repeat at start.");
-
-          var repeat = (int)reader.ReadBits(2) + 3;
+          if (i == 0) ThrowInvalidData("Code length repeat at start.");
+          var repeat = (int)reader.ReadBits(3) + 3;
           var prev = lengths[i - 1];
           for (var j = 0; j < repeat && i < count; ++j)
             lengths[i++] = prev;
-
           break;
         }
 
         case 17: {
-          // Repeat zero 3-10 times
-          var repeat = (int)reader.ReadBits(3) + 3;
+          if (i == 0) ThrowInvalidData("Code length repeat at start.");
+          var repeat = (int)reader.ReadBits(7) + 11;
+          var prev = lengths[i - 1];
           for (var j = 0; j < repeat && i < count; ++j)
-            lengths[i++] = 0;
-
+            lengths[i++] = prev;
           break;
         }
 
         case 18: {
-          // Repeat zero 11-138 times
+          var repeat = (int)reader.ReadBits(3) + 3;
+          for (var j = 0; j < repeat && i < count; ++j)
+            lengths[i++] = 0;
+          break;
+        }
+
+        case 19: {
           var repeat = (int)reader.ReadBits(7) + 11;
           for (var j = 0; j < repeat && i < count; ++j)
             lengths[i++] = 0;
-
           break;
         }
       }
@@ -241,28 +247,18 @@ public sealed class Rar5Decoder {
   }
 
   /// <summary>
-  /// Decodes match length from a length slot.
+  /// SlotToLength: converts a slot to a match length.
+  /// Slot 0-7: Length = 2 + Slot. Slot 8+: LBits = Slot/4 - 1, base = 2 + ((4|(Slot and 3)) shl LBits).
   /// </summary>
-  private int DecodeMatchLength(Rar5BitReader reader, int lengthSlot) {
-    if (lengthSlot < 8)
-      // Direct length encoding: slots 0-7 → lengths 2-9
-      return lengthSlot + 2;
+  private static int SlotToLength(Rar5BitReader reader, int slot) {
+    if (slot < 8)
+      return slot + 2;
 
-    // Extended length: use the length table
-    var lenSym = this._lengthDecoder.DecodeSymbol(reader);
-    return DecodeExtraLength(reader, lenSym) + 8;
-  }
-
-  /// <summary>
-  /// Decodes extra length value from a length table symbol.
-  /// </summary>
-  private static int DecodeExtraLength(Rar5BitReader reader, int lenSym) {
-    if (lenSym < 8)
-      return lenSym + 2;
-
-    var extraBits = lenSym / 2 - 1;
-    var baseLen = (2 + (lenSym & 1)) << extraBits;
-    return baseLen + (int)reader.ReadBits(extraBits) + 2;
+    var lBits = slot / 4 - 1;
+    var length = 2 + ((4 | (slot & 3)) << lBits);
+    if (lBits > 0)
+      length += (int)reader.ReadBits(lBits);
+    return length;
   }
 
   /// <summary>
@@ -278,9 +274,8 @@ public sealed class Rar5Decoder {
     var baseDist = (2 + (slot & 1)) << extraBits;
 
     int distance;
-    if (extraBits > 4) {
-      // High bits from stream, low 4 bits from low-offset table
-      var highBits = (int)reader.ReadBits(extraBits - 4);
+    if (extraBits >= 4) {
+      var highBits = extraBits > 4 ? (int)reader.ReadBits(extraBits - 4) : 0;
       var lowBits = this._lowOffsetDecoder.DecodeSymbol(reader);
       distance = baseDist + (highBits << 4) + lowBits + 1;
     } else {
@@ -291,16 +286,10 @@ public sealed class Rar5Decoder {
     return distance;
   }
 
-  /// <summary>
-  /// Shifts the repeat offset array and inserts a new distance at position 0.
-  /// </summary>
-  private void ShiftRepeatOffsets(int distance) => 
-    (this._repDist[3], this._repDist[2], this._repDist[1], this._repDist[0]) 
+  private void ShiftRepeatOffsets(int distance) =>
+    (this._repDist[3], this._repDist[2], this._repDist[1], this._repDist[0])
     = (this._repDist[2], this._repDist[1], this._repDist[0], distance);
 
-  /// <summary>
-  /// Copies a match from the sliding window to the output.
-  /// </summary>
   private int CopyMatch(byte[] output, int outputPos, int maxOutput, int distance, int length) {
     var copied = 0;
     for (var i = 0; i < length && outputPos + copied < maxOutput; ++i) {
@@ -313,9 +302,6 @@ public sealed class Rar5Decoder {
     return copied;
   }
 
-  /// <summary>
-  /// Applies any pending filters to the output data.
-  /// </summary>
   private byte[] ApplyFilters(byte[] output) {
     if (this._filters.Count == 0)
       return output;

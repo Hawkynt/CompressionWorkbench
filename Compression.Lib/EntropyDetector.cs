@@ -4,7 +4,7 @@ namespace Compression.Lib;
 /// Detects incompressible (already compressed, encrypted, or random) data using
 /// a chi-square goodness-of-fit test on byte frequency distribution.
 /// </summary>
-internal static class EntropyDetector {
+public static class EntropyDetector {
 
   /// <summary>Maximum sample size for large files (256 KB). Sampling head + tail.</summary>
   private const int MaxSampleSize = 256 * 1024;
@@ -22,7 +22,7 @@ internal static class EntropyDetector {
   /// Returns true if the data appears incompressible (compressed, encrypted, or random).
   /// Uses a chi-square test: uniform byte distribution → incompressible.
   /// </summary>
-  internal static bool IsIncompressible(byte[] data) {
+  public static bool IsIncompressible(byte[] data) {
     if (data.Length < 64) return false; // too small to tell
 
     var sample = GetSample(data);
@@ -36,7 +36,7 @@ internal static class EntropyDetector {
   /// Returns true if the file at the given path appears incompressible.
   /// Reads only a sample from the file for efficiency.
   /// </summary>
-  internal static bool IsIncompressible(string filePath) {
+  public static bool IsIncompressible(string filePath) {
     var fi = new FileInfo(filePath);
     if (fi.Length < 64) return false;
 

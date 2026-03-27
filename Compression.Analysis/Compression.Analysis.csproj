@@ -6,8 +6,6 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Compression.Tests" />
-    <InternalsVisibleTo Include="cwb" />
-    <InternalsVisibleTo Include="Compression.UI" />
   </ItemGroup>
 
   <ItemGroup>

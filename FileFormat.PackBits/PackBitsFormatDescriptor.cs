@@ -9,8 +9,7 @@ public sealed class PackBitsFormatDescriptor : IFormatDescriptor, IStreamFormatO
   public string DisplayName => "PackBits";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".packbits";
   public IReadOnlyList<string> Extensions => [".packbits"];
   public IReadOnlyList<string> CompoundExtensions => [];

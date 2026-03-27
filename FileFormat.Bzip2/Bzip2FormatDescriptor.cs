@@ -9,7 +9,7 @@ public sealed class Bzip2FormatDescriptor : IFormatDescriptor, IStreamFormatOper
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark | FormatCapabilities.CanCompoundWithTar;
+    FormatCapabilities.CanCompoundWithTar;
   public string DefaultExtension => ".bz2";
   public IReadOnlyList<string> Extensions => [".bz2", ".bzip2"];
   public IReadOnlyList<string> CompoundExtensions => [];

@@ -13,7 +13,6 @@ public enum FormatCapabilities {
   SupportsPassword = 1 << 4,
   SupportsMultipleEntries = 1 << 5,
   SupportsDirectories = 1 << 6,
-  SupportsBenchmark = 1 << 7,
   SupportsOptimize = 1 << 8,
   CanCompoundWithTar = 1 << 9,
 }

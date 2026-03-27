@@ -184,8 +184,8 @@ public sealed class RarWriter : IDisposable {
     body.AsSpan().CopyTo(crcData.AsSpan(sizeBytes.Length));
     var headerCrc = Crc32.Compute(crcData);
 
-    // Write: CRC(vint) + Size(vint) + Body
-    RarVint.Write(this._stream, headerCrc);
+    // Write: CRC(4 bytes LE) + Size(vint) + Body
+    this._stream.Write(BitConverter.GetBytes(headerCrc));
     this._stream.Write(sizeBytes);
     this._stream.Write(body);
 
@@ -205,7 +205,7 @@ public sealed class RarWriter : IDisposable {
     if (this._recoveryPercent > 0)
       WriteRecoveryRecord();
 
-    WriteSimpleHeader(RarConstants.HeaderTypeEndArchive, 0);
+    WriteEndOfArchiveHeader();
     this._stream.Flush();
   }
 
@@ -247,11 +247,38 @@ public sealed class RarWriter : IDisposable {
     this._headerWritten = true;
 
     this._stream.Write(RarConstants.Rar5Signature);
-    WriteSimpleHeader(RarConstants.HeaderTypeMain, 0);
+    WriteMainArchiveHeader();
 
     // Write encryption header if password is set
     if (this._password != null)
       WriteEncryptionHeader();
+  }
+
+  private void WriteMainArchiveHeader() {
+    var bodyMs = new MemoryStream();
+    RarVint.Write(bodyMs, (ulong)RarConstants.HeaderTypeMain);
+    RarVint.Write(bodyMs, 0UL); // header flags: no extra area, no data area
+
+    // Archive flags (required field for main archive header type 1)
+    ulong archiveFlags = 0;
+    if (this._solid)
+      archiveFlags |= RarConstants.ArchiveFlagSolid;
+    RarVint.Write(bodyMs, archiveFlags);
+
+    var body = bodyMs.ToArray();
+
+    var sizeMs = new MemoryStream();
+    RarVint.Write(sizeMs, (ulong)body.Length);
+    var sizeBytes = sizeMs.ToArray();
+
+    var crcData = new byte[sizeBytes.Length + body.Length];
+    sizeBytes.AsSpan().CopyTo(crcData);
+    body.AsSpan().CopyTo(crcData.AsSpan(sizeBytes.Length));
+    var crc = Crc32.Compute(crcData);
+
+    this._stream.Write(BitConverter.GetBytes(crc));
+    this._stream.Write(sizeBytes);
+    this._stream.Write(body);
   }
 
   private void WriteEncryptionHeader() {
@@ -287,7 +314,7 @@ public sealed class RarWriter : IDisposable {
     body.AsSpan().CopyTo(crcData.AsSpan(sizeBytes.Length));
     var crc = Crc32.Compute(crcData);
 
-    RarVint.Write(this._stream, crc);
+    this._stream.Write(BitConverter.GetBytes(crc));
     this._stream.Write(sizeBytes);
     this._stream.Write(body);
   }
@@ -375,12 +402,36 @@ public sealed class RarWriter : IDisposable {
     body.AsSpan().CopyTo(crcData.AsSpan(sizeBytes.Length));
     var crc = Crc32.Compute(crcData);
 
-    RarVint.Write(this._stream, crc);
+    this._stream.Write(BitConverter.GetBytes(crc));
     this._stream.Write(sizeBytes);
     this._stream.Write(body);
 
     // Write recovery data
     this._stream.Write(recoveryData);
+  }
+
+  private void WriteEndOfArchiveHeader() {
+    var bodyMs = new MemoryStream();
+    RarVint.Write(bodyMs, (ulong)RarConstants.HeaderTypeEndArchive);
+    RarVint.Write(bodyMs, 0UL); // header flags
+
+    // End-of-archive flags (required field for end-of-archive header type 5)
+    RarVint.Write(bodyMs, 0UL); // 0 = no next volume
+
+    var body = bodyMs.ToArray();
+
+    var sizeMs = new MemoryStream();
+    RarVint.Write(sizeMs, (ulong)body.Length);
+    var sizeBytes = sizeMs.ToArray();
+
+    var crcData = new byte[sizeBytes.Length + body.Length];
+    sizeBytes.AsSpan().CopyTo(crcData);
+    body.AsSpan().CopyTo(crcData.AsSpan(sizeBytes.Length));
+    var crc = Crc32.Compute(crcData);
+
+    this._stream.Write(BitConverter.GetBytes(crc));
+    this._stream.Write(sizeBytes);
+    this._stream.Write(body);
   }
 
   private void WriteSimpleHeader(int type, int flags) {
@@ -398,7 +449,7 @@ public sealed class RarWriter : IDisposable {
     body.AsSpan().CopyTo(crcData.AsSpan(sizeBytes.Length));
     var crc = Crc32.Compute(crcData);
 
-    RarVint.Write(this._stream, crc);
+    this._stream.Write(BitConverter.GetBytes(crc));
     this._stream.Write(sizeBytes);
     this._stream.Write(body);
   }

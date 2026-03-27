@@ -9,7 +9,7 @@ public sealed class XzFormatDescriptor : IFormatDescriptor, IStreamFormatOperati
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark | FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
+    FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
   public string DefaultExtension => ".xz";
   public IReadOnlyList<string> Extensions => [".xz"];
   public IReadOnlyList<string> CompoundExtensions => [];

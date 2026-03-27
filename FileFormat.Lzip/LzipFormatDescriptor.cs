@@ -9,7 +9,7 @@ public sealed class LzipFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark | FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
+    FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
   public string DefaultExtension => ".lz";
   public IReadOnlyList<string> Extensions => [".lz", ".lzip"];
   public IReadOnlyList<string> CompoundExtensions => [];

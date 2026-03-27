@@ -8,8 +8,7 @@ public sealed class FreezeFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   public string DisplayName => "Freeze";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".f";
   public IReadOnlyList<string> Extensions => [".f", ".freeze"];
   public IReadOnlyList<string> CompoundExtensions => [];

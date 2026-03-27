@@ -62,7 +62,8 @@ public class TrialDecompressorTests {
       gz.Write(original);
     var compressed = ms.ToArray();
 
-    var trial = new TrialFormat("Gzip", s => new FileFormat.Gzip.GzipStream(s, CompressionStreamMode.Decompress, leaveOpen: true));
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var trial = TrialFormat.CreateAll().First(t => t.Algorithm == "GZIP");
     var result = trial.TryDecompress(compressed, 1024, CancellationToken.None);
     Assert.That(result.Success, Is.True);
     Assert.That(result.Output, Is.EqualTo(original));

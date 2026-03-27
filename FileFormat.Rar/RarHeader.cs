@@ -41,8 +41,11 @@ internal sealed class RarHeader {
   public static RarHeader Read(Stream stream) {
     var header = new RarHeader();
 
-    // 1. Read CRC as vint
-    header.HeaderCrc = (uint)RarVint.Read(stream, out _);
+    // 1. Read CRC as fixed 4-byte little-endian uint32
+    Span<byte> crcBuf = stackalloc byte[4];
+    if (stream.Read(crcBuf) != 4)
+      throw new EndOfStreamException("Unexpected end of RAR header CRC.");
+    header.HeaderCrc = BitConverter.ToUInt32(crcBuf);
 
     // 2. Read header size as vint — remember the raw bytes for CRC verification
     var sizeStartPos = stream.Position;

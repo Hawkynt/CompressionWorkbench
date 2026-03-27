@@ -80,7 +80,14 @@ public sealed class SqxEncoder {
         }
       }
 
-      if (bestRepLen >= match.Length && bestRepLen >= 4) {
+      // Compute distance-dependent minimum length for length-4+ tokens.
+      // The length adjustment subtracts 1 for distance > MaxDistLen3 and another for > MaxDistLen4.
+      // The coded adjusted length must be >= 0, so min raw length = 4 + adjustment.
+      var repDist = bestRepIdx >= 0 ? this._prevDists[(this._prevDistIndex - bestRepIdx) & 3] : 0;
+      var repMinLen4 = 4 + (repDist > SqxConstants.MaxDistLen3 ? 1 : 0) + (repDist > SqxConstants.MaxDistLen4 ? 1 : 0);
+      var matchMinLen4 = 4 + (match.Distance > SqxConstants.MaxDistLen3 ? 1 : 0) + (match.Distance > SqxConstants.MaxDistLen4 ? 1 : 0);
+
+      if (bestRepLen >= match.Length && bestRepLen >= repMinLen4) {
         // Use repeated offset
         var dist = this._prevDists[(this._prevDistIndex - bestRepIdx) & 3];
         tokens.Add(new Token(SqxConstants.RepStart + bestRepIdx, bestRepLen, dist));
@@ -90,7 +97,7 @@ public sealed class SqxEncoder {
         AdvanceMatchFinder(data, matchFinder, pos, bestRepLen);
         pos += bestRepLen;
       }
-      else if (match.Length >= 4) {
+      else if (match.Length >= matchMinLen4) {
         // Length 4+ match — token stores actual length; emission adjusts for distance
         tokens.Add(new Token(SqxConstants.LenStart, match.Length, match.Distance));
         this._lastLen = match.Length;
@@ -406,7 +413,28 @@ public sealed class SqxEncoder {
     }
     Walk(root, 0);
 
+    // Fix oversubscribed codes caused by depth clamping
+    FixCodeLengths(lengths, maxBits);
+
     return lengths;
+  }
+
+  private static void FixCodeLengths(int[] lengths, int maxBits) {
+    var kraftMax = 1L << maxBits;
+    var kraftSum = 0L;
+    foreach (var len in lengths)
+      if (len > 0) kraftSum += kraftMax >> len;
+
+    while (kraftSum > kraftMax)
+      for (var i = lengths.Length - 1; i >= 0; --i) {
+        if (lengths[i] <= 0 || lengths[i] >= maxBits)
+          continue;
+        kraftSum -= kraftMax >> lengths[i];
+        ++lengths[i];
+        kraftSum += kraftMax >> lengths[i];
+        if (kraftSum <= kraftMax)
+          break;
+      }
   }
 
   private static uint[] BuildCanonicalCodes(int[] lengths) {

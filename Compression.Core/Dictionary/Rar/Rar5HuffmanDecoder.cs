@@ -19,6 +19,7 @@ internal sealed class Rar5HuffmanDecoder {
 
   /// <summary>
   /// Builds the decode table from an array of code lengths.
+  /// Uses MSB-first bit ordering.
   /// </summary>
   /// <param name="codeLengths">Per-symbol code lengths (0 = unused symbol).</param>
   /// <param name="numSymbols">Number of symbols.</param>
@@ -48,7 +49,7 @@ internal sealed class Rar5HuffmanDecoder {
         var singleSym = 0;
         for (var i = 0; i < numSymbols; ++i)
           if (codeLengths[i] > 0) {
-            singleSym = i; 
+            singleSym = i;
             break;
           }
 
@@ -78,7 +79,7 @@ internal sealed class Rar5HuffmanDecoder {
       nextCode[bits] = code;
     }
 
-    // Build quick lookup table (LSB-first for fast lookup)
+    // Build quick lookup table (MSB-first: left-align codes to QuickBits width)
     this._quickTable = new int[Rar5HuffmanDecoder.QuickSize];
     this._quickTable.AsSpan().Fill(-1);
 
@@ -87,26 +88,20 @@ internal sealed class Rar5HuffmanDecoder {
       if (len == 0 || len > this._maxCodeLength) continue;
 
       var c = nextCode[len]++;
-      // Reverse bits for LSB-first lookup
-      var reversed = ReverseBits(c, len);
 
       if (len <= Rar5HuffmanDecoder.QuickBits) {
+        // Left-align the code to QuickBits width and fill all suffixes
         var entry = sym | (len << 16);
-        var step = 1 << len;
-        for (var j = reversed; j < Rar5HuffmanDecoder.QuickSize; j += step)
-          this._quickTable[j] = entry;
-
+        var prefix = c << (Rar5HuffmanDecoder.QuickBits - len);
+        var suffixCount = 1 << (Rar5HuffmanDecoder.QuickBits - len);
+        for (var j = 0; j < suffixCount; ++j)
+          this._quickTable[prefix + j] = entry;
       } else {
-        // For codes longer than QuickBits, store in the quick table
-        // with a slower fallback path during decode
+        // For codes longer than QuickBits, mark the prefix for slow path
+        var prefix = c >> (len - Rar5HuffmanDecoder.QuickBits);
         var entry = sym | (len << 16);
-        var step = 1 << len;
-        var quickMask = Rar5HuffmanDecoder.QuickSize - 1;
-        var prefix = reversed & quickMask;
-        // Mark with high bit to indicate slow path needed
         if (this._quickTable[prefix] == -1)
           this._quickTable[prefix] = entry | unchecked((int)0x80000000);
-
       }
     }
 
@@ -201,16 +196,15 @@ internal sealed class Rar5HuffmanDecoder {
     if (this._slowCount == 0 || this._slowCodes == null || this._slowSymbols == null || this._slowLengths == null)
       return 0;
 
-    // Try each slow code (sorted by length would be ideal, but linear scan works for small counts)
+    // MSB-first: peek maxCodeLength bits, compare top len bits against canonical codes
     var bits = reader.PeekBits(this._maxCodeLength);
 
     for (var i = 0; i < this._slowCount; ++i) {
       var len = this._slowLengths[i];
       var code = this._slowCodes[i];
-      // Reverse the canonical code to match LSB-first bit order
-      var reversed = ReverseBits(code, len);
-      var mask = (1u << len) - 1;
-      if ((bits & mask) != (uint)reversed)
+      // Compare top len bits
+      var topBits = bits >> (this._maxCodeLength - len);
+      if (topBits != (uint)code)
         continue;
 
       reader.DropBits(len);
@@ -219,16 +213,6 @@ internal sealed class Rar5HuffmanDecoder {
 
     reader.DropBits(1);
     return 0;
-  }
-
-  [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private static int ReverseBits(int value, int numBits) {
-    var result = 0;
-    for (var i = 0; i < numBits; ++i) {
-      result = (result << 1) | (value & 1);
-      value >>= 1;
-    }
-    return result;
   }
 
   [DoesNotReturn]

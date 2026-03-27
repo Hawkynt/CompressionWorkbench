@@ -9,7 +9,7 @@ public sealed class BrotliFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark | FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
+    FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
   public string DefaultExtension => ".br";
   public IReadOnlyList<string> Extensions => [".br"];
   public IReadOnlyList<string> CompoundExtensions => [];

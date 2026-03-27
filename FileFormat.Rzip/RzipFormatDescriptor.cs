@@ -8,8 +8,7 @@ public sealed class RzipFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public string DisplayName => "Rzip";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".rz";
   public IReadOnlyList<string> Extensions => [".rz", ".rzip"];
   public IReadOnlyList<string> CompoundExtensions => [];

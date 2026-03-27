@@ -78,6 +78,30 @@
     <ProjectReference Include="..\FileFormat.Freeze\FileFormat.Freeze.csproj" />
     <ProjectReference Include="..\FileFormat.Rnc\FileFormat.Rnc.csproj" />
     <ProjectReference Include="..\FileFormat.Lzfse\FileFormat.Lzfse.csproj" />
+    <ProjectReference Include="..\FileFormat.Lzg\FileFormat.Lzg.csproj" />
+    <ProjectReference Include="..\FileFormat.AlZip\FileFormat.AlZip.csproj" />
+    <ProjectReference Include="..\FileFormat.Bsa\FileFormat.Bsa.csproj" />
+    <ProjectReference Include="..\FileFormat.Density\FileFormat.Density.csproj" />
+    <ProjectReference Include="..\FileFormat.Mpq\FileFormat.Mpq.csproj" />
+    <ProjectReference Include="..\FileFormat.UuEncoding\FileFormat.UuEncoding.csproj" />
+    <ProjectReference Include="..\FileFormat.Vpk\FileFormat.Vpk.csproj" />
+    <ProjectReference Include="..\FileFormat.Xar\FileFormat.Xar.csproj" />
+    <ProjectReference Include="..\FileFormat.YEnc\FileFormat.YEnc.csproj" />
+    <ProjectReference Include="..\FileFormat.Bcm\FileFormat.Bcm.csproj" />
+    <ProjectReference Include="..\FileFormat.Bsc\FileFormat.Bsc.csproj" />
+    <ProjectReference Include="..\FileFormat.Balz\FileFormat.Balz.csproj" />
+    <ProjectReference Include="..\FileFormat.Csc\FileFormat.Csc.csproj" />
+    <ProjectReference Include="..\FileFormat.Zling\FileFormat.Zling.csproj" />
+    <ProjectReference Include="..\FileFormat.Lizard\FileFormat.Lizard.csproj" />
+    <ProjectReference Include="..\FileFormat.QuickLz\FileFormat.QuickLz.csproj" />
+    <ProjectReference Include="..\FileFormat.Cmix\FileFormat.Cmix.csproj" />
+    <ProjectReference Include="..\FileFormat.Mcm\FileFormat.Mcm.csproj" />
+    <ProjectReference Include="..\FileFormat.Paq8\FileFormat.Paq8.csproj" />
+    <ProjectReference Include="..\FileFormat.Warc\FileFormat.Warc.csproj" />
+    <ProjectReference Include="..\FileFormat.BinCue\FileFormat.BinCue.csproj" />
+    <ProjectReference Include="..\FileFormat.Mdf\FileFormat.Mdf.csproj" />
+    <ProjectReference Include="..\FileFormat.Nrg\FileFormat.Nrg.csproj" />
+    <ProjectReference Include="..\FileFormat.Cdi\FileFormat.Cdi.csproj" />
   </ItemGroup>
 
 </Project>

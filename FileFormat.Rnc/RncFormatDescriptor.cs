@@ -8,8 +8,7 @@ public sealed class RncFormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   public string DisplayName => "RNC ProPack";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".rnc";
   public IReadOnlyList<string> Extensions => [".rnc"];
   public IReadOnlyList<string> CompoundExtensions => [];

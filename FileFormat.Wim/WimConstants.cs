@@ -30,11 +30,15 @@ public static class WimConstants {
   public const int DefaultChunkSize = 32 * 1024;
 
   /// <summary>
-  /// Size of a single resource entry in the resource table, in bytes.
-  /// Each entry holds: 8 bytes compressed size, 8 bytes original size,
-  /// 8 bytes offset in file, 4 bytes flags.
+  /// Size of a RESHDR_DISK_SHORT structure (packed size+flags, offset, original size).
   /// </summary>
-  public const int ResourceEntrySize = 28;
+  public const int ReshdrDiskShortSize = 24;
+
+  /// <summary>
+  /// Size of a single lookup table entry in the resource table, in bytes.
+  /// Each entry holds: RESHDR_DISK_SHORT (24 bytes) + part number (2) + ref count (4) + SHA-1 hash (20).
+  /// </summary>
+  public const int LookupTableEntrySize = 50;
 
   // -------------------------------------------------------------------------
   // Compression type codes (stored in the header flags field)
@@ -80,6 +84,9 @@ public static class WimConstants {
 
   /// <summary>Resource flag bit 0: resource data is compressed.</summary>
   public const uint ResourceFlagCompressed = 1u;
+
+  /// <summary>Resource flag bit 1: resource contains image metadata.</summary>
+  public const uint ResourceFlagMetadata = 2u;
 
   // -------------------------------------------------------------------------
   // LZX parameters

@@ -144,11 +144,14 @@ public sealed class WimWriter {
     // Split data into chunks and compress each independently.
     var chunkCount = (data.Length + this._chunkSize - 1) / this._chunkSize;
 
-    // The chunk table holds (chunkCount - 1) entries, each an 8-byte LE compressed size.
-    // The last chunk's size is implicit (total compressed size minus sum of others).
+    // Chunk table: (chunkCount - 1) cumulative offsets as uint32 (resources < 4 GB).
+    // The last chunk's end is implicit from the total compressed size.
     // We write a placeholder chunk table, then fill it in after compressing.
+    // Entry width: 4 bytes (uint32) for resources < 4 GB, 8 for >= 4 GB.
+    // byte[] length is int (max ~2 GB), so always 4-byte entries.
+    const int entryWidth = 4;
     var chunkTableOffset = this._output.Position;
-    var chunkTableBytes   = (chunkCount - 1) * 8;
+    var chunkTableBytes  = (chunkCount - 1) * entryWidth;
 
     if (chunkTableBytes > 0) {
       var chunkTablePlaceholder = chunkTableBytes <= 512
@@ -159,7 +162,6 @@ public sealed class WimWriter {
     }
 
     // Compress each chunk and remember their compressed sizes.
-    var firstChunkDataOffset = this._output.Position;
     var compressedSizes = new long[chunkCount];
 
     for (var i = 0; i < chunkCount; ++i) {
@@ -179,16 +181,15 @@ public sealed class WimWriter {
     var resourceEnd     = this._output.Position;
     var totalCompressed = resourceEnd - chunkTableOffset;
 
-    // Seek back and write the real chunk table (all but the last entry).
+    // Seek back and write the real chunk table as cumulative offsets.
     if (chunkTableBytes > 0) {
       this._output.Seek(chunkTableOffset, SeekOrigin.Begin);
-      Span<byte> entry = stackalloc byte[8];
-      var runningOffset = firstChunkDataOffset - chunkTableOffset; // offset of first chunk data relative to resource start
-      // The chunk table stores the compressed offset of each chunk except the first.
-      // More precisely: the chunk table stores compressed sizes of chunks 0..N-2.
+      Span<byte> entryBuf = stackalloc byte[8];
+      long cumulativeOffset = 0;
       for (var i = 0; i < chunkCount - 1; ++i) {
-        BinaryPrimitives.WriteInt64LittleEndian(entry, compressedSizes[i]);
-        this._output.Write(entry);
+        cumulativeOffset += compressedSizes[i];
+        BinaryPrimitives.WriteUInt32LittleEndian(entryBuf, (uint)cumulativeOffset);
+        this._output.Write(entryBuf[..entryWidth]);
       }
       this._output.Seek(resourceEnd, SeekOrigin.Begin);
     }
@@ -223,14 +224,21 @@ public sealed class WimWriter {
   /// </summary>
   private long WriteResourceTable(List<WimResourceEntry> entries) {
     var start = this._output.Position;
-    Span<byte> buf = stackalloc byte[WimConstants.ResourceEntrySize];
+    Span<byte> buf = stackalloc byte[WimConstants.LookupTableEntrySize];
 
     foreach (var e in entries) {
       buf.Clear();
-      BinaryPrimitives.WriteInt64LittleEndian(buf,       e.CompressedSize);
-      BinaryPrimitives.WriteInt64LittleEndian(buf[8..],  e.OriginalSize);
-      BinaryPrimitives.WriteInt64LittleEndian(buf[16..], e.Offset);
-      BinaryPrimitives.WriteUInt32LittleEndian(buf[24..], e.Flags);
+
+      // RESHDR_DISK_SHORT: packed size+flags (8), offset (8), original size (8)
+      var sizeAndFlags = (e.CompressedSize & 0x00FFFFFFFFFFFFFF)
+                       | ((long)e.Flags << 56);
+      BinaryPrimitives.WriteInt64LittleEndian(buf,       sizeAndFlags);
+      BinaryPrimitives.WriteInt64LittleEndian(buf[8..],  e.Offset);
+      BinaryPrimitives.WriteInt64LittleEndian(buf[16..], e.OriginalSize);
+      // Bytes 24-25: part number = 1, 26-29: ref count = 1, 30-49: SHA-1 hash = zeros
+      BinaryPrimitives.WriteUInt16LittleEndian(buf[24..], 1);
+      BinaryPrimitives.WriteUInt32LittleEndian(buf[26..], 1);
+
       this._output.Write(buf);
     }
 

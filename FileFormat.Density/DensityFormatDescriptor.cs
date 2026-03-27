@@ -7,8 +7,7 @@ public sealed class DensityFormatDescriptor : IFormatDescriptor, IStreamFormatOp
   public string DisplayName => "Density";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".density";
   public IReadOnlyList<string> Extensions => [".density"];
   public IReadOnlyList<string> CompoundExtensions => [];

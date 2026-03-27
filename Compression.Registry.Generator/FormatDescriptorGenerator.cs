@@ -67,7 +67,7 @@ public sealed class FormatDescriptorGenerator : IIncrementalGenerator {
     sb.AppendLine();
     sb.AppendLine("namespace Compression.Lib;");
     sb.AppendLine();
-    sb.AppendLine("internal static partial class FormatRegistration {");
+    sb.AppendLine("public static partial class FormatRegistration {");
     sb.AppendLine("  static partial void RegisterFormats() {");
     foreach (var (fullName, _) in descriptors) {
       sb.AppendLine($"    FormatRegistry.Register(new {fullName}());");
@@ -90,8 +90,8 @@ public sealed class FormatDescriptorGenerator : IIncrementalGenerator {
     sb.AppendLine();
     sb.AppendLine("namespace Compression.Lib;");
     sb.AppendLine();
-    sb.AppendLine("internal static partial class FormatDetector {");
-    sb.AppendLine("  internal enum Format {");
+    sb.AppendLine("public static partial class FormatDetector {");
+    sb.AppendLine("  public enum Format {");
 
     // Special values first
     foreach (var special in SpecialFormats) {

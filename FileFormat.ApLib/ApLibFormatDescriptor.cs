@@ -8,8 +8,7 @@ public sealed class ApLibFormatDescriptor : IFormatDescriptor, IStreamFormatOper
   public string DisplayName => "aPLib";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".aplib";
   public IReadOnlyList<string> Extensions => [".aplib"];
   public IReadOnlyList<string> CompoundExtensions => [];

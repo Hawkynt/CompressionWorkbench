@@ -302,16 +302,10 @@ benchCmd.SetAction((ParseResult ctx) => {
   Console.WriteLine($"{"Algorithm",-16} {"Compressed",12} {"Ratio",8} {"Compress",10} {"Decompress",12}");
   Console.WriteLine(new string('-', 62));
 
-  BenchmarkFormat("Gzip", data, F.Gzip);
-  BenchmarkFormat("Bzip2", data, F.Bzip2);
-  BenchmarkFormat("XZ/LZMA2", data, F.Xz);
-  BenchmarkFormat("Zstd", data, F.Zstd);
-  BenchmarkFormat("LZ4", data, F.Lz4);
-  BenchmarkFormat("Brotli", data, F.Brotli);
-  BenchmarkFormat("Snappy", data, F.Snappy);
-  BenchmarkFormat("LZW (.Z)", data, F.Compress);
-  BenchmarkFormat("LZMA", data, F.Lzma);
-  BenchmarkFormat("Lzip", data, F.Lzip);
+  FormatRegistration.EnsureInitialized();
+  foreach (var block in BuildingBlockRegistry.All.OrderBy(b => b.DisplayName)) {
+    BenchmarkBlock(block.DisplayName, data, block);
+  }
   return 0;
 });
 
@@ -565,23 +559,16 @@ static string FormatSize(long bytes) => bytes switch {
   _ => $"{bytes / (1024.0 * 1024 * 1024):F2} GB",
 };
 
-static void BenchmarkFormat(string name, byte[] data, F format) {
-  FormatRegistration.EnsureInitialized();
-  var ops = FormatRegistry.GetStreamOps(format.ToString());
-  if (ops == null) { Console.WriteLine($"{name,-16} {"N/A",-12}"); return; }
-
+static void BenchmarkBlock(string name, byte[] data, IBuildingBlock block) {
   try {
     // Compress
-    using var compMs = new MemoryStream();
     var compSw = Stopwatch.StartNew();
-    ops.Compress(new MemoryStream(data), compMs);
+    var compressed = block.Compress(data);
     compSw.Stop();
-
-    var compressed = compMs.ToArray();
 
     // Decompress
     var decompSw = Stopwatch.StartNew();
-    ops.Decompress(new MemoryStream(compressed), new MemoryStream());
+    block.Decompress(compressed);
     decompSw.Stop();
 
     var ratio = data.Length > 0 ? 100.0 * compressed.Length / data.Length : 0;
