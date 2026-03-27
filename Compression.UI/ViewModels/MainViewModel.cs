@@ -48,6 +48,8 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand PropertiesCommand { get; }
   public ICommand AnalyzeCommand { get; }
   public ICommand AnalyzeFileCommand { get; }
+  public ICommand BenchmarkCommand { get; }
+  public ICommand FileAssociationsCommand { get; }
 
   public MainViewModel() {
     OpenCommand = new RelayCommand(_ => OpenDialog());
@@ -64,6 +66,8 @@ internal sealed class MainViewModel : ViewModelBase {
     PropertiesCommand = new RelayCommand(_ => ShowProperties(), _ => HasArchive && SelectedEntries.Count == 1 && !SelectedEntries[0].IsParentEntry);
     AnalyzeCommand = new RelayCommand(_ => ShowAnalysis(), _ => HasArchive && HasSelectedFile);
     AnalyzeFileCommand = new RelayCommand(_ => ShowAnalyzeFile());
+    BenchmarkCommand = new RelayCommand(_ => ShowBenchmark());
+    FileAssociationsCommand = new RelayCommand(_ => ShowFileAssociations());
   }
 
   private bool HasSelectedFile => SelectedEntries.Any(e => !e.IsDirectory && !e.IsParentEntry);
@@ -319,6 +323,16 @@ internal sealed class MainViewModel : ViewModelBase {
     var dlg = new Views.PropertiesWindow { Owner = Application.Current.MainWindow };
     dlg.ShowProperties(entry, _allEntries, data);
     dlg.ShowDialog();
+  }
+
+  internal void ShowBenchmark() {
+    var win = new Views.BenchmarkWindow { Owner = Application.Current.MainWindow };
+    win.Show();
+  }
+
+  internal void ShowFileAssociations() {
+    var win = new Views.FileAssociationsWindow { Owner = Application.Current.MainWindow };
+    win.ShowDialog();
   }
 
   internal void ShowAnalyzeFile() {
