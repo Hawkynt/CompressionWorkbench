@@ -120,6 +120,13 @@
     <ProjectReference Include="..\FileFormat.Msa\FileFormat.Msa.csproj" />
     <ProjectReference Include="..\FileFormat.TrDos\FileFormat.TrDos.csproj" />
     <ProjectReference Include="..\FileFormat.Umx\FileFormat.Umx.csproj" />
+    <ProjectReference Include="..\FileFormat.Wrapster\FileFormat.Wrapster.csproj" />
+    <ProjectReference Include="..\FileFormat.LhF\FileFormat.LhF.csproj" />
+    <ProjectReference Include="..\FileFormat.Zap\FileFormat.Zap.csproj" />
+    <ProjectReference Include="..\FileFormat.Ampk\FileFormat.Ampk.csproj" />
+    <ProjectReference Include="..\FileFormat.IffCdaf\FileFormat.IffCdaf.csproj" />
+    <ProjectReference Include="..\FileFormat.PackDisk\FileFormat.PackDisk.csproj" />
+    <ProjectReference Include="..\FileFormat.Fat\FileFormat.Fat.csproj" />
   </ItemGroup>
 
 </Project>
