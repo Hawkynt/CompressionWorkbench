@@ -5,14 +5,14 @@ namespace Compression.Lib;
 /// </summary>
 /// <param name="FullPath">Absolute path on disk (empty for synthetic directory entries).</param>
 /// <param name="EntryName">Name inside the archive (forward slashes, directories end with '/').</param>
-internal readonly record struct ArchiveInput(string FullPath, string EntryName) {
-  internal bool IsDirectory => EntryName.EndsWith('/');
+public readonly record struct ArchiveInput(string FullPath, string EntryName) {
+  public bool IsDirectory => EntryName.EndsWith('/');
 
   /// <summary>
   /// Resolves a mix of files, directories, and wildcards into archive inputs.
   /// Directories are recursed; their contents preserve relative paths.
   /// </summary>
-  internal static List<ArchiveInput> Resolve(string[] inputs) {
+  public static List<ArchiveInput> Resolve(string[] inputs) {
     var result = new List<ArchiveInput>();
     foreach (var input in inputs) {
       if (input.Contains('*') || input.Contains('?')) {
@@ -60,13 +60,13 @@ internal readonly record struct ArchiveInput(string FullPath, string EntryName) 
   /// Returns only file entries (non-directories) with their data.
   /// For formats that don't support directory entries.
   /// </summary>
-  internal static IEnumerable<(string EntryName, byte[] Data)> FilesOnly(IReadOnlyList<ArchiveInput> inputs)
+  public static IEnumerable<(string EntryName, byte[] Data)> FilesOnly(IReadOnlyList<ArchiveInput> inputs)
     => inputs.Where(i => !i.IsDirectory).Select(i => (i.EntryName, File.ReadAllBytes(i.FullPath)));
 
   /// <summary>
   /// Flattens all entries to root level (filename only).
   /// For formats without path support.
   /// </summary>
-  internal static IEnumerable<(string EntryName, byte[] Data)> FlatFiles(IReadOnlyList<ArchiveInput> inputs)
+  public static IEnumerable<(string EntryName, byte[] Data)> FlatFiles(IReadOnlyList<ArchiveInput> inputs)
     => inputs.Where(i => !i.IsDirectory).Select(i => (Path.GetFileName(i.EntryName), File.ReadAllBytes(i.FullPath)));
 }

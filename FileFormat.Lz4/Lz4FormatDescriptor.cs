@@ -10,7 +10,7 @@ public sealed class Lz4FormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark | FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
+    FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
   public string DefaultExtension => ".lz4";
   public IReadOnlyList<string> Extensions => [".lz4"];
   public IReadOnlyList<string> CompoundExtensions => [];

@@ -22,6 +22,11 @@ internal sealed class XzBlockHeader {
   public long? UncompressedSize { get; set; }
 
   /// <summary>
+  /// The total header size in bytes (as read from the stream).
+  /// </summary>
+  public int HeaderSize { get; private set; }
+
+  /// <summary>
   /// Reads a block header from the stream.
   /// </summary>
   public static XzBlockHeader Read(Stream stream) {
@@ -43,7 +48,7 @@ internal sealed class XzBlockHeader {
       throw new InvalidDataException("XZ block header CRC mismatch.");
 
     using var ms = new MemoryStream(headerData, 1, headerSize - 5);
-    var header = new XzBlockHeader();
+    var header = new XzBlockHeader { HeaderSize = headerSize };
 
     var flags = ms.ReadByte();
     var numFilters = (flags & 0x03) + 1;

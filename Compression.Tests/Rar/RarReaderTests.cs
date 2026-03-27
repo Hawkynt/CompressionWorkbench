@@ -474,7 +474,7 @@ public class RarReaderTests {
 
   private static void WriteHeaderWithCrc(MemoryStream ms, byte[] headerBody) {
     // RAR5 header layout:
-    //   [Header CRC (vint)] [Header size (vint)] [body...]
+    //   [Header CRC (4 bytes LE)] [Header size (vint)] [body...]
     // Header CRC = CRC-32 of (size vint bytes + body bytes)
     // Header size = body.Length (bytes from Type field to end of header)
 
@@ -489,7 +489,7 @@ public class RarReaderTests {
 
     var headerCrc = Compression.Core.Checksums.Crc32.Compute(crcData);
 
-    RarVint.Write(ms, headerCrc);
+    ms.Write(BitConverter.GetBytes(headerCrc));
     ms.Write(crcData);
   }
 }

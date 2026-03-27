@@ -60,9 +60,14 @@ public static class RncStream {
       throw new InvalidDataException("Invalid RNC magic bytes.");
 
     var method = data[3];
+    if (method == 0) {
+      // Method 0: stored (uncompressed)
+      var storedSize = ReadBE32(data, 4);
+      return data.Slice(HeaderSize, (int)storedSize).ToArray();
+    }
     if (method != 1)
       throw new NotSupportedException(
-        $"RNC method {method} is not supported. Only method 1 is implemented.");
+        $"RNC method {method} is not supported. Only methods 0 and 1 are implemented.");
 
     var uncompressedSize = ReadBE32(data, 4);
     var compressedSize = ReadBE32(data, 8);
@@ -253,8 +258,13 @@ public static class RncStream {
       return BuildHeader(1, 0, 0, 0, 0, 0, 0, []);
 
     // Build chunks. Each chunk produces one set of Huffman tables + tuples.
-    // For data that has no matches, each chunk has exactly 1 tuple (raw only).
     var chunks = BuildChunks(input);
+
+    if (chunks.Count > MaxChunks) {
+      // Too many chunks for the header byte — fall back to method 0 (stored).
+      return BuildHeader(0, (uint)input.Length, (uint)input.Length, 0, 0, 0, 0, input);
+    }
+
     var compressedData = EncodeAllChunks(chunks);
 
     var uncompressedCrc = RncCrc16(input);
@@ -289,11 +299,10 @@ public static class RncStream {
   private const int MaxChunks = 255;
 
   /// <summary>
-  /// Builds chunks from input data. Uses greedy LZSS matching. When no match
-  /// can be found and raw count would exceed MaxHuffSymbol, starts a new chunk.
-  /// Limits total chunks to MaxChunks (255) to fit the header byte. When the
-  /// limit is approaching, forces matches via brute-force scan to keep data
-  /// within the current chunk rather than creating new ones.
+  /// Builds chunks from input data. Uses greedy LZSS matching.
+  /// Every non-last tuple in a chunk must have a match (the decompressor expects this).
+  /// When no hash-chain match is found, ends the current chunk — unless the chunk limit
+  /// (255, from the header byte) is reached, in which case a brute-force match is forced.
   /// </summary>
   private static List<Chunk> BuildChunks(ReadOnlySpan<byte> data) {
     var chunks = new List<Chunk>();
@@ -301,8 +310,6 @@ public static class RncStream {
     var maxDist = (MaxHuffSymbol << 8) | 0xFF;
     var maxMatchLen = MaxHuffSymbol + MinMatchLength;
 
-    // Hash chain: hashHead[hash] = most recent position with that 2-byte prefix
-    // hashPrev[pos] = previous position in the chain for the same hash
     var hashHead = new int[65536];
     Array.Fill(hashHead, -1);
     var hashPrev = new int[data.Length > 0 ? data.Length : 1];
@@ -314,7 +321,7 @@ public static class RncStream {
       var rawStart = pos;
       var rawCount = 0;
 
-      // Collect raw bytes until we find a match or hit the limit
+      // Collect raw bytes until we find a match or hit the symbol limit
       while (pos < data.Length && rawCount < MaxHuffSymbol) {
         if (pos >= MinMatchLength) {
           var (_, ml) = FindMatch(data, pos, maxDist, Math.Min(maxMatchLen, data.Length - pos), hashHead, hashPrev);
@@ -325,51 +332,29 @@ public static class RncStream {
       }
 
       if (pos >= data.Length) {
-        // End of data: this is the last tuple in the current chunk
+        // End of data: last tuple (no match)
         currentChunk.Tuples.Add(new ChunkTuple(data.Slice(rawStart, rawCount).ToArray(), 0, 0));
         chunks.Add(currentChunk);
         currentChunk = new Chunk();
       } else {
-        // Check if we found a match or just hit maxRaw
         var (dist, len) = FindMatch(data, pos, maxDist, Math.Min(maxMatchLen, data.Length - pos), hashHead, hashPrev);
         if (len >= MinMatchLength) {
-          // Found a match: add tuple with match
           currentChunk.Tuples.Add(new ChunkTuple(data.Slice(rawStart, rawCount).ToArray(), dist, len));
           for (var i = 0; i < len; i++)
             HashInsert(data, pos + i, hashHead, hashPrev);
           pos += len;
-        } else if (chunks.Count < MaxChunks - 1) {
-          // No match and rawCount = maxRaw. Safe to start a new chunk.
+        } else {
+          // No match and rawCount = maxRaw. End this chunk.
           currentChunk.Tuples.Add(new ChunkTuple(data.Slice(rawStart, rawCount).ToArray(), 0, 0));
           chunks.Add(currentChunk);
           currentChunk = new Chunk();
-        } else {
-          // Approaching chunk limit: force a match via brute-force scan to stay
-          // in the current chunk. Search all positions in the window for any
-          // 2-byte match at the current position.
-          var (fd, fl) = ForceMatch(data, pos, maxDist);
-          if (fl >= MinMatchLength) {
-            currentChunk.Tuples.Add(new ChunkTuple(data.Slice(rawStart, rawCount).ToArray(), fd, fl));
-            for (var i = 0; i < fl; i++)
-              HashInsert(data, pos + i, hashHead, hashPrev);
-            pos += fl;
-          } else {
-            // Extremely unlikely: no 2-byte match found at all.
-            // Fall back to creating a new chunk anyway (will truncate in header).
-            currentChunk.Tuples.Add(new ChunkTuple(data.Slice(rawStart, rawCount).ToArray(), 0, 0));
-            chunks.Add(currentChunk);
-            currentChunk = new Chunk();
-          }
         }
       }
     }
 
-    // Add remaining chunk if it has tuples
     if (currentChunk.Tuples.Count > 0) {
-      // Ensure last tuple has no match
-      if (currentChunk.Tuples[^1].HasMatch) {
+      if (currentChunk.Tuples[^1].HasMatch)
         currentChunk.Tuples.Add(new ChunkTuple([], 0, 0));
-      }
       chunks.Add(currentChunk);
     }
 
@@ -380,28 +365,6 @@ public static class RncStream {
     }
 
     return chunks;
-  }
-
-  /// <summary>
-  /// Brute-force scan for any match of at least MinMatchLength bytes at <paramref name="pos"/>.
-  /// Used when the chunk limit is approaching and we must avoid creating a new chunk.
-  /// Scans the entire valid window (up to maxDist back) checking every position.
-  /// </summary>
-  private static (int Distance, int Length) ForceMatch(ReadOnlySpan<byte> data, int pos, int maxDist) {
-    if (pos + MinMatchLength > data.Length) return (0, 0);
-    var maxLen = Math.Min(MaxHuffSymbol + MinMatchLength, data.Length - pos);
-    var minPos = Math.Max(0, pos - maxDist);
-    var bestDist = 0; var bestLen = 0;
-    for (var s = pos - 1; s >= minPos; s--) {
-      if (data[s] != data[pos]) continue;
-      var len = 0;
-      while (len < maxLen && pos + len < data.Length && data[s + len] == data[pos + len]) len++;
-      if (len >= MinMatchLength && len > bestLen) {
-        bestLen = len; bestDist = pos - s;
-        if (len >= maxLen) break;
-      }
-    }
-    return (bestDist, bestLen);
   }
 
   // ── Event-based encoding ──────────────────────────────────────────────────

@@ -16,8 +16,8 @@ internal static class Rar5Constants {
   /// <summary>Number of low-offset symbols (4-bit low distance refinement).</summary>
   public const int LowOffsetTableSize = 16;
 
-  /// <summary>Number of length symbols (additional match-length encoding).</summary>
-  public const int LengthTableSize = 16;
+  /// <summary>Number of length symbols (additional match-length encoding). RAR seems to use RC=44.</summary>
+  public const int LengthTableSize = 44;
 
   /// <summary>Number of code-length symbols for reading Huffman table definitions.</summary>
   public const int CodeLengthTableSize = 20;
@@ -52,14 +52,14 @@ internal static class Rar5Constants {
   /// <summary>Symbol for repeated offset 3.</summary>
   public const int RepeatOffset3 = 259;
 
-  /// <summary>First symbol encoding match length + distance.</summary>
-  public const int MatchBase = 262;
-
   /// <summary>Symbol indicating a filter block follows.</summary>
-  public const int FilterSymbol = 258;
+  public const int FilterSymbol = 260;
 
   /// <summary>End of block marker in the main table.</summary>
-  public const int EndOfBlock = 256;
+  public const int EndOfBlock = 261;
+
+  /// <summary>First symbol encoding match length + distance.</summary>
+  public const int MatchBase = 262;
 
   /// <summary>RAR5 filter type: delta filter.</summary>
   public const int FilterDelta = 0;
@@ -105,5 +105,19 @@ internal static class Rar5Constants {
 
     var extraBits = (slot - 2) >> 1;
     return ((2 + (slot & 1)) << extraBits);
+  }
+
+  /// <summary>
+  /// Returns the implicit match-length bonus for a given distance.
+  /// RAR5 adds extra length to matches with large distances:
+  /// +1 for distance &gt; 256, +2 for &gt; 8192, +3 for &gt; 262144.
+  /// Matching 7-Zip's m_LenPlusTable.
+  /// </summary>
+  public static int LengthBonus(int distance) {
+    var bonus = 0;
+    if (distance > 0x100) bonus++;
+    if (distance > 0x2000) bonus++;
+    if (distance > 0x40000) bonus++;
+    return bonus;
   }
 }

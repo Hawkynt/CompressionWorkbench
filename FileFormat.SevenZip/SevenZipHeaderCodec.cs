@@ -302,24 +302,10 @@ internal static class SevenZipHeaderCodec {
         SevenZipVarInt.Write(stream, (ulong)size);
     }
 
-    // Folder CRCs (write all defined)
-    var hasCrcs = false;
-    foreach (var folder in folders) {
-      if (folder.UnpackCrc.HasValue) {
-        hasCrcs = true;
-        break;
-      }
-    }
-
-    if (hasCrcs) {
-      stream.WriteByte(SevenZipConstants.IdCrc);
-      WriteBoolVector(stream, folders.Count,
-        i => folders[i].UnpackCrc.HasValue);
-      foreach (var folder in folders) {
-        if (folder.UnpackCrc.HasValue)
-          WriteUInt32Le(stream, folder.UnpackCrc.Value);
-      }
-    }
+    // Note: Folder CRCs are NOT written in UnpackInfo. They are only stored in
+    // SubStreamsInfo as per-file digests. Writing them here causes 7-Zip 26+ to
+    // reject the archive when the folder has only one stream, because 7-Zip
+    // expects the folder CRC in SubStreamsInfo, not duplicated in UnpackInfo.
 
     stream.WriteByte(SevenZipConstants.IdEnd);
   }
@@ -462,10 +448,20 @@ internal static class SevenZipHeaderCodec {
     List<SevenZipFolder> folders) {
     stream.WriteByte(SevenZipConstants.IdSubStreamsInfo);
 
-    // NumUnpackStreams
-    stream.WriteByte(SevenZipConstants.IdNumUnpackStreams);
-    for (var i = 0; i < folders.Count; ++i)
-      SevenZipVarInt.Write(stream, (ulong)subStreams.NumUnpackStreams[i]);
+    // NumUnpackStreams (omit when all folders have exactly 1 stream — that's the default)
+    var allSingle = true;
+    for (var i = 0; i < folders.Count; ++i) {
+      if (subStreams.NumUnpackStreams[i] != 1) {
+        allSingle = false;
+        break;
+      }
+    }
+
+    if (!allSingle) {
+      stream.WriteByte(SevenZipConstants.IdNumUnpackStreams);
+      for (var i = 0; i < folders.Count; ++i)
+        SevenZipVarInt.Write(stream, (ulong)subStreams.NumUnpackStreams[i]);
+    }
 
     // Sizes (for folders with more than 1 stream, write all but the last)
     var hasSizes = false;

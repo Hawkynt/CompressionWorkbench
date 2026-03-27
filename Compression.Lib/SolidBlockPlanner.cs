@@ -5,10 +5,10 @@ namespace Compression.Lib;
 /// Files with similar extensions are grouped together, incompressible files are separated,
 /// and blocks are capped at a configurable maximum size.
 /// </summary>
-internal static class SolidBlockPlanner {
+public static class SolidBlockPlanner {
 
   /// <summary>Default maximum solid block size (64 MB, matching WinRAR default).</summary>
-  internal const long DefaultMaxBlockSize = 64L * 1024 * 1024;
+  public const long DefaultMaxBlockSize = 64L * 1024 * 1024;
 
   // Extension group indices (used by RecommendCodec)
   private const int GroupSourceCode = 0;
@@ -48,14 +48,14 @@ internal static class SolidBlockPlanner {
   ];
 
   /// <summary>A block of files to be compressed together in one solid stream.</summary>
-  internal sealed class SolidBlock {
-    internal List<(ArchiveInput Input, byte[] Data)> Files { get; } = [];
-    internal long TotalSize { get; private set; }
-    internal bool IsIncompressible { get; init; }
+  public sealed class SolidBlock {
+    public List<(ArchiveInput Input, byte[] Data)> Files { get; } = [];
+    public long TotalSize { get; private set; }
+    public bool IsIncompressible { get; init; }
     /// <summary>Extension group index (-1 for catch-all, -2 for incompressible).</summary>
-    internal int GroupIndex { get; init; } = -1;
+    public int GroupIndex { get; init; } = -1;
 
-    internal void Add(ArchiveInput input, byte[] data) {
+    public void Add(ArchiveInput input, byte[] data) {
       Files.Add((input, data));
       TotalSize += data.Length;
     }
@@ -64,7 +64,7 @@ internal static class SolidBlockPlanner {
   /// <summary>
   /// Recommends the optimal 7z codec for a solid block based on its content type.
   /// </summary>
-  internal static FileFormat.SevenZip.SevenZipCodec RecommendCodec(SolidBlock block,
+  public static FileFormat.SevenZip.SevenZipCodec RecommendCodec(SolidBlock block,
       FileFormat.SevenZip.SevenZipCodec defaultCodec) {
     if (block.IsIncompressible)
       return FileFormat.SevenZip.SevenZipCodec.Copy;
@@ -74,7 +74,7 @@ internal static class SolidBlockPlanner {
   /// <summary>
   /// Recommends the optimal 7z filter for a solid block based on its content type.
   /// </summary>
-  internal static FileFormat.SevenZip.SevenZipFilter RecommendFilter(SolidBlock block) {
+  public static FileFormat.SevenZip.SevenZipFilter RecommendFilter(SolidBlock block) {
     if (block.IsIncompressible)
       return FileFormat.SevenZip.SevenZipFilter.None;
     return block.GroupIndex switch {
@@ -88,7 +88,7 @@ internal static class SolidBlockPlanner {
   /// Files are grouped by content similarity (extension) and split at maxBlockSize boundaries.
   /// Incompressible files are placed into separate blocks.
   /// </summary>
-  internal static List<SolidBlock> Plan(IReadOnlyList<ArchiveInput> inputs,
+  public static List<SolidBlock> Plan(IReadOnlyList<ArchiveInput> inputs,
       long maxBlockSize = DefaultMaxBlockSize, HashSet<string>? incompressible = null) {
     var files = inputs.Where(i => !i.IsDirectory && !string.IsNullOrEmpty(i.FullPath)).ToList();
     if (files.Count == 0) return [];
@@ -122,7 +122,7 @@ internal static class SolidBlockPlanner {
   /// Detects incompressible files from the input list using entropy analysis.
   /// Returns the set of full paths that appear incompressible.
   /// </summary>
-  internal static HashSet<string> DetectIncompressible(IReadOnlyList<ArchiveInput> inputs) {
+  public static HashSet<string> DetectIncompressible(IReadOnlyList<ArchiveInput> inputs) {
     var result = new HashSet<string>();
     foreach (var input in inputs) {
       if (input.IsDirectory || string.IsNullOrEmpty(input.FullPath)) continue;

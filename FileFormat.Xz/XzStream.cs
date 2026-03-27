@@ -139,17 +139,19 @@ public sealed class XzStream : CompressionStream {
     // Write compressed data
     InnerStream.Write(compressedData);
 
-    // Write check
-    WriteCheck(data);
-
-    // Pad block to 4-byte alignment
-    var blockDataSize = InnerStream.Position - blockHeaderEnd;
-    var blockPadding = (int)((4 - (blockDataSize % 4)) % 4);
+    // Pad compressed data to 4-byte alignment (padding comes before check per XZ spec)
+    var compressedEnd = InnerStream.Position;
+    var blockPadding = (int)((4 - ((compressedEnd - blockStartPos) % 4)) % 4);
     for (var i = 0; i < blockPadding; ++i)
       InnerStream.WriteByte(0);
 
-    // Calculate unpadded size (block header + compressed data + check, before padding)
-    var unpaddedSize = InnerStream.Position - blockStartPos - blockPadding;
+    // Write check after padding
+    WriteCheck(data);
+
+    // Unpadded size = block header + compressed data + check (excludes padding)
+    var blockHeaderSize = blockHeaderEnd - blockStartPos;
+    var checkSize = XzConstants.CheckSize(this._checkType);
+    var unpaddedSize = blockHeaderSize + compressedData.Length + checkSize;
 
     // Write index
     var index = new XzIndex();
@@ -253,14 +255,14 @@ public sealed class XzStream : CompressionStream {
 
       output.Write(decompressed);
 
-      // Verify check
-      VerifyCheck(checkType, decompressed);
-
-      // Skip block padding
-      long blockDataLen = compressedSize + XzConstants.CheckSize(checkType);
-      var blockPadding = (int)((4 - (blockDataLen % 4)) % 4);
+      // Skip block padding (padding aligns header + compressed data to 4 bytes, before the check)
+      var bytesBeforePadding = blockHeader.HeaderSize + compressedSize;
+      var blockPadding = (int)((4 - (bytesBeforePadding % 4)) % 4);
       for (var i = 0; i < blockPadding; ++i)
         InnerStream.ReadByte();
+
+      // Verify check (comes after padding per XZ spec)
+      VerifyCheck(checkType, decompressed);
     }
 
     // Read index

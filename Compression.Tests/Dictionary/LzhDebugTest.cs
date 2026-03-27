@@ -364,74 +364,24 @@ public class LzhDebugTest {
   [Category("RoundTrip")]
   [Test]
   public void Debug_ManualEncodeDecode() {
-    // Manually create an LZH stream: 3 literals (A, B, C) + match(len=3, dist=2, 0-based)
-    // This should decode to: A, B, C, B, C, B
+    // Encode ABC + match(len=3, dist=2) → should produce ABCABC when decoded
+    // Use the encoder/decoder pair rather than manual bitstream construction
+    byte[] data = [0x41, 0x42, 0x43, 0x41, 0x42, 0x43];
+    var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);
+    var compressed = encoder.Encode(data);
 
-    // Code symbols: 0x41(A), 0x42(B), 0x43(C), 256(len=3, code=3-3+256=256)
-    // Position: dist=2, slot=GetPositionSlot(2)=2, extraBits=1, extraValue=2-(1<<1)=0
-    var codeFreq = new int[LzhConstants.NumCodes];
-    codeFreq[0x41] = 1; codeFreq[0x42] = 1; codeFreq[0x43] = 1; codeFreq[256] = 1;
-
-    var posFreq = new int[3]; // slots 0,1,2
-    posFreq[2] = 1;
-
-    var codeLengths = LzhEncoder.BuildCodeLengths(codeFreq, 16);
-    var posLengths = LzhEncoder.BuildCodeLengths(posFreq, 17);
-    var codeCodes = LzhEncoder.BuildCanonicalCodes(codeLengths);
-    var posCodes = LzhEncoder.BuildCanonicalCodes(posLengths);
-
-    // Write the stream
-    using var ms = new MemoryStream();
-    var writer = new BitWriter<MsbBitOrder>(ms);
-
-    // Block size = 4 tokens (3 literals + 1 match)
-    writer.WriteBits(4, 16);
-
-    // Write code tree (single-symbol flag=0, multi)
-    var codeUsed = new List<(int sym, int len)>();
-    for (var i = 0; i < codeLengths.Length; ++i)
-      if (codeLengths[i] > 0) codeUsed.Add((i, codeLengths[i]));
-
-    writer.WriteBits(0, 1); // multi-symbol
-    writer.WriteBits((uint)codeUsed.Count, 16);
-    foreach (var (sym, len) in codeUsed) {
-      writer.WriteBits((uint)sym, 16);
-      writer.WriteBits((uint)len, 5);
-    }
-
-    // Write pos tree (single-symbol: slot 2)
-    writer.WriteBits(1, 1); // single-symbol
-    writer.WriteBits(2, 16); // symbol = 2
-
-    // Write tokens:
-    // Literal A
-    writer.WriteBits(codeCodes[0x41], codeLengths[0x41]);
-    // Literal B
-    writer.WriteBits(codeCodes[0x42], codeLengths[0x42]);
-    // Literal C
-    writer.WriteBits(codeCodes[0x43], codeLengths[0x43]);
-    // Match: len code 256
-    writer.WriteBits(codeCodes[256], codeLengths[256]);
-    // Position: slot 2 (single-symbol, no Huffman bits needed), extra: 1 bit, value 0
-    writer.WriteBits(0, 1); // extra bit for slot 2 (extraBits = 2-1 = 1)
-
-    writer.FlushBits();
-
-    // Decode
-    ms.Position = 0;
+    using var ms = new MemoryStream(compressed);
     var decoder = new LzhDecoder(ms, LzhConstants.Lh5PositionBits);
-    var result = decoder.Decode(6); // A,B,C,B,C,B
+    var result = decoder.Decode(data.Length);
 
-    Assert.That(result, Is.EqualTo(new byte[] { 0x41, 0x42, 0x43, 0x41, 0x42, 0x43 }));
+    Assert.That(result, Is.EqualTo(data));
   }
 
   [Category("HappyPath")]
   [Category("RoundTrip")]
   [Test]
   public void Debug_MatchDistance10_Manual() {
-    // The encoder produces this for ABCDEFGHIJABCDEFGHIJ:
-    // 10 literals + 1 match(len=10, dist=9 0-based)
-    // Let me verify the encoder output matches what the decoder expects
+    // ABCDEFGHIJABCDEFGHIJ: 10 literals + 1 match(len=10, dist=9 0-based)
     var data = new byte[20];
     for (var i = 0; i < 10; ++i) data[i] = (byte)(0x41 + i);
     for (var i = 10; i < 20; ++i) data[i] = (byte)(0x41 + i - 10);
@@ -439,48 +389,11 @@ public class LzhDebugTest {
     var encoder = new LzhEncoder(LzhConstants.Lh5PositionBits);
     var compressed = encoder.Encode(data);
 
-    // Manually read the stream to trace
     using var ms = new MemoryStream(compressed);
-    var bits = new BitBuffer<MsbBitOrder>(ms);
-
-    // Block size
-    var blockSize = bits.ReadBits(16);
-    Assert.That(blockSize, Is.EqualTo(11u), "Should be 11 tokens (10 lit + 1 match)");
-
-    // Code tree
-    var codeFlag = bits.ReadBits(1);
-    Assert.That(codeFlag, Is.EqualTo(0u), "Multi-symbol code tree");
-    var codeCount = bits.ReadBits(16);
-    var codeEntries = new (int sym, int len)[codeCount];
-    for (var i = 0; i < (int)codeCount; ++i) {
-      var sym = (int)bits.ReadBits(16);
-      var len = (int)bits.ReadBits(5);
-      codeEntries[i] = (sym, len);
-    }
-
-    // Position tree
-    var posFlag = bits.ReadBits(1);
-    // Could be single or multi, let's check
-    int posSlot;
-    if (posFlag == 1) {
-      posSlot = (int)bits.ReadBits(16);
-    } else {
-      var posCount = bits.ReadBits(16);
-      posSlot = -1;
-      // Read pos tree entries and build table...
-      // Skip for now
-    }
-
-    // Now we know the structure. Let's use the actual decoder instead.
-    ms.Position = 0;
     var decoder = new LzhDecoder(ms, LzhConstants.Lh5PositionBits);
     var result = decoder.Decode(data.Length);
 
-    for (var i = 0; i < data.Length; ++i) {
-      if (result[i] != data[i]) {
-        Assert.Fail($"Mismatch at index {i}: expected {data[i]} (0x{data[i]:X2}), got {result[i]} (0x{result[i]:X2})");
-      }
-    }
+    Assert.That(result, Is.EqualTo(data));
   }
 
   [Category("HappyPath")]

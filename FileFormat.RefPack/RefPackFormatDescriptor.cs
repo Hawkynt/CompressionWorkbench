@@ -8,8 +8,7 @@ public sealed class RefPackFormatDescriptor : IFormatDescriptor, IStreamFormatOp
   public string DisplayName => "RefPack/QFS";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".qfs";
   public IReadOnlyList<string> Extensions => [".qfs", ".refpack"];
   public IReadOnlyList<string> CompoundExtensions => [];

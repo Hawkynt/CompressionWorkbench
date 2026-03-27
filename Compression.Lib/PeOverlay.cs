@@ -7,13 +7,13 @@ namespace Compression.Lib;
 /// Used to detect self-extracting archives from third-party tools (7-Zip, WinRAR, WinZip, etc.)
 /// which prepend a native executable stub before the archive data.
 /// </summary>
-internal static class PeOverlay {
+public static class PeOverlay {
 
   /// <summary>
   /// Returns the file offset where the PE overlay begins, or -1 if not a PE or no overlay exists.
   /// The overlay is the data after the last PE section — where SFX tools place the archive.
   /// </summary>
-  internal static long FindOverlayOffset(Stream stream) {
+  public static long FindOverlayOffset(Stream stream) {
     try {
       stream.Position = 0;
       Span<byte> buf = stackalloc byte[64];
@@ -77,7 +77,7 @@ internal static class PeOverlay {
   /// Returns the (format, offset) of the first match, or null if none found.
   /// Scans up to maxScan bytes (default 1MB) to avoid scanning entire large executables.
   /// </summary>
-  internal static (FormatDetector.Format Format, long Offset)? ScanForArchive(Stream stream, long startOffset, long maxScan = 1024 * 1024) {
+  public static (FormatDetector.Format Format, long Offset)? ScanForArchive(Stream stream, long startOffset, long maxScan = 1024 * 1024) {
     if (startOffset < 0 || startOffset >= stream.Length)
       return null;
 
@@ -146,7 +146,7 @@ internal static class PeOverlay {
   /// First parses PE sections to find the overlay, then scans for archive signatures.
   /// Returns (format, archiveOffset) or null if no embedded archive found.
   /// </summary>
-  internal static (FormatDetector.Format Format, long Offset)? DetectEmbeddedArchive(string path) {
+  public static (FormatDetector.Format Format, long Offset)? DetectEmbeddedArchive(string path) {
     try {
       using var fs = File.OpenRead(path);
       var overlayOffset = FindOverlayOffset(fs);

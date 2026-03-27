@@ -7,13 +7,13 @@ namespace Compression.Lib;
 /// Provides parallel compression for ZIP archives.
 /// Entries are compressed independently in parallel, then written sequentially via AddRawEntry.
 /// </summary>
-internal static class ParallelCompression {
+public static class ParallelCompression {
 
   /// <summary>
   /// Compresses ZIP entries in parallel and writes them sequentially.
   /// Supports Deflate and Deflate64 methods; other methods fall back to sequential AddEntry.
   /// </summary>
-  internal static void CreateZipParallel(Stream output, IReadOnlyList<ArchiveInput> inputs,
+  public static void CreateZipParallel(Stream output, IReadOnlyList<ArchiveInput> inputs,
       string? password, FileFormat.Zip.ZipCompressionMethod method,
       DeflateCompressionLevel level, HashSet<string>? incompressible, int maxThreads,
       FileFormat.Zip.ZipEncryptionMethod encryptionMethod = FileFormat.Zip.ZipEncryptionMethod.Aes256) {

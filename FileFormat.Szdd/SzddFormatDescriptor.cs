@@ -8,8 +8,7 @@ public sealed class SzddFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public string DisplayName => "SZDD";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".sz_";
   public IReadOnlyList<string> Extensions => [];
   public IReadOnlyList<string> CompoundExtensions => [];

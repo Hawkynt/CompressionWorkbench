@@ -7,13 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="cwb" />
-    <InternalsVisibleTo Include="Compression.UI" />
-    <InternalsVisibleTo Include="Compression.Shell" />
     <InternalsVisibleTo Include="Compression.Tests" />
-    <InternalsVisibleTo Include="Compression.Analysis" />
-    <InternalsVisibleTo Include="sfx-cli" />
-    <InternalsVisibleTo Include="sfx-ui" />
   </ItemGroup>
 
   <!-- SFX stubs are embedded as resources when present (populated by CI or publish-sfx-stubs.ps1).
@@ -94,6 +88,38 @@
     <ProjectReference Include="..\FileFormat.Bsa\FileFormat.Bsa.csproj" />
     <ProjectReference Include="..\FileFormat.Mpq\FileFormat.Mpq.csproj" />
     <ProjectReference Include="..\FileFormat.Density\FileFormat.Density.csproj" />
+    <ProjectReference Include="..\FileFormat.Lzg\FileFormat.Lzg.csproj" />
+    <ProjectReference Include="..\FileFormat.Bcm\FileFormat.Bcm.csproj" />
+    <ProjectReference Include="..\FileFormat.Bsc\FileFormat.Bsc.csproj" />
+    <ProjectReference Include="..\FileFormat.Balz\FileFormat.Balz.csproj" />
+    <ProjectReference Include="..\FileFormat.Csc\FileFormat.Csc.csproj" />
+    <ProjectReference Include="..\FileFormat.Zling\FileFormat.Zling.csproj" />
+    <ProjectReference Include="..\FileFormat.Lizard\FileFormat.Lizard.csproj" />
+    <ProjectReference Include="..\FileFormat.QuickLz\FileFormat.QuickLz.csproj" />
+    <ProjectReference Include="..\FileFormat.Cmix\FileFormat.Cmix.csproj" />
+    <ProjectReference Include="..\FileFormat.Mcm\FileFormat.Mcm.csproj" />
+    <ProjectReference Include="..\FileFormat.Paq8\FileFormat.Paq8.csproj" />
+    <ProjectReference Include="..\FileFormat.Warc\FileFormat.Warc.csproj" />
+    <ProjectReference Include="..\FileFormat.Swf\FileFormat.Swf.csproj" />
+    <ProjectReference Include="..\FileFormat.Nds\FileFormat.Nds.csproj" />
+    <ProjectReference Include="..\FileFormat.Nsa\FileFormat.Nsa.csproj" />
+    <ProjectReference Include="..\FileFormat.Sar\FileFormat.Sar.csproj" />
+    <ProjectReference Include="..\FileFormat.StuffItX\FileFormat.StuffItX.csproj" />
+    <ProjectReference Include="..\FileFormat.Adf\FileFormat.Adf.csproj" />
+    <ProjectReference Include="..\FileFormat.PackIt\FileFormat.PackIt.csproj" />
+    <ProjectReference Include="..\FileFormat.DiskDoubler\FileFormat.DiskDoubler.csproj" />
+    <ProjectReference Include="..\FileFormat.BinCue\FileFormat.BinCue.csproj" />
+    <ProjectReference Include="..\FileFormat.Mdf\FileFormat.Mdf.csproj" />
+    <ProjectReference Include="..\FileFormat.Nrg\FileFormat.Nrg.csproj" />
+    <ProjectReference Include="..\FileFormat.Cdi\FileFormat.Cdi.csproj" />
+    <ProjectReference Include="..\FileFormat.Msi\FileFormat.Msi.csproj" />
+    <ProjectReference Include="..\FileFormat.Crunch\FileFormat.Crunch.csproj" />
+    <ProjectReference Include="..\FileFormat.SplitFile\FileFormat.SplitFile.csproj" />
+    <ProjectReference Include="..\FileFormat.Pdf\FileFormat.Pdf.csproj" />
+    <ProjectReference Include="..\FileFormat.Tnef\FileFormat.Tnef.csproj" />
+    <ProjectReference Include="..\FileFormat.Msa\FileFormat.Msa.csproj" />
+    <ProjectReference Include="..\FileFormat.TrDos\FileFormat.TrDos.csproj" />
+    <ProjectReference Include="..\FileFormat.Umx\FileFormat.Umx.csproj" />
   </ItemGroup>
 
 </Project>

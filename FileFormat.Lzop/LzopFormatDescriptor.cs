@@ -9,7 +9,7 @@ public sealed class LzopFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark | FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.SupportsOptimize;
   public string DefaultExtension => ".lzo";
   public IReadOnlyList<string> Extensions => [".lzo"];
   public IReadOnlyList<string> CompoundExtensions => [];

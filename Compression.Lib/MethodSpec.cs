@@ -7,11 +7,11 @@ namespace Compression.Lib;
 /// normalized name and optimize flag. The "+" suffix selects the best available
 /// encoder for that codec while remaining fully decoder-compatible.
 /// </summary>
-internal readonly record struct MethodSpec(string Name, bool Optimize) {
+public readonly record struct MethodSpec(string Name, bool Optimize) {
 
-  internal static MethodSpec Default => new("default", false);
+  public static MethodSpec Default => new("default", false);
 
-  internal static MethodSpec Parse(string? input) {
+  public static MethodSpec Parse(string? input) {
     if (string.IsNullOrWhiteSpace(input)) return Default;
     var trimmed = input.Trim();
     if (trimmed.EndsWith('+'))
@@ -20,13 +20,13 @@ internal readonly record struct MethodSpec(string Name, bool Optimize) {
   }
 
   /// <summary>Whether this is the default "no preference" spec.</summary>
-  internal bool IsDefault => Name == "default" && !Optimize;
+  public bool IsDefault => Name == "default" && !Optimize;
 
   public override string ToString() => Optimize ? $"{Name}+" : Name;
 
   // ── ZIP method resolution ───────────────────────────────────────────
 
-  internal (FileFormat.Zip.ZipCompressionMethod Method, Compression.Core.Deflate.DeflateCompressionLevel Level)
+  public (FileFormat.Zip.ZipCompressionMethod Method, Compression.Core.Deflate.DeflateCompressionLevel Level)
       ResolveZip() => Name switch {
     "store" => (FileFormat.Zip.ZipCompressionMethod.Store, Compression.Core.Deflate.DeflateCompressionLevel.Default),
     "shrink" => (FileFormat.Zip.ZipCompressionMethod.Shrink, Compression.Core.Deflate.DeflateCompressionLevel.Default),
@@ -48,7 +48,7 @@ internal readonly record struct MethodSpec(string Name, bool Optimize) {
 
   // ── 7z codec resolution ─────────────────────────────────────────────
 
-  internal FileFormat.SevenZip.SevenZipCodec Resolve7z() => Name switch {
+  public FileFormat.SevenZip.SevenZipCodec Resolve7z() => Name switch {
     "lzma" => FileFormat.SevenZip.SevenZipCodec.Lzma,
     "deflate" => FileFormat.SevenZip.SevenZipCodec.Deflate,
     "bzip2" => FileFormat.SevenZip.SevenZipCodec.BZip2,
@@ -59,14 +59,14 @@ internal readonly record struct MethodSpec(string Name, bool Optimize) {
 
   // ── Deflate level (for Gzip, Zlib, standalone Deflate) ──────────────
 
-  internal Compression.Core.Deflate.DeflateCompressionLevel ResolveDeflateLevel()
+  public Compression.Core.Deflate.DeflateCompressionLevel ResolveDeflateLevel()
     => Optimize
       ? Compression.Core.Deflate.DeflateCompressionLevel.Maximum
       : Compression.Core.Deflate.DeflateCompressionLevel.Default;
 
   // ── Display: list of available "+" methods per format ───────────────
 
-  internal static string[] GetOptimizableMethods(F format) => format switch {
+  public static string[] GetOptimizableMethods(F format) => format switch {
     F.Zip => ["deflate+  (Zopfli optimal Deflate)", "deflate64+", "lzma+", "zstd+"],
     F.SevenZip => ["lzma2+  (Best LZMA2)", "lzma+", "deflate+"],
     F.Gzip or F.Zlib => ["deflate+  (Zopfli optimal Deflate)"],

@@ -69,7 +69,10 @@ public static class MsZipDecompressor {
       output.AddRange(blockOutput);
 
       // Advance past the compressed data that was consumed.
-      pos += (int)ms.Position;
+      // The BitBuffer inside the decompressor may have read ahead from the
+      // MemoryStream, so ms.Position overshoots. Subtract the unconsumed
+      // bytes to get the true number of compressed bytes for this block.
+      pos += (int)ms.Position - decompressor.UnconsumedBytes;
     }
 
     var result = output.ToArray();

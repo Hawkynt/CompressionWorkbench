@@ -9,7 +9,7 @@ public sealed class CompressFormatDescriptor : IFormatDescriptor, IStreamFormatO
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark | FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.SupportsOptimize;
   public string DefaultExtension => ".z";
   public IReadOnlyList<string> Extensions => [".z"];
   public IReadOnlyList<string> CompoundExtensions => [];

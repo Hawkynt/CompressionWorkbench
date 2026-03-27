@@ -9,10 +9,10 @@ namespace Compression.Lib;
 /// <c>IFormatDescriptor</c> with a parameterless constructor across referenced assemblies.
 /// Compound tar descriptors are registered manually since they are composites, not standalone formats.
 /// </summary>
-internal static partial class FormatRegistration {
+public static partial class FormatRegistration {
   private static bool _done;
 
-  internal static void EnsureInitialized() {
+  public static void EnsureInitialized() {
     if (_done) return;
     _done = true;
     RegisterFormats();

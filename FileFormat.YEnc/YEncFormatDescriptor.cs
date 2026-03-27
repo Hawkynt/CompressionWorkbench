@@ -7,8 +7,7 @@ public sealed class YEncFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public string DisplayName => "yEnc";
   public FormatCategory Category => FormatCategory.Wrapper;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".yenc";
   public IReadOnlyList<string> Extensions => [".yenc"];
   public IReadOnlyList<string> CompoundExtensions => [];

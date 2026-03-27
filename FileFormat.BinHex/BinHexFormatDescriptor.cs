@@ -8,8 +8,7 @@ public sealed class BinHexFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   public string DisplayName => "BinHex";
   public FormatCategory Category => FormatCategory.Wrapper;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".hqx";
   public IReadOnlyList<string> Extensions => [".hqx"];
   public IReadOnlyList<string> CompoundExtensions => [];

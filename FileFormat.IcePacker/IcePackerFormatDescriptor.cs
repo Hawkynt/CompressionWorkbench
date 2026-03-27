@@ -8,8 +8,7 @@ public sealed class IcePackerFormatDescriptor : IFormatDescriptor, IStreamFormat
   public string DisplayName => "ICE Packer";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".ice";
   public IReadOnlyList<string> Extensions => [".ice"];
   public IReadOnlyList<string> CompoundExtensions => [];

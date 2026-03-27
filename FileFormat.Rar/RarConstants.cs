@@ -76,6 +76,23 @@ internal static class RarConstants {
   /// <summary>Data continues in the next volume.</summary>
   public const int HeaderFlagSplitAfter = 0x0010;
 
+  // RAR5 main archive flags (inside the main archive header body, after header flags)
+
+  /// <summary>Archive is a multi-volume archive.</summary>
+  public const int ArchiveFlagVolume = 0x0001;
+
+  /// <summary>Volume number field is present (not first volume).</summary>
+  public const int ArchiveFlagVolumeNumber = 0x0002;
+
+  /// <summary>Archive uses solid compression.</summary>
+  public const int ArchiveFlagSolid = 0x0004;
+
+  /// <summary>Archive has a recovery record.</summary>
+  public const int ArchiveFlagRecovery = 0x0008;
+
+  /// <summary>Archive is locked (no modifications allowed).</summary>
+  public const int ArchiveFlagLocked = 0x0010;
+
   // RAR4 header types
   /// <summary>RAR4 marker header.</summary>
   public const byte Rar4TypeMarker = 0x72;

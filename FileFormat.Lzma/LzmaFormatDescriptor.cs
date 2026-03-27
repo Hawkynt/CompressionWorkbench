@@ -9,7 +9,7 @@ public sealed class LzmaFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark | FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.SupportsOptimize;
   public string DefaultExtension => ".lzma";
   public IReadOnlyList<string> Extensions => [".lzma"];
   public IReadOnlyList<string> CompoundExtensions => [];

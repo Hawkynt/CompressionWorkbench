@@ -35,6 +35,14 @@ public sealed partial class LzhEncoder {
     var bits = new BitWriter<MsbBitOrder>(output);
     var tokenIdx = 0;
 
+    var pBit = this._positionBits switch {
+      12 => 4, // lh4
+      13 => 4, // lh5
+      15 => 5, // lh6
+      16 => 5, // lh7
+      _ => 4
+    };
+
     while (tokenIdx < tokens.Count) {
       var blockEnd = Math.Min(tokenIdx + LzhConstants.BlockSize, tokens.Count);
       var blockCount = blockEnd - tokenIdx;
@@ -71,9 +79,9 @@ public sealed partial class LzhEncoder {
       // Write block size (16 bits)
       bits.WriteBits((uint)blockCount, 16);
 
-      // Write trees using compact format
-      WriteTree(bits, codeLengths);
-      WriteTree(bits, posLengths);
+      // Write trees using standard LZH encoding
+      WriteCTree(bits, codeLengths);
+      WritePTree(bits, posLengths, pBit);
 
       var codeCodes = BuildCanonicalCodes(codeLengths);
       var posCodes = BuildCanonicalCodes(posLengths);
@@ -249,29 +257,145 @@ public sealed partial class LzhEncoder {
   }
 
   /// <summary>
-  /// Writes a Huffman tree to the bitstream.
-  /// Format: 16-bit numUsedSymbols, then for each used symbol:
-  ///   16-bit symbol index + 4-bit code length.
-  /// If only 1 symbol: 1-bit flag (1) + 16-bit symbol.
-  /// If multiple: 1-bit flag (0) + 16-bit count + entries.
+  /// Writes the C tree (literal/length codes) using standard LZH encoding.
+  /// First writes a T tree (code-length tree), then encodes C tree lengths using T.
   /// </summary>
-  private static void WriteTree(BitWriter<MsbBitOrder> bits, int[] lengths) {
-    var usedSymbols = new List<(int sym, int len)>();
-    for (var i = 0; i < lengths.Length; ++i)
-      if (lengths[i] > 0)
-        usedSymbols.Add((i, lengths[i]));
+  private static void WriteCTree(BitWriter<MsbBitOrder> bits, int[] codeLengths) {
+    // Determine actual number of symbols to transmit
+    var numC = codeLengths.Length;
+    while (numC > 0 && codeLengths[numC - 1] == 0) --numC;
+    if (numC == 0) numC = 1; // at least 1
 
-    if (usedSymbols.Count <= 1) {
-      bits.WriteBits(1, 1); // single-symbol flag
-      bits.WriteBits((uint)(usedSymbols.Count > 0 ? usedSymbols[0].sym : 0), 16);
+    // Check for single symbol
+    var singleSym = -1;
+    var usedCount = 0;
+    for (var i = 0; i < codeLengths.Length; ++i)
+      if (codeLengths[i] > 0) { singleSym = i; ++usedCount; }
+
+    if (usedCount <= 1) {
+      // Single-symbol C tree: write empty T tree, then CNUM=0, then 9-bit symbol
+      WritePtTree(bits, new int[LzhConstants.NumCodeLengthSymbols], 5, 3);
+      bits.WriteBits(0, 9);
+      bits.WriteBits((uint)(usedCount > 0 ? singleSym : 0), 9);
       return;
     }
 
-    bits.WriteBits(0, 1); // multi-symbol flag
-    bits.WriteBits((uint)usedSymbols.Count, 16);
-    foreach (var (sym, len) in usedSymbols) {
-      bits.WriteBits((uint)sym, 16);
-      bits.WriteBits((uint)len, 5); // code length (max 17 for position)
+    // Encode C tree code lengths using run-length encoding into T-tree alphabet:
+    // T-alphabet: 0 = zero length, 1 = run of (3 + next 4 bits) zeros,
+    //             2 = run of (20 + next 9 bits) zeros, 3..18 = actual length (value - 2)
+    var tSymbols = new List<(int sym, int extraBits, int extraValue)>();
+    var i2 = 0;
+    while (i2 < numC) {
+      if (codeLengths[i2] == 0) {
+        // Count consecutive zeros
+        var zeroRun = 0;
+        while (i2 + zeroRun < numC && codeLengths[i2 + zeroRun] == 0) ++zeroRun;
+
+        var remaining = zeroRun;
+        while (remaining > 0) {
+          if (remaining >= 20) {
+            var count = Math.Min(remaining, 20 + 511); // max for code 2
+            tSymbols.Add((2, 9, count - 20));
+            remaining -= count;
+          } else if (remaining >= 3) {
+            var count = Math.Min(remaining, 3 + 15); // max for code 1
+            tSymbols.Add((1, 4, count - 3));
+            remaining -= count;
+          } else {
+            tSymbols.Add((0, 0, 0));
+            --remaining;
+          }
+        }
+        i2 += zeroRun;
+      } else {
+        tSymbols.Add((codeLengths[i2] + 2, 0, 0)); // actual length + 2
+        ++i2;
+      }
+    }
+
+    // Build T tree from frequencies
+    var tFreq = new int[LzhConstants.NumCodeLengthSymbols];
+    foreach (var (sym, _, _) in tSymbols)
+      tFreq[sym]++;
+
+    var tLengths = BuildCodeLengths(tFreq, 7); // T tree max code length = 7
+
+    // Write T tree header
+    WritePtTree(bits, tLengths, 5, 3);
+
+    // Write CNUM
+    bits.WriteBits((uint)numC, 9);
+
+    // Encode C tree lengths using T tree
+    var tCodes = BuildCanonicalCodes(tLengths);
+    var tSingleSym = -1;
+    var tUsed = 0;
+    for (var j = 0; j < tLengths.Length; ++j)
+      if (tLengths[j] > 0) { tSingleSym = j; ++tUsed; }
+    var tIsSingle = tUsed <= 1;
+
+    foreach (var (sym, extraBitCount, extraValue) in tSymbols) {
+      if (!tIsSingle)
+        bits.WriteBits(tCodes[sym], tLengths[sym]);
+      if (extraBitCount > 0)
+        bits.WriteBits((uint)extraValue, extraBitCount);
+    }
+  }
+
+  /// <summary>
+  /// Writes a position tree using standard LZH encoding (same format as T tree).
+  /// </summary>
+  private static void WritePTree(BitWriter<MsbBitOrder> bits, int[] posLengths, int pBit) {
+    WritePtTree(bits, posLengths, pBit, pBit);
+  }
+
+  /// <summary>
+  /// Writes a PT-style tree (used for both the T tree and P tree).
+  /// Format: n_sym (nBit bits), then for each symbol:
+  ///   3-bit length, with unary extension for lengths >= 7.
+  ///   After index 2 (for T tree only, when specialBit == 3): 2-bit skip count.
+  /// If n_sym == 0: single symbol written in nBit bits.
+  /// </summary>
+  private static void WritePtTree(BitWriter<MsbBitOrder> bits, int[] lengths, int nBit, int specialBit) {
+    // Determine actual count to transmit
+    var numSym = lengths.Length;
+    while (numSym > 0 && lengths[numSym - 1] == 0) --numSym;
+
+    // Check for single symbol
+    var singleSym = -1;
+    var usedCount = 0;
+    for (var i = 0; i < lengths.Length; ++i)
+      if (lengths[i] > 0) { singleSym = i; ++usedCount; }
+
+    if (usedCount <= 1) {
+      bits.WriteBits(0, nBit); // n_sym = 0 means single symbol
+      bits.WriteBits((uint)(usedCount > 0 ? singleSym : 0), nBit);
+      return;
+    }
+
+    bits.WriteBits((uint)numSym, nBit);
+
+    for (var i = 0; i < numSym; ++i) {
+      var len = lengths[i];
+      if (len < 7) {
+        bits.WriteBits((uint)len, 3);
+      } else {
+        // Write 7 in 3 bits (=0b111), then (len-7) '1' bits, then a '0' bit
+        bits.WriteBits(7, 3);
+        for (var j = 0; j < len - 7; ++j)
+          bits.WriteBits(1, 1);
+        bits.WriteBits(0, 1);
+      }
+
+      // After symbol index 2 in T tree (specialBit==3), write 2-bit skip count
+      if (i == 2 && specialBit == 3) {
+        // Count how many of the next symbols have zero length
+        var skipCount = 0;
+        while (i + 1 + skipCount < numSym && skipCount < 3 && lengths[i + 1 + skipCount] == 0)
+          ++skipCount;
+        bits.WriteBits((uint)skipCount, 2);
+        i += skipCount; // skip those zero-length symbols
+      }
     }
   }
 

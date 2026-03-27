@@ -8,8 +8,7 @@ public sealed class MacBinaryFormatDescriptor : IFormatDescriptor, IStreamFormat
   public string DisplayName => "MacBinary";
   public FormatCategory Category => FormatCategory.Wrapper;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".bin";
   public IReadOnlyList<string> Extensions => [".bin", ".macbin"];
   public IReadOnlyList<string> CompoundExtensions => [];

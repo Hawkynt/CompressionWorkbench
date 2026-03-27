@@ -8,8 +8,7 @@ public sealed class Yaz0FormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public string DisplayName => "Yaz0";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".yaz0";
   public IReadOnlyList<string> Extensions => [".yaz0", ".szs"];
   public IReadOnlyList<string> CompoundExtensions => [];

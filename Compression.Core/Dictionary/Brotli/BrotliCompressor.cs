@@ -303,13 +303,12 @@ public static class BrotliCompressor {
     if (isLast)
       writer.WriteBits(1, 0); // ISEMPTY = 0
 
-    // MLEN (4 nibbles)
+    // MLEN: MNIBBLES nibbles (4, 5, or 6), encoded as MNIBBLES-4 in 2 bits
     var mlen = totalBytes - 1;
-    writer.WriteBits(2, 0); // MNIBBLES - 4 = 0
-    writer.WriteBits(4, (uint)(mlen & 0xF));
-    writer.WriteBits(4, (uint)((mlen >> 4) & 0xF));
-    writer.WriteBits(4, (uint)((mlen >> 8) & 0xF));
-    writer.WriteBits(4, (uint)((mlen >> 12) & 0xF));
+    var mNibbles = mlen <= 0xFFFF ? 4 : mlen <= 0xFFFFF ? 5 : 6;
+    writer.WriteBits(2, (uint)(mNibbles - 4));
+    for (var n = 0; n < mNibbles; ++n)
+      writer.WriteBits(4, (uint)((mlen >> (n * 4)) & 0xF));
 
     if (!isLast)
       writer.WriteBits(1, 0); // ISUNCOMPRESSED = 0
@@ -568,12 +567,19 @@ public static class BrotliCompressor {
 
     switch (nonZero) {
       case 0:
-        // No symbols used; assign length 1 to symbol 0
+        // No symbols used; assign length 1 to two symbols so the Kraft
+        // inequality holds (sum(2^-len) = 1).  This is required when the
+        // code lengths are used inside a complex prefix code's CL tree,
+        // because the decoder reads CL entries until its space counter
+        // reaches zero.
         lengths[0] = 1;
+        lengths[numSymbols > 1 ? 1 : 0] = 1;
         return lengths;
 
       case 1:
+        // Single symbol: pair it with a dummy so sum(2^-1 + 2^-1) = 1.
         lengths[lastNonZero] = 1;
+        lengths[lastNonZero == 0 ? 1 : 0] = 1;
         return lengths;
     }
 

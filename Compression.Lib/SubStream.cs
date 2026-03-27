@@ -5,13 +5,13 @@ namespace Compression.Lib;
 /// Position 0 in the SubStream maps to <paramref name="offset"/> in the underlying stream.
 /// Used to pass embedded archives (e.g., SFX payloads) to readers that assume Position=0 is the archive start.
 /// </summary>
-internal sealed class SubStream : Stream {
+public sealed class SubStream : Stream {
   private readonly Stream _inner;
   private readonly long _offset;
   private readonly long _length;
   private long _position;
 
-  internal SubStream(Stream inner, long offset, long length) {
+  public SubStream(Stream inner, long offset, long length) {
     _inner = inner;
     _offset = offset;
     _length = length;

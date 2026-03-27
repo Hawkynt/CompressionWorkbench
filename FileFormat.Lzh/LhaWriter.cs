@@ -127,8 +127,8 @@ public sealed class LhaWriter {
     var nameBytes = Encoding.ASCII.GetBytes(name);
 
     // Write level 1 header
-    // Header size: from checksum byte to end of name (before CRC)
-    // = 1(checksum) + 5(method) + 4(compressed) + 4(original) + 4(timestamp) + 1(reserved) + 1(level)
+    // header_size = bytes from offset 2 through end of base header (including first ext-size field)
+    // = 5(method) + 4(compressed) + 4(original) + 4(timestamp) + 1(reserved) + 1(level)
     //   + 1(nameLen) + nameLen + 2(crc) + 1(osId) + 2(nextExtSize=0)
     var headerPayloadSize = 5 + 4 + 4 + 4 + 1 + 1 + 1 + nameBytes.Length + 2 + 1 + 2;
 

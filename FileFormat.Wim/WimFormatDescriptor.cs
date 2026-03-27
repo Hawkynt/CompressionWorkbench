@@ -22,16 +22,43 @@ public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new WimReader(stream);
-    return r.Resources.Select((e, i) => new ArchiveEntryInfo(i, $"resource_{i}", e.OriginalSize, e.CompressedSize,
-      e.IsCompressed ? "LZX" : "Store", false, false, null)).ToList();
+    var namedFiles = r.GetNamedFiles();
+
+    if (namedFiles.Count > 0) {
+      return namedFiles.Select((f, i) => new ArchiveEntryInfo(i, f.FileName, f.FileSize,
+        f.ResourceIndex >= 0 ? r.Resources[f.ResourceIndex].CompressedSize : 0,
+        r.Header.CompressionType != WimConstants.CompressionNone ? "Compressed" : "Store",
+        false, false, null)).ToList();
+    }
+
+    // Fallback: no metadata — list raw resources.
+    return r.Resources
+      .Where(e => !e.IsMetadata)
+      .Select((e, i) => new ArchiveEntryInfo(i, $"resource_{i}", e.OriginalSize, e.CompressedSize,
+        e.IsCompressed ? "Compressed" : "Store", false, false, null)).ToList();
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new WimReader(stream);
+    var namedFiles = r.GetNamedFiles();
+
+    if (namedFiles.Count > 0) {
+      foreach (var f in namedFiles) {
+        if (files != null && !MatchesFilter(f.FileName, files)) continue;
+        if (f.ResourceIndex < 0) continue;
+        WriteFile(outputDir, f.FileName, r.ReadResource(f.ResourceIndex));
+      }
+      return;
+    }
+
+    // Fallback: no metadata — extract raw resources.
+    var dataIndex = 0;
     for (var i = 0; i < r.Resources.Count; ++i) {
-      var name = $"resource_{i}";
+      if (r.Resources[i].IsMetadata) continue;
+      var name = $"resource_{dataIndex}";
       if (files != null && !MatchesFilter(name, files)) continue;
       WriteFile(outputDir, name, r.ReadResource(i));
+      dataIndex++;
     }
   }
 }

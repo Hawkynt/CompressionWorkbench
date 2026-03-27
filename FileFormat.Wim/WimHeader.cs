@@ -12,15 +12,22 @@ namespace FileFormat.Wim;
 /// <param name="OriginalSize">Uncompressed size of the resource data in bytes.</param>
 /// <param name="Offset">Absolute byte offset of the resource within the WIM file.</param>
 /// <param name="Flags">Resource flags (see <see cref="WimConstants.ResourceFlagCompressed"/>).</param>
+/// <param name="Hash">SHA-1 hash identifying the resource (20 bytes, or empty for header entries).</param>
 public sealed record WimResourceEntry(
   long CompressedSize,
   long OriginalSize,
   long Offset,
-  uint Flags) {
+  uint Flags,
+  byte[]? Hash = null) {
   /// <summary>
   /// Gets a value indicating whether the resource is stored in compressed form.
   /// </summary>
   public bool IsCompressed => (this.Flags & WimConstants.ResourceFlagCompressed) != 0;
+
+  /// <summary>
+  /// Gets a value indicating whether the resource is a metadata resource.
+  /// </summary>
+  public bool IsMetadata => (this.Flags & WimConstants.ResourceFlagMetadata) != 0;
 }
 
 /// <summary>
@@ -194,27 +201,34 @@ public sealed class WimHeader {
   // Resource entry serialisation (24 bytes in header, 28 bytes in table)
   // -------------------------------------------------------------------------
 
-  // Header resource entries are 24 bytes: 8 compressed, 8 original, 8 offset
-  // (no flags field — flags are implied as uncompressed for metadata entries stored in header)
+  // RESHDR_DISK_SHORT: 24 bytes
+  //   Bytes 0-7:  packed uint64 — low 56 bits = compressed size, high 8 bits = flags
+  //   Bytes 8-15: offset (int64)
+  //   Bytes 16-23: original/uncompressed size (int64)
   private static void WriteResourceEntry(Span<byte> dest, WimResourceEntry? entry) {
     if (entry is null)
       return;
 
-    BinaryPrimitives.WriteInt64LittleEndian(dest,      entry.CompressedSize);
-    BinaryPrimitives.WriteInt64LittleEndian(dest[8..], entry.OriginalSize);
-    BinaryPrimitives.WriteInt64LittleEndian(dest[16..], entry.Offset);
-    // 24 bytes total; flags omitted (header entries have no flags word)
+    // Pack size (low 56 bits) and flags (high 8 bits) into one 8-byte field.
+    var sizeAndFlags = (entry.CompressedSize & 0x00FFFFFFFFFFFFFF)
+                     | ((long)entry.Flags << 56);
+    BinaryPrimitives.WriteInt64LittleEndian(dest,       sizeAndFlags);
+    BinaryPrimitives.WriteInt64LittleEndian(dest[8..],  entry.Offset);
+    BinaryPrimitives.WriteInt64LittleEndian(dest[16..], entry.OriginalSize);
   }
 
   private static WimResourceEntry? ReadResourceEntry(ReadOnlySpan<byte> src) {
-    var compressedSize = BinaryPrimitives.ReadInt64LittleEndian(src);
-    var originalSize   = BinaryPrimitives.ReadInt64LittleEndian(src[8..]);
-    var offset         = BinaryPrimitives.ReadInt64LittleEndian(src[16..]);
+    var sizeAndFlags = BinaryPrimitives.ReadUInt64LittleEndian(src);
+    var offset       = BinaryPrimitives.ReadInt64LittleEndian(src[8..]);
+    var originalSize = BinaryPrimitives.ReadInt64LittleEndian(src[16..]);
+
+    var compressedSize = (long)(sizeAndFlags & 0x00FFFFFFFFFFFFFF);
+    var flags          = (uint)(sizeAndFlags >> 56);
 
     if (compressedSize == 0 && originalSize == 0 && offset == 0)
       return null;
 
-    return new WimResourceEntry(compressedSize, originalSize, offset, WimConstants.ResourceFlagUncompressed);
+    return new WimResourceEntry(compressedSize, originalSize, offset, flags);
   }
 
   // -------------------------------------------------------------------------

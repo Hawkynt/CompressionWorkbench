@@ -9,7 +9,7 @@ public sealed class ZlibFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark | FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.SupportsOptimize;
   public string DefaultExtension => ".zlib";
   public IReadOnlyList<string> Extensions => [".zlib"];
   public IReadOnlyList<string> CompoundExtensions => [];

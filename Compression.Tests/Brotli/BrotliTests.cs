@@ -133,6 +133,66 @@ public class BrotliTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("Boundary")]
+  [Category("RoundTrip")]
+  [TestCase("Zeroes")]
+  [TestCase("Incrementing")]
+  [TestCase("Alternating")]
+  [TestCase("Repeating")]
+  [TestCase("Text")]
+  [TestCase("Random")]
+  [TestCase("BinaryStruct")]
+  public void StreamApi_RoundTrip_256KB(string pattern) {
+    // 256KB — the benchmark size. Exercises the full descriptor path (CompressLz77 + own decompressor).
+    const int size = 262144;
+    var data = Make256KBPattern(pattern, size);
+    using var inStream = new MemoryStream(data);
+    var compressed = FileFormat.Brotli.BrotliStream.Compress(inStream);
+    using var compStream = new MemoryStream(compressed);
+    var decompressed = FileFormat.Brotli.BrotliStream.Decompress(compStream);
+    Assert.That(decompressed.Length, Is.EqualTo(data.Length), "Size mismatch");
+    for (var i = 0; i < data.Length; i++)
+      if (decompressed[i] != data[i]) {
+        Assert.Fail($"Mismatch at index {i}: expected {data[i]}, got {decompressed[i]}");
+        break;
+      }
+  }
+
+  private static byte[] Make256KBPattern(string pattern, int size) {
+    var buf = new byte[size];
+    switch (pattern) {
+      case "Zeroes": break;
+      case "Incrementing":
+        for (var i = 0; i < size; i++) buf[i] = (byte)(i & 0xFF);
+        break;
+      case "Alternating":
+        for (var i = 0; i < size; i++) buf[i] = (byte)(i % 2 == 0 ? 0xAA : 0x55);
+        break;
+      case "Repeating":
+        var pat = "ABCDEFGHIJKLMNOP"u8;
+        for (var i = 0; i < size; i++) buf[i] = pat[i % pat.Length];
+        break;
+      case "Text":
+        var text = "The quick brown fox jumps over the lazy dog. "u8;
+        for (var i = 0; i < size; i++) buf[i] = text[i % text.Length];
+        break;
+      case "Random":
+        new Random(77).NextBytes(buf);
+        break;
+      case "BinaryStruct":
+        var rng = new Random(123);
+        for (var i = 0; i < size; i++)
+          buf[i] = (byte)((i % 16) switch {
+            0 or 1 or 2 or 3 => i / 16 & 0xFF,
+            4 or 5 => 0,
+            6 or 7 => i % 3,
+            _ => rng.Next(256),
+          });
+        break;
+    }
+    return buf;
+  }
+
   // --- Interop tests: decompress data compressed by System.IO.Compression ---
 
   [Category("ThemVsUs")]
@@ -412,6 +472,7 @@ public class BrotliTests {
   [TestCase(1000, Description = "Pattern mod 10")]
   [TestCase(10000, Description = "Random 10K")]
   [TestCase(100000, Description = "Random 100K")]
+  [TestCase(262144, Description = "Random 256K — requires 5 MLEN nibbles")]
   public void Interop_OwnLz77_SystemDecompress(int size) {
     var data = MakeTestData(size);
     var compressed = BrotliCompressor.CompressLz77(data);

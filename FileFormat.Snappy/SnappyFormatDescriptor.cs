@@ -8,8 +8,7 @@ public sealed class SnappyFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   public string DisplayName => "Snappy";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".sz";
   public IReadOnlyList<string> Extensions => [".sz", ".snappy"];
   public IReadOnlyList<string> CompoundExtensions => [];

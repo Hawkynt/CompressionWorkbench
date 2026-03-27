@@ -140,9 +140,9 @@ internal sealed class Bzip2Decompressor {
       for (var s = 0; s < alphaSize; ++s) {
         while (this._bits.ReadBits(1) == 1) {
           if (this._bits.ReadBits(1) == 0)
-            --currentLen;
-          else
             ++currentLen;
+          else
+            --currentLen;
         }
         codeLens[s] = currentLen;
       }

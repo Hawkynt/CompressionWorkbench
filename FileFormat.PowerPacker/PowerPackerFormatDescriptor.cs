@@ -8,8 +8,7 @@ public sealed class PowerPackerFormatDescriptor : IFormatDescriptor, IStreamForm
   public string DisplayName => "PowerPacker";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".pp";
   public IReadOnlyList<string> Extensions => [".pp", ".pp20"];
   public IReadOnlyList<string> CompoundExtensions => [];

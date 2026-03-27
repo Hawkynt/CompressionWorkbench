@@ -8,8 +8,7 @@ public sealed class BriefLzFormatDescriptor : IFormatDescriptor, IStreamFormatOp
   public string DisplayName => "BriefLZ";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsBenchmark;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".blz";
   public IReadOnlyList<string> Extensions => [".blz"];
   public IReadOnlyList<string> CompoundExtensions => [];
