@@ -470,7 +470,14 @@ public class ExternalInteropTests {
   private static void Run7z(string args) =>
     RunTool(SevenZipPath, args);
 
+  private static void Require7z() {
+    if (!File.Exists(SevenZipPath))
+      Assert.Ignore($"7-Zip not found at {SevenZipPath}");
+  }
+
   private static (string StdOut, string StdErr, int ExitCode) RunTool(string tool, string args) {
+    if (!File.Exists(tool))
+      Assert.Ignore($"Tool not found: {tool}");
     var psi = new ProcessStartInfo {
       FileName = tool,
       Arguments = args,
@@ -568,6 +575,7 @@ public class ExternalInteropTests {
   }
 
   private void TestWith7z(string label, byte[] data) {
+    Require7z();
     var rarPath = Path.Combine(this._tmpDir, $"{label}.rar");
     using (var fs = File.Create(rarPath)) {
       using var w = new FileFormat.Rar.RarWriter(fs, method: 3, solid: false);
@@ -589,6 +597,7 @@ public class ExternalInteropTests {
 
   [Test]
   public void Rar_Diagnostic_MinimalFail() {
+    Require7z();
     // dist257 is the minimal failing case: 1 match at distance 257 (slot 16, extraBits=7)
     // dist256 (slot 15, extraBits=6) passes. Let's compare their compressed data.
 
@@ -826,6 +835,7 @@ public class ExternalInteropTests {
 
   [Test]
   public void Rar_Diagnostic_BitstreamParse() {
+    Require7z();
     // Parse the raw compressed bitstream for passing vs failing cases to find the divergence
     var num10 = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 10).Select(i => $"Line {i}: The quick brown fox jumps over the lazy dog.\n")));
     var num11 = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Range(0, 11).Select(i => $"Line {i}: The quick brown fox jumps over the lazy dog.\n")));
@@ -1083,6 +1093,7 @@ public class ExternalInteropTests {
 
   [Test]
   public void Rar_Diagnostic_CompressedBitstream() {
+    Require7z();
     // Systematically test different distance ranges to find the exact trigger
     var results = new List<string>();
 
@@ -1263,6 +1274,7 @@ public class ExternalInteropTests {
 
   [Test]
   public void Rar_Diagnostic_ExtractAndCompare() {
+    Require7z();
     // Create a minimal failing case and extract with 7-Zip to compare output
     var data = new byte[261]; // ff_dist_257
     Array.Fill(data, (byte)0xFF);

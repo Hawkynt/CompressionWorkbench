@@ -42,21 +42,25 @@ jobs:
           New-Item -ItemType Directory -Path $dest -Force | Out-Null
 
           Write-Host "Publishing SFX CLI stub for $rid..." -ForegroundColor Cyan
-          dotnet publish Compression.Sfx.Cli/Compression.Sfx.Cli.csproj -r $rid -c Release --nologo -v quiet
+          dotnet publish Compression.Sfx.Cli/Compression.Sfx.Cli.csproj -r $rid -c Release --nologo -v quiet 2>$null
           $exeName = if ($rid.StartsWith("win")) { "sfx-cli.exe" } else { "sfx-cli" }
           $src = "Compression.Sfx.Cli/bin/Release/net10.0/$rid/publish/$exeName"
           if (Test-Path $src) {
             Copy-Item $src $dest -Force
             Write-Host "  -> $dest/$exeName" -ForegroundColor Green
+          } else {
+            Write-Host "  -> SKIPPED (publish failed for $rid)" -ForegroundColor Yellow
           }
 
           if ($rid.StartsWith("win")) {
             Write-Host "Publishing SFX UI stub for $rid..." -ForegroundColor Cyan
-            dotnet publish Compression.Sfx.Ui/Compression.Sfx.Ui.csproj -r $rid -c Release --nologo -v quiet
+            dotnet publish Compression.Sfx.Ui/Compression.Sfx.Ui.csproj -r $rid -c Release --nologo -v quiet 2>$null
             $src = "Compression.Sfx.Ui/bin/Release/net10.0-windows/$rid/publish/sfx-ui.exe"
             if (Test-Path $src) {
               Copy-Item $src $dest -Force
               Write-Host "  -> $dest/sfx-ui.exe" -ForegroundColor Green
+            } else {
+              Write-Host "  -> SKIPPED (publish failed for $rid)" -ForegroundColor Yellow
             }
           }
         }
