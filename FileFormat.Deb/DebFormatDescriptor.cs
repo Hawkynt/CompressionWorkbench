@@ -9,8 +9,9 @@ public sealed class DebFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "DEB";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".deb";
   public IReadOnlyList<string> Extensions => [".deb"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -34,5 +35,14 @@ public sealed class DebFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(outputDir, e.Path)); continue; }
       WriteFile(outputDir, e.Path, e.Data);
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var control = new DebEntry("control", "Package: pkg\nVersion: 1.0\nArchitecture: all\nDescription: created by CompressionWorkbench\n"u8.ToArray(), false);
+    var dataFiles = FormatHelpers.FilesOnly(inputs)
+      .Select(f => new DebEntry(f.Name, f.Data, false))
+      .ToList();
+    var w = new DebWriter(output);
+    w.Write([control], dataFiles);
   }
 }

@@ -9,7 +9,8 @@ public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "RPM";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest;
   public string DefaultExtension => ".rpm";
   public IReadOnlyList<string> Extensions => [".rpm"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -31,5 +32,12 @@ public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (entry.IsDirectory) { Directory.CreateDirectory(Path.Combine(outputDir, entry.Name)); continue; }
       WriteFile(outputDir, entry.Name, data);
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var w = new RpmWriter();
+    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
+      w.AddFile(name, data);
+    w.WriteTo(output);
   }
 }

@@ -9,7 +9,7 @@ public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "ADF";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".adf";
@@ -35,5 +35,12 @@ public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.FullPath, files)) continue;
       WriteFile(outputDir, e.FullPath, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var w = new AdfWriter();
+    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
+      w.AddFile(name, data);
+    output.Write(w.Build());
   }
 }

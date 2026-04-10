@@ -9,8 +9,8 @@ public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "WIM";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".wim";
   public IReadOnlyList<string> Extensions => [".wim", ".swm", ".esd"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -60,5 +60,11 @@ public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       WriteFile(outputDir, name, r.ReadResource(i));
       dataIndex++;
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var resources = FormatHelpers.FilesOnly(inputs).Select(f => f.Data).ToList();
+    var w = new WimWriter(output);
+    w.Write(resources);
   }
 }

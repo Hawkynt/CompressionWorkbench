@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using Compression.Registry;
+using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.SplitFile;
 
@@ -8,7 +9,8 @@ public sealed class SplitFileFormatDescriptor : IFormatDescriptor, IArchiveForma
   public string DisplayName => "Split File (.001)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest;
   public string DefaultExtension => ".001";
   public IReadOnlyList<string> Extensions => [".001"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -32,5 +34,11 @@ public sealed class SplitFileFormatDescriptor : IFormatDescriptor, IArchiveForma
     Directory.CreateDirectory(outputDir);
     using var fs = File.Create(outputPath);
     stream.CopyTo(fs);
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // SplitFile Create joins all input files sequentially into one output stream.
+    foreach (var (_, data) in FormatHelpers.FilesOnly(inputs))
+      output.Write(data);
   }
 }
