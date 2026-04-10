@@ -13,7 +13,7 @@
   <!-- SFX stubs are embedded as resources when present (populated by CI or publish-sfx-stubs.ps1).
        Resource names follow: stubs/{rid}/sfx-cli[.exe] and stubs/{rid}/sfx-ui[.exe] -->
   <ItemGroup>
-    <EmbeddedResource Include="stubs\**\*" Condition="Exists('stubs')" LogicalName="stubs/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="stubs\**\*" Condition="Exists('stubs') And '$(ExcludeStubs)' != 'true'" LogicalName="stubs/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
