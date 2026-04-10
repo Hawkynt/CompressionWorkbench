@@ -9,8 +9,9 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "FAT Filesystem Image";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".img";
   public IReadOnlyList<string> Extensions => [".img", ".ima", ".flp"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -34,5 +35,12 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var w = new FatWriter();
+    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
+      w.AddFile(name, data);
+    output.Write(w.Build());
   }
 }

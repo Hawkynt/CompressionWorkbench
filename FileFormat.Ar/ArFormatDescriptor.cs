@@ -9,8 +9,8 @@ public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
   public string DisplayName => "AR";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".a";
   public IReadOnlyList<string> Extensions => [".a", ".ar", ".deb"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -32,5 +32,13 @@ public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, e.Data);
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var entries = FormatHelpers.FilesOnly(inputs)
+      .Select(f => new ArEntry { Name = f.Name, Data = f.Data })
+      .ToList();
+    using var w = new ArWriter(output, leaveOpen: true);
+    w.Write(entries);
   }
 }
