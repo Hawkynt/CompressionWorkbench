@@ -55,7 +55,7 @@ foreach ($rid in $targetRids) {
 
         $projPath = Join-Path (Join-Path $root $proj.Dir) "$($proj.Name).csproj"
         Write-Host "Publishing $($proj.Name) for $rid..." -ForegroundColor Cyan
-        dotnet publish $projPath -r $rid -c $Configuration --nologo -v quiet
+        dotnet publish $projPath -r $rid -c $Configuration -p:ExcludeStubs=true --nologo -v quiet
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Failed to publish $($proj.Name) for $rid"
             continue
