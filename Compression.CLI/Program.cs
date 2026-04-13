@@ -528,6 +528,135 @@ analyzeCmd.SetAction((ParseResult ctx) => {
   return 0;
 });
 
+// ── auto-extract ─────────────────────────────────────────────────────
+
+var autoExtractFileArg = new Argument<FileInfo>("file") { Description = "File to auto-detect and extract" };
+var autoExtractOutputOpt = new Option<DirectoryInfo?>("-o") { Description = "Output directory" };
+var autoExtractRecursiveOpt = new Option<bool>("--recursive") { Description = "Recursively extract nested archives" };
+
+var autoExtractCmd = new Command("auto-extract", """
+  Auto-detect format and extract. Optionally recurse into nested archives.
+  Example: cwb auto-extract mystery.bin -o output/ --recursive
+  """) { autoExtractFileArg, autoExtractOutputOpt, autoExtractRecursiveOpt };
+autoExtractCmd.SetAction((ParseResult ctx) => {
+  var file = ctx.GetValue(autoExtractFileArg)!;
+  if (!file.Exists) { Console.Error.WriteLine($"File not found: {file.FullName}"); return 1; }
+
+  var outputDir = ctx.GetValue(autoExtractOutputOpt)?.FullName
+    ?? Path.Combine(Environment.CurrentDirectory, Path.GetFileNameWithoutExtension(file.Name));
+  Directory.CreateDirectory(outputDir);
+
+  using var fs = File.OpenRead(file.FullName);
+  var extractor = new Compression.Analysis.AutoExtractor();
+  var result = extractor.Extract(fs);
+
+  if (result == null) {
+    Console.Error.WriteLine("Could not detect format.");
+    return 1;
+  }
+
+  Console.WriteLine($"Detected: {result.FormatName}");
+  Console.WriteLine($"Entries: {result.Entries.Count}");
+
+  foreach (var entry in result.Entries) {
+    if (entry.IsDirectory) continue;
+    var outPath = Path.Combine(outputDir, entry.Name.Replace('/', Path.DirectorySeparatorChar));
+    var dir = Path.GetDirectoryName(outPath);
+    if (dir != null) Directory.CreateDirectory(dir);
+    File.WriteAllBytes(outPath, entry.Data);
+    Console.WriteLine($"  {entry.Name} ({FormatSize(entry.Data.Length)})");
+  }
+
+  if (ctx.GetValue(autoExtractRecursiveOpt) && result.NestedResults.Count > 0) {
+    Console.WriteLine($"\nNested archives found: {result.NestedResults.Count}");
+    foreach (var nested in result.NestedResults) {
+      Console.WriteLine($"  {nested.EntryName} -> {nested.Result.FormatName} ({nested.Result.Entries.Count} entries)");
+      var nestedDir = Path.Combine(outputDir, Path.GetFileNameWithoutExtension(nested.EntryName) + "_extracted");
+      Directory.CreateDirectory(nestedDir);
+      foreach (var entry in nested.Result.Entries) {
+        if (entry.IsDirectory) continue;
+        var outPath = Path.Combine(nestedDir, entry.Name.Replace('/', Path.DirectorySeparatorChar));
+        var dir = Path.GetDirectoryName(outPath);
+        if (dir != null) Directory.CreateDirectory(dir);
+        File.WriteAllBytes(outPath, entry.Data);
+      }
+    }
+  }
+
+  return 0;
+});
+
+// ── batch ────────────────────────────────────────────────────────────
+
+var batchDirArg = new Argument<DirectoryInfo>("directory") { Description = "Directory to analyze" };
+var batchRecursiveOpt = new Option<bool>("--recursive") { Description = "Recurse into subdirectories" };
+
+var batchCmd = new Command("batch", """
+  Analyze all files in a directory, detecting formats and showing statistics.
+  Example: cwb batch /path/to/files --recursive
+  """) { batchDirArg, batchRecursiveOpt };
+batchCmd.SetAction((ParseResult ctx) => {
+  var dir = ctx.GetValue(batchDirArg)!;
+  if (!dir.Exists) { Console.Error.WriteLine($"Directory not found: {dir.FullName}"); return 1; }
+
+  var analyzer = new Compression.Analysis.BatchAnalyzer();
+  var result = analyzer.AnalyzeDirectory(dir.FullName, ctx.GetValue(batchRecursiveOpt));
+
+  Console.WriteLine($"Directory: {dir.FullName}");
+  Console.WriteLine($"Total files: {result.TotalFiles}");
+  Console.WriteLine($"Total size: {FormatSize(result.TotalSize)}");
+  Console.WriteLine($"Unknown files: {result.UnknownFiles.Count}");
+  Console.WriteLine();
+
+  if (result.FormatDistribution.Count > 0) {
+    Console.WriteLine("── Format Distribution ──");
+    foreach (var (fmt, count) in result.FormatDistribution.OrderByDescending(kv => kv.Value))
+      Console.WriteLine($"  {fmt,-20} {count,5} files");
+    Console.WriteLine();
+  }
+
+  if (result.UnknownFiles.Count > 0 && result.UnknownFiles.Count <= 20) {
+    Console.WriteLine("── Unknown Files ──");
+    foreach (var f in result.UnknownFiles)
+      Console.WriteLine($"  {f}");
+    Console.WriteLine();
+  }
+
+  return 0;
+});
+
+// ── suggest ──────────────────────────────────────────────────────────
+
+var suggestFilesArg = new Argument<string[]>("files") { Description = "Files or directories to package" };
+var suggestPlatformOpt = new Option<string>("--platform") { Description = "Target platform: any, windows, linux, macos, cross", DefaultValueFactory = _ => "any" };
+
+var suggestCmd = new Command("suggest", """
+  Suggest the best archive format for the given files.
+  Example: cwb suggest Documents/ --platform linux
+  """) { suggestFilesArg, suggestPlatformOpt };
+suggestCmd.SetAction((ParseResult ctx) => {
+  var files = ctx.GetValue(suggestFilesArg)!;
+  var platformStr = ctx.GetValue(suggestPlatformOpt) ?? "any";
+  var platform = platformStr.ToLowerInvariant() switch {
+    "windows" or "win" => Compression.Analysis.FormatSuggester.Platform.Windows,
+    "linux" or "unix" => Compression.Analysis.FormatSuggester.Platform.Linux,
+    "macos" or "mac" => Compression.Analysis.FormatSuggester.Platform.MacOS,
+    "cross" or "crossplatform" => Compression.Analysis.FormatSuggester.Platform.CrossPlatform,
+    _ => Compression.Analysis.FormatSuggester.Platform.Any,
+  };
+
+  var suggester = new Compression.Analysis.FormatSuggester();
+  var suggestions = suggester.Suggest(files, platform);
+
+  Console.WriteLine($"Suggestions for {files.Length} input(s), platform: {platformStr}");
+  Console.WriteLine();
+
+  foreach (var s in suggestions)
+    Console.WriteLine($"  {s.Score,3}  {s.DisplayName,-12} ({s.Extension})  {s.Rationale}");
+
+  return 0;
+});
+
 // ── root ─────────────────────────────────────────────────────────────
 
 var root = new RootCommand("""
@@ -545,7 +674,7 @@ var root = new RootCommand("""
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, infoCmd, convertCmd, optimizeCmd, benchCmd, formatsCmd, analyzeCmd
+  listCmd, extractCmd, createCmd, testCmd, infoCmd, convertCmd, optimizeCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd
 };
 
 return root.Parse(args).Invoke();

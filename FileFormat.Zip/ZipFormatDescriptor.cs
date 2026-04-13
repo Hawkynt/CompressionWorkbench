@@ -13,7 +13,7 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     FormatCapabilities.CanTest | FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories | FormatCapabilities.SupportsOptimize;
   public string DefaultExtension => ".zip";
-  public IReadOnlyList<string> Extensions => [".zip", ".zipx", ".jar", ".war", ".ear", ".xpi", ".odt", ".ods", ".odp", ".docx", ".xlsx", ".pptx", ".apk", ".ipa", ".nupkg", ".epub", ".cbz"];
+  public IReadOnlyList<string> Extensions => [".zip", ".zipx"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'P', (byte)'K', 0x03, 0x04], Confidence: 0.95),
