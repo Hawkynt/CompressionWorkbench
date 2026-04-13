@@ -12,7 +12,7 @@ public sealed class MsiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".msi";
-  public IReadOnlyList<string> Extensions => [".msi", ".msp", ".mst", ".doc", ".xls", ".ppt", ".msg"];
+  public IReadOnlyList<string> Extensions => [".msi", ".msp", ".mst"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1], Confidence: 0.90)];

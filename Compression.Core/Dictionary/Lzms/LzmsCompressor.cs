@@ -53,8 +53,9 @@ public sealed class LzmsCompressor {
 
     var dataArray = data.ToArray();
 
-    // Allocate forward output buffer (worst case: slightly larger than input)
-    var maxSize = data.Length + 256;
+    // Allocate forward output buffer — for incompressible data (random bytes),
+    // matches expand the output, so the forward stream can exceed the input size
+    var maxSize = data.Length * 2 + 1024;
     _fwdOutput = new byte[maxSize];
     _fwdPos = 0;
     _fwdBitBuf = 0;

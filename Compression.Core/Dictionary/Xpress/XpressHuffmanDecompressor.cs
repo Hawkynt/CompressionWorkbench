@@ -108,6 +108,12 @@ public static partial class XpressHuffmanDecompressor {
             output[outputPos++] = output[copyFrom++];
         }
       }
+
+      // Rewind InputPos for any 16-bit words eagerly loaded beyond this chunk's
+      // bitstream. The compressor pads each chunk to a 16-bit word boundary, so
+      // the leftover bits within the last word are just padding (< 16 bits).
+      // Any additional full words came from the next chunk's header area.
+      reader.InputPos -= (reader.BitsAvailable / 16) * 2;
     }
 
     return output;
