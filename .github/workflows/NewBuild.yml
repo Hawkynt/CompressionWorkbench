@@ -128,19 +128,19 @@ jobs:
         Compress-Archive -Path "$stageDir/*" -DestinationPath "CompressionWorkbench-UI-win-x64-$version.zip"
 
     - name: Upload Windows CLI
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: CompressionWorkbench-CLI-win-x64-${{ steps.version.outputs.VERSION }}
         path: CompressionWorkbench-CLI-win-x64-${{ steps.version.outputs.VERSION }}.zip
 
     - name: Upload Linux CLI
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: CompressionWorkbench-CLI-linux-x64-${{ steps.version.outputs.VERSION }}
         path: CompressionWorkbench-CLI-linux-x64-${{ steps.version.outputs.VERSION }}.zip
 
     - name: Upload Windows UI
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: CompressionWorkbench-UI-win-x64-${{ steps.version.outputs.VERSION }}
         path: CompressionWorkbench-UI-win-x64-${{ steps.version.outputs.VERSION }}.zip
