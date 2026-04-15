@@ -83,78 +83,90 @@ public partial class PropertiesWindow : Window {
     var h = RatioCanvas.ActualHeight;
     if (w <= 0 || h <= 0) return;
 
-    // Isometric corner view: the viewer looks straight at the front vertical edge.
-    // Two symmetric faces recede at equal angles. The front edge is the vertical
-    // center line; left face goes left-back, right face goes right-back.
-    var cx = w / 2.0;           // center x — the front edge
-    var isoDepth = w * 0.45;    // how far back each face recedes horizontally
-    var topOff = h * 0.06;      // vertical offset for top face (isometric rise)
-    var bodyH = h - topOff;     // front face height
+    // Isometric cuboid at 45° rotation to viewer.
+    // The box has a fixed square cross-section determined by canvas width.
+    // Only the vertical height changes with the canvas; the cube proportions stay correct.
+    //
+    //          bTop
+    //         / \
+    //       lTop  rTop        <- top face (diamond)
+    //       | \ / |
+    //       |  fTop  |        <- front edge top
+    //       |  |  |
+    //       |  |  |           <- vertical body (height varies)
+    //       |  |  |
+    //       lBot  rBot        <- bottom edges
+    //         \ /
+    //          fBot           <- front edge bottom
+    //
+    var cx = w / 2.0;
+    var dx = w * 0.40;         // horizontal half-width of each face
+    var dy = dx * 0.5;         // isometric vertical rise = dx * tan(30°) ≈ dx * 0.5
 
-    // 8 corners of the box:
-    // Front edge (bottom and top)
-    var fBot = new WpfPoint(cx, h);
-    var fTop = new WpfPoint(cx, topOff);
-    // Left-back (bottom and top)
-    var lBot = new WpfPoint(cx - isoDepth, h - topOff * 0.4);
-    var lTop = new WpfPoint(cx - isoDepth, 0);
-    // Right-back (bottom and top)
-    var rBot = new WpfPoint(cx + isoDepth, h - topOff * 0.4);
-    var rTop = new WpfPoint(cx + isoDepth, 0);
-    // Back corner (top only — visible through glass top)
-    var bTop = new WpfPoint(cx, topOff * 0.6 - topOff);
+    // Reserve space for top diamond and bottom V, the rest is vertical body.
+    var topY = dy + 4;              // top of the front edge (with margin)
+    var botY = h - 4;               // bottom of the front edge (with margin)
 
-    // Fill level
+    // 8 corners: front edge is the vertical center line.
+    // "back" direction is always (-dx, -dy) for left face, (+dx, -dy) for right face.
+    var fBot = new WpfPoint(cx, botY);
+    var fTop = new WpfPoint(cx, topY);
+    var lBot = new WpfPoint(cx - dx, botY - dy);
+    var lTop = new WpfPoint(cx - dx, topY - dy);
+    var rBot = new WpfPoint(cx + dx, botY - dy);
+    var rTop = new WpfPoint(cx + dx, topY - dy);
+    var bBot = new WpfPoint(cx, botY - 2 * dy);  // back-bottom corner
+    var bTop = new WpfPoint(cx, topY - 2 * dy);  // back-top corner
+
+    // Fill level (0.0 to 1.0)
     var clamped = _ratio >= 0 ? Math.Clamp(_ratio, 0, 100) / 100.0 : 0;
 
     if (clamped > 0) {
-      // Interpolate fill line positions
-      var fFillY = h - bodyH * clamped;
-      var lFillY = lBot.Y - (lBot.Y - lTop.Y) * clamped;
-      var rFillY = rBot.Y - (rBot.Y - rTop.Y) * clamped;
+      var fFill = Lerp(fBot, fTop, clamped);
+      var lFill = Lerp(lBot, lTop, clamped);
+      var rFill = Lerp(rBot, rTop, clamped);
+      var bFill = Lerp(bBot, bTop, clamped);
 
-      var fFill = new WpfPoint(cx, fFillY);
-      var lFill = new WpfPoint(cx - isoDepth, lFillY);
-      var rFill = new WpfPoint(cx + isoDepth, rFillY);
-
-      // Left face fill
+      // Left face fill (front-left)
       DrawPolygon(RatioCanvas, [fFill, lFill, lBot, fBot],
-        WpfColor.FromArgb(0xAA, 0x1E, 0x90, 0xFF), null);
+        WpfColor.FromArgb(0xBB, 0x1E, 0x90, 0xFF), null);
 
-      // Right face fill (slightly darker)
+      // Right face fill (front-right, slightly darker)
       DrawPolygon(RatioCanvas, [fFill, rFill, rBot, fBot],
-        WpfColor.FromArgb(0xAA, 0x14, 0x6E, 0xCC), null);
+        WpfColor.FromArgb(0xBB, 0x14, 0x6E, 0xCC), null);
 
       // Top liquid surface (diamond)
-      DrawPolygon(RatioCanvas, [
-        fFill,
-        lFill,
-        new WpfPoint(cx, lFillY - (fFillY - lFillY)),  // back midpoint
-        rFill,
-      ], WpfColor.FromArgb(0x77, 0x64, 0xB5, 0xF6), null);
+      DrawPolygon(RatioCanvas, [fFill, lFill, bFill, rFill],
+        WpfColor.FromArgb(0x88, 0x64, 0xB5, 0xF6), null);
     }
 
-    // Wireframe edges
+    // Wireframe
     var edgePen = new WpfPen(new SolidColorBrush(WpfColor.FromRgb(0x55, 0x55, 0x55)), 1.3);
+    var backPen = new WpfPen(new SolidColorBrush(WpfColor.FromRgb(0xAA, 0xAA, 0xAA)), 0.7) {
+      DashStyle = DashStyles.Dot
+    };
 
-    // Bottom edges
+    // Bottom face: 2 visible edges + 2 hidden
     DrawLine(RatioCanvas, fBot, lBot, edgePen);
     DrawLine(RatioCanvas, fBot, rBot, edgePen);
+    DrawLine(RatioCanvas, lBot, bBot, backPen);
+    DrawLine(RatioCanvas, rBot, bBot, backPen);
 
-    // Front vertical edge
+    // 4 vertical edges (front + 2 side + back hidden)
     DrawLine(RatioCanvas, fBot, fTop, edgePen);
-
-    // Left face back vertical + bottom
     DrawLine(RatioCanvas, lBot, lTop, edgePen);
-
-    // Right face back vertical + bottom
     DrawLine(RatioCanvas, rBot, rTop, edgePen);
+    DrawLine(RatioCanvas, bBot, bTop, backPen);
 
-    // Top edges
+    // Top face: 4 edges
     DrawLine(RatioCanvas, fTop, lTop, edgePen);
     DrawLine(RatioCanvas, fTop, rTop, edgePen);
-    DrawLine(RatioCanvas, lTop, rTop, edgePen);
+    DrawLine(RatioCanvas, lTop, bTop, edgePen);
+    DrawLine(RatioCanvas, rTop, bTop, edgePen);
   }
+
+  private static WpfPoint Lerp(WpfPoint a, WpfPoint b, double t) =>
+    new(a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t);
 
   private static void DrawPolygon(Canvas canvas, WpfPoint[] points, WpfColor fill, WpfColor? stroke) {
     var polygon = new System.Windows.Shapes.Polygon {

@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace Compression.Core.Dictionary.Lzma;
 
 /// <summary>
@@ -87,15 +89,26 @@ public sealed class Lzma2Encoder {
   public void Encode(Stream output, Stream input, long length = -1) {
     byte[] data;
     if (length >= 0) {
-      data = new byte[length];
-      var totalRead = 0;
-      while (totalRead < length) {
-        var read = input.Read(data, totalRead, (int)(length - totalRead));
-        if (read == 0) break;
-        totalRead += read;
+      var rented = ArrayPool<byte>.Shared.Rent((int)length);
+      try {
+        var totalRead = 0;
+        while (totalRead < length) {
+          var read = input.Read(rented, totalRead, (int)(length - totalRead));
+          if (read == 0) break;
+          totalRead += read;
+        }
+
+        if (totalRead < length) {
+          data = rented.AsSpan(0, totalRead).ToArray();
+          ArrayPool<byte>.Shared.Return(rented);
+        } else {
+          data = rented.AsSpan(0, (int)length).ToArray();
+          ArrayPool<byte>.Shared.Return(rented);
+        }
+      } catch {
+        ArrayPool<byte>.Shared.Return(rented);
+        throw;
       }
-      if (totalRead < length)
-        Array.Resize(ref data, totalRead);
     } else {
       using var ms = new MemoryStream();
       input.CopyTo(ms);

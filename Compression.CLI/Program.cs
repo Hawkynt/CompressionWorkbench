@@ -428,10 +428,15 @@ var windowOpt = new Option<int>("--window") { Description = "Entropy map window 
 var analyzeOffsetOpt = new Option<long>("--offset") { Description = "Start analysis at byte offset", DefaultValueFactory = _ => 0L };
 var analyzeLengthOpt = new Option<long>("--length") { Description = "Analyze only N bytes", DefaultValueFactory = _ => 0L };
 
+var analyzeRecursiveOpt = new Option<bool>("--recursive") { Description = "Recursively descend into disk image partitions" };
+
 var analyzeCmd = new Command("analyze", """
   Analyze binary data: signatures, fingerprinting, entropy map, trial decompression, chain reconstruction.
-  Example: cwb analyze mystery.bin --all
-  """) { analyzeFileArg, deepScanOpt, fingerprintOpt, trialOpt, entropyMapOpt, chainOpt, allOpt, maxDepthOpt, windowOpt, analyzeOffsetOpt, analyzeLengthOpt };
+  Use --recursive to descend into disk image partitions (VHD, VMDK, QCOW2, VDI).
+  Examples:
+    cwb analyze mystery.bin --all
+    cwb analyze disk.vhd --recursive
+  """) { analyzeFileArg, deepScanOpt, fingerprintOpt, trialOpt, entropyMapOpt, chainOpt, allOpt, maxDepthOpt, windowOpt, analyzeOffsetOpt, analyzeLengthOpt, analyzeRecursiveOpt };
 analyzeCmd.SetAction((ParseResult ctx) => {
   var file = ctx.GetValue(analyzeFileArg)!;
   if (!file.Exists) { Console.Error.WriteLine($"File not found: {file.FullName}"); return 1; }
@@ -525,6 +530,40 @@ analyzeCmd.SetAction((ParseResult ctx) => {
     Console.WriteLine();
   }
 
+  // Recursive disk image analysis
+  if (ctx.GetValue(analyzeRecursiveOpt)) {
+    FormatRegistration.EnsureInitialized();
+    using var fs = File.OpenRead(file.FullName);
+    var extractor = new Compression.Analysis.AutoExtractor();
+    var extractResult = extractor.Extract(fs);
+
+    if (extractResult?.PartitionTable != null) {
+      var pt = extractResult.PartitionTable;
+      Console.WriteLine($"── Partition Table ({pt.Scheme}) ──");
+      Console.WriteLine($"  {"#",-3} {"Type",-24} {"Offset",12} {"Size",12} {"Filesystem",-16}");
+      Console.WriteLine("  " + new string('-', 70));
+      foreach (var p in pt.Partitions) {
+        var fsLabel = p.NestedResult != null ? p.NestedResult.FormatName : "(unrecognized)";
+        Console.WriteLine($"  {p.Index,-3} {p.TypeName,-24} {FormatSize(p.Offset),12} {FormatSize(p.Size),12} {fsLabel,-16}");
+        if (p.NestedResult != null) {
+          Console.WriteLine($"      Entries: {p.NestedResult.Entries.Count}");
+          foreach (var entry in p.NestedResult.Entries.Take(10)) {
+            Console.WriteLine($"        {entry.Name,-40} {FormatSize(entry.Data.Length),12}");
+          }
+          if (p.NestedResult.Entries.Count > 10)
+            Console.WriteLine($"        ... and {p.NestedResult.Entries.Count - 10} more");
+          if (p.NestedResult.NestedResults.Count > 0)
+            Console.WriteLine($"      Nested archives: {p.NestedResult.NestedResults.Count}");
+        }
+      }
+      Console.WriteLine();
+    } else if (extractResult != null) {
+      Console.WriteLine("── Disk Image ──");
+      Console.WriteLine("  No partition table detected (may be a raw filesystem image).");
+      Console.WriteLine();
+    }
+  }
+
   return 0;
 });
 
@@ -567,18 +606,43 @@ autoExtractCmd.SetAction((ParseResult ctx) => {
     Console.WriteLine($"  {entry.Name} ({FormatSize(entry.Data.Length)})");
   }
 
-  if (ctx.GetValue(autoExtractRecursiveOpt) && result.NestedResults.Count > 0) {
-    Console.WriteLine($"\nNested archives found: {result.NestedResults.Count}");
-    foreach (var nested in result.NestedResults) {
-      Console.WriteLine($"  {nested.EntryName} -> {nested.Result.FormatName} ({nested.Result.Entries.Count} entries)");
-      var nestedDir = Path.Combine(outputDir, Path.GetFileNameWithoutExtension(nested.EntryName) + "_extracted");
-      Directory.CreateDirectory(nestedDir);
-      foreach (var entry in nested.Result.Entries) {
-        if (entry.IsDirectory) continue;
-        var outPath = Path.Combine(nestedDir, entry.Name.Replace('/', Path.DirectorySeparatorChar));
-        var dir = Path.GetDirectoryName(outPath);
-        if (dir != null) Directory.CreateDirectory(dir);
-        File.WriteAllBytes(outPath, entry.Data);
+  if (ctx.GetValue(autoExtractRecursiveOpt)) {
+    // Show partition table info if detected.
+    if (result.PartitionTable != null) {
+      var pt = result.PartitionTable;
+      Console.WriteLine($"\nPartition table detected: {pt.Scheme} ({pt.Partitions.Count} partitions)");
+      foreach (var p in pt.Partitions) {
+        var fsLabel = p.NestedResult != null ? p.NestedResult.FormatName : "(unrecognized)";
+        Console.WriteLine($"  Partition {p.Index}: {p.TypeName} ({FormatSize(p.Size)}) -> {fsLabel}");
+        if (p.NestedResult != null) {
+          var partDir = Path.Combine(outputDir, $"partition_{p.Index}_{p.TypeName.Replace('/', '_').Replace(' ', '_')}");
+          Directory.CreateDirectory(partDir);
+          foreach (var entry in p.NestedResult.Entries) {
+            if (entry.IsDirectory) continue;
+            var outPath = Path.Combine(partDir, entry.Name.Replace('/', Path.DirectorySeparatorChar));
+            var dir = Path.GetDirectoryName(outPath);
+            if (dir != null) Directory.CreateDirectory(dir);
+            File.WriteAllBytes(outPath, entry.Data);
+            Console.WriteLine($"    {entry.Name} ({FormatSize(entry.Data.Length)})");
+          }
+        }
+      }
+    }
+
+    // Extract nested archives.
+    if (result.NestedResults.Count > 0) {
+      Console.WriteLine($"\nNested archives found: {result.NestedResults.Count}");
+      foreach (var nested in result.NestedResults) {
+        Console.WriteLine($"  {nested.EntryName} -> {nested.Result.FormatName} ({nested.Result.Entries.Count} entries)");
+        var nestedDir = Path.Combine(outputDir, Path.GetFileNameWithoutExtension(nested.EntryName) + "_extracted");
+        Directory.CreateDirectory(nestedDir);
+        foreach (var entry in nested.Result.Entries) {
+          if (entry.IsDirectory) continue;
+          var outPath = Path.Combine(nestedDir, entry.Name.Replace('/', Path.DirectorySeparatorChar));
+          var dir = Path.GetDirectoryName(outPath);
+          if (dir != null) Directory.CreateDirectory(dir);
+          File.WriteAllBytes(outPath, entry.Data);
+        }
       }
     }
   }
@@ -659,6 +723,188 @@ suggestCmd.SetAction((ParseResult ctx) => {
 
 // ── root ─────────────────────────────────────────────────────────────
 
+// ── tool ─────────────────────────────────────────────────────────────
+
+var toolConfigOpt = new Option<string?>("--config", "-c") { Description = "Path to tool templates JSON file (default: ~/.cwb-tools.json)" };
+var defaultToolConfig = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cwb-tools.json");
+
+var toolListCmd = new Command("list", "List all registered tool templates") { toolConfigOpt };
+toolListCmd.SetAction((ParseResult ctx) => {
+  var configPath = ctx.GetValue(toolConfigOpt) ?? defaultToolConfig;
+  var registry = Compression.Analysis.ExternalTools.ToolTemplateRegistry.CreateDefaults();
+  registry.Load(configPath);
+  Console.WriteLine($"{"Name",-25} {"Action",-12} {"Executable",-15} {"Extensions",-20} {"Description"}");
+  Console.WriteLine(new string('-', 100));
+  foreach (var t in registry.Templates) {
+    var exts = t.Extensions.Count > 0 ? string.Join(",", t.Extensions) : "(any)";
+    Console.WriteLine($"{t.Name,-25} {t.Action,-12} {t.Executable,-15} {exts,-20} {t.Description}");
+  }
+  return 0;
+});
+
+var toolAddName = new Argument<string>("name") { Description = "Template name" };
+var toolAddExe = new Argument<string>("executable") { Description = "Executable name or path" };
+var toolAddArgs = new Argument<string>("arguments") { Description = "Argument template with {input}, {output}, {outputDir} placeholders" };
+var toolAddAction = new Option<string>("--action", "-a") { Description = "Action type: extract, decompress, identify, list, compress", DefaultValueFactory = _ => "extract" };
+var toolAddExts = new Option<string[]>("--ext") { Description = "File extensions this template handles" };
+var toolAddStdout = new Option<bool>("--stdout") { Description = "Capture stdout as decompressed output" };
+var toolAddStdin = new Option<bool>("--stdin") { Description = "Pipe input via stdin" };
+var toolAddTimeout = new Option<int>("--timeout") { Description = "Timeout in milliseconds (0 = default)" };
+var toolAddDesc = new Option<string?>("--desc") { Description = "Description" };
+
+var toolAddCmd = new Command("add", """
+  Add a custom tool template. Use placeholders in arguments:
+    {input}    — input file path
+    {output}   — output file path
+    {outputDir} — output directory
+
+  Examples:
+    cwb tool add my-zstd zstd "-d -c {input}" --action decompress --ext .zst --stdout
+    cwb tool add my-7z 7z "x {input} -o{outputDir} -y" --ext .rar .zip .7z
+    cwb tool add upx upx "-d {input} -o{output}" --action decompress --ext .exe
+  """) { toolAddName, toolAddExe, toolAddArgs, toolAddAction, toolAddExts, toolAddStdout, toolAddStdin, toolAddTimeout, toolAddDesc, toolConfigOpt };
+toolAddCmd.SetAction((ParseResult ctx) => {
+  var configPath = ctx.GetValue(toolConfigOpt) ?? defaultToolConfig;
+  var registry = Compression.Analysis.ExternalTools.ToolTemplateRegistry.CreateDefaults();
+  registry.Load(configPath);
+  var template = new Compression.Analysis.ExternalTools.ToolTemplate {
+    Name = ctx.GetValue(toolAddName)!,
+    Executable = ctx.GetValue(toolAddExe)!,
+    Arguments = ctx.GetValue(toolAddArgs)!,
+    Action = ctx.GetValue(toolAddAction) ?? "extract",
+    Extensions = [.. (ctx.GetValue(toolAddExts) ?? [])],
+    CaptureStdout = ctx.GetValue(toolAddStdout),
+    PipeStdin = ctx.GetValue(toolAddStdin),
+    TimeoutMs = ctx.GetValue(toolAddTimeout),
+    Description = ctx.GetValue(toolAddDesc) ?? ""
+  };
+  registry.Register(template);
+  registry.Save(configPath);
+  Console.WriteLine($"Added template '{template.Name}': {template.Executable} {template.Arguments}");
+  Console.WriteLine($"Saved to {configPath}");
+  return 0;
+});
+
+var toolRemoveName = new Argument<string>("name") { Description = "Template name to remove" };
+var toolRemoveCmd = new Command("remove", "Remove a tool template") { toolRemoveName, toolConfigOpt };
+toolRemoveCmd.SetAction((ParseResult ctx) => {
+  var configPath = ctx.GetValue(toolConfigOpt) ?? defaultToolConfig;
+  var registry = Compression.Analysis.ExternalTools.ToolTemplateRegistry.CreateDefaults();
+  registry.Load(configPath);
+  var name = ctx.GetValue(toolRemoveName)!;
+  if (registry.Remove(name)) {
+    registry.Save(configPath);
+    Console.WriteLine($"Removed template '{name}'");
+  } else {
+    Console.Error.WriteLine($"Template '{name}' not found");
+    return 1;
+  }
+  return 0;
+});
+
+var toolRunFile = new Argument<FileInfo>("file") { Description = "File to process" };
+var toolRunName = new Option<string?>("--template", "-t") { Description = "Run a specific template by name (otherwise tries all matching)" };
+var toolRunAction2 = new Option<string>("--action", "-a") { Description = "Action type to match", DefaultValueFactory = _ => "extract" };
+var toolRunOutput = new Option<DirectoryInfo?>("--output", "-o") { Description = "Output directory" };
+var toolRunCmd = new Command("run", "Run a tool template against a file") { toolRunFile, toolRunName, toolRunAction2, toolRunOutput, toolConfigOpt };
+toolRunCmd.SetAction(async (ParseResult ctx) => {
+  var configPath = ctx.GetValue(toolConfigOpt) ?? defaultToolConfig;
+  var registry = Compression.Analysis.ExternalTools.ToolTemplateRegistry.CreateDefaults();
+  registry.Load(configPath);
+  var file = ctx.GetValue(toolRunFile)!;
+  if (!file.Exists) { Console.Error.WriteLine($"File not found: {file.FullName}"); return 1; }
+  var outDir = ctx.GetValue(toolRunOutput)?.FullName ?? Path.Combine(Path.GetDirectoryName(file.FullName)!, Path.GetFileNameWithoutExtension(file.Name) + "_out");
+
+  var templateName = ctx.GetValue(toolRunName);
+  if (templateName != null) {
+    var template = registry.GetByName(templateName);
+    if (template == null) { Console.Error.WriteLine($"Template '{templateName}' not found"); return 1; }
+    Directory.CreateDirectory(outDir);
+    var result = await template.RunAsync(file.FullName, outputDir: outDir);
+    Console.WriteLine($"[{template.Name}] exit={result.ExitCode} {(result.Success ? "OK" : "FAILED")}");
+    if (!string.IsNullOrWhiteSpace(result.Stdout)) Console.WriteLine(result.Stdout);
+    if (!string.IsNullOrWhiteSpace(result.Stderr)) Console.Error.WriteLine(result.Stderr);
+    return result.Success ? 0 : 1;
+  }
+
+  // Auto-match by extension + action.
+  var action = ctx.GetValue(toolRunAction2) ?? "extract";
+  Directory.CreateDirectory(outDir);
+  var (matched, matchResult) = await registry.TryMatchingAsync(file.FullName, action, outDir);
+  if (matched != null && matchResult != null) {
+    Console.WriteLine($"[{matched.Name}] exit={matchResult.ExitCode} {(matchResult.Success ? "OK" : "FAILED")}");
+    if (!string.IsNullOrWhiteSpace(matchResult.Stdout)) Console.WriteLine(matchResult.Stdout);
+    return matchResult.Success ? 0 : 1;
+  }
+  Console.Error.WriteLine($"No matching template for '{file.Name}' with action '{action}'");
+  return 1;
+});
+
+var toolInitCmd = new Command("init", "Create default tool templates config file") { toolConfigOpt };
+toolInitCmd.SetAction((ParseResult ctx) => {
+  var configPath = ctx.GetValue(toolConfigOpt) ?? defaultToolConfig;
+  var registry = Compression.Analysis.ExternalTools.ToolTemplateRegistry.CreateDefaults();
+  registry.Save(configPath);
+  Console.WriteLine($"Default templates saved to {configPath}");
+  Console.WriteLine($"{registry.Templates.Count} templates configured. Edit the JSON to customize.");
+  return 0;
+});
+
+var toolCmd = new Command("tool", """
+  Manage and run configurable external tool templates.
+  Templates map CLI commands to actions (extract, decompress, identify, list).
+
+  Quick start:
+    cwb tool init                             Create default config
+    cwb tool list                             Show all templates
+    cwb tool add my-tool upx "-d {input}"     Add custom template
+    cwb tool run archive.rar                  Run matching template
+    cwb tool run file.bin -t binwalk-scan     Run specific template
+  """) { toolListCmd, toolAddCmd, toolRemoveCmd, toolRunCmd, toolInitCmd };
+
+// ── reverse-engineer ────────────────────────────────────────────────
+
+var revExe = new Argument<string>("executable") { Description = "Tool executable (name or path)" };
+var revArgs = new Argument<string>("arguments") { Description = "Argument template: use {input} for input file, {output} for output file" };
+var revTimeout = new Option<int>("--timeout") { Description = "Timeout per probe in ms", DefaultValueFactory = _ => 30000 };
+
+var reverseCmd = new Command("reverse-engineer", """
+  Reverse-engineer an unknown tool's output format.
+  Runs the tool with ~40 controlled probe inputs, then analyzes the outputs
+  to discover: magic bytes, header structure, size fields, compression algorithm,
+  filename storage, and more.
+
+  The argument template must include {input} and {output} placeholders.
+
+  Examples:
+    cwb reverse-engineer MyTool.exe "{input} {output}"
+    cwb reverse-engineer packer.exe "--pack {input} --out {output}"
+    cwb reverse-engineer compress.exe "-c -i {input} -o {output}" --timeout 10000
+  """) { revExe, revArgs, revTimeout };
+reverseCmd.Aliases.Add("reveng");
+reverseCmd.SetAction(async (ParseResult ctx) => {
+  FormatRegistration.EnsureInitialized();
+  var exe = ctx.GetValue(revExe)!;
+  var args = ctx.GetValue(revArgs)!;
+  var timeout = ctx.GetValue(revTimeout);
+
+  Console.WriteLine($"Reverse-engineering: {exe} {args}");
+  Console.WriteLine();
+
+  var reverser = new Compression.Analysis.ReverseEngineering.FormatReverser(exe, args, timeout);
+  var report = await reverser.AnalyzeAsync((name, current, total) => {
+    Console.Write($"\r  Probe {current}/{total}: {name,-30}");
+  });
+
+  Console.WriteLine();
+  Console.WriteLine();
+  Console.WriteLine(report.Summary);
+  Console.WriteLine();
+  Console.WriteLine($"Probes: {report.ProbesSucceeded}/{report.ProbesRun} succeeded");
+
+  return report.ProbesSucceeded > 0 ? 0 : 1;
+});
+
 var root = new RootCommand("""
   cwb — CompressionWorkbench CLI. A universal archive tool.
 
@@ -670,11 +916,13 @@ var root = new RootCommand("""
     cwb convert in.zip out.7z -m lzma         Convert ZIP → 7z with LZMA
     cwb create app.7z files --sfx             Create self-extracting 7z
     cwb test archive.zip                      Verify integrity
+    cwb tool init                             Set up external tool templates
+    cwb reverse-engineer MyTool.exe "{input} {output}"  Auto-discover format
 
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, infoCmd, convertCmd, optimizeCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd
+  listCmd, extractCmd, createCmd, testCmd, infoCmd, convertCmd, optimizeCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd
 };
 
 return root.Parse(args).Invoke();

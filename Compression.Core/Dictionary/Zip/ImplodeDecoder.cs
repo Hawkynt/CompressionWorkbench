@@ -19,6 +19,17 @@ public static class ImplodeDecoder {
   /// <param name="hasLiteralTree">Whether a literal tree is present (bit 2 of GP flags).</param>
   /// <param name="is8kDictionary">Whether an 8KB dictionary is used (bit 1 of GP flags).</param>
   /// <returns>The decompressed data.</returns>
+  public static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize, bool hasLiteralTree, bool is8kDictionary)
+    => Decode(compressed.ToArray(), originalSize, hasLiteralTree, is8kDictionary);
+
+  /// <summary>
+  /// Decompresses ZIP Implode data.
+  /// </summary>
+  /// <param name="compressed">The compressed data.</param>
+  /// <param name="originalSize">The expected uncompressed size.</param>
+  /// <param name="hasLiteralTree">Whether a literal tree is present (bit 2 of GP flags).</param>
+  /// <param name="is8kDictionary">Whether an 8KB dictionary is used (bit 1 of GP flags).</param>
+  /// <returns>The decompressed data.</returns>
   public static byte[] Decode(byte[] compressed, int originalSize, bool hasLiteralTree, bool is8kDictionary) {
     var bitPos = 0;
     var distanceBits = is8kDictionary ? 7 : 6;

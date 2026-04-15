@@ -10,7 +10,16 @@ public static class LzpDecompressor {
   private const uint HashMask = HashSize - 1;
 
   /// <summary>
-  /// Decompresses data that was compressed with <see cref="LzpCompressor.Compress"/>.
+  /// Decompresses data that was compressed with <see cref="LzpCompressor"/>.
+  /// </summary>
+  /// <param name="compressed">The compressed data including the LZP header.</param>
+  /// <returns>The original uncompressed data.</returns>
+  /// <exception cref="InvalidDataException">Thrown when the compressed data is too short or corrupt.</exception>
+  public static byte[] Decompress(ReadOnlySpan<byte> compressed)
+    => Decompress(compressed.ToArray());
+
+  /// <summary>
+  /// Decompresses data that was compressed with <see cref="LzpCompressor"/>.
   /// </summary>
   /// <param name="compressed">The compressed data including the LZP header.</param>
   /// <returns>The original uncompressed data.</returns>

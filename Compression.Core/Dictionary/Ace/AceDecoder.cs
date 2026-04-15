@@ -112,6 +112,13 @@ public sealed class AceDecoder {
   /// <summary>
   /// Static convenience method for non-solid decoding (creates a fresh decoder).
   /// </summary>
+  public static byte[] DecodeBlock(ReadOnlySpan<byte> compressed, int originalSize,
+      int dictBits = AceConstants.DefaultDictBits, int compressionType = AceConstants.CompAce10)
+    => DecodeBlock(compressed.ToArray(), originalSize, dictBits, compressionType);
+
+  /// <summary>
+  /// Static convenience method for non-solid decoding (creates a fresh decoder).
+  /// </summary>
   public static byte[] DecodeBlock(byte[] compressed, int originalSize,
       int dictBits = AceConstants.DefaultDictBits, int compressionType = AceConstants.CompAce10) {
     var decoder = new AceDecoder(dictBits);

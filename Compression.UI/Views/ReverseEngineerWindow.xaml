@@ -1,0 +1,145 @@
+<Window x:Class="Compression.UI.Views.ReverseEngineerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Compression.UI.ViewModels"
+        Title="Format Reverse Engineer" Width="800" Height="600"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize">
+  <Window.DataContext>
+    <vm:ReverseEngineerWizardViewModel />
+  </Window.DataContext>
+  <Window.Resources>
+    <vm:WizardStepToVisibilityConverter x:Key="StepToVis" />
+  </Window.Resources>
+  <DockPanel>
+    <!-- Bottom: navigation buttons -->
+    <Border DockPanel.Dock="Bottom" Padding="12" Background="#F0F0F0" BorderThickness="0,1,0,0" BorderBrush="#CCC">
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button Content="Back" Width="80" Margin="0,0,8,0" Command="{Binding BackCommand}" />
+        <Button Content="Cancel" Width="80" Margin="0,0,8,0" Command="{Binding CancelCommand}" />
+        <Button Content="Next" Width="80" Command="{Binding NextCommand}" IsDefault="True" />
+      </StackPanel>
+    </Border>
+
+    <!-- Main content area -->
+    <Grid Margin="16">
+
+      <!-- Step 1: Choose Mode -->
+      <StackPanel Visibility="{Binding CurrentStep, Converter={StaticResource StepToVis}, ConverterParameter=ChooseMode}">
+        <TextBlock Text="Format Reverse Engineering Wizard" FontSize="18" FontWeight="Bold" Margin="0,0,0,16" />
+        <TextBlock TextWrapping="Wrap" Margin="0,0,0,16">
+          This wizard helps you discover the internal format of an unknown archive or compressed file.
+          Choose how you want to provide data:
+        </TextBlock>
+        <RadioButton Content="I have the tool — probe it with test inputs" IsChecked="{Binding IsToolMode}" Margin="0,8" FontSize="14" />
+        <TextBlock Text="Runs the tool ~40 times with controlled inputs to discover headers, size fields, and compression." Margin="24,0,0,8" Foreground="Gray" />
+        <RadioButton Content="I have archive files with known original content" IsChecked="{Binding IsStaticMode}" Margin="0,8" FontSize="14" />
+        <TextBlock Text="Analyzes archives by locating known content inside them — finds where data is stored and how it's compressed." Margin="24,0,0,8" Foreground="Gray" />
+      </StackPanel>
+
+      <!-- Step 2a: Configure Tool -->
+      <StackPanel Visibility="{Binding CurrentStep, Converter={StaticResource StepToVis}, ConverterParameter=ConfigureTool}">
+        <TextBlock Text="Configure External Tool" FontSize="18" FontWeight="Bold" Margin="0,0,0,16" />
+        <TextBlock TextWrapping="Wrap" Margin="0,0,0,12">
+          Enter the tool's executable path and the argument template.
+          Use {input} for the input file and {output} for the output file.
+        </TextBlock>
+
+        <TextBlock Text="Executable:" Margin="0,8,0,4" />
+        <TextBox Text="{Binding ToolPath, UpdateSourceTrigger=PropertyChanged}" />
+
+        <TextBlock Text="Arguments:" Margin="0,12,0,4" />
+        <TextBox Text="{Binding ToolArguments, UpdateSourceTrigger=PropertyChanged}" />
+        <TextBlock Text="Example: {input} {output}  or  --compress {input} -o {output}" Foreground="Gray" Margin="0,4,0,0" />
+
+        <TextBlock Text="Timeout (ms):" Margin="0,12,0,4" />
+        <TextBox Text="{Binding ToolTimeout}" Width="100" HorizontalAlignment="Left" />
+      </StackPanel>
+
+      <!-- Step 2b: Add Samples -->
+      <DockPanel Visibility="{Binding CurrentStep, Converter={StaticResource StepToVis}, ConverterParameter=AddSamples}">
+        <TextBlock DockPanel.Dock="Top" Text="Add Sample Pairs" FontSize="18" FontWeight="Bold" Margin="0,0,0,8" />
+        <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,12">
+          Add pairs of original files and their corresponding archives.
+          The analyzer will search for the original content inside each archive.
+        </TextBlock>
+        <Button DockPanel.Dock="Top" Content="+ Add Sample" HorizontalAlignment="Left" Padding="12,4" Margin="0,0,0,8" Command="{Binding AddSampleCommand}" />
+        <ItemsControl ItemsSource="{Binding Samples}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border BorderBrush="#CCC" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,4">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition />
+                    <RowDefinition />
+                  </Grid.RowDefinitions>
+                  <TextBlock Grid.Row="0" Grid.Column="0" Text="Original:" VerticalAlignment="Center" Margin="0,0,8,4" />
+                  <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding OriginalPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4" />
+                  <TextBlock Grid.Row="1" Grid.Column="0" Text="Archive:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                  <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ArchivePath, UpdateSourceTrigger=PropertyChanged}" />
+                  <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="2" Content="X" Width="24" Margin="8,0,0,0" VerticalAlignment="Center"
+                          Command="{Binding DataContext.RemoveSampleCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                          CommandParameter="{Binding}" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </DockPanel>
+
+      <!-- Step 3: Running -->
+      <StackPanel Visibility="{Binding CurrentStep, Converter={StaticResource StepToVis}, ConverterParameter=Running}" VerticalAlignment="Center">
+        <TextBlock Text="Analyzing..." FontSize="18" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,16" />
+        <ProgressBar Height="24" Margin="40,0" Value="{Binding Progress}" Maximum="100" />
+        <TextBlock Text="{Binding StatusText}" HorizontalAlignment="Center" Margin="0,12,0,4" />
+        <TextBlock Text="{Binding CurrentProbe}" HorizontalAlignment="Center" Foreground="Gray" />
+      </StackPanel>
+
+      <!-- Step 4: Results -->
+      <DockPanel Visibility="{Binding CurrentStep, Converter={StaticResource StepToVis}, ConverterParameter=Results}">
+        <TextBlock DockPanel.Dock="Top" Text="Analysis Results" FontSize="18" FontWeight="Bold" Margin="0,0,0,8" />
+
+        <TabControl>
+          <TabItem Header="Summary">
+            <TextBox Text="{Binding ReportText, Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas"
+                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                     TextWrapping="NoWrap" AcceptsReturn="True" />
+          </TabItem>
+          <TabItem Header="Header">
+            <StackPanel Margin="8">
+              <TextBlock Text="Detected Magic Bytes:" FontWeight="Bold" Margin="0,0,0,8" />
+              <TextBox Text="{Binding HeaderHex, Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas" FontSize="16" />
+              <TextBlock Text="Detected Compression:" FontWeight="Bold" Margin="0,16,0,8" />
+              <TextBox Text="{Binding CompressionResult, Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas" FontSize="16" />
+            </StackPanel>
+          </TabItem>
+          <TabItem Header="Size Fields">
+            <DataGrid ItemsSource="{Binding DetectedSizeFields}" AutoGenerateColumns="False" IsReadOnly="True">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Offset" Binding="{Binding Offset}" Width="80" />
+                <DataGridTextColumn Header="Width" Binding="{Binding Width}" Width="80" />
+                <DataGridTextColumn Header="Endianness" Binding="{Binding Endianness}" Width="100" />
+                <DataGridTextColumn Header="Meaning" Binding="{Binding Meaning}" Width="*" />
+              </DataGrid.Columns>
+            </DataGrid>
+          </TabItem>
+          <TabItem Header="Probe Results">
+            <DataGrid ItemsSource="{Binding ProbeResults}" AutoGenerateColumns="False" IsReadOnly="True">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Probe" Binding="{Binding Name}" Width="200" />
+                <DataGridTextColumn Header="Input Size" Binding="{Binding InputSize}" Width="100" />
+                <DataGridTextColumn Header="Output Size" Binding="{Binding OutputSize}" Width="100" />
+                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />
+              </DataGrid.Columns>
+            </DataGrid>
+          </TabItem>
+        </TabControl>
+      </DockPanel>
+
+    </Grid>
+  </DockPanel>
+</Window>

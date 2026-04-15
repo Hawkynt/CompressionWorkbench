@@ -81,6 +81,16 @@ public static class LzpCompressor {
   }
 
   /// <summary>
+  /// Compresses data using LZP with the specified context order.
+  /// </summary>
+  /// <param name="input">The data to compress.</param>
+  /// <param name="order">The context order (number of preceding bytes used for prediction). Must be at least 1.</param>
+  /// <returns>The compressed byte array including a header.</returns>
+  /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="order"/> is less than 1 or greater than 255.</exception>
+  public static byte[] Compress(ReadOnlySpan<byte> input, int order = 3)
+    => Compress(input.ToArray(), order);
+
+  /// <summary>
   /// Computes a 20-bit FNV-1a hash of the <paramref name="order"/> bytes preceding position <paramref name="pos"/>.
   /// </summary>
   internal static int ComputeHash(byte[] data, int pos, int order) {

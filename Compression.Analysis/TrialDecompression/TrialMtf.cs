@@ -9,6 +9,9 @@ public sealed class TrialMtf : ITrialStrategy {
   public string Algorithm => "MTF";
 
   /// <inheritdoc />
+  public TrialCategory Category => TrialCategory.Primitive;
+
+  /// <inheritdoc />
   public DecompressionAttempt TryDecompress(ReadOnlySpan<byte> data, int maxOutput, CancellationToken ct) {
     try {
       var output = MoveToFrontTransform.Decode(data);

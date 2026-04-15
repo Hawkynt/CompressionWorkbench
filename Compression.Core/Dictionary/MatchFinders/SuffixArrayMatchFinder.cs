@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Compression.Core.Simd;
 
 namespace Compression.Core.Dictionary.MatchFinders;
 
@@ -103,11 +104,7 @@ public sealed class SuffixArrayMatchFinder {
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   private static int VerifyMatchLength(ReadOnlySpan<byte> data, int pos1, int pos2, int maxLength, int dataLength) {
     var limit = Math.Min(maxLength, Math.Min(dataLength - pos1, dataLength - pos2));
-    var len = 0;
-    while (len < limit && data[pos1 + len] == data[pos2 + len])
-      ++len;
-
-    return len;
+    return SimdMatchLength.GetMatchLength(data, pos1, pos2, limit);
   }
 
   // ---- Suffix array construction (O(n log n) with prefix doubling) ----

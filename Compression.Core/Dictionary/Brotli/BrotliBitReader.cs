@@ -7,6 +7,7 @@ namespace Compression.Core.Dictionary.Brotli;
 /// </summary>
 internal sealed class BrotliBitReader {
   private readonly byte[] _data;
+  private readonly int _dataLength;
   private int _bytePos;
   private ulong _bitBuffer;
   private int _bitsAvailable;
@@ -15,8 +16,16 @@ internal sealed class BrotliBitReader {
   /// Initializes a new <see cref="BrotliBitReader"/> over the given data.
   /// </summary>
   /// <param name="data">The compressed data.</param>
-  public BrotliBitReader(byte[] data) {
+  public BrotliBitReader(byte[] data) : this(data, data.Length) { }
+
+  /// <summary>
+  /// Initializes a new <see cref="BrotliBitReader"/> over the given data with an explicit length.
+  /// </summary>
+  /// <param name="data">The buffer containing compressed data.</param>
+  /// <param name="length">The number of valid bytes in the buffer.</param>
+  public BrotliBitReader(byte[] data, int length) {
     this._data = data;
+    this._dataLength = length;
     this._bytePos = 0;
     this._bitBuffer = 0;
     this._bitsAvailable = 0;
@@ -32,14 +41,14 @@ internal sealed class BrotliBitReader {
   public string DebugState => $"bytePos={this._bytePos} bitsAvail={this._bitsAvailable} buf=0x{this._bitBuffer:X16} bitPos={this.BitPosition}";
 
   /// <summary>Gets whether the reader has reached the end of the data.</summary>
-  public bool IsAtEnd => this._bytePos >= this._data.Length && this._bitsAvailable == 0;
+  public bool IsAtEnd => this._bytePos >= this._dataLength && this._bitsAvailable == 0;
 
   /// <summary>
   /// Ensures at least <paramref name="count"/> bits are available in the buffer.
   /// </summary>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public void Fill(int count) {
-    while (this._bitsAvailable < count && this._bytePos < this._data.Length) {
+    while (this._bitsAvailable < count && this._bytePos < this._dataLength) {
       this._bitBuffer |= (ulong)this._data[this._bytePos++] << this._bitsAvailable;
       this._bitsAvailable += 8;
     }

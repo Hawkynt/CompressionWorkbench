@@ -1,0 +1,54 @@
+<UserControl x:Class="Compression.UI.Controls.HeatmapGridControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Compression.UI.Controls">
+  <UserControl.Resources>
+    <Style x:Key="TileStyle" TargetType="Border">
+      <Setter Property="BorderBrush" Value="#999" />
+      <Setter Property="BorderThickness" Value="0.5" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Style.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter Property="BorderBrush" Value="Black" />
+          <Setter Property="BorderThickness" Value="2" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+  </UserControl.Resources>
+
+  <DockPanel>
+    <!-- Breadcrumb navigation -->
+    <ToolBar DockPanel.Dock="Top">
+      <Button Content="Back" Padding="8,2" Click="OnBack" />
+      <Button Content="Root" Padding="8,2" Click="OnRoot" />
+      <Separator />
+      <TextBlock x:Name="BreadcrumbText" VerticalAlignment="Center" FontFamily="Consolas" />
+      <Separator />
+      <Button Content="Extract Region..." Padding="8,2" Click="OnExtract" />
+    </ToolBar>
+
+    <!-- Info panel -->
+    <Border DockPanel.Dock="Bottom" Padding="4,2" BorderThickness="0,1,0,0" BorderBrush="#CCC">
+      <TextBlock x:Name="InfoText" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap" />
+    </Border>
+
+    <!-- Legend -->
+    <Border DockPanel.Dock="Right" Width="110" Padding="6" BorderThickness="1,0,0,0" BorderBrush="#CCC">
+      <StackPanel>
+        <TextBlock Text="Legend" FontWeight="Bold" Margin="0,0,0,6" />
+        <local:LegendItem Color="#27408B" Label="Zeros" />
+        <local:LegendItem Color="#8B5CF6" Label="Format" />
+        <local:LegendItem Color="#4169E1" Label="Very Low" />
+        <local:LegendItem Color="#20B2AA" Label="Low" />
+        <local:LegendItem Color="#228B22" Label="Medium" />
+        <local:LegendItem Color="#DAA520" Label="High" />
+        <local:LegendItem Color="#CD6600" Label="Compressed" />
+        <local:LegendItem Color="#CD2626" Label="Encrypted" />
+        <local:LegendItem Color="#AAAAAA" Label="Empty" />
+      </StackPanel>
+    </Border>
+
+    <!-- 16x16 grid -->
+    <Grid x:Name="TileGrid" Margin="2" />
+  </DockPanel>
+</UserControl>

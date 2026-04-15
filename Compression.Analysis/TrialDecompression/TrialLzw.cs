@@ -9,6 +9,9 @@ public sealed class TrialLzw : ITrialStrategy {
   public string Algorithm => "LZW";
 
   /// <inheritdoc />
+  public TrialCategory Category => TrialCategory.Primitive;
+
+  /// <inheritdoc />
   public DecompressionAttempt TryDecompress(ReadOnlySpan<byte> data, int maxOutput, CancellationToken ct) {
     // Try standard LZW with clear+stop codes (like Unix .Z / GIF)
     try {

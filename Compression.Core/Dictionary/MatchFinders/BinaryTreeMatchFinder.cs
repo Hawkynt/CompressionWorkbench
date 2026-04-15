@@ -1,3 +1,5 @@
+using Compression.Core.Simd;
+
 namespace Compression.Core.Dictionary.MatchFinders;
 
 /// <summary>
@@ -54,11 +56,9 @@ public sealed class BinaryTreeMatchFinder : IMatchFinder {
       var nodeIdx = node & this._windowMask;
       ++iterations;
 
-      // Compare strings
+      // Compare strings using SIMD-accelerated match length
       var limit = Math.Min(maxLength, Math.Min(data.Length - position, data.Length - node));
-      var matchLen = 0;
-      while (matchLen < limit && data[position + matchLen] == data[node + matchLen])
-        ++matchLen;
+      var matchLen = SimdMatchLength.GetMatchLength(data, position, node, limit);
 
       if (matchLen >= minLength && matchLen > bestLength) {
         bestLength = matchLen;

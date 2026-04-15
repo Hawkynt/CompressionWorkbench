@@ -91,3 +91,7 @@ TestResults/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+## Real-world test corpus (users drop private/licensed files here)
+test-corpus/*
+!test-corpus/README.md

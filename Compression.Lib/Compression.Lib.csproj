@@ -73,6 +73,7 @@
     <ProjectReference Include="..\FileFormat.Ext\FileFormat.Ext.csproj" />
     <ProjectReference Include="..\FileFormat.F2fs\FileFormat.F2fs.csproj" />
     <ProjectReference Include="..\FileFormat.Fat\FileFormat.Fat.csproj" />
+    <ProjectReference Include="..\FileFormat.Flac\FileFormat.Flac.csproj" />
     <ProjectReference Include="..\FileFormat.FreeArc\FileFormat.FreeArc.csproj" />
     <ProjectReference Include="..\FileFormat.Freeze\FileFormat.Freeze.csproj" />
     <ProjectReference Include="..\FileFormat.GodotPck\FileFormat.GodotPck.csproj" />
@@ -98,9 +99,11 @@
     <ProjectReference Include="..\FileFormat.Lzfse\FileFormat.Lzfse.csproj" />
     <ProjectReference Include="..\FileFormat.Lzg\FileFormat.Lzg.csproj" />
     <ProjectReference Include="..\FileFormat.Lzh\FileFormat.Lzh.csproj" />
+    <ProjectReference Include="..\FileFormat.Lzham\FileFormat.Lzham.csproj" />
     <ProjectReference Include="..\FileFormat.Lzip\FileFormat.Lzip.csproj" />
     <ProjectReference Include="..\FileFormat.Lzma\FileFormat.Lzma.csproj" />
     <ProjectReference Include="..\FileFormat.Lzop\FileFormat.Lzop.csproj" />
+    <ProjectReference Include="..\FileFormat.Lzs\FileFormat.Lzs.csproj" />
     <ProjectReference Include="..\FileFormat.Lzx\FileFormat.Lzx.csproj" />
     <ProjectReference Include="..\FileFormat.MacBinary\FileFormat.MacBinary.csproj" />
     <ProjectReference Include="..\FileFormat.Maff\FileFormat.Maff.csproj" />
@@ -127,6 +130,7 @@
     <ProjectReference Include="..\FileFormat.Pak\FileFormat.Pak.csproj" />
     <ProjectReference Include="..\FileFormat.Paq8\FileFormat.Paq8.csproj" />
     <ProjectReference Include="..\FileFormat.Pdf\FileFormat.Pdf.csproj" />
+    <ProjectReference Include="..\FileFormat.Ppmd\FileFormat.Ppmd.csproj" />
     <ProjectReference Include="..\FileFormat.PowerPacker\FileFormat.PowerPacker.csproj" />
     <ProjectReference Include="..\FileFormat.Ppt\FileFormat.Ppt.csproj" />
     <ProjectReference Include="..\FileFormat.Pptx\FileFormat.Pptx.csproj" />

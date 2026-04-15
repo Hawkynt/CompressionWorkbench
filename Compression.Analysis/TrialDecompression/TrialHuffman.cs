@@ -11,6 +11,9 @@ public sealed class TrialHuffman : ITrialStrategy {
   public string Algorithm => "Huffman";
 
   /// <inheritdoc />
+  public TrialCategory Category => TrialCategory.Primitive;
+
+  /// <inheritdoc />
   public DecompressionAttempt TryDecompress(ReadOnlySpan<byte> data, int maxOutput, CancellationToken ct) {
     // Try parsing first byte as symbol count, subsequent bytes as code lengths
     if (data.Length < 4)

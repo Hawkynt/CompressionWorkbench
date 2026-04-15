@@ -9,6 +9,9 @@ public sealed class TrialDeflate : ITrialStrategy {
   public string Algorithm => "Deflate";
 
   /// <inheritdoc />
+  public TrialCategory Category => TrialCategory.Primitive;
+
+  /// <inheritdoc />
   public DecompressionAttempt TryDecompress(ReadOnlySpan<byte> data, int maxOutput, CancellationToken ct) {
     try {
       var output = DeflateDecompressor.Decompress(data);

@@ -1,0 +1,96 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          include-prerelease: true
+
+      - name: Restore
+        run: dotnet restore CompressionWorkbench.slnx
+
+      - name: Build
+        run: dotnet build CompressionWorkbench.slnx --configuration Release --no-restore
+
+      # Core tests -- always run (no external tools)
+      - name: Core tests
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release --no-build
+          --filter "Category!=EndToEnd&Category!=OsIntegration&Category!=ExternalInterop&Category!=PolyglotInterop"
+          --logger "trx;LogFileName=core-tests.trx"
+
+      # Install tools for interop tests (Linux)
+      - name: Install interop tools (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full gzip bzip2 xz-utils zstd lz4 tar cpio genisoimage mtools qemu-utils
+
+      # Install tools for interop tests (Windows)
+      - name: Install 7-Zip (Windows)
+        if: matrix.os == 'windows-latest'
+        run: choco install 7zip -y
+
+      # E2E interop tests
+      - name: End-to-end interop tests
+        continue-on-error: true
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release --no-build
+          --filter "Category=EndToEnd"
+          --logger "trx;LogFileName=e2e-tests.trx"
+
+      # OS integration tests (Linux has more coverage)
+      - name: OS integration tests
+        continue-on-error: true
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release --no-build
+          --filter "Category=OsIntegration"
+          --logger "trx;LogFileName=os-tests.trx"
+
+      # Polyglot interop: verify our formats round-trip through other
+      # language ecosystems (Python/Node/Perl/Ruby). Most tests skip
+      # unless the corresponding package is installed; install the common
+      # ones on Linux. Never "pip install" inside tests.
+      - name: Install polyglot test dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        continue-on-error: true
+        run: |
+          python3 -m pip install --user --break-system-packages py7zr zstandard brotli lz4 rarfile || true
+          # Perl core ships with IO::Uncompress::{Gunzip,Bunzip2,UnXz,UnLzop} via IO-Compress-*;
+          # Archive::Zip and Archive::Tar come with most distros. Try to ensure them via cpanm.
+          sudo cpanm --notest Archive::Zip IO::Compress::Lzma IO::Compress::Lzop || true
+          # Ruby gems for optional tests.
+          gem install --user-install minitar rubyzip zstd-ruby || true
+          # Node built-ins cover most tests; install adm-zip and tar-stream for the rest.
+          npm install --prefix /tmp/polyglot-node adm-zip tar-stream || true
+          echo "NODE_PATH=/tmp/polyglot-node/node_modules" >> $GITHUB_ENV
+
+      - name: Polyglot interop tests
+        continue-on-error: true
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release --no-build
+          --filter "Category=PolyglotInterop"
+          --logger "trx;LogFileName=polyglot-tests.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: '**/TestResults/*.trx'

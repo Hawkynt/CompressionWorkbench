@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 
 namespace Compression.Core.Dictionary.Snappy;
@@ -17,10 +18,15 @@ public static class SnappyCompressor {
       return [0]; // varint 0
 
     // Worst case: varint header + source + overhead
-    var buf = new byte[10 + source.Length + source.Length / 6 + 32];
-    var pos = WriteVarInt(buf, 0, source.Length);
-    pos = CompressBlock(source, buf, pos);
-    return buf.AsSpan(0, pos).ToArray();
+    var bufLen = 10 + source.Length + source.Length / 6 + 32;
+    var buf = ArrayPool<byte>.Shared.Rent(bufLen);
+    try {
+      var pos = WriteVarInt(buf, 0, source.Length);
+      pos = CompressBlock(source, buf, pos);
+      return buf.AsSpan(0, pos).ToArray();
+    } finally {
+      ArrayPool<byte>.Shared.Return(buf);
+    }
   }
 
   private static int CompressBlock(ReadOnlySpan<byte> src, Span<byte> dst, int dstPos) {
@@ -28,54 +34,58 @@ public static class SnappyCompressor {
     if (srcLen == 0)
       return dstPos;
 
-    var hashTable = new int[SnappyConstants.HashTableSize];
-    hashTable.AsSpan().Fill(-1);
-    
-    var pos = 0;
-    var litStart = 0;
+    var hashTable = ArrayPool<int>.Shared.Rent(SnappyConstants.HashTableSize);
+    try {
+      hashTable.AsSpan(0, SnappyConstants.HashTableSize).Fill(-1);
 
-    while (pos + 3 < srcLen) {
-      var h = Hash4(src, pos);
-      var candidate = hashTable[h];
-      hashTable[h] = pos;
+      var pos = 0;
+      var litStart = 0;
 
-      if (candidate >= 0 && pos - candidate <= SnappyConstants.MaxCopy2Offset &&
-          src[candidate] == src[pos] &&
-          src[candidate + 1] == src[pos + 1] &&
-          src[candidate + 2] == src[pos + 2] &&
-          src[candidate + 3] == src[pos + 3]) {
-        // Found a match, emit pending literals first
-        if (pos > litStart)
-          dstPos = EmitLiterals(dst, dstPos, src, litStart, pos - litStart);
+      while (pos + 3 < srcLen) {
+        var h = Hash4(src, pos);
+        var candidate = hashTable[h];
+        hashTable[h] = pos;
 
-        // Extend match
-        var matchLen = 4;
-        while (pos + matchLen < srcLen &&
-               src[candidate + matchLen] == src[pos + matchLen] &&
-               matchLen < SnappyConstants.MaxMatchLength)
-          ++matchLen;
+        if (candidate >= 0 && pos - candidate <= SnappyConstants.MaxCopy2Offset &&
+            src[candidate] == src[pos] &&
+            src[candidate + 1] == src[pos + 1] &&
+            src[candidate + 2] == src[pos + 2] &&
+            src[candidate + 3] == src[pos + 3]) {
+          // Found a match, emit pending literals first
+          if (pos > litStart)
+            dstPos = EmitLiterals(dst, dstPos, src, litStart, pos - litStart);
 
-        var offset = pos - candidate;
-        dstPos = EmitCopy(dst, dstPos, offset, matchLen);
+          // Extend match
+          var matchLen = 4;
+          while (pos + matchLen < srcLen &&
+                 src[candidate + matchLen] == src[pos + matchLen] &&
+                 matchLen < SnappyConstants.MaxMatchLength)
+            ++matchLen;
 
-        // Insert hash entries for positions inside the match
-        var end = pos + matchLen;
-        ++pos;
-        while (pos < end && pos + 3 < srcLen) {
-          hashTable[Hash4(src, pos)] = pos;
+          var offset = pos - candidate;
+          dstPos = EmitCopy(dst, dstPos, offset, matchLen);
+
+          // Insert hash entries for positions inside the match
+          var end = pos + matchLen;
           ++pos;
-        }
-        pos = end;
-        litStart = pos;
-      } else
-        ++pos;
+          while (pos < end && pos + 3 < srcLen) {
+            hashTable[Hash4(src, pos)] = pos;
+            ++pos;
+          }
+          pos = end;
+          litStart = pos;
+        } else
+          ++pos;
+      }
+
+      // Emit remaining literals
+      if (litStart < srcLen)
+        dstPos = EmitLiterals(dst, dstPos, src, litStart, srcLen - litStart);
+
+      return dstPos;
+    } finally {
+      ArrayPool<int>.Shared.Return(hashTable);
     }
-
-    // Emit remaining literals
-    if (litStart < srcLen)
-      dstPos = EmitLiterals(dst, dstPos, src, litStart, srcLen - litStart);
-
-    return dstPos;
   }
 
   private static int EmitLiterals(Span<byte> dst, int dstPos,

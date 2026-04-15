@@ -1,3 +1,5 @@
+using Compression.Core.Simd;
+
 namespace Compression.Core.Transforms;
 
 /// <summary>
@@ -8,6 +10,7 @@ public static class RunLengthEncoding {
   /// <summary>
   /// Encodes data using run-length encoding.
   /// Output format: repeated pairs of (count, value) where count is 1-255.
+  /// Uses SIMD-accelerated run scanning when available.
   /// </summary>
   /// <param name="data">The input data to encode.</param>
   /// <returns>The RLE-encoded data.</returns>
@@ -19,13 +22,9 @@ public static class RunLengthEncoding {
     var i = 0;
 
     while (i < data.Length) {
-      var value = data[i];
-      var run = 1;
-      while (i + run < data.Length && data[i + run] == value && run < 255)
-        ++run;
-
+      var run = SimdRunScan.GetRunLength(data, i, 255);
       output.Add((byte)run);
-      output.Add(value);
+      output.Add(data[i]);
       i += run;
     }
 

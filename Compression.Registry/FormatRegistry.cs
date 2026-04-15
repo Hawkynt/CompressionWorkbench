@@ -12,6 +12,7 @@ public static class FormatRegistry {
   private static readonly Dictionary<string, IFormatDescriptor> _byCompoundExtension = new(StringComparer.OrdinalIgnoreCase);
   private static readonly Dictionary<string, IStreamFormatOperations> _streamOps = new(StringComparer.OrdinalIgnoreCase);
   private static readonly Dictionary<string, IArchiveFormatOperations> _archiveOps = new(StringComparer.OrdinalIgnoreCase);
+  private static readonly Dictionary<string, IAsyncArchiveOperations> _asyncArchiveOps = new(StringComparer.OrdinalIgnoreCase);
   private static bool _initialized;
 
   /// <summary>
@@ -35,6 +36,8 @@ public static class FormatRegistry {
       _streamOps[descriptor.Id] = streamOps;
     if (descriptor is IArchiveFormatOperations archiveOps)
       _archiveOps[descriptor.Id] = archiveOps;
+    if (descriptor is IAsyncArchiveOperations asyncArchiveOps)
+      _asyncArchiveOps[descriptor.Id] = asyncArchiveOps;
   }
 
   /// <summary>All registered descriptors.</summary>
@@ -71,6 +74,10 @@ public static class FormatRegistry {
   public static IArchiveFormatOperations? GetArchiveOps(string id)
     => _archiveOps.GetValueOrDefault(id);
 
+  /// <summary>Get async archive operations for a format ID, or null if the format doesn't support async listing.</summary>
+  public static IAsyncArchiveOperations? GetAsyncArchiveOps(string id)
+    => _asyncArchiveOps.GetValueOrDefault(id);
+
   /// <summary>Reset the registry (for testing only).</summary>
   internal static void Reset() {
     _all.Clear();
@@ -79,6 +86,7 @@ public static class FormatRegistry {
     _byCompoundExtension.Clear();
     _streamOps.Clear();
     _archiveOps.Clear();
+    _asyncArchiveOps.Clear();
     _initialized = false;
   }
 

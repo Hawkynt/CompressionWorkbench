@@ -1,3 +1,5 @@
+using Compression.Core.Simd;
+
 namespace Compression.Core.Dictionary.MatchFinders;
 
 /// <summary>
@@ -45,10 +47,7 @@ public sealed class HashChainMatchFinder : IMatchFinder {
       // Quick check: compare first and last bytes of current best
       var limit = Math.Min(maxLength, Math.Min(data.Length - position, data.Length - candidate));
       if (bestLength == 0 || (bestLength < limit && data[candidate + bestLength] == data[position + bestLength])) {
-        var length = 0;
-
-        while (length < limit && data[candidate + length] == data[position + length])
-          ++length;
+        var length = SimdMatchLength.GetMatchLength(data, candidate, position, limit);
 
         if (length >= minLength && length > bestLength) {
           bestLength = length;

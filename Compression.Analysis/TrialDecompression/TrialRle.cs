@@ -9,6 +9,9 @@ public sealed class TrialRle : ITrialStrategy {
   public string Algorithm => "RLE";
 
   /// <inheritdoc />
+  public TrialCategory Category => TrialCategory.Primitive;
+
+  /// <inheritdoc />
   public DecompressionAttempt TryDecompress(ReadOnlySpan<byte> data, int maxOutput, CancellationToken ct) {
     try {
       var output = RunLengthEncoding.Decode(data);

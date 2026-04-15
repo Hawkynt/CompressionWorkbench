@@ -57,9 +57,18 @@ internal static class TarHeader {
     var storedChecksum = (int)ParseOctalLong(header.AsSpan(ChecksumOffset, TarConstants.ChecksumLength));
     var computedChecksum = ComputeChecksum(header);
 
-    if (storedChecksum != computedChecksum)
+    if (storedChecksum != computedChecksum) {
+      // Be lenient with terminator/padding blocks that some writers (e.g. Perl Archive::Tar)
+      // produce: a valid TAR header always has a non-zero stored checksum (minimum ~256 from
+      // the 8 spaces alone). A zero stored checksum means the block is padding or was never
+      // properly initialized — treat as end-of-archive.
+      if (storedChecksum == 0) {
+        isEndOfArchive = true;
+        return null;
+      }
       throw new InvalidDataException(
         $"TAR header checksum mismatch: stored {storedChecksum}, computed {computedChecksum}.");
+    }
 
     // Parse the prefix and name
     var prefix = ParseString(header.AsSpan(PrefixOffset, TarConstants.PrefixLength));
@@ -172,15 +181,17 @@ internal static class TarHeader {
   /// <param name="data">The raw bytes containing the octal string.</param>
   /// <returns>The parsed octal string.</returns>
   internal static string ParseOctal(ReadOnlySpan<byte> data) {
-    var end = data.Length;
-    for (var i = 0; i < data.Length; ++i) {
-      if (data[i] == 0 || data[i] == (byte)' ') {
-        end = i;
-        break;
-      }
-    }
+    // Skip leading whitespace and null bytes — some TAR writers (e.g. Perl Archive::Tar)
+    // pad octal fields with leading spaces instead of leading zeros.
+    var start = 0;
+    while (start < data.Length && (data[start] == 0 || data[start] == (byte)' '))
+      start++;
 
-    return Encoding.ASCII.GetString(data[..end]);
+    var end = start;
+    while (end < data.Length && data[end] != 0 && data[end] != (byte)' ')
+      end++;
+
+    return end == start ? "" : Encoding.ASCII.GetString(data[start..end]);
   }
 
   /// <summary>

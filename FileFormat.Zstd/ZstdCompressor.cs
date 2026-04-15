@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using Compression.Core.Checksums;
 using Compression.Core.Dictionary.MatchFinders;
@@ -185,18 +186,21 @@ internal sealed class ZstdCompressor {
     var allLiteralBytes = allLiterals.ToArray();
 
     // Output buffer
-    var output = new byte[blockData.Length * 2 + 1024];
-    var outputPos = 0;
+    var outputLen = blockData.Length * 2 + 1024;
+    var output = ArrayPool<byte>.Shared.Rent(outputLen);
+    try {
+      var outputPos = 0;
 
-    // Write literals section (Raw encoding)
-    outputPos += ZstdLiterals.CompressLiterals(allLiteralBytes, output, outputPos);
+      // Write literals section (Raw encoding)
+      outputPos += ZstdLiterals.CompressLiterals(allLiteralBytes, output, outputPos);
 
-    // Write sequences section
-    int[] repeatOffsets = [1, 4, 8];
-    outputPos += ZstdSequences.EncodeSequences(sequences.ToArray(), output, outputPos, repeatOffsets);
+      // Write sequences section
+      int[] repeatOffsets = [1, 4, 8];
+      outputPos += ZstdSequences.EncodeSequences(sequences.ToArray(), output, outputPos, repeatOffsets);
 
-    var result = new byte[outputPos];
-    output.AsSpan(0, outputPos).CopyTo(result);
-    return result;
+      return output.AsSpan(0, outputPos).ToArray();
+    } finally {
+      ArrayPool<byte>.Shared.Return(output);
+    }
   }
 }

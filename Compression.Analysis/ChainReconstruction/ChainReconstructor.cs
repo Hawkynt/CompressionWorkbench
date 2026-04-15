@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Compression.Analysis.Fingerprinting;
 using Compression.Analysis.TrialDecompression;
+using Compression.Registry;
 
 namespace Compression.Analysis.ChainReconstruction;
 
@@ -33,21 +34,33 @@ public sealed class ChainReconstructor {
     var seenHashes = new HashSet<string> { ComputeHash(current) };
 
     for (var depth = 0; depth < _maxDepth; depth++) {
+      // First try: archive extraction (containers like ZIP, 7z, RAR).
+      var archiveResult = TryArchiveExtract(current, seenHashes);
+      if (archiveResult != null) {
+        current = archiveResult.Value.Output;
+        layers.Add(new ChainLayer(
+          archiveResult.Value.Algorithm,
+          current.Length,
+          archiveResult.Value.Output.Length,
+          archiveResult.Value.Confidence,
+          current
+        ));
+        seenHashes.Add(ComputeHash(current));
+        continue;
+      }
+
       var bestResult = TryFingerprintGuided(current, seenHashes);
-
-      // Fallback: blind trial if fingerprinting didn't help
       bestResult ??= TryBlindTrial(current, seenHashes);
-
       if (bestResult == null) break;
 
+      current = bestResult.Value.Output;
       layers.Add(new ChainLayer(
         bestResult.Value.Algorithm,
         current.Length,
         bestResult.Value.Output.Length,
-        bestResult.Value.Confidence
+        bestResult.Value.Confidence,
+        current
       ));
-
-      current = bestResult.Value.Output;
       seenHashes.Add(ComputeHash(current));
     }
 
@@ -82,6 +95,9 @@ public sealed class ChainReconstructor {
     byte[] current, HashSet<string> seenHashes) {
 
     foreach (var strategy in TrialRegistry.All) {
+      // Skip magic detections and archive listings — they don't produce decompressed data.
+      if (strategy.Category is TrialCategory.Magic or TrialCategory.Archive) continue;
+
       try {
         using var cts = new CancellationTokenSource(200);
         var attempt = strategy.TryDecompress(current, Math.Min(current.Length * 4, 1024 * 1024), cts.Token);
@@ -114,6 +130,83 @@ public sealed class ChainReconstructor {
     "Encrypted/Random" => null,
     _ => null,
   };
+
+  /// <summary>
+  /// Tries to detect the data as an archive and extract the first file's content.
+  /// Returns the extracted content so chain analysis can continue on it.
+  /// </summary>
+  private static (string Algorithm, byte[] Output, double Confidence)? TryArchiveExtract(
+    byte[] current, HashSet<string> seenHashes) {
+
+    try {
+      Compression.Lib.FormatRegistration.EnsureInitialized();
+
+      foreach (var desc in FormatRegistry.All) {
+        if (desc.Category is not FormatCategory.Archive) continue;
+        if (!desc.Capabilities.HasFlag(FormatCapabilities.CanList)) continue;
+        if (!desc.Capabilities.HasFlag(FormatCapabilities.CanExtract)) continue;
+
+        // Quick magic check first.
+        var magicMatch = false;
+        foreach (var sig in desc.MagicSignatures) {
+          if (current.Length < sig.Offset + sig.Bytes.Length) continue;
+          var match = true;
+          for (var i = 0; i < sig.Bytes.Length && match; i++) {
+            var b = current[sig.Offset + i];
+            if (sig.Mask != null) b = (byte)(b & sig.Mask[i]);
+            if (b != sig.Bytes[i]) match = false;
+          }
+          if (match) { magicMatch = true; break; }
+        }
+        if (!magicMatch) continue;
+
+        // List entries via MemoryStream (listing usually works fine).
+        List<ArchiveEntryInfo>? entries;
+        try {
+          using var input = new MemoryStream(current);
+          var ops = FormatRegistry.GetArchiveOps(desc.Id);
+          if (ops == null) continue;
+          entries = ops.List(input, null);
+        } catch { continue; }
+
+        var firstFile = entries?.FirstOrDefault(e => !e.IsDirectory && e.OriginalSize > 0);
+        if (firstFile == null) continue;
+
+        // Extract via temp file (most reliable).
+        var tempArchive = Path.Combine(Path.GetTempPath(), "cwb_chain_" + Guid.NewGuid().ToString("N")[..8] + desc.DefaultExtension);
+        var tempDir = tempArchive + "_out";
+        try {
+          File.WriteAllBytes(tempArchive, current);
+          Directory.CreateDirectory(tempDir);
+          try {
+            Compression.Lib.ArchiveOperations.Extract(tempArchive, tempDir, null, [firstFile.Name]);
+          } catch {
+            try { Compression.Lib.ArchiveOperations.Extract(tempArchive, tempDir, null, null); } catch { continue; }
+          }
+
+          var candidates = Directory.Exists(tempDir)
+            ? Directory.GetFiles(tempDir, "*", SearchOption.AllDirectories)
+            : [];
+          var match = candidates.FirstOrDefault(f => Path.GetFileName(f) == Path.GetFileName(firstFile.Name))
+                      ?? candidates.FirstOrDefault();
+          if (match == null) continue;
+
+          var extracted = File.ReadAllBytes(match);
+          if (extracted.Length == 0) continue;
+
+          var outputHash = ComputeHash(extracted);
+          if (seenHashes.Contains(outputHash)) continue;
+
+          return ($"{desc.DisplayName} container \u2192 {firstFile.Name}", extracted, 0.95);
+        } finally {
+          try { File.Delete(tempArchive); } catch { }
+          try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
+        }
+      }
+    } catch { /* archive detection failed */ }
+
+    return null;
+  }
 
   private static string ComputeHash(byte[] data) {
     var hash = SHA256.HashData(data);

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text;
 
 namespace FileFormat.Tar;
@@ -40,8 +41,8 @@ public sealed class TarReader : IDisposable {
     if (entry == null || isEndOfArchive) {
       // Try reading another block to confirm end-of-archive (two zero blocks)
       if (isEndOfArchive) {
-        var secondBlock = new byte[TarConstants.BlockSize];
-        _ = this._stream.Read(secondBlock, 0, TarConstants.BlockSize);
+        Span<byte> secondBlock = stackalloc byte[TarConstants.BlockSize];
+        _ = this._stream.Read(secondBlock);
       }
 
       this._currentEntry = null;
@@ -166,12 +167,17 @@ public sealed class TarReader : IDisposable {
     if (this._stream.CanSeek)
       this._stream.Position += count;
     else {
-      var buffer = new byte[Math.Min(count, 4096)];
-      while (count > 0) {
-        var toRead = (int)Math.Min(count, buffer.Length);
-        var read = this._stream.Read(buffer, 0, toRead);
-        if (read == 0) break;
-        count -= read;
+      var bufLen = (int)Math.Min(count, 4096);
+      var buffer = ArrayPool<byte>.Shared.Rent(bufLen);
+      try {
+        while (count > 0) {
+          var toRead = (int)Math.Min(count, bufLen);
+          var read = this._stream.Read(buffer, 0, toRead);
+          if (read == 0) break;
+          count -= read;
+        }
+      } finally {
+        ArrayPool<byte>.Shared.Return(buffer);
       }
     }
   }

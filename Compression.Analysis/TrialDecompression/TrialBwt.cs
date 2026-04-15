@@ -12,6 +12,9 @@ public sealed class TrialBwt : ITrialStrategy {
   /// <inheritdoc />
   public string Algorithm => "BWT";
 
+  /// <inheritdoc />
+  public TrialCategory Category => TrialCategory.Primitive;
+
   private const int MaxTrialSize = 4096;
 
   /// <inheritdoc />
