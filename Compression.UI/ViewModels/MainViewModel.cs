@@ -279,10 +279,37 @@ internal sealed class MainViewModel : ViewModelBase {
 
   private async Task TestArchive() {
     var ok = false;
-    await RunAsync("Testing archive integrity...", () => {
-      ok = ArchiveOperations.Test(ArchivePath, password: null);
-    });
-    StatusText = ok ? "Archive test: OK" : "Archive test: FAILED";
+    string? errorDetail = null;
+    var sw = Stopwatch.StartNew();
+
+    try {
+      await RunAsync("Testing archive integrity...", () => {
+        ok = ArchiveOperations.Test(ArchivePath, password: null);
+      });
+    } catch (Exception ex) {
+      ok = false;
+      errorDetail = ex.Message;
+    }
+
+    sw.Stop();
+    var elapsed = sw.ElapsedMilliseconds;
+
+    if (ok) {
+      StatusText = $"Integrity test: OK ({elapsed}ms)";
+      MessageBox.Show(
+        $"Integrity test passed.\n\nArchive: {System.IO.Path.GetFileName(ArchivePath)}\nEntries: {_allEntries.Count}\nTime: {elapsed}ms",
+        "Integrity Test",
+        System.Windows.MessageBoxButton.OK,
+        System.Windows.MessageBoxImage.Information);
+    } else {
+      StatusText = $"Integrity test: FAILED ({elapsed}ms)";
+      var msg = $"Integrity test FAILED.\n\nArchive: {System.IO.Path.GetFileName(ArchivePath)}";
+      if (errorDetail != null)
+        msg += $"\n\nError: {errorDetail}";
+      MessageBox.Show(msg, "Integrity Test",
+        System.Windows.MessageBoxButton.OK,
+        System.Windows.MessageBoxImage.Error);
+    }
   }
 
   internal void ViewSelectedAs(bool hex) {

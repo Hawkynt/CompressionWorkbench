@@ -73,6 +73,16 @@ public partial class MainWindow : Window {
 
   private void OnExit(object sender, RoutedEventArgs e) => Close();
 
+  private void OnHeatmapExplorer(object sender, RoutedEventArgs e) {
+    var explorer = new Views.HeatmapExplorerWindow { Owner = this };
+    explorer.Show();
+  }
+
+  private void OnReverseEngineer(object sender, RoutedEventArgs e) {
+    var wizard = new Views.ReverseEngineerWindow { Owner = this };
+    wizard.Show();
+  }
+
   private void OnAbout(object sender, RoutedEventArgs e) {
     var about = new Views.AboutWindow { Owner = this };
     about.ShowDialog();

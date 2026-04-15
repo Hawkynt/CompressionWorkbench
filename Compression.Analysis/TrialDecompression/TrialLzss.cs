@@ -9,6 +9,9 @@ public sealed class TrialLzss : ITrialStrategy {
   public string Algorithm => "LZSS";
 
   /// <inheritdoc />
+  public TrialCategory Category => TrialCategory.Primitive;
+
+  /// <inheritdoc />
   public DecompressionAttempt TryDecompress(ReadOnlySpan<byte> data, int maxOutput, CancellationToken ct) {
     // Try standard LZSS parameters (12-bit distance, 4-bit length, min match 3)
     try {

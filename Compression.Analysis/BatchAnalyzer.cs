@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Compression.Registry;
 
 namespace Compression.Analysis;
@@ -47,6 +48,9 @@ public sealed class BatchAnalyzer {
     public long TotalSize { get; init; }
   }
 
+  /// <summary>Default per-file timeout for parallel analysis (30 seconds).</summary>
+  private const int DefaultPerFileTimeoutMs = 30_000;
+
   /// <summary>
   /// Analyzes all files in the given directory.
   /// </summary>
@@ -89,6 +93,83 @@ public sealed class BatchAnalyzer {
       FormatDistribution = distribution,
       TotalFiles = files.Length,
       TotalSize = totalSize
+    };
+  }
+
+  /// <summary>
+  /// Analyzes all files in the given directory concurrently using Parallel.ForEachAsync.
+  /// Each file is processed with a per-file timeout to prevent hangs on problematic files.
+  /// </summary>
+  /// <param name="path">Directory path to analyze.</param>
+  /// <param name="recursive">Whether to recurse into subdirectories.</param>
+  /// <param name="maxDegreeOfParallelism">Maximum number of concurrent file analyses. Defaults to processor count.</param>
+  /// <param name="perFileTimeoutMs">Per-file analysis timeout in milliseconds. Defaults to 30 seconds.</param>
+  /// <param name="ct">Cancellation token for overall cancellation.</param>
+  /// <returns>Aggregate batch analysis result.</returns>
+  public async Task<BatchResult> AnalyzeDirectoryAsync(
+    string path,
+    bool recursive = false,
+    int maxDegreeOfParallelism = 0,
+    int perFileTimeoutMs = DefaultPerFileTimeoutMs,
+    CancellationToken ct = default
+  ) {
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+
+    var searchOption = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+    var files = Directory.GetFiles(path, "*", searchOption);
+
+    var concurrentResults = new ConcurrentBag<FileResult>();
+    long totalSize = 0;
+
+    var parallelOptions = new ParallelOptions {
+      MaxDegreeOfParallelism = maxDegreeOfParallelism > 0 ? maxDegreeOfParallelism : Environment.ProcessorCount,
+      CancellationToken = ct
+    };
+
+    await Parallel.ForEachAsync(files, parallelOptions, async (file, token) => {
+      var info = new FileInfo(file);
+      Interlocked.Add(ref totalSize, info.Length);
+
+      using var fileCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+      fileCts.CancelAfter(perFileTimeoutMs);
+
+      (string? formatId, string? formatName, double confidence) detection;
+      try {
+        detection = await Task.Run(() => DetectFile(file), fileCts.Token).ConfigureAwait(false);
+      }
+      catch (OperationCanceledException) {
+        detection = (null, null, 0.0);
+      }
+
+      concurrentResults.Add(new FileResult {
+        Path = file,
+        Size = info.Length,
+        FormatId = detection.formatId,
+        FormatName = detection.formatName,
+        Confidence = detection.confidence
+      });
+    }).ConfigureAwait(false);
+
+    // Build aggregates from concurrent results
+    var results = concurrentResults.ToList();
+    var unknown = new List<string>();
+    var distribution = new Dictionary<string, int>();
+
+    foreach (var result in results) {
+      if (result.FormatId != null) {
+        distribution.TryGetValue(result.FormatId, out var count);
+        distribution[result.FormatId] = count + 1;
+      } else {
+        unknown.Add(result.Path);
+      }
+    }
+
+    return new BatchResult {
+      FileResults = results,
+      UnknownFiles = unknown,
+      FormatDistribution = distribution,
+      TotalFiles = files.Length,
+      TotalSize = Interlocked.Read(ref totalSize)
     };
   }
 

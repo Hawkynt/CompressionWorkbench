@@ -10,11 +10,17 @@ namespace Compression.Lib;
 /// Compound tar descriptors are registered manually since they are composites, not standalone formats.
 /// </summary>
 public static partial class FormatRegistration {
-  private static bool _done;
+  private static int _initialized;
 
+  /// <summary>
+  /// Ensures all format descriptors and building blocks are registered exactly once.
+  /// Thread-safe: uses <see cref="Interlocked.CompareExchange(ref int, int, int)"/>
+  /// so concurrent callers from parallel trial decompression are safe.
+  /// </summary>
   public static void EnsureInitialized() {
-    if (_done) return;
-    _done = true;
+    if (Interlocked.CompareExchange(ref _initialized, 1, 0) != 0)
+      return;
+
     RegisterFormats();
     RegisterCompoundTar();
     RegisterBuildingBlocks();

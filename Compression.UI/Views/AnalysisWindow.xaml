@@ -108,6 +108,8 @@
                        Checked="OnToolSelected" Padding="8,2" />
           <RadioButton Content="Entropy Map" GroupName="AnalysisTool" x:Name="ToolEntropy"
                        Checked="OnToolSelected" Padding="8,2" />
+          <RadioButton Content="Heatmap" GroupName="AnalysisTool" x:Name="ToolHeatmap"
+                       Checked="OnToolSelected" Padding="8,2" />
           <RadioButton Content="Trial Decompress" GroupName="AnalysisTool" x:Name="ToolTrial"
                        Checked="OnToolSelected" Padding="8,2" />
           <RadioButton Content="Chain" GroupName="AnalysisTool" x:Name="ToolChain"
@@ -228,27 +230,18 @@
 
         <!-- Chain Reconstruction -->
         <Grid x:Name="ChainPanel" Visibility="Collapsed">
-          <Grid.RowDefinitions>
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-          </Grid.RowDefinitions>
-          <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
-            <TextBlock x:Name="ChainText" FontFamily="Consolas" FontSize="13" TextWrapping="Wrap" Margin="8" />
-          </ScrollViewer>
-          <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,4,0,0">
-            <Button Padding="12,4" Margin="0,0,4,0" Click="OnPreviewChainOutput">
-              <StackPanel Orientation="Horizontal">
-                <Image Source="{StaticResource PreviewIcon}" Width="14" Height="14" Margin="0,0,4,0" />
-                <TextBlock Text="Preview Final Data" VerticalAlignment="Center" />
-              </StackPanel>
-            </Button>
-            <Button Padding="12,4" Click="OnSaveChainOutput">
-              <StackPanel Orientation="Horizontal">
-                <Image Source="{StaticResource SaveIcon}" Width="14" Height="14" Margin="0,0,4,0" />
-                <TextBlock Text="Save Final Data..." VerticalAlignment="Center" />
-              </StackPanel>
-            </Button>
-          </StackPanel>
+          <DataGrid x:Name="ChainGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                    CanUserSortColumns="False" SelectionMode="Single"
+                    MouseDoubleClick="OnChainGridDoubleClick">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="#" Binding="{Binding Layer}" Width="30" />
+              <DataGridTextColumn Header="Algorithm" Binding="{Binding Algorithm}" Width="200" />
+              <DataGridTextColumn Header="Input" Binding="{Binding InputSize}" Width="90" />
+              <DataGridTextColumn Header="Output" Binding="{Binding OutputSize}" Width="90" />
+              <DataGridTextColumn Header="Confidence" Binding="{Binding Confidence, StringFormat=F2}" Width="80" />
+              <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
         </Grid>
 
         <!-- Statistics -->
@@ -259,6 +252,9 @@
 
         <!-- Structure -->
         <controls:StructureViewControl x:Name="StructureControl" Visibility="Collapsed" />
+
+        <!-- Heatmap -->
+        <controls:HeatmapGridControl x:Name="HeatmapControl" Visibility="Collapsed" />
 
       </Grid>
     </Grid>

@@ -1,0 +1,14 @@
+<Window x:Class="Compression.UI.Views.HeatmapExplorerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:Compression.UI.Controls"
+        Title="Heatmap File Explorer" Width="900" Height="700"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
+        Background="#1E1E1E">
+  <DockPanel>
+    <ToolBar DockPanel.Dock="Top" Background="#2D2D2D">
+      <Button Content="Open File..." Click="OnOpenFile" Padding="8,2" />
+    </ToolBar>
+    <controls:HeatmapGridControl x:Name="HeatmapGrid" />
+  </DockPanel>
+</Window>

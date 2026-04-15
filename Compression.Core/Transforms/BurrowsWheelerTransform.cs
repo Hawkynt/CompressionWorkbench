@@ -1,3 +1,5 @@
+using Compression.Core.Simd;
+
 namespace Compression.Core.Transforms;
 
 /// <summary>
@@ -47,27 +49,10 @@ public static class BurrowsWheelerTransform {
     ArgumentOutOfRangeException.ThrowIfNegative(originalIndex);
     ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(originalIndex, length);
 
-    // Count occurrences of each byte (4-way unrolled to reduce loop overhead)
-    // TODO: pool arrays
-    var count = new int[256];
-    var count1 = new int[256];
-    var count2 = new int[256];
-    var count3 = new int[256];
-    var i4 = 0;
-    var end4 = length - 3;
-    while (i4 < end4) {
-      ++count[data[i4]];
-      ++count1[data[i4 + 1]];
-      ++count2[data[i4 + 2]];
-      ++count3[data[i4 + 3]];
-      i4 += 4;
-    }
-
-    for (; i4 < length; ++i4)
-      ++count[data[i4]];
-
-    for (var k = 0; k < 256; ++k)
-      count[k] += count1[k] + count2[k] + count3[k];
+    // Count occurrences of each byte using SIMD-accelerated histogram
+    Span<int> count = stackalloc int[256];
+    count.Clear();
+    SimdHistogram.ComputeHistogram(data[..length], count);
 
     // Cumulative counts (first occurrence of each byte in sorted first column)
     var cumulative = new int[256];
@@ -100,20 +85,66 @@ public static class BurrowsWheelerTransform {
   /// <summary>
   /// Sorts rotation indices using O(n log^2 n) prefix-doubling.
   /// Unlike a suffix array, comparisons wrap around the input cyclically.
+  /// The first pass uses counting sort (radix sort) with SIMD-accelerated histogram
+  /// for the initial byte ranking, avoiding the expensive comparison sort for gap=1.
   /// </summary>
   private static int[] BuildRotationSort(byte[] data, int length) {
     var sa = new int[length];
-    
-    // TODO: pool arrays
     var rank = new int[length];
     var tmp = new int[length];
 
+    // Initial ranking by first byte
     for (var i = 0; i < length; ++i) {
       sa[i] = i;
       rank[i] = data[i];
     }
 
-    for (var gap = 1; gap < length; gap *= 2) {
+    // First pass (gap=1): use counting sort on (rank[i], data[(i+1) % length]) pairs
+    // This avoids O(n log n) comparison sort for the first doubling step
+    {
+      // Build a combined 16-bit key: high byte = rank[i] (which is data[i]), low byte = data[(i+1) % length]
+      // Counting sort on this key gives stable sort by both components
+      Span<int> bucketCounts = stackalloc int[65536];
+      bucketCounts.Clear();
+
+      // Count occurrences of each key
+      for (var i = 0; i < length; ++i) {
+        var key = (data[i] << 8) | data[(i + 1) % length];
+        ++bucketCounts[key];
+      }
+
+      // Prefix sum
+      var runningSum = 0;
+      for (var i = 0; i < 65536; ++i) {
+        var c = bucketCounts[i];
+        bucketCounts[i] = runningSum;
+        runningSum += c;
+      }
+
+      // Place indices in sorted order
+      for (var i = 0; i < length; ++i) {
+        var key = (data[i] << 8) | data[(i + 1) % length];
+        sa[bucketCounts[key]++] = i;
+      }
+
+      // Compute new ranks
+      tmp[sa[0]] = 0;
+      for (var i = 1; i < length; ++i) {
+        tmp[sa[i]] = tmp[sa[i - 1]];
+        var prevSecond = data[(sa[i - 1] + 1) % length];
+        var curSecond = data[(sa[i] + 1) % length];
+        if (data[sa[i]] != data[sa[i - 1]] || curSecond != prevSecond)
+          ++tmp[sa[i]];
+      }
+
+      tmp.AsSpan().CopyTo(rank);
+
+      if (rank[sa[length - 1]] == length - 1)
+        return sa;
+    }
+
+    // Subsequent passes: prefix-doubling with comparison sort
+    for (var gap = 2; gap < length; gap *= 2) {
       var g = gap;
       var len = length;
       var r = rank;

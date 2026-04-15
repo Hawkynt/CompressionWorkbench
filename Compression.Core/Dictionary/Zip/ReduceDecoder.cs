@@ -20,6 +20,16 @@ public static class ReduceDecoder {
   /// <param name="originalSize">The expected uncompressed size.</param>
   /// <param name="factor">The compression factor (1-4), derived from method - 1.</param>
   /// <returns>The decompressed data.</returns>
+  public static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize, int factor)
+    => Decode(compressed.ToArray(), originalSize, factor);
+
+  /// <summary>
+  /// Decompresses ZIP Reduce data.
+  /// </summary>
+  /// <param name="compressed">The compressed data.</param>
+  /// <param name="originalSize">The expected uncompressed size.</param>
+  /// <param name="factor">The compression factor (1-4), derived from method - 1.</param>
+  /// <returns>The decompressed data.</returns>
   public static byte[] Decode(byte[] compressed, int originalSize, int factor) {
     if (factor < 1 || factor > 4)
       throw new ArgumentOutOfRangeException(nameof(factor), "Compression factor must be 1-4.");

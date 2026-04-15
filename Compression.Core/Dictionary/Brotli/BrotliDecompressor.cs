@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
@@ -12,51 +13,10 @@ namespace Compression.Core.Dictionary.Brotli;
 ///   all meta-block types and context modes.
 /// </remarks>
 public static class BrotliDecompressor {
-  // RFC 7932 Appendix B context lookup tables.
-  // UTF8 mode: context = Utf8Lut0[p1] | Utf8Lut1[p2]  (result 0-63)
-  // Signed mode: context = (SignedLut[p1] << 3) | SignedLut[p2]  (result 0-63)
-  // Tables from Google Brotli reference (c/common/context.h).
-  private static readonly byte[] Utf8Lut0 = [
-    // Lut0[p1]: categorize previous byte (from Google brotli c/common/context.c)
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 4, 4, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    8, 12, 16, 12, 12, 20, 12, 16, 24, 28, 12, 12, 32, 12, 36, 12,
-    44, 44, 44, 44, 44, 44, 44, 44, 44, 44, 32, 32, 24, 40, 28, 12,
-    12, 48, 52, 52, 52, 48, 52, 52, 52, 48, 52, 52, 52, 52, 52, 48,
-    52, 52, 52, 52, 52, 48, 52, 52, 52, 52, 52, 24, 12, 28, 12, 12,
-    12, 56, 60, 60, 60, 56, 60, 60, 60, 56, 60, 60, 60, 60, 60, 56,
-    60, 60, 60, 60, 60, 56, 60, 60, 60, 60, 60, 24, 12, 28, 12, 0,
-    // 128-191: UTF-8 continuation bytes → category varies by position
-    0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
-    0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
-    0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
-    0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
-    // 192-255: UTF-8 lead bytes
-    2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3,
-    2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3,
-    2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3,
-    2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3,
-  ];
-
-  private static readonly byte[] Utf8Lut1 = [
-    // Lut1[p2]: categorize second-previous byte, results are multiples of 4
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1,
-    1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1,
-    1, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 1, 1, 1, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-  ];
+  // UTF8 mode: context = BrotliConstants.Utf8ContextLut0[p1] | BrotliConstants.Utf8ContextLut1[p2]
+  // Signed mode: context = (SignedLut[p1] << 3) | SignedLut[p2]
+  private static byte[] Utf8Lut0 => BrotliConstants.Utf8ContextLut0;
+  private static byte[] Utf8Lut1 => BrotliConstants.Utf8ContextLut1;
 
   private static readonly byte[] SignedLut = [
     // Lut2[b]: map byte to 3-bit value (0-7) based on signed magnitude
@@ -85,17 +45,18 @@ public static class BrotliDecompressor {
   /// <returns>The decompressed data.</returns>
   /// <exception cref="InvalidDataException">Thrown when the data is malformed.</exception>
   public static byte[] Decompress(ReadOnlySpan<byte> compressed) {
-    var reader = new BrotliBitReader(compressed.ToArray());
+    var inputBuf = ArrayPool<byte>.Shared.Rent(compressed.Length);
+    compressed.CopyTo(inputBuf);
+    var reader = new BrotliBitReader(inputBuf, compressed.Length);
     using var output = new MemoryStream();
-    var ringBuffer = new byte[1 << BrotliConstants.MaxWindowBits]; // will be resized
     var ringPos = 0;
-    var ringMask = 0;
 
     // Read window bits (WBITS)
     var windowBits = DecodeWindowBits(reader);
     var windowSize = 1 << windowBits;
-    ringBuffer = new byte[windowSize];
-    ringMask = windowSize - 1;
+    var ringBuffer = ArrayPool<byte>.Shared.Rent(windowSize);
+    var ringMask = windowSize - 1;
+    try {
 
     // Distance ring buffer: last 4 distances (RFC 7932 Section 4)
     // Ring index 3 = most recent (4), 2 = second (11), 1 = third (15), 0 = oldest (16)
@@ -378,6 +339,10 @@ public static class BrotliDecompressor {
     }
 
     return output.ToArray();
+    } finally {
+      ArrayPool<byte>.Shared.Return(ringBuffer);
+      ArrayPool<byte>.Shared.Return(inputBuf);
+    }
   }
 
   /// <summary>
@@ -796,17 +761,18 @@ public static class BrotliDecompressor {
         break;
 
       case 4:
+        // Per RFC 7932 §3.4: tree_select=0 → [2,2,2,2], tree_select=1 → [1,2,3,3].
         var treeSelect = reader.ReadBool();
         if (treeSelect) {
-          codeLengths[symbols[0]] = 2;
-          codeLengths[symbols[1]] = 2;
-          codeLengths[symbols[2]] = 2;
-          codeLengths[symbols[3]] = 2;
-        } else {
           codeLengths[symbols[0]] = 1;
           codeLengths[symbols[1]] = 2;
           codeLengths[symbols[2]] = 3;
           codeLengths[symbols[3]] = 3;
+        } else {
+          codeLengths[symbols[0]] = 2;
+          codeLengths[symbols[1]] = 2;
+          codeLengths[symbols[2]] = 2;
+          codeLengths[symbols[3]] = 2;
         }
 
         break;

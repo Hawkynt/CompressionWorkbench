@@ -60,6 +60,7 @@
     <Project Path="FileFormat.Ext/FileFormat.Ext.csproj" />
     <Project Path="FileFormat.F2fs/FileFormat.F2fs.csproj" />
     <Project Path="FileFormat.Fat/FileFormat.Fat.csproj" />
+    <Project Path="FileFormat.Flac/FileFormat.Flac.csproj" />
     <Project Path="FileFormat.FreeArc/FileFormat.FreeArc.csproj" />
     <Project Path="FileFormat.Freeze/FileFormat.Freeze.csproj" />
     <Project Path="FileFormat.GodotPck/FileFormat.GodotPck.csproj" />
@@ -85,7 +86,9 @@
     <Project Path="FileFormat.Lzfse/FileFormat.Lzfse.csproj" />
     <Project Path="FileFormat.Lzg/FileFormat.Lzg.csproj" />
     <Project Path="FileFormat.Lzh/FileFormat.Lzh.csproj" />
+    <Project Path="FileFormat.Lzham/FileFormat.Lzham.csproj" />
     <Project Path="FileFormat.Lzip/FileFormat.Lzip.csproj" />
+    <Project Path="FileFormat.Lzs/FileFormat.Lzs.csproj" />
     <Project Path="FileFormat.Lzma/FileFormat.Lzma.csproj" />
     <Project Path="FileFormat.Lzop/FileFormat.Lzop.csproj" />
     <Project Path="FileFormat.Lzx/FileFormat.Lzx.csproj" />
@@ -114,6 +117,7 @@
     <Project Path="FileFormat.Pak/FileFormat.Pak.csproj" />
     <Project Path="FileFormat.Paq8/FileFormat.Paq8.csproj" />
     <Project Path="FileFormat.Pdf/FileFormat.Pdf.csproj" />
+    <Project Path="FileFormat.Ppmd/FileFormat.Ppmd.csproj" />
     <Project Path="FileFormat.PowerPacker/FileFormat.PowerPacker.csproj" />
     <Project Path="FileFormat.Ppt/FileFormat.Ppt.csproj" />
     <Project Path="FileFormat.Pptx/FileFormat.Pptx.csproj" />

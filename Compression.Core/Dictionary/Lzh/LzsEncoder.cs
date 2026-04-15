@@ -15,6 +15,14 @@ public static class LzsEncoder {
   /// </summary>
   /// <param name="data">The data to compress.</param>
   /// <returns>The compressed data.</returns>
+  public static byte[] Encode(ReadOnlySpan<byte> data)
+    => Encode(data.ToArray());
+
+  /// <summary>
+  /// Encodes data using the -lzs- format.
+  /// </summary>
+  /// <param name="data">The data to compress.</param>
+  /// <returns>The compressed data.</returns>
   public static byte[] Encode(byte[] data) {
     var window = new byte[WindowSize];
     Array.Fill(window, (byte)0x20);

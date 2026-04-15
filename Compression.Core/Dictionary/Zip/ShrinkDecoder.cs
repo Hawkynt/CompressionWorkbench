@@ -24,6 +24,15 @@ public static class ShrinkDecoder {
   /// <param name="compressed">The compressed data.</param>
   /// <param name="originalSize">The expected uncompressed size.</param>
   /// <returns>The decompressed data.</returns>
+  public static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize)
+    => Decode(compressed.ToArray(), originalSize);
+
+  /// <summary>
+  /// Decompresses ZIP Shrink data.
+  /// </summary>
+  /// <param name="compressed">The compressed data.</param>
+  /// <param name="originalSize">The expected uncompressed size.</param>
+  /// <returns>The decompressed data.</returns>
   public static byte[] Decode(byte[] compressed, int originalSize) {
     using var ms = new MemoryStream(compressed);
     var reader = new BitReader(ms, BitOrder.LsbFirst);

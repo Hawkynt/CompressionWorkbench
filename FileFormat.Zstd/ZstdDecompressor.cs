@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using Compression.Core.Checksums;
 using Compression.Core.DataStructures;
@@ -116,13 +117,19 @@ internal sealed class ZstdDecompressor {
 
     byte[] blockOutput;
     switch (blockType) {
-      case ZstdConstants.BlockTypeRaw:
-        blockOutput = new byte[blockSize];
-        ReadExact(blockOutput);
+      case ZstdConstants.BlockTypeRaw: {
+        var rented = ArrayPool<byte>.Shared.Rent(blockSize);
+        try {
+          ReadExact(rented.AsSpan(0, blockSize));
+          blockOutput = rented.AsSpan(0, blockSize).ToArray();
+        } finally {
+          ArrayPool<byte>.Shared.Return(rented);
+        }
         // Add raw block bytes to window
         for (var i = 0; i < blockOutput.Length; ++i)
           this._window.WriteByte(blockOutput[i]);
         break;
+      }
 
       case ZstdConstants.BlockTypeRle: {
         var b = this._input.ReadByte();
@@ -137,9 +144,14 @@ internal sealed class ZstdDecompressor {
       }
 
       case ZstdConstants.BlockTypeCompressed: {
-        var compressedBlock = new byte[blockSize];
-        ReadExact(compressedBlock);
-        blockOutput = DecompressBlock(compressedBlock);
+        var rented = ArrayPool<byte>.Shared.Rent(blockSize);
+        try {
+          ReadExact(rented.AsSpan(0, blockSize));
+          var compressedBlock = rented.AsSpan(0, blockSize).ToArray();
+          blockOutput = DecompressBlock(compressedBlock);
+        } finally {
+          ArrayPool<byte>.Shared.Return(rented);
+        }
         break;
       }
 
@@ -216,37 +228,41 @@ internal sealed class ZstdDecompressor {
     if (remainingLiterals > 0)
       totalSize += remainingLiterals;
 
-    var output = new byte[totalSize];
-    var outPos = 0;
-    var litPos = 0;
+    var rented = ArrayPool<byte>.Shared.Rent(totalSize);
+    try {
+      var outPos = 0;
+      var litPos = 0;
 
-    foreach (var seq in sequences) {
-      // Copy literal bytes
-      if (seq.LiteralLength > 0) {
-        literals.AsSpan(litPos, seq.LiteralLength).CopyTo(output.AsSpan(outPos));
-        for (var i = 0; i < seq.LiteralLength; ++i)
+      foreach (var seq in sequences) {
+        // Copy literal bytes
+        if (seq.LiteralLength > 0) {
+          literals.AsSpan(litPos, seq.LiteralLength).CopyTo(rented.AsSpan(outPos));
+          for (var i = 0; i < seq.LiteralLength; ++i)
+            this._window.WriteByte(literals[litPos + i]);
+          litPos += seq.LiteralLength;
+          outPos += seq.LiteralLength;
+        }
+
+        // Execute match copy from window
+        if (seq.MatchLength > 0 && seq.Offset > 0) {
+          var matchOutput = rented.AsSpan(outPos, seq.MatchLength);
+          this._window.CopyFromWindow(seq.Offset, seq.MatchLength, matchOutput);
+          outPos += seq.MatchLength;
+        }
+      }
+
+      // Copy remaining literals
+      if (litPos < literals.Length) {
+        var remaining = literals.Length - litPos;
+        literals.AsSpan(litPos, remaining).CopyTo(rented.AsSpan(outPos));
+        for (var i = 0; i < remaining; ++i)
           this._window.WriteByte(literals[litPos + i]);
-        litPos += seq.LiteralLength;
-        outPos += seq.LiteralLength;
       }
 
-      // Execute match copy from window
-      if (seq.MatchLength > 0 && seq.Offset > 0) {
-        var matchOutput = output.AsSpan(outPos, seq.MatchLength);
-        this._window.CopyFromWindow(seq.Offset, seq.MatchLength, matchOutput);
-        outPos += seq.MatchLength;
-      }
+      return rented.AsSpan(0, totalSize).ToArray();
+    } finally {
+      ArrayPool<byte>.Shared.Return(rented);
     }
-
-    // Copy remaining literals
-    if (litPos < literals.Length) {
-      var remaining = literals.Length - litPos;
-      literals.AsSpan(litPos, remaining).CopyTo(output.AsSpan(outPos));
-      for (var i = 0; i < remaining; ++i)
-        this._window.WriteByte(literals[litPos + i]);
-    }
-
-    return output;
   }
 
   /// <summary>

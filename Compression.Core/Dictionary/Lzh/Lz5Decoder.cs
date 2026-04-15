@@ -22,6 +22,15 @@ public static class Lz5Decoder {
   /// <param name="compressed">The compressed data.</param>
   /// <param name="originalSize">The expected uncompressed size.</param>
   /// <returns>The decompressed data.</returns>
+  public static byte[] Decode(ReadOnlySpan<byte> compressed, int originalSize)
+    => Decode(compressed.ToArray(), originalSize);
+
+  /// <summary>
+  /// Decodes -lz5- compressed data.
+  /// </summary>
+  /// <param name="compressed">The compressed data.</param>
+  /// <param name="originalSize">The expected uncompressed size.</param>
+  /// <returns>The decompressed data.</returns>
   public static byte[] Decode(byte[] compressed, int originalSize) {
     var output = new byte[originalSize];
     var window = new byte[WindowSize];

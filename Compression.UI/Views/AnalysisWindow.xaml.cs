@@ -37,7 +37,7 @@ public partial class AnalysisWindow : Window {
     InitializeComponent();
     CliOverrideBox.Text = CliPlaceholder;
     _toolPanels = [SignaturesGrid, FingerprintsGrid, EntropyPanel, TrialPanel, ChainPanel,
-                   AnalysisStatsControl, StringsControl, StructureControl];
+                   AnalysisStatsControl, StringsControl, StructureControl, HeatmapControl];
   }
 
   private void OnToolSelected(object sender, RoutedEventArgs e) {
@@ -57,6 +57,7 @@ public partial class AnalysisWindow : Window {
       "ToolStats" => AnalysisStatsControl,
       "ToolStrings" => StringsControl,
       "ToolStructure" => StructureControl,
+      "ToolHeatmap" => HeatmapControl,
       _ => SignaturesGrid,
     };
     if (target != null) target.Visibility = Visibility.Visible;
@@ -68,6 +69,8 @@ public partial class AnalysisWindow : Window {
       StringsControl.Data = _fileData;
     if (name == "ToolStructure" && _fileData != null)
       StructureControl.Data = _fileData;
+    if (name == "ToolHeatmap" && _filePath != null)
+      HeatmapControl.OpenFile(_filePath);
   }
 
   internal void RunAnalysis(string fileName, byte[] data) {
@@ -259,22 +262,31 @@ public partial class AnalysisWindow : Window {
     BuildEntropyBar(result.EntropyMap, data.Length);
 
     if (result.Chain != null) {
-      var sb = new StringBuilder();
-      if (result.Chain.Depth == 0) {
-        sb.AppendLine("No compression layers detected.");
+      var chainRows = new List<object>();
+      for (var i = 0; i < result.Chain.Layers.Count; i++) {
+        var l = result.Chain.Layers[i];
+        chainRows.Add(new {
+          Layer = i + 1,
+          l.Algorithm,
+          InputSize = $"{l.InputSize:N0}",
+          OutputSize = $"{l.OutputSize:N0}",
+          l.Confidence,
+          Status = l.OutputData != null ? "Has data" : "No data"
+        });
       }
-      else {
-        for (var i = 0; i < result.Chain.Layers.Count; i++) {
-          var l = result.Chain.Layers[i];
-          sb.AppendLine($"Layer {i + 1}: {l.Algorithm}  ({l.InputSize:N0} \u2192 {l.OutputSize:N0} bytes)  confidence={l.Confidence:F2}");
-        }
-        sb.AppendLine();
-        sb.AppendLine($"Final data: {result.Chain.FinalData.Length:N0} bytes");
-      }
-      ChainText.Text = sb.ToString();
+      if (result.Chain.FinalData.Length > 0)
+        chainRows.Add(new {
+          Layer = result.Chain.Layers.Count + 1,
+          Algorithm = "(final output)",
+          InputSize = "",
+          OutputSize = $"{result.Chain.FinalData.Length:N0}",
+          Confidence = 1.0,
+          Status = "Final"
+        });
+      ChainGrid.ItemsSource = chainRows;
     }
     else {
-      ChainText.Text = "(Chain reconstruction not enabled)";
+      ChainGrid.ItemsSource = null;
     }
   }
 
@@ -437,11 +449,20 @@ public partial class AnalysisWindow : Window {
 
   private void OnTrialGridDoubleClick(object sender, MouseButtonEventArgs e) {
     var trial = TrialGrid.SelectedItem as DecompressionAttempt;
-    if (trial?.Output != null && trial.Success) {
-      var preview = new PreviewWindow();
-      preview.ShowData($"{trial.Algorithm} output ({trial.OutputSize} bytes)", trial.Output, hex: false, analyzeMode: true);
-      preview.Show();
+    if (trial?.Output == null || !trial.Success) return;
+
+    var isMagic = trial.Algorithm.StartsWith("Detected:", StringComparison.Ordinal);
+    var isArchive = trial.Algorithm.Contains("(archive)", StringComparison.Ordinal);
+
+    var preview = new PreviewWindow();
+    if (isMagic || isArchive) {
+      // Magic matches and archive listings contain UTF-8 text descriptions.
+      preview.ShowData($"{trial.Algorithm}", trial.Output, hex: false, analyzeMode: false);
+    } else {
+      // Actual decompressed data — show with analysis option.
+      preview.ShowData($"{trial.Algorithm} output ({trial.OutputSize} bytes)", trial.Output, hex: trial.OutputSize < 4096, analyzeMode: true);
     }
+    preview.Show();
   }
 
   // ── Trial preview/save ───────────────────────────────────────────────
@@ -476,19 +497,40 @@ public partial class AnalysisWindow : Window {
     }
   }
 
-  // ── Chain preview/save ───────────────────────────────────────────────
+  // ── Chain grid double-click ─────────────────────────────────────────
 
-  private void OnPreviewChainOutput(object sender, RoutedEventArgs e) {
+  private void OnChainGridDoubleClick(object sender, MouseButtonEventArgs e) {
     var chain = _lastResult?.Chain;
-    if (chain == null || chain.FinalData.Length == 0) {
-      MessageBox.Show("No chain data available.", "Preview",
-        MessageBoxButton.OK, MessageBoxImage.Information);
+    if (chain == null) return;
+
+    // Get clicked row index.
+    var selected = ChainGrid.SelectedIndex;
+    if (selected < 0) return;
+
+    byte[]? data = null;
+    string title;
+
+    if (selected < chain.Layers.Count) {
+      var layer = chain.Layers[selected];
+      data = layer.OutputData;
+      title = $"Layer {selected + 1}: {layer.Algorithm} ({layer.OutputSize:N0} bytes)";
+    } else {
+      // Final output row.
+      data = chain.FinalData;
+      title = $"Final output ({chain.FinalData.Length:N0} bytes)";
+    }
+
+    if (data == null || data.Length == 0) {
+      MessageBox.Show("No data available for this layer.", "Chain", MessageBoxButton.OK, MessageBoxImage.Information);
       return;
     }
+
     var preview = new PreviewWindow();
-    preview.ShowData($"Chain final data ({chain.FinalData.Length} bytes)", chain.FinalData, hex: false, analyzeMode: true);
+    preview.ShowData(title, data, hex: data.Length < 4096, analyzeMode: true);
     preview.Show();
   }
+
+  // ── Chain save ─────────────────────────────────────────────────────
 
   private void OnSaveChainOutput(object sender, RoutedEventArgs e) {
     var chain = _lastResult?.Chain;

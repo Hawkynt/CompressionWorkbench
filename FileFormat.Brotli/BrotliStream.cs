@@ -32,20 +32,12 @@ public static class BrotliStream {
     BrotliDecompressor.Decompress(data);
 
   /// <summary>
-  /// Compresses data to Brotli format.
-  /// Uses LZ77 + Huffman for data large enough to benefit; falls back to
-  /// uncompressed meta-blocks for very short inputs.
+  /// Compresses data to Brotli format using the clean-room LZ77+Huffman encoder,
+  /// falling back to uncompressed meta-blocks when LZ77 wouldn't produce smaller output.
   /// </summary>
   /// <param name="data">The data to compress.</param>
   /// <returns>The Brotli-compressed data.</returns>
-  public static byte[] Compress(ReadOnlySpan<byte> data) {
-    if (data.Length < 16)
-      return BrotliCompressor.Compress(data);
-
-    var lz77 = BrotliCompressor.CompressLz77(data);
-    var uncomp = BrotliCompressor.Compress(data);
-    return lz77.Length < uncomp.Length ? lz77 : uncomp;
-  }
+  public static byte[] Compress(ReadOnlySpan<byte> data) => BrotliCompressor.Compress(data, BrotliCompressionLevel.Default);
 
   /// <summary>
   /// Compresses data to Brotli format at the specified compression level.

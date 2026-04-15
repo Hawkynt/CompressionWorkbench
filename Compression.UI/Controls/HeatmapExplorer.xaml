@@ -1,0 +1,62 @@
+<UserControl x:Class="Compression.UI.Controls.HeatmapExplorer"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Compression.UI.ViewModels">
+  <UserControl.Resources>
+    <BooleanToVisibilityConverter x:Key="BoolVis" />
+  </UserControl.Resources>
+  <UserControl.DataContext>
+    <vm:HeatmapExplorerViewModel />
+  </UserControl.DataContext>
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <!-- Top bar: breadcrumb + controls -->
+    <Border Grid.Row="0" Background="#F5F5F5" Padding="8,4" BorderThickness="0,0,0,1" BorderBrush="#DDD">
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Content="Extract" Padding="12,4" Margin="4,0,0,0"
+                Command="{Binding ExtractCommand}" Visibility="{Binding CanExtract, Converter={StaticResource BoolVis}}" />
+        <Button DockPanel.Dock="Right" Content="Zoom Out" Padding="8,4" Margin="4,0" Command="{Binding ZoomOutCommand}" />
+        <Button DockPanel.Dock="Left" Content="Open File..." Padding="8,4" Margin="0,0,8,0" Command="{Binding OpenFileCommand}" />
+        <TextBlock Text="{Binding BreadcrumbPath}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" FontFamily="Consolas" />
+      </DockPanel>
+    </Border>
+
+    <!-- 16x16 heatmap grid -->
+    <Grid Grid.Row="1" x:Name="HeatmapGrid" Background="Black">
+      <UniformGrid Rows="16" Columns="16" x:Name="CellGrid" />
+      <TextBlock Text="Open a file to begin" HorizontalAlignment="Center" VerticalAlignment="Center"
+                 Foreground="Gray" FontSize="16" Visibility="{Binding IsEmpty, Converter={StaticResource BoolVis}}" />
+    </Grid>
+
+    <!-- Bottom: selected block info panel -->
+    <Border Grid.Row="2" Background="#F8F8F8" Padding="8" BorderThickness="0,1,0,0" BorderBrush="#DDD"
+            MinHeight="60">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0">
+          <TextBlock Text="{Binding SelectedBlockInfo}" FontFamily="Consolas" FontSize="12" />
+          <TextBlock Text="{Binding SelectedBlockDetail}" FontFamily="Consolas" FontSize="11" Foreground="Gray" Margin="0,2,0,0" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+          <!-- Legend -->
+          <StackPanel Orientation="Horizontal">
+            <Rectangle Width="12" Height="12" Fill="#222" Margin="0,0,4,0" /><TextBlock Text="Empty" FontSize="10" Margin="0,0,8,0" />
+            <Rectangle Width="12" Height="12" Fill="#2196F3" Margin="0,0,4,0" /><TextBlock Text="Header" FontSize="10" Margin="0,0,8,0" />
+            <Rectangle Width="12" Height="12" Fill="#4CAF50" Margin="0,0,4,0" /><TextBlock Text="Structured" FontSize="10" Margin="0,0,8,0" />
+            <Rectangle Width="12" Height="12" Fill="#FF9800" Margin="0,0,4,0" /><TextBlock Text="Compressed" FontSize="10" Margin="0,0,8,0" />
+            <Rectangle Width="12" Height="12" Fill="#F44336" Margin="0,0,4,0" /><TextBlock Text="Random" FontSize="10" Margin="0,0,8,0" />
+            <Rectangle Width="12" Height="12" Fill="#E91E63" Margin="0,0,4,0" /><TextBlock Text="Signature" FontSize="10" />
+          </StackPanel>
+        </StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

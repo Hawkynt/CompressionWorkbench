@@ -9,51 +9,122 @@ public sealed class VmdkWriter {
 
   public void SetDiskData(byte[] data) => _diskData = data;
 
+  /// <summary>
+  /// Builds a monolithic sparse VMDK with a proper two-level grain directory/table structure.
+  /// </summary>
   public byte[] Build() {
     var data = _diskData ?? [];
-    var sectorSize = 512;
-    var grainSize = 128; // 128 sectors = 64KB
+    const int sectorSize = 512;
+    const int grainSizeSectors = 128; // 128 sectors = 64 KB grains
+    const int numGTEsPerGT = 512;    // standard: 512 grain table entries per GT
+    var grainSizeBytes = grainSizeSectors * sectorSize; // 65536
+
     var capacitySectors = (data.Length + sectorSize - 1) / sectorSize;
     if (capacitySectors == 0) capacitySectors = 1;
 
-    // Simplified: write sparse header + descriptor + raw data
-    // Descriptor at sector 1, data starts after descriptor
+    var totalGrains = (capacitySectors + grainSizeSectors - 1) / grainSizeSectors;
+    var numGdEntries = (totalGrains + numGTEsPerGT - 1) / numGTEsPerGT;
+
+    // Build descriptor
     var descriptorText = BuildDescriptor(capacitySectors);
     var descriptorBytes = Encoding.ASCII.GetBytes(descriptorText);
     var descriptorSectors = (descriptorBytes.Length + sectorSize - 1) / sectorSize;
 
-    var overHeadSectors = 1 + descriptorSectors; // header + descriptor
-    // Align to grain boundary
-    overHeadSectors = ((overHeadSectors + grainSize - 1) / grainSize) * grainSize;
+    // Layout (all sector-aligned):
+    //   Sector 0          : sparse header
+    //   Sector 1..        : embedded descriptor
+    //   next aligned      : grain directory (numGdEntries * 4 bytes)
+    //   next aligned      : grain tables (numGdEntries * numGTEsPerGT * 4 bytes each)
+    //   next grain-aligned: data grains
 
-    var totalSize = overHeadSectors * sectorSize + data.Length;
+    var gdOffsetSectors = 1 + descriptorSectors;
+    var gdByteSize = numGdEntries * 4;
+    var gdSectors = (gdByteSize + sectorSize - 1) / sectorSize;
+
+    var gtStartSectors = gdOffsetSectors + gdSectors;
+    var gtByteSizeEach = numGTEsPerGT * 4;
+    var gtSectorsEach = (gtByteSizeEach + sectorSize - 1) / sectorSize;
+    var gtTotalSectors = gtSectorsEach * numGdEntries;
+
+    var dataStartSectors = gtStartSectors + gtTotalSectors;
+    // Align to grain boundary
+    dataStartSectors = ((dataStartSectors + grainSizeSectors - 1) / grainSizeSectors) * grainSizeSectors;
+
+    // Determine which grains are non-zero
+    var grainOffsets = new long[totalGrains]; // sector offset for each grain, or 0 for sparse
+    var nextDataSector = (long)dataStartSectors;
+
+    for (var g = 0; g < totalGrains; g++) {
+      var srcOff = (long)g * grainSizeBytes;
+      var srcLen = (int)Math.Min(grainSizeBytes, data.Length - srcOff);
+      if (srcLen <= 0 || IsAllZero(data.AsSpan((int)srcOff, srcLen))) {
+        grainOffsets[g] = 0; // sparse
+      } else {
+        grainOffsets[g] = nextDataSector;
+        nextDataSector += grainSizeSectors;
+      }
+    }
+
+    var overHeadSectors = dataStartSectors;
+    var totalSize = (int)(nextDataSector * sectorSize);
     var result = new byte[totalSize];
 
     // Sparse header (sector 0)
     SparseMagic.CopyTo(result, 0);
-    BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(4), 1); // version
-    BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(8), 0); // flags
-    BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan(16), (ulong)capacitySectors);
-    BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan(24), (ulong)grainSize);
-    BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan(32), 1); // descriptorOffset (sector 1)
-    BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan(40), (ulong)descriptorSectors);
-    BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan(64), (ulong)overHeadSectors);
-    result[73] = (byte)'\n';
-    result[74] = (byte)' ';
-    result[75] = (byte)'\r';
-    result[76] = (byte)'\n';
+    BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(4), 1);                          // version
+    BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(8), 0);                          // flags
+    BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan(16), (ulong)capacitySectors);    // capacity
+    BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan(24), (ulong)grainSizeSectors);   // grainSize
+    BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan(32), 1);                         // descriptorOffset
+    BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan(40), (ulong)descriptorSectors);  // descriptorSize
+    BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(48), (uint)numGTEsPerGT);        // numGTEsPerGT
+    BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan(56), 0);                         // rgdOffset (0 = none)
+    BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan(64), (ulong)gdOffsetSectors);    // gdOffset
+    BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan(72), (ulong)overHeadSectors);    // overHead
+    result[77] = (byte)'\n';
+    result[78] = (byte)' ';
+    result[79] = (byte)'\r';
+    result[80] = (byte)'\n';
 
     // Descriptor
     descriptorBytes.CopyTo(result, sectorSize);
 
-    // Raw data
-    if (data.Length > 0)
-      data.CopyTo(result, overHeadSectors * sectorSize);
+    // Grain directory entries: each points to a grain table (sector offset)
+    for (var gd = 0; gd < numGdEntries; gd++) {
+      var gtSectorOffset = (uint)(gtStartSectors + gd * gtSectorsEach);
+      BinaryPrimitives.WriteUInt32LittleEndian(
+        result.AsSpan((int)((long)gdOffsetSectors * sectorSize + gd * 4L)), gtSectorOffset);
+    }
+
+    // Grain table entries: each points to a data grain (sector offset), or 0
+    for (var g = 0; g < totalGrains; g++) {
+      var gdIndex = g / numGTEsPerGT;
+      var gtIndex = g % numGTEsPerGT;
+      var gtByteOffset = (long)(gtStartSectors + gdIndex * gtSectorsEach) * sectorSize + gtIndex * 4L;
+      BinaryPrimitives.WriteUInt32LittleEndian(
+        result.AsSpan((int)gtByteOffset), (uint)grainOffsets[g]);
+    }
+
+    // Data grains
+    for (var g = 0; g < totalGrains; g++) {
+      if (grainOffsets[g] == 0) continue;
+      var destOff = (int)(grainOffsets[g] * sectorSize);
+      var srcOff = (long)g * grainSizeBytes;
+      var srcLen = (int)Math.Min(grainSizeBytes, data.Length - srcOff);
+      if (srcLen > 0)
+        data.AsSpan((int)srcOff, srcLen).CopyTo(result.AsSpan(destOff));
+    }
 
     return result;
   }
 
   private static readonly byte[] SparseMagic = [0x4B, 0x44, 0x4D, 0x56];
+
+  private static bool IsAllZero(ReadOnlySpan<byte> data) {
+    foreach (var b in data)
+      if (b != 0) return false;
+    return true;
+  }
 
   private static string BuildDescriptor(int capacitySectors) {
     var sb = new StringBuilder();

@@ -61,6 +61,50 @@ public class Crc32Tests {
 
   [Category("ThemVsUs")]
   [Test]
+  public void Compute_LargeData_MatchesByteByByte() {
+    // Test data >= 64 bytes to exercise the PCLMULQDQ path
+    // Compare bulk Compute() against known-correct byte-by-byte computation
+    var rng = new Random(42);
+    var data = new byte[8192];
+    rng.NextBytes(data);
+    var bulk = Crc32.Compute(data);
+    // Byte-by-byte is always correct (uses table lookup, no SIMD)
+    var crc = new Crc32();
+    foreach (var b in data)
+      crc.Update(b);
+    Assert.That(bulk, Is.EqualTo(crc.Value), $"Bulk=0x{bulk:X8}, ByteByByte=0x{crc.Value:X8}");
+  }
+
+  [Category("ThemVsUs")]
+  [Test]
+  public void Compute_64Bytes_MatchesByteByByte() {
+    // Exactly 64 bytes -- minimum to trigger PCLMULQDQ
+    var rng = new Random(42);
+    var data = new byte[64];
+    rng.NextBytes(data);
+    var bulk = Crc32.Compute(data);
+    var crc = new Crc32();
+    foreach (var b in data)
+      crc.Update(b);
+    Assert.That(bulk, Is.EqualTo(crc.Value), $"Bulk=0x{bulk:X8}, ByteByByte=0x{crc.Value:X8}");
+  }
+
+  [Category("ThemVsUs")]
+  [Test]
+  public void Compute_256Bytes_MatchesByteByByte() {
+    // 256 bytes -- well above threshold, tests folding loop
+    var rng = new Random(42);
+    var data = new byte[256];
+    rng.NextBytes(data);
+    var bulk = Crc32.Compute(data);
+    var crc = new Crc32();
+    foreach (var b in data)
+      crc.Update(b);
+    Assert.That(bulk, Is.EqualTo(crc.Value), $"Bulk=0x{bulk:X8}, ByteByByte=0x{crc.Value:X8}");
+  }
+
+  [Category("ThemVsUs")]
+  [Test]
   public void CastagnoliPolynomial_DifferentFromIeee() {
     var data = Encoding.ASCII.GetBytes("123456789");
     var ieee = Crc32.Compute(data);

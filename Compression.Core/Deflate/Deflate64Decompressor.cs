@@ -1,3 +1,4 @@
+using System.Buffers;
 using Compression.Core.BitIO;
 using Compression.Core.DataStructures;
 
@@ -13,6 +14,7 @@ public sealed class Deflate64Decompressor {
   private readonly BitBuffer<LsbBitOrder> _bitBuffer;
   private readonly SlidingWindow _window;
   private readonly List<byte> _output;
+  private readonly byte[] _copyBuf;
 
   private bool _isFinalBlock;
   private bool _done;
@@ -29,6 +31,7 @@ public sealed class Deflate64Decompressor {
     this._bitBuffer = new(input);
     this._window = new(Deflate64Constants.WindowSize);
     this._output = [];
+    this._copyBuf = new byte[Deflate64Constants.MaxMatchLength];
   }
 
   /// <summary>
@@ -48,9 +51,15 @@ public sealed class Deflate64Decompressor {
   /// <param name="compressedData">The Deflate64 compressed data.</param>
   /// <returns>The decompressed data.</returns>
   public static byte[] Decompress(ReadOnlySpan<byte> compressedData) {
-    using var ms = new MemoryStream(compressedData.ToArray());
-    var decompressor = new Deflate64Decompressor(ms);
-    return decompressor.DecompressAll();
+    var rented = ArrayPool<byte>.Shared.Rent(compressedData.Length);
+    try {
+      compressedData.CopyTo(rented);
+      using var ms = new MemoryStream(rented, 0, compressedData.Length);
+      var decompressor = new Deflate64Decompressor(ms);
+      return decompressor.DecompressAll();
+    } finally {
+      ArrayPool<byte>.Shared.Return(rented);
+    }
   }
 
   /// <summary>
@@ -125,7 +134,7 @@ public sealed class Deflate64Decompressor {
 
   private void DecompressHuffmanBlock(DeflateHuffmanTable litLenTable, DeflateHuffmanTable distTable) {
     // Max match length in Deflate64 is 65538
-    var copyBuf = new byte[Deflate64Constants.MaxMatchLength];
+    var copyBuf = this._copyBuf;
 
     while (true) {
       var symbol = litLenTable.DecodeSymbol(this._bitBuffer);

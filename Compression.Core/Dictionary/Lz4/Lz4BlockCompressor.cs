@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 
 namespace Compression.Core.Dictionary.Lz4;
@@ -24,9 +25,14 @@ public static class Lz4BlockCompressor {
       return Lz4HcCompressor.Compress(source, chainDepth);
     }
 
-    var dest = new byte[CompressBound(source.Length)];
-    var written = CompressCore(source, dest);
-    return dest.AsSpan(0, written).ToArray();
+    var destLen = CompressBound(source.Length);
+    var dest = ArrayPool<byte>.Shared.Rent(destLen);
+    try {
+      var written = CompressCore(source, dest);
+      return dest.AsSpan(0, written).ToArray();
+    } finally {
+      ArrayPool<byte>.Shared.Return(dest);
+    }
   }
 
   /// <summary>
@@ -46,65 +52,69 @@ public static class Lz4BlockCompressor {
     if (srcLen == 0)
       return 0;
 
-    var hashTable = new int[Lz4Constants.HashTableSize];
-    hashTable.AsSpan().Fill(-1);
+    var hashTable = ArrayPool<int>.Shared.Rent(Lz4Constants.HashTableSize);
+    try {
+      hashTable.AsSpan(0, Lz4Constants.HashTableSize).Fill(-1);
 
-    var dstPos = 0;
-    var anchor = 0; // Start of current literal run
-    var pos = 0;
-    var matchLimit = srcLen - Lz4Constants.MfLimit;
+      var dstPos = 0;
+      var anchor = 0; // Start of current literal run
+      var pos = 0;
+      var matchLimit = srcLen - Lz4Constants.MfLimit;
 
-    while (pos < matchLimit) {
-      // Find a match
-      var matchOffset = 0;
-      var matchLength = 0;
+      while (pos < matchLimit) {
+        // Find a match
+        var matchOffset = 0;
+        var matchLength = 0;
 
-      if (pos + 3 < srcLen) {
-        var h = Hash4(src, pos);
-        var candidate = hashTable[h];
-        hashTable[h] = pos;
+        if (pos + 3 < srcLen) {
+          var h = Hash4(src, pos);
+          var candidate = hashTable[h];
+          hashTable[h] = pos;
 
-        if (candidate >= 0 && pos - candidate <= Lz4Constants.MaxDistance)
-          // Check if we have a 4-byte match
-          if (src[candidate] == src[pos] &&
-            src[candidate + 1] == src[pos + 1] &&
-            src[candidate + 2] == src[pos + 2] &&
-            src[candidate + 3] == src[pos + 3]) {
-            matchOffset = pos - candidate;
-            matchLength = 4;
-            // Extend match
-            while (pos + matchLength < srcLen &&
-              src[candidate + matchLength] == src[pos + matchLength])
-              ++matchLength;
-          }
-      }
+          if (candidate >= 0 && pos - candidate <= Lz4Constants.MaxDistance)
+            // Check if we have a 4-byte match
+            if (src[candidate] == src[pos] &&
+              src[candidate + 1] == src[pos + 1] &&
+              src[candidate + 2] == src[pos + 2] &&
+              src[candidate + 3] == src[pos + 3]) {
+              matchOffset = pos - candidate;
+              matchLength = 4;
+              // Extend match
+              while (pos + matchLength < srcLen &&
+                src[candidate + matchLength] == src[pos + matchLength])
+                ++matchLength;
+            }
+        }
 
-      if (matchLength < Lz4Constants.MinMatch) {
+        if (matchLength < Lz4Constants.MinMatch) {
+          ++pos;
+          continue;
+        }
+
+        // Emit sequence: literal length + match
+        var litLen = pos - anchor;
+        dstPos = EmitSequence(dst, dstPos, src, anchor, litLen, matchOffset, matchLength);
+
+        // Advance past the match
+        // Insert hash entries for skipped positions
+        var end = pos + matchLength;
         ++pos;
-        continue;
+        while (pos < end && pos + 3 < srcLen) {
+          hashTable[Hash4(src, pos)] = pos;
+          ++pos;
+        }
+        pos = end;
+        anchor = pos;
       }
 
-      // Emit sequence: literal length + match
-      var litLen = pos - anchor;
-      dstPos = EmitSequence(dst, dstPos, src, anchor, litLen, matchOffset, matchLength);
+      // Emit last literals
+      var lastLitLen = srcLen - anchor;
+      dstPos = EmitLastLiterals(dst, dstPos, src, anchor, lastLitLen);
 
-      // Advance past the match
-      // Insert hash entries for skipped positions
-      var end = pos + matchLength;
-      ++pos;
-      while (pos < end && pos + 3 < srcLen) {
-        hashTable[Hash4(src, pos)] = pos;
-        ++pos;
-      }
-      pos = end;
-      anchor = pos;
+      return dstPos;
+    } finally {
+      ArrayPool<int>.Shared.Return(hashTable);
     }
-
-    // Emit last literals
-    var lastLitLen = srcLen - anchor;
-    dstPos = EmitLastLiterals(dst, dstPos, src, anchor, lastLitLen);
-
-    return dstPos;
   }
 
   internal static int EmitSequence(Span<byte> dst, int dstPos,
