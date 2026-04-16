@@ -20,7 +20,7 @@ jobs:
         run: >
           dotnet test Compression.Tests
           --configuration Release
-          --filter "Category!=EndToEnd&Category!=OsIntegration&Category!=ExternalInterop"
+          --filter "Category!=EndToEnd&Category!=OsIntegration&Category!=ExternalInterop&Category!=PolyglotInterop"
           --collect:"XPlat Code Coverage"
           --results-directory ./coverage
 

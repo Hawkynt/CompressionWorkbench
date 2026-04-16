@@ -25,14 +25,16 @@ jobs:
       with:
         dotnet-version: '10.0.x'
 
-    - name: Update version numbers
-      run: perl .github/workflows/UpdateVersions.pl .
+    - name: Compute version
+      id: version
+      shell: bash
+      run: echo "VERSION=$(perl scripts/version.pl)" >> $GITHUB_OUTPUT
 
     - name: Restore dependencies
       run: dotnet restore CompressionWorkbench.slnx
 
     - name: Build solution
-      run: dotnet build CompressionWorkbench.slnx --configuration Release --no-restore
+      run: dotnet build CompressionWorkbench.slnx --configuration Release --no-restore -p:Version=${{ steps.version.outputs.VERSION }}
 
     - name: Publish SFX stubs into Lib resources
       shell: pwsh
@@ -54,7 +56,7 @@ jobs:
           New-Item -ItemType Directory -Path $dest -Force | Out-Null
 
           Write-Host "::group::Publishing SFX CLI stub for $rid"
-          dotnet publish Compression.Sfx.Cli/Compression.Sfx.Cli.csproj -r $rid -c Release -p:ExcludeStubs=true --nologo
+          dotnet publish Compression.Sfx.Cli/Compression.Sfx.Cli.csproj -r $rid -c Release -p:ExcludeStubs=true -p:Version=${{ steps.version.outputs.VERSION }} --nologo
           $cliExit = $LASTEXITCODE
           Write-Host "::endgroup::"
           $exeName = if ($rid.StartsWith("win")) { "sfx-cli.exe" } else { "sfx-cli" }
@@ -69,7 +71,7 @@ jobs:
 
           if ($rid.StartsWith("win")) {
             Write-Host "::group::Publishing SFX UI stub for $rid"
-            dotnet publish Compression.Sfx.Ui/Compression.Sfx.Ui.csproj -r $rid -c Release -p:ExcludeStubs=true --nologo
+            dotnet publish Compression.Sfx.Ui/Compression.Sfx.Ui.csproj -r $rid -c Release -p:ExcludeStubs=true -p:Version=${{ steps.version.outputs.VERSION }} --nologo
             $uiExit = $LASTEXITCODE
             Write-Host "::endgroup::"
             $src = "Compression.Sfx.Ui/bin/Release/net10.0-windows/$rid/publish/sfx-ui.exe"
@@ -99,22 +101,13 @@ jobs:
         }
 
     - name: Publish CLI for Windows x64 (single-file, self-contained)
-      run: dotnet publish Compression.CLI/Compression.CLI.csproj -r win-x64 -c Release --self-contained --nologo
+      run: dotnet publish Compression.CLI/Compression.CLI.csproj -r win-x64 -c Release --self-contained --nologo -p:Version=${{ steps.version.outputs.VERSION }}
 
     - name: Publish CLI for Linux x64 (single-file, self-contained)
-      run: dotnet publish Compression.CLI/Compression.CLI.csproj -r linux-x64 -c Release --self-contained --nologo
+      run: dotnet publish Compression.CLI/Compression.CLI.csproj -r linux-x64 -c Release --self-contained --nologo -p:Version=${{ steps.version.outputs.VERSION }}
 
     - name: Publish UI for Windows x64 (single-file, self-contained)
-      run: dotnet publish Compression.UI/Compression.UI.csproj -r win-x64 -c Release --self-contained --nologo
-
-    - name: Extract version
-      id: version
-      shell: pwsh
-      run: |
-        $xml = [xml](Get-Content 'Directory.Build.props')
-        $version = $xml.Project.PropertyGroup.Version
-        echo "VERSION=$version" >> $env:GITHUB_OUTPUT
-        echo "Version: $version"
+      run: dotnet publish Compression.UI/Compression.UI.csproj -r win-x64 -c Release --self-contained --nologo -p:Version=${{ steps.version.outputs.VERSION }}
 
     - name: Package Windows CLI
       shell: pwsh
