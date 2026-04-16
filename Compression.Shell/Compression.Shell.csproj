@@ -4,7 +4,8 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <RootNamespace>Compression.Shell</RootNamespace>
     <OutputType>Library</OutputType>
-    <EnableComHosting>true</EnableComHosting>
+    <!-- COM host generation is Windows-only; skip on Linux CI so the project still builds. -->
+    <EnableComHosting Condition="'$(OS)' == 'Windows_NT'">true</EnableComHosting>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <NoWarn>CS1591</NoWarn>
   </PropertyGroup>
