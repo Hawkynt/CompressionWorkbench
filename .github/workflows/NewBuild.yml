@@ -10,6 +10,9 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    # Needed for softprops/action-gh-release to create tags and releases.
+    permissions:
+      contents: write
 
     steps:
     - name: Checkout
