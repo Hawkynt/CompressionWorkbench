@@ -34,9 +34,14 @@ jobs:
     - name: Publish SFX stubs into Lib resources
       shell: pwsh
       run: |
+        # Disable strict native-command error handling so we collect all RID failures
+        # instead of aborting on the first one; we report them explicitly at the end.
+        $PSNativeCommandUseErrorActionPreference = $false
+
         $rids = @("win-x64", "win-x86", "win-arm64", "linux-x64", "linux-arm64")
         $stagingDir = "sfx-staging"
         $stubsDir = "Compression.Lib/stubs"
+        $failures = @()
 
         # Phase 1: Publish all stubs to a staging directory (ExcludeStubs prevents
         # Compression.Lib from embedding previously-built stubs during publish,
@@ -45,35 +50,49 @@ jobs:
           $dest = "$stagingDir/$rid"
           New-Item -ItemType Directory -Path $dest -Force | Out-Null
 
-          Write-Host "Publishing SFX CLI stub for $rid..." -ForegroundColor Cyan
-          dotnet publish Compression.Sfx.Cli/Compression.Sfx.Cli.csproj -r $rid -c Release -p:ExcludeStubs=true --nologo -v quiet 2>$null
+          Write-Host "::group::Publishing SFX CLI stub for $rid"
+          dotnet publish Compression.Sfx.Cli/Compression.Sfx.Cli.csproj -r $rid -c Release -p:ExcludeStubs=true --nologo
+          $cliExit = $LASTEXITCODE
+          Write-Host "::endgroup::"
           $exeName = if ($rid.StartsWith("win")) { "sfx-cli.exe" } else { "sfx-cli" }
           $src = "Compression.Sfx.Cli/bin/Release/net10.0/$rid/publish/$exeName"
-          if (Test-Path $src) {
+          if ($cliExit -eq 0 -and (Test-Path $src)) {
             Copy-Item $src $dest -Force
             Write-Host "  -> $dest/$exeName" -ForegroundColor Green
           } else {
-            Write-Host "  -> SKIPPED (publish failed for $rid)" -ForegroundColor Yellow
+            $failures += "Sfx.Cli/$rid (exit=$cliExit, missing=$src)"
+            Write-Host "  -> FAILED (exit=$cliExit) for $rid" -ForegroundColor Red
           }
 
           if ($rid.StartsWith("win")) {
-            Write-Host "Publishing SFX UI stub for $rid..." -ForegroundColor Cyan
-            dotnet publish Compression.Sfx.Ui/Compression.Sfx.Ui.csproj -r $rid -c Release -p:ExcludeStubs=true --nologo -v quiet 2>$null
+            Write-Host "::group::Publishing SFX UI stub for $rid"
+            dotnet publish Compression.Sfx.Ui/Compression.Sfx.Ui.csproj -r $rid -c Release -p:ExcludeStubs=true --nologo
+            $uiExit = $LASTEXITCODE
+            Write-Host "::endgroup::"
             $src = "Compression.Sfx.Ui/bin/Release/net10.0-windows/$rid/publish/sfx-ui.exe"
-            if (Test-Path $src) {
+            if ($uiExit -eq 0 -and (Test-Path $src)) {
               Copy-Item $src $dest -Force
               Write-Host "  -> $dest/sfx-ui.exe" -ForegroundColor Green
             } else {
-              Write-Host "  -> SKIPPED (publish failed for $rid)" -ForegroundColor Yellow
+              $failures += "Sfx.Ui/$rid (exit=$uiExit, missing=$src)"
+              Write-Host "  -> FAILED (exit=$uiExit) for $rid" -ForegroundColor Red
             }
           }
         }
 
         # Phase 2: Copy all staged stubs into Compression.Lib/stubs/ for embedding
         if (Test-Path $stagingDir) {
+          New-Item -ItemType Directory -Path $stubsDir -Force | Out-Null
           Copy-Item "$stagingDir/*" $stubsDir -Recurse -Force
           Remove-Item $stagingDir -Recurse -Force
           Write-Host "Stubs staged into $stubsDir" -ForegroundColor Green
+        }
+
+        if ($failures.Count -gt 0) {
+          Write-Host ""
+          Write-Host "=== SFX publish failures ===" -ForegroundColor Red
+          $failures | ForEach-Object { Write-Host "  * $_" -ForegroundColor Red }
+          exit 1
         }
 
     - name: Publish CLI for Windows x64 (single-file, self-contained)
