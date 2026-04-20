@@ -9,7 +9,7 @@ public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public string DisplayName => "BIN/CUE";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".bin";
@@ -36,5 +36,16 @@ public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       if (files != null && !MatchesFilter(e.FullPath, files)) continue;
       WriteFile(outputDir, e.FullPath, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // WORM: emit the BIN as plain 2048-byte ISO 9660 cooked sectors. The reader
+    // auto-detects this geometry. CUE sheet generation is not produced here -- the
+    // Create API only gives us a single output stream; users wanting a CUE can
+    // generate one trivially since a single Mode 1 data track is the default.
+    var iso = new FileFormat.Iso.IsoWriter();
+    foreach (var (name, data) in FlatFiles(inputs))
+      iso.AddFile(name, data);
+    output.Write(iso.Build());
   }
 }

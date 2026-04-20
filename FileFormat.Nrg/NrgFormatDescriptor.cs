@@ -9,7 +9,7 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "NRG";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".nrg";
@@ -37,5 +37,21 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.FullPath, files)) continue;
       WriteFile(outputDir, e.FullPath, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // WORM: ISO 9660 image followed by an NRG v2 ("NER5") footer. The reader
+    // only uses the footer to determine version; the chunk-table offset isn't
+    // dereferenced for ISO extraction, so we point it at end-of-file.
+    var iso = new FileFormat.Iso.IsoWriter();
+    foreach (var (name, data) in FlatFiles(inputs))
+      iso.AddFile(name, data);
+    var image = iso.Build();
+    output.Write(image);
+    // Footer: "NER5" (4 bytes) + uint64 BE chunk-table offset.
+    Span<byte> footer = stackalloc byte[12];
+    footer[0] = (byte)'N'; footer[1] = (byte)'E'; footer[2] = (byte)'R'; footer[3] = (byte)'5';
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt64BigEndian(footer[4..], (ulong)image.Length);
+    output.Write(footer);
   }
 }

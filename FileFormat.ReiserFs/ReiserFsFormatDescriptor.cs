@@ -9,7 +9,7 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public string DisplayName => "ReiserFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".reiserfs";
@@ -23,7 +23,7 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "ReiserFS v3 filesystem image (read-only)";
+  public string Description => "ReiserFS v3 filesystem image";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ReiserFsReader(stream);
@@ -39,5 +39,14 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var w = new ReiserFsWriter();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+    }
+    w.WriteTo(output);
   }
 }

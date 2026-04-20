@@ -127,4 +127,38 @@ public class NrgTests {
     var format = Compression.Lib.FormatDetector.DetectByExtension("disc.nrg");
     Assert.That(format, Is.EqualTo(Compression.Lib.FormatDetector.Format.Nrg));
   }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new FileFormat.Nrg.NrgFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Create_HasNer5Footer_AndRoundTrips() {
+    var payload = "nero-payload"u8.ToArray();
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, payload);
+      var d = new FileFormat.Nrg.NrgFormatDescriptor();
+      using var ms = new MemoryStream();
+      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "data.bin", false)],
+        new Compression.Registry.FormatCreateOptions());
+
+      // Verify the NER5 footer was emitted (last 12 bytes: "NER5" + uint64 BE).
+      var bytes = ms.ToArray();
+      Assert.That(bytes[^12..^8], Is.EqualTo(new byte[] { (byte)'N', (byte)'E', (byte)'R', (byte)'5' }));
+
+      ms.Position = 0;
+      var r = new FileFormat.Nrg.NrgReader(ms);
+      Assert.That(r.Version, Is.EqualTo(2));
+      var fileEntry = r.Entries.FirstOrDefault(e => !e.IsDirectory && e.Name.StartsWith("DATA"));
+      Assert.That(fileEntry, Is.Not.Null);
+      Assert.That(r.Extract(fileEntry!)[..payload.Length], Is.EqualTo(payload));
+    } finally {
+      File.Delete(tmp);
+    }
+  }
 }

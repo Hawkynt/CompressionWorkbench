@@ -1,11 +1,13 @@
 # CompressionWorkbench
 
+[![CI](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml)
+[![Release](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/release.yml/badge.svg)](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench?label=release&sort=semver)](https://github.com/Hawkynt/CompressionWorkbench/releases/latest)
+[![Latest nightly](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench?include_prereleases&label=nightly&sort=date)](https://github.com/Hawkynt/CompressionWorkbench/releases?q=prerelease%3Atrue)
 ![License](https://img.shields.io/github/license/Hawkynt/CompressionWorkbench)
 ![Language](https://img.shields.io/github/languages/top/Hawkynt/CompressionWorkbench?color=purple)
 [![Last Commit](https://img.shields.io/github/last-commit/Hawkynt/CompressionWorkbench?branch=main)![Activity](https://img.shields.io/github/commit-activity/y/Hawkynt/CompressionWorkbench?branch=main)](https://github.com/Hawkynt/CompressionWorkbench/commits/main)
-[![GitHub release](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench)](https://github.com/Hawkynt/CompressionWorkbench/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Hawkynt/CompressionWorkbench/total)](https://github.com/Hawkynt/CompressionWorkbench/releases)
-[![Build](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/Build.yml/badge.svg)](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/Build.yml)
 
 > A fully clean-room C# implementation of compression primitives, archive file formats, and analysis tools. Every algorithm is implemented from scratch using no external compression source code - only our own primitives.
 
@@ -301,6 +303,19 @@ These are the 49 algorithms compared in the benchmark tool -- they operate on ra
 
 ## Supported Formats
 
+### Capability Scale
+
+The `Write` column in the tables below uses this four-level scale:
+
+| Level         | Meaning                                                             | Example formats         |
+| ------------- | ------------------------------------------------------------------- | ----------------------- |
+| **Unsupported** | No descriptor exists.                                             | (anything not listed)   |
+| **Read-Only** | Can list and extract; no creation.                                  | MPQ, NSIS, BIN/CUE, BTRFS |
+| **WORM**      | Write-Once-Read-Many — can produce a fresh archive from inputs, but cannot modify an existing one. | ZIP, TAR, 7z (most formats) |
+| **R/W**       | Can also add/replace/remove entries in an existing archive in place. | (none yet — future work) |
+
+In tables, `Yes` = WORM (or better), `-` = Read-Only. When R/W support lands for any format, a third column will be introduced.
+
 ### Archive Formats
 
 | Format      | Extensions     | Read | Write       | Methods                                                                          |
@@ -326,11 +341,11 @@ These are the 49 algorithms compared in the benchmark tool -- they operate on ra
 | HA          | `.ha`          | Yes  | Yes         | HSC/ASC arithmetic coding                                                        |
 | ZPAQ        | `.zpaq`        | Yes  | Yes         | Context mixing, journaling                                                       |
 | StuffIt     | `.sit`         | Yes  | Yes         | Multiple methods                                                                 |
-| StuffIt X   | `.sitx`        | Yes  | -           | StuffIt X format                                                                 |
+| StuffIt X   | `.sitx`        | Yes  | Yes         | StuffIt X format — WORM emits valid `StuffIt!` envelope (detection-only; proprietary element-stream writer not implemented) |
 | SquashFS    | `.sqfs`        | Yes  | Yes         | Filesystem image                                                                 |
 | CramFS      | `.cramfs`      | Yes  | Yes         | Filesystem image                                                                 |
-| NSIS        | `.exe`         | Yes  | -           | Installer extraction                                                             |
-| Inno Setup  | `.exe`         | Yes  | -           | Installer extraction                                                             |
+| NSIS        | `.exe`         | Yes  | Yes         | Installer extraction + WORM emits overlay-only data (no PE stub — not a functional installer) |
+| Inno Setup  | `.exe`         | Yes  | Yes         | Installer extraction + WORM emits signature header (no PE stub — not a functional installer)  |
 | DMS         | `.dms`         | Yes  | Yes         | Amiga disk archiver                                                              |
 | LZX (Amiga) | `.lzx`         | Yes  | Yes         | Amiga LZX format                                                                 |
 | Compact Pro | `.cpt`         | Yes  | Yes         | Classic Mac format                                                               |
@@ -343,40 +358,82 @@ These are the 49 algorithms compared in the benchmark tool -- they operate on ra
 | ALZip       | `.alz`         | Yes  | Yes         | Korean archive (Deflate)                                                         |
 | VPK         | `.vpk`         | Yes  | Yes         | Valve game archive                                                               |
 | BSA         | `.bsa`,`.ba2`  | Yes  | Yes         | Bethesda game archive                                                            |
-| MPQ         | `.mpq`         | Yes  | Yes         | Blizzard game archive                                                            |
+| MPQ         | `.mpq`         | Yes  | Yes         | Blizzard game archive — WORM emits v1 with stored entries, encrypted hash + block tables, and a self-referential `(listfile)` |
 | GRP         | `.grp`         | Yes  | Yes         | BUILD Engine (Duke Nukem 3D)                                                     |
 | HOG         | `.hog`         | Yes  | Yes         | Descent game archive                                                             |
 | BIG         | `.big`         | Yes  | Yes         | EA Games (Command & Conquer, FIFA)                                               |
 | Godot PCK   | `.pck`         | Yes  | Yes         | Godot Engine resource pack                                                       |
-| WARC        | `.warc`        | Yes  | Yes         | Web archive format                                                               |
-| NDS         | `.nds`         | Yes  | -           | Nintendo DS ROM                                                                  |
-| NSA         | `.nsa`         | Yes  | -           | NScripter archive                                                                |
-| SAR         | `.sar`         | Yes  | -           | NScripter archive                                                                |
+| WARC        | `.warc`        | Yes  | Yes         | Web archive format — WORM emits one "resource" record per input file              |
+| NDS         | `.nds`         | Yes  | Yes         | Nintendo DS ROM — WORM emits valid NitroFS (no ARM9/ARM7 boot code; not executable on hardware) |
+| NSA         | `.nsa`         | Yes  | Yes         | NScripter archive — WORM writes stored entries (compression type 0)              |
+| SAR         | `.sar`         | Yes  | Yes         | NScripter archive (uncompressed variant of NSA)                                  |
 | PackIt      | `.pit`         | Yes  | -           | Classic Mac format                                                               |
-| DiskDoubler | `.dd`          | Yes  | -           | Classic Mac compression                                                          |
-| MSI         | `.msi`         | Yes  | -           | OLE Compound File                                                                |
-| PDF         | `.pdf`         | Yes  | -           | Image extraction                                                                 |
+| DiskDoubler | `.dd`          | Yes  | Yes         | Classic Mac compression — WORM stores data fork (method 0)                       |
+| MSI         | `.msi`         | Yes  | Yes         | OLE Compound File — WORM produces a CFB envelope (not a functional Windows Installer DB) |
+| PDF         | `.pdf`         | Yes  | Yes         | Image extraction + WORM via file attachments (EmbeddedFiles) — any file type roundtrips |
 | TNEF        | `.tnef`,`.dat` | Yes  | Yes         | Outlook winmail.dat                                                              |
 | Split File  | `.001`         | Yes  | Yes         | Multi-part file joining/splitting                                                |
 | FreeArc     | `.arc`         | Yes  | Yes         | FreeArc archive                                                                  |
-| CHM         | `.chm`         | Yes  | -           | Microsoft Compiled HTML Help (LZX)                                               |
+| CHM         | `.chm`         | Yes  | Yes         | Microsoft Compiled HTML Help — WORM stores files in section 0 (uncompressed); LZX compression available via options |
+
+### ZIP-Derived Containers
+
+These formats are ZIP archives with format-specific layout conventions. All delegate to the ZIP reader/writer; WORM (`Yes`) means a fresh container can be produced.
+
+| Format | Extensions       | Read | Write | Notes                                |
+| ------ | ---------------- | ---- | ----- | ------------------------------------ |
+| JAR    | `.jar`           | Yes  | Yes   | Java archive                         |
+| WAR    | `.war`           | Yes  | Yes   | Java web archive                     |
+| EAR    | `.ear`           | Yes  | Yes   | Java enterprise archive              |
+| APK    | `.apk`           | Yes  | Yes   | Android package                      |
+| IPA    | `.ipa`           | Yes  | Yes   | iOS package                          |
+| APPX   | `.appx`,`.msix`  | Yes  | Yes   | Windows package                      |
+| XPI    | `.xpi`           | Yes  | Yes   | Firefox extension                    |
+| CRX    | `.crx`           | Yes  | Yes   | Chrome extension — write produces an unsigned CRX3 envelope (browser will reject signature; toolkit roundtrip works) |
+| EPUB   | `.epub`          | Yes  | Yes   | eBook                                |
+| MAFF   | `.maff`          | Yes  | Yes   | Mozilla Archive Format               |
+| KMZ    | `.kmz`           | Yes  | Yes   | Google Earth                         |
+| NuPkg  | `.nupkg`         | Yes  | Yes   | NuGet package                        |
+| DOCX   | `.docx`          | Yes  | Yes   | OOXML Word                           |
+| XLSX   | `.xlsx`          | Yes  | Yes   | OOXML Excel                          |
+| PPTX   | `.pptx`          | Yes  | Yes   | OOXML PowerPoint                     |
+| ODT    | `.odt`           | Yes  | Yes   | OpenDocument Text                    |
+| ODS    | `.ods`           | Yes  | Yes   | OpenDocument Spreadsheet             |
+| ODP    | `.odp`           | Yes  | Yes   | OpenDocument Presentation            |
+| CBZ    | `.cbz`           | Yes  | Yes   | Comic book ZIP                       |
+| CBR    | `.cbr`           | Yes  | Yes   | Comic book RAR — delegates to RarWriter                                      |
+
+### OLE2 Compound File Variants
+
+Microsoft binary office formats built on the OLE2 / Compound File Binary (CFB) container.
+
+| Format    | Extensions  | Read | Write | Notes                                            |
+| --------- | ----------- | ---- | ----- | ------------------------------------------------ |
+| DOC       | `.doc`      | Yes  | Yes   | Word 97-2003 — WORM produces a structurally-valid CFB envelope (not a real Word document; see note below) |
+| XLS       | `.xls`      | Yes  | Yes   | Excel 97-2003 — WORM (CFB envelope, not a real workbook)                            |
+| PPT       | `.ppt`      | Yes  | Yes   | PowerPoint 97-2003 — WORM (CFB envelope, not a real presentation)                   |
+| MSG       | `.msg`      | Yes  | Yes   | Outlook message — WORM (CFB envelope, not real MAPI properties)                     |
+| Thumbs.db | `Thumbs.db` | Yes  | Yes   | Windows thumbnail cache — WORM (CFB envelope, not a real Catalog/thumbnail layout)  |
+| MSI       | `.msi`      | Yes  | Yes   | Windows Installer — WORM produces a CFB envelope (not a functional Installer DB)    |
+
+**Note on DOC/XLS/PPT/MSG/Thumbs.db WORM creation:** The shared `CfbWriter` produces a structurally-valid OLE Compound File container holding the input files as named streams. The result roundtrips through our reader (and other permissive CFB tools like libgsf, Apache POI). It is **not** a Word/Excel/PowerPoint/Outlook document — those require generating each application's internal binary stream layout (e.g. Word's `WordDocument` + `1Table`/`0Table` records), which is well out of scope for a compression toolkit. Limitations: ~6.8 MB total file size cap (109 FAT sectors, no DIFAT chain), single root storage (no nested storages), stream names limited to 31 UTF-16 characters.
 
 ### Disc Image Formats
 
 | Format  | Extensions    | Read | Write | Notes                          |
 | ------- | ------------- | ---- | ----- | ------------------------------ |
-| BIN/CUE | `.bin`,`.cue` | Yes  | Yes   | Raw disc image                 |
-| MDF     | `.mdf`        | Yes  | -     | Alcohol 120%                   |
-| NRG     | `.nrg`        | Yes  | -     | Nero                           |
-| CDI     | `.cdi`        | Yes  | -     | DiscJuggler                    |
-| DMG     | `.dmg`        | Yes  | -     | Apple disk image (zlib, bzip2) |
+| BIN/CUE | `.bin`,`.cue` | Yes  | Yes   | Raw disc image — WORM emits ISO 9660 cooked sectors (auto-detected by reader; CUE sheet is the user's responsibility) |
+| MDF     | `.mdf`        | Yes  | Yes   | Alcohol 120% — WORM emits ISO 9660 (MDS sidecar not produced)              |
+| NRG     | `.nrg`        | Yes  | Yes   | Nero — WORM emits ISO 9660 with NER5 footer                                |
+| CDI     | `.cdi`        | Yes  | Yes   | DiscJuggler — WORM emits ISO 9660 with CDI v2 footer                       |
+| DMG     | `.dmg`        | Yes  | Yes   | Apple disk image — WORM emits raw mish blocks per partition (no zlib/bz2/lzfse encoding); read-side handles all four compressions |
 
 ### Filesystem Image Formats
 
 | Format      | Extensions | Read | Write | Notes                             |
 | ----------- | ---------- | ---- | ----- | --------------------------------- |
 | ISO 9660    | `.iso`     | Yes  | Yes   | CD/DVD filesystem                 |
-| UDF         | `.udf`     | Yes  | -     | Universal Disk Format             |
+| UDF         | `.udf`     | Yes  | Yes   | Universal Disk Format — WORM emits minimal UDF 1.02 with flat file layout |
 | FAT12/16/32 | `.img`     | Yes  | Yes   | DOS/Windows filesystem            |
 | exFAT       | `.img`     | Yes  | Yes   | Extended FAT                      |
 | NTFS        | `.img`     | Yes  | Yes   | Windows NT filesystem (LZNT1)     |
@@ -384,14 +441,14 @@ These are the 49 algorithms compared in the benchmark tool -- they operate on ra
 | HFS+        | `.img`     | Yes  | Yes   | Modern Mac filesystem (B-tree)    |
 | MFS         | `.img`     | Yes  | Yes   | Original Macintosh File System    |
 | ext2/3/4    | `.img`     | Yes  | Yes   | Linux filesystem                  |
-| Btrfs       | `.img`     | Yes  | -     | Linux copy-on-write filesystem    |
-| XFS         | `.img`     | Yes  | -     | Linux high-performance filesystem |
-| JFS         | `.img`     | Yes  | -     | IBM Journaled File System         |
-| ReiserFS    | `.img`     | Yes  | -     | ReiserFS filesystem               |
-| F2FS        | `.img`     | Yes  | -     | Flash-Friendly File System        |
-| UFS         | `.img`     | Yes  | Yes   | Unix File System                  |
-| ZFS         | `.img`     | Yes  | -     | OpenZFS filesystem                |
-| APFS        | `.img`     | Yes  | -     | Apple File System                 |
+| Btrfs       | `.img`     | Yes  | Yes   | Linux CoW filesystem — WORM with root tree + FS tree + inline EXTENT_DATA items (single-subvolume) |
+| XFS         | `.img`     | Yes  | Yes   | Linux high-performance filesystem — WORM with short-form dirs + extent data (big-endian)       |
+| JFS         | `.img`     | Yes  | Yes   | IBM Journaled File System — WORM with inline dtree + xtree extents                            |
+| ReiserFS    | `.img`     | Yes  | Yes   | ReiserFS v3 — WORM with single leaf S+ tree (directory entries + direct data items)             |
+| F2FS        | `.img`     | Yes  | Yes   | Flash-Friendly File System — WORM with NAT + dentry block + direct data blocks                  |
+| UFS         | `.img`     | Yes  | Yes   | Unix File System                                                                               |
+| ZFS         | `.img`     | Yes  | Yes   | OpenZFS — WORM produces valid uberblock label (detection-only; file extraction requires future MOS/ZAP support) |
+| APFS        | `.img`     | Yes  | Yes   | Apple File System — WORM produces valid NX container superblock (listing-only; file extraction requires future extent support) |
 | ROMFS       | `.romfs`   | Yes  | Yes   | Linux ROM filesystem              |
 | MinixFS     | `.minix`   | Yes  | Yes   | Minix v1/v2/v3 filesystem         |
 | VDFS        | `.vdfs`    | Yes  | Yes   | PlayStation Vita filesystem       |
@@ -404,7 +461,7 @@ These are the 49 algorithms compared in the benchmark tool -- they operate on ra
 | VHD    | `.vhd`     | Yes  | Yes   | VirtualPC/Hyper-V                  |
 | VMDK   | `.vmdk`    | Yes  | Yes   | VMware                             |
 | VDI    | `.vdi`     | Yes  | Yes   | VirtualBox (dynamic sparse)        |
-| QCOW2  | `.qcow2`   | Yes  | -     | QEMU (L1/L2 tables, zlib clusters) |
+| QCOW2  | `.qcow2`   | Yes  | Yes   | QEMU — WORM wraps raw disk with L1/L2 table mapping (uncompressed clusters, v2 format) |
 
 ### Retro Computing Formats
 
@@ -419,13 +476,13 @@ These are the 49 algorithms compared in the benchmark tool -- they operate on ra
 | CPC DSK  | `.dsk`     | Yes  | Yes   | Amstrad CPC disk image     |
 | MSA      | `.msa`     | Yes  | -     | Atari ST disk image        |
 | TR-DOS   | `.trd`     | Yes  | -     | ZX Spectrum TR-DOS disk    |
-| PackDisk | -          | Yes  | -     | Amiga PackDisk             |
+| PackDisk | `.pdsk`    | Yes  | Yes   | Amiga PackDisk — WORM writes stored tracks (no XPK encoder needed). Same writer covers DCS / xDisk / xMash via different magics. |
 | Wrapster | -          | Yes  | -     | MP3 wrapper                |
-| LhF      | -          | Yes  | -     | LhF archive                |
-| ZAP      | -          | Yes  | -     | ZAP archive                |
+| LhF      | `.lhf`     | Yes  | Yes   | Amiga LhFloppy disk (LZH-compressed tracks) |
+| ZAP      | `.zap`     | Yes  | Yes   | Amiga disk archiver — WORM writes stored tracks |
 | AMPK     | -          | Yes  | -     | Amiga AMPK                 |
 | IFF-CDAF | -          | Yes  | -     | IFF-CDAF archive           |
-| UMX      | `.umx`     | Yes  | -     | Unreal package             |
+| UMX      | `.umx`     | Yes  | Yes   | Unreal package — WORM emits valid header (detection-only; full compact-index encoding not implemented) |
 
 ### Compression Stream Formats
 

@@ -9,7 +9,7 @@ public sealed class NsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "NSA";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".nsa";
   public IReadOnlyList<string> Extensions => [".nsa"];
@@ -34,5 +34,14 @@ public sealed class NsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var w = new NsaWriter();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+    }
+    w.WriteTo(output);
   }
 }

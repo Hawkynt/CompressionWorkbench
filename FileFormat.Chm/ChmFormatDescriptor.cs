@@ -9,7 +9,7 @@ public sealed class ChmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "CHM";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".chm";
   public IReadOnlyList<string> Extensions => [".chm"];
@@ -40,6 +40,14 @@ public sealed class ChmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) =>
-    throw new NotSupportedException("CHM creation is not supported.");
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // Default: section 0 (stored). Set MethodName="lzx" for LZX-compressed section 1.
+    var w = new ChmWriter();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+    }
+    var useLzx = string.Equals(options.MethodName, "lzx", StringComparison.OrdinalIgnoreCase);
+    w.WriteTo(output, useLzx);
+  }
 }

@@ -9,7 +9,7 @@ public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "DMG";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".dmg";
   public IReadOnlyList<string> Extensions => [".dmg"];
@@ -34,6 +34,15 @@ public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) =>
-    throw new NotSupportedException("DMG creation is not supported.");
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // WORM: each input becomes a partition with a single raw mish block (no
+    // compression). The reader rebuilds sectors from the raw block and writes
+    // each partition out at extract time.
+    var w = new DmgWriter();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      w.AddPartition(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+    }
+    w.WriteTo(output);
+  }
 }

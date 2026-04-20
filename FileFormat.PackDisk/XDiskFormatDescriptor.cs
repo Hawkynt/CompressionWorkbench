@@ -9,7 +9,8 @@ public sealed class XDiskFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public string DisplayName => "xDisk/GDC (Amiga)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".xdsk";
   public IReadOnlyList<string> Extensions => [".xdsk", ".gdc"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -33,5 +34,14 @@ public sealed class XDiskFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var w = new PackDiskWriter("XDSK");
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      w.AddTrack(File.ReadAllBytes(i.FullPath));
+    }
+    w.WriteTo(output);
   }
 }

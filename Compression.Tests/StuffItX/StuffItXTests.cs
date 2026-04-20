@@ -188,4 +188,19 @@ public class StuffItXTests {
       Directory.Delete(tmp, true);
     }
   }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new StuffItXFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath")]
+  public void Writer_HasStuffItMagic() {
+    var w = new StuffItXWriter();
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var bytes = ms.ToArray();
+    Assert.That(Encoding.ASCII.GetString(bytes, 0, 8), Is.EqualTo("StuffIt!"));
+  }
 }

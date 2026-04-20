@@ -9,7 +9,7 @@ public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "PDF (Image Extraction)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".pdf";
   public IReadOnlyList<string> Extensions => [".pdf"];
@@ -35,5 +35,17 @@ public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // WORM: embed every input file as a PDF file attachment via /EmbeddedFiles.
+    // The result is a valid PDF that any viewer lists under "Attachments" and
+    // our reader extracts via the /Type /Filespec + /EmbeddedFile path.
+    var w = new PdfWriter();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+    }
+    w.WriteTo(output);
   }
 }

@@ -208,4 +208,35 @@ public class BinCueTests {
     var format = Compression.Lib.FormatDetector.DetectByExtension("image.cue");
     Assert.That(format, Is.EqualTo(Compression.Lib.FormatDetector.Format.BinCue));
   }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new FileFormat.BinCue.BinCueFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Create_RoundTripsThroughReader() {
+    var payload = "comic-disc-content"u8.ToArray();
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, payload);
+      var d = new FileFormat.BinCue.BinCueFormatDescriptor();
+      using var ms = new MemoryStream();
+      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "data.bin", false)],
+        new Compression.Registry.FormatCreateOptions());
+      ms.Position = 0;
+
+      var r = new FileFormat.BinCue.BinCueReader(ms);
+      var fileEntry = r.Entries.FirstOrDefault(e => !e.IsDirectory && e.Name.StartsWith("DATA"));
+      Assert.That(fileEntry, Is.Not.Null);
+      Assert.That(fileEntry!.Size, Is.EqualTo(payload.Length));
+      var extracted = r.Extract(fileEntry);
+      Assert.That(extracted[..payload.Length], Is.EqualTo(payload));
+    } finally {
+      File.Delete(tmp);
+    }
+  }
 }

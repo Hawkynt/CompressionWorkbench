@@ -9,7 +9,7 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string DisplayName => "F2FS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".f2fs";
@@ -20,7 +20,7 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "F2FS flash-friendly filesystem image (read-only)";
+  public string Description => "F2FS flash-friendly filesystem image";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new F2fsReader(stream);
@@ -36,5 +36,14 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var w = new F2fsWriter();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+    }
+    w.WriteTo(output);
   }
 }

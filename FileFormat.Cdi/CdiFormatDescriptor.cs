@@ -9,7 +9,7 @@ public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "CDI";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".cdi";
@@ -36,5 +36,20 @@ public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.FullPath, files)) continue;
       WriteFile(outputDir, e.FullPath, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // WORM: ISO 9660 image followed by a CDI v2 footer. The reader only uses
+    // the footer for version detection; the session-descriptor offset isn't
+    // dereferenced for ISO extraction.
+    var iso = new FileFormat.Iso.IsoWriter();
+    foreach (var (name, data) in FlatFiles(inputs))
+      iso.AddFile(name, data);
+    output.Write(iso.Build());
+    // Footer: uint32 LE version (CDI v2 = 0x80000004) + uint32 LE offset-from-EOF.
+    Span<byte> footer = stackalloc byte[8];
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(footer, 0x80000004);
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(footer[4..], 0);
+    output.Write(footer);
   }
 }

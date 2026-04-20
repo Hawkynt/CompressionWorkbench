@@ -1,0 +1,184 @@
+name: Build artifacts
+
+# Shared artifact-build block. Called by release.yml (tag push) and nightly.yml
+# (workflow_run on CI success). Everything runs on windows-latest because:
+#   * SFX stubs must be embedded into Compression.Lib before the final Lib
+#     build, and staging is cleaner on one host.
+#   * Compression.UI requires Windows at publish time anyway.
+#   * Linux CLI can still be published from a Windows host via --runtime linux-x64.
+#
+# Inputs:
+#   version       full X.Y.Z.BUILD baked into artifact names
+#   release-kind  "release" | "nightly" (stub/kind unused here, kept for symmetry)
+#   ref           git ref to build (defaults to caller ref)
+#
+# Produces one artifact `CompressionWorkbench-<version>` containing three zips:
+#   * CompressionWorkbench-CLI-win-x64-<version>.zip
+#   * CompressionWorkbench-CLI-linux-x64-<version>.zip
+#   * CompressionWorkbench-UI-win-x64-<version>.zip
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      release-kind:
+        required: true
+        type: string
+      changelog-flag:
+        required: true
+        type: string
+      ref:
+        required: false
+        type: string
+        default: ""
+    outputs:
+      artifact-name:
+        description: "Name of the uploaded artifact folder"
+        value: ${{ jobs.build.outputs.artifact-name }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write                           # action-gh-release needs this downstream
+    outputs:
+      artifact-name: CompressionWorkbench-${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          include-prerelease: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Update CHANGELOG
+        shell: bash
+        run: node .github/workflows/scripts/update-changelog.mjs ${{ inputs.changelog-flag }}
+
+      - name: Restore
+        run: dotnet restore CompressionWorkbench.slnx
+
+      - name: Build solution
+        run: dotnet build CompressionWorkbench.slnx --configuration Release --no-restore -p:Version=${{ inputs.version }}
+
+      - name: Publish SFX stubs into Compression.Lib/stubs
+        shell: pwsh
+        run: |
+          # Collect every RID failure instead of aborting on the first one.
+          $PSNativeCommandUseErrorActionPreference = $false
+
+          $rids       = @("win-x64", "win-x86", "win-arm64", "linux-x64", "linux-arm64")
+          $stagingDir = "sfx-staging"
+          $stubsDir   = "Compression.Lib/stubs"
+          $failures   = @()
+
+          # Phase 1: publish all stubs to a staging directory. ExcludeStubs
+          # prevents Compression.Lib from embedding previously-built stubs
+          # during this publish step, which would push the assembly over the
+          # Roslyn PE size limit.
+          foreach ($rid in $rids) {
+            $dest = "$stagingDir/$rid"
+            New-Item -ItemType Directory -Path $dest -Force | Out-Null
+
+            Write-Host "::group::Publishing SFX CLI stub for $rid"
+            dotnet publish Compression.Sfx.Cli/Compression.Sfx.Cli.csproj -r $rid -c Release -p:ExcludeStubs=true -p:Version=${{ inputs.version }} --nologo
+            $cliExit = $LASTEXITCODE
+            Write-Host "::endgroup::"
+            $exeName = if ($rid.StartsWith("win")) { "sfx-cli.exe" } else { "sfx-cli" }
+            $src = "Compression.Sfx.Cli/bin/Release/net10.0/$rid/publish/$exeName"
+            if ($cliExit -eq 0 -and (Test-Path $src)) {
+              Copy-Item $src $dest -Force
+              Write-Host "  -> $dest/$exeName" -ForegroundColor Green
+            } else {
+              $failures += "Sfx.Cli/$rid (exit=$cliExit, missing=$src)"
+              Write-Host "  -> FAILED (exit=$cliExit) for $rid" -ForegroundColor Red
+            }
+
+            if ($rid.StartsWith("win")) {
+              Write-Host "::group::Publishing SFX UI stub for $rid"
+              dotnet publish Compression.Sfx.Ui/Compression.Sfx.Ui.csproj -r $rid -c Release -p:ExcludeStubs=true -p:Version=${{ inputs.version }} --nologo
+              $uiExit = $LASTEXITCODE
+              Write-Host "::endgroup::"
+              $src = "Compression.Sfx.Ui/bin/Release/net10.0-windows/$rid/publish/sfx-ui.exe"
+              if ($uiExit -eq 0 -and (Test-Path $src)) {
+                Copy-Item $src $dest -Force
+                Write-Host "  -> $dest/sfx-ui.exe" -ForegroundColor Green
+              } else {
+                $failures += "Sfx.Ui/$rid (exit=$uiExit, missing=$src)"
+                Write-Host "  -> FAILED (exit=$uiExit) for $rid" -ForegroundColor Red
+              }
+            }
+          }
+
+          # Phase 2: stage into Compression.Lib/stubs/ for embedding.
+          if (Test-Path $stagingDir) {
+            New-Item -ItemType Directory -Path $stubsDir -Force | Out-Null
+            Copy-Item "$stagingDir/*" $stubsDir -Recurse -Force
+            Remove-Item $stagingDir -Recurse -Force
+            Write-Host "Stubs staged into $stubsDir" -ForegroundColor Green
+          }
+
+          if ($failures.Count -gt 0) {
+            Write-Host ""
+            Write-Host "=== SFX publish failures ===" -ForegroundColor Red
+            $failures | ForEach-Object { Write-Host "  * $_" -ForegroundColor Red }
+            exit 1
+          }
+
+      - name: Publish CLI (win-x64)
+        run: dotnet publish Compression.CLI/Compression.CLI.csproj -r win-x64 -c Release --self-contained --nologo -p:Version=${{ inputs.version }}
+
+      - name: Publish CLI (linux-x64)
+        run: dotnet publish Compression.CLI/Compression.CLI.csproj -r linux-x64 -c Release --self-contained --nologo -p:Version=${{ inputs.version }}
+
+      - name: Publish UI (win-x64)
+        run: dotnet publish Compression.UI/Compression.UI.csproj -r win-x64 -c Release --self-contained --nologo -p:Version=${{ inputs.version }}
+
+      - name: Package CLI (win-x64)
+        shell: pwsh
+        run: |
+          $v = "${{ inputs.version }}"
+          $src = "Compression.CLI/bin/Release/net10.0/win-x64/publish/cwb.exe"
+          Compress-Archive -Path $src -DestinationPath "CompressionWorkbench-CLI-win-x64-$v.zip"
+
+      - name: Package CLI (linux-x64)
+        shell: pwsh
+        run: |
+          $v = "${{ inputs.version }}"
+          $src = "Compression.CLI/bin/Release/net10.0/linux-x64/publish/cwb"
+          Compress-Archive -Path $src -DestinationPath "CompressionWorkbench-CLI-linux-x64-$v.zip"
+
+      - name: Package UI (win-x64)
+        shell: pwsh
+        run: |
+          $v = "${{ inputs.version }}"
+          $pubDir = "Compression.UI/bin/Release/net10.0-windows/win-x64/publish"
+          $shellBuildDir = "Compression.Shell/bin/Release/net10.0-windows"
+          $stageDir = "stage-ui"
+          New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
+
+          Copy-Item "$pubDir/Compression.UI.exe" $stageDir -Force
+
+          # COM host shim must live beside the exe for Explorer shell-extension registration.
+          $comhost = "$shellBuildDir/Compression.Shell.comhost.dll"
+          if (Test-Path $comhost) {
+            Copy-Item $comhost $stageDir -Force
+          }
+
+          Compress-Archive -Path "$stageDir/*" -DestinationPath "CompressionWorkbench-UI-win-x64-$v.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CompressionWorkbench-${{ inputs.version }}
+          path: |
+            CompressionWorkbench-CLI-win-x64-${{ inputs.version }}.zip
+            CompressionWorkbench-CLI-linux-x64-${{ inputs.version }}.zip
+            CompressionWorkbench-UI-win-x64-${{ inputs.version }}.zip

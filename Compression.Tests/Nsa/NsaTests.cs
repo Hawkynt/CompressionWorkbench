@@ -163,4 +163,31 @@ public class NsaTests {
       Directory.Delete(tmp, true);
     }
   }
+
+  [Category("HappyPath")]
+  [Test]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new NsaFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Category("HappyPath"), Category("RoundTrip")]
+  [Test]
+  public void Writer_RoundTrip_TwoFiles_StoredCompression() {
+    var data1 = "first file payload"u8.ToArray();
+    var data2 = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+
+    var w = new NsaWriter();
+    w.AddFile("a.txt", data1);
+    w.AddFile("b.bin", data2);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new NsaReader(ms);
+    Assert.That(r.Entries, Has.Count.EqualTo(2));
+    Assert.That(r.Entries[0].CompressionType, Is.EqualTo(NsaCompressionType.None));
+    Assert.That(r.Extract(r.Entries[0]), Is.EqualTo(data1));
+    Assert.That(r.Extract(r.Entries[1]), Is.EqualTo(data2));
+  }
 }

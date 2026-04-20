@@ -8,7 +8,7 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "ZFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".zfs";
   public IReadOnlyList<string> Extensions => [".zfs", ".zpool"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -26,6 +26,19 @@ public sealed class ZfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    // Detection-only format
+    // Detection-only — full ZFS MOS/DSL/ZAP/dnode traversal not yet implemented.
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // WORM: produces a valid ZFS label with uberblock. File data embedded but
+    // not yet recoverable through our reader (detection-only). Full ZAP/dnode
+    // support is tracked for future work.
+    byte[]? embedded = null;
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      embedded = File.ReadAllBytes(i.FullPath);
+      break;
+    }
+    new ZfsWriter().WriteTo(output, embedded);
   }
 }

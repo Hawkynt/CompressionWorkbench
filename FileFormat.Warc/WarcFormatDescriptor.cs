@@ -10,7 +10,7 @@ public sealed class WarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string DisplayName => "WARC";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".warc";
   public IReadOnlyList<string> Extensions => [".warc"];
@@ -48,6 +48,18 @@ public sealed class WarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         WriteFile(outputDir, name, payload);
       index++;
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var w = new WarcWriter();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var data = File.ReadAllBytes(i.FullPath);
+      // Use the archive name as the WARC-Target-URI so the extractor can
+      // reconstruct it (SanitizeUri keeps slashes/dots/dashes/alphanumeric).
+      w.AddResource(i.ArchiveName, data);
+    }
+    w.WriteTo(output);
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────

@@ -74,4 +74,91 @@ public class MpqTests {
     };
     Assert.That(entry.IsSingleUnit, Is.True);
   }
+
+  // ── WORM creation ────────────────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new FileFormat.Mpq.MpqFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_SingleFile_RoundTripsThroughReader() {
+    var payload = "blizzard worm payload"u8.ToArray();
+    var w = new FileFormat.Mpq.MpqWriter();
+    w.AddFile("readme.txt", payload);
+
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new FileFormat.Mpq.MpqReader(ms);
+    var entry = r.Entries.FirstOrDefault(e => e.FileName.Equals("readme.txt", StringComparison.OrdinalIgnoreCase));
+    Assert.That(entry, Is.Not.Null, "writer must produce a roundtrippable readme.txt entry");
+    Assert.That(r.Extract(entry!), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_MultipleFiles_AllRoundTrip() {
+    var p1 = new byte[100];
+    var p2 = new byte[200];
+    var p3 = new byte[5_000];
+    new Random(1).NextBytes(p1);
+    new Random(2).NextBytes(p2);
+    new Random(3).NextBytes(p3);
+
+    var w = new FileFormat.Mpq.MpqWriter();
+    w.AddFile("data\\one.bin", p1);
+    w.AddFile("data\\two.bin", p2);
+    w.AddFile("scripts\\big.lua", p3);
+
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new FileFormat.Mpq.MpqReader(ms);
+    var byName = r.Entries.ToDictionary(e => e.FileName, StringComparer.OrdinalIgnoreCase);
+    // 3 user files + the auto-generated (listfile).
+    Assert.That(byName.Keys, Does.Contain("(listfile)"));
+    Assert.That(r.Extract(byName["data\\one.bin"]), Is.EqualTo(p1));
+    Assert.That(r.Extract(byName["data\\two.bin"]), Is.EqualTo(p2));
+    Assert.That(r.Extract(byName["scripts\\big.lua"]), Is.EqualTo(p3));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Writer_HasMpqMagic() {
+    var w = new FileFormat.Mpq.MpqWriter();
+    w.AddFile("a.txt", "x"u8.ToArray());
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var bytes = ms.ToArray();
+    // Magic "MPQ\x1A" little-endian = 0x1A51504D
+    Assert.That(bytes[..4], Is.EqualTo(new byte[] { (byte)'M', (byte)'P', (byte)'Q', 0x1A }));
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void Writer_ListfileName_IsReserved() {
+    var w = new FileFormat.Mpq.MpqWriter();
+    Assert.Throws<ArgumentException>(() => w.AddFile("(listfile)", [1]));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_Create_RoundTrips() {
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "mpq descriptor test"u8.ToArray());
+      var d = new FileFormat.Mpq.MpqFormatDescriptor();
+      using var ms = new MemoryStream();
+      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "test.txt", false)],
+        new Compression.Registry.FormatCreateOptions());
+      ms.Position = 0;
+      var entries = d.List(ms, null);
+      Assert.That(entries.Select(e => e.Name), Has.Member("test.txt"));
+    } finally {
+      File.Delete(tmp);
+    }
+  }
 }

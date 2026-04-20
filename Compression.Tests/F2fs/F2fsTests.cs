@@ -39,4 +39,44 @@ public class F2fsTests {
     var r = new FileFormat.F2fs.F2fsReader(ms);
     Assert.That(r.Entries, Has.Count.EqualTo(0));
   }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new FileFormat.F2fs.F2fsFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_SingleFile_RoundTrips() {
+    var payload = "f2fs test"u8.ToArray();
+    var w = new FileFormat.F2fs.F2fsWriter();
+    w.AddFile("test.txt", payload);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new FileFormat.F2fs.F2fsReader(ms);
+    var entry = r.Entries.FirstOrDefault(e => e.Name.StartsWith("test"));
+    Assert.That(entry, Is.Not.Null);
+    Assert.That(r.Extract(entry!), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_Create_RoundTrips() {
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "f2fs descriptor"u8.ToArray());
+      var d = new FileFormat.F2fs.F2fsFormatDescriptor();
+      using var ms = new MemoryStream();
+      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "data.txt", false)],
+        new Compression.Registry.FormatCreateOptions());
+      ms.Position = 0;
+      var entries = d.List(ms, null);
+      Assert.That(entries.Count(e => !e.IsDirectory), Is.GreaterThanOrEqualTo(1));
+    } finally {
+      File.Delete(tmp);
+    }
+  }
 }

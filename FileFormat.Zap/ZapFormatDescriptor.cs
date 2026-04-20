@@ -9,7 +9,8 @@ public sealed class ZapFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "ZAP (Amiga Disk Archiver)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".zap";
   public IReadOnlyList<string> Extensions => [".zap"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -33,5 +34,21 @@ public sealed class ZapFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var w = new ZapWriter();
+    var trackNum = 0;
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      // Recover track index from "track_NNN.raw" naming when present; else
+      // fall back to insertion order.
+      var name = Path.GetFileNameWithoutExtension(i.ArchiveName);
+      var underscore = name.LastIndexOf('_');
+      var explicitTrack = underscore >= 0 && int.TryParse(name[(underscore + 1)..], out var n) ? n : trackNum;
+      w.AddTrack(explicitTrack, File.ReadAllBytes(i.FullPath));
+      trackNum++;
+    }
+    w.WriteTo(output);
   }
 }

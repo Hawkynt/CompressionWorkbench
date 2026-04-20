@@ -91,4 +91,34 @@ public class ZapTests {
     var r = new FileFormat.Zap.ZapReader(ms);
     Assert.Throws<ArgumentNullException>(() => r.Extract(null!));
   }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new FileFormat.Zap.ZapFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_StoredTrack_RoundTrip() {
+    // Reader treats compSize == TrackSize as stored (skips decompression).
+    // The writer always emits stored tracks for WORM creation.
+    var t0 = new byte[FileFormat.Zap.ZapWriter.TrackSize];
+    new Random(7).NextBytes(t0);
+    var t1 = new byte[FileFormat.Zap.ZapWriter.TrackSize];
+    new Random(11).NextBytes(t1);
+
+    var w = new FileFormat.Zap.ZapWriter();
+    w.AddTrack(0, t0);
+    w.AddTrack(1, t1);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new FileFormat.Zap.ZapReader(ms);
+    Assert.That(r.Entries, Has.Count.EqualTo(2));
+    // Reader treats compSize == TrackSize as stored (no decompression).
+    Assert.That(r.Entries[0].CompressedSize, Is.EqualTo(r.Entries[0].Size));
+    Assert.That(r.Extract(r.Entries[0]), Is.EqualTo(t0));
+    Assert.That(r.Extract(r.Entries[1]), Is.EqualTo(t1));
+  }
 }

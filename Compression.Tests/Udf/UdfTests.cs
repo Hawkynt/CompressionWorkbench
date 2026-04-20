@@ -219,4 +219,80 @@ public class UdfTests {
     var entries = desc.List(ms, null);
     Assert.That(entries, Has.Count.EqualTo(1));
   }
+
+  // ── WORM creation ────────────────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new FileFormat.Udf.UdfFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_SingleFile_RoundTrips() {
+    var payload = "hello udf world"u8.ToArray();
+    var w = new FileFormat.Udf.UdfWriter();
+    w.AddFile("readme.txt", payload);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new FileFormat.Udf.UdfReader(ms);
+    Assert.That(r.Entries.Count(e => !e.IsDirectory), Is.EqualTo(1));
+    var entry = r.Entries.First(e => !e.IsDirectory);
+    Assert.That(entry.Name, Is.EqualTo("readme.txt"));
+    Assert.That(entry.Size, Is.EqualTo(payload.Length));
+    Assert.That(r.Extract(entry), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_MultipleFiles_AllRoundTrip() {
+    var p1 = new byte[100];
+    var p2 = new byte[300];
+    new Random(1).NextBytes(p1);
+    new Random(2).NextBytes(p2);
+
+    var w = new FileFormat.Udf.UdfWriter();
+    w.AddFile("a.bin", p1);
+    w.AddFile("b.bin", p2);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new FileFormat.Udf.UdfReader(ms);
+    var files = r.Entries.Where(e => !e.IsDirectory).ToList();
+    Assert.That(files, Has.Count.EqualTo(2));
+    Assert.That(r.Extract(files.First(e => e.Name == "a.bin")), Is.EqualTo(p1));
+    Assert.That(r.Extract(files.First(e => e.Name == "b.bin")), Is.EqualTo(p2));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Writer_HasNsrMagic() {
+    var w = new FileFormat.Udf.UdfWriter();
+    w.AddFile("x.txt", "x"u8.ToArray());
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var bytes = ms.ToArray();
+    // NSR02 at sector 17, offset 1
+    Assert.That(Encoding.ASCII.GetString(bytes, 17 * 2048 + 1, 5), Is.EqualTo("NSR02"));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_Create_RoundTrips() {
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "udf descriptor test"u8.ToArray());
+      var d = new FileFormat.Udf.UdfFormatDescriptor();
+      using var ms = new MemoryStream();
+      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "test.txt", false)],
+        new Compression.Registry.FormatCreateOptions());
+      ms.Position = 0;
+      var entries = d.List(ms, null);
+      Assert.That(entries.Where(e => !e.IsDirectory).Select(e => e.Name), Has.Member("test.txt"));
+    } finally {
+      File.Delete(tmp);
+    }
+  }
 }

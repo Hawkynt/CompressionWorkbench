@@ -1,20 +1,27 @@
-name: Build and Test
+name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
-    branches: [main]
+    branches: [main, master]
+  # release.yml calls this via `uses: ./.github/workflows/ci.yml` so tag
+  # releases run the exact same test matrix as per-PR CI.
+  workflow_call: {}
 
 jobs:
-  build-and-test:
+  test:
+    name: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0                          # version.pl needs full history
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -26,7 +33,7 @@ jobs:
       - name: Build
         run: dotnet build CompressionWorkbench.slnx --configuration Release --no-restore
 
-      # Core tests -- always run (no external tools)
+      # Core tests -- always run (no external tools required).
       - name: Core tests
         run: >
           dotnet test Compression.Tests
@@ -34,17 +41,15 @@ jobs:
           --filter "Category!=EndToEnd&Category!=OsIntegration&Category!=ExternalInterop&Category!=PolyglotInterop"
           --logger "trx;LogFileName=core-tests.trx"
 
-      # Install tools for interop tests (Linux)
+      # Interop tools for E2E tests.
       - name: Install interop tools (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y p7zip-full gzip bzip2 xz-utils zstd lz4 tar cpio genisoimage mtools qemu-utils
 
-      # Install tools for interop tests (Windows)
       - name: Install 7-Zip (Windows)
         if: matrix.os == 'windows-latest'
         run: choco install 7zip -y
 
-      # E2E interop tests
       - name: End-to-end interop tests
         continue-on-error: true
         run: >
@@ -53,7 +58,6 @@ jobs:
           --filter "Category=EndToEnd"
           --logger "trx;LogFileName=e2e-tests.trx"
 
-      # OS integration tests (Linux has more coverage)
       - name: OS integration tests
         continue-on-error: true
         run: >
@@ -62,21 +66,16 @@ jobs:
           --filter "Category=OsIntegration"
           --logger "trx;LogFileName=os-tests.trx"
 
-      # Polyglot interop: verify our formats round-trip through other
-      # language ecosystems (Python/Node/Perl/Ruby). Most tests skip
-      # unless the corresponding package is installed; install the common
-      # ones on Linux. Never "pip install" inside tests.
+      # Polyglot tests verify our formats round-trip through other language
+      # ecosystems. Tests skip individually if the language package isn't
+      # available; never call `pip install` etc. from inside a test.
       - name: Install polyglot test dependencies (Linux)
         if: matrix.os == 'ubuntu-latest'
         continue-on-error: true
         run: |
           python3 -m pip install --user --break-system-packages py7zr zstandard brotli lz4 rarfile || true
-          # Perl core ships with IO::Uncompress::{Gunzip,Bunzip2,UnXz,UnLzop} via IO-Compress-*;
-          # Archive::Zip and Archive::Tar come with most distros. Try to ensure them via cpanm.
           sudo cpanm --notest Archive::Zip IO::Compress::Lzma IO::Compress::Lzop || true
-          # Ruby gems for optional tests.
           gem install --user-install minitar rubyzip zstd-ruby || true
-          # Node built-ins cover most tests; install adm-zip and tar-stream for the rest.
           npm install --prefix /tmp/polyglot-node adm-zip tar-stream || true
           echo "NODE_PATH=/tmp/polyglot-node/node_modules" >> $GITHUB_ENV
 
@@ -94,3 +93,33 @@ jobs:
         with:
           name: test-results-${{ matrix.os }}
           path: '**/TestResults/*.trx'
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          include-prerelease: true
+
+      - name: Run tests with coverage
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release
+          --filter "Category!=EndToEnd&Category!=OsIntegration&Category!=ExternalInterop&Category!=PolyglotInterop"
+          --collect:"XPlat Code Coverage"
+          --results-directory ./coverage
+
+      - name: Generate coverage report
+        run: |
+          dotnet tool install -g dotnet-reportgenerator-globaltool
+          reportgenerator -reports:./coverage/**/coverage.cobertura.xml -targetdir:./coverage/report -reporttypes:HtmlInline_AzurePipelines
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: ./coverage/report

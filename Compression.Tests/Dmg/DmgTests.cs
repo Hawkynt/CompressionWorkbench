@@ -321,14 +321,6 @@ public class DmgTests {
     Assert.Throws<InvalidDataException>(() => _ = new FileFormat.Dmg.DmgReader(ms));
   }
 
-  [Test, Category("ErrorHandling")]
-  public void Descriptor_Create_ThrowsNotSupported() {
-    var desc = new FileFormat.Dmg.DmgFormatDescriptor();
-    using var ms = new MemoryStream();
-    Assert.Throws<NotSupportedException>(() =>
-      desc.Create(ms, [], new Compression.Registry.FormatCreateOptions()));
-  }
-
   [Test, Category("HappyPath")]
   public void Extract_NullEntry_ThrowsArgumentNull() {
     var sectorData = new byte[512];
@@ -336,5 +328,84 @@ public class DmgTests {
     using var ms = new MemoryStream(dmg);
     var r = new FileFormat.Dmg.DmgReader(ms);
     Assert.Throws<ArgumentNullException>(() => r.Extract(null!));
+  }
+
+  // ── WORM creation ────────────────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new FileFormat.Dmg.DmgFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_SinglePartition_RoundTrips() {
+    // Sector-aligned payload so reader returns it without zero-padding noise.
+    var payload = new byte[2048];
+    new Random(7).NextBytes(payload);
+
+    var w = new FileFormat.Dmg.DmgWriter();
+    w.AddPartition("disk1.img", payload);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new FileFormat.Dmg.DmgReader(ms);
+    Assert.That(r.Entries, Has.Count.EqualTo(1));
+    Assert.That(r.Entries[0].Name, Is.EqualTo("disk1.img"));
+    Assert.That(r.Entries[0].Size, Is.EqualTo(payload.Length));
+    Assert.That(r.Extract(r.Entries[0]), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_MultiplePartitions_AllRoundTrip() {
+    var p1 = new byte[1024];
+    var p2 = new byte[3072];
+    new Random(1).NextBytes(p1);
+    new Random(2).NextBytes(p2);
+
+    var w = new FileFormat.Dmg.DmgWriter();
+    w.AddPartition("a.img", p1);
+    w.AddPartition("b.img", p2);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new FileFormat.Dmg.DmgReader(ms);
+    var byName = r.Entries.ToDictionary(e => e.Name);
+    Assert.That(byName, Has.Count.EqualTo(2));
+    Assert.That(r.Extract(byName["a.img"]), Is.EqualTo(p1));
+    Assert.That(r.Extract(byName["b.img"]), Is.EqualTo(p2));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Writer_HasKolyTrailer() {
+    var w = new FileFormat.Dmg.DmgWriter();
+    w.AddPartition("x.img", new byte[512]);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var bytes = ms.ToArray();
+    // koly magic at offset (length - 512)
+    Assert.That(bytes[^512..^508], Is.EqualTo(new byte[] { (byte)'k', (byte)'o', (byte)'l', (byte)'y' }));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_Create_RoundTrips() {
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, new byte[1024]);
+      var d = new FileFormat.Dmg.DmgFormatDescriptor();
+      using var ms = new MemoryStream();
+      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "data.img", false)],
+        new Compression.Registry.FormatCreateOptions());
+      ms.Position = 0;
+      var entries = d.List(ms, null);
+      Assert.That(entries, Has.Count.EqualTo(1));
+      Assert.That(entries[0].Name, Is.EqualTo("data.img"));
+    } finally {
+      File.Delete(tmp);
+    }
   }
 }

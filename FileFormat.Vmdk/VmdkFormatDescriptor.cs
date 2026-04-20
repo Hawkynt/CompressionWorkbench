@@ -29,10 +29,9 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var diskData = Array.Empty<byte>();
-    foreach (var (_, data) in FlatFiles(inputs)) { diskData = data; break; }
+    var fatImage = FileFormat.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
     var w = new VmdkWriter();
-    w.SetDiskData(diskData);
+    w.SetDiskData(fatImage);
     output.Write(w.Build());
   }
 

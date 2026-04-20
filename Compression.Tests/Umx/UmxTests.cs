@@ -226,4 +226,19 @@ public class UmxTests {
     else
       Assert.Pass("No entries found for unknown format");
   }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new FileFormat.Umx.UmxFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath")]
+  public void Writer_ProducesValidMagic() {
+    var w = new FileFormat.Umx.UmxWriter();
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var bytes = ms.ToArray();
+    Assert.That(bytes[..4], Is.EqualTo(new byte[] { 0xC1, 0x83, 0x2A, 0x9E }));
+  }
 }

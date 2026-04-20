@@ -9,7 +9,7 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string DisplayName => "APFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   public string DefaultExtension => ".apfs";
   public IReadOnlyList<string> Extensions => [".apfs"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -28,6 +28,10 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    // Listing-only format
+    // Listing-only — full APFS extent resolution not yet implemented.
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    new ApfsWriter().WriteTo(output);
   }
 }

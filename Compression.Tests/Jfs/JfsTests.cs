@@ -123,4 +123,61 @@ public class JfsTests {
     using var ms = new MemoryStream(data);
     Assert.Throws<InvalidDataException>(() => _ = new FileFormat.Jfs.JfsReader(ms));
   }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new FileFormat.Jfs.JfsFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_InlineFile_RoundTrips() {
+    var payload = "hello jfs inline"u8.ToArray(); // small → inline
+    var w = new FileFormat.Jfs.JfsWriter();
+    w.AddFile("test.txt", payload);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new FileFormat.Jfs.JfsReader(ms);
+    Assert.That(r.Entries.Count(e => !e.IsDirectory), Is.GreaterThanOrEqualTo(1));
+    var entry = r.Entries.First(e => e.Name == "test.txt");
+    Assert.That(entry.Size, Is.EqualTo(payload.Length));
+    Assert.That(r.Extract(entry), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_ExtentFile_RoundTrips() {
+    // > 352 bytes → stored in extent blocks, not inline
+    var payload = new byte[2000];
+    new Random(42).NextBytes(payload);
+    var w = new FileFormat.Jfs.JfsWriter();
+    w.AddFile("big.bin", payload);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new FileFormat.Jfs.JfsReader(ms);
+    var entry = r.Entries.First(e => e.Name == "big.bin");
+    Assert.That(r.Extract(entry), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_Create_RoundTrips() {
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "jfs descriptor"u8.ToArray());
+      var d = new FileFormat.Jfs.JfsFormatDescriptor();
+      using var ms = new MemoryStream();
+      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "data.txt", false)],
+        new Compression.Registry.FormatCreateOptions());
+      ms.Position = 0;
+      var entries = d.List(ms, null);
+      Assert.That(entries.Where(e => !e.IsDirectory).Select(e => e.Name), Has.Member("data.txt"));
+    } finally {
+      File.Delete(tmp);
+    }
+  }
 }
