@@ -294,11 +294,76 @@ public class Qcow2Tests {
     Assert.That(extracted, Is.EqualTo(new byte[clusterSize * 2]));
   }
 
-  [Test, Category("ErrorHandling")]
-  public void Descriptor_Create_Throws() {
-    var desc = new FileFormat.Qcow2.Qcow2FormatDescriptor();
+  // ── WORM creation ────────────────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new FileFormat.Qcow2.Qcow2FormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_SmallDisk_RoundTrips() {
+    // 128 KB raw disk with recognisable pattern.
+    var disk = new byte[128 * 1024];
+    new Random(42).NextBytes(disk);
+
+    var w = new FileFormat.Qcow2.Qcow2Writer();
+    w.SetDiskImage(disk);
     using var ms = new MemoryStream();
-    Assert.Throws<NotSupportedException>(() =>
-      desc.Create(ms, [], new Compression.Registry.FormatCreateOptions()));
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new FileFormat.Qcow2.Qcow2Reader(ms);
+    Assert.That(r.VirtualSize, Is.EqualTo(disk.Length));
+    var extracted = r.ExtractDisk();
+    Assert.That(extracted, Is.EqualTo(disk));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_MultiClusterDisk_RoundTrips() {
+    // 3 clusters (65536 * 3 = 196608 bytes) — crosses an L2 entry boundary.
+    var disk = new byte[3 * 65536];
+    new Random(99).NextBytes(disk);
+
+    var w = new FileFormat.Qcow2.Qcow2Writer();
+    w.SetDiskImage(disk);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new FileFormat.Qcow2.Qcow2Reader(ms);
+    Assert.That(r.ExtractDisk(), Is.EqualTo(disk));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Writer_HasQcow2Magic() {
+    var w = new FileFormat.Qcow2.Qcow2Writer();
+    w.SetDiskImage(new byte[512]);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var bytes = ms.ToArray();
+    Assert.That(bytes[..4], Is.EqualTo(new byte[] { 0x51, 0x46, 0x49, 0xFB }));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_Create_RoundTrips() {
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "qcow2 payload"u8.ToArray());
+      var d = new FileFormat.Qcow2.Qcow2FormatDescriptor();
+      using var ms = new MemoryStream();
+      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "test.txt", false)],
+        new Compression.Registry.FormatCreateOptions());
+      ms.Position = 0;
+      var entries = d.List(ms, null);
+      Assert.That(entries, Has.Count.EqualTo(1));
+      // Virtual size is the FAT filesystem image (>= 1.44 MB by default).
+      Assert.That(entries[0].OriginalSize, Is.GreaterThanOrEqualTo(1440 * 1024));
+    } finally {
+      File.Delete(tmp);
+    }
   }
 }

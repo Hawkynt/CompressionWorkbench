@@ -9,9 +9,9 @@ public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "CBR";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
-    FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.SupportsDirectories | FormatCapabilities.SupportsPassword;
   public string DefaultExtension => ".cbr";
   public IReadOnlyList<string> Extensions => [".cbr"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -34,6 +34,17 @@ public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(outputDir, e.Name)); continue; }
       WriteFile(outputDir, e.Name, r.Extract(i));
+    }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    using var w = new FileFormat.Rar.RarWriter(output, leaveOpen: true, password: options.Password);
+    foreach (var i in inputs) {
+      // RAR stores directory structure implicitly via entry path components;
+      // skip explicit directory inputs (mirrors how the RarReader exposes them).
+      if (i.IsDirectory) continue;
+      var modified = File.Exists(i.FullPath) ? new DateTimeOffset(File.GetLastWriteTimeUtc(i.FullPath), TimeSpan.Zero) : (DateTimeOffset?)null;
+      w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath), modified);
     }
   }
 }

@@ -133,6 +133,38 @@ public sealed class FatWriter {
     return disk;
   }
 
+  /// <summary>
+  /// Convenience: builds a FAT image from a list of files, auto-sizing to fit.
+  /// Used by virtual disk writers (QCOW2, VHD, VMDK, VDI) to embed a filesystem
+  /// inside a disk container so that Create() produces a usable volume.
+  /// </summary>
+  public static byte[] BuildFromFiles(IEnumerable<(string name, byte[] data)> files) {
+    var w = new FatWriter();
+    var totalData = 0L;
+    foreach (var (name, data) in files) {
+      w.AddFile(ToShortName(name), data);
+      totalData += data.Length;
+    }
+    // Auto-size: data + ~50% overhead for FAT/root-dir/alignment, minimum 1.44 MB.
+    var neededBytes = Math.Max(totalData * 3 / 2 + 32768, 1440 * 1024);
+    var totalSectors = Math.Max(2880, (int)((neededBytes + 511) / 512));
+    return w.Build(totalSectors);
+  }
+
+  private static string ToShortName(string name) {
+    var leaf = Path.GetFileName(name);
+    var dotIdx = leaf.LastIndexOf('.');
+    var basePart = (dotIdx >= 0 ? leaf[..dotIdx] : leaf).ToUpperInvariant();
+    var extPart = (dotIdx >= 0 ? leaf[(dotIdx + 1)..] : "").ToUpperInvariant();
+    // Keep only A-Z 0-9 _ chars
+    basePart = new string(basePart.Where(c => c is >= 'A' and <= 'Z' or >= '0' and <= '9' or '_').ToArray());
+    extPart = new string(extPart.Where(c => c is >= 'A' and <= 'Z' or >= '0' and <= '9' or '_').ToArray());
+    if (basePart.Length == 0) basePart = "FILE";
+    if (basePart.Length > 8) basePart = basePart[..8];
+    if (extPart.Length > 3) extPart = extPart[..3];
+    return extPart.Length > 0 ? $"{basePart}.{extPart}" : basePart;
+  }
+
   private static void WriteFatEntry(byte[] disk, int fatOffset, int cluster, int value, int fatType) {
     if (fatType == 12) {
       var bytePos = fatOffset + cluster * 3 / 2;

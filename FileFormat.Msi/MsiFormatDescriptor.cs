@@ -9,7 +9,7 @@ public sealed class MsiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "MSI (OLE Compound File)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".msi";
   public IReadOnlyList<string> Extensions => [".msi", ".msp", ".mst"];
@@ -36,5 +36,21 @@ public sealed class MsiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.FullPath, files)) continue;
       WriteFile(outputDir, e.FullPath, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // WORM: produces a structurally-valid CFB file. NOT a functional Windows
+    // Installer package (that requires Installer DB schema tables, transforms,
+    // cabinet streams, etc. — well out of scope). Useful for CFB container
+    // round-trip and for tools that need to pack streams into an OLE envelope.
+    var w = new CfbWriter();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var leaf = Path.GetFileName(i.ArchiveName);
+      if (string.IsNullOrEmpty(leaf)) leaf = i.ArchiveName;
+      if (leaf.Length > 31) leaf = leaf[..31];
+      w.AddStream(leaf, File.ReadAllBytes(i.FullPath));
+    }
+    w.WriteTo(output);
   }
 }

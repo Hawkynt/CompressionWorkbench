@@ -123,4 +123,38 @@ public class CdiTests {
     var format = Compression.Lib.FormatDetector.DetectByExtension("disc.cdi");
     Assert.That(format, Is.EqualTo(Compression.Lib.FormatDetector.Format.Cdi));
   }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new FileFormat.Cdi.CdiFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Create_HasCdiFooter_AndRoundTrips() {
+    var payload = "discjuggler-payload"u8.ToArray();
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, payload);
+      var d = new FileFormat.Cdi.CdiFormatDescriptor();
+      using var ms = new MemoryStream();
+      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "data.bin", false)],
+        new Compression.Registry.FormatCreateOptions());
+
+      // Verify the CDI v2 footer (uint32 LE 0x80000004 + uint32 LE 0).
+      var bytes = ms.ToArray();
+      Assert.That(BitConverter.ToUInt32(bytes, bytes.Length - 8), Is.EqualTo(0x80000004u));
+
+      ms.Position = 0;
+      var r = new FileFormat.Cdi.CdiReader(ms);
+      Assert.That(r.CdiVersion, Is.EqualTo(0x80000004u));
+      var fileEntry = r.Entries.FirstOrDefault(e => !e.IsDirectory && e.Name.StartsWith("DATA"));
+      Assert.That(fileEntry, Is.Not.Null);
+      Assert.That(r.Extract(fileEntry!)[..payload.Length], Is.EqualTo(payload));
+    } finally {
+      File.Delete(tmp);
+    }
+  }
 }

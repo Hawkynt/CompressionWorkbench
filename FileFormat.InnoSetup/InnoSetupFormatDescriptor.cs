@@ -9,8 +9,9 @@ public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveForma
   public string DisplayName => "Inno Setup";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".exe";
   public IReadOnlyList<string> Extensions => [];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -33,5 +34,15 @@ public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveForma
       if (files != null && !MatchesFilter(e.FileName, files)) continue;
       WriteFile(outputDir, e.FileName, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    byte[]? embedded = null;
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      embedded = File.ReadAllBytes(i.FullPath);
+      break;
+    }
+    new InnoSetupWriter().WriteTo(output, embedded);
   }
 }

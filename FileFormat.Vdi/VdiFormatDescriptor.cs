@@ -33,8 +33,8 @@ public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var allData = FlatFiles(inputs).SelectMany(f => f.Data).ToArray();
-    using var w = new VdiWriter(output, leaveOpen: true, virtualSize: allData.Length);
-    w.Write(allData);
+    var fatImage = FileFormat.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
+    using var w = new VdiWriter(output, leaveOpen: true, virtualSize: fatImage.Length);
+    w.Write(fatImage);
   }
 }

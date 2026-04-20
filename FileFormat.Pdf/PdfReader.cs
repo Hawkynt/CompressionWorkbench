@@ -6,17 +6,19 @@ using System.Text.RegularExpressions;
 namespace FileFormat.Pdf;
 
 /// <summary>
-/// Reads a PDF file and extracts embedded images.
+/// Reads a PDF file and extracts embedded images and file attachments.
 /// </summary>
 /// <remarks>
-/// Supports extracting JPEG (DCTDecode), JPEG2000 (JPXDecode), and raw image
-/// streams (FlateDecode). JPEG/JPEG2000 images are returned as-is; raw images
-/// are returned as raw pixel data with metadata in the entry.
+/// Supports extracting JPEG (DCTDecode), JPEG2000 (JPXDecode), raw image
+/// streams (FlateDecode), and file attachments (/Type /EmbeddedFile with
+/// /Type /Filespec naming). JPEG/JPEG2000 images are returned as-is; raw
+/// images are returned as raw pixel data with metadata in the entry.
 /// </remarks>
 public sealed partial class PdfReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<PdfEntry> _entries = [];
   private readonly Dictionary<int, ImageInfo> _images = [];
+  private readonly Dictionary<int, AttachInfo> _attachments = [];
 
   public IReadOnlyList<PdfEntry> Entries => _entries;
 
@@ -25,6 +27,13 @@ public sealed partial class PdfReader : IDisposable {
     stream.CopyTo(ms);
     _data = ms.ToArray();
     Parse();
+  }
+
+  private sealed class AttachInfo {
+    public int ObjectNumber;
+    public string FileName = "";
+    public long StreamOffset;
+    public long StreamLength;
   }
 
   private sealed class ImageInfo {
@@ -115,6 +124,52 @@ public sealed partial class PdfReader : IDisposable {
         });
       }
     }
+
+    // --- Second pass: extract file attachments (/Type /EmbeddedFile) ---
+    // Build map: stream-object-number → (name, offset, length).
+    // First collect Filespec objects to get filenames and their EF stream refs.
+    var filespecs = new Dictionary<int, string>(); // stream-obj-number → filename
+    foreach (Match m in objMatches) {
+      var objBody = m.Groups[2].Value;
+      if (!objBody.Contains("/Type") || !objBody.Contains("/Filespec")) continue;
+      var fnMatch = FilespecFnPattern().Match(objBody);
+      if (!fnMatch.Success) continue;
+      var fn = fnMatch.Groups[1].Value.Replace("\\(", "(").Replace("\\)", ")").Replace("\\\\", "\\");
+      var efMatch = EfRefPattern().Match(objBody);
+      if (!efMatch.Success) continue;
+      var efObjNum = int.Parse(efMatch.Groups[1].Value);
+      filespecs[efObjNum] = fn;
+    }
+
+    // Now collect EmbeddedFile stream objects referenced by filespecs.
+    foreach (Match m in objMatches) {
+      var objNum = int.Parse(m.Groups[1].Value);
+      if (!filespecs.TryGetValue(objNum, out var fileName)) continue;
+      var objBody = m.Groups[2].Value;
+      if (!objBody.Contains("/Type") || !objBody.Contains("/EmbeddedFile")) continue;
+
+      var streamStart = FindStreamStart(text, m.Index, m.Length);
+      if (streamStart < 0) continue;
+      long streamLen;
+      var lenMatch = LengthPattern().Match(objBody);
+      if (lenMatch.Success && long.TryParse(lenMatch.Groups[1].Value, out var dl)) {
+        streamLen = dl;
+      } else {
+        var endIdx = text.IndexOf("endstream", streamStart, StringComparison.Ordinal);
+        streamLen = endIdx > streamStart ? endIdx - streamStart : 0;
+        while (streamLen > 0 && _data[streamStart + streamLen - 1] is 0x0A or 0x0D) streamLen--;
+      }
+      if (streamLen <= 0) continue;
+
+      var ai = new AttachInfo { ObjectNumber = objNum, FileName = fileName, StreamOffset = streamStart, StreamLength = streamLen };
+      _attachments[objNum] = ai;
+      _entries.Add(new PdfEntry {
+        Name = fileName,
+        Size = streamLen,
+        ObjectNumber = objNum,
+        Filter = "EmbeddedFile",
+      });
+    }
   }
 
   private static int FindStreamStart(string text, int objStart, int objLen) {
@@ -131,8 +186,12 @@ public sealed partial class PdfReader : IDisposable {
   public byte[] Extract(PdfEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
 
+    // Check attachments first.
+    if (_attachments.TryGetValue(entry.ObjectNumber, out var attach))
+      return _data.AsSpan((int)attach.StreamOffset, (int)attach.StreamLength).ToArray();
+
     if (!_images.TryGetValue(entry.ObjectNumber, out var info))
-      throw new InvalidDataException($"PDF: image object {entry.ObjectNumber} not found.");
+      throw new InvalidDataException($"PDF: object {entry.ObjectNumber} not found.");
 
     var rawStream = _data.AsSpan((int)info.StreamOffset, (int)info.StreamLength).ToArray();
 
@@ -192,4 +251,10 @@ public sealed partial class PdfReader : IDisposable {
 
   [GeneratedRegex(@"/Length\s+(\d+)")]
   private static partial Regex LengthPattern();
+
+  [GeneratedRegex(@"/F\s*\(([^)]*)\)")]
+  private static partial Regex FilespecFnPattern();
+
+  [GeneratedRegex(@"/EF\s*<<\s*/F\s+(\d+)\s+0\s+R")]
+  private static partial Regex EfRefPattern();
 }

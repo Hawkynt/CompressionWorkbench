@@ -9,7 +9,8 @@ public sealed class UmxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "Unreal Music (UMX)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest;
   public string DefaultExtension => ".umx";
   public IReadOnlyList<string> Extensions => [".umx"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -33,5 +34,15 @@ public sealed class UmxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    byte[]? embedded = null;
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      embedded = File.ReadAllBytes(i.FullPath);
+      break;
+    }
+    new UmxWriter().WriteTo(output, embedded);
   }
 }

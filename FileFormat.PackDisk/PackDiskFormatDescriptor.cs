@@ -9,7 +9,8 @@ public sealed class PackDiskFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public string DisplayName => "PackDisk (Amiga)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".pdsk";
   public IReadOnlyList<string> Extensions => [".pdsk"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -34,5 +35,16 @@ public sealed class PackDiskFormatDescriptor : IFormatDescriptor, IArchiveFormat
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // WORM: emit stored tracks (no XPK encoder needed). The reader recognises
+    // a track as stored when no "XPKF" chunk header precedes the 5632-byte block.
+    var w = new PackDiskWriter("PDSK");
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      w.AddTrack(File.ReadAllBytes(i.FullPath));
+    }
+    w.WriteTo(output);
   }
 }

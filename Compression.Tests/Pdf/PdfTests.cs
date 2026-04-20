@@ -190,4 +190,69 @@ public class PdfTests {
     var r = new PdfReader(ms);
     Assert.Throws<ArgumentNullException>(() => r.Extract(null!));
   }
+
+  // ── WORM creation (file attachments) ───────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new PdfFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_SingleAttachment_RoundTrips() {
+    var payload = "hello from pdf attachment"u8.ToArray();
+    var w = new PdfWriter();
+    w.AddFile("readme.txt", payload);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+
+    // Verify valid PDF header
+    var bytes = ms.ToArray();
+    Assert.That(System.Text.Encoding.ASCII.GetString(bytes[..5]), Is.EqualTo("%PDF-"));
+
+    ms.Position = 0;
+    var r = new PdfReader(ms);
+    var attach = r.Entries.FirstOrDefault(e => e.Name == "readme.txt");
+    Assert.That(attach, Is.Not.Null);
+    Assert.That(r.Extract(attach!), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_MultipleAttachments_AllRoundTrip() {
+    var p1 = "first attachment"u8.ToArray();
+    var p2 = new byte[] { 0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0xFF };
+
+    var w = new PdfWriter();
+    w.AddFile("a.txt", p1);
+    w.AddFile("b.bin", p2);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new PdfReader(ms);
+    var byName = r.Entries.Where(e => e.Filter == "EmbeddedFile").ToDictionary(e => e.Name);
+    Assert.That(byName, Has.Count.EqualTo(2));
+    Assert.That(r.Extract(byName["a.txt"]), Is.EqualTo(p1));
+    Assert.That(r.Extract(byName["b.bin"]), Is.EqualTo(p2));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_Create_RoundTrips() {
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "pdf descriptor test"u8.ToArray());
+      var d = new PdfFormatDescriptor();
+      using var ms = new MemoryStream();
+      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "test.txt", false)],
+        new Compression.Registry.FormatCreateOptions());
+      ms.Position = 0;
+      var entries = d.List(ms, null);
+      Assert.That(entries.Select(e => e.Name), Has.Member("test.txt"));
+    } finally {
+      File.Delete(tmp);
+    }
+  }
 }

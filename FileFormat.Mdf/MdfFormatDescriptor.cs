@@ -9,7 +9,7 @@ public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "MDF/MDS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".mdf";
@@ -36,5 +36,15 @@ public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.FullPath, files)) continue;
       WriteFile(outputDir, e.FullPath, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // WORM: emit plain 2048-byte ISO 9660 sectors. The reader's geometry detection
+    // recognises this. The accompanying .MDS metadata sidecar isn't produced (the
+    // Create API is single-stream); MDS isn't required to extract MDF content.
+    var iso = new FileFormat.Iso.IsoWriter();
+    foreach (var (name, data) in FlatFiles(inputs))
+      iso.AddFile(name, data);
+    output.Write(iso.Build());
   }
 }

@@ -286,11 +286,132 @@ public sealed class ChmTests {
     Assert.Throws<InvalidDataException>(() => _ = new ChmReader(new MemoryStream(tiny)));
   }
 
-  [Category("Exception")]
-  [Test]
-  public void Create_Throws_NotSupported() {
+  // ── WORM creation ────────────────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
     var d = new ChmFormatDescriptor();
-    Assert.Throws<NotSupportedException>(
-      () => d.Create(Stream.Null, [], new Compression.Registry.FormatCreateOptions()));
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_SingleFile_RoundTrips() {
+    var payload = "hello from chm"u8.ToArray();
+    var w = new ChmWriter();
+    w.AddFile("/index.html", payload);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new ChmReader(ms);
+    var entry = r.Entries.FirstOrDefault(e => e.Path == "/index.html");
+    Assert.That(entry, Is.Not.Null);
+    Assert.That(entry!.Section, Is.EqualTo(0));
+    Assert.That(entry.Size, Is.EqualTo(payload.Length));
+    Assert.That(r.Extract(entry), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_MultipleFiles_AllRoundTrip() {
+    var p1 = "<html>page1</html>"u8.ToArray();
+    var p2 = "<html>page2</html>"u8.ToArray();
+
+    var w = new ChmWriter();
+    w.AddFile("/page1.html", p1);
+    w.AddFile("/page2.html", p2);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new ChmReader(ms);
+    var byPath = r.Entries.ToDictionary(e => e.Path);
+    Assert.That(r.Extract(byPath["/page1.html"]), Is.EqualTo(p1));
+    Assert.That(r.Extract(byPath["/page2.html"]), Is.EqualTo(p2));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Writer_HasItsfMagic() {
+    var w = new ChmWriter();
+    w.AddFile("/a.txt", "x"u8.ToArray());
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var bytes = ms.ToArray();
+    Assert.That(bytes[..4], Is.EqualTo("ITSF"u8.ToArray()));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_Lzx_SingleFile_RoundTrips() {
+    var payload = "lzx compressed content in chm"u8.ToArray();
+    var w = new ChmWriter();
+    w.AddFile("/lzx.html", payload);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms, useLzx: true);
+    ms.Position = 0;
+
+    var r = new ChmReader(ms);
+    var entry = r.Entries.FirstOrDefault(e => e.Path == "/lzx.html");
+    Assert.That(entry, Is.Not.Null);
+    Assert.That(entry!.Section, Is.EqualTo(1), "LZX files should be in section 1");
+    Assert.That(r.Extract(entry), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_Lzx_MultipleFiles_AllRoundTrip() {
+    var p1 = new byte[2000];
+    var p2 = new byte[5000];
+    new Random(1).NextBytes(p1);
+    new Random(2).NextBytes(p2);
+
+    var w = new ChmWriter();
+    w.AddFile("/a.bin", p1);
+    w.AddFile("/b.bin", p2);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms, useLzx: true);
+    ms.Position = 0;
+
+    var r = new ChmReader(ms);
+    var byPath = r.Entries.Where(e => !e.Path.StartsWith("::")).ToDictionary(e => e.Path);
+    Assert.That(r.Extract(byPath["/a.bin"]), Is.EqualTo(p1));
+    Assert.That(r.Extract(byPath["/b.bin"]), Is.EqualTo(p2));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_Create_Lzx_ViaOptions() {
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "lzx via options"u8.ToArray());
+      var d = new ChmFormatDescriptor();
+      using var ms = new MemoryStream();
+      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "test.html", false)],
+        new Compression.Registry.FormatCreateOptions { MethodName = "lzx" });
+      ms.Position = 0;
+      var entries = d.List(ms, null);
+      var userEntry = entries.FirstOrDefault(e => e.Name == "test.html");
+      Assert.That(userEntry, Is.Not.Null);
+      Assert.That(userEntry!.Method, Is.EqualTo("LZX"));
+    } finally {
+      File.Delete(tmp);
+    }
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_Create_RoundTrips() {
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "chm descriptor test"u8.ToArray());
+      var d = new ChmFormatDescriptor();
+      using var ms = new MemoryStream();
+      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "test.html", false)],
+        new Compression.Registry.FormatCreateOptions());
+      ms.Position = 0;
+      var entries = d.List(ms, null);
+      Assert.That(entries.Select(e => e.Name), Has.Member("test.html"));
+    } finally {
+      File.Delete(tmp);
+    }
   }
 }

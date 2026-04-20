@@ -144,6 +144,34 @@ public class SarTests {
 
   [Category("HappyPath")]
   [Test]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new SarFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Category("HappyPath"), Category("RoundTrip")]
+  [Test]
+  public void Writer_RoundTrip_TwoFiles() {
+    var data1 = "hello sar world"u8.ToArray();
+    var data2 = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE };
+
+    var w = new SarWriter();
+    w.AddFile("a.txt", data1);
+    w.AddFile("b.bin", data2);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new SarReader(ms);
+    Assert.That(r.Entries, Has.Count.EqualTo(2));
+    Assert.That(r.Entries[0].Name, Is.EqualTo("a.txt"));
+    Assert.That(r.Extract(r.Entries[0]), Is.EqualTo(data1));
+    Assert.That(r.Entries[1].Name, Is.EqualTo("b.bin"));
+    Assert.That(r.Extract(r.Entries[1]), Is.EqualTo(data2));
+  }
+
+  [Category("HappyPath")]
+  [Test]
   public void Descriptor_Extract_WritesFiles() {
     var data = "SAR extract test"u8.ToArray();
     var sar = BuildSar(("test.txt", data));

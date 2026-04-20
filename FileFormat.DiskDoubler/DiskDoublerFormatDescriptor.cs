@@ -9,7 +9,8 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
   public string DisplayName => "DiskDoubler";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".dd";
   public IReadOnlyList<string> Extensions => [".dd", ".sea"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -44,6 +45,15 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
     }
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) =>
-    throw new NotSupportedException("Creating DiskDoubler files is not supported.");
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // WORM: store the first input as a DiskDoubler data fork (method 0 = stored).
+    // DiskDoubler wraps a single Macintosh file, not a multi-file archive.
+    var w = new DiskDoublerWriter();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      w.SetFile(Path.GetFileName(i.ArchiveName), File.ReadAllBytes(i.FullPath));
+      break;
+    }
+    w.WriteTo(output);
+  }
 }

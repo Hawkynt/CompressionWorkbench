@@ -192,4 +192,24 @@ public class NdsTests {
       Directory.Delete(tmp, true);
     }
   }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new NdsFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_SingleFile_RoundTrips() {
+    var payload = "nds test"u8.ToArray();
+    var w = new NdsWriter();
+    w.AddFile("test.txt", payload);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+    var r = new NdsReader(ms);
+    var entry = r.Entries.FirstOrDefault(e => !e.IsDirectory && e.Name == "test.txt");
+    Assert.That(entry, Is.Not.Null);
+    Assert.That(r.Extract(entry!), Is.EqualTo(payload));
+  }
 }

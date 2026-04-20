@@ -9,7 +9,8 @@ public sealed class LhFFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "LhF (LhFloppy)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".lhf";
   public IReadOnlyList<string> Extensions => [".lhf"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -33,5 +34,21 @@ public sealed class LhFFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var w = new LhFWriter();
+    var trackNum = 0;
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      // Try to recover the track index from the conventional "track_NNN.raw" name
+      // produced by the reader; fall back to insertion order.
+      var name = Path.GetFileNameWithoutExtension(i.ArchiveName);
+      var underscore = name.LastIndexOf('_');
+      var explicitTrack = underscore >= 0 && int.TryParse(name[(underscore + 1)..], out var n) ? n : trackNum;
+      w.AddTrack(explicitTrack, File.ReadAllBytes(i.FullPath));
+      trackNum++;
+    }
+    w.WriteTo(output);
   }
 }

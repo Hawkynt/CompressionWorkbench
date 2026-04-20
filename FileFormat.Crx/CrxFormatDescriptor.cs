@@ -9,7 +9,7 @@ public sealed class CrxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "CRX";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".crx";
@@ -48,6 +48,25 @@ public sealed class CrxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.FileName, files)) continue;
       if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(outputDir, e.FileName)); continue; }
       WriteFile(outputDir, e.FileName, r.ExtractEntry(e));
+    }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // Write a minimal CRX3 envelope: "Cr24" magic, version 3, empty signed header.
+    // Roundtrips through our reader. NOTE: not browser-loadable because the
+    // CrxFileHeader protobuf is empty (no signing keys/signatures). Real signing
+    // requires a private key and is out of scope.
+    output.Write([(byte)'C', (byte)'r', (byte)'2', (byte)'4']);
+    Span<byte> u32 = stackalloc byte[4];
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(u32, 3);
+    output.Write(u32);
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(u32, 0);
+    output.Write(u32);
+
+    using var w = new FileFormat.Zip.ZipWriter(output, leaveOpen: true);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) { w.AddDirectory(i.ArchiveName); continue; }
+      w.AddEntry(i.ArchiveName, File.ReadAllBytes(i.FullPath));
     }
   }
 }

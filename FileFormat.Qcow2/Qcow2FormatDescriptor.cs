@@ -9,7 +9,7 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public string DisplayName => "QCOW2";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest;
   public string DefaultExtension => ".qcow2";
   public IReadOnlyList<string> Extensions => [".qcow2", ".qcow"];
@@ -31,6 +31,13 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     WriteFile(outputDir, "disk.img", r.ExtractDisk());
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) =>
-    throw new NotSupportedException("QCOW2 creation is not supported.");
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // WORM: builds a FAT filesystem from the input files, then wraps it in a
+    // QCOW2 v2 container. This makes the disk image mountable and the files
+    // recoverable by any OS that reads FAT.
+    var fatImage = FileFormat.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
+    var w = new Qcow2Writer();
+    w.SetDiskImage(fatImage);
+    w.WriteTo(output);
+  }
 }

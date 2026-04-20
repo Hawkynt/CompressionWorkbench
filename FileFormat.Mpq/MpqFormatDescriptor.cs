@@ -9,8 +9,8 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "MPQ";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".mpq";
   public IReadOnlyList<string> Extensions => [".mpq"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -36,5 +36,18 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.FileName, files)) continue;
       try { WriteFile(outputDir, e.FileName, r.Extract(e)); } catch { }
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // WORM: produce a v1 MPQ with stored (uncompressed) file entries plus an
+    // auto-generated "(listfile)" so file names roundtrip. Compression isn't
+    // emitted -- the existing per-method decoders (zlib/bzip2/PKWARE/Huffman)
+    // don't have paired encoders here, and stored files are valid MPQ entries.
+    var w = new MpqWriter();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+    }
+    w.WriteTo(output);
   }
 }

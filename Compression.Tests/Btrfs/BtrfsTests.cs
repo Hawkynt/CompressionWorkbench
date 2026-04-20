@@ -365,4 +365,44 @@ public class BtrfsTests {
     var reader = new FileFormat.Btrfs.BtrfsReader(ms);
     Assert.That(reader.Entries, Has.Count.EqualTo(0));
   }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new FileFormat.Btrfs.BtrfsFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_SingleFile_RoundTrips() {
+    var payload = "btrfs inline data"u8.ToArray();
+    var w = new FileFormat.Btrfs.BtrfsWriter();
+    w.AddFile("test.txt", payload);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new FileFormat.Btrfs.BtrfsReader(ms);
+    var entry = r.Entries.FirstOrDefault(e => e.Name == "test.txt");
+    Assert.That(entry, Is.Not.Null);
+    Assert.That(r.Extract(entry!), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_Create_RoundTrips() {
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "btrfs descriptor"u8.ToArray());
+      var d = new FileFormat.Btrfs.BtrfsFormatDescriptor();
+      using var ms = new MemoryStream();
+      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "data.txt", false)],
+        new Compression.Registry.FormatCreateOptions());
+      ms.Position = 0;
+      var entries = d.List(ms, null);
+      Assert.That(entries.Where(e => !e.IsDirectory).Select(e => e.Name), Has.Member("data.txt"));
+    } finally {
+      File.Delete(tmp);
+    }
+  }
 }

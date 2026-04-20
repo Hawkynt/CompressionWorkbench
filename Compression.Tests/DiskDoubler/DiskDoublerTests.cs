@@ -209,4 +209,46 @@ public class DiskDoublerTests {
     }
     Assert.That(ms.CanRead, Is.True);
   }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new DiskDoublerFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_Stored_RoundTrips() {
+    var payload = "hello diskdoubler"u8.ToArray();
+    var w = new DiskDoublerWriter();
+    w.SetFile("test.txt", payload);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new DiskDoublerReader(ms);
+    Assert.That(r.Entries, Has.Count.EqualTo(1));
+    Assert.That(r.Entries[0].Name, Is.EqualTo("test.txt"));
+    Assert.That(r.Entries[0].OriginalSize, Is.EqualTo(payload.Length));
+    Assert.That(r.Extract(r.Entries[0]), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_Create_RoundTrips() {
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "dd descriptor"u8.ToArray());
+      var d = new DiskDoublerFormatDescriptor();
+      using var ms = new MemoryStream();
+      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "payload.bin", false)],
+        new Compression.Registry.FormatCreateOptions());
+      ms.Position = 0;
+      var entries = d.List(ms, null);
+      Assert.That(entries, Has.Count.EqualTo(1));
+      Assert.That(entries[0].Name, Is.EqualTo("payload.bin"));
+    } finally {
+      File.Delete(tmp);
+    }
+  }
 }

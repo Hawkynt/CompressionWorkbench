@@ -1,0 +1,69 @@
+name: Release
+
+# Tag pushes don't trigger ci.yml (branch-scoped), so this workflow invokes
+# ci.yml explicitly and gates the build on its success.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Manual release trigger'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  version:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: v
+        run: |
+          V=$(perl .github/workflows/scripts/version.pl)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $V"
+
+  build:
+    needs: version
+    uses: ./.github/workflows/_build.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      release-kind: release
+      changelog-flag: --release ${{ github.ref_name }}
+
+  publish:
+    needs: [version, build]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact-name }}
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          name: v${{ needs.version.outputs.version }}
+          body: |
+            ## CompressionWorkbench v${{ needs.version.outputs.version }}
+
+            ### Downloads
+            - **Windows UI** — archive browser, binary-analysis wizard, Explorer shell extension
+            - **Windows CLI** — `cwb.exe` — command-line archive tool with SFX support
+            - **Linux CLI** — `cwb` — command-line archive tool with SFX support
+
+            All executables are fully self-contained single files — no runtime installation needed.
+          files: dist/*.zip
+          generate_release_notes: true

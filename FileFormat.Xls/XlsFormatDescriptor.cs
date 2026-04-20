@@ -9,7 +9,7 @@ public sealed class XlsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "XLS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".xls";
   public IReadOnlyList<string> Extensions => [".xls"];
@@ -35,5 +35,22 @@ public sealed class XlsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.FullPath, files)) continue;
       WriteFile(outputDir, e.FullPath, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // WORM: structurally-valid CFB envelope; not a real Excel workbook (the Excel
+    // binary stream layout is far out of scope).
+    var w = new Msi.CfbWriter();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      w.AddStream(CfbStreamName(i.ArchiveName), File.ReadAllBytes(i.FullPath));
+    }
+    w.WriteTo(output);
+  }
+
+  private static string CfbStreamName(string archiveName) {
+    var leaf = Path.GetFileName(archiveName);
+    if (string.IsNullOrEmpty(leaf)) leaf = archiveName;
+    return leaf.Length > 31 ? leaf[..31] : leaf;
   }
 }

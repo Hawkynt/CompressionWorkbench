@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\FileFormat.Iso\FileFormat.Iso.csproj" />
   </ItemGroup>
 
 </Project>

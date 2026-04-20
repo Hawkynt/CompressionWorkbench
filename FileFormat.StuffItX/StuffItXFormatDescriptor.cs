@@ -9,7 +9,7 @@ public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public string DisplayName => "StuffIt X";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".sitx";
@@ -35,5 +35,15 @@ public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormat
       if (files != null && !MatchesFilter(e.FullPath, files)) continue;
       WriteFile(outputDir, e.FullPath, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    byte[]? embedded = null;
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      embedded = File.ReadAllBytes(i.FullPath);
+      break;
+    }
+    new StuffItXWriter().WriteTo(output, embedded);
   }
 }

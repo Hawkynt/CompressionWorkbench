@@ -9,8 +9,9 @@ public sealed class NsisFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string DisplayName => "NSIS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".exe";
   public IReadOnlyList<string> Extensions => [];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -33,5 +34,14 @@ public sealed class NsisFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       if (files != null && !MatchesFilter(e.FileName, files)) continue;
       WriteFile(outputDir, e.FileName, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var w = new NsisWriter();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+    }
+    w.WriteTo(output);
   }
 }

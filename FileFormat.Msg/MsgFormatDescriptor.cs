@@ -9,7 +9,7 @@ public sealed class MsgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "MSG";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".msg";
   public IReadOnlyList<string> Extensions => [".msg"];
@@ -35,5 +35,22 @@ public sealed class MsgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.FullPath, files)) continue;
       WriteFile(outputDir, e.FullPath, r.Extract(e));
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // WORM: structurally-valid CFB envelope; not a real Outlook .msg (which
+    // requires MAPI property streams under nested storages).
+    var w = new Msi.CfbWriter();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      w.AddStream(CfbStreamName(i.ArchiveName), File.ReadAllBytes(i.FullPath));
+    }
+    w.WriteTo(output);
+  }
+
+  private static string CfbStreamName(string archiveName) {
+    var leaf = Path.GetFileName(archiveName);
+    if (string.IsNullOrEmpty(leaf)) leaf = archiveName;
+    return leaf.Length > 31 ? leaf[..31] : leaf;
   }
 }

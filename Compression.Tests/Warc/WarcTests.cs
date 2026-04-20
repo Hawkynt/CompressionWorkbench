@@ -274,4 +274,35 @@ public class WarcTests {
     var records = ReadAll(data);
     Assert.That(records[0].Payload, Is.EqualTo(payload));
   }
+
+  [Category("HappyPath")]
+  [Test]
+  public void Descriptor_ReportsWormCapability() {
+    var d = new WarcFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Category("HappyPath"), Category("RoundTrip")]
+  [Test]
+  public void Writer_AddResource_RoundTripsThroughReader() {
+    var p1 = "first record body"u8.ToArray();
+    var p2 = new byte[] { 0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0xFF };
+
+    var w = new WarcWriter();
+    w.AddResource("https://example.com/a", p1, contentType: "text/plain");
+    w.AddResource("https://example.com/b.bin", p2);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new WarcReader(ms, leaveOpen: true);
+    var all = r.ReadAll();
+    Assert.That(all, Has.Count.EqualTo(2));
+    Assert.That(all[0].Entry.Type, Is.EqualTo("resource"));
+    Assert.That(all[0].Entry.TargetUri, Is.EqualTo("https://example.com/a"));
+    Assert.That(all[0].Entry.ContentType, Is.EqualTo("text/plain"));
+    Assert.That(all[0].Payload, Is.EqualTo(p1));
+    Assert.That(all[1].Entry.TargetUri, Is.EqualTo("https://example.com/b.bin"));
+    Assert.That(all[1].Payload, Is.EqualTo(p2));
+  }
 }
