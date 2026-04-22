@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Msg;
 
-public sealed class MsgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class MsgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Msg";
   public string DisplayName => "MSG";
   public FormatCategory Category => FormatCategory.Archive;

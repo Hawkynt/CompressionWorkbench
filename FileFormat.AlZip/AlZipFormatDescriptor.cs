@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.AlZip;
 
-public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "AlZip";
   public string DisplayName => "ALZip";
   public FormatCategory Category => FormatCategory.Archive;

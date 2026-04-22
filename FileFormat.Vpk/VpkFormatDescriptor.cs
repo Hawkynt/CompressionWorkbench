@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Vpk;
 
-public sealed class VpkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class VpkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Vpk";
   public string DisplayName => "VPK";
   public FormatCategory Category => FormatCategory.Archive;

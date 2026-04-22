@@ -24,7 +24,7 @@ public class ThumbsDbTests {
       File.WriteAllBytes(tmp, "fake thumb body"u8.ToArray());
       var d = new FileFormat.ThumbsDb.ThumbsDbFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "Catalog", false)],
         new Compression.Registry.FormatCreateOptions());

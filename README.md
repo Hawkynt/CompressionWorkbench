@@ -19,9 +19,10 @@ CompressionWorkbench is both a **toolkit** and a **learning platform** for data 
 
 1. **Implement every major compression algorithm from scratch** - no wrappers around zlib, liblzma, or other native libraries
 2. **Support every common archive format** - read, write, convert, and optimize across different-era formats
-3. **Provide a binary analysis engine** - identify unknown compressed data, map entropy, fingerprint algorithms, and reconstruct compression chains
-4. **Benchmark compression building blocks** - compare raw algorithm performance (ratio, speed) across data patterns
-5. **Offer multiple interfaces** - GUI, CLI tool, Explorer shell integration, and self-extracting archives
+3. **Treat every multi-payload container as an archive** - PE resources, multi-page TIFF, multi-frame GIF, font collections, iWork packages, anything with N addressable entries gets the same List/Extract/Create interface as ZIP (see [docs/multi-payload-archives.md](docs/multi-payload-archives.md))
+4. **Provide a binary analysis engine** - identify unknown compressed data, map entropy, fingerprint algorithms, and reconstruct compression chains
+5. **Benchmark compression building blocks** - compare raw algorithm performance (ratio, speed) across data patterns
+6. **Offer multiple interfaces** - GUI, CLI tool, Explorer shell integration, and self-extracting archives
 
 ---
 
@@ -71,11 +72,11 @@ CompressionWorkbench.slnx
 +-- Compression.Tests             NUnit test project
 |
 +-- FileFormat.Ace                ACE archive (v1/v2, sound/picture filters, Blowfish)
-+-- FileFormat.Adf                Amiga Disk File (OFS/FFS, r/w)
++-- FileSystem.Adf                Amiga Disk File (OFS/FFS, r/w)
 +-- FileFormat.AlZip              ALZip (.alz) Korean archive (Deflate)
 +-- FileFormat.Ampk               Amiga AMPK archive
 +-- FileFormat.ApLib               aPLib compression stream
-+-- FileFormat.Apfs               Apple File System (NXSB, r/o)
++-- FileSystem.Apfs               Apple File System (NXSB, r/o)
 +-- FileFormat.Ar                 Unix AR archive
 +-- FileFormat.Arc                ARC archive (methods 0-9)
 +-- FileFormat.Arj                ARJ archive (methods 0-4, garble)
@@ -88,7 +89,7 @@ CompressionWorkbench.slnx
 +-- FileFormat.Brotli             Brotli compression stream
 +-- FileFormat.Bsc                BSC (block-sorting compressor) stream
 +-- FileFormat.Bsa                Bethesda BSA/BA2 game archive
-+-- FileFormat.Btrfs              Btrfs filesystem (r/o)
++-- FileSystem.Btrfs              Btrfs filesystem (r/o)
 +-- FileFormat.Bzip2              BZip2 compression stream
 +-- FileFormat.Cab                Microsoft Cabinet (MSZIP/LZX/Quantum)
 +-- FileFormat.Cdi                DiscJuggler disc image
@@ -96,24 +97,24 @@ CompressionWorkbench.slnx
 +-- FileFormat.Cmix               cmix (neural network) stream
 +-- FileFormat.Compress           Unix .Z (LZW) stream
 +-- FileFormat.CompactPro         Classic Mac Compact Pro archive
-+-- FileFormat.CpcDsk             Amstrad CPC disk image (r/w)
++-- FileSystem.CpcDsk             Amstrad CPC disk image (r/w)
 +-- FileFormat.Cpio               CPIO archive (bin/odc/newc/CRC)
-+-- FileFormat.CramFs             CramFS filesystem image
++-- FileSystem.CramFs             CramFS filesystem image
 +-- FileFormat.Crunch             CP/M Crunch (LZW) stream
 +-- FileFormat.Csc                CSC (context-based) stream
-+-- FileFormat.D64                C64 1541 disk image (r/w)
-+-- FileFormat.D71                C128 1571 disk image (r/w)
-+-- FileFormat.D81                C128 1581 disk image (r/w)
++-- FileSystem.D64                C64 1541 disk image (r/w)
++-- FileSystem.D71                C128 1571 disk image (r/w)
++-- FileSystem.D81                C128 1581 disk image (r/w)
 +-- FileFormat.Deb                Debian package archive
 +-- FileFormat.Density            Density (Centaurean) stream
 +-- FileFormat.DiskDoubler        DiskDoubler archive
 +-- FileFormat.Dmg                Apple DMG disk image (r/o, zlib)
 +-- FileFormat.Dms                Amiga DMS archive
-+-- FileFormat.DoubleSpace        DoubleSpace/DriveSpace CVF (r/w)
-+-- FileFormat.ExFat              exFAT filesystem (r/w)
-+-- FileFormat.Ext                ext2/3/4 filesystem (r/w)
-+-- FileFormat.F2fs               F2FS filesystem (r/o)
-+-- FileFormat.Fat                FAT12/16/32 filesystem (r/w)
++-- FileSystem.DoubleSpace        DoubleSpace/DriveSpace CVF (r/w)
++-- FileSystem.ExFat              exFAT filesystem (r/w)
++-- FileSystem.Ext                ext2/3/4 filesystem (r/w)
++-- FileSystem.F2fs               F2FS filesystem (r/o)
++-- FileSystem.Fat                FAT12/16/32 filesystem (r/w)
 +-- FileFormat.Flac               FLAC lossless audio compression stream
 +-- FileFormat.FreeArc            FreeArc archive (r/w, store mode)
 +-- FileFormat.Freeze             Freeze (Unix) stream
@@ -121,14 +122,14 @@ CompressionWorkbench.slnx
 +-- FileFormat.Grp                BUILD Engine GRP archive (r/w)
 +-- FileFormat.Gzip               Gzip compression stream
 +-- FileFormat.Ha                 HA archive (HSC/ASC)
-+-- FileFormat.Hfs                HFS classic filesystem (r/w)
-+-- FileFormat.HfsPlus            HFS+ filesystem (r/w)
++-- FileSystem.Hfs                HFS classic filesystem (r/w)
++-- FileSystem.HfsPlus            HFS+ filesystem (r/w)
 +-- FileFormat.Hog                Descent HOG archive (r/w)
 +-- FileFormat.IcePacker          Atari ST ICE Packer stream
 +-- FileFormat.IffCdaf            IFF-CDAF archive
 +-- FileFormat.InnoSetup          Inno Setup installer (r/o)
-+-- FileFormat.Iso                ISO 9660 filesystem (r/w)
-+-- FileFormat.Jfs                JFS filesystem (r/o)
++-- FileSystem.Iso                ISO 9660 filesystem (r/w)
++-- FileSystem.Jfs                JFS filesystem (r/o)
 +-- FileFormat.Kwaj               MS-DOS COMPRESS.EXE extended stream
 +-- FileFormat.Lbr                CP/M LBR archive
 +-- FileFormat.LhF                LhF archive
@@ -146,16 +147,16 @@ CompressionWorkbench.slnx
 +-- FileFormat.MacBinary          MacBinary stream
 +-- FileFormat.Mcm                MCM (context mixing) stream
 +-- FileFormat.Mdf                Alcohol 120% MDF disc image
-+-- FileFormat.Mfs                Macintosh File System (r/w)
-+-- FileFormat.MinixFs            Minix filesystem v1/v2/v3 (r/w)
++-- FileSystem.Mfs                Macintosh File System (r/w)
++-- FileSystem.MinixFs            Minix filesystem v1/v2/v3 (r/w)
 +-- FileFormat.Mpq                Blizzard MPQ game archive
-+-- FileFormat.Msa                Atari ST MSA disk image
++-- FileSystem.Msa                Atari ST MSA disk image
 +-- FileFormat.Msi                MSI (OLE Compound File) archive
 +-- FileFormat.Nds                Nintendo DS ROM archive
 +-- FileFormat.Nrg                Nero disc image
 +-- FileFormat.Nsa                NScripter NSA archive
 +-- FileFormat.Nsis               NSIS installer (r/o)
-+-- FileFormat.Ntfs               NTFS filesystem (r/w, LZNT1)
++-- FileSystem.Ntfs               NTFS filesystem (r/w, LZNT1)
 +-- FileFormat.PackBits           PackBits RLE stream
 +-- FileFormat.PackDisk           Amiga PackDisk archive
 +-- FileFormat.PackIt             PackIt archive
@@ -168,9 +169,9 @@ CompressionWorkbench.slnx
 +-- FileFormat.QuickLz            QuickLZ compression stream
 +-- FileFormat.Rar                RAR archive (v1-v5, read + v4/v5 write)
 +-- FileFormat.RefPack            RefPack/QFS (EA) stream
-+-- FileFormat.ReiserFs           ReiserFS filesystem (r/o)
++-- FileSystem.ReiserFs           ReiserFS filesystem (r/o)
 +-- FileFormat.Rnc                Rob Northen Compression stream
-+-- FileFormat.RomFs              Linux ROMFS filesystem (r/w)
++-- FileSystem.RomFs              Linux ROMFS filesystem (r/w)
 +-- FileFormat.Rpm                RPM package archive
 +-- FileFormat.Rzip               RZIP compression stream
 +-- FileFormat.Sar                NScripter SAR archive
@@ -179,7 +180,7 @@ CompressionWorkbench.slnx
 +-- FileFormat.Snappy             Snappy compression stream
 +-- FileFormat.SplitFile           Split file (.001) joiner/splitter
 +-- FileFormat.Spark              RISC OS Spark archive
-+-- FileFormat.SquashFs            SquashFS filesystem image
++-- FileSystem.SquashFs            SquashFS filesystem image
 +-- FileFormat.Sqx                SQX archive (LZH/multimedia/audio)
 +-- FileFormat.Squeeze            Squeeze (.sqz) stream
 +-- FileFormat.StuffIt            StuffIt archive
@@ -190,13 +191,13 @@ CompressionWorkbench.slnx
 +-- FileFormat.Tap                ZX Spectrum tape image (r/w)
 +-- FileFormat.Tar                TAR container (POSIX/GNU/PAX)
 +-- FileFormat.Tnef               TNEF (winmail.dat) archive
-+-- FileFormat.TrDos              TR-DOS disk image
-+-- FileFormat.Udf                UDF filesystem (r/o)
-+-- FileFormat.Ufs                UFS filesystem (r/w)
++-- FileSystem.TrDos              TR-DOS disk image
++-- FileSystem.Udf                UDF filesystem (r/o)
++-- FileSystem.Ufs                UFS filesystem (r/w)
 +-- FileFormat.Uharc              UHARC archive
 +-- FileFormat.Umx                Unreal UMX package
 +-- FileFormat.UuEncoding         UuEncoding stream
-+-- FileFormat.Vdfs               VDFS filesystem (r/w)
++-- FileSystem.Vdfs               VDFS filesystem (r/w)
 +-- FileFormat.Vdi                VirtualBox VDI disk image (r/w)
 +-- FileFormat.Vhd                VHD disk image (r/w)
 +-- FileFormat.Vmdk               VMDK disk image (r/w)
@@ -207,12 +208,12 @@ CompressionWorkbench.slnx
 +-- FileFormat.Wim                WIM image (LZX/XPRESS)
 +-- FileFormat.Wrapster           Wrapster archive
 +-- FileFormat.Xar                XAR (eXtensible ARchive)
-+-- FileFormat.Xfs                XFS filesystem (r/o)
++-- FileSystem.Xfs                XFS filesystem (r/o)
 +-- FileFormat.Xz                 XZ compression stream
 +-- FileFormat.Yaz0               Nintendo Yaz0 (SZS) stream
 +-- FileFormat.YEnc               yEnc binary-to-text stream
 +-- FileFormat.Zap                ZAP archive
-+-- FileFormat.Zfs                ZFS filesystem (r/o)
++-- FileSystem.Zfs                ZFS filesystem (r/o)
 +-- FileFormat.Zip                ZIP archive (Store-Zstd, AES)
 +-- FileFormat.Zlib               Zlib (RFC 1950) stream
 +-- FileFormat.Zling              Zling (ROLZ + Huffman) stream

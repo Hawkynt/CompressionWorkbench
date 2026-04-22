@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.PackDisk;
 
-public sealed class XMashFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class XMashFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "xMash";
   public string DisplayName => "xMash (Amiga)";
   public FormatCategory Category => FormatCategory.Archive;

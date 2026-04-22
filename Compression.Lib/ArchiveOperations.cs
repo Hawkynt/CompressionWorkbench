@@ -107,7 +107,7 @@ public static class ArchiveOperations {
     // All other formats dispatch through the registry
     FormatRegistration.EnsureInitialized();
     var ops = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
-    if (ops != null) {
+    if (ops is Compression.Registry.IArchiveCreatable creator) {
       var registryInputs = inputs.Select(i =>
         new Compression.Registry.ArchiveInputInfo(i.FullPath, i.EntryName, i.IsDirectory)).ToList();
       var registryOpts = new Compression.Registry.FormatCreateOptions {
@@ -124,11 +124,11 @@ public static class ArchiveOperations {
         EncryptionMethod = opts.ZipEncryption,
         IncompressiblePaths = incompressible,
       };
-      ops.Create(outFs, registryInputs, registryOpts);
+      creator.Create(outFs, registryInputs, registryOpts);
       return;
     }
 
-    throw new NotSupportedException($"Cannot create format: {format}");
+    throw new NotSupportedException($"Format {format} has no creatable descriptor");
   }
 
   /// <summary>

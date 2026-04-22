@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>FileFormat.ApkNativeLibs</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\FileFormat.Zip\FileFormat.Zip.csproj" />
+  </ItemGroup>
+
+</Project>

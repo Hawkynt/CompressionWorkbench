@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cbz;
 
-public sealed class CbzFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class CbzFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Cbz";
   public string DisplayName => "CBZ";
   public FormatCategory Category => FormatCategory.Archive;

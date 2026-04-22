@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.CompactPro;
 
-public sealed class CompactProFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class CompactProFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "CompactPro";
   public string DisplayName => "Compact Pro";
   public FormatCategory Category => FormatCategory.Archive;

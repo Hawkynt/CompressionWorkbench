@@ -255,7 +255,7 @@ public class BtrfsTests {
     var img = BuildMinimalBtrfs(("test.txt", content));
     using var ms = new MemoryStream(img);
 
-    var reader = new FileFormat.Btrfs.BtrfsReader(ms);
+    var reader = new FileSystem.Btrfs.BtrfsReader(ms);
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
     Assert.That(reader.Entries[0].Name, Is.EqualTo("test.txt"));
     Assert.That(reader.Entries[0].Size, Is.EqualTo(content.Length));
@@ -268,7 +268,7 @@ public class BtrfsTests {
     var img = BuildMinimalBtrfs(("test.txt", content));
     using var ms = new MemoryStream(img);
 
-    var reader = new FileFormat.Btrfs.BtrfsReader(ms);
+    var reader = new FileSystem.Btrfs.BtrfsReader(ms);
     var extracted = reader.Extract(reader.Entries[0]);
     Assert.That(extracted, Is.EqualTo(content));
   }
@@ -280,7 +280,7 @@ public class BtrfsTests {
     var img = BuildMinimalBtrfs(("a.txt", file1), ("b.txt", file2));
     using var ms = new MemoryStream(img);
 
-    var reader = new FileFormat.Btrfs.BtrfsReader(ms);
+    var reader = new FileSystem.Btrfs.BtrfsReader(ms);
     Assert.That(reader.Entries, Has.Count.EqualTo(2));
     var names = reader.Entries.Select(e => e.Name).ToList();
     Assert.That(names, Does.Contain("a.txt"));
@@ -295,7 +295,7 @@ public class BtrfsTests {
     var img = BuildMinimalBtrfs(("big.bin", content));
     using var ms = new MemoryStream(img);
 
-    var reader = new FileFormat.Btrfs.BtrfsReader(ms);
+    var reader = new FileSystem.Btrfs.BtrfsReader(ms);
     Assert.That(reader.Entries, Has.Count.EqualTo(1));
     var extracted = reader.Extract(reader.Entries[0]);
     Assert.That(extracted, Is.EqualTo(content));
@@ -303,7 +303,7 @@ public class BtrfsTests {
 
   [Test, Category("HappyPath")]
   public void Descriptor_Properties() {
-    var desc = new FileFormat.Btrfs.BtrfsFormatDescriptor();
+    var desc = new FileSystem.Btrfs.BtrfsFormatDescriptor();
     Assert.That(desc.Id, Is.EqualTo("Btrfs"));
     Assert.That(desc.DisplayName, Is.EqualTo("Btrfs Filesystem Image"));
     Assert.That(desc.Extensions, Does.Contain(".btrfs"));
@@ -322,7 +322,7 @@ public class BtrfsTests {
     var img = BuildMinimalBtrfs(("file.bin", content));
     using var ms = new MemoryStream(img);
 
-    var desc = new FileFormat.Btrfs.BtrfsFormatDescriptor();
+    var desc = new FileSystem.Btrfs.BtrfsFormatDescriptor();
     var entries = desc.List(ms, null);
     Assert.That(entries, Has.Count.EqualTo(1));
     Assert.That(entries[0].Name, Is.EqualTo("file.bin"));
@@ -332,7 +332,7 @@ public class BtrfsTests {
   [Test, Category("ErrorHandling")]
   public void Reader_TooSmall_Throws() {
     using var ms = new MemoryStream(new byte[100]);
-    Assert.Throws<InvalidDataException>(() => _ = new FileFormat.Btrfs.BtrfsReader(ms));
+    Assert.Throws<InvalidDataException>(() => _ = new FileSystem.Btrfs.BtrfsReader(ms));
   }
 
   [Test, Category("ErrorHandling")]
@@ -341,14 +341,14 @@ public class BtrfsTests {
     // Write wrong magic at superblock + 64
     "XXXXXXXX"u8.CopyTo(data.AsSpan(0x10040));
     using var ms = new MemoryStream(data);
-    Assert.Throws<InvalidDataException>(() => _ = new FileFormat.Btrfs.BtrfsReader(ms));
+    Assert.Throws<InvalidDataException>(() => _ = new FileSystem.Btrfs.BtrfsReader(ms));
   }
 
   [Test, Category("ErrorHandling")]
   public void Extract_NullEntry_Throws() {
     var img = BuildMinimalBtrfs(("test.txt", "data"u8.ToArray()));
     using var ms = new MemoryStream(img);
-    var reader = new FileFormat.Btrfs.BtrfsReader(ms);
+    var reader = new FileSystem.Btrfs.BtrfsReader(ms);
     Assert.Throws<ArgumentNullException>(() => reader.Extract(null!));
   }
 
@@ -362,29 +362,119 @@ public class BtrfsTests {
     BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(0x10000 + 196), 0);    // no sys_chunk_array
     // root tree / chunk tree point to invalid locations — should parse with 0 entries
     using var ms = new MemoryStream(img);
-    var reader = new FileFormat.Btrfs.BtrfsReader(ms);
+    var reader = new FileSystem.Btrfs.BtrfsReader(ms);
     Assert.That(reader.Entries, Has.Count.EqualTo(0));
   }
 
   [Test, Category("HappyPath")]
   public void Descriptor_ReportsWormCapability() {
-    var d = new FileFormat.Btrfs.BtrfsFormatDescriptor();
+    var d = new FileSystem.Btrfs.BtrfsFormatDescriptor();
     Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
   }
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void Writer_SingleFile_RoundTrips() {
     var payload = "btrfs inline data"u8.ToArray();
-    var w = new FileFormat.Btrfs.BtrfsWriter();
+    var w = new FileSystem.Btrfs.BtrfsWriter();
     w.AddFile("test.txt", payload);
     using var ms = new MemoryStream();
     w.WriteTo(ms);
     ms.Position = 0;
 
-    var r = new FileFormat.Btrfs.BtrfsReader(ms);
+    var r = new FileSystem.Btrfs.BtrfsReader(ms);
     var entry = r.Entries.FirstOrDefault(e => e.Name == "test.txt");
     Assert.That(entry, Is.Not.Null);
     Assert.That(r.Extract(entry!), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsWriteConstraints() {
+    var d = new FileSystem.Btrfs.BtrfsFormatDescriptor();
+    Assert.That(d, Is.InstanceOf<Compression.Registry.IArchiveWriteConstraints>());
+    var c = (Compression.Registry.IArchiveWriteConstraints)d;
+    Assert.That(c.AcceptedInputsDescription, Does.Contain("Btrfs"));
+    Assert.That(c.CanAccept(new Compression.Registry.ArchiveInputInfo("", "d", true), out _), Is.False);
+    Assert.That(c.CanAccept(new Compression.Registry.ArchiveInputInfo("", "f.txt", false), out _), Is.True);
+  }
+
+  [Test, Category("HappyPath")]
+  public void Writer_SuperblockHasValidCrc32C() {
+    var w = new FileSystem.Btrfs.BtrfsWriter();
+    w.AddFile("x.txt", "hello"u8.ToArray());
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var image = ms.ToArray();
+
+    const int sbOffset = 0x10000;
+    const int sbSize = 4096;
+
+    // Stored CRC is the first 4 bytes of the 32-byte csum field (little-endian).
+    var storedCrc = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(sbOffset, 4));
+    // Bytes [4..32) of the csum field must be zero (unused for CRC32 type).
+    for (var i = 4; i < 32; i++)
+      Assert.That(image[sbOffset + i], Is.EqualTo(0),
+        $"csum field byte {i} must be zero for CRC32 type");
+
+    // CRC-32C covers bytes [sbOffset+32 .. sbOffset+4096).
+    var computed = Compression.Core.Checksums.Crc32.Compute(
+      image.AsSpan(sbOffset + 32, sbSize - 32),
+      Compression.Core.Checksums.Crc32.Castagnoli);
+    Assert.That(storedCrc, Is.EqualTo(computed),
+      "superblock CRC-32C mismatch — btrfsck will reject");
+  }
+
+  [Test, Category("HappyPath")]
+  public void Writer_FsTreeLeafHasValidCrc32C() {
+    var w = new FileSystem.Btrfs.BtrfsWriter();
+    w.AddFile("data.bin", "payload"u8.ToArray());
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var image = ms.ToArray();
+
+    // FS tree leaf block is at 0x30000 (see BtrfsWriter.FsTreeOff) and has
+    // block size = NodeSize = 16384.
+    const int fsTreeOff = 0x30000;
+    const int nodeSize = 16384;
+
+    var storedCrc = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(fsTreeOff, 4));
+    for (var i = 4; i < 32; i++)
+      Assert.That(image[fsTreeOff + i], Is.EqualTo(0),
+        $"csum field byte {i} must be zero");
+
+    var computed = Compression.Core.Checksums.Crc32.Compute(
+      image.AsSpan(fsTreeOff + 32, nodeSize - 32),
+      Compression.Core.Checksums.Crc32.Castagnoli);
+    Assert.That(storedCrc, Is.EqualTo(computed),
+      "fs-tree leaf CRC-32C mismatch");
+  }
+
+  [Test, Category("HappyPath")]
+  public void Writer_RootTreeLeafHasValidCrc32C() {
+    var w = new FileSystem.Btrfs.BtrfsWriter();
+    w.AddFile("a.txt", "abc"u8.ToArray());
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var image = ms.ToArray();
+
+    const int rootTreeOff = 0x20000;
+    const int nodeSize = 16384;
+
+    var storedCrc = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(rootTreeOff, 4));
+    var computed = Compression.Core.Checksums.Crc32.Compute(
+      image.AsSpan(rootTreeOff + 32, nodeSize - 32),
+      Compression.Core.Checksums.Crc32.Castagnoli);
+    Assert.That(storedCrc, Is.EqualTo(computed),
+      "root-tree leaf CRC-32C mismatch");
+  }
+
+  [Test, Category("HappyPath")]
+  public void Crc32C_MatchesKnownVector() {
+    // Sanity check the CRC-32C (Castagnoli) polynomial against the canonical
+    // test vector: CRC32C("123456789") == 0xE3069283.
+    var crc = Compression.Core.Checksums.Crc32.Compute(
+      "123456789"u8,
+      Compression.Core.Checksums.Crc32.Castagnoli);
+    Assert.That(crc, Is.EqualTo(0xE3069283u));
   }
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
@@ -392,9 +482,9 @@ public class BtrfsTests {
     var tmp = Path.GetTempFileName();
     try {
       File.WriteAllBytes(tmp, "btrfs descriptor"u8.ToArray());
-      var d = new FileFormat.Btrfs.BtrfsFormatDescriptor();
+      var d = new FileSystem.Btrfs.BtrfsFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "data.txt", false)],
         new Compression.Registry.FormatCreateOptions());
@@ -404,5 +494,129 @@ public class BtrfsTests {
     } finally {
       File.Delete(tmp);
     }
+  }
+
+  // ── Part 2: spec-compliance tests for the real chunk tree ──────────────
+
+  [Test, Category("RealWorld")]
+  public void Writer_ChunkTreeExistsAtSpecOffset() {
+    var w = new FileSystem.Btrfs.BtrfsWriter();
+    w.AddFile("x.txt", "hello"u8.ToArray());
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var image = ms.ToArray();
+
+    // Superblock bytes 88..96 (chunk_root_logical) must be a valid offset,
+    // NOT the sentinel 0x7FFFFFFF the old obsolete writer used.
+    var chunkRoot = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(0x10000 + 88));
+    Assert.That(chunkRoot, Is.GreaterThan(0));
+    Assert.That(chunkRoot, Is.LessThan(image.Length - 100));
+    // Block at that offset must be inside the image and start with a
+    // valid node header (nritems > 0 at offset 88 after csum/fsid).
+    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan((int)chunkRoot + 88));
+    Assert.That(nritems, Is.GreaterThanOrEqualTo(1), "chunk tree leaf must have ≥1 CHUNK_ITEM");
+    Assert.That(image[(int)chunkRoot + 92], Is.EqualTo((byte)0), "chunk tree must be a leaf (level 0)");
+  }
+
+  [Test, Category("RealWorld")]
+  public void Writer_SysChunkArrayPopulated() {
+    var w = new FileSystem.Btrfs.BtrfsWriter();
+    w.AddFile("a.txt", "x"u8.ToArray());
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var image = ms.ToArray();
+
+    // sys_chunk_array_size at sbOffset+196 (reader's offset).
+    var size = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(0x10000 + 196));
+    Assert.That(size, Is.EqualTo(17 + 48 + 32));
+    // First 8 bytes of the array = key.objectid = 256.
+    var keyObjId = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(0x10000 + 299));
+    Assert.That(keyObjId, Is.EqualTo(256));
+    // Key.type = CHUNK_ITEM = 228.
+    Assert.That(image[0x10000 + 299 + 8], Is.EqualTo((byte)228));
+  }
+
+  [Test, Category("RealWorld")]
+  public void Writer_ThreeChunksMapLogicalRanges() {
+    var w = new FileSystem.Btrfs.BtrfsWriter();
+    w.AddFile("a.txt", "payload"u8.ToArray());
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var image = ms.ToArray();
+
+    // Read chunk tree leaf at chunk_root and count CHUNK_ITEM entries.
+    var chunkRoot = (int)BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(0x10000 + 88));
+    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(chunkRoot + 88));
+    Assert.That(nritems, Is.EqualTo(3u),
+      "chunk tree must have exactly three chunks: SYSTEM, METADATA, DATA");
+
+    // Verify each chunk's type flag bit.
+    var seenTypes = new List<ulong>();
+    for (var i = 0; i < nritems; i++) {
+      var itemOff = chunkRoot + 101 + i * 25;
+      var dataOff = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(itemOff + 17));
+      var dataPos = chunkRoot + 101 + (int)dataOff;
+      var type = BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(dataPos + 24));
+      seenTypes.Add(type);
+    }
+    Assert.That(seenTypes, Does.Contain(0x02UL), "SYSTEM chunk (0x02) missing");
+    Assert.That(seenTypes, Does.Contain(0x04UL), "METADATA chunk (0x04) missing");
+    Assert.That(seenTypes, Does.Contain(0x01UL), "DATA chunk (0x01) missing");
+  }
+
+  [Test, Category("RealWorld")]
+  public void Writer_ReaderUsesRealChunkTree() {
+    var w = new FileSystem.Btrfs.BtrfsWriter();
+    w.AddFile("a.txt", "hello"u8.ToArray());
+    w.AddFile("b.bin", new byte[64]);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new FileSystem.Btrfs.BtrfsReader(ms);
+    Assert.That(r.UsedRealChunkTree, Is.True,
+      "writer output must populate the chunk map; reader must not fall back to identity");
+    Assert.That(r.Entries.Count, Is.EqualTo(2));
+  }
+
+  [Test, Category("RealWorld")]
+  public void Writer_ChunkTreeLeafHasValidCrc32C() {
+    var w = new FileSystem.Btrfs.BtrfsWriter();
+    w.AddFile("x", "y"u8.ToArray());
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var image = ms.ToArray();
+
+    var chunkRoot = (int)BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(0x10000 + 88));
+    const int nodeSize = 16384;
+    var storedCrc = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(chunkRoot, 4));
+    var computed = Compression.Core.Checksums.Crc32.Compute(
+      image.AsSpan(chunkRoot + 32, nodeSize - 32),
+      Compression.Core.Checksums.Crc32.Castagnoli);
+    Assert.That(storedCrc, Is.EqualTo(computed),
+      "chunk-tree leaf CRC-32C mismatch — btrfsck will reject");
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Writer_ThreeFiles_VariousSizes_RoundTrip() {
+    var w = new FileSystem.Btrfs.BtrfsWriter();
+    var small = "small"u8.ToArray();
+    var mid = new byte[200];
+    for (var i = 0; i < mid.Length; i++) mid[i] = (byte)(i % 251);
+    var big = new byte[500];
+    Random.Shared.NextBytes(big);
+    w.AddFile("small.txt", small);
+    w.AddFile("mid.bin", mid);
+    w.AddFile("big.bin", big);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    ms.Position = 0;
+
+    var r = new FileSystem.Btrfs.BtrfsReader(ms);
+    Assert.That(r.Entries.Count, Is.EqualTo(3));
+    var byName = r.Entries.ToDictionary(e => e.Name, e => r.Extract(e));
+    Assert.That(byName["small.txt"], Is.EqualTo(small));
+    Assert.That(byName["mid.bin"], Is.EqualTo(mid));
+    Assert.That(byName["big.bin"], Is.EqualTo(big));
   }
 }

@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Wim;
 
-public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Wim";
   public string DisplayName => "WIM";
   public FormatCategory Category => FormatCategory.Archive;

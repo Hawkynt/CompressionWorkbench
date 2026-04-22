@@ -243,6 +243,9 @@ public class EndToEndInteropTests {
   private static readonly HashSet<string> _selfRoundTripExclusions = new(StringComparer.OrdinalIgnoreCase) {
     // Filesystem images that need specific disk geometry or block layout
     ".d64", ".d71", ".d81", ".t64", ".adf", ".tap",
+    // Retro FSes with strict native filename constraints (length/charset) that
+    // can't round-trip generic repeat.txt/small.txt/random.dat names verbatim.
+    ".ssd", ".po", ".scl", ".atr",
     // Disk images with specific sector/partition structure
     ".vhd", ".vmdk", ".qcow2", ".vdi", ".cvf",
     // Filesystem images (HFS, NTFS, ext, etc. require full FS creation)
@@ -266,8 +269,14 @@ public class EndToEndInteropTests {
     // Formats requiring special input data
     ".mp3",    // Wrapster wraps as MP3
     ".zpaq",   // ZPAQ journaling format, complex create/extract semantics
-    // XPK-dependent Amiga formats
-    ".packdisk", ".xmash", ".xdisk", ".dcs",
+    // XPK-dependent Amiga formats: writers emit raw tracks; readers expect XPK chunks.
+    // Test files use generic names (small.txt etc.) that the track-indexed format can't roundtrip.
+    ".pdsk", ".xmsh", ".xdsk", ".dcs", ".lhf", ".dd", ".zap",
+    // Placeholder writers (magic + a few fields, no actual entry data layout)
+    ".sitx",
+    // SFX-style installers — extension .exe is shared by InnoSetup, Nsis, and SFX
+    // wrappers; DetectByExtension can't pick a writer unambiguously.
+    ".exe",
     // Encoding formats (not archives)
     ".uu", ".yenc", ".macbin", ".binhex",
     // Split files

@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ipa;
 
-public sealed class IpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class IpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Ipa";
   public string DisplayName => "IPA";
   public FormatCategory Category => FormatCategory.Archive;

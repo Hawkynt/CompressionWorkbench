@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ampk;
 
-public sealed class AmpkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class AmpkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Ampk";
   public string DisplayName => "AMPK (Amiga Pack)";
   public FormatCategory Category => FormatCategory.Archive;

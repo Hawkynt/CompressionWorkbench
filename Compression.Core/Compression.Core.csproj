@@ -9,6 +9,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Codec.Pcm\Codec.Pcm.csproj" />
     <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
   </ItemGroup>
 

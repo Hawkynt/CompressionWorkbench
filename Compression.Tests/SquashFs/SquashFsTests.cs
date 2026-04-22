@@ -1,4 +1,4 @@
-using FileFormat.SquashFs;
+using FileSystem.SquashFs;
 
 namespace Compression.Tests.SquashFs;
 

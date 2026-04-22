@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Docx;
 
-public sealed class DocxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class DocxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Docx";
   public string DisplayName => "DOCX";
   public FormatCategory Category => FormatCategory.Archive;

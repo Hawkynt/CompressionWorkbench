@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Maff;
 
-public sealed class MaffFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class MaffFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Maff";
   public string DisplayName => "MAFF";
   public FormatCategory Category => FormatCategory.Archive;

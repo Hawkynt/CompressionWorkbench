@@ -170,7 +170,7 @@ public class LhFTests {
 
       var desc = new FileFormat.LhF.LhFFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)desc).Create(
+      ((Compression.Registry.IArchiveCreatable)desc).Create(
         ms,
         [
           new Compression.Registry.ArchiveInputInfo(t0, "track_000.raw", false),

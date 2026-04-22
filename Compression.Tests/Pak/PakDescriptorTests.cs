@@ -23,7 +23,7 @@ public class PakDescriptorTests {
       File.WriteAllBytes(tmpFile, data);
 
       var desc = new FileFormat.Pak.PakFormatDescriptor();
-      var ops = (Compression.Registry.IArchiveFormatOperations)desc;
+      var ops = desc;
 
       // Create
       using var ms = new MemoryStream();
@@ -65,7 +65,7 @@ public class PakDescriptorTests {
       File.WriteAllBytes(tmpFiles[2], data3);
 
       var desc = new FileFormat.Pak.PakFormatDescriptor();
-      var ops = (Compression.Registry.IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [
@@ -112,7 +112,7 @@ public class PakDescriptorTests {
       File.WriteAllBytes(tmpFiles[2], data3);
 
       var desc = new FileFormat.Pak.PakFormatDescriptor();
-      var ops = (Compression.Registry.IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [

@@ -382,7 +382,7 @@ public sealed class ChmTests {
       File.WriteAllBytes(tmp, "lzx via options"u8.ToArray());
       var d = new ChmFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "test.html", false)],
         new Compression.Registry.FormatCreateOptions { MethodName = "lzx" });
@@ -403,7 +403,7 @@ public sealed class ChmTests {
       File.WriteAllBytes(tmp, "chm descriptor test"u8.ToArray());
       var d = new ChmFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "test.html", false)],
         new Compression.Registry.FormatCreateOptions());

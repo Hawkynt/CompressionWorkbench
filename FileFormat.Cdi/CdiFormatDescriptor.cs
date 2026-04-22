@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cdi;
 
-public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Cdi";
   public string DisplayName => "CDI";
   public FormatCategory Category => FormatCategory.Archive;
@@ -42,7 +42,7 @@ public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // WORM: ISO 9660 image followed by a CDI v2 footer. The reader only uses
     // the footer for version detection; the session-descriptor offset isn't
     // dereferenced for ISO extraction.
-    var iso = new FileFormat.Iso.IsoWriter();
+    var iso = new FileSystem.Iso.IsoWriter();
     foreach (var (name, data) in FlatFiles(inputs))
       iso.AddFile(name, data);
     output.Write(iso.Build());

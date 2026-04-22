@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Appx;
 
-public sealed class AppxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class AppxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Appx";
   public string DisplayName => "APPX";
   public FormatCategory Category => FormatCategory.Archive;

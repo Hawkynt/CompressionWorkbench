@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.LhF;
 
-public sealed class LhFFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class LhFFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "LhF";
   public string DisplayName => "LhF (LhFloppy)";
   public FormatCategory Category => FormatCategory.Archive;

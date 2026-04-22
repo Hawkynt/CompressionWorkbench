@@ -225,25 +225,26 @@ public sealed class XzStream : CompressionStream {
           dictSize = DecodeDictionarySize(props[0]);
       }
 
-      // Read compressed data
+      // If the block header carries an explicit compressed size we buffer exactly that
+      // many bytes; otherwise LZMA2 self-delimits via its 0x00 control byte and we let
+      // the decoder consume directly from the (already-seekable) inner stream. Either
+      // way, `compressedSize` is needed below for the 4-byte block padding.
       int compressedSize;
-      if (blockHeader.CompressedSize.HasValue)
+      byte[] decompressed;
+      if (blockHeader.CompressedSize.HasValue) {
         compressedSize = (int)blockHeader.CompressedSize.Value;
-      else
-        throw new NotSupportedException("XZ blocks without compressed size not supported.");
-
-      var compressedData = new byte[compressedSize];
-      var totalRead = 0;
-      while (totalRead < compressedSize) {
-        var read = InnerStream.Read(compressedData, totalRead, compressedSize - totalRead);
-        if (read == 0) throw new EndOfStreamException("Truncated XZ block.");
-        totalRead += read;
+        var compressedData = new byte[compressedSize];
+        InnerStream.ReadExactly(compressedData, 0, compressedSize);
+        using var compressedStream = new MemoryStream(compressedData);
+        decompressed = new Lzma2Decoder(compressedStream, dictSize).Decode();
+      } else {
+        var startPos = InnerStream.Position;
+        decompressed = new Lzma2Decoder(InnerStream, dictSize).Decode();
+        var consumed = InnerStream.Position - startPos;
+        if (consumed > int.MaxValue)
+          throw new NotSupportedException("XZ block compressed size > 2 GB is not supported.");
+        compressedSize = (int)consumed;
       }
-
-      // Decompress with LZMA2
-      using var compressedStream = new MemoryStream(compressedData);
-      var lzma2Decoder = new Lzma2Decoder(compressedStream, dictSize);
-      var decompressed = lzma2Decoder.Decode();
 
       // Apply non-compression filters in reverse order
       // In XZ, filters are listed first-to-last (pre-filters before LZMA2)

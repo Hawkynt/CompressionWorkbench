@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Wad;
 
-public sealed class WadFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class WadFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Wad";
   public string DisplayName => "WAD";
   public FormatCategory Category => FormatCategory.Archive;

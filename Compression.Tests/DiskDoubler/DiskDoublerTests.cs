@@ -239,7 +239,7 @@ public class DiskDoublerTests {
       File.WriteAllBytes(tmp, "dd descriptor"u8.ToArray());
       var d = new DiskDoublerFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "payload.bin", false)],
         new Compression.Registry.FormatCreateOptions());

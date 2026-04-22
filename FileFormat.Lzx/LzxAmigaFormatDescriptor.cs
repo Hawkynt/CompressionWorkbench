@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Lzx;
 
-public sealed class LzxAmigaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class LzxAmigaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "LzxAmiga";
   public string DisplayName => "LZX (Amiga)";
   public FormatCategory Category => FormatCategory.Archive;

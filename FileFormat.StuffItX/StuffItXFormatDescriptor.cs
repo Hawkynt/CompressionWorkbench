@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.StuffItX;
 
-public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "StuffItX";
   public string DisplayName => "StuffIt X";
   public FormatCategory Category => FormatCategory.Archive;

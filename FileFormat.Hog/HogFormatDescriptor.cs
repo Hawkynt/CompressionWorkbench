@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Hog;
 
-public sealed class HogFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class HogFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Hog";
   public string DisplayName => "HOG";
   public FormatCategory Category => FormatCategory.Archive;

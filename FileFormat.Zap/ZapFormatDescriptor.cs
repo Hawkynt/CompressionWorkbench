@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Zap;
 
-public sealed class ZapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class ZapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Zap";
   public string DisplayName => "ZAP (Amiga Disk Archiver)";
   public FormatCategory Category => FormatCategory.Archive;

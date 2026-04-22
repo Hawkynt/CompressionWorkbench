@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.NuPkg;
 
-public sealed class NuPkgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class NuPkgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "NuPkg";
   public string DisplayName => "NuPkg";
   public FormatCategory Category => FormatCategory.Archive;

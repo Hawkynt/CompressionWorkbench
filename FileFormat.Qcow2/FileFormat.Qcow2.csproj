@@ -5,6 +5,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Compression.Core\Compression.Core.csproj" />
     <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
-    <ProjectReference Include="..\FileFormat.Fat\FileFormat.Fat.csproj" />
+    <ProjectReference Include="..\FileSystem.Fat\FileSystem.Fat.csproj" />
   </ItemGroup>
 </Project>

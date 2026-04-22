@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Rpm;
 
-public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Rpm";
   public string DisplayName => "RPM";
   public FormatCategory Category => FormatCategory.Archive;

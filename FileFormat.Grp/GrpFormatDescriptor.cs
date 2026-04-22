@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Grp;
 
-public sealed class GrpFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class GrpFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Grp";
   public string DisplayName => "GRP";
   public FormatCategory Category => FormatCategory.Archive;

@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.GodotPck;
 
-public sealed class GodotPckFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class GodotPckFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "GodotPck";
   public string DisplayName => "Godot PCK";
   public FormatCategory Category => FormatCategory.Archive;

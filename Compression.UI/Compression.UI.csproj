@@ -9,11 +9,24 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <NoWarn>CS1591</NoWarn>
 
-    <!-- Single-file self-contained publish (no trimming for WPF) -->
+    <!-- Single-file publish config (also used by post-build bundle target below). -->
     <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <EnableSingleFileBundle>true</EnableSingleFileBundle>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Costura.Fody weaves referenced managed DLLs into the main assembly at build time
+         so the WPF app ships as one .exe + one .dll (and PublishSingleFile fuses those). -->
+    <PackageReference Include="Fody" Version="6.9.1">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Costura.Fody" Version="6.0.0">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
@@ -23,5 +36,7 @@
   <ItemGroup>
     <EmbeddedResource Include="..\README.md" Link="README.md" LogicalName="README.md" />
   </ItemGroup>
+
+  <Import Project="..\build\SingleFileBundle.targets" />
 
 </Project>

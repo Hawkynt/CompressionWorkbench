@@ -161,7 +161,7 @@ public class FreeArcTests {
       File.WriteAllBytes(tmpFile, data);
       var d = new FreeArcFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(ms,
+      ((Compression.Registry.IArchiveCreatable)d).Create(ms,
         [new Compression.Registry.ArchiveInputInfo(tmpFile, "test.txt", false)],
         new Compression.Registry.FormatCreateOptions());
       ms.Position = 0;

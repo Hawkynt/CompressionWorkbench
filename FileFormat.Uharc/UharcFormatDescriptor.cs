@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Uharc;
 
-public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Uharc";
   public string DisplayName => "UHARC";
   public FormatCategory Category => FormatCategory.Archive;

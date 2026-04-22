@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>FileFormat.Au</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Core\Compression.Core.csproj" />
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\Codec.Pcm\Codec.Pcm.csproj" />
+    <ProjectReference Include="..\Codec.MuLaw\Codec.MuLaw.csproj" />
+    <ProjectReference Include="..\Codec.ALaw\Codec.ALaw.csproj" />
+  </ItemGroup>
+
+</Project>

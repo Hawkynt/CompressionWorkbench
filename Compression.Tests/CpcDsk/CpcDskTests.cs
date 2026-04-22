@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
-using FileFormat.CpcDsk;
+using FileSystem.CpcDsk;
 
 namespace Compression.Tests.CpcDsk;
 

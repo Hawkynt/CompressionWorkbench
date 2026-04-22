@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ear;
 
-public sealed class EarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class EarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Ear";
   public string DisplayName => "EAR";
   public FormatCategory Category => FormatCategory.Archive;

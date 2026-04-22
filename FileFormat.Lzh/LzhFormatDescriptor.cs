@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Lzh;
 
-public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Lzh";
   public string DisplayName => "LZH";
   public FormatCategory Category => FormatCategory.Archive;

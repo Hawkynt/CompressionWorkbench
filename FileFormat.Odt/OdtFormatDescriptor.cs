@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Odt;
 
-public sealed class OdtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class OdtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Odt";
   public string DisplayName => "ODT";
   public FormatCategory Category => FormatCategory.Archive;

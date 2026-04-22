@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Umx;
 
-public sealed class UmxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class UmxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Umx";
   public string DisplayName => "Unreal Music (UMX)";
   public FormatCategory Category => FormatCategory.Archive;

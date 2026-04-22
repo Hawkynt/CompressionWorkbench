@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.T64;
 
-public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "T64";
   public string DisplayName => "T64";
   public FormatCategory Category => FormatCategory.Archive;

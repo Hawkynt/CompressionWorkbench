@@ -24,7 +24,7 @@ public class MsgTests {
       File.WriteAllBytes(tmp, "fake msg body"u8.ToArray());
       var d = new FileFormat.Msg.MsgFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "__substg1.0_001A001F", false)],
         new Compression.Registry.FormatCreateOptions());

@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ha;
 
-public sealed class HaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class HaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Ha";
   public string DisplayName => "HA";
   public FormatCategory Category => FormatCategory.Archive;

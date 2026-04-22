@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Deb;
 
-public sealed class DebFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class DebFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Deb";
   public string DisplayName => "DEB";
   public FormatCategory Category => FormatCategory.Archive;

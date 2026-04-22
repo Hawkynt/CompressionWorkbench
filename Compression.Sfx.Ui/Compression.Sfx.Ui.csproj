@@ -10,21 +10,30 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <NoWarn>CS1591</NoWarn>
 
-    <!--
-      Single-file self-contained stub (Windows only - WPF). Publish with:
-        dotnet publish -r win-x64 -c Release
-      No trimming: WPF/WinForms do not support IL trimming.
-    -->
+    <!-- Single-file publish config (also used by post-build bundle target below). -->
     <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <EnableSingleFileBundle>true</EnableSingleFileBundle>
     <!-- No debug symbols in published stub -->
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Fody" Version="6.9.1">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Costura.Fody" Version="6.0.0">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
   </ItemGroup>
+
+  <Import Project="..\build\SingleFileBundle.targets" />
 
 </Project>

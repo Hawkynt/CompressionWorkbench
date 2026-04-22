@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Dmg;
 
-public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Dmg";
   public string DisplayName => "DMG";
   public FormatCategory Category => FormatCategory.Archive;

@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.ThumbsDb;
 
-public sealed class ThumbsDbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class ThumbsDbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "ThumbsDb";
   public string DisplayName => "Thumbs.db";
   public FormatCategory Category => FormatCategory.Archive;

@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Nsis;
 
-public sealed class NsisFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class NsisFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Nsis";
   public string DisplayName => "NSIS";
   public FormatCategory Category => FormatCategory.Archive;

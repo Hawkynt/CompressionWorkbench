@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Sar;
 
-public sealed class SarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class SarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Sar";
   public string DisplayName => "SAR";
   public FormatCategory Category => FormatCategory.Archive;

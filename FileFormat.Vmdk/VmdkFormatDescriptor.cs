@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Vmdk;
 
-public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Vmdk";
   public string DisplayName => "VMDK";
   public FormatCategory Category => FormatCategory.Archive;
@@ -29,7 +29,7 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var fatImage = FileFormat.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
+    var fatImage = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
     var w = new VmdkWriter();
     w.SetDiskData(fatImage);
     output.Write(w.Build());

@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.IffCdaf;
 
-public sealed class IffCdafFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class IffCdafFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "IffCdaf";
   public string DisplayName => "IFF CDAF";
   public FormatCategory Category => FormatCategory.Archive;

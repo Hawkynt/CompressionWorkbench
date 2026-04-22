@@ -49,7 +49,7 @@ public class NsisWriterTests {
       File.WriteAllBytes(tmp, "nsis descriptor"u8.ToArray());
       var d = new NsisFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "data.bin", false)],
         new Compression.Registry.FormatCreateOptions());

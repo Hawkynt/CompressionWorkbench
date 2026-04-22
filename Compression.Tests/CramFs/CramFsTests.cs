@@ -1,4 +1,4 @@
-using FileFormat.CramFs;
+using FileSystem.CramFs;
 
 namespace Compression.Tests.CramFs;
 

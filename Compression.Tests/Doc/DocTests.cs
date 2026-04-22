@@ -24,7 +24,7 @@ public class DocTests {
       File.WriteAllBytes(tmp, "fake doc body"u8.ToArray());
       var d = new FileFormat.Doc.DocFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "WordDocument", false)],
         new Compression.Registry.FormatCreateOptions());

@@ -24,7 +24,7 @@ public class PptTests {
       File.WriteAllBytes(tmp, "fake ppt body"u8.ToArray());
       var d = new FileFormat.Ppt.PptFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "PowerPoint Document", false)],
         new Compression.Registry.FormatCreateOptions());

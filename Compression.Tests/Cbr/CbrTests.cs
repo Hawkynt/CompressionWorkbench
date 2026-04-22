@@ -24,7 +24,7 @@ public class CbrTests {
       File.WriteAllBytes(tmpFile, "comic page bytes"u8.ToArray());
       var desc = new FileFormat.Cbr.CbrFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)desc).Create(
+      ((Compression.Registry.IArchiveCreatable)desc).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmpFile, "page01.png", false)],
         new Compression.Registry.FormatCreateOptions());

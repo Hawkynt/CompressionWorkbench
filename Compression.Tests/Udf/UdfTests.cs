@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.Checksums;
 
 namespace Compression.Tests.Udf;
 
@@ -160,7 +161,7 @@ public class UdfTests {
     var img = BuildMinimalUdf(("test.txt", content));
     using var ms = new MemoryStream(img);
 
-    var r = new FileFormat.Udf.UdfReader(ms);
+    var r = new FileSystem.Udf.UdfReader(ms);
     Assert.That(r.Entries, Has.Count.EqualTo(1));
     Assert.That(r.Entries[0].Name, Is.EqualTo("test.txt"));
     Assert.That(r.Entries[0].Size, Is.EqualTo(content.Length));
@@ -172,7 +173,7 @@ public class UdfTests {
     var img = BuildMinimalUdf(("test.txt", content));
     using var ms = new MemoryStream(img);
 
-    var r = new FileFormat.Udf.UdfReader(ms);
+    var r = new FileSystem.Udf.UdfReader(ms);
     var extracted = r.Extract(r.Entries[0]);
     Assert.That(extracted, Is.EqualTo(content));
   }
@@ -182,13 +183,13 @@ public class UdfTests {
     var img = BuildMinimalUdf(("a.txt", "First"u8.ToArray()), ("b.txt", "Second"u8.ToArray()));
     using var ms = new MemoryStream(img);
 
-    var r = new FileFormat.Udf.UdfReader(ms);
+    var r = new FileSystem.Udf.UdfReader(ms);
     Assert.That(r.Entries, Has.Count.EqualTo(2));
   }
 
   [Test, Category("HappyPath")]
   public void Descriptor_Properties() {
-    var desc = new FileFormat.Udf.UdfFormatDescriptor();
+    var desc = new FileSystem.Udf.UdfFormatDescriptor();
     Assert.That(desc.Id, Is.EqualTo("Udf"));
     Assert.That(desc.DefaultExtension, Is.EqualTo(".udf"));
     Assert.That(desc.Extensions, Does.Contain(".udf"));
@@ -199,7 +200,7 @@ public class UdfTests {
   [Test, Category("ErrorHandling")]
   public void Reader_TooSmall_Throws() {
     using var ms = new MemoryStream(new byte[100]);
-    Assert.Throws<InvalidDataException>(() => _ = new FileFormat.Udf.UdfReader(ms));
+    Assert.Throws<InvalidDataException>(() => _ = new FileSystem.Udf.UdfReader(ms));
   }
 
   [Test, Category("ErrorHandling")]
@@ -208,14 +209,14 @@ public class UdfTests {
     // Write AVDP tag at sector 256 but no NSR
     BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(256 * 2048), 2);
     using var ms = new MemoryStream(data);
-    Assert.Throws<InvalidDataException>(() => _ = new FileFormat.Udf.UdfReader(ms));
+    Assert.Throws<InvalidDataException>(() => _ = new FileSystem.Udf.UdfReader(ms));
   }
 
   [Test, Category("HappyPath")]
   public void Descriptor_List_ViaInterface() {
     var img = BuildMinimalUdf(("file.bin", new byte[10]));
     using var ms = new MemoryStream(img);
-    var desc = new FileFormat.Udf.UdfFormatDescriptor();
+    var desc = new FileSystem.Udf.UdfFormatDescriptor();
     var entries = desc.List(ms, null);
     Assert.That(entries, Has.Count.EqualTo(1));
   }
@@ -224,20 +225,30 @@ public class UdfTests {
 
   [Test, Category("HappyPath")]
   public void Descriptor_ReportsWormCapability() {
-    var d = new FileFormat.Udf.UdfFormatDescriptor();
+    var d = new FileSystem.Udf.UdfFormatDescriptor();
     Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+    Assert.That(d, Is.InstanceOf<Compression.Registry.IArchiveCreatable>());
+    Assert.That(d, Is.InstanceOf<Compression.Registry.IArchiveWriteConstraints>());
+  }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_WriteConstraints_Expose1MiBFloor() {
+    var d = new FileSystem.Udf.UdfFormatDescriptor();
+    var c = (Compression.Registry.IArchiveWriteConstraints)d;
+    Assert.That(c.MaxTotalArchiveSize, Is.Null, "UDF has no inherent ceiling.");
+    Assert.That(c.MinTotalArchiveSize, Is.EqualTo(1L * 1024 * 1024));
   }
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void Writer_SingleFile_RoundTrips() {
     var payload = "hello udf world"u8.ToArray();
-    var w = new FileFormat.Udf.UdfWriter();
+    var w = new FileSystem.Udf.UdfWriter();
     w.AddFile("readme.txt", payload);
     using var ms = new MemoryStream();
     w.WriteTo(ms);
     ms.Position = 0;
 
-    var r = new FileFormat.Udf.UdfReader(ms);
+    var r = new FileSystem.Udf.UdfReader(ms);
     Assert.That(r.Entries.Count(e => !e.IsDirectory), Is.EqualTo(1));
     var entry = r.Entries.First(e => !e.IsDirectory);
     Assert.That(entry.Name, Is.EqualTo("readme.txt"));
@@ -252,14 +263,14 @@ public class UdfTests {
     new Random(1).NextBytes(p1);
     new Random(2).NextBytes(p2);
 
-    var w = new FileFormat.Udf.UdfWriter();
+    var w = new FileSystem.Udf.UdfWriter();
     w.AddFile("a.bin", p1);
     w.AddFile("b.bin", p2);
     using var ms = new MemoryStream();
     w.WriteTo(ms);
     ms.Position = 0;
 
-    var r = new FileFormat.Udf.UdfReader(ms);
+    var r = new FileSystem.Udf.UdfReader(ms);
     var files = r.Entries.Where(e => !e.IsDirectory).ToList();
     Assert.That(files, Has.Count.EqualTo(2));
     Assert.That(r.Extract(files.First(e => e.Name == "a.bin")), Is.EqualTo(p1));
@@ -268,7 +279,7 @@ public class UdfTests {
 
   [Test, Category("HappyPath")]
   public void Writer_HasNsrMagic() {
-    var w = new FileFormat.Udf.UdfWriter();
+    var w = new FileSystem.Udf.UdfWriter();
     w.AddFile("x.txt", "x"u8.ToArray());
     using var ms = new MemoryStream();
     w.WriteTo(ms);
@@ -277,14 +288,77 @@ public class UdfTests {
     Assert.That(Encoding.ASCII.GetString(bytes, 17 * 2048 + 1, 5), Is.EqualTo("NSR02"));
   }
 
+  // ── Descriptor tag CRC-16 (ECMA-167 §7.2.1) validation ──────────────────
+
+  /// <summary>
+  /// Scans a UDF image for the first descriptor tag with the given identifier,
+  /// returning the absolute byte offset, or -1 if not found. Sectors are 2048 B.
+  /// </summary>
+  private static int FindTag(byte[] img, ushort tagId) {
+    const int sectorSize = 2048;
+    for (var off = 0; off + 16 <= img.Length; off += sectorSize) {
+      var id = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(off));
+      if (id == tagId) return off;
+    }
+    return -1;
+  }
+
+  [Test, Category("ThemVsUs")]
+  public void Writer_DescriptorsHaveValidCrc16() {
+    var w = new FileSystem.Udf.UdfWriter();
+    w.AddFile("payload.bin", new byte[42]);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var img = ms.ToArray();
+
+    // Validate PVD (tag 1), Partition Descriptor (5), AVDP (2), FSD (256).
+    foreach (var tagId in new ushort[] { 1, 2, 5, 256 }) {
+      var off = FindTag(img, tagId);
+      Assert.That(off, Is.GreaterThanOrEqualTo(0), $"tag {tagId} not located in image");
+
+      var storedCrc = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(off + 8));
+      var crcLen = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(off + 10));
+      Assert.That(crcLen, Is.GreaterThan(0), $"tag {tagId} has zero DescriptorCRCLength");
+      Assert.That(off + 16 + crcLen, Is.LessThanOrEqualTo(img.Length));
+
+      var computed = Crc16Ccitt.Compute(img.AsSpan(off + 16, crcLen));
+      Assert.That(storedCrc, Is.EqualTo(computed),
+        $"tag {tagId} CRC mismatch: stored=0x{storedCrc:X4} computed=0x{computed:X4}");
+    }
+  }
+
+  [Test, Category("ThemVsUs")]
+  public void Writer_TagChecksumsAreValid() {
+    var w = new FileSystem.Udf.UdfWriter();
+    w.AddFile("a.txt", "hello"u8.ToArray());
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var img = ms.ToArray();
+
+    // Per ECMA-167 §7.2.2, TagChecksum = sum of tag bytes [0..3, 5..15] mod 256.
+    foreach (var tagId in new ushort[] { 1, 2, 5, 6, 8, 256, 261 }) {
+      var off = FindTag(img, tagId);
+      Assert.That(off, Is.GreaterThanOrEqualTo(0), $"tag {tagId} not located in image");
+
+      var stored = img[off + 4];
+      byte sum = 0;
+      for (var i = 0; i < 16; i++) {
+        if (i == 4) continue;
+        sum = (byte)(sum + img[off + i]);
+      }
+      Assert.That(stored, Is.EqualTo(sum),
+        $"tag {tagId} checksum mismatch: stored=0x{stored:X2} computed=0x{sum:X2}");
+    }
+  }
+
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void Descriptor_Create_RoundTrips() {
     var tmp = Path.GetTempFileName();
     try {
       File.WriteAllBytes(tmp, "udf descriptor test"u8.ToArray());
-      var d = new FileFormat.Udf.UdfFormatDescriptor();
+      var d = new FileSystem.Udf.UdfFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "test.txt", false)],
         new Compression.Registry.FormatCreateOptions());

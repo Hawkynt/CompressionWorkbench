@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>FileFormat.Mca</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Core\Compression.Core.csproj" />
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\FileFormat.Gzip\FileFormat.Gzip.csproj" />
+    <ProjectReference Include="..\FileFormat.Zlib\FileFormat.Zlib.csproj" />
+  </ItemGroup>
+
+</Project>

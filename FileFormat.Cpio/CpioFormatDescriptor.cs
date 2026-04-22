@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cpio;
 
-public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Cpio";
   public string DisplayName => "CPIO";
   public FormatCategory Category => FormatCategory.Archive;

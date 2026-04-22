@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Sqx;
 
-public sealed class SqxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class SqxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Sqx";
   public string DisplayName => "SQX";
   public FormatCategory Category => FormatCategory.Archive;

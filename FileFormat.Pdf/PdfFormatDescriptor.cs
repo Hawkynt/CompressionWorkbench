@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Pdf;
 
-public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Pdf";
   public string DisplayName => "PDF (Image Extraction)";
   public FormatCategory Category => FormatCategory.Archive;

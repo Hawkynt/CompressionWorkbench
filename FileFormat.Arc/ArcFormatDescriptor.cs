@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Arc;
 
-public sealed class ArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class ArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Arc";
   public string DisplayName => "ARC";
   public FormatCategory Category => FormatCategory.Archive;

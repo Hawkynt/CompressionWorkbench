@@ -905,6 +905,55 @@ reverseCmd.SetAction(async (ParseResult ctx) => {
   return report.ProbesSucceeded > 0 ? 0 : 1;
 });
 
+// ── carve ────────────────────────────────────────────────────────────
+
+var carveFileArg = new Argument<FileInfo>("file") { Description = "Binary file to scan for embedded payloads" };
+var carveOutOpt = new Option<DirectoryInfo?>("--out", "-o") { Description = "Directory to write carved payloads (default: don't extract, just list)" };
+var carveMinConfOpt = new Option<double>("--min-confidence") { Description = "Minimum signature confidence (0.0–1.0)", DefaultValueFactory = _ => 0.7 };
+var carveFormatFilterOpt = new Option<string[]>("--format") { Description = "Limit to specific format IDs (comma-separated or repeated)" };
+
+var carveCmd = new Command("carve", """
+  Find embedded file payloads (ZIP, PNG, MP4, GZIP, …) anywhere inside an arbitrary
+  binary — executable, firmware image, disk sector dump, corrupted file. Reports
+  each hit's offset + length + format, and optionally extracts it to a directory.
+
+  Examples:
+    cwb carve firmware.bin                               List embedded payloads
+    cwb carve virus.exe --out extracted/                  Extract everything found
+    cwb carve disk.img --format Zip,Gzip --min-confidence 0.9
+  """) { carveFileArg, carveOutOpt, carveMinConfOpt, carveFormatFilterOpt };
+
+carveCmd.SetAction((ParseResult ctx) => {
+  var file = ctx.GetValue(carveFileArg)!;
+  var outDir = ctx.GetValue(carveOutOpt);
+  var minConf = ctx.GetValue(carveMinConfOpt);
+  var formats = ctx.GetValue(carveFormatFilterOpt);
+
+  if (!file.Exists) { Console.Error.WriteLine($"File not found: {file.FullName}"); return 1; }
+
+  var buffer = File.ReadAllBytes(file.FullName);
+  var options = new Compression.Analysis.PayloadCarver.CarveOptions(
+    MinConfidence: minConf,
+    FormatFilter: formats is { Length: > 0 } ? formats : null,
+    IncludeData: outDir != null);
+  var results = Compression.Analysis.PayloadCarver.Carve(buffer, options);
+
+  Console.WriteLine($"Scanned {FormatSize(buffer.Length)}; {results.Count} payload(s) discovered.");
+  Console.WriteLine();
+  Console.WriteLine($"{"Offset",12} {"Length",12} {"Conf",6} {"Format",-20}");
+  Console.WriteLine(new string('-', 60));
+  foreach (var p in results) {
+    Console.WriteLine($"0x{p.Offset:X10} {FormatSize(p.Length),12} {p.Confidence,6:F2} {p.FormatId,-20}");
+  }
+
+  if (outDir != null && results.Count > 0) {
+    Console.WriteLine();
+    var written = Compression.Analysis.PayloadCarver.Extract(results, outDir.FullName);
+    Console.WriteLine($"Wrote {written.Count} file(s) to {outDir.FullName}");
+  }
+  return 0;
+});
+
 var root = new RootCommand("""
   cwb — CompressionWorkbench CLI. A universal archive tool.
 
@@ -922,7 +971,7 @@ var root = new RootCommand("""
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, infoCmd, convertCmd, optimizeCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd
+  listCmd, extractCmd, createCmd, testCmd, infoCmd, convertCmd, optimizeCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd
 };
 
 return root.Parse(args).Invoke();

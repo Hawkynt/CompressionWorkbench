@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cbr;
 
-public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Cbr";
   public string DisplayName => "CBR";
   public FormatCategory Category => FormatCategory.Archive;
