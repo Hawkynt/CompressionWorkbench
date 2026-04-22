@@ -23,13 +23,31 @@ public partial class MainWindow : Window {
   public void OpenArchive(string path) => ViewModel.Open(path);
 
   private void OnDragOver(object sender, DragEventArgs e) {
-    if (e.Data.GetDataPresent(DataFormats.FileDrop)) {
-      e.Effects = DragDropEffects.Copy;
-      DropOverlay.Visibility = Visibility.Visible;
-      DropText.Text = ViewModel.HasArchive ? "Drop to add files to archive" : "Drop archive to open";
-    }
-    else {
+    if (!e.Data.GetDataPresent(DataFormats.FileDrop)) {
       e.Effects = DragDropEffects.None;
+      e.Handled = true;
+      return;
+    }
+
+    DropOverlay.Visibility = Visibility.Visible;
+
+    // No archive open: any drop opens the first file as an archive.
+    if (!ViewModel.HasArchive) {
+      e.Effects = DragDropEffects.Copy;
+      DropText.Text = "Drop archive to open";
+      e.Handled = true;
+      return;
+    }
+
+    // Archive open: decide by capability + constraints.
+    var files = (string[])e.Data.GetData(DataFormats.FileDrop)!;
+    var (allowed, message) = ViewModel.EvaluateDropAgainstCurrentArchive(files);
+    if (allowed) {
+      e.Effects = DragDropEffects.Copy;
+      DropText.Text = message ?? "Drop to add files to archive";
+    } else {
+      e.Effects = DragDropEffects.None;
+      DropText.Text = message ?? "This archive doesn't accept those inputs";
     }
     e.Handled = true;
   }
@@ -49,6 +67,58 @@ public partial class MainWindow : Window {
 
   private void OnEntryDoubleClick(object sender, MouseButtonEventArgs e) {
     ActivateSelectedEntry();
+  }
+
+  // ── Drag-out: let users drag entries from the archive list to Explorer / any drop target.
+  // WPF drag starts only once the pointer has moved past SystemParameters.MinimumHorizontal/
+  // VerticalDragDistance from the initial mouse-down position; we record that point here and
+  // compare in OnEntryMouseMove so single-click selection doesn't trigger a drag.
+  private System.Windows.Point? _dragStart;
+
+  private void OnEntryMouseDown(object sender, MouseButtonEventArgs e) {
+    // Record the origin only when the click landed on an actual row (not the header or empty area).
+    var hit = e.OriginalSource as DependencyObject;
+    while (hit != null && hit is not System.Windows.Controls.ListViewItem)
+      hit = System.Windows.Media.VisualTreeHelper.GetParent(hit);
+    this._dragStart = hit is System.Windows.Controls.ListViewItem ? e.GetPosition(null) : null;
+  }
+
+  private void OnEntryMouseMove(object sender, System.Windows.Input.MouseEventArgs e) {
+    if (this._dragStart == null || e.LeftButton != MouseButtonState.Pressed) return;
+
+    var diff = e.GetPosition(null) - this._dragStart.Value;
+    if (Math.Abs(diff.X) < SystemParameters.MinimumHorizontalDragDistance &&
+        Math.Abs(diff.Y) < SystemParameters.MinimumVerticalDragDistance)
+      return;
+
+    this._dragStart = null;  // consume — a single drag per gesture
+    this.StartDragOutOfArchive();
+  }
+
+  private void StartDragOutOfArchive() {
+    if (!ViewModel.HasArchive) return;
+    var selectedEntries = ViewModel.SelectedEntries
+      .Where(e => !e.IsParentEntry)
+      .ToList();
+    if (selectedEntries.Count == 0) return;
+
+    // Drag-out needs concrete file paths to feed DataFormats.FileDrop. Materialise the
+    // selection into a per-session temp dir the user can drop anywhere in Explorer. The
+    // temp dir self-cleans on the next successful Save / archive-close, or on process
+    // exit; files the drop target moved have already left, so no orphaned copies remain.
+    string[] paths;
+    try {
+      paths = ViewModel.MaterializeForDragOut(selectedEntries);
+    } catch (Exception ex) {
+      System.Windows.MessageBox.Show(
+        $"Couldn't prepare files for drag-out:\n{ex.Message}",
+        "Drag-out", MessageBoxButton.OK, MessageBoxImage.Warning);
+      return;
+    }
+    if (paths.Length == 0) return;
+
+    var data = new System.Windows.DataObject(DataFormats.FileDrop, paths);
+    DragDrop.DoDragDrop(EntryList, data, DragDropEffects.Copy);
   }
 
   private void OnEntryKeyDown(object sender, System.Windows.Input.KeyEventArgs e) {

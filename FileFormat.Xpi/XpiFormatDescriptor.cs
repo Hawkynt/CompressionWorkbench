@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Xpi;
 
-public sealed class XpiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class XpiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Xpi";
   public string DisplayName => "XPI";
   public FormatCategory Category => FormatCategory.Archive;

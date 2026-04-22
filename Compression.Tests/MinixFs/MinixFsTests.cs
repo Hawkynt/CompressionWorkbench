@@ -8,12 +8,12 @@ public class MinixFsTests {
     var content = "Hello Minix!"u8.ToArray();
 
     using var ms = new MemoryStream();
-    var w = new FileFormat.MinixFs.MinixFsWriter(ms, leaveOpen: true);
+    var w = new FileSystem.MinixFs.MinixFsWriter(ms, leaveOpen: true);
     w.AddFile("hello.txt", content);
     w.Finish();
 
     ms.Position = 0;
-    var r = new FileFormat.MinixFs.MinixFsReader(ms);
+    var r = new FileSystem.MinixFs.MinixFsReader(ms);
     Assert.That(r.Entries, Has.Count.EqualTo(1));
     Assert.That(r.Entries[0].Name, Is.EqualTo("hello.txt"));
     Assert.That(r.Entries[0].Size, Is.EqualTo(content.Length));
@@ -31,14 +31,14 @@ public class MinixFsTests {
     for (var i = 0; i < data3.Length; i++) data3[i] = (byte)(i & 0xFF);
 
     using var ms = new MemoryStream();
-    var w = new FileFormat.MinixFs.MinixFsWriter(ms, leaveOpen: true);
+    var w = new FileSystem.MinixFs.MinixFsWriter(ms, leaveOpen: true);
     w.AddFile("alpha.txt", data1);
     w.AddFile("beta.bin", data2);
     w.AddFile("gamma.dat", data3);
     w.Finish();
 
     ms.Position = 0;
-    var r = new FileFormat.MinixFs.MinixFsReader(ms);
+    var r = new FileSystem.MinixFs.MinixFsReader(ms);
 
     Assert.That(r.Entries, Has.Count.EqualTo(3));
 
@@ -55,7 +55,7 @@ public class MinixFsTests {
 
   [Test, Category("HappyPath")]
   public void Descriptor_Properties() {
-    var desc = new FileFormat.MinixFs.MinixFsFormatDescriptor();
+    var desc = new FileSystem.MinixFs.MinixFsFormatDescriptor();
     Assert.That(desc.Id,             Is.EqualTo("MinixFs"));
     Assert.That(desc.DisplayName,    Is.EqualTo("Minix FS"));
     Assert.That(desc.DefaultExtension, Is.EqualTo(".minix"));
@@ -84,12 +84,12 @@ public class MinixFsTests {
     data[1049] = 0x00;
 
     using var ms = new MemoryStream(data);
-    Assert.Throws<InvalidDataException>(() => _ = new FileFormat.MinixFs.MinixFsReader(ms));
+    Assert.Throws<InvalidDataException>(() => _ = new FileSystem.MinixFs.MinixFsReader(ms));
   }
 
   [Test, Category("ErrorHandling")]
   public void TooSmall_Throws() {
     using var ms = new MemoryStream(new byte[64]);
-    Assert.Throws<InvalidDataException>(() => _ = new FileFormat.MinixFs.MinixFsReader(ms));
+    Assert.Throws<InvalidDataException>(() => _ = new FileSystem.MinixFs.MinixFsReader(ms));
   }
 }

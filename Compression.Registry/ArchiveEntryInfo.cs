@@ -11,5 +11,6 @@ public sealed record ArchiveEntryInfo(
   string Method,
   bool IsDirectory,
   bool IsEncrypted,
-  DateTime? LastModified
+  DateTime? LastModified,
+  string? Kind = null
 );

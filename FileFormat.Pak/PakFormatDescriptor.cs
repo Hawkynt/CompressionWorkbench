@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Pak;
 
-public sealed class PakFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class PakFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Pak";
   public string DisplayName => "PAK";
   public FormatCategory Category => FormatCategory.Archive;

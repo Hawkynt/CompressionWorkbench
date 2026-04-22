@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>FileFormat.Aiff</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Core\Compression.Core.csproj" />
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\Codec.Pcm\Codec.Pcm.csproj" />
+    <ProjectReference Include="..\Codec.MuLaw\Codec.MuLaw.csproj" />
+    <ProjectReference Include="..\Codec.ALaw\Codec.ALaw.csproj" />
+    <ProjectReference Include="..\Codec.ImaAdpcm\Codec.ImaAdpcm.csproj" />
+    <ProjectReference Include="..\Codec.MsAdpcm\Codec.MsAdpcm.csproj" />
+    <ProjectReference Include="..\Codec.Gsm610\Codec.Gsm610.csproj" />
+  </ItemGroup>
+
+</Project>

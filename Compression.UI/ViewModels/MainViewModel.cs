@@ -246,6 +246,69 @@ internal sealed class MainViewModel : ViewModelBase {
     StatusText = $"Extracted to {dlg.SelectedPath}";
   }
 
+  /// <summary>
+  /// Extracts the given selection to a per-session staging folder and returns the
+  /// top-level paths for <see cref="DataFormats.FileDrop"/>. Called by the entry-list
+  /// drag-out handler when the user drags archive entries to Explorer.
+  /// <para>
+  /// Files stay in <see cref="_dragOutStagingRoot"/> (under %TEMP%) until the archive
+  /// is closed or the process exits — copies Windows may make for the drop target are
+  /// independent. Nested directory selections preserve their in-archive relative paths
+  /// so dropped folders look right in the target.
+  /// </para>
+  /// </summary>
+  internal string[] MaterializeForDragOut(IReadOnlyList<ArchiveEntryViewModel> selection) {
+    if (selection.Count == 0 || !HasArchive) return [];
+
+    // Expand directory selections to all contained files, same as ExtractSelected does.
+    var filePaths = new List<string>();
+    foreach (var entry in selection) {
+      if (entry.IsParentEntry) continue;
+      if (entry.IsDirectory) {
+        var dirPrefix = entry.Path.EndsWith('/') ? entry.Path : entry.Path + "/";
+        foreach (var e in _allEntries)
+          if (!e.IsDirectory && e.Path.StartsWith(dirPrefix, StringComparison.Ordinal))
+            filePaths.Add(e.Path);
+      } else {
+        filePaths.Add(entry.Path);
+      }
+    }
+    var files = filePaths.Distinct().ToArray();
+    if (files.Length == 0) return [];
+
+    // Ensure a clean staging dir per drag gesture; previous drag's contents are left in
+    // place (the user may still be completing that drop), but the session-level directory
+    // is reused so repeated drags don't leak unbounded temp folders.
+    var stagingDir = Path.Combine(this.DragOutStagingRoot, Guid.NewGuid().ToString("N")[..8]);
+    Directory.CreateDirectory(stagingDir);
+    ArchiveOperations.Extract(ArchivePath, stagingDir, password: null, files: files);
+
+    // For each dragged top-level entry (not the expanded directory contents), surface
+    // its path under the staging dir. Explorer copies directories recursively.
+    var topLevel = new List<string>();
+    foreach (var entry in selection.Where(e => !e.IsParentEntry)) {
+      var candidate = Path.Combine(stagingDir, entry.Path.Replace('/', Path.DirectorySeparatorChar));
+      if (entry.IsDirectory) {
+        if (Directory.Exists(candidate)) topLevel.Add(candidate);
+      } else if (File.Exists(candidate)) {
+        topLevel.Add(candidate);
+      }
+    }
+    return topLevel.ToArray();
+  }
+
+  private string? _dragOutStagingRoot;
+  private string DragOutStagingRoot {
+    get {
+      if (this._dragOutStagingRoot == null || !Directory.Exists(this._dragOutStagingRoot)) {
+        this._dragOutStagingRoot = Path.Combine(Path.GetTempPath(),
+          "cwb-drag-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(this._dragOutStagingRoot);
+      }
+      return this._dragOutStagingRoot;
+    }
+  }
+
   private async Task ExtractSelected() {
     var dlg = new System.Windows.Forms.FolderBrowserDialog {
       Description = "Select output folder",
@@ -392,8 +455,50 @@ internal sealed class MainViewModel : ViewModelBase {
       return;
     }
 
-    // Archive is open — add dropped files to the archive
+    // Archive is open — validate against the descriptor's constraints before adding.
+    var (allowed, message) = EvaluateDropAgainstCurrentArchive(files);
+    if (!allowed) {
+      StatusText = message ?? "Some dropped files can't go in this archive.";
+      return;
+    }
     AddFilesToArchiveImpl(files);
+  }
+
+  /// <summary>
+  /// Probes the current archive's descriptor: is the drop allowed by writability
+  /// (IArchiveCreatable or IArchiveModifiable) and accepted by any declared
+  /// IArchiveWriteConstraints? Returns the display message to use in the drop overlay.
+  /// </summary>
+  internal (bool Allowed, string? Message) EvaluateDropAgainstCurrentArchive(string[] files) {
+    if (!HasArchive) return (true, "Drop archive to open");
+
+    var format = FormatDetector.DetectByExtension(ArchivePath);
+    if (format == FormatDetector.Format.Unknown) return (true, "Drop to add files to archive");
+
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var ops = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
+    // Read-only descriptors block the drop outright.
+    if (ops is not Compression.Registry.IArchiveCreatable &&
+        ops is not Compression.Registry.IArchiveModifiable) {
+      return (false, "This archive format is read-only (can't add files)");
+    }
+
+    // Per-file + cumulative-size check via optional constraints.
+    if (ops is Compression.Registry.IArchiveWriteConstraints constraints) {
+      long cumulative = 0;
+      foreach (var path in files) {
+        var entryName = System.IO.Path.GetFileName(path);
+        var size = new FileInfo(path).Exists ? new FileInfo(path).Length : 0;
+        cumulative += size;
+        var input = new Compression.Registry.ArchiveInputInfo(path, entryName, IsDirectory: false);
+        if (!constraints.CanAccept(input, out var why))
+          return (false, why ?? constraints.AcceptedInputsDescription);
+      }
+      if (constraints.MaxTotalArchiveSize is long cap && cumulative > cap)
+        return (false, $"Total {cumulative} bytes exceeds this format's {cap}-byte ceiling");
+    }
+
+    return (true, "Drop to add files to archive");
   }
 
   private void AddFilesToArchive() {

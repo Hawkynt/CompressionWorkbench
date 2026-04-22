@@ -5,7 +5,7 @@ public class RomFsTests {
 
   private static byte[] BuildImage(params (string Path, byte[] Data)[] files) {
     using var ms = new MemoryStream();
-    using var w = new FileFormat.RomFs.RomFsWriter(ms, leaveOpen: true);
+    using var w = new FileSystem.RomFs.RomFsWriter(ms, leaveOpen: true);
     foreach (var (path, data) in files)
       w.AddFile(path, data);
     w.Finish();
@@ -22,7 +22,7 @@ public class RomFsTests {
     var img = BuildImage(("hello.txt", data));
 
     using var ms = new MemoryStream(img);
-    var r = new FileFormat.RomFs.RomFsReader(ms);
+    var r = new FileSystem.RomFs.RomFsReader(ms);
 
     var files = r.Entries.Where(e => !e.IsDirectory).ToList();
     Assert.That(files, Has.Count.EqualTo(1));
@@ -40,7 +40,7 @@ public class RomFsTests {
     var img = BuildImage(("a.txt", a), ("b.txt", b), ("c.bin", c));
 
     using var ms = new MemoryStream(img);
-    var r = new FileFormat.RomFs.RomFsReader(ms);
+    var r = new FileSystem.RomFs.RomFsReader(ms);
 
     var files = r.Entries.Where(e => !e.IsDirectory).OrderBy(e => e.Name).ToList();
     Assert.That(files, Has.Count.EqualTo(3));
@@ -58,7 +58,7 @@ public class RomFsTests {
     var img = BuildImage(("etc/config.txt", cfgData), ("bin/app", appData));
 
     using var ms = new MemoryStream(img);
-    var r = new FileFormat.RomFs.RomFsReader(ms);
+    var r = new FileSystem.RomFs.RomFsReader(ms);
 
     var allFiles = r.Entries.Where(e => !e.IsDirectory).ToList();
     Assert.That(allFiles, Has.Count.EqualTo(2));
@@ -78,7 +78,7 @@ public class RomFsTests {
 
   [Test]
   public void Descriptor_Properties() {
-    var d = new FileFormat.RomFs.RomFsFormatDescriptor();
+    var d = new FileSystem.RomFs.RomFsFormatDescriptor();
     Assert.That(d.Id,               Is.EqualTo("RomFs"));
     Assert.That(d.DefaultExtension, Is.EqualTo(".romfs"));
     Assert.That(d.MagicSignatures,  Has.Count.EqualTo(1));
@@ -97,13 +97,13 @@ public class RomFsTests {
     var bad = new byte[512];
     Array.Fill(bad, (byte)0xFF);
     using var ms = new MemoryStream(bad);
-    Assert.Throws<InvalidDataException>(() => _ = new FileFormat.RomFs.RomFsReader(ms));
+    Assert.Throws<InvalidDataException>(() => _ = new FileSystem.RomFs.RomFsReader(ms));
   }
 
   [Test]
   public void TooSmall_Throws() {
     var tiny = new byte[8]; // less than the 16-byte minimum
     using var ms = new MemoryStream(tiny);
-    Assert.Throws<InvalidDataException>(() => _ = new FileFormat.RomFs.RomFsReader(ms));
+    Assert.Throws<InvalidDataException>(() => _ = new FileSystem.RomFs.RomFsReader(ms));
   }
 }

@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.FreeArc;
 
 /// <summary>Format descriptor for FreeArc compressed archives (.arc).</summary>
-public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   /// <inheritdoc/>
   public string Id => "FreeArc";
 

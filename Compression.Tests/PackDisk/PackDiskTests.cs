@@ -111,7 +111,7 @@ public class PackDiskTests {
       File.WriteAllBytes(tmp, new byte[FileFormat.PackDisk.PackDiskWriter.TrackSize]);
       var d = new FileFormat.PackDisk.PackDiskFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "track_000.raw", false)],
         new Compression.Registry.FormatCreateOptions());

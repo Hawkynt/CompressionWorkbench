@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Tnef;
 
-public sealed class TnefFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class TnefFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Tnef";
   public string DisplayName => "MS-TNEF (winmail.dat)";
   public FormatCategory Category => FormatCategory.Archive;

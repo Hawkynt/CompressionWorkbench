@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Tar;
 
-public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator {
+public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator {
   public string Id => "Tar";
   public string DisplayName => "TAR";
   public FormatCategory Category => FormatCategory.Archive;

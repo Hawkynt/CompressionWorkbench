@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.PackDisk;
 
-public sealed class PackDiskFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class PackDiskFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "PackDisk";
   public string DisplayName => "PackDisk (Amiga)";
   public FormatCategory Category => FormatCategory.Archive;

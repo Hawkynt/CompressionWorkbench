@@ -19,7 +19,7 @@ public class DiskImageNestingTests {
   /// </summary>
   private static byte[] BuildVmdkWithMbrAndFatPartition() {
     // Build a small FAT12 filesystem image with a test file.
-    var fatWriter = new FileFormat.Fat.FatWriter();
+    var fatWriter = new FileSystem.Fat.FatWriter();
     fatWriter.AddFile("TEST.TXT", "Hello from FAT!"u8.ToArray());
     var fatImage = fatWriter.Build(); // 1.44MB FAT12
 
@@ -131,7 +131,7 @@ public class DiskImageNestingTests {
   public void PartitionTableDetector_FatDiskImage_NoPartitionTable() {
     // A raw FAT filesystem image has a boot sector that looks like an MBR (0x55AA)
     // but the partition entries are either empty or point beyond the image.
-    var fatWriter = new FileFormat.Fat.FatWriter();
+    var fatWriter = new FileSystem.Fat.FatWriter();
     fatWriter.AddFile("TEST.TXT", "data"u8.ToArray());
     var fatImage = fatWriter.Build(); // 1.44MB
 
@@ -146,7 +146,7 @@ public class DiskImageNestingTests {
   public void PartitionTableDetector_ExtractAndProbe_EndToEnd() {
     // Build a raw disk with MBR + FAT partition and verify the full pipeline
     // (detection + extraction) works without going through a disk image format.
-    var fatWriter = new FileFormat.Fat.FatWriter();
+    var fatWriter = new FileSystem.Fat.FatWriter();
     fatWriter.AddFile("HELLO.TXT", "world"u8.ToArray());
     var fatImage = fatWriter.Build();
 

@@ -244,7 +244,7 @@ public class PdfTests {
       File.WriteAllBytes(tmp, "pdf descriptor test"u8.ToArray());
       var d = new PdfFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "test.txt", false)],
         new Compression.Registry.FormatCreateOptions());

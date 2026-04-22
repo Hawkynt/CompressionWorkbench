@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Nrg;
 
-public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Nrg";
   public string DisplayName => "NRG";
   public FormatCategory Category => FormatCategory.Archive;
@@ -43,7 +43,7 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // WORM: ISO 9660 image followed by an NRG v2 ("NER5") footer. The reader
     // only uses the footer to determine version; the chunk-table offset isn't
     // dereferenced for ISO extraction, so we point it at end-of-file.
-    var iso = new FileFormat.Iso.IsoWriter();
+    var iso = new FileSystem.Iso.IsoWriter();
     foreach (var (name, data) in FlatFiles(inputs))
       iso.AddFile(name, data);
     var image = iso.Build();

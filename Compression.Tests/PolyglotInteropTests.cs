@@ -428,7 +428,7 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED) as z:
 import tarfile, sys
 with tarfile.open(sys.argv[1]) as t:
     names = sorted(m.name for m in t.getmembers())
-    print(' '.join(names))
+    sys.stdout.buffer.write((' '.join(names) + '\n').encode('ascii'))
     for name in names:
         f = t.extractfile(name)
         if f is not None:

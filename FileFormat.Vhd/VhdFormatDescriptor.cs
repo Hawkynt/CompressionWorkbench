@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Vhd;
 
-public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Vhd";
   public string DisplayName => "VHD";
   public FormatCategory Category => FormatCategory.Archive;
@@ -30,7 +30,7 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var fatImage = FileFormat.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
+    var fatImage = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
     var w = new VhdWriter();
     w.SetDiskData(fatImage);
     output.Write(w.Build());

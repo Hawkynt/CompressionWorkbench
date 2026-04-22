@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Apk;
 
-public sealed class ApkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class ApkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Apk";
   public string DisplayName => "APK";
   public FormatCategory Category => FormatCategory.Archive;

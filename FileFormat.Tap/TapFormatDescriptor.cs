@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Tap;
 
-public sealed class TapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class TapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Tap";
   public string DisplayName => "TAP";
   public FormatCategory Category => FormatCategory.Archive;

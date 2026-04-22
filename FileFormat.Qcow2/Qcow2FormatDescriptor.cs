@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Qcow2;
 
-public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Qcow2";
   public string DisplayName => "QCOW2";
   public FormatCategory Category => FormatCategory.Archive;
@@ -35,7 +35,7 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     // WORM: builds a FAT filesystem from the input files, then wraps it in a
     // QCOW2 v2 container. This makes the disk image mountable and the files
     // recoverable by any OS that reads FAT.
-    var fatImage = FileFormat.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
+    var fatImage = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
     var w = new Qcow2Writer();
     w.SetDiskImage(fatImage);
     w.WriteTo(output);

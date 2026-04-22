@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Xls;
 
-public sealed class XlsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class XlsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Xls";
   public string DisplayName => "XLS";
   public FormatCategory Category => FormatCategory.Archive;

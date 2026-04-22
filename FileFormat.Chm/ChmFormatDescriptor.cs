@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Chm;
 
-public sealed class ChmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class ChmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Chm";
   public string DisplayName => "CHM";
   public FormatCategory Category => FormatCategory.Archive;

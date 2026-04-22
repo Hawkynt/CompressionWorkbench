@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>FileFormat.PngCrushAdapters</RootNamespace>
+    <!-- Cross-repo references targets net8.0 (PngCrushCS Directory.Build.props sets it explicitly per project).
+         Multi-target so consumers on net10.0 still work. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- PngCrushCS's FileFormat.Png references System.IO.Hashing transitively; declare it
+         here so the .NET 10 host can resolve the assembly at runtime. -->
+    <PackageReference Include="System.IO.Hashing" Version="9.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <!-- Cross-repo: PngCrushCS's image format library. ✱ Note: building requires the
+         sibling repo to be present at ..\..\PNGCrushCS. -->
+    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj" />
+    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Png\FileFormat.Png.csproj" />
+    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Bmp\FileFormat.Bmp.csproj" />
+    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Ico\FileFormat.Ico.csproj" />
+    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Cur\FileFormat.Cur.csproj" />
+    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Ani\FileFormat.Ani.csproj" />
+    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Apng\FileFormat.Apng.csproj" />
+    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Tiff\FileFormat.Tiff.csproj" />
+    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.BigTiff\FileFormat.BigTiff.csproj" />
+    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Mng\FileFormat.Mng.csproj" />
+    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Fli\FileFormat.Fli.csproj" />
+    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Dcx\FileFormat.Dcx.csproj" />
+    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Icns\FileFormat.Icns.csproj" />
+    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Mpo\FileFormat.Mpo.csproj" />
+  </ItemGroup>
+
+</Project>

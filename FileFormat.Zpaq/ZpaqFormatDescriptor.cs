@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Zpaq;
 
-public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Zpaq";
   public string DisplayName => "ZPAQ";
   public FormatCategory Category => FormatCategory.Archive;

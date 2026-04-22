@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Msi;
 
-public sealed class MsiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class MsiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Msi";
   public string DisplayName => "MSI (OLE Compound File)";
   public FormatCategory Category => FormatCategory.Archive;

@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Zoo;
 
-public sealed class ZooFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class ZooFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Zoo";
   public string DisplayName => "ZOO";
   public FormatCategory Category => FormatCategory.Archive;

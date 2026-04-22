@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Jar;
 
-public sealed class JarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class JarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Jar";
   public string DisplayName => "JAR";
   public FormatCategory Category => FormatCategory.Archive;

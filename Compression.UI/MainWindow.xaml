@@ -183,6 +183,8 @@
               SelectionMode="Extended"
               MouseDoubleClick="OnEntryDoubleClick"
               PreviewKeyDown="OnEntryKeyDown"
+              PreviewMouseLeftButtonDown="OnEntryMouseDown"
+              PreviewMouseMove="OnEntryMouseMove"
               GridViewColumnHeader.Click="OnColumnHeaderClick">
       <ListView.ContextMenu>
         <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">

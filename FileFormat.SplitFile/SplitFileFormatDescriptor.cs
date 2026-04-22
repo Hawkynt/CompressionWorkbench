@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.SplitFile;
 
-public sealed class SplitFileFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class SplitFileFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "SplitFile";
   public string DisplayName => "Split File (.001)";
   public FormatCategory Category => FormatCategory.Archive;

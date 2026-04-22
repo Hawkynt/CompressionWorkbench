@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.BinCue;
 
-public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "BinCue";
   public string DisplayName => "BIN/CUE";
   public FormatCategory Category => FormatCategory.Archive;
@@ -43,7 +43,7 @@ public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     // auto-detects this geometry. CUE sheet generation is not produced here -- the
     // Create API only gives us a single output stream; users wanting a CUE can
     // generate one trivially since a single Mode 1 data track is the default.
-    var iso = new FileFormat.Iso.IsoWriter();
+    var iso = new FileSystem.Iso.IsoWriter();
     foreach (var (name, data) in FlatFiles(inputs))
       iso.AddFile(name, data);
     output.Write(iso.Build());

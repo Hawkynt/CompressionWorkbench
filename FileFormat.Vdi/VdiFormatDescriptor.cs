@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Vdi;
 
-public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Vdi";
   public string DisplayName => "VDI";
   public FormatCategory Category => FormatCategory.Archive;
@@ -33,7 +33,7 @@ public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var fatImage = FileFormat.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
+    var fatImage = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
     using var w = new VdiWriter(output, leaveOpen: true, virtualSize: fatImage.Length);
     w.Write(fatImage);
   }

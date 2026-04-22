@@ -19,7 +19,7 @@ public class XpiTests {
       File.WriteAllBytes(tmpFile, "test data"u8.ToArray());
       var desc = new FileFormat.Xpi.XpiFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)desc).Create(ms, [new Compression.Registry.ArchiveInputInfo(tmpFile, "test.txt", false)], new Compression.Registry.FormatCreateOptions());
+      ((Compression.Registry.IArchiveCreatable)desc).Create(ms, [new Compression.Registry.ArchiveInputInfo(tmpFile, "test.txt", false)], new Compression.Registry.FormatCreateOptions());
       ms.Position = 0;
       var entries = desc.List(ms, null);
       Assert.That(entries, Has.Count.EqualTo(1));

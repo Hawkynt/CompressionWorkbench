@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Epub;
 
-public sealed class EpubFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class EpubFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Epub";
   public string DisplayName => "EPUB";
   public FormatCategory Category => FormatCategory.Archive;

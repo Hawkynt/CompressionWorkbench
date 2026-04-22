@@ -1,0 +1,57 @@
+<Project>
+
+  <!--
+    After each build, invoke `dotnet publish` with PublishSingleFile to produce a
+    framework-dependent single-exe bundle, then replace the multi-file build output
+    in bin\$(Configuration)\$(TargetFramework)\ with just the bundled exe (+ pdb
+    for Debug builds).
+
+    Triggered by <EnableSingleFileBundle>true</EnableSingleFileBundle> in each
+    exe project. Guarded against recursion by the _InSingleFileBundle property
+    that the recursive publish invocation sets on itself.
+
+    Windows-only for now (WPF projects target net10.0-windows anyway; the CLI
+    targets net10.0 but the RID defaults to win-x64).
+  -->
+  <Target Name="PostBuildSingleFileBundle"
+          AfterTargets="Build"
+          Condition="'$(EnableSingleFileBundle)' == 'true' And '$(_InSingleFileBundle)' != 'true' And '$(DesignTimeBuild)' != 'true' And '$(OS)' == 'Windows_NT'">
+
+    <PropertyGroup>
+      <_BundleTargetDir>$(MSBuildProjectDirectory)\$(BaseOutputPath.TrimEnd('\').TrimEnd('/'))\$(Configuration)\$(TargetFramework.TrimEnd('\').TrimEnd('/'))</_BundleTargetDir>
+      <_BundleStagingDir>$(_BundleTargetDir)\bundle-staging</_BundleStagingDir>
+      <_BundleRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_BundleRid>
+      <_BundleRid Condition="'$(_BundleRid)' == ''">win-x64</_BundleRid>
+    </PropertyGroup>
+
+    <Message Importance="high" Text="[SingleFileBundle] Packing $(AssemblyName) ($(Configuration)) into a single executable…" />
+
+    <Exec Command='dotnet publish "$(MSBuildProjectFullPath)" -c $(Configuration) -r $(_BundleRid) --self-contained false --no-build --no-restore -p:PublishSingleFile=true -p:_InSingleFileBundle=true -o "$(_BundleStagingDir)"'
+          ConsoleToMSBuild="true"
+          IgnoreExitCode="false" />
+
+    <!-- The staging dir now contains $(AssemblyName).exe + $(AssemblyName).pdb (Debug) +
+         runtime JSON config files. Wipe the multi-file build output and move the staged
+         single file back. -->
+    <ItemGroup>
+      <_MultiFileOutput Include="$(_BundleTargetDir)\*.dll" />
+      <_MultiFileOutput Include="$(_BundleTargetDir)\*.exe" />
+      <_MultiFileOutput Include="$(_BundleTargetDir)\*.json" />
+      <_MultiFileOutput Include="$(_BundleTargetDir)\*.xml" />
+      <_MultiFileOutput Include="$(_BundleTargetDir)\*.pdb" Condition="'$(Configuration)' == 'Release'" />
+      <_BundleKeepers Include="$(_BundleStagingDir)\$(AssemblyName).exe" />
+      <_BundleKeepers Include="$(_BundleStagingDir)\$(AssemblyName).pdb" Condition="'$(Configuration)' == 'Debug' And Exists('$(_BundleStagingDir)\$(AssemblyName).pdb')" />
+    </ItemGroup>
+
+    <Delete Files="@(_MultiFileOutput)" />
+    <Copy SourceFiles="@(_BundleKeepers)" DestinationFolder="$(_BundleTargetDir)" />
+    <RemoveDir Directories="$(_BundleStagingDir)" />
+    <!-- Remove the intermediate RID sub-folder that `dotnet build -r <rid>` creates
+         (bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\); its contents
+         are now obsoleted by the bundled exe at the parent level. -->
+    <RemoveDir Directories="$(_BundleTargetDir)\$(_BundleRid)" Condition="Exists('$(_BundleTargetDir)\$(_BundleRid)')" />
+
+    <Message Importance="high" Text="[SingleFileBundle] Output: $(_BundleTargetDir)\$(AssemblyName).exe" />
+  </Target>
+
+</Project>

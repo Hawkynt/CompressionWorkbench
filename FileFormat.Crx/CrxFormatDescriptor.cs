@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Crx;
 
-public sealed class CrxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class CrxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Crx";
   public string DisplayName => "CRX";
   public FormatCategory Category => FormatCategory.Archive;

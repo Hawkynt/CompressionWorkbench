@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Kmz;
 
-public sealed class KmzFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class KmzFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Kmz";
   public string DisplayName => "KMZ";
   public FormatCategory Category => FormatCategory.Archive;

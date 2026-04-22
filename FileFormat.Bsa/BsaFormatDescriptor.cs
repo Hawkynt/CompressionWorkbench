@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Bsa;
 
-public sealed class BsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class BsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Bsa";
   public string DisplayName => "BSA";
   public FormatCategory Category => FormatCategory.Archive;

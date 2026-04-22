@@ -24,7 +24,7 @@ public class XlsTests {
       File.WriteAllBytes(tmp, "fake xls body"u8.ToArray());
       var d = new FileFormat.Xls.XlsFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "Workbook", false)],
         new Compression.Registry.FormatCreateOptions());

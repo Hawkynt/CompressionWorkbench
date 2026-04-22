@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>FileFormat.Avif</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\FileFormat.Mp4\FileFormat.Mp4.csproj" />
+    <ProjectReference Include="..\FileFormat.Heif\FileFormat.Heif.csproj" />
+  </ItemGroup>
+
+</Project>

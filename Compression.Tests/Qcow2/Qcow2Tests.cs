@@ -346,6 +346,31 @@ public class Qcow2Tests {
     Assert.That(bytes[..4], Is.EqualTo(new byte[] { 0x51, 0x46, 0x49, 0xFB }));
   }
 
+  // qemu-img check warns when refcount_table_offset is zero. Validate we now populate
+  // it, and that the block it points to has refcount=1 for every cluster.
+  [Test, Category("RealWorld")]
+  public void Writer_PopulatesRefcountTableAndBlock() {
+    var w = new FileFormat.Qcow2.Qcow2Writer();
+    w.SetDiskImage(new byte[70000]); // 2 data clusters at 65536-byte cluster size
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var bytes = ms.ToArray();
+
+    var rtOffset = BinaryPrimitives.ReadUInt64BigEndian(bytes.AsSpan(48));
+    var rtClusters = BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(56));
+    Assert.That(rtOffset, Is.Not.Zero, "refcount_table_offset must be set");
+    Assert.That(rtClusters, Is.EqualTo(1u));
+
+    var rbOffset = BinaryPrimitives.ReadUInt64BigEndian(bytes.AsSpan((int)rtOffset));
+    Assert.That(rbOffset, Is.Not.Zero, "first refcount table entry must point to a refcount block");
+
+    // Every cluster covered by the refcount block should have refcount=1.
+    var rcount0 = BinaryPrimitives.ReadUInt16BigEndian(bytes.AsSpan((int)rbOffset));
+    var rcount1 = BinaryPrimitives.ReadUInt16BigEndian(bytes.AsSpan((int)rbOffset + 2));
+    Assert.That(rcount0, Is.EqualTo(1));
+    Assert.That(rcount1, Is.EqualTo(1));
+  }
+
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void Descriptor_Create_RoundTrips() {
     var tmp = Path.GetTempFileName();
@@ -353,7 +378,7 @@ public class Qcow2Tests {
       File.WriteAllBytes(tmp, "qcow2 payload"u8.ToArray());
       var d = new FileFormat.Qcow2.Qcow2FormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "test.txt", false)],
         new Compression.Registry.FormatCreateOptions());

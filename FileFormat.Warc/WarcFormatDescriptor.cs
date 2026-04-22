@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Warc;
 
-public sealed class WarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class WarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Warc";
   public string DisplayName => "WARC";
   public FormatCategory Category => FormatCategory.Archive;

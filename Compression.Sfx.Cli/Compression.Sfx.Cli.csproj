@@ -7,24 +7,32 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <NoWarn>CS1591</NoWarn>
 
-    <!--
-      Single-file self-contained stub. Publish with:
-        dotnet publish -r win-x64 -c Release
-      The -r flag implies self-contained. All publish properties below
-      only take effect during 'dotnet publish', not 'dotnet build'.
-    -->
+    <!-- Single-file publish config (also used by post-build bundle target below). -->
     <PublishSingleFile>true</PublishSingleFile>
-    <PublishTrimmed>true</PublishTrimmed>
-    <TrimMode>partial</TrimMode>
+    <SelfContained>false</SelfContained>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <EnableSingleFileBundle>true</EnableSingleFileBundle>
     <!-- No debug symbols in published stub -->
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Fody weaves the SFX stub's managed deps into the main assembly at build time,
+         giving us a compact single-file stub even without `dotnet publish`. -->
+    <PackageReference Include="Fody" Version="6.9.1">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Costura.Fody" Version="6.0.0">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
   </ItemGroup>
+
+  <Import Project="..\build\SingleFileBundle.targets" />
 
 </Project>

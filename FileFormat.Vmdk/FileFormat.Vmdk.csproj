@@ -4,6 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
-    <ProjectReference Include="..\FileFormat.Fat\FileFormat.Fat.csproj" />
+    <ProjectReference Include="..\FileSystem.Fat\FileSystem.Fat.csproj" />
   </ItemGroup>
 </Project>

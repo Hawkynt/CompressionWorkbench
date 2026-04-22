@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Mdf;
 
-public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Mdf";
   public string DisplayName => "MDF/MDS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -42,7 +42,7 @@ public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // WORM: emit plain 2048-byte ISO 9660 sectors. The reader's geometry detection
     // recognises this. The accompanying .MDS metadata sidecar isn't produced (the
     // Create API is single-stream); MDS isn't required to extract MDF content.
-    var iso = new FileFormat.Iso.IsoWriter();
+    var iso = new FileSystem.Iso.IsoWriter();
     foreach (var (name, data) in FlatFiles(inputs))
       iso.AddFile(name, data);
     output.Write(iso.Build());

@@ -26,7 +26,7 @@ public class CrxTests {
       File.WriteAllText(tmpFile, "{\"name\":\"ext\"}");
       var desc = new FileFormat.Crx.CrxFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)desc).Create(
+      ((Compression.Registry.IArchiveCreatable)desc).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmpFile, "manifest.json", false)],
         new Compression.Registry.FormatCreateOptions());

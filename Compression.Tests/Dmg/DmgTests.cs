@@ -396,7 +396,7 @@ public class DmgTests {
       File.WriteAllBytes(tmp, new byte[1024]);
       var d = new FileFormat.Dmg.DmgFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "data.img", false)],
         new Compression.Registry.FormatCreateOptions());

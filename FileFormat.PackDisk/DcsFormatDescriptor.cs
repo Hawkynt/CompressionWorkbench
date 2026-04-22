@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.PackDisk;
 
-public sealed class DcsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class DcsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Dcs";
   public string DisplayName => "DCS (Amiga Disk Archiver)";
   public FormatCategory Category => FormatCategory.Archive;

@@ -106,7 +106,7 @@ public class FatTests {
     var disk = BuildFat12(("TEST.TXT", content));
     using var ms = new MemoryStream(disk);
 
-    var r = new FileFormat.Fat.FatReader(ms);
+    var r = new FileSystem.Fat.FatReader(ms);
     Assert.That(r.Entries, Has.Count.EqualTo(1));
     Assert.That(r.FatType, Is.EqualTo(12));
     Assert.That(r.Entries[0].Name, Is.EqualTo("TEST.TXT"));
@@ -118,7 +118,7 @@ public class FatTests {
     var disk = BuildFat12(("HELLO.TXT", content));
     using var ms = new MemoryStream(disk);
 
-    var r = new FileFormat.Fat.FatReader(ms);
+    var r = new FileSystem.Fat.FatReader(ms);
     var extracted = r.Extract(r.Entries[0]);
     Assert.That(extracted, Is.EqualTo(content));
   }
@@ -132,7 +132,7 @@ public class FatTests {
     );
     using var ms = new MemoryStream(disk);
 
-    var r = new FileFormat.Fat.FatReader(ms);
+    var r = new FileSystem.Fat.FatReader(ms);
     Assert.That(r.Entries, Has.Count.EqualTo(3));
   }
 
@@ -143,14 +143,14 @@ public class FatTests {
     var disk = BuildFat12(("A.TXT", data1), ("B.TXT", data2));
     using var ms = new MemoryStream(disk);
 
-    var r = new FileFormat.Fat.FatReader(ms);
+    var r = new FileSystem.Fat.FatReader(ms);
     Assert.That(r.Extract(r.Entries[0]), Is.EqualTo(data1));
     Assert.That(r.Extract(r.Entries[1]), Is.EqualTo(data2));
   }
 
   [Test, Category("HappyPath")]
   public void Descriptor_Properties() {
-    var desc = new FileFormat.Fat.FatFormatDescriptor();
+    var desc = new FileSystem.Fat.FatFormatDescriptor();
     Assert.That(desc.Id, Is.EqualTo("Fat"));
     Assert.That(desc.Extensions, Does.Contain(".img"));
   }
@@ -159,7 +159,7 @@ public class FatTests {
   public void Descriptor_List_ViaInterface() {
     var disk = BuildFat12(("TEST.DAT", new byte[50]));
     using var ms = new MemoryStream(disk);
-    var desc = new FileFormat.Fat.FatFormatDescriptor();
+    var desc = new FileSystem.Fat.FatFormatDescriptor();
     var entries = desc.List(ms, null);
     Assert.That(entries, Has.Count.EqualTo(1));
   }
@@ -167,7 +167,7 @@ public class FatTests {
   [Test, Category("ErrorHandling")]
   public void Reader_TooSmall_Throws() {
     using var ms = new MemoryStream(new byte[100]);
-    Assert.Throws<InvalidDataException>(() => _ = new FileFormat.Fat.FatReader(ms));
+    Assert.Throws<InvalidDataException>(() => _ = new FileSystem.Fat.FatReader(ms));
   }
 
   [Test, Category("ErrorHandling")]
@@ -175,14 +175,14 @@ public class FatTests {
     var data = new byte[1024];
     data[0] = 0x90; // not a valid boot jump
     using var ms = new MemoryStream(data);
-    Assert.Throws<InvalidDataException>(() => _ = new FileFormat.Fat.FatReader(ms));
+    Assert.Throws<InvalidDataException>(() => _ = new FileSystem.Fat.FatReader(ms));
   }
 
   [Test, Category("EdgeCase")]
   public void EmptyDisk_NoEntries() {
     var disk = BuildFat12();
     using var ms = new MemoryStream(disk);
-    var r = new FileFormat.Fat.FatReader(ms);
+    var r = new FileSystem.Fat.FatReader(ms);
     Assert.That(r.Entries, Has.Count.EqualTo(0));
   }
 }

@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Nsa;
 
-public sealed class NsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class NsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Nsa";
   public string DisplayName => "NSA";
   public FormatCategory Category => FormatCategory.Archive;

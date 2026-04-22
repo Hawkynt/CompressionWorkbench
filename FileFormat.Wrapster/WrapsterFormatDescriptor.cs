@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Wrapster;
 
-public sealed class WrapsterFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class WrapsterFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Wrapster";
   public string DisplayName => "Wrapster";
   public FormatCategory Category => FormatCategory.Archive;

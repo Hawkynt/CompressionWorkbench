@@ -39,7 +39,7 @@ public class InnoSetupWriterTests {
       File.WriteAllBytes(tmp, "inno test"u8.ToArray());
       var d = new InnoSetupFormatDescriptor();
       using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveFormatOperations)d).Create(
+      ((Compression.Registry.IArchiveCreatable)d).Create(
         ms,
         [new Compression.Registry.ArchiveInputInfo(tmp, "payload.bin", false)],
         new Compression.Registry.FormatCreateOptions());

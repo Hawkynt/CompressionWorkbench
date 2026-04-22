@@ -184,7 +184,9 @@ public static partial class FormatDetector {
       /* ignore detection failure */
     }
 
-    return Format.Unknown;
+    // Plain PE executable with no installer signature — surface its embedded resources
+    // (icons, version info, manifest, string tables) via the PeResources descriptor.
+    return Format.PeResources;
   }
 
   private static bool ContainsBytes(ReadOnlySpan<byte> haystack, ReadOnlySpan<byte> needle)
@@ -200,15 +202,26 @@ public static partial class FormatDetector {
 
     EnsureRegistryMapped();
 
-    // First try all registry-defined magic signatures
+    // Scan the whole registry and pick the highest-confidence match. Earlier this
+    // loop returned on the first hit, which let a low-confidence descriptor
+    // (e.g. AndroidBundle's 0.15 PK signature, intentionally placed there so
+    // Zip's 0.95 would win on extensionless inputs) defeat a later higher-confidence
+    // match simply because the registry enumerated it first.
+    Format best = Format.Unknown;
+    var bestConfidence = 0.0;
     foreach (var desc in Reg.All) {
-      if (!FormatDetector._idToFormat!.TryGetValue(desc.Id, out var f)) 
+      if (!FormatDetector._idToFormat!.TryGetValue(desc.Id, out var f))
         continue;
 
-      foreach (var sig in desc.MagicSignatures)
-        if (MatchesMagic(header, sig))
-          return f;
+      foreach (var sig in desc.MagicSignatures) {
+        if (!MatchesMagic(header, sig)) continue;
+        if (sig.Confidence > bestConfidence) {
+          bestConfidence = sig.Confidence;
+          best = f;
+        }
+      }
     }
+    if (best != Format.Unknown) return best;
 
     // ── Special heuristic detections not expressible as simple magic ──
 

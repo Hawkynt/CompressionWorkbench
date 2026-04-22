@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cab;
 
-public sealed class CabFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class CabFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Cab";
   public string DisplayName => "CAB";
   public FormatCategory Category => FormatCategory.Archive;

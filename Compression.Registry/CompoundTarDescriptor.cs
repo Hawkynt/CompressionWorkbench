@@ -5,7 +5,7 @@ namespace Compression.Registry;
 /// Auto-generated descriptor for compound tar formats (tar.gz, tar.bz2, etc.).
 /// Wraps tar archive operations with a stream compression layer via the registry.
 /// </summary>
-public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   private readonly string _id;
   private readonly string _displayName;
   private readonly string _streamFormatId;
@@ -63,14 +63,14 @@ public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var streamOps = FormatRegistry.GetStreamOps(_streamFormatId)!;
-    var tarOps = FormatRegistry.GetArchiveOps("Tar")!;
+    var tarCreator = (IArchiveCreatable)FormatRegistry.GetArchiveOps("Tar")!;
     var wrapped = streamOps.WrapCompress(output);
     if (wrapped != null) {
-      using (wrapped) tarOps.Create(wrapped, inputs, options);
+      using (wrapped) tarCreator.Create(wrapped, inputs, options);
       return;
     }
     using var ms = new MemoryStream();
-    tarOps.Create(ms, inputs, options);
+    tarCreator.Create(ms, inputs, options);
     ms.Position = 0;
     streamOps.Compress(ms, output);
   }

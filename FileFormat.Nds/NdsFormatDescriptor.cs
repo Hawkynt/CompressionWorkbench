@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Nds;
 
-public sealed class NdsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class NdsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Nds";
   public string DisplayName => "NDS";
   public FormatCategory Category => FormatCategory.Archive;

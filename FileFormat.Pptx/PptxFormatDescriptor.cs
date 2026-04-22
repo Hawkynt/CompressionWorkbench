@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Pptx;
 
-public sealed class PptxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class PptxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Pptx";
   public string DisplayName => "PPTX";
   public FormatCategory Category => FormatCategory.Archive;

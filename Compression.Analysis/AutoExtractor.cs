@@ -8,9 +8,20 @@ namespace Compression.Analysis;
 /// Supports disk image → partition table → filesystem recursive descent.
 /// </summary>
 public sealed class AutoExtractor {
-  private const int MaxDepth = 5;
-  private const int MaxFileSize = 256 * 1024 * 1024; // 256 MB
-  private const int MaxPartitionSize = 512 * 1024 * 1024; // 512 MB — partitions can be larger than single entries
+  private readonly int _maxDepth;
+  private readonly long _maxFileSize;
+  private readonly long _maxPartitionSize;
+
+  /// <summary>
+  /// Default recursion budgets. The previous <c>MaxDepth=5</c> was tight for chains like
+  /// GZ→TAR→VMDK→FAT32→MKV→video track (6 levels before we even reach media demux);
+  /// 10 covers those headline scenarios without blowing up pathological inputs.
+  /// </summary>
+  public AutoExtractor(int maxDepth = 10, long maxFileSize = 256 * 1024 * 1024, long maxPartitionSize = 512 * 1024 * 1024) {
+    this._maxDepth = maxDepth;
+    this._maxFileSize = maxFileSize;
+    this._maxPartitionSize = maxPartitionSize;
+  }
 
   /// <summary>
   /// Format IDs that represent virtual disk images whose extracted "disk.img" contains raw disk data
@@ -52,6 +63,9 @@ public sealed class AutoExtractor {
 
     /// <summary>Whether this is a directory entry.</summary>
     public bool IsDirectory { get; init; }
+
+    /// <summary>Conventional kind tag (Track/Channel/Plane/Tag/File); null for untagged entries.</summary>
+    public string? Kind { get; init; }
   }
 
   /// <summary>
@@ -98,55 +112,111 @@ public sealed class AutoExtractor {
 
   /// <summary>
   /// Detects the format of the given stream and extracts all entries.
-  /// If entries are themselves archives, recursively extracts them up to <see cref="MaxDepth"/> levels.
-  /// For disk image formats, also detects partition tables and recursively descends into filesystems.
+  /// If entries are themselves archives, recursively extracts them up to the configured
+  /// max depth. For disk image formats, also detects partition tables and recursively descends
+  /// into filesystems.
   /// </summary>
   public ExtractionResult? Extract(Stream stream, int depth = 0) {
-    if (depth >= MaxDepth) return null;
+    if (depth >= this._maxDepth) return null;
 
     Compression.Lib.FormatRegistration.EnsureInitialized();
 
-    // Read header for detection.
+    var bestDesc = DetectFormat(stream);
+    if (bestDesc == null) return null;
+
+    var archiveOps = FormatRegistry.GetArchiveOps(bestDesc.Id);
+    if (archiveOps != null)
+      return this.ExtractArchive(archiveOps, bestDesc, stream, depth);
+
+    var streamOps = FormatRegistry.GetStreamOps(bestDesc.Id);
+    if (streamOps != null)
+      return this.ExtractStream(streamOps, bestDesc, stream, depth);
+
+    return null;
+  }
+
+  private static IFormatDescriptor? DetectFormat(Stream stream) {
     var headerBuf = new byte[Math.Min(4096, stream.Length)];
     var origPos = stream.Position;
     var headerLen = stream.Read(headerBuf, 0, headerBuf.Length);
     stream.Position = origPos;
 
-    // Detect format.
     var header = headerBuf.AsSpan(0, headerLen);
-    IFormatDescriptor? bestDesc = null;
+    IFormatDescriptor? best = null;
     var bestConf = 0.0;
-
     foreach (var desc in FormatRegistry.All) {
       foreach (var sig in desc.MagicSignatures) {
         if (sig.Offset + sig.Bytes.Length > header.Length) continue;
         var match = true;
-        for (var j = 0; j < sig.Bytes.Length; j++) {
+        for (var j = 0; j < sig.Bytes.Length; ++j) {
           var mask = sig.Mask != null && j < sig.Mask.Length ? sig.Mask[j] : (byte)0xFF;
           if ((header[sig.Offset + j] & mask) != (sig.Bytes[j] & mask)) { match = false; break; }
         }
         if (match && sig.Confidence > bestConf) {
           bestConf = sig.Confidence;
-          bestDesc = desc;
+          best = desc;
         }
       }
     }
+    return best;
+  }
 
-    if (bestDesc == null) return null;
+  /// <summary>
+  /// Follows <paramref name="path"/> (slash-separated segments) through nested archives,
+  /// returning the bytes of the leaf entry. Each segment is the name of an entry in
+  /// the archive at that layer — the descent stops when the named entry is a leaf.
+  /// Uses <see cref="IArchiveInMemoryExtract.ExtractEntry"/> where possible to avoid
+  /// disk roundtrips.
+  /// </summary>
+  public byte[]? ExtractPath(Stream stream, string path) {
+    var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+    if (segments.Length == 0) return null;
 
-    // Try archive extraction.
-    var archiveOps = FormatRegistry.GetArchiveOps(bestDesc.Id);
-    if (archiveOps != null) {
-      return ExtractArchive(archiveOps, bestDesc, stream, depth);
+    var currentBytes = ReadAll(stream);
+    foreach (var segment in segments) {
+      using var ms = new MemoryStream(currentBytes);
+      var desc = DetectFormat(ms);
+      if (desc == null) return null;
+      var ops = FormatRegistry.GetArchiveOps(desc.Id);
+      if (ops == null) {
+        // Try stream decompression as an implicit "whole-content" fallthrough.
+        var streamOps = FormatRegistry.GetStreamOps(desc.Id);
+        if (streamOps == null) return null;
+        ms.Position = 0;
+        using var decompressed = new MemoryStream();
+        streamOps.Decompress(ms, decompressed);
+        currentBytes = decompressed.ToArray();
+        continue;
+      }
+      ms.Position = 0;
+      using var next = new MemoryStream();
+      if (ops is IArchiveInMemoryExtract inMem) {
+        inMem.ExtractEntry(ms, segment, next, null);
+      } else {
+        // Fall back to temp-dir path for formats without the in-memory capability.
+        ms.Position = 0;
+        var tmpDir = Path.Combine(Path.GetTempPath(), "cwb_path_" + Guid.NewGuid().ToString("N")[..8]);
+        try {
+          Directory.CreateDirectory(tmpDir);
+          ops.Extract(ms, tmpDir, null, [segment]);
+          var hit = Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories).FirstOrDefault();
+          if (hit == null) return null;
+          currentBytes = File.ReadAllBytes(hit);
+          continue;
+        } finally {
+          try { Directory.Delete(tmpDir, true); } catch { /* best effort */ }
+        }
+      }
+      currentBytes = next.ToArray();
     }
+    return currentBytes;
+  }
 
-    // Try stream decompression.
-    var streamOps = FormatRegistry.GetStreamOps(bestDesc.Id);
-    if (streamOps != null) {
-      return ExtractStream(streamOps, bestDesc, stream, depth);
-    }
-
-    return null;
+  private static byte[] ReadAll(Stream s) {
+    using var ms = new MemoryStream();
+    s.Position = 0;
+    s.CopyTo(ms);
+    return ms.ToArray();
   }
 
   private ExtractionResult ExtractArchive(IArchiveFormatOperations ops, IFormatDescriptor desc, Stream stream, int depth) {
@@ -160,20 +230,26 @@ public sealed class AutoExtractor {
       stream.Position = 0;
       ops.Extract(stream, tmpDir, null, null);
 
+      // Also collect entry Kinds where the descriptor exposes them via List().
+      stream.Position = 0;
+      var kindByName = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+      try {
+        foreach (var e in ops.List(stream, null))
+          kindByName[e.Name] = e.Kind;
+      } catch { /* best effort — some formats only support Extract */ }
+
       foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
         var relPath = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
         var data = File.ReadAllBytes(file);
-        entries.Add(new ExtractedEntry { Name = relPath, Data = data });
+        kindByName.TryGetValue(relPath, out var kind);
+        entries.Add(new ExtractedEntry { Name = relPath, Data = data, Kind = kind });
 
-        // For disk image formats, check if the extracted raw disk data contains a partition table.
-        if (DiskImageFormatIds.Contains(desc.Id) && data.Length >= 1024) {
-          partitionTable ??= TryParsePartitions(data, depth);
-        }
+        if (DiskImageFormatIds.Contains(desc.Id) && data.Length >= 1024)
+          partitionTable ??= this.TryParsePartitions(data, depth);
 
-        // Try recursive extraction on each entry.
-        if (data.Length > 0 && data.Length <= MaxFileSize) {
+        if (data.Length > 0 && data.Length <= this._maxFileSize) {
           using var nestedStream = new MemoryStream(data);
-          var nestedResult = Extract(nestedStream, depth + 1);
+          var nestedResult = this.Extract(nestedStream, depth + 1);
           if (nestedResult != null)
             nested.Add(new NestedResult { EntryName = relPath, Result = nestedResult });
         }
@@ -202,9 +278,9 @@ public sealed class AutoExtractor {
     };
 
     var nested = new List<NestedResult>();
-    if (data.Length > 0 && data.Length <= MaxFileSize) {
+    if (data.Length > 0 && data.Length <= this._maxFileSize) {
       using var nestedStream = new MemoryStream(data);
-      var nestedResult = Extract(nestedStream, depth + 1);
+      var nestedResult = this.Extract(nestedStream, depth + 1);
       if (nestedResult != null)
         nested.Add(new NestedResult { EntryName = "decompressed", Result = nestedResult });
     }
@@ -238,11 +314,8 @@ public sealed class AutoExtractor {
     { "EFI System Partition", ["Fat"] },
   };
 
-  /// <summary>
-  /// Attempts to detect a partition table in raw disk data and recursively process each partition.
-  /// </summary>
   private PartitionTableInfo? TryParsePartitions(byte[] diskData, int depth) {
-    if (depth + 1 >= MaxDepth) return null;
+    if (depth + 1 >= this._maxDepth) return null;
 
     var detection = PartitionTableDetector.Detect(diskData);
     if (detection.Scheme == "None" || detection.Partitions.Count == 0)
@@ -252,18 +325,14 @@ public sealed class AutoExtractor {
     foreach (var part in detection.Partitions) {
       ExtractionResult? nestedResult = null;
 
-      // Only attempt to process partitions within our size limit.
-      if (part.Size > 0 && part.Size <= MaxPartitionSize) {
+      if (part.Size > 0 && part.Size <= this._maxPartitionSize) {
         var partData = PartitionTableDetector.ExtractPartitionData(diskData, part);
         if (partData.Length > 0) {
-          // First, try magic-based detection via the normal Extract pipeline.
           using var partStream = new MemoryStream(partData);
-          nestedResult = Extract(partStream, depth + 1);
+          nestedResult = this.Extract(partStream, depth + 1);
 
-          // If magic detection failed, try known filesystem formats based on partition type.
-          if (nestedResult == null) {
-            nestedResult = TryFilesystemByPartitionType(partData, part.TypeName, depth);
-          }
+          if (nestedResult == null)
+            nestedResult = this.TryFilesystemByPartitionType(partData, part.TypeName, depth);
         }
       }
 
@@ -282,10 +351,6 @@ public sealed class AutoExtractor {
     };
   }
 
-  /// <summary>
-  /// Tries to open partition data as a known filesystem format based on the partition type name.
-  /// This handles formats like FAT that have no magic signatures.
-  /// </summary>
   private ExtractionResult? TryFilesystemByPartitionType(byte[] partData, string typeName, int depth) {
     if (!PartitionTypeToFormatIds.TryGetValue(typeName, out var formatIds))
       return null;
@@ -299,7 +364,7 @@ public sealed class AutoExtractor {
 
       try {
         using var stream = new MemoryStream(partData);
-        return ExtractArchive(archiveOps, desc, stream, depth + 1);
+        return this.ExtractArchive(archiveOps, desc, stream, depth + 1);
       } catch {
         // This format didn't work for the partition data. Try the next one.
       }

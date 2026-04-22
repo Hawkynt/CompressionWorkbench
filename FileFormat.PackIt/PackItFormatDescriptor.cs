@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.PackIt;
 
-public sealed class PackItFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class PackItFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "PackIt";
   public string DisplayName => "PackIt";
   public FormatCategory Category => FormatCategory.Archive;

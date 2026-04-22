@@ -226,7 +226,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "JAR test content");
 
       var desc = new FileFormat.Jar.JarFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -256,7 +256,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "WAR test content");
 
       var desc = new FileFormat.War.WarFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -286,7 +286,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "EAR test content");
 
       var desc = new FileFormat.Ear.EarFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -316,7 +316,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "APK test content");
 
       var desc = new FileFormat.Apk.ApkFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -346,7 +346,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "IPA test content");
 
       var desc = new FileFormat.Ipa.IpaFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -376,7 +376,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "XPI test content");
 
       var desc = new FileFormat.Xpi.XpiFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -406,7 +406,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "EPUB test content");
 
       var desc = new FileFormat.Epub.EpubFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -436,7 +436,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "ODT test content");
 
       var desc = new FileFormat.Odt.OdtFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -466,7 +466,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "ODS test content");
 
       var desc = new FileFormat.Ods.OdsFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -496,7 +496,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "ODP test content");
 
       var desc = new FileFormat.Odp.OdpFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -526,7 +526,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "DOCX test content");
 
       var desc = new FileFormat.Docx.DocxFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -556,7 +556,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "XLSX test content");
 
       var desc = new FileFormat.Xlsx.XlsxFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -586,7 +586,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "PPTX test content");
 
       var desc = new FileFormat.Pptx.PptxFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -616,7 +616,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "CBZ test content");
 
       var desc = new FileFormat.Cbz.CbzFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -646,7 +646,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "MAFF test content");
 
       var desc = new FileFormat.Maff.MaffFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -676,7 +676,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "KMZ test content");
 
       var desc = new FileFormat.Kmz.KmzFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -706,7 +706,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "APPX test content");
 
       var desc = new FileFormat.Appx.AppxFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -736,7 +736,7 @@ public class ZipVariantTests {
       File.WriteAllText(testFile, "NuPkg test content");
 
       var desc = new FileFormat.NuPkg.NuPkgFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       using var ms = new MemoryStream();
       ops.Create(ms, [new ArchiveInputInfo(testFile, "test.txt", false)],
@@ -780,7 +780,7 @@ public class ZipVariantTests {
       crxMs.Position = 0;
 
       var desc = new FileFormat.Crx.CrxFormatDescriptor();
-      var ops = (IArchiveFormatOperations)desc;
+      var ops = desc;
 
       // List
       var entries = ops.List(crxMs, null);

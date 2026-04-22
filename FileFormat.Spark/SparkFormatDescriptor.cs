@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Spark;
 
-public sealed class SparkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class SparkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Spark";
   public string DisplayName => "Spark";
   public FormatCategory Category => FormatCategory.Archive;

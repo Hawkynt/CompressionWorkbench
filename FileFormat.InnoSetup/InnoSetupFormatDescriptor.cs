@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.InnoSetup;
 
-public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "InnoSetup";
   public string DisplayName => "Inno Setup";
   public FormatCategory Category => FormatCategory.Archive;

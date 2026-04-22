@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Arj;
 
-public sealed class ArjFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class ArjFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Arj";
   public string DisplayName => "ARJ";
   public FormatCategory Category => FormatCategory.Archive;

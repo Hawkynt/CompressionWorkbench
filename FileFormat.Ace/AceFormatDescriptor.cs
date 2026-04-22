@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ace;
 
-public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Ace";
   public string DisplayName => "ACE";
   public FormatCategory Category => FormatCategory.Archive;

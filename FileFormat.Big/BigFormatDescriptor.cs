@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Big;
 
-public sealed class BigFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class BigFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Big";
   public string DisplayName => "BIG";
   public FormatCategory Category => FormatCategory.Archive;

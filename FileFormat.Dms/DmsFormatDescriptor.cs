@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Dms;
 
-public sealed class DmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class DmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Dms";
   public string DisplayName => "DMS";
   public FormatCategory Category => FormatCategory.Archive;

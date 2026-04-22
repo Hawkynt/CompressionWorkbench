@@ -26,19 +26,19 @@ public static class ExoticFormatCorpus {
   // ── Public factories (one per exotic format we can write) ───────────────
 
   public static byte[] CreateD64(CorpusEntry[]? entries = null)
-    => BuildViaDescriptor(new FileFormat.D64.D64FormatDescriptor(), entries ?? DefaultEntries);
+    => BuildViaDescriptor(new FileSystem.D64.D64FormatDescriptor(), entries ?? DefaultEntries);
 
   public static byte[] CreateT64(CorpusEntry[]? entries = null)
     => BuildViaDescriptor(new FileFormat.T64.T64FormatDescriptor(), entries ?? DefaultEntries);
 
   public static byte[] CreateAdf(CorpusEntry[]? entries = null)
-    => BuildViaDescriptor(new FileFormat.Adf.AdfFormatDescriptor(), entries ?? DefaultEntries);
+    => BuildViaDescriptor(new FileSystem.Adf.AdfFormatDescriptor(), entries ?? DefaultEntries);
 
   public static byte[] CreateHfs(CorpusEntry[]? entries = null)
-    => BuildViaDescriptor(new FileFormat.Hfs.HfsFormatDescriptor(), entries ?? DefaultEntries);
+    => BuildViaDescriptor(new FileSystem.Hfs.HfsFormatDescriptor(), entries ?? DefaultEntries);
 
   public static byte[] CreateIso(CorpusEntry[]? entries = null)
-    => BuildViaDescriptor(new FileFormat.Iso.IsoFormatDescriptor(),
+    => BuildViaDescriptor(new FileSystem.Iso.IsoFormatDescriptor(),
       entries ?? ToIsoEntries(DefaultEntries));
 
   public static byte[] CreatePak(CorpusEntry[]? entries = null)
@@ -66,7 +66,7 @@ public static class ExoticFormatCorpus {
 
   /// <summary>Writes entries to temp files, calls the descriptor's Create, and
   /// returns the produced archive bytes. Temp files are always cleaned up.</summary>
-  public static byte[] BuildViaDescriptor(IArchiveFormatOperations ops, CorpusEntry[] entries) {
+  public static byte[] BuildViaDescriptor(IArchiveCreatable ops, CorpusEntry[] entries) {
     var tempFiles = new List<string>(entries.Length);
     try {
       var inputs = new List<ArchiveInputInfo>(entries.Length);

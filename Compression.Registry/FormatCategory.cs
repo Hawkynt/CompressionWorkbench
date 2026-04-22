@@ -14,4 +14,10 @@ public enum FormatCategory {
   CompoundTar,
   /// <summary>Recognized by signature only, no operations (ISO, UDF).</summary>
   DetectionOnly,
+  /// <summary>Audio container surfaced as an archive of tracks/channels/tags (FLAC, WAV, MP3, OGG).</summary>
+  Audio,
+  /// <summary>Video container surfaced as an archive of demuxed tracks + attachments (MKV, MP4).</summary>
+  Video,
+  /// <summary>Image container surfaced as an archive of the full image + per-plane pixel data (PNG, JPEG).</summary>
+  Image,
 }

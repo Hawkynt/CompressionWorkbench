@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Mpq;
 
-public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Mpq";
   public string DisplayName => "MPQ";
   public FormatCategory Category => FormatCategory.Archive;

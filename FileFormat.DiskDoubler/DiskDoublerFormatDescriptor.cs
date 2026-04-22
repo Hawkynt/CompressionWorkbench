@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.DiskDoubler;
 
-public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "DiskDoubler";
   public string DisplayName => "DiskDoubler";
   public FormatCategory Category => FormatCategory.Archive;
