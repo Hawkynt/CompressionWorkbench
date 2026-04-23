@@ -76,30 +76,65 @@ public sealed class ProDosWriter {
         entries.Add((name, fileType, StorageType: (byte)1, KeyPointer: key,
                      BlocksUsed: 1, Eof: data.Length));
       } else {
-        // Sapling — index block + data blocks (up to 256 blocks = 128 KB).
         var dataBlockCount = (data.Length + BlockSize - 1) / BlockSize;
-        if (dataBlockCount > 256)
-          throw new InvalidOperationException(
-            $"ProDOS: file '{name}' exceeds 128 KB sapling capacity (tree storage not implemented).");
 
-        var indexKey = AllocateBlock(used, ref nextFreeBlock);
-        var dataBlocks = new int[dataBlockCount];
-        for (var i = 0; i < dataBlockCount; i++) {
-          dataBlocks[i] = AllocateBlock(used, ref nextFreeBlock);
-          var offset = i * BlockSize;
-          var take = Math.Min(BlockSize, data.Length - offset);
-          Buffer.BlockCopy(data, offset, image, dataBlocks[i] * BlockSize, take);
+        if (dataBlockCount <= 256) {
+          // Sapling — one index block + up to 256 data blocks (128 KB).
+          var indexKey = AllocateBlock(used, ref nextFreeBlock);
+          var dataBlocks = new int[dataBlockCount];
+          for (var i = 0; i < dataBlockCount; i++) {
+            dataBlocks[i] = AllocateBlock(used, ref nextFreeBlock);
+            var offset = i * BlockSize;
+            var take = Math.Min(BlockSize, data.Length - offset);
+            Buffer.BlockCopy(data, offset, image, dataBlocks[i] * BlockSize, take);
+          }
+
+          var idxOff = indexKey * BlockSize;
+          for (var i = 0; i < dataBlockCount; i++) {
+            image[idxOff + i] = (byte)(dataBlocks[i] & 0xFF);
+            image[idxOff + 256 + i] = (byte)((dataBlocks[i] >> 8) & 0xFF);
+          }
+
+          entries.Add((name, fileType, StorageType: (byte)2, KeyPointer: indexKey,
+                       BlocksUsed: dataBlockCount + 1, Eof: data.Length));
+        } else {
+          // Tree — master index block + up to 256 subordinate index blocks,
+          // each pointing at up to 256 data blocks (32 MB max).
+          if (dataBlockCount > 256 * 256)
+            throw new InvalidOperationException(
+              $"ProDOS: file '{name}' exceeds 32 MB tree capacity (65536 data blocks).");
+
+          var indexBlockCount = (dataBlockCount + 255) / 256;
+          var masterKey = AllocateBlock(used, ref nextFreeBlock);
+          var subIndexBlocks = new int[indexBlockCount];
+          var blocksUsed = 1 + indexBlockCount + dataBlockCount;
+
+          var dataIdx = 0;
+          for (var si = 0; si < indexBlockCount; si++) {
+            subIndexBlocks[si] = AllocateBlock(used, ref nextFreeBlock);
+            var subOff = subIndexBlocks[si] * BlockSize;
+            var remainingInSub = Math.Min(256, dataBlockCount - dataIdx);
+            for (var di = 0; di < remainingInSub; di++) {
+              var dataBlock = AllocateBlock(used, ref nextFreeBlock);
+              var byteOffset = dataIdx * BlockSize;
+              var take = Math.Min(BlockSize, data.Length - byteOffset);
+              Buffer.BlockCopy(data, byteOffset, image, dataBlock * BlockSize, take);
+              image[subOff + di] = (byte)(dataBlock & 0xFF);
+              image[subOff + 256 + di] = (byte)((dataBlock >> 8) & 0xFF);
+              dataIdx++;
+            }
+          }
+
+          // Master index: low-bytes at [0..255], high-bytes at [256..511].
+          var masterOff = masterKey * BlockSize;
+          for (var si = 0; si < indexBlockCount; si++) {
+            image[masterOff + si] = (byte)(subIndexBlocks[si] & 0xFF);
+            image[masterOff + 256 + si] = (byte)((subIndexBlocks[si] >> 8) & 0xFF);
+          }
+
+          entries.Add((name, fileType, StorageType: (byte)3, KeyPointer: masterKey,
+                       BlocksUsed: blocksUsed, Eof: data.Length));
         }
-
-        // Index block: low bytes at [0..255], high bytes at [256..511].
-        var idxOff = indexKey * BlockSize;
-        for (var i = 0; i < dataBlockCount; i++) {
-          image[idxOff + i] = (byte)(dataBlocks[i] & 0xFF);
-          image[idxOff + 256 + i] = (byte)((dataBlocks[i] >> 8) & 0xFF);
-        }
-
-        entries.Add((name, fileType, StorageType: (byte)2, KeyPointer: indexKey,
-                     BlocksUsed: dataBlockCount + 1, Eof: data.Length));
       }
     }
 

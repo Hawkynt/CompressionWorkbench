@@ -5,6 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Compression.Core\Compression.Core.csproj" />
     <ProjectReference Include="..\FileFormat.Zlib\FileFormat.Zlib.csproj" />
+    <ProjectReference Include="..\FileFormat.Bzip2\FileFormat.Bzip2.csproj" />
     <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
   </ItemGroup>
 </Project>
