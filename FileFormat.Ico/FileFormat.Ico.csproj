@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>CompressionWorkbench.FileFormat.Ico</RootNamespace>
+    <!-- Distinct from the PNGCrushCS sibling repo's FileFormat.Ico assembly (same name, same
+         namespace, different types) — disambiguating the AssemblyName lets Costura bundle
+         both side-by-side without one overwriting the other in the deploy graph. -->
+    <AssemblyName>CompressionWorkbench.FileFormat.Ico</AssemblyName>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+  </ItemGroup>
+</Project>

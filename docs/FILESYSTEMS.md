@@ -65,6 +65,12 @@ Test suite: **8044 passing, 0 failures**.
 | **ZX Spectrum SCL**           | R/W   | TR-DOS .scl spec                  | "SINCLAIR" magic + LE32 trailing sum checksum                                                         |
 | **ZX Spectrum TR-DOS (.trd)** | R/W   | TR-DOS spec                       | 655,360 bytes, 160×16×256                                                                             |
 | **Amstrad CPC DSK**           | R/W   | CPCEMU disk format                | "MV - CPCEMU Disk-File" magic, per-track metadata                                                     |
+| **HP LIF (.lif)**             | R/W   | HP LIF utility manual             | 256-byte sectors, flat directory at sector 2, 32-byte entries with BCD timestamps, 0x8000 BE magic    |
+| **CP/M 2.2 (8" SSSD)**        | R/W   | DR CP/M 2.2 BDOS reference        | 256 256 bytes (77×26×128), 2 reserved tracks, 1024-byte allocation blocks, 64-entry flat directory    |
+| **DEC RT-11 (.rt11/.rx01)**   | R/W   | DEC RT-11 Volume + File Formats   | RX01 8" SSSD ~256 KB, 512-byte blocks, single 1024-byte directory segment at block 6, RAD-50 6.3 names |
+| **OS-9 RBF (.os9/.rbf)**      | R/W   | Microware OS-9 Tech Reference     | CoCo 35-track DSDD ~315 KB, 256-byte sectors, big-endian, identification sector + bitmap + FD chain    |
+| **Commodore G64 (.g64)**      | RO    | VICE emulator docs                | GCR-encoded track dump complementing D64/D71/D81; raw GCR bytes per track                              |
+| **Commodore NIB (.nib)**      | RO    | nibtools docs                     | Raw 84-half-track nibble dump; one entry per track                                                     |
 
 ## Optical / CD / DVD
 

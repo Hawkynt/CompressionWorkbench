@@ -19,9 +19,6 @@
     <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj" />
     <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Png\FileFormat.Png.csproj" />
     <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Bmp\FileFormat.Bmp.csproj" />
-    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Ico\FileFormat.Ico.csproj" />
-    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Cur\FileFormat.Cur.csproj" />
-    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Ani\FileFormat.Ani.csproj" />
     <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Apng\FileFormat.Apng.csproj" />
     <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Tiff\FileFormat.Tiff.csproj" />
     <ProjectReference Include="..\..\PNGCrushCS\FileFormat.BigTiff\FileFormat.BigTiff.csproj" />

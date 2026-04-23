@@ -28,13 +28,44 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Description => "WAV audio; full file + per-channel PCM + RIFF metadata chunks.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var entries = BuildEntries(stream, out _);
+    var entries = BuildEntries(stream, out var parsed);
+    var fullMethod = WavCodecName(parsed.FormatCode);
     return entries.Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
       OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
-      Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null,
+      // FULL.wav carries the file's original codec; per-channel WAVs are
+      // freshly-built integer PCM; metadata chunks are raw bytes.
+      Method: e.Name.Equals("FULL.wav", StringComparison.OrdinalIgnoreCase) ? fullMethod
+            : e.Kind == "Channel" ? "pcm"
+            : "stored",
+      IsDirectory: false, IsEncrypted: false, LastModified: null,
       Kind: e.Kind)).ToList();
   }
+
+  /// <summary>
+  /// Maps the RIFF <c>WAVE_FORMAT_*</c> code (the <c>wFormatTag</c> in the <c>fmt </c>
+  /// chunk) to a short human-readable codec name. Falls back to the hex code for
+  /// uncatalogued values so the user can look it up in the WAVE format registry.
+  /// </summary>
+  private static string WavCodecName(int formatCode) => formatCode switch {
+    0x0001 => "pcm",
+    0x0002 => "ms_adpcm",
+    0x0003 => "pcm_float",
+    0x0006 => "alaw",
+    0x0007 => "mulaw",
+    0x0011 => "ima_adpcm",
+    0x0031 => "gsm610",
+    0x0050 => "mpeg",
+    0x0055 => "mp3",
+    0x0092 => "ac3",
+    0x0161 => "wma",
+    0x0162 => "wmapro",
+    0x0163 => "wmalossless",
+    0x2000 => "ac3_dolby",
+    0x2001 => "dts",
+    0xFFFE => "extensible",
+    _ => $"format_0x{formatCode:X4}",
+  };
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream, out _)) {

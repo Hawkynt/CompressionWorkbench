@@ -542,6 +542,124 @@ Microsoft binary office formats built on the OLE2 / Compound File Binary (CFB) c
 
 `tar.gz`, `tar.bz2`, `tar.xz`, `tar.zst`, `tar.lz4`, `tar.lz`, `tar.br`
 
+### Modern Packaging Formats
+
+| Format    | Extensions     | Read | Write | Notes                                                                          |
+| --------- | -------------- | ---- | ----- | ------------------------------------------------------------------------------ |
+| AppImage  | `.AppImage`    | Yes  | -     | ELF stub + appended SquashFS; offset located by ELF section-end + magic scan   |
+| Snap      | `.snap`        | Yes  | -     | SquashFS image with `meta/snap.yaml`; reuses `FileSystem.SquashFs`             |
+| MSIX      | `.msix`,`.msixbundle` | Yes | - | Modern Windows app package; mirrors APPX (ZIP + AppxManifest.xml)              |
+| ESD       | `.esd`         | Yes  | -     | Windows Update encrypted-LZMS WIM variant; shares `MSWIM\0\0\0` magic, detected by extension |
+| Split WIM | `.swm`,`.swmN` | Yes  | -     | Multi-part WIM volume (one part of an N-way split set)                         |
+| WACZ      | `.wacz`        | Yes  | -     | Web Archive Collection Zipped — ZIP around WARC files with `datapackage.json` + page index |
+| Wheel     | `.whl`         | Yes  | -     | Python wheel (PEP 427) — ZIP with `dist-info/METADATA`, `WHEEL`, `RECORD`      |
+| Gem       | `.gem`         | Yes  | -     | Ruby gem package — TAR with `metadata.gz`, `data.tar.gz`, `checksums.yaml.gz`  |
+| Crate     | `.crate`       | Yes  | -     | Rust crate package — TAR.GZ with single `name-version/` directory containing `Cargo.toml` |
+
+### Firmware + Embedded Formats
+
+| Format             | Extensions                       | Read | Write | Notes                                                                |
+| ------------------ | -------------------------------- | ---- | ----- | -------------------------------------------------------------------- |
+| U-Boot uImage      | `.uimg`,`.img`,`.bin`            | Yes  | -     | 64-byte legacy header + body; reports OS/arch/comp; auto-decompresses payload when possible |
+| Device Tree Blob   | `.dtb`,`.dtbo`                   | Yes  | -     | FDT v17, walks property tree as pseudo-archive (one entry per leaf property) |
+| Intel HEX          | `.hex`,`.ihex`                   | Yes  | -     | ASCII firmware records, decoded to flat `firmware.bin` + metadata    |
+| Motorola S-Record  | `.s19`,`.s28`,`.s37`,`.srec`,`.mot` | Yes | -    | 16/24/32-bit address records, same decoded shape as Intel HEX        |
+| TI-TXT             | -                                | Yes  | -     | MSP430 firmware text, address blocks                                 |
+| UEFI Firmware Vol  | `.fv`,`.fd`,`.rom`,`.bin`        | Yes  | -     | `_FVH` at offset 40, walks FFS files (RAW/PEIM/DRIVER/PEI_CORE/etc.) |
+
+### Disk Image + Forensics Formats
+
+| Format | Extensions               | Read | Write | Notes                                                                       |
+| ------ | ------------------------ | ---- | ----- | --------------------------------------------------------------------------- |
+| VHDX   | `.vhdx`                  | Yes  | -     | Hyper-V modern; surfaces File Type ID + 2 headers + 2 region tables (BAT walk deferred) |
+| EWF/E01 | `.e01`,`.ewf`,`.l01`    | Yes  | -     | EnCase forensic image; section-chain walker, header2 acquisition text + MD5/SHA1 |
+| G64    | `.g64`                   | Yes  | -     | Commodore GCR-encoded track dump (1541)                                     |
+| NIB    | `.nib`                   | Yes  | -     | Commodore raw nibble track dump                                             |
+
+### Scientific + ML Formats
+
+| Format | Extensions       | Read | Write | Notes                                                                      |
+| ------ | ---------------- | ---- | ----- | -------------------------------------------------------------------------- |
+| NumPy NPY | `.npy`        | Yes  | -     | Single ndarray header + raw bytes                                          |
+| NumPy NPZ | `.npz`        | Yes  | -     | ZIP of NPYs                                                                |
+| NIfTI-1/2 | `.nii`,`.nii.gz` | Yes | -    | Medical imaging (MRI); 352-byte v1 / 540-byte v2 header + voxel data; transparent gzip |
+| HDF4   | `.hdf`,`.hdf4`,`.h4` | Yes | -   | DD linked-list walker, tag histogram + per-DD entry                         |
+| ONNX   | `.onnx`          | Yes  | -     | Pure-C# protobuf reader (~400 LOC), surfaces graph initializers as entries |
+
+### CAD / 3D Formats
+
+| Format  | Extensions | Read | Write | Notes                                                                |
+| ------- | ---------- | ---- | ----- | -------------------------------------------------------------------- |
+| STL     | `.stl`     | Yes  | -     | ASCII + binary; triangle count, bounding box, name                   |
+| PLY     | `.ply`     | Yes  | -     | Stanford triangle format (ASCII, binary LE/BE), element schema       |
+| DXF     | `.dxf`     | Yes  | -     | AutoCAD ASCII; section list + entity histogram (LINE/CIRCLE/POLYLINE/TEXT) |
+| Collada | `.dae`     | Yes  | -     | XML 3D interchange; surfaces top-level libraries as XML fragments    |
+| 3DS     | `.3ds`     | Yes  | -     | Autodesk binary chunks; mesh count, vertex/face count, chunk-ID histogram |
+
+### Medical Imaging
+
+| Format    | Extensions | Read | Write | Notes                                                                 |
+| --------- | ---------- | ---- | ----- | --------------------------------------------------------------------- |
+| DICOM     | `.dcm`     | Yes  | -     | Single DICOM image                                                    |
+| DICOMDIR  | `.dcmdir`,`DICOMDIR` | Yes | -    | Multi-study patient/series index referencing sibling DICOM files     |
+
+### Streaming & Subtitle Formats
+
+| Format   | Extensions            | Read | Write | Notes                                                                            |
+| -------- | --------------------- | ---- | ----- | -------------------------------------------------------------------------------- |
+| SUP      | `.sup`                | Yes  | -     | Blu-ray Presentation Graphic Stream subtitle segments, grouped by epoch          |
+| VobSub   | `.idx` + `.sub`       | Yes  | -     | DVD subtitle pair; parses `.idx` palette/timestamps + slices sibling `.sub` PES  |
+| M3U8/HLS | `.m3u8`,`.m3u`        | Yes  | -     | HTTP Live Streaming manifest — master variant list or media segment list         |
+| MPEG-TS  | `.ts`,`.m2ts`,`.mts`  | Yes  | -     | MPEG-2 Transport Stream demuxed into per-PID elementary streams (video/audio/data) |
+
+### Audio Codecs
+
+Standalone audio codecs live under `Codec.*` projects (separate from container-format descriptors). Each exposes a static `Decompress(Stream input, Stream output)` producing interleaved little-endian PCM and a `ReadStreamInfo` for metadata-only access. Encoders are explicitly out-of-scope for the new codecs — only the legacy ones (PCM/FLAC/A-law/μ-law/GSM/ADPCM/MIDI) ship encoders.
+
+| Codec     | Project          | Encoder | Decoder state                                                                  |
+| --------- | ---------------- | ------- | ------------------------------------------------------------------------------ |
+| PCM       | `Codec.Pcm`      | Yes     | Production — raw integer PCM up to 32-bit                                      |
+| FLAC      | `Codec.Flac`     | Yes     | Production — FIXED + LPC subframes, all sample rates / bit depths              |
+| A-law     | `Codec.ALaw`     | Yes     | Production — G.711                                                             |
+| μ-law     | `Codec.MuLaw`    | Yes     | Production — G.711                                                             |
+| GSM 06.10 | `Codec.Gsm610`   | Yes     | Production — full RPE-LTP                                                      |
+| IMA ADPCM | `Codec.ImaAdpcm` | Yes     | Production — Microsoft + Apple variants                                        |
+| MS ADPCM  | `Codec.MsAdpcm`  | Yes     | Production — WAV format 0x0002                                                 |
+| MIDI      | `Codec.Midi`     | Yes     | Production — SMF 0/1/2 with all standard meta + channel events                 |
+| **MP3**   | `Codec.Mp3`      | -       | **Header + framing complete; bit-exact decode unverified** — full minimp3 port (1469 LOC, scalar) covering MPEG-1/2/2.5 Layer III, MS+intensity stereo, ID3v2 skip, Xing VBR. Frame header parser + layer/bitrate-table lookup + Layer I/II rejection all pass tests. End-to-end PCM decode against a reference clip is deferred until an MP3 test vector lands in `test-corpus/` (no `lame`/`ffmpeg` was available on the build host). |
+| **Vorbis**| `Codec.Vorbis`   | -       | **Partial** — full stb_vorbis structural port (1295 LOC) covering Ogg page reassembly, codebooks (lookup 0/1/2), floor 1, residue 0/1/2, channel coupling, IMDCT (direct O(N²) — slow but correct on 2048-sample blocks). Floor 0 explicitly throws `NotSupportedException`. End-to-end test marked `Inconclusive` until a `.ogg` test vector lands in `test-corpus/`. |
+| **Opus**  | `Codec.Opus`     | -       | **Framing only** — Ogg page walker + OpusHead/OpusTags + TOC byte + frame packing modes 0/1/2/3 + range decoder (`ec_dec`) all real (12 tests pass). CELT and SILK pipelines are stubs that emit silence at the correct sample count. Hybrid mode throws `NotSupportedException`. |
+| **AAC-LC**| `Codec.Aac`      | -       | **Framing only** — ADTS frame parser + AudioSpecificConfig + element dispatcher + profile gating real (11 tests pass). Spectral pipeline + Huffman tables + IMDCT + filterbank are scaffolded but the spectral data tables are TODO; end-to-end test `[Ignore]`-d to avoid silently emitting garbage PCM. HE-AAC v1/v2 + Main/SSR/LTP/ER all throw `NotSupportedException`. |
+
+**Implementation philosophy:** the four new audio codecs (Mp3 / Vorbis / Opus / AAC-LC) ship under the project's "no toy implementations" rule — partial state is documented openly (in class summaries, in `Assert.Ignore` messages, and in this table) rather than silently producing wrong PCM. Future work: bit-pack debugging for Mp3, real CELT/SILK for Opus, spectral table population for AAC, and reference test-vector validation across all four when audio test corpora are added.
+
+### Executable Packer Detection & Unpacking
+
+CompressionWorkbench treats executable packers (UPX, the demoscene compressors, classic DOS packers, modern PE protectors) as pseudo-archives — they get the same `List` / `Extract` interface as ZIP or TAR.
+
+| Packer | Container | Detection | In-process unpack |
+|--------|-----------|-----------|-------------------|
+| **UPX** | PE / ELF / Mach-O | Section names + `UPX!` header + tampering-resistant structural fingerprint | NRV2B/D/E LE32 + LZMA |
+| **PKLITE** | DOS .exe | `PKLITE Copr.` copyright string | No (use `pklite -x`) |
+| **LZEXE** | DOS .exe | `LZ91` / `LZ09` signature | No |
+| **Petite** | Win32 PE | `.petite*` section + `Petite` literal | No |
+| **Shrinkler** | Amiga HUNK | HUNK magic + `Shrinkler` literal | No |
+| **FSG** | Win32 PE | `FSG!` magic | No |
+| **MEW** | Win32 PE | `.MEW*` section name | No |
+| **MPRESS** | Win32 PE / Linux ELF | `.MPRESS1/2` section + `MATCODE` literal | No |
+| **Crinkler** | Win32 PE | `Crinkler` literal | No |
+| **kkrunchy** | Win32 PE | `kkrunchy` literal | No |
+| **ASPack** | Win32 PE | `.aspack` / `.adata` section + `ASPack` literal | No |
+| **NsPack** | Win32 PE | `.nsp*` section + `NsPack` literal | No |
+| **Yoda's Crypter** | Win32 PE | `.yC` / `yC` section + `Yoda's` literal | No |
+| **ASProtect** | Win32 PE | `ASProtect` literal | No |
+| **Themida** | Win32 PE | `Themida` / `WinLicense` literal | No (best-effort) |
+| **VMProtect** | Win32 PE | `.vmp*` section + `VMProtect` literal | No (best-effort) |
+
+UPX detection is hardened against tampered binaries: the structural fingerprint (BSS-style first section + RWX flags + entry point in last section + payload entropy ≥ 7.5) catches binaries where the `UPX!` magic and section names have been wiped. A brute-force PackHeader scan validates `format`/`method`/`uLen`/`cLen`/`level`/`version` even when the magic bytes are zeroed.
+
+See [docs/PACKERS.md](docs/PACKERS.md) for the full coverage matrix and the detection-confidence model.
+
 ---
 
 ## Compression.Analysis - Binary Analysis Engine

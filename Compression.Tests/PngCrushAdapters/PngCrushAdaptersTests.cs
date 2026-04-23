@@ -1,7 +1,7 @@
 #pragma warning disable CS1591
 using Compression.Lib;
 using Compression.Registry;
-using FileFormat.PngCrushAdapters;
+using CompressionWorkbench.FileFormat.Ico;
 
 namespace Compression.Tests.PngCrushAdapters;
 
@@ -39,7 +39,7 @@ public class PngCrushAdaptersTests {
   }
 
   [Test]
-  public void IcoListAndExtract_ProducesPngEntries() {
+  public void IcoListAndExtract_ProducesImageEntries() {
     var src = @"C:\Windows\System32\OneDrive.ico";
     if (!File.Exists(src)) Assert.Ignore("Test ICO not present on this system");
 
@@ -52,15 +52,18 @@ public class PngCrushAdaptersTests {
     try {
       fs.Position = 0;
       desc.Extract(fs, outDir, null, null);
-      var pngs = Directory.GetFiles(outDir, "*.png", SearchOption.AllDirectories);
-      Assert.That(pngs, Has.Length.EqualTo(entries.Count), "All entries should extract to PNG files");
+      // Native ICO reader preserves the on-disk encoding: PNG entries become .png,
+      // DIB entries become .bmp (with reconstructed BITMAPFILEHEADER).
+      var images = Directory.GetFiles(outDir, "*.png", SearchOption.AllDirectories)
+        .Concat(Directory.GetFiles(outDir, "*.bmp", SearchOption.AllDirectories))
+        .ToArray();
+      Assert.That(images, Has.Length.EqualTo(entries.Count), "All entries should extract to PNG or BMP files");
 
-      // Verify PNG magic on first file
-      var bytes = File.ReadAllBytes(pngs[0]);
-      Assert.That(bytes[0], Is.EqualTo(0x89));
-      Assert.That(bytes[1], Is.EqualTo(0x50));
-      Assert.That(bytes[2], Is.EqualTo(0x4E));
-      Assert.That(bytes[3], Is.EqualTo(0x47));
+      // Verify the first extracted file has either a PNG or BMP magic.
+      var bytes = File.ReadAllBytes(images[0]);
+      var isPng = bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47;
+      var isBmp = bytes[0] == (byte)'B' && bytes[1] == (byte)'M';
+      Assert.That(isPng || isBmp, Is.True, $"First file magic: {bytes[0]:X2} {bytes[1]:X2} {bytes[2]:X2} {bytes[3]:X2}");
     } finally {
       try { Directory.Delete(outDir, true); } catch { /* best effort */ }
     }

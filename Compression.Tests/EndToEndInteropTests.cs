@@ -246,6 +246,11 @@ public class EndToEndInteropTests {
     // Retro FSes with strict native filename constraints (length/charset) that
     // can't round-trip generic repeat.txt/small.txt/random.dat names verbatim.
     ".ssd", ".po", ".scl", ".atr",
+    // Retro FSes with sector-size padding that inflates small files beyond byte-exact
+    // round-trip (CP/M: 128 B records, LIF: 256 B sectors, RT-11: 512 B blocks no
+    // length-in-bytes field, OS-9 RBF: 256 B sectors with FD.SIZ but generic-name
+    // generator drops files we'd reject for RAD-50/length).
+    ".cpm", ".lif", ".rt11", ".rx01", ".os9", ".rbf",
     // Disk images with specific sector/partition structure
     ".vhd", ".vmdk", ".qcow2", ".vdi", ".cvf",
     // Filesystem images (HFS, NTFS, ext, etc. require full FS creation)
@@ -263,6 +268,8 @@ public class EndToEndInteropTests {
     // Formats with custom internal structure not suitable for generic create/extract
     ".chm", ".dmg", ".nds", ".swf", ".pdf", ".umx",
     ".msi", ".doc", ".xls", ".ppt", ".msg", ".thumbsdb",
+    // Image-bundle formats — accept only PNG/BMP inputs, fail on generic .txt/.dat
+    ".ico", ".cur",
     // Game archives with special alignment/structure or format detection collision
     ".bsa", ".mpq", ".vpk",
     ".wad",    // WAD and WAD2 share same extension, detection collision
