@@ -198,9 +198,18 @@ public sealed class MpqReader {
       }
     }
 
-    // bzip2 (0x10) — not implemented, return payload raw
-    if ((method & 0x10) != 0)
-      return data[1..];
+    // bzip2 (0x10): data[1..] is a bzip2-wrapped stream
+    if ((method & 0x10) != 0) {
+      try {
+        using var ms = new MemoryStream(data, 1, data.Length - 1, writable: false);
+        using var bz = new FileFormat.Bzip2.Bzip2Stream(ms, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
+        using var decompressed = new MemoryStream();
+        bz.CopyTo(decompressed);
+        return decompressed.ToArray();
+      } catch {
+        return data[1..];
+      }
+    }
 
     // PKWare DCL / Huffman / LZMA / other — return raw data as fallback
     return data;

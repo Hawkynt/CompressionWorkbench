@@ -63,6 +63,6 @@ public enum CabCompressionType : ushort {
   /// <summary>Quantum compression.</summary>
   Quantum = 2,
 
-  /// <summary>LZX compression (not implemented).</summary>
+  /// <summary>LZX compression — reader uses <c>LzxDecompressor</c>, writer uses <c>BB_Lzx</c>.</summary>
   Lzx = 3,
 }

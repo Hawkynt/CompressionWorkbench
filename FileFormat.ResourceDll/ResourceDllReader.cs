@@ -9,9 +9,8 @@ namespace FileFormat.ResourceDll;
 /// Reads files embedded as Win32 resources in a PE32/PE32+ DLL/EXE.
 /// <see cref="Read"/> returns only <c>RT_RCDATA</c> string-named entries (the shape
 /// <see cref="ResourceDllWriter"/> produces); <see cref="ReadAll"/> returns every
-/// resource, regardless of type, suitable for general PE-resource browsing
-/// (Tier 1 of <c>docs/multi-payload-archives.md</c>). Multi-language resources
-/// expose only the first language entry.
+/// resource, regardless of type, suitable for general PE-resource browsing.
+/// Multi-language resources expose only the first language entry.
 /// </summary>
 public sealed class ResourceDllReader {
   /// <summary>One <c>RT_RCDATA</c>-style entry as surfaced by <see cref="Read"/>.

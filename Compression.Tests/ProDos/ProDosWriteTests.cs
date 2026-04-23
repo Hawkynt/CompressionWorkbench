@@ -122,4 +122,23 @@ public class ProDosWriteTests {
     Assert.That(d.CanonicalSizes, Does.Contain(819200L));
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
   }
+
+  [Test, Category("RoundTrip")]
+  public void Write_TreeStorage_RoundTripsLargeFile() {
+    // > 128 KB forces tree storage (storageType 3): master index + subordinate indexes.
+    var rng = new Random(12345);
+    var data = new byte[200_000];
+    rng.NextBytes(data);
+
+    var w = new ProDosWriter();
+    w.AddFile("BIG", data);
+    var img = w.Build("WORM", ProDosWriter.Disk800KTotalBlocks);
+
+    using var r = new ProDosReader(new MemoryStream(img));
+    Assert.That(r.Entries, Has.Count.EqualTo(1));
+    Assert.That(r.Entries[0].StorageType, Is.EqualTo(3), "file should land in tree storage");
+    Assert.That(r.Entries[0].Size, Is.EqualTo(data.Length));
+    var extracted = r.Extract(r.Entries[0]);
+    Assert.That(extracted, Is.EqualTo(data));
+  }
 }
