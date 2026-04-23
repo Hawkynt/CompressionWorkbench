@@ -64,12 +64,14 @@ public sealed class ZfsWriter {
     }
 
     // Now fill in root dir ZAP
-    var rootDirZapBytes = MicroZap.Encode(rootDirEntries, ZfsConstants.SectorSize);
-    datasetDnodes[rootDirSlot] = BuildZapDnode(rootDirZapBytes, alloc, output, txg);
+    var rootDirZapBytes = MicroZap.Encode(rootDirEntries, (int)ZfsConstants.SectorSize);
+    datasetDnodes[rootDirSlot] = BuildZapDnode(rootDirZapBytes, alloc, output, txg,
+      ZfsConstants.DmuOtDirectoryContents);
 
     // Master node ZAP → "ROOT" = rootDirSlot
-    var masterZapBytes = MicroZap.Encode(new[] { ("ROOT", (ulong)rootDirSlot) }, ZfsConstants.SectorSize);
-    datasetDnodes[masterNodeSlot] = BuildZapDnode(masterZapBytes, alloc, output, txg);
+    var masterZapBytes = MicroZap.Encode(new[] { ("ROOT", (ulong)rootDirSlot) }, (int)ZfsConstants.SectorSize);
+    datasetDnodes[masterNodeSlot] = BuildZapDnode(masterZapBytes, alloc, output, txg,
+      ZfsConstants.DmuOtMasterNode);
 
     // ---------- Pack dataset dnode array ----------
 
@@ -109,8 +111,9 @@ public sealed class ZfsWriter {
     var objDirEntries = new List<(string, ulong)> {
       ("root_dataset", (ulong)dslDirSlot),
     };
-    var objDirZapBytes = MicroZap.Encode(objDirEntries, ZfsConstants.SectorSize);
-    mosDnodes[objDirSlot] = BuildZapDnode(objDirZapBytes, alloc, output, txg);
+    var objDirZapBytes = MicroZap.Encode(objDirEntries, (int)ZfsConstants.SectorSize);
+    mosDnodes[objDirSlot] = BuildZapDnode(objDirZapBytes, alloc, output, txg,
+      ZfsConstants.DmuOtObjectDirectory);
 
     var mosDnodeBlock = PackDnodes(mosDnodes);
     var mosDnodeBp = WriteBlock(mosDnodeBlock, alloc, output, txg, ZfsConstants.ZioChecksumFletcher4);
@@ -220,12 +223,13 @@ public sealed class ZfsWriter {
     };
   }
 
-  private static Dnode.Builder BuildZapDnode(byte[] zapBlock, SectorAllocator alloc, Stream output, ulong txg) {
+  private static Dnode.Builder BuildZapDnode(byte[] zapBlock, SectorAllocator alloc, Stream output, ulong txg,
+    byte dnodeType = ZfsConstants.DmuOtZap) {
     var bp = WriteBlock(zapBlock, alloc, output, txg,
       ZfsConstants.ZioChecksumFletcher4,
-      type: ZfsConstants.DmuOtZap);
+      type: dnodeType);
     return new Dnode.Builder {
-      Type = ZfsConstants.DmuOtZap,
+      Type = dnodeType,
       Levels = 1,
       NumBlkPtr = 1,
       DataBlockSizeInSectors = (uint)(zapBlock.Length / ZfsConstants.SectorSize),

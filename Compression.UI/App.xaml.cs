@@ -6,6 +6,13 @@ public partial class App : System.Windows.Application {
   protected override void OnStartup(System.Windows.StartupEventArgs e) {
     base.OnStartup(e);
 
+    // Surface unhandled exceptions to a crash log so future "just crashed" reports
+    // come with a stack trace. WPF dispatcher + thread-pool + AppDomain all need
+    // their own hook; we route all three to the same writer.
+    this.DispatcherUnhandledException += (_, ex) => { LogCrash("Dispatcher", ex.Exception); ex.Handled = false; };
+    System.AppDomain.CurrentDomain.UnhandledException += (_, ex) => LogCrash("AppDomain", ex.ExceptionObject as System.Exception);
+    System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, ex) => { LogCrash("Task", ex.Exception); ex.SetObserved(); };
+
     // --analyze [file] : launch directly into analysis window
     if (e.Args.Length > 0 && e.Args[0] is "--analyze" or "/analyze" or "-a") {
       var win = new Views.AnalysisWindow { ShowInTaskbar = true };
@@ -42,6 +49,24 @@ public partial class App : System.Windows.Application {
     // Handle file association: if launched with a file argument, open it
     if (e.Args.Length > 0 && System.IO.File.Exists(e.Args[0]))
       mainWindow.OpenArchive(e.Args[0]);
+  }
+
+  private static void LogCrash(string source, System.Exception? ex) {
+    try {
+      var path = System.IO.Path.Combine(
+        System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
+        "CompressionWorkbench", "crash.log");
+      System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+      var msg = $"[{System.DateTime.Now:O}] {source} unhandled exception:\n{ex}\n\n";
+      System.IO.File.AppendAllText(path, msg);
+      System.Windows.MessageBox.Show(
+        $"Unhandled {source} exception:\n\n{ex?.Message}\n\nFull trace appended to:\n{path}",
+        "CompressionWorkbench — crash",
+        System.Windows.MessageBoxButton.OK,
+        System.Windows.MessageBoxImage.Error);
+    } catch {
+      /* last-ditch: don't compound the original failure */
+    }
   }
 
   private void HandleCreateArchive(string inputPath, string ext) {

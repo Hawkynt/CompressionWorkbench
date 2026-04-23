@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>CompressionWorkbench.FileFormat.Ani</RootNamespace>
+    <!-- Distinct from the PNGCrushCS sibling repo's FileFormat.Ani assembly to avoid
+         a Costura-bundle collision. See memory/costura-stale-bundle.md. -->
+    <AssemblyName>CompressionWorkbench.FileFormat.Ani</AssemblyName>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <!-- Each ANI frame is a CUR file; reuse the CWB ICO/CUR reader to split sub-images
+         preserving their on-disk encoding (PNG or DIB). -->
+    <ProjectReference Include="..\FileFormat.Ico\FileFormat.Ico.csproj" />
+  </ItemGroup>
+</Project>

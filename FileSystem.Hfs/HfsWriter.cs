@@ -11,17 +11,17 @@ namespace FileSystem.Hfs;
 /// <list type="bullet">
 ///   <item>Flat root directory only (no subdirectories).</item>
 ///   <item>Allocation block size fixed at 512 bytes.</item>
-///   <item>Up to ~30 files — all records fit in a single 512-byte catalog leaf node.</item>
+///   <item>Single catalog leaf node (4 KB) — fits roughly 25–30 files.</item>
 ///   <item>ASCII-only filenames (no MacRoman high-byte handling).</item>
 ///   <item>No resource forks; resource-fork fields in file records are zero.</item>
 /// </list>
 /// </para>
 /// </summary>
 public sealed class HfsWriter {
-  private const int BootSize = 1024;       // 2 boot sectors
-  private const int MdbOffset = 1024;
+  private const int MdbOffset = 1024;      // MDB lives in sector 2 (after 2 boot sectors)
   private const int MdbSize = 512;         // MDB occupies one sector
-  private const int NodeSize = 512;        // B-tree node size
+  private const int ExtentsNodeSize = 512; // extents B-tree node size
+  private const int CatalogNodeSize = 4096;// catalog B-tree node size (larger, to fit more records)
   private const uint AllocBlockSize = 512; // allocation block size in bytes
   private const int MinTotalSectors = 800; // 400 KB minimum image (400 × 1024 / 512 = 800)
 
@@ -85,10 +85,10 @@ public sealed class HfsWriter {
     //   abs block  2..3 : catalog B-tree  (header node + leaf node = 2 × 512)
     //   abs block  4..  : file data       (one contiguous extent per file)
     const ushort ExtentsStartAbs = 0;
-    const ushort ExtentsBlockCount = 2;
+    const ushort ExtentsBlockCount = 2;                                     // 2 × 512 = 1024 B
     const ushort CatalogStartAbs = 2;
-    const ushort CatalogBlockCount = 2;
-    const ushort FirstDataBlock = 4;
+    const int CatalogBlockCount = (2 * CatalogNodeSize) / (int)AllocBlockSize; // 2 × 4096 / 512 = 16
+    const ushort FirstDataBlock = CatalogStartAbs + CatalogBlockCount;      // 18
 
     var fileExtents = new List<(ushort StartAbs, ushort BlockCount)>();
     var nextBlock = (uint)FirstDataBlock;
@@ -161,12 +161,12 @@ public sealed class HfsWriter {
     };
 
     var extentsBaseOffset = allocBase + ExtentsStartAbs * (int)AllocBlockSize;
-    WriteBTreeHeaderNode(image.AsSpan(extentsBaseOffset, NodeSize),
+    WriteBTreeHeaderNode(image.AsSpan(extentsBaseOffset, ExtentsNodeSize),
       treeDepth: 1, rootNode: 1, leafRecords: (uint)extentsLeafRecs.Count,
       firstLeaf: 1, lastLeaf: 1, totalNodes: 2, freeNodes: 0,
-      maxKeyLen: MaxExtentsKeyLen);
-    WriteLeafNode(image.AsSpan(extentsBaseOffset + NodeSize, NodeSize),
-      extentsLeafRecs, prevLeaf: 0, nextLeaf: 0, height: 1);
+      maxKeyLen: MaxExtentsKeyLen, nodeSize: ExtentsNodeSize);
+    WriteLeafNode(image.AsSpan(extentsBaseOffset + ExtentsNodeSize, ExtentsNodeSize),
+      extentsLeafRecs, prevLeaf: 0, nextLeaf: 0, height: 1, nodeSize: ExtentsNodeSize);
 
     // --- 5. Catalog B-tree ------------------------------------------------
     //
@@ -232,17 +232,17 @@ public sealed class HfsWriter {
     }
 
     var catalogBaseOffset = allocBase + CatalogStartAbs * (int)AllocBlockSize;
-    WriteBTreeHeaderNode(image.AsSpan(catalogBaseOffset, NodeSize),
+    WriteBTreeHeaderNode(image.AsSpan(catalogBaseOffset, CatalogNodeSize),
       treeDepth: 1, rootNode: 1, leafRecords: (uint)catRecs.Count,
       firstLeaf: 1, lastLeaf: 1, totalNodes: 2, freeNodes: 0,
-      maxKeyLen: MaxCatalogKeyLen);
-    WriteLeafNode(image.AsSpan(catalogBaseOffset + NodeSize, NodeSize),
-      catRecs, prevLeaf: 0, nextLeaf: 0, height: 1);
+      maxKeyLen: MaxCatalogKeyLen, nodeSize: CatalogNodeSize);
+    WriteLeafNode(image.AsSpan(catalogBaseOffset + CatalogNodeSize, CatalogNodeSize),
+      catRecs, prevLeaf: 0, nextLeaf: 0, height: 1, nodeSize: CatalogNodeSize);
 
     // --- 6. Master Directory Block ----------------------------------------
 
     var nRtFiles = (ushort)files.Count;
-    WriteMdb(image.AsSpan(MdbOffset),
+    WriteMdb(image.AsSpan(MdbOffset, MdbSize),
       crDate: now, mdDate: now,
       drNmFls: nRtFiles,
       drVBMSt: drVBMSt,
@@ -328,7 +328,7 @@ public sealed class HfsWriter {
   private static void WriteBTreeHeaderNode(Span<byte> node,
     ushort treeDepth, uint rootNode, uint leafRecords,
     uint firstLeaf, uint lastLeaf, uint totalNodes, uint freeNodes,
-    byte maxKeyLen) {
+    byte maxKeyLen, int nodeSize) {
     node.Clear();
     // Node descriptor.
     BinaryPrimitives.WriteUInt32BigEndian(node[0..], 0);       // fLink
@@ -345,7 +345,7 @@ public sealed class HfsWriter {
     BinaryPrimitives.WriteUInt32BigEndian(hdr[6..], leafRecords);      // bthNRecs
     BinaryPrimitives.WriteUInt32BigEndian(hdr[10..], firstLeaf);       // bthFNode
     BinaryPrimitives.WriteUInt32BigEndian(hdr[14..], lastLeaf);        // bthLNode
-    BinaryPrimitives.WriteUInt16BigEndian(hdr[18..], NodeSize);        // bthNodeSize
+    BinaryPrimitives.WriteUInt16BigEndian(hdr[18..], (ushort)nodeSize); // bthNodeSize
     BinaryPrimitives.WriteUInt16BigEndian(hdr[20..], maxKeyLen);       // bthKeyLen (max key length)
     BinaryPrimitives.WriteUInt32BigEndian(hdr[22..], totalNodes);      // bthNNodes
     BinaryPrimitives.WriteUInt32BigEndian(hdr[26..], freeNodes);       // bthFree
@@ -353,34 +353,22 @@ public sealed class HfsWriter {
 
     // Record 2: 128 bytes reserved/unused — offset 120.
     // Record 3: BTMapRec — bitmap of allocated nodes. We have 2 nodes allocated.
-    // Header+reserved occupy 14..247 (14 + 106 + 128 = 248). BTMapRec at 248.
     const int bthRecOffset = 14;
     const int reservedRecOffset = 14 + 106;   // 120
     const int mapRecOffset = reservedRecOffset + 128; // 248
     // Mark nodes 0 and 1 as allocated (MSB-first within byte).
     node[mapRecOffset] = 0b11000000;
 
-    // Free-space offset: first byte of BTMapRec is mapRecOffset; the map itself
-    // extends to the end of the node minus the pointer list. For our tiny tree
-    // we leave only a trivial map.
-
-    // Pointer list at end: 4 offsets (numRecords + 1 free-space pointer),
-    // each a uint16 BE, stored in REVERSE order (last record's offset closest to
-    // end-of-node boundary).
-    var mapRecEnd = mapRecOffset + (NodeSize - mapRecOffset - 2 * 4); // whatever space remains
-    // Slot offsets end of node (counted from end):
-    //   end-2 : offset of record 1 (BTHdrRec)
-    //   end-4 : offset of record 2 (reserved)
-    //   end-6 : offset of record 3 (BTMapRec)
-    //   end-8 : free-space pointer
-    BinaryPrimitives.WriteUInt16BigEndian(node[(NodeSize - 2)..], (ushort)bthRecOffset);
-    BinaryPrimitives.WriteUInt16BigEndian(node[(NodeSize - 4)..], (ushort)reservedRecOffset);
-    BinaryPrimitives.WriteUInt16BigEndian(node[(NodeSize - 6)..], (ushort)mapRecOffset);
-    BinaryPrimitives.WriteUInt16BigEndian(node[(NodeSize - 8)..], (ushort)mapRecEnd);
+    // Pointer list at end: 4 offsets (numRecords + 1 free-space pointer).
+    var mapRecEnd = nodeSize - 2 * 4;
+    BinaryPrimitives.WriteUInt16BigEndian(node[(nodeSize - 2)..], (ushort)bthRecOffset);
+    BinaryPrimitives.WriteUInt16BigEndian(node[(nodeSize - 4)..], (ushort)reservedRecOffset);
+    BinaryPrimitives.WriteUInt16BigEndian(node[(nodeSize - 6)..], (ushort)mapRecOffset);
+    BinaryPrimitives.WriteUInt16BigEndian(node[(nodeSize - 8)..], (ushort)mapRecEnd);
   }
 
   private static void WriteLeafNode(Span<byte> node, List<byte[]> records,
-    uint prevLeaf, uint nextLeaf, byte height) {
+    uint prevLeaf, uint nextLeaf, byte height, int nodeSize) {
     node.Clear();
     BinaryPrimitives.WriteUInt32BigEndian(node[0..], nextLeaf); // fLink
     BinaryPrimitives.WriteUInt32BigEndian(node[4..], prevLeaf); // bLink
@@ -389,10 +377,8 @@ public sealed class HfsWriter {
     BinaryPrimitives.WriteUInt16BigEndian(node[10..], (ushort)records.Count); // numRecords
     BinaryPrimitives.WriteUInt16BigEndian(node[12..], 0);       // reserved
 
-    // Pointer-list size = 2 × (numRecords + 1) bytes at end of node.
-    // Reject anything that won't fit.
     var pointerListBytes = 2 * (records.Count + 1);
-    var dataArea = NodeSize - 14 - pointerListBytes;
+    var dataArea = nodeSize - 14 - pointerListBytes;
     var total = records.Sum(r => r.Length);
     if (total > dataArea)
       throw new InvalidDataException($"HFS: leaf node overflow ({total} > {dataArea} bytes). Reduce file count/name length.");
@@ -401,12 +387,10 @@ public sealed class HfsWriter {
     for (var i = 0; i < records.Count; i++) {
       var rec = records[i];
       rec.CopyTo(node[pos..]);
-      // Pointer list: slot i (0-based) is at node[NodeSize - 2*(i+1)]
-      BinaryPrimitives.WriteUInt16BigEndian(node[(NodeSize - 2 * (i + 1))..], (ushort)pos);
+      BinaryPrimitives.WriteUInt16BigEndian(node[(nodeSize - 2 * (i + 1))..], (ushort)pos);
       pos += rec.Length;
     }
-    // Free-space pointer (after last record).
-    BinaryPrimitives.WriteUInt16BigEndian(node[(NodeSize - 2 * (records.Count + 1))..], (ushort)pos);
+    BinaryPrimitives.WriteUInt16BigEndian(node[(nodeSize - 2 * (records.Count + 1))..], (ushort)pos);
   }
 
   // ------------------------------------------------------------------------

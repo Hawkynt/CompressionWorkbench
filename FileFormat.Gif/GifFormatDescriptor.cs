@@ -22,7 +22,7 @@ public sealed class GifFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new("GIF87a"u8.ToArray(), Confidence: 0.95),
     new("GIF89a"u8.ToArray(), Confidence: 0.95),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored (LZW passthrough)")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzw", "LZW (variable-width, GIF flavour)")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description => "Animated GIF; each frame extractable as a standalone single-frame GIF.";
@@ -37,7 +37,11 @@ public sealed class GifFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         Name: name,
         OriginalSize: frames[i].Data.Length,
         CompressedSize: frames[i].Data.Length,
-        Method: "stored",
+        // Per-frame image data is LZW-compressed (variable-width, GIF flavour). The
+        // descriptor's slicing only copies the LZW byte stream verbatim — no re-encoding —
+        // so the listed entries report "lzw" to reflect the actual on-disk encoding the
+        // user would see if they hex-dumped the byte range.
+        Method: "lzw",
         IsDirectory: false,
         IsEncrypted: false,
         LastModified: null));

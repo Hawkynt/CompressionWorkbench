@@ -7,7 +7,6 @@ namespace FileSystem.Hfs;
 public sealed class HfsReader : IDisposable {
   private const ushort HfsMagic = 0x4244;
   private const int MdbOffset = 1024;
-  private const int NodeSize = 512;
 
   // HFS catalog record types.
   private const byte RecFolder = 1;
@@ -52,7 +51,7 @@ public sealed class HfsReader : IDisposable {
     if (this._catalogBlockCount == 0) return;
 
     var catalogOffset = this.BlockToOffset(this._catalogStartBlock);
-    if (catalogOffset < 0 || catalogOffset + NodeSize > this._data.Length) return;
+    if (catalogOffset < 0 || catalogOffset + 512 > this._data.Length) return;
 
     this.ReadCatalogTree(catalogOffset);
   }
@@ -60,22 +59,23 @@ public sealed class HfsReader : IDisposable {
   private int BlockToOffset(int block) => this._firstBlockOffset + (int)(block * this._blockSize);
 
   private void ReadCatalogTree(int catalogBase) {
-    if (catalogBase + NodeSize > this._data.Length) return;
+    if (catalogBase + 32 > this._data.Length) return;
 
     // Header node: node 0. Verify kind == 1.
     var headerKind = (sbyte)this._data[catalogBase + 8];
     if (headerKind != 1) return;
 
-    // BTHdrRec is the first record in the header node (at offset 14):
-    //   bthDepth(2) + bthRoot(4) + bthNRecs(4) + bthFNode(4) + bthLNode(4) + ...
+    // BTHdrRec at offset 14: bthDepth(2) + bthRoot(4) + bthNRecs(4) + bthFNode(4) + bthLNode(4) + bthNodeSize(2) + ...
     var hdr = this._data.AsSpan(catalogBase + 14);
     var firstLeaf = BinaryPrimitives.ReadUInt32BigEndian(hdr[10..]);
+    var nodeSize = BinaryPrimitives.ReadUInt16BigEndian(hdr[18..]);
+    if (nodeSize == 0) nodeSize = 512;
 
     var node = (int)firstLeaf;
     var visited = new HashSet<int>();
     while (node != 0 && visited.Add(node)) {
-      var nodeOffset = catalogBase + node * NodeSize;
-      if (nodeOffset + NodeSize > this._data.Length) break;
+      var nodeOffset = catalogBase + node * nodeSize;
+      if (nodeOffset + nodeSize > this._data.Length) break;
 
       var nodeKind = (sbyte)this._data[nodeOffset + 8];
       if (nodeKind != -1) break; // not a leaf
@@ -83,7 +83,7 @@ public sealed class HfsReader : IDisposable {
       var numRecords = BinaryPrimitives.ReadUInt16BigEndian(this._data.AsSpan(nodeOffset + 10));
 
       for (var r = 0; r < numRecords; r++) {
-        var recOffsetPos = nodeOffset + NodeSize - 2 * (r + 1);
+        var recOffsetPos = nodeOffset + nodeSize - 2 * (r + 1);
         if (recOffsetPos < nodeOffset) break;
         var recOffset = BinaryPrimitives.ReadUInt16BigEndian(this._data.AsSpan(recOffsetPos));
         var recPos = nodeOffset + recOffset;
