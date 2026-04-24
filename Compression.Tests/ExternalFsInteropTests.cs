@@ -328,6 +328,559 @@ public class ExternalFsInteropTests {
     Assert.That(check.ExitCode, Is.EqualTo(0), $"qemu-img check reported errors:\n{check.StdOut}\n{check.StdErr}");
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // WSL-based validation — real Linux kernel fsck/repair/check tools
+  // ═══════════════════════════════════════════════════════════════════
+
+  private static void RequireWsl() {
+    if (!FsInteropToolbox.WslAvailable)
+      Assert.Ignore("WSL not installed. Run `wsl --install` in Admin PowerShell and reboot, " +
+                    "then `sudo apt install -y e2fsprogs xfsprogs btrfs-progs exfatprogs dosfstools " +
+                    "udftools squashfs-tools` inside the Linux shell.");
+  }
+
+  private static void RequireWslTool(string tool) {
+    RequireWsl();
+    if (!FsInteropToolbox.WslHasTool(tool))
+      Assert.Ignore($"WSL is present but '{tool}' is not installed in the distro. " +
+                    $"Run inside WSL: `sudo apt install -y <pkg-providing-{tool}>`.");
+  }
+
+  // ── ext4 (fsck.ext4 -n + dumpe2fs) ─────────────────────────────────
+
+  [Test]
+  public void Ext_OurImage_Fsckext4Accepts() {
+    RequireWslTool("fsck.ext4");
+    var ext = new ExtWriter();
+    ext.AddFile("hello.txt", SmallText);
+    ext.AddFile("repeat.txt", RepetitiveText);
+    var imgPath = Path.Combine(this._tmpDir, "ext4_fsck.img");
+    File.WriteAllBytes(imgPath, ext.Build());
+
+    // -n = no-op (read-only check); -f = force even if "clean"; -v = verbose
+    var result = FsInteropToolbox.RunWsl($"fsck.ext4 -fnv {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"fsck.ext4 rejected our image (exit {result.ExitCode}):\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+  }
+
+  [Test]
+  public void Ext_OurImage_DumpE2fsReportsSuperblock() {
+    RequireWslTool("dumpe2fs");
+    var ext = new ExtWriter();
+    ext.AddFile("hello.txt", SmallText);
+    var imgPath = Path.Combine(this._tmpDir, "ext4_dump.img");
+    File.WriteAllBytes(imgPath, ext.Build());
+
+    var result = FsInteropToolbox.RunWsl($"dumpe2fs -h {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0), $"dumpe2fs failed:\n{result.StdErr}");
+    Assert.That(result.StdOut, Does.Contain("Filesystem UUID"), "dumpe2fs -h should print Filesystem UUID line");
+    Assert.That(result.StdOut, Does.Contain("0xEF53"), "dumpe2fs -h should report magic number 0xEF53");
+  }
+
+  // ── XFS (xfs_repair -n + xfs_db) ───────────────────────────────────
+
+  [Test]
+  public void Xfs_OurImage_XfsRepairAccepts() {
+    RequireWslTool("xfs_repair");
+    var xfs = new FileSystem.Xfs.XfsWriter();
+    xfs.AddFile("hello.txt", SmallText);
+    xfs.AddFile("repeat.txt", RepetitiveText);
+    var imgPath = Path.Combine(this._tmpDir, "xfs_repair.img");
+    using (var fs = File.Create(imgPath)) xfs.WriteTo(fs);
+
+    // -n = no modify; -f = force (treat file as block device)
+    var result = FsInteropToolbox.RunWsl($"xfs_repair -n -f {FsInteropToolbox.WinToWsl(imgPath)}");
+    // xfs_repair exit 0 means clean; exit 1 means repair would be needed.
+    // For a fresh mkfs-parity image, 0 is the pass criterion.
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"xfs_repair rejected our image (exit {result.ExitCode}):\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+  }
+
+  // ── Btrfs (btrfs check) ────────────────────────────────────────────
+
+  [Test]
+  public void Btrfs_OurImage_BtrfsCheckAccepts() {
+    RequireWslTool("btrfs");
+    var btrfs = new FileSystem.Btrfs.BtrfsWriter();
+    btrfs.AddFile("hello.txt", SmallText);
+    btrfs.AddFile("repeat.txt", RepetitiveText);
+    var imgPath = Path.Combine(this._tmpDir, "btrfs_check.img");
+    using (var fs = File.Create(imgPath)) btrfs.WriteTo(fs);
+
+    var result = FsInteropToolbox.RunWsl($"btrfs check --readonly {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"btrfs check rejected our image (exit {result.ExitCode}):\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+  }
+
+  // ── FAT (fsck.fat -n) ──────────────────────────────────────────────
+
+  [Test]
+  public void Fat_OurImage_FsckFatAccepts() {
+    RequireWslTool("fsck.fat");
+    var fat = new FatWriter();
+    fat.AddFile("HELLO.TXT", SmallText);
+    fat.AddFile("REPEAT.TXT", RepetitiveText);
+    var imgPath = Path.Combine(this._tmpDir, "fat_fsck.img");
+    File.WriteAllBytes(imgPath, fat.Build());
+
+    // -n = no-op; -V = verify (second pass)
+    var result = FsInteropToolbox.RunWsl($"fsck.fat -n -V {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"fsck.fat rejected our image:\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+  }
+
+  // ── exFAT (fsck.exfat) ─────────────────────────────────────────────
+
+  [Test]
+  public void ExFat_OurImage_FsckExfatAccepts() {
+    RequireWslTool("fsck.exfat");
+    var xfat = new ExFatWriter();
+    xfat.AddFile("hello.txt", SmallText);
+    var imgPath = Path.Combine(this._tmpDir, "exfat_fsck.img");
+    File.WriteAllBytes(imgPath, xfat.Build());
+
+    // fsck.exfat in read-only mode
+    var result = FsInteropToolbox.RunWsl($"fsck.exfat -n {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"fsck.exfat rejected our image:\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+  }
+
+  // ── SquashFS (unsquashfs -stat) ────────────────────────────────────
+
+  [Test]
+  public void SquashFs_OurImage_UnsquashfsStatsAccepts() {
+    RequireWslTool("unsquashfs");
+    var imgPath = Path.Combine(this._tmpDir, "sqfs_stat.sqfs");
+    using (var fs = File.Create(imgPath)) {
+      using var sfs = new SquashFsWriter(fs, leaveOpen: true);
+      sfs.AddFile("hello.txt", SmallText);
+      sfs.AddFile("repeat.txt", RepetitiveText);
+    }
+
+    // -s dumps superblock info; non-zero exit means the image is not a valid SquashFS.
+    var result = FsInteropToolbox.RunWsl($"unsquashfs -s {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"unsquashfs rejected our image:\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+    Assert.That(result.StdOut, Does.Contain("Found a valid").IgnoreCase.Or.Contain("Superblock"),
+      "unsquashfs -s should report a valid SquashFS superblock");
+  }
+
+  // ── Reverse direction: Linux mkfs → our reader ─────────────────────
+
+  [Test]
+  public void Ext_LinuxMkfsOutput_ReadByOurReader() {
+    RequireWslTool("mkfs.ext4");
+    // Build an empty 4MB file and let mkfs.ext4 format it in-place.
+    var imgPath = Path.Combine(this._tmpDir, "mkfs_ext4.img");
+    using (var fs = File.Create(imgPath))
+      fs.SetLength(4 * 1024 * 1024);
+
+    // -F = force even on a regular file; -b 1024 = 1KB blocks (smallest for 4MB image)
+    var result = FsInteropToolbox.RunWsl($"mkfs.ext4 -F -b 1024 {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0), $"mkfs.ext4 failed:\n{result.StdErr}");
+
+    // Our reader should accept the Linux-generated image.
+    using var stream = File.OpenRead(imgPath);
+    var descriptor = new FileSystem.Ext.ExtFormatDescriptor();
+    var entries = descriptor.List(stream, null);
+    Assert.That(entries, Is.Not.Null, "Our reader returned null for a valid Linux-mkfs.ext4 image");
+    // A freshly-mkfs'd ext4 has only `lost+found`. That's enough to prove we read it.
+  }
+
+  [Test]
+  public void Fat_LinuxMkfsOutput_ReadByOurReader() {
+    RequireWslTool("mkfs.vfat");
+    var imgPath = Path.Combine(this._tmpDir, "mkfs_vfat.img");
+    using (var fs = File.Create(imgPath))
+      fs.SetLength(2 * 1024 * 1024);
+
+    var result = FsInteropToolbox.RunWsl($"mkfs.vfat -F 12 {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0), $"mkfs.vfat failed:\n{result.StdErr}");
+
+    using var stream = File.OpenRead(imgPath);
+    var descriptor = new FileSystem.Fat.FatFormatDescriptor();
+    var entries = descriptor.List(stream, null);
+    Assert.That(entries, Is.Not.Null, "Our reader returned null for a valid Linux-mkfs.vfat image");
+  }
+
+  // ── JFS (mkfs.jfs + fsck.jfs) ──────────────────────────────────────
+
+  [Test]
+  public void Jfs_OurImage_FsckJfsAccepts() {
+    RequireWslTool("fsck.jfs");
+    var jfs = new FileSystem.Jfs.JfsWriter();
+    jfs.AddFile("hello.txt", SmallText);
+    jfs.AddFile("repeat.txt", RepetitiveText);
+    var imgPath = Path.Combine(this._tmpDir, "jfs_fsck.img");
+    using (var fs = File.Create(imgPath)) jfs.WriteTo(fs);
+
+    // fsck.jfs: -n (no modify), -f (force even if clean), -v (verbose). Exit 0 = clean.
+    var result = FsInteropToolbox.RunWsl($"fsck.jfs -n -f -v {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"fsck.jfs rejected our image (exit {result.ExitCode}):\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+  }
+
+  [Test]
+  public void Jfs_LinuxMkfsOutput_ReadByOurReader() {
+    RequireWslTool("mkfs.jfs");
+    // JFS minimum is 16 MB.
+    var imgPath = Path.Combine(this._tmpDir, "mkfs_jfs.img");
+    using (var fs = File.Create(imgPath))
+      fs.SetLength(16 * 1024 * 1024);
+
+    // -q = quiet, no prompts; pipe 'y' as safety.
+    var result = FsInteropToolbox.RunWsl($"echo y | mkfs.jfs -q {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0), $"mkfs.jfs failed:\n{result.StdErr}");
+
+    using var stream = File.OpenRead(imgPath);
+    var descriptor = new FileSystem.Jfs.JfsFormatDescriptor();
+    var entries = descriptor.List(stream, null);
+    Assert.That(entries, Is.Not.Null, "Our reader returned null for a valid Linux-mkfs.jfs image");
+  }
+
+  // ── ReiserFS (mkfs.reiserfs + reiserfsck) ──────────────────────────
+
+  [Test]
+  public void ReiserFs_OurImage_ReiserfsckAccepts() {
+    RequireWslTool("reiserfsck");
+    var rfs = new FileSystem.ReiserFs.ReiserFsWriter();
+    rfs.AddFile("hello.txt", SmallText);
+    rfs.AddFile("repeat.txt", RepetitiveText);
+    var imgPath = Path.Combine(this._tmpDir, "reiser_check.img");
+    using (var fs = File.Create(imgPath)) rfs.WriteTo(fs);
+
+    // --check = read-only validation; --quiet = no progress bar; -y = answer yes to any prompts.
+    var result = FsInteropToolbox.RunWsl($"reiserfsck --check --quiet -y {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"reiserfsck rejected our image (exit {result.ExitCode}):\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+  }
+
+  [Test]
+  public void ReiserFs_LinuxMkfsOutput_ReadByOurReader() {
+    RequireWslTool("mkfs.reiserfs");
+    // ReiserFS minimum is ~32 MB in practice.
+    var imgPath = Path.Combine(this._tmpDir, "mkfs_reiser.img");
+    using (var fs = File.Create(imgPath))
+      fs.SetLength(34 * 1024 * 1024);
+
+    // -q = quiet, -f = force (allow block-device-less regular file).
+    var result = FsInteropToolbox.RunWsl($"echo y | mkfs.reiserfs -q -f {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0), $"mkfs.reiserfs failed:\n{result.StdErr}");
+
+    using var stream = File.OpenRead(imgPath);
+    var descriptor = new FileSystem.ReiserFs.ReiserFsFormatDescriptor();
+    var entries = descriptor.List(stream, null);
+    Assert.That(entries, Is.Not.Null, "Our reader returned null for a valid Linux-mkfs.reiserfs image");
+  }
+
+  // ── F2FS (mkfs.f2fs + fsck.f2fs) ───────────────────────────────────
+
+  [Test]
+  public void F2fs_OurImage_FsckF2fsAccepts() {
+    RequireWslTool("fsck.f2fs");
+    var f2fs = new FileSystem.F2fs.F2fsWriter();
+    f2fs.AddFile("hello.txt", SmallText);
+    f2fs.AddFile("repeat.txt", RepetitiveText);
+    var imgPath = Path.Combine(this._tmpDir, "f2fs_check.img");
+    File.WriteAllBytes(imgPath, f2fs.Build());
+
+    // fsck.f2fs: -f (force), --dry-run. Exit 0 = clean.
+    var result = FsInteropToolbox.RunWsl($"fsck.f2fs -f --dry-run {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"fsck.f2fs rejected our image (exit {result.ExitCode}):\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+  }
+
+  [Test]
+  public void F2fs_LinuxMkfsOutput_ReadByOurReader() {
+    RequireWslTool("mkfs.f2fs");
+    // F2FS minimum is ~38 MB; we use 64 MB to match our writer's default.
+    var imgPath = Path.Combine(this._tmpDir, "mkfs_f2fs.img");
+    using (var fs = File.Create(imgPath))
+      fs.SetLength(64 * 1024 * 1024);
+
+    // -q = quiet, -f = force.
+    var result = FsInteropToolbox.RunWsl($"mkfs.f2fs -q -f {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0), $"mkfs.f2fs failed:\n{result.StdErr}");
+
+    using var stream = File.OpenRead(imgPath);
+    var descriptor = new FileSystem.F2fs.F2fsFormatDescriptor();
+    var entries = descriptor.List(stream, null);
+    Assert.That(entries, Is.Not.Null, "Our reader returned null for a valid Linux-mkfs.f2fs image");
+  }
+
+  // ── UDF (mkudffs + udffsck optional) ───────────────────────────────
+
+  [Test]
+  public void Udf_OurImage_UdffsckAccepts() {
+    if (!FsInteropToolbox.WslAvailable)
+      Assert.Ignore("WSL not installed. See RequireWsl() hint.");
+    if (!FsInteropToolbox.WslHasTool("udffsck")) {
+      // udftools on Ubuntu 24.04 doesn't ship udffsck; mkudffs is the only tool.
+      // We fall back to a read-parity check via our reader as a sanity gate.
+      Assert.Ignore("udffsck not available in this udftools build (Ubuntu 24.04 ships mkudffs only). " +
+                    "No Linux-side reader can validate — skipping.");
+    }
+    var udf = new FileSystem.Udf.UdfWriter();
+    udf.AddFile("hello.txt", SmallText);
+    var imgPath = Path.Combine(this._tmpDir, "udf_check.img");
+    using (var fs = File.Create(imgPath)) udf.WriteTo(fs);
+
+    var result = FsInteropToolbox.RunWsl($"udffsck {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"udffsck rejected our image:\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+  }
+
+  [Test]
+  public void Udf_LinuxMkudffsOutput_ReadByOurReader() {
+    RequireWslTool("mkudffs");
+    // mkudffs needs ~150 blocks minimum. We use 2 MB (1024 × 2 KB blocks).
+    var imgPath = Path.Combine(this._tmpDir, "mkudffs.img");
+    using (var fs = File.Create(imgPath))
+      fs.SetLength(2 * 1024 * 1024);
+
+    // --blocksize 2048 is UDF default; --media-type hd says "hard disk" layout.
+    // mkudffs expects block count as second positional arg when file doesn't look like a device.
+    var blocks = (2 * 1024 * 1024) / 2048;
+    var result = FsInteropToolbox.RunWsl(
+      $"mkudffs --blocksize=2048 --media-type=hd {FsInteropToolbox.WinToWsl(imgPath)} {blocks}");
+    Assert.That(result.ExitCode, Is.EqualTo(0), $"mkudffs failed:\n{result.StdErr}");
+
+    using var stream = File.OpenRead(imgPath);
+    var descriptor = new FileSystem.Udf.UdfFormatDescriptor();
+    // UDF reader may return an empty list for a freshly-formatted volume; that's fine.
+    var entries = descriptor.List(stream, null);
+    Assert.That(entries, Is.Not.Null, "Our reader returned null for a valid Linux-mkudffs image");
+  }
+
+  // ── Minix v3 (mkfs.minix) — no Linux fsck.minix for v3 ─────────────
+
+  [Test]
+  public void Minix_LinuxMkfsOutput_ReadByOurReader() {
+    RequireWslTool("mkfs.minix");
+    // Minix v3 supports images down to ~1 MB easily.
+    var imgPath = Path.Combine(this._tmpDir, "mkfs_minix.img");
+    using (var fs = File.Create(imgPath))
+      fs.SetLength(4 * 1024 * 1024);
+
+    // -3 = minix v3 (matches our writer).
+    var result = FsInteropToolbox.RunWsl($"mkfs.minix -3 {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0), $"mkfs.minix failed:\n{result.StdErr}");
+
+    using var stream = File.OpenRead(imgPath);
+    var descriptor = new FileSystem.MinixFs.MinixFsFormatDescriptor();
+    var entries = descriptor.List(stream, null);
+    Assert.That(entries, Is.Not.Null, "Our reader returned null for a valid Linux-mkfs.minix image");
+  }
+
+  [Test]
+  public void Minix_OurImage_LinuxSideCheck_Skip() {
+    // util-linux ships mkfs.minix but no fsck.minix for v3 — there is no Linux tool
+    // that validates v3 images. Document this and skip cleanly.
+    Assert.Ignore("No Linux fsck.minix for Minix v3 in util-linux. Our reverse test " +
+                  "(Linux mkfs.minix → our reader) covers read-side parity.");
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Mutation validation — writer + in-place/rebuild modify + fsck check
+  // ═══════════════════════════════════════════════════════════════════
+
+  private static byte[] DataA => "aaaaaaaaaaaaaaaaa-alpha"u8.ToArray();
+  private static byte[] DataB => "bbbbb-bravo-original"u8.ToArray();
+  private static byte[] DataBNew => "bbbbb-bravo-REPLACED-with-new-content-xxxxx"u8.ToArray();
+  private static byte[] DataC => "ccccc-charlie-xxx"u8.ToArray();
+  private static byte[] DataD => "ddddd-delta-added"u8.ToArray();
+
+  // ── ext4 mutation — uses existing ExtRemover in-place + rebuild for add/replace ──
+
+  [Test]
+  public void Ext_MutateThenValidate() {
+    RequireWslTool("fsck.ext4");
+    var imgPath = Path.Combine(this._tmpDir, "ext4_mutate.img");
+
+    // Step 1: create with a.txt, b.txt, c.txt
+    {
+      var w = new ExtWriter();
+      w.AddFile("a.txt", DataA);
+      w.AddFile("b.txt", DataB);
+      w.AddFile("c.txt", DataC);
+      File.WriteAllBytes(imgPath, w.Build());
+    }
+
+    // Step 2: initial validation
+    var r1 = FsInteropToolbox.RunWsl($"fsck.ext4 -fnv {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(r1.ExitCode, Is.EqualTo(0),
+      $"ext4 initial image invalid: stdout:\n{r1.StdOut}\nstderr:\n{r1.StdErr}");
+
+    // Step 3: mutate — replace b.txt, delete a.txt, add d.txt
+    {
+      using var fs = File.Open(imgPath, FileMode.Open, FileAccess.ReadWrite);
+      ExtModifier.Mutate(
+        fs,
+        replacements: [("b.txt", DataBNew), ("d.txt", DataD)],
+        deletions: ["a.txt"]);
+    }
+
+    // Step 4: re-validate
+    var r2 = FsInteropToolbox.RunWsl($"fsck.ext4 -fnv {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(r2.ExitCode, Is.EqualTo(0),
+      $"ext4 image invalid after mutation:\nstdout:\n{r2.StdOut}\nstderr:\n{r2.StdErr}");
+
+    // Step 5: read back via our reader and confirm expected final state
+    using (var stream = File.OpenRead(imgPath)) {
+      var entries = new FileSystem.Ext.ExtFormatDescriptor().List(stream, null);
+      var names = entries.Where(e => !e.IsDirectory).Select(e => e.Name).ToList();
+      Assert.That(names, Does.Not.Contain("a.txt"), "a.txt should be deleted");
+      Assert.That(names, Does.Contain("b.txt"), "b.txt should remain (replaced content)");
+      Assert.That(names, Does.Contain("c.txt"), "c.txt should remain unchanged");
+      Assert.That(names, Does.Contain("d.txt"), "d.txt should be added");
+    }
+  }
+
+  // ── XFS mutation — rebuild-style via XfsModifier ───────────────────
+
+  [Test]
+  public void Xfs_MutateThenValidate() {
+    RequireWslTool("xfs_repair");
+    var imgPath = Path.Combine(this._tmpDir, "xfs_mutate.img");
+
+    {
+      var w = new FileSystem.Xfs.XfsWriter();
+      w.AddFile("a.txt", DataA);
+      w.AddFile("b.txt", DataB);
+      w.AddFile("c.txt", DataC);
+      using var fs = File.Create(imgPath);
+      w.WriteTo(fs);
+    }
+
+    var r1 = FsInteropToolbox.RunWsl($"xfs_repair -n -f {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(r1.ExitCode, Is.EqualTo(0),
+      $"xfs initial image invalid:\nstdout:\n{r1.StdOut}\nstderr:\n{r1.StdErr}");
+
+    // Mutate: rebuild-style. Replace b, delete a, add d.
+    {
+      using var fs = File.Open(imgPath, FileMode.Open, FileAccess.ReadWrite);
+      FileSystem.Xfs.XfsModifier.Remove(fs, ["a.txt"]);
+    }
+    {
+      using var fs = File.Open(imgPath, FileMode.Open, FileAccess.ReadWrite);
+      FileSystem.Xfs.XfsModifier.AddOrReplace(fs, [("b.txt", DataBNew), ("d.txt", DataD)]);
+    }
+
+    var r2 = FsInteropToolbox.RunWsl($"xfs_repair -n -f {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(r2.ExitCode, Is.EqualTo(0),
+      $"xfs image invalid after mutation:\nstdout:\n{r2.StdOut}\nstderr:\n{r2.StdErr}");
+
+    using (var stream = File.OpenRead(imgPath)) {
+      var entries = new FileSystem.Xfs.XfsFormatDescriptor().List(stream, null);
+      var names = entries.Where(e => !e.IsDirectory).Select(e => e.Name).ToList();
+      Assert.That(names, Does.Not.Contain("a.txt"));
+      Assert.That(names, Does.Contain("b.txt"));
+      Assert.That(names, Does.Contain("c.txt"));
+      Assert.That(names, Does.Contain("d.txt"));
+    }
+  }
+
+  // ── Btrfs mutation — rebuild-style via BtrfsModifier ───────────────
+
+  [Test]
+  public void Btrfs_MutateThenValidate() {
+    RequireWslTool("btrfs");
+    var imgPath = Path.Combine(this._tmpDir, "btrfs_mutate.img");
+
+    {
+      var w = new FileSystem.Btrfs.BtrfsWriter();
+      w.AddFile("a.txt", DataA);
+      w.AddFile("b.txt", DataB);
+      w.AddFile("c.txt", DataC);
+      using var fs = File.Create(imgPath);
+      w.WriteTo(fs);
+    }
+
+    var r1 = FsInteropToolbox.RunWsl($"btrfs check --readonly {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(r1.ExitCode, Is.EqualTo(0),
+      $"btrfs initial image invalid:\nstdout:\n{r1.StdOut}\nstderr:\n{r1.StdErr}");
+
+    {
+      using var fs = File.Open(imgPath, FileMode.Open, FileAccess.ReadWrite);
+      FileSystem.Btrfs.BtrfsModifier.Remove(fs, ["a.txt"]);
+    }
+    {
+      using var fs = File.Open(imgPath, FileMode.Open, FileAccess.ReadWrite);
+      FileSystem.Btrfs.BtrfsModifier.AddOrReplace(fs, [("b.txt", DataBNew), ("d.txt", DataD)]);
+    }
+
+    var r2 = FsInteropToolbox.RunWsl($"btrfs check --readonly {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(r2.ExitCode, Is.EqualTo(0),
+      $"btrfs image invalid after mutation:\nstdout:\n{r2.StdOut}\nstderr:\n{r2.StdErr}");
+
+    using (var stream = File.OpenRead(imgPath)) {
+      var entries = new FileSystem.Btrfs.BtrfsFormatDescriptor().List(stream, null);
+      var names = entries.Where(e => !e.IsDirectory).Select(e => e.Name).ToList();
+      Assert.That(names, Does.Not.Contain("a.txt"));
+      Assert.That(names, Does.Contain("b.txt"));
+      Assert.That(names, Does.Contain("c.txt"));
+      Assert.That(names, Does.Contain("d.txt"));
+    }
+  }
+
+  // ── XFS regression test: 3 short-name files (reproducer for fixed sf_offset bug) ──
+
+  [Test]
+  public void Xfs_ThreeShortNameFiles_Regression() {
+    RequireWslTool("xfs_repair");
+    // Regression test for XfsWriter sf_offset bug (fixed). The writer used to
+    // advance sf_offset by the shortform entry size (nameLen+8 padded) instead
+    // of the data-block entry size (nameLen+12 padded). For name lengths 1..8
+    // that mismatch produced "entry contains offset out of order in shortform
+    // dir" under xfs_repair. Fix: XfsWriter.cs — see the comment at the
+    // `nextOffset = ...` update line.
+    var imgPath = Path.Combine(this._tmpDir, "xfs_shortnames.img");
+    var w = new FileSystem.Xfs.XfsWriter();
+    w.AddFile("a.txt", DataA);
+    w.AddFile("b.txt", DataB);
+    w.AddFile("c.txt", DataC);
+    using (var fs = File.Create(imgPath)) w.WriteTo(fs);
+
+    var result = FsInteropToolbox.RunWsl($"xfs_repair -n -f {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"xfs_repair rejected 3 short-name files:\n{result.StdOut}\n{result.StdErr}");
+  }
+
+  // ── Platform-only formats documented as non-WSL-validatable ────────
+
+  [Test]
+  public void Apfs_NoLinuxValidator_Skip() {
+    Assert.Ignore("APFS has no Linux fsck (apfs-fuse is read-only and not in apt). " +
+                  "Our APFS writer is self-validated only; Apple's apfs_fsck runs on macOS only.");
+  }
+
+  [Test]
+  public void Zfs_NoLinuxValidator_Skip() {
+    Assert.Ignore("ZFS zdb/zpool validators are tied to the zfsonlinux kernel module and not apt-installable " +
+                  "in a standard WSL Ubuntu. Our ZFS writer is self-validated only.");
+  }
+
+  [Test]
+  public void Mfs_NoLinuxValidator_Skip() {
+    Assert.Ignore("Classic Mac MFS has no Linux validator. Self-validated only.");
+  }
+
+  [Test]
+  public void HfsClassic_NoLinuxValidator_Skip() {
+    Assert.Ignore("Classic HFS (not HFS+) has no Linux fsck. " +
+                  "hfsutils reads but does not validate. Self-validated only.");
+  }
+
+  [Test]
+  public void HfsPlus_NoLinuxFsck_Skip() {
+    // Linux hfsprogs ships fsck.hfsplus but it's notoriously lenient and not apt-default.
+    // Our HFS+ writer targets macOS fsck_hfs which is the canonical validator.
+    Assert.Ignore("HFS+ canonical validator is macOS fsck_hfs. Linux hfsprogs fsck.hfsplus " +
+                  "is lenient and not installed by default. Self-validated only.");
+  }
+
+  // ── existing (kept below) ───────────────────────────────────────────
+
   [Test]
   public void Qcow2_OurImage_Listable7z() {
     FsInteropToolbox.Require7z();
@@ -365,6 +918,61 @@ internal static class FsInteropToolbox {
   public static bool DismAvailable { get; } = TryFromPath("dism") is not null;
   public static bool ChkdskAvailable { get; } = TryFromPath("chkdsk") is not null;
   public static bool MToolsAvailable { get; } = TryFromPath("minfo") is not null;
+  public static bool WslAvailable { get; } = DetectWsl();
+
+  private static readonly Dictionary<string, bool> _wslToolCache = new(StringComparer.Ordinal);
+
+  private static bool DetectWsl() {
+    if (!OperatingSystem.IsWindows()) return false;
+    var wslExe = TryFromPath("wsl");
+    if (wslExe is null) return false;
+    // `wsl --status` prints default distro info when a distro is installed;
+    // prints a setup prompt when WSL is shipped-but-not-configured.
+    var status = RunExact(wslExe, "--status");
+    return status.ExitCode == 0 && !string.IsNullOrWhiteSpace(status.StdOut);
+  }
+
+  /// <summary>
+  /// Checks whether the named Linux tool (e.g. <c>fsck.ext4</c>, <c>btrfs</c>)
+  /// is installed in the default WSL distro. Results are cached per tool name.
+  /// </summary>
+  public static bool WslHasTool(string tool) {
+    if (!WslAvailable) return false;
+    if (_wslToolCache.TryGetValue(tool, out var cached)) return cached;
+    // `command -v` returns 0 and prints path if present, 1 otherwise; works in any POSIX shell.
+    var result = RunWsl($"command -v {tool}");
+    var found = result.ExitCode == 0 && !string.IsNullOrWhiteSpace(result.StdOut);
+    _wslToolCache[tool] = found;
+    return found;
+  }
+
+  /// <summary>
+  /// Executes <paramref name="linuxCommand"/> inside the default WSL distro
+  /// (as a single <c>bash -c</c> invocation so shell metacharacters work).
+  /// Single-quote paths inside the command for literal arg boundaries —
+  /// Windows CreateProcess groups via the outer double-quotes, bash parses
+  /// the single-quotes inside.
+  /// </summary>
+  public static (string StdOut, string StdErr, int ExitCode) RunWsl(string linuxCommand) {
+    var wsl = TryFromPath("wsl") ?? "wsl";
+    var dqEscaped = linuxCommand.Replace("\"", "\\\"");
+    return RunExact(wsl, $"-e bash -c \"{dqEscaped}\"");
+  }
+
+  /// <summary>
+  /// Converts a Windows path (e.g. <c>C:\Users\x\foo</c>) to its WSL
+  /// equivalent (<c>/mnt/c/Users/x/foo</c>). Paths with spaces are
+  /// wrapped in single-quotes by the caller via <see cref="RunWsl"/>.
+  /// </summary>
+  public static string WinToWsl(string winPath) {
+    if (string.IsNullOrEmpty(winPath)) return winPath;
+    var full = Path.GetFullPath(winPath);
+    if (full.Length < 2 || full[1] != ':') return full.Replace('\\', '/');
+    var drive = char.ToLowerInvariant(full[0]);
+    var tail = full[2..].Replace('\\', '/');
+    // Single-quote the whole thing so spaces are handled when passed to bash -c.
+    return $"'/mnt/{drive}{tail}'";
+  }
 
   public static void Require7z() {
     if (!SevenZipAvailable)

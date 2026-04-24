@@ -40,21 +40,21 @@ public class BtrfsTests {
     // ── Superblock ──────────────────────────────────────────────────
     var sb = img.AsSpan(sbOffset);
 
-    // Magic at offset 64
-    "_BHRfS_M"u8.CopyTo(sb.Slice(64));
+    // Magic at offset 0x40 (64)
+    "_BHRfS_M"u8.CopyTo(sb.Slice(0x40));
 
-    // Root tree logical address at offset 80
-    BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(80), rootTreeOffset);
-    // Chunk tree logical address at offset 88
-    BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(88), chunkTreeOffset);
-    // Sector size at offset 128
-    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(128), sectorSize);
-    // Node size at offset 132
-    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(132), nodeSize);
-    // Leaf size at offset 136
-    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(136), nodeSize);
-    // sys_chunk_array size at offset 196 = 0 (we use identity mapping)
-    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(196), 0);
+    // Root tree logical address at offset 0x50 (80)
+    BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(0x50), rootTreeOffset);
+    // Chunk tree logical address at offset 0x58 (88)
+    BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(0x58), chunkTreeOffset);
+    // Sector size at offset 0x90 (144)
+    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(0x90), sectorSize);
+    // Node size at offset 0x94 (148)
+    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(0x94), nodeSize);
+    // Leaf size at offset 0x98 (152)
+    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(0x98), nodeSize);
+    // sys_chunk_array size at offset 0xA0 (160) = 0 (we use identity mapping)
+    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(0xA0), 0);
 
     // ── Chunk tree (identity mapping) ───────────────────────────────
     // Single chunk item mapping [0, imageSize) -> [0, imageSize) (identity)
@@ -230,21 +230,16 @@ public class BtrfsTests {
 
   private static void WriteNodeHeader(byte[] img, int offset, int nodeSize,
       int nritems, int level, int owner) {
-    // Checksum: 32 bytes (zeros for test)
-    // FS UUID: 16 bytes (zeros)
-    // Bytenr at offset 48
+    // btrfs_header layout (fs/btrfs/ctree.h):
+    //   0 csum[32], 32 fsid[16], 48 bytenr(u64), 56 flags(u64),
+    //   64 chunk_tree_uuid[16], 80 generation(u64), 88 owner(u64),
+    //   96 nritems(u32), 100 level(u8) — total 101 bytes.
     BinaryPrimitives.WriteInt64LittleEndian(img.AsSpan(offset + 48), offset);
-    // Flags at offset 56
-    BinaryPrimitives.WriteInt64LittleEndian(img.AsSpan(offset + 56), 1);
-    // Magic not in node header (only superblock has it)
-    // Generation at offset 72
-    BinaryPrimitives.WriteInt64LittleEndian(img.AsSpan(offset + 72), 1);
-    // Owner at offset 80
-    BinaryPrimitives.WriteInt64LittleEndian(img.AsSpan(offset + 80), owner);
-    // nritems at offset 88
-    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(offset + 88), (uint)nritems);
-    // Level at offset 92
-    img[offset + 92] = (byte)level;
+    BinaryPrimitives.WriteInt64LittleEndian(img.AsSpan(offset + 56), 1);       // flags = WRITTEN
+    BinaryPrimitives.WriteInt64LittleEndian(img.AsSpan(offset + 80), 1);       // generation
+    BinaryPrimitives.WriteInt64LittleEndian(img.AsSpan(offset + 88), owner);   // owner
+    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(offset + 96), (uint)nritems);
+    img[offset + 100] = (byte)level;
   }
 
   // ── Tests ──────────────────────────────────────────────────────────────
@@ -354,12 +349,14 @@ public class BtrfsTests {
 
   [Test, Category("EdgeCase")]
   public void Superblock_Only_NoFiles() {
-    // Minimal valid superblock with no entries
-    var img = new byte[0x10000 + 4096 * 4];
+    // Minimal valid superblock with no entries. The reader requires the
+    // image to be large enough to cover sys_chunk_array (0x32B + 4 bytes
+    // past the superblock base).
+    var img = new byte[0x10000 + 0x32B + 16];
     "_BHRfS_M"u8.CopyTo(img.AsSpan(0x10040));
-    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(0x10000 + 128), 512);  // sector size
-    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(0x10000 + 132), 4096); // node size
-    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(0x10000 + 196), 0);    // no sys_chunk_array
+    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(0x10000 + 0x90), 512);  // sector size
+    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(0x10000 + 0x94), 4096); // node size
+    BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(0x10000 + 0xA0), 0);    // no sys_chunk_array
     // root tree / chunk tree point to invalid locations — should parse with 0 entries
     using var ms = new MemoryStream(img);
     var reader = new FileSystem.Btrfs.BtrfsReader(ms);
@@ -431,9 +428,9 @@ public class BtrfsTests {
     w.WriteTo(ms);
     var image = ms.ToArray();
 
-    // FS tree leaf block is at 0x30000 (see BtrfsWriter.FsTreeOff) and has
+    // FS tree leaf block is at 0x50000 (see BtrfsWriter.FsTreeOff) and has
     // block size = NodeSize = 16384.
-    const int fsTreeOff = 0x30000;
+    const int fsTreeOff = 0x50000;
     const int nodeSize = 16384;
 
     var storedCrc = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(fsTreeOff, 4));
@@ -506,16 +503,16 @@ public class BtrfsTests {
     w.WriteTo(ms);
     var image = ms.ToArray();
 
-    // Superblock bytes 88..96 (chunk_root_logical) must be a valid offset,
+    // Superblock chunk_root at spec offset 0x58 (88) must be a valid offset,
     // NOT the sentinel 0x7FFFFFFF the old obsolete writer used.
-    var chunkRoot = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(0x10000 + 88));
+    var chunkRoot = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(0x10000 + 0x58));
     Assert.That(chunkRoot, Is.GreaterThan(0));
     Assert.That(chunkRoot, Is.LessThan(image.Length - 100));
     // Block at that offset must be inside the image and start with a
-    // valid node header (nritems > 0 at offset 88 after csum/fsid).
-    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan((int)chunkRoot + 88));
+    // valid node header (nritems > 0 at offset 96 per btrfs_header spec).
+    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan((int)chunkRoot + 96));
     Assert.That(nritems, Is.GreaterThanOrEqualTo(1), "chunk tree leaf must have ≥1 CHUNK_ITEM");
-    Assert.That(image[(int)chunkRoot + 92], Is.EqualTo((byte)0), "chunk tree must be a leaf (level 0)");
+    Assert.That(image[(int)chunkRoot + 100], Is.EqualTo((byte)0), "chunk tree must be a leaf (level 0)");
   }
 
   [Test, Category("RealWorld")]
@@ -526,14 +523,29 @@ public class BtrfsTests {
     w.WriteTo(ms);
     var image = ms.ToArray();
 
-    // sys_chunk_array_size at sbOffset+196 (reader's offset).
-    var size = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(0x10000 + 196));
+    // sys_chunk_array_size at spec offset 0xA0 (160) per fs/btrfs/ctree.h.
+    var size = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(0x10000 + 0xA0));
     Assert.That(size, Is.EqualTo(17 + 48 + 32));
-    // First 8 bytes of the array = key.objectid = 256.
-    var keyObjId = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(0x10000 + 299));
+    // First 8 bytes of the array (at spec offset 0x32B) = key.objectid = 256.
+    var keyObjId = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(0x10000 + 0x32B));
     Assert.That(keyObjId, Is.EqualTo(256));
     // Key.type = CHUNK_ITEM = 228.
-    Assert.That(image[0x10000 + 299 + 8], Is.EqualTo((byte)228));
+    Assert.That(image[0x10000 + 0x32B + 8], Is.EqualTo((byte)228));
+  }
+
+  [Test, Category("RealWorld")]
+  public void Writer_CsumTypeIsZero() {
+    // Regression: earlier writer clobbered csum_type at 0xC4 with the sys
+    // chunk array length (97), causing btrfs check to reject the image with
+    // "unsupported checksum algorithm 97". Must stay 0 (CRC-32C).
+    var w = new FileSystem.Btrfs.BtrfsWriter();
+    w.AddFile("x.txt", "hello"u8.ToArray());
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    var image = ms.ToArray();
+    var csumType = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(0x10000 + 0xC4));
+    Assert.That(csumType, Is.EqualTo((ushort)0),
+      $"csum_type must be 0 (CRC-32C) — got {csumType}");
   }
 
   [Test, Category("RealWorld")]
@@ -544,21 +556,26 @@ public class BtrfsTests {
     w.WriteTo(ms);
     var image = ms.ToArray();
 
-    // Read chunk tree leaf at chunk_root and count CHUNK_ITEM entries.
-    var chunkRoot = (int)BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(0x10000 + 88));
-    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(chunkRoot + 88));
-    Assert.That(nritems, Is.EqualTo(3u),
-      "chunk tree must have exactly three chunks: SYSTEM, METADATA, DATA");
+    // Read chunk tree leaf at chunk_root (spec offset 0x58) and count CHUNK_ITEM entries.
+    // The chunk tree also contains one DEV_ITEM (type=216) before the CHUNK_ITEM
+    // entries (type=228), matching what mkfs.btrfs emits.
+    var chunkRoot = (int)BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(0x10000 + 0x58));
+    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(chunkRoot + 96));
 
-    // Verify each chunk's type flag bit.
+    var chunkItemCount = 0;
     var seenTypes = new List<ulong>();
     for (var i = 0; i < nritems; i++) {
       var itemOff = chunkRoot + 101 + i * 25;
+      var keyType = image[itemOff + 8];
+      if (keyType != 228) continue; // 228 = BTRFS_CHUNK_ITEM_KEY
+      chunkItemCount++;
       var dataOff = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(itemOff + 17));
       var dataPos = chunkRoot + 101 + (int)dataOff;
       var type = BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(dataPos + 24));
       seenTypes.Add(type);
     }
+    Assert.That(chunkItemCount, Is.EqualTo(3),
+      "chunk tree must have exactly three CHUNK_ITEM entries: SYSTEM, METADATA, DATA");
     Assert.That(seenTypes, Does.Contain(0x02UL), "SYSTEM chunk (0x02) missing");
     Assert.That(seenTypes, Does.Contain(0x04UL), "METADATA chunk (0x04) missing");
     Assert.That(seenTypes, Does.Contain(0x01UL), "DATA chunk (0x01) missing");
@@ -587,7 +604,7 @@ public class BtrfsTests {
     w.WriteTo(ms);
     var image = ms.ToArray();
 
-    var chunkRoot = (int)BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(0x10000 + 88));
+    var chunkRoot = (int)BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(0x10000 + 0x58));
     const int nodeSize = 16384;
     var storedCrc = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(chunkRoot, 4));
     var computed = Compression.Core.Checksums.Crc32.Compute(

@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Btrfs;
 
-public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
   // WORM-minimal writer constraints: a single leaf node holds ≤64 file
   // tuples (INODE_ITEM + DIR_INDEX + inline EXTENT_DATA). No chunk tree is
   // emitted — the reader's identity LogicalToPhysical fallback maps blocks.
@@ -68,5 +68,26 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
     }
     w.WriteTo(output);
+  }
+
+  /// <summary>
+  /// Rebuild-style add/replace (see <see cref="BtrfsModifier"/>). Emits a fresh
+  /// <c>btrfs check --readonly</c>-clean image over the old bytes.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    var toAdd = inputs
+      .Where(i => !i.IsDirectory)
+      .Select(i => (i.ArchiveName, File.ReadAllBytes(i.FullPath)))
+      .ToList();
+    BtrfsModifier.AddOrReplace(archive, toAdd);
+  }
+
+  /// <summary>
+  /// Rebuild-style remove (see <see cref="BtrfsModifier"/>). The removed file's
+  /// data does not survive into the rebuilt image because the new writer emits
+  /// a fresh superblock, chunk tree, and fs-tree leaf.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    BtrfsModifier.Remove(archive, entryNames);
   }
 }

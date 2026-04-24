@@ -64,7 +64,7 @@ public sealed class DoubleSpaceWriter {
   internal const int BitFatRegionBytes = 8192;         // 1 bit tracks 8 KB
 
   // ---- User inputs --------------------------------------------------------
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, byte[] Data, bool Compress)> _files = [];
   private CvfVariant _variant = CvfVariant.DoubleSpace60;
 
   /// <summary>Which CVF variant to produce (signatures and CvfVersion differ).</summary>
@@ -76,11 +76,27 @@ public sealed class DoubleSpaceWriter {
     set => _variant = value ? CvfVariant.DriveSpace62 : CvfVariant.DoubleSpace60;
   }
 
+  /// <summary>
+  /// When <c>true</c> (default), per-cluster JM/LZ compression is attempted
+  /// and the compressed payload is emitted whenever it shrinks the cluster.
+  /// Clusters that do not compress are stored raw (MDFAT flags = 1).
+  /// </summary>
+  public bool EnableCompression { get; set; } = true;
+
   /// <summary>Adds a file. <paramref name="name"/> may be a long filename; a VFAT LFN chain is emitted automatically.</summary>
-  public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data) => this.AddFile(name, data, compress: true);
+
+  /// <summary>
+  /// Adds a file with an explicit per-file compression opt-in. Use
+  /// <paramref name="compress"/>=<c>false</c> to force stored runs for that
+  /// file even when <see cref="EnableCompression"/> is on (useful for mixed
+  /// stored/compressed tests or for already-compressed payloads where LZ
+  /// would only waste CPU).
+  /// </summary>
+  public void AddFile(string name, byte[] data, bool compress) {
     ArgumentException.ThrowIfNullOrEmpty(name);
     ArgumentNullException.ThrowIfNull(data);
-    this._files.Add((name, data));
+    this._files.Add((name, data, compress));
   }
 
   // =========================================================================
@@ -156,7 +172,7 @@ public sealed class DoubleSpaceWriter {
 
     // Step 6 — build the DATA region and populate MDFAT / BitFAT.
     var innerDataOffset = innerFirstDataSector * BytesPerSector;
-    BuildDataRegion(disk, innerFatOffset, innerFatPlan, innerDataOffset,
+    this.BuildDataRegion(disk, innerFatOffset, innerFatPlan, innerDataOffset,
       mdfatStart, bitFatStart, dataStart, maxDataSectors);
 
     // Step 7 — mirror FAT1 to FAT2.
@@ -242,7 +258,7 @@ public sealed class DoubleSpaceWriter {
   private (int TotalClusters, int EntriesUsed) BudgetInnerVolume() {
     var clusters = 0;
     var entries = 0;
-    foreach (var (name, data) in this._files) {
+    foreach (var (name, data, _) in this._files) {
       var cNeeded = Math.Max(1, (data.Length + ClusterBytes - 1) / ClusterBytes);
       clusters += cNeeded;
       var lfnEntries = NeedsLfn(name) ? (name.Length + 12) / 13 : 0;
@@ -252,14 +268,14 @@ public sealed class DoubleSpaceWriter {
   }
 
   /// <summary>One physical file occupying a contiguous FAT chain.</summary>
-  private readonly record struct PlannedFile(string Name, byte[] Data, int FirstCluster, int ClusterCount);
+  private readonly record struct PlannedFile(string Name, byte[] Data, int FirstCluster, int ClusterCount, bool Compress);
 
   private List<PlannedFile> WriteRootDirectoryAndAssignClusters(byte[] disk, int rootOffset, int innerTotalClusters) {
     var plan = new List<PlannedFile>();
     var dirPos = rootOffset;
     var nextCluster = 2;
 
-    foreach (var (name, data) in this._files) {
+    foreach (var (name, data, compress) in this._files) {
       var clustersNeeded = Math.Max(1, (data.Length + ClusterBytes - 1) / ClusterBytes);
       if (nextCluster + clustersNeeded > innerTotalClusters) break; // out of room
 
@@ -273,7 +289,7 @@ public sealed class DoubleSpaceWriter {
       WriteShortEntry(disk, dirPos, shortName, nextCluster, data.Length);
       dirPos += 32;
 
-      plan.Add(new PlannedFile(name, data, nextCluster, clustersNeeded));
+      plan.Add(new PlannedFile(name, data, nextCluster, clustersNeeded, compress));
       nextCluster += clustersNeeded;
     }
 
@@ -392,17 +408,18 @@ public sealed class DoubleSpaceWriter {
   //                              DATA region
   // =========================================================================
 
-  private static void BuildDataRegion(
+  private void BuildDataRegion(
     byte[] disk, int innerFatOffset, List<PlannedFile> files, int innerDataOffset,
     int mdfatStart, int bitFatStart, int dataStart, int dataSectors) {
 
     var physSectorPos = 0; // offset in sectors within the DATA region
     var clusterBytes = new byte[ClusterBytes];
+    var useDriveSpace = this._variant != CvfVariant.DoubleSpace60;
 
     foreach (var file in files) {
-      // Walk the file's cluster chain. For each cluster, emit a stored run
-      // of exactly ClusterBytes contents (zero-padded for the final cluster)
-      // and mark MDFAT + inner FAT entries.
+      // Walk the file's cluster chain. For each cluster, emit either a
+      // compressed run (MDFAT flags = 2) or a stored run (MDFAT flags = 1)
+      // — the reader dispatches on the per-run 2-byte CVF header bit 15.
       var data = file.Data;
       for (var c = 0; c < file.ClusterCount; c++) {
         var cluster = file.FirstCluster + c;
@@ -420,15 +437,25 @@ public sealed class DoubleSpaceWriter {
         if (innerClusterOffset + ClusterBytes <= disk.Length)
           clusterBytes.CopyTo(disk.AsSpan(innerClusterOffset));
 
-        // Emit a stored DS compression run — header bit 15 clear, size-1.
-        // size field encodes chunkLen (original bytes) so reader only restores
-        // the significant tail. Cluster padding is implicit at read time.
         var validChunk = Math.Max(1, chunkLen);
-        var block = DsCompression.Compress(data.AsSpan(offsetInFile, validChunk));
-        // Force stored (in case compression was somehow accepted): if the
-        // compression path produced a compressed block, rewrite as stored so
-        // MDFAT flags stay consistent.
-        block = ForceStoredEncoding(data.AsSpan(offsetInFile, validChunk));
+        var rawSpan = data.AsSpan(offsetInFile, validChunk);
+
+        // Decide stored vs. compressed for this cluster. Compression is only
+        // attempted when globally enabled, per-file opted-in, and the cluster
+        // has >=32 bytes of real data (tiny inputs rarely shrink usefully).
+        byte[] block;
+        uint flagsNibble;
+        if (this.EnableCompression && file.Compress && validChunk >= 32) {
+          block = useDriveSpace
+            ? DsCompression.CompressDriveSpace(rawSpan)
+            : DsCompression.Compress(rawSpan);
+          var headerWord = (ushort)(block[0] | (block[1] << 8));
+          var wasCompressed = (headerWord & 0x8000) != 0;
+          flagsNibble = wasCompressed ? 0x2u : 0x1u;
+        } else {
+          block = WrapStoredRun(rawSpan);
+          flagsNibble = 0x1u;
+        }
 
         var runStartSector = physSectorPos;
         var runSectors = (block.Length + BytesPerSector - 1) / BytesPerSector;
@@ -443,7 +470,7 @@ public sealed class DoubleSpaceWriter {
         // bits 21..27 run length in sectors, bits 28..31 flags.
         var mdfatEntry = ((uint)runStartSector & 0x1FFFFFu)
           | (((uint)runSectors & 0x7Fu) << 21)
-          | (0x1u << 28); // flags = stored
+          | (flagsNibble << 28);
         var mdfatEntryOffset = mdfatStart * BytesPerSector + cluster * 4;
         BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(mdfatEntryOffset), mdfatEntry);
 
@@ -468,11 +495,11 @@ public sealed class DoubleSpaceWriter {
   }
 
   /// <summary>
-  /// Emits a DS-compression block with the <b>stored</b> flag (bit 15 clear).
-  /// The JM/DSS LZ variant is intentionally not produced yet — see class
-  /// docstring. Reader accepts stored runs without any LZ decoding pass.
+  /// Emits a stored CVF run (2-byte header, bit 15 clear, size-1 in low bits)
+  /// followed by the raw bytes. Used when compression is disabled for a
+  /// cluster or when the compressed form would not shrink the data.
   /// </summary>
-  private static byte[] ForceStoredEncoding(ReadOnlySpan<byte> input) {
+  private static byte[] WrapStoredRun(ReadOnlySpan<byte> input) {
     if (input.Length == 0) return [0x00, 0x00];
     var result = new byte[2 + input.Length];
     var header = (ushort)(input.Length - 1);

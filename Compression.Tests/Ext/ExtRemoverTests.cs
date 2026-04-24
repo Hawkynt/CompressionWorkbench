@@ -85,8 +85,9 @@ public class ExtRemoverTests {
   public void InodeBytesAreZeroedAfterRemove() {
     var image = BuildImageWith(("only.bin", new byte[500]));
 
-    // File inode is #3 (index 2). Inode table at block firstDataBlock(1) + 4 = 5.
-    const int fileInodeOffset = 5 * 1024 + 2 * 128;
+    // First user file inode = #11 (inodes 1..10 reserved per EXT2_GOOD_OLD_FIRST_INO).
+    // Index in the inode table = 10. Inode table at block firstDataBlock(1)+4 = 5.
+    const int fileInodeOffset = 5 * 1024 + 10 * 128;
     var fileInodeBefore = image.AsSpan(fileInodeOffset, 128).ToArray();
     Assert.That(fileInodeBefore.Any(b => b != 0), Is.True, "precondition: inode has content");
 
@@ -102,7 +103,8 @@ public class ExtRemoverTests {
     var image = BuildImageWith(("chunky.bin", new byte[3000])); // 3 blocks @ 1K
 
     // Find which blocks the file used — direct pointers at inode offsets 40..84.
-    const int fileInodeOffset = 5 * 1024 + 2 * 128;
+    // First user inode is #11, table index 10.
+    const int fileInodeOffset = 5 * 1024 + 10 * 128;
     var directBlocks = new List<uint>();
     for (var i = 0; i < 12; i++) {
       var bn = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
@@ -112,17 +114,21 @@ public class ExtRemoverTests {
     }
     Assert.That(directBlocks, Is.Not.Empty);
 
+    // Block bitmap bit N represents block (firstDataBlock(1) + N).
     const int blockBitmapOffset = 3 * 1024; // firstDataBlock(1) + 2 = block 3
+    const int firstDataBlock = 1;
     foreach (var bn in directBlocks) {
-      var bit = (image[blockBitmapOffset + (int)bn / 8] >> ((int)bn % 8)) & 1;
-      Assert.That(bit, Is.EqualTo(1), $"block {bn} should be marked used before remove");
+      var bit = (int)bn - firstDataBlock;
+      var set = (image[blockBitmapOffset + bit / 8] >> (bit % 8)) & 1;
+      Assert.That(set, Is.EqualTo(1), $"block {bn} should be marked used before remove");
     }
 
     ExtRemover.Remove(image, "chunky.bin");
 
     foreach (var bn in directBlocks) {
-      var bit = (image[blockBitmapOffset + (int)bn / 8] >> ((int)bn % 8)) & 1;
-      Assert.That(bit, Is.EqualTo(0), $"block {bn} should be freed in bitmap after remove");
+      var bit = (int)bn - firstDataBlock;
+      var set = (image[blockBitmapOffset + bit / 8] >> (bit % 8)) & 1;
+      Assert.That(set, Is.EqualTo(0), $"block {bn} should be freed in bitmap after remove");
     }
   }
 
@@ -130,15 +136,15 @@ public class ExtRemoverTests {
   public void InodeBitmapBitClearedAfterRemove() {
     var image = BuildImageWith(("solo.txt", new byte[50]));
 
-    // Inode #3 = bit index 2.
+    // First user inode = #11 = bit index 10.
     const int inodeBitmapOffset = 4 * 1024;
-    var bitBefore = (image[inodeBitmapOffset] >> 2) & 1;
-    Assert.That(bitBefore, Is.EqualTo(1), "precondition: inode 3 marked used");
+    var bitBefore = (image[inodeBitmapOffset + 1] >> 2) & 1; // bit 10 = byte 1 bit 2
+    Assert.That(bitBefore, Is.EqualTo(1), "precondition: inode 11 marked used");
 
     ExtRemover.Remove(image, "solo.txt");
 
-    var bitAfter = (image[inodeBitmapOffset] >> 2) & 1;
-    Assert.That(bitAfter, Is.EqualTo(0), "inode 3 bit must be cleared after remove");
+    var bitAfter = (image[inodeBitmapOffset + 1] >> 2) & 1;
+    Assert.That(bitAfter, Is.EqualTo(0), "inode 11 bit must be cleared after remove");
   }
 
   [Test]

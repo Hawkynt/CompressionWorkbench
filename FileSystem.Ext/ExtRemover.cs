@@ -118,9 +118,11 @@ public static class ExtRemover {
     // --- Zero the inode bytes entirely ---
     fileInode.Clear();
 
-    // --- Clear the bits in the block bitmap for each freed data block ---
+    // --- Clear the bits in the block bitmap for each freed data block.
+    //     Bitmap bit N refers to block (firstDataBlock + N), so we must
+    //     subtract firstDataBlock before indexing. ---
     foreach (var bn in dataBlocks)
-      ClearBitmapBit(image, blockBitmapOffset, (int)bn);
+      ClearBitmapBit(image, blockBitmapOffset, (int)bn - (int)firstDataBlock);
 
     // --- Clear the bit in the inode bitmap for the freed inode ---
     ClearBitmapBit(image, inodeBitmapOffset, (int)(victimInode - 1));

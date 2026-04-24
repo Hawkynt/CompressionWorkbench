@@ -51,22 +51,30 @@ public sealed class BtrfsReader : IDisposable {
   }
 
   private void Parse() {
-    // Superblock is at offset 0x10000 (65536)
+    // Superblock is at offset 0x10000 (65536). Canonical offsets per
+    // fs/btrfs/ctree.h btrfs_super_block:
+    //   0x40 magic[8], 0x50 root, 0x58 chunk_root,
+    //   0x90 sectorsize, 0x94 nodesize, 0xA0 sys_chunk_array_size,
+    //   0x32B sys_chunk_array[2048].
+    // Historical versions of this reader inspected sbOffset+{80,88,128,132,
+    // 196,299}; those offsets collided with csum_type (0xC4) and were replaced
+    // with the spec-compliant locations below.
     const int sbOffset = 0x10000;
+    const int sysChunkArrayOffset = sbOffset + 0x32B;
 
-    if (_data.Length < sbOffset + 300)
+    if (_data.Length < sysChunkArrayOffset + 4)
       throw new InvalidDataException("Btrfs: image too small for superblock.");
 
-    // Validate magic at superblock + 64
-    if (!_data.AsSpan(sbOffset + 64, 8).SequenceEqual(Magic))
+    // Validate magic at superblock + 0x40
+    if (!_data.AsSpan(sbOffset + 0x40, 8).SequenceEqual(Magic))
       throw new InvalidDataException("Btrfs: invalid magic.");
 
-    // Parse superblock fields
-    _rootTreeLogical = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(sbOffset + 80));
-    _chunkTreeLogical = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(sbOffset + 88));
-    _sectorSize = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(sbOffset + 128));
-    _nodeSize = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(sbOffset + 132));
-    _sysChunkArraySize = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(sbOffset + 196));
+    // Parse superblock fields at canonical offsets
+    _rootTreeLogical = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(sbOffset + 0x50));
+    _chunkTreeLogical = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(sbOffset + 0x58));
+    _sectorSize = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(sbOffset + 0x90));
+    _nodeSize = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(sbOffset + 0x94));
+    _sysChunkArraySize = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(sbOffset + 0xA0));
 
     if (_nodeSize == 0 || _nodeSize > 65536)
       _nodeSize = 16384;
@@ -74,7 +82,7 @@ public sealed class BtrfsReader : IDisposable {
       _sectorSize = 4096;
 
     // Step 1: Parse sys_chunk_array from superblock to build initial chunk map
-    ParseSysChunkArray(sbOffset + 299);
+    ParseSysChunkArray(sysChunkArrayOffset);
 
     // Step 2: Read chunk tree to extend the chunk map
     ReadChunkTree();
@@ -134,8 +142,9 @@ public sealed class BtrfsReader : IDisposable {
     if (physical < 0 || physical + 101 > _data.Length) return;
     var offset = (int)physical;
 
-    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset + 88));
-    var level = _data[offset + 92];
+    // btrfs_header: nritems (u32) at offset 96, level (u8) at offset 100.
+    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset + 96));
+    var level = _data[offset + 100];
 
     if (level > 0) {
       // Internal node: key(17) + blockptr(8) + generation(8) = 33 bytes per item
@@ -222,8 +231,9 @@ public sealed class BtrfsReader : IDisposable {
     if (physical < 0 || physical + 101 > _data.Length) return -1;
     var offset = (int)physical;
 
-    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset + 88));
-    var level = _data[offset + 92];
+    // btrfs_header: nritems (u32) at offset 96, level (u8) at offset 100.
+    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset + 96));
+    var level = _data[offset + 100];
 
     if (level > 0) {
       // Internal node: search children
@@ -275,8 +285,9 @@ public sealed class BtrfsReader : IDisposable {
     if (physical < 0 || physical + 101 > _data.Length) return;
     var offset = (int)physical;
 
-    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset + 88));
-    var level = _data[offset + 92];
+    // btrfs_header: nritems (u32) at offset 96, level (u8) at offset 100.
+    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset + 96));
+    var level = _data[offset + 100];
 
     if (level > 0) {
       for (uint i = 0; i < nritems && i < 1000; i++) {
@@ -339,8 +350,9 @@ public sealed class BtrfsReader : IDisposable {
     if (physical < 0 || physical + 101 > _data.Length) return;
     var offset = (int)physical;
 
-    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset + 88));
-    var level = _data[offset + 92];
+    // btrfs_header: nritems (u32) at offset 96, level (u8) at offset 100.
+    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset + 96));
+    var level = _data[offset + 100];
 
     if (level > 0) {
       for (uint i = 0; i < nritems && i < 1000; i++) {
@@ -415,8 +427,9 @@ public sealed class BtrfsReader : IDisposable {
     if (physical < 0 || physical + 101 > _data.Length) return;
     var offset = (int)physical;
 
-    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset + 88));
-    var level = _data[offset + 92];
+    // btrfs_header: nritems (u32) at offset 96, level (u8) at offset 100.
+    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset + 96));
+    var level = _data[offset + 100];
 
     if (level > 0) {
       for (uint i = 0; i < nritems && i < 1000; i++) {
