@@ -18,6 +18,10 @@ public sealed class XfsReader : IDisposable {
   private uint _agCount;
   private byte _agBlkLog;
   private ushort _versionNum;
+  private uint _featuresIncompat;
+
+  private const uint XfsFeatIncompatFtype = 0x1;
+  private bool HasFtype => (this._featuresIncompat & XfsFeatIncompatFtype) != 0;
 
   public IReadOnlyList<XfsEntry> Entries => _entries;
 
@@ -43,6 +47,10 @@ public sealed class XfsReader : IDisposable {
     _versionNum = BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(100));
     _inodeSize = BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(104));
     _agBlkLog = _data[124];
+    // sb_features_incompat lives at offset 216 on v5 superblocks. Only read
+    // when sb is v5 (low nibble of sb_versionnum == 5); otherwise leave zero.
+    if ((_versionNum & 0xF) >= 5 && _data.Length >= 220)
+      _featuresIncompat = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(216));
 
     if (_blockSize == 0) _blockSize = 4096;
     if (_inodeSize == 0) _inodeSize = 256;
@@ -115,7 +123,10 @@ public sealed class XfsReader : IDisposable {
       var name = Encoding.UTF8.GetString(_data, pos + 3, nameLen);
 
       ulong childIno;
-      var inoPos = pos + 3 + nameLen;
+      // With the FTYPE feature, each sf entry inserts a 1-byte ftype between
+      // the filename and the inode number.
+      var ftypeLen = this.HasFtype ? 1 : 0;
+      var inoPos = pos + 3 + nameLen + ftypeLen;
       if (i < count && i8count == 0) {
         // 4-byte inode
         if (inoPos + 4 > _data.Length) break;

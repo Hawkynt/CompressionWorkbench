@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Xfs;
 
-public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
   // WORM write constraints — XFS has no inherent ceiling; real mkfs.xfs minimum ≈ 16 MB.
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 16 * 1024 * 1024;
@@ -51,5 +51,26 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
     }
     w.WriteTo(output);
+  }
+
+  /// <summary>
+  /// Rebuild-style add/replace (see <see cref="XfsModifier"/>). Emits a fresh
+  /// <c>xfs_repair -n -f</c>-clean image over the old bytes.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    var toAdd = inputs
+      .Where(i => !i.IsDirectory)
+      .Select(i => (i.ArchiveName, File.ReadAllBytes(i.FullPath)))
+      .ToList();
+    XfsModifier.AddOrReplace(archive, toAdd);
+  }
+
+  /// <summary>
+  /// Rebuild-style remove (see <see cref="XfsModifier"/>). The removed file's
+  /// data does not survive into the rebuilt image because the new writer emits
+  /// a fresh superblock, AGF/AGI, and inode table.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    XfsModifier.Remove(archive, entryNames);
   }
 }

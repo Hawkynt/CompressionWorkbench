@@ -129,8 +129,10 @@ public class ExtTests {
     var freeBlocks = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(sb[12..]);
     var freeInodes = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(sb[16..]);
 
-    // 2 reserved + 2 files = 4 used → 124 free (for the default 128 inodes-per-group).
-    Assert.That(freeInodes, Is.EqualTo(inodesCount - 4));
+    // 10 reserved (inodes 1..10 per EXT2_GOOD_OLD_FIRST_INO) + 2 files = 12 used
+    // → 116 free (for the default 128 inodes-per-group). Reserving 1..10
+    // matches what mkfs.ext4 emits; without it fsck rejects user inodes at 3..10.
+    Assert.That(freeInodes, Is.EqualTo(inodesCount - 12));
     // freeBlocks must be strictly between 0 and totalBlocks, never zero for a mostly-empty disk.
     Assert.That(freeBlocks, Is.GreaterThan(0));
     Assert.That(freeBlocks, Is.LessThan(blocksCount));
@@ -149,7 +151,7 @@ public class ExtTests {
     var usedDirs = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(bgd[16..]);
 
     Assert.That(bgdFreeBlocks, Is.GreaterThan(0));
-    Assert.That(bgdFreeInodes, Is.EqualTo(125)); // 128 - 2 reserved - 1 file
+    Assert.That(bgdFreeInodes, Is.EqualTo(117)); // 128 - 10 reserved - 1 file
     Assert.That(usedDirs, Is.EqualTo(1));         // root
   }
 
@@ -162,9 +164,10 @@ public class ExtTests {
 
     // Inode table starts at block firstDataBlock+4 = 5 (1K blocks).
     var inodeTable = img.AsSpan(5 * 1024);
-    // Root inode (#2) = index 1, file inode (#3) = index 2.
+    // Root inode (#2) = index 1, first file inode (#11) = index 10.
+    // Inodes 3..10 are reserved per EXT2_GOOD_OLD_FIRST_INO.
     var root = inodeTable.Slice(1 * 128, 128);
-    var file = inodeTable.Slice(2 * 128, 128);
+    var file = inodeTable.Slice(10 * 128, 128);
 
     Assert.That(System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(root[26..]),
       Is.EqualTo(2), "root dir i_links_count should be 2");

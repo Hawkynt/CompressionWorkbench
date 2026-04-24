@@ -20,27 +20,51 @@ public sealed class ExtWriter {
 
   public byte[] Build(int blockSize = 1024, int totalBlocks = 4096) {
     const ushort ExtMagic = 0xEF53;
+    // EXT2_GOOD_OLD_FIRST_INO — first inode available for user files on a
+    // revision-0 (GOOD_OLD_REV) filesystem. Inodes 1..10 are reserved:
+    //   1=bad-blocks, 2=root, 3=ACL-idx (obsolete), 4=ACL-data (obsolete),
+    //   5=boot-loader, 6=undeleted-dir, 7=resize, 8=journal, 9=exclude,
+    //   10=replica.  e2fsck refuses to accept dirents pointing at 3..10.
+    const uint FirstUserInode = 11;
+    // EXT4 feature flags (fs/ext4/ext4.h).
+    const uint FeatureIncompatFiletype = 0x0002;
+    // Dynamic revision — required so s_inode_size / s_first_ino / feature
+    // flags are honoured by the kernel and fsck.
+    const uint RevLevelDynamic = 1;
 
     var firstDataBlock = blockSize == 1024 ? 1u : 0u;
     const int inodeSize = 128;
     const int inodesPerGroup = 128;
     var inodeTableBlocks = (inodesPerGroup * inodeSize + blockSize - 1) / blockSize;
-    var firstFreeBlock = (int)firstDataBlock + 5 + inodeTableBlocks;
+    // Metadata layout: SB(1) + BGD(1) + block_bitmap(1) + inode_bitmap(1) +
+    // inode_table(inodeTableBlocks). First free block = after all metadata.
+    var firstFreeBlock = (int)firstDataBlock + 4 + inodeTableBlocks;
     var disk = new byte[totalBlocks * blockSize];
     var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
-    // --- Block bitmap: mark all metadata blocks up through the inode-table tail as used ---
+    // --- Block bitmap: mark all metadata blocks up through the inode-table
+    //     tail as used. Bit N in the bitmap refers to block (firstDataBlock
+    //     + N), so blocks 0..firstDataBlock-1 (the boot-area slot on 1 KiB
+    //     filesystems) are implicit and not tracked by any bit. ---
     var blockBitmapOffset = (int)(firstDataBlock + 2) * blockSize;
-    for (var b = 0; b < firstFreeBlock; ++b)
-      disk[blockBitmapOffset + b / 8] |= (byte)(1 << (b % 8));
+    for (var b = (int)firstDataBlock; b < firstFreeBlock; ++b) {
+      var bitIdx = b - (int)firstDataBlock;
+      disk[blockBitmapOffset + bitIdx / 8] |= (byte)(1 << (bitIdx % 8));
+    }
 
-    // --- Inode bitmap: inodes 1 (bad-blocks-reserved) and 2 (root) are pre-allocated ---
+    // --- Inode bitmap: inodes 1..(FirstUserInode-1) are all reserved;
+    // inode 2 (root) is actually in use. Bitmap bit i corresponds to
+    // inode (i+1). Set bits for inodes 1..10 so fsck doesn't flag "reserved
+    // inode in use but empty", which is the default mkfs.ext4 behaviour. ---
     var inodeBitmapOffset = (int)(firstDataBlock + 3) * blockSize;
-    disk[inodeBitmapOffset] = 0x03;
+    for (var ino = 1u; ino < FirstUserInode; ++ino) {
+      var idx = (int)(ino - 1);
+      disk[inodeBitmapOffset + idx / 8] |= (byte)(1 << (idx % 8));
+    }
 
     // --- Root directory + file inode allocation ---
     var inodeTableOffset = (int)(firstDataBlock + 4) * blockSize;
-    var nextInode = 3u;
+    var nextInode = FirstUserInode;
     var nextBlock = firstFreeBlock;
 
     var rootDirBlock = nextBlock++;
@@ -111,8 +135,10 @@ public sealed class ExtWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(rootIno[40..], (uint)rootDirBlock); // direct block 0
 
     // --- Free-count accounting (what fsck scrutinises) ---
-    // Total inodes = inodesPerGroup; used = 2 reserved + files added.
-    var usedInodes = 2 + (uint)fileInodes.Count;
+    // Total inodes = inodesPerGroup; used = (FirstUserInode-1) reserved
+    // inodes + files added. The reserved slots are "in use" as far as the
+    // inode bitmap is concerned — their bits are set above.
+    var usedInodes = (FirstUserInode - 1) + (uint)fileInodes.Count;
     var freeInodes = (uint)inodesPerGroup - usedInodes;
     // Used blocks = firstFreeBlock (metadata) + 1 (root dir) + sum of file blocks.
     var usedBlocks = (uint)nextBlock;
@@ -144,11 +170,19 @@ public sealed class ExtWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(sb[64..], now);                       // s_lastcheck
     BinaryPrimitives.WriteUInt32LittleEndian(sb[68..], 0);                         // s_checkinterval
     BinaryPrimitives.WriteUInt32LittleEndian(sb[72..], 0);                         // s_creator_os = Linux
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[76..], 0);                         // s_rev_level = GOOD_OLD_REV
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[76..], RevLevelDynamic);           // s_rev_level = DYNAMIC_REV
     BinaryPrimitives.WriteUInt16LittleEndian(sb[80..], 0);                         // s_def_resuid
     BinaryPrimitives.WriteUInt16LittleEndian(sb[82..], 0);                         // s_def_resgid
-    // Inode size appears at 88 only when rev_level >= 1, but writing it is harmless.
+    // Dynamic-rev extension fields start at offset 84. s_first_ino tells
+    // fsck which inode number user files may start at — without this set
+    // (default 11 for GOOD_OLD_REV), any dirent pointing at inodes 3..10
+    // is flagged as "invalid inode # reserved".
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[84..], FirstUserInode);            // s_first_ino
     BinaryPrimitives.WriteUInt16LittleEndian(sb[88..], inodeSize);                 // s_inode_size
+    // s_feature_incompat at offset 96. FILETYPE (0x0002) tells fsck that
+    // the dirent's file_type byte is authoritative; without this flag, any
+    // non-zero file_type is reported as corruption.
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[96..], FeatureIncompatFiletype);   // s_feature_incompat
 
     // UUID at offset 104 (16 bytes) — blkid/dumpe2fs rely on this to identify
     // the filesystem. The kernel accepts any non-zero UUID at rev 0 (it becomes
@@ -157,6 +191,18 @@ public sealed class ExtWriter {
     uuid.CopyTo(sb.Slice(104, 16));
     // Volume label at offset 120 (16 bytes) — optional, left empty. Last-mount
     // path at offset 136 (64 bytes) — also optional.
+
+    // --- Padding at the tail of each bitmap block must be set to 1 per
+    //     mkfs convention; fsck flags unset padding as a corruption hint. ---
+    var blockBitmapBits = totalBlocks - (int)firstDataBlock;
+    var blockBitmapBytes = blockSize;
+    for (var bit = blockBitmapBits; bit < blockBitmapBytes * 8; ++bit)
+      disk[blockBitmapOffset + bit / 8] |= (byte)(1 << (bit % 8));
+
+    var inodeBitmapBits = inodesPerGroup;
+    var inodeBitmapBytes = blockSize;
+    for (var bit = inodeBitmapBits; bit < inodeBitmapBytes * 8; ++bit)
+      disk[inodeBitmapOffset + bit / 8] |= (byte)(1 << (bit % 8));
 
     // --- Block Group Descriptor at block (firstDataBlock+1) — 32 bytes, reserved area zeroed ---
     var bgdOffset = (int)(firstDataBlock + 1) * blockSize;
@@ -184,6 +230,12 @@ public sealed class ExtWriter {
     return pos + entrySize;
   }
 
-  private static void MarkBlockUsed(byte[] disk, int bitmapOffset, int blockNum)
-    => disk[bitmapOffset + blockNum / 8] |= (byte)(1 << (blockNum % 8));
+  // Marks a block as "used" in the block bitmap. The bitmap's bit 0 refers
+  // to block (firstDataBlock), so the caller-supplied block number must be
+  // adjusted by firstDataBlock before indexing. Callers in this file always
+  // pass firstDataBlock=1 (1 KiB-block default) so we hard-code the bias.
+  private static void MarkBlockUsed(byte[] disk, int bitmapOffset, int blockNum, int firstDataBlock = 1) {
+    var bit = blockNum - firstDataBlock;
+    disk[bitmapOffset + bit / 8] |= (byte)(1 << (bit % 8));
+  }
 }

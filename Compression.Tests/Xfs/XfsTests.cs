@@ -227,9 +227,11 @@ public class XfsTests {
     w.WriteTo(ms);
     var image = ms.ToArray();
 
-    // v5 superblock declares XFS_SB_VERSION_5 (5) in sb_versionnum at offset 100.
-    var version = BinaryPrimitives.ReadUInt16BigEndian(image.AsSpan(100));
-    Assert.That(version, Is.EqualTo(5), "writer must emit v5 superblock");
+    // v5 superblock: the low nibble of sb_versionnum (offset 100, big-endian)
+    // is the VERSION_NUM field per XFS_SB_VERSION_NUMBITS = 0xF. The upper
+    // 12 bits hold feature flags; mkfs.xfs emits 0xB4A5 for a plain v5 fs.
+    var versionnum = BinaryPrimitives.ReadUInt16BigEndian(image.AsSpan(100));
+    Assert.That(versionnum & 0xF, Is.EqualTo(5), "writer must emit v5 superblock");
 
     // Superblock is hashed over the first sector (512 bytes) with sb_crc (offset 224) zeroed.
     const int sectorSize = 512;
@@ -254,12 +256,16 @@ public class XfsTests {
     w.WriteTo(ms);
     var image = ms.ToArray();
 
-    // Root inode sits at block 4, offset 0, size 256.
-    const int inodeBlock = 4;
+    // xfs_repair requires the root-inode chunk to sit at the agbno computed from
+    // XFS_PREALLOC_BLOCKS, which for our 4 KiB/256 B geometry is agbno 72. That
+    // puts rootino at inode number 72×16 = 1152 and the dinode at byte offset
+    // 72 × 4096 = 294 912. Slots 1 and 2 are sb_rbmino / sb_rsumino; user
+    // files occupy slots 3+.
+    const int inodeChunkBlock = 72;
     const int blockSize = 4096;
     const int inodeSize = 256;
     const int diCrcOffset = 100;
-    var ioff = inodeBlock * blockSize;
+    var ioff = inodeChunkBlock * blockSize;
 
     // di_version must be 3 for v5-capable CRCed inodes.
     Assert.That(image[ioff + 4], Is.EqualTo(3), "root inode di_version must be 3 on v5 images");
@@ -275,8 +281,9 @@ public class XfsTests {
     var recomputed = Crc32.Compute(inode, Crc32.Castagnoli);
     Assert.That(recomputed, Is.EqualTo(storedCrc), "di_crc does not match CRC-32C of inode with crc-field zeroed");
 
-    // Also verify the file inode (inode #65) which lives at ioff + inodeSize.
-    var fileIoff = ioff + inodeSize;
+    // The first user-file inode lives in slot 3 (slots 0=root, 1=rbmino, 2=rsumino).
+    const int firstFileSlot = 3;
+    var fileIoff = ioff + firstFileSlot * inodeSize;
     Assert.That(image[fileIoff + 4], Is.EqualTo(3));
     var fileStoredCrc = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(fileIoff + diCrcOffset));
     Assert.That(fileStoredCrc, Is.Not.EqualTo(0u));
