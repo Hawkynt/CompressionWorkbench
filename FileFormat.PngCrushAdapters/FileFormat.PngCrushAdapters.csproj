@@ -2,20 +2,31 @@
 
   <PropertyGroup>
     <RootNamespace>FileFormat.PngCrushAdapters</RootNamespace>
-    <!-- Cross-repo references targets net8.0 (PngCrushCS Directory.Build.props sets it explicitly per project).
-         Multi-target so consumers on net10.0 still work. -->
+    <!--
+      Adapter project for the sibling PngCrushCS repo. When that repo is checked
+      out at ..\..\PNGCrushCS, this project compiles the adapter sources and
+      pulls in its descriptors (Apng/Tiff/Mpo/etc.). When the sibling is
+      ABSENT (e.g. on CI runners), the project produces an empty assembly
+      so the .slnx still builds cleanly.
+    -->
+    <SiblingPresent>false</SiblingPresent>
+    <SiblingPresent Condition="Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj')">true</SiblingPresent>
+    <!-- Suppress default *.cs compile globbing when sibling is absent so adapter sources don't try to build. -->
+    <EnableDefaultCompileItems Condition="'$(SiblingPresent)' != 'true'">false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(SiblingPresent)' == 'true'">
     <!-- PngCrushCS's FileFormat.Png references System.IO.Hashing transitively; declare it
          here so the .NET 10 host can resolve the assembly at runtime. -->
     <PackageReference Include="System.IO.Hashing" Version="9.0.4" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
-    <!-- Cross-repo: PngCrushCS's image format library. ✱ Note: building requires the
-         sibling repo to be present at ..\..\PNGCrushCS. -->
+  <ItemGroup Condition="'$(SiblingPresent)' == 'true'">
+    <!-- Cross-repo: PngCrushCS's image format library. -->
     <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj" />
     <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Png\FileFormat.Png.csproj" />
     <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Bmp\FileFormat.Bmp.csproj" />
