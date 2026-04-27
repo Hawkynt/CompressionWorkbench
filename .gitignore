@@ -51,6 +51,10 @@ TestResult.xml
 *.meta
 *.obj
 *.iobj
+# C/C++ *.obj must not exclude the Wavefront-OBJ format project directory.
+# On Windows core.ignorecase=true matches "FileFormat.Obj" as if ending in ".obj".
+!FileFormat.Obj/
+!FileFormat.Obj/**
 *.pch
 *.pdb
 *.ipdb
