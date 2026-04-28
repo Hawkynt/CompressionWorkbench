@@ -18,7 +18,14 @@ public static class JpegSegmentSurgery {
   private static readonly byte[] ExifHeader = Encoding.ASCII.GetBytes("Exif\0\0");
   private static readonly byte[] PhotoshopHeader = Encoding.ASCII.GetBytes("Photoshop 3.0\0");
   private const ushort PhotoshopIrbIptcId = 0x0404;
-  private const int MaxSegmentPayload = 65533;  // 65535 total segment bytes minus the 2-byte length
+  /// <summary>
+  /// Largest payload (after the 2-byte length field) a single JPEG APP
+  /// segment can hold. Callers building APP1 EXIF / XMP payloads use this
+  /// as the hard cap before falling back to splitting (XMP) or shrinking
+  /// (thumbnails).
+  /// </summary>
+  public const int MaxApp1PayloadBytes = 65533;
+  private const int MaxSegmentPayload = MaxApp1PayloadBytes;
 
   /// <summary>
   /// Produces a new JPEG byte array identical to <paramref name="input"/>

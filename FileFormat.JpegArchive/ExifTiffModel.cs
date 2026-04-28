@@ -70,6 +70,16 @@ public sealed class TiffIfd {
 public sealed class TiffImage {
   public bool LittleEndian { get; init; }
   public TiffIfd Ifd0 { get; init; } = new();
+
+  /// <summary>
+  /// Optional embedded JPEG thumbnail bytes. When set together with an IFD1
+  /// chain (<see cref="TiffIfd.Next"/>), <see cref="TiffWriter"/> writes the
+  /// blob after the IFD1 entries and back-patches the IFD1
+  /// <c>JpegInterchangeFormat</c> (0x0201) and <c>JpegInterchangeFormatLength</c>
+  /// (0x0202) tags so EXIF readers find it. Reading thumbnail bytes back from
+  /// an existing TIFF is not done here yet — that's a follow-up.
+  /// </summary>
+  public byte[]? ThumbnailJpegBytes { get; set; }
 }
 
 /// <summary>
@@ -77,6 +87,11 @@ public sealed class TiffImage {
 /// write path. Grouped by IFD: main (IFD0), EXIF sub-IFD, GPS sub-IFD.
 /// </summary>
 public static class TiffTags {
+  // IFD1 (thumbnail) — same well-known tags as IFD0, plus the JPEG offset/length pair.
+  public const ushort Compression = 0x0103;        // 6 = JPEG-compressed thumbnail
+  public const ushort JpegInterchangeFormat       = 0x0201; // offset to thumbnail JPEG bytes
+  public const ushort JpegInterchangeFormatLength = 0x0202; // thumbnail JPEG length
+
   // IFD0 (main image).
   public const ushort ImageDescription = 0x010E;
   public const ushort Make             = 0x010F;
