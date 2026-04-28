@@ -34,8 +34,46 @@ public static class PayloadLengthProbe {
       "Tar" => ProbeTar(data, offset),
       "Ogg" => ProbeOgg(data, offset),
       "Flac" => ProbeFlac(data, offset),
+      "Gif" => ProbeGif(data, offset),
+      "Pdf" => ProbePdf(data, offset),
+      "Bmp" => ProbeBmp(data, offset),
       _ => null,
     };
+  }
+
+  // GIF ends with 0x3B (trailer). Scan forward.
+  private static long? ProbeGif(ReadOnlySpan<byte> data, long offset) {
+    for (var i = offset + 6; i < data.Length; ++i) {
+      if (data[(int)i] == 0x3B) return i + 1 - offset;
+    }
+    return null;
+  }
+
+  // PDF ends with "%%EOF" followed by optional \r\n. Scan forward for last occurrence.
+  private static long? ProbePdf(ReadOnlySpan<byte> data, long offset) {
+    ReadOnlySpan<byte> marker = "%%EOF"u8;
+    var lastEnd = -1L;
+    for (var i = offset; i + marker.Length <= data.Length; ++i) {
+      var ok = true;
+      for (var j = 0; j < marker.Length; ++j) {
+        if (data[(int)(i + j)] != marker[j]) { ok = false; break; }
+      }
+      if (ok) {
+        lastEnd = i + marker.Length;
+        // Consume trailing newline(s).
+        while (lastEnd < data.Length && (data[(int)lastEnd] == 0x0D || data[(int)lastEnd] == 0x0A))
+          lastEnd++;
+      }
+    }
+    return lastEnd > 0 ? lastEnd - offset : null;
+  }
+
+  // BMP: uint32 at offset 2 is the total file size in bytes.
+  private static long? ProbeBmp(ReadOnlySpan<byte> data, long offset) {
+    if (offset + 6 > data.Length) return null;
+    var size = BinaryPrimitives.ReadUInt32LittleEndian(data[(int)(offset + 2)..]);
+    if (size < 14 || offset + size > data.Length) return null;
+    return size;
   }
 
   // RIFF: "RIFF" + uint32-LE size + "WAVE"/"AVI "/"WEBP"/…; payload length = 8 + size.

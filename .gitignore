@@ -1,6 +1,4 @@
 ## .NET
-bin/
-obj/
 *.user
 *.suo
 *.userosscache
@@ -24,6 +22,8 @@ x86/
 bld/
 [Bb]in/
 [Oo]bj/
+bin
+obj
 [Ll]og/
 [Ll]ogs/
 

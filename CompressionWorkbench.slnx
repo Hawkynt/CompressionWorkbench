@@ -43,7 +43,13 @@
     <Project Path="FileFormat.Bcm/FileFormat.Bcm.csproj" />
     <Project Path="FileFormat.Big/FileFormat.Big.csproj" />
     <Project Path="FileSystem.Bbc/FileSystem.Bbc.csproj" />
+    <Project Path="FileSystem.BcacheFs/FileSystem.BcacheFs.csproj" />
     <Project Path="FileSystem.Bfs/FileSystem.Bfs.csproj" />
+    <Project Path="FileSystem.Ext1/FileSystem.Ext1.csproj" />
+    <Project Path="FileSystem.LittleFs/FileSystem.LittleFs.csproj" />
+    <Project Path="FileSystem.OpenVms/FileSystem.OpenVms.csproj" />
+    <Project Path="FileSystem.Refs/FileSystem.Refs.csproj" />
+    <Project Path="FileSystem.Sfs/FileSystem.Sfs.csproj" />
     <Project Path="FileFormat.BinCue/FileFormat.BinCue.csproj" />
     <Project Path="FileFormat.BinHex/FileFormat.BinHex.csproj" />
     <Project Path="FileFormat.BriefLz/FileFormat.BriefLz.csproj" />
@@ -111,6 +117,8 @@
     <Project Path="FileFormat.Ha/FileFormat.Ha.csproj" />
     <Project Path="FileFormat.Hdf5/FileFormat.Hdf5.csproj" />
     <Project Path="FileFormat.Heif/FileFormat.Heif.csproj" />
+    <Project Path="FileSystem.Hammer/FileSystem.Hammer.csproj" />
+    <Project Path="FileSystem.Hammer2/FileSystem.Hammer2.csproj" />
     <Project Path="FileSystem.Hfs/FileSystem.Hfs.csproj" />
     <Project Path="FileSystem.HfsPlus/FileSystem.HfsPlus.csproj" />
     <Project Path="FileSystem.Hpfs/FileSystem.Hpfs.csproj" />
@@ -220,6 +228,8 @@
     <Project Path="FileFormat.Nsa/FileFormat.Nsa.csproj" />
     <Project Path="FileFormat.Nsis/FileFormat.Nsis.csproj" />
     <Project Path="FileSystem.Ntfs/FileSystem.Ntfs.csproj" />
+    <Project Path="FileSystem.Nwfs/FileSystem.Nwfs.csproj" />
+    <Project Path="FileSystem.Ocfs2/FileSystem.Ocfs2.csproj" />
     <Project Path="FileFormat.Obj/FileFormat.Obj.csproj" />
     <Project Path="FileFormat.Odp/FileFormat.Odp.csproj" />
     <Project Path="FileFormat.Ods/FileFormat.Ods.csproj" />
@@ -244,6 +254,7 @@
     <Project Path="FileFormat.QuickLz/FileFormat.QuickLz.csproj" />
     <Project Path="FileFormat.Rar/FileFormat.Rar.csproj" />
     <Project Path="FileFormat.RefPack/FileFormat.RefPack.csproj" />
+    <Project Path="FileSystem.Reiser4/FileSystem.Reiser4.csproj" />
     <Project Path="FileSystem.ReiserFs/FileSystem.ReiserFs.csproj" />
     <Project Path="FileFormat.ResourceDll/FileFormat.ResourceDll.csproj" />
     <Project Path="FileFormat.Rnc/FileFormat.Rnc.csproj" />

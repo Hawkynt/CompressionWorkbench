@@ -138,30 +138,30 @@ public class HfsPlusTests {
     w.AddFile("a.txt", new byte[] { 1, 2, 3 });
     var image = w.Build();
 
-    // Catalog leaf node lives at block 2 (header=block 1, leaf=block 2).
+    // Find the catalog leaf via the volume header's catalogFile fork (offset 272).
+    // Reading the fork's first extent (startBlock at +16, blockCount at +20).
+    const int VolumeHeaderOffset = 1024;
     const int nodeSize = 4096;
-    const int leafBase = 2 * 4096;
+    var blockSize = BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(VolumeHeaderOffset + 40));
+    var catStart = BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(VolumeHeaderOffset + 272 + 16));
+    var leafBase = (int)((catStart * blockSize) + nodeSize); // skip the header node → leaf is next
 
-    // The leaf contains: thread(root), folder(root), thread(file), filerecord(file).
-    // We locate the file record by reading TOC offsets from end of node.
+    // Records are sorted by (parentCnid, name). With one file:
+    //   0: (1, "untitled") → root folder record
+    //   1: (2, "")        → root folder thread
+    //   2: (2, "a.txt")   → FILE record  ← we want this one
+    //   3: (16, "")       → file thread
     var leaf = image.AsSpan(leafBase, nodeSize);
     var numRecs = BinaryPrimitives.ReadUInt16BigEndian(leaf[10..]);
     Assert.That(numRecs, Is.GreaterThanOrEqualTo(4));
 
-    // Find the last record (index numRecs-1): its offset is at nodeSize - 2*numRecs.
-    // Total leaf record extent is (next-offset - this-offset). The file record is the 4th record.
-    // Record order: 0=folderThread, 1=folder, 2=fileThread, 3=fileRecord.
-    var fileRecOffset = BinaryPrimitives.ReadUInt16BigEndian(leaf[(nodeSize - 2 * 4)..]);
-    var nextOffset = BinaryPrimitives.ReadUInt16BigEndian(leaf[(nodeSize - 2 * 5)..]); // free-space offset
+    var fileRecOffset = BinaryPrimitives.ReadUInt16BigEndian(leaf[(nodeSize - 2 * (2 + 1))..]);
+    var nextOffset = BinaryPrimitives.ReadUInt16BigEndian(leaf[(nodeSize - 2 * (2 + 2))..]);
 
-    // Record spans from fileRecOffset to nextOffset. Strip the catalog key.
-    // Key = keyLength(2) + keyLength bytes; keyLength is BE u16 at start.
     var keyLen = BinaryPrimitives.ReadUInt16BigEndian(leaf[fileRecOffset..]);
     var recordBodyStart = fileRecOffset + 2 + keyLen;
-
-    // Round up to align boundary — we don't pad the data body itself.
     var bodyLength = nextOffset - recordBodyStart;
-    // Body length may be followed by up to 1 byte alignment pad, so accept 248 or 249.
+
     Assert.That(bodyLength, Is.GreaterThanOrEqualTo(248),
       "HFSPlusCatalogFile body must be at least 248 bytes per TN1150.");
   }
@@ -178,11 +178,15 @@ public class HfsPlusTests {
     w.AddFile("x.bin", payload);
     var image = w.Build();
 
-    const int leafBase = 2 * 4096;
+    const int VolumeHeaderOffset = 1024;
     const int nodeSize = 4096;
+    var blockSize = BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(VolumeHeaderOffset + 40));
+    var catStart = BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(VolumeHeaderOffset + 272 + 16));
+    var leafBase = (int)((catStart * blockSize) + nodeSize);
     var leaf = image.AsSpan(leafBase, nodeSize);
 
-    var fileRecOffset = BinaryPrimitives.ReadUInt16BigEndian(leaf[(nodeSize - 2 * 4)..]);
+    // Record at index 2 is the file record (after root folder + root folder thread).
+    var fileRecOffset = BinaryPrimitives.ReadUInt16BigEndian(leaf[(nodeSize - 2 * (2 + 1))..]);
     var keyLen = BinaryPrimitives.ReadUInt16BigEndian(leaf[fileRecOffset..]);
     var bodyStart = fileRecOffset + 2 + keyLen;
 

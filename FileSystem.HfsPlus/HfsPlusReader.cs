@@ -64,10 +64,11 @@ public sealed class HfsPlusReader : IDisposable {
     if (_blockSize == 0)
       throw new InvalidDataException("HFS+ block size is zero.");
 
-    // Catalog file: first extent descriptor at offset 272.
-    // Extent descriptors: startBlock (uint32 BE) + blockCount (uint32 BE).
-    _catalogStartBlock = BinaryPrimitives.ReadUInt32BigEndian(vh[272..]);
-    _catalogBlockCount = BinaryPrimitives.ReadUInt32BigEndian(vh[276..]);
+    // Catalog file ForkData starts at offset 272 (TN1150 §3.2).
+    // Layout: logicalSize(u64) + clumpSize(u32) + totalBlocks(u32) + extents[8].
+    // First extent: startBlock at offset 272+16=288, blockCount at 272+20=292.
+    _catalogStartBlock = BinaryPrimitives.ReadUInt32BigEndian(vh[288..]);
+    _catalogBlockCount = BinaryPrimitives.ReadUInt32BigEndian(vh[292..]);
 
     // Parse catalog B-tree.
     var entries = new List<HfsPlusEntry>();
@@ -102,14 +103,16 @@ public sealed class HfsPlusReader : IDisposable {
     var kind = (sbyte)nodeSpan[8];
     if (kind != 1) return; // Not a header node.
 
-    // Header record at offset 14.
+    // Header record at offset 14. BTHeaderRec layout per TN1150 §2.5.1:
+    //   +0  treeDepth      (u16)
+    //   +2  rootNode       (u32)
+    //   +6  leafRecords    (u32)
+    //   +10 firstLeafNode  (u32)
+    //   +14 lastLeafNode   (u32)
+    //   +18 nodeSize       (u16)
     var hdr = nodeSpan[14..];
-    // treeDepth: uint16 BE at 0
-    // rootNode: uint32 BE at 2
-    // leafRecords: uint32 BE at 6
-    var firstLeafNode = BinaryPrimitives.ReadUInt32BigEndian(hdr[18..]);
-    // lastLeafNode: uint32 BE at 22
-    var nodeSize = BinaryPrimitives.ReadUInt16BigEndian(hdr[26..]);
+    var firstLeafNode = BinaryPrimitives.ReadUInt32BigEndian(hdr[10..]);
+    var nodeSize = BinaryPrimitives.ReadUInt16BigEndian(hdr[18..]);
 
     if (nodeSize == 0) return;
 

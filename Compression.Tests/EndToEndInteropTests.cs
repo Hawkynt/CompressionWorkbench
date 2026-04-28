@@ -252,7 +252,9 @@ public class EndToEndInteropTests {
     // generator drops files we'd reject for RAD-50/length).
     ".cpm", ".lif", ".rt11", ".rx01", ".os9", ".rbf",
     // Disk images with specific sector/partition structure
-    ".vhd", ".vmdk", ".qcow2", ".vdi", ".cvf",
+    ".vhd", ".vmdk", ".vhdx", ".qcow2", ".vdi", ".cvf",
+    // WORM-minimal writers that don't round-trip user files (SB-only / empty-FS):
+    ".bcachefs", ".reiser4",
     // Filesystem images (HFS, NTFS, ext, etc. require full FS creation)
     ".hfs", ".hfsp", ".mfs", ".ntfs", ".ext", ".exfat", ".fat", ".img",
     ".ufs", ".xfs", ".jfs", ".reiserfs", ".f2fs", ".romfs", ".minixfs", ".minix",

@@ -807,6 +807,9 @@ dotnet test --filter "Category=OsIntegration"
 | chkdsk              | Windows built-in (admin + mounted volume)       | FAT, exFAT, NTFS                                                                 |
 | mtools              | Optional — install from Cygwin                  | FAT (non-admin)                                                                  |
 | WSL + mkfs.* / fsck.* | Optional — `wsl --install` as admin + reboot  | ext / XFS / Btrfs / F2FS / JFS / ReiserFS / UDF / UFS                            |
+| DOSBox-X + MS-DOS 6.0/6.2 | Opt-in — set `CWB_MSDOS_DBLSPACE_BOOT_IMG`  | DBLSPACE CVF (`DBLSPACE /CHKDSK D:`) — see [`Compression.Tests/Support/MsDosImageStaging.md`](Compression.Tests/Support/MsDosImageStaging.md) |
+| DOSBox-X + MS-DOS 6.22    | Opt-in — set `CWB_MSDOS_DRVSPACE_BOOT_IMG`  | DRVSPACE CVF (`DRVSPACE /CHKDSK D:`) — see [`Compression.Tests/Support/MsDosImageStaging.md`](Compression.Tests/Support/MsDosImageStaging.md) |
+| DOSBox-X + FreeDOS LiveCD | Auto (hash-pinned download)                  | FAT (`CHKDSK D:` from FreeDOS) — gate is `[Explicit]` because the LiveCD welcome screen races the autoexec |
 
 Tests skip cleanly when the tool is missing; they never fail the suite on a tool-deficient machine.
 

@@ -45,11 +45,16 @@ public sealed class JfsReader : IDisposable {
     _blockSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(SuperblockOffset + 16));
     if (_blockSize <= 0 || _blockSize > 64 * 1024) _blockSize = 4096;
 
-    // s_ait2 pxd at superblock offset 48: use as primary AIT pointer in our single-AG layout.
-    var aitAddr = ReadPxdAddress(_data.AsSpan(SuperblockOffset + 48));
-    if (aitAddr == 0 || (long)aitAddr * _blockSize >= _data.Length) {
-      // Fall back to a conventional block 9.
-      aitAddr = 9;
+    // Kernel jfs_filsys.h fixed physical block address: AITBL_OFF = 0xB000 (block 11 @ 4 KB).
+    // s_ait2 is SECONDARY (recovery); the primary AIT lives at this fixed byte offset.
+    // Fall back to the secondary pxd if the primary bytes look empty (e.g. test images
+    // written by older versions of this library that mis-used s_ait2 as primary).
+    ulong aitAddr = 0xB000UL / (ulong)_blockSize;
+    // Safety: if this fixed location is outside the image, try the secondary pxd as a fallback.
+    if ((long)aitAddr * _blockSize >= _data.Length) {
+      aitAddr = ReadPxdAddress(_data.AsSpan(SuperblockOffset + 48));
+      if (aitAddr == 0 || (long)aitAddr * _blockSize >= _data.Length)
+        aitAddr = 9; // legacy fallback
     }
 
     var aitByteOff = (long)aitAddr * _blockSize;
@@ -58,9 +63,31 @@ public sealed class JfsReader : IDisposable {
     if (fsinoOff + InodeSize > _data.Length)
       throw new InvalidDataException("JFS: aggregate inode table truncated.");
 
-    // FILESYSTEM_I's xtree root at di_data offset (256). First xad_t points to fileset inode table.
+    // FILESYSTEM_I's xtree root at di_data offset 224. First xad_t points to
+    // the fileset inode allocation map (AIM = 2 blocks: dinomap page + first IAG).
+    // The IAG's inoext[0] (offset 3072 in the IAG page) holds the pxd_t address
+    // of the fileset inode table (4 blocks). Walk through:
+    //   FILESYSTEM_I.xtree[0] → fileset AIM block
+    //   fileset AIM block + 1 (IAG #0) at offset 3072 → inoext[0] pxd → FSIT block
     var xtRootOff = (int)fsinoOff + XtreeDataOffset;
-    _filesetInodeTableOffset = ReadFirstExtentByteOffset(_data.AsSpan(xtRootOff), _blockSize);
+    var filesetAimByteOff = ReadFirstExtentByteOffset(_data.AsSpan(xtRootOff), _blockSize);
+    if (filesetAimByteOff <= 0 || filesetAimByteOff + 2L * _blockSize > _data.Length) {
+      // Legacy images where FILESYSTEM_I directly addresses the FSIT.
+      _filesetInodeTableOffset = filesetAimByteOff;
+    } else {
+      // Try indirect path (real mkfs.jfs layout): IAG #0 at AIM + 1 block.
+      var iagOff = filesetAimByteOff + _blockSize;
+      // inoext[0] at IAG offset 3072.
+      var inoextPxd = _data.AsSpan((int)iagOff + 3072, 8);
+      var inoextLen = ReadPxdLength(inoextPxd);
+      var inoextAddr = ReadPxdAddress(inoextPxd);
+      if (inoextLen >= 4 && inoextAddr > 0 && (long)inoextAddr * _blockSize < _data.Length) {
+        _filesetInodeTableOffset = (long)inoextAddr * _blockSize;
+      } else {
+        // Fall back to legacy direct-pointer behaviour.
+        _filesetInodeTableOffset = filesetAimByteOff;
+      }
+    }
     if (_filesetInodeTableOffset <= 0 || _filesetInodeTableOffset >= _data.Length)
       throw new InvalidDataException("JFS: fileset inode table not reachable.");
 

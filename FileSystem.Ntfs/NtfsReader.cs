@@ -337,10 +337,12 @@ public sealed class NtfsReader : IDisposable {
     // Collect all MFT records that reference this directory as parent
     var childRefs = new HashSet<uint>();
 
-    // From index entries
+    // From index entries — skip system MFT records (0..15) which may appear in
+    // root's INDEX_ROOT when the writer emits all 16 reserved system files.
     if (dir.IndexEntryRefs != null) {
       foreach (var r in dir.IndexEntryRefs)
-        childRefs.Add(r);
+        if (r > 15)
+          childRefs.Add(r);
     }
 
     // Also scan all records for those with this parent

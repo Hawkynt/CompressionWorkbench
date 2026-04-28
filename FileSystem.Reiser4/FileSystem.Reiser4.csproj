@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FileSystem.Reiser4</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\Compression.Core\Compression.Core.csproj" />
+  </ItemGroup>
+  <!-- Reference template blocks captured byte-exact from `mkfs.reiser4 -fffy`. The
+       writer reproduces the same minimum-viable empty filesystem layout: 25
+       reserved blocks (0-15 jump area, 16 master, 17 format40 SB, 18 bitmap,
+       19-20 journal, 21 status, 22 backup, 23 twig root, 24 leaf with root dir).
+       Only the mkfs_id and UUID vary per-image; everything else is deterministic
+       for a fresh empty filesystem. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Templates\block_16.bin" />
+    <EmbeddedResource Include="Templates\block_17.bin" />
+    <EmbeddedResource Include="Templates\block_18.bin" />
+    <EmbeddedResource Include="Templates\block_21.bin" />
+    <EmbeddedResource Include="Templates\block_22.bin" />
+    <EmbeddedResource Include="Templates\block_23.bin" />
+    <EmbeddedResource Include="Templates\block_24.bin" />
+  </ItemGroup>
+</Project>

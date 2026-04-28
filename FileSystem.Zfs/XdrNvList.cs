@@ -91,6 +91,38 @@ internal static class XdrNvList {
     WriteU32Be(s, 0);
   }
 
+  // Per OpenZFS module/nvpair/nvpair.c:
+  //   sizeof(nvpair_t) = 16 (int32 nvp_size + int16 nvp_name_sz + int16 reserved
+  //                          + int32 nvp_value_elem + int32 nvp_type)
+  //   sizeof(nvlist_t) = 24 (int32 ver + uint32 flag + uint64 priv + uint32 flag2 + int32 pad)
+  //   NV_ALIGN(x) = round up to 8.
+  //
+  // decoded_size formula (NVP_SIZE_CALC):
+  //   nvp_size = NV_ALIGN(sizeof(nvpair_t) + name_sz_with_null)
+  //            + NV_ALIGN(in_memory_value_size)
+  //
+  // The decoder validates: (nvp_size - NVP_VALOFF) == NV_ALIGN(value_sz),
+  // where NVP_VALOFF = NV_ALIGN(16 + name_sz_with_null). Sending the wire
+  // encoded_size as decoded_size makes that check fail with EFAULT, which
+  // surfaces as "failed to unpack label N".
+  private const int SizeOfNvpairT = 16;
+  private const int SizeOfNvlistT = 24;
+
+  private static int NvAlign8(int x) => (x + 7) & ~7;
+
+  private static int InMemoryValueSize(DataType type, object value) =>
+      type switch {
+        DataType.UInt64 => 8,
+        DataType.String => Encoding.UTF8.GetByteCount((string)value) + 1, // includes NUL
+        DataType.NvList => SizeOfNvlistT,
+        _ => throw new NotSupportedException($"DataType {type} not supported."),
+      };
+
+  private static int InMemoryNvpSize(string name, DataType type, object value) {
+    var nameSzWithNull = Encoding.ASCII.GetByteCount(name) + 1;
+    return NvAlign8(SizeOfNvpairT + nameSzWithNull) + NvAlign8(InMemoryValueSize(type, value));
+  }
+
   private static void EncodeNvPair(Stream s, string name, DataType type, object value) {
     // First encode value to a scratch stream so we know sizes.
     using var valueBody = new MemoryStream();
@@ -115,7 +147,7 @@ internal static class XdrNvList {
         throw new NotSupportedException($"DataType {type} not supported.");
     }
 
-    // Name block
+    // Name block: 4-byte length prefix + name bytes + zero-pad to 4-byte boundary.
     using var nameBlock = new MemoryStream();
     var nameBytes = Encoding.ASCII.GetBytes(name);
     WriteU32Be(nameBlock, (uint)nameBytes.Length);
@@ -124,9 +156,11 @@ internal static class XdrNvList {
 
     var nameLen = (int)nameBlock.Length;
     var valLen = (int)valueBody.Length;
-    var encodedSize = 8 + nameLen + valLen; // 4 encoded + 4 decoded + name + value
+    var encodedSize = 8 + nameLen + valLen; // 4 encoded + 4 decoded + name block + value block
+    var decodedSize = InMemoryNvpSize(name, type, value);
+
     WriteU32Be(s, (uint)encodedSize);
-    WriteU32Be(s, (uint)encodedSize); // decoded_size — match encoded for our purposes
+    WriteU32Be(s, (uint)decodedSize); // in-memory nvpair_t size — REQUIRED by libnvpair validator
     nameBlock.Position = 0;
     nameBlock.CopyTo(s);
     valueBody.Position = 0;

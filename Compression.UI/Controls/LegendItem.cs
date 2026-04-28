@@ -26,7 +26,14 @@ public sealed class LegendItem : StackPanel {
     Orientation = System.Windows.Controls.Orientation.Horizontal;
     Margin = new Thickness(0, 2, 0, 2);
     _rect = new Rectangle { Width = 12, Height = 12, Margin = new Thickness(0, 0, 6, 0) };
-    _text = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
+    _text = new TextBlock {
+      FontSize = 11,
+      VerticalAlignment = VerticalAlignment.Center,
+      // Match HeatmapGridControl's dark-theme TextBlock foreground so legend
+      // labels stay readable on the #1E1E1E host window.
+      Foreground = new System.Windows.Media.SolidColorBrush(
+        System.Windows.Media.Color.FromRgb(0xE6, 0xE6, 0xE6)),
+    };
     Children.Add(_rect);
     Children.Add(_text);
   }

@@ -117,6 +117,16 @@ public sealed class NtfsWriter {
     var bitmapClusters = (bitmapBytes + ClusterSize - 1) / ClusterSize;
     nextCluster += bitmapClusters;
 
+    // $MFT's own $BITMAP attribute (type 0xB0) — tracks which MFT records are
+    // in use. ntfs-3g consults this on mount before walking the MFT, so even a
+    // 16-record image needs a real cluster-backed bitmap. Bit i set ⇔ record i
+    // is allocated. Stored non-resident in its own cluster.
+    var mftBitmapBitsBytes = (totalMftRecords + 7) / 8;
+    var mftBitmapCluster = nextCluster;
+    var mftBitmapClusters = (mftBitmapBitsBytes + ClusterSize - 1) / ClusterSize;
+    if (mftBitmapClusters < 1) mftBitmapClusters = 1;
+    nextCluster += mftBitmapClusters;
+
     // Skip over the $MFTMirr region if we've grown into it.
     if (nextCluster > mftMirrCluster && nextCluster <= mftMirrCluster + mftMirrClusters) {
       nextCluster = mftMirrCluster + mftMirrClusters;
@@ -141,8 +151,19 @@ public sealed class NtfsWriter {
     // --- Boot sector (VBR) ---------------------------------------------------
     WriteBootSector(disk, totalSectors, mftStartCluster, mftMirrCluster, volumeSerial);
 
+    // --- Build the $MFT bitmap data and write it to its cluster -------------
+    // Bit i set ⇔ MFT record i is currently allocated. We allocate records 0..15
+    // (system) plus one per user file. Bits beyond `totalMftRecords-1` stay 0.
+    var mftBitmapBytesActual = mftBitmapClusters * ClusterSize;
+    var mftBitmap = new byte[mftBitmapBytesActual];
+    for (var r = 0; r < totalMftRecords; r++)
+      mftBitmap[r / 8] |= (byte)(1 << (r % 8));
+    WriteBytesToClusters(disk, mftBitmapCluster, mftBitmap);
+
     // --- Build each system MFT record ---------------------------------------
-    // Record 0: $MFT
+    // Record 0: $MFT — has both $DATA (the MFT records themselves) and $BITMAP
+    // (the per-record allocation bitmap). ntfs-3g loads $BITMAP first to know
+    // how many entries to walk; without it mount fails immediately.
     WriteMftRecord(
       disk, mftOffset, 0, sequence: 1,
       fileName: "$MFT",
@@ -151,7 +172,10 @@ public sealed class NtfsWriter {
       residentData: null,
       nonResidentRuns: [(mftStartCluster, mftClusters)],
       dataSize: mftTotalBytes,
-      sizeHintInFileName: mftTotalBytes);
+      sizeHintInFileName: mftTotalBytes,
+      extraNonResidentAttrs: [
+        new NonResidentAttr(0xB0, [(mftBitmapCluster, mftBitmapClusters)], mftBitmapBytesActual),
+      ]);
 
     // Record 1: $MFTMirr — stored at mftMirrCluster.
     WriteMftRecord(
@@ -242,6 +266,7 @@ public sealed class NtfsWriter {
       logFileCluster, logFileClusters,
       upCaseCluster, upCaseClusters,
       bitmapCluster, bitmapClusters,
+      mftBitmapCluster, mftBitmapClusters,
       fileInfos);
     WriteBytesToClusters(disk, bitmapCluster, bitmap);
     WriteMftRecord(
@@ -425,12 +450,17 @@ public sealed class NtfsWriter {
   // $FILE_NAME and $DATA.
   private readonly record struct ResidentAttr(uint Type, byte[] Value);
 
+  // Represents an extra non-resident attribute (e.g. $BITMAP for $MFT) emitted
+  // after $DATA. Logical/physical sizes are derived from the cluster runs.
+  private readonly record struct NonResidentAttr(uint Type, List<(int Cluster, int Count)> Runs, long DataSize);
+
   private static void WriteMftRecord(byte[] disk, int mftBaseOffset, uint recordNum, ushort sequence,
     string fileName, uint parentRecord, bool isDirectory,
     byte[]? residentData, List<(int Cluster, int Count)>? nonResidentRuns, long dataSize,
     long sizeHintInFileName,
     byte[]? indexRootData = null,
-    ResidentAttr[]? extraAttrs = null) {
+    ResidentAttr[]? extraAttrs = null,
+    NonResidentAttr[]? extraNonResidentAttrs = null) {
 
     var recordOffset = mftBaseOffset + (int)recordNum * MftRecordSize;
     if (recordOffset + MftRecordSize > disk.Length) return;
@@ -479,6 +509,12 @@ public sealed class NtfsWriter {
     // 0x90 $INDEX_ROOT for directories.
     if (isDirectory && indexRootData != null)
       pos = WriteIndexRootAttr(record, pos, indexRootData);
+
+    // Caller-supplied extra non-resident attributes (e.g. 0xB0 $BITMAP on $MFT).
+    if (extraNonResidentAttrs != null) {
+      foreach (var na in extraNonResidentAttrs)
+        pos = WriteNonResidentAttr(record, pos, na.Type, na.Runs, na.DataSize);
+    }
 
     // End-of-attributes marker.
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos), 0xFFFFFFFF);
@@ -593,13 +629,16 @@ public sealed class NtfsWriter {
     return pos + attrLen;
   }
 
-  private static int WriteNonResidentDataAttr(byte[] record, int pos, List<(int Cluster, int Count)> runs, long dataSize) {
+  private static int WriteNonResidentDataAttr(byte[] record, int pos, List<(int Cluster, int Count)> runs, long dataSize)
+    => WriteNonResidentAttr(record, pos, 0x80, runs, dataSize);
+
+  private static int WriteNonResidentAttr(byte[] record, int pos, uint type, List<(int Cluster, int Count)> runs, long dataSize) {
     var dataRuns = EncodeDataRuns(runs);
     var dataRunsOffset = 64;
     var attrLen = dataRunsOffset + dataRuns.Length;
     attrLen = (attrLen + 7) & ~7;
 
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos), 0x80);
+    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos), type);
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos + 4), (uint)attrLen);
     record[pos + 8] = 1; // non-resident
     record[pos + 9] = 0;
@@ -618,17 +657,26 @@ public sealed class NtfsWriter {
   }
 
   private static int WriteIndexRootAttr(byte[] record, int pos, byte[] indexData) {
-    var attrLen = 24 + indexData.Length;
+    // INDEX_ROOT (type 0x90) for a file-name directory MUST be named "$I30"
+    // (UTF-16, 4 chars = 8 bytes). ntfs-3g locates the directory index by
+    // searching for an attribute with type 0x90 AND name "$I30"; without the
+    // name it logs "Index root attribute missing in directory inode N".
+    var indexName = Encoding.Unicode.GetBytes("$I30"); // 8 bytes
+    var nameOffset = 24; // standard resident-attr header is 24 bytes
+    var dataOffset = (nameOffset + indexName.Length + 7) & ~7; // align value to 8
+    var attrLen = dataOffset + indexData.Length;
     attrLen = (attrLen + 7) & ~7;
+
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos), 0x90);
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos + 4), (uint)attrLen);
-    record[pos + 8] = 0; record[pos + 9] = 0;
+    record[pos + 8] = 0;                       // form code = resident
+    record[pos + 9] = (byte)(indexName.Length / 2); // name length in chars
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(pos + 10), (ushort)nameOffset);
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos + 16), (uint)indexData.Length);
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(pos + 20), 24);
-    // $INDEX_ROOT is always named "$I30" (the collation tag for file-name indexes).
-    // Most readers (ours + ntfs-3g) are lenient about the name field but setting
-    // it correctly costs nothing and matches real NTFS.
-    indexData.CopyTo(record, pos + 24);
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(pos + 20), (ushort)dataOffset);
+
+    indexName.CopyTo(record, pos + nameOffset);
+    indexData.CopyTo(record, pos + dataOffset);
     return pos + attrLen;
   }
 
@@ -680,11 +728,30 @@ public sealed class NtfsWriter {
     header[12] = 1;                                                    // clusters per index block
     ms.Write(header);
 
+    // ntfs-3g resolves system files like $Secure via path lookup through the
+    // root directory's $I30 index, NOT by hard-coded record number — so the
+    // root index must list every reserved metadata file we populate. The
+    // index entries are large enough that a fully-populated index won't fit
+    // in a resident $INDEX_ROOT, so we'd normally need an $INDEX_ALLOCATION;
+    // we instead keep the index minimal (only the system files ntfs-3g
+    // actually opens by name during mount-time `secure_init` plus all user
+    // files) which fits comfortably in the 1 KiB MFT record.
+    // Records 12-15 are reserved and not exposed (matches `mkfs.ntfs`).
+    var indexed = new List<(uint Record, string Name)> {
+      (9,  "$Secure"),  // ntfs_open_secure() does pathname_to_inode("$Secure")
+    };
+    for (var i = 0; i < files.Count; i++)
+      indexed.Add(((uint)(firstUserRecord + i), files[i].Name));
+
+    // NTFS file-name collation: case-insensitive Unicode code-point order via
+    // $UpCase. char.ToUpperInvariant matches our $UpCase table for all of the
+    // names above (they're ASCII), so it's an order-preserving substitute.
+    indexed.Sort((a, b) => string.Compare(
+      a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+
     using var entries = new MemoryStream();
-    for (var i = 0; i < files.Count; i++) {
-      var recNum = (uint)(firstUserRecord + i);
-      WriteIndexEntry(entries, recNum, files[i].Name);
-    }
+    foreach (var (recNum, name) in indexed)
+      WriteIndexEntry(entries, recNum, name);
     var last = new byte[16];
     BinaryPrimitives.WriteUInt16LittleEndian(last.AsSpan(8), 16);
     BinaryPrimitives.WriteUInt16LittleEndian(last.AsSpan(12), 0x02);
@@ -834,6 +901,7 @@ public sealed class NtfsWriter {
     int logStart, int logCount,
     int upCaseStart, int upCaseCount,
     int bitmapStart, int bitmapCount,
+    int mftBitmapStart, int mftBitmapCount,
     List<(string Name, byte[] Data, bool Resident, int StartCluster, int ClusterCount)> files) {
     var bytes = (int)((totalClusters + 7) / 8);
     var bitmap = new byte[bytes];
@@ -845,6 +913,7 @@ public sealed class NtfsWriter {
     SetRange(bitmap, logStart, logCount);
     SetRange(bitmap, upCaseStart, upCaseCount);
     SetRange(bitmap, bitmapStart, bitmapCount);
+    SetRange(bitmap, mftBitmapStart, mftBitmapCount);
 
     foreach (var f in files) {
       if (!f.Resident) SetRange(bitmap, f.StartCluster, f.ClusterCount);

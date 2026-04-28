@@ -3,13 +3,20 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:Compression.UI.Controls">
   <UserControl.Resources>
+    <!-- Dark-theme defaults — host window uses #1E1E1E so TextBlock/Button must
+         provide light foreground; otherwise WPF defaults to SystemColors.ControlText
+         (black on Windows light theme, still ~black under dark theme), making
+         labels unreadable on the dark host. -->
+    <Style TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#E6E6E6" />
+    </Style>
     <Style x:Key="TileStyle" TargetType="Border">
       <Setter Property="BorderBrush" Value="#999" />
       <Setter Property="BorderThickness" Value="0.5" />
       <Setter Property="Cursor" Value="Hand" />
       <Style.Triggers>
         <Trigger Property="IsMouseOver" Value="True">
-          <Setter Property="BorderBrush" Value="Black" />
+          <Setter Property="BorderBrush" Value="White" />
           <Setter Property="BorderThickness" Value="2" />
         </Trigger>
       </Style.Triggers>
@@ -28,12 +35,12 @@
     </ToolBar>
 
     <!-- Info panel -->
-    <Border DockPanel.Dock="Bottom" Padding="4,2" BorderThickness="0,1,0,0" BorderBrush="#CCC">
+    <Border DockPanel.Dock="Bottom" Padding="4,2" BorderThickness="0,1,0,0" BorderBrush="#444">
       <TextBlock x:Name="InfoText" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap" />
     </Border>
 
     <!-- Legend -->
-    <Border DockPanel.Dock="Right" Width="110" Padding="6" BorderThickness="1,0,0,0" BorderBrush="#CCC">
+    <Border DockPanel.Dock="Right" Width="110" Padding="6" BorderThickness="1,0,0,0" BorderBrush="#444">
       <StackPanel>
         <TextBlock Text="Legend" FontWeight="Bold" Margin="0,0,0,6" />
         <local:LegendItem Color="#27408B" Label="Zeros" />
