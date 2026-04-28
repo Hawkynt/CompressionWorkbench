@@ -58,6 +58,22 @@ public static class TiffWriter {
     foreach (var (_, info) in subIfdPlacements)
       PopulateIfd(ctx, info.SubIfd, info.Slot, emptyMap: true);
 
+    // Embedded JPEG thumbnail: write the bytes after every IFD/value block,
+    // then back-patch the IFD1 JpegInterchangeFormat (0x0201) /
+    // JpegInterchangeFormatLength (0x0202) tag values to point at the blob.
+    // Both tags are LONG (4 bytes) so they live inline in the entry slot,
+    // which means we can patch them without having to reserve out-of-line
+    // value space up front.
+    if (ifd1Slot is not null && image.Ifd0.Next is { } ifd1Thumb && image.ThumbnailJpegBytes is { Length: > 0 } thumbBytes) {
+      if (ctx.Position % 2 != 0)
+        ctx.WriteByte(0);
+      var thumbOffset = ctx.Position;
+      ctx.WriteBytes(thumbBytes);
+
+      PatchInlineLong(ctx, ifd1Slot, ifd1Thumb, TiffTags.JpegInterchangeFormat, (uint)thumbOffset);
+      PatchInlineLong(ctx, ifd1Slot, ifd1Thumb, TiffTags.JpegInterchangeFormatLength, (uint)thumbBytes.Length);
+    }
+
     // Write the TIFF header at offset 0.
     var buffer = ctx.ToArray();
     buffer[0] = image.LittleEndian ? (byte)'I' : (byte)'M';
@@ -116,6 +132,21 @@ public static class TiffWriter {
 
     public int EntryPosition(int index) => this.StartPosition + 2 + index * 12;
     public int NextOffsetPosition => this.StartPosition + 2 + this.EntryCount * 12;
+  }
+
+  /// <summary>
+  /// Replace the inline 4-byte LONG value of <paramref name="tag"/> in an
+  /// already-populated IFD slot. Used for back-patching offsets that aren't
+  /// known until after the entry table has been emitted (e.g. the embedded
+  /// JPEG thumbnail's position).
+  /// </summary>
+  private static void PatchInlineLong(WriterContext ctx, IfdTableSlot slot, TiffIfd ifd, ushort tag, uint value) {
+    for (var i = 0; i < ifd.Entries.Count; i++) {
+      if (ifd.Entries[i].Tag != tag)
+        continue;
+      ctx.WriteU32At(slot.EntryPosition(i) + 8, value);
+      return;
+    }
   }
 
   /// <summary>

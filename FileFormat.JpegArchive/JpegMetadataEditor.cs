@@ -63,15 +63,63 @@ public static class JpegMetadataEditor {
   }
 
   /// <summary>
+  /// Builds the APP1 EXIF payload (incl. the 6-byte <c>Exif\0\0</c> prefix)
+  /// for embedding <paramref name="thumbnailJpegBytes"/> as the IFD1
+  /// thumbnail of <paramref name="jpegBytes"/>. Existing IFD0 entries are
+  /// preserved. Use <see cref="JpegSegmentSurgery.MaxApp1PayloadBytes"/>
+  /// to check against the single-APP1 cap before calling
+  /// <see cref="SetEmbeddedThumbnail"/>; this lets callers iterate on
+  /// dimensions / quality without writing the file repeatedly.
+  /// </summary>
+  public static byte[] BuildEmbeddedThumbnailPayload(ReadOnlySpan<byte> jpegBytes, byte[] thumbnailJpegBytes, int thumbnailWidth, int thumbnailHeight) {
+    ArgumentNullException.ThrowIfNull(thumbnailJpegBytes);
+    if (thumbnailJpegBytes.Length == 0)
+      throw new ArgumentException("Thumbnail bytes must be non-empty.", nameof(thumbnailJpegBytes));
+
+    var tiff = ExtractTiffOrCreate(jpegBytes);
+    var le = tiff.LittleEndian;
+
+    var ifd1 = new TiffIfd();
+    ifd1.SetEntry(ExifValueEncoding.Short(0x0100, (ushort)thumbnailWidth, le));   // ImageWidth
+    ifd1.SetEntry(ExifValueEncoding.Short(0x0101, (ushort)thumbnailHeight, le));  // ImageLength
+    ifd1.SetEntry(ExifValueEncoding.Short(TiffTags.Compression, 6, le));          // 6 = JPEG
+    // Offset and length are back-patched by TiffWriter once the bytes are placed.
+    ifd1.SetEntry(new TiffEntry(TiffTags.JpegInterchangeFormat, TiffFieldType.Long, 1, new byte[4]));
+    ifd1.SetEntry(new TiffEntry(TiffTags.JpegInterchangeFormatLength, TiffFieldType.Long, 1, new byte[4]));
+
+    tiff.Ifd0.Next = ifd1;
+    tiff.ThumbnailJpegBytes = thumbnailJpegBytes;
+
+    var newTiff = TiffWriter.Serialize(tiff);
+    return ConcatenateExifPayload(newTiff);
+  }
+
+  /// <summary>
+  /// Replaces (or creates) the IFD1 embedded JPEG thumbnail. Throws
+  /// <see cref="InvalidOperationException"/> when the resulting EXIF
+  /// segment exceeds the JPEG APP1 cap — callers wanting graceful
+  /// downgrade should preflight via <see cref="BuildEmbeddedThumbnailPayload"/>.
+  /// </summary>
+  public static byte[] SetEmbeddedThumbnail(ReadOnlySpan<byte> jpegBytes, byte[] thumbnailJpegBytes, int thumbnailWidth, int thumbnailHeight) {
+    var payload = BuildEmbeddedThumbnailPayload(jpegBytes, thumbnailJpegBytes, thumbnailWidth, thumbnailHeight);
+    return JpegSegmentSurgery.ReplaceExifSegment(jpegBytes, payload);
+  }
+
+  /// <summary>
   /// Reads the APP1 EXIF segment (if any) and parses its TIFF area, or
   /// returns a fresh little-endian empty TIFF image if the JPEG doesn't
   /// have EXIF yet.
   /// </summary>
   public static TiffImage ExtractTiffOrCreate(ReadOnlySpan<byte> jpegBytes) {
     var exifBytes = JpegSegmentSurgery.TryReadExifSegment(jpegBytes);
-    if (exifBytes != null) {
+    if (exifBytes != null && exifBytes.Length > ExifHeader.Length) {
       try {
-        return TiffReader.Parse(exifBytes);
+        // TryReadExifSegment returns the payload INCLUDING the 6-byte
+        // "Exif\0\0" prefix; TiffReader.Parse expects the bare TIFF area
+        // (II/MM at byte 0), so strip the prefix here.
+        var prefixed = exifBytes.AsSpan(0, ExifHeader.Length).SequenceEqual(ExifHeader);
+        var tiffArea = prefixed ? exifBytes.AsSpan(ExifHeader.Length) : exifBytes.AsSpan();
+        return TiffReader.Parse(tiffArea);
       } catch (InvalidDataException) {
         // Malformed EXIF — start fresh rather than refuse to write.
       }
