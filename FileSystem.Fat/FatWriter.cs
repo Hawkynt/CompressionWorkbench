@@ -6,17 +6,28 @@ namespace FileSystem.Fat;
 
 /// <summary>
 /// Builds FAT12 / FAT16 / FAT32 filesystem images from scratch per the Microsoft
-/// FAT specification (FATGEN103). Auto-selects FAT type based on cluster count.
-/// Short names only (8.3).
+/// FAT specification (FATGEN103, EFI FAT32). Auto-selects FAT type based on
+/// cluster count. Emits VFAT / LFN (Long File Name) directory entries
+/// transparently when the input filename does not fit in 8.3 (mixed-case,
+/// non-ASCII, longer than 8 + 3 chars, or with multiple dots) — DOS-era
+/// readers see only the short name, modern readers see the long one.
 /// </summary>
 /// <remarks>
 /// FAT32 layout: 32 reserved sectors (boot @0, FSInfo @1, backup boot @6), two
 /// FAT copies, root directory at cluster 2 with FAT entry = end-of-chain.
+/// LFN format: 32-byte slots with attribute 0x0F immediately preceding the
+/// matching 8.3 dirent, written in reverse order so the highest-sequence slot
+/// is read first; each holds 13 UTF-16LE code units (5+6+2 split) and a
+/// checksum of the associated short name.
 /// </remarks>
 public sealed class FatWriter {
   private readonly List<(string Name, byte[] Data)> _files = [];
 
-  /// <summary>Adds a file to the image. Name should be 8.3 format (e.g. "TEST.TXT").</summary>
+  /// <summary>
+  /// Adds a file to the image. Long names (mixed case, > 8.3, non-ASCII,
+  /// multiple dots) are written as VFAT/LFN entries with an auto-generated
+  /// 8.3 short-name alias. Plain 8.3 names are written as a single dirent.
+  /// </summary>
   public void AddFile(string name, byte[] data) => _files.Add((name, data));
 
   /// <summary>
@@ -145,47 +156,58 @@ public sealed class FatWriter {
     // ── Root directory and file data ──────────────────────────────────────
     var clusterSize = sectorsPerCluster * bytesPerSector;
 
+    // Pre-compute the per-file directory-entry blob. Each plain 8.3 file
+    // contributes 32 bytes; every LFN-eligible file contributes
+    // ceil(len/13)·32 bytes of LFN slots followed by 32 bytes of 8.3 entry.
+    // We need the total up-front to know how many clusters the FAT32 root
+    // directory needs (it lives in the cluster chain, so root may span > 1
+    // cluster) — and to honour FAT12/16's BPB_RootEntCnt limit.
+    var existingShortNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var perFileSlots = new List<byte[]>(_files.Count);
+    foreach (var (name, _) in _files) {
+      perFileSlots.Add(BuildDirentSlots(name, existingShortNames));
+    }
+    var totalDirentBytes = perFileSlots.Sum(s => s.Length);
+
     int dirEntryPos;
     int nextCluster;
+    var dataAreaOffset = firstDataSector * bytesPerSector;
     if (fatType == 32) {
-      // Root lives in the cluster chain at cluster 2 — allocate it up-front
-      // and mark its FAT entry as end-of-chain. Place directory entries
-      // inside the cluster-2 region.
+      // Root lives in the cluster chain at cluster 2 — possibly spanning
+      // multiple clusters if many LFN slots accumulate. Allocate enough
+      // contiguous clusters to fit all root dirents, mark them as a chain
+      // ending in EOC, and start file clusters after the last root cluster.
+      var rootClustersNeeded = Math.Max(1, (totalDirentBytes + clusterSize - 1) / clusterSize);
+      for (var rc = 0; rc < rootClustersNeeded; rc++) {
+        var cluster = 2 + rc;
+        var nextVal = (rc + 1 < rootClustersNeeded) ? cluster + 1 : 0x0FFFFFFF;
+        WriteFatEntry(disk, fatOffset, cluster, nextVal, fatType);
+      }
       var rootStart = firstDataSector * bytesPerSector;
       dirEntryPos = rootStart;
-      WriteFatEntry(disk, fatOffset, 2, 0x0FFFFFFF, fatType);
-      nextCluster = 3;
+      nextCluster = 2 + rootClustersNeeded;
     } else {
       dirEntryPos = (reservedSectors + fatCount * fatSize) * bytesPerSector;
       nextCluster = 2;
     }
-    var dataAreaOffset = firstDataSector * bytesPerSector;
-    if (fatType == 32) {
-      // For FAT32 the first cluster (2) is the root directory itself, so file
-      // clusters start at cluster 2 + 1 round(rootDir / cluster). We used a
-      // single cluster for the root above, so data files start at cluster 3.
-      // dataAreaOffset already points at cluster 2; cluster 3 follows it.
-    }
 
-    foreach (var (name, data) in _files) {
-      // Generate 8.3 short name
-      var dotIdx = name.LastIndexOf('.');
-      var baseName = dotIdx >= 0 ? name[..dotIdx] : name;
-      var ext = dotIdx >= 0 ? name[(dotIdx + 1)..] : "";
-      var shortBase = baseName.ToUpperInvariant().PadRight(8)[..8];
-      var shortExt = ext.ToUpperInvariant().PadRight(3)[..3];
+    // Place each file: copy its dirent slots into the root, then write data
+    // into the next free cluster run + chain it in the FAT.
+    for (var i = 0; i < _files.Count; i++) {
+      var (_, data) = _files[i];
+      var slots = perFileSlots[i];
+      // Patch the start-cluster fields of the *short-name entry* (always the
+      // last 32 bytes of the slot blob) now that we know where its data
+      // will live.
+      var sn = slots.AsSpan(slots.Length - 32, 32);
+      if (fatType == 32)
+        BinaryPrimitives.WriteUInt16LittleEndian(sn[20..], (ushort)((nextCluster >> 16) & 0xFFFF));
+      BinaryPrimitives.WriteUInt16LittleEndian(sn[26..], (ushort)(nextCluster & 0xFFFF));
+      BinaryPrimitives.WriteUInt32LittleEndian(sn[28..], (uint)data.Length);
 
-      // Write directory entry
-      Encoding.ASCII.GetBytes(shortBase).CopyTo(disk, dirEntryPos);
-      Encoding.ASCII.GetBytes(shortExt).CopyTo(disk, dirEntryPos + 8);
-      disk[dirEntryPos + 11] = 0x20; // Archive attribute
-      // For FAT32 first-cluster-high lives at offset 20, low at 26.
-      if (fatType == 32) {
-        BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(dirEntryPos + 20), (ushort)((nextCluster >> 16) & 0xFFFF));
-      }
-      BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(dirEntryPos + 26), (ushort)(nextCluster & 0xFFFF));
-      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(dirEntryPos + 28), (uint)data.Length);
-      dirEntryPos += 32;
+      // Copy dirent slots into the root directory area.
+      slots.CopyTo(disk.AsSpan(dirEntryPos));
+      dirEntryPos += slots.Length;
 
       // Write file data to clusters
       var clustersNeeded = Math.Max(1, (data.Length + clusterSize - 1) / clusterSize);
@@ -205,10 +227,218 @@ public sealed class FatWriter {
       nextCluster += clustersNeeded;
     }
 
+    // ── FSInfo accounting (FAT32 only) ───────────────────────────────────
+    if (fatType == 32) {
+      var fsInfo = 1 * bytesPerSector;
+      // Total data clusters in the volume = (DataSec / SectorsPerCluster).
+      var dataSec = totalSectors - firstDataSector;
+      var totalClusters = (uint)(dataSec / sectorsPerCluster);
+      // Used = clusters allocated from 2..nextCluster-1.
+      var used = (uint)(nextCluster - 2);
+      var free = used <= totalClusters ? totalClusters - used : 0u;
+      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(fsInfo + 488), free);
+      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(fsInfo + 492), (uint)(nextCluster - 1));
+      // Mirror to backup FSInfo at sector 7.
+      Array.Copy(disk, fsInfo, disk, 7 * bytesPerSector, bytesPerSector);
+    }
+
     // Copy FAT1 to FAT2
     Buffer.BlockCopy(disk, fatOffset, disk, fatOffset + fatSize * bytesPerSector, fatSize * bytesPerSector);
 
     return disk;
+  }
+
+  // ── VFAT/LFN encoding ────────────────────────────────────────────────
+  //
+  // For each input filename we produce a contiguous byte buffer of dirent
+  // slots: zero or more 32-byte LFN slots followed by exactly one 32-byte
+  // 8.3 short-name entry. The 8.3 portion is left with placeholder zeroes
+  // for first-cluster / file-size — the caller patches those once the data
+  // location is known.
+
+  /// <summary>Returns true if <paramref name="name"/> can be represented
+  /// in pure 8.3 (uppercase ASCII, ≤ 8 chars base, ≤ 3 chars ext, single
+  /// dot, no spaces, no LFN-only chars).</summary>
+  private static bool IsPlain8Dot3(string name) {
+    var dotIdx = name.LastIndexOf('.');
+    var basePart = dotIdx >= 0 ? name[..dotIdx] : name;
+    var extPart = dotIdx >= 0 ? name[(dotIdx + 1)..] : "";
+    if (basePart.Length is 0 or > 8) return false;
+    if (extPart.Length > 3) return false;
+    // Disallow secondary dots in the base — that always requires LFN.
+    if (basePart.Contains('.')) return false;
+    foreach (var c in basePart)
+      if (!Is83Char(c)) return false;
+    foreach (var c in extPart)
+      if (!Is83Char(c)) return false;
+    return true;
+  }
+
+  /// <summary>Characters allowed in a raw 8.3 entry per FATGEN103 §6.1.
+  /// Uppercase ASCII, digits, and a small punctuation set. Lowercase
+  /// letters force LFN to preserve case (DOS uppercases on display but
+  /// VFAT preserves user case via the long name).</summary>
+  private static bool Is83Char(char c) =>
+    c is >= 'A' and <= 'Z'
+    or >= '0' and <= '9'
+    or '_' or '-' or '$' or '%' or '\'' or '@' or '~' or '`' or '!'
+    or '(' or ')' or '{' or '}' or '^' or '#' or '&';
+
+  /// <summary>Sanitises a single character for the 8.3 alias: uppercase
+  /// ASCII, digits, and underscore-substitute everything else.</summary>
+  private static char SanitizeForShort(char c) {
+    if (c is >= 'A' and <= 'Z' or >= '0' and <= '9') return c;
+    if (c is >= 'a' and <= 'z') return (char)(c - 32);
+    return Is83Char(c) ? c : '_';
+  }
+
+  /// <summary>Generates an 8.3 alias for a long filename per the VFAT
+  /// algorithm: uppercase, drop spaces and dots from the base, replace
+  /// disallowed chars with underscore, truncate the base to 6 chars and
+  /// append <c>~N</c> if collisions or truncation occurred.</summary>
+  private static string GenerateShortName(string longName, HashSet<string> existing) {
+    var lastDot = longName.LastIndexOf('.');
+    var rawBase = lastDot > 0 ? longName[..lastDot] : longName;
+    var rawExt = lastDot > 0 ? longName[(lastDot + 1)..] : "";
+
+    var basePart = new StringBuilder();
+    var lossy = false;
+    foreach (var c in rawBase) {
+      if (c is ' ' or '.') { lossy = true; continue; }
+      if (Is83Char(char.ToUpperInvariant(c))) basePart.Append(char.ToUpperInvariant(c));
+      else if (c is >= 'a' and <= 'z') { basePart.Append((char)(c - 32)); lossy = true; }
+      else { basePart.Append('_'); lossy = true; }
+    }
+    if (basePart.Length == 0) basePart.Append("FILE");
+
+    var extPart = new StringBuilder();
+    foreach (var c in rawExt) {
+      if (extPart.Length >= 3) { lossy = true; break; }
+      if (c is ' ' or '.') { lossy = true; continue; }
+      if (Is83Char(char.ToUpperInvariant(c))) extPart.Append(char.ToUpperInvariant(c));
+      else { extPart.Append('_'); lossy = true; }
+    }
+
+    // Truncate base to 6 chars and append ~N when a long name collapses;
+    // also when a name was truncated above 8 chars; also when we already
+    // have a colliding short name from a previous file.
+    var needsTilde = lossy || basePart.Length > 8 || rawBase.Length > 8;
+    if (needsTilde) {
+      var head = basePart.ToString();
+      if (head.Length > 6) head = head[..6];
+      for (var n = 1; n < 1_000_000; n++) {
+        var candidate = $"{head}~{n}";
+        if (extPart.Length > 0) candidate += "." + extPart;
+        if (existing.Add(candidate)) return candidate;
+      }
+      throw new InvalidOperationException("FAT: unable to generate unique 8.3 short name.");
+    }
+
+    var simple = basePart.ToString();
+    if (extPart.Length > 0) simple += "." + extPart;
+    if (!existing.Add(simple)) {
+      // Plain-8.3 collision (case-insensitive): fall back to ~N too.
+      var head = basePart.Length > 6 ? basePart.ToString(0, 6) : basePart.ToString();
+      for (var n = 1; n < 1_000_000; n++) {
+        var candidate = $"{head}~{n}";
+        if (extPart.Length > 0) candidate += "." + extPart;
+        if (existing.Add(candidate)) return candidate;
+      }
+    }
+    return simple;
+  }
+
+  /// <summary>FAT/VFAT short-name checksum (FATGEN103 §6.4): unsigned
+  /// rotate-right-with-add over the 11 raw 8.3 bytes. Stored in every LFN
+  /// slot so a corrupt or out-of-order slot can be detected.</summary>
+  private static byte LfnChecksum(ReadOnlySpan<byte> short11) {
+    byte sum = 0;
+    for (var i = 0; i < 11; i++)
+      sum = (byte)((((sum & 1) != 0 ? 0x80 : 0) + (sum >> 1) + short11[i]) & 0xFF);
+    return sum;
+  }
+
+  /// <summary>Builds the 32-byte raw 8.3 directory entry (offset 0..31)
+  /// for a short name like <c>"HELLO   TXT"</c> (already padded). Caller
+  /// fills first-cluster + size fields later.</summary>
+  private static byte[] BuildShortEntry(string shortName) {
+    var entry = new byte[32];
+    var dotIdx = shortName.LastIndexOf('.');
+    var basePart = dotIdx >= 0 ? shortName[..dotIdx] : shortName;
+    var extPart = dotIdx >= 0 ? shortName[(dotIdx + 1)..] : "";
+    var basePad = basePart.PadRight(8).Substring(0, 8);
+    var extPad = extPart.PadRight(3).Substring(0, 3);
+    Encoding.ASCII.GetBytes(basePad).CopyTo(entry, 0);
+    Encoding.ASCII.GetBytes(extPad).CopyTo(entry, 8);
+    entry[11] = 0x20; // Archive attribute
+    return entry;
+  }
+
+  /// <summary>Builds the slot blob for one file (LFN entries first if the
+  /// long name needs them, then the 8.3 entry). Updates <paramref
+  /// name="existingShortNames"/> with the chosen alias to detect ~N
+  /// collisions across subsequent files.</summary>
+  private static byte[] BuildDirentSlots(string longName, HashSet<string> existingShortNames) {
+    if (IsPlain8Dot3(longName)) {
+      existingShortNames.Add(longName.ToUpperInvariant());
+      return BuildShortEntry(longName.ToUpperInvariant());
+    }
+
+    var shortName = GenerateShortName(longName, existingShortNames);
+    var shortEntry = BuildShortEntry(shortName);
+    var checksum = LfnChecksum(shortEntry.AsSpan(0, 11));
+
+    // Each LFN slot carries 13 UTF-16 units: pad with NUL (after the real
+    // name) plus 0xFFFF for unused trailing slots, per the spec.
+    var fragments = (longName.Length + 13) / 13; // include space for trailing NUL
+    if (fragments < 1) fragments = 1;
+    if (fragments > 20)
+      throw new InvalidOperationException("FAT: long name exceeds 255 UTF-16 chars.");
+
+    var blob = new byte[fragments * 32 + 32];
+    // Slot N (highest sequence) goes first on disk; per FAT spec it's
+    // marked with the 0x40 "last-LFN" flag.
+    for (var slotIdx = 0; slotIdx < fragments; slotIdx++) {
+      var seq = fragments - slotIdx; // LDIR_Ord 1..N reading on-disk
+      var firstChar = (seq - 1) * 13;
+      var slotOffset = slotIdx * 32;
+
+      blob[slotOffset + 0] = (byte)(seq | (slotIdx == 0 ? 0x40 : 0));
+      blob[slotOffset + 11] = 0x0F;  // attribute: LFN
+      blob[slotOffset + 12] = 0;     // type
+      blob[slotOffset + 13] = checksum;
+      // FstClusLO at offset 26 stays zero per spec.
+
+      // Layout: 5 chars at [1..10], 6 chars at [14..25], 2 chars at [28..31].
+      WriteLfnChars(blob, slotOffset + 1, 5, longName, firstChar);
+      WriteLfnChars(blob, slotOffset + 14, 6, longName, firstChar + 5);
+      WriteLfnChars(blob, slotOffset + 28, 2, longName, firstChar + 11);
+    }
+    shortEntry.CopyTo(blob, fragments * 32);
+    return blob;
+  }
+
+  /// <summary>Writes <paramref name="count"/> UTF-16LE chars from
+  /// <paramref name="name"/> starting at <paramref name="firstChar"/>;
+  /// the first out-of-range char is encoded as NUL (0x0000), every
+  /// subsequent slot position is padded with 0xFFFF.</summary>
+  private static void WriteLfnChars(byte[] blob, int offset, int count, string name, int firstChar) {
+    var pastEnd = false;
+    for (var j = 0; j < count; j++) {
+      var idx = firstChar + j;
+      ushort code;
+      if (pastEnd) {
+        code = 0xFFFF;
+      } else if (idx < name.Length) {
+        code = name[idx];
+      } else if (idx == name.Length) {
+        code = 0x0000;
+        pastEnd = true;
+      } else {
+        code = 0xFFFF;
+      }
+      BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(offset + j * 2), code);
+    }
   }
 
   /// <summary>

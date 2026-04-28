@@ -954,6 +954,74 @@ carveCmd.SetAction((ParseResult ctx) => {
   return 0;
 });
 
+// ── visualize ────────────────────────────────────────────────────────
+
+var vizFileArg = new Argument<FileInfo>("input") { Description = "Binary / disk-image to visualize" };
+var vizOutOpt = new Option<FileInfo?>("--out") { Description = "Output file path (required for svg/html)" };
+var vizFormatOpt = new Option<string>("--format") { Description = "Output format: ascii | svg | html", DefaultValueFactory = _ => "ascii" };
+var vizBlockSizeOpt = new Option<int>("--block-size") { Description = "Block size in bytes (default 4096)", DefaultValueFactory = _ => 4096 };
+var vizMaxDepthOpt = new Option<int>("--max-depth") { Description = "Maximum recursion depth", DefaultValueFactory = _ => 5 };
+
+var visualizeCmd = new Command("visualize", """
+  Render a colored block-view of how filesystems and containers are stacked
+  inside a binary. Runs RecursiveFilesystemCarver, builds a BlockMap, then
+  renders ASCII (stdout), SVG, or HTML.
+
+  Examples:
+    cwb visualize disk.img                                    ASCII strip on stdout
+    cwb visualize disk.img --format svg --out map.svg          Per-layer SVG
+    cwb visualize triple-nested.img --format html --out map.html
+  """) { vizFileArg, vizOutOpt, vizFormatOpt, vizBlockSizeOpt, vizMaxDepthOpt };
+
+visualizeCmd.SetAction((ParseResult ctx) => {
+  var file = ctx.GetValue(vizFileArg)!;
+  var outFile = ctx.GetValue(vizOutOpt);
+  var fmt = (ctx.GetValue(vizFormatOpt) ?? "ascii").ToLowerInvariant();
+  var blockSize = ctx.GetValue(vizBlockSizeOpt);
+  var maxDepth = ctx.GetValue(vizMaxDepthOpt);
+
+  if (!file.Exists) { Console.Error.WriteLine($"File not found: {file.FullName}"); return 1; }
+  if (fmt is not ("ascii" or "svg" or "html")) {
+    Console.Error.WriteLine($"Unknown format '{fmt}' — expected ascii | svg | html.");
+    return 2;
+  }
+  if (fmt is "svg" or "html" && outFile is null) {
+    Console.Error.WriteLine($"--out is required for --format {fmt}.");
+    return 2;
+  }
+
+  Console.Error.WriteLine($"Carving {file.Name} ({FormatSize(file.Length)})…");
+
+  IReadOnlyList<Compression.Analysis.NestedHit> hits;
+  using (var fs = File.OpenRead(file.FullName)) {
+    var carver = new Compression.Analysis.RecursiveFilesystemCarver { MaxDepth = maxDepth };
+    hits = carver.CarveStream(fs);
+  }
+  Console.Error.WriteLine($"Found {hits.Count} top-level hit(s).");
+
+  var map = new Compression.Analysis.BlockMap(file.Length, blockSize);
+  map.MarkRecursive(hits);
+
+  switch (fmt) {
+    case "ascii":
+      Console.WriteLine(Compression.Analysis.BlockMapRenderer.RenderAscii(map));
+      if (map.MaxDepth > 1) {
+        Console.WriteLine();
+        Console.WriteLine(Compression.Analysis.BlockMapRenderer.RenderAsciiLayered(map));
+      }
+      break;
+    case "svg":
+      File.WriteAllText(outFile!.FullName, Compression.Analysis.BlockMapRenderer.RenderSvg(map));
+      Console.Error.WriteLine($"Wrote SVG to {outFile.FullName}");
+      break;
+    case "html":
+      File.WriteAllText(outFile!.FullName, Compression.Analysis.BlockMapRenderer.RenderHtml(map, hits));
+      Console.Error.WriteLine($"Wrote HTML to {outFile.FullName}");
+      break;
+  }
+  return 0;
+});
+
 var root = new RootCommand("""
   cwb — CompressionWorkbench CLI. A universal archive tool.
 
@@ -971,7 +1039,7 @@ var root = new RootCommand("""
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, infoCmd, convertCmd, optimizeCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd
+  listCmd, extractCmd, createCmd, testCmd, infoCmd, convertCmd, optimizeCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd
 };
 
 return root.Parse(args).Invoke();

@@ -65,15 +65,17 @@ public class ReiserFsTests {
     var dirDataOff = rootBlockOff + blockSize - dirItemData.Length;
     dirItemData.CopyTo(img, dirDataOff);
 
-    // Dir item header
+    // Dir item header — key uses KEY_FORMAT_2 with type=TYPE_DIRENTRY (3)
+    // packed in bits 60-63 of offset_v2 at +8.
     var ih0Off = rootBlockOff + 24;
     BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(ih0Off), 1);
     BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(ih0Off + 4), 2);
+    BinaryPrimitives.WriteUInt64LittleEndian(img.AsSpan(ih0Off + 8), (3UL << 60) | 1UL); // type=DIRENTRY, offset=1
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(ih0Off + 16), (ushort)files.Length);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(ih0Off + 18), (ushort)dirItemData.Length);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(ih0Off + 20), (ushort)(dirDataOff - rootBlockOff));
 
-    // Direct items
+    // Direct items — key uses KEY_FORMAT_2 with type=TYPE_DIRECT (2).
     for (int i = 0; i < files.Length; i++) {
       var (_, data) = files[i];
       var ihOff = rootBlockOff + 24 + (i + 1) * 24;
@@ -81,6 +83,7 @@ public class ReiserFsTests {
 
       BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(ihOff), 2);
       BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(ihOff + 4), (uint)(100 + i));
+      BinaryPrimitives.WriteUInt64LittleEndian(img.AsSpan(ihOff + 8), (2UL << 60) | 1UL); // type=DIRECT, offset=1
       BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(ihOff + 16), 0xFFFF);
       BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(ihOff + 18), (ushort)data.Length);
       BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(ihOff + 20), (ushort)(dataLocation - rootBlockOff));
@@ -210,9 +213,13 @@ public class ReiserFsTests {
     var bytes = ms.ToArray();
     const int sb = 65536;
 
-    // root block at +8 (per Linux kernel fs/reiserfs/reiserfs.h)
+    // root block at +8 (per Linux kernel fs/reiserfs/reiserfs.h). Our writer ships
+    // a default-sized journal (reiserfsprogs:journal_default_size = 8192 blocks starting
+    // at block 18), so the root leaf sits immediately AFTER the journal body + header.
+    // Real mkfs.reiserfs does the same — a fresh 34 MB image has s_root_block ≈ 8211.
     var root = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(sb + 8));
-    Assert.That(root, Is.EqualTo(18u), "s_root_block must be at spec offset +8.");
+    Assert.That(root, Is.GreaterThan(18u),
+      "s_root_block must be at spec offset +8 and must sit past the journal.");
 
     // blocksize at +44
     var bs = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(sb + 44));
@@ -256,8 +263,11 @@ public class ReiserFsTests {
     w.WriteTo(ms);
     var bytes = ms.ToArray();
 
-    // Root leaf block = 18
-    var boff = 18 * 4096;
+    // Root leaf block is past the default journal (writer emits the spec-mandated
+    // 8192-block journal starting at block 18 + journal header). Read s_root_block
+    // from the superblock instead of assuming a fixed offset.
+    var rootBlock = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(65536 + 8));
+    var boff = rootBlock * 4096;
     var level = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(boff));
     Assert.That(level, Is.EqualTo((ushort)1), "blk_level must be 1 for leaf.");
 

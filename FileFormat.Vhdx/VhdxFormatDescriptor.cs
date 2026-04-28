@@ -13,13 +13,14 @@ namespace FileFormat.Vhdx;
 /// compared against reference parsers. Full disk-image extraction (metadata
 /// region walk + BAT + block decode) is deferred.
 /// </summary>
-public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Vhdx";
   public string DisplayName => "VHDX";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
+    FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".vhdx";
   public IReadOnlyList<string> Extensions => [".vhdx"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -40,6 +41,19 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, e.Data);
     }
+  }
+
+  /// <summary>
+  /// Wraps the supplied input files into a fixed-payload VHDX container.
+  /// The inputs are first written into an embedded FAT filesystem image, then
+  /// that image is wrapped in a spec-compliant VHDX (16 MiB blocks, 512 B logical
+  /// sectors, 4096 B physical sectors, no log, no parent).
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var fat = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
+    var w = new VhdxWriter();
+    w.SetDiskData(fat);
+    output.Write(w.Build());
   }
 
   private static List<(string Name, byte[] Data)> BuildEntries(Stream stream) {

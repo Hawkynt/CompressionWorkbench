@@ -32,10 +32,14 @@ public sealed class F2fsReader : IDisposable {
   private const int AddrsPerInode = 923;
 
   // Inline dentry region inside inode (see F2fsWriter.WriteRootInodeInline for layout).
-  private const int InlineDentryStart = 360;
+  // Kernel reserves DEFAULT_INLINE_XATTR_ADDRS=50 __le32 slots at end of i_addr when
+  // F2FS_INLINE_DENTRY is set (no F2FS_FEATURE_FLEXIBLE_INLINE_XATTR), so the usable
+  // inline data region is 4 * (923 - 50 - 1) = 3488 bytes starting at i_addr[1] = offset 364.
+  // bitmap[23] + reserved[7] + dentry[182][11] + filename[182][8] = 3488.
+  private const int InlineDentryStart = 364;
   private const int NrInlineDentry = 182;
   private const int InlineBitmapSize = (NrInlineDentry + 7) / 8; // 23
-  private const int InlineReservedSize = 8;
+  private const int InlineReservedSize = 7;
   private const int InlineDentryBase = InlineDentryStart + InlineBitmapSize + InlineReservedSize;
   private const int InlineNameBase = InlineDentryBase + NrInlineDentry * 11;
 

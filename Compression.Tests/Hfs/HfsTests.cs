@@ -6,8 +6,11 @@ namespace Compression.Tests.Hfs;
 public class HfsTests {
 
   private const int MdbOffset = 1024;
+  // hfsutils libhfs hardcodes HFS_BLOCKSZ=512 and validates header-record
+  // offsets at exactly 0x00e/0x078/0x0f8/0x1f8 — both B*-trees must use
+  // 512-byte nodes, with index nodes added when records overflow one leaf.
   private const int ExtentsNodeSize = 512;
-  private const int CatalogNodeSize = 4096;
+  private const int CatalogNodeSize = 512;
 
   [Test, Category("RoundTrip")]
   public void RoundTrip_SingleFile() {
@@ -153,32 +156,43 @@ public class HfsTests {
     var catalogStart = BinaryPrimitives.ReadUInt16BigEndian(disk.AsSpan(MdbOffset + 150));
     var catalogOffset = drAlBlSt * 512 + catalogStart * 512;
 
-    // Header + leaf.
+    // Header at node 0.
     Assert.That((sbyte)disk[catalogOffset + 8], Is.EqualTo((sbyte)1));
 
-    var leafOffset = catalogOffset + CatalogNodeSize;
-    Assert.That((sbyte)disk[leafOffset + 8], Is.EqualTo((sbyte)-1));
-    var numRecords = BinaryPrimitives.ReadUInt16BigEndian(disk.AsSpan(leafOffset + 10));
-    // Expected records: 1 root-dir record + 1 root thread + 3 file records + 3 file threads = 8
-    Assert.That(numRecords, Is.EqualTo(8));
+    // Read bthFNode (first leaf) and walk fLink chain — leaves may span
+    // multiple 512-byte nodes once records overflow a single leaf.
+    var firstLeaf = (int)BinaryPrimitives.ReadUInt32BigEndian(disk.AsSpan(catalogOffset + 14 + 10));
+    Assert.That(firstLeaf, Is.GreaterThan(0), "expected non-zero first-leaf pointer");
 
-    // Classify records.
     int folderCount = 0, fileCount = 0, folderThreadCount = 0, fileThreadCount = 0;
-    for (var i = 0; i < numRecords; i++) {
-      var ptrPos = leafOffset + CatalogNodeSize - 2 * (i + 1);
-      var recOffset = BinaryPrimitives.ReadUInt16BigEndian(disk.AsSpan(ptrPos));
-      var recPos = leafOffset + recOffset;
-      var keyLen = disk[recPos];
-      var dataPos = recPos + 1 + keyLen;
-      if ((dataPos & 1) != 0) dataPos++;
-      var recType = disk[dataPos];
-      switch (recType) {
-        case 1: folderCount++; break;
-        case 2: fileCount++; break;
-        case 3: folderThreadCount++; break;
-        case 4: fileThreadCount++; break;
+    var totalRecords = 0;
+    var node = firstLeaf;
+    var visited = new HashSet<int>();
+    while (node != 0 && visited.Add(node)) {
+      var leafOffset = catalogOffset + node * CatalogNodeSize;
+      Assert.That((sbyte)disk[leafOffset + 8], Is.EqualTo((sbyte)-1), $"node {node} not a leaf");
+      var numRecords = BinaryPrimitives.ReadUInt16BigEndian(disk.AsSpan(leafOffset + 10));
+      totalRecords += numRecords;
+      for (var i = 0; i < numRecords; i++) {
+        var ptrPos = leafOffset + CatalogNodeSize - 2 * (i + 1);
+        var recOffset = BinaryPrimitives.ReadUInt16BigEndian(disk.AsSpan(ptrPos));
+        var recPos = leafOffset + recOffset;
+        var keyLen = disk[recPos];
+        var dataPos = recPos + 1 + keyLen;
+        if ((dataPos & 1) != 0) dataPos++;
+        var recType = disk[dataPos];
+        switch (recType) {
+          case 1: folderCount++; break;
+          case 2: fileCount++; break;
+          case 3: folderThreadCount++; break;
+          case 4: fileThreadCount++; break;
+        }
       }
+      node = (int)BinaryPrimitives.ReadUInt32BigEndian(disk.AsSpan(leafOffset)); // fLink
     }
+
+    // Expected records: 1 root-dir record + 1 root thread + 3 file records + 3 file threads = 8
+    Assert.That(totalRecords, Is.EqualTo(8));
     Assert.That(folderCount, Is.EqualTo(1), "expected 1 folder record (root)");
     Assert.That(folderThreadCount, Is.EqualTo(1), "expected 1 folder-thread record");
     Assert.That(fileCount, Is.EqualTo(3), "expected 3 file records");
@@ -229,12 +243,12 @@ public class HfsTests {
 
     var drVBMSt = BinaryPrimitives.ReadUInt16BigEndian(disk.AsSpan(MdbOffset + 14));
     var bitmapOffset = drVBMSt * 512;
-    // Blocks 0..1 = extents tree, 2..17 = catalog tree (16 blocks for 2×4096-byte nodes),
-    // 18..19 = our 1024-byte file. Total 20 used blocks.
-    // Byte 0 covers blocks 0..7 — all allocated → 0xFF.
-    Assert.That(disk[bitmapOffset], Is.EqualTo((byte)0xFF));
-    Assert.That(disk[bitmapOffset + 1], Is.EqualTo((byte)0xFF)); // blocks 8..15
-    Assert.That(disk[bitmapOffset + 2], Is.EqualTo((byte)0xF0)); // blocks 16..23, used=16..19 → 0b11110000
+    // With 512-byte B*-tree nodes (hfsutils-compatible layout):
+    //   blocks 0..1 = extents tree (header + leaf)
+    //   blocks 2..3 = catalog tree (header + 1 leaf — small enough)
+    //   blocks 4..5 = our 1024-byte file
+    // Total 6 used blocks → byte 0 = 0b11111100 = 0xFC.
+    Assert.That(disk[bitmapOffset], Is.EqualTo((byte)0xFC));
   }
 
   [Test, Category("HappyPath")]

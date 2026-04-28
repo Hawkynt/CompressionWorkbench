@@ -97,8 +97,27 @@ public sealed class ReiserFsReader : IDisposable {
       var dataOff = boff + ihLocation;
       if (dataOff < 0 || dataOff + ihLength > _data.Length) continue;
 
-      // Directory item heuristic: count is a plausible entry count, not 0xFFFF.
-      if (ihCount > 0 && ihCount < 0x4000 && ihLength >= ihCount * 16) {
+      // Resolve item type from the key (see FindFileData for the algorithm).
+      // Treat TYPE_DIRENTRY (3) as a directory item.
+      var keyOffsetV2 = BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan(ihOff + 8));
+      var typeV2 = (uint)(keyOffsetV2 >> 60);
+      int itemType;
+      if (typeV2 == 0 || typeV2 == 15) {
+        var uniqueness = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ihOff + 12));
+        itemType = uniqueness switch {
+          0u => 0, 0xfffffffeu => 1, 0xffffffffu => 2, 500u => 3, _ => -1,
+        };
+      } else {
+        itemType = (int)typeV2;
+      }
+
+      if (itemType == 3 && ihCount > 0 && ihCount < 0x4000 && ihLength >= ihCount * 16) {
+        // Per kernel layout, names are packed at the END of the item and grow
+        // backward: entry[0]'s name sits at the highest offset (item_end - len[0]);
+        // entry[i]'s name ends at entry[i-1]'s location (strictly decreasing).
+        // Read each name from deh_location to deh_location of previous entry
+        // (or to end-of-item for the first entry). Don't rely on null terminators
+        // — stock mkreiserfs does not write any.
         for (int e = 0; e < ihCount; e++) {
           var dehOff = dataOff + e * 16;
           if (dehOff + 16 > _data.Length) break;
@@ -112,9 +131,20 @@ public sealed class ReiserFsReader : IDisposable {
           var nameOff = dataOff + nameLoc;
           if (nameOff < dataOff || nameOff >= dataOff + ihLength) continue;
 
-          var nameEnd = nameOff;
-          while (nameEnd < dataOff + ihLength && nameEnd < _data.Length && _data[nameEnd] != 0)
-            nameEnd++;
+          // Determine name end: the item_end for the first entry, or the previous
+          // entry's deh_location (names are in REVERSE order inside item).
+          int nameEndInItem;
+          if (e == 0) {
+            nameEndInItem = ihLength;
+          } else {
+            var prevLoc = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(dataOff + (e - 1) * 16 + 12));
+            nameEndInItem = prevLoc;
+          }
+          var nameEnd = dataOff + nameEndInItem;
+          // Also stop at null for backward compatibility with readers that padded with \0.
+          for (var k = nameOff; k < nameEnd && k < _data.Length; k++) {
+            if (_data[k] == 0) { nameEnd = k; break; }
+          }
           if (nameEnd <= nameOff) continue;
 
           var name = Encoding.UTF8.GetString(_data, nameOff, nameEnd - nameOff);
@@ -171,10 +201,31 @@ public sealed class ReiserFsReader : IDisposable {
 
       var ihLength = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(ihOff + 18));
       var ihLocation = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(ihOff + 20));
-      var ihCount = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(ihOff + 16));
 
-      // Directory items: skip. ihCount for direct items is 0xFFFF.
-      if (ihCount < 0x4000 && ihCount > 0) continue;
+      // Determine the item's TYPE from the key. ReiserFS encodes the type
+      // either in offset_v1.k_uniqueness (KEY_FORMAT_1, when bits 60-63 of
+      // the offset_v2 union are 0 or 15) or directly in bits 60-63 of
+      // offset_v2 (KEY_FORMAT_2). We accept only TYPE_DIRECT (=2) here.
+      // TYPE_STAT_DATA (=0) and TYPE_DIRENTRY (=3) and TYPE_INDIRECT (=1)
+      // must be skipped — otherwise we'd hand back the SD's 44 bytes.
+      var keyOffsetV2 = BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan(ihOff + 8));
+      var typeV2 = (uint)(keyOffsetV2 >> 60);
+      int itemType;
+      if (typeV2 == 0 || typeV2 == 15) {
+        // KEY_FORMAT_1 — type encoded in uniqueness field.
+        var uniqueness = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ihOff + 12));
+        itemType = uniqueness switch {
+          0u => 0,           // V1_SD_UNIQUENESS = TYPE_STAT_DATA
+          0xfffffffeu => 1,  // V1_INDIRECT_UNIQUENESS
+          0xffffffffu => 2,  // V1_DIRECT_UNIQUENESS
+          500u => 3,         // V1_DIRENTRY_UNIQUENESS
+          _ => -1,
+        };
+      } else {
+        // KEY_FORMAT_2 — type is bits 60-63.
+        itemType = (int)typeV2;
+      }
+      if (itemType != 2) continue; // not TYPE_DIRECT
 
       var dataOff = boff + ihLocation;
       if (dataOff >= 0 && dataOff + ihLength <= _data.Length && ihLength > 0)

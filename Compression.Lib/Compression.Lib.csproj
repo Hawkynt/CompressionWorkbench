@@ -56,7 +56,13 @@
     <ProjectReference Include="..\FileFormat.Bcm\FileFormat.Bcm.csproj" />
     <ProjectReference Include="..\FileFormat.Big\FileFormat.Big.csproj" />
     <ProjectReference Include="..\FileSystem.Bbc\FileSystem.Bbc.csproj" />
+    <ProjectReference Include="..\FileSystem.BcacheFs\FileSystem.BcacheFs.csproj" />
     <ProjectReference Include="..\FileSystem.Bfs\FileSystem.Bfs.csproj" />
+    <ProjectReference Include="..\FileSystem.Ext1\FileSystem.Ext1.csproj" />
+    <ProjectReference Include="..\FileSystem.LittleFs\FileSystem.LittleFs.csproj" />
+    <ProjectReference Include="..\FileSystem.OpenVms\FileSystem.OpenVms.csproj" />
+    <ProjectReference Include="..\FileSystem.Refs\FileSystem.Refs.csproj" />
+    <ProjectReference Include="..\FileSystem.Sfs\FileSystem.Sfs.csproj" />
     <ProjectReference Include="..\FileFormat.BinCue\FileFormat.BinCue.csproj" />
     <ProjectReference Include="..\FileFormat.BinHex\FileFormat.BinHex.csproj" />
     <ProjectReference Include="..\FileFormat.BriefLz\FileFormat.BriefLz.csproj" />
@@ -121,6 +127,8 @@
     <ProjectReference Include="..\FileFormat.Ha\FileFormat.Ha.csproj" />
     <ProjectReference Include="..\FileFormat.Hdf5\FileFormat.Hdf5.csproj" />
     <ProjectReference Include="..\FileFormat.Heif\FileFormat.Heif.csproj" />
+    <ProjectReference Include="..\FileSystem.Hammer\FileSystem.Hammer.csproj" />
+    <ProjectReference Include="..\FileSystem.Hammer2\FileSystem.Hammer2.csproj" />
     <ProjectReference Include="..\FileSystem.Hfs\FileSystem.Hfs.csproj" />
     <ProjectReference Include="..\FileSystem.HfsPlus\FileSystem.HfsPlus.csproj" />
     <ProjectReference Include="..\FileSystem.Hpfs\FileSystem.Hpfs.csproj" />
@@ -230,6 +238,8 @@
     <ProjectReference Include="..\FileFormat.Nsa\FileFormat.Nsa.csproj" />
     <ProjectReference Include="..\FileFormat.Nsis\FileFormat.Nsis.csproj" />
     <ProjectReference Include="..\FileSystem.Ntfs\FileSystem.Ntfs.csproj" />
+    <ProjectReference Include="..\FileSystem.Nwfs\FileSystem.Nwfs.csproj" />
+    <ProjectReference Include="..\FileSystem.Ocfs2\FileSystem.Ocfs2.csproj" />
     <ProjectReference Include="..\FileFormat.Obj\FileFormat.Obj.csproj" />
     <ProjectReference Include="..\FileFormat.Odp\FileFormat.Odp.csproj" />
     <ProjectReference Include="..\FileFormat.Ods\FileFormat.Ods.csproj" />
@@ -254,6 +264,7 @@
     <ProjectReference Include="..\FileFormat.QuickLz\FileFormat.QuickLz.csproj" />
     <ProjectReference Include="..\FileFormat.Rar\FileFormat.Rar.csproj" />
     <ProjectReference Include="..\FileFormat.RefPack\FileFormat.RefPack.csproj" />
+    <ProjectReference Include="..\FileSystem.Reiser4\FileSystem.Reiser4.csproj" />
     <ProjectReference Include="..\FileSystem.ReiserFs\FileSystem.ReiserFs.csproj" />
     <ProjectReference Include="..\FileFormat.ResourceDll\FileFormat.ResourceDll.csproj" />
     <ProjectReference Include="..\FileFormat.Rnc\FileFormat.Rnc.csproj" />
