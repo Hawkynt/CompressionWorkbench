@@ -44,12 +44,21 @@
           <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <WrapPanel Grid.Row="0" Margin="0,0,0,4">
-          <CheckBox x:Name="ChkAll" Content="All" IsChecked="True" Margin="0,0,12,0" Checked="OnAllChecked" Unchecked="OnAllUnchecked" />
+          <!--
+            Defaults aim for FAST first-pass analysis. "Trial Decompress" and
+            "Chain Reconstruct" are OFF by default because they each run every
+            registered decompressor (49+ building blocks) at PerTrialTimeoutMs
+            apiece — even on a 64 KB file that's seconds to tens of seconds.
+            User can opt in once they want full deep analysis.
+          -->
+          <CheckBox x:Name="ChkAll" Content="All" IsChecked="False" Margin="0,0,12,0" Checked="OnAllChecked" Unchecked="OnAllUnchecked" />
           <CheckBox x:Name="ChkDeepScan" Content="Deep Scan" IsChecked="True" Margin="0,0,12,0" />
           <CheckBox x:Name="ChkFingerprint" Content="Fingerprint" IsChecked="True" Margin="0,0,12,0" />
-          <CheckBox x:Name="ChkTrial" Content="Trial Decompress" IsChecked="True" Margin="0,0,12,0" />
+          <CheckBox x:Name="ChkTrial" Content="Trial Decompress" IsChecked="False" Margin="0,0,12,0"
+                    ToolTip="SLOW — runs every registered decompressor with timeout. Enable on demand." />
           <CheckBox x:Name="ChkEntropyMap" Content="Entropy Map" IsChecked="True" Margin="0,0,12,0" />
-          <CheckBox x:Name="ChkChain" Content="Chain Reconstruct" IsChecked="True" Margin="0,0,12,0" />
+          <CheckBox x:Name="ChkChain" Content="Chain Reconstruct" IsChecked="False" Margin="0,0,12,0"
+                    ToolTip="SLOW — recursive trial decompression. Enable on demand." />
         </WrapPanel>
         <WrapPanel Grid.Row="1">
           <TextBlock Text="Max Depth:" VerticalAlignment="Center" Margin="0,0,4,0" />
@@ -82,7 +91,12 @@
       <TextBox x:Name="CliOverrideBox" Grid.Column="1" Margin="8,0,0,0" VerticalContentAlignment="Center"
                ToolTip="Optional CLI-style flags, e.g.: --deep-scan --max-depth 5 --offset 1024 --length 4096"
                Text="" Foreground="Gray" GotFocus="OnCliGotFocus" LostFocus="OnCliLostFocus" />
-      <TextBlock x:Name="StatusText" Grid.Column="2" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="Gray" Text="" />
+      <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
+        <ProgressBar x:Name="BusyBar" Width="120" Height="14" IsIndeterminate="True"
+                     Visibility="Collapsed" Margin="0,0,8,0"
+                     ToolTip="Analysis in progress — large files take time" />
+        <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="#222" Text="" />
+      </StackPanel>
     </Grid>
 
     <!-- Row 3: Results -->
@@ -158,16 +172,19 @@
           </Grid.RowDefinitions>
 
           <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="4,4,4,2">
+            <!-- Legend labels: explicit dark Foreground + slightly larger font.
+                 Default WPF TextBlock rendering on this dialog's background was
+                 visibly grey-on-white at FontSize=10 on some systems. -->
             <Border Width="16" Height="12" Background="#FF2878DC" CornerRadius="1" Margin="0,0,2,0" />
-            <TextBlock Text="Plain" FontSize="10" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <TextBlock Text="Plain" FontSize="11" Foreground="#222" VerticalAlignment="Center" Margin="0,0,8,0" />
             <Border Width="16" Height="12" Background="#FF64DCBE" CornerRadius="1" Margin="0,0,2,0" />
-            <TextBlock Text="Structured" FontSize="10" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <TextBlock Text="Structured" FontSize="11" Foreground="#222" VerticalAlignment="Center" Margin="0,0,8,0" />
             <Border Width="16" Height="12" Background="#FF64C03C" CornerRadius="1" Margin="0,0,2,0" />
-            <TextBlock Text="Light Comp." FontSize="10" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <TextBlock Text="Light Comp." FontSize="11" Foreground="#222" VerticalAlignment="Center" Margin="0,0,8,0" />
             <Border Width="16" Height="12" Background="#FFF09628" CornerRadius="1" Margin="0,0,2,0" />
-            <TextBlock Text="Dict Comp." FontSize="10" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <TextBlock Text="Dict Comp." FontSize="11" Foreground="#222" VerticalAlignment="Center" Margin="0,0,8,0" />
             <Border Width="16" Height="12" Background="#FFF02828" CornerRadius="1" Margin="0,0,2,0" />
-            <TextBlock Text="Random/Enc." FontSize="10" VerticalAlignment="Center" Margin="0,0,12,0" />
+            <TextBlock Text="Random/Enc." FontSize="11" Foreground="#222" VerticalAlignment="Center" Margin="0,0,12,0" />
             <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="0,2,8,2" />
             <CheckBox x:Name="ChkCUSUM" Content="CUSUM Boundary Detection" IsChecked="False"
                       VerticalAlignment="Center" Checked="OnEntropyModeChanged" Unchecked="OnEntropyModeChanged"

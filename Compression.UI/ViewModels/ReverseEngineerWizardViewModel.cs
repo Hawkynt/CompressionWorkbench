@@ -21,6 +21,11 @@ internal sealed class ReverseEngineerWizardViewModel : ViewModelBase {
   public ICommand NextCommand { get; }
   public ICommand BackCommand { get; }
   public ICommand CancelCommand { get; }
+  public ICommand BrowseOriginalCommand { get; }
+  public ICommand BrowseArchiveCommand { get; }
+
+  /// <summary>Raised when the user clicks Cancel — the host Window subscribes and closes.</summary>
+  public event EventHandler? RequestClose;
 
   // ── Mode selection ─────────────────────────────────────────────────
 
@@ -107,9 +112,30 @@ internal sealed class ReverseEngineerWizardViewModel : ViewModelBase {
   public ReverseEngineerWizardViewModel() {
     NextCommand = new RelayCommand(_ => GoNext(), _ => CanGoNext());
     BackCommand = new RelayCommand(_ => GoBack(), _ => CurrentStep > WizardStep.ChooseMode && !IsRunning);
-    CancelCommand = new RelayCommand(_ => _cts?.Cancel(), _ => IsRunning);
+    // Cancel is ALWAYS enabled — closes the wizard. If analysis is running,
+    // also signals the cancellation token so the worker stops promptly.
+    CancelCommand = new RelayCommand(_ => {
+      if (IsRunning) _cts?.Cancel();
+      RequestClose?.Invoke(this, EventArgs.Empty);
+    });
     AddSampleCommand = new RelayCommand(_ => Samples.Add(new SampleEntry()));
     RemoveSampleCommand = new RelayCommand(p => { if (p is SampleEntry s) Samples.Remove(s); });
+    BrowseOriginalCommand = new RelayCommand(p => {
+      if (p is not SampleEntry s) return;
+      var dlg = new Microsoft.Win32.OpenFileDialog {
+        Title = "Pick the ORIGINAL (uncompressed) file",
+        Filter = "All files|*.*",
+      };
+      if (dlg.ShowDialog() == true) s.OriginalPath = dlg.FileName;
+    });
+    BrowseArchiveCommand = new RelayCommand(p => {
+      if (p is not SampleEntry s) return;
+      var dlg = new Microsoft.Win32.OpenFileDialog {
+        Title = "Pick the ARCHIVE file containing that original",
+        Filter = "All files|*.*",
+      };
+      if (dlg.ShowDialog() == true) s.ArchivePath = dlg.FileName;
+    });
     StartAnalysisCommand = new AsyncRelayCommand(async _ => await RunAnalysisAsync());
   }
 

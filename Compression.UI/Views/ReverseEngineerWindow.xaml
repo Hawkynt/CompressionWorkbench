@@ -72,6 +72,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                   </Grid.ColumnDefinitions>
                   <Grid.RowDefinitions>
                     <RowDefinition />
@@ -79,9 +80,15 @@
                   </Grid.RowDefinitions>
                   <TextBlock Grid.Row="0" Grid.Column="0" Text="Original:" VerticalAlignment="Center" Margin="0,0,8,4" />
                   <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding OriginalPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4" />
+                  <Button Grid.Row="0" Grid.Column="2" Content="Browse..." Padding="8,2" Margin="4,0,0,4"
+                          Command="{Binding DataContext.BrowseOriginalCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                          CommandParameter="{Binding}" />
                   <TextBlock Grid.Row="1" Grid.Column="0" Text="Archive:" VerticalAlignment="Center" Margin="0,0,8,0" />
                   <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ArchivePath, UpdateSourceTrigger=PropertyChanged}" />
-                  <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="2" Content="X" Width="24" Margin="8,0,0,0" VerticalAlignment="Center"
+                  <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Padding="8,2" Margin="4,0,0,0"
+                          Command="{Binding DataContext.BrowseArchiveCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                          CommandParameter="{Binding}" />
+                  <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="3" Content="X" Width="24" Margin="8,0,0,0" VerticalAlignment="Center"
                           Command="{Binding DataContext.RemoveSampleCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                           CommandParameter="{Binding}" />
                 </Grid>

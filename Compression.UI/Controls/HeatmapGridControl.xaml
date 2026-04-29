@@ -3,13 +3,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:Compression.UI.Controls">
   <UserControl.Resources>
-    <!-- Dark-theme defaults — host window uses #1E1E1E so TextBlock/Button must
-         provide light foreground; otherwise WPF defaults to SystemColors.ControlText
-         (black on Windows light theme, still ~black under dark theme), making
-         labels unreadable on the dark host. -->
-    <Style TargetType="TextBlock">
-      <Setter Property="Foreground" Value="#E6E6E6" />
-    </Style>
+    <!-- Foreground was hardcoded #E6E6E6 (light) for the dark HeatmapExplorerWindow
+         host (#1E1E1E). The same control is also embedded in AnalysisWindow which
+         has a default-light background — light-on-light made the legend invisible.
+         Removed the universal Foreground override; code-behind picks contrasting
+         foreground at Loaded based on the host Window's actual Background luminance. -->
     <Style x:Key="TileStyle" TargetType="Border">
       <Setter Property="BorderBrush" Value="#999" />
       <Setter Property="BorderThickness" Value="0.5" />

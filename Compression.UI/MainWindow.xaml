@@ -79,9 +79,6 @@
           <MenuItem.Icon><Image Source="{StaticResource TestIcon}" Width="16" Height="16" /></MenuItem.Icon>
         </MenuItem>
         <Separator />
-        <MenuItem Header="_Heatmap Explorer..." Click="OnHeatmapExplorer">
-          <MenuItem.Icon><Image Source="{StaticResource AnalyzeIcon}" Width="16" Height="16" /></MenuItem.Icon>
-        </MenuItem>
         <MenuItem Header="_Reverse Engineer Format..." Click="OnReverseEngineer">
           <MenuItem.Icon><Image Source="{StaticResource AnalyzeIcon}" Width="16" Height="16" /></MenuItem.Icon>
         </MenuItem>

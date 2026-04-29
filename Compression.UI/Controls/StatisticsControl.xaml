@@ -4,6 +4,62 @@
   <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0">
     <StackPanel x:Name="RootPanel">
 
+      <!-- Byte Frequency Histogram (moved above Randomness Tests so the visual
+           distribution is the first thing the user sees on the Properties panel). -->
+      <TextBlock Text="Byte Frequency Distribution" FontWeight="SemiBold" FontSize="12"
+                 Foreground="#FF4466AA" Margin="0,0,0,6" />
+
+      <Border Margin="8,0,0,0" BorderBrush="#FFDDDDDD" BorderThickness="1" CornerRadius="3"
+              ClipToBounds="True">
+        <Canvas x:Name="HistogramCanvas" Height="100" ClipToBounds="True"
+                SizeChanged="OnHistogramSizeChanged"
+                MouseMove="OnHistogramMouseMove" MouseLeave="OnHistogramMouseLeave"
+                Background="Transparent"
+                ToolTipService.InitialShowDelay="0" ToolTipService.ShowDuration="60000"
+                ToolTipService.BetweenShowDelay="0">
+          <Canvas.ToolTip>
+            <ToolTip x:Name="HistogramTooltip" />
+          </Canvas.ToolTip>
+        </Canvas>
+      </Border>
+
+      <!-- Histogram legend -->
+      <Grid Margin="8,4,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="8" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="8" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="8" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="8" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0" Orientation="Horizontal">
+          <Border Width="10" Height="10" Background="#FFE06060" CornerRadius="1" Margin="0,0,3,0" />
+          <TextBlock Text="Most" FontSize="10" Foreground="Gray" />
+        </StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal">
+          <Border Width="10" Height="10" Background="#FF4CAF50" CornerRadius="1" Margin="0,0,3,0" />
+          <TextBlock Text="Least" FontSize="10" Foreground="Gray" />
+        </StackPanel>
+        <StackPanel Grid.Column="4" Orientation="Horizontal">
+          <Border Width="10" Height="10" Background="#30FF9800" CornerRadius="1" Margin="0,0,3,0" />
+          <TextBlock Text="Ctrl" FontSize="10" Foreground="Gray" />
+        </StackPanel>
+        <StackPanel Grid.Column="6" Orientation="Horizontal">
+          <Border Width="10" Height="10" Background="#303399FF" CornerRadius="1" Margin="0,0,3,0" />
+          <TextBlock Text="ASCII" FontSize="10" Foreground="Gray" />
+        </StackPanel>
+        <StackPanel Grid.Column="8" Orientation="Horizontal">
+          <Border Width="10" Height="10" Background="#309C27B0" CornerRadius="1" Margin="0,0,3,0" />
+          <TextBlock Text="High" FontSize="10" Foreground="Gray" />
+        </StackPanel>
+      </Grid>
+
+      <Separator Margin="0,8,0,8" />
+
       <!-- Randomness Tests -->
       <TextBlock Text="Randomness Tests" FontWeight="SemiBold" FontSize="12" Foreground="#FF4466AA" Margin="0,0,0,6" />
       <Grid Margin="8,0,0,0">
@@ -112,59 +168,6 @@
 
         <Separator Margin="0,8,0,8" />
       </StackPanel>
-
-      <!-- Byte Frequency Histogram -->
-      <TextBlock Text="Byte Frequency Distribution" FontWeight="SemiBold" FontSize="12"
-                 Foreground="#FF4466AA" Margin="0,0,0,6" />
-
-      <Border Margin="8,0,0,0" BorderBrush="#FFDDDDDD" BorderThickness="1" CornerRadius="3"
-              ClipToBounds="True">
-        <Canvas x:Name="HistogramCanvas" Height="100" ClipToBounds="True"
-                SizeChanged="OnHistogramSizeChanged"
-                MouseMove="OnHistogramMouseMove" MouseLeave="OnHistogramMouseLeave"
-                Background="Transparent"
-                ToolTipService.InitialShowDelay="0" ToolTipService.ShowDuration="60000"
-                ToolTipService.BetweenShowDelay="0">
-          <Canvas.ToolTip>
-            <ToolTip x:Name="HistogramTooltip" />
-          </Canvas.ToolTip>
-        </Canvas>
-      </Border>
-
-      <!-- Histogram legend -->
-      <Grid Margin="8,4,0,0">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="8" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="8" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="8" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="8" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <StackPanel Grid.Column="0" Orientation="Horizontal">
-          <Border Width="10" Height="10" Background="#FFE06060" CornerRadius="1" Margin="0,0,3,0" />
-          <TextBlock Text="Most" FontSize="10" Foreground="Gray" />
-        </StackPanel>
-        <StackPanel Grid.Column="2" Orientation="Horizontal">
-          <Border Width="10" Height="10" Background="#FF4CAF50" CornerRadius="1" Margin="0,0,3,0" />
-          <TextBlock Text="Least" FontSize="10" Foreground="Gray" />
-        </StackPanel>
-        <StackPanel Grid.Column="4" Orientation="Horizontal">
-          <Border Width="10" Height="10" Background="#30FF9800" CornerRadius="1" Margin="0,0,3,0" />
-          <TextBlock Text="Ctrl" FontSize="10" Foreground="Gray" />
-        </StackPanel>
-        <StackPanel Grid.Column="6" Orientation="Horizontal">
-          <Border Width="10" Height="10" Background="#303399FF" CornerRadius="1" Margin="0,0,3,0" />
-          <TextBlock Text="ASCII" FontSize="10" Foreground="Gray" />
-        </StackPanel>
-        <StackPanel Grid.Column="8" Orientation="Horizontal">
-          <Border Width="10" Height="10" Background="#309C27B0" CornerRadius="1" Margin="0,0,3,0" />
-          <TextBlock Text="High" FontSize="10" Foreground="Gray" />
-        </StackPanel>
-      </Grid>
 
     </StackPanel>
   </ScrollViewer>
