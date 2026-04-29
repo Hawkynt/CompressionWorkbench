@@ -22,6 +22,8 @@ public partial class MainWindow : Window {
 
   public void OpenArchive(string path) => ViewModel.Open(path);
 
+  public void StartInOsBrowserAtLastFolder() => ViewModel.StartInOsBrowserAtLastFolder();
+
   private void OnDragOver(object sender, DragEventArgs e) {
     if (!e.Data.GetDataPresent(DataFormats.FileDrop)) {
       e.Effects = DragDropEffects.None;
@@ -142,11 +144,6 @@ public partial class MainWindow : Window {
   }
 
   private void OnExit(object sender, RoutedEventArgs e) => Close();
-
-  private void OnHeatmapExplorer(object sender, RoutedEventArgs e) {
-    var explorer = new Views.HeatmapExplorerWindow { Owner = this };
-    explorer.Show();
-  }
 
   private void OnReverseEngineer(object sender, RoutedEventArgs e) {
     var wizard = new Views.ReverseEngineerWindow { Owner = this };

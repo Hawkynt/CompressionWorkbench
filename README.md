@@ -665,6 +665,9 @@ Universal archive tool with smart conversion, optimal re-encoding, benchmarking,
 | `auto-extract <file>`          | -       | Recursive nested extraction (see below)                     |
 | `batch <dir>`                  | -       | Scan a directory in parallel and aggregate format stats     |
 | `suggest <file>`               | -       | Platform-aware format recommendation                        |
+| `recover <image>`              | -       | Forensic carving — finds embedded filesystems + files in damaged disk images. `--mode auto\|filesystems\|files`, `--recursive` walks nested wrappers (e.g. ZIP→VHD→MBR→FAT). |
+| `visualize <file>`             | -       | Renders a colored block map of every detected envelope (FAT/ext/NTFS/MBR/...) stacked by depth. `--format ascii\|svg\|html` |
+| `carve <file>`                 | -       | Photorec-style file carver (JPEG/PNG/MP4/ZIP/... at any offset, including in slack space) |
 | `reverse-engineer <tool>`      | `reveng`| Black-box probing of an unknown compression tool            |
 | `tool (init\|list\|add\|run\|remove)` | - | Manage external-tool templates                          |
 | `formats`                      | -       | List all supported formats                                  |
@@ -701,6 +704,14 @@ cwb suggest big.csv        # "→ consider zstd -19 (columnar/text, moderate ent
 
 The archive browser is the conventional half: file list with icons, columns (name, size, compressed, ratio, method, modified), open / extract / create / test flows, preview window (text + hex), properties dialog with compression-ratio visualisation, benchmark tool, and Explorer context-menu integration (`Compression.Shell`).
 
+**UI niceties** that match power-user expectations from 7-Zip / Total Commander:
+
+- **".." everywhere** — navigates up one folder; at archive root it exits to **OS-browser mode** rooted at the archive's containing folder, so you can keep walking up the filesystem like 7z does.
+- **Auto-descent into nested archives** — double-clicking a file inside an archive that's itself an archive (e.g. a `.vhd` inside a `.zip`) opens it as a new archive context. ".." pops back to the parent. Guarded by content-hash dedup + max-depth-16 cap so a malformed file detected as containing itself doesn't loop forever.
+- **Drag in / drag out** — drop files on the window to open them or add them to the open archive (auto-detects); drag entries out of the list to copy them into Explorer or any drop target.
+- **Last-folder restore** — relaunching the app reopens the OS browser at the last folder a file was opened from. If that folder was deleted in the meantime, walks up parents until one exists, falling back to `%USERPROFILE%`.
+- **All file-type filters** — Open dialog dropdown lists "All Archives" + one entry per registered descriptor (auto-discovered, alphabetically sorted), so you can narrow to e.g. "ZIP archive (*.zip)" or "VMDK virtual disk (*.vmdk)" with one click.
+
 The analyser is the interesting half. **When you drop an unknown binary on the UI, it never says "unsupported" — it shows you what the bytes look like.** The Binary Analysis wizard has a toolbar that walks you through progressively deeper investigation:
 
 - **Scan Results** — every registered magic-byte signature that matches, with offsets and confidence.
@@ -724,7 +735,7 @@ The Heatmap Explorer is the *visual* first pass. A 16×16 colour grid represents
 | Red         | Random / encrypted (incompressible)              | 7.5–8.0  |
 | Purple      | A known format signature was detected here       | any      |
 
-Click any cell to subdivide into another 16×16 grid — it recursively zooms in on a region. Hovering shows offset, size, entropy, unique-byte count, and the detected signature (if any). **Extract** on a purple cell saves just that region to a file. The explorer only samples each block, so it handles arbitrarily large files without loading them into memory. Accessible from the analyser tab or standalone at *Tools → Heatmap Explorer*.
+Click any cell to subdivide into another 16×16 grid — it recursively zooms in on a region. Hovering shows offset, size, entropy, unique-byte count, and the detected signature (if any). **Extract** on a purple cell saves just that region to a file. The explorer only samples each block, so it handles arbitrarily large files without loading them into memory. Accessible from the analyser's "Heatmap" tab.
 
 ### Compression.Analysis — the analyser as a library
 
@@ -741,6 +752,10 @@ Everything the UI exposes is available as a .NET library under `Compression.Anal
 - **Black-box tool integration** — `ExternalToolRunner`, `ToolOutputParser`, `CrossValidator`, `FallbackDecompressor` with auto-discovery of tools on `PATH`.
 - **AutoExtractor** — recursive nested extraction: archives inside archives, disk images → partition tables → filesystems → files. Configurable max depth (default 5) and file-size limits.
 - **BatchAnalyzer** — parallel directory scan with aggregate format statistics.
+- **FileCarver / FileCarverOutputSink** — photorec-style flat magic-scan carving for damaged dumps. Streams 1 MB windows with 64 KB overlap; never materialises multi-GB images.
+- **FilesystemCarver / FilesystemExtractor** — finds filesystem superblocks anywhere in a stream (ext at +1080, FAT at +54/+82, XFS "XFSB" at 0, Btrfs at 0x10020, …), validates each via the matching reader's `List()`, extracts contents per-file with isolated error handling.
+- **RecursiveFilesystemCarver** — descends through wrapper chains: VHD → MBR → FAT → file.zip etc. Each `NestedHit` carries its `EnvelopeStack` lineage so consumers know what's wrapping what.
+- **BlockMap / BlockMapRenderer** — colored visualization of envelope stacks. ASCII / SVG / HTML output with per-format palette (ext = green, FAT = orange, NTFS = blue, Btrfs = teal, XFS = red, MBR/GPT = grey, QCOW2/VMDK/VHD = purples). Used by `cwb visualize`.
 - **PayloadCarver, StringsExtractor, EntropyHeatmap** — standalone helpers.
 
 **Detection pipeline.** Magic bytes → parallel trial decompression (early-termination on low-entropy output) → extension fallback → deep probe (header parse + structural validation + integrity check).

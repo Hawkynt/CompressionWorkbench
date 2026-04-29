@@ -15,6 +15,24 @@ internal sealed class MainViewModel : ViewModelBase {
   private bool _isBusy;
   private double _progress;
   private string _currentFolder = "";
+  // When non-null: the user has navigated OUT of an archive via the ".." entry
+  // and is currently browsing an OS filesystem folder. The Entries list contains
+  // OS files/folders rather than archive entries. Double-clicking a file in this
+  // mode tries to open it as an archive (recursive descent, like 7z).
+  private string? _osBrowserPath;
+
+  // Stack of ancestor archives the user descended through. Each entry is
+  // (path, currentFolder, contentHash) of a parent archive. NavigateUp at
+  // archive root pops the stack and restores the parent rather than exiting
+  // to OS browser when there's a parent archive context.
+  // ContentHash is the SHA-256 of the FIRST 64 KB of the archive bytes —
+  // used to short-circuit nested-descent loops where a malformed file
+  // detects as an archive containing itself.
+  private readonly Stack<(string Path, string Folder, string ContentHash)> _archiveStack = new();
+  private const int MaxNestedDescentDepth = 16;
+  // Temp files created for nested-archive descent — cleaned on archive close
+  // and on app exit.
+  private readonly List<string> _nestedTempFiles = [];
 
   public ObservableCollection<ArchiveEntryViewModel> Entries { get; } = [];
   public ObservableCollection<ArchiveEntryViewModel> SelectedEntries { get; } = [];
@@ -29,6 +47,7 @@ internal sealed class MainViewModel : ViewModelBase {
   public string CurrentFolder { get => _currentFolder; set { SetField(ref _currentFolder, value); RefreshBreadcrumbs(); } }
 
   public bool HasArchive => !string.IsNullOrEmpty(ArchivePath);
+  public bool IsBrowsingOsFolder => _osBrowserPath is not null;
   public string Title => HasArchive
     ? $"CompressionWorkbench \u2014 {Path.GetFileName(ArchivePath)}"
     : "CompressionWorkbench";
@@ -57,7 +76,8 @@ internal sealed class MainViewModel : ViewModelBase {
     ExtractSelectedCommand = new AsyncRelayCommand(_ => ExtractSelected(), _ => HasArchive && SelectedEntries.Count > 0);
     TestCommand = new AsyncRelayCommand(_ => TestArchive(), _ => HasArchive);
     CreateCommand = new RelayCommand(_ => CreateDialog());
-    NavigateUpCommand = new RelayCommand(_ => NavigateUp(), _ => !string.IsNullOrEmpty(CurrentFolder));
+    // NavigateUp is always available — at archive root it transitions to OS-browser mode.
+    NavigateUpCommand = new RelayCommand(_ => NavigateUp(), _ => HasArchive || _osBrowserPath is not null);
     NavigateIntoCommand = new RelayCommand(p => NavigateInto(p as ArchiveEntryViewModel));
     NavigateToBreadcrumbCommand = new RelayCommand(p => NavigateToBreadcrumb(p as string));
     ViewAsTextCommand = new RelayCommand(_ => ViewSelectedAs(hex: false), _ => HasArchive && HasSelectedFile);
@@ -74,7 +94,9 @@ internal sealed class MainViewModel : ViewModelBase {
   private bool CanAddFiles => !string.IsNullOrEmpty(ArchivePath) && FormatDetector.DetectByExtension(ArchivePath) is var f
     && f != FormatDetector.Format.Unknown && !FormatDetector.IsStreamFormat(f);
 
-  public void Open(string path) {
+  public void Open(string path) => Open(path, fromNestedDescent: false);
+
+  internal void Open(string path, bool fromNestedDescent) {
     try {
       IsBusy = true;
       StatusText = $"Opening {Path.GetFileName(path)}...";
@@ -82,9 +104,19 @@ internal sealed class MainViewModel : ViewModelBase {
       var format = FormatDetector.Detect(path);
       var entries = ArchiveOperations.List(path, password: null);
 
+      // Top-level Open clears the parent-archive stack and any leftover nested
+      // temp files. Nested descents skip this cleanup so the back-stack survives.
+      if (!fromNestedDescent) {
+        _archiveStack.Clear();
+        CleanupNestedTempFiles();
+      }
+
       ArchivePath = path;
       Format = format.ToString();
       CurrentFolder = "";
+      // Re-entering archive mode: clear the OS-browser breadcrumb.
+      _osBrowserPath = null;
+      OnPropertyChanged(nameof(IsBrowsingOsFolder));
 
       _allEntries.Clear();
       foreach (var e in entries) {
@@ -110,6 +142,16 @@ internal sealed class MainViewModel : ViewModelBase {
 
       OnPropertyChanged(nameof(HasArchive));
       OnPropertyChanged(nameof(Title));
+
+      // Persist the parent folder so the next launch can restore browsing
+      // there (parent-walk fallback handles deletion between sessions).
+      // Skipped for nested-descent temp files since those live under %TEMP%
+      // and aren't a meaningful "last folder" to remember.
+      if (!fromNestedDescent) {
+        var parent = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(parent))
+          new UserSettings { LastFolder = parent }.Save();
+      }
     }
     catch (Exception ex) {
       StatusText = $"Error: {ex.Message}";
@@ -119,21 +161,44 @@ internal sealed class MainViewModel : ViewModelBase {
     }
   }
 
+  /// <summary>
+  /// Restores OS-browser mode at the last-used folder (or the deepest
+  /// surviving ancestor if it has been deleted). Called from
+  /// <c>App.OnStartup</c> when no archive argument is supplied.
+  /// </summary>
+  public void StartInOsBrowserAtLastFolder() {
+    var settings = UserSettings.Load();
+    var folder = UserSettings.ResolveExistingAncestor(settings.LastFolder);
+    _osBrowserPath = folder;
+    CurrentFolder = "";
+    RefreshVisibleEntries();
+    OnPropertyChanged(nameof(IsBrowsingOsFolder));
+    StatusText = $"Browsing: {folder}";
+  }
+
   private readonly List<ArchiveEntryViewModel> _allEntries = [];
 
   private void RefreshVisibleEntries() {
     Entries.Clear();
+
+    // OS-browser mode: list filesystem children instead of archive entries.
+    // Reached when the user navigates UP from an archive's root via the ".." entry.
+    if (_osBrowserPath is not null) {
+      RefreshOsBrowserEntries();
+      return;
+    }
+
     var prefix = string.IsNullOrEmpty(CurrentFolder) ? "" : CurrentFolder;
 
-    // Add ".." entry when inside a subfolder
-    if (!string.IsNullOrEmpty(prefix)) {
-      Entries.Add(new ArchiveEntryViewModel {
-        Name = "..",
-        Path = "",
-        IsDirectory = true,
-        IsParentEntry = true,
-      });
-    }
+    // Always emit ".." — even at archive root. At root, ".." exits the archive
+    // and switches to OS-browser mode rooted at the archive's containing folder
+    // (matches 7-Zip behaviour).
+    Entries.Add(new ArchiveEntryViewModel {
+      Name = "..",
+      Path = "",
+      IsDirectory = true,
+      IsParentEntry = true,
+    });
 
     // Collect immediate children, deduplicating folders
     // Key: normalized folder name with trailing slash, or file name
@@ -191,26 +256,170 @@ internal sealed class MainViewModel : ViewModelBase {
   private void NavigateInto(ArchiveEntryViewModel? entry) {
     if (entry == null) return;
     if (entry.IsParentEntry) { NavigateUp(); return; }
+
+    // OS-browser mode: directories CD; files probe-open as archive (fall
+    // back to byte preview when the format isn't a recognized archive).
+    if (_osBrowserPath is not null) {
+      if (entry.IsDirectory) {
+        _osBrowserPath = entry.Path;
+        CurrentFolder = "";
+        RefreshVisibleEntries();
+        return;
+      }
+
+      if (string.IsNullOrEmpty(entry.Path) || !File.Exists(entry.Path)) {
+        StatusText = $"Cannot open: {entry.Name} not readable.";
+        return;
+      }
+
+      var format = FormatDetector.Format.Unknown;
+      try { format = FormatDetector.Detect(entry.Path); } catch { /* fall through */ }
+      if (format != FormatDetector.Format.Unknown && !FormatDetector.IsStreamFormat(format)) {
+        Open(entry.Path);
+        return;
+      }
+
+      // Not an archive — show as bytes.
+      try {
+        var data = File.ReadAllBytes(entry.Path);
+        if (data.Length == 0) {
+          StatusText = $"{entry.Name} is empty.";
+          return;
+        }
+        var preview = new Views.PreviewWindow { Owner = Application.Current.MainWindow };
+        preview.ShowData(entry.Name, data, hex: false);
+        preview.Show();
+      }
+      catch (Exception ex) {
+        StatusText = $"Cannot preview: {ex.Message}";
+      }
+      return;
+    }
+
     if (!entry.IsDirectory) return;
     CurrentFolder = entry.Path.EndsWith('/') ? entry.Path : entry.Path + "/";
     RefreshVisibleEntries();
   }
 
   private void NavigateUp() {
-    if (string.IsNullOrEmpty(CurrentFolder)) return;
-    var trimmed = CurrentFolder.TrimEnd('/');
-    var lastSlash = trimmed.LastIndexOf('/');
-    CurrentFolder = lastSlash >= 0 ? trimmed[..(lastSlash + 1)] : "";
+    // OS-browser mode: ".." goes to OS parent; at filesystem root we stay put.
+    if (_osBrowserPath is not null) {
+      var parent = Directory.GetParent(_osBrowserPath)?.FullName;
+      if (!string.IsNullOrEmpty(parent)) {
+        _osBrowserPath = parent;
+        RefreshVisibleEntries();
+      }
+      return;
+    }
+
+    if (!string.IsNullOrEmpty(CurrentFolder)) {
+      var trimmed = CurrentFolder.TrimEnd('/');
+      var lastSlash = trimmed.LastIndexOf('/');
+      CurrentFolder = lastSlash >= 0 ? trimmed[..(lastSlash + 1)] : "";
+      RefreshVisibleEntries();
+      return;
+    }
+
+    // At archive root — first try to pop a parent archive off the stack
+    // (we're in a nested archive descended via TryEnterAsNestedArchive).
+    if (_archiveStack.Count > 0) {
+      var (parentPath, parentFolder, _) = _archiveStack.Pop();
+      // Re-open the parent — fromNestedDescent: true so the stack survives.
+      Open(parentPath, fromNestedDescent: true);
+      CurrentFolder = parentFolder;
+      RefreshVisibleEntries();
+      return;
+    }
+
+    // No parent archive — exit to OS-browser rooted at the archive's containing folder.
+    if (string.IsNullOrEmpty(ArchivePath)) return;
+    var dir = Path.GetDirectoryName(ArchivePath);
+    if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) {
+      dir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    }
+    _osBrowserPath = dir;
     RefreshVisibleEntries();
+    OnPropertyChanged(nameof(IsBrowsingOsFolder));
+  }
+
+  /// <summary>
+  /// Populates Entries with the OS folder's immediate children (subdirs + files).
+  /// File entries are clickable — double-clicking attempts to open them as an
+  /// archive via <see cref="Open"/>.
+  /// </summary>
+  private void RefreshOsBrowserEntries() {
+    if (_osBrowserPath is null) return;
+
+    // Always show ".." — let the user keep walking up the FS tree.
+    Entries.Add(new ArchiveEntryViewModel {
+      Name = "..",
+      Path = "",
+      IsDirectory = true,
+      IsParentEntry = true,
+    });
+
+    try {
+      var dirInfo = new DirectoryInfo(_osBrowserPath);
+      foreach (var sub in dirInfo.EnumerateDirectories().OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)) {
+        Entries.Add(new ArchiveEntryViewModel {
+          Name = sub.Name,
+          Path = sub.FullName,
+          IsDirectory = true,
+          LastModified = sub.LastWriteTime,
+        });
+      }
+      foreach (var file in dirInfo.EnumerateFiles().OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)) {
+        Entries.Add(new ArchiveEntryViewModel {
+          Name = file.Name,
+          Path = file.FullName,
+          IsDirectory = false,
+          OriginalSize = file.Length,
+          CompressedSize = -1,
+          LastModified = file.LastWriteTime,
+          Method = "",
+        });
+      }
+    }
+    catch (UnauthorizedAccessException) {
+      StatusText = $"Access denied: {_osBrowserPath}";
+    }
+    catch (DirectoryNotFoundException) {
+      StatusText = $"Folder vanished: {_osBrowserPath}";
+    }
+
+    StatusText = $"Browsing: {_osBrowserPath}";
+    RefreshBreadcrumbs();
   }
 
   private void NavigateToBreadcrumb(string? path) {
+    // OS-browser mode: the breadcrumb path is an absolute FS path → CD there.
+    if (_osBrowserPath is not null) {
+      if (!string.IsNullOrEmpty(path) && Directory.Exists(path)) {
+        _osBrowserPath = path;
+        RefreshVisibleEntries();
+      }
+      return;
+    }
     CurrentFolder = path ?? "";
     RefreshVisibleEntries();
   }
 
   private void RefreshBreadcrumbs() {
     Breadcrumbs.Clear();
+
+    // OS-browser mode: surface the FS path as breadcrumb segments. Each segment
+    // is clickable → navigates back up to that level. (Click handler is the same
+    // NavigateToBreadcrumbCommand; in OS mode we route to OS-folder navigation.)
+    if (_osBrowserPath is not null) {
+      var parts = _osBrowserPath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+      var accumulated = "";
+      for (var i = 0; i < parts.Length; i++) {
+        accumulated = i == 0 ? parts[i] + Path.DirectorySeparatorChar : Path.Combine(accumulated, parts[i]);
+        Breadcrumbs.Add(new BreadcrumbSegment { Label = parts[i], FolderPath = accumulated });
+      }
+      return;
+    }
+
     // Root segment
     Breadcrumbs.Add(new BreadcrumbSegment { Label = Path.GetFileName(ArchivePath), FolderPath = "" });
 
@@ -380,8 +589,40 @@ internal sealed class MainViewModel : ViewModelBase {
     if (entry == null) return;
 
     try {
-      StatusText = $"Loading preview of {entry.Name}...";
-      var data = ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: null);
+      StatusText = $"Loading {entry.Name}...";
+      byte[] data;
+
+      // OS-browser mode: read from disk directly. Otherwise extract from the
+      // currently-open archive. Without this branch, ExtractEntry tries to
+      // resolve an absolute FS path inside the (stale) archive and throws
+      // "The value cannot be an empty string" or similar.
+      if (_osBrowserPath is not null) {
+        if (string.IsNullOrEmpty(entry.Path) || !File.Exists(entry.Path)) {
+          StatusText = $"Cannot preview: {entry.Name} not readable.";
+          return;
+        }
+        data = File.ReadAllBytes(entry.Path);
+      } else {
+        if (string.IsNullOrEmpty(ArchivePath) || string.IsNullOrEmpty(entry.Path)) {
+          StatusText = $"Cannot preview: missing archive context.";
+          return;
+        }
+        data = ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: null);
+      }
+
+      // Before showing the preview, check if the extracted bytes are themselves
+      // an archive — if so, descend into it (push current context onto the
+      // archive stack and re-open). Matches 7-Zip's behaviour for nested
+      // archives like a ZIP-inside-ZIP or a VHD-inside-tarball.
+      if (TryEnterAsNestedArchive(entry.Name, data))
+        return;
+
+      // Avoid empty-data preview throws.
+      if (data.Length == 0) {
+        StatusText = $"{entry.Name} is empty.";
+        return;
+      }
+
       var preview = new Views.PreviewWindow { Owner = Application.Current.MainWindow };
       preview.ShowData(entry.Name, data, hex);
       preview.Show();
@@ -390,6 +631,99 @@ internal sealed class MainViewModel : ViewModelBase {
     catch (Exception ex) {
       StatusText = $"Preview error: {ex.Message}";
     }
+  }
+
+  /// <summary>
+  /// If <paramref name="data"/> looks like a known archive/filesystem,
+  /// materialise it to a temp file and open it as the new active archive,
+  /// pushing the current archive onto <see cref="_archiveStack"/> so the user
+  /// can navigate back via "..". Returns <c>true</c> on successful descent.
+  /// Guards against infinite recursion via depth cap + content-hash check.
+  /// </summary>
+  private bool TryEnterAsNestedArchive(string entryName, byte[] data) {
+    if (data.Length == 0) return false;
+
+    // Depth cap — even legitimately nested archives don't usually exceed
+    // 5-6 levels (e.g. .docx inside .zip inside .tar.gz inside .vhd). 16 is
+    // generous; beyond that something has gone wrong.
+    if (_archiveStack.Count >= MaxNestedDescentDepth) {
+      StatusText = $"Maximum nesting depth ({MaxNestedDescentDepth}) reached — showing as bytes.";
+      return false;
+    }
+
+    // Content-hash recursion guard: hash a prefix of the candidate's bytes
+    // and reject if the same hash already exists in the descent chain.
+    // Prevents pathological loops where a file "decodes" to itself or where
+    // a descriptor's magic match is so loose that random bytes get re-entered.
+    var candidateHash = HashPrefix(data);
+    foreach (var frame in _archiveStack)
+      if (string.Equals(frame.ContentHash, candidateHash, StringComparison.Ordinal)) {
+        StatusText = $"Loop detected — '{entryName}' has the same content as a parent archive in the chain.";
+        return false;
+      }
+
+    // Also check the currently-open archive (top of effective stack) so we
+    // don't re-enter a file that's identical to the host archive.
+    if (!string.IsNullOrEmpty(ArchivePath) && File.Exists(ArchivePath)) {
+      try {
+        using var fs = File.OpenRead(ArchivePath);
+        var hostHash = HashPrefix(fs);
+        if (string.Equals(hostHash, candidateHash, StringComparison.Ordinal)) {
+          StatusText = $"Loop detected — '{entryName}' is identical to the host archive.";
+          return false;
+        }
+      } catch { /* best effort */ }
+    }
+
+    // Quick header-byte sniff via FormatDetector. We need a file path for
+    // detection-by-extension fall-through, so write to temp first.
+    var tempPath = Path.Combine(Path.GetTempPath(),
+                                $"cwb_nested_{Guid.NewGuid():N}_{Path.GetFileName(entryName)}");
+    try {
+      File.WriteAllBytes(tempPath, data);
+    }
+    catch {
+      return false;
+    }
+
+    var format = FormatDetector.Format.Unknown;
+    try { format = FormatDetector.Detect(tempPath); } catch { /* fall through */ }
+    if (format == FormatDetector.Format.Unknown || FormatDetector.IsStreamFormat(format)) {
+      // Not an archive (or a single-stream compressor like .gz that
+      // contains exactly one payload — preview those as bytes instead).
+      try { File.Delete(tempPath); } catch { /* best effort */ }
+      return false;
+    }
+
+    // Save current archive context for "go back" navigation.
+    if (!string.IsNullOrEmpty(ArchivePath)) {
+      var parentHash = "";
+      try { using var fs = File.OpenRead(ArchivePath); parentHash = HashPrefix(fs); } catch { /* best effort */ }
+      _archiveStack.Push((ArchivePath, CurrentFolder, parentHash));
+    }
+    _nestedTempFiles.Add(tempPath);
+
+    StatusText = $"Entering nested archive: {entryName} ({format}) — depth {_archiveStack.Count}";
+    Open(tempPath, fromNestedDescent: true);
+    return true;
+  }
+
+  private static string HashPrefix(byte[] data) {
+    var len = Math.Min(data.Length, 64 * 1024);
+    return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data.AsSpan(0, len)));
+  }
+
+  private static string HashPrefix(Stream stream) {
+    var buf = new byte[64 * 1024];
+    var read = stream.Read(buf, 0, buf.Length);
+    return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(buf.AsSpan(0, read)));
+  }
+
+  private void CleanupNestedTempFiles() {
+    foreach (var f in _nestedTempFiles) {
+      try { File.Delete(f); } catch { /* best effort */ }
+    }
+    _nestedTempFiles.Clear();
   }
 
   internal IReadOnlyList<ArchiveEntryViewModel> AllEntries => _allEntries;
@@ -657,12 +991,34 @@ internal sealed class MainViewModel : ViewModelBase {
 
   private static string BuildOpenFilter() {
     FormatRegistration.EnsureInitialized();
-    var exts = new List<string>();
+
+    // Aggregate-pattern entry: "All Archives" with the union of every registered
+    // descriptor's extensions. This is the default selection so users with
+    // unknown formats still see everything.
+    var allExts = new List<string>();
     foreach (var desc in FormatRegistry.All) {
-      foreach (var ext in desc.CompoundExtensions) exts.Add("*" + ext);
-      foreach (var ext in desc.Extensions) exts.Add("*" + ext);
+      foreach (var ext in desc.CompoundExtensions) allExts.Add("*" + ext);
+      foreach (var ext in desc.Extensions) allExts.Add("*" + ext);
     }
-    return $"All Archives|{string.Join(";", exts.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(e => e))}|All Files|*.*";
+    var allUnion = string.Join(";", allExts.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(e => e));
+
+    // Per-descriptor entries: one filter line per registered format so the user
+    // can pick e.g. "ZIP archive (*.zip)" or "TAR archive (*.tar;*.tgz)" from
+    // the dropdown and have only matching files shown.
+    var perFormat = new List<string>();
+    foreach (var desc in FormatRegistry.All
+                       .Where(d => d.Extensions.Count > 0 || d.CompoundExtensions.Count > 0)
+                       .OrderBy(d => d.DisplayName, StringComparer.OrdinalIgnoreCase)) {
+      var descExts = new List<string>();
+      foreach (var ext in desc.CompoundExtensions) descExts.Add("*" + ext);
+      foreach (var ext in desc.Extensions) descExts.Add("*" + ext);
+      var pattern = string.Join(";", descExts.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(e => e));
+      // Truncate the displayed pattern if too long for the dropdown.
+      var shown = pattern.Length > 60 ? pattern[..57] + "..." : pattern;
+      perFormat.Add($"{desc.DisplayName} ({shown})|{pattern}");
+    }
+
+    return $"All Archives|{allUnion}|{string.Join("|", perFormat)}|All Files|*.*";
   }
 
   private static string BuildCreateFilter() {

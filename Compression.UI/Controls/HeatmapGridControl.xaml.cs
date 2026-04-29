@@ -35,6 +35,25 @@ public partial class HeatmapGridControl : UserControl {
   public HeatmapGridControl() {
     InitializeComponent();
     BuildGridStructure();
+    // Pick a Foreground that contrasts with the host Window's background.
+    // The control is embedded in BOTH HeatmapExplorerWindow (dark #1E1E1E) and
+    // AnalysisWindow (default light), so we can't hardcode either color.
+    Loaded += (_, _) => ApplyContrastingForeground();
+  }
+
+  private void ApplyContrastingForeground() {
+    var host = System.Windows.Window.GetWindow(this);
+    if (host?.Background is not System.Windows.Media.SolidColorBrush bg) {
+      // Default-Window background is non-solid — assume light theme.
+      Foreground = System.Windows.Media.Brushes.Black;
+      return;
+    }
+    var c = bg.Color;
+    // Perceived luminance per BT.601: 0.299R + 0.587G + 0.114B (0..255).
+    var lum = 0.299 * c.R + 0.587 * c.G + 0.114 * c.B;
+    Foreground = lum < 128
+      ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xE6, 0xE6, 0xE6))
+      : System.Windows.Media.Brushes.Black;
   }
 
   /// <summary>Opens a file and shows the top-level heatmap.</summary>

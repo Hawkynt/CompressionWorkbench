@@ -69,8 +69,18 @@ public partial class AnalysisWindow : Window {
       StringsControl.Data = _fileData;
     if (name == "ToolStructure" && _fileData != null)
       StructureControl.Data = _fileData;
-    if (name == "ToolHeatmap" && _filePath != null)
-      HeatmapControl.OpenFile(_filePath);
+    if (name == "ToolHeatmap" && _fileData != null) {
+      // Prefer the real on-disk file when present (HeatmapGridControl uses
+      // FileStream w/ RandomAccess for large files). When _filePath is just a
+      // synthetic archive-entry name like "FULL.bfs" — i.e. invoked via
+      // ShowAnalysis on an in-archive entry — File.Exists is false; fall back
+      // to streaming the in-memory bytes so we don't probe CWD/FULL.bfs.
+      if (_filePath != null && System.IO.File.Exists(_filePath))
+        HeatmapControl.OpenFile(_filePath);
+      else
+        HeatmapControl.OpenStream(new System.IO.MemoryStream(_fileData),
+                                  _filePath ?? "(in-memory)");
+    }
   }
 
   internal void RunAnalysis(string fileName, byte[] data) {
@@ -220,7 +230,8 @@ public partial class AnalysisWindow : Window {
     var fileName = _filePath;
 
     RunBtn.IsEnabled = false;
-    StatusText.Text = "Analyzing...";
+    BusyBar.Visibility = System.Windows.Visibility.Visible;
+    StatusText.Text = $"Analyzing {data.Length:N0} bytes...";
     Title = $"Analysis \u2014 {Path.GetFileName(fileName)}";
 
     var sw = Stopwatch.StartNew();
@@ -234,6 +245,7 @@ public partial class AnalysisWindow : Window {
     }
     catch (Exception ex) {
       StatusText.Text = $"Error: {ex.Message}";
+      BusyBar.Visibility = System.Windows.Visibility.Collapsed;
       RunBtn.IsEnabled = true;
       return;
     }
@@ -241,7 +253,8 @@ public partial class AnalysisWindow : Window {
     sw.Stop();
     _lastResult = result;
     _entropyRegions = result.EntropyMap;
-    StatusText.Text = $"Done ({sw.ElapsedMilliseconds}ms)";
+    StatusText.Text = $"Done ({sw.ElapsedMilliseconds:N0}ms)";
+    BusyBar.Visibility = System.Windows.Visibility.Collapsed;
     RunBtn.IsEnabled = true;
 
     PopulateResults(fileName, data, result);
@@ -313,12 +326,19 @@ public partial class AnalysisWindow : Window {
         var r = regions[i];
         double w;
         if (i == regions.Count - 1) {
-          // Last region: fill remaining space to prevent white gap
-          w = canvasWidth - x;
+          // Last region: fill remaining space to prevent white gap.
+          // Clamp non-negative — when many tiny regions hit Math.Max(1,...),
+          // x can overshoot canvasWidth and w would otherwise be negative,
+          // throwing ArgumentException on Rectangle.Width set.
+          w = Math.Max(0, canvasWidth - x);
         }
         else {
           w = Math.Max(1, r.Length / (double)totalSpan * canvasWidth);
         }
+        // Same overshoot guard applies to non-last regions when x is already
+        // at/past canvasWidth.
+        if (x >= canvasWidth) { break; }
+        if (x + w > canvasWidth) w = Math.Max(0, canvasWidth - x);
 
         var color = EntropyToColorConverter.EntropyToColor(r.Entropy);
 

@@ -46,9 +46,14 @@ public partial class App : System.Windows.Application {
     MainWindow = mainWindow;
     mainWindow.Show();
 
-    // Handle file association: if launched with a file argument, open it
-    if (e.Args.Length > 0 && System.IO.File.Exists(e.Args[0]))
+    // Handle file association: if launched with a file argument, open it.
+    // Otherwise restore the OS-browser at the last-used folder (or deepest
+    // surviving ancestor if it has been removed since last session).
+    if (e.Args.Length > 0 && System.IO.File.Exists(e.Args[0])) {
       mainWindow.OpenArchive(e.Args[0]);
+    } else {
+      mainWindow.StartInOsBrowserAtLastFolder();
+    }
   }
 
   private static void LogCrash(string source, System.Exception? ex) {

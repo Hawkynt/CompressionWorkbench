@@ -52,10 +52,27 @@ public static class JpegMetadataEditor {
     if (patch.ImageDescription is { } description)
       tiff.Ifd0.SetEntry(ExifValueEncoding.Ascii(TiffTags.ImageDescription, description));
 
+    // Date/time tags — DateTime in IFD0, the "Original" + "Digitized" pair
+    // in EXIF SubIFD. Format is JEITA's "yyyy:MM:dd HH:mm:ss". Patching any
+    // of the SubIFD dates makes us materialise the SubIFD pointer below.
+    if (patch.DateTimeModified is { } modified)
+      tiff.Ifd0.SetEntry(ExifValueEncoding.Ascii(TiffTags.DateTime, FormatExifDate(modified)));
+    if (patch.DateTimeOriginal is { } original) {
+      var subIfd = GetOrCreateSubIfd(tiff.Ifd0, TiffTags.ExifSubIfdPointer);
+      subIfd.SetEntry(ExifValueEncoding.Ascii(TiffTags.DateTimeOriginal, FormatExifDate(original)));
+    }
+    if (patch.DateTimeDigitized is { } digitized) {
+      var subIfd = GetOrCreateSubIfd(tiff.Ifd0, TiffTags.ExifSubIfdPointer);
+      subIfd.SetEntry(ExifValueEncoding.Ascii(TiffTags.DateTimeDigitized, FormatExifDate(digitized)));
+    }
+
     // Ensure the sub-IFD pointer entry exists so TiffWriter updates its offset
     // correctly. TiffWriter rewrites the value slot from SubIfds placement.
     if (tiff.Ifd0.FindEntry(TiffTags.GpsSubIfdPointer) == null)
       tiff.Ifd0.SetEntry(new TiffEntry(TiffTags.GpsSubIfdPointer, TiffFieldType.Long, 1, new byte[4]));
+    if (tiff.Ifd0.SubIfds.ContainsKey(TiffTags.ExifSubIfdPointer)
+        && tiff.Ifd0.FindEntry(TiffTags.ExifSubIfdPointer) == null)
+      tiff.Ifd0.SetEntry(new TiffEntry(TiffTags.ExifSubIfdPointer, TiffFieldType.Long, 1, new byte[4]));
 
     var newTiffBytes = TiffWriter.Serialize(tiff);
     var newApp1Payload = ConcatenateExifPayload(newTiffBytes);
@@ -136,6 +153,10 @@ public static class JpegMetadataEditor {
     return sub;
   }
 
+  /// <summary>JEITA EXIF date/time format: <c>yyyy:MM:dd HH:mm:ss</c>.</summary>
+  private static string FormatExifDate(DateTime when)
+    => when.ToString("yyyy:MM:dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+
   private static byte[] ConcatenateExifPayload(byte[] tiffBytes) {
     var payload = new byte[ExifHeader.Length + tiffBytes.Length];
     Array.Copy(ExifHeader, payload, ExifHeader.Length);
@@ -154,6 +175,12 @@ public sealed class ExifPatch {
   public double? ImageDirectionDegrees { get; init; }
   public bool ImageDirectionIsMagnetic { get; init; }
   public string? ImageDescription { get; init; }
+  /// <summary>EXIF SubIFD <c>DateTimeOriginal</c> (0x9003) — when the shutter closed.</summary>
+  public DateTime? DateTimeOriginal { get; init; }
+  /// <summary>EXIF SubIFD <c>DateTimeDigitized</c> (0x9004) — when the file was created.</summary>
+  public DateTime? DateTimeDigitized { get; init; }
+  /// <summary>IFD0 <c>DateTime</c> (0x0132) — last-modified.</summary>
+  public DateTime? DateTimeModified { get; init; }
 }
 
 /// <summary>
