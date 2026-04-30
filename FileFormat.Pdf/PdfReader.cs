@@ -17,10 +17,18 @@ namespace FileFormat.Pdf;
 public sealed partial class PdfReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<PdfEntry> _entries = [];
+  private readonly List<PdfEntry> _pages = [];
   private readonly Dictionary<int, ImageInfo> _images = [];
   private readonly Dictionary<int, AttachInfo> _attachments = [];
 
   public IReadOnlyList<PdfEntry> Entries => _entries;
+
+  /// <summary>
+  /// Per-page slice entries (one self-contained single-page PDF per leaf page).
+  /// Kept separate from <see cref="Entries"/> so the existing image/attachment
+  /// surface is unchanged for callers that only care about embedded content.
+  /// </summary>
+  public IReadOnlyList<PdfEntry> PageEntries => _pages;
 
   public PdfReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
@@ -49,6 +57,8 @@ public sealed partial class PdfReader : IDisposable {
 
   private void Parse() {
     var text = Encoding.Latin1.GetString(_data);
+
+    this.ParsePages();
 
     // Find all objects with image XObjects
     var objMatches = ObjPattern().Matches(text);
@@ -186,6 +196,10 @@ public sealed partial class PdfReader : IDisposable {
   public byte[] Extract(PdfEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
 
+    // Page-slice entries carry their bytes directly.
+    if (entry.PageData is { } pageBytes)
+      return pageBytes;
+
     // Check attachments first.
     if (_attachments.TryGetValue(entry.ObjectNumber, out var attach))
       return _data.AsSpan((int)attach.StreamOffset, (int)attach.StreamLength).ToArray();
@@ -226,6 +240,40 @@ public sealed partial class PdfReader : IDisposable {
         // If all decompression fails, return raw
       }
       return compressed;
+    }
+  }
+
+  /// <summary>
+  /// Splits the PDF into one self-contained single-page PDF per leaf page,
+  /// adding a <c>pages/page_NN.pdf</c> entry for each. Failures are silently
+  /// swallowed so <c>List()</c> never throws — the existing image/attachment
+  /// surface remains the fallback.
+  /// </summary>
+  private void ParsePages() {
+    try {
+      var splitter = new PdfPageSplitter(_data);
+      var pages = splitter.PageObjectNumbers;
+      if (pages.Count == 0) return;
+      var width = pages.Count.ToString().Length;
+      if (width < 2) width = 2;
+      for (var i = 0; i < pages.Count; ++i) {
+        byte[] pdfBytes;
+        try {
+          pdfBytes = splitter.BuildSinglePagePdf(pages[i]);
+        } catch {
+          continue; // skip an individual page that fails to slice
+        }
+        var name = $"pages/page_{(i + 1).ToString().PadLeft(width, '0')}.pdf";
+        _pages.Add(new PdfEntry {
+          Name = name,
+          Size = pdfBytes.Length,
+          ObjectNumber = pages[i],
+          Filter = "Page",
+          PageData = pdfBytes,
+        });
+      }
+    } catch {
+      // Bounded read: never propagate parse failures from List().
     }
   }
 

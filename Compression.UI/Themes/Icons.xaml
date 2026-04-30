@@ -226,6 +226,19 @@
   </DrawingImage>
 
   <!-- Preview / eye -->
+  <!-- View image: framed picture with sun + mountain -->
+  <DrawingImage x:Key="ViewImageIcon">
+    <DrawingImage.Drawing>
+      <DrawingGroup>
+        <GeometryDrawing Brush="#FFE8F2FB" Geometry="M 1,2 L 15,2 L 15,14 L 1,14 Z">
+          <GeometryDrawing.Pen><Pen Brush="#FF556688" Thickness="0.7" /></GeometryDrawing.Pen>
+        </GeometryDrawing>
+        <GeometryDrawing Brush="#FFFFC857" Geometry="M 4.5,5 A 1.2,1.2 0 1 0 4.5,7.39 A 1.2,1.2 0 1 0 4.5,5 Z" />
+        <GeometryDrawing Brush="#FF6688AA" Geometry="M 2,12.5 L 6,8 L 9,11 L 12,7 L 14,12.5 Z" />
+      </DrawingGroup>
+    </DrawingImage.Drawing>
+  </DrawingImage>
+
   <DrawingImage x:Key="PreviewIcon">
     <DrawingImage.Drawing>
       <DrawingGroup>

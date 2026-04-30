@@ -1,13 +1,12 @@
 #pragma warning disable CS1591
-using System.Text;
 using Compression.Registry;
 
 namespace FileFormat.FontCollection;
 
 /// <summary>
-/// Exposes a single-font .otf. OTF fonts with TrueType outlines ('glyf') slice
-/// the same way as .ttf; fonts with CFF/CFF2 outlines currently emit a single
-/// whole-file entry, since CFF charstring decoding is a separate project.
+/// Exposes a single-font .otf as <c>FULL.otf</c> + <c>metadata.ini</c> + per-glyph
+/// SVG entries. OTFs with TrueType outlines ('glyf') split per glyph; OTFs with
+/// CFF/CFF2 outlines emit FULL only and record the skip reason in metadata.ini.
 /// </summary>
 public sealed class OtfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Otf";
@@ -25,18 +24,21 @@ public sealed class OtfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "OpenType font; TrueType-outline OTFs expose per-glyph SVG entries.";
+  public string Description => "OpenType font; FULL + metadata + per-glyph SVG (TrueType outlines).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
-    GlyphCatalog.Build(Read(stream)).Select((g, i) => new ArchiveEntryInfo(
-      Index: i, Name: g.Name, OriginalSize: g.Svg.Length, CompressedSize: g.Svg.Length,
-      Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null)).ToList();
+    TtfFormatDescriptor.BuildEntries(Read(stream), defaultExt: ".otf")
+      .Select((e, i) => new ArchiveEntryInfo(
+        Index: i, Name: e.EntryName,
+        OriginalSize: e.Bytes.Length, CompressedSize: e.Bytes.Length,
+        Method: "stored", IsDirectory: false, IsEncrypted: false,
+        LastModified: null)).ToList();
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    foreach (var entry in GlyphCatalog.Build(Read(stream))) {
-      if (files != null && files.Length > 0 && !FormatHelpers.MatchesFilter(entry.Name, files))
+    foreach (var entry in TtfFormatDescriptor.BuildEntries(Read(stream), defaultExt: ".otf")) {
+      if (files != null && files.Length > 0 && !FormatHelpers.MatchesFilter(entry.EntryName, files))
         continue;
-      FormatHelpers.WriteFile(outputDir, entry.Name, Encoding.UTF8.GetBytes(entry.Svg));
+      FormatHelpers.WriteFile(outputDir, entry.EntryName, entry.Bytes);
     }
   }
 

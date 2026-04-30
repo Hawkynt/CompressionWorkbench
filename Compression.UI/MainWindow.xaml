@@ -188,6 +188,9 @@
           <MenuItem Header="View as _Hex" Command="{Binding ViewAsHexCommand}">
             <MenuItem.Icon><Image Source="{StaticResource ViewHexIcon}" Width="16" Height="16" /></MenuItem.Icon>
           </MenuItem>
+          <MenuItem Header="Preview as _Image" Command="{Binding ViewAsImageCommand}">
+            <MenuItem.Icon><Image Source="{StaticResource ViewImageIcon}" Width="16" Height="16" /></MenuItem.Icon>
+          </MenuItem>
           <Separator />
           <MenuItem Header="_Extract Selected..." Command="{Binding ExtractSelectedCommand}">
             <MenuItem.Icon><Image Source="{StaticResource ExtractSelectedIcon}" Width="16" Height="16" /></MenuItem.Icon>
