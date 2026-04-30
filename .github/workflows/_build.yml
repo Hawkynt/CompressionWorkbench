@@ -50,6 +50,14 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
           fetch-depth: 0
 
+      # FileFormat.PngCrushAdapters has sibling-conditional ProjectReferences
+      # to ..\..\PNGCrushCS\FileFormat.{Png,Apng,Jpeg,...}. Solution build
+      # references the sibling for the full image-format surface (test compile,
+      # UI publish via PngCrushAdapters).
+      - name: Clone PNGCrushCS sibling
+        shell: bash
+        run: git clone --depth 1 https://github.com/Hawkynt/PNGCrushCS.git "$GITHUB_WORKSPACE/../PNGCrushCS"
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
