@@ -5,7 +5,25 @@
     <IsTestProject>true</IsTestProject>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <NoWarn>CS1591</NoWarn>
+    <!-- Mirror FileFormat.PngCrushAdapters: tests that reference the sibling
+         PngCrushCS repo (FileFormat.Png/Jpeg/Apng/Core/etc.) only compile when
+         the sibling is checked out at ..\..\PNGCrushCS. CI without the sibling
+         drops these tests instead of failing the build. -->
+    <SiblingPresent>false</SiblingPresent>
+    <SiblingPresent Condition="Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj')">true</SiblingPresent>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(SiblingPresent)' != 'true'">
+    <!-- Tests that import sibling-only namespaces (FileFormat.Png, .Apng, .Jpeg,
+         .Core, and the PngCrushAdapters surface that depends on them). -->
+    <Compile Remove="Gif\GifColorSpaceTests.cs" />
+    <Compile Remove="Gif\GifTests.cs" />
+    <Compile Remove="Image\AllColorSpacesTests.cs" />
+    <Compile Remove="Image\ColorSpaceLazinessTests.cs" />
+    <Compile Remove="Image\ColorSpaceLazyExtractTests.cs" />
+    <Compile Remove="Image\ColorSpaceSplitterTests.cs" />
+    <Compile Remove="PngCrushAdapters\**\*.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.*" />
