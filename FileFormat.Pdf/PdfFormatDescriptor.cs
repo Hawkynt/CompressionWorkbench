@@ -24,14 +24,15 @@ public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new PdfReader(stream);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(
+    var all = r.Entries.Concat(r.PageEntries);
+    return all.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, e.Filter, false, false, null
     )).ToList();
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new PdfReader(stream);
-    foreach (var e in r.Entries) {
+    foreach (var e in r.Entries.Concat(r.PageEntries)) {
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }

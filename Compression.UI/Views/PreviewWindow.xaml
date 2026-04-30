@@ -3,7 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:Compression.UI.Controls"
         Title="Preview" Width="960" Height="640" MinWidth="500" MinHeight="350"
-        WindowStartupLocation="CenterOwner" SizeChanged="OnWindowSizeChanged">
+        WindowStartupLocation="CenterOwner" SizeChanged="OnWindowSizeChanged"
+        KeyDown="OnWindowKeyDown">
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -14,6 +15,8 @@
     <!-- Toolbar -->
     <ToolBarTray Grid.Row="0">
       <ToolBar Band="0" BandIndex="0">
+        <RadioButton x:Name="ImageMode" Content="Image" GroupName="Mode"
+                     Checked="OnModeChanged" Padding="8,2" Visibility="Collapsed" />
         <RadioButton x:Name="TextMode" Content="Text" IsChecked="True" GroupName="Mode"
                      Checked="OnModeChanged" Padding="8,2" />
         <RadioButton x:Name="HexMode" Content="Hex" GroupName="Mode"
@@ -83,14 +86,49 @@
         </ListBox.ItemContainerStyle>
       </ListBox>
 
-      <!-- Text view -->
-      <TextBox Grid.Column="0" x:Name="ContentBox"
-               IsReadOnly="True" AcceptsReturn="True"
-               FontFamily="Cascadia Mono,Consolas,Courier New"
-               FontSize="12"
-               HorizontalScrollBarVisibility="Auto"
-               VerticalScrollBarVisibility="Auto"
-               TextWrapping="NoWrap" />
+      <!-- Text view: virtualized line list. Backing IList<TextLineViewModel>
+           materialises rows on indexer access only — multi-MB previews stay
+           fluid because the underlying byte buffer is decoded one visible row
+           at a time. (Plain TextBox isn't virtualized; it freezes on big files.) -->
+      <ListBox Grid.Column="0" x:Name="ContentBox" Visibility="Collapsed"
+               FontFamily="Cascadia Mono,Consolas,Courier New" FontSize="12"
+               VirtualizingPanel.IsVirtualizing="True"
+               VirtualizingPanel.VirtualizationMode="Recycling"
+               VirtualizingPanel.ScrollUnit="Pixel"
+               ScrollViewer.HorizontalScrollBarVisibility="Auto"
+               BorderThickness="0"
+               ItemsSource="{Binding}"
+               SelectionMode="Extended">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding Text}" TextWrapping="NoWrap" />
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+        <ListBox.ItemContainerStyle>
+          <Style TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="4,0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="MinHeight" Value="16" />
+          </Style>
+        </ListBox.ItemContainerStyle>
+      </ListBox>
+
+      <!-- Image view: WPF BitmapImage handles PNG/JPEG/BMP/GIF/TIFF/Ico natively.
+           Disabled scrollbars constrain the child to the viewport so Uniform
+           stretch can take effect — Auto would hand the child infinity and
+           the Image would silently keep its native pixel size. NearestNeighbor
+           scaling is the right default for previews: it upscales pixel-art /
+           icons / sprites without bilinear blur, and downscaling impact on
+           photos is minor at typical viewport sizes. -->
+      <ScrollViewer Grid.Column="0" x:Name="ImageScroll"
+                    Visibility="Collapsed"
+                    HorizontalScrollBarVisibility="Disabled"
+                    VerticalScrollBarVisibility="Disabled"
+                    Background="#202020">
+        <Image x:Name="ImageView" Stretch="Uniform"
+               RenderOptions.BitmapScalingMode="NearestNeighbor"
+               HorizontalAlignment="Center" VerticalAlignment="Center" />
+      </ScrollViewer>
 
       <!-- Resizable splitter for stats panel -->
       <GridSplitter x:Name="StatsSplitter" Grid.Column="1" Width="4" Visibility="Collapsed"
@@ -108,6 +146,18 @@
     <StatusBar Grid.Row="2">
       <StatusBarItem>
         <TextBlock x:Name="SizeLabel" />
+      </StatusBarItem>
+      <Separator x:Name="FrameNavSeparator" Visibility="Collapsed" />
+      <StatusBarItem x:Name="FrameNavPanel" Visibility="Collapsed">
+        <StackPanel Orientation="Horizontal">
+          <Button x:Name="PrevFrameButton" Content="◀" Padding="6,0" Click="OnPrevFrame"
+                  ToolTip="Previous frame (Left arrow)" />
+          <Button x:Name="PlayPauseButton" Content="▶" Padding="6,0" Margin="2,0" Click="OnPlayPause"
+                  ToolTip="Play / pause animation (Space)" />
+          <Button x:Name="NextFrameButton" Content="▶▶" Padding="6,0" Click="OnNextFrame"
+                  ToolTip="Next frame (Right arrow)" />
+          <TextBlock x:Name="FrameIndexLabel" Margin="10,0,4,0" VerticalAlignment="Center" />
+        </StackPanel>
       </StatusBarItem>
     </StatusBar>
   </Grid>

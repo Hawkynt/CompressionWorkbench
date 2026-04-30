@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using FileFormat.Gif;
+using FileFormat.PngCrushAdapters;
 
 namespace Compression.Tests.Gif;
 
@@ -25,13 +26,14 @@ public class GifTests {
     bw.Write("NETSCAPE2.0"u8.ToArray());
     bw.Write((byte)0x03); bw.Write((byte)0x01); bw.Write((ushort)0); bw.Write((byte)0);
 
-    // Frame 0: GCE (0x21 0xF9 4 flags delay*2 transp 0) + Image Descriptor (0x2C, left=0, top=0, w=2, h=1, packed=0)
+    // Frame 0: GCE + Image Descriptor with VALID LZW: [clear=4, idx0, idx1, eoi=5]
+    // packed LSB-first into bytes 0x44 0x02 (3-bit codes from lzwMin=2).
     WriteGce(bw, delay: 10);
-    WriteImage(bw, width: 2, lzwMin: 2, imageData: [0x02, 0x44, 0x01]); // 2-pixel LZW stream for indices [0,1]
+    WriteImage(bw, width: 2, lzwMin: 2, imageData: [0x44, 0x02]);
 
     // Frame 1
     WriteGce(bw, delay: 10);
-    WriteImage(bw, width: 2, lzwMin: 2, imageData: [0x02, 0x44, 0x01]);
+    WriteImage(bw, width: 2, lzwMin: 2, imageData: [0x44, 0x02]);
 
     bw.Write((byte)0x3B); // Trailer
     return ms.ToArray();
@@ -85,27 +87,44 @@ public class GifTests {
   }
 
   [Test]
-  public void DescriptorListReturnsFrameEntries() {
+  public void DescriptorListReturnsFrameFoldersWithColorspaceTree() {
+    // After Phase 35 lazy-rewrite the GIF descriptor now decodes frames to RGBA32 and
+    // emits a frame folder containing the composite frame, alpha, and the full
+    // colorspace tree — matching APNG/TIFF/MPO layout.
     var data = MakeTwoFrameGif();
     var desc = new GifFormatDescriptor();
     using var ms = new MemoryStream(data);
     var entries = desc.List(ms, null);
-    Assert.That(entries, Has.Count.EqualTo(2));
-    Assert.That(entries[0].Name, Is.EqualTo("frame_000.gif"));
-    Assert.That(entries[1].Name, Is.EqualTo("frame_001.gif"));
+    var names = entries.Select(e => e.Name).ToList();
+
+    // Two frame folders, each prefixed with "frame_NNN_WxH_BBpp/".
+    Assert.That(names, Has.Some.StartsWith("frame_000_2x1_32bpp/"));
+    Assert.That(names, Has.Some.StartsWith("frame_001_2x1_32bpp/"));
+
+    // Composite frame PNG present.
+    Assert.That(names, Does.Contain("frame_000_2x1_32bpp/frame_000.png"));
+    Assert.That(names, Does.Contain("frame_001_2x1_32bpp/frame_001.png"));
+
+    // Colorspace tree present (sample a few).
+    Assert.That(names, Does.Contain("frame_000_2x1_32bpp/colorspace/RGB/R.png"));
+    Assert.That(names, Does.Contain("frame_000_2x1_32bpp/colorspace/YCbCr/Y.png"));
+    Assert.That(names, Does.Contain("frame_001_2x1_32bpp/colorspace/RGB/R.png"));
+    Assert.That(names, Does.Contain("frame_000_2x1_32bpp/Alpha.png"),
+      "RGBA32 frame format must announce its colorspace-agnostic Alpha.png");
   }
 
   [Test]
-  public void DescriptorExtractWritesFiles() {
+  public void DescriptorExtractWritesPngFiles() {
     var data = MakeTwoFrameGif();
     var dir = Path.Combine(Path.GetTempPath(), "gif_test_" + Guid.NewGuid().ToString("N"));
     try {
       using (var ms = new MemoryStream(data))
-        new GifFormatDescriptor().Extract(ms, dir, null, null);
-      Assert.That(File.Exists(Path.Combine(dir, "frame_000.gif")), Is.True);
-      Assert.That(File.Exists(Path.Combine(dir, "frame_001.gif")), Is.True);
-      var f0 = File.ReadAllBytes(Path.Combine(dir, "frame_000.gif"));
-      Assert.That(f0[..6], Is.EquivalentTo("GIF89a"u8.ToArray()));
+        new GifFormatDescriptor().Extract(ms, dir, null, ["frame_000_2x1_32bpp/frame_000.png"]);
+      var p0 = Path.Combine(dir, "frame_000_2x1_32bpp", "frame_000.png");
+      Assert.That(File.Exists(p0), Is.True);
+      var bytes = File.ReadAllBytes(p0);
+      // PNG signature: 89 50 4E 47 0D 0A 1A 0A
+      Assert.That(bytes[..8], Is.EquivalentTo(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }));
     } finally {
       if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
     }

@@ -21,6 +21,13 @@ internal sealed class MainViewModel : ViewModelBase {
   // mode tries to open it as an archive (recursive descent, like 7z).
   private string? _osBrowserPath;
 
+  // Captured when a user opens an archive from OS-browser mode. NavigateUp at
+  // the top archive root prefers this over Path.GetDirectoryName(ArchivePath)
+  // — without it, archives that live in %TEMP% (nested-descent leftovers,
+  // download-manager hand-offs, drag-drop temps) drop the user into LocalAppData
+  // instead of the folder they came from.
+  private string? _priorOsBrowserPath;
+
   // Stack of ancestor archives the user descended through. Each entry is
   // (path, currentFolder, contentHash) of a parent archive. NavigateUp at
   // archive root pops the stack and restores the parent rather than exiting
@@ -63,6 +70,7 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand NavigateToBreadcrumbCommand { get; }
   public ICommand ViewAsTextCommand { get; }
   public ICommand ViewAsHexCommand { get; }
+  public ICommand ViewAsImageCommand { get; }
   public ICommand AddFilesCommand { get; }
   public ICommand PropertiesCommand { get; }
   public ICommand AnalyzeCommand { get; }
@@ -82,6 +90,7 @@ internal sealed class MainViewModel : ViewModelBase {
     NavigateToBreadcrumbCommand = new RelayCommand(p => NavigateToBreadcrumb(p as string));
     ViewAsTextCommand = new RelayCommand(_ => ViewSelectedAs(hex: false), _ => HasArchive && HasSelectedFile);
     ViewAsHexCommand = new RelayCommand(_ => ViewSelectedAs(hex: true), _ => HasArchive && HasSelectedFile);
+    ViewAsImageCommand = new RelayCommand(_ => ViewSelectedAsImage(), _ => (HasArchive || IsBrowsingOsFolder) && HasSelectedFile);
     AddFilesCommand = new RelayCommand(_ => AddFilesToArchive(), _ => HasArchive && CanAddFiles);
     PropertiesCommand = new RelayCommand(_ => ShowProperties(), _ => HasArchive && SelectedEntries.Count == 1 && !SelectedEntries[0].IsParentEntry);
     AnalyzeCommand = new RelayCommand(_ => ShowAnalysis(), _ => HasArchive && HasSelectedFile);
@@ -109,6 +118,11 @@ internal sealed class MainViewModel : ViewModelBase {
       if (!fromNestedDescent) {
         _archiveStack.Clear();
         CleanupNestedTempFiles();
+        // Remember where the user was browsing so NavigateUp can return them
+        // there. Only captured on top-level Open: nested descents preserve the
+        // first capture so a multi-level descent still exits to the original
+        // OS folder, not the temp dir of an intermediate frame.
+        _priorOsBrowserPath = _osBrowserPath;
       }
 
       ArchivePath = path;
@@ -331,15 +345,36 @@ internal sealed class MainViewModel : ViewModelBase {
       return;
     }
 
-    // No parent archive — exit to OS-browser rooted at the archive's containing folder.
-    if (string.IsNullOrEmpty(ArchivePath)) return;
-    var dir = Path.GetDirectoryName(ArchivePath);
-    if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) {
-      dir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    // No parent archive — exit to OS-browser. Prefer the folder the user was
+    // browsing when they opened the archive (captured on top-level Open). Only
+    // fall back to the archive's containing dir when no prior path is known —
+    // archives opened from %TEMP% (nested-descent residue, drag-drop temps,
+    // download hand-offs) would otherwise dump the user into LocalAppData.
+    var dir = !string.IsNullOrEmpty(_priorOsBrowserPath) && Directory.Exists(_priorOsBrowserPath)
+      ? _priorOsBrowserPath
+      : null;
+    if (dir is null && !string.IsNullOrEmpty(ArchivePath)) {
+      var archiveDir = Path.GetDirectoryName(ArchivePath);
+      if (!string.IsNullOrEmpty(archiveDir) && Directory.Exists(archiveDir) && !IsTempPath(archiveDir))
+        dir = archiveDir;
     }
+    dir ??= Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     _osBrowserPath = dir;
+    _priorOsBrowserPath = null;
     RefreshVisibleEntries();
     OnPropertyChanged(nameof(IsBrowsingOsFolder));
+  }
+
+  /// <summary>
+  /// True when <paramref name="path"/> is the per-user TEMP directory or a
+  /// child of it. Used to suppress NavigateUp landings inside %LOCALAPPDATA%
+  /// when the open archive happens to live in temp (nested-descent extraction,
+  /// drag-drop staging, browser download buffers).
+  /// </summary>
+  private static bool IsTempPath(string path) {
+    var temp = Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    var p = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    return p.StartsWith(temp, StringComparison.OrdinalIgnoreCase);
   }
 
   /// <summary>
@@ -584,7 +619,19 @@ internal sealed class MainViewModel : ViewModelBase {
     }
   }
 
-  internal void ViewSelectedAs(bool hex) {
+  internal void ViewSelectedAs(bool hex) => ViewSelectedAs(hex, allowDescend: true);
+
+  /// <summary>
+  /// Preview the selected entry, ALWAYS as an image — bypasses both nested-archive
+  /// descent and the text/hex routing. Falls back to byte preview if the bytes
+  /// don't sniff as a known image. Wired to the right-click "Preview as Image"
+  /// menu item so users can force the image renderer for entries that would
+  /// otherwise enter a colorspace tree (default behaviour for .png inside
+  /// .zip etc.).
+  /// </summary>
+  internal void ViewSelectedAsImage() => ViewSelectedAs(hex: false, allowDescend: false);
+
+  private void ViewSelectedAs(bool hex, bool allowDescend) {
     var entry = SelectedEntries.FirstOrDefault(e => !e.IsDirectory && !e.IsParentEntry);
     if (entry == null) return;
 
@@ -614,7 +661,9 @@ internal sealed class MainViewModel : ViewModelBase {
       // an archive — if so, descend into it (push current context onto the
       // archive stack and re-open). Matches 7-Zip's behaviour for nested
       // archives like a ZIP-inside-ZIP or a VHD-inside-tarball.
-      if (TryEnterAsNestedArchive(entry.Name, data))
+      // Skipped when the user explicitly chose "Preview as Image" so the image
+      // renderer always wins regardless of the format being archive-listable.
+      if (allowDescend && TryEnterAsNestedArchive(entry.Name, data))
         return;
 
       // Avoid empty-data preview throws.
@@ -693,6 +742,23 @@ internal sealed class MainViewModel : ViewModelBase {
       // contains exactly one payload — preview those as bytes instead).
       try { File.Delete(tempPath); } catch { /* best effort */ }
       return false;
+    }
+
+    // Image formats are registered as archives (colorspace planes via
+    // MultiImageArchiveHelper). Decision rule: ENTER a child image ONLY when
+    // the parent archive is NOT itself an image — that lets users descend into
+    // a standalone PNG inside a ZIP/TAR to browse R/G/B/Y/Cb/Cr/etc planes.
+    // Skip the descent when parent IS an image, because then the child image
+    // is a frame extracted by the parent (e.g. frame_000.png inside a GIF) —
+    // double-clicking it should show the picture, not recurse into another
+    // colorspace tree (which would just yield the same R/G/B planes again).
+    var desc = FormatRegistry.GetById(format.ToString());
+    if (desc?.Category == FormatCategory.Image) {
+      var parentDesc = FormatRegistry.GetById(Format);
+      if (parentDesc?.Category == FormatCategory.Image) {
+        try { File.Delete(tempPath); } catch { /* best effort */ }
+        return false;
+      }
     }
 
     // Save current archive context for "go back" navigation.

@@ -609,9 +609,11 @@ public class SfxBuilderTests {
   [Test]
   [Category("Unit")]
   public void PeOverlay_ScanForArchive_FindsZipSignature() {
-    // Create a buffer with some padding then a ZIP signature
+    // Create a buffer with deterministic padding then a ZIP signature.
+    // (Random bytes can hit ARJ's 0x60 0xEA — or any other format magic — before the
+    //  planted ZIP, breaking the assertion. 0xCC is not a magic prefix for any format.)
     var buf = new byte[1024];
-    Random.Shared.NextBytes(buf);
+    Array.Fill(buf, (byte)0xCC);
     buf[500] = 0x50; buf[501] = 0x4B; buf[502] = 0x03; buf[503] = 0x04; // PK\x03\x04
 
     using var ms = new MemoryStream(buf);
@@ -626,7 +628,7 @@ public class SfxBuilderTests {
   [Category("Unit")]
   public void PeOverlay_ScanForArchive_FindsRarSignature() {
     var buf = new byte[1024];
-    Random.Shared.NextBytes(buf);
+    Array.Fill(buf, (byte)0xCC);
     // RAR5: Rar!\x1A\x07\x01\x00
     buf[200] = 0x52; buf[201] = 0x61; buf[202] = 0x72;
     buf[203] = 0x21; buf[204] = 0x1A; buf[205] = 0x07; buf[206] = 0x01;

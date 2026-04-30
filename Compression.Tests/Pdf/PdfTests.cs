@@ -179,8 +179,8 @@ public class PdfTests {
 
     var desc = new PdfFormatDescriptor();
     var entries = desc.List(ms, null);
-    Assert.That(entries, Has.Count.EqualTo(1));
-    Assert.That(entries[0].Name, Does.EndWith(".jpg"));
+    // Descriptor surfaces both image entries and per-page slices.
+    Assert.That(entries.Any(e => e.Name.EndsWith(".jpg")), Is.True);
   }
 
   [Test, Category("ErrorHandling")]

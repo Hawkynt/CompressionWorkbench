@@ -132,10 +132,25 @@ public partial class MainWindow : Window {
 
   private void ActivateSelectedEntry() {
     if (EntryList.SelectedItem is not ArchiveEntryViewModel entry) return;
-    if (entry.IsParentEntry || entry.IsDirectory)
+    if (entry.IsParentEntry || entry.IsDirectory) {
       ViewModel.NavigateIntoCommand.Execute(entry);
-    else
-      ViewModel.ViewSelectedAs(hex: false);
+      return;
+    }
+
+    // OS-browser mode: file double-click should match the File → Open flow —
+    // delegate to NavigateInto, which detects format and either Open()s the
+    // file as archive (showing colorspace tree etc.) or falls back to byte
+    // preview when the format is unknown. Without this branch ViewSelectedAs
+    // would call File.ReadAllBytes on a multi-MB JPEG and route it through
+    // the preview window, freezing the UI.
+    if (ViewModel.IsBrowsingOsFolder) {
+      ViewModel.NavigateIntoCommand.Execute(entry);
+      return;
+    }
+
+    // Inside-archive entry: extract + preview (handles nested-archive descent
+    // for non-image formats and visual rendering for known image bytes).
+    ViewModel.ViewSelectedAs(hex: false);
   }
 
   private void OnBreadcrumbClick(object sender, RoutedEventArgs e) {

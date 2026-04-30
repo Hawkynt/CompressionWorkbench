@@ -55,8 +55,6 @@ public class BsaTests {
   public void Detect_ByExtension() {
     Assert.That(Compression.Lib.FormatDetector.DetectByExtension("test.bsa"),
       Is.EqualTo(Compression.Lib.FormatDetector.Format.Bsa));
-    Assert.That(Compression.Lib.FormatDetector.DetectByExtension("test.ba2"),
-      Is.EqualTo(Compression.Lib.FormatDetector.Format.Bsa));
   }
 
   [Test, Category("RoundTrip")]

@@ -123,13 +123,18 @@ public class TtcTests {
   }
 
   [Test]
-  public void DescriptorListGivesFontNames() {
+  public void DescriptorListGivesFullAndPerFontEntries() {
     var desc = new TtcFormatDescriptor();
     using var ms = new MemoryStream(MakeSyntheticTtc());
     var entries = desc.List(ms, null);
-    Assert.That(entries, Has.Count.EqualTo(2));
-    Assert.That(entries[0].Name, Is.EqualTo("font_000.ttf"));
-    Assert.That(entries[1].Name, Is.EqualTo("font_001.ttf"));
+    var names = entries.Select(e => e.Name).ToList();
+    // New layout: FULL.ttc + per-member fonts under fonts/ + metadata.ini.
+    // (Glyph SVGs are absent here because the synthetic TTC carries garbage glyf data
+    // — the splitter records that as parse_status=partial in metadata.)
+    Assert.That(names, Does.Contain("FULL.ttc"));
+    Assert.That(names, Has.Some.StartsWith("fonts/0_"));
+    Assert.That(names, Has.Some.StartsWith("fonts/1_"));
+    Assert.That(names, Does.Contain("metadata.ini"));
   }
 
   [Test]

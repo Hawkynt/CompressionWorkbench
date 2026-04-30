@@ -17,6 +17,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <!-- GIF reader/decoder lives in FileFormat.Gif (dependency-free); the
+         color-aware GIF descriptor here uses GifPixelDecoder + the colorspace
+         pipeline. Always reference it (no sibling guard) so projects that DO
+         have the sibling get the rich descriptor without conditional plumbing. -->
+    <ProjectReference Include="..\FileFormat.Gif\FileFormat.Gif.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(SiblingPresent)' == 'true'">
@@ -38,6 +43,7 @@
     <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Dcx\FileFormat.Dcx.csproj" />
     <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Icns\FileFormat.Icns.csproj" />
     <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Mpo\FileFormat.Mpo.csproj" />
+    <ProjectReference Include="..\..\PNGCrushCS\FileFormat.Jpeg\FileFormat.Jpeg.csproj" />
   </ItemGroup>
 
 </Project>

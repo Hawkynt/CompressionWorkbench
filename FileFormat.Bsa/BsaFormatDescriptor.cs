@@ -12,12 +12,11 @@ public sealed class BsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".bsa";
-  public IReadOnlyList<string> Extensions => [".bsa", ".ba2"];
+  public IReadOnlyList<string> Extensions => [".bsa"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x00, 0x01, 0x00, 0x00], Confidence: 0.40),
-    new([(byte)'B', (byte)'S', (byte)'A', 0x00], Confidence: 0.90),
-    new([(byte)'B', (byte)'T', (byte)'D', (byte)'X'], Confidence: 0.90)
+    new([(byte)'B', (byte)'S', (byte)'A', 0x00], Confidence: 0.90)
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("bsa", "BSA")];
   public string? TarCompressionFormatId => null;

@@ -298,6 +298,30 @@ public class EndToEndInteropTests {
     ".rpm", ".deb", ".nsis", ".inno", ".squashfs", ".cramfs",
     // Compound tar variants that may have issues with specific compressors
     ".tar.br",
+    // Hash-keyed archive: stores Westwood ID, not names. Reader synthesizes
+    // names from IDs ("061DFAD7.bin"), so round-trip via filename never matches.
+    ".mix",
+    // Fixed 8-section format (PARAM.SFO, ICON0.PNG, ...). Won't accept arbitrary names.
+    ".pbp",
+    // Resource-typed format: each entry is (4-char Type, 8-char Name).
+    // Reader exposes "TYPE.NAME"; arbitrary "repeat.txt" inputs don't survive the
+    // type/name split + 8-char name truncation.
+    ".lfd",
+    // Sound container with fixed synthetic entries (header.bin/program.bin/tags.txt).
+    // Doesn't accept arbitrary filenames.
+    ".psf",
+    // Resource-typed format like LFD: 4-char Type + 8-char Name; reader exposes
+    // "TYPE_id[_name]"; arbitrary "repeat.txt" inputs don't survive the synthesis.
+    ".mhk",
+    // Audio bank with synthetic entry naming (entry_NNN.bin); audio data has
+    // no concept of source filename, so arbitrary filenames don't survive.
+    ".akb",
+    ".awb",
+    // Single-stream compressor surfaced as a single "data" entry; arbitrary
+    // input filenames don't round-trip.
+    ".lrz",
+    // Sequence of length-prefixed records named record_NNNNN.bin; same class.
+    ".tfrecord",
   };
 
   private static IEnumerable<string> RoundTripFormats() {
