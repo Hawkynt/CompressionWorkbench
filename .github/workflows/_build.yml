@@ -63,6 +63,25 @@ jobs:
           dotnet-version: '10.0.x'
           include-prerelease: true
 
+      - name: Pre-build PNGCrushCS sibling (Release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/../PNGCrushCS"
+          for proj in Compression.Core FileFormat.Core FileFormat.Bmp FileFormat.Apng \
+                      FileFormat.Tiff FileFormat.BigTiff FileFormat.Mng FileFormat.Fli \
+                      FileFormat.Dcx FileFormat.Icns FileFormat.Mpo FileFormat.Jpeg \
+                      FileFormat.Png; do
+            echo "::group::Building $proj"
+            dotnet build "$proj/$proj.csproj" --configuration Release --nologo
+            echo "::endgroup::"
+            test -f "$proj/bin/Release/net8.0/$proj.dll" || {
+              echo "::error::Pre-build did not produce $proj/bin/Release/net8.0/$proj.dll"
+              exit 1
+            }
+          done
+          echo "All sibling Release DLLs verified."
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
