@@ -116,7 +116,7 @@ jobs:
             New-Item -ItemType Directory -Path $dest -Force | Out-Null
 
             Write-Host "::group::Publishing SFX CLI stub for $rid"
-            dotnet publish Compression.Sfx.Cli/Compression.Sfx.Cli.csproj -r $rid -c Release -p:ExcludeStubs=true -p:Version=${{ inputs.version }} --nologo
+            dotnet publish Compression.Sfx.Cli/Compression.Sfx.Cli.csproj -r $rid -c Release -p:ExcludeStubs=true -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }} --nologo
             $cliExit = $LASTEXITCODE
             Write-Host "::endgroup::"
             $exeName = if ($rid.StartsWith("win")) { "sfx-cli.exe" } else { "sfx-cli" }
@@ -131,7 +131,7 @@ jobs:
 
             if ($rid.StartsWith("win")) {
               Write-Host "::group::Publishing SFX UI stub for $rid"
-              dotnet publish Compression.Sfx.Ui/Compression.Sfx.Ui.csproj -r $rid -c Release -p:ExcludeStubs=true -p:Version=${{ inputs.version }} --nologo
+              dotnet publish Compression.Sfx.Ui/Compression.Sfx.Ui.csproj -r $rid -c Release -p:ExcludeStubs=true -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }} --nologo
               $uiExit = $LASTEXITCODE
               Write-Host "::endgroup::"
               $src = "Compression.Sfx.Ui/bin/Release/net10.0-windows/$rid/publish/sfx-ui.exe"
@@ -160,14 +160,19 @@ jobs:
             exit 1
           }
 
+      # EnableSingleFileBundle=false disables the post-build SingleFileBundle.targets
+      # that fires on `dotnet build`. When called from `dotnet publish`, the post-
+      # build target deletes runtimeconfig.json after Build, then the publish step's
+      # own PublishSingleFile bundling can't find it. Letting publish handle the
+      # single-file bundling natively avoids the conflict.
       - name: Publish CLI (win-x64)
-        run: dotnet publish Compression.CLI/Compression.CLI.csproj -r win-x64 -c Release --self-contained --nologo -p:Version=${{ inputs.version }}
+        run: dotnet publish Compression.CLI/Compression.CLI.csproj -r win-x64 -c Release --self-contained --nologo -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }}
 
       - name: Publish CLI (linux-x64)
-        run: dotnet publish Compression.CLI/Compression.CLI.csproj -r linux-x64 -c Release --self-contained --nologo -p:Version=${{ inputs.version }}
+        run: dotnet publish Compression.CLI/Compression.CLI.csproj -r linux-x64 -c Release --self-contained --nologo -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }}
 
       - name: Publish UI (win-x64)
-        run: dotnet publish Compression.UI/Compression.UI.csproj -r win-x64 -c Release --self-contained --nologo -p:Version=${{ inputs.version }}
+        run: dotnet publish Compression.UI/Compression.UI.csproj -r win-x64 -c Release --self-contained --nologo -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }}
 
       - name: Package CLI (win-x64)
         shell: pwsh
