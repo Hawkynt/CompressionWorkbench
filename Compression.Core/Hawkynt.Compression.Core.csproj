@@ -1,0 +1,68 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The .csproj filename is "Hawkynt.Compression.Core.csproj" so
+         that $(MSBuildProjectName) — which the .NET 10 preview SDK uses to
+         resolve in-tree ProjectReferences AND which is the source for both the
+         default $(AssemblyName) and the default $(PackageId) — equals the
+         desired NuGet package ID. PackageId / AssemblyName / RootNamespace are
+         intentionally NOT set explicitly: the SDK derives them from the
+         filename, so the resulting assembly is "Hawkynt.Compression.Core.dll"
+         and the package is "Hawkynt.Compression.Core.x.y.z.nupkg".
+
+         The runtime namespace stays "Compression.Core" because RootNamespace
+         is set below — `using Compression.Core.*` keeps resolving regardless
+         of the assembly filename. -->
+    <RootNamespace>Compression.Core</RootNamespace>
+
+    <IsPackable>true</IsPackable>
+    <Title>Hawkynt CompressionWorkbench Core</Title>
+    <Description>Pure-managed compression primitives — bit I/O, dictionary coders (DEFLATE / LZW / LZMA / LZ4 / Snappy / Brotli / ...), entropy coders (Huffman / arithmetic / range / FSE / rANS / PPMd / context-mixing), transforms (BWT / MTF / RLE / Delta / BCJ), hashing (CRC-32C hardware-accelerated, xxHash, MurmurHash3, BLAKE2b / SHA / MD5), SIMD match-finders, and disk-image partition parsers. No native dependency on zlib / liblzma / libarchive.</Description>
+    <PackageTags>$(PackageTags);compression;deflate;lzw;lzma;lz4;snappy;brotli;huffman;arithmetic-coding;crc32c;managed</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!-- Bundle Compression.Registry's DLL into lib/ instead of emitting it as
+         a NuGet transitive dependency. PrivateAssets="all" on the Registry
+         ProjectReference + this hook keeps Hawkynt.Compression.Core a
+         single-DLL-flavoured package: a consumer (e.g. PNGCrushCS) installs
+         Hawkynt.Compression.Core and gets BitIO / Hashing / Dictionary /
+         Entropy / Transforms / IBuildingBlock in one go.
+
+         Other concerns ship as their own single-responsibility packages
+         (matching the sibling Hawkynt.FileFormats.Images convention):
+         Hawkynt.FileFormats.Audio for PCM / FLAC / etc., Hawkynt.FileFormats.Archives
+         for ZIP / TAR / 7Z / RAR, Hawkynt.FileFormats.FileSystems for FAT / ext4 / NTFS.
+         Compression.Core depends on none of them. -->
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_AddBundledAssembliesToPackage</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Compression.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- PrivateAssets="all" prevents the Registry ProjectReference from being
+         emitted as a transitive NuGet `<dependency>` entry. The Registry DLL
+         is still copied into our `lib/` via _AddBundledAssembliesToPackage,
+         keeping the published package self-contained while still letting Core
+         compose against IBuildingBlock at build time. -->
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <Target Name="_AddBundledAssembliesToPackage" DependsOnTargets="ResolveReferences">
+    <ItemGroup>
+      <_BundledRefs Include="@(ReferencePath)"
+                    Condition="'%(ReferencePath.ReferenceSourceTarget)' == 'ProjectReference' and '%(ReferencePath.Extension)' == '.dll'" />
+      <TfmSpecificPackageFile Include="@(_BundledRefs)" PackagePath="lib/$(TargetFramework)" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Dictionary\Brotli\brotli-dictionary.bin" LogicalName="brotli-dictionary.bin" />
+  </ItemGroup>
+
+</Project>

@@ -1,6 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using Compression.Core.Audio;
+using Codec.Pcm;
 using FileFormat.Wav;
 
 namespace Compression.Tests.Audio;
@@ -15,7 +15,7 @@ public class WavTests {
       BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 4), (short)(i * 100));      // left
       BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 4 + 2), (short)(i * -100)); // right
     }
-    return ChannelSplitter.ToWavBlob(pcm, channels: 2, sampleRate: 44100, bitsPerSample: 16);
+    return PcmCodec.ToWavBlob(pcm, channels: 2, sampleRate: 44100, bitsPerSample: 16);
   }
 
   [Test]
@@ -58,10 +58,10 @@ public class WavTests {
   }
 
   [Test]
-  public void ChannelSplitter_NamesMatchLayout() {
-    Assert.That(ChannelSplitter.LayoutNames(1), Is.EqualTo(new[] { "MONO" }));
-    Assert.That(ChannelSplitter.LayoutNames(2), Is.EqualTo(new[] { "LEFT", "RIGHT" }));
-    Assert.That(ChannelSplitter.LayoutNames(6)[3], Is.EqualTo("LFE"));
+  public void PcmCodec_NamesMatchLayout() {
+    Assert.That(PcmCodec.LayoutNames(1), Is.EqualTo(new[] { "MONO" }));
+    Assert.That(PcmCodec.LayoutNames(2), Is.EqualTo(new[] { "LEFT", "RIGHT" }));
+    Assert.That(PcmCodec.LayoutNames(6)[3], Is.EqualTo("LFE"));
   }
 
   [Test]

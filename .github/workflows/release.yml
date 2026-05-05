@@ -65,5 +65,54 @@ jobs:
             - **Linux CLI** — `cwb` — command-line archive tool with SFX support
 
             All executables are fully self-contained single files — no runtime installation needed.
+
+            ### NuGet packages
+            All published as single-responsibility packages alongside the
+            sibling `Hawkynt.FileFormats.Images`. All version-locked 1:1.
+            - `Hawkynt.Compression.Core` — pure-managed compression primitives
+              (BitIO + dictionary / entropy coders + transforms + hashing).
+              Bundles `Compression.Registry` for `IBuildingBlock` discovery.
+            - `Hawkynt.FileFormats.Audio` — PCM / FLAC / WAV / AIFF / AU /
+              MP3 / AAC / Vorbis / Opus / MIDI / OGG / tracker / chiptune /
+              game-audio bundles.
+            - `Hawkynt.FileFormats.Archives` — gzip / bzip2 / xz / zstd /
+              brotli / lz4 / snappy / lzma + zip / tar / 7z / rar / cab /
+              wim / cpio / xar + apk / ipa / deb / rpm / nupkg + Office
+              Open XML / ODF / web archives + game / engine / installer
+              packages.
+            - `Hawkynt.FileFormats.FileSystems` — FAT / exFAT / NTFS /
+              ext / Btrfs / XFS / HFS+ / APFS / SquashFS / ISO9660 / UDF
+              + VHD / VHDX / VMDK / VDI / QCOW2 / DMG + retro-disk formats.
           files: dist/*.zip
           generate_release_notes: true
+
+  publish-nuget:
+    name: Publish NuGet
+    needs: [version, build]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      # The .nupkg files were packed inside `_build.yml` and uploaded as the
+      # `nuget-packages-<version>` artifact. We just download + push here.
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.nuget-artifact-name }}
+          path: dist-nuget
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          include-prerelease: true
+
+      - name: Push to NuGet.org
+        env:
+          NUGET_TOKEN: ${{ secrets.NUGET_TOKEN }}
+        run: |
+          if [ -z "$NUGET_TOKEN" ]; then
+            echo "::warning::NUGET_TOKEN secret is not set; skipping publish."
+            exit 0
+          fi
+          dotnet nuget push "dist-nuget/*.nupkg" \
+            --api-key "$NUGET_TOKEN" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate

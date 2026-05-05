@@ -322,6 +322,8 @@ public class EndToEndInteropTests {
     ".lrz",
     // Sequence of length-prefixed records named record_NNNNN.bin; same class.
     ".tfrecord",
+    // Texture file cache with synthetic naming bundle_NNNNN.bin; same class.
+    ".tfc",
   };
 
   private static IEnumerable<string> RoundTripFormats() {

@@ -1692,7 +1692,7 @@ public class ExternalFsInteropTests {
       Assert.Ignore("FreeBSD bootonly ISO drops to an interactive installer prompt that we cannot " +
                     "drive non-interactively from this test. Either bake a custom live ISO with " +
                     "`fsck_ffs -n /dev/ada1; halt` in /etc/rc.local, or run the manual command path " +
-                    "documented in docs/FILESYSTEMS.md. QEMU serial log:\n" + log);
+                    "documented in Hawkynt.FileFormats.FileSystems/README.md. QEMU serial log:\n" + log);
     }
 
     // If we reached this branch a custom live ISO was used and fsck_ffs ran. fsck_ffs prints
@@ -1718,7 +1718,7 @@ public class ExternalFsInteropTests {
     // and `bcachefs show-super` parses + prints it without error. Note:
     // `bcachefs fsck` will still complain about the empty B-trees, journal,
     // replicas, etc. — that is explicitly out of scope here, see
-    // docs/FILESYSTEMS.md for the full gap statement.
+    // Hawkynt.FileFormats.FileSystems/README.md for the full gap statement.
     var w = new FileSystem.BcacheFs.BcacheFsWriter();
     w.SetLabel("cwb-bcachefs-interop");
     var imgPath = Path.Combine(this._tmpDir, "bcachefs_ours.img");
@@ -1785,7 +1785,7 @@ public class ExternalFsInteropTests {
     // a clean fsck pass, which would mean we're silently wrong about the gap.
     // The "going read-write" + "check_inodes...done" + "delete_dead_inodes...done"
     // sequence is what a successful empty-FS fsck looks like (see reference
-    // image fsck output in docs/FILESYSTEMS.md). We sniff for either of those
+    // image fsck output in Hawkynt.FileFormats.FileSystems/README.md). We sniff for either of those
     // success markers and fail loudly if seen.
     var result = FsInteropToolbox.RunWsl($"bcachefs fsck -y {wslImg}");
     var combined = (result.StdOut ?? "") + "\n" + (result.StdErr ?? "");
@@ -1796,7 +1796,7 @@ public class ExternalFsInteropTests {
     if (lookedClean)
       Assert.Fail("bcachefs fsck unexpectedly succeeded against our SB-only image — " +
                   "either we shipped real B-tree/journal/alloc support (great! promote " +
-                  "in docs/FILESYSTEMS.md and flip this assertion to expect exit 0) or " +
+                  "in Hawkynt.FileFormats.FileSystems/README.md and flip this assertion to expect exit 0) or " +
                   "fsck silently skipped validation. Output:\n" + combined);
     // Otherwise: gap is intact, test is informative. Don't fail CI on it.
     TestContext.Out.WriteLine("[expected gap] bcachefs fsck rejected our SB-only image, as designed:");

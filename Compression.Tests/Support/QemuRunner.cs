@@ -23,7 +23,7 @@ internal static class QemuRunner {
   /// Sentinel returned by <see cref="RunFsckFfs"/> when QEMU booted but the
   /// guest dropped to an interactive prompt instead of running our script.
   /// The bootonly ISO behaves this way — driving it requires a custom live
-  /// image (see docs/FILESYSTEMS.md).
+  /// image (see Hawkynt.FileFormats.FileSystems/README.md).
   /// </summary>
   public const int SkipExitCode_StillInteractive = -42;
 

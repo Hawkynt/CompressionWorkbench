@@ -1,6 +1,6 @@
 # FileFormat Architecture
 
-How to build metadata-compatible file format libraries across any domain — image, audio, video, compression, crypto — with idiot-proof implementations, zero hand-written parsing for headers, and automatic format discovery.
+> How to build metadata-compatible file format libraries across any domain — image, audio, video, compression, crypto — with idiot-proof implementations, zero hand-written parsing for headers, and automatic format discovery.
 
 ## Design Goals
 
@@ -32,6 +32,7 @@ public class RawImage {
 ```
 
 For other domains, define the equivalent:
+
 - **Audio**: `RawAudio { SampleRate, Channels, BitDepth, SampleData }`
 - **Compression**: `Stream` input/output (already universal)
 - **Video**: `RawFrame[]` or frame-by-frame `RawImage` sequence
@@ -441,38 +442,38 @@ public readonly partial record struct Zip64ExtendedInfo(
 
 #### 4.9 Supported `[Field]` Feature Matrix
 
-| Feature | Attribute | Example | Kaitai Equivalent |
-| --- | --- | --- | --- |
-| Absolute position + size | `Field(offset, size)` | `Field(8, 4)` | `seq` with explicit `pos` |
-| Sequential position | `SeqField` | (inferred from decl order) | `seq` default |
-| Byte order | `Endian(Big)` | class-level or per-field | `meta.endian`, `u4be` |
-| Runtime byte order | `EndianField("ByteOrder")` | TIFF II/MM | `meta.endian: ...` switch |
-| Enum cast | `EnumField(typeof(T))` | `ZipCompressionMethod` | `enum: ...` |
-| Fixed array | `Repeat(N)` | `uint[4]` mipmap offsets | `repeat: expr` |
-| Bit extraction | `BitField(byte, bit, N)` | WIM 56+8 packing | `type: b5` |
-| Bit flags | `BitFlags` | GZIP flags | — |
-| Packed bitmask | `PackedField(container, mask)` | `_ & 0x1F` | expression |
-| ASCII string | `StringField("ASCII")` | TAR name field | `type: str, encoding: ASCII` |
-| Null-terminated string | `NullTermString("Latin1")` | GZIP filename | `type: strz` |
-| Octal string | `OctalString` | TAR size/mode | — (custom) |
-| Raw byte array | `RawBytes` | WIM GUID | no type + `size` |
-| Conditional | `If(field, op, value)` | GZIP optional fields | `if: ...` |
-| Size from field | `SizedBy(field)` | ZIP filename | `size: len_file_name` |
-| Size until end | `SizeEos` | remaining bytes | `size-eos: true` |
-| Discriminated union | `SwitchOn(field)` + `Case` | ZIP section types | `switch-on` + `cases` |
-| Counted repetition | `Repeat(field)` | entry count | `repeat: expr` |
-| Sentinel repetition | `RepeatUntil(value)` | zero-block | `repeat: until` |
-| EOS repetition | `RepeatEos` | read all | `repeat: eos` |
-| Exact value | `Valid(value)` | magic bytes | `valid: ...` |
-| Range check | `ValidRange(min, max)` | version bounds | `valid: { min, max }` |
-| Whitelist | `ValidAnyOf(...)` | allowed methods | `valid: { any-of }` |
-| Expression check | `ValidExpr("...")` | alignment | `valid: { expr }` |
-| Derived value | `Computed("expr")` | not in binary | `instances` with `value` |
-| CRC/checksum | `Checksum(algo, start, end)` | TAR, ZIP | — |
-| Skip bytes | `Filler(offset, size)` | reserved | — |
-| Alignment | `Align(N)` | sector align | — |
-| Byte transform | `Process(Xor, key)` | obfuscated | `process: xor(key)` |
-| Sub-struct | (type reference) | WIM resource entry | `types` section |
+| Feature                  | Attribute                      | Example                    | Kaitai Equivalent            |
+| ------------------------ | ------------------------------ | -------------------------- | ---------------------------- |
+| Absolute position + size | `Field(offset, size)`          | `Field(8, 4)`              | `seq` with explicit `pos`    |
+| Sequential position      | `SeqField`                     | (inferred from decl order) | `seq` default                |
+| Byte order               | `Endian(Big)`                  | class-level or per-field   | `meta.endian`, `u4be`        |
+| Runtime byte order       | `EndianField("ByteOrder")`     | TIFF II/MM                 | `meta.endian: ...` switch    |
+| Enum cast                | `EnumField(typeof(T))`         | `ZipCompressionMethod`     | `enum: ...`                  |
+| Fixed array              | `Repeat(N)`                    | `uint[4]` mipmap offsets   | `repeat: expr`               |
+| Bit extraction           | `BitField(byte, bit, N)`       | WIM 56+8 packing           | `type: b5`                   |
+| Bit flags                | `BitFlags`                     | GZIP flags                 | —                            |
+| Packed bitmask           | `PackedField(container, mask)` | `_ & 0x1F`                 | expression                   |
+| ASCII string             | `StringField("ASCII")`         | TAR name field             | `type: str, encoding: ASCII` |
+| Null-terminated string   | `NullTermString("Latin1")`     | GZIP filename              | `type: strz`                 |
+| Octal string             | `OctalString`                  | TAR size/mode              | — (custom)                   |
+| Raw byte array           | `RawBytes`                     | WIM GUID                   | no type + `size`             |
+| Conditional              | `If(field, op, value)`         | GZIP optional fields       | `if: ...`                    |
+| Size from field          | `SizedBy(field)`               | ZIP filename               | `size: len_file_name`        |
+| Size until end           | `SizeEos`                      | remaining bytes            | `size-eos: true`             |
+| Discriminated union      | `SwitchOn(field)` + `Case`     | ZIP section types          | `switch-on` + `cases`        |
+| Counted repetition       | `Repeat(field)`                | entry count                | `repeat: expr`               |
+| Sentinel repetition      | `RepeatUntil(value)`           | zero-block                 | `repeat: until`              |
+| EOS repetition           | `RepeatEos`                    | read all                   | `repeat: eos`                |
+| Exact value              | `Valid(value)`                 | magic bytes                | `valid: ...`                 |
+| Range check              | `ValidRange(min, max)`         | version bounds             | `valid: { min, max }`        |
+| Whitelist                | `ValidAnyOf(...)`              | allowed methods            | `valid: { any-of }`          |
+| Expression check         | `ValidExpr("...")`             | alignment                  | `valid: { expr }`            |
+| Derived value            | `Computed("expr")`             | not in binary              | `instances` with `value`     |
+| CRC/checksum             | `Checksum(algo, start, end)`   | TAR, ZIP                   | —                            |
+| Skip bytes               | `Filler(offset, size)`         | reserved                   | —                            |
+| Alignment                | `Align(N)`                     | sector align               | —                            |
+| Byte transform           | `Process(Xor, key)`            | obfuscated                 | `process: xor(key)`          |
+| Sub-struct               | (type reference)               | WIM resource entry         | `types` section              |
 
 ### 5. Format Detection
 
@@ -510,6 +511,7 @@ At compile time, the source generator extracts all `[FormatMagicBytes]` and `[Fo
 A Roslyn incremental source generator (`ImageFormatGenerator`) scans all referenced assemblies at compile time and generates two files:
 
 **`ImageFormat.g.cs`** — enum with all discovered formats:
+
 ```csharp
 public enum ImageFormat {
   Unknown,
@@ -522,6 +524,7 @@ public enum ImageFormat {
 ```
 
 **`FormatRegistration.g.cs`** — typed registration calls:
+
 ```csharp
 static partial void RegisterAll() {
   _RegisterReaderWriter<global::FileFormat.Qoi.QoiFile>(
@@ -548,6 +551,7 @@ For detection-only formats without an `IImageFormatReader<T>` implementation (e.
 Three levels of metadata are available without domain-specific knowledge:
 
 **Level 1 — Format identity (static, zero cost):**
+
 ```csharp
 // Available at compile time, no file needed
 T.PrimaryExtension    // ".qoi"
@@ -556,6 +560,7 @@ T.Capabilities        // FormatCapability.VariableResolution
 ```
 
 **Level 2 — Header field map (static, zero cost):**
+
 ```csharp
 // Generated from [Field] / [SeqField] annotations — hex editors, metadata viewers
 QoiHeader.GetFieldMap()
@@ -573,6 +578,7 @@ GzipHeader.GetFieldMap(headerBytes)
 ```
 
 **Level 3 — Parsed metadata (fast, reads only the header):**
+
 ```csharp
 // Reads first 4KB, parses header only — no pixel decode
 var info = FormatIO.ReadInfo<PngFile>(fileBytes);
@@ -709,7 +715,7 @@ FileFormat.Compress/
 <!-- FileFormat.Compress.csproj — just references, everything else from Directory.Build.props -->
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <ProjectReference Include="..\Compression.Core\Compression.Core.csproj" />
+    <ProjectReference Include="..\Compression.Core\Hawkynt.Compression.Core.csproj" />
     <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
   </ItemGroup>
 </Project>
@@ -757,15 +763,15 @@ public sealed class CompressFormatDescriptor : IFormatDescriptor, IStreamFormatO
 
 The compression domain uses **instance-based descriptors** instead of static abstract interfaces — the descriptor is a concrete `sealed class` that the source generator discovers via `IFormatDescriptor` and registers with `new CompressFormatDescriptor()`. The tradeoffs:
 
-| Aspect | Image pattern (PNGCrushCS) | Compression pattern (CompressionWorkbench) |
-|--------|---------------------------|-------------------------------------------|
-| Descriptor type | `readonly record struct` (value type) | `sealed class` (reference type) |
-| Interface dispatch | Static abstract — zero-cost, compile-time | Instance virtual — one allocation per format at startup |
-| IR type | `RawImage` (pixels) | `Stream` (bytes) |
-| Registration | Generic typed calls: `_RegisterReader<QoiFile>(...)` | Constructor calls: `new CompressFormatDescriptor()` |
-| Header parsing | `[GenerateSerializer]` source generator | `[GenerateSerializer]` source generator (same) |
-| Detection | Tri-state (`true`/`false`/`null`) | Confidence `double` (0.0–1.0) + optional `Mask` |
-| Validation | Reader throws on bad data | Optional `IFormatValidator` (3-tier: Header/Structure/Integrity) |
+| Aspect             | Image pattern (PNGCrushCS)                           | Compression pattern (CompressionWorkbench)                       |
+| ------------------ | ---------------------------------------------------- | ---------------------------------------------------------------- |
+| Descriptor type    | `readonly record struct` (value type)                | `sealed class` (reference type)                                  |
+| Interface dispatch | Static abstract — zero-cost, compile-time            | Instance virtual — one allocation per format at startup          |
+| IR type            | `RawImage` (pixels)                                  | `Stream` (bytes)                                                 |
+| Registration       | Generic typed calls: `_RegisterReader<QoiFile>(...)` | Constructor calls: `new CompressFormatDescriptor()`              |
+| Header parsing     | `[GenerateSerializer]` source generator              | `[GenerateSerializer]` source generator (same)                   |
+| Detection          | Tri-state (`true`/`false`/`null`)                    | Confidence `double` (0.0–1.0) + optional `Mask`                  |
+| Validation         | Reader throws on bad data                            | Optional `IFormatValidator` (3-tier: Header/Structure/Integrity) |
 
 Both patterns are valid. The image pattern optimizes for zero-cost abstraction (hundreds of formats loaded at once, no per-format allocation). The compression pattern optimizes for simplicity (one class per format, no separate reader/writer/header files needed for simple formats).
 
@@ -799,6 +805,7 @@ The pattern is domain-agnostic. The interfaces and IR type change; the structure
 | **Crypto**      | `byte[]`         | `Decrypt(in, key)`    | `Encrypt(in, key)`  | Algorithm, KeySize, BlockSize      |
 
 What stays constant across all domains:
+
 - `readonly record struct` data model
 - `[GenerateSerializer]` + `[Field]` / `[SeqField]` for binary headers
 - `[FormatMagicBytes]` for detection
@@ -809,16 +816,16 @@ What stays constant across all domains:
 
 ## What the Framework Owns vs. What You Own
 
-| Framework (generated/provided)                          | You (hand-written)                                 |
-| ------------------------------------------------------- | -------------------------------------------------- |
-| Binary header ReadFrom/WriteTo                          | Codec logic (RLE, LZ, Huffman, etc.)               |
-| Validation (magic, range, checksum)                     | Complex validation beyond declarative scope        |
-| Computed fields and bit extraction                      | Business logic for derived values                  |
-| Format enum generation                                  | Payload extraction and assembly                    |
-| Registration calls with magic bytes                     | IR conversion semantics (ToRawImage / Decompress)  |
-| Detection priority ordering                             | `MatchesSignature` for ambiguous formats           |
-| Field map for hex editors                               | Format-specific enums and constants                |
-| Convenience overloads (File, Stream, byte[])            | Sequential tail parsing beyond fixed header        |
+| Framework (generated/provided)               | You (hand-written)                                |
+| -------------------------------------------- | ------------------------------------------------- |
+| Binary header ReadFrom/WriteTo               | Codec logic (RLE, LZ, Huffman, etc.)              |
+| Validation (magic, range, checksum)          | Complex validation beyond declarative scope       |
+| Computed fields and bit extraction           | Business logic for derived values                 |
+| Format enum generation                       | Payload extraction and assembly                   |
+| Registration calls with magic bytes          | IR conversion semantics (ToRawImage / Decompress) |
+| Detection priority ordering                  | `MatchesSignature` for ambiguous formats          |
+| Field map for hex editors                    | Format-specific enums and constants               |
+| Convenience overloads (File, Stream, byte[]) | Sequential tail parsing beyond fixed header       |
 
 The generator handles the mechanical, error-prone parts. You handle the creative parts — the actual format logic that requires understanding the spec.
 

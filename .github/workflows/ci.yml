@@ -64,6 +64,22 @@ jobs:
       - name: Build
         run: dotnet build CompressionWorkbench.slnx --configuration Release --no-restore
 
+      # Verify the four NuGet meta-packages still pack on every PR / push.
+      # This catches regressions in the bundling target (filter excludes for
+      # Compression.Core / Registry, ProjectReference path resolution, etc.)
+      # before they reach release / nightly. We don't push or upload — the
+      # _build.yml workflow does the real packing and artifact upload for the
+      # nightly / release workflows that consume them.
+      - name: Verify NuGet meta-packages pack
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          rm -rf dist-nuget
+          dotnet pack Compression.Core/Hawkynt.Compression.Core.csproj                 --configuration Release --no-build --output dist-nuget -p:Version=0.0.0-ci
+          dotnet pack Hawkynt.FileFormats.Audio/Hawkynt.FileFormats.Audio.csproj             --configuration Release --no-build --output dist-nuget -p:Version=0.0.0-ci
+          dotnet pack Hawkynt.FileFormats.Archives/Hawkynt.FileFormats.Archives.csproj       --configuration Release --no-build --output dist-nuget -p:Version=0.0.0-ci
+          dotnet pack Hawkynt.FileFormats.FileSystems/Hawkynt.FileFormats.FileSystems.csproj --configuration Release --no-build --output dist-nuget -p:Version=0.0.0-ci
+          ls -la dist-nuget/
+
       # Core tests -- always run (no external tools required).
       - name: Core tests
         run: >
