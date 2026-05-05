@@ -70,14 +70,20 @@ jobs:
       # before they reach release / nightly. We don't push or upload — the
       # _build.yml workflow does the real packing and artifact upload for the
       # nightly / release workflows that consume them.
+      #
+      # NB: --no-build is intentionally omitted. The meta csprojs use a custom
+      # `_AddBundledAssembliesToPackage` target with `DependsOnTargets="ResolveReferences"`
+      # which the SDK refuses to invoke under --no-build (NETSDK1085). The
+      # prior `dotnet build` step already produced up-to-date outputs so pack's
+      # build phase no-ops.
       - name: Verify NuGet meta-packages pack
         if: matrix.os == 'ubuntu-latest'
         run: |
           rm -rf dist-nuget
-          dotnet pack Compression.Core/Hawkynt.Compression.Core.csproj                 --configuration Release --no-build --output dist-nuget -p:Version=0.0.0-ci
-          dotnet pack Hawkynt.FileFormats.Audio/Hawkynt.FileFormats.Audio.csproj             --configuration Release --no-build --output dist-nuget -p:Version=0.0.0-ci
-          dotnet pack Hawkynt.FileFormats.Archives/Hawkynt.FileFormats.Archives.csproj       --configuration Release --no-build --output dist-nuget -p:Version=0.0.0-ci
-          dotnet pack Hawkynt.FileFormats.FileSystems/Hawkynt.FileFormats.FileSystems.csproj --configuration Release --no-build --output dist-nuget -p:Version=0.0.0-ci
+          dotnet pack Compression.Core/Hawkynt.Compression.Core.csproj                 --configuration Release --output dist-nuget -p:Version=0.0.0-ci
+          dotnet pack Hawkynt.FileFormats.Audio/Hawkynt.FileFormats.Audio.csproj             --configuration Release --output dist-nuget -p:Version=0.0.0-ci
+          dotnet pack Hawkynt.FileFormats.Archives/Hawkynt.FileFormats.Archives.csproj       --configuration Release --output dist-nuget -p:Version=0.0.0-ci
+          dotnet pack Hawkynt.FileFormats.FileSystems/Hawkynt.FileFormats.FileSystems.csproj --configuration Release --output dist-nuget -p:Version=0.0.0-ci
           ls -la dist-nuget/
 
       # Core tests -- always run (no external tools required).

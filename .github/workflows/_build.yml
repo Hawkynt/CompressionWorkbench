@@ -224,12 +224,17 @@ jobs:
       # command line propagates globally and triggers NU1201 on referenced
       # projects, so don't pass it here. Pack Core first because the metas
       # declare it as a NuGet `<dependency>`.
+      # NB: --no-build is intentionally omitted. The meta-package csprojs use a
+      # custom `_AddBundledAssembliesToPackage` target with
+      # `DependsOnTargets="ResolveReferences"` to bundle member DLLs into lib/.
+      # Under --no-build the SDK refuses to invoke ResolveReferences (NETSDK1085
+      # "Build target was invoked"), so we let pack re-validate; outputs from
+      # the prior `dotnet build` step are up-to-date so the build phase no-ops.
       - name: Pack Hawkynt.Compression.Core
         shell: bash
         run: |
           dotnet pack Compression.Core/Hawkynt.Compression.Core.csproj \
             --configuration Release \
-            --no-build \
             --output dist-nuget \
             -p:Version=${{ inputs.version }} \
             -p:ContinuousIntegrationBuild=true \
@@ -241,7 +246,6 @@ jobs:
         run: |
           dotnet pack Hawkynt.FileFormats.Audio/Hawkynt.FileFormats.Audio.csproj \
             --configuration Release \
-            --no-build \
             --output dist-nuget \
             -p:Version=${{ inputs.version }} \
             -p:ContinuousIntegrationBuild=true
@@ -251,7 +255,6 @@ jobs:
         run: |
           dotnet pack Hawkynt.FileFormats.Archives/Hawkynt.FileFormats.Archives.csproj \
             --configuration Release \
-            --no-build \
             --output dist-nuget \
             -p:Version=${{ inputs.version }} \
             -p:ContinuousIntegrationBuild=true
@@ -261,7 +264,6 @@ jobs:
         run: |
           dotnet pack Hawkynt.FileFormats.FileSystems/Hawkynt.FileFormats.FileSystems.csproj \
             --configuration Release \
-            --no-build \
             --output dist-nuget \
             -p:Version=${{ inputs.version }} \
             -p:ContinuousIntegrationBuild=true
