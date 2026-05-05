@@ -37,7 +37,7 @@ namespace FileSystem.BcacheFs;
 /// other on-disk btree roots, journal entries, compat-feature bits, and
 /// the <c>clean</c>/<c>journal_v2</c>/<c>counters</c>/<c>members_v2</c> SB
 /// sections. Reaching fsck-clean is multi-week kernel-spec work tracked in
-/// <c>docs/FILESYSTEMS.md</c>.
+/// <c>Hawkynt.FileFormats.FileSystems/README.md</c>.
 /// </para>
 /// </remarks>
 public sealed class BcacheFsWriter {
