@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>FileSystem.SquashFs</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
+    <ProjectReference Include="..\..\FileFormats\FileFormat.Xz\FileFormat.Xz.csproj" />
+    <ProjectReference Include="..\..\FileFormats\FileFormat.Zstd\FileFormat.Zstd.csproj" />
+    <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,273 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Meta-package. Has no source code of its own; bundles every compression-
+         stream + archive-container DLL into one NuGet drop. Folder + .csproj
+         filename equal $(MSBuildProjectName) so $(PackageId) defaults correctly
+         under the .NET 10 SDK (see Compression.Core/Hawkynt.Compression.Core.csproj
+         for the rationale). -->
+    <RootNamespace>Hawkynt.FileFormats.Archives</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>$(NoWarn);CS2008</NoWarn>
+
+    <IsPackable>true</IsPackable>
+    <Title>Hawkynt FileFormats Archives</Title>
+    <Description>Pure-managed compression streams (gzip / bzip2 / xz / zstd / brotli / lz4 / snappy / lzma / lzop / lrzip / and the long tail) and archive containers (zip / tar / 7z / rar / cab / wim / cpio / ar / xar / and the rest) plus software-package containers (apk / ipa / nupkg / deb / rpm / appx / msix / wheel / crate), Office Open XML / OpenDocument zip-bundles, comic-book archives, and the long tail of game / install-suite / Amiga / vintage formats. Self-contained bundle on top of Hawkynt.Compression.Core.</Description>
+    <PackageTags>$(PackageTags);archive;zip;tar;7z;rar;cab;wim;gzip;bzip2;xz;zstd;brotli;lz4;snappy;lzma;deb;rpm;apk;ipa;managed</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_AddBundledAssembliesToPackage</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Core\Hawkynt.Compression.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Compression streams (single-file codecs without container framing). -->
+  <ItemGroup>
+    <ProjectReference Include="..\FileFormats\FileFormat.ApLib\FileFormat.ApLib.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Balz\FileFormat.Balz.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Bcm\FileFormat.Bcm.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.BinHex\FileFormat.BinHex.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.BriefLz\FileFormat.BriefLz.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Brotli\FileFormat.Brotli.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Bsc\FileFormat.Bsc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Bzip2\FileFormat.Bzip2.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Cmix\FileFormat.Cmix.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Compress\FileFormat.Compress.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Crunch\FileFormat.Crunch.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Csc\FileFormat.Csc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Density\FileFormat.Density.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Freeze\FileFormat.Freeze.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Gzip\FileFormat.Gzip.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.IcePacker\FileFormat.IcePacker.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Kwaj\FileFormat.Kwaj.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lizard\FileFormat.Lizard.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lrzip\FileFormat.Lrzip.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lz4\FileFormat.Lz4.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lzfse\FileFormat.Lzfse.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lzg\FileFormat.Lzg.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lzham\FileFormat.Lzham.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lzip\FileFormat.Lzip.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lzma\FileFormat.Lzma.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lzop\FileFormat.Lzop.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lzs\FileFormat.Lzs.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lzx\FileFormat.Lzx.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.MacBinary\FileFormat.MacBinary.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Mcm\FileFormat.Mcm.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.PackBits\FileFormat.PackBits.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Paq8\FileFormat.Paq8.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.PowerPacker\FileFormat.PowerPacker.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ppmd\FileFormat.Ppmd.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.QuickLz\FileFormat.QuickLz.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.RefPack\FileFormat.RefPack.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Rnc\FileFormat.Rnc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Rzip\FileFormat.Rzip.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Snappy\FileFormat.Snappy.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Squeeze\FileFormat.Squeeze.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Szdd\FileFormat.Szdd.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.UuEncoding\FileFormat.UuEncoding.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Xz\FileFormat.Xz.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.YEnc\FileFormat.YEnc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Yaz0\FileFormat.Yaz0.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Zlib\FileFormat.Zlib.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Zling\FileFormat.Zling.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Zstd\FileFormat.Zstd.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Archive containers (multi-file). -->
+  <ItemGroup>
+    <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.AlZip\FileFormat.AlZip.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.AppleSingle\FileFormat.AppleSingle.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ar\FileFormat.Ar.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Arc\FileFormat.Arc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Arj\FileFormat.Arj.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Cab\FileFormat.Cab.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Cbr\FileFormat.Cbr.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Cbz\FileFormat.Cbz.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Chm\FileFormat.Chm.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.CompactPro\FileFormat.CompactPro.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Cpio\FileFormat.Cpio.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.DiskDoubler\FileFormat.DiskDoubler.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Dms\FileFormat.Dms.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Esd\FileFormat.Esd.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.FreeArc\FileFormat.FreeArc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ha\FileFormat.Ha.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.IffCdaf\FileFormat.IffCdaf.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lbr\FileFormat.Lbr.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.LhF\FileFormat.LhF.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lzh\FileFormat.Lzh.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.PackDisk\FileFormat.PackDisk.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.PackIt\FileFormat.PackIt.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Rar\FileFormat.Rar.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sar\FileFormat.Sar.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.SevenZip\FileFormat.SevenZip.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Shar\FileFormat.Shar.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Spark\FileFormat.Spark.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.SplitFile\FileFormat.SplitFile.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sqx\FileFormat.Sqx.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.StuffIt\FileFormat.StuffIt.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.StuffItX\FileFormat.StuffItX.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Swm\FileFormat.Swm.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Tar\FileFormat.Tar.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Uharc\FileFormat.Uharc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Wim\FileFormat.Wim.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Wrapster\FileFormat.Wrapster.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Xar\FileFormat.Xar.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Zip\FileFormat.Zip.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Zoo\FileFormat.Zoo.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Zpaq\FileFormat.Zpaq.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Software-package containers (Apk / Ipa / Deb / Rpm / NuPkg / etc.). -->
+  <ItemGroup>
+    <ProjectReference Include="..\FileFormats\FileFormat.AndroidBundle\FileFormat.AndroidBundle.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.AndroidOta\FileFormat.AndroidOta.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Apk\FileFormat.Apk.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.ApkNativeLibs\FileFormat.ApkNativeLibs.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.AppImage\FileFormat.AppImage.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Appx\FileFormat.Appx.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Crate\FileFormat.Crate.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Crx\FileFormat.Crx.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Deb\FileFormat.Deb.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ear\FileFormat.Ear.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Gem\FileFormat.Gem.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.InnoSetup\FileFormat.InnoSetup.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ipa\FileFormat.Ipa.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Jar\FileFormat.Jar.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Msi\FileFormat.Msi.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Msix\FileFormat.Msix.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Nsis\FileFormat.Nsis.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.NuPkg\FileFormat.NuPkg.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Rpm\FileFormat.Rpm.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Snap\FileFormat.Snap.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.War\FileFormat.War.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Wheel\FileFormat.Wheel.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Xpi\FileFormat.Xpi.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Office Open XML / OpenDocument / web archive zip-bundles. -->
+  <ItemGroup>
+    <ProjectReference Include="..\FileFormats\FileFormat.Docx\FileFormat.Docx.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Xlsx\FileFormat.Xlsx.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Pptx\FileFormat.Pptx.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Odt\FileFormat.Odt.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ods\FileFormat.Ods.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Odp\FileFormat.Odp.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Vsdx\FileFormat.Vsdx.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Epub\FileFormat.Epub.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Kmz\FileFormat.Kmz.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Maff\FileFormat.Maff.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Wacz\FileFormat.Wacz.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Warc\FileFormat.Warc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Wbn\FileFormat.Wbn.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Game / engine / install / runtime / Amiga / vintage long-tail formats. -->
+  <ItemGroup>
+    <ProjectReference Include="..\FileFormats\FileFormat.Afs\FileFormat.Afs.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ampk\FileFormat.Ampk.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ba2\FileFormat.Ba2.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Big\FileFormat.Big.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Bsa\FileFormat.Bsa.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Dzip\FileFormat.Dzip.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Gar\FileFormat.Gar.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Gob\FileFormat.Gob.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.GodotPck\FileFormat.GodotPck.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Grp\FileFormat.Grp.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Hog\FileFormat.Hog.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Hpi\FileFormat.Hpi.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lfd\FileFormat.Lfd.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Mhk\FileFormat.Mhk.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Mix\FileFormat.Mix.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Mpq\FileFormat.Mpq.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Narc\FileFormat.Narc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Nds\FileFormat.Nds.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Nsa\FileFormat.Nsa.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Pak\FileFormat.Pak.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Pbp\FileFormat.Pbp.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Psarc\FileFormat.Psarc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Rgss\FileFormat.Rgss.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Rpa\FileFormat.Rpa.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sarc\FileFormat.Sarc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sfar\FileFormat.Sfar.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Slf\FileFormat.Slf.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Swf\FileFormat.Swf.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Tfc\FileFormat.Tfc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Tnef\FileFormat.Tnef.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.U8\FileFormat.U8.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Umx\FileFormat.Umx.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.UnityBundle\FileFormat.UnityBundle.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.UnrealPak\FileFormat.UnrealPak.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Upx\FileFormat.Upx.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Vpk\FileFormat.Vpk.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Vpp\FileFormat.Vpp.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.VppV2\FileFormat.VppV2.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Wad\FileFormat.Wad.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Wad2\FileFormat.Wad2.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ypf\FileFormat.Ypf.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Zap\FileFormat.Zap.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Pseudo-archives — formats whose binary structure already contains
+       multiple addressable payloads (PE resources, icons, font collections,
+       gettext catalogues, executable packers). Each surfaces an
+       IArchiveFormatOperations.List with one entry per inner payload. -->
+  <ItemGroup>
+    <ProjectReference Include="..\FileFormats\FileFormat.PeResources\FileFormat.PeResources.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.ResourceDll\FileFormat.ResourceDll.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.ExePackers\FileFormat.ExePackers.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ico\FileFormat.Ico.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ani\FileFormat.Ani.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.FontCollection\FileFormat.FontCollection.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Gettext\FileFormat.Gettext.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Streaming / video / subtitle multi-track containers. MP4 / MKV / AVI /
+       MPEG-TS demux into per-track entries; PGS (.sup) / VobSub split into
+       subtitle segments; HLS surfaces the segment manifest. -->
+  <ItemGroup>
+    <ProjectReference Include="..\FileFormats\FileFormat.Mp4\FileFormat.Mp4.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Matroska\FileFormat.Matroska.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Avi\FileFormat.Avi.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.MpegTs\FileFormat.MpegTs.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sup\FileFormat.Sup.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.VobSub\FileFormat.VobSub.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.M3u8\FileFormat.M3u8.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Scientific / ML data containers (NumPy / HDF / NIfTI / ONNX / DICOM)
+       and CAD / 3D scene formats (STL / PLY / DXF / Collada / OBJ). Each
+       surfaces named payloads (arrays, datasets, layers, meshes) as
+       archive entries. -->
+  <ItemGroup>
+    <ProjectReference Include="..\FileFormats\FileFormat.Numpy\FileFormat.Numpy.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Hdf4\FileFormat.Hdf4.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Hdf5\FileFormat.Hdf5.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Nifti\FileFormat.Nifti.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Onnx\FileFormat.Onnx.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Dicom\FileFormat.Dicom.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Stl\FileFormat.Stl.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ply\FileFormat.Ply.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Dxf\FileFormat.Dxf.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Collada\FileFormat.Collada.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Obj\FileFormat.Obj.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <Target Name="_AddBundledAssembliesToPackage" DependsOnTargets="ResolveReferences">
+    <ItemGroup>
+      <_BundledRefs Include="@(ReferencePath)"
+                    Condition="'%(ReferencePath.ReferenceSourceTarget)' == 'ProjectReference'
+                               and '%(ReferencePath.Extension)' == '.dll'
+                               and !$([System.String]::Copy('%(ReferencePath.MSBuildSourceProjectFile)').EndsWith('Hawkynt.Compression.Core.csproj'))
+                               and !$([System.String]::Copy('%(ReferencePath.MSBuildSourceProjectFile)').EndsWith('Compression.Registry.csproj'))" />
+      <TfmSpecificPackageFile Include="@(_BundledRefs)" PackagePath="lib/$(TargetFramework)" />
+    </ItemGroup>
+  </Target>
+
+</Project>

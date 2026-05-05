@@ -34,8 +34,11 @@ on:
         default: ""
     outputs:
       artifact-name:
-        description: "Name of the uploaded artifact folder"
+        description: "Name of the uploaded artifact folder (zips of the executables)"
         value: ${{ jobs.build.outputs.artifact-name }}
+      nuget-artifact-name:
+        description: "Name of the uploaded artifact folder (the four .nupkg files)"
+        value: ${{ jobs.build.outputs.nuget-artifact-name }}
 
 jobs:
   build:
@@ -44,6 +47,7 @@ jobs:
       contents: write                           # action-gh-release needs this downstream
     outputs:
       artifact-name: CompressionWorkbench-${{ inputs.version }}
+      nuget-artifact-name: nuget-packages-${{ inputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -214,3 +218,55 @@ jobs:
             CompressionWorkbench-CLI-win-x64-${{ inputs.version }}.zip
             CompressionWorkbench-CLI-linux-x64-${{ inputs.version }}.zip
             CompressionWorkbench-UI-win-x64-${{ inputs.version }}.zip
+
+      # NuGet meta-packages. PackageId for each comes from $(MSBuildProjectName)
+      # which equals the .csproj filename — overriding -p:PackageId at the
+      # command line propagates globally and triggers NU1201 on referenced
+      # projects, so don't pass it here. Pack Core first because the metas
+      # declare it as a NuGet `<dependency>`.
+      - name: Pack Hawkynt.Compression.Core
+        shell: bash
+        run: |
+          dotnet pack Compression.Core/Hawkynt.Compression.Core.csproj \
+            --configuration Release \
+            --no-build \
+            --output dist-nuget \
+            -p:Version=${{ inputs.version }} \
+            -p:ContinuousIntegrationBuild=true \
+            -p:IncludeSymbols=true \
+            -p:SymbolPackageFormat=snupkg
+
+      - name: Pack Hawkynt.FileFormats.Audio
+        shell: bash
+        run: |
+          dotnet pack Hawkynt.FileFormats.Audio/Hawkynt.FileFormats.Audio.csproj \
+            --configuration Release \
+            --no-build \
+            --output dist-nuget \
+            -p:Version=${{ inputs.version }} \
+            -p:ContinuousIntegrationBuild=true
+
+      - name: Pack Hawkynt.FileFormats.Archives
+        shell: bash
+        run: |
+          dotnet pack Hawkynt.FileFormats.Archives/Hawkynt.FileFormats.Archives.csproj \
+            --configuration Release \
+            --no-build \
+            --output dist-nuget \
+            -p:Version=${{ inputs.version }} \
+            -p:ContinuousIntegrationBuild=true
+
+      - name: Pack Hawkynt.FileFormats.FileSystems
+        shell: bash
+        run: |
+          dotnet pack Hawkynt.FileFormats.FileSystems/Hawkynt.FileFormats.FileSystems.csproj \
+            --configuration Release \
+            --no-build \
+            --output dist-nuget \
+            -p:Version=${{ inputs.version }} \
+            -p:ContinuousIntegrationBuild=true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages-${{ inputs.version }}
+          path: dist-nuget/*

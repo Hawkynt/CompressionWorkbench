@@ -33,7 +33,7 @@ public class AutoExtractorRecursiveTests {
       System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 4), (short)(i * 100));
       System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 4 + 2), (short)(-i * 100));
     }
-    var wav = Compression.Core.Audio.ChannelSplitter.ToWavBlob(pcm, 2, 44100, 16);
+    var wav = Codec.Pcm.PcmCodec.ToWavBlob(pcm, 2, 44100, 16);
 
     var extractor = new AutoExtractor();
     using var ms = new MemoryStream(wav);

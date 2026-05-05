@@ -137,7 +137,7 @@ The project inherits all settings from `Directory.Build.props` (net10.0, C# 14, 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <ProjectReference Include="..\Compression.Core\Compression.Core.csproj" />
+    <ProjectReference Include="..\Compression.Core\Hawkynt.Compression.Core.csproj" />
     <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
   </ItemGroup>
 </Project>

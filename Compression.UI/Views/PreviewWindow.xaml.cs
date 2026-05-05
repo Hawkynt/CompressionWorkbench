@@ -101,21 +101,50 @@ public partial class PreviewWindow : Window {
   }
 
   /// <summary>
-  /// If <paramref name="data"/> begins with a known image-format magic, decode
-  /// it via WPF's <see cref="BitmapImage"/> (PNG/JPEG/BMP/GIF/TIFF) or
-  /// <see cref="IconBitmapDecoder"/> (ICO/CUR) and bind the result to the
-  /// <c>ImageView</c> control. Returns <c>false</c> for non-image bytes or
-  /// unsupported variants (e.g. WebP \u2014 WPF has no built-in codec) so the
-  /// caller falls back to the text/hex path.
+  /// Detects via <see cref="Hawkynt.FileFormats.Images.FormatRegistry"/> (covers
+  /// ~540 image formats by magic-byte sniffing). Three-tier render:
+  /// <list type="number">
+  ///   <item>WPF-native (PNG/JPEG/BMP/GIF/TIFF/ICO/CUR) \u2192 existing
+  ///   <see cref="BitmapDecoder"/> path with multi-frame + GIF disposal
+  ///   compositing.</item>
+  ///   <item>Other formats Hawkynt recognises (WebP/AVIF/HEIF/PCX/TGA/DDS/Targa
+  ///   /KTX/Sgi/Xpm/Xcf/Krita/Psd/Bpg/Flif/Qoi/Netpbm/...) \u2192 decode to
+  ///   <c>RawImage</c>, re-encode as PNG bytes, recurse through the WPF-native
+  ///   path. Single frame only; no animation for these.</item>
+  ///   <item>Unrecognised \u2192 return <c>false</c>, fall through to text/hex.</item>
+  /// </list>
   /// </summary>
   private bool TryRenderAsImage(byte[] data) {
     if (!IsKnownImageSignature(data, out var isIcon)) return false;
+    return RenderViaWpfDecoder(data, isIcon);
+  }
+
+  private static bool IsKnownImageSignature(ReadOnlySpan<byte> data, out bool isIcon) {
+    isIcon = false;
+    if (data.Length < 4) return false;
+    if (data.Length >= 8 && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47
+        && data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A) return true;
+    if (data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) return true;
+    if (data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x38) return true;
+    if (data[0] == 0x42 && data[1] == 0x4D) return true;
+    if (data[0] == 0x49 && data[1] == 0x49 && data[2] == 0x2A && data[3] == 0x00) return true;
+    if (data[0] == 0x4D && data[1] == 0x4D && data[2] == 0x00 && data[3] == 0x2A) return true;
+    if (data[0] == 0x00 && data[1] == 0x00 && data[3] == 0x00 && (data[2] == 0x01 || data[2] == 0x02)) {
+      isIcon = true;
+      return true;
+    }
+    return false;
+  }
+
+  /// <summary>
+  /// Drives the WPF <see cref="BitmapDecoder"/> path: decode, materialise frames
+  /// (with GIF disposal compositing), populate the multi-frame nav UI, optionally
+  /// start animation. Used for WPF-native input formats and as the final stage of
+  /// the Hawkynt-bridged path (where input bytes are PNG-encoded RawImage output).
+  /// </summary>
+  private bool RenderViaWpfDecoder(byte[] data, bool isIcon) {
     try {
       using var ms = new MemoryStream(data);
-      // Unified path: BitmapDecoder.Create auto-selects the right WPF codec for
-      // PNG/JPEG/BMP/GIF/TIFF (multi-page); ICO/CUR need IconBitmapDecoder
-      // explicitly because the auto-selector doesn't recognise their magic.
-      // OnLoad forces full decode while the stream is open so we can release it.
       BitmapDecoder decoder = isIcon
         ? new IconBitmapDecoder(ms, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad)
         : BitmapDecoder.Create(ms, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
@@ -453,39 +482,6 @@ public partial class PreviewWindow : Window {
     StopAnimation();
     _frames = null;
     base.OnClosed(e);
-  }
-
-  /// <summary>
-  /// Recognises image formats that WPF's BitmapImage (or IconBitmapDecoder)
-  /// can render natively. WebP is intentionally NOT included \u2014 WPF lacks a
-  /// built-in WebP codec on stock Windows. Returns <c>true</c> for renderable
-  /// signatures and sets <paramref name="isIcon"/> for ICO/CUR.
-  /// </summary>
-  private static bool IsKnownImageSignature(ReadOnlySpan<byte> data, out bool isIcon) {
-    isIcon = false;
-    if (data.Length < 4) return false;
-    // PNG: 89 50 4E 47 0D 0A 1A 0A
-    if (data.Length >= 8 && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47
-        && data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A)
-      return true;
-    // JPEG: FF D8 FF
-    if (data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) return true;
-    // GIF: "GIF8"
-    if (data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x38) return true;
-    // BMP: "BM"
-    if (data[0] == 0x42 && data[1] == 0x4D) return true;
-    // TIFF LE: II*\0
-    if (data[0] == 0x49 && data[1] == 0x49 && data[2] == 0x2A && data[3] == 0x00) return true;
-    // TIFF BE: MM\0*
-    if (data[0] == 0x4D && data[1] == 0x4D && data[2] == 0x00 && data[3] == 0x2A) return true;
-    // ICO / CUR: 00 00 01 00 / 00 00 02 00
-    if (data[0] == 0x00 && data[1] == 0x00 && data[3] == 0x00
-        && (data[2] == 0x01 || data[2] == 0x02)) {
-      isIcon = true;
-      return true;
-    }
-    // WebP: RIFF????WEBP \u2014 WPF lacks a built-in codec, deliberately fall through to hex.
-    return false;
   }
 
   private void OnModeChanged(object sender, RoutedEventArgs e) {

@@ -1,0 +1,65 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>FileFormat.PngCrushAdapters</RootNamespace>
+    <!--
+      Adapter project for the sibling PngCrushCS repo. When that repo is checked
+      out at ..\..\..\PNGCrushCS (sibling of the workbench root, NOT a subdir),
+      this project compiles the adapter sources and pulls in its descriptors
+      (Apng/Tiff/Mpo/etc.). When the sibling is ABSENT (e.g. on CI runners),
+      the project produces an empty assembly so the .slnx still builds cleanly.
+      The triple "..\..\..\" is because this csproj lives at
+      <repo>/FileFormats/FileFormat.PngCrushAdapters/, three levels deep.
+    -->
+    <SiblingPresent>false</SiblingPresent>
+    <SiblingPresent Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj')">true</SiblingPresent>
+    <!-- Suppress default *.cs compile globbing when sibling is absent so adapter sources don't try to build. -->
+    <EnableDefaultCompileItems Condition="'$(SiblingPresent)' != 'true'">false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <!-- GIF reader/decoder lives in FileFormat.Gif (dependency-free); the
+         color-aware GIF descriptor here uses GifPixelDecoder + the colorspace
+         pipeline. Always reference it (no sibling guard) so projects that DO
+         have the sibling get the rich descriptor without conditional plumbing. -->
+    <ProjectReference Include="..\FileFormat.Gif\FileFormat.Gif.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(SiblingPresent)' == 'true'">
+    <!-- PngCrushCS sibling transitively requires System.IO.Hashing 10.0.3+
+         (FileFormat.Jpeg → FrameworkExtensions.Backports). Pin here to satisfy
+         the floor and avoid NU1605 downgrade. -->
+    <PackageReference Include="System.IO.Hashing" Version="10.0.3" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(SiblingPresent)' == 'true'">
+    <!--
+      Cross-repo: PngCrushCS's image format library. We reference the specific
+      sub-projects our adapters use directly; the unified meta-package
+      Hawkynt.FileFormats.Images is intentionally NOT referenced because its
+      transitive Compression.Core (sibling's Zopfli/Deflate one) collides with
+      our own Compression.Core in fully-qualified type names like
+      Compression.Core.BitIO.BitOrder. Going through extern-alias plumbing to
+      disambiguate is more cost than the meta-package's convenience justifies.
+    -->
+    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj" />
+    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Png\FileFormat.Png.csproj" />
+    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Bmp\FileFormat.Bmp.csproj" />
+    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Apng\FileFormat.Apng.csproj" />
+    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Tiff\FileFormat.Tiff.csproj" />
+    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.BigTiff\FileFormat.BigTiff.csproj" />
+    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Mng\FileFormat.Mng.csproj" />
+    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Fli\FileFormat.Fli.csproj" />
+    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Dcx\FileFormat.Dcx.csproj" />
+    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Icns\FileFormat.Icns.csproj" />
+    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Mpo\FileFormat.Mpo.csproj" />
+    <!-- PrivateAssets="all" keeps the dependency available to PngCrushAdapters'
+         own JpegFormatDescriptor sources while preventing the transitive
+         FrameworkExtensions.Backports (which exposes a duplicate
+         Compression.Core.BitIO.BitOrder type, colliding with our own
+         Compression.Core.dll, CS0433) from leaking to consumers. -->
+    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Jpeg\FileFormat.Jpeg.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>
