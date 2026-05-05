@@ -1,5 +1,5 @@
 #pragma warning disable CS1591
-using Compression.Core.Audio;
+using Codec.Pcm;
 using Compression.Registry;
 
 namespace FileFormat.Flac;
@@ -71,9 +71,9 @@ public sealed class FlacArchiveDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
     if (props.Channels == 1) {
       entries.Add(("MONO.wav", "Channel",
-        ChannelSplitter.ToWavBlob(pcmBytes, 1, props.SampleRate, props.BitsPerSample)));
+        PcmCodec.ToWavBlob(pcmBytes, 1, props.SampleRate, props.BitsPerSample)));
     } else {
-      foreach (var (name, wav) in ChannelSplitter.SplitInterleavedPcm(
+      foreach (var (name, wav) in PcmCodec.SplitInterleavedPcm(
           pcmBytes, props.Channels, props.SampleRate, props.BitsPerSample))
         entries.Add(($"{name}.wav", "Channel", wav));
     }

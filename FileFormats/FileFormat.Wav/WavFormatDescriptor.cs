@@ -1,6 +1,6 @@
 #pragma warning disable CS1591
 using System.Text;
-using Compression.Core.Audio;
+using Codec.Pcm;
 using Compression.Registry;
 
 namespace FileFormat.Wav;
@@ -178,7 +178,7 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     // Split PCM integer formats (code 1) per-channel; float/other are skipped.
     if (parsed.FormatCode == 1 && parsed.BitsPerSample is 8 or 16 or 24 or 32 && parsed.NumChannels > 1) {
-      foreach (var (name, wavBlob) in ChannelSplitter.SplitInterleavedPcm(
+      foreach (var (name, wavBlob) in PcmCodec.SplitInterleavedPcm(
           parsed.InterleavedPcm, parsed.NumChannels, parsed.SampleRate, parsed.BitsPerSample))
         entries.Add(($"{name}.wav", "Channel", wavBlob));
     }

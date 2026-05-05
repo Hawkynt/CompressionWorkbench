@@ -13,7 +13,7 @@ namespace FileSystem.BcacheFs;
 /// SB-only image via <see cref="BcacheFsWriter"/> that <c>bcachefs show-super</c>
 /// accepts. Walking the b-tree object graph (extents/dirents/inodes) and
 /// emitting B-tree nodes are explicitly out of scope — see
-/// <c>docs/FILESYSTEMS.md</c> for the full gap statement.
+/// <c>Hawkynt.FileFormats.FileSystems/README.md</c> for the full gap statement.
 /// </summary>
 public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "BcacheFs";
