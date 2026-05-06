@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Adf;
 
-public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable {
+public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable {
   public long? MaxTotalArchiveSize => 901120;  // standard DD (880 KB) — 11 sectors × 2 sides × 80 tracks × 512
   public string AcceptedInputsDescription =>
     "Amiga DD ADF disk; any file up to 901 120 bytes total.";
@@ -18,9 +18,32 @@ public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "ADF";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing Adf image (FFS).
+  /// Uses <c>AdfModifier</c> for true O(touched bytes) random-access I/O —
+  /// only the root block, the bitmap, the optional hash-chain neighbour,
+  /// and the new file's header + data blocks are read or written.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      AdfModifier.RemoveFile(archive, name, wipeData: true);
+      AdfModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing Adf image (FFS). Uses
+  /// <c>AdfModifier</c> for O(touched bytes) random-access I/O.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      AdfModifier.RemoveFile(archive, name, wipeData: true);
+  }
+
   public string DefaultExtension => ".adf";
   public IReadOnlyList<string> Extensions => [".adf"];
   public IReadOnlyList<string> CompoundExtensions => [];

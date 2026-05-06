@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ProDos;
 
-public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
 
   // We cap at the 800 KB Mac-format floppy — the largest canonical size we emit.
   public long? MaxTotalArchiveSize => ProDosWriter.Disk800KTotalBlocks * 512L;
@@ -23,9 +23,32 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public FormatCategory Category => FormatCategory.Archive;
 
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing ProDos image.
+  /// Uses <c>ProDosModifier</c> for true O(touched bytes) random-access
+  /// I/O — only the volume header, the directory chain, the bitmap, and
+  /// the file's index + data blocks are read or written.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      ProDosModifier.RemoveFile(archive, name, wipeData: true);
+      ProDosModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing ProDos image. Uses
+  /// <c>ProDosModifier</c> for O(touched bytes) random-access I/O.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      ProDosModifier.RemoveFile(archive, name, wipeData: true);
+  }
+
 
   public string DefaultExtension => ".po";
   public IReadOnlyList<string> Extensions => [".po", ".2mg"];

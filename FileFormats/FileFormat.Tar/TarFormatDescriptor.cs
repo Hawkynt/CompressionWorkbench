@@ -4,13 +4,37 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Tar;
 
-public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator {
+public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable {
   public string Id => "Tar";
   public string DisplayName => "TAR";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing TAR archive.
+  /// Uses <see cref="TarModifier"/> for true random-access I/O — Add is
+  /// O(touched bytes) (append before terminator); Remove is O(image-size-after-target)
+  /// because TAR has no central directory and trailing entries must be shifted.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      TarModifier.RemoveFile(archive, name, wipeData: true);
+      TarModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes named entries from an existing TAR archive. Uses
+  /// <see cref="TarModifier"/> for in-place compaction.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      TarModifier.RemoveFile(archive, name, wipeData: true);
+  }
+
   public string DefaultExtension => ".tar";
   public IReadOnlyList<string> Extensions => [".tar"];
   public IReadOnlyList<string> CompoundExtensions => [];

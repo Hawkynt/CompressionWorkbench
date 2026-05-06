@@ -1,4 +1,4 @@
-namespace Compression.Lib;
+namespace Compression.Registry;
 
 /// <summary>
 /// Detects incompressible (already compressed, encrypted, or random) data using
@@ -28,7 +28,6 @@ public static class EntropyDetector {
     var sample = GetSample(data);
     var chiSquare = ComputeChiSquare(sample);
 
-    // Low chi-square = uniform distribution = incompressible
     return chiSquare < ChiSquareThreshold;
   }
 
@@ -43,9 +42,7 @@ public static class EntropyDetector {
     byte[] sample;
     if (fi.Length <= MaxSampleSize) {
       sample = File.ReadAllBytes(filePath);
-    }
-    else {
-      // Sample head + tail for better coverage
+    } else {
       sample = new byte[MaxSampleSize];
       using var fs = File.OpenRead(filePath);
       var headSize = MaxSampleSize / 2;
@@ -61,7 +58,6 @@ public static class EntropyDetector {
 
   private static ReadOnlySpan<byte> GetSample(byte[] data) {
     if (data.Length <= MaxSampleSize) return data;
-    // For in-memory data, just use the first MaxSampleSize bytes
     return data.AsSpan(0, MaxSampleSize);
   }
 

@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.AppleDos;
 
-public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
 
   public long? MaxTotalArchiveSize => AppleDosReader.StandardSize;
   public string AcceptedInputsDescription =>
@@ -19,8 +19,31 @@ public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public FormatCategory Category => FormatCategory.Archive;
 
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing AppleDos image.
+  /// Uses <c>AppleDosModifier</c> for true O(touched bytes) random-access
+  /// I/O — only the VTOC, the catalog chain, and the file's data + T/S
+  /// list sectors are read or written.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      AppleDosModifier.RemoveFile(archive, name, wipeData: true);
+      AppleDosModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing AppleDos image. Uses
+  /// <c>AppleDosModifier</c> for O(touched bytes) random-access I/O.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      AppleDosModifier.RemoveFile(archive, name, wipeData: true);
+  }
+
 
   public string DefaultExtension => ".dsk";
   public IReadOnlyList<string> Extensions => [".dsk", ".do"];

@@ -220,6 +220,107 @@ testCmd.SetAction((ParseResult ctx) => {
   return ok ? 0 : 1;
 });
 
+// ── add / remove / replace ───────────────────────────────────────────
+
+var addArchiveArg = new Argument<FileInfo>("archive") { Description = "Archive to modify" };
+var addFilesArg = new Argument<string[]>("files") { Description = "Files to add (or replace by name)", Arity = ArgumentArity.OneOrMore };
+
+var addCmd = new Command("add", """
+  Add (or replace by name) files inside an existing archive.
+  Routes through IArchiveModifiable for true random-access I/O when the
+  format supports it (retro disk filesystems: D64/D71/D81/AppleDOS/ProDOS/
+  Atari8/BBC/ADF/etc.); falls back to extract-add-recreate for ZIP/7z/RAR/
+  tar variants.
+  Examples:
+    cwb add disk.d81 game.prg                     Add into 1581 disk
+    cwb add archive.zip notes.txt -m deflate      Add with re-encoding
+  """) { addArchiveArg, addFilesArg, methodOpt, levelOpt, dictSizeOpt, passwordOpt };
+addCmd.SetAction((ParseResult ctx) => {
+  var archive = ctx.GetValue(addArchiveArg)!;
+  var files = ctx.GetValue(addFilesArg)!;
+  if (!archive.Exists) { Console.Error.WriteLine($"File not found: {archive.FullName}"); return 1; }
+
+  List<ArchiveInput> resolved;
+  try { resolved = ArchiveInput.Resolve(files); }
+  catch (FileNotFoundException ex) { Console.Error.WriteLine(ex.Message); return 1; }
+
+  var opts = new CompressionOptions {
+    Method = MethodSpec.Parse(ctx.GetValue(methodOpt)),
+    Level = ctx.GetValue(levelOpt),
+    DictSize = ParseSize(ctx.GetValue(dictSizeOpt)),
+    Password = ctx.GetValue(passwordOpt),
+  };
+
+  Console.Write($"Adding {resolved.Count} file(s) to {archive.Name}...");
+  var sw = Stopwatch.StartNew();
+  ArchiveOperations.Add(archive.FullName, resolved, opts);
+  sw.Stop();
+  Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+  return 0;
+});
+
+var removeArchiveArg = new Argument<FileInfo>("archive") { Description = "Archive to modify" };
+var removeNamesArg = new Argument<string[]>("names") { Description = "Entry names to remove", Arity = ArgumentArity.OneOrMore };
+
+var removeCmd = new Command("remove", """
+  Remove named entries from an existing archive. Prefers the modifier path
+  for true random-access I/O; falls back to extract-skip-recreate.
+  Examples:
+    cwb remove disk.d64 OLDFILE                   Drop one entry
+    cwb remove archive.zip readme.txt notes.txt   Drop multiple entries
+  """) { removeArchiveArg, removeNamesArg, methodOpt, levelOpt, passwordOpt };
+removeCmd.Aliases.Add("rm");
+removeCmd.SetAction((ParseResult ctx) => {
+  var archive = ctx.GetValue(removeArchiveArg)!;
+  var names = ctx.GetValue(removeNamesArg)!;
+  if (!archive.Exists) { Console.Error.WriteLine($"File not found: {archive.FullName}"); return 1; }
+
+  var opts = new CompressionOptions {
+    Method = MethodSpec.Parse(ctx.GetValue(methodOpt)),
+    Level = ctx.GetValue(levelOpt),
+    Password = ctx.GetValue(passwordOpt),
+  };
+
+  Console.Write($"Removing {names.Length} entry(ies) from {archive.Name}...");
+  var sw = Stopwatch.StartNew();
+  ArchiveOperations.Remove(archive.FullName, names, opts);
+  sw.Stop();
+  Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+  return 0;
+});
+
+var replaceArchiveArg = new Argument<FileInfo>("archive") { Description = "Archive to modify" };
+var replaceNameArg = new Argument<string>("name") { Description = "Existing entry name to replace" };
+var replaceFileArg = new Argument<FileInfo>("file") { Description = "Replacement source file" };
+
+var replaceCmd = new Command("replace", """
+  Replace an existing entry with the contents of a new file. Sugar for
+  remove + add — uses the modifier path when available so the operation
+  touches only the metadata sectors and the new file's data.
+  Example:
+    cwb replace disk.d64 INTRO patched.prg
+  """) { replaceArchiveArg, replaceNameArg, replaceFileArg, methodOpt, levelOpt, passwordOpt };
+replaceCmd.SetAction((ParseResult ctx) => {
+  var archive = ctx.GetValue(replaceArchiveArg)!;
+  var name = ctx.GetValue(replaceNameArg)!;
+  var file = ctx.GetValue(replaceFileArg)!;
+  if (!archive.Exists) { Console.Error.WriteLine($"File not found: {archive.FullName}"); return 1; }
+  if (!file.Exists) { Console.Error.WriteLine($"File not found: {file.FullName}"); return 1; }
+
+  var opts = new CompressionOptions {
+    Method = MethodSpec.Parse(ctx.GetValue(methodOpt)),
+    Level = ctx.GetValue(levelOpt),
+    Password = ctx.GetValue(passwordOpt),
+  };
+
+  Console.Write($"Replacing '{name}' in {archive.Name}...");
+  var sw = Stopwatch.StartNew();
+  ArchiveOperations.Replace(archive.FullName, name, file.FullName, opts);
+  sw.Stop();
+  Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+  return 0;
+});
+
 // ── info ─────────────────────────────────────────────────────────────
 
 var infoCmd = new Command("info", "Show detailed archive information") { archiveArg, passwordOpt };
@@ -1022,6 +1123,81 @@ visualizeCmd.SetAction((ParseResult ctx) => {
   return 0;
 });
 
+// ── defragment ────────────────────────────────────────────────────────
+
+var defragImageArg = new Argument<FileInfo>("image") { Description = "Filesystem image to defragment in place" };
+var defragModeOpt = new Option<string>("--mode") {
+  Description = "Layout strategy: pack-start (default), pack-end, fill-holes, carve-hole",
+  DefaultValueFactory = _ => "pack-start",
+};
+var defragHoleSizeOpt = new Option<long>("--hole-size") {
+  Description = "For --mode carve-hole: bytes to reserve as a contiguous free region",
+  DefaultValueFactory = _ => 0L,
+};
+var defragHoleAtOpt = new Option<long>("--hole-at") {
+  Description = "For --mode carve-hole: byte offset of the carved region (-1 = auto, at end)",
+  DefaultValueFactory = _ => -1L,
+};
+var defragCmd = new Command("defragment", """
+  Defragment a filesystem image in place using one of four layout strategies:
+
+    pack-start    Pack live extents at the data origin; trailing free space.
+                  The default; closest match to a traditional defrag tool.
+    pack-end      Pack live extents at the end of the image; leading free
+                  space. Useful before injecting boot sectors or installer
+                  payloads at low offsets.
+    fill-holes    Lazy compaction — best-fit fill of existing holes from tail
+                  extents. Doesn't guarantee contiguity but moves the minimum
+                  number of bytes. Use on huge images with a few small holes.
+    carve-hole    Reserve a contiguous free region of --hole-size bytes at
+                  --hole-at (or auto-pick at the end). Live extents in the
+                  way are relocated to existing free space or appended.
+
+  Only descriptors that implement IArchiveDefragmentable accept this command.
+  Currently: FAT12 / FAT16 / FAT32 (all four modes), other R/W filesystems
+  (pack-start only via the default-impl fallback).
+  """) {
+  defragImageArg, defragModeOpt, defragHoleSizeOpt, defragHoleAtOpt
+};
+defragCmd.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(defragImageArg)!;
+  var modeStr = ctx.GetValue(defragModeOpt) ?? "pack-start";
+  var holeSize = ctx.GetValue(defragHoleSizeOpt);
+  var holeAt = ctx.GetValue(defragHoleAtOpt);
+
+  if (!image.Exists) {
+    Console.Error.WriteLine($"File not found: {image.FullName}");
+    return 1;
+  }
+
+  var mode = modeStr.ToLowerInvariant() switch {
+    "pack-start" => DefragMode.ConsolidateAtStart,
+    "pack-end" => DefragMode.ConsolidateAtEnd,
+    "fill-holes" => DefragMode.FillHolesLazy,
+    "carve-hole" => DefragMode.CarveHole,
+    _ => throw new ArgumentException($"Unknown mode '{modeStr}'. Use one of: pack-start, pack-end, fill-holes, carve-hole."),
+  };
+
+  var format = FormatDetector.Detect(image.FullName);
+  var ops = FormatRegistry.GetById(format.ToString());
+  if (ops is not IArchiveDefragmentable defragmentable) {
+    Console.Error.WriteLine($"{format} does not support defragmentation.");
+    return 1;
+  }
+
+  Console.Write($"Defragmenting {image.Name} ({format}, mode={modeStr})...");
+  var sw = Stopwatch.StartNew();
+  using var stream = image.Open(FileMode.Open, FileAccess.ReadWrite);
+  defragmentable.Defragment(stream, new DefragOptions {
+    Mode = mode,
+    HoleSize = holeSize,
+    HoleAt = holeAt,
+  });
+  sw.Stop();
+  Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+  return 0;
+});
+
 var root = new RootCommand("""
   cwb — CompressionWorkbench CLI. A universal archive tool.
 
@@ -1033,13 +1209,14 @@ var root = new RootCommand("""
     cwb convert in.zip out.7z -m lzma         Convert ZIP → 7z with LZMA
     cwb create app.7z files --sfx             Create self-extracting 7z
     cwb test archive.zip                      Verify integrity
+    cwb defragment disk.img --mode pack-end   Repack files at end of image
     cwb tool init                             Set up external tool templates
     cwb reverse-engineer MyTool.exe "{input} {output}"  Auto-discover format
 
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, infoCmd, convertCmd, optimizeCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd
+  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, convertCmd, optimizeCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd
 };
 
 return root.Parse(args).Invoke();
@@ -1074,13 +1251,13 @@ static void BenchmarkBlock(string name, byte[] data, IBuildingBlock block) {
 }
 
 static long ParseSize(string? sizeStr) {
-  if (string.IsNullOrWhiteSpace(sizeStr)) return SolidBlockPlanner.DefaultMaxBlockSize;
+  if (string.IsNullOrWhiteSpace(sizeStr)) return FileFormat.SevenZip.SolidBlockPlanner.DefaultMaxBlockSize;
   var s2 = sizeStr.Trim().ToLowerInvariant();
   if (s2 == "0") return 0; // single block (no splitting)
   long multiplier = 1;
   if (s2.EndsWith('k')) { multiplier = 1024; s2 = s2[..^1]; }
   else if (s2.EndsWith('m')) { multiplier = 1024 * 1024; s2 = s2[..^1]; }
   else if (s2.EndsWith('g')) { multiplier = 1024L * 1024 * 1024; s2 = s2[..^1]; }
-  return long.TryParse(s2, out var val) ? val * multiplier : SolidBlockPlanner.DefaultMaxBlockSize;
+  return long.TryParse(s2, out var val) ? val * multiplier : FileFormat.SevenZip.SolidBlockPlanner.DefaultMaxBlockSize;
 }
 

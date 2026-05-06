@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Bbc;
 
-public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
 
   // 40-track SSD: 40 * 10 * 256 = 102 400 bytes. Writer emits this canonical size.
   public long? MaxTotalArchiveSize => BbcWriter.DiskSize40;
@@ -20,8 +20,31 @@ public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
 
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing Bbc image.
+  /// Uses <c>BbcModifier</c> for true O(touched bytes) random-access
+  /// I/O — only the two catalog sectors and the file's contiguous data
+  /// run are read or written.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      BbcModifier.RemoveFile(archive, name, wipeData: true);
+      BbcModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing Bbc image. Uses
+  /// <c>BbcModifier</c> for O(touched bytes) random-access I/O.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      BbcModifier.RemoveFile(archive, name, wipeData: true);
+  }
+
 
   public string DefaultExtension => ".ssd";
   public IReadOnlyList<string> Extensions => [".ssd", ".dsd"];

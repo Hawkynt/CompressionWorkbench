@@ -118,11 +118,11 @@ State legend:
 | `FileSystem.Btrfs`    | R/W   | B-tree filesystem — CRC-32C, real chunk tree (SYSTEM/METADATA/DATA)    |
 | `FileSystem.Ext`      | R/W   | ext2 / ext3 / ext4 — DYNAMIC_REV, FILETYPE feature, files at inode 11  |
 | `FileSystem.Xfs`      | R/W   | XFS v5 — `xfs_repair`-validated, AGF/AGI/AGFL, full B-tree set         |
-| `FileSystem.Ext1`     | WORM  | ext1 — Theodore Ts'o 1992 original (magic 0xEF51, no `mkfs.ext1` exists) |
-| `FileSystem.ReiserFs` | WORM  | ReiserFS 3.6 — spec-correct offsets, `s_root_block@+8`                  |
+| `FileSystem.Ext1`     | R/W   | ext1 — Theodore Ts'o 1992 original (magic 0xEF51, no `mkfs.ext1` exists); add/remove via rebuild |
+| `FileSystem.ReiserFs` | R/W   | ReiserFS 3.6 — spec-correct offsets, `s_root_block@+8`; add/remove via rebuild                  |
 | `FileSystem.Reiser4`  | WORM  | Reiser4 — empty-FS only via 7 byte-exact reference blocks              |
 | `FileSystem.Jfs`      | R     | IBM JFS — superblock + inode table parse only                          |
-| `FileSystem.F2fs`     | WORM  | Flash-Friendly Filesystem — superblock + checkpoint + SIT + NAT + Main |
+| `FileSystem.F2fs`     | R/W   | Flash-Friendly Filesystem — superblock + checkpoint + SIT + NAT + Main; add/remove via rebuild |
 | `FileSystem.Zfs`      | R     | Sun ZFS — read existing pools                                          |
 | `FileSystem.Ufs`      | R     | UNIX File System (BSD) — `fs_magic=0x011954`                           |
 | `FileSystem.BcacheFs` | WORM  | bcachefs — superblock-only WORM (fsck parity multi-week, B-trees TODO) |
@@ -139,10 +139,10 @@ State legend:
 
 | Filesystem           | State | Notes                                                                 |
 | -------------------- | ----- | --------------------------------------------------------------------- |
-| `FileSystem.HfsPlus` | WORM  | Mac OS Extended — TN1150-compliant catalog file record (248 B)        |
-| `FileSystem.Hfs`     | WORM  | Classic Mac OS HFS — real B-tree catalog + extents trees              |
-| `FileSystem.Apfs`    | R     | Apple File System (macOS High Sierra+) — single-container/volume read |
-| `FileSystem.Mfs`     | WORM  | Macintosh File System (1984) — pre-HFS flat FS, `drSigWord=0xD2D7`    |
+| `FileSystem.HfsPlus` | R/W   | Mac OS Extended — TN1150-compliant catalog file record (248 B); add/remove via read-extract-rebuild |
+| `FileSystem.Hfs`     | R/W   | Classic Mac OS HFS — real B-tree catalog + extents trees; add/remove via rebuild         |
+| `FileSystem.Apfs`    | R/W   | Apple File System (macOS High Sierra+) — single-container/volume; add/remove via rebuild |
+| `FileSystem.Mfs`     | R/W   | Macintosh File System (1984) — pre-HFS flat FS, `drSigWord=0xD2D7`; add/remove via rebuild |
 
 #### Compressed / embedded / flash
 
@@ -159,25 +159,25 @@ State legend:
 
 | Filesystem       | State | Notes                                                                 |
 | ---------------- | ----- | --------------------------------------------------------------------- |
-| `FileSystem.Iso` | WORM  | ISO 9660 + Joliet — PVD@16, VDST@17, L+M path tables                  |
-| `FileSystem.Udf` | WORM  | UDF (DVD / Blu-ray) — ECMA-167, VRS@16-18, AVDP@256, CRC-16-XMODEM    |
+| `FileSystem.Iso` | R/W   | ISO 9660 + Joliet — PVD@16, VDST@17, L+M path tables; in-place add / remove via read-extract-rebuild (overwrites the source stream, secure-wipes removed bytes) |
+| `FileSystem.Udf` | R/W   | UDF (DVD / Blu-ray) — ECMA-167, VRS@16-18, AVDP@256, CRC-16-XMODEM; add/remove via rebuild |
 | `FileSystem.Sfs` | R     | Smart File System (Amiga) — superblock walk only                      |
 
 #### Retro / vintage
 
 | Filesystem                       | State | Notes                                                       |
 | -------------------------------- | ----- | ----------------------------------------------------------- |
-| `FileSystem.D64` / `D71` / `D81` | WORM  | Commodore 1541 / 1571 / 1581 — directory at T18S1+          |
+| `FileSystem.D64` / `D71` / `D81` | R/W   | Commodore 1541 / 1571 / 1581 — directory at T18S1+; add/remove via rebuild |
 | `FileSystem.CbmNibble`           | R     | Commodore raw nibble (`.g64` / `.nib`)                      |
-| `FileSystem.AppleDos`            | WORM  | Apple DOS 3.3 — 143 360 bytes, catalog at T17S15            |
-| `FileSystem.ProDos`              | WORM  | ProDOS — 143 360 / 819 200, storage-type-3 trees up to 32MB |
-| `FileSystem.Atari8`              | WORM  | Atari 8-bit DOS 2 — 16-byte hdr + VTOC at sector 360        |
-| `FileSystem.Bbc`                 | WORM  | BBC Micro DFS / ADFS — 102 400 / 204 800 bytes              |
+| `FileSystem.AppleDos`            | R/W   | Apple DOS 3.3 — 143 360 bytes, catalog at T17S15; add/remove via rebuild   |
+| `FileSystem.ProDos`              | R/W   | ProDOS — 143 360 / 819 200, storage-type-3 trees; add/remove via rebuild  |
+| `FileSystem.Atari8`              | R/W   | Atari 8-bit DOS 2 — 16-byte hdr + VTOC at sector 360; add/remove via rebuild |
+| `FileSystem.Bbc`                 | R/W   | BBC Micro DFS / ADFS — 102 400 / 204 800 bytes; add/remove via rebuild       |
 | `FileSystem.Cpm`                 | R     | CP/M 2.2 — 256 256 bytes, 64-entry flat directory           |
 | `FileSystem.CpcDsk`              | WORM  | Amstrad CPC DSK — `MV - CPCEMU Disk-File`                   |
 | `FileSystem.TrDos`               | WORM  | Soviet ZX Spectrum TR-DOS — 655 360 bytes                   |
-| `FileSystem.ZxScl`               | WORM  | Spectrum SCL — `SINCLAIR` magic + LE32 sum                  |
-| `FileSystem.Adf`                 | WORM  | Amiga Disk Format — DOS\1 magic, BSDsum checksums           |
+| `FileSystem.ZxScl`               | R/W   | Spectrum SCL — `SINCLAIR` magic + LE32 sum; add/remove via rebuild         |
+| `FileSystem.Adf`                 | R/W   | Amiga Disk Format — DOS\1 magic, BSDsum checksums; add/remove via rebuild  |
 | `FileSystem.Msa`                 | WORM  | Atari ST Magic Shadow Archive — 0x0E0F BE magic             |
 
 #### Mainframe / minicomputer

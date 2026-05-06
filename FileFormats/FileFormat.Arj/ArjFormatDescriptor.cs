@@ -4,14 +4,34 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Arj;
 
-public sealed class ArjFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class ArjFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Arj";
   public string DisplayName => "ARJ";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsPassword |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsPassword |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing ARJ archive.
+  /// Uses <see cref="ArjModifier"/> — Add appends Stored before the EOA
+  /// marker; Remove walks the entry chain and shifts trailing bytes
+  /// (no central directory).
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      ArjModifier.RemoveFile(archive, name, wipeData: true);
+      ArjModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>Removes named entries; uses <see cref="ArjModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      ArjModifier.RemoveFile(archive, name, wipeData: true);
+  }
+
   public string DefaultExtension => ".arj";
   public IReadOnlyList<string> Extensions => [".arj"];
   public IReadOnlyList<string> CompoundExtensions => [];

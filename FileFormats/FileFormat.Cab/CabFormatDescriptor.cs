@@ -10,7 +10,8 @@ public sealed class CabFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".cab";
   public IReadOnlyList<string> Extensions => [".cab"];
   public IReadOnlyList<string> CompoundExtensions => [];

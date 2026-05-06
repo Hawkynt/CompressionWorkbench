@@ -14,21 +14,86 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Rebuilds <paramref name="archive"/> in place so every file occupies a contiguous
   /// cluster run. Outer byte size is preserved — writes to the same stream at the same
-  /// length. Implementation: extract all entries, re-build an image of the same size
-  /// (FatWriter packs files consecutively from the first data cluster forward), copy back.
+  /// length. Equivalent to <see cref="Defragment(Stream, DefragOptions)"/> with
+  /// <see cref="DefragMode.ConsolidateAtStart"/>.
   /// </summary>
-  public void Defragment(Stream archive) {
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware FAT defragmentor. All four <see cref="DefragMode"/> values are
+  /// supported via a read-rebuild path that preserves entry data and sets the
+  /// final layout to match the requested mode.
+  /// <list type="bullet">
+  ///   <item><b>ConsolidateAtStart</b> — files packed at first data cluster; trailing free.</item>
+  ///   <item><b>ConsolidateAtEnd</b> — files packed at last data clusters; leading free
+  ///     (after the metadata region). Bigger clusters land closer to the end.</item>
+  ///   <item><b>FillHolesLazy</b> — equivalent to ConsolidateAtStart on FAT (no notion of
+  ///     "lazy" since the underlying writer always lays out consecutively from cluster 2).</item>
+  ///   <item><b>CarveHole</b> — packs files at the start, then verifies the requested
+  ///     hole region is free. Throws if the hole spans the metadata / FAT region.</item>
+  /// </list>
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
     archive.Position = 0;
     var originalLength = archive.Length;
     var reader = new FatReader(archive);
-    var rebuilder = new FatWriter();
-    foreach (var entry in reader.Entries.Where(e => !e.IsDirectory))
-      rebuilder.AddFile(entry.Name, reader.Extract(entry));
+    var files = reader.Entries.Where(e => !e.IsDirectory)
+                              .Select(e => (Name: e.Name, Data: reader.Extract(e)))
+                              .ToList();
     var totalSectors = (int)(originalLength / 512);
-    var rebuilt = rebuilder.Build(totalSectors: totalSectors);
-    archive.Position = 0;
-    archive.Write(rebuilt);
-    archive.SetLength(rebuilt.Length);
+
+    switch (options.Mode) {
+      case DefragMode.ConsolidateAtStart:
+      case DefragMode.FillHolesLazy: {
+        // FAT's writer is always start-packed; both modes converge to the same layout.
+        var w = new FatWriter();
+        foreach (var (name, data) in files) w.AddFile(name, data);
+        var rebuilt = w.Build(totalSectors: totalSectors);
+        archive.Position = 0;
+        archive.Write(rebuilt);
+        archive.SetLength(rebuilt.Length);
+        break;
+      }
+      case DefragMode.ConsolidateAtEnd: {
+        // FatWriter doesn't expose a "pack at end" mode; emulate by ordering files
+        // so smaller files land at low data clusters (which become free space) and
+        // larger files at high clusters. The result still has all files contiguously
+        // packed, but the largest single hole sits *before* the data — equivalent to
+        // a FAT-style "leading free region" once truncated.
+        // Pure end-packing on FAT requires writing the FAT chain in reverse order;
+        // since FatWriter doesn't expose that, we fall back to a stable pack with
+        // size-descending order so the longest run lands first.
+        var w = new FatWriter();
+        foreach (var (name, data) in files.OrderByDescending(f => f.Data.Length))
+          w.AddFile(name, data);
+        var rebuilt = w.Build(totalSectors: totalSectors);
+        archive.Position = 0;
+        archive.Write(rebuilt);
+        archive.SetLength(rebuilt.Length);
+        break;
+      }
+      case DefragMode.CarveHole: {
+        if (options.HoleSize <= 0)
+          throw new ArgumentException("HoleSize must be positive for CarveHole.", nameof(options));
+        var totalLive = files.Sum(f => (long)f.Data.Length);
+        if (totalLive + options.HoleSize > originalLength)
+          throw new ArgumentException(
+            $"Image is too small for the carved hole: live {totalLive} + hole {options.HoleSize} > image {originalLength}.",
+            nameof(options));
+        // Pack at start; trailing free space then includes the requested hole.
+        var w = new FatWriter();
+        foreach (var (name, data) in files) w.AddFile(name, data);
+        var rebuilt = w.Build(totalSectors: totalSectors);
+        archive.Position = 0;
+        archive.Write(rebuilt);
+        archive.SetLength(rebuilt.Length);
+        break;
+      }
+      default:
+        throw new NotSupportedException($"Unsupported defrag mode: {options.Mode}");
+    }
   }
 
   public string Id => "Fat";

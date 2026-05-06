@@ -10,7 +10,8 @@ public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".ace";
   public IReadOnlyList<string> Extensions => [".ace"];
   public IReadOnlyList<string> CompoundExtensions => [];

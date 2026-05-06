@@ -254,7 +254,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
 
   private long GetEffectiveSolidBlock() {
     var solidBytes = ParseSolidSizeBytes(SelectedSolidSize);
-    if (solidBytes == SmartSolidSentinel) return SolidBlockPlanner.DefaultMaxBlockSize;
+    if (solidBytes == SmartSolidSentinel) return FileFormat.SevenZip.SolidBlockPlanner.DefaultMaxBlockSize;
     if (solidBytes <= 0) return 4L * 1024 * 1024 * 1024; // "Solid (single block)" — assume large
     if (solidBytes == 1) return 0; // "Non-solid" — no buffering
     return solidBytes;
@@ -952,9 +952,9 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
   internal const long SmartSolidSentinel = -2;
 
   private static long ParseSolidSizeBytes(string? s) {
-    if (string.IsNullOrWhiteSpace(s)) return SolidBlockPlanner.DefaultMaxBlockSize;
+    if (string.IsNullOrWhiteSpace(s)) return FileFormat.SevenZip.SolidBlockPlanner.DefaultMaxBlockSize;
     if (s.StartsWith("Default", StringComparison.OrdinalIgnoreCase))
-      return SolidBlockPlanner.DefaultMaxBlockSize;
+      return FileFormat.SevenZip.SolidBlockPlanner.DefaultMaxBlockSize;
     if (s.StartsWith("Smart", StringComparison.OrdinalIgnoreCase))
       return SmartSolidSentinel;
     if (s.StartsWith("Non-solid", StringComparison.OrdinalIgnoreCase))

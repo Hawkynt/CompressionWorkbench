@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Ntfs;
 
-public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
   public string Id => "Ntfs";
   public string DisplayName => "NTFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -12,6 +12,28 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware NTFS defragmentor via read-extract-rebuild dispatch through
+  /// <see cref="DefragRebuilder"/>. All four <see cref="DefragMode"/> values supported;
+  /// image size preserved.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    var totalSize = (int)archive.Length;
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new NtfsReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new NtfsWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        return w.Build(totalSize);
+      });
+  }
   public string DefaultExtension => ".ntfs";
   public IReadOnlyList<string> Extensions => [".ntfs", ".img"];
   public IReadOnlyList<string> CompoundExtensions => [];

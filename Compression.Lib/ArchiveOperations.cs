@@ -81,7 +81,7 @@ public static class ArchiveOperations {
     if (!opts.ForceCompress) {
       incompressible = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
       foreach (var i in inputs) {
-        if (!i.IsDirectory && !string.IsNullOrEmpty(i.FullPath) && EntropyDetector.IsIncompressible(i.FullPath))
+        if (!i.IsDirectory && !string.IsNullOrEmpty(i.FullPath) && Compression.Registry.EntropyDetector.IsIncompressible(i.FullPath))
           incompressible.Add(i.FullPath);
       }
       if (incompressible.Count == 0) incompressible = null;
@@ -97,14 +97,9 @@ public static class ArchiveOperations {
 
     using var outFs = File.Create(outputPath);
 
-    // Complex formats that depend on Compression.Lib internals (MethodSpec, SolidBlockPlanner, etc.)
-    switch (format) {
-      case F.Zip: CreateZip(outFs, inputs, password, method, incompressible, opts); return;
-      case F.SevenZip: Create7z(outFs, inputs, password, opts); return;
-      case F.Rar: CreateRar(outFs, inputs, opts); return;
-    }
-
-    // All other formats dispatch through the registry
+    // Every format dispatches through IArchiveCreatable now — the previous
+    // hardcoded switch for ZIP/7z/RAR has moved into those descriptors'
+    // own Create methods.
     FormatRegistration.EnsureInitialized();
     var ops = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
     if (ops is Compression.Registry.IArchiveCreatable creator) {
@@ -244,6 +239,129 @@ public static class ArchiveOperations {
     }
     var label = method.Optimize ? $"full recompress ({method})" : "full recompress";
     return (label, 3);
+  }
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing archive. When the
+  /// format's descriptor implements <see cref="Compression.Registry.IArchiveModifiable"/>,
+  /// the call is routed through it for true O(touched bytes) random-access I/O
+  /// (e.g. retro disk filesystems with the new modifier classes). Otherwise
+  /// falls back to extract-add-recreate, which requires <paramref name="opts"/>
+  /// to know how to recompress.
+  /// </summary>
+  public static void Add(string archivePath, IReadOnlyList<ArchiveInput> inputs,
+                         CompressionOptions? opts = null) {
+    var format = FormatDetector.Detect(archivePath);
+    FormatRegistration.EnsureInitialized();
+    var ops = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
+
+    if (ops is Compression.Registry.IArchiveModifiable modifier) {
+      var registryInputs = inputs.Select(i =>
+        new Compression.Registry.ArchiveInputInfo(i.FullPath, i.EntryName, i.IsDirectory)).ToList();
+      using var fs = File.Open(archivePath, FileMode.Open, FileAccess.ReadWrite);
+      modifier.Add(fs, registryInputs);
+      return;
+    }
+
+    // Rebuild fallback: extract everything, splat inputs on top, recreate.
+    AddViaRebuild(archivePath, inputs, opts ?? new CompressionOptions());
+  }
+
+  /// <summary>
+  /// Removes named entries from an existing archive. Prefers
+  /// <see cref="Compression.Registry.IArchiveModifiable.Remove"/>; falls back to
+  /// extract-skip-recreate.
+  /// </summary>
+  public static void Remove(string archivePath, string[] entryNames,
+                            CompressionOptions? opts = null) {
+    var format = FormatDetector.Detect(archivePath);
+    FormatRegistration.EnsureInitialized();
+    var ops = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
+
+    if (ops is Compression.Registry.IArchiveModifiable modifier) {
+      using var fs = File.Open(archivePath, FileMode.Open, FileAccess.ReadWrite);
+      modifier.Remove(fs, entryNames);
+      return;
+    }
+
+    RemoveViaRebuild(archivePath, entryNames, opts ?? new CompressionOptions());
+  }
+
+  /// <summary>
+  /// Replaces an existing entry with the contents of <paramref name="newSourcePath"/>.
+  /// Sugar for <see cref="Remove"/> followed by <see cref="Add"/>; uses the
+  /// modifier path when available so the operation is O(touched bytes) on the
+  /// new file's bytes.
+  /// </summary>
+  public static void Replace(string archivePath, string entryName, string newSourcePath,
+                             CompressionOptions? opts = null) {
+    if (!File.Exists(newSourcePath))
+      throw new FileNotFoundException("Source file not found.", newSourcePath);
+    Remove(archivePath, [entryName], opts);
+    Add(archivePath, [new ArchiveInput(newSourcePath, entryName)], opts);
+  }
+
+  private static void AddViaRebuild(string archivePath, IReadOnlyList<ArchiveInput> inputs,
+                                    CompressionOptions opts) {
+    var tempDir = Path.Combine(Path.GetTempPath(), "cwb_add_" + Guid.NewGuid().ToString("N")[..8]);
+    try {
+      Directory.CreateDirectory(tempDir);
+      Extract(archivePath, tempDir, password: null, files: null);
+
+      // Splat new inputs into the temp tree, preserving their entry names.
+      foreach (var i in inputs) {
+        if (i.IsDirectory || string.IsNullOrEmpty(i.FullPath)) continue;
+        var entryName = string.IsNullOrEmpty(i.EntryName) ? Path.GetFileName(i.FullPath) : i.EntryName;
+        var dest = Path.Combine(tempDir, entryName.Replace('/', Path.DirectorySeparatorChar));
+        var destDir = Path.GetDirectoryName(dest);
+        if (destDir != null) Directory.CreateDirectory(destDir);
+        File.Copy(i.FullPath, dest, overwrite: true);
+      }
+
+      Create(archivePath, EnumerateTempInputs(tempDir), opts);
+    }
+    finally {
+      if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+    }
+  }
+
+  private static void RemoveViaRebuild(string archivePath, string[] entryNames,
+                                       CompressionOptions opts) {
+    var skip = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
+    var tempDir = Path.Combine(Path.GetTempPath(), "cwb_rm_" + Guid.NewGuid().ToString("N")[..8]);
+    try {
+      Directory.CreateDirectory(tempDir);
+      Extract(archivePath, tempDir, password: null, files: null);
+
+      foreach (var path in Directory.GetFiles(tempDir, "*", SearchOption.AllDirectories)) {
+        var rel = Path.GetRelativePath(tempDir, path).Replace('\\', '/');
+        if (skip.Contains(rel) || skip.Contains(Path.GetFileName(rel)))
+          File.Delete(path);
+      }
+
+      Create(archivePath, EnumerateTempInputs(tempDir), opts);
+    }
+    finally {
+      if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+    }
+  }
+
+  /// <summary>
+  /// Builds an <see cref="ArchiveInput"/> list from a temp dir's contents
+  /// using paths relative to the dir itself — so entry names don't include
+  /// the dir name as a prefix.
+  /// </summary>
+  private static List<ArchiveInput> EnumerateTempInputs(string tempDir) {
+    var inputs = new List<ArchiveInput>();
+    foreach (var dir in Directory.GetDirectories(tempDir, "*", SearchOption.AllDirectories)) {
+      var rel = Path.GetRelativePath(tempDir, dir).Replace('\\', '/');
+      inputs.Add(new ArchiveInput("", rel + "/"));
+    }
+    foreach (var file in Directory.GetFiles(tempDir, "*", SearchOption.AllDirectories)) {
+      var rel = Path.GetRelativePath(tempDir, file).Replace('\\', '/');
+      inputs.Add(new ArchiveInput(file, rel));
+    }
+    return inputs;
   }
 
   public static bool Test(string path, string? password) {
@@ -523,136 +641,6 @@ public static class ArchiveOperations {
     DecompressStreamPair(input, ms, format);
   }
 
-  // ── Complex Create methods (depend on Compression.Lib internals) ─
-
-  private static void CreateZip(Stream s, IReadOnlyList<ArchiveInput> inputs, string? pw,
-      MethodSpec method, HashSet<string>? incompressible, CompressionOptions opts) {
-    var (zipMethod, level) = method.ResolveZip();
-    // Override Deflate level from --level if provided
-    if (opts.Level.HasValue) level = opts.ResolveDeflateLevel();
-
-    var zipEnc = opts.ResolveZipEncryption();
-
-    if (opts.Threads > 1 && inputs.Count(i => !i.IsDirectory) > 1) {
-      ParallelCompression.CreateZipParallel(s, inputs, pw, zipMethod, level, incompressible, opts.Threads, zipEnc);
-      return;
-    }
-
-    var w = new FileFormat.Zip.ZipWriter(s, leaveOpen: true, compressionLevel: level, password: pw,
-      encryptionMethod: zipEnc);
-    // Wire per-method settings from CLI options
-    if (opts.DictSize > 0 && zipMethod == FileFormat.Zip.ZipCompressionMethod.Lzma)
-      w.LzmaDictionarySize = CompressionOptions.NormalizeDictSize(opts.ResolveLzmaDictSize());
-    w.LzmaLevel = opts.ResolveLzmaLevel();
-    if (opts.WordSize.HasValue && zipMethod == FileFormat.Zip.ZipCompressionMethod.Ppmd)
-      w.PpmdOrder = Math.Clamp(opts.WordSize.Value, 2, 16);
-    if (opts.DictSize > 0 && zipMethod == FileFormat.Zip.ZipCompressionMethod.Ppmd)
-      w.PpmdMemorySizeMB = Math.Clamp((int)(opts.DictSize / (1024 * 1024)), 1, 256);
-    if (opts.DictSize > 0 && zipMethod == FileFormat.Zip.ZipCompressionMethod.BZip2)
-      w.Bzip2BlockSize = opts.ResolveBzip2BlockSize();
-    foreach (var i in inputs) {
-      if (i.IsDirectory) { w.AddDirectory(i.EntryName); continue; }
-      var data = File.ReadAllBytes(i.FullPath);
-      var entryMethod = incompressible != null && incompressible.Contains(i.FullPath)
-        ? FileFormat.Zip.ZipCompressionMethod.Store
-        : zipMethod;
-      w.AddEntry(i.EntryName, data, entryMethod);
-    }
-    w.Finish();
-  }
-
-  private static void CreateRar(Stream s, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts) {
-    var pw = opts.Password;
-    var useRar4 = opts.Method.Name == "rar4";
-    var useStore = opts.Method.Name is "store" or "copy";
-    // RAR method levels: 0=Store,1=Fastest,2=Fast,3=Normal,4=Good,5=Best
-    var rarLevel = useStore ? 0 : opts.Level switch {
-      0 => 0, 1 => 1, 2 => 2, 3 or 4 => 3, 5 or 6 => 4, >= 7 => 5, _ => 3,
-    };
-
-    if (useRar4) {
-      var windowBits = opts.DictSize > 0
-        ? Math.Clamp((int)Math.Log2(opts.DictSize), 15, 22) : 20;
-      // RAR4 methods: 0x30=Store..0x35=Best
-      var rar4Method = (byte)(0x30 + rarLevel);
-      var w4 = new FileFormat.Rar.Rar4Writer(s, method: rar4Method, windowBits: windowBits,
-        solid: opts.SolidSize == 0, password: pw);
-      foreach (var (name, data) in ArchiveInput.FilesOnly(inputs))
-        w4.AddFile(name, data);
-      w4.Finish();
-    }
-    else {
-      var dictLog = opts.DictSize > 0
-        ? Math.Clamp((int)Math.Log2(opts.DictSize), 17, 28) : 17;
-      var w = new FileFormat.Rar.RarWriter(s, method: rarLevel, dictionarySizeLog: dictLog,
-        solid: opts.SolidSize == 0, password: pw, encryptHeaders: opts.EncryptFilenames);
-      foreach (var (name, data) in ArchiveInput.FilesOnly(inputs))
-        w.AddFile(name, data);
-      w.Finish();
-    }
-  }
-
-  private static void Create7z(Stream s, IReadOnlyList<ArchiveInput> inputs, string? pw,
-      CompressionOptions opts) {
-    var method = opts.Method;
-    var defaultCodec = method.IsDefault ? FileFormat.SevenZip.SevenZipCodec.Lzma2 : method.Resolve7z();
-    var dictSize = defaultCodec == FileFormat.SevenZip.SevenZipCodec.PPMd
-      ? opts.ResolvePpmdMemorySize()
-      : defaultCodec == FileFormat.SevenZip.SevenZipCodec.BZip2
-        ? opts.ResolveBzip2BlockSize() * 100 * 1024
-        : opts.ResolveLzmaDictSize();
-    var ppmdOrder = opts.ResolvePpmdOrder();
-    var ppmdMem = opts.ResolvePpmdMemorySize();
-    var blockSize = opts.SolidSize > 0 ? opts.SolidSize : SolidBlockPlanner.DefaultMaxBlockSize;
-
-    // Detect incompressible files via entropy analysis
-    var incompressible = opts.ForceCompress ? null : SolidBlockPlanner.DetectIncompressible(inputs);
-
-    // Plan solid blocks: group by extension similarity, separate incompressible
-    var solidBlocks = SolidBlockPlanner.Plan(inputs, blockSize, incompressible);
-
-    // Check if any block needs a different codec/filter than default
-    var needsMultiCodec = solidBlocks.Any(b =>
-      SolidBlockPlanner.RecommendCodec(b, defaultCodec) != defaultCodec ||
-      SolidBlockPlanner.RecommendFilter(b) != FileFormat.SevenZip.SevenZipFilter.None);
-
-    var w = new FileFormat.SevenZip.SevenZipWriter(s, defaultCodec, dictionarySize: dictSize,
-      ppmdOrder: ppmdOrder, ppmdMemorySize: ppmdMem, password: pw,
-      encryptHeaders: opts.EncryptFilenames);
-
-    // Add directory entries
-    foreach (var i in inputs)
-      if (i.IsDirectory) w.AddDirectory(i.EntryName);
-
-    // Add file entries in solid-block order (grouped by extension similarity)
-    var fileEntryIndex = 0;
-    var blockDescs = new List<FileFormat.SevenZip.SevenZipWriter.BlockDescriptor>();
-    foreach (var block in solidBlocks) {
-      var indices = new int[block.Files.Count];
-      for (var j = 0; j < block.Files.Count; j++) {
-        var (input, data) = block.Files[j];
-        w.AddEntry(new FileFormat.SevenZip.SevenZipEntry { Name = input.EntryName, Size = data.Length }, data);
-        indices[j] = fileEntryIndex++;
-      }
-
-      if (needsMultiCodec) {
-        var blockCodec = SolidBlockPlanner.RecommendCodec(block, defaultCodec);
-        var blockFilter = SolidBlockPlanner.RecommendFilter(block);
-        blockDescs.Add(new FileFormat.SevenZip.SevenZipWriter.BlockDescriptor {
-          EntryIndices = indices,
-          Codec = blockCodec != defaultCodec ? blockCodec : null,
-          Filter = blockFilter != FileFormat.SevenZip.SevenZipFilter.None ? blockFilter : null,
-        });
-      }
-    }
-
-    if (needsMultiCodec) {
-      w.FinishWithBlocks(blockDescs, maxThreads: opts.Threads);
-    }
-    else {
-      w.Finish(maxThreads: opts.Threads, maxBlockSize: opts.Threads > 1 ? blockSize : 0);
-    }
-  }
 
   // ── Helpers ────────────────────────────────────────────────────────
 

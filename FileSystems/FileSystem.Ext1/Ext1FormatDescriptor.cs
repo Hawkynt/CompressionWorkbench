@@ -18,14 +18,49 @@ namespace FileSystem.Ext1;
 /// vintage pre-1993 Linux disk images and forensic tooling for early Linux installs
 /// are the consumers.
 /// </summary>
-public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
   public string Id => "Ext1";
   public string DisplayName => "ext1";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing Ext1 image.
+  /// Read-extract-rebuild via <see cref="ModifyRebuilder"/>; the rebuild
+  /// path doubles as a secure-wipe for replaced bytes.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => ModifyRebuilder.Add(archive, inputs,
+      readEntries: stream => {
+        var r = new Ext1Reader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new Ext1Writer();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        return w.Build();
+      });
+
+  /// <summary>
+  /// Removes the named entries from an existing Ext1 image. The image is
+  /// rebuilt without the target entries — old file bytes are wiped because
+  /// the new layout starts fresh, leaving no forensic trace.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames)
+    => ModifyRebuilder.Remove(archive, entryNames,
+      readEntries: stream => {
+        var r = new Ext1Reader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new Ext1Writer();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        return w.Build();
+      });
+
   public string DefaultExtension => ".ext1";
   public IReadOnlyList<string> Extensions => [".ext1"];
   public IReadOnlyList<string> CompoundExtensions => [];

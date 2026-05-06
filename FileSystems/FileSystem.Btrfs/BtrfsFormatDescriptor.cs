@@ -4,7 +4,32 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Btrfs;
 
-public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
+public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable {
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware Btrfs defragmentor via read-extract-rebuild dispatch through
+  /// <see cref="DefragRebuilder"/>. All four <see cref="DefragMode"/> values supported.
+  /// Image size preserved by writing back through BtrfsWriter.WriteTo into a
+  /// MemoryStream sized to the original.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new BtrfsReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new BtrfsWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        using var ms = new MemoryStream();
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
+  }
+
   // WORM-minimal writer constraints: a single leaf node holds ≤64 file
   // tuples (INODE_ITEM + DIR_INDEX + inline EXTENT_DATA). No chunk tree is
   // emitted — the reader's identity LogicalToPhysical fallback maps blocks.
