@@ -105,4 +105,116 @@ public class IsoTests {
     // Verify CD001 exists at offset 0x8001
     Assert.That(Encoding.ASCII.GetString(image, 0x8001, 5), Is.EqualTo("CD001"));
   }
+
+  // ArchiveInputInfo takes a path on disk; the modifiable tests write each
+  // payload to a temp file, then point the InputInfo at it.
+  private static (string TmpFile, Compression.Registry.ArchiveInputInfo Info) MakeInput(string archiveName, byte[] data) {
+    var tmp = Path.GetTempFileName();
+    File.WriteAllBytes(tmp, data);
+    return (tmp, new Compression.Registry.ArchiveInputInfo(tmp, archiveName, false));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Modifiable_Add_AppendsNewFile() {
+    var w = new FileSystem.Iso.IsoWriter();
+    w.AddFile("EXISTING.TXT", "old"u8.ToArray());
+    using var ms = new MemoryStream();
+    ms.Write(w.Build());
+
+    var (tmp, info) = MakeInput("NEW.TXT", "added"u8.ToArray());
+    try {
+      new FileSystem.Iso.IsoFormatDescriptor().Add(ms, [info]);
+
+      ms.Position = 0;
+      var reader = new FileSystem.Iso.IsoReader(ms);
+      Assert.That(reader.Entries, Has.Count.EqualTo(2));
+      var byName = reader.Entries.ToDictionary(e => e.Name, e => reader.Extract(e));
+      Assert.That(byName["EXISTING.TXT"], Is.EqualTo("old"u8.ToArray()));
+      Assert.That(byName["NEW.TXT"], Is.EqualTo("added"u8.ToArray()));
+    } finally { File.Delete(tmp); }
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Modifiable_Add_ReplacesByName() {
+    var w = new FileSystem.Iso.IsoWriter();
+    w.AddFile("DOC.TXT", "v1"u8.ToArray());
+    using var ms = new MemoryStream();
+    ms.Write(w.Build());
+
+    var (tmp, info) = MakeInput("DOC.TXT", "v2-replacement"u8.ToArray());
+    try {
+      new FileSystem.Iso.IsoFormatDescriptor().Add(ms, [info]);
+
+      ms.Position = 0;
+      var reader = new FileSystem.Iso.IsoReader(ms);
+      Assert.That(reader.Entries, Has.Count.EqualTo(1), "replacement should not duplicate the entry");
+      Assert.That(reader.Extract(reader.Entries[0]), Is.EqualTo("v2-replacement"u8.ToArray()));
+    } finally { File.Delete(tmp); }
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Modifiable_Remove_DropsTargetEntry() {
+    var w = new FileSystem.Iso.IsoWriter();
+    w.AddFile("KEEP.TXT", "stay"u8.ToArray());
+    w.AddFile("DROP.TXT", "go"u8.ToArray());
+    w.AddFile("ALSO.TXT", "stay too"u8.ToArray());
+    using var ms = new MemoryStream();
+    ms.Write(w.Build());
+
+    new FileSystem.Iso.IsoFormatDescriptor().Remove(ms, ["DROP.TXT"]);
+
+    ms.Position = 0;
+    var reader = new FileSystem.Iso.IsoReader(ms);
+    Assert.That(reader.Entries.Select(e => e.Name), Is.EquivalentTo(new[] { "KEEP.TXT", "ALSO.TXT" }));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Modifiable_Remove_WipesTargetBytes() {
+    // The rebuild path must leave no recoverable trace of the removed file.
+    var w = new FileSystem.Iso.IsoWriter();
+    w.AddFile("KEEP.TXT", "harmless"u8.ToArray());
+    w.AddFile("SECRET.TXT", "TOPSECRET-MARKER-ABC123"u8.ToArray());
+    using var ms = new MemoryStream();
+    ms.Write(w.Build());
+
+    new FileSystem.Iso.IsoFormatDescriptor().Remove(ms, ["SECRET.TXT"]);
+
+    var bytes = ms.ToArray();
+    var asAscii = Encoding.ASCII.GetString(bytes);
+    Assert.That(asAscii, Does.Not.Contain("TOPSECRET-MARKER-ABC123"));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Modifiable_AddRemove_Sequence_RoundTrips() {
+    var w = new FileSystem.Iso.IsoWriter();
+    w.AddFile("A.TXT", "alpha"u8.ToArray());
+    using var ms = new MemoryStream();
+    ms.Write(w.Build());
+
+    var (tmp1, info1) = MakeInput("B.TXT", "beta"u8.ToArray());
+    var (tmp2, info2) = MakeInput("C.TXT", "gamma"u8.ToArray());
+    try {
+      var desc = new FileSystem.Iso.IsoFormatDescriptor();
+      desc.Add(ms, [info1]);
+      desc.Add(ms, [info2]);
+      desc.Remove(ms, ["A.TXT"]);
+
+      ms.Position = 0;
+      var reader = new FileSystem.Iso.IsoReader(ms);
+      Assert.That(reader.Entries.Select(e => e.Name), Is.EquivalentTo(new[] { "B.TXT", "C.TXT" }));
+      var byName = reader.Entries.ToDictionary(e => e.Name, e => Encoding.ASCII.GetString(reader.Extract(e)));
+      Assert.That(byName["B.TXT"], Is.EqualTo("beta"));
+      Assert.That(byName["C.TXT"], Is.EqualTo("gamma"));
+    } finally {
+      File.Delete(tmp1);
+      File.Delete(tmp2);
+    }
+  }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_DeclaresIArchiveModifiable() {
+    var desc = new FileSystem.Iso.IsoFormatDescriptor();
+    Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveModifiable>());
+    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.True);
+  }
 }

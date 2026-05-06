@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.D64;
 
-public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable {
+public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable {
   public long? MaxTotalArchiveSize => 174848;  // standard 1541 single-sided D64 image size
   public string AcceptedInputsDescription =>
     "Commodore 1541 D64 disk; any file up to 174 848 bytes total (664 data sectors × 254 bytes).";
@@ -24,8 +24,38 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "D64";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing D64 image.
+  /// Uses <see cref="D64Modifier"/> for true O(touched bytes) random-access
+  /// I/O — only the BAM (1 sector) + directory chain (≤19 sectors) + the
+  /// new file's data sectors (⌈len/254⌉ sectors) are read or written. The
+  /// 174 848-byte image isn't touched outside that.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      var truncatedName = name.Length > 16 ? name[..16] : name;
+      // Replacement semantics: if the file exists, remove it first.
+      D64Modifier.RemoveFile(archive, truncatedName, wipeData: true);
+      D64Modifier.AddFile(archive, truncatedName, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing D64 image. Uses
+  /// <see cref="D64Modifier"/> for O(touched bytes) random-access I/O —
+  /// walks the file chain, marks each sector free in the BAM, secure-wipes
+  /// data sectors, and clears the directory entry's file-type byte.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames) {
+      var truncatedName = name.Length > 16 ? name[..16] : name;
+      D64Modifier.RemoveFile(archive, truncatedName, wipeData: true);
+    }
+  }
+
   public string DefaultExtension => ".d64";
   public IReadOnlyList<string> Extensions => [".d64"];
   public IReadOnlyList<string> CompoundExtensions => [];

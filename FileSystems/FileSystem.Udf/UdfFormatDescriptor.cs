@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Udf;
 
-public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
   // WORM write constraints — UDF has no inherent ceiling; minimum viable image ~1 MB.
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 1 * 1024 * 1024;
@@ -15,9 +15,48 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "UDF";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing Udf image.
+  /// Read-extract-rebuild via <see cref="ModifyRebuilder"/>; the rebuild
+  /// path doubles as a secure-wipe for replaced bytes.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => ModifyRebuilder.Add(archive, inputs,
+      readEntries: stream => {
+        var r = new UdfReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new UdfWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        using var ms = new MemoryStream();
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
+
+  /// <summary>
+  /// Removes the named entries from an existing Udf image. The image is
+  /// rebuilt without the target entries — old file bytes are wiped because
+  /// the new layout starts fresh, leaving no forensic trace.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames)
+    => ModifyRebuilder.Remove(archive, entryNames,
+      readEntries: stream => {
+        var r = new UdfReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new UdfWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        using var ms = new MemoryStream();
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
+
   public string DefaultExtension => ".udf";
   public IReadOnlyList<string> Extensions => [".udf"];
   public IReadOnlyList<string> CompoundExtensions => [];

@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.D71;
 
-public sealed class D71FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable {
+public sealed class D71FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable {
   public long? MaxTotalArchiveSize => 349696;
   public string AcceptedInputsDescription =>
     "Commodore 1571 D71 disk; any file up to 349 696 bytes total.";
@@ -21,8 +21,34 @@ public sealed class D71FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "D71";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing D71 image.
+  /// Uses <see cref="D71Modifier"/> for true O(touched bytes) random-access
+  /// I/O — only the BAM (2 sectors), the directory chain, and the file's
+  /// data sectors are read or written.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      var truncated = name.Length > 16 ? name[..16] : name;
+      D71Modifier.RemoveFile(archive, truncated, wipeData: true);
+      D71Modifier.AddFile(archive, truncated, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing D71 image. Uses
+  /// <see cref="D71Modifier"/> for O(touched bytes) random-access I/O.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames) {
+      var truncated = name.Length > 16 ? name[..16] : name;
+      D71Modifier.RemoveFile(archive, truncated, wipeData: true);
+    }
+  }
+
   public string DefaultExtension => ".d71";
   public IReadOnlyList<string> Extensions => [".d71"];
   public IReadOnlyList<string> CompoundExtensions => [];

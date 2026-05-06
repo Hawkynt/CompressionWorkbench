@@ -4,13 +4,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.SevenZip;
 
-public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator {
+public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable {
   public string Id => "SevenZip";
   public string DisplayName => "7z";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".7z";
   public IReadOnlyList<string> Extensions => [".7z"];
@@ -37,6 +38,71 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(outputDir, e.Name)); continue; }
       WriteFile(outputDir, e.Name, r.Extract(i));
+    }
+  }
+
+  /// <summary>
+  /// Builds a 7z archive from <paramref name="inputs"/>. Plans solid blocks by
+  /// extension similarity, segregates incompressible files, and per-block
+  /// recommends BCJ x86 filter for executables.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var defaultCodec = string.IsNullOrEmpty(options.MethodName)
+      ? SevenZipCodec.Lzma2
+      : SevenZipOptionsResolver.ResolveCodec(options.MethodName);
+
+    var dictSize = defaultCodec == SevenZipCodec.PPMd
+      ? SevenZipOptionsResolver.ResolvePpmdMemorySize(options.DictSize)
+      : defaultCodec == SevenZipCodec.BZip2
+        ? SevenZipOptionsResolver.ResolveBzip2BlockSize(options.DictSize) * 100 * 1024
+        : SevenZipOptionsResolver.ResolveLzmaDictSize(options.DictSize, options.Optimize);
+    var ppmdOrder = SevenZipOptionsResolver.ResolvePpmdOrder(options.WordSize);
+    var ppmdMem = SevenZipOptionsResolver.ResolvePpmdMemorySize(options.DictSize);
+    var blockSize = options.SolidSize > 0 ? options.SolidSize : SolidBlockPlanner.DefaultMaxBlockSize;
+
+    // Detect incompressible files via entropy unless caller already passed a set
+    // or explicitly disabled detection with ForceCompress.
+    var incompressible = options.ForceCompress
+      ? null
+      : options.IncompressiblePaths ?? SolidBlockPlanner.DetectIncompressible(inputs);
+
+    var solidBlocks = SolidBlockPlanner.Plan(inputs, blockSize, incompressible);
+
+    var needsMultiCodec = solidBlocks.Any(b =>
+      SolidBlockPlanner.RecommendCodec(b, defaultCodec) != defaultCodec ||
+      SolidBlockPlanner.RecommendFilter(b) != SevenZipFilter.None);
+
+    var w = new SevenZipWriter(output, defaultCodec, dictionarySize: dictSize,
+      ppmdOrder: ppmdOrder, ppmdMemorySize: ppmdMem, password: options.Password,
+      encryptHeaders: options.EncryptFilenames);
+
+    foreach (var i in inputs)
+      if (i.IsDirectory) w.AddDirectory(i.ArchiveName);
+
+    var fileEntryIndex = 0;
+    var blockDescs = new List<SevenZipWriter.BlockDescriptor>();
+    foreach (var block in solidBlocks) {
+      var indices = new int[block.Files.Count];
+      for (var j = 0; j < block.Files.Count; j++) {
+        var (input, data) = block.Files[j];
+        w.AddEntry(new SevenZipEntry { Name = input.ArchiveName, Size = data.Length }, data);
+        indices[j] = fileEntryIndex++;
+      }
+      if (needsMultiCodec) {
+        var blockCodec = SolidBlockPlanner.RecommendCodec(block, defaultCodec);
+        var blockFilter = SolidBlockPlanner.RecommendFilter(block);
+        blockDescs.Add(new SevenZipWriter.BlockDescriptor {
+          EntryIndices = indices,
+          Codec = blockCodec != defaultCodec ? blockCodec : null,
+          Filter = blockFilter != SevenZipFilter.None ? blockFilter : null,
+        });
+      }
+    }
+
+    if (needsMultiCodec) {
+      w.FinishWithBlocks(blockDescs, maxThreads: options.Threads);
+    } else {
+      w.Finish(maxThreads: options.Threads, maxBlockSize: options.Threads > 1 ? blockSize : 0);
     }
   }
 

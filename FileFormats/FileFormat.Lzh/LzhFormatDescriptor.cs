@@ -4,13 +4,32 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Lzh;
 
-public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Lzh";
   public string DisplayName => "LZH";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing LHA/LZH archive.
+  /// Uses <see cref="LhaModifier"/> — Add appends after the EOF position,
+  /// Remove walks the chain and shifts trailing bytes (no central directory).
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      LhaModifier.RemoveFile(archive, name, wipeData: true);
+      LhaModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>Removes named entries; uses <see cref="LhaModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      LhaModifier.RemoveFile(archive, name, wipeData: true);
+  }
+
   public string DefaultExtension => ".lzh";
   public IReadOnlyList<string> Extensions => [".lzh", ".lha"];
   public IReadOnlyList<string> CompoundExtensions => [];

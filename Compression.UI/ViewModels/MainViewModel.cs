@@ -877,9 +877,15 @@ internal sealed class MainViewModel : ViewModelBase {
 
     Compression.Lib.FormatRegistration.EnsureInitialized();
     var ops = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
-    // Read-only descriptors block the drop outright.
+    // Block the drop only when the descriptor is genuinely read-only. ZIP / 7z /
+    // RAR don't implement IArchiveCreatable themselves — their create path is a
+    // hardcoded switch inside ArchiveOperations — so we also accept the
+    // CanCreate / CanModify capability flags as evidence of write capability.
+    var caps = (ops as Compression.Registry.IFormatDescriptor)?.Capabilities ?? 0;
     if (ops is not Compression.Registry.IArchiveCreatable &&
-        ops is not Compression.Registry.IArchiveModifiable) {
+        ops is not Compression.Registry.IArchiveModifiable &&
+        !caps.HasFlag(Compression.Registry.FormatCapabilities.CanCreate) &&
+        !caps.HasFlag(Compression.Registry.FormatCapabilities.CanModify)) {
       return (false, "This archive format is read-only (can't add files)");
     }
 
@@ -919,52 +925,97 @@ internal sealed class MainViewModel : ViewModelBase {
       return;
     }
 
-    // Show options dialog for compression parameters
-    var optsDlg = new CreateOptionsWindow(format) { Owner = Application.Current.MainWindow };
-    optsDlg.Title = "Add Files — Compression Options";
-    if (optsDlg.ShowDialog() != true) return;
-
-    var opts = optsDlg.Options.ToOptions();
     var archivePath = ArchivePath;
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var ops = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
+    var prefersModifierPath = ops is Compression.Registry.IArchiveModifiable;
+
+    // Compression options are only meaningful for the rebuild path. Skip the
+    // dialog entirely when the descriptor implements IArchiveModifiable —
+    // retro filesystems have no codec choices to make and we want the
+    // O(touched bytes) modifier path to feel as fast as it actually is.
+    Compression.Lib.CompressionOptions opts;
+    if (prefersModifierPath) {
+      opts = new Compression.Lib.CompressionOptions();
+    } else {
+      var optsDlg = new CreateOptionsWindow(format) { Owner = Application.Current.MainWindow };
+      optsDlg.Title = "Add Files — Compression Options";
+      if (optsDlg.ShowDialog() != true) return;
+      opts = optsDlg.Options.ToOptions();
+    }
+
+    // ── Collision check ────────────────────────────────────────────────
+    // Read existing entry names (cheap — just a directory walk for retro
+    // FSes; for ZIP/7z this is also fast since List doesn't decompress).
+    HashSet<string> existing;
+    try {
+      existing = new HashSet<string>(
+        ArchiveOperations.List(archivePath, password: null).Select(e => e.Name),
+        StringComparer.OrdinalIgnoreCase);
+    } catch (Exception ex) {
+      MessageBox.Show($"Failed to read archive contents: {ex.Message}",
+        "Add Files", MessageBoxButton.OK, MessageBoxImage.Warning);
+      return;
+    }
+
+    var pathsToAdd = new List<string>();
+    var pathsToReplace = new List<string>();
+    var skipAll = false;
+    var yesAll = false;
+    foreach (var p in paths) {
+      var entryName = ResolveEntryName(p);
+      if (!existing.Contains(entryName)) { pathsToAdd.Add(p); continue; }
+
+      if (yesAll) { pathsToReplace.Add(p); continue; }
+      if (skipAll) continue;
+
+      var dlg = new Views.ReplaceConfirmationWindow(Path.GetFileName(archivePath), entryName) {
+        Owner = Application.Current.MainWindow
+      };
+      dlg.ShowDialog();
+      switch (dlg.Decision) {
+        case Views.ReplaceDecision.Yes:      pathsToReplace.Add(p); break;
+        case Views.ReplaceDecision.YesToAll: pathsToReplace.Add(p); yesAll = true; break;
+        case Views.ReplaceDecision.Skip:     break;
+        case Views.ReplaceDecision.SkipAll:  skipAll = true; break;
+        case Views.ReplaceDecision.Cancel:   StatusText = "Add cancelled."; return;
+      }
+    }
+
+    var totalChanges = pathsToAdd.Count + pathsToReplace.Count;
+    if (totalChanges == 0) { StatusText = "Nothing to add (all collisions skipped)."; return; }
 
     Task.Run(() => {
       Application.Current.Dispatcher.Invoke(() => {
         IsBusy = true;
-        StatusText = $"Adding {paths.Length} item(s) to archive...";
+        StatusText = $"Adding {totalChanges} item(s) to archive...";
       });
 
       try {
         var sw = Stopwatch.StartNew();
+        var folderPrefix = _currentFolder.Length > 0 ? _currentFolder.TrimEnd('/') + "/" : "";
 
-        // Extract existing entries to temp dir
-        var tempDir = Path.Combine(Path.GetTempPath(), "cwb_add_" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(tempDir);
-        try {
-          ArchiveOperations.Extract(archivePath, tempDir, password: null, files: null);
-
-          // Copy new files into temp dir, preserving the current folder context
-          foreach (var p in paths) {
-            if (Directory.Exists(p)) {
-              CopyDirectory(p, Path.Combine(tempDir, _currentFolder.Replace('/', Path.DirectorySeparatorChar), Path.GetFileName(p)));
-            }
-            else if (File.Exists(p)) {
-              var destDir = Path.Combine(tempDir, _currentFolder.Replace('/', Path.DirectorySeparatorChar));
-              Directory.CreateDirectory(destDir);
-              File.Copy(p, Path.Combine(destDir, Path.GetFileName(p)), overwrite: true);
-            }
-          }
-
-          // Re-create archive from temp dir
-          var inputs = ArchiveInput.Resolve([tempDir]);
-          ArchiveOperations.Create(archivePath, inputs, opts);
+        // Replacements — explicit Replace flow (Remove + Add) so the user's
+        // intent is recorded as a single atomic op per file.
+        foreach (var p in pathsToReplace) {
+          if (Directory.Exists(p)) continue; // directories don't replace by name
+          var entryName = folderPrefix + Path.GetFileName(p);
+          ArchiveOperations.Replace(archivePath, entryName, p, opts);
         }
-        finally {
-          try { Directory.Delete(tempDir, true); } catch { }
+
+        // Adds — gather files (and recursively walk dropped directories) into
+        // a single Add call so the modifier path can batch them.
+        var addInputs = new List<ArchiveInput>();
+        foreach (var p in pathsToAdd) {
+          if (Directory.Exists(p)) CollectDirectory(p, folderPrefix, addInputs);
+          else if (File.Exists(p)) addInputs.Add(new ArchiveInput(p, folderPrefix + Path.GetFileName(p)));
         }
+        if (addInputs.Count > 0)
+          ArchiveOperations.Add(archivePath, addInputs, opts);
 
         sw.Stop();
         Application.Current.Dispatcher.Invoke(() => {
-          StatusText = $"Added {paths.Length} item(s) ({sw.ElapsedMilliseconds}ms)";
+          StatusText = $"Added {totalChanges} item(s) ({sw.ElapsedMilliseconds}ms)";
           Open(archivePath);
         });
       }
@@ -975,6 +1026,24 @@ internal sealed class MainViewModel : ViewModelBase {
         });
       }
     });
+  }
+
+  /// <summary>Resolves the archive-relative entry name a dropped path will land at.</summary>
+  private string ResolveEntryName(string path) {
+    var prefix = _currentFolder.Length > 0 ? _currentFolder.TrimEnd('/') + "/" : "";
+    return prefix + Path.GetFileName(path);
+  }
+
+  private static void CollectDirectory(string sourceDir, string entryPrefix, List<ArchiveInput> sink) {
+    var rootName = Path.GetFileName(sourceDir);
+    foreach (var dir in Directory.GetDirectories(sourceDir, "*", SearchOption.AllDirectories)) {
+      var rel = Path.GetRelativePath(sourceDir, dir).Replace('\\', '/');
+      sink.Add(new ArchiveInput("", entryPrefix + rootName + "/" + rel + "/"));
+    }
+    foreach (var file in Directory.GetFiles(sourceDir, "*", SearchOption.AllDirectories)) {
+      var rel = Path.GetRelativePath(sourceDir, file).Replace('\\', '/');
+      sink.Add(new ArchiveInput(file, entryPrefix + rootName + "/" + rel));
+    }
   }
 
   private static void CopyDirectory(string sourceDir, string destDir) {

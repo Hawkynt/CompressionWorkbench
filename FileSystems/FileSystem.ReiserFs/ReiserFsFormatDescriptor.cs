@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ReiserFs;
 
-public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
   // WORM write constraints — ReiserFS has no inherent ceiling; real mkfs.reiserfs minimum ≈ 128 MB.
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 128L * 1024 * 1024;
@@ -15,9 +15,48 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public string DisplayName => "ReiserFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing ReiserFs image.
+  /// Read-extract-rebuild via <see cref="ModifyRebuilder"/>; the rebuild
+  /// path doubles as a secure-wipe for replaced bytes.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => ModifyRebuilder.Add(archive, inputs,
+      readEntries: stream => {
+        var r = new ReiserFsReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new ReiserFsWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        using var ms = new MemoryStream();
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
+
+  /// <summary>
+  /// Removes the named entries from an existing ReiserFs image. The image is
+  /// rebuilt without the target entries — old file bytes are wiped because
+  /// the new layout starts fresh, leaving no forensic trace.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames)
+    => ModifyRebuilder.Remove(archive, entryNames,
+      readEntries: stream => {
+        var r = new ReiserFsReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new ReiserFsWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        using var ms = new MemoryStream();
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
+
   public string DefaultExtension => ".reiserfs";
   public IReadOnlyList<string> Extensions => [".reiserfs"];
   public IReadOnlyList<string> CompoundExtensions => [];

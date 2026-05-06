@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Atari8;
 
-public sealed class Atari8FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+public sealed class Atari8FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
 
   // Writer emits SS/SD (92 176 bytes). Declared ceiling matches Atari8Writer.ImageSize.
   public long? MaxTotalArchiveSize => Atari8Writer.ImageSize;
@@ -20,8 +20,31 @@ public sealed class Atari8FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public FormatCategory Category => FormatCategory.Archive;
 
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing Atari8 image.
+  /// Uses <c>Atari8Modifier</c> for true O(touched bytes) random-access
+  /// I/O — only the VTOC, the touched directory sector, and the file's
+  /// data sectors are read or written.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      Atari8Modifier.RemoveFile(archive, name, wipeData: true);
+      Atari8Modifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing Atari8 image. Uses
+  /// <c>Atari8Modifier</c> for O(touched bytes) random-access I/O.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      Atari8Modifier.RemoveFile(archive, name, wipeData: true);
+  }
+
 
   public string DefaultExtension => ".atr";
   public IReadOnlyList<string> Extensions => [".atr"];

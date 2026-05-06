@@ -4,13 +4,36 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ExFat;
 
-public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
   public string Id => "ExFat";
   public string DisplayName => "exFAT";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware exFAT defragmentor. Read-extract-rebuild dispatch via
+  /// <see cref="DefragRebuilder"/>; all four <see cref="DefragMode"/> values
+  /// supported. Image size is preserved (rebuilt to the next-MB boundary
+  /// matching the original).
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    var sizeMB = (int)System.Math.Max(8, (archive.Length + 1024 * 1024 - 1) / (1024 * 1024));
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new ExFatReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new ExFatWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        return w.Build(sizeMB);
+      });
+  }
   public string DefaultExtension => ".img";
   public IReadOnlyList<string> Extensions => [".img", ".exfat"];
   public IReadOnlyList<string> CompoundExtensions => [];

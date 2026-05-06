@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Ext;
 
-public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
   public string Id => "Ext";
   public string DisplayName => "ext2/3/4";
   public FormatCategory Category => FormatCategory.Archive;
@@ -12,6 +12,26 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware ext2/3/4 defragmentor via read-extract-rebuild dispatch through
+  /// <see cref="DefragRebuilder"/>. All four <see cref="DefragMode"/> values supported.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new ExtReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new ExtWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        return w.Build();
+      });
+  }
   public string DefaultExtension => ".ext2";
   public IReadOnlyList<string> Extensions => [".ext2", ".ext3", ".ext4", ".img"];
   public IReadOnlyList<string> CompoundExtensions => [];

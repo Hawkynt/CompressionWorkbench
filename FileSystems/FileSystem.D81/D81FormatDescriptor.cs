@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.D81;
 
-public sealed class D81FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable {
+public sealed class D81FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable {
   public long? MaxTotalArchiveSize => 819200;
   public string AcceptedInputsDescription =>
     "Commodore 1581 D81 disk; any file up to 819 200 bytes total.";
@@ -18,8 +18,34 @@ public sealed class D81FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "D81";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing D81 image.
+  /// Uses <c>D81Modifier</c> for true O(touched bytes) random-access
+  /// I/O — only the BAM (2 sectors), the directory chain, and the file's
+  /// data sectors are read or written.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      var truncated = name.Length > 16 ? name[..16] : name;
+      D81Modifier.RemoveFile(archive, truncated, wipeData: true);
+      D81Modifier.AddFile(archive, truncated, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing D81 image. Uses
+  /// <c>D81Modifier</c> for O(touched bytes) random-access I/O.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames) {
+      var truncated = name.Length > 16 ? name[..16] : name;
+      D81Modifier.RemoveFile(archive, truncated, wipeData: true);
+    }
+  }
+
   public string DefaultExtension => ".d81";
   public IReadOnlyList<string> Extensions => [".d81"];
   public IReadOnlyList<string> CompoundExtensions => [];

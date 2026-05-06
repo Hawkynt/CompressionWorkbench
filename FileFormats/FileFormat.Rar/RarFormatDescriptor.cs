@@ -4,13 +4,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Rar;
 
-public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Rar";
   public string DisplayName => "RAR";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".rar";
   public IReadOnlyList<string> Extensions => [".rar"];
@@ -39,6 +40,43 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(outputDir, e.Name)); continue; }
       WriteFile(outputDir, e.Name, r.Extract(i));
+    }
+  }
+
+  /// <summary>
+  /// Builds a RAR archive from <paramref name="inputs"/>. Selects RAR4 or RAR5
+  /// based on <c>options.MethodName</c> and resolves dictionary / level from
+  /// <c>options.DictSize</c> / <c>options.Level</c>.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var useRar4 = options.MethodName == "rar4";
+    var useStore = options.MethodName is "store" or "copy";
+    var rarLevel = useStore ? 0 : options.Level switch {
+      0 => 0, 1 => 1, 2 => 2, 3 or 4 => 3, 5 or 6 => 4, >= 7 => 5, _ => 3,
+    };
+
+    if (useRar4) {
+      var windowBits = options.DictSize > 0
+        ? Math.Clamp((int)Math.Log2(options.DictSize), 15, 22) : 20;
+      var rar4Method = (byte)(0x30 + rarLevel);
+      var w4 = new Rar4Writer(output, method: rar4Method, windowBits: windowBits,
+        solid: options.SolidSize == 0, password: options.Password);
+      foreach (var i in inputs) {
+        if (i.IsDirectory) continue; // RAR writer doesn't track empty dirs here
+        w4.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+      }
+      w4.Finish();
+    } else {
+      var dictLog = options.DictSize > 0
+        ? Math.Clamp((int)Math.Log2(options.DictSize), 17, 28) : 17;
+      var w = new RarWriter(output, method: rarLevel, dictionarySizeLog: dictLog,
+        solid: options.SolidSize == 0, password: options.Password,
+        encryptHeaders: options.EncryptFilenames);
+      foreach (var i in inputs) {
+        if (i.IsDirectory) continue;
+        w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+      }
+      w.Finish();
     }
   }
 }
