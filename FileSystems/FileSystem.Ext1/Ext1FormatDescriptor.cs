@@ -28,38 +28,28 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
   /// <summary>
-  /// Adds (or replaces by name) files inside an existing Ext1 image.
-  /// Read-extract-rebuild via <see cref="ModifyRebuilder"/>; the rebuild
-  /// path doubles as a secure-wipe for replaced bytes.
+  /// Adds (or replaces by name) files inside an existing Ext1 image. Uses
+  /// <see cref="Ext1Modifier"/> for true O(touched bytes) random-access I/O —
+  /// only the superblock, BGD entry, block + inode bitmaps, the affected inode
+  /// slot, the root dir block, and the file's data blocks are read or written.
   /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs,
-      readEntries: stream => {
-        var r = new Ext1Reader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new Ext1Writer();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      // Replace-by-name semantics — drop any prior entry with the same name first.
+      Ext1Modifier.RemoveFile(archive, name, wipeData: true);
+      Ext1Modifier.AddFile(archive, name, data);
+    }
+  }
 
   /// <summary>
-  /// Removes the named entries from an existing Ext1 image. The image is
-  /// rebuilt without the target entries — old file bytes are wiped because
-  /// the new layout starts fresh, leaving no forensic trace.
+  /// Removes the named entries from an existing Ext1 image. Uses
+  /// <see cref="Ext1Modifier"/> for O(touched bytes) random-access I/O — file
+  /// data blocks are wiped during removal so no forensic trace remains.
   /// </summary>
-  public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames,
-      readEntries: stream => {
-        var r = new Ext1Reader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new Ext1Writer();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      Ext1Modifier.RemoveFile(archive, name, wipeData: true);
+  }
 
   public string DefaultExtension => ".ext1";
   public IReadOnlyList<string> Extensions => [".ext1"];

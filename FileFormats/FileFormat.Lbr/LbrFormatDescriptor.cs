@@ -4,13 +4,33 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Lbr;
 
-public sealed class LbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class LbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Lbr";
   public string DisplayName => "LBR";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an LBR archive. Uses
+  /// <see cref="LbrModifier"/> — reuses deleted directory slots and
+  /// appends data after the existing data region. Throws if the
+  /// pre-allocated directory pool is full.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FlatFiles(inputs)) {
+      LbrModifier.RemoveFile(archive, name, wipeData: true);
+      LbrModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>Removes named entries; uses <see cref="LbrModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      LbrModifier.RemoveFile(archive, name, wipeData: true);
+  }
   public string DefaultExtension => ".lbr";
   public IReadOnlyList<string> Extensions => [".lbr"];
   public IReadOnlyList<string> CompoundExtensions => [];

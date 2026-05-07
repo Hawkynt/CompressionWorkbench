@@ -4,13 +4,30 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Wrapster;
 
-public sealed class WrapsterFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class WrapsterFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Wrapster";
   public string DisplayName => "Wrapster";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Adds (or replaces by name) files in a Wrapster archive. Implementation
+  /// reads all entries, mutates the list, and re-emits the archive — Wrapster's
+  /// directory references absolute offsets so true random-access is impossible.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs))
+      WrapsterModifier.AddFile(archive, name, data);
+  }
+
+  /// <summary>Removes named entries; uses <see cref="WrapsterModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      WrapsterModifier.RemoveFile(archive, name);
+  }
   public string DefaultExtension => ".mp3";
   public IReadOnlyList<string> Extensions => [];
   public IReadOnlyList<string> CompoundExtensions => [];

@@ -4,13 +4,13 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ar;
 
-public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Ar";
   public string DisplayName => "AR";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".a";
   public IReadOnlyList<string> Extensions => [".a", ".ar", ".deb"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -40,5 +40,28 @@ public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
       .ToList();
     using var w = new ArWriter(output, leaveOpen: true);
     w.Write(entries);
+  }
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing AR archive.
+  /// Uses <see cref="ArModifier"/> for true random-access I/O — Add is
+  /// O(touched bytes) (append at EOF after a quick header walk); Remove
+  /// is O(image-size-after-target) because AR has no central directory
+  /// and trailing entries must be shifted.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs)) {
+      ArModifier.RemoveFile(archive, name, wipeData: true);
+      ArModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes named entries from an existing AR archive. Uses
+  /// <see cref="ArModifier"/> for in-place compaction.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      ArModifier.RemoveFile(archive, name, wipeData: true);
   }
 }

@@ -10,15 +10,15 @@ namespace FileSystem.Lif;
 /// computers and compatible HP-IL/HP-IB peripherals from the early 1980s.
 /// </summary>
 public sealed class LifFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints {
 
   public string Id => "Lif";
   public string DisplayName => "HP LIF (Logical Interchange Format)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".lif";
   public IReadOnlyList<string> Extensions => [".lif"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -69,6 +69,28 @@ public sealed class LifFormatDescriptor :
       .ToList();
     var image = LifWriter.Build(files);
     output.Write(image);
+  }
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing LIF image. Uses
+  /// <see cref="LifModifier"/> for true O(touched bytes) random-access I/O —
+  /// only the directory sectors and the file's contiguous data run are
+  /// read or written.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      LifModifier.RemoveFile(archive, name, wipeData: true);
+      LifModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing LIF image. Uses
+  /// <see cref="LifModifier"/> for O(touched bytes) random-access I/O.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      LifModifier.RemoveFile(archive, name, wipeData: true);
   }
 
   private static LifReader.Volume ReadVolume(Stream stream) {

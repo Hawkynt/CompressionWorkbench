@@ -4,13 +4,31 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ha;
 
-public sealed class HaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class HaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Ha";
   public string DisplayName => "HA";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing HA archive. Uses
+  /// <see cref="HaModifier"/> — Add appends a Stored entry at EOF; Remove
+  /// walks the entry chain and shifts trailing bytes (no central directory).
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      HaModifier.RemoveFile(archive, name, wipeData: true);
+      HaModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>Removes named entries; uses <see cref="HaModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      HaModifier.RemoveFile(archive, name, wipeData: true);
+  }
   public string DefaultExtension => ".ha";
   public IReadOnlyList<string> Extensions => [".ha"];
   public IReadOnlyList<string> CompoundExtensions => [];

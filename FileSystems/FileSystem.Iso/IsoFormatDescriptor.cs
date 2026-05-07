@@ -67,32 +67,17 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Adds or replaces files inside an existing ISO 9660 image. ISO 9660 has no
-  /// free-space map and lays files out sequentially after the directory, so an
-  /// incremental insert would require shifting downstream file data; the
-  /// pragmatic approach is read-extract-rebuild. New entries are appended to
-  /// the existing root directory; if a name collides, the new bytes win.
+  /// Adds or replaces files at the root of an existing ISO 9660 image. Uses
+  /// <see cref="IsoModifier"/> for true random-access I/O — only the PVD
+  /// (sector 16), the root directory's existing extent, and the new file's
+  /// data sectors are touched. The 32 KB system area, VDST, path tables, and
+  /// existing file data sectors are left untouched. Names are sanitized to
+  /// the ISO 9660 8.3 d-characters identifier set; ';1' versions are added
+  /// automatically by the modifier.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    archive.Position = 0;
-    var reader = new IsoReader(archive);
-    var newNames = new HashSet<string>(
-      FilesOnly(inputs).Select(t => t.Name.ToUpperInvariant()),
-      StringComparer.OrdinalIgnoreCase
-    );
-    var combined = new IsoWriter();
-    // Carry forward every existing file that isn't being replaced.
-    foreach (var entry in reader.Entries) {
-      if (entry.IsDirectory) continue;
-      if (newNames.Contains(entry.Name)) continue;
-      combined.AddFile(entry.Name, reader.Extract(entry));
-    }
     foreach (var (name, data) in FilesOnly(inputs))
-      combined.AddFile(name, data);
-    var rebuilt = combined.Build();
-    archive.Position = 0;
-    archive.Write(rebuilt);
-    archive.SetLength(rebuilt.Length);
+      IsoModifier.AddFile(archive, name, data);
   }
 
   public void Defragment(Stream archive)
@@ -117,24 +102,14 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Removes the named entries from an existing ISO 9660 image. The whole image
-  /// is rebuilt without the target entries — old file bytes are wiped because
-  /// the new layout starts fresh, leaving no forensic trace of the removed
-  /// content. Names match case-insensitively (ISO 9660 stores uppercase IDs).
+  /// Removes the named entries from an existing ISO 9660 image. Uses
+  /// <see cref="IsoModifier"/> for O(touched bytes) random-access I/O — the
+  /// directory record is shifted out of its sector and the file's data
+  /// sectors are zero-wiped. Names match case-insensitively after stripping
+  /// any ';N' version suffix (ISO 9660 stores uppercase IDs).
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    archive.Position = 0;
-    var reader = new IsoReader(archive);
-    var toRemove = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
-    var combined = new IsoWriter();
-    foreach (var entry in reader.Entries) {
-      if (entry.IsDirectory) continue;
-      if (toRemove.Contains(entry.Name)) continue;
-      combined.AddFile(entry.Name, reader.Extract(entry));
-    }
-    var rebuilt = combined.Build();
-    archive.Position = 0;
-    archive.Write(rebuilt);
-    archive.SetLength(rebuilt.Length);
+    foreach (var name in entryNames)
+      IsoModifier.RemoveFile(archive, name, wipeData: true);
   }
 }

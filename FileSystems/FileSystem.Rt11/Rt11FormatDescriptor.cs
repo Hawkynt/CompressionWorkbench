@@ -12,15 +12,15 @@ namespace FileSystem.Rt11;
 /// canonical RX01 single-density 8" floppy image (~256 KB).
 /// </summary>
 public sealed class Rt11FormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints {
 
   public string Id => "Rt11";
   public string DisplayName => "DEC RT-11 (RX01)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".rt11";
   public IReadOnlyList<string> Extensions => [".rt11", ".rx01"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -79,6 +79,28 @@ public sealed class Rt11FormatDescriptor :
       .ToList();
     var image = Rt11Writer.Build(files);
     output.Write(image);
+  }
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing RT-11 image. Uses
+  /// <see cref="Rt11Modifier"/> for true O(touched bytes) random-access I/O —
+  /// only the directory segment(s) and the file's contiguous data run are
+  /// read or written.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      Rt11Modifier.RemoveFile(archive, name, wipeData: true);
+      Rt11Modifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing RT-11 image. Uses
+  /// <see cref="Rt11Modifier"/> for O(touched bytes) random-access I/O.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      Rt11Modifier.RemoveFile(archive, name, wipeData: true);
   }
 
   private static Rt11Reader.Volume ReadVolume(Stream stream) {

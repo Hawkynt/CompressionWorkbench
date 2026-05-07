@@ -106,6 +106,23 @@ public sealed class Rt11Writer {
       entryOff += Rt11Layout.DirEntryBytes;
     }
 
+    // Empty-area entry covering remaining unallocated blocks (RT-11 tracks free
+    // space via E_MPTY entries within the directory itself, not a bitmap).
+    var freeBlocks = Rt11Layout.ImageBlocks - nextFileBlock;
+    if (freeBlocks > 0) {
+      // RT-11 size field is a 16-bit word; clamp the empty-area entry accordingly.
+      var freeUshort = freeBlocks > ushort.MaxValue ? ushort.MaxValue : (ushort)freeBlocks;
+      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(entryOff + 0), Rt11Layout.E_MPTY);  // status: empty area
+      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(entryOff + 2), 0);                  // name high
+      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(entryOff + 4), 0);                  // name low
+      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(entryOff + 6), 0);                  // type
+      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(entryOff + 8), freeUshort);
+      image[entryOff + 10] = 0;
+      image[entryOff + 11] = 0;
+      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(entryOff + 12), 0);
+      entryOff += Rt11Layout.DirEntryBytes;
+    }
+
     // EOS terminator.
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(entryOff + 0), Rt11Layout.E_EOS);
 

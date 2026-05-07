@@ -12,6 +12,51 @@ namespace FileSystem.Bfs;
 /// to enumerate files is explicitly out of scope — we emit the raw superblock
 /// bytes and the whole disk for downstream tools.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>Why R-only.</b> A complete BeFS R/W stack is multi-week work. The format
+/// is built on several non-trivial structures that all interlock:
+/// </para>
+/// <list type="bullet">
+///   <item><description>
+///   <b>Allocation groups + block bitmap chain.</b> Free-space tracking is split
+///   across N allocation groups, each with its own bitmap. Allocations must
+///   honor AG locality and the on-disk <c>used_blocks</c> counter in the
+///   superblock.
+///   </description></item>
+///   <item><description>
+///   <b>Inodes (typically 2 KiB) with small_data / file_cookie areas.</b> Each
+///   inode embeds attribute key/value pairs inline; large attributes spill to
+///   <c>data_stream</c> blocks. The reader/writer must round-trip both layouts.
+///   </description></item>
+///   <item><description>
+///   <b>data_stream with direct + indirect + double-indirect extent lists.</b>
+///   File data is referenced through 12 direct extents, an indirect extent, and
+///   a double-indirect extent — each extent is a <c>(allocation_group,
+///   start, length)</c> triple. Truncate/grow paths must rebalance these.
+///   </description></item>
+///   <item><description>
+///   <b>Directory contents stored as a B+ tree.</b> Each directory is an inode
+///   whose data stream is a real B+ tree (separate header + interior nodes +
+///   leaf duplicates). Insert/delete must split/merge nodes and rewrite parent
+///   chains. There is also a per-volume index B+ tree (<c>indices_dir_ino</c>)
+///   used for live queries that must stay in sync.
+///   </description></item>
+///   <item><description>
+///   <b>Journal.</b> BeFS is journaled — any structural change must be wrapped
+///   in a transaction header in the on-disk log area, otherwise <c>fs_check</c>
+///   from Haiku will mark the volume dirty.
+///   </description></item>
+/// </list>
+/// <para>
+/// Per the project rule "never advertise <c>CanCreate</c> without real spec
+/// compliance" we keep BFS at <see cref="FormatCapabilities.CanList"/> +
+/// <see cref="FormatCapabilities.CanExtract"/> + <see cref="FormatCapabilities.CanTest"/>
+/// only. A guard test (<c>BfsTests.Descriptor_IsHonestlyReadOnly</c>) blocks
+/// drive-by capability upgrades that would not be validated by Haiku's
+/// <c>fs_check</c>.
+/// </para>
+/// </remarks>
 public sealed class BfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Bfs";
   public string DisplayName => "BFS";

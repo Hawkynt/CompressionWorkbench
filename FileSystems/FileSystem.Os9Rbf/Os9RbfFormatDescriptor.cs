@@ -13,15 +13,15 @@ namespace FileSystem.Os9Rbf;
 /// directory descriptor is reachable via the identification sector.
 /// </summary>
 public sealed class Os9RbfFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
 
   public string Id => "Os9Rbf";
   public string DisplayName => "Microware OS-9 RBF";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".os9";
   public IReadOnlyList<string> Extensions => [".os9", ".rbf"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -80,6 +80,29 @@ public sealed class Os9RbfFormatDescriptor :
       .ToList();
     var image = Os9RbfWriter.Build(files);
     output.Write(image);
+  }
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing OS-9 RBF image. Uses
+  /// <see cref="Os9RbfModifier"/> for true O(touched bytes) random-access I/O —
+  /// only the identification sector, the bitmap, the root dir's FD + extents,
+  /// and the new file's FD + data sectors are read or written.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      var bare = Path.GetFileName(name);
+      Os9RbfModifier.RemoveFile(archive, bare, wipeData: true);
+      Os9RbfModifier.AddFile(archive, bare, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing OS-9 RBF image. Uses
+  /// <see cref="Os9RbfModifier"/> for O(touched bytes) random-access I/O.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      Os9RbfModifier.RemoveFile(archive, Path.GetFileName(name), wipeData: true);
   }
 
   private static Os9RbfReader.Volume ReadVolume(Stream stream) {

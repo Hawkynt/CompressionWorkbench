@@ -165,6 +165,14 @@ public partial class MainWindow : Window {
     wizard.Show();
   }
 
+  private void OnDefragment(object sender, RoutedEventArgs e) {
+    var preselected = ViewModel.HasArchive ? ViewModel.ArchivePath : null;
+    var dlg = preselected != null
+      ? new Views.DefragmentWindow(preselected) { Owner = this }
+      : new Views.DefragmentWindow { Owner = this };
+    dlg.Show();
+  }
+
   private void OnAbout(object sender, RoutedEventArgs e) {
     var about = new Views.AboutWindow { Owner = this };
     about.ShowDialog();

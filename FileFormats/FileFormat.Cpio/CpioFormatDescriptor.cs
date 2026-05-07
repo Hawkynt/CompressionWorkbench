@@ -4,13 +4,29 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cpio;
 
-public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Cpio";
   public string DisplayName => "CPIO";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+
+  /// <summary>Adds (or replaces by name) files via <see cref="CpioModifier"/>.</summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      CpioModifier.RemoveFile(archive, name, wipeData: true);
+      CpioModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>Removes named entries via <see cref="CpioModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      CpioModifier.RemoveFile(archive, name, wipeData: true);
+  }
+
   public string DefaultExtension => ".cpio";
   public IReadOnlyList<string> Extensions => [".cpio"];
   public IReadOnlyList<string> CompoundExtensions => [];

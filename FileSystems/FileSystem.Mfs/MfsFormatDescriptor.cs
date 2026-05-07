@@ -14,38 +14,30 @@ public sealed class MfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     FormatCapabilities.SupportsMultipleEntries;
 
   /// <summary>
-  /// Adds (or replaces by name) files inside an existing Mfs image.
-  /// Read-extract-rebuild via <see cref="ModifyRebuilder"/>; the rebuild
-  /// path doubles as a secure-wipe for replaced bytes.
+  /// Adds (or replaces by name) files inside an existing MFS image.
+  /// Uses <see cref="MfsModifier"/> for true O(touched bytes) random-access
+  /// I/O — only the MDB (1 sector) + directory area + the new file's
+  /// data blocks are read or written. The rest of the image is untouched.
   /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs,
-      readEntries: stream => {
-        var r = new MfsReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new MfsWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      // Replacement semantics: if the file exists, remove it first so we
+      // free its blocks and don't leave an orphan dir entry.
+      MfsModifier.RemoveFile(archive, name, wipeData: true);
+      MfsModifier.AddFile(archive, name, data);
+    }
+  }
 
   /// <summary>
-  /// Removes the named entries from an existing Mfs image. The image is
-  /// rebuilt without the target entries — old file bytes are wiped because
-  /// the new layout starts fresh, leaving no forensic trace.
+  /// Removes the named entries from an existing MFS image. Uses
+  /// <see cref="MfsModifier"/> for O(touched bytes) random-access I/O —
+  /// locates the directory entry, secure-wipes the data blocks, and clears
+  /// the entry's in-use bit.
   /// </summary>
-  public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames,
-      readEntries: stream => {
-        var r = new MfsReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new MfsWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      MfsModifier.RemoveFile(archive, name, wipeData: true);
+  }
 
   public string DefaultExtension => ".mfs";
   public IReadOnlyList<string> Extensions => [".mfs"];

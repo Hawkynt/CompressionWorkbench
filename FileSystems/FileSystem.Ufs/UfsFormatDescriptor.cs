@@ -5,7 +5,8 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Ufs;
 
 public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-                                          IArchiveCreatable, IArchiveWriteConstraints {
+                                          IArchiveCreatable, IArchiveWriteConstraints,
+                                          IArchiveModifiable {
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 16L * 1024 * 1024;
   public string AcceptedInputsDescription =>
@@ -20,7 +21,7 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".ufs";
   public IReadOnlyList<string> Extensions => [".ufs"];
@@ -55,5 +56,28 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
     }
     w.WriteTo(output);
+  }
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing UFS1 image. Uses
+  /// <see cref="UfsModifier"/> for true O(touched bytes) random-access I/O —
+  /// only the superblock, CG header (with bitmaps), the affected inode slot,
+  /// the root dir block, and the file's data blocks are read or written.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      // Replace-by-name semantics — drop any prior entry with the same name first.
+      UfsModifier.RemoveFile(archive, name, wipeData: true);
+      UfsModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing UFS1 image. Data blocks are
+  /// wiped during removal so no forensic trace remains.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      UfsModifier.RemoveFile(archive, name, wipeData: true);
   }
 }

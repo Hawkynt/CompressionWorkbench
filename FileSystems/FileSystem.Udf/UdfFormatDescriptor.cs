@@ -20,42 +20,28 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     FormatCapabilities.SupportsDirectories;
 
   /// <summary>
-  /// Adds (or replaces by name) files inside an existing Udf image.
-  /// Read-extract-rebuild via <see cref="ModifyRebuilder"/>; the rebuild
-  /// path doubles as a secure-wipe for replaced bytes.
+  /// Adds (or replaces) files at the root of an existing UDF image. Uses
+  /// <see cref="UdfModifier"/> for true random-access I/O — only the
+  /// Partition Descriptor sector, the root directory's File Entry sector,
+  /// the FID extent, and the new file's FE + data sectors are touched.
+  /// The 32 KiB system area, VRS, AVDP, LVD, and FSD are left untouched.
   /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs,
-      readEntries: stream => {
-        var r = new UdfReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new UdfWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        using var ms = new MemoryStream();
-        w.WriteTo(ms);
-        return ms.ToArray();
-      });
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs))
+      UdfModifier.AddFile(archive, name, data);
+  }
 
   /// <summary>
-  /// Removes the named entries from an existing Udf image. The image is
-  /// rebuilt without the target entries — old file bytes are wiped because
-  /// the new layout starts fresh, leaving no forensic trace.
+  /// Removes the named entries from an existing UDF image. Uses
+  /// <see cref="UdfModifier"/> for O(touched bytes) random-access I/O — the
+  /// FID's deleted flag (ECMA-167 §14.4.3 bit 2) is set, its identifier
+  /// bytes are zeroed, the tag is re-CRC'd, and the file's FE and data
+  /// extents are zero-wiped.
   /// </summary>
-  public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames,
-      readEntries: stream => {
-        var r = new UdfReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new UdfWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        using var ms = new MemoryStream();
-        w.WriteTo(ms);
-        return ms.ToArray();
-      });
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      UdfModifier.RemoveFile(archive, name, wipeData: true);
+  }
 
   public string DefaultExtension => ".udf";
   public IReadOnlyList<string> Extensions => [".udf"];

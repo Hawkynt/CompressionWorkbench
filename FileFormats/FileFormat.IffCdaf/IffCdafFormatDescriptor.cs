@@ -4,13 +4,32 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.IffCdaf;
 
-public sealed class IffCdafFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class IffCdafFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "IffCdaf";
   public string DisplayName => "IFF CDAF";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an IFF-CDAF archive. Uses
+  /// <see cref="IffCdafModifier"/> — appends FNAM+FDAT chunk pairs and
+  /// updates the FORM header size.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      IffCdafModifier.RemoveFile(archive, name, wipeData: true);
+      IffCdafModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>Removes named entries; uses <see cref="IffCdafModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      IffCdafModifier.RemoveFile(archive, name, wipeData: true);
+  }
   public string DefaultExtension => ".cdaf";
   public IReadOnlyList<string> Extensions => [".cdaf"];
   public IReadOnlyList<string> CompoundExtensions => [];

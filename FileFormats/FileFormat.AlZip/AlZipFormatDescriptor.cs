@@ -4,13 +4,32 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.AlZip;
 
-public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "AlZip";
   public string DisplayName => "ALZip";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing ALZ archive. Uses
+  /// <see cref="AlZipModifier"/> — Add appends a new entry over the trailing
+  /// CLZ end marker; Remove walks the entry chain and shifts trailing bytes.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FlatFiles(inputs)) {
+      AlZipModifier.RemoveFile(archive, name, wipeData: true);
+      AlZipModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>Removes named entries; uses <see cref="AlZipModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      AlZipModifier.RemoveFile(archive, name, wipeData: true);
+  }
   public string DefaultExtension => ".alz";
   public IReadOnlyList<string> Extensions => [".alz"];
   public IReadOnlyList<string> CompoundExtensions => [];
