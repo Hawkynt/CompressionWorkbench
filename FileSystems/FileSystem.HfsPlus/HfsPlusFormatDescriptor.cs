@@ -14,38 +14,27 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     FormatCapabilities.SupportsMultipleEntries;
 
   /// <summary>
-  /// Adds (or replaces by name) files inside an existing HFS+ image.
-  /// Read-extract-rebuild via <see cref="ModifyRebuilder"/>; the rebuild
-  /// path doubles as a secure-wipe for replaced bytes.
+  /// Adds (or replaces by name) files inside an existing HFS+ image via
+  /// <see cref="HfsPlusModifier.AddFile"/>. The modifier mutates the catalog
+  /// leaf, allocation bitmap, and volume header in place; on leaf overflow it
+  /// transparently falls back to a writer-driven rebuild so the call always
+  /// succeeds.
   /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs,
-      readEntries: stream => {
-        var r = new HfsPlusReader(stream, leaveOpen: true);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new HfsPlusWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FlatFiles(inputs))
+      HfsPlusModifier.AddFile(archive, name, data);
+  }
 
   /// <summary>
-  /// Removes the named entries from an existing HFS+ image. Image is rebuilt
-  /// without the target entries — old file bytes are wiped because the new
-  /// layout starts fresh.
+  /// Removes the named entries from an existing HFS+ image via
+  /// <see cref="HfsPlusModifier.RemoveFile"/>. File data blocks are wiped and
+  /// the catalog records are excised from the leaf node; missing names are
+  /// silently ignored.
   /// </summary>
-  public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames,
-      readEntries: stream => {
-        var r = new HfsPlusReader(stream, leaveOpen: true);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new HfsPlusWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      HfsPlusModifier.RemoveFile(archive, name, wipeData: true);
+  }
   public string DefaultExtension => ".dmg";
   public IReadOnlyList<string> Extensions => [".dmg", ".hfsx", ".hfs"];
   public IReadOnlyList<string> CompoundExtensions => [];

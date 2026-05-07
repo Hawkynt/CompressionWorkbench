@@ -4,13 +4,32 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Arc;
 
-public sealed class ArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class ArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Arc";
   public string DisplayName => "ARC";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing ARC archive.
+  /// Uses <see cref="ArcModifier"/> — Add appends Stored before the EOA
+  /// marker; Remove walks the entry chain and shifts trailing bytes
+  /// (no central directory).
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      ArcModifier.RemoveFile(archive, name, wipeData: true);
+      ArcModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>Removes named entries; uses <see cref="ArcModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      ArcModifier.RemoveFile(archive, name, wipeData: true);
+  }
   public string DefaultExtension => ".arc";
   public IReadOnlyList<string> Extensions => [".arc"];
   public IReadOnlyList<string> CompoundExtensions => [];

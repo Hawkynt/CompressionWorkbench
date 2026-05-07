@@ -71,6 +71,36 @@ public class JfsTests {
     Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveWriteConstraints>());
   }
 
+  /// <summary>
+  /// Lock the JFS capability surface at WORM (write-once empty image, no
+  /// in-place mutation). True R/W requires walking the dtree B+ tree on add /
+  /// remove (split + balance internal nodes when the inline 8-slot dtroot
+  /// overflows), the xtree B+ tree for >288 B file growth, and the dmap
+  /// buddy-tree maintenance after every block alloc/free. The current writer
+  /// emits a single-leaf dtroot, single-leaf xtree, and a fully-precomputed
+  /// dmaptree+dmapctl — all of which are validated clean by
+  /// <c>fsck.jfs -n -f -v</c> but cannot be mutated incrementally without
+  /// re-running ujfs_adjtree, splitting nodes, and threading the freelist.
+  /// Per the project rule "never advertise CanCreate without real spec
+  /// compliance", this test fails any drive-by upgrade that adds
+  /// <see cref="Compression.Registry.IArchiveModifiable"/> without the
+  /// underlying B+ tree work. Mirrors the <c>SfsTests.Descriptor_IsHonestlyReadOnly</c>
+  /// pattern.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void Descriptor_IsHonestlyWormOnly() {
+    var d = new FileSystem.Jfs.JfsFormatDescriptor();
+    Assert.That(d, Is.Not.InstanceOf<Compression.Registry.IArchiveModifiable>(),
+      "JFS must not advertise IArchiveModifiable until the dtree B+ tree split/balance, xtree B+ tree growth, and dmap buddy-tree maintenance are implemented.");
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.False,
+      "JFS Capabilities flag must not include CanModify until the B+ tree mutation work lands.");
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True,
+      "JFS WORM emission is supported; CanCreate must remain advertised.");
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanList), Is.True);
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanExtract), Is.True);
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanTest), Is.True);
+  }
+
   [Test, Category("ErrorHandling")]
   public void Reader_TooSmall_Throws() {
     using var ms = new MemoryStream(new byte[100]);

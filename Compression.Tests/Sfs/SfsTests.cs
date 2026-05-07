@@ -88,4 +88,24 @@ public class SfsTests {
     var d = new FileSystem.Sfs.SfsFormatDescriptor();
     Assert.DoesNotThrow(() => d.List(ms, null));
   }
+
+  /// <summary>
+  /// Lock the SFS capability surface at R-only. SFS R/W requires the
+  /// object-container B+ tree, bitmap chain, directory hash table, and
+  /// free-extent tree (see <see cref="FileSystem.Sfs.SfsFormatDescriptor"/>
+  /// remarks). Per the project rule "never advertise CanCreate without real
+  /// spec compliance", this test fails any drive-by upgrade that adds
+  /// modify/create capabilities without the underlying B+ tree work.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void Descriptor_IsHonestlyReadOnly() {
+    var d = new FileSystem.Sfs.SfsFormatDescriptor();
+    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>(),
+      "SFS must not advertise IArchiveModifiable until the object-container B+ tree, bitmap chain, and directory hash table are implemented.");
+    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>(),
+      "SFS must not advertise IArchiveCreatable — empty-WORM emission still requires real B+ tree node bytes that no Windows/WSL validator can prove correct.");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanTest), Is.True);
+  }
 }

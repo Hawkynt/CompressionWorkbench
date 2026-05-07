@@ -4,6 +4,25 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Jfs;
 
+/// <summary>
+/// Descriptor for IBM JFS1 aggregate images. Reader walks the kernel-fixed AIT
+/// (block 11), the indirect fileset AIM → IAG → FSIT path, and the inline
+/// dtree root + xtree extents. Writer emits a complete WORM image with
+/// FILESYSTEM_I → AIM → IAG → FSIT, dual superblocks, dmap+dmapctl with
+/// canonical <c>ujfs_adjtree</c> buddy tree, both AIT/AIM copies, and an
+/// inline-dtroot root directory with up to 8 user files. Validated clean
+/// against real <c>fsck.jfs -n -f -v</c>.
+/// <para>
+/// State: <b>WORM</b>. R/W in-place mutation deliberately not implemented —
+/// adding files outside the inline 8-slot dtroot requires real dtree B+ tree
+/// node split/balance, file growth past 288 B requires xtree B+ tree splits,
+/// and every block alloc/free must rerun <c>ujfs_adjtree</c> across the
+/// dmaptree+dmapctl. The capability surface is locked at WORM by
+/// <c>JfsTests.Descriptor_IsHonestlyWormOnly</c> until that work lands;
+/// see <c>SfsFormatDescriptor</c> / <c>BcacheFsFormatDescriptor</c> for the
+/// same honest-WORM precedent.
+/// </para>
+/// </summary>
 public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
                                           IArchiveCreatable, IArchiveWriteConstraints {
   // WORM write constraints.

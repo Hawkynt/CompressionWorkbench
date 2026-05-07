@@ -4,13 +4,34 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Spark;
 
-public sealed class SparkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class SparkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Spark";
   public string DisplayName => "Spark";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing Spark archive.
+  /// Uses <see cref="SparkModifier"/> — Add appends Stored before the EOA
+  /// marker; Remove walks the top-level entry chain and shifts trailing
+  /// bytes (no central directory).
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      var flat = Path.GetFileName(name);
+      SparkModifier.RemoveFile(archive, flat, wipeData: true);
+      SparkModifier.AddFile(archive, flat, data);
+    }
+  }
+
+  /// <summary>Removes named entries; uses <see cref="SparkModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      SparkModifier.RemoveFile(archive, Path.GetFileName(name), wipeData: true);
+  }
+
   public string DefaultExtension => ".spk";
   public IReadOnlyList<string> Extensions => [".spk", ".spark"];
   public IReadOnlyList<string> CompoundExtensions => [];

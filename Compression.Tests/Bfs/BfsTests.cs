@@ -108,4 +108,25 @@ public class BfsTests {
     var entries = d.List(ms, null);
     Assert.That(entries.Select(e => e.Name), Does.Contain("FULL.bfs"));
   }
+
+  /// <summary>
+  /// Lock the BFS capability surface at R-only. BFS R/W requires a full
+  /// directory B+ tree, allocation-group bitmap chain, indirect/double-indirect
+  /// data_stream extent management, and journal transactions (see
+  /// <see cref="FileSystem.Bfs.BfsFormatDescriptor"/> remarks). Per the project
+  /// rule "never advertise CanCreate without real spec compliance", this test
+  /// fails any drive-by upgrade that adds modify/create capabilities without
+  /// the underlying B+ tree + journal work.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void Descriptor_IsHonestlyReadOnly() {
+    var d = new FileSystem.Bfs.BfsFormatDescriptor();
+    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>(),
+      "BFS must not advertise IArchiveModifiable until the directory B+ tree, AG bitmap chain, indirect-extent data_stream, and journal are implemented.");
+    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>(),
+      "BFS must not advertise IArchiveCreatable — empty-WORM emission still requires real B+ tree node bytes and a valid journal that Haiku's fs_check would accept.");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanTest), Is.True);
+  }
 }

@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Registry;
 using FileSystem.Hpfs;
 
 namespace Compression.Tests.Hpfs;
@@ -132,5 +133,39 @@ public class HpfsTests {
   public void Reader_TooSmall_Throws() {
     Assert.Throws<InvalidDataException>(() =>
       _ = new HpfsReader(new MemoryStream(new byte[1024])));
+  }
+
+  /// <summary>
+  /// Lock the HPFS capability surface at R-only. HPFS R/W is multi-week work:
+  /// the reader is intentionally narrow (root directory only, no subdirectory
+  /// descent, no allocation B+ tree extent traversal, no banded allocation
+  /// bitmap, no SpareBlock/Hot Fix List). A real writer requires:
+  /// <list type="bullet">
+  ///   <item>Banded allocation bitmap (1 bitmap per 8 MiB band) maintenance.</item>
+  ///   <item>Directory B+ tree split/merge/balance operations.</item>
+  ///   <item>Per-file allocation B+ tree (AllocSec height &gt; 0) for files
+  ///   beyond 8 direct extents.</item>
+  ///   <item>Root + SpareBlock dual maintenance with the Hot Fix List.</item>
+  ///   <item>Code page table.</item>
+  /// </list>
+  /// Even an empty-WORM emission can't be externally validated: modern Linux
+  /// distros ship a read-only HPFS driver only, and <c>hpfsck</c> was
+  /// abandoned years ago — only OS/2 <c>chkdsk</c> can verify a written image.
+  /// Per the project rule "never advertise CanCreate without real spec
+  /// compliance", this test fails any drive-by upgrade that adds modify/create
+  /// capabilities without the underlying B+ tree work.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void Descriptor_IsHonestlyReadOnly() {
+    var d = new HpfsFormatDescriptor();
+    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>(),
+      "HPFS must not advertise IArchiveModifiable until directory B+ tree, allocation B+ tree, and banded bitmap manipulation are implemented.");
+    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>(),
+      "HPFS must not advertise IArchiveCreatable — empty-WORM emission requires real SpareBlock, banded bitmap, and B+ tree node bytes that no Windows/WSL validator can prove correct (only OS/2 chkdsk can).");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanTest), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
   }
 }

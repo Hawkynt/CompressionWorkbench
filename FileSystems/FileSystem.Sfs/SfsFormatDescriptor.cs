@@ -9,10 +9,42 @@ namespace FileSystem.Sfs;
 /// <summary>
 /// Read-only descriptor for Amiga Smart Filesystem (SFS) volume images. SFS is
 /// the OFS/FFS replacement used by AmigaOS 4 and AROS, with the complete spec
-/// at http://www.xs4all.nl/~hjohn/SFS/ (Amiga SFS spec). Surfaces the parsed root block as a
-/// structured metadata bundle; walking the B-tree to enumerate files is a
-/// follow-up.
+/// at http://www.xs4all.nl/~hjohn/SFS/ (Amiga SFS spec). Surfaces the parsed
+/// root block as a structured metadata bundle; per-file enumeration would
+/// require walking the object-container B+ tree.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>Scope</b>: <see cref="FormatCapabilities.CanList"/> +
+/// <see cref="FormatCapabilities.CanExtract"/> +
+/// <see cref="FormatCapabilities.CanTest"/> only. The descriptor deliberately
+/// does NOT implement <c>IArchiveModifiable</c> or <c>IArchiveCreatable</c>.
+/// </para>
+/// <para>
+/// <b>Why no R/W</b>: SFS is not a flat-directory filesystem. A real
+/// implementation requires:
+/// </para>
+/// <list type="bullet">
+///   <item><description><b>Object-container B+ tree</b> — keyed by object
+///   number, branch/leaf nodes with 24-byte headers, used to map every
+///   inode/file/dir to its on-disk extent list.</description></item>
+///   <item><description><b>Bitmap chain</b> — multi-block free-space map
+///   spanning the volume, with checksum each block.</description></item>
+///   <item><description><b>Directory hash table</b> — Amiga-style
+///   FNV-flavoured hash buckets per directory inode, distinct from the
+///   object-container tree.</description></item>
+///   <item><description><b>Free-extent tree</b> — separate B+ tree of
+///   coalesced free runs, updated transactionally on every alloc.</description></item>
+/// </list>
+/// <para>
+/// All four structures cross-reference each other and are checksummed; partial
+/// writes corrupt the volume. There is no Linux/Windows-side <c>fsck</c>-class
+/// validator (SFS is AmigaOS 4 / AROS only), so an empty-WORM writer would
+/// emit bytes nothing can prove correct. Per the project rule
+/// (<c>MEMORY.md</c>: "never advertise <c>CanCreate</c> without real spec
+/// compliance"), R-only is the honest state for this format.
+/// </para>
+/// </remarks>
 public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Sfs";
   public string DisplayName => "Amiga SFS";

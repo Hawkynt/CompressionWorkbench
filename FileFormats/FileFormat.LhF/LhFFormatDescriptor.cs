@@ -4,13 +4,32 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.LhF;
 
-public sealed class LhFFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class LhFFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "LhF";
   public string DisplayName => "LhF (LhFloppy)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Adds (or replaces by name) tracks inside an existing LhF archive. Uses
+  /// <see cref="LhFModifier"/> — Add appends after the EOF position and bumps
+  /// the trackCount field; Remove walks the track list and shifts trailing
+  /// bytes (no central directory).
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      LhFModifier.RemoveFile(archive, name, wipeData: true);
+      LhFModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>Removes named tracks; uses <see cref="LhFModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      LhFModifier.RemoveFile(archive, name, wipeData: true);
+  }
   public string DefaultExtension => ".lhf";
   public IReadOnlyList<string> Extensions => [".lhf"];
   public IReadOnlyList<string> CompoundExtensions => [];

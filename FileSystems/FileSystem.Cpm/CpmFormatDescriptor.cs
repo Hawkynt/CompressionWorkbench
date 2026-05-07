@@ -12,15 +12,15 @@ namespace FileSystem.Cpm;
 /// matches this layout.
 /// </summary>
 public sealed class CpmFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
 
   public string Id => "Cpm";
   public string DisplayName => "CP/M 2.2 (8\" SSSD)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".cpm";
   public IReadOnlyList<string> Extensions => [".cpm", ".dsk"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -74,6 +74,32 @@ public sealed class CpmFormatDescriptor :
       .ToList();
     var image = CpmWriter.Build(files);
     output.Write(image);
+  }
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing CP/M image.
+  /// Uses <see cref="CpmModifier"/> for true O(touched bytes) random-access I/O —
+  /// only the 2 KB directory + the affected file's data blocks are read or written.
+  /// Replacement semantics: pre-existing entries with the same (name, ext) under
+  /// user code 0 are removed (and their data wiped) before the new file is written.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      var data = File.ReadAllBytes(input.FullPath);
+      CpmModifier.RemoveFile(archive, input.ArchiveName, userCode: 0, wipeData: true);
+      CpmModifier.AddFile(archive, input.ArchiveName, data, userCode: 0);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing CP/M image. Uses
+  /// <see cref="CpmModifier"/> for O(touched bytes) random-access I/O —
+  /// matching directory entries are flipped to 0xE5 and data blocks are zeroed.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      CpmModifier.RemoveFile(archive, name, userCode: 0, wipeData: true);
   }
 
   private static CpmReader.Volume ReadVolume(Stream stream) {
