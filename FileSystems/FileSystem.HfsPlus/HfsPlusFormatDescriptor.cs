@@ -4,7 +4,37 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.HfsPlus;
 
-public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the HFS+ catalog B-tree leaf chain and yields the actual on-disk
+  /// byte layout — reserved boot region + volume header + allocation file +
+  /// catalog file as <see cref="DefragBlockKind.MetadataReserved"/>, every
+  /// file record's first data-fork extent
+  /// (<c>HFSPlusForkData.extents[0]</c>) as
+  /// <see cref="DefragBlockKind.Used"/>.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => HfsPlusExtentMap.Enumerate(image);
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    var mover = new HfsPlusBlockMover();
+    image.Position = 0;
+    mover.Init(image); // reads only the 512-byte volume header
+    mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+  }
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    var mover = new HfsPlusBlockMover();
+    image.Position = 0;
+    mover.Init(image); // reads only the 512-byte volume header
+    mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+  }
+
   public string Id => "HfsPlus";
   public string DisplayName => "HFS+";
   public FormatCategory Category => FormatCategory.Archive;
@@ -69,5 +99,28 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       if (files != null && !MatchesFilter(e.FullPath, files)) continue;
       WriteFile(outputDir, e.FullPath, r.Extract(e));
     }
+  }
+
+  /// <inheritdoc/>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware HFS+ defragmentor via read-extract-rebuild dispatch through
+  /// <see cref="DefragRebuilder"/>. The writer always emits a contiguous,
+  /// start-packed allocation block layout, so all four <see cref="DefragMode"/>
+  /// values converge on a clean repack.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new HfsPlusReader(stream, leaveOpen: true);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FullPath, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new HfsPlusWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        return w.Build();
+      });
   }
 }

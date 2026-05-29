@@ -4,7 +4,40 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.PackIt;
 
-public sealed class PackItFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class PackItFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the PackIt archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the PackIt archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new PackItReader(stream, leaveOpen: true);
+        return r.Entries.Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new PackItWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddFile(n, d);
+        }
+        return ms.ToArray();
+      });
+  }
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new PackItReader(archive);
+    foreach (var e in r.Entries) {
+      var totalSize = e.DataForkSize + e.ResourceForkSize;
+      if (totalSize > 0)
+        yield return new DefragBlockInfo(e.DataOffset, totalSize, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "PackIt";
   public string DisplayName => "PackIt";
   public FormatCategory Category => FormatCategory.Archive;

@@ -4,7 +4,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ppt;
 
-public sealed class PptFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class PptFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "PPT is an OLE2 Compound File envelope with cross-referenced PowerPoint binary streams — " +
+      "rebuilding from the surface stream list would destroy the presentation structure.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => Msi.CfbLayoutMap.Enumerate(archive);
+
   public string Id => "Ppt";
   public string DisplayName => "PPT";
   public FormatCategory Category => FormatCategory.Archive;

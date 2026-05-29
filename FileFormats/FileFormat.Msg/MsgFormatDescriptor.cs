@@ -4,7 +4,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Msg;
 
-public sealed class MsgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class MsgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "MSG is an OLE2 Compound File envelope with MAPI property streams under nested storages — " +
+      "rebuilding from the surface stream list would destroy the message structure.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => Msi.CfbLayoutMap.Enumerate(archive);
+
   public string Id => "Msg";
   public string DisplayName => "MSG";
   public FormatCategory Category => FormatCategory.Archive;

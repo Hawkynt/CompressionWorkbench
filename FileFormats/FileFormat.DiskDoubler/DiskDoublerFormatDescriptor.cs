@@ -4,7 +4,24 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.DiskDoubler;
 
-public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "DiskDoubler wraps a single Macintosh file (data fork + resource fork) — defragmentation isn't meaningful.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new DiskDoublerReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.CompressedSize > 0)
+        yield return new DefragBlockInfo(e.DataOffset, e.CompressedSize, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "DiskDoubler";
   public string DisplayName => "DiskDoubler";
   public FormatCategory Category => FormatCategory.Archive;

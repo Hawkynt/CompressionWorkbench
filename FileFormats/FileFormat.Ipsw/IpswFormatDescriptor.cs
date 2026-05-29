@@ -18,7 +18,11 @@ namespace FileFormat.Ipsw;
 /// it does not steal generic ZIPs. Read-only; the plist and DMG payloads are emitted as raw bytes
 /// — no plist parsing or DMG mounting.</para>
 /// </summary>
-public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
+
   public string Id => "Ipsw";
   public string DisplayName => "Apple IPSW";
   public FormatCategory Category => FormatCategory.Archive;

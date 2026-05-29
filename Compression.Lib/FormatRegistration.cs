@@ -1,3 +1,5 @@
+using Compression.Core.DiskImage;
+using Compression.Lib.FsConversion;
 using Compression.Registry;
 
 namespace Compression.Lib;
@@ -25,6 +27,23 @@ public static partial class FormatRegistration {
     RegisterCompoundTar();
     RegisterBuildingBlocks();
     FormatRegistry.Initialize();
+
+    // Wire the in-place FS-variant converter delegate so PartitionEditor.
+    // ConvertFilesystem can dispatch FAT12↔16↔32 and ext2→3→4 conversions
+    // without taking a hard dependency on Compression.Lib from Compression.Core.
+    PartitionEditor.InPlaceFilesystemConverter = (stream, srcId, dstId)
+      => InPlaceConverter.TryConvert(stream, srcId, dstId)
+         is InPlaceConversionResult.Succeeded or InPlaceConversionResult.NoOp;
+
+    // Wire the in-place FS-resizer delegate so PartitionEditor.ResizePartition
+    // can dispatch FAT shrink/grow and ext shrink/grow without a Core →
+    // FileSystem.* dependency.
+    PartitionEditor.InPlaceFilesystemResizer = (stream, fsId, newSize, isShrink) => {
+      if (!FilesystemResizer.IsSupported(fsId)) return false;
+      if (isShrink) FilesystemResizer.Shrink(stream, fsId, newSize);
+      else FilesystemResizer.Grow(stream, fsId, newSize);
+      return true;
+    };
   }
 
   /// <summary>

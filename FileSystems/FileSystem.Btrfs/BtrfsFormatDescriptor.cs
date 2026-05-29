@@ -4,7 +4,35 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Btrfs;
 
-public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable {
+public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the superblock + chunk tree + root tree + fs-tree leaf and yields
+  /// the actual on-disk byte layout. Targets the WORM writer profile (single
+  /// fs-tree leaf, mostly inline EXTENT_DATA): inline extents surface as
+  /// MetadataReserved tiles (file content lives inside the metadata leaf),
+  /// regular extents surface as Used runs after logical→physical translation
+  /// through the chunk map. Multi-leaf b-trees are not walked here — the
+  /// WORM writer doesn't produce them.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => BtrfsExtentMap.Enumerate(image);
+
+
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    var mover = new BtrfsBlockMover();
+    mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+  }
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    var mover = new BtrfsBlockMover();
+    mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+  }
 
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
@@ -47,7 +75,7 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".btrfs";
   public IReadOnlyList<string> Extensions => [".btrfs", ".img"];

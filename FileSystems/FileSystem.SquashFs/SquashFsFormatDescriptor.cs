@@ -4,12 +4,12 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.SquashFs;
 
-public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
   public string Id => "SquashFs";
   public string DisplayName => "SquashFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".sqfs";
   public IReadOnlyList<string> Extensions => [".sqfs", ".squashfs", ".snap", ".appimage"];
@@ -48,5 +48,62 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
         w.AddFile(input.ArchiveName, data);
       }
     }
+  }
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => ModifyRebuilder.Add(archive, inputs,
+      readEntries: stream => {
+        var r = new SquashFsReader(stream, leaveOpen: true);
+        return r.Entries.Where(e => !e.IsDirectory && !e.IsSymlink).Select(e => (e.FullPath, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new SquashFsWriter(ms, leaveOpen: true))
+          foreach (var (n, d) in files) w.AddFile(n, d);
+        return ms.ToArray();
+      });
+
+  public void Remove(Stream archive, string[] entryNames)
+    => ModifyRebuilder.Remove(archive, entryNames,
+      readEntries: stream => {
+        var r = new SquashFsReader(stream, leaveOpen: true);
+        return r.Entries.Where(e => !e.IsDirectory && !e.IsSymlink).Select(e => (e.FullPath, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new SquashFsWriter(ms, leaveOpen: true))
+          foreach (var (n, d) in files) w.AddFile(n, d);
+        return ms.ToArray();
+      });
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options)
+    => DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new SquashFsReader(stream, leaveOpen: true);
+        return r.Entries.Where(e => !e.IsDirectory && !e.IsSymlink).Select(e => (e.FullPath, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new SquashFsWriter(ms, leaveOpen: true))
+          foreach (var (n, d) in files) w.AddFile(n, d);
+        return ms.ToArray();
+      });
+
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    yield return new DefragBlockInfo(0, SquashFsConstants.SuperblockSize, DefragBlockKind.MetadataReserved, "superblock");
+    var r = new SquashFsReader(image, leaveOpen: true);
+    long offset = SquashFsConstants.SuperblockSize;
+    foreach (var e in r.Entries) {
+      if (e.IsDirectory || e.IsSymlink) continue;
+      if (e.Size > 0) {
+        yield return new DefragBlockInfo(offset, e.Size, DefragBlockKind.Used, e.FullPath);
+        offset += e.Size;
+      }
+    }
+    if (offset < image.Length)
+      yield return new DefragBlockInfo(offset, image.Length - offset, DefragBlockKind.MetadataReserved, "metadata-tables");
   }
 }

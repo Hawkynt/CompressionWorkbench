@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.Layout;
 
 namespace FileFormat.Vdi;
 
@@ -30,13 +31,21 @@ namespace FileFormat.Vdi;
 ///   Offset 408: 16 bytes UUID last snapshot
 ///   Offset 424: 16 bytes UUID link
 ///   Offset 440: 16 bytes UUID parent
+/// <para>
+/// Streams reads via <see cref="SectorCache"/> so opening a multi-TB image
+/// does not load the whole file into RAM — only the header, block map and
+/// (during <see cref="ExtractDisk"/>) the requested block bytes are fetched
+/// on demand.
+/// </para>
 /// </summary>
 public sealed class VdiReader : IDisposable {
   public const uint VdiSignature = 0xBEDA107F;
   private static readonly byte[] PreHeaderText =
     Encoding.ASCII.GetBytes("<<< Oracle VM VirtualBox Disk Image >>>\n");
 
-  private readonly byte[] _data;
+  private readonly SectorCache _cache;
+  private readonly long _streamLength;
+  private uint[] _blockMap = [];
 
   /// <summary>Virtual disk size in bytes.</summary>
   public long VirtualSize { get; private set; }
@@ -60,21 +69,25 @@ public sealed class VdiReader : IDisposable {
   public uint ImageType { get; private set; }
 
   public VdiReader(Stream stream, bool leaveOpen = false) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(stream);
+    _streamLength = stream.Length;
+    _cache = new SectorCache(stream);
     Parse();
   }
 
   private void Parse() {
-    if (_data.Length < 512)
+    if (_streamLength < 512)
       throw new InvalidDataException("VDI: file too small.");
 
-    // Verify signature at offset 64
-    if (_data.Length < 68)
-      throw new InvalidDataException("VDI: file too small for signature.");
+    // Header is well under 4 KiB; fetch a single chunk via the cache.
+    if (_streamLength < 392)
+      throw new InvalidDataException("VDI: header truncated.");
 
-    var sig = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(64));
+    var hdrLen = (int)Math.Min(_streamLength, 512);
+    var hdr = _cache.Read(0, hdrLen);
+
+    // Verify signature at offset 64
+    var sig = BinaryPrimitives.ReadUInt32LittleEndian(hdr.AsSpan(64));
     if (sig != VdiSignature)
       throw new InvalidDataException($"VDI: invalid signature 0x{sig:X8}, expected 0x{VdiSignature:X8}.");
 
@@ -97,21 +110,41 @@ public sealed class VdiReader : IDisposable {
     // uint32 cBlocks          @ 384
     // uint32 cBlocksAllocated @ 388
 
-    if (_data.Length < 392)
-      throw new InvalidDataException("VDI: header truncated.");
-
-    ImageType = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(76));
-    OffsetBlocks = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(340));
-    OffsetData = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(344));
-    VirtualSize = (long)BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan(368));
-    BlockSize = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(376));
-    BlockCount = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(384));
-    AllocatedBlockCount = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(388));
+    ImageType = BinaryPrimitives.ReadUInt32LittleEndian(hdr.AsSpan(76));
+    OffsetBlocks = BinaryPrimitives.ReadUInt32LittleEndian(hdr.AsSpan(340));
+    OffsetData = BinaryPrimitives.ReadUInt32LittleEndian(hdr.AsSpan(344));
+    VirtualSize = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr.AsSpan(368));
+    BlockSize = BinaryPrimitives.ReadUInt32LittleEndian(hdr.AsSpan(376));
+    BlockCount = BinaryPrimitives.ReadUInt32LittleEndian(hdr.AsSpan(384));
+    AllocatedBlockCount = BinaryPrimitives.ReadUInt32LittleEndian(hdr.AsSpan(388));
 
     if (BlockSize == 0)
       throw new InvalidDataException("VDI: block size is zero.");
     if (VirtualSize < 0)
       throw new InvalidDataException("VDI: invalid virtual disk size.");
+
+    // Load the block allocation map once — it's typically small (4 bytes per
+    // block, so e.g. 4 MiB for a 4 TiB disk with 1 MiB blocks).
+    if (BlockCount > 0) {
+      var mapByteLen = (long)BlockCount * 4;
+      if (OffsetBlocks + mapByteLen > _streamLength)
+        throw new InvalidDataException("VDI: block allocation map extends beyond file.");
+
+      _blockMap = new uint[BlockCount];
+      const int chunkBytes = 64 * 1024;
+      var buf = new byte[Math.Min(chunkBytes, (int)mapByteLen)];
+      var remaining = mapByteLen;
+      var srcOff = (long)OffsetBlocks;
+      var idx = 0;
+      while (remaining > 0) {
+        var take = (int)Math.Min(remaining, buf.Length);
+        _cache.Read(srcOff, buf.AsSpan(0, take));
+        for (var i = 0; i + 4 <= take; i += 4)
+          _blockMap[idx++] = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(i, 4));
+        remaining -= take;
+        srcOff += take;
+      }
+    }
   }
 
   /// <summary>
@@ -122,10 +155,9 @@ public sealed class VdiReader : IDisposable {
     if (VirtualSize == 0) return [];
 
     var result = new byte[VirtualSize];
-    var mapSpan = _data.AsSpan((int)OffsetBlocks, (int)BlockCount * 4);
 
     for (uint i = 0; i < BlockCount; i++) {
-      var blockMapEntry = BinaryPrimitives.ReadUInt32LittleEndian(mapSpan.Slice((int)(i * 4), 4));
+      var blockMapEntry = _blockMap[(int)i];
       if (blockMapEntry == 0xFFFFFFFF)
         continue; // unallocated — leave as zero
 
@@ -133,15 +165,15 @@ public sealed class VdiReader : IDisposable {
       var dstOff = (long)i * BlockSize;
       var copyLen = (int)Math.Min(BlockSize, VirtualSize - dstOff);
 
-      if (srcOff + copyLen > _data.Length)
-        copyLen = (int)Math.Max(0, _data.Length - srcOff);
+      if (srcOff + copyLen > _streamLength)
+        copyLen = (int)Math.Max(0, _streamLength - srcOff);
 
       if (copyLen > 0)
-        _data.AsSpan((int)srcOff, copyLen).CopyTo(result.AsSpan((int)dstOff, copyLen));
+        _cache.Read(srcOff, result.AsSpan((int)dstOff, copyLen));
     }
 
     return result;
   }
 
-  public void Dispose() { }
+  public void Dispose() => _cache.Dispose();
 }

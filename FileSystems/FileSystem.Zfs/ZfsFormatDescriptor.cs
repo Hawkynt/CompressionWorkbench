@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Zfs;
 
 public sealed class ZfsFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable {
 
   public string Id => "Zfs";
   public string DisplayName => "ZFS";
@@ -70,5 +70,35 @@ public sealed class ZfsFormatDescriptor :
       w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
     }
     w.WriteTo(output);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware ZFS defragmentor via read-extract-rebuild dispatch through
+  /// <see cref="DefragRebuilder"/>. The writer always emits a fresh
+  /// contiguous-from-start pool image with single-vdev, single-dataset,
+  /// flat root, Fletcher-4 checksums, and NV_BIG_ENDIAN XDR labels.
+  /// Image size is preserved from the original archive length so labels
+  /// land at the expected start/end positions.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    // Capture original image size before the rebuild rewrites the archive —
+    // ZFS labels live at fixed start + end positions so the rebuilt image
+    // must keep the same overall footprint.
+    var originalSize = archive.Length;
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new ZfsReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new ZfsWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        using var ms = new MemoryStream();
+        w.WriteTo(ms, originalSize);
+        return ms.ToArray();
+      });
   }
 }

@@ -4,7 +4,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Doc;
 
-public sealed class DocFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class DocFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "DOC is an OLE2 Compound File envelope with cross-referenced internal streams (WordDocument, 1Table, etc.) — " +
+      "rebuilding from the surface stream list would destroy the document's internal references.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => Msi.CfbLayoutMap.Enumerate(archive);
+
   public string Id => "Doc";
   public string DisplayName => "DOC";
   public FormatCategory Category => FormatCategory.Archive;

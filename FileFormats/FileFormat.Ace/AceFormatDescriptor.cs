@@ -4,7 +4,38 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ace;
 
-public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the ACE archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the ACE archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new AceReader(stream);
+        return r.Entries.Select(e => (e.FileName, r.ExtractEntry(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        var w = new AceWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
+  }
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new AceReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.CompressedSize > 0)
+        yield return new DefragBlockInfo(e.DataOffset, e.CompressedSize, DefragBlockKind.Used, FileName: e.FileName);
+    }
+  }
+
   public string Id => "Ace";
   public string DisplayName => "ACE";
   public FormatCategory Category => FormatCategory.Archive;

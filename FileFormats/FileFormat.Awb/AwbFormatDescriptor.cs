@@ -9,7 +9,18 @@ namespace FileFormat.Awb;
 /// (Yakuza, Persona 5), and other CRI Middleware titles. Contains raw codec payloads
 /// (HCA, ADX, etc.) which are surfaced verbatim — we do not decode the inner audio.
 /// </summary>
-public sealed class AwbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class AwbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new AwbReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.Size > 0)
+        yield return new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
 
   public string Id => "Awb";
   public string DisplayName => "CRI Audio Wave Bank";
@@ -54,5 +65,26 @@ public sealed class AwbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     using var w = new AwbWriter(output, leaveOpen: true);
     foreach (var (_, data) in FlatFiles(inputs))
       w.AddEntry(data);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        using var r = new AwbReader(stream, leaveOpen: true);
+        // Materialise so the reader can be disposed before we yield.
+        var list = new List<(string, byte[])>(r.Entries.Count);
+        foreach (var e in r.Entries) list.Add((e.Name, r.Extract(e)));
+        return list;
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new AwbWriter(ms, leaveOpen: true)) {
+          foreach (var (_, d) in files) w.AddEntry(d);
+        }
+        return ms.ToArray();
+      });
   }
 }

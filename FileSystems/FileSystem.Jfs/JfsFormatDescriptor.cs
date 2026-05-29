@@ -24,7 +24,7 @@ namespace FileSystem.Jfs;
 /// </para>
 /// </summary>
 public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-                                          IArchiveCreatable, IArchiveWriteConstraints {
+                                          IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable {
   // WORM write constraints.
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 16L * 1024 * 1024;
@@ -82,5 +82,29 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
     }
     w.WriteTo(output);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware JFS1 defragmentor via read-extract-rebuild dispatch through
+  /// <see cref="DefragRebuilder"/>. The writer always emits a fresh
+  /// contiguous-from-start single-aggregate image with FILESYSTEM_I → AIM →
+  /// IAG → FSIT, dual superblocks, dmap+dmapctl, and an inline-dtroot.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new JfsReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new JfsWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        using var ms = new MemoryStream();
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
   }
 }

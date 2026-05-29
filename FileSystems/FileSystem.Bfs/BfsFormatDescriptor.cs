@@ -7,62 +7,22 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Bfs;
 
 /// <summary>
-/// Read-only descriptor for BeOS / Haiku BFS filesystem images. Surfaces the
-/// superblock as a structured metadata bundle. Walking the root directory B+tree
-/// to enumerate files is explicitly out of scope — we emit the raw superblock
-/// bytes and the whole disk for downstream tools.
+/// R/W descriptor for BeOS / Haiku BFS filesystem images. Can list, extract,
+/// create (WORM), modify (via rebuild), and defragment BFS images. The writer
+/// produces a minimal single-AG image with a single B+ tree leaf for the root
+/// directory and direct block_run extents for file data.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Why R-only.</b> A complete BeFS R/W stack is multi-week work. The format
-/// is built on several non-trivial structures that all interlock:
-/// </para>
-/// <list type="bullet">
-///   <item><description>
-///   <b>Allocation groups + block bitmap chain.</b> Free-space tracking is split
-///   across N allocation groups, each with its own bitmap. Allocations must
-///   honor AG locality and the on-disk <c>used_blocks</c> counter in the
-///   superblock.
-///   </description></item>
-///   <item><description>
-///   <b>Inodes (typically 2 KiB) with small_data / file_cookie areas.</b> Each
-///   inode embeds attribute key/value pairs inline; large attributes spill to
-///   <c>data_stream</c> blocks. The reader/writer must round-trip both layouts.
-///   </description></item>
-///   <item><description>
-///   <b>data_stream with direct + indirect + double-indirect extent lists.</b>
-///   File data is referenced through 12 direct extents, an indirect extent, and
-///   a double-indirect extent — each extent is a <c>(allocation_group,
-///   start, length)</c> triple. Truncate/grow paths must rebalance these.
-///   </description></item>
-///   <item><description>
-///   <b>Directory contents stored as a B+ tree.</b> Each directory is an inode
-///   whose data stream is a real B+ tree (separate header + interior nodes +
-///   leaf duplicates). Insert/delete must split/merge nodes and rewrite parent
-///   chains. There is also a per-volume index B+ tree (<c>indices_dir_ino</c>)
-///   used for live queries that must stay in sync.
-///   </description></item>
-///   <item><description>
-///   <b>Journal.</b> BeFS is journaled — any structural change must be wrapped
-///   in a transaction header in the on-disk log area, otherwise <c>fs_check</c>
-///   from Haiku will mark the volume dirty.
-///   </description></item>
-/// </list>
-/// <para>
-/// Per the project rule "never advertise <c>CanCreate</c> without real spec
-/// compliance" we keep BFS at <see cref="FormatCapabilities.CanList"/> +
-/// <see cref="FormatCapabilities.CanExtract"/> + <see cref="FormatCapabilities.CanTest"/>
-/// only. A guard test (<c>BfsTests.Descriptor_IsHonestlyReadOnly</c>) blocks
-/// drive-by capability upgrades that would not be validated by Haiku's
-/// <c>fs_check</c>.
-/// </para>
-/// </remarks>
-public sealed class BfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class BfsFormatDescriptor
+    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
+      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
+
   public string Id => "Bfs";
   public string DisplayName => "BFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".bfs";
   public IReadOnlyList<string> Extensions => [".bfs", ".img"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -75,13 +35,167 @@ public sealed class BfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "BeOS / Haiku filesystem image — superblock surface only.";
+  public string Description => "BeOS / Haiku BFS filesystem image";
+
+  // ── IArchiveFormatOperations ────────────────────────────────────────
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    try {
+      var r = new BfsReader(stream);
+      return r.Entries.Select((e, i) => new ArchiveEntryInfo(
+        i, e.Name, e.Size, e.Size, "Stored", false, false, null
+      )).ToList();
+    } catch {
+      // Fallback: surface raw image + metadata like the old R-only descriptor
+      return ListFallback(stream);
+    }
+  }
+
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    try {
+      var r = new BfsReader(stream);
+      foreach (var e in r.Entries) {
+        if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
+        WriteFile(outputDir, e.Name, r.Extract(e));
+      }
+    } catch {
+      // Fallback: emit raw image + metadata
+      ExtractFallback(stream, outputDir, files);
+    }
+  }
+
+  // ── IArchiveCreatable ──────────────────────────────────────────────
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var w = new BfsWriter();
+    foreach (var (name, data) in FlatFiles(inputs))
+      w.AddFile(name, data);
+    output.Write(w.Build());
+  }
+
+  // ── IArchiveModifiable (rebuild-based) ─────────────────────────────
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => ModifyRebuilder.Add(archive, inputs, ReadEntries, BuildImage);
+
+  public void Remove(Stream archive, string[] entryNames)
+    => ModifyRebuilder.Remove(archive, entryNames, ReadEntries, BuildImage);
+
+  // ── IArchiveDefragmentable (rebuild-based) ─────────────────────────
+
+  public void Defragment(Stream archive)
+    => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options)
+    => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+
+  // ── IFilesystemExtentMap ───────────────────────────────────────────
+
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    image.Position = 0;
+    using var ms = new MemoryStream();
+    image.CopyTo(ms);
+    var imageBytes = ms.ToArray();
+
+    var sb = BfsSuperblock.TryParse(imageBytes);
+    if (!sb.Valid) yield break;
+
+    var blockSize = (int)sb.BlockSize;
+    if (blockSize < 512) yield break;
+
+    // Superblock
+    yield return new DefragBlockInfo(sb.SuperblockOffset, 1024, DefragBlockKind.MetadataReserved, "Superblock");
+
+    // Log area (blocks 2..9 for offset-0 images, or similar)
+    var logRun = ReadBlockRunFromImage(imageBytes, sb.SuperblockOffset + 88);
+    if (logRun.Length > 0) {
+      var logOffset = (long)logRun.Start * blockSize;
+      var logSize = (long)logRun.Length * blockSize;
+      yield return new DefragBlockInfo(logOffset, logSize, DefragBlockKind.MetadataReserved, "Journal/Log");
+    }
+
+    // AG bitmap (block 10 for our images — right after log)
+    var agBitmapBlock = logRun.Start + logRun.Length;
+    yield return new DefragBlockInfo((long)agBitmapBlock * blockSize, blockSize, DefragBlockKind.MetadataReserved, "AG Bitmap");
+
+    // Root dir inode + B+ tree
+    var rootRun = ReadBlockRunFromImage(imageBytes, sb.SuperblockOffset + 116);
+    if (rootRun.Length > 0) {
+      yield return new DefragBlockInfo((long)rootRun.Start * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Root Dir Inode");
+      // Read root inode data_stream.direct[0] for B+ tree block
+      var rootInodeOff = rootRun.Start * blockSize;
+      if (rootInodeOff + 72 + 8 <= imageBytes.Length) {
+        var btreeRun = ReadBlockRunFromImage(imageBytes, rootInodeOff + 72);
+        if (btreeRun.Length > 0)
+          yield return new DefragBlockInfo((long)btreeRun.Start * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Root Dir B+Tree");
+      }
+    }
+
+    // Indices dir inode + B+ tree
+    var idxRun = ReadBlockRunFromImage(imageBytes, sb.SuperblockOffset + 124);
+    if (idxRun.Length > 0) {
+      yield return new DefragBlockInfo((long)idxRun.Start * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Indices Dir Inode");
+      var idxInodeOff = idxRun.Start * blockSize;
+      if (idxInodeOff + 72 + 8 <= imageBytes.Length) {
+        var btreeRun = ReadBlockRunFromImage(imageBytes, idxInodeOff + 72);
+        if (btreeRun.Length > 0)
+          yield return new DefragBlockInfo((long)btreeRun.Start * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Indices B+Tree");
+      }
+    }
+
+    // File extents — walk the B+ tree leaf
+    BfsReader reader;
+    try {
+      image.Position = 0;
+      reader = new BfsReader(image);
+    } catch {
+      yield break;
+    }
+
+    foreach (var entry in reader.Entries) {
+      var inodeOff = entry.InodeBlock * blockSize;
+      // Inode block itself
+      yield return new DefragBlockInfo(inodeOff, blockSize, DefragBlockKind.MetadataReserved, $"Inode: {entry.Name}");
+
+      // Data blocks from direct extents
+      if (entry.Size > 0 && inodeOff + 72 + NumDirectBlocks * 8 <= imageBytes.Length) {
+        var remaining = entry.Size;
+        for (var i = 0; i < NumDirectBlocks && remaining > 0; i++) {
+          var run = ReadBlockRunFromImage(imageBytes, inodeOff + 72 + i * 8);
+          if (run.Length == 0) break;
+          var runBytes = Math.Min((long)run.Length * blockSize, remaining);
+          yield return new DefragBlockInfo((long)run.Start * blockSize, runBytes, DefragBlockKind.Used, entry.Name);
+          remaining -= runBytes;
+        }
+      }
+    }
+  }
+
+  private const int NumDirectBlocks = 12;
+
+  // ── Shared delegates ───────────────────────────────────────────────
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    var r = new BfsReader(stream);
+    return r.Entries.Select(e => (e.Name, r.Extract(e)));
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    var w = new BfsWriter();
+    foreach (var (n, d) in files) w.AddFile(n, d);
+    return w.Build();
+  }
+
+  // ── Fallback for malformed images ──────────────────────────────────
+
+  private static List<ArchiveEntryInfo> ListFallback(Stream stream) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
     try {
-      image = ReadAll(stream);
+      stream.Position = 0;
+      using var ms = new MemoryStream();
+      stream.CopyTo(ms);
+      image = ms.ToArray();
     } catch {
       entries.Add(new ArchiveEntryInfo(0, "FULL.bfs", 0, 0, "stored", false, false, null));
       entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
@@ -96,12 +210,15 @@ public sealed class BfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+  private static void ExtractFallback(Stream stream, string outputDir, string[]? files) {
     byte[] image;
     try {
-      image = ReadAll(stream);
+      stream.Position = 0;
+      using var ms = new MemoryStream();
+      stream.CopyTo(ms);
+      image = ms.ToArray();
     } catch {
-      WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"));
+      WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"), files);
       return;
     }
 
@@ -142,9 +259,11 @@ public sealed class BfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  private static byte[] ReadAll(Stream stream) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    return ms.ToArray();
+  private static (uint Ag, int Start, int Length) ReadBlockRunFromImage(byte[] image, int offset) {
+    if (offset + 8 > image.Length) return (0, 0, 0);
+    var ag = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(offset));
+    var start = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(offset + 4));
+    var length = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(offset + 6));
+    return (ag, start, length);
   }
 }

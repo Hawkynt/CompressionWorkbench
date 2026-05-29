@@ -4,7 +4,32 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Zip;
 
-public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable {
+public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
+
+  /// <summary>Rebuild-based defrag: extracts every entry then re-creates the archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts every entry then re-creates the archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new ZipReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FileName, r.ExtractEntry(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new ZipWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddEntry(n, d);
+          w.Finish();
+        }
+        return ms.ToArray();
+      });
+  }
+
   public string Id => "Zip";
   public string DisplayName => "ZIP";
   public FormatCategory Category => FormatCategory.Archive;
@@ -210,6 +235,19 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       return new() { IsValid = false, Confidence = 0.5, Health = FormatHealth.Damaged,
         Level = ValidationLevel.Structure, Issues = issues };
     }
+  }
+
+  /// <summary>
+  /// Zeros all dead bytes in the ZIP archive: gaps between local file entries,
+  /// orphan data left after <see cref="ZipModifier.RemoveFile"/>, and any
+  /// padding regions not covered by the layout map.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = ZipLayoutMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 
   public ValidationResult ValidateIntegrity(Stream stream) {

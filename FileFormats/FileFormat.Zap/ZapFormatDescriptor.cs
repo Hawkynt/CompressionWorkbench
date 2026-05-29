@@ -4,7 +4,25 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Zap;
 
-public sealed class ZapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class ZapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "ZAP archives carry Amiga disk tracks indexed by track number — track positions are part of " +
+      "the floppy geometry, so defragmentation isn't meaningful.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new ZapReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.Size > 0)
+        yield return new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "Zap";
   public string DisplayName => "ZAP (Amiga Disk Archiver)";
   public FormatCategory Category => FormatCategory.Archive;

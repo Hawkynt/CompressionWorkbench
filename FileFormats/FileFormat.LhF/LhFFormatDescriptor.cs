@@ -4,7 +4,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.LhF;
 
-public sealed class LhFFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class LhFFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new LhFReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.Size > 0)
+        yield return new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "LhF";
   public string DisplayName => "LhF (LhFloppy)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -69,5 +80,31 @@ public sealed class LhFFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       trackNum++;
     }
     w.WriteTo(output);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new LhFReader(stream);
+        return r.Entries.Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new LhFWriter();
+        var trackNum = 0;
+        foreach (var (n, d) in files) {
+          // Recover the track index from the "track_NNN.raw" reader-synthesized name.
+          var stem = Path.GetFileNameWithoutExtension(n);
+          var underscore = stem.LastIndexOf('_');
+          var explicitTrack = underscore >= 0 && int.TryParse(stem[(underscore + 1)..], out var t) ? t : trackNum;
+          w.AddTrack(explicitTrack, d);
+          trackNum++;
+        }
+        using var ms = new MemoryStream();
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
   }
 }

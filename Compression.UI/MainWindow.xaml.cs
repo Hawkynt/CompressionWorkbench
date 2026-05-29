@@ -173,6 +173,98 @@ public partial class MainWindow : Window {
     dlg.Show();
   }
 
+  private void OnPartitionEditor(object sender, RoutedEventArgs e) {
+    // If an archive is already open and it's a partitionable image, pre-load it.
+    // Otherwise the window's Open... button (or the file dialog we show below)
+    // lets the user pick a file.
+    var preselected = ViewModel.HasArchive ? ViewModel.ArchivePath : null;
+    if (preselected != null && System.IO.File.Exists(preselected)) {
+      var dlg = new Views.PartitionsWindow(preselected) { Owner = this };
+      dlg.Show();
+      return;
+    }
+
+    var openDlg = new Microsoft.Win32.OpenFileDialog {
+      Title = "Open disk image / virtual disk",
+      Filter = "Disk images & virtual disks|*.img;*.iso;*.bin;*.vhd;*.vhdx;*.vmdk;*.qcow2;*.qcow;*.vdi"
+             + "|All files|*.*",
+    };
+    if (openDlg.ShowDialog(this) == true) {
+      var window = new Views.PartitionsWindow(openDlg.FileName) { Owner = this };
+      window.Show();
+    } else {
+      // User cancelled the file dialog — still show the empty window so they
+      // can use the in-window Open... toolbar button.
+      var window = new Views.PartitionsWindow { Owner = this };
+      window.Show();
+    }
+  }
+
+  private void OnConvertArchive(object sender, RoutedEventArgs e) {
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+
+    // Source = the currently open archive from the view model.
+    var sourcePath = ViewModel.ArchivePath;
+    if (string.IsNullOrEmpty(sourcePath) || !System.IO.File.Exists(sourcePath)) {
+      MessageBox.Show(this, "Open an archive or image first, then use Convert Archive to write it out in another format.",
+        "Convert Archive", MessageBoxButton.OK, MessageBoxImage.Information);
+      return;
+    }
+
+    // Build a SaveFileDialog filter listing every IArchiveCreatable descriptor,
+    // grouped by FormatCategory (Archive | Stream | Audio | Video | ...).
+    var creatable = Compression.Registry.FormatRegistry.All
+      .Where(d => d is Compression.Registry.IArchiveCreatable)
+      .OrderBy(d => d.Category.ToString())
+      .ThenBy(d => d.DisplayName, StringComparer.OrdinalIgnoreCase)
+      .ToList();
+
+    if (creatable.Count == 0) {
+      MessageBox.Show(this, "No creatable formats are registered.",
+        "Convert Archive", MessageBoxButton.OK, MessageBoxImage.Warning);
+      return;
+    }
+
+    // Filter format: "Name (*.ext;*.ext2)|*.ext;*.ext2|...|All files (*.*)|*.*"
+    var parts = new List<string>();
+    var orderedDescriptors = new List<Compression.Registry.IFormatDescriptor>();
+    foreach (var group in creatable.GroupBy(d => d.Category)) {
+      foreach (var d in group) {
+        var exts = d.Extensions.Count > 0
+          ? string.Join(";", d.Extensions.Select(x => "*" + x))
+          : "*" + d.DefaultExtension;
+        var label = $"{group.Key}: {d.DisplayName} ({exts})";
+        parts.Add($"{label}|{exts}");
+        orderedDescriptors.Add(d);
+      }
+    }
+    parts.Add("All files (*.*)|*.*");
+
+    var saveDlg = new Microsoft.Win32.SaveFileDialog {
+      Title = "Convert archive to...",
+      Filter = string.Join("|", parts),
+      FileName = System.IO.Path.GetFileNameWithoutExtension(sourcePath) + "_converted",
+    };
+    if (saveDlg.ShowDialog(this) != true) return;
+
+    // FilterIndex is 1-based; the last slot is "All files" which falls back
+    // to extension-based detection. Otherwise we have an explicit pick.
+    string? targetFormatId = null;
+    var idx = saveDlg.FilterIndex - 1;
+    if (idx >= 0 && idx < orderedDescriptors.Count)
+      targetFormatId = orderedDescriptors[idx].Id;
+
+    try {
+      var warnings = Compression.Lib.ArchiveOperations.ConvertArchive(sourcePath, saveDlg.FileName, targetFormatId);
+      var msg = $"Conversion complete.\nOutput: {saveDlg.FileName}";
+      if (warnings.Count > 0)
+        msg += "\n\nWarnings:\n" + string.Join("\n", warnings);
+      MessageBox.Show(this, msg, "Convert Archive", MessageBoxButton.OK, MessageBoxImage.Information);
+    } catch (Exception ex) {
+      MessageBox.Show(this, $"Conversion failed: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+    }
+  }
+
   private void OnAbout(object sender, RoutedEventArgs e) {
     var about = new Views.AboutWindow { Owner = this };
     about.ShowDialog();

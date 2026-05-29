@@ -23,7 +23,7 @@ namespace FileFormat.PngCrushAdapters;
 /// claims the PNG magic + <c>.png</c> extension as the static fallback.
 /// </para>
 /// </remarks>
-public sealed class PngFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class PngFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFileInternalLayoutMap, IFileInternalChunkMover {
   public string Id => "Png";
   public string DisplayName => "PNG image";
   public FormatCategory Category => FormatCategory.Image;
@@ -48,4 +48,13 @@ public sealed class PngFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     MultiImageArchiveHelper.Extract(stream, outputDir, files, "image", OpenSource);
 
   private static IFrameSource OpenSource(Stream s) => new PngFrameSource(s);
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => PngLayoutMap.Enumerate(file);
+
+  /// <inheritdoc />
+  public void Optimize(Stream file) => PngOptimizer.Optimize(file);
+
+  /// <inheritdoc />
+  public void Optimize(Stream file, MetadataPlacementProfile? profile) => PngOptimizer.Optimize(file, profile);
 }

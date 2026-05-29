@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using Compression.Core.Statistics;
 using Compression.Registry;
 
 namespace FileFormat.SevenZip;
@@ -140,6 +141,40 @@ public static class SolidBlockPlanner {
     if (catchAll.Count > 0)
       result.Add((-1, catchAll));
     return result;
+  }
+
+  /// <summary>
+  /// Plans solid blocks by statistical similarity of file contents rather than extension.
+  /// Reads each file, computes a fingerprint, and groups similar-content files together.
+  /// </summary>
+  /// <param name="inputs">Files to plan into solid blocks.</param>
+  /// <param name="maxBlockSize">Maximum total size of a single solid block.</param>
+  /// <returns>Solid blocks grouped by content similarity.</returns>
+  public static List<SolidBlock> PlanBySimilarity(
+      IReadOnlyList<ArchiveInputInfo> inputs, long maxBlockSize = DefaultMaxBlockSize) {
+    var files = inputs.Where(i => !i.IsDirectory && !string.IsNullOrEmpty(i.FullPath)).ToList();
+    if (files.Count == 0) return [];
+
+    // Read all file contents
+    var contents = new byte[files.Count][];
+    for (var i = 0; i < files.Count; i++)
+      contents[i] = File.ReadAllBytes(files[i].FullPath);
+
+    // Determine max groups: aim for ~DefaultMaxBlockSize per group
+    var totalSize = contents.Sum(c => (long)c.Length);
+    var maxGroups = Math.Max(1, (int)Math.Ceiling((double)totalSize / maxBlockSize));
+
+    var groups = FileSimilarityGrouper.GroupBySimilarity(contents, maxGroups, maxBlockSize);
+
+    var blocks = new List<SolidBlock>();
+    foreach (var group in groups) {
+      var block = new SolidBlock { GroupIndex = -1 };
+      foreach (var idx in group)
+        block.Add(files[idx], contents[idx]);
+      blocks.Add(block);
+    }
+
+    return blocks;
   }
 
   private static void SplitIntoBlocks(List<SolidBlock> blocks, List<ArchiveInputInfo> files,

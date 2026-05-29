@@ -1,0 +1,165 @@
+<Window x:Class="Compression.UI.Views.PartitionsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Partition Editor"
+        Width="980" Height="640"
+        MinWidth="780" MinHeight="480"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip">
+
+  <Grid Margin="8">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <!-- Top toolbar: Open / Refresh -->
+    <ToolBarTray Grid.Row="0">
+      <ToolBar Band="0" BandIndex="0">
+        <Button x:Name="OpenBtn" Click="OnOpen" ToolTip="Open a disk image / virtual disk" Padding="8,2">
+          <StackPanel Orientation="Horizontal">
+            <Image Source="{StaticResource OpenIcon}" Width="16" Height="16" Margin="0,0,4,0" />
+            <TextBlock Text="Open..." VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <Button x:Name="RefreshBtn" Click="OnRefresh" ToolTip="Re-read the partition table from disk" Padding="8,2"
+                IsEnabled="False">
+          <StackPanel Orientation="Horizontal">
+            <Image Source="{StaticResource NavigateUpIcon}" Width="16" Height="16" Margin="0,0,4,0" />
+            <TextBlock Text="Refresh" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+      </ToolBar>
+    </ToolBarTray>
+
+    <!-- Path / info strip -->
+    <Border Grid.Row="1" BorderBrush="LightGray" BorderThickness="1" Padding="6" Margin="0,6,0,6">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="80" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="100" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="Image:" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <TextBlock Grid.Row="0" Grid.Column="1" x:Name="PathLbl" Text="(no image loaded)"
+                   Foreground="DimGray" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+        <TextBlock Grid.Row="0" Grid.Column="2" Text="Format:" FontWeight="SemiBold"
+                   HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,4,0" />
+        <TextBlock Grid.Row="0" Grid.Column="3" x:Name="FormatLbl" Text="—" VerticalAlignment="Center" Margin="0,0,4,0" />
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="Backing:" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <TextBlock Grid.Row="1" Grid.Column="1" x:Name="BackingLbl" Text="—" Foreground="DimGray"
+                   VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+
+    <!-- Main pane: grid on left, action buttons on right -->
+    <Grid Grid.Row="2">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <DataGrid Grid.Column="0" x:Name="PartGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                CanUserSortColumns="True" SelectionMode="Single"
+                GridLinesVisibility="Horizontal" HeadersVisibility="Column"
+                HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                AlternatingRowBackground="#F8F8F8"
+                SelectionChanged="OnSelectionChanged">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="#"          Binding="{Binding IndexDisplay}"    Width="40">
+            <DataGridTextColumn.ElementStyle>
+              <Style TargetType="TextBlock">
+                <Setter Property="HorizontalAlignment" Value="Right" />
+                <Setter Property="Margin" Value="0,0,4,0" />
+              </Style>
+            </DataGridTextColumn.ElementStyle>
+          </DataGridTextColumn>
+          <DataGridTextColumn Header="Start LBA"  Binding="{Binding StartLbaDisplay}" Width="110">
+            <DataGridTextColumn.ElementStyle>
+              <Style TargetType="TextBlock">
+                <Setter Property="HorizontalAlignment" Value="Right" />
+                <Setter Property="Margin" Value="0,0,6,0" />
+                <Setter Property="FontFamily" Value="Consolas" />
+              </Style>
+            </DataGridTextColumn.ElementStyle>
+          </DataGridTextColumn>
+          <DataGridTextColumn Header="End LBA"    Binding="{Binding EndLbaDisplay}"   Width="110">
+            <DataGridTextColumn.ElementStyle>
+              <Style TargetType="TextBlock">
+                <Setter Property="HorizontalAlignment" Value="Right" />
+                <Setter Property="Margin" Value="0,0,6,0" />
+                <Setter Property="FontFamily" Value="Consolas" />
+              </Style>
+            </DataGridTextColumn.ElementStyle>
+          </DataGridTextColumn>
+          <DataGridTextColumn Header="Size"       Binding="{Binding SizeDisplay}"     Width="90">
+            <DataGridTextColumn.ElementStyle>
+              <Style TargetType="TextBlock">
+                <Setter Property="HorizontalAlignment" Value="Right" />
+                <Setter Property="Margin" Value="0,0,6,0" />
+              </Style>
+            </DataGridTextColumn.ElementStyle>
+          </DataGridTextColumn>
+          <DataGridTextColumn Header="Type"       Binding="{Binding TypeDisplay}"     Width="*" />
+          <DataGridTextColumn Header="Label"      Binding="{Binding Label}"           Width="160" />
+          <DataGridTextColumn Header="Source"     Binding="{Binding Source}"          Width="160" />
+        </DataGrid.Columns>
+      </DataGrid>
+
+      <StackPanel Grid.Column="1" Margin="8,0,0,0" Width="160">
+        <TextBlock Text="Actions" FontWeight="SemiBold" Margin="0,0,0,4" />
+        <Button x:Name="AddBtn"          Content="Add..."           Padding="4" Margin="0,2"
+                Click="OnAdd"             IsEnabled="False"
+                ToolTip="Add a new primary (MBR) or GPT partition." />
+        <Button x:Name="AddLogicalBtn"   Content="Add Logical..."   Padding="4" Margin="0,2"
+                Click="OnAddLogical"      IsEnabled="False"
+                ToolTip="Add a logical partition inside the MBR extended container." />
+        <Button x:Name="DeleteBtn"       Content="Delete"           Padding="4" Margin="0,2"
+                Click="OnDelete"          IsEnabled="False"
+                ToolTip="Drop the selected partition from the table (data not zeroed)." />
+        <Button x:Name="PurgeBtn"        Content="Purge"            Padding="4" Margin="0,2"
+                Click="OnPurge"           IsEnabled="False"
+                ToolTip="Drop the selected partition AND zero-fill its byte range." />
+        <Separator Margin="0,6" />
+        <Button x:Name="ConvertMbrGptBtn" Content="MBR → GPT"       Padding="4" Margin="0,2"
+                Click="OnConvertMbrToGpt" IsEnabled="False"
+                ToolTip="Convert the current MBR partition table to GPT." />
+        <Button x:Name="ConvertGptMbrBtn" Content="GPT → MBR"       Padding="4" Margin="0,2"
+                Click="OnConvertGptToMbr" IsEnabled="False"
+                ToolTip="Convert the current GPT partition table to MBR (only works when ≤4 entries)." />
+        <Separator Margin="0,6" />
+        <Button x:Name="FormatBtn"       Content="Format..."        Padding="4" Margin="0,2"
+                Click="OnFormat"          IsEnabled="False"
+                ToolTip="Write a fresh filesystem image into the selected partition's byte range." />
+        <Button x:Name="VerifyBtn"       Content="Verify"           Padding="4" Margin="0,2"
+                Click="OnVerify"          IsEnabled="False"
+                ToolTip="Run on-disk integrity checks: signatures, CRCs, primary/backup divergence." />
+      </StackPanel>
+    </Grid>
+
+    <!-- Status bar -->
+    <StatusBar Grid.Row="3" Margin="0,6,0,0">
+      <StatusBarItem>
+        <TextBlock x:Name="SchemeLbl" Text="Scheme: —" />
+      </StatusBarItem>
+      <Separator />
+      <StatusBarItem>
+        <TextBlock x:Name="DiskSizeLbl" Text="Disk size: —" />
+      </StatusBarItem>
+      <Separator />
+      <StatusBarItem>
+        <TextBlock x:Name="CountLbl" Text="Partitions: —" />
+      </StatusBarItem>
+      <StatusBarItem HorizontalAlignment="Right">
+        <TextBlock x:Name="StatusLbl" Text="" Foreground="DimGray" />
+      </StatusBarItem>
+    </StatusBar>
+  </Grid>
+</Window>

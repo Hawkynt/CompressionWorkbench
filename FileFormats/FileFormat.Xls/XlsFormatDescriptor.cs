@@ -4,7 +4,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Xls;
 
-public sealed class XlsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class XlsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "XLS is an OLE2 Compound File envelope with cross-referenced Excel binary streams — " +
+      "rebuilding from the surface stream list would destroy the workbook structure.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => Msi.CfbLayoutMap.Enumerate(archive);
+
   public string Id => "Xls";
   public string DisplayName => "XLS";
   public FormatCategory Category => FormatCategory.Archive;

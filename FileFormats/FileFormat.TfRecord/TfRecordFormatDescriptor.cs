@@ -4,7 +4,39 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.TfRecord;
 
-public sealed class TfRecordFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class TfRecordFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the TFRecord stream in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the TFRecord stream per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new TfRecordReader(stream);
+        return r.Entries.Where(e => !e.IsCorrupt).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new TfRecordWriter(ms, leaveOpen: true)) {
+          foreach (var (_, d) in files) w.AddRecord(d);
+        }
+        return ms.ToArray();
+      });
+  }
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new TfRecordReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.Size > 0)
+        yield return new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "TfRecord";
   public string DisplayName => "TensorFlow TFRecord";
   public FormatCategory Category => FormatCategory.Archive;

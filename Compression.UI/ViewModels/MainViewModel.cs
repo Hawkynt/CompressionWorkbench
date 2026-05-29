@@ -77,6 +77,7 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand AnalyzeFileCommand { get; }
   public ICommand BenchmarkCommand { get; }
   public ICommand FileAssociationsCommand { get; }
+  public ICommand DefragmentEntryCommand { get; }
 
   public MainViewModel() {
     OpenCommand = new RelayCommand(_ => OpenDialog());
@@ -92,11 +93,48 @@ internal sealed class MainViewModel : ViewModelBase {
     ViewAsHexCommand = new RelayCommand(_ => ViewSelectedAs(hex: true), _ => HasArchive && HasSelectedFile);
     ViewAsImageCommand = new RelayCommand(_ => ViewSelectedAsImage(), _ => (HasArchive || IsBrowsingOsFolder) && HasSelectedFile);
     AddFilesCommand = new RelayCommand(_ => AddFilesToArchive(), _ => HasArchive && CanAddFiles);
-    PropertiesCommand = new RelayCommand(_ => ShowProperties(), _ => HasArchive && SelectedEntries.Count == 1 && !SelectedEntries[0].IsParentEntry);
+    // When nothing is selected, Properties shows archive-level stats; when a
+    // single non-parent entry is selected, it shows that entry's stats.
+    PropertiesCommand = new RelayCommand(_ => ShowProperties(),
+      _ => HasArchive && (SelectedEntries.Count == 0
+                          || (SelectedEntries.Count == 1 && !SelectedEntries[0].IsParentEntry)));
     AnalyzeCommand = new RelayCommand(_ => ShowAnalysis(), _ => HasArchive && HasSelectedFile);
     AnalyzeFileCommand = new RelayCommand(_ => ShowAnalyzeFile());
     BenchmarkCommand = new RelayCommand(_ => ShowBenchmark());
     FileAssociationsCommand = new RelayCommand(_ => ShowFileAssociations());
+    DefragmentEntryCommand = new RelayCommand(_ => DefragmentSelected(), _ => CanDefragmentSelected);
+  }
+
+  /// <summary>
+  /// True when the selected entry is a single, non-directory file whose
+  /// extension routes to a descriptor that implements
+  /// <see cref="IArchiveDefragmentable"/>. The right-click "Defragment..."
+  /// menu item is enabled exactly when this returns true.
+  /// </summary>
+  private bool CanDefragmentSelected {
+    get {
+      if (SelectedEntries.Count != 1) return false;
+      var entry = SelectedEntries[0];
+      if (entry.IsDirectory || entry.IsParentEntry) return false;
+      // OS-browser entries hold the absolute path in `Path`; archive entries
+      // hold the in-archive name. We can only defragment OS-browser files
+      // because the descriptor needs a real on-disk image, not a slice of a
+      // host archive.
+      if (!IsBrowsingOsFolder) return false;
+      var p = entry.Path;
+      if (string.IsNullOrEmpty(p) || !File.Exists(p)) return false;
+      Compression.Lib.FormatRegistration.EnsureInitialized();
+      var format = FormatDetector.DetectByExtension(p);
+      var ops = FormatRegistry.GetArchiveOps(format.ToString());
+      return ops is IArchiveDefragmentable;
+    }
+  }
+
+  private void DefragmentSelected() {
+    if (!CanDefragmentSelected) return;
+    var path = SelectedEntries[0].Path;
+    var dlg = new Views.DefragmentWindow(path) { Owner = Application.Current.MainWindow };
+    dlg.Show();
   }
 
   private bool HasSelectedFile => SelectedEntries.Any(e => !e.IsDirectory && !e.IsParentEntry);
@@ -796,7 +834,43 @@ internal sealed class MainViewModel : ViewModelBase {
 
   internal void ShowProperties() {
     var entry = SelectedEntries.FirstOrDefault();
-    if (entry == null || entry.IsParentEntry) return;
+
+    // No selection → archive-level properties. Synthesise an entry that
+    // represents the archive itself: name is the archive file name, sizes are
+    // the on-disk size + sum of uncompressed entry sizes, modification time is
+    // the file mtime. Statistics tab samples the archive bytes for histogram /
+    // entropy display.
+    if (entry == null || entry.IsParentEntry) {
+      if (!HasArchive) return;
+      var fi = new FileInfo(ArchivePath);
+      var uncompressedTotal = _allEntries.Where(e => !e.IsDirectory && !e.IsParentEntry)
+                                         .Sum(e => Math.Max(0, e.OriginalSize));
+      var archiveEntry = new ArchiveEntryViewModel {
+        Name = Path.GetFileName(ArchivePath),
+        Path = ArchivePath,
+        OriginalSize = uncompressedTotal > 0 ? uncompressedTotal : fi.Length,
+        CompressedSize = fi.Length,
+        Method = Format,
+        IsDirectory = false,
+        LastModified = fi.LastWriteTime,
+      };
+      byte[]? archiveData = null;
+      try {
+        // Sample up to 1 MiB so the statistics panel can show a histogram
+        // without pulling a multi-GB archive into memory.
+        const int Sample = 1 * 1024 * 1024;
+        using var fs = File.OpenRead(ArchivePath);
+        var len = (int)Math.Min(fs.Length, Sample);
+        archiveData = new byte[len];
+        fs.ReadExactly(archiveData, 0, len);
+      } catch {
+        // Best-effort sampling; properties still shown without statistics.
+      }
+      var archiveDlg = new Views.PropertiesWindow { Owner = Application.Current.MainWindow };
+      archiveDlg.ShowProperties(archiveEntry, _allEntries, archiveData);
+      archiveDlg.ShowDialog();
+      return;
+    }
 
     byte[]? data = null;
     if (!entry.IsDirectory) {
@@ -1055,14 +1129,21 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   private void CreateDialog() {
+    var (filter, formats) = BuildCreateFilterWithFormats();
     var dlg = new Microsoft.Win32.SaveFileDialog {
       Title = "Create Archive",
-      Filter = BuildCreateFilter(),
+      Filter = filter,
     };
     if (dlg.ShowDialog() != true) return;
 
-    // Detect format from chosen extension
-    var format = FormatDetector.DetectByExtension(dlg.FileName);
+    // FilterIndex is 1-based and tells us which item in the dropdown the user
+    // chose. Trust that over the file extension because many extensions (.img,
+    // .bin, .dd) are claimed by multiple filesystems — the user's drop-down
+    // selection is the authoritative answer.
+    var idx = dlg.FilterIndex - 1;
+    var format = idx >= 0 && idx < formats.Count
+      ? formats[idx]
+      : FormatDetector.DetectByExtension(dlg.FileName);
 
     // Show options dialog
     var optsDlg = new CreateOptionsWindow(format) { Owner = Application.Current.MainWindow };
@@ -1089,19 +1170,30 @@ internal sealed class MainViewModel : ViewModelBase {
       });
 
       var sw = Stopwatch.StartNew();
-      ArchiveOperations.Create(outputPath, inputs, opts);
+      Exception? err = null;
+      try {
+        ArchiveOperations.Create(outputPath, inputs, opts, format);
 
-      if (makeSfx) {
-        var sfxPath = Path.ChangeExtension(outputPath, ".exe");
-        SfxBuilder.WrapExisting(outputPath, sfxPath, sfxStubType, sfxTargetRid);
-        try { File.Delete(outputPath); } catch { }
-        outputPath = sfxPath;
+        if (makeSfx) {
+          var sfxPath = Path.ChangeExtension(outputPath, ".exe");
+          SfxBuilder.WrapExisting(outputPath, sfxPath, sfxStubType, sfxTargetRid);
+          try { File.Delete(outputPath); } catch { /* leftover archive — non-fatal */ }
+          outputPath = sfxPath;
+        }
+      } catch (Exception ex) {
+        err = ex;
       }
-
       sw.Stop();
 
       Application.Current.Dispatcher.Invoke(() => {
         IsBusy = false;
+        if (err != null) {
+          StatusText = $"Create failed: {err.Message}";
+          MessageBox.Show(
+            $"Failed to create {Path.GetFileName(outputPath)}:\n\n{err.GetType().Name}: {err.Message}",
+            "Create Archive", MessageBoxButton.OK, MessageBoxImage.Error);
+          return;
+        }
         StatusText = $"Created {Path.GetFileName(outputPath)} ({sw.ElapsedMilliseconds}ms)";
         Open(outputPath);
       });
@@ -1156,14 +1248,27 @@ internal sealed class MainViewModel : ViewModelBase {
     return $"All Archives|{allUnion}|{string.Join("|", perFormat)}|All Files|*.*";
   }
 
-  private static string BuildCreateFilter() {
+  private static string BuildCreateFilter() => BuildCreateFilterWithFormats().Filter;
+
+  /// <summary>
+  /// Builds the SaveFileDialog filter string AND a parallel list of format
+  /// IDs, so the caller can map the dialog's 1-based FilterIndex back to the
+  /// exact format the user picked. This is the only correct way to handle
+  /// extensions claimed by multiple formats (e.g. <c>.img</c>).
+  /// </summary>
+  private static (string Filter, List<FormatDetector.Format> Formats) BuildCreateFilterWithFormats() {
     FormatRegistration.EnsureInitialized();
     var entries = new List<string>();
-    foreach (var desc in FormatRegistry.All.Where(d=>d.Capabilities.HasFlag(FormatCapabilities.CanCreate)).OrderBy(d => d.DisplayName, StringComparer.OrdinalIgnoreCase)) {
+    var formats = new List<FormatDetector.Format>();
+    foreach (var desc in FormatRegistry.All
+        .Where(d => d.Capabilities.HasFlag(FormatCapabilities.CanCreate))
+        .OrderBy(d => d.DisplayName, StringComparer.OrdinalIgnoreCase)) {
+      if (!Enum.TryParse<FormatDetector.Format>(desc.Id, out var f)) continue;
       var ext = desc.DefaultExtension;
       entries.Add($"{desc.DisplayName} (*{ext})|*{ext}");
+      formats.Add(f);
     }
-    return string.Join("|", entries);
+    return (string.Join("|", entries), formats);
   }
 }
 

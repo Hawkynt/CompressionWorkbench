@@ -93,8 +93,8 @@ State legend:
 | `FileFormat.UefiFv` | R     | UEFI firmware volume — [more →](https://en.wikipedia.org/wiki/UEFI)                             |
 | `FileFormat.Ipsw`   | R     | Apple iOS / iPadOS firmware archive — [more →](https://en.wikipedia.org/wiki/IPSW)              |
 | `FileFormat.Ewf`    | R     | Expert Witness Format / EnCase forensic image — [more →](https://en.wikipedia.org/wiki/EnCase)  |
-| `FileFormat.T64`    | WORM  | Commodore 64 tape archive — [more →](https://en.wikipedia.org/wiki/Commodore_DOS)               |
-| `FileFormat.Tap`    | WORM  | Sinclair / Commodore tape image — [more →](https://en.wikipedia.org/wiki/Commodore_DOS)         |
+| `FileFormat.T64`    | R/W   | Commodore 64 tape archive — rebuild-based modify — [more →](https://en.wikipedia.org/wiki/Commodore_DOS)  |
+| `FileFormat.Tap`    | R/W   | Sinclair / Commodore tape image — rebuild-based modify — [more →](https://en.wikipedia.org/wiki/Commodore_DOS) |
 | `FileFormat.Dtb`    | R     | Device Tree Blob (`.dtb` / `.dtbo`) — FDT v17, walks property tree as pseudo-archive — [more →](https://en.wikipedia.org/wiki/Device_tree) |
 | `FileFormat.FirmwareHex` | R | Intel HEX (`.hex` / `.ihex`), Motorola S-Record (`.s19` / `.s28` / `.s37` / `.srec` / `.mot`), TI-TXT (MSP430) — ASCII firmware records decoded to flat `firmware.bin` + metadata — [more →](https://en.wikipedia.org/wiki/Intel_HEX) |
 
@@ -108,8 +108,8 @@ State legend:
 | `FileSystem.ExFat`       | R/W   | Microsoft exFAT — full VBR, boot-checksum sector (§3.1.3) — [more →](https://en.wikipedia.org/wiki/ExFAT) |
 | `FileSystem.Ntfs`        | R/W   | NTFS — all 16 system MFT files, USA fixup, LZNT1 compression — [more →](https://en.wikipedia.org/wiki/NTFS) |
 | `FileSystem.Refs`        | R     | Resilient File System (Server 2012+) — header + boot sector parse only — [more →](https://en.wikipedia.org/wiki/ReFS) |
-| `FileSystem.Hpfs`        | R     | OS/2 High Performance File System — [more →](https://en.wikipedia.org/wiki/High_Performance_File_System) |
-| `FileSystem.DoubleSpace` | WORM  | DOS 6 DoubleSpace / DriveSpace CVF — stored runs only, JM/LZ77 is TODO — [more →](https://en.wikipedia.org/wiki/DriveSpace) |
+| `FileSystem.Hpfs`        | R/W   | OS/2 High Performance File System — rebuild-based add/remove, defragment, extent map — [more →](https://en.wikipedia.org/wiki/High_Performance_File_System) |
+| `FileSystem.DoubleSpace` | R/W   | DOS 6 DoubleSpace / DriveSpace CVF — stored runs, rebuild-based modify — [more →](https://en.wikipedia.org/wiki/DriveSpace) |
 
 #### Unix / Linux
 
@@ -119,20 +119,20 @@ State legend:
 | `FileSystem.Ext`      | R/W   | ext2 / ext3 / ext4 — DYNAMIC_REV, FILETYPE feature, files at inode 11 — [more →](https://en.wikipedia.org/wiki/Ext4) |
 | `FileSystem.Xfs`      | R/W   | XFS v5 — `xfs_repair`-validated, AGF/AGI/AGFL, full B-tree set — [more →](https://en.wikipedia.org/wiki/XFS) |
 | `FileSystem.Ext1`     | R/W   | ext1 — Theodore Ts'o 1992 original (magic 0xEF51, no `mkfs.ext1` exists); add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Extended_file_system) |
-| `FileSystem.ReiserFs` | R/W   | ReiserFS 3.6 — spec-correct offsets, `s_root_block@+8`; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/ReiserFS) |
+| `FileSystem.ReiserFs` | WORM  | ReiserFS 3.6 — spec-correct single-leaf image (root SD + DIRENTRY + per-file SD/DIRECT, R5-hashed key ordering). In-flight Add/Remove needs S+tree split/merge with comp_keys ordering, bitmap chain, objectid map (multi-week) — [more →](https://en.wikipedia.org/wiki/ReiserFS) |
 | `FileSystem.Reiser4`  | WORM  | Reiser4 — empty-FS only via 7 byte-exact reference blocks — [more →](https://en.wikipedia.org/wiki/Reiser4) |
 | `FileSystem.Jfs`      | WORM  | IBM JFS1 — `fsck.jfs -n -f -v` clean; inline dtroot ≤8 files, no B+ tree split/grow yet — [more →](https://en.wikipedia.org/wiki/JFS_(file_system)) |
-| `FileSystem.F2fs`     | R/W   | Flash-Friendly Filesystem — superblock + checkpoint + SIT + NAT + Main; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/F2FS) |
+| `FileSystem.F2fs`     | WORM  | Flash-Friendly Filesystem — superblock + checkpoint pack + SIT/NAT/SSA + Main with HOT/WARM/COLD nodes + inline-dentry root. In-flight Add/Remove needs NAT/SIT journal mutation, segment-typed valid_map allocation, checkpoint CRC recompute (multi-week) — [more →](https://en.wikipedia.org/wiki/F2FS) |
 | `FileSystem.Zfs`      | R     | Sun ZFS — read existing pools — [more →](https://en.wikipedia.org/wiki/ZFS)                          |
 | `FileSystem.Ufs`      | R     | UNIX File System (BSD) — `fs_magic=0x011954` — [more →](https://en.wikipedia.org/wiki/Unix_File_System) |
 | `FileSystem.BcacheFs` | WORM  | bcachefs — superblock-only WORM (fsck parity multi-week, B-trees TODO) — [more →](https://en.wikipedia.org/wiki/Bcachefs) |
 | `FileSystem.Ubifs`    | R     | UBIFS — log-structured, no writer (LPT/TNC trees multi-week) — [more →](https://en.wikipedia.org/wiki/UBIFS) |
-| `FileSystem.Jffs2`    | R     | JFFS2 — log-structured node-scanner only — [more →](https://en.wikipedia.org/wiki/JFFS2)             |
-| `FileSystem.Yaffs2`   | R     | YAFFS2 — OOB/ECC layout not emittable — [more →](https://en.wikipedia.org/wiki/YAFFS)                |
-| `FileSystem.Bfs`      | R     | BeFS — superblock surfacing only — [more →](https://en.wikipedia.org/wiki/Be_File_System)            |
+| `FileSystem.Jffs2`    | R/W   | JFFS2 — log-structured, rebuild-based modify — [more →](https://en.wikipedia.org/wiki/JFFS2)         |
+| `FileSystem.Yaffs2`   | R/W   | YAFFS2 — rebuild-based modify, defragment — [more →](https://en.wikipedia.org/wiki/YAFFS)            |
+| `FileSystem.Bfs`      | R/W   | BeFS — single-AG B+ tree writer, rebuild-based modify — [more →](https://en.wikipedia.org/wiki/Be_File_System) |
 | `FileSystem.Hammer`   | R     | DragonFly HAMMER — DragonFly BSD only, no Linux validator — [more →](https://en.wikipedia.org/wiki/HAMMER_(file_system)) |
 | `FileSystem.Hammer2`  | R     | DragonFly HAMMER 2 — [more →](https://en.wikipedia.org/wiki/HAMMER2)                                 |
-| `FileSystem.Ocfs2`    | R     | Oracle Cluster Filesystem 2 — [more →](https://en.wikipedia.org/wiki/OCFS2)                          |
+| `FileSystem.Ocfs2`    | R/W   | Oracle Cluster Filesystem 2 — rebuild-based modify — [more →](https://en.wikipedia.org/wiki/OCFS2)   |
 | `FileSystem.Nwfs`     | R     | Novell NetWare — [more →](https://en.wikipedia.org/wiki/Novell_Storage_Services)                     |
 
 #### Apple / classic Mac
@@ -141,17 +141,17 @@ State legend:
 | -------------------- | ----- | --------------------------------------------------------------------- |
 | `FileSystem.HfsPlus` | R/W   | Mac OS Extended — TN1150-compliant catalog file record (248 B); add/remove via read-extract-rebuild — [more →](https://en.wikipedia.org/wiki/HFS_Plus) |
 | `FileSystem.Hfs`     | R/W   | Classic Mac OS HFS — real B-tree catalog + extents trees; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Hierarchical_File_System_(Apple)) |
-| `FileSystem.Apfs`    | R/W   | Apple File System (macOS High Sierra+) — single-container/volume; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Apple_File_System) |
+| `FileSystem.Apfs`    | WORM  | Apple File System (macOS High Sierra+) — single container/volume, real NXSB/APSB + omap + FS-tree B-tree under Fletcher-64. In-flight Add/Remove needs B-tree split/merge, xid-keyed omap updates, checkpoint advance, spaceman bitmap, per-block Fletcher-64 recompute (multi-week) — [more →](https://en.wikipedia.org/wiki/Apple_File_System) |
 | `FileSystem.Mfs`     | R/W   | Macintosh File System (1984) — pre-HFS flat FS, `drSigWord=0xD2D7`; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Macintosh_File_System) |
 
 #### Compressed / embedded / flash
 
 | Filesystem            | State | Notes                                                            |
 | --------------------- | ----- | ---------------------------------------------------------------- |
-| `FileSystem.SquashFs` | WORM  | Compressed FS used in AppImage / live ISOs — zlib + Adler-32 — [more →](https://en.wikipedia.org/wiki/SquashFS) |
-| `FileSystem.CramFs`   | WORM  | Compressed RAM-FS for embedded — `0x28CD3D45`, CRC-32, zlib — [more →](https://en.wikipedia.org/wiki/Cramfs)   |
-| `FileSystem.RomFs`    | WORM  | Read-only ROM FS — `-rom1fs-` magic, BE fields — [more →](https://en.wikipedia.org/wiki/Romfs)                 |
-| `FileSystem.MinixFs`  | WORM  | Minix v1/2/3 — superblock magics `0x137F/0x138F/0x2468/...` — [more →](https://en.wikipedia.org/wiki/MINIX_file_system) |
+| `FileSystem.SquashFs` | R/W   | Compressed FS used in AppImage / live ISOs — zlib + Adler-32, rebuild-based modify — [more →](https://en.wikipedia.org/wiki/SquashFS) |
+| `FileSystem.CramFs`   | R/W   | Compressed RAM-FS for embedded — `0x28CD3D45`, CRC-32, zlib, rebuild-based modify — [more →](https://en.wikipedia.org/wiki/Cramfs)   |
+| `FileSystem.RomFs`    | R/W   | Read-only ROM FS — `-rom1fs-` magic, BE fields, rebuild-based modify — [more →](https://en.wikipedia.org/wiki/Romfs)                 |
+| `FileSystem.MinixFs`  | R/W   | Minix v1/2/3 — superblock magics `0x137F/0x138F/0x2468/...`, rebuild-based modify — [more →](https://en.wikipedia.org/wiki/MINIX_file_system) |
 | `FileSystem.Erofs`    | R     | Enhanced Read-Only FS (Android) — variable-length encoded inodes — [more →](https://en.wikipedia.org/wiki/EROFS) |
 | `FileSystem.LittleFs` | R     | LittleFS for microcontrollers — superblock surfacing only — [more →](https://github.com/littlefs-project/littlefs) |
 
@@ -188,7 +188,7 @@ State legend:
 | `FileSystem.OpenVms`  | R     | OpenVMS Files-11 (ODS-2 / ODS-5) — home block read only — [more →](https://en.wikipedia.org/wiki/Files-11) |
 | `FileSystem.Os9Rbf`   | R     | OS-9 Random Block File — Microware OS-9 Tech Reference — [more →](https://en.wikipedia.org/wiki/OS-9) |
 | `FileSystem.Rt11`     | R     | DEC RT-11 — 256 KB RX01 8" SSSD — [more →](https://en.wikipedia.org/wiki/RT-11)                       |
-| `FileSystem.Vdfs`     | R     | Gothic-engine FS — proprietary, no public spec — [more →](https://en.wikipedia.org/wiki/Gothic_(series)) |
+| `FileSystem.Vdfs`     | R/W   | Gothic-engine VDFS archive — REGoth/VdfsSharp-documented — [more →](https://en.wikipedia.org/wiki/Gothic_(series)) |
 
 ## WSL-validated filesystems
 

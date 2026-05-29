@@ -4,7 +4,38 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cbr;
 
-public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Rar.RarLayoutMap.Enumerate(archive);
+
+  /// <summary>Rebuild-based defrag delegating to RAR (CBR is a RAR variant).</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag delegating to RAR (CBR is a RAR variant).</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new FileFormat.Rar.RarReader(stream);
+        var list = new List<(string Name, byte[] Data)>();
+        for (var i = 0; i < r.Entries.Count; i++) {
+          var e = r.Entries[i];
+          if (e.IsDirectory) continue;
+          list.Add((e.Name, r.Extract(i)));
+        }
+        return list;
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new FileFormat.Rar.RarWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddFile(n, d);
+          w.Finish();
+        }
+        return ms.ToArray();
+      });
+  }
+
   public string Id => "Cbr";
   public string DisplayName => "CBR";
   public FormatCategory Category => FormatCategory.Archive;

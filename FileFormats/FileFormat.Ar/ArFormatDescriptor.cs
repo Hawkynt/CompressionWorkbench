@@ -4,7 +4,49 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ar;
 
-public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the AR archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the AR archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new ArReader(stream);
+        return r.Entries.Select(e => (e.Name, e.Data));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new ArWriter(ms, leaveOpen: true)) {
+          var entries = files.Select(f => new ArEntry { Name = f.Name, Data = f.Data }).ToList();
+          w.Write(entries);
+        }
+        return ms.ToArray();
+      });
+  }
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    // 8-byte global header "!<arch>\n"
+    yield return new DefragBlockInfo(0, ArConstants.GlobalHeaderSize, DefragBlockKind.MetadataReserved, FileName: "AR Global Header");
+    var r = new ArReader(archive);
+    // AR reader reads everything eagerly; reconstruct offsets by walking
+    long pos = ArConstants.GlobalHeaderSize;
+    foreach (var e in r.Entries) {
+      // 60-byte entry header
+      yield return new DefragBlockInfo(pos, ArConstants.EntryHeaderSize, DefragBlockKind.MetadataReserved, FileName: $"Header: {e.Name}");
+      pos += ArConstants.EntryHeaderSize;
+      if (e.Data.Length > 0)
+        yield return new DefragBlockInfo(pos, e.Data.Length, DefragBlockKind.Used, FileName: e.Name);
+      pos += e.Data.Length;
+      if (e.Data.Length % 2 != 0)
+        pos++; // padding byte
+    }
+  }
+
   public string Id => "Ar";
   public string DisplayName => "AR";
   public FormatCategory Category => FormatCategory.Archive;

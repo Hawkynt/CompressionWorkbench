@@ -33,7 +33,28 @@ namespace FileFormat.Esd;
 /// <see href="https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview"/>.
 /// </para>
 /// </remarks>
-public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    if (archive.Length < WimConstants.HeaderSize)
+      yield break;
+    yield return new DefragBlockInfo(0, WimConstants.HeaderSize, DefragBlockKind.MetadataReserved, FileName: "ESD/WIM Header");
+    WimReader r;
+    try {
+      archive.Position = 0;
+      r = new WimReader(archive);
+    } catch {
+      yield break;
+    }
+    foreach (var res in r.Resources) {
+      if (res.CompressedSize <= 0 || res.Offset < 0) continue;
+      var kind = res.IsMetadata ? DefragBlockKind.MetadataReserved : DefragBlockKind.Used;
+      var label = res.IsMetadata ? "Metadata Resource" : "Data Resource";
+      yield return new DefragBlockInfo(res.Offset, res.CompressedSize, kind, FileName: label);
+    }
+  }
+
   /// <inheritdoc/>
   public string Id => "Esd";
 

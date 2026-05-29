@@ -4,7 +4,50 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Mpq;
 
-public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the MPQ archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the MPQ archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new MpqReader(stream);
+        var list = new List<(string Name, byte[] Data)>();
+        foreach (var e in r.Entries) {
+          if (!e.Exists) continue;
+          try { list.Add((e.FileName, r.Extract(e))); } catch { /* skip unreadable */ }
+        }
+        return list;
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        var w = new MpqWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
+  }
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    MpqReader r;
+    try {
+      archive.Position = 0;
+      r = new MpqReader(archive);
+    } catch {
+      yield break;
+    }
+    // MPQ header is 32 bytes (v1) at _headerOffset
+    yield return new DefragBlockInfo(r.HeaderOffset, 32, DefragBlockKind.MetadataReserved, FileName: "MPQ Header");
+    foreach (var e in r.Entries) {
+      if (!e.Exists || e.CompressedSize <= 0) continue;
+      yield return new DefragBlockInfo(r.HeaderOffset + e.FileOffset, e.CompressedSize, DefragBlockKind.Used, FileName: e.FileName);
+    }
+  }
+
   public string Id => "Mpq";
   public string DisplayName => "MPQ";
   public FormatCategory Category => FormatCategory.Archive;

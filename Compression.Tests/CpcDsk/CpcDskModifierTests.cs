@@ -220,6 +220,100 @@ public class CpcDskModifierTests {
     Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
   }
 
+  // ── EnumerateLogicalFiles + Defragment ────────────────────────────────
+
+  [Test, Category("RoundTrip")]
+  public void EnumerateLogicalFiles_ReturnsAddedFiles() {
+    var ms = BuildEmptyImage();
+    CpcDskModifier.AddFile(ms, "A.TXT", "alpha"u8.ToArray());
+    CpcDskModifier.AddFile(ms, "B.BIN", "beta-payload"u8.ToArray());
+    CpcDskModifier.AddFile(ms, "C.DAT", "gamma!"u8.ToArray());
+
+    var files = CpcDskModifier.EnumerateLogicalFiles(ms).ToList();
+    var names = files.Select(f => f.Name).ToList();
+    Assert.That(names, Does.Contain("A.TXT"));
+    Assert.That(names, Does.Contain("B.BIN"));
+    Assert.That(names, Does.Contain("C.DAT"));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void EnumerateLogicalFiles_PayloadStartsWithExpectedBytes() {
+    var ms = BuildEmptyImage();
+    var payload = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"u8.ToArray();
+    CpcDskModifier.AddFile(ms, "DATA.BIN", payload);
+
+    var files = CpcDskModifier.EnumerateLogicalFiles(ms).ToList();
+    Assert.That(files, Has.Count.EqualTo(1));
+    var read = files[0].Data;
+    // RC-trim length = 128 records × 128 = 16384 max for 1 extent; payload is 26 B,
+    // RC=1 so trim is 128 B. The first 26 B must equal payload exactly.
+    Assert.That(read.AsSpan(0, payload.Length).ToArray(), Is.EqualTo(payload));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void EnumerateLogicalFiles_EmptyDisk_ReturnsNoEntries() {
+    var ms = BuildEmptyImage();
+    var files = CpcDskModifier.EnumerateLogicalFiles(ms).ToList();
+    Assert.That(files, Is.Empty);
+  }
+
+  [Test, Category("RoundTrip")]
+  public void EnumerateLogicalFiles_SkipsRemovedFiles() {
+    var ms = BuildEmptyImage();
+    CpcDskModifier.AddFile(ms, "KEEP.TXT", "stay"u8.ToArray());
+    CpcDskModifier.AddFile(ms, "DROP.TXT", "go away"u8.ToArray());
+    CpcDskModifier.RemoveFile(ms, "DROP.TXT");
+
+    var files = CpcDskModifier.EnumerateLogicalFiles(ms).ToList();
+    var names = files.Select(f => f.Name).ToList();
+    Assert.That(names, Does.Contain("KEEP.TXT"));
+    Assert.That(names, Does.Not.Contain("DROP.TXT"));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Defragment_PreservesFilesAndContent() {
+    // Build a fresh image via the descriptor's Create path so it has the writer's
+    // default geometry — that's what Defragment rebuilds with.
+    var desc = new CpcDskFormatDescriptor();
+    using var ms = new MemoryStream();
+    var tmpA = Path.GetTempFileName();
+    var tmpB = Path.GetTempFileName();
+    var tmpC = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmpA, "alpha"u8.ToArray());
+      File.WriteAllBytes(tmpB, "beta-payload"u8.ToArray());
+      File.WriteAllBytes(tmpC, "gamma!"u8.ToArray());
+      desc.Create(ms, [
+        new ArchiveInputInfo(tmpA, "A.TXT", false),
+        new ArchiveInputInfo(tmpB, "B.BIN", false),
+        new ArchiveInputInfo(tmpC, "C.DAT", false),
+      ], new FormatCreateOptions());
+
+      // Defragment in place.
+      ((IArchiveDefragmentable)desc).Defragment(ms);
+
+      // Listing should still show our files (sector count == tracks*sides*spt
+      // since the reader exposes physical sectors). The logical files are in
+      // EnumerateLogicalFiles.
+      ms.Position = 0;
+      var logical = CpcDskModifier.EnumerateLogicalFiles(ms).ToList();
+      var names = logical.Select(f => f.Name).ToList();
+      Assert.That(names, Does.Contain("A.TXT"));
+      Assert.That(names, Does.Contain("B.BIN"));
+      Assert.That(names, Does.Contain("C.DAT"));
+    } finally {
+      File.Delete(tmpA);
+      File.Delete(tmpB);
+      File.Delete(tmpC);
+    }
+  }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsIArchiveDefragmentable() {
+    var d = new CpcDskFormatDescriptor();
+    Assert.That(d, Is.InstanceOf<IArchiveDefragmentable>());
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────────
 
   /// <summary>

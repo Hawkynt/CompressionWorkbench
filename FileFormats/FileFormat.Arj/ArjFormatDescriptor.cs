@@ -4,7 +4,31 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Arj;
 
-public sealed class ArjFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class ArjFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ArjLayoutMap.Enumerate(archive);
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the ARJ archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the ARJ archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new ArjReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FileName, r.ExtractEntry(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        var w = new ArjWriter(1);
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
+  }
+
   public string Id => "Arj";
   public string DisplayName => "ARJ";
   public FormatCategory Category => FormatCategory.Archive;

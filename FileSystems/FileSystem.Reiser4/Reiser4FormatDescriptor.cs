@@ -18,7 +18,7 @@ namespace FileSystem.Reiser4;
 ///   <item><description><c>"ReIsEr4"</c> at offset 65536 — master superblock <c>ms_magic[16]</c>.</description></item>
 /// </list>
 /// </summary>
-public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable {
   public string Id => "Reiser4";
   public string DisplayName => "Reiser4";
   public FormatCategory Category => FormatCategory.Archive;
@@ -143,6 +143,21 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       w.Label = options.Password;
     w.Write(output);
   }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Reiser4 defragment is unsupported in this implementation. The writer
+  /// emits an empty filesystem only (root directory + . + ..) — files-on-image
+  /// require multi-week storage-tree grow logic. Without a reader that walks
+  /// the twig-level B-tree there is nothing to extract and re-pack, so the
+  /// rebuild path is not viable. The descriptor advertises the capability
+  /// so the capability surface stays honest.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) =>
+    throw new NotSupportedException(
+      "Reiser4 defragment requires a twig-level B-tree reader and writer that preserve user files; current implementation is empty-FS WORM only.");
 
   // ── IArchiveWriteConstraints ─────────────────────────────────────────
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {

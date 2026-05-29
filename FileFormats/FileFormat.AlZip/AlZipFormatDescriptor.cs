@@ -4,7 +4,38 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.AlZip;
 
-public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the ALZ archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the ALZ archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new AlZipReader(stream, leaveOpen: true);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FileName, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new AlZipWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddFile(n, d);
+        }
+        return ms.ToArray();
+      });
+  }
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new AlZipReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.CompressedSize > 0)
+        yield return new DefragBlockInfo(e.DataOffset, e.CompressedSize, DefragBlockKind.Used, FileName: e.FileName);
+    }
+  }
+
   public string Id => "AlZip";
   public string DisplayName => "ALZip";
   public FormatCategory Category => FormatCategory.Archive;
@@ -55,7 +86,9 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    using var w = new AlZipWriter(output);
+    // leaveOpen: true — caller owns the stream (e.g. AtomicFileWriter flushes
+    // it to disk after we return; closing it here would break that contract).
+    using var w = new AlZipWriter(output, leaveOpen: true);
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
       w.AddFile(name, data);
   }

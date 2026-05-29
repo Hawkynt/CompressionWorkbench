@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using Compression.Core.Layout;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -10,7 +11,17 @@ namespace FileSystem.Lif;
 /// computers and compatible HP-IL/HP-IB peripherals from the early 1980s.
 /// </summary>
 public sealed class LifFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the LIF directory and yields the actual on-disk byte layout — the
+  /// volume label + directory sectors as <see cref="DefragBlockKind.MetadataReserved"/>,
+  /// every per-file contiguous 256-byte sector run as a
+  /// <see cref="DefragBlockKind.Used"/> extent, and unused sectors as
+  /// <see cref="DefragBlockKind.Free"/>.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => LifExtentMap.Enumerate(image);
 
   public string Id => "Lif";
   public string DisplayName => "HP LIF (Logical Interchange Format)";
@@ -91,6 +102,92 @@ public sealed class LifFormatDescriptor :
   public void Remove(Stream archive, string[] entryNames) {
     foreach (var name in entryNames)
       LifModifier.RemoveFile(archive, name, wipeData: true);
+  }
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    var mover = new LifBlockMover();
+    mover.Init(image);
+    mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+  }
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    var mover = new LifBlockMover();
+    mover.Init(image);
+    mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware LIF defragmentor. Tries planner-driven in-place path first,
+  /// falls back to rebuild path on error.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      archive.Position = 0;
+      using var snapshot = new MemoryStream();
+      archive.CopyTo(snapshot);
+      try {
+        archive.Position = 0;
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch {
+        archive.Position = 0;
+        snapshot.Position = 0;
+        snapshot.CopyTo(archive);
+        archive.SetLength(snapshot.Length);
+        archive.Position = 0;
+      }
+    }
+
+    DefragmentWithRebuild(archive, options);
+  }
+
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var imageSize = archive.Length;
+
+    var mover = new LifBlockMover();
+    mover.Init(archive);
+
+    var extents = LifExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "scanning", Fraction: 0, CurrentReadOffset: 0, CurrentWriteOffset: -1,
+      ImageSize: imageSize, BlockMap: extents, Status: "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.DataOrigin, imageSize, mover.UnitSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
+
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
+        ImageSize: imageSize, BlockMap: extents, Status: "Already defragmented"));
+      return;
+    }
+
+    DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize, () => mover.Init(archive));
+
+    var postExtents = LifExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
+      ImageSize: imageSize, BlockMap: postExtents, Status: "Defragmentation complete"));
+  }
+
+  private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var v = ReadVolume(stream);
+        return v.Files.Select(f => (f.Name, LifReader.Extract(v, f)));
+      },
+      buildImage: files => LifWriter.Build(files.ToList()));
   }
 
   private static LifReader.Volume ReadVolume(Stream stream) {

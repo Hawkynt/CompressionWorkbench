@@ -4,7 +4,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Afs;
 
-public sealed class AfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class AfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new AfsReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.Size > 0)
+        yield return new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "Afs";
   public string DisplayName => "Sega AFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -40,5 +51,23 @@ public sealed class AfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     using var w = new AfsWriter(output, leaveOpen: true);
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
       w.AddEntry(name, data);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new AfsReader(stream, leaveOpen: true);
+        return r.Entries.Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new AfsWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddEntry(n, d);
+        }
+        return ms.ToArray();
+      });
   }
 }

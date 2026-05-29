@@ -4,7 +4,39 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.SevenZip;
 
-public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable {
+public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the 7z archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the 7z archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new SevenZipReader(stream);
+        var list = new List<(string, byte[])>();
+        for (var i = 0; i < r.Entries.Count; ++i) {
+          var e = r.Entries[i];
+          if (e.IsDirectory) continue;
+          list.Add((e.Name, r.Extract(i)));
+        }
+        return list;
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        var w = new SevenZipWriter(ms, SevenZipCodec.Lzma2);
+        foreach (var (n, d) in files)
+          w.AddEntry(new SevenZipEntry { Name = n, Size = d.Length }, d);
+        w.Finish();
+        return ms.ToArray();
+      });
+  }
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => SevenZipLayoutMap.Enumerate(archive);
+
   public string Id => "SevenZip";
   public string DisplayName => "7z";
   public FormatCategory Category => FormatCategory.Archive;

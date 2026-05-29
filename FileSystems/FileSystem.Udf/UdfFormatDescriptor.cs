@@ -4,7 +4,28 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Udf;
 
-public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
+public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks AVDP@LBA 256 → VDS → FSD → root FE, then recurses through
+  /// directory File Entries and decodes short_ad / long_ad allocation
+  /// descriptors. The 32 KiB system area, VRS, AVDP, every VDS sector, the
+  /// FSD, and every File Entry sector surface as MetadataReserved; file
+  /// data extents surface as Used. Adjacent same-run extents are coalesced.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => UdfExtentMap.Enumerate(image);
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    => new UdfBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    => new UdfBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+
   // WORM write constraints — UDF has no inherent ceiling; minimum viable image ~1 MB.
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 1 * 1024 * 1024;
@@ -78,5 +99,29 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
     }
     w.WriteTo(output);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware UDF 2.01 defragmentor via read-extract-rebuild dispatch
+  /// through <see cref="DefragRebuilder"/>. The writer always emits a fresh
+  /// contiguous-from-start image with system area + VRS + AVDP + VDS + FSD
+  /// + root FE and a packed file-data region.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new UdfReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new UdfWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        using var ms = new MemoryStream();
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
   }
 }

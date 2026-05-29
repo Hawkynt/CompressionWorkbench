@@ -7,7 +7,7 @@ namespace FileFormat.Matroska;
 /// Surfaces a Matroska/WebM file as an archive: one entry per demuxed track,
 /// plus attachments, plus chapters XML when present.
 /// </summary>
-public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IFileInternalLayoutMap, IFileInternalChunkMover {
   public string Id => "Mkv";
   public string DisplayName => "MKV / WebM (demuxed)";
   public FormatCategory Category => FormatCategory.Video;
@@ -50,6 +50,20 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
 
+  private readonly MkvCuesFrontOptimizer _optimizer = new();
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => MkvLayoutMap.Enumerate(file);
+
+  /// <inheritdoc />
+  public void Optimize(Stream file) => _optimizer.Optimize(file);
+
+  /// <inheritdoc />
+  public void Optimize(Stream file, MetadataPlacementProfile? profile) => _optimizer.Optimize(file, profile);
+
+  /// <summary>Maximum number of individual frame entries per video track.</summary>
+  private const int MaxFrameEntries = 100_000;
+
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -61,6 +75,14 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var ext = CodecToExtension(t.CodecId);
       var lang = string.IsNullOrEmpty(t.Language) ? "und" : t.Language;
       entries.Add(($"track_{t.Number:D2}_{t.TrackType}_{lang}{ext}", "Track", t.FrameBytes));
+
+      // Emit individual video frames.
+      if (t.TrackType == "video" && t.Frames.Count > 0) {
+        var frameExt = CodecToFrameExtension(t.CodecId);
+        var frameCount = Math.Min(t.Frames.Count, MaxFrameEntries);
+        for (var f = 0; f < frameCount; ++f)
+          entries.Add(($"frames/track_{t.Number:D2}/frame_{f + 1:D6}{frameExt}", "Frame", t.Frames[f].Data));
+      }
     }
     foreach (var a in result.Attachments)
       entries.Add(($"attachments/{a.FileName}", "File", a.Data));
@@ -75,6 +97,7 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     "V_VP9" => ".vp9",
     "V_VP8" => ".vp8",
     "V_AV1" => ".av1",
+    "V_MJPEG" => ".mjpg",
     "A_AAC" => ".aac",
     "A_MPEG/L3" => ".mp3",
     "A_OPUS" => ".opus",
@@ -86,6 +109,18 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     "S_TEXT/ASS" => ".ass",
     "S_TEXT/SSA" => ".ssa",
     "S_VOBSUB" => ".sub",
+    _ => ".bin",
+  };
+
+  /// <summary>Returns the appropriate extension for an individual video frame.</summary>
+  private static string CodecToFrameExtension(string codecId) => codecId switch {
+    "V_MPEG4/ISO/AVC" => ".h264",
+    "V_MPEGH/ISO/HEVC" => ".hevc",
+    "V_VP9" => ".vp9",
+    "V_VP8" => ".vp8",
+    "V_AV1" => ".av1",
+    "V_MJPEG" => ".jpg",
+    "V_MS/VFW/FOURCC" => ".bin",
     _ => ".bin",
   };
 }

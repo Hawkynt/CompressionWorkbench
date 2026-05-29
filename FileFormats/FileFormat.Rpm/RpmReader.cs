@@ -24,6 +24,9 @@ public sealed class RpmReader : IDisposable {
   private readonly long _payloadOffset;
   private bool _disposed;
 
+  /// <summary>Gets the byte offset where the compressed payload begins.</summary>
+  public long PayloadOffset => _payloadOffset;
+
   // -------------------------------------------------------------------------
   // Public properties
   // -------------------------------------------------------------------------

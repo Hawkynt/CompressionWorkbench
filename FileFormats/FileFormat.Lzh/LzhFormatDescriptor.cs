@@ -4,7 +4,31 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Lzh;
 
-public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => LzhLayoutMap.Enumerate(archive);
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the LHA archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the LHA archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new LhaReader(stream);
+        return r.Entries.Select(e => (e.FileName, r.ExtractEntry(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        var w = new LhaWriter(LhaConstants.MethodLh5);
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
+  }
+
   public string Id => "Lzh";
   public string DisplayName => "LZH";
   public FormatCategory Category => FormatCategory.Archive;

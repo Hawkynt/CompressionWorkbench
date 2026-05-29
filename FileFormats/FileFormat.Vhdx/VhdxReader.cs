@@ -62,7 +62,14 @@ public sealed class VhdxReader {
     uint LogLength,
     ulong LogOffset);
 
-  public static VhdxImage Read(ReadOnlySpan<byte> data) {
+  public static VhdxImage Read(ReadOnlySpan<byte> data) => Read(data, data.Length);
+
+  /// <summary>
+  /// Parses VHDX header bytes. <paramref name="data"/> only needs to span the
+  /// header region (~0x50000 bytes); <paramref name="totalFileSize"/> is the
+  /// length of the underlying physical file used solely for reporting.
+  /// </summary>
+  public static VhdxImage Read(ReadOnlySpan<byte> data, long totalFileSize) {
     if (data.Length < Header1Offset + RegionSize)
       throw new InvalidDataException("VHDX: file is shorter than the mandatory 128 KiB File Type Identifier + Header 1.");
 
@@ -91,7 +98,7 @@ public sealed class VhdxReader {
       RegionTableBackup: regionTable2,
       PrimaryHeaderInfo: primary,
       BackupHeaderInfo: backup,
-      TotalFileSize: data.Length);
+      TotalFileSize: totalFileSize);
   }
 
   private static byte[] SafeSlice(ReadOnlySpan<byte> data, int offset, int size) {

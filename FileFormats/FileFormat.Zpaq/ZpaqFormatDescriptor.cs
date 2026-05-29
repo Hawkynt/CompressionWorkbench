@@ -4,7 +4,36 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Zpaq;
 
-public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the ZPAQ archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the ZPAQ archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new ZpaqReader(stream);
+        var list = new List<(string, byte[])>();
+        foreach (var e in r.Entries) {
+          if (e.IsDirectory) continue;
+          using var es = r.Extract(e);
+          using var ms = new MemoryStream();
+          es.CopyTo(ms);
+          list.Add((e.FileName, ms.ToArray()));
+        }
+        return list;
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new ZpaqWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddFile(n, d);
+        }
+        return ms.ToArray();
+      });
+  }
+
   public string Id => "Zpaq";
   public string DisplayName => "ZPAQ";
   public FormatCategory Category => FormatCategory.Archive;

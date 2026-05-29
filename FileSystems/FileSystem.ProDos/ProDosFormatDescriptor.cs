@@ -1,10 +1,21 @@
 #pragma warning disable CS1591
+using Compression.Core.Layout;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ProDos;
 
-public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
+public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the volume directory + bitmap + per-file storage tiers
+  /// (seedling/sapling/tree) and yields the actual on-disk block layout.
+  /// Boot, volume directory chain, bitmap, and subdir blocks are emitted
+  /// as <see cref="DefragBlockKind.MetadataReserved"/>; data + index +
+  /// master-index blocks are attributed to their owning file.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => ProDosExtentMap.Enumerate(image);
 
   // We cap at the 800 KB Mac-format floppy — the largest canonical size we emit.
   public long? MaxTotalArchiveSize => ProDosWriter.Disk800KTotalBlocks * 512L;
@@ -95,5 +106,61 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     var floppyCap = (ProDosWriter.FloppyTotalBlocks - 10) * 512L;  // rough free-space cap
     var totalBlocks = total > floppyCap ? ProDosWriter.Disk800KTotalBlocks : ProDosWriter.FloppyTotalBlocks;
     output.Write(w.Build(totalBlocks: totalBlocks));
+  }
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    => new ProDosBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    => new ProDosBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware ProDOS defragmentor. Tries the planner-driven in-place path first,
+  /// falling back to the rebuild path on error or for <see cref="DefragMode.CarveHole"/>.
+  /// Image total-block size is preserved by inferring it from the input stream length.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      try {
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch {
+        archive.Position = 0;
+      }
+    }
+    var originalLength = archive.Length;
+    var totalBlocks = (int)(originalLength / 512L);
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        using var r = new ProDosReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory)
+          .Select(e => (e.FullPath, r.Extract(e))).ToList();
+      },
+      buildImage: files => {
+        var w = new ProDosWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        return w.Build(totalBlocks: totalBlocks);
+      });
+  }
+
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var imageSize = archive.Length;
+    using var snap = new MemoryStream();
+    archive.CopyTo(snap);
+    var imageData = snap.ToArray();
+    var extents = ProDosExtentMap.Enumerate(new MemoryStream(imageData)).ToList();
+    var mover = new ProDosBlockMover();
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(extents, 0, imageSize, 512, options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
+    if (moves.Count == 0) return;
+    DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize);
   }
 }

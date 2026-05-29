@@ -384,9 +384,12 @@ public class Qcow2Tests {
         new Compression.Registry.FormatCreateOptions());
       ms.Position = 0;
       var entries = d.List(ms, null);
-      Assert.That(entries, Has.Count.EqualTo(1));
-      // Virtual size is the FAT filesystem image (>= 1.44 MB by default).
-      Assert.That(entries[0].OriginalSize, Is.GreaterThanOrEqualTo(1440 * 1024));
+      // With inner-FS pass-through the descriptor sees the inner FAT files
+      // instead of the raw "disk.img" entry.
+      Assert.That(entries, Has.Count.GreaterThanOrEqualTo(1));
+      Assert.That(entries.Any(e => e.Name.Contains("TEST", StringComparison.OrdinalIgnoreCase)
+                                   || e.Name.Contains("test", StringComparison.OrdinalIgnoreCase)),
+        Is.True, "Should find test.txt in the inner FAT filesystem");
     } finally {
       File.Delete(tmp);
     }

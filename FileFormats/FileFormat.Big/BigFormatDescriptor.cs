@@ -4,7 +4,20 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Big;
 
-public sealed class BigFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class BigFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new BigReader(archive);
+    // 16-byte header: magic(4) + totalSize(4) + numFiles(4) + headerSize(4)
+    yield return new DefragBlockInfo(0, 16, DefragBlockKind.MetadataReserved, FileName: "BIG Header");
+    foreach (var e in r.Entries) {
+      if (e.Size > 0)
+        yield return new DefragBlockInfo(e.DataOffset, e.Size, DefragBlockKind.Used, FileName: e.Path);
+    }
+  }
+
   public string Id => "Big";
   public string DisplayName => "BIG";
   public FormatCategory Category => FormatCategory.Archive;
@@ -41,5 +54,23 @@ public sealed class BigFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     using var w = new BigWriter(output, leaveOpen: true);
     foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new BigReader(stream);
+        return r.Entries.Select(e => (e.Path, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new BigWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddFile(n, d);
+        }
+        return ms.ToArray();
+      });
   }
 }

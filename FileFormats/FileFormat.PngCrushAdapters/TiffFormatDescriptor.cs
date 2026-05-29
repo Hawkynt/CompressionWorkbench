@@ -5,7 +5,7 @@ using FileFormat.Tiff;
 
 namespace FileFormat.PngCrushAdapters;
 
-public sealed class TiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class TiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFileInternalLayoutMap {
   public string Id => "Tiff";
   public string DisplayName => "TIFF (multi-page)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -29,6 +29,9 @@ public sealed class TiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
     MultiImageArchiveHelper.Extract(stream, outputDir, files, "page", ReadAll);
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => TiffLayoutMap.Enumerate(file);
 
   private static IReadOnlyList<RawImage> ReadAll(Stream s) =>
     MultiImageArchiveHelper.ToRawImages<TiffFile>(TiffReader.FromStream(s));

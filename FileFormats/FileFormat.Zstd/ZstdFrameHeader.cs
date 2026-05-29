@@ -121,19 +121,21 @@ internal readonly record struct ZstdFrameHeader(
     BinaryPrimitives.WriteUInt32LittleEndian(magic, ZstdConstants.FrameMagic);
     stream.Write(magic);
 
-    // Determine FCS field size based on content size
+    // Determine FCS field size based on content size.
+    // Per RFC 8878: fcsFlag=0 + singleSegment => 1-byte FCS; fcsFlag=0 + !singleSegment => no FCS.
+    // So when not single-segment, we must use fcsFlag >= 1 to emit a content size.
     int fcsFlag;
     int fcsBytes;
     if (ContentSize < 0) {
       fcsFlag = 0;
       fcsBytes = 0;
     }
-    else if (ContentSize <= 255) {
-      fcsFlag = 0; // with single-segment, fcsFlag=0 means 1 byte
+    else if (SingleSegment && ContentSize <= 255) {
+      fcsFlag = 0; // single-segment mode: fcsFlag=0 means 1 byte
       fcsBytes = 1;
     }
     else if (ContentSize <= 65535 + 256) {
-      fcsFlag = 1; // 2 bytes
+      fcsFlag = 1; // 2 bytes (value stored as ContentSize - 256)
       fcsBytes = 2;
     }
     else if (ContentSize <= uint.MaxValue) {
@@ -145,6 +147,26 @@ internal readonly record struct ZstdFrameHeader(
       fcsBytes = 8;
     }
 
+    // Determine dictionary ID encoding size
+    int dictIdFlag;
+    int dictIdBytes;
+    if (DictionaryId == 0) {
+      dictIdFlag = 0;
+      dictIdBytes = 0;
+    }
+    else if (DictionaryId <= 0xFF) {
+      dictIdFlag = 1;
+      dictIdBytes = 1;
+    }
+    else if (DictionaryId <= 0xFFFF) {
+      dictIdFlag = 2;
+      dictIdBytes = 2;
+    }
+    else {
+      dictIdFlag = 3;
+      dictIdBytes = 4;
+    }
+
     // Build descriptor byte
     var descriptor = 0;
     descriptor |= (fcsFlag & 3) << 6;
@@ -152,7 +174,7 @@ internal readonly record struct ZstdFrameHeader(
       descriptor |= 1 << 5;
     if (ContentChecksum)
       descriptor |= 1 << 2;
-    // DictionaryId = 0 => dictIdFlag = 0
+    descriptor |= dictIdFlag & 3;
 
     stream.WriteByte((byte)descriptor);
 
@@ -167,7 +189,12 @@ internal readonly record struct ZstdFrameHeader(
       stream.WriteByte((byte)(exponent << 3));
     }
 
-    // No dictionary ID
+    // Dictionary ID
+    if (dictIdBytes > 0) {
+      Span<byte> dictBuf = stackalloc byte[4];
+      BinaryPrimitives.WriteUInt32LittleEndian(dictBuf, DictionaryId);
+      stream.Write(dictBuf[..dictIdBytes]);
+    }
 
     // Frame content size
     if (fcsBytes > 0) {

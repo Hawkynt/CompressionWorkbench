@@ -4,7 +4,39 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Psarc;
 
-public sealed class PsarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class PsarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the PSARC archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the PSARC archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new PsarcReader(stream);
+        return r.Entries.Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new PsarcWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddEntry(n, d);
+        }
+        return ms.ToArray();
+      });
+  }
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new PsarcReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.CompressedSize > 0)
+        yield return new DefragBlockInfo(e.StartOffset, e.CompressedSize, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "Psarc";
   public string DisplayName => "PSARC";
   public FormatCategory Category => FormatCategory.Archive;

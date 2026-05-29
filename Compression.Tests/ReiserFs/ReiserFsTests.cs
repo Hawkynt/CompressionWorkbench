@@ -301,4 +301,28 @@ public class ReiserFsTests {
       File.Delete(tmp);
     }
   }
+
+  /// <summary>
+  /// Lock the ReiserFS capability surface at WORM. The writer emits a real
+  /// spec-compliant single-leaf image (superblock at +65536, root SD +
+  /// DIRENTRY + per-file SD/DIRECT items, R5-hashed key ordering). True
+  /// in-flight Add/Remove requires S+tree split/merge with comp_keys-ordered
+  /// insertion, bitmap chain updates, and objectid map maintenance —
+  /// multi-week work. Per the project rule "never advertise a capability the
+  /// writer can't actually deliver", this test fails any drive-by upgrade
+  /// that re-adds <c>IArchiveModifiable</c> without the underlying S+tree
+  /// mutation work.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void Descriptor_IsHonestlyRebuildBased() {
+    var d = new FileSystem.ReiserFs.ReiserFsFormatDescriptor();
+    Assert.That(d, Is.Not.InstanceOf<Compression.Registry.IArchiveModifiable>(),
+      "ReiserFS must not advertise IArchiveModifiable until S+tree split/merge with comp_keys ordering, bitmap chain mutation, and objectid-map maintenance are implemented.");
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.False,
+      "ReiserFS must not flag CanModify while WORM-only.");
+    Assert.That(d, Is.InstanceOf<Compression.Registry.IArchiveCreatable>());
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanList), Is.True);
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanExtract), Is.True);
+  }
 }

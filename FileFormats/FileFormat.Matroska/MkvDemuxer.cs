@@ -11,8 +11,12 @@ namespace FileFormat.Matroska;
 /// extremely rare in real-world MKVs.
 /// </summary>
 public sealed class MkvDemuxer {
+  /// <summary>A single block (frame) from a track.</summary>
+  public sealed record FrameEntry(byte[] Data);
+
   public sealed record Track(int Number, string TrackType, string CodecId, string? Language,
-                             byte[]? CodecPrivate, byte[] FrameBytes);
+                             byte[]? CodecPrivate, byte[] FrameBytes,
+                             IReadOnlyList<FrameEntry> Frames);
   public sealed record Attachment(string FileName, string MimeType, byte[] Data);
 
   public sealed record DemuxResult(
@@ -56,13 +60,14 @@ public sealed class MkvDemuxer {
 
     var trackEntries = new List<Track>();
     var trackBuffers = new Dictionary<int, MemoryStream>();
+    var trackFrames = new Dictionary<int, List<FrameEntry>>();
     var attachments = new List<Attachment>();
     byte[]? chapters = null;
 
     foreach (var child in ebml.Children(segment.Value)) {
       switch (child.Id) {
-        case Id_Tracks: ParseTracks(ebml, child, trackEntries, trackBuffers); break;
-        case Id_Cluster: ParseCluster(ebml, child, trackBuffers); break;
+        case Id_Tracks: ParseTracks(ebml, child, trackEntries, trackBuffers, trackFrames); break;
+        case Id_Cluster: ParseCluster(ebml, child, trackBuffers, trackFrames); break;
         case Id_Attachments: ParseAttachments(ebml, child, attachments); break;
         case Id_Chapters: chapters = ebml.ReadBinary(child); break;
       }
@@ -72,18 +77,20 @@ public sealed class MkvDemuxer {
     var tracks = new List<Track>(trackEntries.Count);
     foreach (var t in trackEntries) {
       var raw = trackBuffers.TryGetValue(t.Number, out var buf) ? buf.ToArray() : [];
+      var frames = trackFrames.TryGetValue(t.Number, out var fl) ? (IReadOnlyList<FrameEntry>)fl : [];
       var data = t.CodecId switch {
         "V_MPEG4/ISO/AVC" => ConvertAvcLengthPrefixToAnnexB(raw, t.CodecPrivate),
         "V_MPEGH/ISO/HEVC" => ConvertHevcLengthPrefixToAnnexB(raw, t.CodecPrivate),
         _ => raw,
       };
-      tracks.Add(t with { FrameBytes = data });
+      tracks.Add(t with { FrameBytes = data, Frames = frames });
     }
     return new DemuxResult(tracks, attachments, chapters);
   }
 
   private static void ParseTracks(EbmlReader ebml, EbmlReader.Element tracks,
-                                   List<Track> entries, Dictionary<int, MemoryStream> buffers) {
+                                   List<Track> entries, Dictionary<int, MemoryStream> buffers,
+                                   Dictionary<int, List<FrameEntry>> frameLists) {
     foreach (var entry in ebml.Children(tracks)) {
       if (entry.Id != Id_TrackEntry) continue;
       int number = 0; string codec = "", lang = "eng"; byte[]? codecPrivate = null;
@@ -101,24 +108,27 @@ public sealed class MkvDemuxer {
           case Id_Language: lang = ebml.ReadString(field); break;
         }
       }
-      entries.Add(new Track(number, type, codec, lang, codecPrivate, []));
+      entries.Add(new Track(number, type, codec, lang, codecPrivate, [], []));
       buffers[number] = new MemoryStream();
+      frameLists[number] = new List<FrameEntry>();
     }
   }
 
   private static void ParseCluster(EbmlReader ebml, EbmlReader.Element cluster,
-                                    Dictionary<int, MemoryStream> buffers) {
+                                    Dictionary<int, MemoryStream> buffers,
+                                    Dictionary<int, List<FrameEntry>> frameLists) {
     foreach (var child in ebml.Children(cluster)) {
-      if (child.Id == Id_SimpleBlock) AppendBlockFrames(ebml, child, buffers);
+      if (child.Id == Id_SimpleBlock) AppendBlockFrames(ebml, child, buffers, frameLists);
       else if (child.Id == Id_BlockGroup) {
         foreach (var inner in ebml.Children(child))
-          if (inner.Id == Id_Block) AppendBlockFrames(ebml, inner, buffers);
+          if (inner.Id == Id_Block) AppendBlockFrames(ebml, inner, buffers, frameLists);
       }
     }
   }
 
   private static void AppendBlockFrames(EbmlReader ebml, EbmlReader.Element block,
-                                         Dictionary<int, MemoryStream> buffers) {
+                                         Dictionary<int, MemoryStream> buffers,
+                                         Dictionary<int, List<FrameEntry>> frameLists) {
     // Block/SimpleBlock body: track-number vint + 16-bit timecode + 8-bit flags + frame bytes.
     var body = ebml.Body(block);
     if (body.Length < 4) return;
@@ -127,11 +137,11 @@ public sealed class MkvDemuxer {
     if (tnLen == 0 || body.Length < tnLen + 3) return;
     ulong trackNum = body[0] & (0xFFu >> tnLen);
     for (var i = 1; i < tnLen; ++i) trackNum = (trackNum << 8) | body[i];
-    var frames = body[(tnLen + 3)..];
+    var frameData = body[(tnLen + 3)..].ToArray();
     if (buffers.TryGetValue((int)trackNum, out var buf)) {
-      // Lacing ignored — frames written as-is; consumers needing per-frame splitting
-      // parse the lacing flag themselves.
-      buf.Write(frames);
+      buf.Write(frameData);
+      if (frameLists.TryGetValue((int)trackNum, out var fl))
+        fl.Add(new FrameEntry(frameData));
     }
   }
 

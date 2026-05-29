@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FileSystem.FatPlus</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
+    <ProjectReference Include="..\FileSystem.Fat\FileSystem.Fat.csproj" />
+  </ItemGroup>
+</Project>

@@ -15,7 +15,39 @@ namespace FileFormat.VppV2;
 /// descriptor for older archives. Saint's Row 2 ships <c>.vpp_pc</c>, which differs from v1's
 /// <c>.vpp</c>, so extension-based detection routes correctly without ambiguity.
 /// </remarks>
-public sealed class VppV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class VppV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the VPP v2 archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the VPP v2 archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new VppV2Reader(stream);
+        return r.Entries.Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new VppV2Writer(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddEntry(n, d);
+        }
+        return ms.ToArray();
+      });
+  }
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new VppV2Reader(archive);
+    foreach (var e in r.Entries) {
+      if (e.DataSize > 0)
+        yield return new DefragBlockInfo(e.DataOffset, e.DataSize, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "VppV2";
   public string DisplayName => "Volition VPP v2 (Saint's Row 2)";
   public FormatCategory Category => FormatCategory.Archive;

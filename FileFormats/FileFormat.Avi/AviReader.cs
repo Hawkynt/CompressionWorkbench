@@ -9,11 +9,12 @@ namespace FileFormat.Avi;
 /// <c>LIST/hdrl</c> (<c>avih</c> + one <c>LIST/strl</c> per stream) and
 /// <c>LIST/movi</c> (the actual chunk data, 4-char stream-id prefixed). Tracks are
 /// returned with their FourCC, BITMAPINFOHEADER / WAVEFORMATEX payload, and a
-/// concatenation of sample bytes (one big blob per track; individual frame
-/// boundaries are not preserved in the concatenation but indexable via the
-/// <c>Chunks</c> list).
+/// concatenation of sample bytes plus individual frame chunks in <c>Chunks</c>.
 /// </summary>
 public sealed class AviReader {
+  /// <summary>One movi chunk belonging to a track (a single video frame or audio packet).</summary>
+  public sealed record ChunkEntry(string ChunkId, byte[] Data);
+
   public sealed record Track(
     int Index,
     string StreamType,         // "vids" or "auds" (or raw FourCC)
@@ -26,7 +27,8 @@ public sealed class AviReader {
     int AudioBitsPerSample,    // audio only
     int AudioFormatTag,        // audio only (WAVEFORMATEX wFormatTag)
     int AudioBlockAlign,       // audio only
-    byte[] Data);
+    byte[] Data,
+    IReadOnlyList<ChunkEntry> Chunks);
 
   public sealed record ParsedAvi(
     int Width,
@@ -88,7 +90,11 @@ public sealed class AviReader {
     if (!movi.IsEmpty) {
       var mp = 0;
       var buffers = new Dictionary<int, MemoryStream>();
-      for (var i = 0; i < tracks.Count; ++i) buffers[i] = new MemoryStream();
+      var chunkLists = new Dictionary<int, List<ChunkEntry>>();
+      for (var i = 0; i < tracks.Count; ++i) {
+        buffers[i] = new MemoryStream();
+        chunkLists[i] = new List<ChunkEntry>();
+      }
 
       while (mp + 8 <= movi.Length) {
         var cid = Encoding.ASCII.GetString(movi.Slice(mp, 4));
@@ -99,17 +105,20 @@ public sealed class AviReader {
         if (cid == "LIST" && csize >= 4) {
           // rec-list: recurse into it as if it were movi.
           var inner = movi.Slice(cbodyStart + 4, csize - 4);
-          AppendChunks(inner, tracks.Count, buffers);
+          AppendChunks(inner, tracks.Count, buffers, chunkLists);
         } else if (cid.Length == 4 && char.IsDigit(cid[0]) && char.IsDigit(cid[1])) {
           var streamIdx = (cid[0] - '0') * 10 + (cid[1] - '0');
-          if (buffers.TryGetValue(streamIdx, out var buf))
-            buf.Write(movi.Slice(cbodyStart, csize));
+          if (buffers.TryGetValue(streamIdx, out var buf)) {
+            var chunkData = movi.Slice(cbodyStart, csize).ToArray();
+            buf.Write(chunkData);
+            chunkLists[streamIdx].Add(new ChunkEntry(cid, chunkData));
+          }
         }
         mp = cbodyStart + csize + (csize & 1);
       }
 
       for (var i = 0; i < tracks.Count; ++i)
-        tracks[i] = tracks[i] with { Data = buffers[i].ToArray() };
+        tracks[i] = tracks[i] with { Data = buffers[i].ToArray(), Chunks = chunkLists[i] };
     }
 
     return new ParsedAvi(width, height, uspf, totalFrames, tracks);
@@ -170,11 +179,12 @@ public sealed class AviReader {
       p = bodyStart + size + (size & 1);
     }
 
-    return new Track(index, streamType, handler, format, w, h, ch, sr, bps, fmtTag, blockAlign, []);
+    return new Track(index, streamType, handler, format, w, h, ch, sr, bps, fmtTag, blockAlign, [], []);
   }
 
   private static void AppendChunks(ReadOnlySpan<byte> area, int trackCount,
-                                    Dictionary<int, MemoryStream> buffers) {
+                                    Dictionary<int, MemoryStream> buffers,
+                                    Dictionary<int, List<ChunkEntry>> chunkLists) {
     var mp = 0;
     while (mp + 8 <= area.Length) {
       var cid = Encoding.ASCII.GetString(area.Slice(mp, 4));
@@ -183,8 +193,11 @@ public sealed class AviReader {
       if (cbodyStart + csize > area.Length) break;
       if (cid.Length == 4 && char.IsDigit(cid[0]) && char.IsDigit(cid[1])) {
         var idx = (cid[0] - '0') * 10 + (cid[1] - '0');
-        if (idx < trackCount && buffers.TryGetValue(idx, out var buf))
-          buf.Write(area.Slice(cbodyStart, csize));
+        if (idx < trackCount && buffers.TryGetValue(idx, out var buf)) {
+          var chunkData = area.Slice(cbodyStart, csize).ToArray();
+          buf.Write(chunkData);
+          chunkLists[idx].Add(new ChunkEntry(cid, chunkData));
+        }
       }
       mp = cbodyStart + csize + (csize & 1);
     }

@@ -32,7 +32,11 @@ namespace FileFormat.Wacz;
 /// Reference: <see href="https://specs.webrecorder.net/wacz/1.1.1/"/>.
 /// </para>
 /// </remarks>
-public sealed class WaczFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class WaczFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
+
   /// <inheritdoc/>
   public string Id => "Wacz";
 

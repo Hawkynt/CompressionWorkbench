@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using Compression.Core.Layout;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -13,7 +14,18 @@ namespace FileSystem.Os9Rbf;
 /// directory descriptor is reachable via the identification sector.
 /// </summary>
 public sealed class Os9RbfFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the OS-9 RBF root directory and yields the actual on-disk byte
+  /// layout — identification sector + bitmap + per-file FD sectors as
+  /// <see cref="DefragBlockKind.MetadataReserved"/>, every (start, count)
+  /// segment in each file's segment list as a contiguous
+  /// <see cref="DefragBlockKind.Used"/> extent, and unallocated sectors as
+  /// <see cref="DefragBlockKind.Free"/>.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => Os9RbfExtentMap.Enumerate(image);
 
   public string Id => "Os9Rbf";
   public string DisplayName => "Microware OS-9 RBF";
@@ -103,6 +115,85 @@ public sealed class Os9RbfFormatDescriptor :
   public void Remove(Stream archive, string[] entryNames) {
     foreach (var name in entryNames)
       Os9RbfModifier.RemoveFile(archive, Path.GetFileName(name), wipeData: true);
+  }
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    => new Os9RbfBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    => new Os9RbfBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware OS-9 RBF defragmentor. Tries planner-driven in-place path first,
+  /// falls back to rebuild path on error.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      archive.Position = 0;
+      using var snapshot = new MemoryStream();
+      archive.CopyTo(snapshot);
+      try {
+        archive.Position = 0;
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch {
+        archive.Position = 0;
+        snapshot.Position = 0;
+        snapshot.CopyTo(archive);
+        archive.SetLength(snapshot.Length);
+        archive.Position = 0;
+      }
+    }
+
+    DefragmentWithRebuild(archive, options);
+  }
+
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var imageSize = archive.Length;
+    var mover = new Os9RbfBlockMover();
+
+    var extents = Os9RbfExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "scanning", Fraction: 0, CurrentReadOffset: 0, CurrentWriteOffset: -1,
+      ImageSize: imageSize, BlockMap: extents, Status: "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.DataOrigin, imageSize, mover.UnitSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
+
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
+        ImageSize: imageSize, BlockMap: extents, Status: "Already defragmented"));
+      return;
+    }
+
+    DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize);
+
+    var postExtents = Os9RbfExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
+      ImageSize: imageSize, BlockMap: postExtents, Status: "Defragmentation complete"));
+  }
+
+  private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var v = ReadVolume(stream);
+        return v.Files.Where(f => !f.IsDirectory)
+                      .Select(f => (f.Name, Os9RbfReader.Extract(v, f)));
+      },
+      buildImage: files => Os9RbfWriter.Build(files.ToList()));
   }
 
   private static Os9RbfReader.Volume ReadVolume(Stream stream) {

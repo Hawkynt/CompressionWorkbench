@@ -4,7 +4,29 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Hfs;
 
-public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the HFS catalog B-tree leaf chain and yields the actual on-disk
+  /// byte layout — boot blocks + MDB + volume bitmap + catalog file as
+  /// <see cref="DefragBlockKind.MetadataReserved"/>, every file record's
+  /// data-fork extent (filExtRec[0]) as <see cref="DefragBlockKind.Used"/>.
+  /// Coverage matches what <see cref="HfsReader"/> can extract — first leaf
+  /// chain only, single data-fork extent per file.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => HfsExtentMap.Enumerate(image);
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    => new HfsBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    => new HfsBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+
   public string Id => "Hfs";
   public string DisplayName => "HFS (Classic)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -74,5 +96,28 @@ public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
+  }
+
+  /// <inheritdoc/>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware HFS defragmentor via read-extract-rebuild dispatch through
+  /// <see cref="DefragRebuilder"/>. The writer always emits a contiguous,
+  /// start-packed allocation block layout, so all four <see cref="DefragMode"/>
+  /// values converge on a clean repack.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new HfsReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new HfsWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        return w.Build();
+      });
   }
 }

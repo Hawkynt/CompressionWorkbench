@@ -4,7 +4,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Nds;
 
-public sealed class NdsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class NdsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new NdsReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.Size > 0)
+        yield return new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "Nds";
   public string DisplayName => "NDS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -45,5 +56,23 @@ public sealed class NdsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
     }
     w.WriteTo(output);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new NdsReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FullPath, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new NdsWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        using var ms = new MemoryStream();
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
   }
 }

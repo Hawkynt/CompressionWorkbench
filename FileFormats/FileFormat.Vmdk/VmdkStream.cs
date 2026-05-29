@@ -1,0 +1,212 @@
+#pragma warning disable CS1591
+using System.Buffers.Binary;
+
+namespace FileFormat.Vmdk;
+
+/// <summary>
+/// Provides seekable read/write access to the virtual disk content of a monolithic
+/// sparse VMDK. Translates virtual disk offsets through the grain directory and
+/// grain tables. Reads from unallocated grains return zeros. Writes to unallocated
+/// grains are not supported (the stream only writes to already-allocated grains).
+/// </summary>
+/// <remarks>
+/// This stream works with the sparse VMDK format produced by <see cref="VmdkWriter"/>,
+/// where all non-zero grains are pre-allocated. Writing to zero (unallocated) grains
+/// would require extending the file and updating the grain table — this is deferred
+/// to a future phase.
+/// </remarks>
+public sealed class VmdkStream : Stream {
+  private static readonly byte[] SparseMagic = [0x4B, 0x44, 0x4D, 0x56]; // "KDMV" LE
+
+  private readonly Stream _backing;
+  private readonly bool _leaveOpen;
+  private readonly long _diskSize;
+  private readonly int _grainSizeBytes;
+  private readonly int _grainTableEntries;
+  private readonly long[] _grainOffsets; // virtual grain index -> byte offset in file (0 = unallocated)
+  private long _position;
+
+  private VmdkStream(Stream backing, long diskSize, int grainSizeBytes, int grainTableEntries,
+                     long[] grainOffsets, bool leaveOpen) {
+    _backing = backing;
+    _diskSize = diskSize;
+    _grainSizeBytes = grainSizeBytes;
+    _grainTableEntries = grainTableEntries;
+    _grainOffsets = grainOffsets;
+    _leaveOpen = leaveOpen;
+  }
+
+  public override bool CanRead => true;
+  public override bool CanSeek => true;
+  public override bool CanWrite => _backing.CanWrite;
+  public override long Length => _diskSize;
+
+  public override long Position {
+    get => _position;
+    set {
+      if (value < 0) throw new ArgumentOutOfRangeException(nameof(value));
+      _position = value;
+    }
+  }
+
+  public override int Read(byte[] buffer, int offset, int count) {
+    if (_position >= _diskSize) return 0;
+    var remaining = (int)Math.Min(count, _diskSize - _position);
+    var totalRead = 0;
+
+    while (remaining > 0) {
+      var grainIdx = (int)(_position / _grainSizeBytes);
+      var grainOff = (int)(_position % _grainSizeBytes);
+      var toRead = Math.Min(remaining, _grainSizeBytes - grainOff);
+
+      if (grainIdx >= _grainOffsets.Length || _grainOffsets[grainIdx] == 0) {
+        // Unallocated grain — return zeros
+        Array.Clear(buffer, offset, toRead);
+      } else {
+        _backing.Position = _grainOffsets[grainIdx] + grainOff;
+        var n = _backing.Read(buffer, offset, toRead);
+        if (n < toRead) {
+          // Backing ended early — zero the rest
+          Array.Clear(buffer, offset + n, toRead - n);
+        }
+      }
+
+      offset += toRead;
+      remaining -= toRead;
+      _position += toRead;
+      totalRead += toRead;
+    }
+
+    return totalRead;
+  }
+
+  public override void Write(byte[] buffer, int offset, int count) {
+    if (!CanWrite) throw new NotSupportedException("Backing stream is not writable.");
+    if (_position + count > _diskSize)
+      throw new InvalidOperationException(
+        $"Write would exceed virtual disk size ({_diskSize} bytes). " +
+        $"Position={_position}, Count={count}.");
+
+    var remaining = count;
+    while (remaining > 0) {
+      var grainIdx = (int)(_position / _grainSizeBytes);
+      var grainOff = (int)(_position % _grainSizeBytes);
+      var toWrite = Math.Min(remaining, _grainSizeBytes - grainOff);
+
+      if (grainIdx >= _grainOffsets.Length || _grainOffsets[grainIdx] == 0)
+        throw new NotSupportedException(
+          $"Cannot write to unallocated grain {grainIdx}. Only pre-allocated grains are writable.");
+
+      _backing.Position = _grainOffsets[grainIdx] + grainOff;
+      _backing.Write(buffer, offset, toWrite);
+
+      offset += toWrite;
+      remaining -= toWrite;
+      _position += toWrite;
+    }
+  }
+
+  public override long Seek(long offset, SeekOrigin origin) {
+    var newPos = origin switch {
+      SeekOrigin.Begin => offset,
+      SeekOrigin.Current => _position + offset,
+      SeekOrigin.End => _diskSize + offset,
+      _ => throw new ArgumentOutOfRangeException(nameof(origin))
+    };
+    if (newPos < 0) throw new IOException("Seek before beginning of stream.");
+    _position = newPos;
+    return _position;
+  }
+
+  public override void SetLength(long value) {
+    if (value != _diskSize)
+      throw new NotSupportedException(
+        $"Cannot change the length of a VMDK virtual disk stream " +
+        $"(current={_diskSize}, requested={value}).");
+  }
+
+  public override void Flush() => _backing.Flush();
+
+  protected override void Dispose(bool disposing) {
+    if (disposing && !_leaveOpen)
+      _backing.Dispose();
+    base.Dispose(disposing);
+  }
+
+  // ── Static factory ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tries to open a <see cref="VmdkStream"/> for a sparse VMDK.
+  /// Returns <c>null</c> if the stream is not a valid sparse VMDK.
+  /// </summary>
+  public static VmdkStream? TryOpen(Stream stream) {
+    try {
+      if (stream.Length < 512) return null;
+
+      stream.Position = 0;
+      Span<byte> magic = stackalloc byte[4];
+      stream.ReadExactly(magic);
+      if (!magic.SequenceEqual(SparseMagic))
+        return null;
+
+      // Parse sparse header
+      stream.Position = 16;
+      Span<byte> hdr = stackalloc byte[64]; // read bytes 16..79
+      stream.ReadExactly(hdr);
+
+      var capacity = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr);         // offset 16
+      var grainSizeSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr[8..]); // offset 24
+      // descriptor offset/size at 32, 40 — skip
+      var numGTEsPerGT = (int)BinaryPrimitives.ReadUInt32LittleEndian(hdr[32..]); // offset 48
+      // rgdOffset at 56 — skip
+      var gdOffsetSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr[48..]); // offset 64
+
+      if (numGTEsPerGT <= 0) numGTEsPerGT = 512;
+      var grainSizeBytes = (int)(grainSizeSectors * 512);
+      if (grainSizeBytes <= 0) return null;
+
+      var diskSize = capacity * 512;
+      var totalGrains = (int)((diskSize + grainSizeBytes - 1) / grainSizeBytes);
+      var numGdEntries = (int)((capacity + (long)numGTEsPerGT * grainSizeSectors - 1) /
+                               ((long)numGTEsPerGT * grainSizeSectors));
+
+      var gdByteOffset = gdOffsetSectors * 512;
+      if (gdByteOffset <= 0 || gdByteOffset + numGdEntries * 4L > stream.Length)
+        return null;
+
+      // Read grain directory
+      var gdBuf = new byte[numGdEntries * 4];
+      stream.Position = gdByteOffset;
+      stream.ReadExactly(gdBuf);
+
+      // Build per-grain offset array
+      var grainOffsets = new long[totalGrains];
+      for (var gd = 0; gd < numGdEntries; gd++) {
+        var gtSectorOffset = BinaryPrimitives.ReadUInt32LittleEndian(gdBuf.AsSpan(gd * 4));
+        if (gtSectorOffset == 0) continue;
+
+        var gtByteOffset = (long)gtSectorOffset * 512;
+        var entriesToRead = Math.Min(numGTEsPerGT, totalGrains - gd * numGTEsPerGT);
+        if (entriesToRead <= 0) continue;
+
+        var gtBuf = new byte[entriesToRead * 4];
+        stream.Position = gtByteOffset;
+        stream.ReadExactly(gtBuf);
+
+        for (var gte = 0; gte < entriesToRead; gte++) {
+          var grainIdx = gd * numGTEsPerGT + gte;
+          if (grainIdx >= totalGrains) break;
+          var grainSector = BinaryPrimitives.ReadUInt32LittleEndian(gtBuf.AsSpan(gte * 4));
+          grainOffsets[grainIdx] = grainSector == 0 ? 0 : (long)grainSector * 512;
+        }
+      }
+
+      stream.Position = 0;
+      return new VmdkStream(stream, diskSize, grainSizeBytes, numGTEsPerGT,
+                            grainOffsets, leaveOpen: true);
+    } catch {
+      stream.Position = 0;
+      return null;
+    }
+  }
+}

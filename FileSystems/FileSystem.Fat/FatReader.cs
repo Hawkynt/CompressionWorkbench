@@ -177,6 +177,12 @@ public sealed class FatReader : IDisposable {
   private static string GetShortName(byte[] data, int offset) {
     var name = Encoding.ASCII.GetString(data, offset, 8).TrimEnd();
     var ext = Encoding.ASCII.GetString(data, offset + 8, 3).TrimEnd();
+    // VFAT/NTFS NT case bits at byte 12: bit 3 (0x08) = base is lowercase,
+    // bit 4 (0x10) = extension is lowercase. The 11-byte name field stores
+    // uppercase; we apply the case bits here to restore the user's spelling.
+    var ntCase = data[offset + 12];
+    if ((ntCase & 0x08) != 0) name = name.ToLowerInvariant();
+    if ((ntCase & 0x10) != 0) ext = ext.ToLowerInvariant();
     return string.IsNullOrEmpty(ext) ? name : $"{name}.{ext}";
   }
 

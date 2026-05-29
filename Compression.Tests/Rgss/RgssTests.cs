@@ -120,6 +120,94 @@ public class RgssTests {
     }
   }
 
+  [Test, Category("HappyPath")]
+  public void Create_SingleFile_RoundTrips() {
+    var d = new RgssFormatDescriptor();
+    byte[] fileData = System.Text.Encoding.UTF8.GetBytes("Hello from RPG Maker!");
+
+    var tmpDir = Path.Combine(Path.GetTempPath(), "rgss_create_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tmpDir);
+    var inputFile = Path.Combine(tmpDir, "Data/test.txt");
+    Directory.CreateDirectory(Path.GetDirectoryName(inputFile)!);
+    File.WriteAllBytes(inputFile, fileData);
+
+    try {
+      using var archiveMs = new MemoryStream();
+      var inputs = new List<Compression.Registry.ArchiveInputInfo> {
+        new(inputFile, "Data/test.txt", false)
+      };
+      d.Create(archiveMs, inputs, new Compression.Registry.FormatCreateOptions());
+
+      // Verify the created archive can be read back
+      archiveMs.Position = 0;
+      var list = d.List(archiveMs, null);
+      // Should have metadata.ini + the file entry
+      Assert.That(list.Count, Is.GreaterThanOrEqualTo(2));
+      // The entry name uses backslashes internally but should round-trip
+      Assert.That(list.Any(e => e.Name.Contains("test.txt")), Is.True);
+
+      // Extract and verify data
+      var extractDir = Path.Combine(tmpDir, "extract");
+      archiveMs.Position = 0;
+      d.Extract(archiveMs, extractDir, null, null);
+
+      // Find the extracted file (may be under Data\test.txt or Data/test.txt)
+      var extractedFile = Directory.GetFiles(extractDir, "test.txt", SearchOption.AllDirectories).FirstOrDefault();
+      Assert.That(extractedFile, Is.Not.Null, "Extracted file not found");
+      Assert.That(File.ReadAllBytes(extractedFile!), Is.EqualTo(fileData));
+    } finally {
+      Directory.Delete(tmpDir, true);
+    }
+  }
+
+  [Test, Category("HappyPath")]
+  public void Create_MultipleFiles_RoundTrips() {
+    var d = new RgssFormatDescriptor();
+    byte[] file1 = [1, 2, 3, 4, 5];
+    byte[] file2 = [10, 20, 30, 40, 50, 60, 70, 80];
+
+    var tmpDir = Path.Combine(Path.GetTempPath(), "rgss_multi_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tmpDir);
+    var input1 = Path.Combine(tmpDir, "Scripts.rxdata");
+    var input2 = Path.Combine(tmpDir, "Map001.rxdata");
+    File.WriteAllBytes(input1, file1);
+    File.WriteAllBytes(input2, file2);
+
+    try {
+      using var archiveMs = new MemoryStream();
+      var inputs = new List<Compression.Registry.ArchiveInputInfo> {
+        new(input1, "Scripts.rxdata", false),
+        new(input2, "Map001.rxdata", false)
+      };
+      d.Create(archiveMs, inputs, new Compression.Registry.FormatCreateOptions());
+
+      archiveMs.Position = 0;
+      var list = d.List(archiveMs, null);
+      // metadata.ini + 2 entries
+      Assert.That(list.Count, Is.GreaterThanOrEqualTo(3));
+
+      var extractDir = Path.Combine(tmpDir, "extract");
+      archiveMs.Position = 0;
+      d.Extract(archiveMs, extractDir, null, null);
+
+      var script = Directory.GetFiles(extractDir, "Scripts.rxdata", SearchOption.AllDirectories).FirstOrDefault();
+      Assert.That(script, Is.Not.Null);
+      Assert.That(File.ReadAllBytes(script!), Is.EqualTo(file1));
+
+      var map = Directory.GetFiles(extractDir, "Map001.rxdata", SearchOption.AllDirectories).FirstOrDefault();
+      Assert.That(map, Is.Not.Null);
+      Assert.That(File.ReadAllBytes(map!), Is.EqualTo(file2));
+    } finally {
+      Directory.Delete(tmpDir, true);
+    }
+  }
+
+  [Test, Category("HappyPath")]
+  public void Create_HasCanCreateCapability() {
+    var d = new RgssFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
   [Test, Category("EdgeCase")]
   public void BadMagic_Throws() {
     var buf = new byte[32];

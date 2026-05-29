@@ -4,7 +4,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Lfd;
 
-public sealed class LfdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class LfdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new LfdReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.Size > 0)
+        yield return new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "Lfd";
   public string DisplayName => "LucasArts LFD";
   public FormatCategory Category => FormatCategory.Archive;
@@ -44,6 +55,28 @@ public sealed class LfdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var (type, resName) = SplitName(name);
       w.AddEntry(type, resName, data);
     }
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new LfdReader(stream);
+        // DisplayName == "TYPE.NAME"; SplitName recovers (type, name) on the rebuild side.
+        return r.Entries.Select(e => (e.DisplayName, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new LfdWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) {
+            var (type, resName) = SplitName(n);
+            w.AddEntry(type, resName, d);
+          }
+        }
+        return ms.ToArray();
+      });
   }
 
   private static (string Type, string Name) SplitName(string filename) {

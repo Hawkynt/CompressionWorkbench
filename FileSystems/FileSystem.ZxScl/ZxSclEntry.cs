@@ -17,5 +17,5 @@ public sealed class ZxSclEntry {
   /// <summary>File length in 256-byte sectors (header-stated).</summary>
   public byte LengthSectors { get; init; }
   /// <summary>Absolute offset of the file data inside the SCL stream.</summary>
-  internal long DataOffset { get; init; }
+  public long DataOffset { get; init; }
 }

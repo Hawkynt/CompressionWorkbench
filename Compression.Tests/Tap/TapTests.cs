@@ -89,4 +89,130 @@ public class TapTests {
     var r = new FileFormat.Tap.TapReader(ms);
     Assert.That(r.Entries, Is.Empty);
   }
+
+  // ── IArchiveModifiable ─────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsIArchiveModifiable() {
+    var desc = new FileFormat.Tap.TapFormatDescriptor();
+    Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveModifiable>());
+    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.True);
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Add_ViaDescriptor_NewFileAppearsInListing() {
+    using var ms = new MemoryStream();
+    var w = new FileFormat.Tap.TapWriter(ms, leaveOpen: true);
+    w.AddFile("original", "old data"u8.ToArray());
+    w.Finish();
+
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "new data"u8.ToArray());
+      var desc = new FileFormat.Tap.TapFormatDescriptor();
+      ((Compression.Registry.IArchiveModifiable)desc).Add(ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "added", false)]);
+
+      ms.Position = 0;
+      var r = new FileFormat.Tap.TapReader(ms);
+      var names = r.Entries.Select(e => e.Name).ToList();
+      Assert.That(names, Does.Contain("original"));
+      Assert.That(names, Does.Contain("added"));
+    } finally { File.Delete(tmp); }
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Remove_ViaDescriptor_FileDisappears() {
+    using var ms = new MemoryStream();
+    var w = new FileFormat.Tap.TapWriter(ms, leaveOpen: true);
+    w.AddFile("keep", "keep me"u8.ToArray());
+    w.AddFile("drop", "drop me"u8.ToArray());
+    w.Finish();
+
+    var desc = new FileFormat.Tap.TapFormatDescriptor();
+    ((Compression.Registry.IArchiveModifiable)desc).Remove(ms, ["drop"]);
+
+    ms.Position = 0;
+    var r = new FileFormat.Tap.TapReader(ms);
+    var names = r.Entries.Select(e => e.Name).ToList();
+    Assert.That(names, Does.Contain("keep"));
+    Assert.That(names, Does.Not.Contain("drop"));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Add_ContentPreserved() {
+    using var ms = new MemoryStream();
+    var w = new FileFormat.Tap.TapWriter(ms, leaveOpen: true);
+    w.AddFile("first", "alpha"u8.ToArray());
+    w.Finish();
+
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "beta"u8.ToArray());
+      var desc = new FileFormat.Tap.TapFormatDescriptor();
+      ((Compression.Registry.IArchiveModifiable)desc).Add(ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "second", false)]);
+
+      ms.Position = 0;
+      var r = new FileFormat.Tap.TapReader(ms);
+      Assert.That(r.Extract(r.Entries.First(e => e.Name == "first")), Is.EqualTo("alpha"u8.ToArray()));
+      Assert.That(r.Extract(r.Entries.First(e => e.Name == "second")), Is.EqualTo("beta"u8.ToArray()));
+    } finally { File.Delete(tmp); }
+  }
+
+  // ── IArchiveDefragmentable ─────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsIArchiveDefragmentable() {
+    var desc = new FileFormat.Tap.TapFormatDescriptor();
+    Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveDefragmentable>());
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Defragment_PreservesAllFiles() {
+    using var ms = new MemoryStream();
+    var w = new FileFormat.Tap.TapWriter(ms, leaveOpen: true);
+    w.AddFile("A", "alpha"u8.ToArray());
+    w.AddFile("B", "bravo"u8.ToArray());
+    w.AddFile("C", "charlie"u8.ToArray());
+    w.Finish();
+
+    ((Compression.Registry.IArchiveDefragmentable)new FileFormat.Tap.TapFormatDescriptor()).Defragment(ms);
+
+    ms.Position = 0;
+    var r = new FileFormat.Tap.TapReader(ms);
+    Assert.That(r.Entries, Has.Count.EqualTo(3));
+    Assert.That(r.Extract(r.Entries[0]), Is.EqualTo("alpha"u8.ToArray()));
+    Assert.That(r.Extract(r.Entries[1]), Is.EqualTo("bravo"u8.ToArray()));
+    Assert.That(r.Extract(r.Entries[2]), Is.EqualTo("charlie"u8.ToArray()));
+  }
+
+  // ── IArchiveLayoutMap ──────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsIArchiveLayoutMap() {
+    var desc = new FileFormat.Tap.TapFormatDescriptor();
+    Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveLayoutMap>());
+  }
+
+  [Test, Category("RoundTrip")]
+  public void EnumerateLayout_ReportsHeaderAndDataBlocks() {
+    using var ms = new MemoryStream();
+    var w = new FileFormat.Tap.TapWriter(ms, leaveOpen: true);
+    w.AddFile("hello", "world"u8.ToArray());
+    w.AddFile("data", new byte[64]);
+    w.Finish();
+
+    var desc = new FileFormat.Tap.TapFormatDescriptor();
+    ms.Position = 0;
+    var tiles = ((Compression.Registry.IArchiveLayoutMap)desc).EnumerateLayout(ms).ToList();
+
+    Assert.That(tiles, Is.Not.Empty);
+    Assert.That(tiles.Any(t => t.Kind == Compression.Registry.DefragBlockKind.MetadataReserved), Is.True,
+      "Expected header blocks as MetadataReserved");
+    Assert.That(tiles.Any(t => t.Kind == Compression.Registry.DefragBlockKind.Used
+                                && t.FileName == "hello"), Is.True);
+    Assert.That(tiles.Any(t => t.Kind == Compression.Registry.DefragBlockKind.Used
+                                && t.FileName == "data"), Is.True);
+  }
 }

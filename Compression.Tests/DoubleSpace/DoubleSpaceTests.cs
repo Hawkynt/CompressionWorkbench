@@ -361,6 +361,84 @@ public class DoubleSpaceTests {
     Assert.That(r.Extract(r.Entries[0]), Is.EqualTo(text));
   }
 
+  // =========================================================================
+  //                   Modify / Defragment / ExtentMap tests
+  // =========================================================================
+
+  [Test, Category("HappyPath")]
+  public void DoubleSpace_ImplementsModifiable() {
+    var desc = new FileSystem.DoubleSpace.DoubleSpaceFormatDescriptor();
+    Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveModifiable>());
+    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.True);
+  }
+
+  [Test, Category("HappyPath")]
+  public void DriveSpace_ImplementsModifiable() {
+    var desc = new FileSystem.DoubleSpace.DriveSpaceFormatDescriptor();
+    Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveModifiable>());
+    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.True);
+  }
+
+  [Test, Category("RoundTrip")]
+  public void DoubleSpace_AddRemove_RoundTrips() {
+    var w = new FileSystem.DoubleSpace.DoubleSpaceWriter();
+    w.AddFile("A.TXT", "alpha"u8.ToArray());
+    var cvf = w.Build();
+    using var ms = new MemoryStream();
+    ms.Write(cvf);
+    ms.Position = 0;
+
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "beta"u8.ToArray());
+      var desc = new FileSystem.DoubleSpace.DoubleSpaceFormatDescriptor();
+      ((Compression.Registry.IArchiveModifiable)desc).Add(ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "B.TXT", false)]);
+
+      ms.Position = 0;
+      var r = new FileSystem.DoubleSpace.DoubleSpaceReader(ms);
+      Assert.That(r.Entries.Any(e => e.Name == "A.TXT"), Is.True);
+      Assert.That(r.Entries.Any(e => e.Name == "B.TXT"), Is.True);
+
+      ((Compression.Registry.IArchiveModifiable)desc).Remove(ms, ["A.TXT"]);
+      ms.Position = 0;
+      var r2 = new FileSystem.DoubleSpace.DoubleSpaceReader(ms);
+      Assert.That(r2.Entries.Any(e => e.Name == "A.TXT"), Is.False);
+      Assert.That(r2.Entries.Any(e => e.Name == "B.TXT"), Is.True);
+    } finally { File.Delete(tmp); }
+  }
+
+  [Test, Category("RoundTrip")]
+  public void DoubleSpace_Defragment_PreservesFiles() {
+    var w = new FileSystem.DoubleSpace.DoubleSpaceWriter();
+    w.AddFile("X.TXT", "xdata"u8.ToArray());
+    w.AddFile("Y.TXT", "ydata"u8.ToArray());
+    var cvf = w.Build();
+    using var ms = new MemoryStream();
+    ms.Write(cvf);
+
+    new FileSystem.DoubleSpace.DoubleSpaceFormatDescriptor().Defragment(ms,
+      new Compression.Registry.DefragOptions { Mode = Compression.Registry.DefragMode.ConsolidateAtStart });
+
+    ms.Position = 0;
+    var r = new FileSystem.DoubleSpace.DoubleSpaceReader(ms);
+    Assert.That(r.Entries.Count(e => !e.IsDirectory), Is.EqualTo(2));
+    Assert.That(r.Extract(r.Entries.First(e => e.Name == "X.TXT")), Is.EqualTo("xdata"u8.ToArray()));
+    Assert.That(r.Extract(r.Entries.First(e => e.Name == "Y.TXT")), Is.EqualTo("ydata"u8.ToArray()));
+  }
+
+  [Test, Category("HappyPath")]
+  public void DoubleSpace_ExtentMap_ReturnsEntries() {
+    var w = new FileSystem.DoubleSpace.DoubleSpaceWriter();
+    w.AddFile("A.TXT", new byte[100]);
+    var cvf = w.Build();
+    using var ms = new MemoryStream(cvf);
+    var desc = new FileSystem.DoubleSpace.DoubleSpaceFormatDescriptor();
+    var extents = ((Compression.Registry.IFilesystemExtentMap)desc).EnumerateExtents(ms).ToList();
+    Assert.That(extents, Has.Count.GreaterThan(0));
+    Assert.That(extents.Any(e => e.Kind == Compression.Registry.DefragBlockKind.Used), Is.True);
+  }
+
   [Test, Category("RoundTrip")]
   public void DriveSpace_CompressedCluster_RoundTrip() {
     // DriveSpace variant with an 8 KiB JM-derived window — must also
@@ -376,5 +454,123 @@ public class DoubleSpaceTests {
     var r = new FileSystem.DoubleSpace.DoubleSpaceReader(ms);
     Assert.That(r.IsDriveSpace, Is.True);
     Assert.That(r.Extract(r.Entries[0]), Is.EqualTo(text));
+  }
+
+  // =========================================================================
+  //                     In-place defrag (planner-driven) tests
+  // =========================================================================
+
+  [Test, Category("RoundTrip")]
+  public void DoubleSpace_PlannerDefrag_PreservesFiles() {
+    // Build a CVF with multiple files, defrag via planner, verify all data intact.
+    var w = new FileSystem.DoubleSpace.DoubleSpaceWriter();
+    w.AddFile("A.TXT", "alpha content here"u8.ToArray());
+    w.AddFile("B.TXT", "beta content data"u8.ToArray());
+    w.AddFile("C.BIN", new byte[500]);
+    var cvf = w.Build();
+    using var ms = new MemoryStream();
+    ms.Write(cvf);
+
+    new FileSystem.DoubleSpace.DoubleSpaceFormatDescriptor().Defragment(ms,
+      new Compression.Registry.DefragOptions { Mode = Compression.Registry.DefragMode.ConsolidateAtStart });
+
+    ms.Position = 0;
+    var r = new FileSystem.DoubleSpace.DoubleSpaceReader(ms);
+    Assert.That(r.Entries.Count(e => !e.IsDirectory), Is.EqualTo(3));
+    Assert.That(r.Extract(r.Entries.First(e => e.Name == "A.TXT")), Is.EqualTo("alpha content here"u8.ToArray()));
+    Assert.That(r.Extract(r.Entries.First(e => e.Name == "B.TXT")), Is.EqualTo("beta content data"u8.ToArray()));
+    Assert.That(r.Extract(r.Entries.First(e => e.Name == "C.BIN")), Is.EqualTo(new byte[500]));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void DriveSpace_PlannerDefrag_PreservesFiles() {
+    var w = new FileSystem.DoubleSpace.DoubleSpaceWriter { DriveSpace = true };
+    w.AddFile("X.TXT", "xdata content"u8.ToArray());
+    w.AddFile("Y.TXT", "ydata content"u8.ToArray());
+    var cvf = w.Build();
+    using var ms = new MemoryStream();
+    ms.Write(cvf);
+
+    new FileSystem.DoubleSpace.DriveSpaceFormatDescriptor().Defragment(ms,
+      new Compression.Registry.DefragOptions { Mode = Compression.Registry.DefragMode.ConsolidateAtStart });
+
+    ms.Position = 0;
+    var r = new FileSystem.DoubleSpace.DoubleSpaceReader(ms);
+    Assert.That(r.Entries.Count(e => !e.IsDirectory), Is.EqualTo(2));
+    Assert.That(r.Extract(r.Entries.First(e => e.Name == "X.TXT")), Is.EqualTo("xdata content"u8.ToArray()));
+    Assert.That(r.Extract(r.Entries.First(e => e.Name == "Y.TXT")), Is.EqualTo("ydata content"u8.ToArray()));
+  }
+
+  [Test, Category("HappyPath")]
+  public void DoubleSpace_ExtentMap_ShowsPhysicalLayout() {
+    // Verify the new MDFAT-aware extent map yields Used extents in the DATA
+    // region (not just logical file sizes) plus metadata regions.
+    var w = new FileSystem.DoubleSpace.DoubleSpaceWriter();
+    w.AddFile("A.TXT", new byte[100]);
+    w.AddFile("B.TXT", new byte[200]);
+    var cvf = w.Build();
+    using var ms = new MemoryStream(cvf);
+    var extents = FileSystem.DoubleSpace.DoubleSpaceExtentMap.Enumerate(ms).ToList();
+
+    // Must have metadata, used, and free regions.
+    Assert.That(extents.Any(e => e.Kind == Compression.Registry.DefragBlockKind.MetadataReserved), Is.True,
+      "should have metadata regions (MDBPB, MDFAT, BitFAT)");
+    Assert.That(extents.Any(e => e.Kind == Compression.Registry.DefragBlockKind.Used), Is.True,
+      "should have used regions for file data");
+    Assert.That(extents.Any(e => e.Kind == Compression.Registry.DefragBlockKind.Free), Is.True,
+      "should have free regions in the DATA area");
+    // Verify file names appear in Used extents.
+    var usedNames = extents.Where(e => e.Kind == Compression.Registry.DefragBlockKind.Used)
+                           .Select(e => e.FileName).ToList();
+    Assert.That(usedNames, Does.Contain("A.TXT"));
+    Assert.That(usedNames, Does.Contain("B.TXT"));
+  }
+
+  [Test, Category("HappyPath")]
+  public void DoubleSpace_BlockMover_ImplementsInterface() {
+    var desc = new FileSystem.DoubleSpace.DoubleSpaceFormatDescriptor();
+    Assert.That(desc, Is.InstanceOf<Compression.Registry.IFilesystemBlockMover>());
+  }
+
+  [Test, Category("HappyPath")]
+  public void DriveSpace_BlockMover_ImplementsInterface() {
+    var desc = new FileSystem.DoubleSpace.DriveSpaceFormatDescriptor();
+    Assert.That(desc, Is.InstanceOf<Compression.Registry.IFilesystemBlockMover>());
+  }
+
+  [Test, Category("RoundTrip")]
+  public void DoubleSpace_DefragFillHolesLazy_PreservesFiles() {
+    var w = new FileSystem.DoubleSpace.DoubleSpaceWriter();
+    w.AddFile("P.TXT", "payload one"u8.ToArray());
+    w.AddFile("Q.TXT", "payload two"u8.ToArray());
+    var cvf = w.Build();
+    using var ms = new MemoryStream();
+    ms.Write(cvf);
+
+    new FileSystem.DoubleSpace.DoubleSpaceFormatDescriptor().Defragment(ms,
+      new Compression.Registry.DefragOptions { Mode = Compression.Registry.DefragMode.FillHolesLazy });
+
+    ms.Position = 0;
+    var r = new FileSystem.DoubleSpace.DoubleSpaceReader(ms);
+    Assert.That(r.Extract(r.Entries.First(e => e.Name == "P.TXT")), Is.EqualTo("payload one"u8.ToArray()));
+    Assert.That(r.Extract(r.Entries.First(e => e.Name == "Q.TXT")), Is.EqualTo("payload two"u8.ToArray()));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void DoubleSpace_DefragConsolidateAtEnd_PreservesFiles() {
+    var w = new FileSystem.DoubleSpace.DoubleSpaceWriter();
+    w.AddFile("M.TXT", "middle"u8.ToArray());
+    w.AddFile("N.TXT", new byte[300]);
+    var cvf = w.Build();
+    using var ms = new MemoryStream();
+    ms.Write(cvf);
+
+    new FileSystem.DoubleSpace.DoubleSpaceFormatDescriptor().Defragment(ms,
+      new Compression.Registry.DefragOptions { Mode = Compression.Registry.DefragMode.ConsolidateAtEnd });
+
+    ms.Position = 0;
+    var r = new FileSystem.DoubleSpace.DoubleSpaceReader(ms);
+    Assert.That(r.Extract(r.Entries.First(e => e.Name == "M.TXT")), Is.EqualTo("middle"u8.ToArray()));
+    Assert.That(r.Extract(r.Entries.First(e => e.Name == "N.TXT")), Is.EqualTo(new byte[300]));
   }
 }

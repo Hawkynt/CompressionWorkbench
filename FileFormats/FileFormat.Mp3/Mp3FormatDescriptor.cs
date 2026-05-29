@@ -17,7 +17,13 @@ namespace FileFormat.Mp3;
 /// the original audio frames unchanged.
 /// </para>
 /// </summary>
-public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
+public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable, IArchiveDefragmentable, IFileInternalLayoutMap, IFileInternalChunkMover {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "MP3 is a single-blob audio file (ID3 tags + MPEG frames) — defragmentation isn't meaningful; use Mp3Optimizer instead.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
   public string Id => "Mp3";
   public string DisplayName => "MP3 (MPEG audio)";
   public FormatCategory Category => FormatCategory.Audio;
@@ -34,6 +40,15 @@ public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description => "MP3 audio; ID3v1/v2 surfaced as metadata.ini + cover.*";
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => Mp3LayoutMap.Enumerate(file);
+
+  /// <inheritdoc />
+  public void Optimize(Stream file) => Mp3Optimizer.Optimize(file);
+
+  /// <inheritdoc />
+  public void Optimize(Stream file, MetadataPlacementProfile? profile) => Mp3Optimizer.Optimize(file, profile);
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(

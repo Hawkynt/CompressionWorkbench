@@ -43,7 +43,51 @@ public static class DefragRebuilder {
 
     archive.Position = 0;
     var originalLength = archive.Length;
-    var files = new System.Collections.Generic.List<(string Name, byte[] Data)>(readEntries(archive));
+
+    // Emit a "scanning" event up front so the UI can show "starting" state
+    // before any entries are pulled. BlockMap is null here because we haven't
+    // walked the image yet.
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "scanning",
+      Fraction: 0,
+      CurrentReadOffset: 0,
+      CurrentWriteOffset: -1,
+      ImageSize: originalLength,
+      BlockMap: null,
+      Status: "Walking directory"));
+
+    // Stream entries one-at-a-time through readEntries so the UI's read head
+    // animates as files are walked. The accumulated map grows incrementally:
+    // each yielded entry adds a Used tile and the map is re-emitted so far,
+    // giving live-progress visualisation even on large images. archive.Position
+    // is the underlying stream cursor, which most readers move forward as they
+    // walk file data — a good proxy for "where the read head is right now".
+    var files = new System.Collections.Generic.List<(string Name, byte[] Data)>();
+    var partialMap = new System.Collections.Generic.List<DefragBlockInfo>();
+    var partialOffset = 0L;
+    foreach (var entry in readEntries(archive)) {
+      files.Add(entry);
+      partialMap.Add(new DefragBlockInfo(
+        partialOffset, entry.Data.Length, DefragBlockKind.Used, entry.Name,
+        Classification: null));
+      partialOffset += entry.Data.Length;
+      var readPos = System.Math.Min(archive.Position, originalLength);
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        Phase: "scanning",
+        Fraction: originalLength > 0 ? (double)readPos / originalLength * 0.5 : 0, // scan = first half
+        CurrentReadOffset: readPos,
+        CurrentWriteOffset: -1,
+        ImageSize: originalLength,
+        // Re-emit the in-progress map every entry. Each map snapshot is small
+        // (one DefragBlockInfo per file), so listeners can animate without
+        // back-pressure.
+        BlockMap: AppendFreeTail(partialMap, partialOffset, originalLength),
+        Status: $"Read {entry.Name}"));
+    }
+
+    // Emit one final "scanning" event with the full assembled map and the
+    // listing-order classification baked in (matching the post-defrag layout).
+    options.OnProgress?.Invoke(BuildScanEvent(files, originalLength, "scanning"));
 
     System.Collections.Generic.IReadOnlyList<(string Name, byte[] Data)> ordered;
     switch (options.Mode) {
@@ -77,8 +121,203 @@ public static class DefragRebuilder {
     }
 
     var rebuilt = buildImage(ordered);
+
+    // Emit "writing" updates while we copy the rebuilt image back. Chunked at
+    // 64 KB so the UI can animate a write head without the listener getting
+    // spammed; for small images the loop runs once.
     archive.Position = 0;
-    archive.Write(rebuilt);
-    archive.SetLength(rebuilt.Length);
+    const int ChunkSize = 64 * 1024;
+    var totalWrite = (long)rebuilt.Length;
+    var writeOffset = 0L;
+    while (writeOffset < totalWrite) {
+      var chunk = (int)System.Math.Min(ChunkSize, totalWrite - writeOffset);
+      archive.Write(rebuilt, (int)writeOffset, chunk);
+      writeOffset += chunk;
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        Phase: "writing",
+        // Scan = first half, Write = second half. UI sees a continuous 0..1
+        // ramp across both phases.
+        Fraction: totalWrite > 0 ? 0.5 + 0.5 * (double)writeOffset / totalWrite : 0,
+        CurrentReadOffset: -1,
+        CurrentWriteOffset: writeOffset,
+        ImageSize: totalWrite,
+        BlockMap: null));
+    }
+    archive.SetLength(totalWrite);
+
+    // Final "complete" event with the post-defrag block map.
+    options.OnProgress?.Invoke(BuildScanEvent(ordered, totalWrite, "complete"));
+  }
+
+  /// <summary>
+  /// Builds a block-map snapshot for live-progress display. Files are placed
+  /// contiguously starting at offset 0 (matching how the rebuild writer lays
+  /// them out) and classified into Hot / Normal / Cold / Frozen quartiles
+  /// based on listing-order as a proxy.
+  ///
+  /// <para><b>Note for UI consumers:</b> the rebuild path receives entries as
+  /// (name, bytes) tuples and therefore has no access to entry mtimes — the
+  /// classification emitted here is a listing-order proxy only. Honest
+  /// mtime-based classification requires the pre-defrag snapshot built from
+  /// <see cref="ArchiveEntryInfo.LastModified"/> on the descriptor's
+  /// <see cref="IArchiveFormatOperations.List"/> output (see the WPF
+  /// <c>DefragmentWindow.PreviewBlockMap</c> method for the canonical
+  /// implementation).</para>
+  /// </summary>
+  private static DefragProgressEvent BuildScanEvent(
+      System.Collections.Generic.IReadOnlyList<(string Name, byte[] Data)> files,
+      long imageSize,
+      string phase) {
+    var map = new System.Collections.Generic.List<DefragBlockInfo>();
+    var offset = 0L;
+    var fileCount = files.Count;
+    for (var i = 0; i < fileCount; i++) {
+      var (name, data) = files[i];
+      var cls = ClassifyByOrder(i, fileCount);
+      map.Add(new DefragBlockInfo(offset, data.Length, DefragBlockKind.Used, name, cls));
+      offset += data.Length;
+    }
+    if (offset < imageSize)
+      map.Add(new DefragBlockInfo(offset, imageSize - offset, DefragBlockKind.Free));
+    return new DefragProgressEvent(
+      Phase: phase,
+      Fraction: phase == "complete" ? 1 : 0,
+      CurrentReadOffset: -1,
+      CurrentWriteOffset: -1,
+      ImageSize: imageSize,
+      BlockMap: map);
+  }
+
+  /// <summary>
+  /// Listing-order quartile classification used as a coarse proxy when no
+  /// modification-time information is available. The rebuilder does NOT have
+  /// access to entry mtimes (its input is just (name, bytes) tuples), so this
+  /// proxy is the best the rebuild path can do; UI consumers wanting honest
+  /// mtime-based classification should use the pre-defrag snapshot path
+  /// (<c>DefragmentWindow.PreviewBlockMap</c>) which has access to
+  /// <see cref="ArchiveEntryInfo.LastModified"/>.
+  /// </summary>
+  /// <summary>
+  /// Returns a copy of <paramref name="liveTiles"/> with a Free block appended
+  /// to fill the gap between the last live byte and <paramref name="imageSize"/>.
+  /// Used by the per-entry scanning emit so the in-progress map always shows
+  /// the full image area, not just the read-so-far portion.
+  /// </summary>
+  private static System.Collections.Generic.IReadOnlyList<DefragBlockInfo> AppendFreeTail(
+      System.Collections.Generic.List<DefragBlockInfo> liveTiles,
+      long liveByteCount,
+      long imageSize) {
+    if (liveByteCount >= imageSize) return liveTiles.ToArray();
+    var withTail = new System.Collections.Generic.List<DefragBlockInfo>(liveTiles.Count + 1);
+    withTail.AddRange(liveTiles);
+    withTail.Add(new DefragBlockInfo(liveByteCount, imageSize - liveByteCount, DefragBlockKind.Free));
+    return withTail;
+  }
+
+  /// <summary>
+  /// Streaming variant of <see cref="Rebuild"/> for filesystems that can build
+  /// their image incrementally — i.e. whose writer exposes a sink-style
+  /// <c>Begin / WriteEntry / Finish</c> protocol rather than a batch
+  /// <c>Build()</c>. Bytes flow per-entry from reader to writer without
+  /// accumulating the full file list in memory, so multi-GB containers can
+  /// start the write before the full directory tree has been walked.
+  ///
+  /// <para>Currently only used for <see cref="DefragMode.ConsolidateAtStart"/>
+  /// and <see cref="DefragMode.FillHolesLazy"/> (both pack files in input
+  /// order, so no upfront sort needed). End-pack and carve-hole still need
+  /// the buffered <see cref="Rebuild"/> path — they require knowing all sizes
+  /// before writing the first byte.</para>
+  /// </summary>
+  /// <param name="archive">Stream to rewrite. Must be readable, writable, seekable.</param>
+  /// <param name="options">Defrag mode + parameters. Must be ConsolidateAtStart or FillHolesLazy.</param>
+  /// <param name="readEntries">Lazily yields entries from the existing image.</param>
+  /// <param name="beginWrite">Initialises the streaming writer over a target stream.</param>
+  /// <param name="writeEntry">Writes one (name, bytes) tuple to the streaming writer.</param>
+  /// <param name="finishWrite">Finalises the streaming writer (flushes metadata, etc.).</param>
+  public static void RebuildStreaming(
+    System.IO.Stream archive,
+    DefragOptions options,
+    System.Func<System.IO.Stream, System.Collections.Generic.IEnumerable<(string Name, byte[] Data)>> readEntries,
+    System.Action<System.IO.Stream> beginWrite,
+    System.Action<string, byte[]> writeEntry,
+    System.Action finishWrite) {
+    System.ArgumentNullException.ThrowIfNull(archive);
+    System.ArgumentNullException.ThrowIfNull(options);
+    System.ArgumentNullException.ThrowIfNull(readEntries);
+    System.ArgumentNullException.ThrowIfNull(beginWrite);
+    System.ArgumentNullException.ThrowIfNull(writeEntry);
+    System.ArgumentNullException.ThrowIfNull(finishWrite);
+    if (options.Mode is not (DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy))
+      throw new System.NotSupportedException(
+        $"RebuildStreaming only supports ConsolidateAtStart / FillHolesLazy; got {options.Mode}.");
+
+    var originalLength = archive.Length;
+    archive.Position = 0;
+
+    // Stream to a temp file (not memory) so multi-GB containers don't blow up
+    // RAM. After everything's written, atomically swap the temp bytes back into
+    // archive — that's the only way to honour the in-place contract.
+    var tempPath = System.IO.Path.GetTempFileName();
+    try {
+      using (var temp = System.IO.File.Open(tempPath, System.IO.FileMode.Open,
+          System.IO.FileAccess.ReadWrite)) {
+        beginWrite(temp);
+
+        long readPos = 0;
+        long entriesProcessed = 0;
+        foreach (var entry in readEntries(archive)) {
+          // Write each entry as it arrives — no accumulation.
+          writeEntry(entry.Name, entry.Data);
+          entriesProcessed++;
+          readPos = System.Math.Min(archive.Position, originalLength);
+          var writePos = temp.Position;
+          options.OnProgress?.Invoke(new DefragProgressEvent(
+            Phase: "streaming",
+            Fraction: originalLength > 0 ? System.Math.Min(1.0, (double)readPos / originalLength) : 0,
+            CurrentReadOffset: readPos,
+            CurrentWriteOffset: writePos,
+            ImageSize: originalLength,
+            BlockMap: null,
+            Status: $"Streamed {entry.Name} ({entriesProcessed} entries)"));
+        }
+        finishWrite();
+        temp.Flush();
+
+        // Copy temp → archive atomically (in chunks). archive.SetLength then
+        // copy preserves the original stream identity; callers don't have to
+        // close + reopen.
+        var totalWrite = temp.Length;
+        archive.SetLength(totalWrite);
+        archive.Position = 0;
+        temp.Position = 0;
+        var buf = new byte[64 * 1024];
+        var copied = 0L;
+        int n;
+        while ((n = temp.Read(buf, 0, buf.Length)) > 0) {
+          archive.Write(buf, 0, n);
+          copied += n;
+          options.OnProgress?.Invoke(new DefragProgressEvent(
+            Phase: "writing",
+            Fraction: totalWrite > 0 ? (double)copied / totalWrite : 0,
+            CurrentReadOffset: -1,
+            CurrentWriteOffset: copied,
+            ImageSize: totalWrite,
+            BlockMap: null));
+        }
+      }
+    } finally {
+      try { System.IO.File.Delete(tempPath); } catch { /* best-effort cleanup */ }
+    }
+  }
+
+  private static DefragBlockClass ClassifyByOrder(int index, int total) {
+    if (total <= 0) return DefragBlockClass.Normal;
+    var q = index * 4 / total; // 0..3
+    return q switch {
+      0 => DefragBlockClass.Hot,
+      1 => DefragBlockClass.Normal,
+      2 => DefragBlockClass.Cold,
+      _ => DefragBlockClass.Frozen,
+    };
   }
 }

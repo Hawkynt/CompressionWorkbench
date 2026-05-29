@@ -4,7 +4,48 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Deb;
 
-public sealed class DebFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class DebFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts the data.tar entries and rebuilds the .deb package.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts the data.tar entries and rebuilds the .deb package.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new DebReader(stream);
+        return r.ReadDataEntries().Where(e => !e.IsDirectory).Select(e => (e.Path, e.Data));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        var control = new DebEntry("control",
+          "Package: pkg\nVersion: 1.0\nArchitecture: all\nDescription: rebuilt by CompressionWorkbench\n"u8.ToArray(), false);
+        var dataFiles = files.Select(f => new DebEntry(f.Name, f.Data, false)).ToList();
+        var w = new DebWriter(ms);
+        w.Write([control], dataFiles);
+        return ms.ToArray();
+      });
+  }
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    // Deb is an ar archive; delegate to the ar layout walker.
+    archive.Position = 0;
+    yield return new DefragBlockInfo(0, Ar.ArConstants.GlobalHeaderSize, DefragBlockKind.MetadataReserved, FileName: "AR Global Header");
+    var r = new Ar.ArReader(archive);
+    long pos = Ar.ArConstants.GlobalHeaderSize;
+    foreach (var e in r.Entries) {
+      yield return new DefragBlockInfo(pos, Ar.ArConstants.EntryHeaderSize, DefragBlockKind.MetadataReserved, FileName: "Header: " + e.Name);
+      pos += Ar.ArConstants.EntryHeaderSize;
+      if (e.Data.Length > 0)
+        yield return new DefragBlockInfo(pos, e.Data.Length, DefragBlockKind.Used, FileName: e.Name);
+      pos += e.Data.Length;
+      if (e.Data.Length % 2 != 0)
+        pos++;
+    }
+  }
+
   public string Id => "Deb";
   public string DisplayName => "DEB";
   public FormatCategory Category => FormatCategory.Archive;

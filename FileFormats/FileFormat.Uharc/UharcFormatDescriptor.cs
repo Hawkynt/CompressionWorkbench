@@ -4,7 +4,50 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Uharc;
 
-public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the UHARC archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the UHARC archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new UharcReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FileName, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new UharcWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddFile(n, d, DateTime.Now);
+        }
+        return ms.ToArray();
+      });
+  }
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    yield return new DefragBlockInfo(0, UharcConstants.HeaderSize, DefragBlockKind.MetadataReserved, FileName: "UHARC Header");
+    UharcReader r;
+    try {
+      r = new UharcReader(archive, leaveOpen: true);
+    } catch {
+      yield break;
+    }
+    foreach (var e in r.Entries) {
+      // Entry header: 1+4+4+4+4+2+nameLen+1 bytes before DataOffset
+      var hdrLen = 1 + 4 + 4 + 4 + 4 + 2 + System.Text.Encoding.UTF8.GetByteCount(e.FileName) + 1;
+      var hdrStart = e.DataOffset - hdrLen;
+      if (hdrStart >= 0)
+        yield return new DefragBlockInfo(hdrStart, hdrLen, DefragBlockKind.MetadataReserved, FileName: "Header: " + e.FileName);
+      if (e.CompressedSize > 0)
+        yield return new DefragBlockInfo(e.DataOffset, e.CompressedSize, DefragBlockKind.Used, FileName: e.FileName);
+    }
+  }
+
   public string Id => "Uharc";
   public string DisplayName => "UHARC";
   public FormatCategory Category => FormatCategory.Archive;

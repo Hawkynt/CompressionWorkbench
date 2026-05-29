@@ -4,7 +4,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.ThumbsDb;
 
-public sealed class ThumbsDbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class ThumbsDbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "Thumbs.db is an OLE2 Compound File with a Catalog stream + per-thumbnail JPEG streams — " +
+      "rebuilding from the surface stream list would destroy the catalog references.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => Msi.CfbLayoutMap.Enumerate(archive);
+
   public string Id => "ThumbsDb";
   public string DisplayName => "Thumbs.db";
   public FormatCategory Category => FormatCategory.Archive;

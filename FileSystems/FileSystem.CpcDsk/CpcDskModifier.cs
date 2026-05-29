@@ -102,6 +102,127 @@ public static class CpcDskModifier {
   }
 
   /// <summary>
+  /// Walks the AMSDOS directory in track 0 of an existing CPC DSK image and
+  /// returns the <em>logical</em> files it describes — the same name+payload
+  /// pairs that <see cref="CpcDskWriter.AddFile"/> consumes. Multi-extent
+  /// files (same base+ext across several directory slots with different
+  /// <c>EX</c> values) are stitched together in extent order, and trailing
+  /// slack inside the last sector is trimmed to the byte-precise length
+  /// implied by the <c>RC</c> field (records × 128).
+  ///
+  /// <para>This is the read side of the round-trip needed by
+  /// <see cref="Compression.Registry.IArchiveDefragmentable"/>. The physical
+  /// <see cref="CpcDskReader"/> exposes <c>T01S0_C1</c>-style sector names,
+  /// which would corrupt file identity if fed to the writer; this method
+  /// returns the AMSDOS filenames the writer rebuilds verbatim.</para>
+  ///
+  /// <para>I/O cost: one disk-info header read (256 B) + one geometry probe
+  /// TIB read (256 B) + the full directory area on track 0 (sectorsPerTrack ×
+  /// sectorSize, ≈4.5 KB on a 9×512 disk) + one sector read per allocated
+  /// data block referenced by live entries. Unformatted track 0 returns no
+  /// entries.</para>
+  /// </summary>
+  /// <returns>(name, data) pairs in directory-slot order. Multi-extent files
+  /// appear once. Empty if the directory is all-0xE5 or track 0 is unformatted.</returns>
+  public static IEnumerable<(string Name, byte[] Data)> EnumerateLogicalFiles(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+
+    var loc = SectorLocator.Parse(image);
+    var dir = ReadDirectoryArea(image, loc);
+
+    // Group dir slots by (base, ext) — each extent of a multi-extent file is a
+    // separate 32-byte directory record sharing the same name with a different
+    // EX value. Preserve first-seen ordering so consumers see deterministic
+    // output across runs.
+    var groups = new Dictionary<(string Base, string Ext), List<(int ExtentNumber, int RecordCount, int[] Blocks)>>();
+    var order = new List<(string Base, string Ext)>();
+
+    var maxEntries = dir.Length / DirEntrySize;
+    for (var slot = 0; slot < maxEntries; slot++) {
+      var off = slot * DirEntrySize;
+      var userNumber = dir[off];
+      if (userNumber == DirUnusedMarker) continue;
+      // CP/M reserves user numbers > 0x0F for non-file purposes (label, time-stamp).
+      // AMSDOS only emits user 0..15 for real files; the writer stores 0.
+      if (userNumber > 0x0F) continue;
+
+      var entryBase = StripAttributeBits(Encoding.ASCII.GetString(dir, off + 1, 8)).TrimEnd();
+      var entryExt = StripAttributeBits(Encoding.ASCII.GetString(dir, off + 9, 3)).TrimEnd();
+      // Skip slots whose name is empty — defensive against fuzzed images.
+      if (entryBase.Length == 0 && entryExt.Length == 0) continue;
+
+      var ex = dir[off + 12];          // extent number low byte
+      var s2 = dir[off + 14];          // extent number high byte (bits 5..)
+      var extentNumber = ex | (s2 << 5);
+      var rc = dir[off + 15];
+
+      var blocks = new int[16];
+      for (var b = 0; b < 16; b++)
+        blocks[b] = dir[off + 16 + b];
+
+      var key = (entryBase, entryExt);
+      if (!groups.TryGetValue(key, out var list)) {
+        list = [];
+        groups[key] = list;
+        order.Add(key);
+      }
+      list.Add((extentNumber, rc, blocks));
+    }
+
+    if (groups.Count == 0) yield break;
+
+    var totalBlocks = loc.Tracks * loc.Sides * loc.SectorsPerTrack;
+    foreach (var key in order) {
+      var extents = groups[key];
+      // Sort extents by EX so blocks come out in logical order regardless of
+      // directory-slot layout. CP/M normally writes them in order, but rebuilds
+      // and free-slot reuse can interleave them.
+      extents.Sort(static (a, b) => a.ExtentNumber.CompareTo(b.ExtentNumber));
+
+      // Concatenate every referenced block in extent-then-allocation order.
+      // Block 0 in CP/M's allocation list means "no block here" — stop reading
+      // that extent. Blocks beyond the image (corrupt entries) are skipped.
+      var data = new List<byte>();
+      var lastRc = 0;
+      foreach (var (_, rc, blocks) in extents) {
+        for (var i = 0; i < blocks.Length; i++) {
+          var blockNum = blocks[i];
+          if (blockNum == 0) break;
+          if (blockNum >= totalBlocks) continue;
+          var (t, side, secIdx) = BlockToTrackSideSector(blockNum, loc);
+          var offset = loc.GetSectorOffset(t, side, secIdx);
+          if (offset < 0) continue;
+          var sectorBuf = new byte[loc.SectorSize];
+          image.Position = offset;
+          image.ReadExactly(sectorBuf);
+          data.AddRange(sectorBuf);
+        }
+        lastRc = rc;
+      }
+
+      // Trim trailing slack to byte-precise length. RC counts 128-byte CP/M
+      // records used in the *last* extent; everything before that is full
+      // 128-record extents (16 384 B at 1-block-per-sector × 512 = full alloc list).
+      // Computing the exact length needs to know how many extents preceded:
+      //     fullExtents = extents.Count - 1
+      //     totalRecords = fullExtents × 128 + (lastRc == 0 ? 128 : lastRc)
+      // and the final byte length is totalRecords × 128. If the writer's
+      // CP/M math undercounts (rc==0 with empty file) we still cap at the
+      // actual block bytes we read.
+      var fullExtents = extents.Count - 1;
+      var effectiveRc = lastRc == 0 ? 128 : lastRc;
+      var byteLength = (long)fullExtents * 128 * 128 + (long)effectiveRc * 128;
+      if (byteLength > data.Count) byteLength = data.Count;
+      if (byteLength < 0) byteLength = 0;
+
+      var payload = byteLength == data.Count ? data.ToArray() : data.GetRange(0, (int)byteLength).ToArray();
+
+      var fullName = key.Ext.Length == 0 ? key.Base : key.Base + "." + key.Ext;
+      yield return (fullName, payload);
+    }
+  }
+
+  /// <summary>
   /// Removes the named file from the AMSDOS filesystem. Returns true if the
   /// file was found and deleted. Walks the directory to locate the entry,
   /// optionally wipes the data blocks it references, then sets the

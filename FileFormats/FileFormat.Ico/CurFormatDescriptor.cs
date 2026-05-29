@@ -10,7 +10,13 @@ namespace CompressionWorkbench.FileFormat.Ico;
 /// hotspot X/Y instead of plane count and bit depth.
 /// </summary>
 public sealed class CurFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveWriteConstraints {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "CUR is a Windows cursor bundle (image bitmaps + hotspot fields) — defragmentation isn't meaningful.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
 
   public string Id => "Cur";
   public string DisplayName => "Windows CUR cursor";

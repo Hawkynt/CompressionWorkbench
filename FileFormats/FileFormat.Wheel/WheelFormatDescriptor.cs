@@ -30,7 +30,11 @@ namespace FileFormat.Wheel;
 /// Reference: <see href="https://peps.python.org/pep-0427/"/>.
 /// </para>
 /// </remarks>
-public sealed class WheelFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class WheelFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
+
   /// <inheritdoc/>
   public string Id => "Wheel";
 

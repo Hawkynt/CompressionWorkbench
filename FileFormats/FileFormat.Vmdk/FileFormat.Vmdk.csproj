@@ -3,6 +3,7 @@
     <RootNamespace>FileFormat.Vmdk</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
     <ProjectReference Include="..\..\FileSystems\FileSystem.Fat\FileSystem.Fat.csproj" />
   </ItemGroup>

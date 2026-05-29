@@ -4,48 +4,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.F2fs;
 
-public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
+public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable {
   public string Id => "F2fs";
   public string DisplayName => "F2FS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-
-  /// <summary>
-  /// Adds (or replaces by name) files inside an existing F2fs image.
-  /// Read-extract-rebuild via <see cref="ModifyRebuilder"/>; the rebuild
-  /// path doubles as a secure-wipe for replaced bytes.
-  /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs,
-      readEntries: stream => {
-        var r = new F2fsReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new F2fsWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
-
-  /// <summary>
-  /// Removes the named entries from an existing F2fs image. The image is
-  /// rebuilt without the target entries — old file bytes are wiped because
-  /// the new layout starts fresh, leaving no forensic trace.
-  /// </summary>
-  public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames,
-      readEntries: stream => {
-        var r = new F2fsReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new F2fsWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
 
   public string DefaultExtension => ".f2fs";
   public IReadOnlyList<string> Extensions => [".f2fs"];
@@ -55,7 +21,16 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "F2FS flash-friendly filesystem image";
+  /// <summary>
+  /// F2FS flash-friendly filesystem image — WORM. The writer emits a real
+  /// kernel-spec multi-segment image (superblock + checkpoint pack +
+  /// SIT/NAT/SSA + Main area with HOT/WARM/COLD nodes and inline-dentry
+  /// root). True in-flight Add/Remove would require mutating the NAT and SIT
+  /// journals, allocating from the segment-typed valid_map, walking inline
+  /// dentries, and recomputing the checkpoint CRC — multi-week work.
+  /// Per project policy, WORM = create only; no in-flight modification.
+  /// </summary>
+  public string Description => "F2FS flash-friendly filesystem image (WORM)";
 
   // --- WORM write constraints ---
   // F2FS minimum image = ~30 MB in the real-world mkfs.f2fs tool; our writer emits 64 MB by
@@ -101,5 +76,29 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     w.WriteTo(output);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware F2FS defragmentor via read-extract-rebuild dispatch through
+  /// <see cref="DefragRebuilder"/>. The writer always emits a fresh
+  /// contiguous-from-start multi-segment image (SIT/NAT journals, checkpoint
+  /// pack, inline-dentry root).
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new F2fsReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new F2fsWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        using var ms = new MemoryStream();
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
   }
 }

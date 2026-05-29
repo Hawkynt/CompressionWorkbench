@@ -1,0 +1,54 @@
+<Window x:Class="Compression.UI.Views.AddPartitionDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Add Partition" Width="460" Height="340"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        ShowInTaskbar="False">
+  <Grid Margin="12">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="120" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+
+    <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" x:Name="HeadingLbl"
+               Text="Add a new primary partition." FontWeight="SemiBold" Margin="0,0,0,8" />
+
+    <TextBlock Grid.Row="1" Grid.Column="0" Text="Start sector (LBA):" VerticalAlignment="Center" Margin="0,4" />
+    <TextBox  Grid.Row="1" Grid.Column="1" x:Name="StartLbaBox" Margin="0,4"
+              VerticalContentAlignment="Center"
+              ToolTip="Sector index from the start of the disk. Each sector is 512 bytes." />
+
+    <TextBlock Grid.Row="2" Grid.Column="0" Text="Length (sectors):" VerticalAlignment="Center" Margin="0,4" />
+    <TextBox  Grid.Row="2" Grid.Column="1" x:Name="LengthSectorsBox" Margin="0,4"
+              VerticalContentAlignment="Center"
+              ToolTip="Number of 512-byte sectors. Multiply by 512 to get bytes." />
+
+    <TextBlock Grid.Row="3" Grid.Column="0" Text="Type:" VerticalAlignment="Center" Margin="0,4" />
+    <ComboBox Grid.Row="3" Grid.Column="1" x:Name="TypeCombo" Margin="0,4" />
+
+    <TextBlock Grid.Row="4" Grid.Column="0" Text="Label:" VerticalAlignment="Center" Margin="0,4" />
+    <TextBox  Grid.Row="4" Grid.Column="1" x:Name="LabelBox" Margin="0,4"
+              VerticalContentAlignment="Center"
+              ToolTip="GPT only — MBR ignores the label. Up to 36 UTF-16 chars." />
+
+    <TextBlock Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" x:Name="HintLbl"
+               Text="" Foreground="DimGray" Margin="0,6,0,0" TextWrapping="Wrap" />
+
+    <StackPanel Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2"
+                Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+      <Button x:Name="OkBtn" Content="OK" Width="80" Padding="4" Margin="0,0,8,0"
+              IsDefault="True" Click="OnOk" />
+      <Button Content="Cancel" Width="80" Padding="4" IsCancel="True" />
+    </StackPanel>
+  </Grid>
+</Window>

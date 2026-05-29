@@ -5,7 +5,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Psf;
 
-public sealed class PsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class PsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "PSF is a fixed-section sound container (header + reserved + program + tags) — " +
+      "section order is part of the format spec; defragmentation isn't meaningful.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
   public string Id => "Psf";
   public string DisplayName => "Portable Sound Format";
   public FormatCategory Category => FormatCategory.Archive;

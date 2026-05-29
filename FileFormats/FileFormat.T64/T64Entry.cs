@@ -8,5 +8,5 @@ public sealed class T64Entry {
   public byte EntryType { get; init; } // 1=normal, 3=snapshot
   public ushort StartAddress { get; init; }
   public ushort EndAddress { get; init; }
-  internal int DataOffset { get; init; }
+  public int DataOffset { get; init; }
 }

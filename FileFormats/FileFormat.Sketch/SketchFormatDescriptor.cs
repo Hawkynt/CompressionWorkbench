@@ -12,7 +12,11 @@ namespace FileFormat.Sketch;
 /// image/text-preview assets. Read-only descriptor surfacing the canonical
 /// parts plus a derived metadata.ini.
 /// </summary>
-public sealed class SketchFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class SketchFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
+
   public string Id => "Sketch";
   public string DisplayName => "Sketch";
   public FormatCategory Category => FormatCategory.Archive;

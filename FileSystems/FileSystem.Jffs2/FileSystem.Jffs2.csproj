@@ -5,6 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
   </ItemGroup>
 

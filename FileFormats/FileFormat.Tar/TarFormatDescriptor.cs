@@ -4,7 +4,41 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Tar;
 
-public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable {
+public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the TAR archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the TAR archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new TarReader(stream);
+        var list = new List<(string, byte[])>();
+        while (r.GetNextEntry() is { } e) {
+          if (e.IsDirectory) { r.Skip(); continue; }
+          using var es = r.GetEntryStream();
+          var data = new byte[e.Size];
+          es.ReadExactly(data);
+          list.Add((e.Name, data));
+        }
+        return list;
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        var w = new TarWriter(ms);
+        foreach (var (n, d) in files)
+          w.AddEntry(new TarEntry { Name = n, Size = d.Length }, d);
+        w.Finish();
+        return ms.ToArray();
+      });
+  }
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => TarLayoutMap.Enumerate(archive);
+
   public string Id => "Tar";
   public string DisplayName => "TAR";
   public FormatCategory Category => FormatCategory.Archive;

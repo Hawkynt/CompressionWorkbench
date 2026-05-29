@@ -10,7 +10,7 @@ namespace FileFormat.Ogg;
 /// reconstruction, Opus CELT/SILK) is out of scope; consumers that need PCM pipe
 /// the extracted packets through a decoder downstream.
 /// </summary>
-public sealed class OggFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class OggFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IFileInternalLayoutMap {
   public string Id => "Ogg";
   public string DisplayName => "OGG (Xiph container)";
   public FormatCategory Category => FormatCategory.Audio;
@@ -52,6 +52,9 @@ public sealed class OggFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => OggLayoutMap.Enumerate(file);
 
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();

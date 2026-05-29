@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ZxScl;
 
-public sealed class ZxSclFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
+public sealed class ZxSclFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   // Upper bound: max payload (40 tracks x 16 sectors x 256 bytes x 4 layers) + magic/headers/CRC.
   public long? MaxTotalArchiveSize => ZxSclReader.MaxPayloadSize;
@@ -105,5 +105,57 @@ public sealed class ZxSclFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());
+  }
+
+  // ── IArchiveDefragmentable (rebuild-based) ───────────────────────────
+
+  public void Defragment(Stream archive)
+    => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options)
+    => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+
+  // ── IArchiveLayoutMap ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Enumerates the byte layout of an SCL archive: 8-byte magic as
+  /// MetadataReserved, 1-byte file count + N×14-byte headers as
+  /// MetadataReserved, each file's sector-padded data region as Used,
+  /// and the trailing 4-byte CRC as MetadataReserved.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    using var r = new ZxSclReader(archive);
+
+    // Magic: 8 bytes
+    yield return new DefragBlockInfo(0, 8, DefragBlockKind.MetadataReserved, "SINCLAIR magic");
+
+    // File count (1 byte) + N × 14-byte headers
+    var headerTableSize = 1 + r.Entries.Count * ZxSclReader.HeaderSize;
+    yield return new DefragBlockInfo(8, headerTableSize, DefragBlockKind.MetadataReserved, "Directory");
+
+    // File data regions
+    foreach (var e in r.Entries) {
+      if (e.Size > 0)
+        yield return new DefragBlockInfo(e.DataOffset, e.Size, DefragBlockKind.Used, e.Name);
+    }
+
+    // Trailing CRC: 4 bytes at end
+    var crcOffset = archive.Length - 4;
+    if (crcOffset > 0)
+      yield return new DefragBlockInfo(crcOffset, 4, DefragBlockKind.MetadataReserved, "CRC32");
+  }
+
+  // ── Shared delegates ─────────────────────────────────────────────────
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    var r = new ZxSclReader(stream);
+    return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    var w = new ZxSclWriter();
+    foreach (var (n, d) in files) w.AddFile(n, d);
+    return w.Build();
   }
 }

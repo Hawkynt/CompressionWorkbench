@@ -4,7 +4,35 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Wim;
 
-public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "WIM defragmentation is not supported — XML metadata resource references SHA-1 hashes of " +
+      "compressed resource bytes; a rebuild would change those references and break the image.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    if (archive.Length < WimConstants.HeaderSize)
+      yield break;
+    yield return new DefragBlockInfo(0, WimConstants.HeaderSize, DefragBlockKind.MetadataReserved, FileName: "WIM Header");
+    WimReader r;
+    try {
+      archive.Position = 0;
+      r = new WimReader(archive);
+    } catch {
+      yield break;
+    }
+    foreach (var res in r.Resources) {
+      if (res.CompressedSize <= 0 || res.Offset < 0) continue;
+      var kind = res.IsMetadata ? DefragBlockKind.MetadataReserved : DefragBlockKind.Used;
+      var label = res.IsMetadata ? "Metadata Resource" : "Data Resource";
+      yield return new DefragBlockInfo(res.Offset, res.CompressedSize, kind, FileName: label);
+    }
+  }
+
   public string Id => "Wim";
   public string DisplayName => "WIM";
   public FormatCategory Category => FormatCategory.Archive;

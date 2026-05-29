@@ -15,7 +15,23 @@ namespace FileFormat.Fla;
 /// Uses compound extension <c>.fla</c> with empty magic to avoid conflicting
 /// with DOC/ZIP descriptors that own the generic magics.
 /// </summary>
-public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var sig = new byte[8];
+    if (archive.Read(sig, 0, Math.Min(8, (int)Math.Min(8, archive.Length))) < 4)
+      return [];
+    // CFB variant
+    if (sig[0] == 0xD0 && sig[1] == 0xCF && sig[2] == 0x11 && sig[3] == 0xE0)
+      return FileFormat.Msi.CfbLayoutMap.Enumerate(archive);
+    // ZIP/XFL variant
+    if (sig[0] == 0x50 && sig[1] == 0x4B && sig[2] == 0x03 && sig[3] == 0x04)
+      return FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
+    return [];
+  }
+
   public string Id => "Fla";
   public string DisplayName => "Flash/Animate FLA";
   public FormatCategory Category => FormatCategory.Archive;

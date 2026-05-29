@@ -12,7 +12,14 @@ namespace FileFormat.ResourceDll;
 /// than throwing). The <c>.resource.dll</c> compound extension routes file-by-name
 /// dispatch here without claiming all <c>.dll</c> files.
 /// </summary>
-public sealed class ResourceDllFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class ResourceDllFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "ResourceDll is a PE32+ DLL with RVAs, section alignment, and import tables — " +
+      "rebuilding from RT_RCDATA blobs alone would destroy the PE structure.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
   public string Id => "ResourceDll";
   public string DisplayName => "Resource DLL (Win32 RT_RCDATA archive)";
   public FormatCategory Category => FormatCategory.Archive;

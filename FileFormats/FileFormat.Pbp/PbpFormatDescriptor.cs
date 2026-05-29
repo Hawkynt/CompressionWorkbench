@@ -4,7 +4,25 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Pbp;
 
-public sealed class PbpFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class PbpFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "PBP is a PSP firmware/EBOOT container with fixed-section layout (ICON0/PIC0/PIC1/SND0/PSP/PSAR) — " +
+      "section order is part of the format spec; defragmentation isn't meaningful.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new PbpReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.Size > 0)
+        yield return new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "Pbp";
   public string DisplayName => "PSP PBP Archive";
   public FormatCategory Category => FormatCategory.Archive;

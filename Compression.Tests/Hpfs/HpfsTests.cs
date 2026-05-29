@@ -135,37 +135,231 @@ public class HpfsTests {
       _ = new HpfsReader(new MemoryStream(new byte[1024])));
   }
 
-  /// <summary>
-  /// Lock the HPFS capability surface at R-only. HPFS R/W is multi-week work:
-  /// the reader is intentionally narrow (root directory only, no subdirectory
-  /// descent, no allocation B+ tree extent traversal, no banded allocation
-  /// bitmap, no SpareBlock/Hot Fix List). A real writer requires:
-  /// <list type="bullet">
-  ///   <item>Banded allocation bitmap (1 bitmap per 8 MiB band) maintenance.</item>
-  ///   <item>Directory B+ tree split/merge/balance operations.</item>
-  ///   <item>Per-file allocation B+ tree (AllocSec height &gt; 0) for files
-  ///   beyond 8 direct extents.</item>
-  ///   <item>Root + SpareBlock dual maintenance with the Hot Fix List.</item>
-  ///   <item>Code page table.</item>
-  /// </list>
-  /// Even an empty-WORM emission can't be externally validated: modern Linux
-  /// distros ship a read-only HPFS driver only, and <c>hpfsck</c> was
-  /// abandoned years ago — only OS/2 <c>chkdsk</c> can verify a written image.
-  /// Per the project rule "never advertise CanCreate without real spec
-  /// compliance", this test fails any drive-by upgrade that adds modify/create
-  /// capabilities without the underlying B+ tree work.
-  /// </summary>
+  // ── Capability checks (replaces Descriptor_IsHonestlyReadOnly) ─────
+
   [Test, Category("HappyPath")]
-  public void Descriptor_IsHonestlyReadOnly() {
+  public void Descriptor_ImplementsCreatable() {
     var d = new HpfsFormatDescriptor();
-    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>(),
-      "HPFS must not advertise IArchiveModifiable until directory B+ tree, allocation B+ tree, and banded bitmap manipulation are implemented.");
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>(),
-      "HPFS must not advertise IArchiveCreatable — empty-WORM emission requires real SpareBlock, banded bitmap, and B+ tree node bytes that no Windows/WSL validator can prove correct (only OS/2 chkdsk can).");
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsModifiable() {
+    var d = new HpfsFormatDescriptor();
+    Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+  }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsDefragmentable() {
+    var d = new HpfsFormatDescriptor();
+    Assert.That(d, Is.InstanceOf<IArchiveDefragmentable>());
+  }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsExtentMap() {
+    var d = new HpfsFormatDescriptor();
+    Assert.That(d, Is.InstanceOf<IFilesystemExtentMap>());
+  }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_SupportsListExtractTest() {
+    var d = new HpfsFormatDescriptor();
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanTest), Is.True);
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+  }
+
+  // ── Writer round-trip tests ────────────────────────────────────────
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_SingleFile_RoundTrips() {
+    var payload = "Hello HPFS!"u8.ToArray();
+    var w = new HpfsWriter();
+    w.AddFile("TEST.TXT", payload);
+    var image = w.Build();
+
+    using var r = new HpfsReader(new MemoryStream(image));
+    Assert.That(r.Entries, Has.Count.EqualTo(1));
+    Assert.That(r.Entries[0].Name, Is.EqualTo("TEST.TXT"));
+    Assert.That(r.Entries[0].Size, Is.EqualTo(payload.Length));
+    Assert.That(r.Extract(r.Entries[0]), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_ThreeFiles_RoundTrip() {
+    var w = new HpfsWriter();
+    var file1 = "alpha content"u8.ToArray();
+    var file2 = new byte[600]; // > 1 LBA
+    for (var i = 0; i < file2.Length; i++) file2[i] = (byte)(i & 0xFF);
+    var file3 = "tiny"u8.ToArray();
+
+    w.AddFile("ALPHA.TXT", file1);
+    w.AddFile("BIGFILE.BIN", file2);
+    w.AddFile("SMALL.DAT", file3);
+    var image = w.Build();
+
+    using var r = new HpfsReader(new MemoryStream(image));
+    Assert.That(r.Entries, Has.Count.EqualTo(3));
+
+    var byName = r.Entries.ToDictionary(e => e.Name);
+    Assert.That(byName.ContainsKey("ALPHA.TXT"), Is.True);
+    Assert.That(byName.ContainsKey("BIGFILE.BIN"), Is.True);
+    Assert.That(byName.ContainsKey("SMALL.DAT"), Is.True);
+
+    Assert.That(r.Extract(byName["ALPHA.TXT"]), Is.EqualTo(file1));
+    Assert.That(r.Extract(byName["BIGFILE.BIN"]), Is.EqualTo(file2));
+    Assert.That(r.Extract(byName["SMALL.DAT"]), Is.EqualTo(file3));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_EmptyFile_RoundTrips() {
+    var w = new HpfsWriter();
+    w.AddFile("EMPTY.TXT", []);
+    var image = w.Build();
+
+    using var r = new HpfsReader(new MemoryStream(image));
+    Assert.That(r.Entries, Has.Count.EqualTo(1));
+    Assert.That(r.Entries[0].Size, Is.EqualTo(0));
+    Assert.That(r.Extract(r.Entries[0]), Is.Empty);
+  }
+
+  [Test, Category("HappyPath")]
+  public void Writer_SuperblockHasValidMagic() {
+    var w = new HpfsWriter();
+    w.AddFile("X.TXT", "data"u8.ToArray());
+    var image = w.Build();
+
+    // Superblock at LBA 16
+    var sbOff = HpfsReader.SuperblockLba * LbaSize;
+    Assert.That(image[sbOff..][..HpfsReader.SuperblockMagic.Length],
+      Is.EqualTo(HpfsReader.SuperblockMagic));
+  }
+
+  // ── Descriptor Create round-trip ───────────────────────────────────
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_Create_RoundTrips() {
+    var tmp1 = Path.GetTempFileName();
+    var tmp2 = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp1, "first file"u8.ToArray());
+      File.WriteAllBytes(tmp2, "second file"u8.ToArray());
+
+      var inputs = new List<ArchiveInputInfo> {
+        new(tmp1, "README.TXT", false),
+        new(tmp2, "DATA.BIN", false),
+      };
+
+      var d = new HpfsFormatDescriptor();
+      using var ms = new MemoryStream();
+      d.Create(ms, inputs, new FormatCreateOptions());
+      ms.Position = 0;
+
+      var entries = d.List(ms, null);
+      Assert.That(entries, Has.Count.EqualTo(2));
+      var names = entries.Select(e => e.Name).ToHashSet();
+      Assert.That(names, Does.Contain("README.TXT"));
+      Assert.That(names, Does.Contain("DATA.BIN"));
+
+      ms.Position = 0;
+      var outDir = Path.Combine(Path.GetTempPath(), "hpfs_create_" + Guid.NewGuid().ToString("N"));
+      Directory.CreateDirectory(outDir);
+      try {
+        d.Extract(ms, outDir, null, null);
+        Assert.That(File.ReadAllBytes(Path.Combine(outDir, "README.TXT")),
+          Is.EqualTo("first file"u8.ToArray()));
+        Assert.That(File.ReadAllBytes(Path.Combine(outDir, "DATA.BIN")),
+          Is.EqualTo("second file"u8.ToArray()));
+      } finally {
+        try { Directory.Delete(outDir, recursive: true); } catch { /* ignore */ }
+      }
+    } finally {
+      File.Delete(tmp1);
+      File.Delete(tmp2);
+    }
+  }
+
+  // ── Modify (Add/Remove) tests ─────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Modify_Add_AppendsFile() {
+    var w = new HpfsWriter();
+    w.AddFile("ORIGINAL.TXT", "original"u8.ToArray());
+    var image = w.Build();
+
+    var d = new HpfsFormatDescriptor();
+    using var ms = new MemoryStream(image);
+
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "added content"u8.ToArray());
+      d.Add(ms, [new ArchiveInputInfo(tmp, "ADDED.TXT", false)]);
+    } finally {
+      File.Delete(tmp);
+    }
+
+    ms.Position = 0;
+    var entries = d.List(ms, null);
+    Assert.That(entries.Select(e => e.Name), Does.Contain("ORIGINAL.TXT"));
+    Assert.That(entries.Select(e => e.Name), Does.Contain("ADDED.TXT"));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Modify_Remove_RemovesFile() {
+    var w = new HpfsWriter();
+    w.AddFile("KEEP.TXT", "keep me"u8.ToArray());
+    w.AddFile("DELETE.TXT", "remove me"u8.ToArray());
+    var image = w.Build();
+
+    var d = new HpfsFormatDescriptor();
+    using var ms = new MemoryStream(image);
+    d.Remove(ms, ["DELETE.TXT"]);
+
+    ms.Position = 0;
+    var entries = d.List(ms, null);
+    Assert.That(entries.Select(e => e.Name), Does.Contain("KEEP.TXT"));
+    Assert.That(entries.Select(e => e.Name), Does.Not.Contain("DELETE.TXT"));
+  }
+
+  // ── Extent map test ────────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void ExtentMap_ReturnsMetadataAndFileExtents() {
+    var w = new HpfsWriter();
+    w.AddFile("A.TXT", "some data"u8.ToArray());
+    w.AddFile("B.TXT", new byte[1024]);
+    var image = w.Build();
+
+    var d = new HpfsFormatDescriptor();
+    using var ms = new MemoryStream(image);
+    var extents = d.EnumerateExtents(ms).ToList();
+
+    Assert.That(extents.Where(e => e.Kind == DefragBlockKind.MetadataReserved), Is.Not.Empty,
+      "Expected metadata-reserved regions");
+    var fileExtents = extents.Where(e => e.Kind == DefragBlockKind.Used).ToList();
+    Assert.That(fileExtents, Is.Not.Empty, "Expected file data regions");
+  }
+
+  // ── Defrag test ────────────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Defragment_PreservesAllFiles() {
+    var w = new HpfsWriter();
+    w.AddFile("ONE.TXT", "first"u8.ToArray());
+    w.AddFile("TWO.TXT", "second"u8.ToArray());
+    var image = w.Build();
+
+    var d = new HpfsFormatDescriptor();
+    using var ms = new MemoryStream(image);
+    d.Defragment(ms);
+
+    ms.Position = 0;
+    var entries = d.List(ms, null);
+    Assert.That(entries, Has.Count.EqualTo(2));
+    var names = entries.Select(e => e.Name).ToHashSet();
+    Assert.That(names, Does.Contain("ONE.TXT"));
+    Assert.That(names, Does.Contain("TWO.TXT"));
   }
 }

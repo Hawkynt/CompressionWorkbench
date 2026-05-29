@@ -4,7 +4,22 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Grp;
 
-public sealed class GrpFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class GrpFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new GrpReader(archive);
+    // Header: 12-byte magic + 4-byte count = 16 bytes
+    // Directory: fileCount * 16 bytes
+    var dirEnd = 16 + r.Entries.Count * 16;
+    yield return new DefragBlockInfo(0, dirEnd, DefragBlockKind.MetadataReserved, FileName: "GRP Header + Directory");
+    foreach (var e in r.Entries) {
+      if (e.Size > 0)
+        yield return new DefragBlockInfo(e.DataOffset, e.Size, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "Grp";
   public string DisplayName => "GRP";
   public FormatCategory Category => FormatCategory.Archive;
@@ -40,5 +55,23 @@ public sealed class GrpFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     using var w = new GrpWriter(output, leaveOpen: true);
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
       w.AddFile(name, data);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new GrpReader(stream);
+        return r.Entries.Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new GrpWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddFile(n, d);
+        }
+        return ms.ToArray();
+      });
   }
 }

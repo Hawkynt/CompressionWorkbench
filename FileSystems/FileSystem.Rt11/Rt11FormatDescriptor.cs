@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using Compression.Core.Layout;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -12,7 +13,18 @@ namespace FileSystem.Rt11;
 /// canonical RX01 single-density 8" floppy image (~256 KB).
 /// </summary>
 public sealed class Rt11FormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the RT-11 directory segment chain and yields the actual on-disk
+  /// byte layout — boot/home blocks + directory segments as
+  /// <see cref="DefragBlockKind.MetadataReserved"/>, every permanent file as
+  /// a <see cref="DefragBlockKind.Used"/> contiguous 512-byte block run
+  /// (RT-11 always stores files contiguously), and E_MPTY directory slots'
+  /// ranges as <see cref="DefragBlockKind.Free"/>.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => Rt11ExtentMap.Enumerate(image);
 
   public string Id => "Rt11";
   public string DisplayName => "DEC RT-11 (RX01)";
@@ -101,6 +113,84 @@ public sealed class Rt11FormatDescriptor :
   public void Remove(Stream archive, string[] entryNames) {
     foreach (var name in entryNames)
       Rt11Modifier.RemoveFile(archive, name, wipeData: true);
+  }
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    => new Rt11BlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    => new Rt11BlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware RT-11 defragmentor. Tries planner-driven in-place path first,
+  /// falls back to rebuild path on error.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      archive.Position = 0;
+      using var snapshot = new MemoryStream();
+      archive.CopyTo(snapshot);
+      try {
+        archive.Position = 0;
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch {
+        archive.Position = 0;
+        snapshot.Position = 0;
+        snapshot.CopyTo(archive);
+        archive.SetLength(snapshot.Length);
+        archive.Position = 0;
+      }
+    }
+
+    DefragmentWithRebuild(archive, options);
+  }
+
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var imageSize = archive.Length;
+    var mover = new Rt11BlockMover();
+
+    var extents = Rt11ExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "scanning", Fraction: 0, CurrentReadOffset: 0, CurrentWriteOffset: -1,
+      ImageSize: imageSize, BlockMap: extents, Status: "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.DataOrigin, imageSize, mover.UnitSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
+
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
+        ImageSize: imageSize, BlockMap: extents, Status: "Already defragmented"));
+      return;
+    }
+
+    DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize);
+
+    var postExtents = Rt11ExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
+      ImageSize: imageSize, BlockMap: postExtents, Status: "Defragmentation complete"));
+  }
+
+  private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var v = ReadVolume(stream);
+        return v.Files.Select(f => (f.Name, Rt11Reader.Extract(v, f)));
+      },
+      buildImage: files => Rt11Writer.Build(files.ToList()));
   }
 
   private static Rt11Reader.Volume ReadVolume(Stream stream) {

@@ -1,15 +1,43 @@
 #pragma warning disable CS1591
+using Compression.Core.Layout;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Fat;
 
-public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable {
+public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+
+  /// <summary>
+  /// Walks the boot sector + FAT chains and emits the actual on-disk layout
+  /// as <see cref="DefragBlockInfo"/>s — one per cluster-chain run per file,
+  /// plus the reserved region (boot/FAT/root dir) and the free-cluster set.
+  /// Used by the defragment window's block-map preview to show the real
+  /// fragmented layout before defrag runs.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => FatExtentMap.Enumerate(image);
+
   // Canonical FAT image sizes in ascending order: 3.5" floppies, then continuous sizes for
   // hard disks. Shrink picks the smallest that fits the current payload.
   public IReadOnlyList<long> CanonicalSizes => [737280, 1474560, 2949120];
   public void Shrink(Stream input, Stream output) =>
     Compression.Registry.ArchiveShrinker.ShrinkViaRebuild(input, output, this, this, this.CanonicalSizes);
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    var mover = new FatBlockMover();
+    mover.Init(image); // reads only the 512-byte BPB
+    mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+  }
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    var mover = new FatBlockMover();
+    mover.Init(image); // reads only the 512-byte BPB
+    mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+  }
 
   /// <summary>
   /// Rebuilds <paramref name="archive"/> in place so every file occupies a contiguous
@@ -21,21 +49,181 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
-  /// Mode-aware FAT defragmentor. All four <see cref="DefragMode"/> values are
-  /// supported via a read-rebuild path that preserves entry data and sets the
-  /// final layout to match the requested mode.
-  /// <list type="bullet">
-  ///   <item><b>ConsolidateAtStart</b> — files packed at first data cluster; trailing free.</item>
-  ///   <item><b>ConsolidateAtEnd</b> — files packed at last data clusters; leading free
-  ///     (after the metadata region). Bigger clusters land closer to the end.</item>
-  ///   <item><b>FillHolesLazy</b> — equivalent to ConsolidateAtStart on FAT (no notion of
-  ///     "lazy" since the underlying writer always lays out consecutively from cluster 2).</item>
-  ///   <item><b>CarveHole</b> — packs files at the start, then verifies the requested
-  ///     hole region is free. Throws if the hole spans the metadata / FAT region.</item>
-  /// </list>
+  /// Mode-aware FAT defragmentor. Supports both a planner-driven in-place path
+  /// (using <see cref="DefragPlanner"/> + <see cref="FatBlockMover"/>) and the
+  /// legacy rebuild path (using <see cref="DefragRebuilder"/>).
+  ///
+  /// <para>The planner-driven path is used for <see cref="DefragMode.ConsolidateAtStart"/>,
+  /// <see cref="DefragMode.ConsolidateAtEnd"/>, <see cref="DefragMode.FillHolesLazy"/>,
+  /// and <see cref="DefragMode.CarveHole"/>. Falls back to the rebuild path on
+  /// error.</para>
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
+
+    // Try the planner-driven path for supported modes.
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      try {
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch {
+        // Fall back to rebuild path on any error.
+        archive.Position = 0;
+      }
+    }
+
+    // Legacy rebuild path (fallback).
+    DefragmentWithRebuild(archive, options);
+  }
+
+  // ── Planner-driven defrag path ─────────────────────────────────────────
+
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var imageSize = archive.Length;
+    var stride = Math.Max(1, options.InterleaveStride);
+
+    // Stream-based init: reads only the 512-byte BPB. Avoids loading a
+    // multi-GB image into memory.
+    var mover = new FatBlockMover();
+    mover.Init(archive);
+
+    // Emit scanning progress with the pre-defrag block map. The extent map
+    // walks the archive directly (also streaming).
+    var extents = FatExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "scanning",
+      Fraction: 0,
+      CurrentReadOffset: 0,
+      CurrentWriteOffset: -1,
+      ImageSize: imageSize,
+      BlockMap: extents,
+      Status: "Analysing layout"));
+
+    // Compute the planned moves.
+    var profile = options.Profile;
+    // Quick profile: per-file consolidation only.
+    // Performance profile: full zone-based rearrangement.
+    var moves = DefragPlanner.Plan(
+      extents,
+      mover.FirstDataByte,
+      imageSize,
+      mover.ClusterSize,
+      profile,
+      options.Mode,
+      stride,
+      options.HoleSize,
+      options.HoleAt,
+      options.MetadataZonePlacement);
+
+    if (moves.Count == 0) {
+      // Already defragmented — emit complete event.
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        Phase: "complete",
+        Fraction: 1,
+        CurrentReadOffset: -1,
+        CurrentWriteOffset: -1,
+        ImageSize: imageSize,
+        BlockMap: extents,
+        Status: "Already defragmented"));
+      return;
+    }
+
+    if (stride > 1) {
+      // Interleaved placement: two-phase approach.
+      // Phase 1: Execute all raw byte moves.
+      for (var i = 0; i < moves.Count; i++) {
+        var move = moves[i];
+        options.OnProgress?.Invoke(new DefragProgressEvent(
+          Phase: "writing",
+          Fraction: (double)i / moves.Count * 0.5,
+          CurrentReadOffset: move.SrcOffset,
+          CurrentWriteOffset: move.DstOffset,
+          ImageSize: imageSize,
+          BlockMap: null,
+          Status: $"Moving block {i + 1} of {moves.Count}: {move.FileName}"));
+        // zeroSource: false — same crash-safety rationale as DefragPlannerExecutor.
+        // Old bytes become orphan data after the FAT-chain repatch below; they're
+        // unreferenced but recoverable until the next allocation reuses the cluster.
+        mover.MoveExtent(archive, move.SrcOffset, move.DstOffset, move.Length, zeroSource: false);
+      }
+
+      // Phase 2: Patch FAT chains per file using UpdateAllocationScattered.
+      // Group moves by file, then for each file compute old and new cluster lists.
+      // BPB is unchanged by data moves; no need to re-Init.
+      var movesByFile = new Dictionary<string, List<ClusterMove>>(StringComparer.OrdinalIgnoreCase);
+      foreach (var move in moves) {
+        if (!movesByFile.TryGetValue(move.FileName, out var list))
+          movesByFile[move.FileName] = list = [];
+        list.Add(move);
+      }
+
+      // For each file, also gather the original full chain and compute the new chain.
+      // We need the original chain (before any moves) to know the start cluster for
+      // the directory-entry lookup. Fortunately, extent map gives us the per-file
+      // source offsets, and the moves tell us which ones moved.
+      var fileIdx = 0;
+      foreach (var (fileName, fileMoves) in movesByFile) {
+        // Build the mapping from old offset → new offset for this file's blocks.
+        var offsetMap = new Dictionary<long, long>();
+        foreach (var m in fileMoves)
+          offsetMap[m.SrcOffset] = m.DstOffset;
+
+        // Reconstruct the file's old cluster chain from the extent map.
+        var fileExtents = extents
+          .Where(e => e.Kind == DefragBlockKind.Used &&
+                      string.Equals(e.FileName, fileName, StringComparison.OrdinalIgnoreCase))
+          .OrderBy(e => e.Offset)
+          .ToList();
+
+        var oldClusters = new List<int>();
+        var newClusters = new List<int>();
+        foreach (var ext in fileExtents) {
+          var blocks = (int)((ext.Length + mover.ClusterSize - 1) / mover.ClusterSize);
+          for (var b = 0; b < blocks; b++) {
+            var srcOff = ext.Offset + (long)b * mover.ClusterSize;
+            oldClusters.Add(mover.OffsetCluster(srcOff));
+            var dstOff = offsetMap.TryGetValue(srcOff, out var mapped) ? mapped : srcOff;
+            newClusters.Add(mover.OffsetCluster(dstOff));
+          }
+        }
+
+        mover.UpdateAllocationScattered(archive, fileName, oldClusters, newClusters);
+        // BPB unchanged — no re-Init needed. UpdateAllocationScattered already
+        // does targeted writes + per-step flushes.
+        fileIdx++;
+        options.OnProgress?.Invoke(new DefragProgressEvent(
+          Phase: "writing",
+          Fraction: 0.5 + 0.5 * fileIdx / movesByFile.Count,
+          CurrentReadOffset: -1,
+          CurrentWriteOffset: -1,
+          ImageSize: imageSize,
+          BlockMap: null,
+          Status: $"Patching chain {fileIdx} of {movesByFile.Count}: {fileName}"));
+      }
+    } else {
+      // Contiguous placement: shared executor with per-move progress. BPB
+      // doesn't change during defrag so no per-move re-Init is needed.
+      DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize, reinitAfterMove: null);
+    }
+
+    // Emit complete event with post-defrag block map. Re-walk the archive
+    // directly — no need to load it into memory.
+    archive.Position = 0;
+    var postExtents = FatExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "complete",
+      Fraction: 1,
+      CurrentReadOffset: -1,
+      CurrentWriteOffset: -1,
+      ImageSize: imageSize,
+      BlockMap: postExtents,
+      Status: $"Defragmentation complete — {moves.Count} move(s) executed"));
+  }
+
+  // ── Legacy rebuild path ────────────────────────────────────────────────
+
+  private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
     archive.Position = 0;
     var originalLength = archive.Length;
     var reader = new FatReader(archive);
@@ -57,14 +245,6 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         break;
       }
       case DefragMode.ConsolidateAtEnd: {
-        // FatWriter doesn't expose a "pack at end" mode; emulate by ordering files
-        // so smaller files land at low data clusters (which become free space) and
-        // larger files at high clusters. The result still has all files contiguously
-        // packed, but the largest single hole sits *before* the data — equivalent to
-        // a FAT-style "leading free region" once truncated.
-        // Pure end-packing on FAT requires writing the FAT chain in reverse order;
-        // since FatWriter doesn't expose that, we fall back to a stable pack with
-        // size-descending order so the longest run lands first.
         var w = new FatWriter();
         foreach (var (name, data) in files.OrderByDescending(f => f.Data.Length))
           w.AddFile(name, data);
@@ -171,5 +351,40 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     archive.Position = 0;
     archive.Write(image);
     archive.SetLength(image.Length);
+  }
+
+  /// <summary>
+  /// Zeros all unused space in the FAT image: free clusters, cluster-tip slack,
+  /// and optionally deleted directory entries. Uses the generic
+  /// <see cref="UnusedSpaceWiper"/> driven by the FAT extent map plus a
+  /// directory-entry-based file-size lookup for cluster-tip precision.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    // Build file-size lookup from directory entries for cluster-tip wiping.
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        var reader = new FatReader(image);
+        var sizeMap = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in reader.Entries)
+          if (!entry.IsDirectory)
+            sizeMap[entry.Name] = entry.Size;
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        // If reader fails, skip cluster-tip wiping.
+        fileSizeLookup = null;
+      }
+    }
+
+    // Enumerate extents — this gives us the cluster-aligned layout.
+    image.Position = 0;
+    var extents = FatExtentMap.Enumerate(image);
+
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
   }
 }

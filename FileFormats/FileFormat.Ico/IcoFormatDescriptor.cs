@@ -10,7 +10,13 @@ namespace CompressionWorkbench.FileFormat.Ico;
 /// inputs is supported.
 /// </summary>
 public sealed class IcoFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveWriteConstraints {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "ICO is a Windows icon bundle (image bitmaps + DIB/PNG payloads) — defragmentation isn't meaningful.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
 
   public string Id => "Ico";
   public string DisplayName => "Windows ICO/CUR";

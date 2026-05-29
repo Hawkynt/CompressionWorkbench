@@ -9,7 +9,7 @@ namespace FileFormat.Mp4;
 /// produce the concatenated sample payload in track order. Not a re-muxer — the
 /// output is elementary streams, not playable MP4 fragments.
 /// </summary>
-public sealed class Mp4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class Mp4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IFileInternalLayoutMap, IFileInternalChunkMover {
   public string Id => "Mp4";
   public string DisplayName => "MP4 / MOV (demuxed)";
   public FormatCategory Category => FormatCategory.Video;
@@ -52,6 +52,9 @@ public sealed class Mp4FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
 
+  /// <summary>Maximum number of individual frame entries per video track.</summary>
+  private const int MaxFrameEntries = 100_000;
+
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -63,7 +66,15 @@ public sealed class Mp4FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var t in tracks) {
       var ext = ChooseExtension(t.HandlerType, t.CodecFourCc);
       var name = $"track_{t.Id:D2}_{t.HandlerType}_{t.CodecFourCc}{ext}";
-      entries.Add((name, t.HandlerType == "vide" ? "Track" : t.HandlerType == "soun" ? "Track" : "Track", t.Data));
+      entries.Add((name, "Track", t.Data));
+
+      // Emit individual video frames.
+      if (t.HandlerType == "vide" && t.Samples.Count > 0) {
+        var frameExt = ChooseFrameExtension(t.CodecFourCc);
+        var frameCount = Math.Min(t.Samples.Count, MaxFrameEntries);
+        for (var f = 0; f < frameCount; ++f)
+          entries.Add(($"frames/track_{t.Id:D2}/frame_{f + 1:D6}{frameExt}", "Frame", t.Samples[f].Data));
+      }
     }
     return entries;
   }
@@ -73,6 +84,8 @@ public sealed class Mp4FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ("vide", "avc3") => ".h264",
     ("vide", "hvc1") => ".hevc",
     ("vide", "hev1") => ".hevc",
+    ("vide", "mp4v") => ".m4v",
+    ("vide", "mjpa") or ("vide", "mjpb") => ".mjpg",
     ("vide", _) => ".bin",
     ("soun", "mp4a") => ".aac",
     ("soun", _) => ".bin",
@@ -80,4 +93,19 @@ public sealed class Mp4FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ("text", _) => ".txt",
     _ => ".bin",
   };
+
+  /// <summary>Returns the appropriate extension for an individual video frame.</summary>
+  private static string ChooseFrameExtension(string codec) => codec switch {
+    "avc1" or "avc3" => ".h264",
+    "hvc1" or "hev1" => ".hevc",
+    "mjpa" or "mjpb" => ".jpg",
+    _ => ".bin",
+  };
+
+  private readonly Mp4LayoutMap _layoutMap = new();
+  private readonly Mp4FastStart _fastStart = new();
+
+  public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => this._layoutMap.EnumerateChunks(file);
+  public void Optimize(Stream file) => this._fastStart.Optimize(file);
+  public void Optimize(Stream file, MetadataPlacementProfile? profile) => this._fastStart.Optimize(file, profile);
 }

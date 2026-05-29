@@ -18,7 +18,33 @@ namespace FileSystem.Ext1;
 /// vintage pre-1993 Linux disk images and forensic tooling for early Linux installs
 /// are the consumers.
 /// </summary>
-public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
+public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the rev-0 superblock + BGD table + inode tree and yields the
+  /// actual on-disk byte layout — every metadata region (SB, BGDT, block +
+  /// inode bitmaps, inode table) plus one extent per contiguous block run
+  /// per file. Used by the defragment window's block-map preview.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => Ext1ExtentMap.Enumerate(image);
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    var mover = new Ext1BlockMover();
+    mover.Init(image);
+    mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+  }
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    var mover = new Ext1BlockMover();
+    mover.Init(image);
+    mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+  }
+
   public string Id => "Ext1";
   public string DisplayName => "ext1";
   public FormatCategory Category => FormatCategory.Archive;
@@ -144,6 +170,30 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     w.WriteTo(output);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware ext1 defragmentor via read-extract-rebuild dispatch through
+  /// <see cref="DefragRebuilder"/>. The writer always emits a fresh
+  /// contiguous-from-start single-group rev-0 layout with the canonical
+  /// 4 MiB image footprint (1024-byte blocks × 4096).
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new Ext1Reader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new Ext1Writer();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        using var ms = new MemoryStream();
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {

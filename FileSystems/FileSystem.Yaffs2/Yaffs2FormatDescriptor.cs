@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 using Compression.Registry;
@@ -7,16 +8,19 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Yaffs2;
 
 /// <summary>
-/// Read-only descriptor for YAFFS2 raw-NAND images. Auto-detects chunk/spare
-/// layout, surfaces an object table and reconstructed file tree. No magic bytes
-/// exist in the format itself, so detection is extension- and heuristic-based.
+/// R/W descriptor for YAFFS2 raw-NAND images. Auto-detects chunk/spare
+/// layout, surfaces an object table and reconstructed file tree.
+/// Supports: list, extract, create (WORM), modify (rebuild-based), defragment, extent map.
 /// </summary>
-public sealed class Yaffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class Yaffs2FormatDescriptor
+    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
+      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
   public string Id => "Yaffs2";
   public string DisplayName => "YAFFS2";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".yaffs2";
   public IReadOnlyList<string> Extensions => [".yaffs2", ".yaffs"];
@@ -27,7 +31,9 @@ public sealed class Yaffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Yet Another Flash File System v2 (raw NAND image) — triage + file reconstruction.";
+  public string Description => "Yet Another Flash File System v2 (raw NAND image) — read/write with mkyaffs2image-compatible layout.";
+
+  // ── IArchiveFormatOperations (List / Extract) ─────────────────────────
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -101,6 +107,128 @@ public sealed class Yaffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     }
   }
 
+  // ── IArchiveCreatable ─────────────────────────────────────────────────
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var w = new Yaffs2Writer();
+    foreach (var (name, data) in FlatFiles(inputs))
+      w.AddFile(name, data);
+    w.WriteTo(output);
+  }
+
+  // ── IArchiveModifiable (rebuild-based) ────────────────────────────────
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => ModifyRebuilder.Add(archive, inputs, ReadFileEntries, BuildImage);
+
+  public void Remove(Stream archive, string[] entryNames)
+    => ModifyRebuilder.Remove(archive, entryNames, ReadFileEntries, BuildImage);
+
+  // ── IArchiveDefragmentable ────────────────────────────────────────────
+
+  public void Defragment(Stream archive)
+    => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options)
+    => DefragRebuilder.Rebuild(archive, options, ReadFileEntries, BuildImage);
+
+  // ── IFilesystemExtentMap ──────────────────────────────────────────────
+
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    byte[] data;
+    try {
+      image.Position = 0;
+      using var ms = new MemoryStream();
+      image.CopyTo(ms);
+      data = ms.ToArray();
+    } catch {
+      return [];
+    }
+
+    return EnumerateExtentsCore(data);
+  }
+
+  private static List<DefragBlockInfo> EnumerateExtentsCore(byte[] data) {
+    var result = new List<DefragBlockInfo>();
+
+    // Try to detect the layout
+    var scan = Yaffs2Scanner.Scan(data);
+    if (!scan.ParseOk || scan.ChunkSize == 0) return result;
+
+    var stride = scan.ChunkSize + scan.SpareSize;
+    var paths = BuildPaths(scan);
+    var objectNames = new Dictionary<int, string>();
+    foreach (var obj in scan.Objects) {
+      var path = paths.TryGetValue(obj.ObjectId, out var p) ? p : obj.Name;
+      objectNames[obj.ObjectId] = path;
+    }
+
+    // Walk chunks and classify them
+    for (var off = 0; off + stride <= data.Length; off += stride) {
+      var spare = data.AsSpan(off + scan.ChunkSize, scan.SpareSize);
+      var (objId, chunkId, _) = ParseSpare(spare);
+
+      if (chunkId == 0) {
+        // Object header — metadata
+        var name = objectNames.TryGetValue(objId, out var n) ? n : $"obj:{objId}";
+        result.Add(new DefragBlockInfo(off, stride, DefragBlockKind.MetadataReserved, $"header:{name}"));
+      } else if (objId != 0) {
+        // Data chunk
+        var name = objectNames.TryGetValue(objId, out var n) ? n : $"obj:{objId}";
+        result.Add(new DefragBlockInfo(off, stride, DefragBlockKind.Used, name));
+      } else {
+        // Unrecognized or empty
+        result.Add(new DefragBlockInfo(off, stride, DefragBlockKind.Free));
+      }
+    }
+
+    // Trailing bytes
+    var consumed = (data.Length / stride) * stride;
+    if (consumed < data.Length)
+      result.Add(new DefragBlockInfo(consumed, data.Length - consumed, DefragBlockKind.Free));
+
+    return result;
+  }
+
+  private static (int ObjId, int ChunkId, uint NBytes) ParseSpare(ReadOnlySpan<byte> spare) {
+    if (spare.Length < 16) return (0, 0, 0);
+    try {
+      var objId = BinaryPrimitives.ReadInt32LittleEndian(spare.Slice(4, 4));
+      var chunkId = BinaryPrimitives.ReadInt32LittleEndian(spare.Slice(8, 4));
+      var nBytes = BinaryPrimitives.ReadUInt32LittleEndian(spare.Slice(12, 4));
+      if (objId is < 0 or > 1_000_000) objId = 0;
+      if (chunkId is < 0 or > 1_000_000) chunkId = 0;
+      return (objId, chunkId, nBytes);
+    } catch {
+      return (0, 0, 0);
+    }
+  }
+
+  // ── Shared helpers ────────────────────────────────────────────────────
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadFileEntries(Stream stream) {
+    var image = ReadAll(stream);
+    var scan = Yaffs2Scanner.Scan(image);
+    if (!scan.ParseOk) yield break;
+
+    var paths = BuildPaths(scan);
+    foreach (var obj in scan.Objects) {
+      if (obj.Type != Yaffs2Scanner.YObjectType.File) continue;
+      if (!scan.DataChunks.TryGetValue(obj.ObjectId, out var chunks) || chunks.Count == 0) continue;
+      var path = paths.TryGetValue(obj.ObjectId, out var p) ? p : obj.Name;
+      if (string.IsNullOrEmpty(path)) continue;
+      // Use the leaf filename for round-trip (writer flattens paths)
+      var leafName = Path.GetFileName(path);
+      yield return (leafName, Concat(chunks, obj.Size));
+    }
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    var w = new Yaffs2Writer();
+    foreach (var (n, d) in files) w.AddFile(n, d);
+    return w.Build();
+  }
+
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
     if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;
     WriteFile(outputDir, name, data);
@@ -108,7 +236,6 @@ public sealed class Yaffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
 
   private static byte[] Concat(List<byte[]> chunks, long declaredSize) {
     var total = chunks.Sum(c => (long)c.Length);
-    // Trim to declared size if smaller.
     var targetLen = declaredSize > 0 && declaredSize < total ? (int)declaredSize : (int)total;
     var result = new byte[targetLen];
     var pos = 0;
@@ -122,7 +249,6 @@ public sealed class Yaffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   }
 
   private static Dictionary<int, string> BuildPaths(Yaffs2Scanner.ScanResult scan) {
-    // Rebuild each object's path by walking parents.
     var byId = new Dictionary<int, Yaffs2Scanner.ObjectEntry>();
     foreach (var o in scan.Objects) byId[o.ObjectId] = o;
     var paths = new Dictionary<int, string>();

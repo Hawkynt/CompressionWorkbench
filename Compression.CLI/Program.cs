@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Diagnostics;
+using Compression.Core.DiskImage;
 using Compression.Lib;
 using Compression.Registry;
 using F = Compression.Lib.FormatDetector.Format;
@@ -530,17 +531,44 @@ var analyzeOffsetOpt = new Option<long>("--offset") { Description = "Start analy
 var analyzeLengthOpt = new Option<long>("--length") { Description = "Analyze only N bytes", DefaultValueFactory = _ => 0L };
 
 var analyzeRecursiveOpt = new Option<bool>("--recursive") { Description = "Recursively descend into disk image partitions" };
+var clusterHintOpt = new Option<bool>("--cluster-hint") { Description = "Analyze FAT image file sizes and suggest optimal cluster size to minimize slack" };
 
 var analyzeCmd = new Command("analyze", """
   Analyze binary data: signatures, fingerprinting, entropy map, trial decompression, chain reconstruction.
   Use --recursive to descend into disk image partitions (VHD, VMDK, QCOW2, VDI).
+  Use --cluster-hint to suggest optimal cluster size for a FAT image.
   Examples:
     cwb analyze mystery.bin --all
     cwb analyze disk.vhd --recursive
-  """) { analyzeFileArg, deepScanOpt, fingerprintOpt, trialOpt, entropyMapOpt, chainOpt, allOpt, maxDepthOpt, windowOpt, analyzeOffsetOpt, analyzeLengthOpt, analyzeRecursiveOpt };
+    cwb analyze disk.img --cluster-hint
+  """) { analyzeFileArg, deepScanOpt, fingerprintOpt, trialOpt, entropyMapOpt, chainOpt, allOpt, maxDepthOpt, windowOpt, analyzeOffsetOpt, analyzeLengthOpt, analyzeRecursiveOpt, clusterHintOpt };
 analyzeCmd.SetAction((ParseResult ctx) => {
   var file = ctx.GetValue(analyzeFileArg)!;
   if (!file.Exists) { Console.Error.WriteLine($"File not found: {file.FullName}"); return 1; }
+
+  // --cluster-hint: dedicated FAT cluster size analysis
+  if (ctx.GetValue(clusterHintOpt)) {
+    try {
+      FormatRegistration.EnsureInitialized();
+      using var stream = File.OpenRead(file.FullName);
+      var hint = FileSystem.Fat.FatShrinkHelper.AnalyzeClusterSizes(stream);
+      Console.WriteLine($"File: {file.Name}");
+      Console.WriteLine($"Current: {hint.CurrentClusterSize}-byte clusters, {hint.CurrentSlackPercent:F1}% slack");
+      Console.WriteLine($"Optimal: {hint.RecommendedClusterSize}-byte clusters, {hint.RecommendedSlackPercent:F1}% slack");
+      Console.WriteLine();
+      Console.WriteLine($"{"Cluster Size",14} {"Slack",10} {"Allocated",12} {"Slack %",8}");
+      Console.WriteLine(new string('-', 48));
+      foreach (var s in hint.AllStats) {
+        var marker = s.ClusterSize == hint.CurrentClusterSize ? " <-current" :
+                     s.ClusterSize == hint.RecommendedClusterSize ? " <-optimal" : "";
+        Console.WriteLine($"{s.ClusterSize,14} {FormatSize(s.TotalSlack),10} {FormatSize(s.TotalAllocated),12} {s.SlackPercent,7:F1}%{marker}");
+      }
+      return 0;
+    } catch (Exception ex) {
+      Console.Error.WriteLine($"Cluster hint analysis failed: {ex.Message}");
+      return 1;
+    }
+  }
 
   var options = new Compression.Analysis.AnalysisOptions {
     DeepScan = ctx.GetValue(deepScanOpt),
@@ -1125,7 +1153,7 @@ visualizeCmd.SetAction((ParseResult ctx) => {
 
 // ── defragment ────────────────────────────────────────────────────────
 
-var defragImageArg = new Argument<FileInfo>("image") { Description = "Filesystem image to defragment in place" };
+var defragImageArg = new Argument<string>("image") { Description = "Filesystem image (or glob pattern / directory) to defragment in place" };
 var defragModeOpt = new Option<string>("--mode") {
   Description = "Layout strategy: pack-start (default), pack-end, fill-holes, carve-hole",
   DefaultValueFactory = _ => "pack-start",
@@ -1137,6 +1165,16 @@ var defragHoleSizeOpt = new Option<long>("--hole-size") {
 var defragHoleAtOpt = new Option<long>("--hole-at") {
   Description = "For --mode carve-hole: byte offset of the carved region (-1 = auto, at end)",
   DefaultValueFactory = _ => -1L,
+};
+var defragStrideOpt = new Option<int>("--stride") {
+  Description = "Block interleave factor (1 = contiguous, 2+ = interleaved). Range 1-256",
+  DefaultValueFactory = _ => 1,
+};
+var defragBatchOpt = new Option<bool>("--batch") {
+  Description = "Treat argument as a glob pattern; defragment all matching files",
+};
+var defragRecursiveOpt = new Option<bool>("--recursive") {
+  Description = "When argument is a directory, recurse into subdirectories",
 };
 var defragCmd = new Command("defragment", """
   Defragment a filesystem image in place using one of four layout strategies:
@@ -1153,22 +1191,24 @@ var defragCmd = new Command("defragment", """
                   --hole-at (or auto-pick at the end). Live extents in the
                   way are relocated to existing free space or appended.
 
+  Batch mode:
+    cwb defragment *.img --mode pack-start --stride 2
+    cwb defragment images/ --mode pack-end --recursive
+
   Only descriptors that implement IArchiveDefragmentable accept this command.
   Currently: FAT12 / FAT16 / FAT32 (all four modes), other R/W filesystems
   (pack-start only via the default-impl fallback).
   """) {
-  defragImageArg, defragModeOpt, defragHoleSizeOpt, defragHoleAtOpt
+  defragImageArg, defragModeOpt, defragHoleSizeOpt, defragHoleAtOpt, defragStrideOpt, defragBatchOpt, defragRecursiveOpt
 };
 defragCmd.SetAction((ParseResult ctx) => {
-  var image = ctx.GetValue(defragImageArg)!;
+  var imageArg = ctx.GetValue(defragImageArg)!;
   var modeStr = ctx.GetValue(defragModeOpt) ?? "pack-start";
   var holeSize = ctx.GetValue(defragHoleSizeOpt);
   var holeAt = ctx.GetValue(defragHoleAtOpt);
-
-  if (!image.Exists) {
-    Console.Error.WriteLine($"File not found: {image.FullName}");
-    return 1;
-  }
+  var stride = ctx.GetValue(defragStrideOpt);
+  var isBatch = ctx.GetValue(defragBatchOpt);
+  var isRecursive = ctx.GetValue(defragRecursiveOpt);
 
   var mode = modeStr.ToLowerInvariant() switch {
     "pack-start" => DefragMode.ConsolidateAtStart,
@@ -1178,25 +1218,982 @@ defragCmd.SetAction((ParseResult ctx) => {
     _ => throw new ArgumentException($"Unknown mode '{modeStr}'. Use one of: pack-start, pack-end, fill-holes, carve-hole."),
   };
 
-  var format = FormatDetector.Detect(image.FullName);
-  var ops = FormatRegistry.GetById(format.ToString());
-  if (ops is not IArchiveDefragmentable defragmentable) {
-    Console.Error.WriteLine($"{format} does not support defragmentation.");
+  // Resolve file list: single file, glob, or directory
+  var files = ResolveDefragTargets(imageArg, isBatch, isRecursive);
+  if (files.Count == 0) {
+    Console.Error.WriteLine($"No files matched: {imageArg}");
     return 1;
   }
 
-  Console.Write($"Defragmenting {image.Name} ({format}, mode={modeStr})...");
+  var totalOk = 0;
+  var totalFail = 0;
+  foreach (var file in files) {
+    try {
+      var format = FormatDetector.Detect(file);
+      var ops = FormatRegistry.GetById(format.ToString());
+      if (ops is not IArchiveDefragmentable defragmentable) {
+        if (files.Count > 1) {
+          Console.Error.WriteLine($"  SKIP {Path.GetFileName(file)}: {format} does not support defragmentation.");
+          totalFail++;
+          continue;
+        }
+        Console.Error.WriteLine($"{format} does not support defragmentation.");
+        return 1;
+      }
+
+      Console.Write($"Defragmenting {Path.GetFileName(file)} ({format}, mode={modeStr})...");
+      var sw = Stopwatch.StartNew();
+      using var stream = File.Open(file, FileMode.Open, FileAccess.ReadWrite);
+      defragmentable.Defragment(stream, new DefragOptions {
+        Mode = mode,
+        HoleSize = holeSize,
+        HoleAt = holeAt,
+        InterleaveStride = Math.Clamp(stride, 1, 256),
+      });
+      sw.Stop();
+      Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+      totalOk++;
+    } catch (Exception ex) {
+      Console.Error.WriteLine($" FAILED: {ex.Message}");
+      totalFail++;
+    }
+  }
+
+  if (files.Count > 1) {
+    Console.WriteLine($"Batch complete: {totalOk} succeeded, {totalFail} failed out of {files.Count} file(s).");
+  }
+
+  return totalFail > 0 && totalOk == 0 ? 1 : 0;
+});
+
+// ── shrink ────────────────────────────────────────────────────────────
+
+var shrinkImageArg = new Argument<string>("image") { Description = "Filesystem image or VHD to shrink" };
+var shrinkCompactOpt = new Option<bool>("--compact") { Description = "Also compact the container (remove all-zero blocks from dynamic VHD)" };
+
+var shrinkCmd = new Command("shrink", """
+  Defragment and truncate a filesystem image to remove trailing free space.
+  For FAT images: defragments, finds last used cluster, truncates, updates BPB.
+  For ext images: defragments, finds last used block, truncates, updates superblock.
+  For VHD with --compact: also scans for all-zero blocks and rebuilds as sparse.
+
+  Examples:
+    cwb shrink disk.img                    Defrag + truncate FAT or ext image
+    cwb shrink disk.vhd --compact          Also compact container (VHD sparse)
+  """) { shrinkImageArg, shrinkCompactOpt };
+shrinkCmd.SetAction((ParseResult ctx) => {
+  var imageArg = ctx.GetValue(shrinkImageArg)!;
+  var compact = ctx.GetValue(shrinkCompactOpt);
+
+  if (!File.Exists(imageArg)) { Console.Error.WriteLine($"File not found: {imageArg}"); return 1; }
+
+  FormatRegistration.EnsureInitialized();
+  var format = FormatDetector.Detect(imageArg);
+  var formatId = format.ToString();
+
+  Console.Write($"Shrinking {Path.GetFileName(imageArg)} ({formatId})...");
   var sw = Stopwatch.StartNew();
-  using var stream = image.Open(FileMode.Open, FileAccess.ReadWrite);
-  defragmentable.Defragment(stream, new DefragOptions {
-    Mode = mode,
-    HoleSize = holeSize,
-    HoleAt = holeAt,
-  });
-  sw.Stop();
-  Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+  var origSize = new FileInfo(imageArg).Length;
+
+  try {
+    if (formatId == "Fat") {
+      using var stream = File.Open(imageArg, FileMode.Open, FileAccess.ReadWrite);
+      var result = FileSystem.Fat.FatShrinkHelper.Shrink(stream);
+      sw.Stop();
+      Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+      Console.WriteLine($"  {FormatSize(result.OriginalSize)} -> {FormatSize(result.NewSize)} ({(result.WasReduced ? "reduced" : "no change")})");
+    } else if (formatId is "Ext" or "Ext1") {
+      using var stream = File.Open(imageArg, FileMode.Open, FileAccess.ReadWrite);
+      var result = FileSystem.Ext.ExtShrinkHelper.Shrink(stream);
+      sw.Stop();
+      Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+      Console.WriteLine($"  {FormatSize(result.OriginalSize)} -> {FormatSize(result.NewSize)} ({(result.WasReduced ? "reduced" : "no change")})");
+    } else if (formatId == "Vhd" && compact) {
+      using var stream = File.Open(imageArg, FileMode.Open, FileAccess.ReadWrite);
+      var result = FileFormat.Vhd.VhdCompactor.Compact(stream);
+      sw.Stop();
+      Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+      Console.WriteLine($"  {FormatSize(result.OriginalSize)} -> {FormatSize(result.NewSize)} ({result.BlocksFreed} blocks freed)");
+    } else if (formatId == "Vhd") {
+      // Without --compact, defragment the inner FS via the VHD descriptor
+      var desc = FormatRegistry.GetById("Vhd");
+      if (desc is IArchiveDefragmentable defrag) {
+        using var stream = File.Open(imageArg, FileMode.Open, FileAccess.ReadWrite);
+        defrag.Defragment(stream);
+        sw.Stop();
+        Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+        Console.WriteLine($"  Inner FS defragmented. Use --compact to also remove sparse blocks.");
+      } else {
+        sw.Stop();
+        Console.WriteLine(" skipped");
+        Console.Error.WriteLine($"  VHD descriptor does not support defragmentation.");
+        return 1;
+      }
+    } else {
+      sw.Stop();
+      Console.WriteLine(" skipped");
+      Console.Error.WriteLine($"  Format {formatId} does not support shrink. Supported: Fat, Ext, Vhd.");
+      return 1;
+    }
+  } catch (Exception ex) {
+    sw.Stop();
+    Console.Error.WriteLine($" FAILED: {ex.Message}");
+    return 1;
+  }
+
   return 0;
 });
+
+// ── wipe-empty ────────────────────────────────────────────────────────
+
+var wipeImageArg = new Argument<string>("image") { Description = "Filesystem image or archive to wipe unused space from" };
+var wipeNoClusterTipsOpt = new Option<bool>("--no-cluster-tips") {
+  Description = "Skip cluster-tip wiping (only zero free clusters / gaps)",
+};
+var wipeNoDeletedOpt = new Option<bool>("--no-deleted-entries") {
+  Description = "Skip wiping of deleted directory entries",
+};
+
+var wipeCmd = new Command("wipe-empty", """
+  Zero-fill all unused space in a filesystem image or archive. Ensures no
+  deleted file remnants, cluster-tip slack, or padding bytes survive.
+
+  What gets wiped:
+    - Free clusters / sectors not allocated to any file
+    - Cluster-tip slack (file < cluster → trailing bytes zeroed)
+    - Dead bytes in archives (orphan data after file removal, padding)
+    - Gaps between archive entries
+
+  Examples:
+    cwb wipe-empty disk.img                    Zero all unused space
+    cwb wipe-empty disk.img --no-cluster-tips  Skip cluster-tip wiping
+    cwb wipe-empty archive.zip                 Zero dead bytes in archive
+
+  Works with any format that implements IWipeEmpty (FAT, ZIP, and others).
+  For formats without a dedicated implementation but with an extent/layout
+  map, the generic wiper zeros all gaps between live extents.
+  """) { wipeImageArg, wipeNoClusterTipsOpt, wipeNoDeletedOpt };
+wipeCmd.SetAction((ParseResult ctx) => {
+  var imageArg = ctx.GetValue(wipeImageArg)!;
+  var noClusterTips = ctx.GetValue(wipeNoClusterTipsOpt);
+  var noDeleted = ctx.GetValue(wipeNoDeletedOpt);
+
+  if (!File.Exists(imageArg)) { Console.Error.WriteLine($"File not found: {imageArg}"); return 1; }
+
+  FormatRegistration.EnsureInitialized();
+  var format = FormatDetector.Detect(imageArg);
+  var formatId = format.ToString();
+  var descriptor = FormatRegistry.GetById(formatId);
+
+  Console.Write($"Wiping unused space in {Path.GetFileName(imageArg)} ({formatId})...");
+  var sw = Stopwatch.StartNew();
+  var origSize = new FileInfo(imageArg).Length;
+
+  try {
+    long wiped;
+    var totalUnused = -1L;
+    if (descriptor is IWipeEmpty wiper) {
+      using var stream = File.Open(imageArg, FileMode.Open, FileAccess.ReadWrite);
+      // Report total unused alongside bytes written when the descriptor
+      // also exposes an extent/layout map — otherwise a mostly-empty image
+      // looks "mostly used" because the wiper skips already-zero chunks.
+      if (descriptor is IFilesystemExtentMap fsMap) {
+        stream.Position = 0;
+        totalUnused = UnusedSpaceWiper.ComputeUnusedBytes(fsMap.EnumerateExtents(stream), stream.Length);
+      } else if (descriptor is IArchiveLayoutMap arMap) {
+        stream.Position = 0;
+        totalUnused = UnusedSpaceWiper.ComputeUnusedBytes(arMap.EnumerateLayout(stream), stream.Length);
+      }
+      stream.Position = 0;
+      wiped = wiper.WipeUnusedSpace(stream, wipeClusterTips: !noClusterTips, wipeDeletedEntries: !noDeleted);
+    } else if (descriptor is IFilesystemExtentMap extentMap) {
+      using var stream = File.Open(imageArg, FileMode.Open, FileAccess.ReadWrite);
+      stream.Position = 0;
+      var extents = extentMap.EnumerateExtents(stream).ToList();
+      totalUnused = UnusedSpaceWiper.ComputeUnusedBytes(extents, stream.Length);
+      wiped = UnusedSpaceWiper.Wipe(stream, extents, stream.Length, wipeClusterTips: !noClusterTips);
+    } else if (descriptor is IArchiveLayoutMap layoutMap) {
+      using var stream = File.Open(imageArg, FileMode.Open, FileAccess.ReadWrite);
+      stream.Position = 0;
+      var extents = layoutMap.EnumerateLayout(stream).ToList();
+      totalUnused = UnusedSpaceWiper.ComputeUnusedBytes(extents, stream.Length);
+      wiped = UnusedSpaceWiper.Wipe(stream, extents, stream.Length, wipeClusterTips: false);
+    } else {
+      sw.Stop();
+      Console.WriteLine(" skipped");
+      Console.Error.WriteLine($"  Format {formatId} does not support wipe-empty (no extent/layout map).");
+      return 1;
+    }
+
+    sw.Stop();
+    Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+    if (totalUnused >= 0) {
+      var unusedPct = origSize > 0 ? 100.0 * totalUnused / origSize : 0;
+      var alreadyZero = Math.Max(0, totalUnused - wiped);
+      Console.WriteLine($"  Unused space: {FormatSize(totalUnused)} ({unusedPct:F1}% of image)");
+      Console.WriteLine($"  Newly zeroed: {FormatSize(wiped)} ({wiped:N0} bytes); {FormatSize(alreadyZero)} was already zero");
+    } else {
+      var pct = origSize > 0 ? 100.0 * wiped / origSize : 0;
+      Console.WriteLine($"  Wiped {FormatSize(wiped)} ({wiped:N0} bytes, {pct:F1}% of image)");
+    }
+  } catch (Exception ex) {
+    sw.Stop();
+    Console.Error.WriteLine($" FAILED: {ex.Message}");
+    return 1;
+  }
+
+  return 0;
+});
+
+// ── deploy ──────────────────────────────────────────────────────────────
+
+var deployImageArg = new Argument<FileInfo>("image") { Description = "Source image file to write" };
+var deployDeviceArg = new Argument<string>("device") { Description = @"Target block device (\\.\PhysicalDriveN on Windows, /dev/sdX on Linux)" };
+var deployYesOpt = new Option<bool>("--yes", "-y") { Description = "Skip interactive confirmation" };
+var deployVerifyOpt = new Option<bool>("--verify") { Description = "Read back written data and verify CRC-32 against source" };
+
+var deployCmd = new Command("deploy", """
+  Raw-write an image file to a block device.
+
+  *** WARNING: THIS WILL DESTROY ALL DATA ON THE TARGET DEVICE! ***
+
+  Safety guards:
+    - Refuses to write to system drives (C:\ on Windows, / or /boot on Linux)
+    - Shows source size + target info before writing
+    - Requires --yes flag or interactive confirmation
+    - Computes CRC-32 of written bytes for verification
+    - Optional --verify flag reads back the written data to double-check
+
+  Examples:
+    cwb deploy disk.img \\.\PhysicalDrive2 --yes
+    cwb deploy disk.img /dev/sdb --yes --verify
+  """) {
+  deployImageArg, deployDeviceArg, deployYesOpt, deployVerifyOpt
+};
+deployCmd.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(deployImageArg)!;
+  var device = ctx.GetValue(deployDeviceArg)!;
+  var autoConfirm = ctx.GetValue(deployYesOpt);
+  var verify = ctx.GetValue(deployVerifyOpt);
+
+  if (!image.Exists) {
+    Console.Error.WriteLine($"Image file not found: {image.FullName}");
+    return 1;
+  }
+
+  // Safety: refuse system drives
+  if (IsSystemDrive(device)) {
+    Console.Error.WriteLine($"REFUSED: '{device}' appears to be a system drive. Aborting.");
+    return 1;
+  }
+
+  var imageSize = image.Length;
+  Console.WriteLine($"Source:  {image.FullName} ({FormatSize(imageSize)})");
+  Console.WriteLine($"Target:  {device}");
+  Console.WriteLine();
+  Console.WriteLine("*** WARNING: ALL DATA ON THE TARGET DEVICE WILL BE DESTROYED! ***");
+  Console.WriteLine();
+
+  if (!autoConfirm) {
+    Console.Write("Type 'yes' to continue: ");
+    var response = Console.ReadLine()?.Trim();
+    if (!string.Equals(response, "yes", StringComparison.OrdinalIgnoreCase)) {
+      Console.WriteLine("Aborted.");
+      return 1;
+    }
+  }
+
+  const int ChunkSize = 64 * 1024; // 64 KB chunks
+  var buffer = new byte[ChunkSize];
+  var writeCrc = new Compression.Core.Checksums.Crc32();
+
+  try {
+    using var src = File.OpenRead(image.FullName);
+    using var dst = new FileStream(device, FileMode.Open, FileAccess.Write, FileShare.None);
+
+    var written = 0L;
+    var sw = Stopwatch.StartNew();
+    int bytesRead;
+    while ((bytesRead = src.Read(buffer, 0, ChunkSize)) > 0) {
+      dst.Write(buffer, 0, bytesRead);
+      writeCrc.Update(buffer.AsSpan(0, bytesRead));
+      written += bytesRead;
+
+      if (sw.ElapsedMilliseconds > 500 || written == imageSize) {
+        var elapsed = sw.Elapsed.TotalSeconds;
+        var mbps = elapsed > 0 ? written / (1024.0 * 1024) / elapsed : 0;
+        var pct = imageSize > 0 ? 100.0 * written / imageSize : 100;
+        Console.Write($"\rWriting: {FormatSize(written)} / {FormatSize(imageSize)} ({pct:F1}%) {mbps:F1} MB/s  ");
+      }
+    }
+    dst.Flush();
+    sw.Stop();
+
+    var totalMbps = sw.Elapsed.TotalSeconds > 0 ? written / (1024.0 * 1024) / sw.Elapsed.TotalSeconds : 0;
+    Console.WriteLine();
+    Console.WriteLine($"Write complete: {FormatSize(written)} in {sw.Elapsed.TotalSeconds:F1}s ({totalMbps:F1} MB/s)");
+    Console.WriteLine($"Write CRC-32:  0x{writeCrc.Value:X8}");
+
+    // Source CRC for comparison
+    src.Position = 0;
+    var srcCrc = new Compression.Core.Checksums.Crc32();
+    while ((bytesRead = src.Read(buffer, 0, ChunkSize)) > 0)
+      srcCrc.Update(buffer.AsSpan(0, bytesRead));
+    Console.WriteLine($"Source CRC-32: 0x{srcCrc.Value:X8}");
+
+    if (writeCrc.Value != srcCrc.Value) {
+      Console.Error.WriteLine("*** CRC-32 MISMATCH — write may be corrupted! ***");
+      return 1;
+    }
+    Console.WriteLine("CRC-32 match: OK");
+  } catch (UnauthorizedAccessException) {
+    Console.Error.WriteLine($"Access denied to '{device}'. Run as administrator/root.");
+    return 1;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"Deploy failed: {ex.Message}");
+    return 1;
+  }
+
+  // Verify pass
+  if (verify) {
+    Console.WriteLine();
+    Console.Write("Verifying...");
+    try {
+      using var src = File.OpenRead(image.FullName);
+      using var dst = new FileStream(device, FileMode.Open, FileAccess.Read, FileShare.None);
+
+      var verifyCrc = new Compression.Core.Checksums.Crc32();
+      var verified = 0L;
+      var sw2 = Stopwatch.StartNew();
+      int bytesRead2;
+      while ((bytesRead2 = dst.Read(buffer, 0, ChunkSize)) > 0 && verified < imageSize) {
+        var toCheck = (int)Math.Min(bytesRead2, imageSize - verified);
+        verifyCrc.Update(buffer.AsSpan(0, toCheck));
+        verified += toCheck;
+
+        if (sw2.ElapsedMilliseconds > 500 || verified >= imageSize) {
+          var mbps = sw2.Elapsed.TotalSeconds > 0 ? verified / (1024.0 * 1024) / sw2.Elapsed.TotalSeconds : 0;
+          Console.Write($"\rVerifying: {FormatSize(verified)} / {FormatSize(imageSize)} {mbps:F1} MB/s  ");
+        }
+      }
+      sw2.Stop();
+      Console.WriteLine();
+
+      Console.WriteLine($"Verify CRC-32: 0x{verifyCrc.Value:X8}");
+      if (verifyCrc.Value != writeCrc.Value) {
+        Console.Error.WriteLine("*** VERIFY FAILED — read-back CRC does not match! ***");
+        return 1;
+      }
+      Console.WriteLine("Verify: OK");
+    } catch (Exception ex) {
+      Console.Error.WriteLine($"Verify failed: {ex.Message}");
+      return 1;
+    }
+  }
+
+  return 0;
+});
+
+// ── convert-clusters ──────────────────────────────────────────────────
+
+var ccDiskArg = new Argument<FileInfo>("image") { Description = "FAT filesystem image to convert" };
+var ccClusterSizeOpt = new Option<int>("--cluster-size") { Description = "Target cluster size in bytes (power of 2, e.g. 512, 1024, 4096)" };
+var ccOutputOpt = new Option<FileInfo?>("--output", "-o") { Description = "Output path (default: overwrite in place)" };
+var ccYesOpt = new Option<bool>("--yes", "-y") { Description = "Skip interactive confirmation" };
+
+var convertClustersCmd = new Command("convert-clusters", """
+  Rebuild a FAT image with a different cluster size. Shows a before/after
+  waste preview before modifying the image.
+
+  Examples:
+    cwb convert-clusters disk.img --cluster-size 1024
+    cwb convert-clusters disk.img --cluster-size 4096 -o output.img
+    cwb convert-clusters disk.img --cluster-size 512 --yes
+  """) { ccDiskArg, ccClusterSizeOpt, ccOutputOpt, ccYesOpt };
+
+convertClustersCmd.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(ccDiskArg)!;
+  var clusterSize = ctx.GetValue(ccClusterSizeOpt);
+  var output = ctx.GetValue(ccOutputOpt);
+  var autoConfirm = ctx.GetValue(ccYesOpt);
+
+  if (!image.Exists) { Console.Error.WriteLine($"File not found: {image.FullName}"); return 1; }
+  if (clusterSize <= 0 || (clusterSize & (clusterSize - 1)) != 0) {
+    Console.Error.WriteLine($"Cluster size must be a positive power of 2, got: {clusterSize}");
+    return 1;
+  }
+
+  FormatRegistration.EnsureInitialized();
+
+  // Preview
+  try {
+    var (current, target) = ArchiveOperations.PreviewClusterConversion(image.FullName, clusterSize);
+    Console.WriteLine($"Current: {current.ClusterSize}-byte clusters, {current.SlackPercent:F0}% tip slack ({FormatSize(current.TotalSlack)} wasted)");
+    Console.WriteLine($"Target:  {target.ClusterSize}-byte clusters, {target.SlackPercent:F0}% tip slack ({FormatSize(target.TotalSlack)} wasted)");
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"Preview failed: {ex.Message}");
+    return 1;
+  }
+
+  if (!autoConfirm) {
+    Console.Write("Proceed? [y/N] ");
+    var response = Console.ReadLine()?.Trim();
+    if (!string.Equals(response, "y", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(response, "yes", StringComparison.OrdinalIgnoreCase)) {
+      Console.WriteLine("Aborted.");
+      return 0;
+    }
+  }
+
+  var outPath = output?.FullName ?? image.FullName;
+  Console.Write($"Rebuilding with {clusterSize}-byte clusters...");
+  var sw = Stopwatch.StartNew();
+  ArchiveOperations.ConvertClusters(image.FullName, outPath, clusterSize);
+  sw.Stop();
+  Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+  Console.WriteLine($"Output: {outPath} ({FormatSize(new FileInfo(outPath).Length)})");
+  return 0;
+});
+
+// ── resize ──────────────────────────────────────────────────────────
+
+var resizeDiskArg = new Argument<FileInfo>("image") { Description = "Filesystem image to resize" };
+var resizeProfileOpt = new Option<string?>("--profile") { Description = "Media profile: 3.5-hd, 3.5-dd, 5.25-hd, 5.25-dd, cd, dvd, bd" };
+var resizeSizeOpt = new Option<string?>("--size") { Description = "Custom target size (e.g. 1440k, 100m, 4g)" };
+var resizeYesOpt = new Option<bool>("--yes", "-y") { Description = "Skip interactive confirmation" };
+
+var resizeCmd2 = new Command("resize", """
+  Resize a filesystem image to a media profile or custom size. Extracts all
+  files, rebuilds the image at the target size. Refuses if content doesn't fit.
+
+  Profiles:
+    3.5-hd   = 1,474,560 bytes (1.44 MB, FAT12)
+    3.5-dd   = 737,280 bytes (720 KB)
+    5.25-hd  = 1,228,800 bytes (1.2 MB)
+    5.25-dd  = 368,640 bytes (360 KB)
+    cd       = 681,984,000 bytes (650 MB)
+    dvd      = 4,700,000,000 bytes (4.7 GB)
+    bd       = 25,025,314,816 bytes (25 GB)
+
+  Examples:
+    cwb resize disk.img --profile 3.5-hd
+    cwb resize disk.img --size 1440k
+    cwb resize disk.img --size 100m --yes
+  """) { resizeDiskArg, resizeProfileOpt, resizeSizeOpt, resizeYesOpt };
+
+resizeCmd2.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(resizeDiskArg)!;
+  var profileStr = ctx.GetValue(resizeProfileOpt);
+  var sizeStr = ctx.GetValue(resizeSizeOpt);
+  var autoConfirm = ctx.GetValue(resizeYesOpt);
+
+  if (!image.Exists) { Console.Error.WriteLine($"File not found: {image.FullName}"); return 1; }
+  if (string.IsNullOrEmpty(profileStr) && string.IsNullOrEmpty(sizeStr)) {
+    Console.Error.WriteLine("Specify --profile or --size.");
+    return 1;
+  }
+
+  long targetSize;
+  if (!string.IsNullOrEmpty(profileStr)) {
+    if (!MediaProfileLookup.TryParse(profileStr, out var profile)) {
+      Console.Error.WriteLine($"Unknown profile '{profileStr}'. Known: 3.5-hd, 3.5-dd, 5.25-hd, 5.25-dd, cd, dvd, bd");
+      return 1;
+    }
+    targetSize = MediaProfileLookup.GetSize(profile);
+  } else {
+    targetSize = ParseSizeGeneric(sizeStr!);
+    if (targetSize <= 0) {
+      Console.Error.WriteLine($"Invalid size: {sizeStr}");
+      return 1;
+    }
+  }
+
+  FormatRegistration.EnsureInitialized();
+
+  // Preview
+  try {
+    var preview = ArchiveOperations.PreviewResize(image.FullName, targetSize);
+    Console.WriteLine($"Current: {FormatSize(preview.CurrentSize)}");
+    Console.WriteLine($"Target:  {FormatSize(preview.TargetSize)}");
+    Console.WriteLine($"Content: {FormatSize(preview.ContentSize)}");
+    if (!preview.Fits) {
+      Console.Error.WriteLine("ERROR: Content does not fit in target size.");
+      return 1;
+    }
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"Preview failed: {ex.Message}");
+    return 1;
+  }
+
+  if (!autoConfirm) {
+    Console.Write("Proceed? [y/N] ");
+    var response = Console.ReadLine()?.Trim();
+    if (!string.Equals(response, "y", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(response, "yes", StringComparison.OrdinalIgnoreCase)) {
+      Console.WriteLine("Aborted.");
+      return 0;
+    }
+  }
+
+  Console.Write($"Resizing to {FormatSize(targetSize)}...");
+  var sw = Stopwatch.StartNew();
+  ArchiveOperations.Resize(image.FullName, targetSize);
+  sw.Stop();
+  Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+  Console.WriteLine($"Output: {image.FullName} ({FormatSize(new FileInfo(image.FullName).Length)})");
+  return 0;
+});
+
+// ── convert-archive (was: convert-fs) ───────────────────────────────
+
+var cfsInputArg = new Argument<FileInfo>("input") { Description = "Source archive or filesystem image" };
+var cfsOutputArg = new Argument<FileInfo>("output") { Description = "Destination archive or filesystem image" };
+var cfsFormatOpt = new Option<string?>("--format", "-f") { Description = "Target format ID (e.g. fat, ext, d64, zip, tar, 7z). Auto-detected from extension if omitted" };
+
+var convertArchiveHelp = """
+  Convert between any listable/creatable format pair. Works across categories:
+
+    FS -> FS:        cwb convert-archive disk.d64 output.img --format fat
+    FS -> Archive:   cwb convert-archive disk.d64 output.zip
+    Archive -> FS:   cwb convert-archive archive.zip output.img --format fat
+    Archive -> Arc:  cwb convert-archive in.zip out.tar
+
+  Extracts all files from the source (any format with List+Extract), then
+  creates the target (any format with Create). Metadata (timestamps,
+  permissions) is preserved where both formats support them; lost metadata
+  is logged.
+
+  Same-format / FAT-variant / ext-variant pairs take the in-place metadata
+  fast path; everything else uses extract + rebuild.
+
+  For archive-to-archive conversion that exploits bitstream / container
+  restreaming (e.g. gz -> zlib without recompressing the Deflate stream),
+  use 'cwb convert' instead — it has smart tier 1/2/3 dispatch.
+
+  Examples:
+    cwb convert-archive input.d64 output.img --format fat
+    cwb convert-archive disk.img output.d64
+    cwb convert-archive old.img new.img --format ext
+    cwb convert-archive archive.zip output.img --format fat
+    cwb convert-archive disk.d64 output.7z
+  """;
+
+var convertArchiveCmd = new Command("convert-archive", convertArchiveHelp) { cfsInputArg, cfsOutputArg, cfsFormatOpt };
+
+Func<ParseResult, int> convertArchiveAction = (ParseResult ctx) => {
+  var input = ctx.GetValue(cfsInputArg)!;
+  var output = ctx.GetValue(cfsOutputArg)!;
+  var formatId = ctx.GetValue(cfsFormatOpt);
+
+  if (!input.Exists) { Console.Error.WriteLine($"File not found: {input.FullName}"); return 1; }
+
+  FormatRegistration.EnsureInitialized();
+
+  var srcFormat = FormatDetector.Detect(input.FullName);
+  Console.WriteLine($"Source: {input.Name} ({srcFormat})");
+
+  Console.Write($"Converting...");
+  var sw = Stopwatch.StartNew();
+  var warnings = ArchiveOperations.ConvertArchive(input.FullName, output.FullName, formatId);
+  sw.Stop();
+  Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+  Console.WriteLine($"Output: {output.FullName} ({FormatSize(new FileInfo(output.FullName).Length)})");
+
+  if (warnings.Count > 0) {
+    Console.WriteLine();
+    Console.WriteLine("Metadata warnings:");
+    foreach (var w in warnings)
+      Console.WriteLine($"  {w}");
+  }
+
+  return 0;
+};
+
+convertArchiveCmd.SetAction(convertArchiveAction);
+
+// Hidden back-compat alias for the old name; same handler, same arguments.
+var convertFsCmd = new Command("convert-fs", "[Deprecated] Alias for 'convert-archive'.") { cfsInputArg, cfsOutputArg, cfsFormatOpt };
+convertFsCmd.Hidden = true;
+convertFsCmd.SetAction(convertArchiveAction);
+
+// ── dedup ────────────────────────────────────────────────────────────
+
+var dedupImageArg = new Argument<FileInfo>("image") { Description = "Filesystem image or archive to deduplicate" };
+var dedupDryRunOpt = new Option<bool>("--dry-run") { Description = "Report duplicates without modifying the image" };
+var dedupStrategyOpt = new Option<string>("--keep") {
+  Description = "Which file to keep: first (default) or shallowest (shallowest directory depth)",
+  DefaultValueFactory = _ => "first",
+};
+
+var dedupCmd = new Command("dedup", """
+  Scan a filesystem image or archive for duplicate files (by SHA-256 content hash).
+
+  Dry run (default with --dry-run): reports duplicate groups with sizes and potential savings.
+  Execute (without --dry-run): for formats that support creation, rebuilds the image
+  without duplicates. For formats without creation support, only reporting is available.
+
+  Examples:
+    cwb dedup disk.img                          Execute dedup (keep first)
+    cwb dedup disk.img --dry-run                Report only
+    cwb dedup disk.zip --keep first             Remove dupes, keep first occurrence
+    cwb dedup disk.img --keep shallowest        Keep file at shallowest path
+  """) { dedupImageArg, dedupDryRunOpt, dedupStrategyOpt };
+dedupCmd.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(dedupImageArg)!;
+  var dryRun = ctx.GetValue(dedupDryRunOpt);
+  var strategyStr = ctx.GetValue(dedupStrategyOpt) ?? "first";
+
+  if (!image.Exists) { Console.Error.WriteLine($"File not found: {image.FullName}"); return 1; }
+
+  var strategy = strategyStr.ToLowerInvariant() switch {
+    "shallowest" or "largest-path" or "keep-largest-path" => DeduplicationStrategy.KeepLargestPath,
+    _ => DeduplicationStrategy.KeepFirst,
+  };
+
+  Console.Write($"Scanning {image.Name} for duplicates...");
+  var sw = Stopwatch.StartNew();
+  var report = DeduplicationScanner.Analyze(image.FullName);
+  sw.Stop();
+  Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+  Console.WriteLine();
+
+  Console.WriteLine($"Total files:      {report.TotalFiles}");
+  Console.WriteLine($"Unique files:     {report.UniqueFiles}");
+  Console.WriteLine($"Duplicate files:  {report.DuplicateFiles}");
+  Console.WriteLine($"Total size:       {FormatSize(report.TotalSize)}");
+  Console.WriteLine($"Wasted bytes:     {FormatSize(report.WastedBytes)}");
+  Console.WriteLine();
+
+  if (report.Groups.Count == 0) {
+    Console.WriteLine("No duplicates found.");
+    return 0;
+  }
+
+  Console.WriteLine($"{"Hash (first 8)",16} {"Size",12} {"Count",6} {"Wasted",12}  Files");
+  Console.WriteLine(new string('-', 90));
+  foreach (var g in report.Groups.Take(50)) {
+    var hashStr = Convert.ToHexString(g.ContentHash)[..16];
+    Console.WriteLine($"{hashStr,16} {FormatSize(g.Size),12} {g.FileNames.Count,6} {FormatSize(g.WastedBytes),12}  {g.FileNames[0]}");
+    foreach (var f in g.FileNames.Skip(1))
+      Console.WriteLine($"{"",16} {"",12} {"",6} {"",12}  {f}");
+  }
+  if (report.Groups.Count > 50)
+    Console.WriteLine($"  ... and {report.Groups.Count - 50} more groups");
+  Console.WriteLine();
+
+  if (dryRun) {
+    Console.WriteLine($"Potential savings: {FormatSize(report.PotentialSavings)} (dry run, no changes made)");
+    return 0;
+  }
+
+  // Execute deduplication
+  try {
+    Console.Write($"Deduplicating (strategy: {strategyStr})...");
+    var sw2 = Stopwatch.StartNew();
+    var saved = DeduplicationScanner.Execute(image.FullName, strategy);
+    sw2.Stop();
+    Console.WriteLine($" done ({sw2.ElapsedMilliseconds}ms)");
+    Console.WriteLine($"Bytes saved: {FormatSize(saved)}");
+  } catch (NotSupportedException ex) {
+    Console.Error.WriteLine($"Cannot execute deduplication: {ex.Message}");
+    Console.Error.WriteLine("Use --dry-run to view the report without modifying the image.");
+    return 1;
+  }
+
+  return 0;
+});
+
+// ── sparsify ────────────────────────────────────────────────────────
+
+var sparsifyImageArg = new Argument<FileInfo>("image") { Description = "Container image to sparsify (VHD, QCOW2, VDI, VMDK)" };
+
+var sparsifyCmd = new Command("sparsify", """
+  Sparsify a container disk image: scan all allocated blocks, detect all-zero
+  blocks, and rebuild the container without them.
+
+  Supported formats: VHD (dynamic), QCOW2, VDI, VMDK.
+  For VHD: converts fixed VHD to dynamic if needed, then removes zero blocks.
+  For QCOW2/VDI/VMDK: extracts virtual disk and rewrites with sparse detection.
+
+  Examples:
+    cwb sparsify disk.vhd          Compact VHD (same as shrink --compact)
+    cwb sparsify disk.qcow2        Remove zero-filled clusters
+    cwb sparsify disk.vdi          Remove zero-filled blocks
+    cwb sparsify disk.vmdk         Remove zero-filled grains
+  """) { sparsifyImageArg };
+sparsifyCmd.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(sparsifyImageArg)!;
+  if (!image.Exists) { Console.Error.WriteLine($"File not found: {image.FullName}"); return 1; }
+
+  var origSize = image.Length;
+  Console.Write($"Sparsifying {image.Name} ({FormatSize(origSize)})...");
+  var sw = Stopwatch.StartNew();
+
+  try {
+    var freed = SparseConverter.Sparsify(image.FullName);
+    sw.Stop();
+    Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+    var newSize = new FileInfo(image.FullName).Length;
+    Console.WriteLine($"  {FormatSize(origSize)} -> {FormatSize(newSize)} ({FormatSize(freed)} freed)");
+  } catch (NotSupportedException ex) {
+    sw.Stop();
+    Console.Error.WriteLine($" FAILED: {ex.Message}");
+    return 1;
+  } catch (Exception ex) {
+    sw.Stop();
+    Console.Error.WriteLine($" FAILED: {ex.Message}");
+    return 1;
+  }
+  return 0;
+});
+
+// ── densify ─────────────────────────────────────────────────────────
+
+var densifyImageArg = new Argument<FileInfo>("image") { Description = "Container image to densify (VHD, QCOW2, VDI, VMDK)" };
+
+var densifyCmd = new Command("densify", """
+  Densify a container disk image: ensure all virtual blocks are physically
+  allocated. Useful before deploying to hardware that doesn't support sparse.
+
+  Supported formats: VHD, QCOW2, VDI, VMDK.
+  For VHD: rebuilds as a fixed VHD (every block physically present).
+  For QCOW2/VDI/VMDK: rewrites with all blocks allocated.
+
+  Examples:
+    cwb densify disk.vhd          Convert dynamic VHD to fixed
+    cwb densify disk.qcow2        Pre-allocate all clusters
+    cwb densify disk.vdi          Pre-allocate all blocks
+    cwb densify disk.vmdk         Pre-allocate all grains
+  """) { densifyImageArg };
+densifyCmd.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(densifyImageArg)!;
+  if (!image.Exists) { Console.Error.WriteLine($"File not found: {image.FullName}"); return 1; }
+
+  var origSize = image.Length;
+  Console.Write($"Densifying {image.Name} ({FormatSize(origSize)})...");
+  var sw = Stopwatch.StartNew();
+
+  try {
+    var allocated = SparseConverter.Densify(image.FullName);
+    sw.Stop();
+    Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+    var newSize = new FileInfo(image.FullName).Length;
+    Console.WriteLine($"  {FormatSize(origSize)} -> {FormatSize(newSize)} ({FormatSize(allocated)} allocated)");
+  } catch (NotSupportedException ex) {
+    sw.Stop();
+    Console.Error.WriteLine($" FAILED: {ex.Message}");
+    return 1;
+  } catch (Exception ex) {
+    sw.Stop();
+    Console.Error.WriteLine($" FAILED: {ex.Message}");
+    return 1;
+  }
+  return 0;
+});
+
+// ── partition ────────────────────────────────────────────────────────
+
+var partitionImageArg = new Argument<FileInfo>("image") { Description = "Disk image (raw .img/.raw, or virtual disk: VHD/VHDX/VMDK/QCOW2/VDI)" };
+
+var partitionListCmd = new Command("list", """
+  List all partitions in a disk image. Auto-detects the host container
+  (VHD/VHDX/VMDK/QCOW2/VDI) and opens its guest disk; raw images are read
+  directly.
+  Example: cwb partition list disk.vhd
+  """) { partitionImageArg };
+partitionListCmd.Aliases.Add("ls");
+partitionListCmd.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(partitionImageArg)!;
+  if (!image.Exists) { Console.Error.WriteLine($"File not found: {image.FullName}"); return 1; }
+
+  try {
+    var result = PartitionOperations.List(image.FullName);
+    Console.WriteLine($"Image:  {image.Name}");
+    Console.WriteLine($"Scheme: {result.Scheme}");
+    if (result.Partitions.Count == 0) { Console.WriteLine("(no partitions)"); return 0; }
+
+    Console.WriteLine();
+    Console.WriteLine($"{"#",-3} {"Source",-24} {"Type",-10} {"Start",14} {"Size",14} {"Bootable",8} {"Label"}");
+    Console.WriteLine(new string('-', 90));
+    foreach (var p in result.Partitions) {
+      var boot = p.IsActive ? "yes" : "";
+      Console.WriteLine($"{p.Index,-3} {p.Source,-24} {p.TypeCode,-10} {FormatSize(p.StartOffset),14} {FormatSize(p.Size),14} {boot,8} {p.Name}");
+    }
+    return 0;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"List failed: {ex.Message}");
+    return 1;
+  }
+});
+
+var partitionAddImageArg = new Argument<FileInfo>("image") { Description = "Disk image to modify" };
+var partitionAddStartOpt = new Option<long>("--start") { Description = "Start sector (LBA, multiplied by 512 internally)", Required = true };
+var partitionAddLengthOpt = new Option<long>("--length") { Description = "Length in sectors", Required = true };
+var partitionAddTypeOpt = new Option<string>("--type") { Description = "Partition type: Linux, Fat32Lba, NtfsExfat, EfiSystem, ExtendedLba, …", Required = true };
+var partitionAddLabelOpt = new Option<string?>("--label") { Description = "Partition label (GPT only)" };
+
+var partitionAddCmd = new Command("add", """
+  Add a primary or logical partition. If an extended container exists and the
+  range falls inside it, the new entry is added as a logical partition.
+  Sectors are 512 bytes each.
+  Example:
+    cwb partition add disk.vhd --start 2048 --length 2048 --type Linux
+    cwb partition add disk.img --start 4096 --length 1024 --type Fat32Lba --label boot
+  """) { partitionAddImageArg, partitionAddStartOpt, partitionAddLengthOpt, partitionAddTypeOpt, partitionAddLabelOpt };
+partitionAddCmd.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(partitionAddImageArg)!;
+  if (!image.Exists) { Console.Error.WriteLine($"File not found: {image.FullName}"); return 1; }
+  try {
+    var type = PartitionOperations.ParseType(ctx.GetValue(partitionAddTypeOpt)!);
+    var startBytes = ctx.GetValue(partitionAddStartOpt) * PartitionEditor.SectorSize;
+    var lengthBytes = ctx.GetValue(partitionAddLengthOpt) * PartitionEditor.SectorSize;
+    PartitionOperations.Add(image.FullName, startBytes, lengthBytes, type, ctx.GetValue(partitionAddLabelOpt));
+    Console.WriteLine($"Added {type} partition: start={startBytes:N0} bytes, size={lengthBytes:N0} bytes.");
+    return 0;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"Add failed: {ex.Message}");
+    return 1;
+  }
+});
+
+var partitionDelImageArg = new Argument<FileInfo>("image") { Description = "Disk image to modify" };
+var partitionDelIndexOpt = new Option<int>("--index") { Description = "Zero-based partition index to delete", Required = true };
+
+var partitionDeleteCmd = new Command("delete", """
+  Delete a partition by index. Data bytes on disk are left untouched — use
+  'cwb partition purge' to also zero-fill the byte range.
+  Example: cwb partition delete disk.vhd --index 1
+  """) { partitionDelImageArg, partitionDelIndexOpt };
+partitionDeleteCmd.Aliases.Add("rm");
+partitionDeleteCmd.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(partitionDelImageArg)!;
+  if (!image.Exists) { Console.Error.WriteLine($"File not found: {image.FullName}"); return 1; }
+  try {
+    var idx = ctx.GetValue(partitionDelIndexOpt);
+    PartitionOperations.Delete(image.FullName, idx);
+    Console.WriteLine($"Deleted partition #{idx}.");
+    return 0;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"Delete failed: {ex.Message}");
+    return 1;
+  }
+});
+
+var partitionPurgeImageArg = new Argument<FileInfo>("image") { Description = "Disk image to modify" };
+var partitionPurgeIndexOpt = new Option<int>("--index") { Description = "Zero-based partition index to purge", Required = true };
+
+var partitionPurgeCmd = new Command("purge", """
+  Delete a partition and zero-fill its on-disk byte range. Slower than delete
+  but ensures no remnants of the previous filesystem survive.
+  Example: cwb partition purge disk.vhd --index 0
+  """) { partitionPurgeImageArg, partitionPurgeIndexOpt };
+partitionPurgeCmd.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(partitionPurgeImageArg)!;
+  if (!image.Exists) { Console.Error.WriteLine($"File not found: {image.FullName}"); return 1; }
+  try {
+    var idx = ctx.GetValue(partitionPurgeIndexOpt);
+    PartitionOperations.Purge(image.FullName, idx);
+    Console.WriteLine($"Purged partition #{idx} (table entry removed, bytes zeroed).");
+    return 0;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"Purge failed: {ex.Message}");
+    return 1;
+  }
+});
+
+var partitionConvImageArg = new Argument<FileInfo>("image") { Description = "Disk image to convert" };
+var partitionConvToOpt = new Option<string>("--to") { Description = "Target scheme: mbr or gpt", Required = true };
+
+var partitionConvertCmd = new Command("convert", """
+  Convert the partition scheme between MBR and GPT. MBR→GPT promotes the
+  protective MBR and translates type bytes to GUIDs; GPT→MBR works if the GPT
+  has at most 4 entries.
+  Examples:
+    cwb partition convert disk.img --to gpt
+    cwb partition convert disk.vhd --to mbr
+  """) { partitionConvImageArg, partitionConvToOpt };
+partitionConvertCmd.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(partitionConvImageArg)!;
+  if (!image.Exists) { Console.Error.WriteLine($"File not found: {image.FullName}"); return 1; }
+  try {
+    var target = PartitionOperations.ParseScheme(ctx.GetValue(partitionConvToOpt)!);
+    PartitionOperations.Convert(image.FullName, target);
+    Console.WriteLine($"Converted partition scheme to {target}.");
+    return 0;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"Convert failed: {ex.Message}");
+    return 1;
+  }
+});
+
+var partitionFormatImageArg = new Argument<FileInfo>("image") { Description = "Disk image whose partition to format" };
+var partitionFormatIndexOpt = new Option<int>("--index") { Description = "Zero-based partition index to format", Required = true };
+var partitionFormatFsOpt = new Option<string>("--fs") { Description = "Filesystem format ID (e.g. Fat, Ext, Ntfs, ExFat) — must be a creatable format", Required = true };
+
+var partitionFormatCmd = new Command("format", """
+  Write a fresh filesystem image of --fs into the partition's byte range.
+  The format ID must be registered and support creation; the generated bytes
+  must fit within the partition.
+  Example: cwb partition format disk.vhd --index 0 --fs Fat
+  """) { partitionFormatImageArg, partitionFormatIndexOpt, partitionFormatFsOpt };
+partitionFormatCmd.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(partitionFormatImageArg)!;
+  if (!image.Exists) { Console.Error.WriteLine($"File not found: {image.FullName}"); return 1; }
+  try {
+    var idx = ctx.GetValue(partitionFormatIndexOpt);
+    var fs = ctx.GetValue(partitionFormatFsOpt)!;
+    PartitionOperations.Format(image.FullName, idx, fs);
+    Console.WriteLine($"Formatted partition #{idx} as {fs}.");
+    return 0;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"Format failed: {ex.Message}");
+    return 1;
+  }
+});
+
+var partitionVerifyImageArg = new Argument<FileInfo>("image") { Description = "Disk image to verify" };
+
+var partitionVerifyCmd = new Command("verify", """
+  Check MBR/GPT integrity: signature presence, GPT header/entry-array CRCs,
+  primary/backup consistency, out-of-range extents.
+  Example: cwb partition verify disk.vhd
+  """) { partitionVerifyImageArg };
+partitionVerifyCmd.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(partitionVerifyImageArg)!;
+  if (!image.Exists) { Console.Error.WriteLine($"File not found: {image.FullName}"); return 1; }
+  try {
+    var result = PartitionOperations.Verify(image.FullName);
+    Console.WriteLine($"Scheme: {result.Scheme}");
+    if (result.IsValid) {
+      Console.WriteLine("Status: OK");
+      return 0;
+    }
+    Console.WriteLine("Status: ISSUES");
+    foreach (var issue in result.Issues)
+      Console.WriteLine($"  - {issue}");
+    return 1;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"Verify failed: {ex.Message}");
+    return 1;
+  }
+});
+
+var partitionCmd = new Command("partition", """
+  Edit the MBR/GPT partition table of a raw disk image or a virtual-disk
+  container (VHD/VHDX/VMDK/QCOW2/VDI).
+
+  Subcommands:
+    list      Show all primaries + logicals in disk-table order.
+    add       Add a primary (or logical, if inside an extended container).
+    delete    Remove a partition entry; bytes left untouched.
+    purge     Remove + zero-fill the partition's bytes.
+    convert   Switch between MBR and GPT schemes.
+    format    Write a fresh filesystem image into a partition.
+    verify    Check MBR/GPT signature, CRCs, and extent bounds.
+  """) {
+  partitionListCmd, partitionAddCmd, partitionDeleteCmd, partitionPurgeCmd,
+  partitionConvertCmd, partitionFormatCmd, partitionVerifyCmd
+};
 
 var root = new RootCommand("""
   cwb — CompressionWorkbench CLI. A universal archive tool.
@@ -1210,13 +2207,20 @@ var root = new RootCommand("""
     cwb create app.7z files --sfx             Create self-extracting 7z
     cwb test archive.zip                      Verify integrity
     cwb defragment disk.img --mode pack-end   Repack files at end of image
+    cwb shrink disk.img                      Defrag + truncate trailing free space
+    cwb shrink disk.vhd --compact            Also compact container (VHD sparse)
+    cwb wipe-empty disk.img                  Zero all unused space in image
+    cwb dedup disk.img --dry-run             Find duplicate files in image
+    cwb sparsify disk.vhd                    Remove zero-filled blocks
+    cwb densify disk.qcow2                   Pre-allocate all blocks
+    cwb analyze disk.img --cluster-hint      Suggest optimal cluster size
     cwb tool init                             Set up external tool templates
     cwb reverse-engineer MyTool.exe "{input} {output}"  Auto-discover format
 
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, convertCmd, optimizeCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd
+  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, convertCmd, optimizeCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, shrinkCmd, wipeCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
 };
 
 return root.Parse(args).Invoke();
@@ -1248,6 +2252,49 @@ static void BenchmarkBlock(string name, byte[] data, IBuildingBlock block) {
   catch (Exception ex) {
     Console.WriteLine($"{name,-16} {"FAILED",-12} {ex.Message}");
   }
+}
+
+static List<string> ResolveDefragTargets(string imageArg, bool isBatch, bool isRecursive) {
+  // Single file path?
+  if (!isBatch && !isRecursive && File.Exists(imageArg))
+    return [imageArg];
+
+  // Directory?
+  if (Directory.Exists(imageArg)) {
+    var searchOption = isRecursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+    return [.. Directory.GetFiles(imageArg, "*", searchOption)];
+  }
+
+  // Glob pattern: split into directory + pattern
+  var dir = Path.GetDirectoryName(imageArg);
+  var pattern = Path.GetFileName(imageArg);
+  if (string.IsNullOrEmpty(dir)) dir = ".";
+  if (!Directory.Exists(dir)) return [];
+  var searchOpt = isRecursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+  return [.. Directory.GetFiles(dir, pattern, searchOpt)];
+}
+
+static bool IsSystemDrive(string device) {
+  var d = device.ToLowerInvariant().Trim();
+  // Windows: refuse PhysicalDrive0 (typically the system disk)
+  if (d.Contains("physicaldrive0")) return true;
+  // Windows: refuse C:\ paths
+  if (d.StartsWith("c:") || d.StartsWith(@"\\.\c:")) return true;
+  // Linux: refuse the root or boot devices
+  if (d == "/dev/sda" || d == "/dev/nvme0n1" || d == "/dev/vda") return true;
+  // Mount points
+  if (d == "/" || d == "/boot") return true;
+  return false;
+}
+
+static long ParseSizeGeneric(string sizeStr) {
+  if (string.IsNullOrWhiteSpace(sizeStr)) return 0;
+  var s = sizeStr.Trim().ToLowerInvariant();
+  long multiplier = 1;
+  if (s.EndsWith('k')) { multiplier = 1024; s = s[..^1]; }
+  else if (s.EndsWith('m')) { multiplier = 1024 * 1024; s = s[..^1]; }
+  else if (s.EndsWith('g')) { multiplier = 1024L * 1024 * 1024; s = s[..^1]; }
+  return long.TryParse(s, out var val) ? val * multiplier : 0;
 }
 
 static long ParseSize(string? sizeStr) {

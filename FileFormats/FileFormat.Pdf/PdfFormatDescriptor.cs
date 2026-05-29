@@ -4,7 +4,17 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Pdf;
 
-public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "PDF is a cross-referenced object stream (xref table + indirect objects + trailer) — " +
+      "rebuilding from extracted images would destroy the document structure.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => PdfLayoutMap.Enumerate(archive);
+
   public string Id => "Pdf";
   public string DisplayName => "PDF (Image Extraction)";
   public FormatCategory Category => FormatCategory.Archive;

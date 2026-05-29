@@ -10,7 +10,18 @@ namespace FileFormat.Akb;
 /// Square Enix AKB audio bank descriptor — surfaces per-entry raw audio payloads plus a synthetic
 /// <c>metadata.ini</c> entry containing bank-wide header fields (sample rate, channel mode, loop points).
 /// </summary>
-public sealed class AkbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class AkbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new AkbReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.Size > 0)
+        yield return new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "Akb";
   public string DisplayName => "Square Enix AKB";
   public FormatCategory Category => FormatCategory.Archive;
@@ -69,6 +80,24 @@ public sealed class AkbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         continue;
       w.AddEntry(name, data);
     }
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new AkbReader(stream, leaveOpen: true);
+        return r.Entries.Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new AkbWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddEntry(n, d);
+        }
+        return ms.ToArray();
+      });
   }
 
   private static byte[] BuildMetadata(AkbReader reader) {

@@ -4,7 +4,25 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.StuffItX;
 
-public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "StuffIt X writer only embeds a single opaque payload; rebuilding from extracted entries " +
+      "would not match the original on-disk structure.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new StuffItXReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.CompressedSize > 0)
+        yield return new DefragBlockInfo(e.DataOffset, e.CompressedSize, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "StuffItX";
   public string DisplayName => "StuffIt X";
   public FormatCategory Category => FormatCategory.Archive;

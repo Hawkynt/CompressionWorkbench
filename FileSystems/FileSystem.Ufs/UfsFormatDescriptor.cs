@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using Compression.Core.Layout;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -6,7 +7,19 @@ namespace FileSystem.Ufs;
 
 public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
                                           IArchiveCreatable, IArchiveWriteConstraints,
-                                          IArchiveModifiable {
+                                          IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the UFS1 superblock, CG 0 inode table, and root directory tree;
+  /// yields the actual on-disk byte layout — superblock + inode table as
+  /// <see cref="DefragBlockKind.MetadataReserved"/>, every per-file direct-
+  /// block run (coalesced into contiguous extents) as
+  /// <see cref="DefragBlockKind.Used"/>. Indirect blocks are not followed
+  /// (single-CG profile our writer emits doesn't use them).
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => UfsExtentMap.Enumerate(image);
+
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 16L * 1024 * 1024;
   public string AcceptedInputsDescription =>
@@ -79,5 +92,90 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Remove(Stream archive, string[] entryNames) {
     foreach (var name in entryNames)
       UfsModifier.RemoveFile(archive, name, wipeData: true);
+  }
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    var mover = new UfsBlockMover();
+    mover.Init(image);
+    mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+  }
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    var mover = new UfsBlockMover();
+    mover.Init(image);
+    mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware UFS1 defragmentor. Tries planner-driven in-place path first,
+  /// falls back to rebuild path on error. The planner path is streaming
+  /// throughout — no whole-image snapshot is taken.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      try {
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch {
+        archive.Position = 0;
+      }
+    }
+
+    DefragmentWithRebuild(archive, options);
+  }
+
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var imageSize = archive.Length;
+
+    var mover = new UfsBlockMover();
+    mover.Init(archive);
+
+    var extents = UfsExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "scanning", Fraction: 0, CurrentReadOffset: 0, CurrentWriteOffset: -1,
+      ImageSize: imageSize, BlockMap: extents, Status: "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.DataOrigin, imageSize, mover.BlockSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
+
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
+        ImageSize: imageSize, BlockMap: extents, Status: "Already defragmented"));
+      return;
+    }
+
+    DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize, () => mover.Init(archive));
+
+    var postExtents = UfsExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
+      ImageSize: imageSize, BlockMap: postExtents, Status: "Defragmentation complete"));
+  }
+
+  private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new UfsReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new UfsWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        using var ms = new MemoryStream();
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
   }
 }

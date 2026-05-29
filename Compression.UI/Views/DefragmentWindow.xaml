@@ -1,8 +1,9 @@
 <Window x:Class="Compression.UI.Views.DefragmentWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Defragment Filesystem Image" Width="780" Height="600"
-        MinWidth="560" MinHeight="420"
+        xmlns:controls="clr-namespace:Compression.UI.Controls"
+        Title="Defragment / Optimize" Width="900" Height="780"
+        MinWidth="720" MinHeight="560"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip">
 
   <Grid Margin="12">
@@ -48,8 +49,8 @@
       </Grid>
     </Border>
 
-    <!-- Mode picker -->
-    <GroupBox Grid.Row="2" Header="Layout strategy" Margin="0,0,0,8">
+    <!-- Mode picker (FS defrag modes) -->
+    <GroupBox Grid.Row="2" Header="Layout strategy" Margin="0,0,0,8" x:Name="FsModesGroup">
       <StackPanel Margin="6">
         <RadioButton x:Name="ModePackStart" GroupName="Mode" IsChecked="True"
                      Margin="0,2" Checked="OnModeChanged">
@@ -80,6 +81,57 @@
                        Text="Reserve a contiguous free region of the chosen size. Live data in the way is relocated to other free space (or appended)." />
           </StackPanel>
         </RadioButton>
+        <Separator Margin="0,6,0,4" />
+        <Grid Margin="0,2,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="120" />
+            <ColumnDefinition Width="80" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Grid.Column="0" Text="Block interleave:" VerticalAlignment="Center" />
+          <TextBox Grid.Column="1" x:Name="InterleaveStrideBox" Text="1"
+                   Margin="0,0,4,0" VerticalContentAlignment="Center"
+                   ToolTip="Block interleave factor. 1 = contiguous (default), 2 = every-other-block, N = place each file's Kth block at (start + K*stride). Range 1-256." />
+          <TextBlock Grid.Column="2" Text="1 = contiguous, 2 = every-other-block, up to 256"
+                     Foreground="DimGray" VerticalAlignment="Center" />
+        </Grid>
+        <Grid Margin="0,6,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="120" />
+            <ColumnDefinition Width="200" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Grid.Column="0" Text="Metadata placement:" VerticalAlignment="Center" />
+          <ComboBox Grid.Column="1" x:Name="MetadataZoneCombo" SelectedIndex="0"
+                    ToolTip="Controls where filesystem metadata and directory entries are placed during defragmentation.">
+            <ComboBoxItem Content="Don't move metadata" />
+            <ComboBoxItem Content="Metadata at front (fast access)" />
+            <ComboBoxItem Content="Metadata at back (data-first)" />
+            <ComboBoxItem Content="Metadata in middle (min seek)" />
+            <ComboBoxItem Content="Before file content (read-ahead)" />
+          </ComboBox>
+        </Grid>
+      </StackPanel>
+    </GroupBox>
+
+    <!-- Archive repack note (visible only when an archive is loaded) -->
+    <GroupBox Grid.Row="2" Header="Archive optimization" Margin="0,0,0,8"
+              x:Name="ArchiveRepackGroup" Visibility="Collapsed">
+      <StackPanel Margin="6">
+        <TextBlock TextWrapping="Wrap" Foreground="DimGray"
+                   Text="Archive repack: entries will be extracted and re-created with optimal compression settings. The layout strategy modes above do not apply to archive formats." />
+        <CheckBox x:Name="SmartSolidRepackCheck" Margin="0,6,0,0" Visibility="Collapsed"
+                  Content="Smart solid-block repack (7z only)"
+                  ToolTip="Tries 5 different file grouping strategies and picks the one that produces the smallest archive. More thorough but slower than a plain repack." />
+        <StackPanel Orientation="Horizontal" Margin="0,6,0,0" x:Name="MetadataPlacementPanel" Visibility="Collapsed">
+          <TextBlock Text="Metadata placement:" VerticalAlignment="Center" Margin="0,0,8,0" />
+          <ComboBox x:Name="MetadataPlacementCombo" Width="180"
+                    SelectedIndex="0" SelectionChanged="OnMetadataPlacementChanged">
+            <ComboBoxItem Content="Format default" />
+            <ComboBoxItem Content="Metadata first" />
+            <ComboBoxItem Content="Data first" />
+          </ComboBox>
+        </StackPanel>
       </StackPanel>
     </GroupBox>
 
@@ -111,19 +163,125 @@
       </Grid>
     </GroupBox>
 
-    <!-- Output / log -->
-    <GroupBox Grid.Row="4" Header="Output" Margin="0,0,0,8">
+    <!-- Block map (live tile chart) + file list side panel -->
+    <Grid Grid.Row="4" Margin="0,0,0,8">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="2*" MinWidth="240" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition x:Name="FilesPanelColumn" Width="1*" MinWidth="220" />
+      </Grid.ColumnDefinitions>
+
+      <GroupBox Grid.Column="0" Header="Block map">
+        <DockPanel>
+          <!-- Layout-source status line: "Real on-disk layout (fragmented)"
+               when the descriptor exposed IFilesystemExtentMap,
+               "Approximate layout (post-defrag preview)" otherwise. -->
+          <TextBlock DockPanel.Dock="Top" x:Name="LayoutStatusLbl"
+                     Text="—" Foreground="DimGray" FontStyle="Italic"
+                     Margin="6,2,6,0" />
+          <!-- Color legend -->
+          <WrapPanel DockPanel.Dock="Bottom" Margin="6,4,6,4">
+            <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+              <Rectangle Width="10" Height="10" Fill="#E64A19" Margin="0,2,4,0" /><TextBlock Text="Hot" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+              <Rectangle Width="10" Height="10" Fill="#42A5F5" Margin="0,2,4,0" /><TextBlock Text="Normal" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+              <Rectangle Width="10" Height="10" Fill="#66BB6A" Margin="0,2,4,0" /><TextBlock Text="Cold" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+              <Rectangle Width="10" Height="10" Fill="#90A4AE" Margin="0,2,4,0" /><TextBlock Text="Frozen" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+              <Rectangle Width="10" Height="10" Fill="#DAA520" Margin="0,2,4,0" /><TextBlock Text="Directory" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+              <Rectangle Width="10" Height="10" Fill="#E0E0E0" Stroke="Gray" StrokeThickness="0.5" Margin="0,2,4,0" /><TextBlock Text="Free" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+              <Rectangle Width="10" Height="10" Fill="#C03030" Margin="0,2,4,0" /><TextBlock Text="Bad" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+              <Rectangle Width="10" Height="10" Fill="#707070" Margin="0,2,4,0" /><TextBlock Text="Reserved" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+              <Line X1="0" Y1="0" X2="0" Y2="12" Stroke="LimeGreen" StrokeThickness="2" Margin="2,0,4,0" /><TextBlock Text="Read head" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+              <Line X1="0" Y1="0" X2="0" Y2="12" Stroke="Orange" StrokeThickness="2" Margin="2,0,4,0" /><TextBlock Text="Write head" />
+            </StackPanel>
+            <ToggleButton x:Name="FilesPanelToggle" Content="Files panel"
+                          IsChecked="True" Margin="6,0,0,0" Padding="6,1"
+                          Checked="OnFilesPanelToggle" Unchecked="OnFilesPanelToggle"
+                          ToolTip="Show or hide the file list side panel." />
+          </WrapPanel>
+          <controls:BlockMapControl x:Name="BlockMap" MinHeight="160"
+                                    TileClicked="OnBlockMapTileClicked" />
+        </DockPanel>
+      </GroupBox>
+
+      <GridSplitter Grid.Column="1" x:Name="FilesPanelSplitter" Width="4"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                    Background="Transparent" ResizeBehavior="PreviousAndNext" />
+
+      <GroupBox Grid.Column="2" x:Name="FilesPanelGroup" Header="Files" Margin="4,0,0,0">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Top" x:Name="FilesPanelStatus"
+                     Text="—" Foreground="DimGray" Margin="4,0,4,4" />
+          <DataGrid x:Name="FilesGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                    CanUserSortColumns="True" SelectionMode="Single"
+                    GridLinesVisibility="Horizontal" HeadersVisibility="Column"
+                    HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                    VirtualizingPanel.IsVirtualizing="True"
+                    VirtualizingPanel.VirtualizationMode="Recycling"
+                    VirtualizingPanel.ScrollUnit="Pixel"
+                    EnableRowVirtualization="True"
+                    EnableColumnVirtualization="False"
+                    Sorting="OnFilesGridSorting">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
+              <DataGridTextColumn Header="Size" Binding="{Binding SizeDisplay}" Width="80" />
+              <DataGridTextColumn Header="Frag" Binding="{Binding FragmentsDisplay}" Width="44">
+                <DataGridTextColumn.ElementStyle>
+                  <Style TargetType="TextBlock">
+                    <Setter Property="ToolTip" Value="Fragment-count display requires per-FS extent walk; not yet implemented." />
+                    <Setter Property="HorizontalAlignment" Value="Center" />
+                    <Setter Property="Foreground" Value="DimGray" />
+                  </Style>
+                </DataGridTextColumn.ElementStyle>
+              </DataGridTextColumn>
+              <DataGridTextColumn Header="Method" Binding="{Binding MethodDisplay}" Width="80" />
+              <DataGridTextColumn Header="Modified" Binding="{Binding ModifiedDisplay}" Width="120" />
+              <DataGridTextColumn Header="Class" Binding="{Binding Class}" Width="64" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
+      </GroupBox>
+    </Grid>
+
+    <!-- Output / log: small visible status strip below the block-map.
+         Earlier iteration hid this in row 4 (collapsed) so users couldn't see
+         operation results; restored as row 5 with a fixed height so the
+         "OK / FAILED" lines and image-size delta are always shown. -->
+    <GroupBox Grid.Row="5" Header="Output" Margin="0,0,0,4" Height="80">
       <TextBox x:Name="OutputBox" IsReadOnly="True" FontFamily="Consolas" FontSize="11"
                TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"
                HorizontalScrollBarVisibility="Auto" Background="#FAFAFA" />
     </GroupBox>
 
-    <!-- Progress -->
-    <ProgressBar Grid.Row="5" x:Name="Progress" Height="4" Margin="0,0,0,8"
-                 IsIndeterminate="False" />
+    <!-- Progress (overlay on top of the Output box's bottom edge) -->
+    <ProgressBar Grid.Row="5" x:Name="Progress" Height="4" Margin="0,0,0,0"
+                 IsIndeterminate="False" VerticalAlignment="Bottom" />
 
     <!-- Action buttons -->
     <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button x:Name="WipeEmptyBtn" Content="Wipe Empty" Width="100" Padding="4" Margin="0,0,8,0"
+              Click="OnWipeEmpty" IsEnabled="False"
+              ToolTip="Zero-fill all unused space: free clusters, cluster-tip slack, dead bytes. Forensic cleanliness tool." />
+      <Button x:Name="ShrinkBtn" Content="Shrink" Width="100" Padding="4" Margin="0,0,8,0"
+              Click="OnShrink" IsEnabled="False"
+              ToolTip="Defragment + truncate trailing free space to minimize image size." />
       <Button x:Name="RunBtn" Content="Defragment" Width="120" Padding="4" Margin="0,0,8,0"
               Click="OnRun" IsDefault="True" IsEnabled="False" />
       <Button Content="Close" Width="80" Padding="4" Click="OnClose" IsCancel="True" />

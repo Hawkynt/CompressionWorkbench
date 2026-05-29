@@ -1,0 +1,154 @@
+#pragma warning disable CS1591
+using System.Globalization;
+using System.Text;
+using Compression.Registry;
+using static Compression.Registry.FormatHelpers;
+
+namespace FileSystem.AdvFs;
+
+/// <summary>
+/// Read-only descriptor for AdvFS (Tru64 UNIX Advanced File System, DEC/HP).
+/// Open-sourced by HP in 2008 under the GPL; the storage domain → file set →
+/// file model and the on-disk structures are described in <c>bs_ods.h</c>,
+/// <c>bs_disk_block.h</c>, and <c>bs_public.h</c> of that release.
+///
+/// Walking the BMT (Bitfile Metadata Table) B-tree and following BFD
+/// (Bitfile Descriptor) extent chains to extract user files is explicitly
+/// out of scope (multi-week effort) — this descriptor surfaces:
+/// <list type="bullet">
+///   <item><description><c>FULL.advfs</c> — the raw image bytes</description></item>
+///   <item><description><c>metadata.ini</c> — parsed BSR_DMN_ATTR/BSR_VD_ATTR/BSR_DMN_MATTR fields</description></item>
+///   <item><description><c>rbmt_page0.bin</c> — 4 KB capture of RBMT page 0 (offset 131072)</description></item>
+/// </list>
+///
+/// Detection: a 16-byte cookie <c>"ADVFS\0RBMT0\0\0\0\0\0"</c> at offset
+/// 131072 (= page 16 × 8192-byte AdvFS page). This is an internal convention
+/// rather than the canonical Tru64 on-disk magic (record type discriminators
+/// rather than a fixed bytes-at-offset signature). Real Tru64 images that
+/// don't carry the cookie will not auto-detect but can still be parsed when
+/// fed to the descriptor directly.
+///
+/// Create / Modify / Defragment: <see cref="NotSupportedException"/> — the
+/// descriptor is read-only.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://sourceforge.net/projects/advfs/</c> — HP 2008 GPL release</description></item>
+///   <item><description>HP "AdvFS Technical Reference" (in the source tarball)</description></item>
+///   <item><description>Wikipedia "Advanced File System"</description></item>
+/// </list>
+/// </summary>
+public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
+  public string Id => "AdvFs";
+  public string DisplayName => "AdvFS (Tru64 UNIX)";
+  public FormatCategory Category => FormatCategory.Archive;
+  public FormatCapabilities Capabilities =>
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+  public string DefaultExtension => ".advfs";
+  public IReadOnlyList<string> Extensions => [".advfs"];
+  public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    new(AdvFsReader.DetectionCookie, Offset: (int)AdvFsReader.RbmtPageOffset, Confidence: 0.80f),
+  ];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description =>
+    "AdvFS (Tru64 UNIX Advanced File System) image — header-surface read-only.";
+
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    var entries = new List<ArchiveEntryInfo>();
+    byte[] image;
+    try {
+      image = ReadAllBounded(stream);
+    } catch {
+      entries.Add(new ArchiveEntryInfo(0, "FULL.advfs", 0, 0, "stored", false, false, null));
+      entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
+      return entries;
+    }
+
+    AdvFsReader reader;
+    try {
+      using var ms = new MemoryStream(image, writable: false);
+      reader = new AdvFsReader(ms);
+    } catch {
+      entries.Add(new ArchiveEntryInfo(0, "FULL.advfs", image.LongLength, image.LongLength, "stored", false, false, null));
+      entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
+      return entries;
+    }
+
+    var idx = 0;
+    entries.Add(new ArchiveEntryInfo(idx++, "FULL.advfs", image.LongLength, image.LongLength, "stored", false, false, null));
+    entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
+    if (reader.Valid)
+      entries.Add(new ArchiveEntryInfo(idx++, "rbmt_page0.bin", reader.HeaderRaw.LongLength, reader.HeaderRaw.LongLength, "stored", false, false, null));
+    return entries;
+  }
+
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    byte[] image;
+    try {
+      image = ReadAllBounded(stream);
+    } catch {
+      WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"), files);
+      return;
+    }
+
+    AdvFsReader reader;
+    try {
+      using var ms = new MemoryStream(image, writable: false);
+      reader = new AdvFsReader(ms);
+    } catch {
+      WriteIfMatch(outputDir, "FULL.advfs", image, files);
+      WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"), files);
+      return;
+    }
+
+    WriteIfMatch(outputDir, "FULL.advfs", image, files);
+    WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(reader), files);
+    if (reader.Valid)
+      WriteIfMatch(outputDir, "rbmt_page0.bin", reader.HeaderRaw, files);
+  }
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException("AdvFs read-only — defragmentation requires a writer.");
+
+  public void Defragment(Stream archive, DefragOptions options)
+    => throw new NotSupportedException("AdvFs read-only — defragmentation requires a writer.");
+
+  private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
+    if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;
+    WriteFile(outputDir, name, data);
+  }
+
+  private static byte[] BuildMetadata(AdvFsReader r) {
+    var b = new StringBuilder();
+    var ic = CultureInfo.InvariantCulture;
+    b.Append(ic, $"parse_status={r.ParseStatus}\n");
+    if (r.Valid) {
+      b.Append(ic, $"domain_id_hex={r.DomainIdHex}\n");
+      b.Append(ic, $"mount_id=0x{r.MountId:X16}\n");
+      b.Append(ic, $"on_disk_version={r.OnDiskVersion}\n");
+      b.Append(ic, $"vd_index={r.VdIndex}\n");
+      b.Append(ic, $"vd_count={r.VdCount}\n");
+      b.Append(ic, $"state=0x{r.State:X8}\n");
+      b.Append(ic, $"vd_blk_cnt={r.VdBlkCnt}\n");
+      b.Append(ic, $"vd_meta_blk_cnt={r.VdMetaBlkCnt}\n");
+      b.Append(ic, $"volume_tag={r.VolumeTag}\n");
+    }
+    return Encoding.UTF8.GetBytes(b.ToString());
+  }
+
+  // Capture header area + comfortable headroom. The detection cookie lives at
+  // offset 131072; capping at 256 KB keeps speculative-carver scans bounded.
+  private const int HeaderReadCap = 256 * 1024;
+
+  private static byte[] ReadAllBounded(Stream stream) {
+    using var ms = new MemoryStream();
+    var buf = new byte[8192];
+    int read;
+    while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
+      ms.Write(buf, 0, read);
+    return ms.ToArray();
+  }
+}

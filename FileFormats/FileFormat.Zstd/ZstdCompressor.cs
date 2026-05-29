@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using Compression.Core.Checksums;
 using Compression.Core.Dictionary.MatchFinders;
+using Compression.Core.Dictionary.Zstd;
 
 namespace FileFormat.Zstd;
 
@@ -9,11 +10,13 @@ namespace FileFormat.Zstd;
 /// Compresses data into Zstandard format and writes to a stream.
 /// Buffers all input and writes the complete frame on <see cref="Finish"/>.
 /// Uses hash-chain match finding with raw literal blocks and predefined FSE tables.
+/// Optionally accepts a <see cref="ZstdDictionary"/> for dictionary-mode compression.
 /// </summary>
 internal sealed class ZstdCompressor {
   private readonly Stream _output;
   private readonly int _compressionLevel;
   private readonly MemoryStream _pendingData;
+  private readonly ZstdDictionary? _dictionary;
   private bool _finished;
 
   /// <summary>
@@ -21,9 +24,11 @@ internal sealed class ZstdCompressor {
   /// </summary>
   /// <param name="output">The stream to write compressed data to.</param>
   /// <param name="compressionLevel">The compression level (1-9). Default 3.</param>
-  public ZstdCompressor(Stream output, int compressionLevel = 3) {
+  /// <param name="dictionary">Optional Zstd dictionary for prepopulating the match window.</param>
+  public ZstdCompressor(Stream output, int compressionLevel = 3, ZstdDictionary? dictionary = null) {
     this._output = output;
     this._compressionLevel = compressionLevel;
+    this._dictionary = dictionary;
     this._pendingData = new MemoryStream();
   }
 
@@ -49,13 +54,14 @@ internal sealed class ZstdCompressor {
     var hash = XxHash64.Compute(allData);
     var contentChecksum = (uint)(hash & 0xFFFFFFFF);
 
-    // Write frame header
+    // Write frame header (include dictionary ID when a dictionary is supplied)
+    var dictId = this._dictionary?.DictionaryId ?? 0u;
     var header = new ZstdFrameHeader(
       WindowSize: Math.Max(allData.Length, 1024),
       ContentSize: allData.Length,
-      DictionaryId: 0,
+      DictionaryId: dictId,
       ContentChecksum: true,
-      SingleSegment: true);
+      SingleSegment: dictId == 0);
     header.Write(this._output);
 
     // Split data into blocks and compress
@@ -124,6 +130,8 @@ internal sealed class ZstdCompressor {
   /// <summary>
   /// Attempts to compress a block using LZ matching and sequence encoding.
   /// Returns null if the block cannot be compressed effectively.
+  /// When a dictionary is present, uses dictionary-derived repeat offsets for
+  /// better sequence encoding.
   /// </summary>
   private byte[]? TryCompressBlock(ReadOnlySpan<byte> blockData) {
     if (blockData.Length < ZstdConstants.MinMatch)
@@ -194,8 +202,8 @@ internal sealed class ZstdCompressor {
       // Write literals section (Raw encoding)
       outputPos += ZstdLiterals.CompressLiterals(allLiteralBytes, output, outputPos);
 
-      // Write sequences section
-      int[] repeatOffsets = [1, 4, 8];
+      // Write sequences section — use dictionary repeat offsets when available
+      int[] repeatOffsets = this._dictionary?.RepeatOffsets ?? [1, 4, 8];
       outputPos += ZstdSequences.EncodeSequences(sequences.ToArray(), output, outputPos, repeatOffsets);
 
       return output.AsSpan(0, outputPos).ToArray();

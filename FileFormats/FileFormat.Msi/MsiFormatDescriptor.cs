@@ -4,7 +4,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Msi;
 
-public sealed class MsiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class MsiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "MSI is an OLE2 Compound File envelope with Installer DB schema tables, transforms, and cabinet streams — " +
+      "rebuilding from the surface stream list would destroy the package structure.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => CfbLayoutMap.Enumerate(archive);
+
   public string Id => "Msi";
   public string DisplayName => "MSI (OLE Compound File)";
   public FormatCategory Category => FormatCategory.Archive;

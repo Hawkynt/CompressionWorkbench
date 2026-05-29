@@ -4,7 +4,13 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cdi;
 
-public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "CDI is a DiscJuggler disc image (sector-based ISO 9660 + footer) — defragmentation isn't meaningful.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
   public string Id => "Cdi";
   public string DisplayName => "CDI";
   public FormatCategory Category => FormatCategory.Archive;

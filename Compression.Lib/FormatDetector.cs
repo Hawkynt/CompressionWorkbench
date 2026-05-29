@@ -136,8 +136,18 @@ public static partial class FormatDetector {
     if (singleExt is ".ar" or ".a" or ".deb") 
       return DetectArOrDeb(lower);
 
-    if (lower.EndsWith(".sz_") || lower.EndsWith("._")) 
+    if (lower.EndsWith(".sz_") || lower.EndsWith("._"))
       return Format.Szdd;
+
+    // Generic disk-image extension claimed by many filesystems — pick the
+    // most common writable target by default. Without this, the registry's
+    // first-claim-wins map can route ".img" to a niche read-only descriptor
+    // (Bfs alphabetically) which silently fails on Create. Other ambiguous
+    // extensions (.bin, .dd, .raw) are NOT special-cased: .bin belongs to
+    // BinCue (CD images), .dd is dd-image (raw), .raw is generic — those
+    // correctly resolve via the registry to specific descriptors.
+    if (singleExt == ".img")
+      return Format.Fat;
 
     // Single extension lookup from registry
     if (!string.IsNullOrEmpty(singleExt) && FormatDetector._extToFormat!.TryGetValue(singleExt, out var format))

@@ -4,7 +4,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Tfc;
 
-public sealed class TfcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class TfcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "Mass Effect TFC bundles are opaque LZX-compressed chunks referenced from the parent UPK package — " +
+      "rebuilding without knowledge of UPK indices would break asset references.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
   public string Id => "Tfc";
   public string DisplayName => "Mass Effect TFC";
   public FormatCategory Category => FormatCategory.Archive;

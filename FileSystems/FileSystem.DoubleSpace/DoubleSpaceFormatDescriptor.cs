@@ -1,16 +1,17 @@
 #pragma warning disable CS1591
 using System.Text;
+using Compression.Core.Layout;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.DoubleSpace;
 
-public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
   public string Id => "DoubleSpace";
   public string DisplayName => "DoubleSpace CVF";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".cvf";
@@ -53,5 +54,133 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());
+  }
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => ModifyRebuilder.Add(archive, inputs,
+      readEntries: stream => {
+        var r = new DoubleSpaceReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new DoubleSpaceWriter { Variant = CvfVariant.DoubleSpace60 };
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        return w.Build();
+      });
+
+  public void Remove(Stream archive, string[] entryNames)
+    => ModifyRebuilder.Remove(archive, entryNames,
+      readEntries: stream => {
+        var r = new DoubleSpaceReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new DoubleSpaceWriter { Variant = CvfVariant.DoubleSpace60 };
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        return w.Build();
+      });
+
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => DoubleSpaceExtentMap.Enumerate(image);
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    var mover = new DoubleSpaceBlockMover();
+    image.Position = 0;
+    using var ms = new MemoryStream();
+    image.CopyTo(ms);
+    mover.Init(ms.ToArray());
+    mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+  }
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    var mover = new DoubleSpaceBlockMover();
+    image.Position = 0;
+    using var ms = new MemoryStream();
+    image.CopyTo(ms);
+    mover.Init(ms.ToArray());
+    mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware CVF defragmentor. Supports planner-driven in-place defrag
+  /// (using <see cref="DefragPlanner"/> + <see cref="DoubleSpaceBlockMover"/>)
+  /// with rebuild fallback on error.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      try {
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch {
+        archive.Position = 0;
+      }
+    }
+
+    DefragmentWithRebuild(archive, options);
+  }
+
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var imageSize = archive.Length;
+
+    using var bpbMs = new MemoryStream();
+    archive.CopyTo(bpbMs);
+    var imageData = bpbMs.ToArray();
+
+    var mover = new DoubleSpaceBlockMover();
+    mover.Init(imageData);
+
+    var extents = DoubleSpaceExtentMap.Enumerate(new MemoryStream(imageData)).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "scanning", Fraction: 0, CurrentReadOffset: 0, CurrentWriteOffset: -1,
+      ImageSize: imageSize, BlockMap: extents, Status: "Analysing layout"));
+
+    var moves = DefragPlanner.Plan(
+      extents, mover.DataRegionByteStart, imageSize, mover.BytesPerSector,
+      options.Profile, options.Mode, Math.Max(1, options.InterleaveStride),
+      options.HoleSize, options.HoleAt);
+
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
+        ImageSize: imageSize, BlockMap: extents, Status: "Already defragmented"));
+      return;
+    }
+
+    DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize, () => {
+      archive.Position = 0;
+      using var reread = new MemoryStream();
+      archive.CopyTo(reread);
+      imageData = reread.ToArray();
+      mover.Init(imageData);
+    });
+
+    archive.Position = 0;
+    var postExtents = DoubleSpaceExtentMap.Enumerate(new MemoryStream(imageData)).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
+      ImageSize: imageSize, BlockMap: postExtents, Status: "Defragmentation complete"));
+  }
+
+  private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new DoubleSpaceReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new DoubleSpaceWriter { Variant = CvfVariant.DoubleSpace60 };
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        return w.Build();
+      });
   }
 }

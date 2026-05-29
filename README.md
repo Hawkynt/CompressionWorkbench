@@ -244,20 +244,32 @@ Universal archive tool with smart conversion, optimal re-encoding, benchmarking,
 | `extract <archive> [files...]` | `x`     | Extract files from an archive                               |
 | `create <archive> <files...>`  | `c`     | Create a new archive                                        |
 | `test <archive>`               | `t`     | Test archive integrity                                      |
+| `add <archive> <files...>`     | -       | Add or replace files inside an existing archive             |
+| `remove <archive> <names...>`  | -       | Remove named entries from an existing archive               |
+| `replace <archive> <entry> <file>` | -   | Replace a single entry with a new file                      |
 | `info <archive>`               | -       | Show detailed archive information                           |
-| `convert <input> <output>`     | -       | Convert between archive formats                             |
+| `convert <input> <output>`     | -       | Convert between any formats (archive, FS, stream)           |
 | `optimize <input> <output>`    | `opt`   | Re-encode with optimal compression                          |
-| `benchmark <file>`             | `bench` | Benchmark all building blocks on the supplied data       |
+| `benchmark <file>`             | `bench` | Benchmark all building blocks on the supplied data          |
+| `formats`                      | -       | List all supported formats                                  |
 | `analyze <file>`               | -       | Run binary analysis (detection + entropy + trial decompress)|
 | `auto-extract <file>`          | -       | Recursive nested extraction (see below)                     |
 | `batch <dir>`                  | -       | Scan a directory in parallel and aggregate format stats     |
 | `suggest <file>`               | -       | Platform-aware format recommendation                        |
-| `recover <image>`              | -       | Forensic carving — finds embedded filesystems + files in damaged disk images. `--mode auto\|filesystems\|files`, `--recursive` walks nested wrappers (e.g. ZIP→VHD→MBR→FAT). |
-| `visualize <file>`             | -       | Renders a colored block map of every detected envelope (FAT/ext/NTFS/MBR/...) stacked by depth. `--format ascii\|svg\|html` |
-| `carve <file>`                 | -       | Photorec-style file carver (JPEG/PNG/MP4/ZIP/... at any offset, including in slack space) |
-| `reverse-engineer <tool>`      | `reveng`| Black-box probing of an unknown compression tool            |
 | `tool (init\|list\|add\|run\|remove)` | - | Manage external-tool templates                          |
-| `formats`                      | -       | List all supported formats                                  |
+| `reverse-engineer <tool>`      | `reveng`| Black-box probing of an unknown compression tool            |
+| `carve <file>`                 | -       | Photorec-style file carver (JPEG/PNG/MP4/ZIP/... at any offset, including in slack space) |
+| `visualize <file>`             | -       | Renders a colored block map of every detected envelope (FAT/ext/NTFS/MBR/...) stacked by depth. `--format ascii\|svg\|html` |
+| `defragment <image>`           | -       | Defragment a filesystem image in place (`--mode pack-start\|pack-end\|fill-holes\|carve-hole`) |
+| `shrink <image>`               | -       | Defragment + truncate trailing free space; `--compact` for VHD sparse |
+| `wipe-empty <image>`           | -       | Zero-fill all unused space (free clusters, cluster tips, deleted entries) |
+| `deploy <image> <device>`      | -       | Raw-write an image to a block device with CRC verification  |
+| `convert-clusters <image>`     | -       | Rebuild a FAT image with a different cluster size           |
+| `resize <image>`               | -       | Resize a filesystem image to a target size                  |
+| `convert-archive <in> <out>`   | -       | Convert between any listable/creatable formats (archive-to-archive, archive-to-FS, FS-to-archive, FS-to-FS). `convert-fs` is a hidden back-compat alias. |
+| `dedup <image>`                | -       | Find and optionally remove duplicate files (by SHA-256)     |
+| `sparsify <image>`             | -       | Remove zero-filled blocks from a container image            |
+| `densify <image>`              | -       | Pre-allocate all blocks in a container image                |
 
 Examples:
 
@@ -273,6 +285,15 @@ cwb benchmark largefile.bin
 cwb analyze unknown.bin
 cwb auto-extract sample.vhd --recursive
 cwb suggest big.csv        # "→ consider zstd -19 (columnar/text, moderate entropy)"
+cwb defragment disk.img --mode pack-start
+cwb shrink disk.img
+cwb wipe-empty disk.img
+cwb convert-archive disk.d64 output.zip     # retro FS → modern archive
+cwb convert-archive archive.zip out.tar     # archive → archive
+cwb convert-archive archive.zip out.img -f fat # archive → filesystem image
+cwb dedup disk.img --dry-run
+cwb sparsify disk.vhd
+cwb deploy disk.img \\.\PhysicalDrive2 --yes
 ```
 
 **3-tier conversion model.** `cwb convert` picks the cheapest strategy that preserves data:

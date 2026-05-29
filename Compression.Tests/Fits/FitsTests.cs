@@ -136,6 +136,91 @@ public class FitsTests {
     }
   }
 
+  // ── Create (WORM) ─────────────────────────────────────────────────────────
+
+  [Category("HappyPath")]
+  [Test]
+  public void Create_SingleFile_RoundTrips() {
+    // Create a FITS archive from a single file, then list/extract and verify.
+    var d = new FitsFormatDescriptor();
+    byte[] fileData = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+
+    // Write to temp file, then create archive
+    var tmpDir = Path.Combine(Path.GetTempPath(), "fits_create_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tmpDir);
+    var inputFile = Path.Combine(tmpDir, "image.dat");
+    File.WriteAllBytes(inputFile, fileData);
+
+    try {
+      using var archiveMs = new MemoryStream();
+      var inputs = new List<Compression.Registry.ArchiveInputInfo> {
+        new(inputFile, "image.dat", false)
+      };
+      d.Create(archiveMs, inputs, new Compression.Registry.FormatCreateOptions());
+
+      // Verify the created archive can be listed
+      archiveMs.Position = 0;
+      var entries = d.List(archiveMs, null);
+      var names = entries.Select(e => e.Name).ToList();
+      Assert.That(names, Does.Contain("FULL.fits"));
+      Assert.That(names, Does.Contain("hdu_00_primary.data"));
+
+      // Extract and verify data
+      var extractDir = Path.Combine(tmpDir, "extract");
+      archiveMs.Position = 0;
+      d.Extract(archiveMs, extractDir, null, null);
+      var extractedData = File.ReadAllBytes(Path.Combine(extractDir, "hdu_00_primary.data"));
+      Assert.That(extractedData, Is.EqualTo(fileData));
+    } finally {
+      Directory.Delete(tmpDir, true);
+    }
+  }
+
+  [Category("HappyPath")]
+  [Test]
+  public void Create_MultipleFiles_RoundTrips() {
+    var d = new FitsFormatDescriptor();
+    byte[] file1 = [10, 20, 30, 40];
+    byte[] file2 = [50, 60, 70, 80, 90, 100];
+
+    var tmpDir = Path.Combine(Path.GetTempPath(), "fits_multi_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tmpDir);
+    var input1 = Path.Combine(tmpDir, "primary.dat");
+    var input2 = Path.Combine(tmpDir, "extension.dat");
+    File.WriteAllBytes(input1, file1);
+    File.WriteAllBytes(input2, file2);
+
+    try {
+      using var archiveMs = new MemoryStream();
+      var inputs = new List<Compression.Registry.ArchiveInputInfo> {
+        new(input1, "primary.dat", false),
+        new(input2, "extension.dat", false)
+      };
+      d.Create(archiveMs, inputs, new Compression.Registry.FormatCreateOptions());
+
+      archiveMs.Position = 0;
+      var entries = d.List(archiveMs, null);
+      // Should have FULL, primary header, primary data, extension header, extension data, metadata
+      Assert.That(entries.Count, Is.GreaterThanOrEqualTo(5));
+
+      // Extract primary data
+      var extractDir = Path.Combine(tmpDir, "extract");
+      archiveMs.Position = 0;
+      d.Extract(archiveMs, extractDir, null, null);
+      var extractedPrimary = File.ReadAllBytes(Path.Combine(extractDir, "hdu_00_primary.data"));
+      Assert.That(extractedPrimary, Is.EqualTo(file1));
+    } finally {
+      Directory.Delete(tmpDir, true);
+    }
+  }
+
+  [Category("HappyPath")]
+  [Test]
+  public void Create_HasCanCreateCapability() {
+    var d = new FitsFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  }
+
   // ── Robustness ───────────────────────────────────────────────────────────
 
   [Category("Robustness")]

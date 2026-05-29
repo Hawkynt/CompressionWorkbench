@@ -187,4 +187,27 @@ public class F2fsTests {
     var w = new F2fsWriter();
     Assert.Throws<InvalidOperationException>(() => w.AddFile("big.bin", new byte[924 * 4096]));
   }
+
+  /// <summary>
+  /// Lock the F2FS capability surface at WORM. The writer emits a real
+  /// kernel-spec multi-segment image (SIT/NAT journals, checkpoint pack,
+  /// inline-dentry root). True in-flight Add/Remove requires NAT/SIT journal
+  /// mutation, segment-typed valid_map allocation, inline-dentry walk, and
+  /// checkpoint CRC recomputation — multi-week work. Per the project rule
+  /// "never advertise a capability the writer can't actually deliver", this
+  /// test fails any drive-by upgrade that re-adds <c>IArchiveModifiable</c>
+  /// without the underlying B-tree mutation work.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void Descriptor_IsHonestlyRebuildBased() {
+    var d = new F2fsFormatDescriptor();
+    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>(),
+      "F2FS must not advertise IArchiveModifiable until in-flight NAT/SIT mutation, segment-typed valid_map allocation, and checkpoint CRC recomputation are implemented.");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
+      "F2FS must not flag CanModify while WORM-only.");
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
+  }
 }

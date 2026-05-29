@@ -4,7 +4,32 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Jar;
 
-public sealed class JarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class JarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
+
+  /// <summary>Rebuild-based defrag delegating to ZIP (JAR is a ZIP variant).</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag delegating to ZIP (JAR is a ZIP variant).</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new FileFormat.Zip.ZipReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FileName, r.ExtractEntry(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new FileFormat.Zip.ZipWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddEntry(n, d);
+          w.Finish();
+        }
+        return ms.ToArray();
+      });
+  }
+
   public string Id => "Jar";
   public string DisplayName => "JAR";
   public FormatCategory Category => FormatCategory.Archive;

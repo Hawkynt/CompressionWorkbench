@@ -7,7 +7,27 @@ namespace FileSystem.Iso;
 /// <summary>
 /// Format descriptor for ISO 9660 optical disc images.
 /// </summary>
-public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
+public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the 32 KiB system area, the volume descriptor sequence, the path
+  /// tables, and the directory tree, and yields each file's contiguous
+  /// extent (LBA, length) as a single Used run — ECMA-119 mandates contiguous
+  /// allocation per file. Directories surface as MetadataReserved.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => IsoExtentMap.Enumerate(image);
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    => new IsoBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    => new IsoBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+
   /// <inheritdoc/>
   public string Id => "Iso";
   /// <inheritdoc/>

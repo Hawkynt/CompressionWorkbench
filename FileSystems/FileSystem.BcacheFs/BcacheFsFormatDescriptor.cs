@@ -15,7 +15,7 @@ namespace FileSystem.BcacheFs;
 /// emitting B-tree nodes are explicitly out of scope — see
 /// <c>Hawkynt.FileFormats.FileSystems/README.md</c> for the full gap statement.
 /// </summary>
-public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
   public string Id => "BcacheFs";
   public string DisplayName => "BcacheFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -110,6 +110,21 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     }
     w.WriteTo(output);
   }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// BcacheFS defragment is unsupported in this implementation. The writer
+  /// emits an SB-only WORM image with no B-tree (extents/dirents/inodes are
+  /// the multi-week follow-up); without a reader that walks the b-tree
+  /// object graph there is nothing to extract and re-pack, so the rebuild
+  /// path is not viable. Per project policy, the descriptor still advertises
+  /// the capability so capability surfaces stay honest.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) =>
+    throw new NotSupportedException(
+      "BcacheFS defragment requires a b-tree reader that can extract user files; the current writer is SB-only WORM with no reader.");
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
     if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;

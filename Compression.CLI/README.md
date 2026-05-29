@@ -17,12 +17,32 @@ dotnet build Compression.CLI
 | `extract <archive> [files...]` | `x` | Extract files from an archive |
 | `create <archive> <files...>` | `c` | Create a new archive |
 | `test <archive>` | `t` | Test archive integrity |
+| `add <archive> <files...>` | - | Add or replace files inside an existing archive |
+| `remove <archive> <names...>` | - | Remove named entries from an existing archive |
+| `replace <archive> <entry> <file>` | - | Replace a single entry with a new file |
 | `info <archive>` | - | Show detailed archive information |
-| `convert <input> <output>` | - | Convert between archive formats |
+| `convert <input> <output>` | - | Convert between any formats (archive, FS, stream) |
 | `optimize <input> <output>` | `opt` | Re-encode with optimal compression |
 | `benchmark <file>` | `bench` | Compare compression across algorithms |
-| `analyze <file>` | - | Run binary analysis (signatures, entropy, fingerprinting) |
 | `formats` | - | List all supported formats |
+| `analyze <file>` | - | Run binary analysis (signatures, entropy, fingerprinting) |
+| `auto-extract <file>` | - | Recursive nested extraction (disk -> partition -> FS -> file) |
+| `batch <dir>` | - | Scan a directory and aggregate format stats |
+| `suggest <file>` | - | Platform-aware format recommendation |
+| `tool (init\|list\|add\|run\|remove)` | - | Manage external-tool templates |
+| `reverse-engineer <tool>` | `reveng` | Black-box probing of an unknown compression tool |
+| `carve <file>` | - | Photorec-style file carver |
+| `visualize <file>` | - | Colored block map of detected envelopes |
+| `defragment <image>` | - | Defragment a FS image in place (4 layout strategies) |
+| `shrink <image>` | - | Defrag + truncate trailing free space |
+| `wipe-empty <image>` | - | Zero-fill all unused space in an image or archive |
+| `deploy <image> <device>` | - | Raw-write an image to a block device with CRC verification |
+| `convert-clusters <image>` | - | Rebuild a FAT image with a different cluster size |
+| `resize <image>` | - | Resize a filesystem image to a target size |
+| `convert-archive <in> <out>` | - | Cross-format conversion (archive-to-archive, archive-to-FS, FS-to-archive, FS-to-FS). `convert-fs` is a hidden back-compat alias. |
+| `dedup <image>` | - | Find and optionally remove duplicate files (by SHA-256) |
+| `sparsify <image>` | - | Remove zero-filled blocks from a container image |
+| `densify <image>` | - | Pre-allocate all blocks in a container image |
 
 ## Examples
 
@@ -36,6 +56,17 @@ cwb convert input.tar.gz output.tar.xz
 cwb optimize input.zip optimized.zip
 cwb benchmark largefile.bin
 cwb analyze unknown.bin
+cwb auto-extract sample.vhd --recursive
+cwb defragment disk.img --mode pack-start
+cwb shrink disk.img
+cwb wipe-empty disk.img
+cwb convert-archive disk.d64 output.zip     # retro FS to modern archive
+cwb convert-archive archive.zip out.tar     # archive to archive
+cwb convert-archive archive.zip out.img -f fat # archive to filesystem image
+cwb dedup disk.img --dry-run
+cwb sparsify disk.vhd
+cwb deploy disk.img \\.\PhysicalDrive2 --yes
+cwb suggest big.csv
 ```
 
 ## Method+ System

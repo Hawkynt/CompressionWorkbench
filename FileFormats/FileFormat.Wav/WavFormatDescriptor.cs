@@ -9,7 +9,13 @@ namespace FileFormat.Wav;
 /// Exposes a WAV/RIFF file as an archive of <c>FULL.wav</c> plus one mono WAV per
 /// channel plus any ancillary RIFF metadata chunks (INFO/LIST/bext).
 /// </summary>
-public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
+public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable, IArchiveDefragmentable, IFileInternalLayoutMap, IFileInternalChunkMover {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "WAV is a single-blob audio file (RIFF chunks + PCM data) — defragmentation isn't meaningful; use WavOptimizer instead.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
   public string Id => "Wav";
   public string DisplayName => "WAV (RIFF audio)";
   public FormatCategory Category => FormatCategory.Audio;
@@ -165,6 +171,17 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     reason = $"not a WAV-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
     return false;
   }
+
+  private readonly WavOptimizer _optimizer = new();
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => WavLayoutMap.Enumerate(file);
+
+  /// <inheritdoc />
+  public void Optimize(Stream file) => _optimizer.Optimize(file);
+
+  /// <inheritdoc />
+  public void Optimize(Stream file, MetadataPlacementProfile? profile) => _optimizer.Optimize(file, profile);
 
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream, out WavReader.ParsedWav parsed) {
     using var ms = new MemoryStream();

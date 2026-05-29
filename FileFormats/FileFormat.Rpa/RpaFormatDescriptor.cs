@@ -5,7 +5,31 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Rpa;
 
-public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    RpaReader r;
+    try {
+      archive.Position = 0;
+      r = new RpaReader(archive);
+    } catch {
+      yield break;
+    }
+    // Header line (text, up to ~34 bytes) before the index offset
+    yield return new DefragBlockInfo(0, Math.Min(r.IndexOffset, 64), DefragBlockKind.MetadataReserved, FileName: "RPA Header");
+    // File data regions
+    foreach (var e in r.Entries) {
+      if (e.Length > 0 && e.Offset >= 0)
+        yield return new DefragBlockInfo(e.Offset, e.Length, DefragBlockKind.Used, FileName: e.Path);
+    }
+    // Index (pickle) at end of file
+    if (r.IndexOffset > 0 && r.IndexOffset < archive.Length) {
+      var idxLen = archive.Length - r.IndexOffset;
+      yield return new DefragBlockInfo(r.IndexOffset, idxLen, DefragBlockKind.MetadataReserved, FileName: "Pickle Index");
+    }
+  }
+
   public string Id => "Rpa";
   public string DisplayName => "Ren'Py Archive";
   public FormatCategory Category => FormatCategory.Archive;

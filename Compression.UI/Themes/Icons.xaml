@@ -262,4 +262,30 @@
     </DrawingImage.Drawing>
   </DrawingImage>
 
+  <!--
+    DefragmentIcon — three rows of cluster tiles with a downward arrow showing
+    the "compact toward start" intent of a defrag pass. Hot tile, free tiles,
+    cold tile pattern echoes the block-map color legend so it's recognisable
+    at 16x16.
+  -->
+  <DrawingImage x:Key="DefragmentIcon">
+    <DrawingImage.Drawing>
+      <DrawingGroup>
+        <!-- Row 1: scattered (before) -->
+        <GeometryDrawing Brush="#FFE64A19" Geometry="M 1,1 L 4,1 L 4,4 L 1,4 Z" />
+        <GeometryDrawing Brush="#FFE0E0E0" Geometry="M 5,1 L 7,1 L 7,4 L 5,4 Z" />
+        <GeometryDrawing Brush="#FF42A5F5" Geometry="M 8,1 L 10,1 L 10,4 L 8,4 Z" />
+        <GeometryDrawing Brush="#FFE0E0E0" Geometry="M 11,1 L 13,1 L 13,4 L 11,4 Z" />
+        <GeometryDrawing Brush="#FF66BB6A" Geometry="M 14,1 L 15,1 L 15,4 L 14,4 Z" />
+        <!-- Arrow -->
+        <GeometryDrawing Brush="#FF555555" Geometry="M 7,6 L 9,6 L 9,9 L 11,9 L 8,12 L 5,9 L 7,9 Z" />
+        <!-- Row 3: packed (after) -->
+        <GeometryDrawing Brush="#FFE64A19" Geometry="M 1,12 L 4,12 L 4,15 L 1,15 Z" />
+        <GeometryDrawing Brush="#FF42A5F5" Geometry="M 4,12 L 7,12 L 7,15 L 4,15 Z" />
+        <GeometryDrawing Brush="#FF66BB6A" Geometry="M 7,12 L 10,12 L 10,15 L 7,15 Z" />
+        <GeometryDrawing Brush="#FFE0E0E0" Geometry="M 10,12 L 15,12 L 15,15 L 10,15 Z" />
+      </DrawingGroup>
+    </DrawingImage.Drawing>
+  </DrawingImage>
+
 </ResourceDictionary>

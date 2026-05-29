@@ -4,7 +4,13 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.SplitFile;
 
-public sealed class SplitFileFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class SplitFileFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "Split-file (.001/.002/...) is a multi-part file join — defragmentation isn't meaningful for a stream view.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
   public string Id => "SplitFile";
   public string DisplayName => "Split File (.001)";
   public FormatCategory Category => FormatCategory.Archive;

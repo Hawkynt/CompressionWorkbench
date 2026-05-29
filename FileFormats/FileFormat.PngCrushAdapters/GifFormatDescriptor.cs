@@ -18,7 +18,7 @@ namespace FileFormat.PngCrushAdapters;
 /// raw <see cref="GifPixelDecoder"/> stays in <c>FileFormat.Gif</c> as a
 /// dependency-free utility (it produces RGBA32 byte buffers, no PngCrushCS types).
 /// </remarks>
-public sealed class GifFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class GifFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFileInternalLayoutMap {
   public string Id => "Gif";
   public string DisplayName => "GIF (multi-frame)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -42,6 +42,9 @@ public sealed class GifFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
     MultiImageArchiveHelper.Extract(stream, outputDir, files, "frame", ReadAll);
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => GifLayoutMap.Enumerate(file);
 
   /// <summary>Decodes <paramref name="s"/> to a list of <see cref="RawImage"/> RGBA32 frames.</summary>
   /// <remarks>

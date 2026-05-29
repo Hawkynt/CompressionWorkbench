@@ -4,7 +4,25 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Umx;
 
-public sealed class UmxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class UmxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "UMX is an Unreal Engine 1 package with cross-referenced objects (export/import tables); " +
+      "writer only embeds a single opaque payload — rebuilding from extracted entries would break references.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new UmxReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.Size > 0)
+        yield return new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "Umx";
   public string DisplayName => "Unreal Music (UMX)";
   public FormatCategory Category => FormatCategory.Archive;

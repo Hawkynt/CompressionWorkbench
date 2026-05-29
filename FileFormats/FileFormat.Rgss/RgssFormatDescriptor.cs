@@ -5,12 +5,50 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Rgss;
 
-public sealed class RgssFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class RgssFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the RGSS archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the RGSS archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new RgssReader(stream);
+        return r.Entries.Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        var entries = files.Select(f => (Name: f.Name, Data: f.Data)).ToList();
+        new RgssWriter(ms).Write(entries);
+        return ms.ToArray();
+      });
+  }
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    // 8-byte magic header "RGSSAD\0V"
+    yield return new DefragBlockInfo(0, 8, DefragBlockKind.MetadataReserved, FileName: "RGSS Header");
+    RgssReader r;
+    try {
+      r = new RgssReader(archive);
+    } catch {
+      yield break;
+    }
+    foreach (var e in r.Entries) {
+      if (e.Size > 0 && e.Offset >= 0)
+        yield return new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "Rgss";
   public string DisplayName => "RPG Maker RGSSAD";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".rgssad";
   public IReadOnlyList<string> Extensions => [".rgssad", ".rgss2a", ".rgss3a"];
@@ -34,6 +72,12 @@ public sealed class RgssFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     foreach (var e in r.Entries)
       list.Add(new ArchiveEntryInfo(idx++, e.Name, e.Size, e.Size, "XOR", false, true, null));
     return list;
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var entries = FormatHelpers.FilesOnly(inputs).ToList();
+    var w = new RgssWriter(output);
+    w.Write(entries);
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {

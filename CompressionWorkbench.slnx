@@ -39,6 +39,7 @@
     <Project Path="FileSystems/FileSystem.Apfs/FileSystem.Apfs.csproj" />
     <Project Path="FileFormats/FileFormat.Apk/FileFormat.Apk.csproj" />
     <Project Path="FileFormats/FileFormat.ApkNativeLibs/FileFormat.ApkNativeLibs.csproj" />
+    <Project Path="FileSystems/FileSystem.AdvFs/FileSystem.AdvFs.csproj" />
     <Project Path="FileSystems/FileSystem.AppleDos/FileSystem.AppleDos.csproj" />
     <Project Path="FileFormats/FileFormat.Appx/FileFormat.Appx.csproj" />
     <Project Path="FileFormats/FileFormat.Ar/FileFormat.Ar.csproj" />
@@ -110,6 +111,7 @@
     <Project Path="FileSystems/FileSystem.Ext/FileSystem.Ext.csproj" />
     <Project Path="FileSystems/FileSystem.F2fs/FileSystem.F2fs.csproj" />
     <Project Path="FileSystems/FileSystem.Fat/FileSystem.Fat.csproj" />
+    <Project Path="FileSystems/FileSystem.FatPlus/FileSystem.FatPlus.csproj" />
     <Project Path="FileFormats/FileFormat.Fb2/FileFormat.Fb2.csproj" />
     <Project Path="FileFormats/FileFormat.Fits/FileFormat.Fits.csproj" />
     <Project Path="FileFormats/FileFormat.Fla/FileFormat.Fla.csproj" />
@@ -127,6 +129,7 @@
     <Project Path="FileFormats/FileFormat.Gar/FileFormat.Gar.csproj" />
     <Project Path="FileFormats/FileFormat.GodotPck/FileFormat.GodotPck.csproj" />
     <Project Path="FileFormats/FileFormat.Grp/FileFormat.Grp.csproj" />
+    <Project Path="FileSystems/FileSystem.Gfs2/FileSystem.Gfs2.csproj" />
     <Project Path="FileFormats/FileFormat.Gzip/FileFormat.Gzip.csproj" />
     <Project Path="FileFormats/FileFormat.Ha/FileFormat.Ha.csproj" />
     <Project Path="FileFormats/FileFormat.Hdf5/FileFormat.Hdf5.csproj" />
@@ -243,6 +246,13 @@
     <Project Path="FileFormats/FileFormat.Mp4/FileFormat.Mp4.csproj" />
     <Project Path="FileFormats/FileFormat.Ogg/FileFormat.Ogg.csproj" />
     <Project Path="FileSystems/FileSystem.MinixFs/FileSystem.MinixFs.csproj" />
+    <Project Path="FileSystems/FileSystem.MinixV1/FileSystem.MinixV1.csproj" />
+    <Project Path="FileSystems/FileSystem.MinixV2/FileSystem.MinixV2.csproj" />
+    <Project Path="FileSystems/FileSystem.Nilfs2/FileSystem.Nilfs2.csproj" />
+    <Project Path="FileSystems/FileSystem.Tux2/FileSystem.Tux2.csproj" />
+    <Project Path="FileSystems/FileSystem.Tux3/FileSystem.Tux3.csproj" />
+    <Project Path="FileSystems/FileSystem.SmartFs/FileSystem.SmartFs.csproj" />
+    <Project Path="FileSystems/FileSystem.DragonFs/FileSystem.DragonFs.csproj" />
     <Project Path="FileFormats/FileFormat.Mpq/FileFormat.Mpq.csproj" />
     <Project Path="FileSystems/FileSystem.Msa/FileSystem.Msa.csproj" />
     <Project Path="FileFormats/FileFormat.Msi/FileFormat.Msi.csproj" />
@@ -256,6 +266,7 @@
     <Project Path="FileFormats/FileFormat.Nrg/FileFormat.Nrg.csproj" />
     <Project Path="FileFormats/FileFormat.Nsa/FileFormat.Nsa.csproj" />
     <Project Path="FileFormats/FileFormat.Nsis/FileFormat.Nsis.csproj" />
+    <Project Path="FileSystems/FileSystem.Nss/FileSystem.Nss.csproj" />
     <Project Path="FileSystems/FileSystem.Ntfs/FileSystem.Ntfs.csproj" />
     <Project Path="FileSystems/FileSystem.Nwfs/FileSystem.Nwfs.csproj" />
     <Project Path="FileSystems/FileSystem.Ocfs2/FileSystem.Ocfs2.csproj" />
@@ -323,6 +334,7 @@
     <Project Path="FileFormats/FileFormat.TfRecord/FileFormat.TfRecord.csproj" />
     <Project Path="FileFormats/FileFormat.ThumbsDb/FileFormat.ThumbsDb.csproj" />
     <Project Path="FileFormats/FileFormat.Tnef/FileFormat.Tnef.csproj" />
+    <Project Path="FileSystems/FileSystem.TFat/FileSystem.TFat.csproj" />
     <Project Path="FileSystems/FileSystem.TrDos/FileSystem.TrDos.csproj" />
     <Project Path="FileSystems/FileSystem.Ubifs/FileSystem.Ubifs.csproj" />
     <Project Path="FileSystems/FileSystem.Udf/FileSystem.Udf.csproj" />
@@ -334,6 +346,7 @@
     <Project Path="FileFormats/FileFormat.UnrealPak/FileFormat.UnrealPak.csproj" />
     <Project Path="FileFormats/FileFormat.UuEncoding/FileFormat.UuEncoding.csproj" />
     <Project Path="FileSystems/FileSystem.Vdfs/FileSystem.Vdfs.csproj" />
+    <Project Path="FileSystems/FileSystem.VxFs/FileSystem.VxFs.csproj" />
     <Project Path="FileFormats/FileFormat.Vdi/FileFormat.Vdi.csproj" />
     <Project Path="FileFormats/FileFormat.Vhd/FileFormat.Vhd.csproj" />
     <Project Path="FileFormats/FileFormat.Vmdk/FileFormat.Vmdk.csproj" />
@@ -384,5 +397,8 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Compression.Tests/Compression.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Benchmarks/">
+    <Project Path="Compression.Benchmarks/Compression.Benchmarks.csproj" />
   </Folder>
 </Solution>

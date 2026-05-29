@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.PackDisk;
 
-public sealed class PackDiskFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class PackDiskFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
   public string Id => "PackDisk";
   public string DisplayName => "PackDisk (Amiga)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -46,5 +46,23 @@ public sealed class PackDiskFormatDescriptor : IFormatDescriptor, IArchiveFormat
       w.AddTrack(File.ReadAllBytes(i.FullPath));
     }
     w.WriteTo(output);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new PackDiskReader(stream);
+        return r.Entries.Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new PackDiskWriter("PDSK");
+        foreach (var (_, d) in files) w.AddTrack(d);
+        using var ms = new MemoryStream();
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
   }
 }

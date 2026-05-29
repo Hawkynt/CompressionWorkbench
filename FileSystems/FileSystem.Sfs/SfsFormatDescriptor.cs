@@ -45,7 +45,7 @@ namespace FileSystem.Sfs;
 /// compliance"), R-only is the honest state for this format.
 /// </para>
 /// </remarks>
-public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
   public string Id => "Sfs";
   public string DisplayName => "Amiga SFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -134,6 +134,22 @@ public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     bldr.Append(CultureInfo.InvariantCulture, $"block_size={root.BlockSize}\n");
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Amiga SFS defragment is unsupported in this implementation. SFS is
+  /// read-only here — there is no writer (object-container B+ tree, bitmap
+  /// chain, directory hash table, and free-extent tree all cross-reference
+  /// each other and are checksummed; partial writes corrupt the volume).
+  /// The descriptor advertises the capability so capability surfaces stay
+  /// honest, but actual defragment requires writer infrastructure that is
+  /// out of scope (see class remarks for the multi-week justification).
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) =>
+    throw new NotSupportedException(
+      "Amiga SFS is read-only in this implementation; defragment would require a full SFS writer (B+ object tree, bitmap chain, directory hash table, free-extent tree).");
 
   // Bounded — SFS root block is at offset 0 with magic "SFS\0"; we only need the
   // first few KB for header surfacing.

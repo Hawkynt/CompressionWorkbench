@@ -1,10 +1,22 @@
 #pragma warning disable CS1591
+using Compression.Core.Layout;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.D71;
 
-public sealed class D71FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable {
+public sealed class D71FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the directory chain on track 18 (and BAM mirror on track 53)
+  /// and yields the actual on-disk byte layout — track 18 BAM+directory
+  /// and the BAM mirror as <see cref="DefragBlockKind.MetadataReserved"/>,
+  /// every per-file sector chain as one or more contiguous-run extents,
+  /// and the un-attributed sectors as <see cref="DefragBlockKind.Free"/>.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => D71ExtentMap.Enumerate(image);
+
   public long? MaxTotalArchiveSize => 349696;
   public string AcceptedInputsDescription =>
     "Commodore 1571 D71 disk; any file up to 349 696 bytes total.";
@@ -78,5 +90,58 @@ public sealed class D71FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name.Length > 16 ? name[..16] : name, data);
     output.Write(w.Build());
+  }
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    => new D71BlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    => new D71BlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware D71 defragmentor. Tries the planner-driven in-place path first,
+  /// falling back to the rebuild path on error or for <see cref="DefragMode.CarveHole"/>.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      try {
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch {
+        archive.Position = 0;
+      }
+    }
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new D71Reader(stream);
+        return r.Entries.Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new D71Writer();
+        foreach (var (n, d) in files)
+          w.AddFile(n.Length > 16 ? n[..16] : n, d);
+        return w.Build();
+      });
+  }
+
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var imageSize = archive.Length;
+    using var snap = new MemoryStream();
+    archive.CopyTo(snap);
+    var imageData = snap.ToArray();
+    var extents = D71ExtentMap.Enumerate(new MemoryStream(imageData)).ToList();
+    var mover = new D71BlockMover();
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(extents, 0, imageSize, 256, options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
+    if (moves.Count == 0) return;
+    DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize);
   }
 }

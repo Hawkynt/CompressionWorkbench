@@ -4,7 +4,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Mhk;
 
-public sealed class MhkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class MhkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new MhkReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.Size > 0)
+        yield return new DefragBlockInfo(e.Offset, e.Size, DefragBlockKind.Used, FileName: e.DisplayName);
+    }
+  }
+
   public string Id => "Mhk";
   public string DisplayName => "Cyan Mohawk";
   public FormatCategory Category => FormatCategory.Archive;
@@ -45,6 +56,37 @@ public sealed class MhkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var (type, id, resName) = SplitInputName(name, ref autoId);
       w.AddEntry(type, id, resName, data);
     }
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    // Capture (type, id, name) tuples up-front so the rebuild preserves the full
+    // resource identity. Pass through DefragRebuilder using DisplayName as the
+    // sortable key and stash the side-channel info in a parallel dictionary.
+    var meta = new Dictionary<string, (string Type, ushort Id, string? Name)>(StringComparer.Ordinal);
+
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new MhkReader(stream);
+        var list = new List<(string, byte[])>(r.Entries.Count);
+        foreach (var e in r.Entries) {
+          meta[e.DisplayName] = (e.Type, e.Id, e.Name);
+          list.Add((e.DisplayName, r.Extract(e)));
+        }
+        return list;
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new MhkWriter(ms, leaveOpen: true)) {
+          foreach (var (display, data) in files) {
+            if (meta.TryGetValue(display, out var info))
+              w.AddEntry(info.Type, info.Id, info.Name, data);
+          }
+        }
+        return ms.ToArray();
+      });
   }
 
   // Convention for round-tripping flat input files: map filenames of the form

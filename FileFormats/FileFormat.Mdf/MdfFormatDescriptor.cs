@@ -4,7 +4,13 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Mdf;
 
-public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "MDF/MDS is a raw CD-ROM sector image (Alcohol 120%) — defragmentation isn't meaningful.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
   public string Id => "Mdf";
   public string DisplayName => "MDF/MDS";
   public FormatCategory Category => FormatCategory.Archive;

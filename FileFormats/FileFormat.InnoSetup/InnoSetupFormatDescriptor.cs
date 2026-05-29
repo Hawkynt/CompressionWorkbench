@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.InnoSetup;
 
-public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
   public string Id => "InnoSetup";
   public string DisplayName => "Inno Setup";
   public FormatCategory Category => FormatCategory.Archive;
@@ -45,4 +45,11 @@ public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveForma
     }
     new InnoSetupWriter().WriteTo(output, embedded);
   }
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "Inno Setup is a single-payload installer wrapper (PE stub + opaque Setup.0 blob) — " +
+      "defragmentation is not meaningful and would destroy the installer's signed structure.");
+
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 }

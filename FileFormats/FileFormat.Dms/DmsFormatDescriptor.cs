@@ -4,7 +4,29 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Dms;
 
-public sealed class DmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class DmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+
+  /// <summary>Rebuild-based defrag: extracts the disk image then re-emits the DMS file.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts the disk image then re-emits the DMS file.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new DmsReader(stream);
+        var disk = r.ExtractDisk();
+        return [("disk.adf", disk)];
+      },
+      buildImage: files => {
+        if (files.Count == 0)
+          throw new InvalidOperationException("DMS defrag requires a disk image to be present.");
+        using var ms = new MemoryStream();
+        using (var w = new DmsWriter(ms, leaveOpen: true))
+          w.WriteDisk(files[0].Data, compressionMode: 0);
+        return ms.ToArray();
+      });
+  }
   public string Id => "Dms";
   public string DisplayName => "DMS";
   public FormatCategory Category => FormatCategory.Archive;

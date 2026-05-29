@@ -1,5 +1,22 @@
 namespace Compression.Registry;
 
+/// <summary>
+/// Controls where filesystem metadata (superblock, FAT, MFT, bitmaps, inode tables)
+/// and directory extents land during defragmentation.
+/// </summary>
+public enum MetadataZone {
+  /// <summary>Don't move metadata — preserve current positions. This is the default.</summary>
+  Unchanged,
+  /// <summary>Metadata + directories at lowest offsets (fast outer-track on HDDs, low-address flash advantage).</summary>
+  Front,
+  /// <summary>Metadata + directories at highest offsets (reserve front for file data).</summary>
+  Back,
+  /// <summary>Metadata + directories centered in the image (minimize average seek time on platters).</summary>
+  Middle,
+  /// <summary>Each directory block placed immediately before its children's data (read-ahead optimization).</summary>
+  BeforeContent,
+}
+
 /// <summary>Defragmentation strategies for <see cref="IArchiveDefragmentable.Defragment(System.IO.Stream, DefragOptions)"/>.</summary>
 public enum DefragMode {
   /// <summary>
@@ -66,4 +83,49 @@ public sealed record class DefragOptions {
   /// auto-pick (carve at the end, immediately after the last live extent).
   /// Ignored except in <see cref="DefragMode.CarveHole"/>.</summary>
   public long HoleAt { get; init; } = -1;
+
+  /// <summary>
+  /// Optional progress callback. When non-null, the defragmenter emits at
+  /// least three events: a "scanning" event with the pre-defrag block map,
+  /// periodic "writing" events with read/write offsets during the rebuild,
+  /// and a "complete" event with the post-defrag block map. UI consumers
+  /// can render a live tile chart from these events.
+  /// </summary>
+  public Action<DefragProgressEvent>? OnProgress { get; init; }
+
+  /// <summary>
+  /// Layout profile for planner-driven defragmentation. Controls whether
+  /// the defragmenter performs full zone-based rearrangement
+  /// (<see cref="LayoutProfile.Performance"/>) or per-file consolidation
+  /// only (<see cref="LayoutProfile.Quick"/>). Default:
+  /// <see cref="LayoutProfile.Performance"/>.
+  /// </summary>
+  public LayoutProfile Profile { get; init; } = LayoutProfile.Performance;
+
+  /// <summary>
+  /// Optional metadata placement profile for file-internal optimizers.
+  /// When non-null, optimizers that support <see cref="IFileInternalChunkMover"/>
+  /// use these rules to decide where metadata chunks land relative to the
+  /// primary data payload. When null, each optimizer uses its format-specific
+  /// default placement.
+  /// </summary>
+  public MetadataPlacementProfile? MetadataPlacement { get; init; }
+
+  /// <summary>
+  /// Block interleave factor. 1 = contiguous (default), 2 = every-other-block,
+  /// N = place each file's Kth block at (start + K*stride). Free blocks between
+  /// the scattered fragments are left available for other files' interleaved
+  /// blocks, round-robin style. Useful for optimizing sequential read throughput
+  /// on spinning media (interleave matches rotational latency) and for testing
+  /// FS robustness with fragmented layouts. Range: 1-256.
+  /// </summary>
+  public int InterleaveStride { get; init; } = 1;
+
+  /// <summary>
+  /// Controls where filesystem metadata and directory extents are placed during
+  /// defragmentation. Default: <see cref="MetadataZone.Unchanged"/> (metadata
+  /// stays where it is). Only affects planner-driven defragmentation of
+  /// filesystem images; ignored for archive optimization and file-internal layout.
+  /// </summary>
+  public MetadataZone MetadataZonePlacement { get; init; } = MetadataZone.Unchanged;
 }

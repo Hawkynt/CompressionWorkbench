@@ -14,7 +14,6 @@ public class ModifyRebuilderTests {
 
   [TestCase("HfsPlus")]
   [TestCase("Hfs")]
-  [TestCase("Apfs")]
   [TestCase("Mfs")]
   [TestCase("Adf")]
   [TestCase("AppleDos")]
@@ -26,9 +25,20 @@ public class ModifyRebuilderTests {
   [TestCase("D81")]
   [TestCase("ZxScl")]
   [TestCase("Ext1")]
-  [TestCase("F2fs")]
-  [TestCase("ReiserFs")]
   [TestCase("Udf")]
+  [TestCase("DoubleSpace")]
+  [TestCase("DriveSpace")]
+  [TestCase("MinixFs")]
+  [TestCase("SquashFs")]
+  [TestCase("CramFs")]
+  [TestCase("RomFs")]
+  [TestCase("T64")]
+  [TestCase("Tap")]
+  // F2fs / ReiserFs / Apfs intentionally excluded — locked WORM (real-FS B-tree
+  // shape; in-flight Add/Remove is multi-week work). Guard tests live in the
+  // per-FS fixtures: F2fsTests.Descriptor_IsHonestlyRebuildBased,
+  // ReiserFsTests.Descriptor_IsHonestlyRebuildBased,
+  // ApfsTests.Descriptor_IsHonestlyRebuildBased.
   public void DescriptorImplementsIArchiveModifiable(string formatId) {
     var desc = FormatRegistry.GetById(formatId);
     Assert.That(desc, Is.Not.Null, $"{formatId} descriptor not registered");

@@ -1,10 +1,22 @@
 #pragma warning disable CS1591
+using Compression.Core.Layout;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Ext;
 
-public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
+public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the superblock + BGD table + inode tree and yields the actual
+  /// on-disk byte layout — every metadata region (SB, BGDT, block + inode
+  /// bitmaps, inode tables) plus one extent per contiguous block run per
+  /// file (coalesced for direct/indirect pointers; native ext4 extent runs
+  /// surface as-is). Used by the defragment window's block-map preview.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => ExtExtentMap.Enumerate(image);
+
   public string Id => "Ext";
   public string DisplayName => "ext2/3/4";
   public FormatCategory Category => FormatCategory.Archive;
@@ -13,14 +25,72 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    var mover = new ExtBlockMover();
+    image.Position = 0;
+    using var ms = new MemoryStream();
+    image.CopyTo(ms);
+    mover.Init(ms.ToArray());
+    mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+  }
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    var mover = new ExtBlockMover();
+    image.Position = 0;
+    using var ms = new MemoryStream();
+    image.CopyTo(ms);
+    mover.Init(ms.ToArray());
+    mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+  }
+
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
-  /// Mode-aware ext2/3/4 defragmentor via read-extract-rebuild dispatch through
-  /// <see cref="DefragRebuilder"/>. All four <see cref="DefragMode"/> values supported.
+  /// Mode-aware ext2/3/4 defragmentor. Supports planner-driven in-place path
+  /// (using <see cref="DefragPlanner"/> + <see cref="ExtBlockMover"/>) and the
+  /// legacy rebuild path (using <see cref="DefragRebuilder"/>).
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      try {
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch {
+        archive.Position = 0;
+      }
+    }
+    DefragmentWithRebuild(archive, options);
+  }
+
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var mover = new ExtBlockMover();
+    mover.Init(archive); // reads only SB + first BGD (~2 KB)
+
+    var extents = ExtExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent("scanning", 0, 0, -1, archive.Length, extents, "Analysing layout"));
+
+    var moves = DefragPlanner.Plan(extents, mover.FirstDataByte, archive.Length, mover.BlockSize, options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent("complete", 1, -1, -1, archive.Length, extents, "Already defragmented"));
+      return;
+    }
+
+    // SB/BGD don't change during defrag — no per-move re-init needed.
+    DefragPlannerExecutor.Execute(archive, options, mover, moves, archive.Length, reinitAfterMove: null);
+
+    archive.Position = 0;
+    var postExtents = ExtExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent("complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
+  }
+
+  private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new ExtReader(stream);
@@ -66,39 +136,26 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Add files to an existing ext2 image. Like the FAT variant, this rebuilds the
-  /// image carrying over all existing files plus the new ones — <see cref="ExtWriter"/>
-  /// is build-from-scratch, so "add" equals "re-pack".
+  /// Adds (or replaces by name) files inside an existing ext2/3/4 image. Uses
+  /// <see cref="ExtModifier"/> for true O(touched bytes) random-access I/O —
+  /// only the superblock, BGD entry, block + inode bitmaps, the affected inode
+  /// slot, the root dir block, and the file's data blocks are read or written.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    archive.Position = 0;
-    var reader = new ExtReader(archive);
-    var combined = new ExtWriter();
-    foreach (var entry in reader.Entries.Where(e => !e.IsDirectory))
-      combined.AddFile(entry.Name, reader.Extract(entry));
-    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
-      combined.AddFile(name, data);
-    var rebuilt = combined.Build();
-    archive.Position = 0;
-    archive.Write(rebuilt);
-    archive.SetLength(rebuilt.Length);
+    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs)) {
+      // Replace-by-name semantics — drop any prior entry with the same name first.
+      ExtModifier.RemoveFile(archive, name, wipeData: true);
+      ExtModifier.AddFile(archive, name, data);
+    }
   }
 
   /// <summary>
-  /// Securely removes files from an existing ext2 image. Zeros the data blocks
-  /// (including tip slack), the inode, the directory entry bytes, and updates
-  /// bitmap and free-count accounting. No forensic recovery of the removed
-  /// content is possible from the resulting bytes.
+  /// Securely removes files from an existing ext2/3/4 image. Uses
+  /// <see cref="ExtModifier"/> for O(touched bytes) random-access I/O — file
+  /// data blocks are wiped during removal so no forensic trace remains.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    archive.Position = 0;
-    using var ms = new MemoryStream();
-    archive.CopyTo(ms);
-    var image = ms.ToArray();
     foreach (var name in entryNames)
-      ExtRemover.Remove(image, name);
-    archive.Position = 0;
-    archive.Write(image);
-    archive.SetLength(image.Length);
+      ExtModifier.RemoveFile(archive, name, wipeData: true);
   }
 }

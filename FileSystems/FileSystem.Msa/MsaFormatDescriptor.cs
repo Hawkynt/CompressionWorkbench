@@ -1,10 +1,11 @@
 #pragma warning disable CS1591
 using Compression.Registry;
+using FileSystem.Fat;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Msa;
 
-public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
   public string Id => "Msa";
   public string DisplayName => "MSA (Magic Shadow Archiver)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -60,5 +61,77 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Remove(Stream archive, string[] entryNames) {
     foreach (var name in entryNames)
       MsaModifier.RemoveFile(archive, name);
+  }
+
+  // ── IArchiveDefragmentable ───────────────────────────────────────────
+
+  public void Defragment(Stream archive)
+    => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Defragments the inner FAT12 filesystem inside an MSA image. The image is
+  /// decoded to a flat disk, the FAT layer is defragmented via rebuild (read all
+  /// files, rebuild with FatWriter which always start-packs), and the result is
+  /// re-encoded to MSA tracks preserving the original geometry.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+
+    archive.Position = 0;
+    var reader = new MsaReader(archive);
+    if (reader.Entries.Count == 0) return;
+    var flat = reader.Extract(reader.Entries[0]);
+    var geom = (reader.SectorsPerTrack, reader.Sides, reader.StartTrack, reader.EndTrack);
+
+    // Read all files from the inner FAT image.
+    using var fatStream = new MemoryStream(flat, writable: false);
+    var fatReader = new FatReader(fatStream);
+    var files = fatReader.Entries
+      .Where(e => !e.IsDirectory)
+      .Select(e => (e.Name, fatReader.Extract(e)))
+      .ToList();
+
+    // Rebuild the FAT image (FatWriter always start-packs = defragmented).
+    IReadOnlyList<(string Name, byte[] Data)> ordered = options.Mode switch {
+      DefragMode.ConsolidateAtEnd => files.OrderByDescending(f => f.Item2.Length).ToList(),
+      _ => files,
+    };
+
+    var fw = new FatWriter();
+    foreach (var (name, data) in ordered) fw.AddFile(name, data);
+    var totalSectors = flat.Length / 512;
+    var rebuilt = fw.Build(totalSectors: totalSectors);
+    if (rebuilt.Length != flat.Length) {
+      var sized = new byte[flat.Length];
+      Array.Copy(rebuilt, sized, Math.Min(rebuilt.Length, sized.Length));
+      rebuilt = sized;
+    }
+
+    // Re-encode to MSA.
+    using var ms = new MemoryStream();
+    MsaWriter.Write(ms, rebuilt, geom.SectorsPerTrack, geom.Sides);
+    var msaBytes = ms.ToArray();
+    archive.Position = 0;
+    archive.Write(msaBytes, 0, msaBytes.Length);
+    archive.SetLength(msaBytes.Length);
+  }
+
+  // ── IFilesystemExtentMap ─────────────────────────────────────────────
+
+  /// <summary>
+  /// Decodes the MSA tracks to a flat FAT12 image and delegates to
+  /// <see cref="FatExtentMap.Enumerate"/> for the actual cluster-chain walk.
+  /// The returned offsets are relative to the inner flat image (not the MSA
+  /// container) — this matches what the defrag window expects for filesystem
+  /// extent maps.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    image.Position = 0;
+    var reader = new MsaReader(image);
+    if (reader.Entries.Count == 0) yield break;
+    var flat = reader.Extract(reader.Entries[0]);
+    using var fatStream = new MemoryStream(flat, writable: false);
+    foreach (var extent in FatExtentMap.Enumerate(fatStream))
+      yield return extent;
   }
 }

@@ -1,10 +1,23 @@
 #pragma warning disable CS1591
+using Compression.Core.Layout;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Adf;
 
-public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable {
+public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the boot blocks + root block + bitmap blocks + per-file
+  /// header/extension/data block chains, yielding the actual on-disk
+  /// layout. Boot/root/bitmap and directory headers become
+  /// <see cref="DefragBlockKind.MetadataReserved"/>; file header
+  /// + extension blocks + data blocks attribute to their owning file
+  /// (coalesced into contiguous runs).
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => AdfExtentMap.Enumerate(image);
+
   public long? MaxTotalArchiveSize => 901120;  // standard DD (880 KB) — 11 sectors × 2 sides × 80 tracks × 512
   public string AcceptedInputsDescription =>
     "Amiga DD ADF disk; any file up to 901 120 bytes total.";
@@ -74,5 +87,58 @@ public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());
+  }
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    => new AdfBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    => new AdfBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware ADF defragmentor. Tries the planner-driven in-place path first,
+  /// falling back to the rebuild path on error or for <see cref="DefragMode.CarveHole"/>.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      try {
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch {
+        archive.Position = 0;
+      }
+    }
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new AdfReader(stream, leaveOpen: true);
+        return r.Entries.Where(e => !e.IsDirectory)
+          .Select(e => (e.FullPath, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new AdfWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        return w.Build();
+      });
+  }
+
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var imageSize = archive.Length;
+    using var snap = new MemoryStream();
+    archive.CopyTo(snap);
+    var imageData = snap.ToArray();
+    var extents = AdfExtentMap.Enumerate(new MemoryStream(imageData)).ToList();
+    var mover = new AdfBlockMover();
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(extents, 0, imageSize, 512, options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
+    if (moves.Count == 0) return;
+    DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize);
   }
 }

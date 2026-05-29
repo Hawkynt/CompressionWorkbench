@@ -4,7 +4,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Sfar;
 
-public sealed class SfarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class SfarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations , IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new SfarReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.Size > 0)
+        yield return new DefragBlockInfo(e.DataOffset, e.Size, DefragBlockKind.Used, FileName: e.Name);
+    }
+  }
+
   public string Id => "Sfar";
   public string DisplayName => "BioWare SFAR";
   public FormatCategory Category => FormatCategory.Archive;

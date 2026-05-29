@@ -11,7 +11,46 @@ namespace FileFormat.Fits;
 /// Surfaces each HDU as a <c>.header</c>/<c>.data</c> pair, plus a passthrough <c>FULL.fits</c>
 /// and a <c>metadata.ini</c> summary.
 /// </summary>
-public sealed class FitsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class FitsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "FITS is an astronomical data container of HDUs (headers + data) — defragmentation isn't meaningful " +
+      "and would risk corrupting the precise FITS card / 2880-byte alignment expected by astronomy tooling.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    List<FitsHdu> hdus;
+    try {
+      hdus = FitsParser.ParseAll(archive);
+    } catch {
+      yield break;
+    }
+    foreach (var hdu in hdus) {
+      // Header region: from the start of the HDU to the data offset
+      var headerLen = hdu.DataOffset > 0 ? hdu.DataOffset : 0L;
+      // We need to compute the header start. For the first HDU it's 0, for subsequent
+      // HDUs we can infer from the previous HDU's data end. Use a simpler approach:
+      // DataOffset - (rounded-up header size). Instead, just emit the data region.
+      if (hdu.DataLength > 0 && hdu.DataOffset >= 0) {
+        var name = hdu.Object ?? (hdu.Xtension ?? "primary");
+        yield return new DefragBlockInfo(hdu.DataOffset, hdu.DataLength, DefragBlockKind.Used, FileName: name);
+      }
+    }
+    // Also tile the header regions by tracking positions
+    archive.Position = 0;
+    long pos = 0;
+    foreach (var hdu in hdus) {
+      if (hdu.DataOffset > pos)
+        yield return new DefragBlockInfo(pos, hdu.DataOffset - pos, DefragBlockKind.MetadataReserved, FileName: "HDU Header");
+      var dataEnd = hdu.DataOffset + hdu.DataLength;
+      var dataPad = (2880 - dataEnd % 2880) % 2880;
+      pos = dataEnd + dataPad;
+    }
+  }
+
   // FITS magic: first card must begin with "SIMPLE  =                    T"
   // (keyword in columns 1-8, "= " at columns 9-10, value 'T' at column 30).
   private static readonly byte[] SimpleMagic =
@@ -24,7 +63,7 @@ public sealed class FitsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".fits";
   public IReadOnlyList<string> Extensions => [".fits", ".fit", ".fts"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -119,11 +158,19 @@ public sealed class FitsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         WriteFile(outputDir, $"{prefix}.header", Encoding.ASCII.GetBytes(headerText));
       }
 
-      if (files == null || files.Length == 0 || MatchesFilter($"{prefix}.data", files)) {
-        var dataLen = hdu.DataLength > 0 && hdu.DataOffset + hdu.DataLength <= stream.Length
-          ? hdu.DataLength
-          : 0L;
+      var dataLen = hdu.DataLength > 0 && hdu.DataOffset + hdu.DataLength <= stream.Length
+        ? hdu.DataLength
+        : 0L;
+
+      if (files == null || files.Length == 0 || MatchesFilter($"{prefix}.data", files))
         WriteHduData(stream, outputDir, $"{prefix}.data", hdu.DataOffset, dataLen);
+
+      // Also emit the HDU data under its original filename (OBJECT keyword) so that
+      // round-trip create/extract preserves the original file names.
+      if (dataLen > 0 && !string.IsNullOrWhiteSpace(hdu.Object)) {
+        var originalName = hdu.Object.Trim();
+        if (originalName.Length > 0 && (files == null || files.Length == 0 || MatchesFilter(originalName, files)))
+          WriteHduData(stream, outputDir, originalName, hdu.DataOffset, dataLen);
       }
     }
 
@@ -179,6 +226,11 @@ public sealed class FitsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         sb.Append("telescope=").Append(hdu.Telescope).Append("\r\n");
     }
     return Encoding.ASCII.GetBytes(sb.ToString());
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var entries = FormatHelpers.FilesOnly(inputs).ToList();
+    FitsWriter.Write(output, entries);
   }
 
   private static string SanitizeXtension(string xt) {

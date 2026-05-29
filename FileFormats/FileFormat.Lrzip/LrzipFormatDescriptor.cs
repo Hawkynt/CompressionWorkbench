@@ -4,7 +4,28 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Lrzip;
 
-public sealed class LrzipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class LrzipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+
+  /// <summary>Rebuild-based defrag: decompresses the single payload then re-compresses it.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: decompresses the single payload then re-compresses it.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new LrzipReader(stream, leaveOpen: true);
+        return [(EntryName, r.Extract())];
+      },
+      buildImage: files => {
+        if (files.Count == 0)
+          throw new InvalidOperationException("Lrzip defrag requires a payload entry.");
+        using var ms = new MemoryStream();
+        var w = new LrzipWriter();
+        w.Write(files[0].Data, ms);
+        return ms.ToArray();
+      });
+  }
   public string Id => "Lrzip";
   public string DisplayName => "Long Range Zip";
   public FormatCategory Category => FormatCategory.Archive;

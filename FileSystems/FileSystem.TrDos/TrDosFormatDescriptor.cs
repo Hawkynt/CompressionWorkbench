@@ -1,10 +1,22 @@
 #pragma warning disable CS1591
+using Compression.Core.Layout;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.TrDos;
 
-public sealed class TrDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class TrDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the 128-entry directory at track 0 sectors 0-7 and yields the
+  /// actual on-disk byte layout — directory + disk-info sector as
+  /// <see cref="DefragBlockKind.MetadataReserved"/>, every contiguous file
+  /// run as a <see cref="DefragBlockKind.Used"/> extent, unused sectors as
+  /// <see cref="DefragBlockKind.Free"/>.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => TrDosExtentMap.Enumerate(image);
+
   public string Id => "TrDos";
   public string DisplayName => "TR-DOS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -62,5 +74,87 @@ public sealed class TrDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public void Remove(Stream archive, string[] entryNames) {
     foreach (var name in entryNames)
       TrDosModifier.RemoveFile(archive, name, wipeData: true);
+  }
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    => new TrDosBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    => new TrDosBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware TR-DOS defragmentor. Tries planner-driven in-place path first,
+  /// falls back to rebuild path on error.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      archive.Position = 0;
+      using var snapshot = new MemoryStream();
+      archive.CopyTo(snapshot);
+      try {
+        archive.Position = 0;
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch {
+        archive.Position = 0;
+        snapshot.Position = 0;
+        snapshot.CopyTo(archive);
+        archive.SetLength(snapshot.Length);
+        archive.Position = 0;
+      }
+    }
+
+    DefragmentWithRebuild(archive, options);
+  }
+
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var imageSize = archive.Length;
+    var mover = new TrDosBlockMover();
+
+    var extents = TrDosExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "scanning", Fraction: 0, CurrentReadOffset: 0, CurrentWriteOffset: -1,
+      ImageSize: imageSize, BlockMap: extents, Status: "Analysing layout"));
+
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(
+      extents, mover.DataOrigin, imageSize, mover.UnitSize,
+      options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
+
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
+        ImageSize: imageSize, BlockMap: extents, Status: "Already defragmented"));
+      return;
+    }
+
+    DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize);
+
+    var postExtents = TrDosExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "complete", Fraction: 1, CurrentReadOffset: -1, CurrentWriteOffset: -1,
+      ImageSize: imageSize, BlockMap: postExtents, Status: "Defragmentation complete"));
+  }
+
+  private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new TrDosReader(stream);
+        return r.Entries.Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new TrDosWriter();
+        foreach (var (n, d) in files) w.AddFile(n.Length > 8 ? n[..8] : n, 'C', d);
+        return w.Build();
+      });
   }
 }

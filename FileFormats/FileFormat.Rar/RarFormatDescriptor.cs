@@ -4,7 +4,17 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Rar;
 
-public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "RAR defragmentation is not supported — solid blocks, recovery records, and per-archive signatures " +
+      "would all need to be regenerated, which is not safe via a generic rebuild path.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => RarLayoutMap.Enumerate(archive);
+
   public string Id => "Rar";
   public string DisplayName => "RAR";
   public FormatCategory Category => FormatCategory.Archive;

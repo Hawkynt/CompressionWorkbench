@@ -4,7 +4,52 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cpio;
 
-public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the CPIO archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the CPIO archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new CpioReader(stream);
+        return r.ReadAll().Where(x => !x.Entry.IsDirectory).Select(x => (x.Entry.Name, x.Data));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        var w = new CpioWriter(ms);
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        w.Finish();
+        return ms.ToArray();
+      });
+  }
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    using var r = new CpioReader(archive, leaveOpen: true);
+    var entries = r.ReadAll();
+    // Walk the stream sequentially to compute entry positions
+    archive.Position = 0;
+    foreach (var (entry, data) in entries) {
+      var nameSize = System.Text.Encoding.ASCII.GetByteCount(entry.Name) + 1;
+      var headerPlusName = CpioConstants.NewAsciiHeaderSize + nameSize;
+      var namePadding = (4 - headerPlusName % 4) % 4;
+      var totalHeader = headerPlusName + namePadding;
+      var pos = archive.Position;
+      yield return new DefragBlockInfo(pos, totalHeader, DefragBlockKind.MetadataReserved, FileName: $"Header: {entry.Name}");
+      if (entry.FileSize > 0) {
+        yield return new DefragBlockInfo(pos + totalHeader, entry.FileSize, DefragBlockKind.Used, FileName: entry.Name);
+        var dataPadding = (4 - entry.FileSize % 4) % 4;
+        archive.Position = pos + totalHeader + entry.FileSize + dataPadding;
+      } else {
+        archive.Position = pos + totalHeader;
+      }
+    }
+  }
+
   public string Id => "Cpio";
   public string DisplayName => "CPIO";
   public FormatCategory Category => FormatCategory.Archive;

@@ -5,7 +5,48 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Warc;
 
-public sealed class WarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class WarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the WARC archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the WARC archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new WarcReader(stream, leaveOpen: true);
+        var all = r.ReadAll();
+        var list = new List<(string, byte[])>();
+        for (var i = 0; i < all.Count; ++i) {
+          var (entry, payload) = all[i];
+          var name = string.IsNullOrEmpty(entry.TargetUri)
+            ? (string.IsNullOrEmpty(entry.RecordId) ? $"record-{i}" : entry.RecordId)
+            : entry.TargetUri;
+          list.Add((name, payload));
+        }
+        return list;
+      },
+      buildImage: files => {
+        var w = new WarcWriter();
+        foreach (var (n, d) in files) w.AddResource(n, d);
+        using var ms = new MemoryStream();
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
+  }
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new WarcReader(archive);
+    foreach (var (entry, _) in r.ReadAll()) {
+      if (entry.PayloadOffset >= 0 && entry.ContentLength > 0)
+        yield return new DefragBlockInfo(entry.PayloadOffset, entry.ContentLength, DefragBlockKind.Used, FileName: entry.TargetUri ?? entry.RecordId);
+    }
+  }
+
   public string Id => "Warc";
   public string DisplayName => "WARC";
   public FormatCategory Category => FormatCategory.Archive;

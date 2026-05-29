@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Run with: dotnet run -c Release [double-dash] [double-dash]filter *
+       Not part of the regular test suite. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.14.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Compression.Core\Hawkynt.Compression.Core.csproj" />
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Fat\FileSystem.Fat.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.D64\FileSystem.D64.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Zip\FileFormat.Zip.csproj" />
+  </ItemGroup>
+
+</Project>

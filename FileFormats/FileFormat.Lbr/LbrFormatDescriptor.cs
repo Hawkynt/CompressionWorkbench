@@ -4,7 +4,19 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Lbr;
 
-public sealed class LbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class LbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new LbrReader(archive);
+    foreach (var e in r.Entries) {
+      var size = (long)e.SectorCount * LbrConstants.SectorSize;
+      if (size > 0)
+        yield return new DefragBlockInfo(e.DataOffset, size, DefragBlockKind.Used, FileName: e.FileName);
+    }
+  }
+
   public string Id => "Lbr";
   public string DisplayName => "LBR";
   public FormatCategory Category => FormatCategory.Archive;
@@ -58,5 +70,23 @@ public sealed class LbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     using var w = new LbrWriter(output, leaveOpen: true);
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
       w.AddFile(name, data);
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new LbrReader(stream);
+        return r.Entries.Select(e => (e.FileName, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new LbrWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddFile(n, d);
+        }
+        return ms.ToArray();
+      });
   }
 }

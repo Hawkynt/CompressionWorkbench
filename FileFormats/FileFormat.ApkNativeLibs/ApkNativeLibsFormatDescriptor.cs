@@ -12,7 +12,11 @@ namespace FileFormat.ApkNativeLibs;
 /// detection (all magic signatures are zero-confidence); the caller must route
 /// here explicitly, e.g. <c>cwb list --format ApkNativeLibs foo.apk</c>.
 /// </summary>
-public sealed class ApkNativeLibsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class ApkNativeLibsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
+
   public string Id => "ApkNativeLibs";
   public string DisplayName => "APK native libraries";
   public FormatCategory Category => FormatCategory.Archive;

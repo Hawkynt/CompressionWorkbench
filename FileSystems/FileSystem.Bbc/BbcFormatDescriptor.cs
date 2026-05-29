@@ -1,10 +1,21 @@
 #pragma warning disable CS1591
+using Compression.Core.Layout;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Bbc;
 
-public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
+public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the catalog (sectors 0-1 per side) and yields the actual
+  /// on-disk byte layout — catalog sectors as
+  /// <see cref="DefragBlockKind.MetadataReserved"/>, every file as a
+  /// single contiguous run starting at its <c>(start_sector, length)</c>,
+  /// and unallocated sectors as Free.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => BbcExtentMap.Enumerate(image);
 
   // 40-track SSD: 40 * 10 * 256 = 102 400 bytes. Writer emits this canonical size.
   public long? MaxTotalArchiveSize => BbcWriter.DiskSize40;
@@ -88,5 +99,73 @@ public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());
+  }
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    => new BbcBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    => new BbcBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware BBC DFS defragmentor. Tries the planner-driven in-place path
+  /// first, falling back to the rebuild path on error or for <see cref="DefragMode.CarveHole"/>.
+  /// The source DFS directory prefix and load/exec/locked metadata are preserved per file.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      try {
+        DefragmentWithPlanner(archive, options);
+        return;
+      } catch {
+        archive.Position = 0;
+      }
+    }
+    DefragmentWithRebuild(archive, options);
+  }
+
+  private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
+    archive.Position = 0;
+    var imageSize = archive.Length;
+    using var snap = new MemoryStream();
+    archive.CopyTo(snap);
+    var imageData = snap.ToArray();
+    var extents = BbcExtentMap.Enumerate(new MemoryStream(imageData)).ToList();
+    var mover = new BbcBlockMover();
+    var moves = Compression.Core.Layout.DefragPlanner.Plan(extents, 0, imageSize, 256, options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
+    if (moves.Count == 0) return;
+    DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize);
+  }
+
+  private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
+    var meta = new Dictionary<string, (char Dir, uint Load, uint Exec, bool Locked)>();
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        using var r = new BbcReader(stream, doubleSided: false);
+        var list = new List<(string Name, byte[] Data)>();
+        foreach (var e in r.Entries) {
+          meta[e.FullName] = (e.Directory, e.LoadAddress, e.ExecAddress, e.IsLocked);
+          list.Add((e.FullName, r.Extract(e)));
+        }
+        return list;
+      },
+      buildImage: files => {
+        var w = new BbcWriter();
+        foreach (var (fullName, data) in files) {
+          var (dir, load, exec, locked) = meta.TryGetValue(fullName, out var m)
+            ? m : ('$', 0x1900u, 0x1900u, false);
+          var name = fullName.Length >= 2 && fullName[1] == '.' ? fullName[2..] : fullName;
+          w.AddFile(name, data, directory: dir, loadAddr: load, execAddr: exec, locked: locked);
+        }
+        return w.Build();
+      });
   }
 }

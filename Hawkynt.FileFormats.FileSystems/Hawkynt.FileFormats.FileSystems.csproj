@@ -31,6 +31,7 @@
   <ItemGroup>
     <ProjectReference Include="..\FileSystems\FileSystem.Adf\FileSystem.Adf.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Apfs\FileSystem.Apfs.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileSystems\FileSystem.AdvFs\FileSystem.AdvFs.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.AppleDos\FileSystem.AppleDos.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Atari8\FileSystem.Atari8.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Bbc\FileSystem.Bbc.csproj" PrivateAssets="all" />
@@ -51,6 +52,7 @@
     <ProjectReference Include="..\FileSystems\FileSystem.Ext1\FileSystem.Ext1.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.F2fs\FileSystem.F2fs.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Fat\FileSystem.Fat.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Gfs2\FileSystem.Gfs2.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Hammer\FileSystem.Hammer.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Hammer2\FileSystem.Hammer2.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Hfs\FileSystem.Hfs.csproj" PrivateAssets="all" />
@@ -63,7 +65,15 @@
     <ProjectReference Include="..\FileSystems\FileSystem.LittleFs\FileSystem.LittleFs.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Mfs\FileSystem.Mfs.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.MinixFs\FileSystem.MinixFs.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileSystems\FileSystem.MinixV1\FileSystem.MinixV1.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileSystems\FileSystem.MinixV2\FileSystem.MinixV2.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Nilfs2\FileSystem.Nilfs2.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Tux2\FileSystem.Tux2.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Tux3\FileSystem.Tux3.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileSystems\FileSystem.SmartFs\FileSystem.SmartFs.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileSystems\FileSystem.DragonFs\FileSystem.DragonFs.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Msa\FileSystem.Msa.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Nss\FileSystem.Nss.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Ntfs\FileSystem.Ntfs.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Nwfs\FileSystem.Nwfs.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Ocfs2\FileSystem.Ocfs2.csproj" PrivateAssets="all" />
@@ -77,11 +87,13 @@
     <ProjectReference Include="..\FileSystems\FileSystem.Rt11\FileSystem.Rt11.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Sfs\FileSystem.Sfs.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.SquashFs\FileSystem.SquashFs.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileSystems\FileSystem.TFat\FileSystem.TFat.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.TrDos\FileSystem.TrDos.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Ubifs\FileSystem.Ubifs.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Udf\FileSystem.Udf.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Ufs\FileSystem.Ufs.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Vdfs\FileSystem.Vdfs.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileSystems\FileSystem.VxFs\FileSystem.VxFs.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Xfs\FileSystem.Xfs.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Yaffs2\FileSystem.Yaffs2.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileSystems\FileSystem.Zfs\FileSystem.Zfs.csproj" PrivateAssets="all" />

@@ -35,8 +35,12 @@ public sealed class FatWriter {
   /// </summary>
   /// <param name="totalSectors">Total sectors (default 2880 = 1.44 MB floppy).</param>
   /// <param name="bytesPerSector">Bytes per sector (default 512).</param>
+  /// <param name="requestedClusterSize">Desired cluster size in bytes (0 = auto-select).
+  /// Must be a power of two and a multiple of <paramref name="bytesPerSector"/>.
+  /// The actual cluster size may differ if the requested value is incompatible
+  /// with the resulting FAT type (e.g. a 64 KB cluster on a tiny FAT12 image).</param>
   /// <returns>Complete disk image as byte array.</returns>
-  public byte[] Build(int totalSectors = 2880, int bytesPerSector = 512) {
+  public byte[] Build(int totalSectors = 2880, int bytesPerSector = 512, int requestedClusterSize = 0) {
     const int fatCount = 2;
 
     // Start with FAT12 floppy defaults
@@ -44,6 +48,12 @@ public sealed class FatWriter {
     var sectorsPerCluster = 1;
     var rootEntryCount = 224;
     var fatSize = 9; // sectors per FAT for 1.44MB floppy
+
+    // Apply requested cluster size if valid.
+    if (requestedClusterSize > 0 && requestedClusterSize >= bytesPerSector
+        && (requestedClusterSize & (requestedClusterSize - 1)) == 0
+        && requestedClusterSize % bytesPerSector == 0)
+      sectorsPerCluster = requestedClusterSize / bytesPerSector;
 
     // Determine FAT type
     var rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
@@ -53,7 +63,7 @@ public sealed class FatWriter {
 
     // Adjust parameters for FAT16/32.
     if (fatType == 16) {
-      sectorsPerCluster = 4;
+      if (requestedClusterSize <= 0) sectorsPerCluster = 4;
       rootEntryCount = 512;
       rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
       fatSize = (totalSectors * 2 / bytesPerSector) + 1;
@@ -62,13 +72,15 @@ public sealed class FatWriter {
       reservedSectors = 32; // FAT32 requires >=1 but convention is 32 (leaves room for FSInfo+BackupBoot)
       rootEntryCount = 0;   // FAT32 root is in the cluster chain, not a fixed area
       rootDirSectors = 0;
-      // Sectors-per-cluster heuristic from FATGEN103 table.
-      sectorsPerCluster = totalSectors < 66600 ? 1
-        : totalSectors < 532480 ? 1      // up to 260 MB, 512-byte clusters ⇒ 1 spc
-        : totalSectors < 16777216 ? 8    // up to 8 GB ⇒ 4 KB clusters
-        : totalSectors < 33554432 ? 16
-        : totalSectors < 67108864 ? 32
-        : 64;
+      if (requestedClusterSize <= 0) {
+        // Sectors-per-cluster heuristic from FATGEN103 table.
+        sectorsPerCluster = totalSectors < 66600 ? 1
+          : totalSectors < 532480 ? 1      // up to 260 MB, 512-byte clusters ⇒ 1 spc
+          : totalSectors < 16777216 ? 8    // up to 8 GB ⇒ 4 KB clusters
+          : totalSectors < 33554432 ? 16
+          : totalSectors < 67108864 ? 32
+          : 64;
+      }
       // Estimate FAT size: (data sectors / spc) entries × 4 bytes each, rounded up.
       var dataSectorsEstimate = totalSectors - reservedSectors;
       var dataClustersEstimate = dataSectorsEstimate / sectorsPerCluster;
@@ -257,8 +269,12 @@ public sealed class FatWriter {
   // location is known.
 
   /// <summary>Returns true if <paramref name="name"/> can be represented
-  /// in pure 8.3 (uppercase ASCII, ≤ 8 chars base, ≤ 3 chars ext, single
-  /// dot, no spaces, no LFN-only chars).</summary>
+  /// in pure 8.3 (≤ 8 chars base, ≤ 3 chars ext, single dot, no spaces,
+  /// no LFN-only chars). Both uppercase and lowercase ASCII letters
+  /// qualify — when the base and/or extension is uniformly lowercase,
+  /// the NT case bits at byte 12 of the dirent preserve case without
+  /// needing LFN slots; mixed case in the same component still forces
+  /// LFN.</summary>
   private static bool IsPlain8Dot3(string name) {
     var dotIdx = name.LastIndexOf('.');
     var basePart = dotIdx >= 0 ? name[..dotIdx] : name;
@@ -267,11 +283,48 @@ public sealed class FatWriter {
     if (extPart.Length > 3) return false;
     // Disallow secondary dots in the base — that always requires LFN.
     if (basePart.Contains('.')) return false;
-    foreach (var c in basePart)
-      if (!Is83Char(c)) return false;
-    foreach (var c in extPart)
-      if (!Is83Char(c)) return false;
+    if (!IsPlain8Dot3Component(basePart)) return false;
+    if (!IsPlain8Dot3Component(extPart)) return false;
+    // NT case bits can encode "all uppercase" or "all lowercase" per
+    // component, but NOT mixed case — mixed case forces LFN to preserve
+    // the user's exact spelling.
+    if (HasMixedCaseAscii(basePart)) return false;
+    if (HasMixedCaseAscii(extPart)) return false;
     return true;
+  }
+
+  /// <summary>A single 8.3 base or extension component is plain-encodable
+  /// when every character is a valid uppercase 8.3 char, an ASCII digit/
+  /// punct/etc., or a lowercase ASCII letter (which the NT case bits will
+  /// preserve).</summary>
+  private static bool IsPlain8Dot3Component(string component) {
+    foreach (var c in component) {
+      if (c is >= 'a' and <= 'z') continue;
+      if (!Is83Char(c)) return false;
+    }
+    return true;
+  }
+
+  /// <summary>Returns true if the component mixes uppercase and lowercase
+  /// ASCII letters — mixed case can't be encoded with a single NT case
+  /// bit, so the writer must fall back to LFN to preserve user case.</summary>
+  private static bool HasMixedCaseAscii(string component) {
+    var hasUpper = false;
+    var hasLower = false;
+    foreach (var c in component) {
+      if (c is >= 'A' and <= 'Z') hasUpper = true;
+      else if (c is >= 'a' and <= 'z') hasLower = true;
+      if (hasUpper && hasLower) return true;
+    }
+    return false;
+  }
+
+  /// <summary>Returns true if the component contains at least one lowercase
+  /// ASCII letter (so the writer should set the corresponding NT case bit).</summary>
+  private static bool HasLowerCaseAscii(string component) {
+    foreach (var c in component)
+      if (c is >= 'a' and <= 'z') return true;
+    return false;
   }
 
   /// <summary>Characters allowed in a raw 8.3 entry per FATGEN103 §6.1.
@@ -360,17 +413,22 @@ public sealed class FatWriter {
 
   /// <summary>Builds the 32-byte raw 8.3 directory entry (offset 0..31)
   /// for a short name like <c>"HELLO   TXT"</c> (already padded). Caller
-  /// fills first-cluster + size fields later.</summary>
-  private static byte[] BuildShortEntry(string shortName) {
+  /// fills first-cluster + size fields later. The optional
+  /// <paramref name="ntCaseBits"/> byte at offset 12 encodes the
+  /// VFAT/NTFS case-preservation flags: bit 3 (0x08) = base is lowercase,
+  /// bit 4 (0x10) = extension is lowercase. The 11-byte name field always
+  /// stores uppercase; the reader applies the case bits on display.</summary>
+  private static byte[] BuildShortEntry(string shortName, byte ntCaseBits = 0) {
     var entry = new byte[32];
     var dotIdx = shortName.LastIndexOf('.');
     var basePart = dotIdx >= 0 ? shortName[..dotIdx] : shortName;
     var extPart = dotIdx >= 0 ? shortName[(dotIdx + 1)..] : "";
-    var basePad = basePart.PadRight(8).Substring(0, 8);
-    var extPad = extPart.PadRight(3).Substring(0, 3);
+    var basePad = basePart.ToUpperInvariant().PadRight(8).Substring(0, 8);
+    var extPad = extPart.ToUpperInvariant().PadRight(3).Substring(0, 3);
     Encoding.ASCII.GetBytes(basePad).CopyTo(entry, 0);
     Encoding.ASCII.GetBytes(extPad).CopyTo(entry, 8);
     entry[11] = 0x20; // Archive attribute
+    entry[12] = ntCaseBits;
     return entry;
   }
 
@@ -381,7 +439,16 @@ public sealed class FatWriter {
   private static byte[] BuildDirentSlots(string longName, HashSet<string> existingShortNames) {
     if (IsPlain8Dot3(longName)) {
       existingShortNames.Add(longName.ToUpperInvariant());
-      return BuildShortEntry(longName.ToUpperInvariant());
+      // Compute NT case bits so the reader can restore lower-case spelling
+      // without needing LFN slots — bit 3 = base is lowercase, bit 4 =
+      // extension is lowercase.
+      var dotIdx = longName.LastIndexOf('.');
+      var basePart = dotIdx >= 0 ? longName[..dotIdx] : longName;
+      var extPart = dotIdx >= 0 ? longName[(dotIdx + 1)..] : "";
+      byte caseBits = 0;
+      if (HasLowerCaseAscii(basePart)) caseBits |= 0x08;
+      if (HasLowerCaseAscii(extPart)) caseBits |= 0x10;
+      return BuildShortEntry(longName.ToUpperInvariant(), caseBits);
     }
 
     var shortName = GenerateShortName(longName, existingShortNames);

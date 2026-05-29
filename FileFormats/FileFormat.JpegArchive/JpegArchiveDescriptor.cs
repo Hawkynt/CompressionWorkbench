@@ -16,13 +16,13 @@ namespace FileFormat.JpegArchive;
 /// accessible explicitly via <c>cwb list --format JpegArchive photo.jpg</c>.
 /// </para>
 /// </summary>
-public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveLayoutMap, IArchiveDefragmentable {
   public string Id => "JpegArchive";
   public string DisplayName => "JPEG (archive view)";
   public FormatCategory Category => FormatCategory.Image;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsOptimize;
   public string DefaultExtension => ".jpg";
   // Empty — extension collides with the primary JPEG reader; only addressable by explicit --format.
   public IReadOnlyList<string> Extensions => [];
@@ -122,6 +122,24 @@ public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOpe
       entries.Add(($"thumbnail_photoshop_{i:D2}.jpg", "Tag", photoshopThumbnails[i]));
 
     return entries;
+  }
+
+  // ── IArchiveLayoutMap ───────────────────────────────────────────
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => JpegLayoutMap.Enumerate(archive);
+
+  // ── IArchiveDefragmentable ────────────────────────────────────
+
+  /// <inheritdoc />
+  public void Defragment(Stream archive) => JpegOptimizer.Optimize(archive);
+
+  /// <inheritdoc />
+  public void Defragment(Stream archive, DefragOptions options) {
+    // JPEG optimization is a single fixed strategy: move EXIF to front.
+    // All defrag modes converge to the same operation, unless a metadata
+    // placement profile overrides the default.
+    JpegOptimizer.Optimize(archive, options.MetadataPlacement);
   }
 
   // Photoshop IRB: sequence of 8BIM resource blocks.

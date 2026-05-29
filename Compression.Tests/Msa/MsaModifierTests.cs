@@ -254,4 +254,71 @@ public class MsaModifierTests {
     var desc = new MsaFormatDescriptor();
     Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveModifiable>());
   }
+
+  // ── IArchiveDefragmentable ─────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsIArchiveDefragmentable() {
+    var desc = new MsaFormatDescriptor();
+    Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveDefragmentable>());
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Defragment_PreservesAllFiles() {
+    var ms = BuildMsaWithFat(
+      ("ALPHA.TXT", "alpha"u8.ToArray()),
+      ("BRAVO.TXT", "bravo"u8.ToArray()),
+      ("DELTA.TXT", "delta"u8.ToArray()));
+
+    ((Compression.Registry.IArchiveDefragmentable)new MsaFormatDescriptor()).Defragment(ms);
+
+    var names = ListFatNames(ms);
+    Assert.That(names, Has.Some.Matches<string>(n => n.Equals("ALPHA.TXT", StringComparison.OrdinalIgnoreCase)));
+    Assert.That(names, Has.Some.Matches<string>(n => n.Equals("BRAVO.TXT", StringComparison.OrdinalIgnoreCase)));
+    Assert.That(names, Has.Some.Matches<string>(n => n.Equals("DELTA.TXT", StringComparison.OrdinalIgnoreCase)));
+    Assert.That(ReadFatFile(ms, "ALPHA.TXT"), Is.EqualTo("alpha"u8.ToArray()));
+    Assert.That(ReadFatFile(ms, "BRAVO.TXT"), Is.EqualTo("bravo"u8.ToArray()));
+    Assert.That(ReadFatFile(ms, "DELTA.TXT"), Is.EqualTo("delta"u8.ToArray()));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Defragment_PreservesMsaGeometry() {
+    var ms = BuildMsaWithFat(("TEST.TXT", "data"u8.ToArray()));
+    ((Compression.Registry.IArchiveDefragmentable)new MsaFormatDescriptor()).Defragment(ms);
+
+    ms.Position = 0;
+    var r = new MsaReader(ms);
+    Assert.Multiple(() => {
+      Assert.That(r.SectorsPerTrack, Is.EqualTo(9));
+      Assert.That(r.Sides, Is.EqualTo(1));
+      Assert.That(r.EndTrack, Is.EqualTo(79));
+    });
+  }
+
+  // ── IFilesystemExtentMap ───────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsIFilesystemExtentMap() {
+    var desc = new MsaFormatDescriptor();
+    Assert.That(desc, Is.InstanceOf<Compression.Registry.IFilesystemExtentMap>());
+  }
+
+  [Test, Category("RoundTrip")]
+  public void EnumerateExtents_ReportsReservedAndUsed() {
+    var ms = BuildMsaWithFat(
+      ("HELLO.TXT", "world"u8.ToArray()),
+      ("BIG.BIN", new byte[4096]));
+
+    var desc = new MsaFormatDescriptor();
+    var extents = ((Compression.Registry.IFilesystemExtentMap)desc).EnumerateExtents(ms).ToList();
+
+    Assert.That(extents, Is.Not.Empty);
+    Assert.That(extents.Any(e => e.Kind == Compression.Registry.DefragBlockKind.MetadataReserved), Is.True,
+      "Expected at least one MetadataReserved extent (FAT boot/FAT/root).");
+    Assert.That(extents.Any(e => e.Kind == Compression.Registry.DefragBlockKind.Used), Is.True,
+      "Expected at least one Used extent (a file's cluster chain).");
+    var usedNames = extents.Where(e => e.Kind == Compression.Registry.DefragBlockKind.Used)
+                           .Select(e => e.FileName).ToHashSet();
+    Assert.That(usedNames, Has.Some.Matches<string?>(n => n != null && n.Contains("HELLO", StringComparison.OrdinalIgnoreCase)));
+  }
 }

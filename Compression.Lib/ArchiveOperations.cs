@@ -52,13 +52,23 @@ public static class ArchiveOperations {
       return;
     }
 
+    // Prefer archive ops when available (e.g. FLAC exposes per-channel WAVs
+    // as an archive view even though it also supports stream decompression).
+    FormatRegistration.EnsureInitialized();
+    var archiveOps = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
+    if (archiveOps != null) {
+      using var fs = File.OpenRead(path);
+      archiveOps.Extract(fs, outputDir, password, files);
+      return;
+    }
+
     if (FormatDetector.IsStreamFormat(format)) {
       ExtractStream(path, outputDir, format);
       return;
     }
 
-    using var fs = File.OpenRead(path);
-    ExtractWithStream(format, fs, outputDir, password, files);
+    using var fs3 = File.OpenRead(path);
+    ExtractWithStream(format, fs3, outputDir, password, files);
   }
 
   private static void ExtractWithStream(F format, Stream fs, string outputDir, string? password, string[]? files) {
@@ -69,10 +79,29 @@ public static class ArchiveOperations {
     throw new NotSupportedException($"Cannot extract format: {format}");
   }
 
-  public static void Create(string outputPath, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts) {
+  /// <summary>
+  /// Creates a new archive at <paramref name="outputPath"/>. The format is
+  /// inferred from the output extension; for ambiguous extensions
+  /// (e.g. <c>.img</c> claimed by FAT/NTFS/ext/Btrfs/etc.), use the overload
+  /// that takes an explicit <see cref="FormatDetector.Format"/>.
+  /// </summary>
+  public static void Create(string outputPath, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts)
+    => Create(outputPath, inputs, opts, FormatDetector.DetectByExtension(outputPath));
+
+  /// <summary>
+  /// Creates a new archive in the explicitly-requested <paramref name="format"/>.
+  /// Bypasses extension-based detection so the caller can disambiguate
+  /// extensions claimed by multiple formats.
+  /// </summary>
+  /// <remarks>
+  /// Fail-safe: the archive is staged to a sibling <c>.tmp</c> file, flushed
+  /// to disk, then atomically renamed over <paramref name="outputPath"/>. A
+  /// crash mid-write never leaves a partial archive in place.
+  /// </remarks>
+  public static void Create(string outputPath, IReadOnlyList<ArchiveInput> inputs,
+                            CompressionOptions opts, FormatDetector.Format format) {
     var method = opts.Method.Name == null ? MethodSpec.Default : opts.Method;
     var password = opts.Password;
-    var format = FormatDetector.DetectByExtension(outputPath);
     if (format == F.Unknown)
       throw new NotSupportedException($"Cannot determine format from extension: {Path.GetExtension(outputPath)}");
 
@@ -95,35 +124,32 @@ public static class ArchiveOperations {
       return;
     }
 
-    using var outFs = File.Create(outputPath);
-
     // Every format dispatches through IArchiveCreatable now — the previous
     // hardcoded switch for ZIP/7z/RAR has moved into those descriptors'
     // own Create methods.
     FormatRegistration.EnsureInitialized();
     var ops = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
-    if (ops is Compression.Registry.IArchiveCreatable creator) {
-      var registryInputs = inputs.Select(i =>
-        new Compression.Registry.ArchiveInputInfo(i.FullPath, i.EntryName, i.IsDirectory)).ToList();
-      var registryOpts = new Compression.Registry.FormatCreateOptions {
-        Password = opts.Password,
-        MethodName = opts.Method.Name,
-        Optimize = opts.Method.Optimize,
-        Level = opts.Level,
-        DictSize = opts.DictSize,
-        WordSize = opts.WordSize,
-        Threads = opts.Threads,
-        SolidSize = opts.SolidSize,
-        ForceCompress = opts.ForceCompress,
-        EncryptFilenames = opts.EncryptFilenames,
-        EncryptionMethod = opts.ZipEncryption,
-        IncompressiblePaths = incompressible,
-      };
-      creator.Create(outFs, registryInputs, registryOpts);
-      return;
-    }
+    if (ops is not Compression.Registry.IArchiveCreatable creator)
+      throw new NotSupportedException($"Format {format} has no creatable descriptor");
 
-    throw new NotSupportedException($"Format {format} has no creatable descriptor");
+    var registryInputs = inputs.Select(i =>
+      new Compression.Registry.ArchiveInputInfo(i.FullPath, i.EntryName, i.IsDirectory)).ToList();
+    var registryOpts = new Compression.Registry.FormatCreateOptions {
+      Password = opts.Password,
+      MethodName = opts.Method.Name,
+      Optimize = opts.Method.Optimize,
+      Level = opts.Level,
+      DictSize = opts.DictSize,
+      WordSize = opts.WordSize,
+      Threads = opts.Threads,
+      SolidSize = opts.SolidSize,
+      ForceCompress = opts.ForceCompress,
+      EncryptFilenames = opts.EncryptFilenames,
+      EncryptionMethod = opts.ZipEncryption,
+      IncompressiblePaths = incompressible,
+    };
+
+    AtomicFileWriter.WriteAtomic(outputPath, fs => creator.Create(fs, registryInputs, registryOpts));
   }
 
   /// <summary>
@@ -136,11 +162,35 @@ public static class ArchiveOperations {
   /// Tier 3 is also used when the method is changed (e.g. store→deflate+) or when "+" is requested.
   /// </summary>
   /// <returns>A (strategy description, tier number) tuple.</returns>
+  /// <remarks>
+  /// Fail-safe: the output is staged to a sibling <c>.tmp</c> file, flushed
+  /// to disk, then atomically renamed over <paramref name="outputPath"/>. A
+  /// crash mid-conversion never leaves a partial target; the orphan temp
+  /// is deleted in a finally block.
+  /// </remarks>
   public static (string Strategy, int Tier) Convert(string inputPath, string outputPath,
       string? password, MethodSpec method = default) {
     if (method.Name == null) method = MethodSpec.Default;
     var srcFormat = FormatDetector.Detect(inputPath);
     var dstFormat = FormatDetector.DetectByExtension(outputPath);
+
+    var tempOutputPath = AtomicFileWriter.MakeTempPath(outputPath);
+    try {
+      var result = ConvertCore(inputPath, tempOutputPath, srcFormat, dstFormat, password, method);
+      AtomicFileWriter.ReplaceTarget(tempOutputPath, outputPath);
+      return result;
+    } catch {
+      AtomicFileWriter.TryDelete(tempOutputPath);
+      throw;
+    }
+  }
+
+  /// <summary>
+  /// Internal conversion that writes to a freely-chosen output path. The
+  /// public <see cref="Convert"/> wraps this with atomic-rename semantics.
+  /// </summary>
+  private static (string Strategy, int Tier) ConvertCore(string inputPath, string outputPath,
+      F srcFormat, F dstFormat, string? password, MethodSpec method) {
 
     // "+" forces tier 3 (full recompress with optimal encoder)
     if (!method.Optimize && method.IsDefault) {
@@ -178,39 +228,47 @@ public static class ArchiveOperations {
 
       // Tier 2a: compound tar → compound tar (swap outer compression)
       if (srcComp.HasValue && dstComp.HasValue) {
-        using var inFs = File.OpenRead(inputPath);
-        using var outFs = File.Create(outputPath);
-        using var decompressed = new MemoryStream();
-        DecompressStreamPair(inFs, decompressed, srcComp.Value);
-        decompressed.Position = 0;
-        CompressStreamPair(decompressed, outFs, dstComp.Value);
+        using (var inFs = File.OpenRead(inputPath))
+        using (var outFs = File.Create(outputPath))
+        using (var decompressed = new MemoryStream()) {
+          DecompressStreamPair(inFs, decompressed, srcComp.Value);
+          decompressed.Position = 0;
+          CompressStreamPair(decompressed, outFs, dstComp.Value);
+          outFs.Flush(flushToDisk: true);
+        }
         return ("tar passthrough, swap outer compression", 2);
       }
 
       // Tier 2b: compound tar → plain tar (just strip outer compression)
       if (srcComp.HasValue && dstFormat == F.Tar) {
-        using var inFs = File.OpenRead(inputPath);
-        using var outFs = File.Create(outputPath);
-        DecompressStreamPair(inFs, outFs, srcComp.Value);
+        using (var inFs = File.OpenRead(inputPath))
+        using (var outFs = File.Create(outputPath)) {
+          DecompressStreamPair(inFs, outFs, srcComp.Value);
+          outFs.Flush(flushToDisk: true);
+        }
         return ("unwrap outer compression", 2);
       }
 
       // Tier 2c: plain tar → compound tar (just add outer compression)
       if (srcFormat == F.Tar && dstComp.HasValue) {
-        using var inFs = File.OpenRead(inputPath);
-        using var outFs = File.Create(outputPath);
-        CompressStreamPair(inFs, outFs, dstComp.Value);
+        using (var inFs = File.OpenRead(inputPath))
+        using (var outFs = File.Create(outputPath)) {
+          CompressStreamPair(inFs, outFs, dstComp.Value);
+          outFs.Flush(flushToDisk: true);
+        }
         return ("wrap with outer compression", 2);
       }
 
       // Tier 2d: stream → stream with different codec (decompress + recompress content)
       if (FormatDetector.IsStreamFormat(srcFormat) && FormatDetector.IsStreamFormat(dstFormat)) {
-        using var inFs = File.OpenRead(inputPath);
-        using var raw = new MemoryStream();
-        DecompressStreamPair(inFs, raw, srcFormat);
-        raw.Position = 0;
-        using var outFs = File.Create(outputPath);
-        CompressStreamPair(raw, outFs, dstFormat);
+        using (var inFs = File.OpenRead(inputPath))
+        using (var raw = new MemoryStream()) {
+          DecompressStreamPair(inFs, raw, srcFormat);
+          raw.Position = 0;
+          using var outFs = File.Create(outputPath);
+          CompressStreamPair(raw, outFs, dstFormat);
+          outFs.Flush(flushToDisk: true);
+        }
         return ("restream content with new codec", 2);
       }
     }
@@ -232,7 +290,7 @@ public static class ArchiveOperations {
         var rel = Path.GetRelativePath(tempDir, file).Replace('\\', '/');
         inputs.Add(new ArchiveInput(file, rel));
       }
-      Create(outputPath, inputs, new CompressionOptions { Method = method, Password = password });
+      Create(outputPath, inputs, new CompressionOptions { Method = method, Password = password }, dstFormat);
     }
     finally {
       if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
@@ -407,7 +465,13 @@ public static class ArchiveOperations {
       // Need Adler-32 of uncompressed data — must decompress for checksum
       var uncompressed = Compression.Core.Deflate.DeflateDecompressor.Decompress(deflate);
       var adler = Compression.Core.Checksums.Adler32.Compute(uncompressed);
-      File.WriteAllBytes(outputPath, FileFormat.Zlib.ZlibRawHelper.Wrap(deflate, adler));
+      // Write through a flushed FileStream so the outer Convert atomic-rename
+      // sees fully-persisted bytes. (Convert already routes us to a temp path.)
+      using (var outFs = File.Create(outputPath)) {
+        var wrapped = FileFormat.Zlib.ZlibRawHelper.Wrap(deflate, adler);
+        outFs.Write(wrapped, 0, wrapped.Length);
+        outFs.Flush(flushToDisk: true);
+      }
       return "bitstream transfer (Deflate reframe, gz→zlib)";
     }
 
@@ -416,7 +480,11 @@ public static class ArchiveOperations {
       // Need CRC-32 + size of uncompressed data
       var uncompressed = Compression.Core.Deflate.DeflateDecompressor.Decompress(deflate);
       var crc32 = Compression.Core.Checksums.Crc32.Compute(uncompressed);
-      File.WriteAllBytes(outputPath, FileFormat.Gzip.GzipRawHelper.Wrap(deflate, crc32, (uint)uncompressed.Length));
+      using (var outFs = File.Create(outputPath)) {
+        var wrapped = FileFormat.Gzip.GzipRawHelper.Wrap(deflate, crc32, (uint)uncompressed.Length);
+        outFs.Write(wrapped, 0, wrapped.Length);
+        outFs.Flush(flushToDisk: true);
+      }
       return "bitstream transfer (Deflate reframe, zlib→gz)";
     }
 
@@ -437,8 +505,10 @@ public static class ArchiveOperations {
     if (method != FileFormat.Zip.ZipCompressionMethod.Deflate) return null;
 
     if (dst == F.Gzip) {
-      using var outFs = File.Create(outputPath);
-      FileFormat.Gzip.GzipRawHelper.Wrap(outFs, rawDeflate, crc32, (uint)uncompSize);
+      using (var outFs = File.Create(outputPath)) {
+        FileFormat.Gzip.GzipRawHelper.Wrap(outFs, rawDeflate, crc32, (uint)uncompSize);
+        outFs.Flush(flushToDisk: true);
+      }
       return "bitstream transfer (ZIP Deflate → Gzip)";
     }
 
@@ -446,7 +516,11 @@ public static class ArchiveOperations {
       // Need Adler-32 — must decompress for checksum
       var uncompressed = Compression.Core.Deflate.DeflateDecompressor.Decompress(rawDeflate);
       var adler = Compression.Core.Checksums.Adler32.Compute(uncompressed);
-      File.WriteAllBytes(outputPath, FileFormat.Zlib.ZlibRawHelper.Wrap(rawDeflate, adler));
+      using (var outFs = File.Create(outputPath)) {
+        var wrapped = FileFormat.Zlib.ZlibRawHelper.Wrap(rawDeflate, adler);
+        outFs.Write(wrapped, 0, wrapped.Length);
+        outFs.Flush(flushToDisk: true);
+      }
       return "bitstream transfer (ZIP Deflate → Zlib)";
     }
 
@@ -474,11 +548,13 @@ public static class ArchiveOperations {
     }
     else return null;
 
-    using var outFs = File.Create(outputPath);
-    var w = new FileFormat.Zip.ZipWriter(outFs, leaveOpen: true, password: password);
-    var name = Path.GetFileNameWithoutExtension(inputPath);
-    w.AddRawEntry(name, rawDeflate, FileFormat.Zip.ZipCompressionMethod.Deflate, crc32, uncompSize);
-    w.Finish();
+    using (var outFs = File.Create(outputPath)) {
+      var w = new FileFormat.Zip.ZipWriter(outFs, leaveOpen: true, password: password);
+      var name = Path.GetFileNameWithoutExtension(inputPath);
+      w.AddRawEntry(name, rawDeflate, FileFormat.Zip.ZipCompressionMethod.Deflate, crc32, uncompSize);
+      w.Finish();
+      outFs.Flush(flushToDisk: true);
+    }
     return $"bitstream transfer ({src} Deflate → ZIP)";
   }
 
@@ -489,28 +565,34 @@ public static class ArchiveOperations {
   /// while keeping the same format. Uses Zopfli (level Maximum) for Deflate,
   /// Best for LZMA/LZX/etc. The output is fully compatible with standard decoders.
   /// </summary>
+  /// <remarks>
+  /// Fail-safe: the output is staged to a sibling <c>.tmp</c> file, flushed
+  /// to disk, then atomically renamed over <paramref name="outputPath"/>. A
+  /// crash during recompression never leaves a partial archive in place.
+  /// </remarks>
   /// <returns>(originalSize, optimizedSize, entriesOptimized)</returns>
   public static (long OriginalSize, long OptimizedSize, int EntriesOptimized) Optimize(
       string inputPath, string outputPath, string? password) {
     var format = FormatDetector.Detect(inputPath);
     var originalSize = new FileInfo(inputPath).Length;
+    var entries = 0;
 
     // ── ZIP: re-encode each Deflate entry with Zopfli ────────────────
     if (format == F.Zip) {
-      var count = OptimizeZip(inputPath, outputPath, password);
-      return (originalSize, new FileInfo(outputPath).Length, count);
+      AtomicFileWriter.WriteAtomic(outputPath, outFs => entries = OptimizeZip(inputPath, outFs, password));
+      return (originalSize, new FileInfo(outputPath).Length, entries);
     }
 
     // ── Gzip: re-encode Deflate with Maximum level ───────────────────
     if (format == F.Gzip) {
       var data = DecompressFile(inputPath, F.Gzip);
-      using (var outFs = File.Create(outputPath)) {
+      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
         using var gs = new FileFormat.Gzip.GzipStream(outFs,
           Compression.Core.Streams.CompressionStreamMode.Compress,
           Compression.Core.Deflate.DeflateCompressionLevel.Maximum,
           leaveOpen: true);
         gs.Write(data);
-      }
+      });
       return (originalSize, new FileInfo(outputPath).Length, 1);
     }
 
@@ -520,7 +602,7 @@ public static class ArchiveOperations {
       var decompressed = FileFormat.Zlib.ZlibStream.Decompress(data.AsSpan());
       var recompressed = FileFormat.Zlib.ZlibStream.Compress(decompressed.AsSpan(),
         Compression.Core.Deflate.DeflateCompressionLevel.Maximum);
-      File.WriteAllBytes(outputPath, recompressed);
+      AtomicFileWriter.WriteAllBytesAtomic(outputPath, recompressed);
       return (originalSize, new FileInfo(outputPath).Length, 1);
     }
 
@@ -528,35 +610,40 @@ public static class ArchiveOperations {
     var comp = FormatDetector.GetTarCompression(format);
     if (comp.HasValue) {
       // Decompress to raw tar, recompress with best settings
-      using var inFs = File.OpenRead(inputPath);
-      using var rawTar = new MemoryStream();
-      DecompressStreamPair(inFs, rawTar, comp.Value);
-      rawTar.Position = 0;
-      using var outFs = File.Create(outputPath);
-      CompressStreamPairOptimal(rawTar, outFs, comp.Value);
+      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
+        using var inFs = File.OpenRead(inputPath);
+        using var rawTar = new MemoryStream();
+        DecompressStreamPair(inFs, rawTar, comp.Value);
+        rawTar.Position = 0;
+        CompressStreamPairOptimal(rawTar, outFs, comp.Value);
+      });
       return (originalSize, new FileInfo(outputPath).Length, 1);
     }
 
     // ── Other stream formats: decompress + recompress with best ──────
     if (FormatDetector.IsStreamFormat(format)) {
-      using var inFs = File.OpenRead(inputPath);
-      using var raw = new MemoryStream();
-      DecompressStreamPair(inFs, raw, format);
-      raw.Position = 0;
-      using var outFs = File.Create(outputPath);
-      CompressStreamPairOptimal(raw, outFs, format);
+      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
+        using var inFs = File.OpenRead(inputPath);
+        using var raw = new MemoryStream();
+        DecompressStreamPair(inFs, raw, format);
+        raw.Position = 0;
+        CompressStreamPairOptimal(raw, outFs, format);
+      });
       return (originalSize, new FileInfo(outputPath).Length, 1);
     }
 
     // ── Unsupported: fall back to copy ───────────────────────────────
-    File.Copy(inputPath, outputPath, overwrite: true);
+    // Use temp+rename so a crash mid-copy doesn't leave a truncated target.
+    AtomicFileWriter.WriteAtomic(outputPath, outFs => {
+      using var inFs = File.OpenRead(inputPath);
+      inFs.CopyTo(outFs);
+    });
     return (originalSize, originalSize, 0);
   }
 
-  private static int OptimizeZip(string inputPath, string outputPath, string? password) {
+  private static int OptimizeZip(string inputPath, Stream outFs, string? password) {
     using var inFs = File.OpenRead(inputPath);
     var r = new FileFormat.Zip.ZipReader(inFs, leaveOpen: true, password: password);
-    using var outFs = File.Create(outputPath);
     var w = new FileFormat.Zip.ZipWriter(outFs, leaveOpen: true,
       compressionLevel: Compression.Core.Deflate.DeflateCompressionLevel.Maximum,
       password: password);
@@ -621,12 +708,13 @@ public static class ArchiveOperations {
   }
 
   private static void CompressStream(string inputPath, string outputPath, F format, MethodSpec method = default) {
-    using var inFs = File.OpenRead(inputPath);
-    using var outFs = File.Create(outputPath);
-    if (method.Optimize)
-      CompressStreamPairOptimal(inFs, outFs, format);
-    else
-      CompressStreamPair(inFs, outFs, format);
+    AtomicFileWriter.WriteAtomic(outputPath, outFs => {
+      using var inFs = File.OpenRead(inputPath);
+      if (method.Optimize)
+        CompressStreamPairOptimal(inFs, outFs, format);
+      else
+        CompressStreamPair(inFs, outFs, format);
+    });
   }
 
   public static byte[] DecompressFile(string path, F format) {
@@ -641,6 +729,395 @@ public static class ArchiveOperations {
     DecompressStreamPair(input, ms, format);
   }
 
+
+  // ── FS Toolbox: Convert Cluster/Sector Size ────────────────────────
+
+  /// <summary>
+  /// Result of a cluster-size waste analysis for a single cluster size candidate.
+  /// </summary>
+  public sealed record ClusterWasteInfo(int ClusterSize, long TotalSlack, long TotalAllocated, double SlackPercent);
+
+  /// <summary>
+  /// Computes the waste preview (tip slack) for the current and target cluster
+  /// sizes of a FAT filesystem image, without modifying the image.
+  /// </summary>
+  /// <returns>Tuple of (current stats, target stats, list of file sizes).</returns>
+  public static (ClusterWasteInfo Current, ClusterWasteInfo Target) PreviewClusterConversion(
+      string imagePath, int targetClusterSize) {
+    using var stream = File.OpenRead(imagePath);
+    var hint = FileSystem.Fat.FatShrinkHelper.AnalyzeClusterSizes(stream);
+    var currentStats = hint.AllStats.FirstOrDefault(s => s.ClusterSize == hint.CurrentClusterSize);
+    var targetStats = hint.AllStats.FirstOrDefault(s => s.ClusterSize == targetClusterSize);
+
+    var current = currentStats != null
+      ? new ClusterWasteInfo(currentStats.ClusterSize, currentStats.TotalSlack, currentStats.TotalAllocated, currentStats.SlackPercent)
+      : new ClusterWasteInfo(hint.CurrentClusterSize, 0, 0, 0);
+    var target = targetStats != null
+      ? new ClusterWasteInfo(targetStats.ClusterSize, targetStats.TotalSlack, targetStats.TotalAllocated, targetStats.SlackPercent)
+      : ComputeWasteForSize(imagePath, targetClusterSize);
+    return (current, target);
+  }
+
+  private static ClusterWasteInfo ComputeWasteForSize(string imagePath, int clusterSize) {
+    using var stream = File.OpenRead(imagePath);
+    var reader = new FileSystem.Fat.FatReader(stream);
+    var totalSlack = 0L;
+    var totalAllocated = 0L;
+    foreach (var e in reader.Entries) {
+      if (e.IsDirectory || e.Size <= 0) continue;
+      var clusters = (e.Size + clusterSize - 1) / clusterSize;
+      var allocated = clusters * clusterSize;
+      totalAllocated += allocated;
+      totalSlack += allocated - e.Size;
+    }
+    var pct = totalAllocated > 0 ? 100.0 * totalSlack / totalAllocated : 0;
+    return new ClusterWasteInfo(clusterSize, totalSlack, totalAllocated, pct);
+  }
+
+  /// <summary>
+  /// Rebuilds a FAT image with a different cluster size. Extracts all files
+  /// and recreates the image using <see cref="FileSystem.Fat.FatWriter"/> with
+  /// the requested cluster size. The image is written to
+  /// <paramref name="outputPath"/> (which may be the same as
+  /// <paramref name="inputPath"/> for in-place conversion).
+  /// </summary>
+  /// <remarks>
+  /// Fail-safe: the rebuilt image is staged to a sibling <c>.tmp</c> file,
+  /// flushed to disk, then atomically renamed over <paramref name="outputPath"/>.
+  /// In-place conversion (input == output) is safe — the source is fully
+  /// read into memory before the destination is touched.
+  /// </remarks>
+  public static void ConvertClusters(string inputPath, string outputPath, int targetClusterSize) {
+    // Extract all files from the existing image. Use a using block so the
+    // input handle is released before we overwrite the same path (in-place
+    // conversion when input == output).
+    List<(string Name, byte[] Data)> files;
+    int totalSectors;
+    using (var inStream = File.OpenRead(inputPath)) {
+      var reader = new FileSystem.Fat.FatReader(inStream);
+      files = reader.Entries.Where(e => !e.IsDirectory)
+                            .Select(e => (e.Name, Data: reader.Extract(e)))
+                            .ToList();
+      totalSectors = (int)(inStream.Length / 512);
+    }
+
+    // Rebuild with the new cluster size.
+    var writer = new FileSystem.Fat.FatWriter();
+    foreach (var (name, data) in files)
+      writer.AddFile(name, data);
+    var rebuilt = writer.Build(totalSectors: totalSectors, requestedClusterSize: targetClusterSize);
+    AtomicFileWriter.WriteAllBytesAtomic(outputPath, rebuilt);
+  }
+
+  // ── FS Toolbox: Resize to Media Profile ───────────────────────────
+
+  /// <summary>
+  /// Result of a resize preview: whether the content fits, and the before/after sizes.
+  /// </summary>
+  public sealed record ResizePreview(long CurrentSize, long TargetSize, long ContentSize, bool Fits);
+
+  /// <summary>
+  /// Previews a resize operation without modifying the image. Computes how much
+  /// space the live content occupies and whether it fits in the target size.
+  /// </summary>
+  public static ResizePreview PreviewResize(string imagePath, long targetSize) {
+    var currentSize = new FileInfo(imagePath).Length;
+    // Compute content size by summing file data from the FS.
+    var format = FormatDetector.Detect(imagePath);
+    var entries = List(imagePath, null);
+    var contentSize = entries.Where(e => !e.IsDirectory).Sum(e => e.OriginalSize);
+    // Add ~50% overhead estimate for metadata/FAT tables.
+    var estimatedMinSize = contentSize * 3 / 2 + 32768;
+    return new ResizePreview(currentSize, targetSize, contentSize, estimatedMinSize <= targetSize);
+  }
+
+  /// <summary>
+  /// Resizes a filesystem image to the target size. Defragments first to
+  /// pack content at the start, then truncates or extends the image.
+  /// Updates FS metadata (BPB total sectors for FAT).
+  /// </summary>
+  /// <exception cref="InvalidOperationException">If the content does not fit
+  /// in the target size.</exception>
+  public static void Resize(string imagePath, long targetSize) {
+    var format = FormatDetector.Detect(imagePath);
+    FormatRegistration.EnsureInitialized();
+    var descriptor = Compression.Registry.FormatRegistry.GetById(format.ToString());
+
+    // Strategy: extract all files, rebuild at the target size.
+    var entries = List(imagePath, null);
+    var files = new List<(string Name, byte[] Data)>();
+    {
+      var tempDir = Path.Combine(Path.GetTempPath(), "cwb_resize_" + Guid.NewGuid().ToString("N")[..8]);
+      try {
+        Extract(imagePath, tempDir, null, null);
+        foreach (var e in entries) {
+          if (e.IsDirectory) continue;
+          var filePath = Path.Combine(tempDir, e.Name.Replace('/', Path.DirectorySeparatorChar));
+          if (File.Exists(filePath))
+            files.Add((e.Name, File.ReadAllBytes(filePath)));
+        }
+      } finally {
+        if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+      }
+    }
+
+    var formatId = format.ToString();
+    if (formatId == "Fat") {
+      var totalSectors = (int)(targetSize / 512);
+      var writer = new FileSystem.Fat.FatWriter();
+      foreach (var (name, data) in files)
+        writer.AddFile(name, data);
+      var rebuilt = writer.Build(totalSectors: totalSectors);
+      if (rebuilt.Length > targetSize)
+        throw new InvalidOperationException(
+          $"Content does not fit in target size ({targetSize} bytes). " +
+          $"Minimum required: {rebuilt.Length} bytes.");
+      // Extend to exact target size if the image is smaller.
+      if (rebuilt.Length < targetSize) {
+        var padded = new byte[targetSize];
+        Array.Copy(rebuilt, padded, rebuilt.Length);
+        // Update BPB total sectors to match padded size.
+        var paddedTotalSectors = (int)(targetSize / 512);
+        if (paddedTotalSectors < 65536) {
+          System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(padded.AsSpan(19), (ushort)paddedTotalSectors);
+          System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(padded.AsSpan(32), 0u);
+        } else {
+          System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(padded.AsSpan(19), 0);
+          System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(padded.AsSpan(32), (uint)paddedTotalSectors);
+        }
+        rebuilt = padded;
+      }
+      AtomicFileWriter.WriteAllBytesAtomic(imagePath, rebuilt);
+    } else if (formatId is "Ext" or "Ext1") {
+      var blockSize = 1024;
+      var totalBlocks = (int)(targetSize / blockSize);
+      var writer = new FileSystem.Ext.ExtWriter();
+      foreach (var (name, data) in files)
+        writer.AddFile(name, data);
+      var rebuilt = writer.Build(blockSize: blockSize, totalBlocks: totalBlocks);
+      if (rebuilt.Length > targetSize)
+        throw new InvalidOperationException(
+          $"Content does not fit in target size ({targetSize} bytes). " +
+          $"Minimum required: {rebuilt.Length} bytes.");
+      AtomicFileWriter.WriteAllBytesAtomic(imagePath, rebuilt);
+    } else {
+      throw new NotSupportedException($"Resize is not supported for format: {formatId}. Supported: Fat, Ext.");
+    }
+  }
+
+  // ── Cross-Format Conversion ────────────────────────────────────────
+
+  /// <summary>
+  /// Backwards-compatible alias for <see cref="ConvertArchive"/>.
+  /// Older callers and tests use this name from when the feature was
+  /// FS-image-only; the implementation now lives in
+  /// <see cref="ConvertArchive"/> and accepts any archive/filesystem
+  /// source and any creatable target.
+  /// </summary>
+  public static List<string> ConvertFs(string inputPath, string outputPath, string? targetFormatId = null)
+    => ConvertArchive(inputPath, outputPath, targetFormatId);
+
+  /// <summary>
+  /// Converts between ANY listable/creatable format pair. Works across format
+  /// categories:
+  /// <list type="bullet">
+  ///   <item>FS → FS (e.g. D64 → FAT)</item>
+  ///   <item>FS → Archive (e.g. D64 → ZIP, FAT → 7z)</item>
+  ///   <item>Archive → FS (e.g. ZIP → FAT image)</item>
+  ///   <item>Archive → Archive (e.g. ZIP → TAR, 7z → ZIP)</item>
+  /// </list>
+  /// Dispatch order:
+  /// <list type="number">
+  ///   <item>Same-format / FAT-variant / ext-variant pair: routed through
+  ///   <see cref="FsConversion.InPlaceConverter"/> for the metadata-only
+  ///   fast path. If the in-place converter declines (e.g. NoOp or
+  ///   NotSupported), we fall through to the extract+rebuild path.</item>
+  ///   <item>Anything else: extract every entry from the source (via
+  ///   <see cref="Extract"/>) then create the target (via <see cref="Create"/>).
+  ///   Any format that supports <c>List</c> + <c>Extract</c> works as a
+  ///   source; any format that implements
+  ///   <see cref="Compression.Registry.IArchiveCreatable"/> works as a target.</item>
+  /// </list>
+  /// </summary>
+  /// <param name="inputPath">Path to the source image / archive.</param>
+  /// <param name="outputPath">Path for the output (extension determines format
+  /// unless <paramref name="explicitTargetFormat"/> is set).</param>
+  /// <param name="explicitTargetFormat">Explicit target format ID (e.g. "Fat",
+  /// "Ext", "Zip", "SevenZip"). When null, the format is inferred from
+  /// <paramref name="outputPath"/>'s extension.</param>
+  /// <returns>List of metadata-loss warnings (empty if no metadata was lost).</returns>
+  /// <remarks>
+  /// Fail-safe: dispatches to <see cref="Create(string, IReadOnlyList{ArchiveInput}, CompressionOptions, FormatDetector.Format)"/>
+  /// which stages the output to a sibling <c>.tmp</c> file and atomically
+  /// renames it into place. The temp extraction directory is always cleaned
+  /// up in a finally block. The source file is never deleted, even on
+  /// successful conversion.
+  /// </remarks>
+  public static List<string> ConvertArchive(string inputPath, string outputPath, string? explicitTargetFormat = null) {
+    var targetFormatId = explicitTargetFormat;
+    var warnings = new List<string>();
+
+    // Detect source format.
+    var srcFormat = FormatDetector.Detect(inputPath);
+    FormatRegistration.EnsureInitialized();
+
+    // Determine target format.
+    FormatDetector.Format dstFormat;
+    if (!string.IsNullOrEmpty(targetFormatId)) {
+      if (!Enum.TryParse<FormatDetector.Format>(targetFormatId, ignoreCase: true, out dstFormat))
+        throw new NotSupportedException($"Unknown target format: {targetFormatId}");
+    } else {
+      dstFormat = FormatDetector.DetectByExtension(outputPath);
+    }
+
+    if (dstFormat == FormatDetector.Format.Unknown)
+      throw new NotSupportedException($"Cannot determine target format from extension: {Path.GetExtension(outputPath)}");
+
+    // Check that the target supports creation.
+    var dstOps = Compression.Registry.FormatRegistry.GetArchiveOps(dstFormat.ToString());
+    if (dstOps is not Compression.Registry.IArchiveCreatable)
+      throw new NotSupportedException($"Target format {dstFormat} does not support creation.");
+
+    // ── Fast path: in-place variant conversion ──────────────────────
+    // FAT12↔16↔32 and ext2↔3↔4 only rewrite metadata; the FsConversion
+    // InPlaceConverter handles them with no extract/rebuild. We honor the
+    // existing fast path so callers that previously relied on ConvertFs
+    // for variant-only conversions don't regress.
+    if (TryInPlaceConvert(inputPath, outputPath, srcFormat, dstFormat))
+      return warnings;
+
+    // Extract from source.
+    var srcEntries = List(inputPath, null);
+    var tempDir = Path.Combine(Path.GetTempPath(), "cwb_fsconv_" + Guid.NewGuid().ToString("N")[..8]);
+    try {
+      Extract(inputPath, tempDir, null, null);
+
+      // Check metadata preservation. Source entries with timestamps but no
+      // timestamp support in target => warning.
+      var srcHasTimestamps = srcEntries.Any(e => e.LastModified.HasValue);
+      // Simple heuristic: if source has timestamps and target is a retro FS
+      // (D64, T64, ADF, etc.), log a warning.
+      var retroFormats = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+        "D64", "D71", "D81", "T64", "Adf", "AppleDos", "Atari8", "Bbc",
+        "Cpm", "ZxScl", "TrDos", "Msa", "Mfs", "CpcDsk",
+      };
+      if (srcHasTimestamps && retroFormats.Contains(dstFormat.ToString()))
+        warnings.Add($"Target format {dstFormat} does not support timestamps; file dates will be lost.");
+
+      // Check for file name length restrictions.
+      var shortNameFormats = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+        "D64", "D71", "D81", "Cpm", "Atari8",
+      };
+      if (shortNameFormats.Contains(dstFormat.ToString())) {
+        foreach (var e in srcEntries) {
+          if (!e.IsDirectory && e.Name.Length > 16)
+            warnings.Add($"File name '{e.Name}' may be truncated in {dstFormat}.");
+        }
+      }
+
+      // Cross-category warnings: detect when source and target are from
+      // different domains (filesystem images vs archive containers vs streams).
+      var filesystemFormats = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+        "Fat", "ExFat", "Ntfs", "Ext", "Ext1", "Btrfs", "Xfs", "Hfs", "HfsPlus",
+        "Apfs", "Mfs", "Iso", "Udf", "Zfs", "Ufs", "Jfs", "ReiserFs", "Reiser4",
+        "F2fs", "SquashFs", "CramFs", "RomFs", "MinixFs", "D64", "D71", "D81",
+        "T64", "Adf", "AppleDos", "ProDos", "Atari8", "Bbc", "Cpm", "CpcDsk",
+        "ZxScl", "TrDos", "Msa", "Hpfs", "DoubleSpace", "Vdfs", "Bfs", "Ocfs2",
+        "Jffs2", "Yaffs2", "BcacheFs",
+      };
+      var srcIsFs = filesystemFormats.Contains(srcFormat.ToString());
+      var dstIsFs = filesystemFormats.Contains(dstFormat.ToString());
+      if (srcIsFs != dstIsFs)
+        warnings.Add($"Cross-category conversion: {srcFormat} ({(srcIsFs ? "filesystem" : "archive")}) -> {dstFormat} ({(dstIsFs ? "filesystem" : "archive")}).");
+
+      // Build inputs from extracted files.
+      var inputs = EnumerateTempInputs(tempDir);
+
+      // Skip directory entries for formats that don't support them
+      // (most stream formats and some flat archive formats).
+      var dstDescriptor = Compression.Registry.FormatRegistry.GetById(dstFormat.ToString());
+      if (dstDescriptor != null &&
+          (dstDescriptor.Capabilities & Compression.Registry.FormatCapabilities.SupportsDirectories) == 0) {
+        inputs = inputs.Where(i => !i.IsDirectory).ToList();
+      }
+
+      Create(outputPath, inputs, new CompressionOptions(), dstFormat);
+    } finally {
+      if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+    }
+
+    return warnings;
+  }
+
+  /// <summary>
+  /// Attempts the in-place fast path for variant conversions
+  /// (FAT12↔16↔32, ext2↔3↔4). Returns true if the conversion was handled
+  /// in-place; false to let the caller fall through to the
+  /// extract+rebuild path. Same-format conversions (Fat→Fat etc.) also
+  /// flow through here as a copy-only optimization when the variant is
+  /// not specified or already matches.
+  /// </summary>
+  /// <remarks>
+  /// The InPlaceConverter needs the image opened R/W. For safety we stage
+  /// a copy under a temp path, run the conversion against it, then
+  /// atomically replace the target. This guarantees a crash mid-conversion
+  /// can't tear the destination if it already existed.
+  /// </remarks>
+  private static bool TryInPlaceConvert(string inputPath, string outputPath, F srcFormat, F dstFormat) {
+    var srcId = srcFormat.ToString();
+    var dstId = dstFormat.ToString();
+
+    // Only attempt for the FAT / ext families that the InPlaceConverter
+    // understands. Other family-internal conversions (e.g. ext1→ext) are
+    // not yet supported by the in-place path and just fall through.
+    var srcIsFat = srcId.StartsWith("Fat", StringComparison.OrdinalIgnoreCase);
+    var dstIsFat = dstId.StartsWith("Fat", StringComparison.OrdinalIgnoreCase);
+    var srcIsExt = srcId.StartsWith("Ext", StringComparison.OrdinalIgnoreCase);
+    var dstIsExt = dstId.StartsWith("Ext", StringComparison.OrdinalIgnoreCase);
+    if (!((srcIsFat && dstIsFat) || (srcIsExt && dstIsExt))) return false;
+
+    // Stage the source into the destination temp path, then run the
+    // converter against that stream. AtomicFileWriter.ReplaceTarget will
+    // do the atomic rename once we're done.
+    var tempPath = AtomicFileWriter.MakeTempPath(outputPath);
+    var handled = false;
+    try {
+      File.Copy(inputPath, tempPath, overwrite: true);
+
+      FormatRegistration.EnsureInitialized();
+      using (var fs = File.Open(tempPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) {
+        var result = FsConversion.InPlaceConverter.TryConvert(fs, srcId, dstId);
+        switch (result) {
+          case FsConversion.InPlaceConversionResult.Succeeded:
+          case FsConversion.InPlaceConversionResult.NoOp:
+            fs.Flush();
+            handled = true;
+            break;
+          case FsConversion.InPlaceConversionResult.GeometryRejected:
+          case FsConversion.InPlaceConversionResult.NotSupported:
+          default:
+            // Fall back to the generic extract+rebuild path.
+            handled = false;
+            break;
+        }
+      }
+
+      if (handled) {
+        AtomicFileWriter.ReplaceTarget(tempPath, outputPath);
+        return true;
+      }
+      return false;
+    }
+    catch {
+      AtomicFileWriter.TryDelete(tempPath);
+      throw;
+    }
+    finally {
+      // If we declined the in-place conversion, drop the temp copy so
+      // the caller's extract+rebuild path doesn't trip over orphan files.
+      if (!handled) AtomicFileWriter.TryDelete(tempPath);
+    }
+  }
 
   // ── Helpers ────────────────────────────────────────────────────────
 

@@ -23,7 +23,11 @@ namespace FileFormat.AndroidBundle;
 /// inputs.
 /// </para>
 /// </summary>
-public sealed class AndroidBundleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class AndroidBundleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
+
   public string Id => "AndroidBundle";
   public string DisplayName => "Android App Bundle / split-APK set";
   public FormatCategory Category => FormatCategory.Archive;

@@ -11,7 +11,7 @@ namespace FileFormat.Avi;
 /// synthesised WAV for PCM or raw bytes for compressed codecs), and
 /// <c>metadata.ini</c> with FourCC/dimensions/duration info.
 /// </summary>
-public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IFileInternalLayoutMap, IFileInternalChunkMover {
 
   public string Id => "Avi";
   public string DisplayName => "AVI (RIFF video)";
@@ -61,6 +61,20 @@ public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
 
+  private readonly AviOptimizer _optimizer = new();
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => AviLayoutMap.Enumerate(file);
+
+  /// <inheritdoc />
+  public void Optimize(Stream file) => _optimizer.Optimize(file);
+
+  /// <inheritdoc />
+  public void Optimize(Stream file, MetadataPlacementProfile? profile) => _optimizer.Optimize(file, profile);
+
+  /// <summary>Maximum number of individual frame entries to list per video track to keep List() responsive.</summary>
+  private const int MaxFrameEntries = 100_000;
+
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -76,6 +90,20 @@ public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (t.StreamType == "vids") {
         var ext = VideoFourCcToExtension(t.Handler);
         entries.Add(($"track_{i:D2}_video{ext}", "Track", t.Data));
+
+        // Emit individual video frames.
+        var frameExt = VideoFourCcToFrameExtension(t.Handler);
+        var frameCount = Math.Min(t.Chunks.Count, MaxFrameEntries);
+        for (var f = 0; f < frameCount; ++f) {
+          var chunk = t.Chunks[f];
+          var frameData = chunk.Data;
+
+          // For uncompressed DIB/RGB video, wrap raw pixels in a BMP header.
+          if (IsUncompressedVideo(t.Handler) && t.Width > 0 && t.Height > 0)
+            frameData = WrapAsBmp(frameData, t.Width, t.Height, t.Format);
+
+          entries.Add(($"frames/track_{i:D2}/frame_{f + 1:D6}{frameExt}", "Frame", frameData));
+        }
       } else if (t.StreamType == "auds") {
         if (t.AudioFormatTag == 1 && t.AudioBitsPerSample is 8 or 16 or 24 or 32 && t.AudioChannels > 0) {
           // Pack raw PCM into a WAV so it's directly playable.
@@ -103,6 +131,7 @@ public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (t.StreamType == "vids") {
         info.AppendLine($"track_{i}.width={t.Width}");
         info.AppendLine($"track_{i}.height={t.Height}");
+        info.AppendLine($"track_{i}.frame_count={t.Chunks.Count}");
       } else if (t.StreamType == "auds") {
         info.AppendLine($"track_{i}.channels={t.AudioChannels}");
         info.AppendLine($"track_{i}.sample_rate={t.AudioSampleRate}");
@@ -140,6 +169,62 @@ public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       "    " or "RGB " or "" or "???? " => ".raw",
       _ => ".bin",
     };
+  }
+
+  /// <summary>Returns the appropriate extension for an individual video frame.</summary>
+  private static string VideoFourCcToFrameExtension(uint handler) {
+    if (IsUncompressedVideo(handler)) return ".bmp";
+    var s = FourCcToString(handler).ToUpperInvariant();
+    return s switch {
+      "MJPG" => ".jpg",
+      "H264" or "AVC1" or "X264" => ".h264",
+      "HEVC" or "H265" or "HVC1" => ".hevc",
+      _ => ".bin",
+    };
+  }
+
+  /// <summary>Checks whether the FourCC indicates uncompressed RGB/DIB video.</summary>
+  private static bool IsUncompressedVideo(uint handler) {
+    // handler=0 means no compression (raw DIB).
+    if (handler == 0) return true;
+    var s = FourCcToString(handler).ToUpperInvariant();
+    return s is "    " or "DIB " or "RGB " or "RAW " or "NONE" or "????";
+  }
+
+  /// <summary>
+  /// Wraps raw bottom-up BGR pixel data in a BMP file header.
+  /// The <paramref name="format"/> is the BITMAPINFOHEADER from the strf chunk.
+  /// </summary>
+  private static byte[] WrapAsBmp(byte[] rawPixels, int width, int height, byte[] format) {
+    // Determine bits-per-pixel from BITMAPINFOHEADER (offset 14 = biBitCount).
+    var bpp = 24;
+    if (format.Length >= 16)
+      bpp = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(format.AsSpan(14));
+    if (bpp is not (8 or 16 or 24 or 32)) bpp = 24;
+
+    var absHeight = Math.Abs(height);
+    var rowSize = ((width * bpp + 31) / 32) * 4;
+    var pixelDataSize = rowSize * absHeight;
+    var headerSize = 14 + 40; // BMP file header + DIB header
+    var fileSize = headerSize + pixelDataSize;
+
+    var bmp = new byte[fileSize];
+    // BMP file header
+    bmp[0] = (byte)'B'; bmp[1] = (byte)'M';
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bmp.AsSpan(2), (uint)fileSize);
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bmp.AsSpan(10), (uint)headerSize);
+    // DIB header (BITMAPINFOHEADER)
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bmp.AsSpan(14), 40);
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(bmp.AsSpan(18), width);
+    System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(bmp.AsSpan(22), absHeight);
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(bmp.AsSpan(26), 1); // planes
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(bmp.AsSpan(28), (ushort)bpp);
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bmp.AsSpan(34), (uint)pixelDataSize);
+
+    // Copy raw pixel data (capped to available bytes).
+    var copyLen = Math.Min(rawPixels.Length, pixelDataSize);
+    rawPixels.AsSpan(0, copyLen).CopyTo(bmp.AsSpan(headerSize));
+    return bmp;
   }
 
   private static string AudioFormatTagToExtension(int tag) => tag switch {

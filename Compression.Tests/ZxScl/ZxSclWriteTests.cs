@@ -108,4 +108,65 @@ public class ZxSclWriteTests {
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
     Assert.That(d.MaxTotalArchiveSize, Is.EqualTo(ZxSclReader.MaxPayloadSize));
   }
+
+  // ── IArchiveDefragmentable ─────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsIArchiveDefragmentable() {
+    var d = new ZxSclFormatDescriptor();
+    Assert.That(d, Is.InstanceOf<IArchiveDefragmentable>());
+  }
+
+  [Test, Category("RoundTrip")]
+  public void Defragment_PreservesAllFiles() {
+    var w = new ZxSclWriter();
+    w.AddFile("A.cod", "alpha"u8.ToArray());
+    w.AddFile("B.cod", "bravo"u8.ToArray());
+    w.AddFile("C.cod", "charlie"u8.ToArray());
+    var scl = w.Build();
+    using var ms = new MemoryStream();
+    ms.Write(scl);
+
+    ((IArchiveDefragmentable)new ZxSclFormatDescriptor()).Defragment(ms);
+
+    ms.Position = 0;
+    var r = new ZxSclReader(ms);
+    Assert.That(r.Entries, Has.Count.EqualTo(3));
+    // Leading bytes preserved (data is sector-padded)
+    Assert.That(r.Extract(r.Entries[0]).AsSpan(0, 5).ToArray(), Is.EqualTo("alpha"u8.ToArray()));
+    Assert.That(r.Extract(r.Entries[1]).AsSpan(0, 5).ToArray(), Is.EqualTo("bravo"u8.ToArray()));
+    Assert.That(r.Extract(r.Entries[2]).AsSpan(0, 7).ToArray(), Is.EqualTo("charlie"u8.ToArray()));
+  }
+
+  // ── IArchiveLayoutMap ──────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsIArchiveLayoutMap() {
+    var d = new ZxSclFormatDescriptor();
+    Assert.That(d, Is.InstanceOf<IArchiveLayoutMap>());
+  }
+
+  [Test, Category("RoundTrip")]
+  public void EnumerateLayout_ReportsMagicDirectoryAndEntries() {
+    var w = new ZxSclWriter();
+    w.AddFile("HELLO.cod", "world"u8.ToArray());
+    w.AddFile("DATA.dat", new byte[500]);
+    var scl = w.Build();
+    using var ms = new MemoryStream(scl);
+
+    var d = new ZxSclFormatDescriptor();
+    var tiles = ((IArchiveLayoutMap)d).EnumerateLayout(ms).ToList();
+
+    Assert.That(tiles, Is.Not.Empty);
+    Assert.That(tiles.Any(t => t.Kind == Compression.Registry.DefragBlockKind.MetadataReserved
+                                && t.FileName == "SINCLAIR magic"), Is.True);
+    Assert.That(tiles.Any(t => t.Kind == Compression.Registry.DefragBlockKind.MetadataReserved
+                                && t.FileName == "Directory"), Is.True);
+    Assert.That(tiles.Any(t => t.Kind == Compression.Registry.DefragBlockKind.Used
+                                && t.FileName != null && t.FileName.Contains("HELLO")), Is.True);
+    Assert.That(tiles.Any(t => t.Kind == Compression.Registry.DefragBlockKind.Used
+                                && t.FileName != null && t.FileName.Contains("DATA")), Is.True);
+    Assert.That(tiles.Any(t => t.Kind == Compression.Registry.DefragBlockKind.MetadataReserved
+                                && t.FileName == "CRC32"), Is.True);
+  }
 }

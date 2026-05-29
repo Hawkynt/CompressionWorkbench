@@ -4,7 +4,13 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Nrg;
 
-public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "NRG is a Nero disc image (raw ISO 9660 sectors + footer) — defragmentation isn't meaningful.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
   public string Id => "Nrg";
   public string DisplayName => "NRG";
   public FormatCategory Category => FormatCategory.Archive;

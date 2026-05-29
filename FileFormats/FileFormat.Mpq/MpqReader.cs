@@ -27,6 +27,9 @@ public sealed class MpqReader {
 
   public IReadOnlyList<MpqEntry> Entries => _entries;
 
+  /// <summary>Gets the byte offset of the MPQ header within the stream.</summary>
+  public long HeaderOffset => _headerOffset;
+
   public MpqReader(Stream stream) {
     _stream = stream;
     using var br = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);

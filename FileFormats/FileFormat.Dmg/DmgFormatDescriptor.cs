@@ -4,7 +4,13 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Dmg;
 
-public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "DMG is an Apple disk image with mish blocks and a signed footer — defragmentation isn't meaningful.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
   public string Id => "Dmg";
   public string DisplayName => "DMG";
   public FormatCategory Category => FormatCategory.Archive;

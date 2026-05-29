@@ -10,7 +10,24 @@
          the sibling is checked out at ..\..\PNGCrushCS. CI without the sibling
          drops these tests instead of failing the build. -->
     <SiblingPresent>false</SiblingPresent>
-    <SiblingPresent Condition="Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj')">true</SiblingPresent>
+    <!-- Require every adapter sub-project the tests import. Mirror the gate in
+         FileFormat.PngCrushAdapters.csproj so a half-checked-out sibling (Core
+         present, sub-projects missing) is treated as "no sibling" instead of
+         producing CS0234 errors. -->
+    <SiblingPresent Condition="
+      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Png\FileFormat.Png.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Bmp\FileFormat.Bmp.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Apng\FileFormat.Apng.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Tiff\FileFormat.Tiff.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.BigTiff\FileFormat.BigTiff.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Mng\FileFormat.Mng.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Fli\FileFormat.Fli.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Dcx\FileFormat.Dcx.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Icns\FileFormat.Icns.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Mpo\FileFormat.Mpo.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Jpeg\FileFormat.Jpeg.csproj')
+      ">true</SiblingPresent>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(SiblingPresent)' != 'true'">
@@ -22,6 +39,8 @@
     <Compile Remove="Image\ColorSpaceLazinessTests.cs" />
     <Compile Remove="Image\ColorSpaceLazyExtractTests.cs" />
     <Compile Remove="Image\ColorSpaceSplitterTests.cs" />
+    <Compile Remove="Png\PngLayoutMapTests.cs" />
+    <Compile Remove="Tiff\TiffLayoutMapTests.cs" />
     <Compile Remove="PngCrushAdapters\**\*.cs" />
   </ItemGroup>
 
@@ -87,6 +106,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.ApLib\FileFormat.ApLib.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.ApkNativeLibs\FileFormat.ApkNativeLibs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Apfs\FileSystem.Apfs.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.AdvFs\FileSystem.AdvFs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.AppleDos\FileSystem.AppleDos.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ar\FileFormat.Ar.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Arc\FileFormat.Arc.csproj" />
@@ -144,6 +164,7 @@
     <ProjectReference Include="..\FileSystems\FileSystem.Ext\FileSystem.Ext.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.F2fs\FileSystem.F2fs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Fat\FileSystem.Fat.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.FatPlus\FileSystem.FatPlus.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Fits\FileFormat.Fits.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Fla\FileFormat.Fla.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Fmod\FileFormat.Fmod.csproj" />
@@ -159,6 +180,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Gar\FileFormat.Gar.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.GodotPck\FileFormat.GodotPck.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Grp\FileFormat.Grp.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Gfs2\FileSystem.Gfs2.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Gzip\FileFormat.Gzip.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ha\FileFormat.Ha.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Hdf5\FileFormat.Hdf5.csproj" />
@@ -264,6 +286,13 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Mp4\FileFormat.Mp4.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ogg\FileFormat.Ogg.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.MinixFs\FileSystem.MinixFs.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.MinixV1\FileSystem.MinixV1.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.MinixV2\FileSystem.MinixV2.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Nilfs2\FileSystem.Nilfs2.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Tux2\FileSystem.Tux2.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Tux3\FileSystem.Tux3.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.SmartFs\FileSystem.SmartFs.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.DragonFs\FileSystem.DragonFs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Mpq\FileFormat.Mpq.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Msa\FileSystem.Msa.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Msi\FileFormat.Msi.csproj" />
@@ -275,6 +304,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Nrg\FileFormat.Nrg.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Nsa\FileFormat.Nsa.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Nsis\FileFormat.Nsis.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Nss\FileSystem.Nss.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Ntfs\FileSystem.Ntfs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Nwfs\FileSystem.Nwfs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Ocfs2\FileSystem.Ocfs2.csproj" />
@@ -341,6 +371,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Tar\FileFormat.Tar.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.TfRecord\FileFormat.TfRecord.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Tnef\FileFormat.Tnef.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.TFat\FileSystem.TFat.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.TrDos\FileSystem.TrDos.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Ubifs\FileSystem.Ubifs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Udf\FileSystem.Udf.csproj" />
@@ -352,6 +383,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.UnrealPak\FileFormat.UnrealPak.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.UuEncoding\FileFormat.UuEncoding.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Vdfs\FileSystem.Vdfs.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.VxFs\FileSystem.VxFs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Vdi\FileFormat.Vdi.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Vhd\FileFormat.Vhd.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Vmdk\FileFormat.Vmdk.csproj" />

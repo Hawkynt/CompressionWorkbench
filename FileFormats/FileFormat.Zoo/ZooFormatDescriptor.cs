@@ -4,7 +4,43 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Zoo;
 
-public sealed class ZooFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class ZooFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the Zoo archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the Zoo archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new ZooReader(stream);
+        return r.Entries.Select(e => (e.EffectiveName, r.ExtractEntry(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        var w = new ZooWriter(ms);
+        foreach (var (n, d) in files) w.AddEntry(n, d);
+        w.Finish();
+        return ms.ToArray();
+      });
+  }
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    if (archive.Length < ZooConstants.ArchiveHeaderSize) yield break;
+
+    yield return new DefragBlockInfo(0, ZooConstants.ArchiveHeaderSize, DefragBlockKind.MetadataReserved, FileName: "Zoo Archive Header");
+
+    var r = new ZooReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.DataOffset > 0 && e.CompressedSize > 0)
+        yield return new DefragBlockInfo(e.DataOffset, e.CompressedSize, DefragBlockKind.Used, FileName: e.EffectiveName);
+    }
+  }
+
   public string Id => "Zoo";
   public string DisplayName => "ZOO";
   public FormatCategory Category => FormatCategory.Archive;

@@ -243,7 +243,7 @@ State legend:
 | `FileFormat.Pak`        | WORM  | PAK (Quake)                        |
 | `FileFormat.Pbp`        | WORM  | PSP PBP archive                    |
 | `FileFormat.Psarc`      | WORM  | PSARC (Sony)                       |
-| `FileFormat.Rgss`       | R     | RPG Maker RGSSAD                   |
+| `FileFormat.Rgss`       | WORM  | RPG Maker RGSSAD                   |
 | `FileFormat.Rpa`        | R     | Ren'Py Archive                     |
 | `FileFormat.Sarc`       | WORM  | Nintendo SARC                      |
 | `FileFormat.Sfar`       | R     | BioWare SFAR (Mass Effect)         |

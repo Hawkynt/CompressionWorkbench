@@ -4,7 +4,36 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Xfs;
 
-public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable {
+public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+
+  /// <summary>
+  /// Walks the per-AG superblock + AGF/AGI/AGFL + bnobt/cntbt/inobt headers
+  /// (yielded as MetadataReserved tiles) and the root inode's directory
+  /// listing, then yields each child file's BMBT_REC packed-128-bit extents
+  /// as Used runs (with adjacent runs coalesced). Inline (<c>local</c>
+  /// fork-format) inodes surface as MetadataReserved — the file content
+  /// lives inside the inode itself.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => XfsExtentMap.Enumerate(image);
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    var mover = new XfsBlockMover();
+    image.Position = 0;
+    mover.Init(image); // reads only the 512-byte superblock
+    mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+  }
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    var mover = new XfsBlockMover();
+    image.Position = 0;
+    mover.Init(image); // reads only the 512-byte superblock
+    mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+  }
 
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
@@ -39,8 +68,8 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
-    FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".xfs";
   public IReadOnlyList<string> Extensions => [".xfs"];
   public IReadOnlyList<string> CompoundExtensions => [];

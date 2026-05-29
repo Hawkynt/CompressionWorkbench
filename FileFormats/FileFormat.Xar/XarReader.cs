@@ -19,6 +19,9 @@ public sealed class XarReader {
   /// <summary>All entries in the archive.</summary>
   public IReadOnlyList<XarEntry> Entries => _entries;
 
+  /// <summary>Byte offset where the data heap begins (after header + TOC).</summary>
+  public long HeapStart => _heapStart;
+
   /// <summary>Creates a new XAR reader for the given stream.</summary>
   public XarReader(Stream stream) {
     _stream = stream;

@@ -13,7 +13,11 @@ namespace FileFormat.Mp4;
 /// codec is obscure.
 /// </summary>
 public sealed class Mp4Demuxer {
-  public sealed record Track(int Id, string HandlerType, string CodecFourCc, byte[] Data, long DurationTicks, int Timescale);
+  /// <summary>A single sample (video frame or audio packet).</summary>
+  public sealed record SampleEntry(byte[] Data);
+
+  public sealed record Track(int Id, string HandlerType, string CodecFourCc, byte[] Data, long DurationTicks, int Timescale,
+                             IReadOnlyList<SampleEntry> Samples);
 
   public IReadOnlyList<Track> Demux(byte[] file) {
     var parser = new BoxParser();
@@ -56,8 +60,9 @@ public sealed class Mp4Demuxer {
       : ReadChunkOffsets64(file, co64!);
     var samplesPerChunk = ReadSampleToChunk(file, stsc, chunkOffsets.Count);
 
-    // Emit sample bytes concatenated in track order.
+    // Emit sample bytes concatenated in track order, also collecting individual samples.
     using var body = new MemoryStream();
+    var samples = new List<SampleEntry>();
     var sampleIdx = 0;
     for (var chunk = 0; chunk < chunkOffsets.Count; ++chunk) {
       var count = samplesPerChunk[chunk];
@@ -65,7 +70,10 @@ public sealed class Mp4Demuxer {
       for (var s = 0; s < count && sampleIdx < sampleSizes.Count; ++s, ++sampleIdx) {
         var size = sampleSizes[sampleIdx];
         if (offset + size > file.Length) break;
-        body.Write(file, (int)offset, size);
+        var sampleBytes = new byte[size];
+        Array.Copy(file, (int)offset, sampleBytes, 0, size);
+        body.Write(sampleBytes, 0, size);
+        samples.Add(new SampleEntry(sampleBytes));
         offset += size;
       }
     }
@@ -91,7 +99,7 @@ public sealed class Mp4Demuxer {
         file.AsSpan((int)(tkhd.BodyOffset + (version == 1 ? 20 : 12))));
     }
 
-    return new Track(id, handlerType, codecFourCc, sampleData, duration, timescale);
+    return new Track(id, handlerType, codecFourCc, sampleData, duration, timescale, samples);
   }
 
   private static string ReadCodecFourCc(byte[] file, BoxParser.Box stsd) {

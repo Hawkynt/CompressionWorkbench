@@ -105,4 +105,215 @@ public class Yaffs2Tests {
     var entries = d.List(ms, null);
     Assert.That(entries.Select(e => e.Name), Does.Contain("FULL.yaffs2"));
   }
+
+  // ── Capability checks ─────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsCreatable() {
+    var d = new FileSystem.Yaffs2.Yaffs2FormatDescriptor();
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+  }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsModifiable() {
+    var d = new FileSystem.Yaffs2.Yaffs2FormatDescriptor();
+    Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+  }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsDefragmentable() {
+    var d = new FileSystem.Yaffs2.Yaffs2FormatDescriptor();
+    Assert.That(d, Is.InstanceOf<IArchiveDefragmentable>());
+  }
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ImplementsExtentMap() {
+    var d = new FileSystem.Yaffs2.Yaffs2FormatDescriptor();
+    Assert.That(d, Is.InstanceOf<IFilesystemExtentMap>());
+  }
+
+  // ── Writer round-trip tests ────────────────────────────────────────
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_SingleFile_RoundTrips() {
+    var payload = "Hello YAFFS2!"u8.ToArray();
+    var w = new FileSystem.Yaffs2.Yaffs2Writer();
+    w.AddFile("test.txt", payload);
+    var image = w.Build();
+
+    // Verify via scanner
+    var scan = FileSystem.Yaffs2.Yaffs2Scanner.Scan(image);
+    Assert.That(scan.ParseOk, Is.True);
+    Assert.That(scan.ChunkSize, Is.EqualTo(ChunkSize));
+    Assert.That(scan.SpareSize, Is.EqualTo(SpareSize));
+
+    // Find the file object
+    var fileObj = scan.Objects.FirstOrDefault(o => o.Type == FileSystem.Yaffs2.Yaffs2Scanner.YObjectType.File && o.Name == "test.txt");
+    Assert.That(fileObj, Is.Not.Null);
+    Assert.That(scan.DataChunks.ContainsKey(fileObj!.ObjectId), Is.True);
+
+    // Verify data round-trips
+    var chunks = scan.DataChunks[fileObj.ObjectId];
+    var data = new byte[chunks.Sum(c => c.Length)];
+    var pos = 0;
+    foreach (var c in chunks) { c.CopyTo(data, pos); pos += c.Length; }
+    Assert.That(data[..payload.Length], Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_ThreeFiles_RoundTrip() {
+    var w = new FileSystem.Yaffs2.Yaffs2Writer();
+    var file1 = "alpha content"u8.ToArray();
+    var file2 = new byte[3000]; // spans 2 chunks
+    for (var i = 0; i < file2.Length; i++) file2[i] = (byte)(i & 0xFF);
+    var file3 = "tiny"u8.ToArray();
+
+    w.AddFile("alpha.txt", file1);
+    w.AddFile("bigfile.bin", file2);
+    w.AddFile("small.dat", file3);
+    var image = w.Build();
+
+    var scan = FileSystem.Yaffs2.Yaffs2Scanner.Scan(image);
+    Assert.That(scan.ParseOk, Is.True);
+
+    var fileNames = scan.Objects
+      .Where(o => o.Type == FileSystem.Yaffs2.Yaffs2Scanner.YObjectType.File)
+      .Select(o => o.Name)
+      .ToHashSet();
+    Assert.That(fileNames, Does.Contain("alpha.txt"));
+    Assert.That(fileNames, Does.Contain("bigfile.bin"));
+    Assert.That(fileNames, Does.Contain("small.dat"));
+  }
+
+  // ── Descriptor Create round-trip ───────────────────────────────────
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_Create_RoundTrips() {
+    var tmp1 = Path.GetTempFileName();
+    var tmp2 = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp1, "first file content"u8.ToArray());
+      File.WriteAllBytes(tmp2, "second"u8.ToArray());
+
+      var inputs = new List<ArchiveInputInfo> {
+        new(tmp1, "readme.txt", false),
+        new(tmp2, "data.bin", false),
+      };
+
+      var d = new FileSystem.Yaffs2.Yaffs2FormatDescriptor();
+      using var ms = new MemoryStream();
+      d.Create(ms, inputs, new FormatCreateOptions());
+      ms.Position = 0;
+
+      // Verify via scanner that files exist
+      var image = ms.ToArray();
+      var scan = FileSystem.Yaffs2.Yaffs2Scanner.Scan(image);
+      Assert.That(scan.ParseOk, Is.True);
+      var fileNames = scan.Objects
+        .Where(o => o.Type == FileSystem.Yaffs2.Yaffs2Scanner.YObjectType.File)
+        .Select(o => o.Name)
+        .ToHashSet();
+      Assert.That(fileNames, Does.Contain("readme.txt"));
+      Assert.That(fileNames, Does.Contain("data.bin"));
+    } finally {
+      File.Delete(tmp1);
+      File.Delete(tmp2);
+    }
+  }
+
+  // ── Modify (Add/Remove) tests ─────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Modify_Add_AppendsFile() {
+    var w = new FileSystem.Yaffs2.Yaffs2Writer();
+    w.AddFile("original.txt", "original"u8.ToArray());
+    var image = w.Build();
+
+    var d = new FileSystem.Yaffs2.Yaffs2FormatDescriptor();
+    using var ms = new MemoryStream();
+    ms.Write(image);
+    ms.Position = 0;
+
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "added content"u8.ToArray());
+      d.Add(ms, [new ArchiveInputInfo(tmp, "added.txt", false)]);
+    } finally {
+      File.Delete(tmp);
+    }
+
+    ms.Position = 0;
+    var scan = FileSystem.Yaffs2.Yaffs2Scanner.Scan(ms.ToArray());
+    var fileNames = scan.Objects
+      .Where(o => o.Type == FileSystem.Yaffs2.Yaffs2Scanner.YObjectType.File)
+      .Select(o => o.Name)
+      .ToHashSet();
+    Assert.That(fileNames, Does.Contain("original.txt"));
+    Assert.That(fileNames, Does.Contain("added.txt"));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Modify_Remove_RemovesFile() {
+    var w = new FileSystem.Yaffs2.Yaffs2Writer();
+    w.AddFile("keep.txt", "keep me"u8.ToArray());
+    w.AddFile("delete.txt", "remove me"u8.ToArray());
+    var image = w.Build();
+
+    var d = new FileSystem.Yaffs2.Yaffs2FormatDescriptor();
+    using var ms = new MemoryStream(image);
+    d.Remove(ms, ["delete.txt"]);
+
+    ms.Position = 0;
+    var scan = FileSystem.Yaffs2.Yaffs2Scanner.Scan(ms.ToArray());
+    var fileNames = scan.Objects
+      .Where(o => o.Type == FileSystem.Yaffs2.Yaffs2Scanner.YObjectType.File)
+      .Select(o => o.Name)
+      .ToHashSet();
+    Assert.That(fileNames, Does.Contain("keep.txt"));
+    Assert.That(fileNames, Does.Not.Contain("delete.txt"));
+  }
+
+  // ── Extent map test ────────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void ExtentMap_ReturnsChunkExtents() {
+    var w = new FileSystem.Yaffs2.Yaffs2Writer();
+    w.AddFile("a.txt", "some data"u8.ToArray());
+    w.AddFile("b.txt", new byte[2048]);
+    var image = w.Build();
+
+    var d = new FileSystem.Yaffs2.Yaffs2FormatDescriptor();
+    using var ms = new MemoryStream(image);
+    var extents = d.EnumerateExtents(ms).ToList();
+
+    Assert.That(extents.Where(e => e.Kind == DefragBlockKind.MetadataReserved), Is.Not.Empty,
+      "Expected metadata-reserved regions (object headers)");
+    Assert.That(extents.Where(e => e.Kind == DefragBlockKind.Used), Is.Not.Empty,
+      "Expected file data regions");
+  }
+
+  // ── Defrag test ────────────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void Defragment_PreservesAllFiles() {
+    var w = new FileSystem.Yaffs2.Yaffs2Writer();
+    w.AddFile("one.txt", "first"u8.ToArray());
+    w.AddFile("two.txt", "second"u8.ToArray());
+    var image = w.Build();
+
+    var d = new FileSystem.Yaffs2.Yaffs2FormatDescriptor();
+    using var ms = new MemoryStream(image);
+    d.Defragment(ms);
+
+    ms.Position = 0;
+    var scan = FileSystem.Yaffs2.Yaffs2Scanner.Scan(ms.ToArray());
+    var fileNames = scan.Objects
+      .Where(o => o.Type == FileSystem.Yaffs2.Yaffs2Scanner.YObjectType.File)
+      .Select(o => o.Name)
+      .ToHashSet();
+    Assert.That(fileNames, Does.Contain("one.txt"));
+    Assert.That(fileNames, Does.Contain("two.txt"));
+  }
 }

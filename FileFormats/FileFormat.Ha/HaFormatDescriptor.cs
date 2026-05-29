@@ -4,7 +4,50 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ha;
 
-public sealed class HaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class HaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the HA archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the HA archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new HaReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FileName, r.Extract(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new HaWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddFile(n, d, DateTime.Now);
+        }
+        return ms.ToArray();
+      });
+  }
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    if (archive.Length < 2) yield break;
+
+    // 2-byte magic "HA"
+    yield return new DefragBlockInfo(0, 2, DefragBlockKind.MetadataReserved, FileName: "HA Magic");
+
+    var r = new HaReader(archive);
+    foreach (var e in r.Entries) {
+      var headerSize = e.DataOffset - (e.DataOffset - (17 + System.Text.Encoding.Latin1.GetByteCount(e.FileName) + 1));
+      var headerStart = e.DataOffset - (17 + System.Text.Encoding.Latin1.GetByteCount(e.FileName) + 1);
+      // Actually: header = 1(versionMethod) + 4(compSize) + 4(origSize) + 4(crc32) + 4(dosDateTime) + nameLen+1(null)
+      var nameLen = System.Text.Encoding.Latin1.GetByteCount(e.FileName) + 1;
+      var entryHeaderSize = 17 + nameLen;
+      var entryHeaderStart = e.DataOffset - entryHeaderSize;
+      yield return new DefragBlockInfo(entryHeaderStart, entryHeaderSize, DefragBlockKind.MetadataReserved, FileName: $"Header: {e.FileName}");
+      if (e.CompressedSize > 0)
+        yield return new DefragBlockInfo(e.DataOffset, e.CompressedSize, DefragBlockKind.Used, FileName: e.FileName);
+    }
+  }
+
   public string Id => "Ha";
   public string DisplayName => "HA";
   public FormatCategory Category => FormatCategory.Archive;

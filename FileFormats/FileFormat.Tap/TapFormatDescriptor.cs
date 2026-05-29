@@ -4,13 +4,13 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Tap;
 
-public sealed class TapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class TapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemBlockMover {
   public string Id => "Tap";
   public string DisplayName => "TAP";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".tap";
   public IReadOnlyList<string> Extensions => [".tap"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -38,5 +38,114 @@ public sealed class TapFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     using var w = new TapWriter(output, leaveOpen: true);
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
+  }
+
+  // ── IArchiveModifiable (in-place) ─────────────────────────────────────
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing TAP tape image.
+  /// Uses <see cref="TapModifier"/> for in-place append at EOF (Add) and
+  /// byte-shift removal (Remove) — O(touched bytes) for Add, O(tail size)
+  /// for Remove.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      TapModifier.RemoveFile(archive, name);
+      TapModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes named entries from an existing TAP tape image using
+  /// <see cref="TapModifier"/> — walks the block chain, shifts trailing bytes.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      TapModifier.RemoveFile(archive, name);
+  }
+
+  // ── IFilesystemBlockMover delegation ───────────────────────────────────
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    => new TapBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    => new TapBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
+
+  // ── IArchiveDefragmentable ───────────────────────────────────────────
+
+  public void Defragment(Stream archive)
+    => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Defragments a TAP image via rebuild (TAP is sequential with no directory).
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options)
+    => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+
+  // ── IArchiveLayoutMap ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Enumerates the byte layout of a TAP tape image. Each file occupies two
+  /// blocks: a 19-byte header block (flag + type + name + params + checksum,
+  /// preceded by a 2-byte length word) and a variable-size data block
+  /// (flag + payload + checksum, preceded by a 2-byte length word). Header
+  /// blocks are reported as MetadataReserved; data blocks as Used.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    using var ms = new MemoryStream();
+    archive.CopyTo(ms);
+    var data = ms.ToArray();
+    var pos = 0;
+    string? pendingName = null;
+
+    while (pos + 2 <= data.Length) {
+      var blockLength = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(pos));
+      if (blockLength == 0 || pos + 2 + blockLength > data.Length)
+        break;
+
+      var flag = data[pos + 2];
+
+      if (flag == 0x00 && blockLength == 19) {
+        // Header block: 2 (length word) + 19 (block body) = 21 bytes total
+        pendingName = System.Text.Encoding.ASCII.GetString(data, pos + 2 + 2, 10).TrimEnd(' ');
+        yield return new DefragBlockInfo(pos, 2 + blockLength, DefragBlockKind.MetadataReserved,
+          $"Header: {pendingName}");
+      } else if (flag == 0xFF) {
+        // Data block
+        var name = pendingName ?? $"BLOCK_{pos}";
+        pendingName = null;
+        yield return new DefragBlockInfo(pos, 2 + blockLength, DefragBlockKind.Used, name);
+      } else {
+        // Unknown block
+        yield return new DefragBlockInfo(pos, 2 + blockLength, DefragBlockKind.MetadataReserved,
+          $"Unknown block @{pos}");
+        pendingName = null;
+      }
+
+      pos += 2 + blockLength;
+    }
+
+    if (pos < data.Length)
+      yield return new DefragBlockInfo(pos, data.Length - pos, DefragBlockKind.Free);
+  }
+
+  // ── Shared delegates ─────────────────────────────────────────────────
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    var r = new TapReader(stream);
+    return r.Entries.Select(e => (e.Name, r.Extract(e)));
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    using var ms = new MemoryStream();
+    var w = new TapWriter(ms, leaveOpen: true);
+    foreach (var (n, d) in files)
+      w.AddFile(n, d);
+    w.Finish();
+    return ms.ToArray();
   }
 }

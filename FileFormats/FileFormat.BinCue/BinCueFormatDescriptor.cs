@@ -4,7 +4,13 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.BinCue;
 
-public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  public void Defragment(Stream archive)
+    => throw new NotSupportedException(
+      "BIN/CUE is a raw CD-ROM sector image — defragmentation isn't meaningful for a single ISO 9660 track.");
+  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+
   public string Id => "BinCue";
   public string DisplayName => "BIN/CUE";
   public FormatCategory Category => FormatCategory.Archive;
@@ -48,4 +54,9 @@ public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       iso.AddFile(name, data);
     output.Write(iso.Build());
   }
+
+  // ── IArchiveLayoutMap ───────────────────────────────────────────────
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => BinCueLayoutMap.Enumerate(archive);
 }

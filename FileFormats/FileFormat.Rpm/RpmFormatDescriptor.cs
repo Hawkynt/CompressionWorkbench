@@ -4,7 +4,71 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Rpm;
 
-public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the RPM archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the RPM archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new RpmReader(stream);
+        using var payload = r.GetPayloadStream();
+        var cpioReader = new FileFormat.Cpio.CpioReader(payload);
+        return cpioReader.ReadAll()
+          .Where(x => !x.Entry.IsDirectory)
+          .Select(x => (x.Entry.Name, x.Data))
+          .ToList();
+      },
+      buildImage: files => {
+        var w = new RpmWriter();
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        using var ms = new MemoryStream();
+        w.WriteTo(ms);
+        return ms.ToArray();
+      });
+  }
+
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    // RPM layout: Lead (96 B) + Signature header + Main header + Payload
+    // Walk the RPM header structures to find where the payload starts.
+    if (archive.Length < 96)
+      yield break;
+    archive.Position = 0;
+    yield return new DefragBlockInfo(0, RpmConstants.LeadSize, DefragBlockKind.MetadataReserved, FileName: "RPM Lead");
+
+    var pos = (long)RpmConstants.LeadSize;
+    // Skip Signature header + Main header by reading their index/store sizes
+    for (var h = 0; h < 2; h++) {
+      if (pos + 16 > archive.Length) yield break;
+      archive.Position = pos;
+      var hdr = new byte[16];
+      if (archive.Read(hdr, 0, 16) < 16) yield break;
+      // Validate header magic 8E AD E8 01
+      if (hdr[0] != 0x8E || hdr[1] != 0xAD || hdr[2] != 0xE8 || hdr[3] != 0x01) yield break;
+      var nindex = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(hdr.AsSpan(8));
+      var hsize = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(hdr.AsSpan(12));
+      var headerLen = 16 + nindex * 16 + hsize;
+      var label = h == 0 ? "Signature Header" : "Main Header";
+      yield return new DefragBlockInfo(pos, headerLen, DefragBlockKind.MetadataReserved, FileName: label);
+      pos += headerLen;
+      // After signature header, align to 8 bytes
+      if (h == 0) {
+        var rem = pos % 8;
+        if (rem != 0) pos += 8 - rem;
+      }
+    }
+
+    // Payload: rest of file
+    var payloadLen = archive.Length - pos;
+    if (payloadLen > 0)
+      yield return new DefragBlockInfo(pos, payloadLen, DefragBlockKind.Used, FileName: "payload.cpio");
+  }
+
   public string Id => "Rpm";
   public string DisplayName => "RPM";
   public FormatCategory Category => FormatCategory.Archive;

@@ -20,7 +20,11 @@ namespace FileFormat.Numpy;
 /// the only container semantics needed are DEFLATE + stored entries, both of
 /// which are handled by the BCL implementation.
 /// </remarks>
-public sealed class NpzFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class NpzFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
+
 
   public string Id => "Npz";
   public string DisplayName => "NumPy NPZ";

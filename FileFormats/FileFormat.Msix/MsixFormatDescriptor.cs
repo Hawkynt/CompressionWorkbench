@@ -16,7 +16,32 @@ namespace FileFormat.Msix;
 /// and capability declarations parsed from the manifest, followed by every
 /// ZIP entry verbatim.
 /// </summary>
-public sealed class MsixFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class MsixFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
+
+  /// <summary>Rebuild-based defrag delegating to ZIP (MSIX is a ZIP variant).</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag delegating to ZIP (MSIX is a ZIP variant).</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new ZipReader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.FileName, r.ExtractEntry(e)));
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        using (var w = new ZipWriter(ms, leaveOpen: true)) {
+          foreach (var (n, d) in files) w.AddEntry(n, d);
+          w.Finish();
+        }
+        return ms.ToArray();
+      });
+  }
+
 
   /// <summary>Unique format identifier.</summary>
   public string Id => "Msix";

@@ -12,7 +12,25 @@
       <repo>/FileFormats/FileFormat.PngCrushAdapters/, three levels deep.
     -->
     <SiblingPresent>false</SiblingPresent>
-    <SiblingPresent Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj')">true</SiblingPresent>
+    <!-- Require EVERY adapter dependency, not just FileFormat.Core. The sibling
+         repo is sometimes mid-refactor with Core present but sub-projects (Apng,
+         Tiff, BigTiff, Mng, Fli, Dcx, Icns, Mpo, Jpeg, Png, Bmp) missing — that
+         half-state would still set this to true under a Core-only check and then
+         fail with CS0234 for the missing namespaces. -->
+    <SiblingPresent Condition="
+      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Png\FileFormat.Png.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Bmp\FileFormat.Bmp.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Apng\FileFormat.Apng.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Tiff\FileFormat.Tiff.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.BigTiff\FileFormat.BigTiff.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Mng\FileFormat.Mng.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Fli\FileFormat.Fli.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Dcx\FileFormat.Dcx.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Icns\FileFormat.Icns.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Mpo\FileFormat.Mpo.csproj') and
+      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Jpeg\FileFormat.Jpeg.csproj')
+      ">true</SiblingPresent>
     <!-- Suppress default *.cs compile globbing when sibling is absent so adapter sources don't try to build. -->
     <EnableDefaultCompileItems Condition="'$(SiblingPresent)' != 'true'">false</EnableDefaultCompileItems>
   </PropertyGroup>

@@ -59,7 +59,7 @@ public sealed class ZstdStream : CompressionStream {
   /// <inheritdoc />
   protected override void CompressBlock(byte[] buffer, int offset, int count) {
     if (!this._initialized) {
-      this._compressor = new ZstdCompressor(InnerStream, this._compressionLevel);
+      this._compressor = new ZstdCompressor(InnerStream, this._compressionLevel, this._dictionary);
       this._initialized = true;
     }
 
@@ -69,7 +69,7 @@ public sealed class ZstdStream : CompressionStream {
   /// <inheritdoc />
   protected override void FinishCompression() {
     if (!this._initialized) {
-      this._compressor = new ZstdCompressor(InnerStream, this._compressionLevel);
+      this._compressor = new ZstdCompressor(InnerStream, this._compressionLevel, this._dictionary);
       this._initialized = true;
     }
 

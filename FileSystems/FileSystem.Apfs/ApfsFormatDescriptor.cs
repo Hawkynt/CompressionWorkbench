@@ -5,48 +5,14 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Apfs;
 
 public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable {
+    IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable {
   public string Id => "Apfs";
   public string DisplayName => "APFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-
-  /// <summary>
-  /// Adds (or replaces by name) files inside an existing Apfs image.
-  /// Read-extract-rebuild via <see cref="ModifyRebuilder"/>; the rebuild
-  /// path doubles as a secure-wipe for replaced bytes.
-  /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs,
-      readEntries: stream => {
-        var r = new ApfsReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new ApfsWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
-
-  /// <summary>
-  /// Removes the named entries from an existing Apfs image. The image is
-  /// rebuilt without the target entries — old file bytes are wiped because
-  /// the new layout starts fresh, leaving no forensic trace.
-  /// </summary>
-  public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames,
-      readEntries: stream => {
-        var r = new ApfsReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new ApfsWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
 
   public string DefaultExtension => ".apfs";
   public IReadOnlyList<string> Extensions => [".apfs"];
@@ -56,7 +22,16 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Apple File System container image";
+  /// <summary>
+  /// APFS container image — WORM. The writer emits real NXSB/APSB
+  /// superblocks, container/volume object maps, and a populated FS-tree
+  /// B-tree with inode + drec + file_extent records under Fletcher-64
+  /// checksums. True in-flight Add/Remove would require B-tree split/merge,
+  /// xid-keyed object map updates, checkpoint advance, spaceman bitmap
+  /// allocation, and per-block Fletcher-64 recomputation — multi-week work.
+  /// Per project policy, WORM = create only; no in-flight modification.
+  /// </summary>
+  public string Description => "Apple File System container image (WORM)";
 
   // WORM write constraints.
   public long? MaxTotalArchiveSize => null;
@@ -88,5 +63,31 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>
+  /// Mode-aware APFS defragmentor via read-extract-rebuild dispatch through
+  /// <see cref="DefragRebuilder"/>. All four <see cref="DefragMode"/> values
+  /// supported. The writer always emits a fresh contiguous-from-start image
+  /// with valid Fletcher-64 checksums and a populated FS-tree B-tree.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new ApfsReader(stream, leaveOpen: true);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: files => {
+        var w = new ApfsWriter();
+        // Cap the rebuilt image to the smallest valid APFS image — the
+        // original archive length governs the writer's footprint via
+        // DefragRebuilder.Rebuild's SetLength call.
+        w.SetMinImageSize(Math.Max(archive.Length, ApfsConstants.MIN_APFS_IMAGE_SIZE));
+        foreach (var (n, d) in files) w.AddFile(n, d);
+        return w.Build();
+      });
   }
 }

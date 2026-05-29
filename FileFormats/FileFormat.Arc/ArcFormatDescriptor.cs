@@ -4,7 +4,52 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Arc;
 
-public sealed class ArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class ArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the ARC archive in listing order.</summary>
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <summary>Rebuild-based defrag: extracts then re-creates the ARC archive per the requested mode.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    DefragRebuilder.Rebuild(archive, options,
+      readEntries: stream => {
+        var r = new ArcReader(stream);
+        var list = new List<(string Name, byte[] Data)>();
+        while (r.GetNextEntry() is { } e)
+          list.Add((e.FileName, r.ReadEntryData()));
+        return list;
+      },
+      buildImage: files => {
+        using var ms = new MemoryStream();
+        var w = new ArcWriter(ms, ArcCompressionMethod.Crunched);
+        foreach (var (n, d) in files) w.AddEntry(n, d);
+        w.Finish();
+        return ms.ToArray();
+      });
+  }
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    archive.Position = 0;
+    var r = new ArcReader(archive);
+    while (r.GetNextEntry() is { } e) {
+      var headerSize = e.Method >= ArcConstants.MethodStored ? ArcConstants.NewHeaderSize : ArcConstants.OldHeaderSize;
+      // After GetNextEntry, stream is positioned at data start
+      var dataStart = archive.Position;
+      var headerStart = dataStart - headerSize;
+      yield return new DefragBlockInfo(headerStart, headerSize, DefragBlockKind.MetadataReserved, FileName: $"Header: {e.FileName}");
+      if (e.CompressedSize > 0)
+        yield return new DefragBlockInfo(dataStart, e.CompressedSize, DefragBlockKind.Used, FileName: e.FileName);
+      // Skip past data to next entry
+      archive.Position = dataStart + e.CompressedSize;
+    }
+    // End-of-archive marker (2 bytes: 0x1A 0x00)
+    var eoaPos = archive.Position - 2; // GetNextEntry already consumed the 0x1A 0x00
+    if (eoaPos >= 0)
+      yield return new DefragBlockInfo(eoaPos, 2, DefragBlockKind.MetadataReserved, FileName: "End-of-archive");
+  }
+
   public string Id => "Arc";
   public string DisplayName => "ARC";
   public FormatCategory Category => FormatCategory.Archive;

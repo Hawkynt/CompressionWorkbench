@@ -13,6 +13,9 @@ public sealed class VpkReader {
   private readonly int _version;
   private readonly long _dataOffset; // offset where embedded data starts (after directory tree)
 
+  /// <summary>Gets the byte offset where embedded file data begins.</summary>
+  public long DataOffset => _dataOffset;
+
   public IReadOnlyList<VpkEntry> Entries => _entries;
   public int Version => _version;
 
