@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.CpcDsk;
 
-public sealed class CpcDskFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class CpcDskFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks a Standard or Extended CPC DSK image and yields the actual on-disk
@@ -86,6 +86,41 @@ public sealed class CpcDskFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       var entryName = Path.GetFileName(name);
       CpcDskModifier.RemoveFile(archive, entryName, wipeData: true);
     }
+  }
+
+  /// <summary>
+  /// Zeros all unused space in a CPC DSK image: unallocated data sectors and
+  /// the cluster-tip slack at the tail of each AMSDOS file's last sector.
+  /// CP/M allocates whole sectors but tracks length only to 128-byte record
+  /// granularity, so the bytes between a file's real length and its last
+  /// allocated sector boundary are slack and get zero-filled when
+  /// <paramref name="wipeClusterTips"/> is set. Live file data and the AMSDOS
+  /// directory / Track-Info metadata are preserved.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    // Build a file-size lookup from the logical AMSDOS files. The extent map
+    // names Used runs by the AMSDOS "base.ext" filename, which is exactly the
+    // key EnumerateLogicalFiles returns — so cluster-tip detection lines up.
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        var sizeMap = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, data) in CpcDskModifier.EnumerateLogicalFiles(image))
+          sizeMap[name] = data.LongLength;
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    var extents = CpcDskExtentMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
   }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
