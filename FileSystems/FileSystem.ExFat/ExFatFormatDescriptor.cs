@@ -5,7 +5,39 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ExFat;
 
-public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IFormatOptionsSchema {
+public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  /// <summary>
+  /// Zeros all unused space in the exFAT image: free clusters, cluster-tip slack
+  /// (the bytes between a file's real size and the end of its last allocated
+  /// cluster), and any gaps outside the reserved/FAT/heap-used regions. Driven
+  /// by the generic <see cref="UnusedSpaceWiper"/> over the exFAT extent map,
+  /// with a directory-entry-based file-size lookup for cluster-tip precision.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        var reader = new ExFatReader(image);
+        var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var entry in reader.Entries)
+          if (!entry.IsDirectory)
+            sizeMap[entry.Name] = entry.Size;
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    var extents = ExFatExtentMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
+  }
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 

@@ -75,6 +75,18 @@ public static class ExFatExtentMap {
     WalkDirectoryStream(image, cache, fatOffset, clusterHeapOffset, clusterCount, clusterSize,
       rootCluster, "", entries, [rootCluster]);
 
+    // The root directory's own cluster chain is metadata — reserve it so it is
+    // neither reported as Free nor treated as wipeable unused space. (Child
+    // directory clusters surface as Used/Directory runs via the entry list.)
+    foreach (var run in WalkClusterChainStream(cache, fatOffset, clusterCount,
+               clusterSize, rootCluster, size: 0, noFatChain: false)) {
+      for (var c = run.firstCluster; c < run.firstCluster + run.clusterCount && c < clusterOwners.Length; c++)
+        clusterOwners[c] = "<root>";
+      var off = clusterHeapOffset + (long)(run.firstCluster - 2) * clusterSize;
+      yield return new DefragBlockInfo(off, (long)run.clusterCount * clusterSize,
+        DefragBlockKind.MetadataReserved, FileName: "exFAT root directory");
+    }
+
     // Yield each entry's cluster runs.
     foreach (var (name, firstCluster, size, isDir, noFatChain) in entries) {
       var isMeta = name is "<bitmap>" or "<upcase>";
