@@ -180,10 +180,10 @@ public sealed class F2fsReader : IDisposable {
     var dentryOff = blockOff + bitmapSize + reserved;
     var nameOff = dentryOff + nrDentry * 11;
 
-    for (var i = 0; i < nrDentry; ++i) {
+    for (var i = 0; i < nrDentry;) {
       var byteIdx = blockOff + i / 8;
       if (byteIdx >= this._data.Length) break;
-      if ((this._data[byteIdx] & (1 << (i % 8))) == 0) continue;
+      if ((this._data[byteIdx] & (1 << (i % 8))) == 0) { ++i; continue; }
 
       var entryOff = dentryOff + i * 11;
       if (entryOff + 11 > this._data.Length) break;
@@ -191,14 +191,19 @@ public sealed class F2fsReader : IDisposable {
       var ino = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(entryOff + 4));
       var nameLen = BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(entryOff + 8));
       var fileType = this._data[entryOff + 10];
-      if (ino == 0 || nameLen == 0 || nameLen > 255) continue;
+
+      // A name spans ceil(nameLen / SLOT_LEN) consecutive slots; advance past all of them.
+      var slots = nameLen <= 0 ? 1 : (nameLen + SlotLen - 1) / SlotLen;
+
+      if (ino == 0 || nameLen == 0 || nameLen > 255) { i += slots; continue; }
 
       var fnOff = nameOff + i * SlotLen;
       var fnLen = Math.Min(nameLen, this._data.Length - fnOff);
-      if (fnLen <= 0 || fnOff + fnLen > this._data.Length) continue;
+      if (fnLen <= 0 || fnOff + fnLen > this._data.Length) { i += slots; continue; }
 
       var name = Encoding.UTF8.GetString(this._data, fnOff, fnLen);
       name = name.TrimEnd('\0');
+      i += slots;
       if (string.IsNullOrEmpty(name) || name == "." || name == "..") continue;
 
       var fullPath = string.IsNullOrEmpty(basePath) ? name : $"{basePath}/{name}";

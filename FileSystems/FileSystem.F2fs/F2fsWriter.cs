@@ -199,21 +199,23 @@ public sealed class F2fsWriter {
     // cur_seg values are RELATIVE to main_blkaddr (i.e. main-relative segno).
     var mainStart = SegMain * BlocksPerSeg;
 
-    // Root inode block (HOT_NODE seg, block 0).
-    var rootInodeBlock = mainStart + MainSegHotNode * BlocksPerSeg + 0;
+    // ---- Section / segment geometry ----
+    // mkfs reserves segment 0 (one segment of pre-roll padding before segment0_blkaddr=512).
+    // segment_count counts segments from segment0 onwards.
+    var countedSegments = totalSegments - 1;
+    var segmentCountMain = countedSegments - (SegMain - SegCp); // = 31 - 7 = 24 for default.
+    var totalSections = countedSegments / SegsPerSec;
+    var totalZones = totalSections / SecsPerZone;
 
     // ---- Build the directory tree from slash-separated names ----
     // The root directory keeps RootIno; every intermediate path component becomes a
     // subdirectory inode with its own nid. Files become regular-file inodes. Each
-    // directory carries inline dentries naming its direct children, so the reader's
-    // recursive walk reconstructs the exact nested path.
+    // directory names its direct children either with inline dentries (small dirs) or
+    // with regular dentry data blocks (large dirs), so the reader's recursive walk
+    // reconstructs the exact nested path.
     uint nextNid = RootIno + 1; // 4, 5, 6, ...
-    var warmNodeSegStart = mainStart + MainSegWarmNode * BlocksPerSeg;
-    var warmDataSegStart = mainStart + MainSegWarmData * BlocksPerSeg;
-    var nextWarmNodeBlk = 0;
-    var nextWarmDataBlk = 0;
 
-    var root = new DirPlan { Nid = RootIno, InodeBlock = rootInodeBlock };
+    var root = new DirPlan { Nid = RootIno, InodeBlock = -1 };
     var filePlan = new List<FilePlan>();
     var subdirPlan = new List<DirPlan>();
 
@@ -227,12 +229,9 @@ public sealed class F2fsWriter {
       for (var p = 0; p < parts.Length - 1; ++p) {
         var component = parts[p];
         if (!dir.SubDirs.TryGetValue(component, out var child)) {
-          if (nextWarmNodeBlk + 1 > BlocksPerSeg)
-            throw new InvalidOperationException(
-              "F2FS writer: WARM_NODE segment full (single-segment writer limit).");
           child = new DirPlan {
             Nid = nextNid++,
-            InodeBlock = warmNodeSegStart + nextWarmNodeBlk++,
+            InodeBlock = -1,
             ParentNid = dir.Nid,
           };
           dir.SubDirs.Add(component, child);
@@ -244,36 +243,100 @@ public sealed class F2fsWriter {
 
       // The final component is the file itself.
       var fileName = parts[^1];
-      var dataBlocksNeeded = data.Length == 0 ? 0 : (data.Length + BlockSize - 1) / BlockSize;
-      if (nextWarmNodeBlk + 1 > BlocksPerSeg
-          || nextWarmDataBlk + dataBlocksNeeded > BlocksPerSeg)
-        throw new InvalidOperationException(
-          "F2FS writer: WARM_NODE/WARM_DATA segment full (single-segment writer limit).");
-
-      var inodeBlock = warmNodeSegStart + nextWarmNodeBlk++;
-      var dataBlocks = new List<int>(dataBlocksNeeded);
-      for (var i = 0; i < dataBlocksNeeded; ++i)
-        dataBlocks.Add(warmDataSegStart + nextWarmDataBlk++);
-
       var fileNid = nextNid++;
       filePlan.Add(new FilePlan {
         Nid = fileNid,
         Name = fileName,
         Data = data,
-        InodeBlock = inodeBlock,
-        DataBlocks = dataBlocks,
+        InodeBlock = -1,
+        DataBlocks = [],
         ParentNid = dir.Nid,
       });
       dir.Children.Add((fileNid, fileName, FtRegFile));
     }
 
-    // Every directory's inline dentry area must fit its children plus "." and "..".
+    // Decide each directory's dentry storage: inline when the children (plus "." and
+    // "..") fit the inline slot count, otherwise regular dentry data blocks.
     const int dotsSlots = 2;
-    foreach (var d in subdirPlan.Prepend(root)) {
+    var allDirs = subdirPlan.Prepend(root).ToList();
+    foreach (var d in allDirs) {
       var slots = dotsSlots + d.Children.Sum(c => DentrySlotsFor(c.Name));
-      if (slots > NrInlineDentry)
-        throw new InvalidOperationException(
-          $"F2FS writer: a directory has too many/too-long children for an inline dentry ({slots} slots > {NrInlineDentry}).");
+      if (slots <= NrInlineDentry) {
+        d.UsesInlineDentry = true;
+        d.DentryBlockCount = 0;
+      } else {
+        d.UsesInlineDentry = false;
+        // Linear data-block layout: pack dentry slots into consecutive blocks, each
+        // holding NrDentryInBlock slots. "." and ".." occupy the first two slots of
+        // block 0. A multi-slot name never straddles a block boundary.
+        d.DentryBlockCount = PlanDentryBlockCount(d.Children);
+      }
+    }
+
+    // ---- Lay out the main area dynamically as contiguous multi-segment regions ----
+    //   HOT_NODE   : root inode (1 block)
+    //   WARM_NODE  : subdirectory + file inodes (one block each)
+    //   COLD_NODE  : empty (kept type-tagged)
+    //   HOT_DATA   : directory dentry data blocks (non-inline dirs)
+    //   WARM_DATA  : file data blocks
+    //   COLD_DATA  : empty (kept type-tagged)
+    // Each region spans ceil(blocks / BlocksPerSeg) segments so it can hold far more
+    // than a single segment's worth of blocks.
+    var warmNodeBlockCount = subdirPlan.Count + filePlan.Count;
+    var dentryBlockTotal = allDirs.Sum(d => d.DentryBlockCount);
+    var dataBlockTotal = filePlan.Sum(f => f.Data.Length == 0
+      ? 0 : (f.Data.Length + BlockSize - 1) / BlockSize);
+
+    var hotNodeSegs = 1;
+    var warmNodeSegs = Math.Max(1, (warmNodeBlockCount + BlocksPerSeg - 1) / BlocksPerSeg);
+    var coldNodeSegs = 1;
+    var hotDataSegs = Math.Max(1, (dentryBlockTotal + BlocksPerSeg - 1) / BlocksPerSeg);
+    var warmDataSegs = Math.Max(1, (dataBlockTotal + BlocksPerSeg - 1) / BlocksPerSeg);
+    var coldDataSegs = 1;
+
+    var hotNodeSegStart = 0;
+    var warmNodeSegStart = hotNodeSegStart + hotNodeSegs;
+    var coldNodeSegStart = warmNodeSegStart + warmNodeSegs;
+    var hotDataSegStart = coldNodeSegStart + coldNodeSegs;
+    var warmDataSegStart = hotDataSegStart + hotDataSegs;
+    var coldDataSegStart = warmDataSegStart + warmDataSegs;
+    var usedMainSegs = coldDataSegStart + coldDataSegs;
+
+    if (usedMainSegs > segmentCountMain)
+      throw new InvalidOperationException(
+        $"F2FS writer: payload needs {usedMainSegs} main segments but only {segmentCountMain} are available; "
+        + "increase the total segment count.");
+
+    var warmNodeBlkBase = mainStart + warmNodeSegStart * BlocksPerSeg;
+    var hotDataBlkBase = mainStart + hotDataSegStart * BlocksPerSeg;
+    var warmDataBlkBase = mainStart + warmDataSegStart * BlocksPerSeg;
+
+    // Root inode lives at HOT_NODE block 0.
+    var rootInodeBlock = mainStart + hotNodeSegStart * BlocksPerSeg + 0;
+    root.InodeBlock = rootInodeBlock;
+
+    // Assign WARM_NODE inode blocks (subdirectory inodes first, then file inodes).
+    var nextWarmNodeBlk = 0;
+    foreach (var d in subdirPlan)
+      d.InodeBlock = warmNodeBlkBase + nextWarmNodeBlk++;
+    foreach (var f in filePlan)
+      f.InodeBlock = warmNodeBlkBase + nextWarmNodeBlk++;
+
+    // Assign HOT_DATA dentry blocks to every non-inline directory.
+    var nextHotDataBlk = 0;
+    foreach (var d in allDirs) {
+      if (d.UsesInlineDentry)
+        continue;
+      for (var b = 0; b < d.DentryBlockCount; ++b)
+        d.DentryBlocks.Add(hotDataBlkBase + nextHotDataBlk++);
+    }
+
+    // Assign WARM_DATA blocks to each file.
+    var nextWarmDataBlk = 0;
+    foreach (var f in filePlan) {
+      var blocksNeeded = f.Data.Length == 0 ? 0 : (f.Data.Length + BlockSize - 1) / BlockSize;
+      for (var i = 0; i < blocksNeeded; ++i)
+        f.DataBlocks.Add(warmDataBlkBase + nextWarmDataBlk++);
     }
 
     // Warm-node inodes are the subdirectory inodes plus the regular-file inodes, laid out
@@ -286,16 +349,8 @@ public sealed class F2fsWriter {
     var warmNodeCount = warmNodeInodes.Count;
     var validNodeCount = 1 + warmNodeCount; // root + warm-node inodes.
     var validInodeCount = validNodeCount;
-    var totalDataBlocks = filePlan.Sum(f => f.DataBlocks.Count);
+    var totalDataBlocks = dataBlockTotal + dentryBlockTotal;
     var validBlockCount = validNodeCount + totalDataBlocks;
-
-    // ---- Section / segment geometry ----
-    // mkfs reserves segment 0 (one segment of pre-roll padding before segment0_blkaddr=512).
-    // segment_count counts segments from segment0 onwards.
-    var countedSegments = totalSegments - 1;
-    var segmentCountMain = countedSegments - (SegMain - SegCp); // = 31 - 7 = 24 for default.
-    var totalSections = countedSegments / SegsPerSec;
-    var totalZones = totalSections / SecsPerZone;
 
     // ---- 1) Write file data and file inodes (regular files in WARM_NODE/WARM_DATA) ----
     foreach (var f in filePlan) {
@@ -308,12 +363,18 @@ public sealed class F2fsWriter {
       WriteRegularFileInode(disk, f.InodeBlock * BlockSize, f.Nid, f.Name, f.Data.Length, f.DataBlocks, f.ParentNid);
     }
 
-    // ---- 2) Write directory inodes (root + subdirectories) with inline dentries ----
-    WriteDirectoryInodeInline(disk, root.InodeBlock * BlockSize, root.Nid, parentNid: RootIno,
-      root.Children, isRoot: true);
-    foreach (var d in subdirPlan)
-      WriteDirectoryInodeInline(disk, d.InodeBlock * BlockSize, d.Nid, parentNid: d.ParentNid,
-        d.Children, isRoot: false);
+    // ---- 2) Write directory inodes (root + subdirectories). Small directories keep
+    //         inline dentries; large directories spill into regular dentry data blocks. ----
+    foreach (var d in allDirs) {
+      var isRoot = d.Nid == RootIno;
+      var dirParent = isRoot ? RootIno : d.ParentNid;
+      if (d.UsesInlineDentry)
+        WriteDirectoryInodeInline(disk, d.InodeBlock * BlockSize, d.Nid, parentNid: dirParent,
+          d.Children, isRoot: isRoot);
+      else
+        WriteDirectoryInodeWithDataBlocks(disk, d.InodeBlock * BlockSize, d.Nid, parentNid: dirParent,
+          d.Children, d.DentryBlocks, isRoot: isRoot);
+    }
 
     // ---- 3) Write NAT entries on disk (file/dir entries; root NAT also lives in journal) ----
     var natBlkAddr = SegNat * BlocksPerSeg;
@@ -338,31 +399,30 @@ public sealed class F2fsWriter {
       sitMaps[i] = new byte[64];
     }
 
-    // HOT_NODE: 1 valid block (root inode).
-    sitTypes[MainSegHotNode] = CursegHotNode;
-    sitVblocks[MainSegHotNode] = 1;
-    SetBit(sitMaps[MainSegHotNode], 0);
+    // Marks `count` consecutive valid blocks starting at the given region's first
+    // segment, spilling across as many segments as needed and tagging each with `type`.
+    void MarkRegion(int segStart, int segSpan, int count, int type) {
+      for (var s = 0; s < segSpan; ++s)
+        sitTypes[segStart + s] = type;
+      for (var b = 0; b < count; ++b) {
+        var seg = segStart + b / BlocksPerSeg;
+        SetBit(sitMaps[seg], b % BlocksPerSeg);
+        ++sitVblocks[seg];
+      }
+    }
 
-    // WARM_NODE: subdirectory + file inode count (all warm-node inodes).
-    sitTypes[MainSegWarmNode] = CursegWarmNode;
-    sitVblocks[MainSegWarmNode] = warmNodeCount;
-    for (var i = 0; i < warmNodeCount; ++i)
-      SetBit(sitMaps[MainSegWarmNode], i);
-
-    // COLD_NODE: empty.
-    sitTypes[MainSegColdNode] = CursegColdNode;
-
-    // HOT_DATA: empty (root uses inline dentry).
-    sitTypes[MainSegHotData] = CursegHotData;
-
-    // WARM_DATA: file data block count.
-    sitTypes[MainSegWarmData] = CursegWarmData;
-    sitVblocks[MainSegWarmData] = totalDataBlocks;
-    for (var i = 0; i < totalDataBlocks; ++i)
-      SetBit(sitMaps[MainSegWarmData], i);
-
-    // COLD_DATA: empty.
-    sitTypes[MainSegColdData] = CursegColdData;
+    // HOT_NODE: root inode (1 block).
+    MarkRegion(hotNodeSegStart, hotNodeSegs, 1, CursegHotNode);
+    // WARM_NODE: subdirectory + file inodes.
+    MarkRegion(warmNodeSegStart, warmNodeSegs, warmNodeCount, CursegWarmNode);
+    // COLD_NODE: empty (type-tagged).
+    MarkRegion(coldNodeSegStart, coldNodeSegs, 0, CursegColdNode);
+    // HOT_DATA: directory dentry data blocks (non-inline directories).
+    MarkRegion(hotDataSegStart, hotDataSegs, dentryBlockTotal, CursegHotData);
+    // WARM_DATA: file data blocks.
+    MarkRegion(warmDataSegStart, warmDataSegs, dataBlockTotal, CursegWarmData);
+    // COLD_DATA: empty (type-tagged).
+    MarkRegion(coldDataSegStart, coldDataSegs, 0, CursegColdData);
 
     // Write SIT entries to disk. mkfs.f2fs leaves the SIT region zero-filled and stores
     // entries for active segments in the SIT journal of the checkpoint pack. We follow the
@@ -374,12 +434,12 @@ public sealed class F2fsWriter {
 
     // ---- 5) Write checkpoint pack (both copies). ----
     var cpBlkAddr = SegCp * BlocksPerSeg;
-    var freeSegments = segmentCountMain - 6; // 6 active main segments.
+    var freeSegments = segmentCountMain - usedMainSegs; // segments not occupied by node/data regions.
     // user_block_count formula from mkfs: (free + 6 - ovp) * blocks_per_seg.
     // Need user_block_count < segment_count_main * blocks_per_seg per fsck sanity check.
     var rsvdSegments = 2u;        // fsmeta needs >= 9 (2+2+2+1+rsvd).
     var ovpSegments = 6u;         // > rsvd; modest reservation.
-    var userBlockCount = ((ulong)(freeSegments + 6) - ovpSegments) * BlocksPerSeg;
+    var userBlockCount = ((ulong)(freeSegments + usedMainSegs) - ovpSegments) * BlocksPerSeg;
 
     // Build the 6 CP-pack blocks once and copy into both pack slots.
     var cpPack = BuildCheckpointPack(
@@ -494,6 +554,13 @@ public sealed class F2fsWriter {
     public uint ParentNid;
     public readonly Dictionary<string, DirPlan> SubDirs = new(StringComparer.Ordinal);
     public readonly List<(uint Nid, string Name, byte Type)> Children = [];
+
+    // Dentry storage: inline (in the inode block) for small directories, or regular
+    // 4 KiB dentry data blocks for large ones. DentryBlocks holds the absolute block
+    // addresses of those data blocks when not inline.
+    public bool UsesInlineDentry = true;
+    public int DentryBlockCount;
+    public readonly List<int> DentryBlocks = [];
   }
 
   // ==================================================================
@@ -717,15 +784,15 @@ public sealed class F2fsWriter {
     foreach (var f in filePlan) {
       // For each WARM_DATA block: nid = file inode nid, ofs_in_node = 0..N-1.
       for (var j = 0; j < f.DataBlocks.Count; ++j) {
+        // The compact-summary block holds a single block's worth of data summaries.
+        // Once it is full we stop; this metadata is advisory for our reader, which
+        // recovers data-block locations from the inode i_addr pointers, not the summary.
+        if (summaryOff + 7 > BlockSize - SumFooterSize)
+          return block;
         BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(summaryOff), f.Nid);
         block[summaryOff + 4] = 1; // version
         BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(summaryOff + 5), (ushort)j); // ofs_in_node
         summaryOff += 7;
-
-        // mkfs format wraps to next block when offset+SUMMARY_SIZE > 4096-SUM_FOOTER_SIZE.
-        // For our small file counts this never triggers.
-        if (summaryOff + 7 > BlockSize - SumFooterSize)
-          break;
       }
     }
 
@@ -890,6 +957,115 @@ public sealed class F2fsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(s[(footerOff + 8)..], 0);
     BinaryPrimitives.WriteUInt64LittleEndian(s[(footerOff + 12)..], 1UL);
     BinaryPrimitives.WriteUInt32LittleEndian(s[(footerOff + 20)..], 0);
+  }
+
+  // ==================================================================
+  // Directory inode whose dentries live in regular 4 KiB data blocks
+  // (used when the directory has more children than the inline area holds).
+  //
+  // Each data block is an f2fs_dentry_block:
+  //   dentry_bitmap[27] + reserved[3] + f2fs_dir_entry[214] + filename[214][8] = 4096.
+  // "." and ".." are the first two dentries of block 0. The directory inode carries no
+  // inline-dentry flag; its i_addr[] direct pointers reference the dentry data blocks in
+  // order, exactly as the reader's traditional-layout path walks them.
+  // ==================================================================
+  private static void WriteDirectoryInodeWithDataBlocks(byte[] disk, int off, uint ino, uint parentNid,
+    IReadOnlyList<(uint Nid, string Name, byte Type)> children, IReadOnlyList<int> dentryBlocks, bool isRoot) {
+    var s = disk.AsSpan(off, BlockSize);
+
+    BinaryPrimitives.WriteUInt16LittleEndian(s[0..], 0x41ED); // i_mode: S_IFDIR | 0755
+    s[2] = 0;                                                 // i_advise
+    s[3] = 0;                                                 // i_inline: no inline dentry/data.
+    BinaryPrimitives.WriteUInt32LittleEndian(s[4..], 0);       // i_uid
+    BinaryPrimitives.WriteUInt32LittleEndian(s[8..], 0);       // i_gid
+    var childDirCount = children.Count(c => c.Type == FtDir);
+    BinaryPrimitives.WriteUInt32LittleEndian(s[12..], (uint)(2 + childDirCount)); // i_links
+    // i_size spans every dentry data block.
+    BinaryPrimitives.WriteUInt64LittleEndian(s[16..], (ulong)((long)dentryBlocks.Count * BlockSize));
+    BinaryPrimitives.WriteUInt64LittleEndian(s[24..], (ulong)(1 + dentryBlocks.Count)); // i_blocks (inode + data blocks).
+    var now = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    BinaryPrimitives.WriteUInt64LittleEndian(s[32..], now);
+    BinaryPrimitives.WriteUInt64LittleEndian(s[40..], now);
+    BinaryPrimitives.WriteUInt64LittleEndian(s[48..], now);
+    BinaryPrimitives.WriteUInt32LittleEndian(s[56..], 0);
+    BinaryPrimitives.WriteUInt32LittleEndian(s[60..], 0);
+    BinaryPrimitives.WriteUInt32LittleEndian(s[64..], 0);
+    BinaryPrimitives.WriteUInt32LittleEndian(s[68..], 0);
+    BinaryPrimitives.WriteUInt32LittleEndian(s[72..], 1);      // i_current_depth
+    BinaryPrimitives.WriteUInt32LittleEndian(s[76..], 0);      // i_xattr_nid
+    BinaryPrimitives.WriteUInt32LittleEndian(s[80..], 0);      // i_flags
+    BinaryPrimitives.WriteUInt32LittleEndian(s[84..], isRoot ? 0 : parentNid); // i_pino
+    BinaryPrimitives.WriteUInt32LittleEndian(s[88..], 0);      // i_namelen = 0
+
+    // Direct block pointers: i_addr[923] at offset 360, one per dentry data block.
+    const int iAddrOff = 360;
+    for (var i = 0; i < dentryBlocks.Count; ++i)
+      BinaryPrimitives.WriteUInt32LittleEndian(s[(iAddrOff + i * 4)..], (uint)dentryBlocks[i]);
+
+    // Node footer at end of block.
+    var footerOff = BlockSize - 24;
+    BinaryPrimitives.WriteUInt32LittleEndian(s[footerOff..], ino);
+    BinaryPrimitives.WriteUInt32LittleEndian(s[(footerOff + 4)..], ino);
+    BinaryPrimitives.WriteUInt32LittleEndian(s[(footerOff + 8)..], 0);
+    BinaryPrimitives.WriteUInt64LittleEndian(s[(footerOff + 12)..], 1UL);
+    BinaryPrimitives.WriteUInt32LittleEndian(s[(footerOff + 20)..], 0);
+
+    // Fill the dentry data blocks with "." , ".." and every child, packed linearly.
+    FillDentryDataBlocks(disk, ino, isRoot ? RootIno : parentNid, children, dentryBlocks);
+  }
+
+  /// <summary>
+  /// Number of regular 4 KiB dentry data blocks a directory needs: "." and ".." occupy the
+  /// first two slots, then every child consumes <see cref="DentrySlotsFor"/> slots. A name
+  /// never straddles a block boundary (kernel GET_DENTRY_SLOTS / f2fs_dentry_block rule), so a
+  /// name that does not fit the remaining slots of the current block starts the next block.
+  /// </summary>
+  private static int PlanDentryBlockCount(IReadOnlyList<(uint Nid, string Name, byte Type)> children) {
+    var blocks = 1;
+    var slotInBlock = 2; // "." and ".." occupy slots 0 and 1 of block 0.
+    foreach (var (_, name, _) in children) {
+      var slots = DentrySlotsFor(name);
+      if (slotInBlock + slots > NrDentryInBlock) {
+        ++blocks;
+        slotInBlock = 0;
+      }
+      slotInBlock += slots;
+    }
+    return blocks;
+  }
+
+  /// <summary>
+  /// Writes the f2fs_dentry_block payloads for a non-inline directory: "." and ".." first,
+  /// then every child packed into consecutive slots/blocks with the same name-never-straddles
+  /// rule used by <see cref="PlanDentryBlockCount"/>.
+  /// </summary>
+  private static void FillDentryDataBlocks(byte[] disk, uint ino, uint parentNid,
+    IReadOnlyList<(uint Nid, string Name, byte Type)> children, IReadOnlyList<int> dentryBlocks) {
+    var blockIndex = 0;
+    var slot = 0;
+
+    void StartBlock(int idx) {
+      blockIndex = idx;
+      slot = 0;
+    }
+
+    int BitmapOff() => dentryBlocks[blockIndex] * BlockSize;
+    int DentryBase() => BitmapOff() + DentryBlockBitmapSize + DentryBlockReserved;
+    int NameBase() => DentryBase() + NrDentryInBlock * 11;
+
+    void Place(uint childNid, string name, byte type) {
+      var slots = DentrySlotsFor(name);
+      if (slot + slots > NrDentryInBlock)
+        StartBlock(blockIndex + 1);
+      var s = disk.AsSpan();
+      slot += WriteDentry(s, BitmapOff(), DentryBase(), NameBase(), slot, childNid, name, type);
+    }
+
+    StartBlock(0);
+    Place(ino, ".", FtDir);
+    Place(parentNid, "..", FtDir);
+    foreach (var (childNid, name, type) in children)
+      Place(childNid, name, type);
   }
 
   /// <summary>
