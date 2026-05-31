@@ -17,6 +17,37 @@
 
 ---
 
+CompressionWorkbench is built on a single, ambitious premise: **if you have this
+software, you should never need another archiver again.** Every algorithm, every
+archive format, every filesystem, every file that is secretly an archive, and every
+parameter combination — no matter how exotic — supported to the fullest state each
+format allows.
+
+The foundation is a library of **primitive building blocks**: the raw compression
+algorithms (dictionary coders, entropy coders, transforms, filters) implemented as
+composable, standalone primitives. Everything else is assembled from these blocks
+rather than reimplemented. On top of them we chase **each and every exotic compression
+format** ever shipped — mainstream, obscure, retro, and long-forgotten alike — exposed
+through a **universal compressor** that surfaces the *complete* option set of each format
+instead of a lowest-common-denominator subset, paired with a **compression optimizer**
+that hunts for the parameter combination yielding the best result on your actual data.
+
+We treat **everything as a potentially-addressable archive** — the
+"everything-may-be-an-archive" principle: not just ZIP/7z/RAR, but every container,
+document, package, disk image, and file format that holds multiple payloads inside it.
+That reaches all the way down to **filesystems**: the goal is to get every filesystem in,
+and to make each one **read *and* write** — with a **WORM** (write-once) path as the
+honest intermediate state on the way to full read/write. Each writable filesystem gets a
+**layout optimizer** (cluster / block / MFT sizing tuned to minimise wasted space),
+**defragmentation**, and a relentless **hunt for exotic parameter combinations** that
+turns partial support into complete support for every variant out there.
+
+The end state: every codec, every archive format, every filesystem, every pseudo-archive,
+and every exotic parameter combination — handled in one place, as completely as each
+format permits. One tool, for all of it.
+
+---
+
 ## Quick start
 
 **Install via NuGet** — pick the surface you need:
@@ -458,6 +489,19 @@ Tests skip cleanly when the tool is missing; they never fail the suite on a tool
 ```bash
 dotnet build CompressionWorkbench.slnx
 ```
+
+### Running the UI on Linux (Wine)
+
+The UI project targets `net10.0-windows` (WPF) and cannot run natively on Linux.
+Use the provided helper script to build and launch it under Wine:
+
+```bash
+./run-wine.sh            # first run: publishes a self-contained Windows exe, then launches
+./run-wine.sh --rebuild  # force a fresh publish (e.g. after pulling new changes)
+```
+
+**Prerequisites:** Wine must be installed (`sudo pacman -S wine` on Arch/CachyOS).
+For better font rendering install Core Fonts once: `winetricks corefonts`.
 
 ## Testing
 
