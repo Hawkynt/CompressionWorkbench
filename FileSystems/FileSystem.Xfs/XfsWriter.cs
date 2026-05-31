@@ -114,13 +114,86 @@ public sealed class XfsWriter {
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    // Short-form dir with 4-byte inode entries — hard ceiling of 15 files (64-inode
-    // chunk minus root minus rbm minus rsum minus a few reserve slots).
-    if (this._files.Count >= InodesPerBlock - 1)
-      throw new InvalidOperationException($"XfsWriter supports at most {InodesPerBlock - 1} files.");
-    var leaf = Path.GetFileName(name);
-    if (leaf.Length > 250) leaf = leaf[..250];
-    this._files.Add((leaf, data));
+    // Preserve the full path; subdirectory inodes are materialised in WriteTo.
+    // Normalise separators and trim leading/trailing slashes.
+    var normalized = name.Replace('\\', '/').Trim('/');
+    if (normalized.Length == 0)
+      throw new ArgumentException("XfsWriter: file name must not be empty.", nameof(name));
+    this._files.Add((normalized, data));
+  }
+
+  /// <summary>
+  /// A node in the in-memory directory tree built from path-separated file
+  /// names. Each node maps to exactly one XFS inode; directories carry a
+  /// short-form child list, regular files carry their payload.
+  /// </summary>
+  private sealed class TreeNode {
+    public required string Name;            // single path component ("" for root)
+    public bool IsDirectory;
+    public byte[] Data = [];                // payload for regular files
+    public readonly List<TreeNode> Children = [];
+    public ulong Ino;                       // assigned inode number
+    public int Slot;                        // slot index in the root inode chunk
+    public int DataBlock;                   // first data block (files only)
+    public int BlockCount;                  // data blocks (files only)
+  }
+
+  /// <summary>
+  /// Builds the directory tree from the path-separated file names. Returns the
+  /// root node plus a flat list of every node in inode-slot order: the root
+  /// occupies slot 0, slots 1/2 are reserved for rbmino/rsumino, and every
+  /// directory/file node is assigned slots 3+. Directories sort before the
+  /// files at each level so a parent's child inodes are contiguous, but the
+  /// exact ordering is irrelevant — only the slot/inode assignment matters.
+  /// </summary>
+  private (TreeNode Root, List<TreeNode> Nodes) BuildTree(int firstNodeSlot) {
+    var root = new TreeNode { Name = "", IsDirectory = true };
+
+    foreach (var (path, data) in this._files) {
+      var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+      var cursor = root;
+      for (var p = 0; p < parts.Length; p++) {
+        var leaf = parts[p];
+        if (leaf.Length > 250) leaf = leaf[..250];
+        var isLast = p == parts.Length - 1;
+        if (isLast) {
+          // A regular file leaf.
+          cursor.Children.Add(new TreeNode { Name = leaf, IsDirectory = false, Data = data });
+        } else {
+          // An intermediate directory: reuse if it already exists.
+          var existing = cursor.Children.FirstOrDefault(c => c.IsDirectory && c.Name == leaf);
+          if (existing is null) {
+            existing = new TreeNode { Name = leaf, IsDirectory = true };
+            cursor.Children.Add(existing);
+          }
+          cursor = existing;
+        }
+      }
+    }
+
+    // Flatten in slot order: root first, then breadth-first over the tree.
+    var nodes = new List<TreeNode> { root };
+    var queue = new Queue<TreeNode>();
+    queue.Enqueue(root);
+    while (queue.Count > 0) {
+      var dir = queue.Dequeue();
+      foreach (var child in dir.Children) {
+        nodes.Add(child);
+        if (child.IsDirectory) queue.Enqueue(child);
+      }
+    }
+
+    // Assign inode slots/numbers. Root is slot 0; non-root nodes start at
+    // firstNodeSlot (3, past rbmino/rsumino).
+    root.Slot = 0;
+    root.Ino = RootIno;
+    var slot = firstNodeSlot;
+    for (var i = 1; i < nodes.Count; i++) {
+      nodes[i].Slot = slot;
+      nodes[i].Ino = RootIno + (ulong)slot;
+      slot++;
+    }
+    return (root, nodes);
   }
 
   public void WriteTo(Stream output) {
@@ -128,18 +201,26 @@ public sealed class XfsWriter {
     //   slot 0  = root directory (rootino)
     //   slot 1  = sb_rbmino (realtime bitmap inode) — empty regular file
     //   slot 2  = sb_rsumino (realtime summary inode) — empty regular file
-    //   slot 3+ = user file inodes
+    //   slot 3+ = directory and file inodes (subdirectory tree)
     //   remaining = free
-    const int FirstFileSlot = 3;
+    const int FirstNodeSlot = 3;
 
-    // ── Allocate per-file data blocks in AG 0, starting at DataStartBlock ──
-    var fileDataBlocks = new int[this._files.Count];
-    var fileBlockCounts = new int[this._files.Count];
+    var (_, nodes) = BuildTree(FirstNodeSlot);
+
+    // The whole tree (dirs + files, plus root/rbm/rsum) must fit in one
+    // 64-inode chunk. nodes already includes the root; rbm/rsum take 2 more.
+    var inodesNeeded = nodes.Count + 2;
+    if (inodesNeeded > InodesPerChunk)
+      throw new InvalidOperationException(
+        $"XfsWriter supports at most {InodesPerChunk - 3} directory and file entries; got {nodes.Count - 1}.");
+
+    // ── Allocate data blocks for regular-file nodes, in slot order ──
     var nextBlock = DataStartBlock;
-    for (var i = 0; i < this._files.Count; i++) {
-      fileDataBlocks[i] = nextBlock;
-      fileBlockCounts[i] = Math.Max(1, (this._files[i].data.Length + BlockSize - 1) / BlockSize);
-      nextBlock += fileBlockCounts[i];
+    foreach (var node in nodes) {
+      if (node.IsDirectory) continue;
+      node.DataBlock = nextBlock;
+      node.BlockCount = Math.Max(1, (node.Data.Length + BlockSize - 1) / BlockSize);
+      nextBlock += node.BlockCount;
     }
     // Reserve 64 blocks (256 KiB) for an internal log at the tail of AG 0.
     const int LogBlocks = 64;
@@ -159,7 +240,8 @@ public sealed class XfsWriter {
     var freeStartAgN = DataStartBlock - InodeChunkBlocks;  // no inode chunk in AG 1+
     var freeLenAgN = AgBlocks - freeStartAgN;
 
-    var usedInodeSlots = FirstFileSlot + this._files.Count;
+    // Used slots = root + rbm + rsum + every tree node beyond the root.
+    var usedInodeSlots = 2 + nodes.Count;  // (root counted in nodes) + rbm + rsum
     var freeInodeSlots = InodesPerChunk - usedInodeSlots;
 
     // ── Per-AG metadata ──
@@ -217,49 +299,25 @@ public sealed class XfsWriter {
         freeMask: ComputeFreeMask(usedInodeSlots));
     }
 
-    // ── Root directory inode (slot 0 of chunk) ──
-    var rootOff = InodeChunkBlock * BlockSize;
-    WriteInodeCoreV3(image, rootOff, RootIno, mode: 0x41ED /* S_IFDIR|0755 */,
-      format: 1, nlink: 2);
-    // Short-form dir header (xfs_dir2_sf_hdr):
-    //   __u8 count      — number of 4-byte-inode entries
-    //   __u8 i8count    — number of 8-byte-inode entries
-    //   __u8 parent[4]  — parent inode (4 B when i8count==0, else 8 B)
-    var dirOff = rootOff + 176;
-    image[dirOff] = (byte)this._files.Count;
-    image[dirOff + 1] = 0; // i8count
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(dirOff + 2), (uint)RootIno);
-    var entryPos = dirOff + 6;
-    var firstChildIno = RootIno + (ulong)FirstFileSlot;
-    // Start entry offsets at 0x60 — standard base past "." (0x30) and ".." (0x40).
-    ushort nextOffset = 0x60;
-    for (var i = 0; i < this._files.Count; i++) {
-      var childIno = (uint)(firstChildIno + (ulong)i);
-      var nameBytes = Encoding.UTF8.GetBytes(this._files[i].name);
-      var nameLen = Math.Min(nameBytes.Length, 250);
-      // Entry (xfs_dir2_sf_entry) with FTYPE feature:
-      //   __u8 namelen
-      //   __u8 offset[2]     (monotonic; mimics data-block offset)
-      //   __u8 name[namelen]
-      //   __u8 ftype         (only when sb_features_incompat has FTYPE)
-      //   __u8 ino[4 or 8]
-      image[entryPos] = (byte)nameLen;
-      BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(entryPos + 1), nextOffset);
-      nameBytes.AsSpan(0, nameLen).CopyTo(image.AsSpan(entryPos + 3));
-      image[entryPos + 3 + nameLen] = 1; // DT_REG (regular file)
-      BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(entryPos + 4 + nameLen), childIno);
-      entryPos += 3 + nameLen + 1 + 4;
-      // Next entry's sf_offset mimics the data-block layout, NOT the shortform
-      // on-disk entry size. A dir2 data block entry with FTYPE is:
-      //   ino(8) + namelen(1) + name[nameLen] + ftype(1) + tag(2) = nameLen + 12,
-      // padded to 8-byte alignment. xfs_repair rejects "entry contains offset
-      // out of order in shortform dir" when we advance by the shortform entry
-      // size (nameLen + 8 padded) instead.
-      nextOffset = (ushort)(nextOffset + ((nameLen + 12 + 7) & ~7));
+    // ── Directory inodes (root + every subdirectory) ──
+    // Each directory inode carries a short-form directory whose parent is the
+    // enclosing directory (the root's parent is itself). Build a parent lookup
+    // so each child can name its parent inode and so we can fix up nlinks.
+    var parentOf = new Dictionary<TreeNode, TreeNode>();
+    foreach (var node in nodes)
+      foreach (var child in node.Children)
+        parentOf[child] = node;
+
+    foreach (var node in nodes) {
+      if (!node.IsDirectory) continue;
+      var ioff = InodeChunkBlock * BlockSize + node.Slot * InodeSize;
+      // A directory's link count is 2 (self "." plus parent's reference) plus
+      // one for each child subdirectory (whose ".." points back here).
+      var childDirCount = node.Children.Count(c => c.IsDirectory);
+      WriteInodeCoreV3(image, ioff, node.Ino, mode: 0x41ED /* S_IFDIR|0755 */,
+        format: 1 /* local short-form */, nlink: (uint)(2 + childDirCount));
+      WriteShortFormDirectory(image, ioff, node, parentOf);
     }
-    var dirSize = entryPos - dirOff;
-    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(rootOff + 56), (ulong)dirSize);
-    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(rootOff + 64), 0);
 
     // ── Realtime bitmap inode (slot 1) — empty S_IFREG|0 (mkfs convention) ──
     var rbmOff = InodeChunkBlock * BlockSize + 1 * InodeSize;
@@ -270,23 +328,24 @@ public sealed class XfsWriter {
     var rsumOff = InodeChunkBlock * BlockSize + 2 * InodeSize;
     WriteInodeCoreV3(image, rsumOff, RootIno + 2, mode: 0x8000, format: 2, nlink: 1);
 
-    // ── User file inodes (slots 3+) ──
-    for (var i = 0; i < this._files.Count; i++) {
-      var ioff = InodeChunkBlock * BlockSize + (FirstFileSlot + i) * InodeSize;
-      WriteInodeCoreV3(image, ioff, firstChildIno + (ulong)i,
+    // ── Regular-file inodes ──
+    foreach (var node in nodes) {
+      if (node.IsDirectory) continue;
+      var ioff = InodeChunkBlock * BlockSize + node.Slot * InodeSize;
+      WriteInodeCoreV3(image, ioff, node.Ino,
         mode: 0x81A4 /* S_IFREG|0644 */, format: 2, nlink: 1);
-      BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(ioff + 56), (ulong)this._files[i].data.Length);
-      BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(ioff + 64), (ulong)fileBlockCounts[i]);
+      BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(ioff + 56), (ulong)node.Data.Length);
+      BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(ioff + 64), (ulong)node.BlockCount);
       BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(ioff + 76), 1);
 
-      var startBlock = (ulong)fileDataBlocks[i];
-      var blockCount = (ulong)fileBlockCounts[i];
+      var startBlock = (ulong)node.DataBlock;
+      var blockCount = (ulong)node.BlockCount;
       var hi = (startBlock >> 43) & 0x1FF;
       var lo = (startBlock << 21) | (blockCount & 0x1FFFFF);
       BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(ioff + 176), hi);
       BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(ioff + 184), lo);
 
-      this._files[i].data.CopyTo(image, fileDataBlocks[i] * BlockSize);
+      node.Data.CopyTo(image, node.DataBlock * BlockSize);
     }
 
     // ── Format the log at (logStartAgBno, LogBlocks) ──
@@ -302,7 +361,7 @@ public sealed class XfsWriter {
     // mkfs.xfs writes valid IN-magic inodes (mode=0, nlink=0) for every slot
     // in the chunk, not just allocated ones. xfs_repair walks the chunk and
     // validates each slot; zero-filled slots are flagged as corrupt.
-    for (var slot = FirstFileSlot + this._files.Count; slot < InodesPerChunk; slot++) {
+    for (var slot = usedInodeSlots; slot < InodesPerChunk; slot++) {
       var ioff = InodeChunkBlock * BlockSize + slot * InodeSize;
       WriteInodeCoreV3(image, ioff, RootIno + (ulong)slot, mode: 0,
         format: 0 /* XFS_DINODE_FMT_DEV */, nlink: 0, aformat: 0);
@@ -336,6 +395,48 @@ public sealed class XfsWriter {
     if (usedSlots >= InodesPerChunk) return 0UL;
     if (usedSlots <= 0) return ulong.MaxValue;
     return ulong.MaxValue << usedSlots;
+  }
+
+  /// <summary>
+  /// Writes the inline short-form directory (xfs_dir2_sf) for a directory inode
+  /// at <paramref name="inodeOff"/>. The fork lives at offset 176 in a v3
+  /// dinode. "." and ".." are implied (self / parent) — only real children are
+  /// listed. Each entry carries the FTYPE byte (DT_DIR for subdirectories,
+  /// DT_REG for files) since the superblock advertises the FTYPE feature.
+  /// </summary>
+  private static void WriteShortFormDirectory(byte[] image, int inodeOff, TreeNode dir,
+      IReadOnlyDictionary<TreeNode, TreeNode> parentOf) {
+    var dirOff = inodeOff + 176;
+    var parentIno = parentOf.TryGetValue(dir, out var parent) ? parent.Ino : dir.Ino;
+
+    // xfs_dir2_sf_hdr: count(1), i8count(1), parent[4] (4 B when i8count==0).
+    image[dirOff] = (byte)dir.Children.Count;
+    image[dirOff + 1] = 0; // i8count — all inode numbers fit in 32 bits
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(dirOff + 2), (uint)parentIno);
+
+    var entryPos = dirOff + 6;
+    // Start entry offsets at 0x60 — standard base past "." (0x30) and ".." (0x40).
+    ushort nextOffset = 0x60;
+    foreach (var child in dir.Children) {
+      var nameBytes = Encoding.UTF8.GetBytes(child.Name);
+      var nameLen = Math.Min(nameBytes.Length, 250);
+      // xfs_dir2_sf_entry with FTYPE: namelen(1), offset[2], name[namelen],
+      // ftype(1), ino[4].
+      image[entryPos] = (byte)nameLen;
+      BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(entryPos + 1), nextOffset);
+      nameBytes.AsSpan(0, nameLen).CopyTo(image.AsSpan(entryPos + 3));
+      image[entryPos + 3 + nameLen] = child.IsDirectory ? (byte)2 : (byte)1; // DT_DIR / DT_REG
+      BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(entryPos + 4 + nameLen), (uint)child.Ino);
+      entryPos += 3 + nameLen + 1 + 4;
+      // Next sf_offset mimics the dir2 data-block layout (ino(8)+namelen(1)+
+      // name+ftype(1)+tag(2) = nameLen + 12, padded to 8), NOT the shortform
+      // on-disk entry size — xfs_repair rejects out-of-order offsets otherwise.
+      nextOffset = (ushort)(nextOffset + ((nameLen + 12 + 7) & ~7));
+    }
+
+    var dirSize = entryPos - dirOff;
+    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(inodeOff + 56), (ulong)dirSize); // di_size
+    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(inodeOff + 64), 0);               // di_nblocks
   }
 
   private static void WriteSuperblock(Span<byte> sb, ulong totalBlocks, ulong logStart,
