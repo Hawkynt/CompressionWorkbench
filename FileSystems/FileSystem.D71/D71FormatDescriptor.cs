@@ -5,7 +5,28 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.D71;
 
-public sealed class D71FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class D71FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+
+  /// <summary>
+  /// Zeros all unused space in the D71 image: every sector not claimed by a
+  /// live file chain or by the directory/BAM metadata is overwritten with zeros.
+  /// <para>
+  /// Cluster-tip wiping is not applicable to the 1571 layout: files are stored
+  /// as a chain of 256-byte sectors carrying a 2-byte track/sector link header
+  /// plus 254 payload bytes, so the directory-entry size is expressed in
+  /// 254-byte units that do not map onto a contiguous, cluster-aligned tail.
+  /// The trailing slack inside a file's final sector is therefore left to the
+  /// reader/writer; this method clears only whole free sectors.
+  /// </para>
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = D71ExtentMap.Enumerate(image);
+    // Linked-sector layout — no cluster-aligned tail to wipe per file.
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
+  }
 
   /// <summary>
   /// Walks the directory chain on track 18 (and BAM mirror on track 53)
