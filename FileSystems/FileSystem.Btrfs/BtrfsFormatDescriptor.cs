@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Btrfs;
 
-public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks the superblock + chunk tree + root tree + fs-tree leaf and yields
@@ -142,5 +142,28 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     BtrfsModifier.Remove(archive, entryNames);
+  }
+
+  /// <summary>
+  /// Zeros all unused space in a Btrfs image. The WORM writer stores every
+  /// file's bytes as an <em>inline</em> EXTENT_DATA item inside the fs-tree
+  /// metadata leaf, so file content surfaces as
+  /// <see cref="DefragBlockKind.MetadataReserved"/> tiles (named
+  /// <c>inline:&lt;file&gt;</c>) rather than as separate on-disk data extents.
+  /// Consequently there are no cluster tips to wipe — inline payloads are
+  /// byte-exact with no allocation slack — but the reserved DATA chunk and any
+  /// gaps between metadata blocks are free and get zero-filled here.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    // Cluster tips are not applicable: file data is inline-packed in the
+    // metadata leaf with byte-exact length. Pass no size lookup so the wiper
+    // only reclaims free regions (the DATA chunk and inter-block gaps).
+    image.Position = 0;
+    var extents = BtrfsExtentMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 }
