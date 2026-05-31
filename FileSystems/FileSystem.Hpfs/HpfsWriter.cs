@@ -20,9 +20,13 @@ namespace FileSystem.Hpfs;
 /// (an fnode with the directory flag, referenced by a directory-flagged dirent
 /// in the parent's dirent block, with its own dirent block).
 ///
-/// Limitations: a single 2 KiB dirent block per directory (no dirent-block
-/// B-tree spill), direct allocation only (no AllocSec B-tree), single bitmap
-/// band. Practical ceiling is roughly 60 small-named entries per directory.
+/// A directory whose children overflow one 2 KiB dirent block spills into
+/// additional leaf dirent blocks organised as a 2-level dirent B-tree: the
+/// directory's root block holds separator dirents whose down-pointers reference
+/// the leaf blocks. With short names this scales to well over a thousand entries
+/// per directory (the 2-level root block holds roughly 40 separators, i.e. ~40
+/// leaves of ~45 entries each). Other limitations remain: direct file allocation
+/// only (no AllocSec B-tree), and a single bitmap band.
 /// </summary>
 internal sealed class HpfsWriter {
 
@@ -34,7 +38,13 @@ internal sealed class HpfsWriter {
 
   // Dirent flag bits.
   private const ushort DirentFlagSpecial = 0x0001; // end-of-block sentinel / ".."
+  private const ushort DirentFlagBtreeDown = 0x0004; // record carries a 4-byte B-tree down-pointer at its tail
   private const ushort DirentFlagDirectory = 0x0008;
+
+  // Dirents begin at this offset into a 2 KiB dirent block.
+  private const int DirentAreaOffset = 0x14;
+  // Minimum dirent record length (the fixed header before the name).
+  private const int DirentHeaderLen = 32;
 
   // Fixed layout LBAs
   private const uint BootLba = 0;
@@ -64,9 +74,14 @@ internal sealed class HpfsWriter {
 
     // Filled in during the layout pass.
     public uint FnodeLba;       // fnode for this entry (file or directory)
-    public uint DirBlockLba;    // directory's own dirent block (directories only)
+    public uint DirBlockLba;    // directory's own (root) dirent block (directories only)
     public uint DataLba;        // first data LBA (files only)
     public uint DataLenLbas;    // data length in LBAs (files only)
+
+    // Extra leaf dirent blocks when the children overflow the root dirent block.
+    // The root block then holds B-tree separator dirents whose down-pointers
+    // reference these leaves (directories only).
+    public readonly List<uint> LeafBlockLbas = [];
   }
 
   /// <summary>
@@ -93,6 +108,13 @@ internal sealed class HpfsWriter {
     var nextLba = FirstAllocLba;
     root.FnodeLba = RootFnodeLba;
     root.DirBlockLba = RootDirLba;
+    // Root's first dirent block is the fixed RootDirLba; overflow leaves come
+    // from the free pool (the reader chains them via B-tree down-pointers).
+    var rootExtraLeaves = CountOverflowLeaves(root);
+    for (var i = 0; i < rootExtraLeaves; i++) {
+      root.LeafBlockLbas.Add(nextLba);
+      nextLba += DirBlockLbas;
+    }
     AssignLbas(root, ref nextLba, isRoot: true);
 
     var totalLbas = Math.Max(nextLba, 128u); // minimum 64 KB image
@@ -150,6 +172,13 @@ internal sealed class HpfsWriter {
       if (child.IsDirectory) {
         child.DirBlockLba = nextLba;
         nextLba += DirBlockLbas;
+        // If the child's own children overflow one dirent block, reserve extra
+        // leaf dirent blocks so the directory becomes a 2-level B-tree.
+        var extraLeaves = CountOverflowLeaves(child);
+        for (var i = 0; i < extraLeaves; i++) {
+          child.LeafBlockLbas.Add(nextLba);
+          nextLba += DirBlockLbas;
+        }
         AssignLbas(child, ref nextLba, isRoot: false);
       } else {
         var dataLbas = (uint)((child.Data.Length + LbaSize - 1) / LbaSize);
@@ -240,53 +269,170 @@ internal sealed class HpfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0xC4 + 8, 4), dirBlockLba);  // physical LBA
   }
 
-  /// <summary>Writes a directory's 2 KiB dirent block: one sorted dirent per child
-  /// followed by the end-of-block sentinel.</summary>
-  private void WriteDirBlock(byte[] image, TreeNode dir) {
-    var off = (int)(dir.DirBlockLba * LbaSize);
+  /// <summary>The record length a child's dirent occupies (header + 4-aligned name),
+  /// optionally with a trailing 4-byte B-tree down-pointer.</summary>
+  private static int DirentRecordLen(string name, bool withDownPointer) {
+    var nameLen = Math.Min(Encoding.Latin1.GetByteCount(name), 254);
+    var recLen = DirentHeaderLen + nameLen + (withDownPointer ? 4 : 0);
+    if ((recLen & 3) != 0) recLen = (recLen + 3) & ~3;
+    return recLen;
+  }
 
+  /// <summary>Usable dirent bytes in a 2 KiB block (after the block header).</summary>
+  private static int DirentAreaBytes => DirBlockSize - DirentAreaOffset;
+
+  /// <summary>
+  /// Number of extra leaf dirent blocks a directory needs beyond its root block.
+  /// Zero when all children plus the end sentinel fit in one block; otherwise the
+  /// directory becomes a 2-level B-tree whose leaves hold the children and whose
+  /// root block holds separator dirents with down-pointers.
+  /// </summary>
+  private static int CountOverflowLeaves(TreeNode dir) {
+    var children = dir.Children.Values.ToList();
+    if (children.Count == 0) return 0;
+
+    // Does everything fit directly in the root block (entries + end sentinel)?
+    var direct = DirentHeaderLen; // reserve the end sentinel
+    foreach (var c in children) direct += DirentRecordLen(c.Name, withDownPointer: false);
+    if (direct <= DirentAreaBytes) return 0;
+
+    var (leaves, _) = PlanBtree(children);
+    return leaves.Count;
+  }
+
+  /// <summary>
+  /// Plans a 2-level B-tree for the given (sorted) children: greedily fills leaf
+  /// blocks, and after each full leaf promotes the next child as a separator in
+  /// the root block. Returns the per-leaf child slices and the separator children
+  /// (one between consecutive leaves; the rightmost leaf has no separator after it).
+  /// </summary>
+  private static (List<List<TreeNode>> Leaves, List<TreeNode> Separators) PlanBtree(List<TreeNode> children) {
+    var leaves = new List<List<TreeNode>>();
+    var separators = new List<TreeNode>();
+
+    var current = new List<TreeNode>();
+    var leafUsed = DirentHeaderLen; // reserve end sentinel in each leaf
+    var rootUsed = DirentHeaderLen; // reserve end sentinel (carries rightmost down-pointer)
+
+    for (var i = 0; i < children.Count; i++) {
+      var child = children[i];
+      var leafCost = DirentRecordLen(child.Name, withDownPointer: false);
+
+      if (leafUsed + leafCost <= DirentAreaBytes) {
+        current.Add(child);
+        leafUsed += leafCost;
+        continue;
+      }
+
+      // Leaf is full: close it and promote this child as a separator in the root.
+      leaves.Add(current);
+      separators.Add(child);
+      rootUsed += DirentRecordLen(child.Name, withDownPointer: true);
+      if (rootUsed > DirentAreaBytes)
+        throw new InvalidOperationException(
+          "HPFS: directory too large for a 2-level dirent B-tree (the root dirent block is out of separator space). " +
+          "With short names this supports roughly 1500 entries per directory; deeper (3-level) B-trees are not yet implemented.");
+
+      current = [];
+      leafUsed = DirentHeaderLen;
+    }
+
+    leaves.Add(current); // final (rightmost) leaf
+    return (leaves, separators);
+  }
+
+  /// <summary>Writes a directory's dirent structure. When the children fit in one
+  /// 2 KiB block they are written directly; otherwise the root block becomes a
+  /// 2-level B-tree of separator dirents whose down-pointers reference the
+  /// directory's leaf dirent blocks.</summary>
+  private void WriteDirBlock(byte[] image, TreeNode dir) {
+    var children = dir.Children.Values.ToList();
+
+    if (dir.LeafBlockLbas.Count == 0) {
+      // Fits in one block: plain dirent list + end sentinel.
+      WriteLeafDirBlock(image, dir.DirBlockLba, children);
+      return;
+    }
+
+    var (leaves, separators) = PlanBtree(children);
+
+    // Write each leaf block.
+    for (var i = 0; i < leaves.Count; i++)
+      WriteLeafDirBlock(image, dir.LeafBlockLbas[i], leaves[i]);
+
+    // Write the root block: separator[i] sits between leaf[i] and leaf[i+1] and
+    // carries a down-pointer to leaf[i]; the end sentinel carries the down-pointer
+    // to the rightmost leaf.
+    var off = (int)(dir.DirBlockLba * LbaSize);
     DirBlockMagic.CopyTo(image.AsSpan(off, 4));
 
-    // Dirents start at offset 0x14 (20) into the block. Children are already
-    // sorted by name via the SortedDictionary.
-    var cursor = off + 0x14;
-    var blockEnd = off + DirBlockSize;
-
-    foreach (var child in dir.Children.Values) {
-      var nameBytes = Encoding.Latin1.GetBytes(child.Name);
-      if (nameBytes.Length > 254) nameBytes = nameBytes[..254];
-
-      // Record layout:
-      //   0: u16 recLen
-      //   2: u16 flags (bit 3 = directory)
-      //   4: u32 fnodeLba
-      //  12: u32 fileSize (0 for directories)
-      //  30: u8 nameLen
-      //  31: name bytes
-      var recLen = 32 + nameBytes.Length;
-      if ((recLen & 3) != 0) recLen = (recLen + 3) & ~3;
-
-      if (cursor + recLen + 32 > blockEnd)
-        break; // No room for this entry + sentinel; stop adding.
-
-      var flags = child.IsDirectory ? DirentFlagDirectory : (ushort)0;
-
-      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(cursor, 2), (ushort)recLen);
-      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(cursor + 2, 2), flags);
-      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(cursor + 4, 4), child.FnodeLba);
-      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(cursor + 12, 4),
-        child.IsDirectory ? 0u : (uint)child.Data.Length);
-      image[cursor + 30] = (byte)nameBytes.Length;
-      nameBytes.CopyTo(image.AsSpan(cursor + 31, nameBytes.Length));
-
-      cursor += recLen;
+    var cursor = off + DirentAreaOffset;
+    for (var i = 0; i < separators.Count; i++) {
+      cursor = WriteDirent(image, cursor, separators[i], downPointerLba: dir.LeafBlockLbas[i]);
     }
 
-    // End-of-block sentinel dirent.
-    if (cursor + 32 <= blockEnd) {
-      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(cursor, 2), 32); // min record length
-      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(cursor + 2, 2), DirentFlagSpecial);
-    }
+    // End sentinel with the down-pointer to the last leaf.
+    WriteEndSentinel(image, cursor, downPointerLba: dir.LeafBlockLbas[^1]);
+  }
+
+  /// <summary>Writes a plain leaf dirent block: sorted child dirents + end sentinel.</summary>
+  private static void WriteLeafDirBlock(byte[] image, uint blockLba, List<TreeNode> children) {
+    var off = (int)(blockLba * LbaSize);
+    DirBlockMagic.CopyTo(image.AsSpan(off, 4));
+
+    var cursor = off + DirentAreaOffset;
+    foreach (var child in children)
+      cursor = WriteDirent(image, cursor, child, downPointerLba: 0);
+
+    WriteEndSentinel(image, cursor, downPointerLba: 0);
+  }
+
+  /// <summary>Writes one child dirent at <paramref name="cursor"/> and returns the next
+  /// cursor. When <paramref name="downPointerLba"/> is non-zero the record carries a
+  /// trailing 4-byte B-tree down-pointer and the down-pointer flag.</summary>
+  private static int WriteDirent(byte[] image, int cursor, TreeNode child, uint downPointerLba) {
+    var nameBytes = Encoding.Latin1.GetBytes(child.Name);
+    if (nameBytes.Length > 254) nameBytes = nameBytes[..254];
+
+    var hasDown = downPointerLba != 0;
+    var recLen = DirentHeaderLen + nameBytes.Length + (hasDown ? 4 : 0);
+    if ((recLen & 3) != 0) recLen = (recLen + 3) & ~3;
+
+    // Record layout:
+    //   0: u16 recLen
+    //   2: u16 flags (bit 2 = down-pointer present, bit 3 = directory)
+    //   4: u32 fnodeLba
+    //  12: u32 fileSize (0 for directories)
+    //  30: u8 nameLen
+    //  31: name bytes
+    //  recLen-4: u32 down-pointer LBA (when bit 2 set)
+    var flags = (ushort)((child.IsDirectory ? DirentFlagDirectory : 0)
+                         | (hasDown ? DirentFlagBtreeDown : 0));
+
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(cursor, 2), (ushort)recLen);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(cursor + 2, 2), flags);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(cursor + 4, 4), child.FnodeLba);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(cursor + 12, 4),
+      child.IsDirectory ? 0u : (uint)child.Data.Length);
+    image[cursor + 30] = (byte)nameBytes.Length;
+    nameBytes.CopyTo(image.AsSpan(cursor + 31, nameBytes.Length));
+
+    if (hasDown)
+      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(cursor + recLen - 4, 4), downPointerLba);
+
+    return cursor + recLen;
+  }
+
+  /// <summary>Writes the end-of-block sentinel dirent, optionally carrying a
+  /// B-tree down-pointer to the rightmost child block.</summary>
+  private static void WriteEndSentinel(byte[] image, int cursor, uint downPointerLba) {
+    var hasDown = downPointerLba != 0;
+    var recLen = DirentHeaderLen + (hasDown ? 4 : 0);
+    var flags = (ushort)(DirentFlagSpecial | (hasDown ? DirentFlagBtreeDown : 0));
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(cursor, 2), (ushort)recLen);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(cursor + 2, 2), flags);
+    if (hasDown)
+      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(cursor + recLen - 4, 4), downPointerLba);
   }
 
   private static void WriteFileFnode(byte[] image, uint fnodeLba, uint dataLba, uint dataLenLbas, uint parentFnodeLba) {

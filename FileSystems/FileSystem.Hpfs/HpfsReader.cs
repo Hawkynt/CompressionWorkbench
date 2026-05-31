@@ -12,6 +12,9 @@ namespace FileSystem.Hpfs;
 /// <list type="bullet">
 ///   <item>Hierarchical: subdirectories are descended and files are surfaced at
 ///   their full nested path (segments joined with '/').</item>
+///   <item>Large directories: dirent blocks are read as a B-tree — each dirent's
+///   down-pointer (and the end sentinel's rightmost down-pointer) is followed, so
+///   a directory spanning many dirent blocks is read in full.</item>
 ///   <item>Small files using the fnode's direct allocation list (no AllocSec B-tree traversal).</item>
 /// </list>
 /// <para>Larger files (those whose fnode height field is non-zero, indicating an
@@ -131,9 +134,28 @@ public sealed class HpfsReader : IDisposable {
   private const int MaxDepth = 64;
 
   private void ParseDirectoryBlock(uint dirLba, string pathPrefix, int depth) {
-    if (depth > MaxDepth) return;
+    ParseDirentBlock(dirLba, pathPrefix, depth, blockDepth: 0,
+      visitedBlocks: []);
+  }
+
+  /// <summary>Maximum dirent-block B-tree depth we descend, guarding against
+  /// cyclic or corrupt down-pointers.</summary>
+  private const int MaxBlockDepth = 32;
+
+  /// <summary>
+  /// Parses a single dirent block, following B-tree down-pointers so a directory
+  /// whose children span multiple dirent blocks is read in full. Each dirent may
+  /// carry a down-pointer (flag bit 2) to a child dirent block holding the keys
+  /// that sort before it; the end-of-block sentinel may carry the down-pointer to
+  /// the rightmost child. Children are surfaced in B-tree order: a dirent's left
+  /// subtree is read before the dirent itself.
+  /// </summary>
+  private void ParseDirentBlock(uint dirLba, string pathPrefix, int depth, int blockDepth, HashSet<uint> visitedBlocks) {
+    if (depth > MaxDepth || blockDepth > MaxBlockDepth) return;
+    if (!visitedBlocks.Add(dirLba)) return; // already visited this block — avoid cycles
+
     var off = LbaOffset(dirLba);
-    if (off + DirBlockSize > _data.Length) return;
+    if (off < 0 || off + DirBlockSize > _data.Length) return;
 
     // Verify directory-block magic.
     for (var i = 0; i < DirBlockMagic.Length; i++)
@@ -145,16 +167,30 @@ public sealed class HpfsReader : IDisposable {
     var blockEnd = off + DirBlockSize;
     var safety = 0;
 
-    while (cursor < blockEnd && safety++ < 512) {
+    while (cursor < blockEnd && safety++ < 1024) {
       var recLen = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(cursor));
       if (recLen < 32 || cursor + recLen > blockEnd) break;
 
       var flags = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(cursor + 2));
 
       // Bit 0 (0x0001): "special" entry — either ".." or end-of-block sentinel.
+      // Bit 2 (0x0004): B-tree down-pointer present (4-byte LBA at record tail).
       // Bit 3 (0x0008): directory.
       var isSpecial = (flags & 0x0001) != 0;
+      var hasDownPointer = (flags & 0x0004) != 0;
       var isDirectory = (flags & 0x0008) != 0;
+
+      // In-order traversal: read this dirent's left subtree before the dirent.
+      if (hasDownPointer && cursor + recLen <= blockEnd) {
+        var childLba = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(cursor + recLen - 4));
+        if (childLba != 0)
+          ParseDirentBlock(childLba, pathPrefix, depth, blockDepth + 1, visitedBlocks);
+      }
+
+      // The end-of-block sentinel terminates the dirent list (its down-pointer,
+      // the rightmost child, was already followed above).
+      if (isSpecial && _data[cursor + 30] == 0)
+        break;
 
       var fnodeLba = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(cursor + 4));
       var fileSize = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(cursor + 12));
