@@ -50,7 +50,9 @@ public sealed class Ext1Writer {
 
     var firstDataBlock = blockSize == 1024 ? 1u : 0u;
     const int inodeSize = 128;
-    const int inodesPerGroup = 128;
+    // The single block group's inode table must hold the reserved inodes plus
+    // one inode per file; size it to fit them all, never below the classic 128.
+    var inodesPerGroup = ChooseInodeCount((int)FirstUserInode + this._files.Count);
     var inodeTableBlocks = (inodesPerGroup * inodeSize + blockSize - 1) / blockSize;
     var firstFreeBlock = (int)firstDataBlock + 4 + inodeTableBlocks;
     var disk = new byte[totalBlocks * blockSize];
@@ -74,24 +76,74 @@ public sealed class Ext1Writer {
     var nextInode = FirstUserInode;
     var nextBlock = firstFreeBlock;
 
-    var rootDirBlock = nextBlock++;
-    MarkBlockUsed(disk, blockBitmapOffset, rootDirBlock, (int)firstDataBlock);
-
-    var rootDirData = new byte[blockSize];
-    var dirPos = 0;
-    dirPos = WriteRev0DirEntry(rootDirData, dirPos, 2, ".", blockSize, isLast: false);
-    dirPos = WriteRev0DirEntry(rootDirData, dirPos, 2, "..", blockSize, isLast: this._files.Count == 0);
-
+    // Allocate the file inodes first, then assemble the full ordered list of
+    // root-directory entries so they can be laid out across as many data blocks
+    // as needed.
     var fileInodes = new List<(uint Inode, byte[] Data)>(this._files.Count);
+    var rootEntries = new List<(uint Inode, string Name)> {
+      (2, "."),
+      (2, ".."),
+    };
     for (var i = 0; i < this._files.Count; ++i) {
       var (name, data) = this._files[i];
       var fileInode = nextInode++;
       var inodeBitIndex = (int)(fileInode - 1);
       disk[inodeBitmapOffset + inodeBitIndex / 8] |= (byte)(1 << (inodeBitIndex % 8));
       fileInodes.Add((fileInode, data));
-      dirPos = WriteRev0DirEntry(rootDirData, dirPos, fileInode, name, blockSize, isLast: i == this._files.Count - 1);
+      rootEntries.Add((fileInode, name));
     }
-    rootDirData.CopyTo(disk, rootDirBlock * blockSize);
+
+    // Lay the entries into one or more root data blocks. Records never straddle
+    // a block boundary; the last record in each block has its rec_len padded to
+    // the block end. "." / ".." stay the first two records of the first block.
+    var rootBlockList = new List<int>();
+    var entryIdx = 0;
+    while (entryIdx < rootEntries.Count) {
+      var blockData = new byte[blockSize];
+      var pos = 0;
+      var firstInBlock = entryIdx;
+      while (entryIdx < rootEntries.Count) {
+        var nameLen = Encoding.UTF8.GetByteCount(rootEntries[entryIdx].Name);
+        var size = 8 + nameLen + 3 & ~3;
+        if (pos + size > blockSize) break;
+        pos += size;
+        ++entryIdx;
+      }
+      if (entryIdx == firstInBlock)
+        throw new InvalidOperationException(
+          $"ext1 writer: directory entry '{rootEntries[firstInBlock].Name}' exceeds a single {blockSize}-byte block.");
+
+      var writePos = 0;
+      for (var e = firstInBlock; e < entryIdx; ++e) {
+        var isLast = e == entryIdx - 1;
+        writePos = WriteRev0DirEntry(blockData, writePos, rootEntries[e].Inode, rootEntries[e].Name, blockSize, isLast);
+      }
+
+      var blockNum = nextBlock++;
+      MarkBlockUsed(disk, blockBitmapOffset, blockNum, (int)firstDataBlock);
+      blockData.CopyTo(disk, blockNum * blockSize);
+      rootBlockList.Add(blockNum);
+    }
+
+    // Past 12 direct blocks, a singly-indirect block chains the rest.
+    const int MaxDirectBlocks = 12;
+    var pointersPerBlock = blockSize / 4;
+    var maxRootBlocks = MaxDirectBlocks + pointersPerBlock;
+    if (rootBlockList.Count > maxRootBlocks)
+      throw new InvalidOperationException(
+        $"ext1 writer: root directory needs {rootBlockList.Count} blocks but only direct + singly-indirect " +
+        $"blocks are supported (max {maxRootBlocks} blocks at {blockSize}-byte blocks).");
+
+    var rootIndirectBlock = 0;
+    var rootAllocatedBlocks = rootBlockList.Count;
+    if (rootBlockList.Count > MaxDirectBlocks) {
+      rootIndirectBlock = nextBlock++;
+      MarkBlockUsed(disk, blockBitmapOffset, rootIndirectBlock, (int)firstDataBlock);
+      ++rootAllocatedBlocks;
+      var indOff = rootIndirectBlock * blockSize;
+      for (var p = MaxDirectBlocks; p < rootBlockList.Count; ++p)
+        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(indOff + (p - MaxDirectBlocks) * 4), (uint)rootBlockList[p]);
+    }
 
     // --- File inodes + data blocks ---
     var sectorsPerBlock = blockSize / 512;
@@ -133,13 +185,17 @@ public sealed class Ext1Writer {
     var rootInodeOffset = inodeTableOffset + 1 * inodeSize;
     var rootIno = disk.AsSpan(rootInodeOffset, inodeSize);
     BinaryPrimitives.WriteUInt16LittleEndian(rootIno, 0x4000 | 0x01ED);          // i_mode: dir, 0755
-    BinaryPrimitives.WriteUInt32LittleEndian(rootIno[4..], (uint)blockSize);     // i_size
+    BinaryPrimitives.WriteUInt32LittleEndian(rootIno[4..], (uint)(rootBlockList.Count * blockSize)); // i_size
     BinaryPrimitives.WriteUInt32LittleEndian(rootIno[8..], now);
     BinaryPrimitives.WriteUInt32LittleEndian(rootIno[12..], now);
     BinaryPrimitives.WriteUInt32LittleEndian(rootIno[16..], now);
     BinaryPrimitives.WriteUInt16LittleEndian(rootIno[26..], 2);                  // i_links_count: "." + parent
-    BinaryPrimitives.WriteUInt32LittleEndian(rootIno[28..], (uint)sectorsPerBlock);
-    BinaryPrimitives.WriteUInt32LittleEndian(rootIno[40..], (uint)rootDirBlock);
+    BinaryPrimitives.WriteUInt32LittleEndian(rootIno[28..], (uint)(rootAllocatedBlocks * sectorsPerBlock)); // i_blocks
+    var rootDirectCount = Math.Min(MaxDirectBlocks, rootBlockList.Count);
+    for (var b = 0; b < rootDirectCount; ++b)
+      BinaryPrimitives.WriteUInt32LittleEndian(rootIno[(40 + b * 4)..], (uint)rootBlockList[b]); // direct blocks 0..11
+    if (rootIndirectBlock != 0)
+      BinaryPrimitives.WriteUInt32LittleEndian(rootIno[88..], (uint)rootIndirectBlock); // singly-indirect pointer
 
     // --- Free-count accounting ---
     var usedInodes = (FirstUserInode - 1) + (uint)fileInodes.Count;
@@ -227,6 +283,14 @@ public sealed class Ext1Writer {
     BinaryPrimitives.WriteUInt16LittleEndian(dirData.AsSpan(pos + 6), (ushort)nameBytes.Length);
     nameBytes.CopyTo(dirData, pos + 8);
     return pos + entrySize;
+  }
+
+  // Rounds the required inode count up to a sensible group size. The minimal
+  // writer keeps a single block group, so the inode count is simply sized to
+  // hold every reserved/file inode with headroom, never below the classic 128.
+  private static int ChooseInodeCount(int needed) {
+    var withHeadroom = Math.Max(128, needed + needed / 10 + 16);
+    return withHeadroom + 7 & ~7;
   }
 
   private static void MarkBlockUsed(byte[] disk, int bitmapOffset, int blockNum, int firstDataBlock) {
