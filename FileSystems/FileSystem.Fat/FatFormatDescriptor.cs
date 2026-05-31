@@ -392,8 +392,8 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new FatWriter();
     foreach (var input in inputs.Where(i => !i.IsDirectory))
-      w.AddFile(input.ArchiveName, File.ReadAllBytes(input.FullPath),
-                File.GetLastWriteTime(input.FullPath));
+      w.AddFile(input.ArchiveName, input.ReadContent(),
+                input.InMemoryContent != null ? null : File.GetLastWriteTime(input.FullPath));
 
     var specific = options.FormatSpecific;
     var totalSectors  = ParseImageSizeSectors(specific?.GetValueOrDefault("ImageSize"));
@@ -501,8 +501,8 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var entry in reader.Entries.Where(e => !e.IsDirectory))
       combined.AddFile(entry.Name, reader.Extract(entry));
     foreach (var input in inputs.Where(i => !i.IsDirectory))
-      combined.AddFile(input.ArchiveName, File.ReadAllBytes(input.FullPath),
-                       File.GetLastWriteTime(input.FullPath));
+      combined.AddFile(input.ArchiveName, input.ReadContent(),
+                       input.InMemoryContent != null ? null : File.GetLastWriteTime(input.FullPath));
     var totalSectors = (int)(archive.Length / 512);
     var rebuilt = combined.Build(totalSectors: totalSectors);
     archive.Position = 0;
