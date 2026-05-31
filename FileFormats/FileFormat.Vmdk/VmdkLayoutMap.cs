@@ -33,12 +33,13 @@ public static class VmdkLayoutMap {
     yield return new DefragBlockInfo(0, sectorSize, DefragBlockKind.MetadataReserved,
       FileName: "Sparse Header");
 
-    var capacity = (long)BinaryPrimitives.ReadUInt64LittleEndian(buf.AsSpan(16));
-    var grainSizeSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(buf.AsSpan(24));
-    var descriptorOffset = (long)BinaryPrimitives.ReadUInt64LittleEndian(buf.AsSpan(32));
-    var descriptorSize = (long)BinaryPrimitives.ReadUInt64LittleEndian(buf.AsSpan(40));
-    var numGTEsPerGT = (int)BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(48));
-    var gdOffsetSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(buf.AsSpan(64));
+    // SparseExtentHeader is byte-packed; fields sit at 12/20/28/36/44/56.
+    var capacity = (long)BinaryPrimitives.ReadUInt64LittleEndian(buf.AsSpan(12));
+    var grainSizeSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(buf.AsSpan(20));
+    var descriptorOffset = (long)BinaryPrimitives.ReadUInt64LittleEndian(buf.AsSpan(28));
+    var descriptorSize = (long)BinaryPrimitives.ReadUInt64LittleEndian(buf.AsSpan(36));
+    var numGTEsPerGT = (int)BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(44));
+    var gdOffsetSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(buf.AsSpan(56));
 
     if (numGTEsPerGT <= 0) numGTEsPerGT = 512;
     var grainSizeBytes = grainSizeSectors * sectorSize;

@@ -59,23 +59,24 @@ public sealed class VmdkReader : IDisposable {
   private void ParseSparse(byte[] head) {
     _isSparse = true;
 
-    // Sparse VMDK header (all offsets in sectors, little-endian)
+    // SparseExtentHeader is byte-packed (no natural alignment); all sector
+    // offsets are little-endian.
     // offset  0: magic "KDMV" (4 bytes)
     // offset  4: version (4 bytes)
     // offset  8: flags (4 bytes)
-    // offset 16: capacity in sectors (8 bytes)
-    // offset 24: grainSize in sectors (8 bytes)
-    // offset 32: descriptorOffset in sectors (8 bytes)
-    // offset 40: descriptorSize in sectors (8 bytes)
-    // offset 48: numGTEsPerGT (4 bytes) — grain table entries per grain table
-    // offset 56: rgdOffset in sectors (8 bytes) — redundant grain directory
-    // offset 64: gdOffset in sectors (8 bytes) — primary grain directory
-    // offset 72: overHead in sectors (8 bytes)
+    // offset 12: capacity in sectors (8 bytes)
+    // offset 20: grainSize in sectors (8 bytes)
+    // offset 28: descriptorOffset in sectors (8 bytes)
+    // offset 36: descriptorSize in sectors (8 bytes)
+    // offset 44: numGTEsPerGT (4 bytes) — grain table entries per grain table
+    // offset 48: rgdOffset in sectors (8 bytes) — redundant grain directory
+    // offset 56: gdOffset in sectors (8 bytes) — primary grain directory
+    // offset 64: overHead in sectors (8 bytes)
 
-    var capacity = (long)BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(16));
-    var grainSizeSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(24));
-    _grainTableEntries = (int)BinaryPrimitives.ReadUInt32LittleEndian(head.AsSpan(48));
-    var gdOffsetSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(64));
+    var capacity = (long)BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(12));
+    var grainSizeSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(20));
+    _grainTableEntries = (int)BinaryPrimitives.ReadUInt32LittleEndian(head.AsSpan(44));
+    var gdOffsetSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(56));
 
     _diskSize = capacity * 512;
     _grainSizeBytes = grainSizeSectors * 512;

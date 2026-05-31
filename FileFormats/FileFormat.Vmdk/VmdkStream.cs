@@ -149,17 +149,18 @@ public sealed class VmdkStream : Stream {
       if (!magic.SequenceEqual(SparseMagic))
         return null;
 
-      // Parse sparse header
-      stream.Position = 16;
-      Span<byte> hdr = stackalloc byte[64]; // read bytes 16..79
+      // Parse sparse header — SparseExtentHeader is byte-packed (no alignment),
+      // so fields sit at 12 (capacity), 20 (grainSize), 44 (numGTEsPerGT), 56 (gdOffset).
+      stream.Position = 12;
+      Span<byte> hdr = stackalloc byte[52]; // read bytes 12..63
       stream.ReadExactly(hdr);
 
-      var capacity = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr);         // offset 16
-      var grainSizeSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr[8..]); // offset 24
-      // descriptor offset/size at 32, 40 — skip
-      var numGTEsPerGT = (int)BinaryPrimitives.ReadUInt32LittleEndian(hdr[32..]); // offset 48
-      // rgdOffset at 56 — skip
-      var gdOffsetSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr[48..]); // offset 64
+      var capacity = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr);          // offset 12
+      var grainSizeSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr[8..]); // offset 20
+      // descriptor offset/size at 28, 36 — skip
+      var numGTEsPerGT = (int)BinaryPrimitives.ReadUInt32LittleEndian(hdr[32..]); // offset 44
+      // rgdOffset at 48 — skip
+      var gdOffsetSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(hdr[44..]); // offset 56
 
       if (numGTEsPerGT <= 0) numGTEsPerGT = 512;
       var grainSizeBytes = (int)(grainSizeSectors * 512);
