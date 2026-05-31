@@ -6,6 +6,13 @@ public partial class App : System.Windows.Application {
   protected override void OnStartup(System.Windows.StartupEventArgs e) {
     base.OnStartup(e);
 
+    // Under Wine, WPF popup/menu windows use layered (transparent) HWNDs that
+    // Wine cannot composite, producing solid-black rectangles. Forcing software
+    // rendering eliminates that code path. Activated only when the Wine launch
+    // script sets this variable so normal Windows builds are unaffected.
+    if (System.Environment.GetEnvironmentVariable("COMPRESSIONWORKBENCH_WINE") == "1")
+      System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+
     // Surface unhandled exceptions to a crash log so future "just crashed" reports
     // come with a stack trace. WPF dispatcher + thread-pool + AppDomain all need
     // their own hook; we route all three to the same writer.
