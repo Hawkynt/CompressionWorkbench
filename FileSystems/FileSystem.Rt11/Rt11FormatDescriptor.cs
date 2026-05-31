@@ -13,7 +13,7 @@ namespace FileSystem.Rt11;
 /// canonical RX01 single-density 8" floppy image (~256 KB).
 /// </summary>
 public sealed class Rt11FormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks the RT-11 directory segment chain and yields the actual on-disk
@@ -25,6 +25,26 @@ public sealed class Rt11FormatDescriptor :
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => Rt11ExtentMap.Enumerate(image);
+
+  /// <summary>
+  /// Zeros all unused space in an RT-11 image: the blocks behind E_MPTY
+  /// directory slots and any trailing region not claimed by a permanent file
+  /// or the boot/home/directory metadata. Driven by the generic
+  /// <see cref="UnusedSpaceWiper"/> over the RT-11 extent map.
+  ///
+  /// <para>Cluster tips are not applicable: RT-11 stores files contiguously and
+  /// records only a 512-byte block count — there is no sub-block logical length,
+  /// so a file occupies exactly its allocated block run with no slack tail.
+  /// <paramref name="wipeClusterTips"/> is therefore forced off.</para>
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = Rt11ExtentMap.Enumerate(image);
+    // No logical-vs-physical size distinction in RT-11 — tips never apply.
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
+  }
 
   public string Id => "Rt11";
   public string DisplayName => "DEC RT-11 (RX01)";
