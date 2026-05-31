@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Hfs;
 
-public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks the HFS catalog B-tree leaf chain and yields the actual on-disk
@@ -16,6 +16,54 @@ public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => HfsExtentMap.Enumerate(image);
+
+  // ── IWipeEmpty ─────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros all unused space in the HFS image: free allocation blocks, gaps
+  /// between files and the block-tip slack between a file's logical size and
+  /// the end of its last allocated 512-byte block. The catalog extent map
+  /// clamps each file's run to its logical byte length, so trailing slack
+  /// inside the final block presents as a free gap that the generic
+  /// <see cref="UnusedSpaceWiper"/> zero-fills.
+  ///
+  /// <para>The HFS extent map keys each <see cref="DefragBlockInfo.FileName"/>
+  /// by the catalog <em>leaf</em> name, whereas <see cref="HfsReader"/> reports
+  /// the full slash-separated path; the size lookup is therefore keyed by the
+  /// leaf segment so the explicit cluster-tip pass matches.</para>
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        var reader = new HfsReader(image);
+        var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var entry in reader.Entries)
+          if (!entry.IsDirectory) {
+            var leaf = LeafName(entry.Name);
+            sizeMap[leaf] = entry.Size;
+          }
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    var extents = HfsExtentMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
+  }
+
+  // The catalog extent map labels file extents with the leaf name only.
+  private static string LeafName(string path) {
+    var slash = path.LastIndexOf('/');
+    return slash < 0 ? path : path[(slash + 1)..];
+  }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
