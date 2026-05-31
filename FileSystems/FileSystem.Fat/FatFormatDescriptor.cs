@@ -66,7 +66,14 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       DisplayName: "Long filenames (VFAT)",
       Kind: FormatOptionKind.Boolean,
       Default: "true",
-      Description: "VFAT LFN entries preserve mixed-case names and names > 8.3 chars. Disable only for strict DOS 8.3 compatibility."),
+      Description: "VFAT LFN entries preserve mixed-case names and names > 8.3 chars. Disable only for strict DOS 8.3 compatibility (no VFAT)."),
+    new FormatOptionDescriptor(
+      Key: "ForceLongFilenames",
+      DisplayName: "Force LFN for every entry",
+      Kind: FormatOptionKind.Boolean,
+      Default: "false",
+      Description: "Emit a VFAT long-name entry for every file/dir (with a generated 8.3 alias), even names that already fit 8.3 — the way Windows always records a long name. Implies VFAT on.",
+      DependsOn: "LongFilenames=true"),
     new FormatOptionDescriptor(
       Key: "TransactionFat",
       DisplayName: "Transaction FAT (TFAT)",
@@ -395,6 +402,8 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var rootEntries   = ParseRootEntries(specific?.GetValueOrDefault("RootEntries"));
     var label         = specific?.GetValueOrDefault("VolumeLabel");
     var enableLfn     = specific?.GetValueOrDefault("LongFilenames") != "false";
+    var forceLfn      = specific?.GetValueOrDefault("ForceLongFilenames") == "true";
+    if (forceLfn) enableLfn = true; // force-LFN implies VFAT is on
     var tfat          = specific?.GetValueOrDefault("TransactionFat") == "true";
     var fatPlus       = specific?.GetValueOrDefault("FatPlus") == "true";
     _ = fatPlus; // modTime always written; DIR_CrtTimeTenth provides sub-second precision
@@ -410,10 +419,10 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var disk = totalSectors > 0
       ? w.Build(totalSectors, requestedClusterSize: clusterBytes, volumeLabel: label,
                 forcedFatType: forcedFatType, enableLfn: enableLfn, transactionFat: tfat,
-                requestedRootEntries: rootEntries)
+                requestedRootEntries: rootEntries, forceLfn: forceLfn)
       : w.BuildAutoSized(requestedClusterSize: clusterBytes, volumeLabel: label,
                          forcedFatType: forcedFatType, enableLfn: enableLfn, transactionFat: tfat,
-                         requestedRootEntries: rootEntries);
+                         requestedRootEntries: rootEntries, forceLfn: forceLfn);
     output.Write(disk);
   }
 

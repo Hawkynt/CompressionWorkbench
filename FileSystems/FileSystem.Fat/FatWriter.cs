@@ -49,7 +49,8 @@ public sealed class FatWriter {
   /// <returns>Complete disk image as byte array.</returns>
   public byte[] Build(int totalSectors = 2880, int bytesPerSector = 512, int requestedClusterSize = 0,
     string? volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false,
-    int requestedRootEntries = 0) {
+    int requestedRootEntries = 0, bool forceLfn = false) {
+    if (forceLfn) enableLfn = true; // force-LFN implies VFAT is on
     const int fatCount = 2;
 
     // Start with FAT12 floppy defaults
@@ -225,7 +226,7 @@ public sealed class FatWriter {
     // cluster chain in the data area; the FAT12/16 root lives in its fixed
     // region, the FAT32 root in the cluster chain at cluster 2.
     var dataAreaOffset = firstDataSector * bytesPerSector;
-    var placement = PlaceTree(BuildTree(), fatType, clusterSize, enableLfn);
+    var placement = PlaceTree(BuildTree(), fatType, clusterSize, enableLfn, forceLfn);
 
     // For FAT12/16 the root directory is a fixed-size region. Overflow would
     // silently write directory entries into the data clusters that follow it,
@@ -296,7 +297,8 @@ public sealed class FatWriter {
   /// </summary>
   public void BuildTo(Stream output, int totalSectors = 2880, int bytesPerSector = 512,
     int requestedClusterSize = 0, string? volumeLabel = null, int forcedFatType = 0,
-    bool enableLfn = true, bool transactionFat = false, int requestedRootEntries = 0) {
+    bool enableLfn = true, bool transactionFat = false, int requestedRootEntries = 0, bool forceLfn = false) {
+    if (forceLfn) enableLfn = true; // force-LFN implies VFAT is on
     ArgumentNullException.ThrowIfNull(output);
     if (!output.CanSeek || !output.CanWrite)
       throw new ArgumentException("BuildTo requires a writable, seekable stream.", nameof(output));
@@ -369,7 +371,7 @@ public sealed class FatWriter {
 
     // Lay out the directory tree onto contiguous cluster runs (no image
     // allocation). The same planner drives Build, so output is byte-identical.
-    var placement = PlaceTree(BuildTree(), fatType, (int)clusterSize, enableLfn);
+    var placement = PlaceTree(BuildTree(), fatType, (int)clusterSize, enableLfn, forceLfn);
     if (fatType != 32 && placement.RootContentBytes > rootEntryCount * 32)
       throw new InvalidOperationException(
         $"FAT{fatType}: the root directory needs {placement.RootContentBytes / 32} entries " +
@@ -719,7 +721,7 @@ public sealed class FatWriter {
   /// long name needs them, then the 8.3 entry). Updates <paramref
   /// name="existingShortNames"/> with the chosen alias to detect ~N
   /// collisions across subsequent files.</summary>
-  private static byte[] BuildDirentSlots(string longName, HashSet<string> existingShortNames, DateTime? modTime = null, bool enableLfn = true, byte attr = 0x20) {
+  private static byte[] BuildDirentSlots(string longName, HashSet<string> existingShortNames, DateTime? modTime = null, bool enableLfn = true, byte attr = 0x20, bool forceLfn = false) {
     if (!enableLfn) {
       // Strict 8.3 mode: no LFN slots, just generate a short-name alias.
       var shortAlias = IsPlain8Dot3(longName)
@@ -728,7 +730,10 @@ public sealed class FatWriter {
       existingShortNames.Add(shortAlias.ToUpperInvariant());
       return BuildShortEntry(shortAlias, 0, modTime, attr);
     }
-    if (IsPlain8Dot3(longName)) {
+    // forceLfn emits an LFN entry set for every name (Windows-style), even one
+    // that already fits 8.3 — so the falls-through-to-LFN path below runs for
+    // all names. Otherwise plain 8.3 names use a single dirent with NT case bits.
+    if (!forceLfn && IsPlain8Dot3(longName)) {
       existingShortNames.Add(longName.ToUpperInvariant());
       // Compute NT case bits so the reader can restore lower-case spelling
       // without needing LFN slots — bit 3 = base is lowercase, bit 4 =
@@ -853,13 +858,13 @@ public sealed class FatWriter {
   /// tree. Short-name uniqueness is scoped per directory (FAT requires unique
   /// 8.3 names only within a single directory). Files are listed before
   /// subdirectories. Leaves the start-cluster/size fields as placeholders.</summary>
-  private static void BuildSlots(DirNode dir, bool enableLfn) {
+  private static void BuildSlots(DirNode dir, bool enableLfn, bool forceLfn = false) {
     var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     foreach (var f in dir.Files)
-      dir.ChildSlots.Add((BuildDirentSlots(f.Name, names, f.ModTime, enableLfn, 0x20), f, null));
+      dir.ChildSlots.Add((BuildDirentSlots(f.Name, names, f.ModTime, enableLfn, 0x20, forceLfn), f, null));
     foreach (var d in dir.Dirs)
-      dir.ChildSlots.Add((BuildDirentSlots(d.Name, names, null, enableLfn, 0x10), null, d));
-    foreach (var d in dir.Dirs) BuildSlots(d, enableLfn);
+      dir.ChildSlots.Add((BuildDirentSlots(d.Name, names, null, enableLfn, 0x10, forceLfn), null, d));
+    foreach (var d in dir.Dirs) BuildSlots(d, enableLfn, forceLfn);
   }
 
   /// <summary>Byte length of a directory's on-disk content: '.'/'..' (64 bytes,
@@ -911,8 +916,8 @@ public sealed class FatWriter {
   /// file, fills in their content (patching child start-cluster/size fields
   /// and writing '.'/'..'), and returns a <see cref="Placement"/> that both
   /// <see cref="Build"/> and <see cref="BuildTo"/> render identically.</summary>
-  private static Placement PlaceTree(DirNode root, int fatType, int clusterSize, bool enableLfn) {
-    BuildSlots(root, enableLfn);
+  private static Placement PlaceTree(DirNode root, int fatType, int clusterSize, bool enableLfn, bool forceLfn = false) {
+    BuildSlots(root, enableLfn, forceLfn);
     var p = new Placement { RootContentBytes = ContentLength(root, true) };
 
     // The root either occupies a fixed region (FAT12/16) or a cluster chain at
@@ -984,13 +989,14 @@ public sealed class FatWriter {
   /// </summary>
   public byte[] BuildAutoSized(int bytesPerSector = 512, int requestedClusterSize = 0,
     string? volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false,
-    int requestedRootEntries = 0) {
+    int requestedRootEntries = 0, bool forceLfn = false) {
+    if (forceLfn) enableLfn = true; // force-LFN implies VFAT is on
     // Lay out the directory tree to size the image. Only the root's *direct*
     // children bound the fixed FAT12/16 root directory; files inside
     // subdirectories live in the subdir's own cluster chain, so they add data
     // clusters but never overflow the root.
     var tree = BuildTree();
-    BuildSlots(tree, enableLfn);
+    BuildSlots(tree, enableLfn, forceLfn);
     var rootDirentBytes = ContentLength(tree, isRoot: true);
     var fileSizes = new List<long>();
     var dirContentBytes = new List<long>();
@@ -1035,7 +1041,7 @@ public sealed class FatWriter {
       totalSectors = Math.Max(totalSectors, (int)fat32Sectors);
     }
 
-    return Build(totalSectors, bytesPerSector, clusterBytes, volumeLabel, forcedFatType, enableLfn, transactionFat, requestedRootEntries);
+    return Build(totalSectors, bytesPerSector, clusterBytes, volumeLabel, forcedFatType, enableLfn, transactionFat, requestedRootEntries, forceLfn);
   }
 
   /// <summary>
