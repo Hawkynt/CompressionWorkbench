@@ -11,7 +11,7 @@ namespace FileSystem.Hpfs;
 /// </summary>
 public sealed class HpfsFormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
-      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
+      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
 
   public string Id => "Hpfs";
   public string DisplayName => "HPFS";
@@ -94,6 +94,42 @@ public sealed class HpfsFormatDescriptor
     }
 
     return EnumerateExtentsCore(data);
+  }
+
+  // ── IWipeEmpty ─────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros all unused space in the HPFS image: free sectors, gaps between files
+  /// and the sector-tip slack between a file's logical size and the end of its
+  /// last allocated 512-byte sector. The extent map clamps each file's data run
+  /// to its logical byte length, so trailing slack inside the final sector
+  /// presents as a free gap that the generic <see cref="UnusedSpaceWiper"/>
+  /// zero-fills. The size lookup is keyed by the reader's full path, matching
+  /// the extent FileName.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        using var reader = new HpfsReader(image);
+        var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var entry in reader.Entries)
+          if (!entry.IsDirectory && !entry.IsBtreeFile)
+            sizeMap[entry.Name] = entry.Size;
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    var extents = EnumerateExtents(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
   }
 
   private static List<DefragBlockInfo> EnumerateExtentsCore(byte[] data) {
