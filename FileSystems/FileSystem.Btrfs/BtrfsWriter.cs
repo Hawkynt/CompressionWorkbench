@@ -38,24 +38,39 @@ public sealed class BtrfsWriter {
   private const int ChunkTreeOff = 0x20000;   // SYSTEM chunk: chunk tree only
   private const int DevTreeOff = 0x30000;     // METADATA chunk starts here
   private const int RootTreeOff = 0x40000;
-  private const int FsTreeOff = 0x50000;
-  private const int ExtentTreeOff = 0x60000;
-  private const int CsumTreeOff = 0x70000;
-  private const int DataRegionOff = 0x80000;
+  private const int FsTreeOff = 0x50000;      // first FS-tree block (root node)
+
+  // The metadata chunk holds dev/root/fs/extent/csum trees. The FS tree may
+  // span an arbitrary number of node-sized blocks (one internal node + N leaf
+  // nodes when a directory overflows a single leaf), so the extent/csum trees
+  // and the data region are placed *after* the FS-tree blocks at offsets
+  // computed per image in <see cref="ComputeLayout"/>. The fixed offsets above
+  // cover the blocks whose position never depends on file count.
 
   // Chunk ranges (logical == physical in this image). Lengths are multiples
   // of BTRFS_STRIPE_LEN (64 KiB).
   //   SYSTEM:   [0x10000, 0x30000) 128 KiB — superblock gap + chunk tree
-  //   METADATA: [0x30000, 0x80000) 320 KiB — dev/root/fs/extent/csum trees
-  //   DATA:     [0x80000, 0xC0000) 256 KiB — file data region
+  //   METADATA: [0x30000, …)       — dev/root/fs(+grown leaves)/extent/csum
+  //   DATA:     [end of metadata, …) — file data region
   private const long SystemChunkStart = 0x10000;
   private const long SystemChunkLength = 0x20000;  // 128 KiB (sb gap + chunk tree)
   private const long MetadataChunkStart = 0x30000;
-  private const long MetadataChunkLength = 0x50000; // 320 KiB (dev+root+fs+extent+csum)
-  private const long DataChunkStart = 0x80000;
   private const long DataChunkLength = 0x40000;    // 256 KiB data region
 
-  private const long TotalSize = 0xC0000; // 768 KiB image
+  // The dev/root trees plus the extent and csum trees and the data region are
+  // sized at write time once the FS-tree block count is known. These fields are
+  // populated by ComputeLayout before any tree is serialised.
+  private int _fsTreeBlockCount = 1;            // FS-tree blocks (root + leaves)
+  private long _extentTreeOff;
+  private long _csumTreeOff;
+  private long _metadataChunkLength;
+  private long _dataChunkStart;
+  private long _totalSize;
+
+  // Logical/physical offsets of every FS-tree block, in write order. Index 0 is
+  // the root node (an internal node when _fsTreeBlockCount > 2, otherwise the
+  // sole leaf). Leaves follow when the tree has grown.
+  private readonly List<long> _fsTreeBlockOffsets = [];
 
   // Key types — shared with the reader.
   private const byte InodeItem = 1;
@@ -112,8 +127,6 @@ public sealed class BtrfsWriter {
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    if (this._files.Count >= 64)
-      throw new InvalidOperationException("BtrfsWriter supports at most 64 files in a single leaf node.");
     // Normalise separators and drop empty components (leading "/", "a//b").
     var parts = name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
     if (parts.Length == 0)
@@ -125,15 +138,27 @@ public sealed class BtrfsWriter {
 
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
-    var image = new byte[TotalSize];
+
+    // ── Phase 1: build and pack the FS tree ─────────────────────────────
+    // The FS-tree item set is assembled and split into leaf-sized batches
+    // first, because the resulting block count drives the physical layout
+    // (where the extent/csum trees and the data region land, and how big the
+    // image and the metadata chunk must be).
+    var fsLeaves = BuildFsTreeLeaves();
+    // FS-tree block count: one block when a single leaf is the root; otherwise
+    // one internal root node plus one block per leaf.
+    var fsTreeBlocks = fsLeaves.Count == 1 ? 1 : fsLeaves.Count + 1;
+    ComputeLayout(fsTreeBlocks);
+
+    var image = new byte[this._totalSize];
 
     WriteSuperblock(image);
     WriteChunkTree(image);
     WriteDevTree(image);
     WriteRootTree(image);
-    BuildFsTree(image);
+    WriteFsTree(image, fsLeaves);
     WriteExtentTree(image);
-    WriteEmptyTree(image, CsumTreeOff, CsumTreeObjectId);
+    WriteEmptyTree(image, (int)this._csumTreeOff, CsumTreeObjectId);
 
     // Every metadata block starts with a 32-byte csum field whose first
     // 4 bytes hold CRC-32C over bytes [32..blockSize).
@@ -141,12 +166,48 @@ public sealed class BtrfsWriter {
     WriteBlockChecksum(image, ChunkTreeOff, NodeSize);
     WriteBlockChecksum(image, DevTreeOff, NodeSize);
     WriteBlockChecksum(image, RootTreeOff, NodeSize);
-    WriteBlockChecksum(image, FsTreeOff, NodeSize);
-    WriteBlockChecksum(image, ExtentTreeOff, NodeSize);
-    WriteBlockChecksum(image, CsumTreeOff, NodeSize);
+    foreach (var off in this._fsTreeBlockOffsets)
+      WriteBlockChecksum(image, (int)off, NodeSize);
+    WriteBlockChecksum(image, (int)this._extentTreeOff, NodeSize);
+    WriteBlockChecksum(image, (int)this._csumTreeOff, NodeSize);
 
     output.Write(image);
   }
+
+  // Decides the physical placement of every block whose offset depends on the
+  // FS-tree block count, then records the chunk/image sizes those placements
+  // imply. Logical == physical throughout, so these offsets double as logical
+  // addresses in the chunk map.
+  private void ComputeLayout(int fsTreeBlockCount) {
+    this._fsTreeBlockCount = fsTreeBlockCount;
+
+    this._fsTreeBlockOffsets.Clear();
+    for (var i = 0; i < fsTreeBlockCount; i++)
+      this._fsTreeBlockOffsets.Add(FsTreeOff + (long)i * NodeSize);
+
+    var afterFsTree = FsTreeOff + (long)fsTreeBlockCount * NodeSize;
+    this._extentTreeOff = afterFsTree;
+    this._csumTreeOff = afterFsTree + NodeSize;
+
+    // Metadata chunk spans dev/root trees through the csum tree. Round its
+    // length up to a whole BTRFS_STRIPE_LEN (64 KiB) so the chunk mapping
+    // stays stripe-aligned like the original fixed layout.
+    var metadataEnd = this._csumTreeOff + NodeSize;
+    var metadataRawLength = metadataEnd - MetadataChunkStart;
+    this._metadataChunkLength = RoundUpToStripe(metadataRawLength);
+
+    this._dataChunkStart = MetadataChunkStart + this._metadataChunkLength;
+    this._totalSize = this._dataChunkStart + DataChunkLength;
+  }
+
+  private static long RoundUpToStripe(long length) {
+    var rem = length % StripeLen;
+    return rem == 0 ? length : length + (StripeLen - rem);
+  }
+
+  // Number of metadata tree blocks the extent tree must account for:
+  // chunk + dev + root + every FS-tree block + extent + csum.
+  private int MetadataBlockCount => 4 + this._fsTreeBlockCount;
 
   // Builds an empty leaf block (no items). Used for CSUM_TREE where the
   // only requirement is a valid node header — no CSUM_ITEM entries needed
@@ -172,9 +233,12 @@ public sealed class BtrfsWriter {
     AddTreeBlockExtent(items, ChunkTreeOff, ChunkTreeObjectId);
     AddTreeBlockExtent(items, DevTreeOff,   DevTreeObjectId);
     AddTreeBlockExtent(items, RootTreeOff,  RootTreeObjectId);
-    AddTreeBlockExtent(items, FsTreeOff,    FsTreeObjectId);
-    AddTreeBlockExtent(items, ExtentTreeOff, ExtentTreeObjectId);
-    AddTreeBlockExtent(items, CsumTreeOff,  CsumTreeObjectId);
+    // Every FS-tree block — the root node (internal when the tree has grown)
+    // and each leaf — is an owned metadata extent of FS_TREE.
+    foreach (var off in this._fsTreeBlockOffsets)
+      AddTreeBlockExtent(items, off, FsTreeObjectId);
+    AddTreeBlockExtent(items, this._extentTreeOff, ExtentTreeObjectId);
+    AddTreeBlockExtent(items, this._csumTreeOff,  CsumTreeObjectId);
 
     // Block groups — one per chunk. Used bytes must match what
     // update_block_group_used() accumulates from the extent items that
@@ -183,13 +247,13 @@ public sealed class BtrfsWriter {
     // root objectid (3). mkfs.btrfs always stores 256 here.
     items.Add((SystemChunkStart, BlockGroupItem, SystemChunkLength,
       BuildBlockGroupItem(used: CountMetadataUseInRange(SystemChunkStart, SystemChunkLength), FirstChunkTreeObjectId, BlockGroupSystem)));
-    items.Add((MetadataChunkStart, BlockGroupItem, MetadataChunkLength,
-      BuildBlockGroupItem(used: CountMetadataUseInRange(MetadataChunkStart, MetadataChunkLength), FirstChunkTreeObjectId, BlockGroupMetadata)));
-    items.Add((DataChunkStart, BlockGroupItem, DataChunkLength,
+    items.Add((MetadataChunkStart, BlockGroupItem, this._metadataChunkLength,
+      BuildBlockGroupItem(used: CountMetadataUseInRange(MetadataChunkStart, this._metadataChunkLength), FirstChunkTreeObjectId, BlockGroupMetadata)));
+    items.Add((this._dataChunkStart, BlockGroupItem, DataChunkLength,
       BuildBlockGroupItem(used: 0, FirstChunkTreeObjectId, BlockGroupData)));
 
     SortLeafItems(items);
-    WriteLeafNode(image, ExtentTreeOff, ExtentTreeObjectId, items);
+    WriteLeafNode(image, (int)this._extentTreeOff, ExtentTreeObjectId, items);
   }
 
   private static void AddTreeBlockExtent(List<(long, byte, long, byte[])> items,
@@ -224,10 +288,11 @@ public sealed class BtrfsWriter {
   // given chunk range. btrfs check's update_block_group_used() pre-seeds
   // rec->actual_used from the extents it walks; when the tool later compares
   // that against rec->used (what we stamp here), they must match.
-  private static long CountMetadataUseInRange(long chunkStart, long chunkLength) {
+  private long CountMetadataUseInRange(long chunkStart, long chunkLength) {
     var chunkEnd = chunkStart + chunkLength;
     long used = 0;
-    long[] nodes = [ChunkTreeOff, DevTreeOff, RootTreeOff, FsTreeOff, ExtentTreeOff, CsumTreeOff];
+    var nodes = new List<long> { ChunkTreeOff, DevTreeOff, RootTreeOff, this._extentTreeOff, this._csumTreeOff };
+    nodes.AddRange(this._fsTreeBlockOffsets);
     foreach (var n in nodes)
       if (n >= chunkStart && n < chunkEnd)
         used += NodeSize;
@@ -244,7 +309,7 @@ public sealed class BtrfsWriter {
   // btrfs check rejects as "unsupported checksum algorithm 97". The reader
   // now reads the spec offsets (0xA0 / 0x32B) instead, and the pragmatic
   // duplicates have been removed.
-  private static void WriteSuperblock(byte[] image) {
+  private void WriteSuperblock(byte[] image) {
     var sb = image.AsSpan(SbOffset);
 
     // Canonical spec layout ────────────────────────────────────────────
@@ -288,13 +353,13 @@ public sealed class BtrfsWriter {
     BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(0x48), 1); // generation
     BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(0x50), RootTreeOff);
     BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(0x58), ChunkTreeOff);
-    BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(0x70), TotalSize);
+    BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(0x70), this._totalSize);
     // bytes_used: actual bytes consumed by metadata + data. btrfs check
     // compares this against the sum of every allocated extent it walks;
-    // we have 6 metadata tree blocks (chunk/dev/root/fs/extent/csum) and
-    // no file data extents (we store files inline in FS_TREE EXTENT_DATA
-    // items which do not contribute to bytes_used).
-    BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(0x78), 6L * NodeSize);
+    // we account every metadata tree block (chunk/dev/root, the FS-tree
+    // root+leaves, extent, csum) and no file data extents (files live inline
+    // in FS_TREE EXTENT_DATA items which do not contribute to bytes_used).
+    BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(0x78), (long)this.MetadataBlockCount * NodeSize);
     // root_dir_objectid at 0x80 is the default directory inode inside the
     // default subvolume (fs tree root). Per fs/btrfs/ctree.h this is
     // BTRFS_FIRST_FREE_OBJECTID (256), NOT the fs-tree objectid.
@@ -328,15 +393,15 @@ public sealed class BtrfsWriter {
 
   // Builds the 98-byte DEV_ITEM embedded in both the superblock and the
   // dev tree. Matches fs/btrfs/ctree.h btrfs_dev_item.
-  private static byte[] BuildSuperblockDevItem() {
+  private byte[] BuildSuperblockDevItem() {
     var d = new byte[98];
     BinaryPrimitives.WriteInt64LittleEndian(d.AsSpan(0), 1);              // devid
-    BinaryPrimitives.WriteInt64LittleEndian(d.AsSpan(8), TotalSize);      // total_bytes
+    BinaryPrimitives.WriteInt64LittleEndian(d.AsSpan(8), this._totalSize); // total_bytes
     // bytes_used must equal the sum of every DEV_EXTENT length that
     // references this device. btrfs check complains with
     // "Dev extent's total-byte(X) is not equal to byte-used(Y)" otherwise.
     BinaryPrimitives.WriteInt64LittleEndian(d.AsSpan(16),
-      SystemChunkLength + MetadataChunkLength + DataChunkLength);
+      SystemChunkLength + this._metadataChunkLength + DataChunkLength);
     BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(24), SectorSize);   // io_align
     BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(28), SectorSize);   // io_width
     BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(32), SectorSize);   // sector_size
@@ -386,7 +451,7 @@ public sealed class BtrfsWriter {
 
   // ── Chunk tree (three CHUNK_ITEMs) ───────────────────────────────────
 
-  private static void WriteChunkTree(byte[] image) {
+  private void WriteChunkTree(byte[] image) {
     // Per mkfs.btrfs the CHUNK_TREE holds both DEV_ITEM entries (one per
     // device) and CHUNK_ITEM entries (one per chunk). The key order enforced
     // by SortLeafItems places DEV_ITEM (objId=DEV_ITEMS=1, type=216) before
@@ -396,9 +461,9 @@ public sealed class BtrfsWriter {
       (FirstChunkTreeObjectId, ChunkItem, SystemChunkStart,
         BuildChunkItem(SystemChunkLength, BlockGroupSystem, SystemChunkStart)),
       (FirstChunkTreeObjectId, ChunkItem, MetadataChunkStart,
-        BuildChunkItem(MetadataChunkLength, BlockGroupMetadata, MetadataChunkStart)),
-      (FirstChunkTreeObjectId, ChunkItem, DataChunkStart,
-        BuildChunkItem(DataChunkLength, BlockGroupData, DataChunkStart)),
+        BuildChunkItem(this._metadataChunkLength, BlockGroupMetadata, MetadataChunkStart)),
+      (FirstChunkTreeObjectId, ChunkItem, this._dataChunkStart,
+        BuildChunkItem(DataChunkLength, BlockGroupData, this._dataChunkStart)),
     };
     SortLeafItems(items);
     WriteLeafNode(image, ChunkTreeOff, ChunkTreeObjectId, items);
@@ -429,7 +494,7 @@ public sealed class BtrfsWriter {
   // chunk stripes). Key layout for DEV_EXTENT: (devid, DEV_EXTENT,
   // physical_offset).
 
-  private static void WriteDevTree(byte[] image) {
+  private void WriteDevTree(byte[] image) {
     // DEV_TREE holds DEV_EXTENT entries only; DEV_ITEM lives in CHUNK_TREE.
     // btrfs check rejects DEV_ITEM found in DEV_TREE with "Invalid key
     // type(DEV_ITEM) found in root(DEV_TREE)".
@@ -437,9 +502,9 @@ public sealed class BtrfsWriter {
       (1, DevExtent, SystemChunkStart,
         BuildDevExtent(ChunkTreeObjectId, FirstChunkTreeObjectId, SystemChunkStart, SystemChunkLength)),
       (1, DevExtent, MetadataChunkStart,
-        BuildDevExtent(ChunkTreeObjectId, FirstChunkTreeObjectId, MetadataChunkStart, MetadataChunkLength)),
-      (1, DevExtent, DataChunkStart,
-        BuildDevExtent(ChunkTreeObjectId, FirstChunkTreeObjectId, DataChunkStart, DataChunkLength)),
+        BuildDevExtent(ChunkTreeObjectId, FirstChunkTreeObjectId, MetadataChunkStart, this._metadataChunkLength)),
+      (1, DevExtent, this._dataChunkStart,
+        BuildDevExtent(ChunkTreeObjectId, FirstChunkTreeObjectId, this._dataChunkStart, DataChunkLength)),
     };
     SortLeafItems(items);
     WriteLeafNode(image, DevTreeOff, DevTreeObjectId, items);
@@ -463,12 +528,16 @@ public sealed class BtrfsWriter {
   // DEV_TREE (4), FS_TREE (5), and CSUM_TREE (7); missing any of these
   // causes "could not setup extent tree" / similar open-time failures.
 
-  private static void WriteRootTree(byte[] image) {
+  private void WriteRootTree(byte[] image) {
+    // The FS-tree ROOT_ITEM points at the FS-tree root block, which is always
+    // _fsTreeBlockOffsets[0] (== FsTreeOff): the sole leaf when the tree fits
+    // one node, otherwise the internal index node atop the leaves. Its level is
+    // recorded in the block header, not here.
     var items = new List<(long objId, byte type, long offset, byte[] data)> {
-      (ExtentTreeObjectId, RootItem, 0, BuildRootItem(ExtentTreeOff, rootDirId: 0)),
-      (DevTreeObjectId,    RootItem, 0, BuildRootItem(DevTreeOff,    rootDirId: 0)),
-      (FsTreeObjectId,     RootItem, 0, BuildRootItem(FsTreeOff,     rootDirId: FirstFreeObjectId)),
-      (CsumTreeObjectId,   RootItem, 0, BuildRootItem(CsumTreeOff,   rootDirId: 0)),
+      (ExtentTreeObjectId, RootItem, 0, BuildRootItem(this._extentTreeOff, rootDirId: 0)),
+      (DevTreeObjectId,    RootItem, 0, BuildRootItem(DevTreeOff,          rootDirId: 0)),
+      (FsTreeObjectId,     RootItem, 0, BuildRootItem(FsTreeOff,           rootDirId: FirstFreeObjectId)),
+      (CsumTreeObjectId,   RootItem, 0, BuildRootItem(this._csumTreeOff,   rootDirId: 0)),
     };
     SortLeafItems(items);
     WriteLeafNode(image, RootTreeOff, RootTreeObjectId, items);
@@ -506,7 +575,20 @@ public sealed class BtrfsWriter {
     public readonly Dictionary<string, long> FileObjectIds = new(StringComparer.Ordinal);
   }
 
-  private void BuildFsTree(byte[] image) {
+  // A single leaf's worth of FS-tree items together with the lowest key in
+  // the leaf — the internal-node key pointer that references it.
+  private sealed class FsTreeLeaf {
+    public required List<(long objId, byte type, long offset, byte[] data)> Items;
+    public long FirstObjId;
+    public byte FirstType;
+    public long FirstOffset;
+  }
+
+  // Builds the complete sorted FS-tree item set and packs it into leaf-sized
+  // batches. Returns one batch per leaf node; the caller emits an internal
+  // index node above them when more than one leaf results. Index 0 of the
+  // returned list is always the first (lowest-key) leaf.
+  private List<FsTreeLeaf> BuildFsTreeLeaves() {
     // ── Phase 1: assemble the directory tree ────────────────────────────
     // The FS-tree root directory is BTRFS_FIRST_FREE_OBJECTID (256); every
     // other inode gets the next sequential objectid as it is first seen.
@@ -540,9 +622,81 @@ public sealed class BtrfsWriter {
     // ── Phase 2: emit FS-tree items inode-by-inode ──────────────────────
     var items = new List<(long objId, byte type, long offset, byte[] data)>();
     EmitDirectory(items, root, isRoot: true);
-
     SortLeafItems(items);
-    WriteLeafNode(image, FsTreeOff, FsTreeObjectId, items);
+
+    // ── Phase 3: pack the sorted items into leaf nodes ──────────────────
+    return PackIntoLeaves(items);
+  }
+
+  // Usable bytes for items inside a node (after the 101-byte btrfs_header).
+  private const int LeafItemSpace = NodeSize - 101;
+  // Per-item overhead inside a leaf: the 25-byte btrfs_item header. The item's
+  // data is stored separately at the tail of the leaf.
+  private const int LeafItemHeader = 25;
+  // Per-child overhead inside an internal node: key(17)+blockptr(8)+gen(8).
+  private const int KeyPtrSize = 33;
+  // Maximum children an internal node can index.
+  private const int MaxKeyPtrs = LeafItemSpace / KeyPtrSize;
+
+  // Greedily slices the sorted item set into leaves, each bounded by the node's
+  // usable space. A single oversized item (one whose 25-byte header plus data
+  // exceeds a whole leaf) is impossible here because inline file payloads are
+  // bounded well below the node size, but we still place such an item alone so
+  // the writer never silently drops data.
+  private static List<FsTreeLeaf> PackIntoLeaves(
+      List<(long objId, byte type, long offset, byte[] data)> items) {
+    var leaves = new List<FsTreeLeaf>();
+    var current = new List<(long, byte, long, byte[])>();
+    var used = 0;
+
+    foreach (var item in items) {
+      var cost = LeafItemHeader + item.data.Length;
+      if (current.Count > 0 && used + cost > LeafItemSpace) {
+        leaves.Add(MakeLeaf(current));
+        current = [];
+        used = 0;
+      }
+      current.Add(item);
+      used += cost;
+    }
+    if (current.Count > 0 || leaves.Count == 0)
+      leaves.Add(MakeLeaf(current));
+    return leaves;
+  }
+
+  private static FsTreeLeaf MakeLeaf(List<(long objId, byte type, long offset, byte[] data)> items) {
+    var leaf = new FsTreeLeaf { Items = items };
+    if (items.Count > 0) {
+      leaf.FirstObjId = items[0].objId;
+      leaf.FirstType = items[0].type;
+      leaf.FirstOffset = items[0].offset;
+    }
+    return leaf;
+  }
+
+  // Serialises the FS-tree blocks. When the item set fits one leaf the FS-tree
+  // root *is* that leaf (level 0). Otherwise the root becomes a level-1
+  // internal node whose key pointers reference each leaf in key order; the
+  // leaves occupy the blocks following the root.
+  private void WriteFsTree(byte[] image, List<FsTreeLeaf> leaves) {
+    if (leaves.Count == 1) {
+      WriteLeafNode(image, (int)this._fsTreeBlockOffsets[0], FsTreeObjectId, leaves[0].Items);
+      return;
+    }
+
+    if (leaves.Count > MaxKeyPtrs)
+      throw new InvalidOperationException(
+        $"BtrfsWriter: directory tree needs {leaves.Count} leaves, exceeding the "
+        + $"{MaxKeyPtrs}-child single internal node (deeper trees are not emitted).");
+
+    // Block 0 is the internal root; blocks 1..N are the leaves.
+    var keyPtrs = new List<(long objId, byte type, long offset, long blockPtr)>();
+    for (var i = 0; i < leaves.Count; i++) {
+      var leafOff = this._fsTreeBlockOffsets[i + 1];
+      WriteLeafNode(image, (int)leafOff, FsTreeObjectId, leaves[i].Items);
+      keyPtrs.Add((leaves[i].FirstObjId, leaves[i].FirstType, leaves[i].FirstOffset, leafOff));
+    }
+    WriteInternalNode(image, (int)this._fsTreeBlockOffsets[0], FsTreeObjectId, level: 1, keyPtrs);
   }
 
   // Emits all FS-tree items for a directory inode and recurses into its
@@ -723,6 +877,39 @@ public sealed class BtrfsWriter {
       BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(itemOff + 21), (uint)data.Length);
 
       data.CopyTo(image, nodeOff + 101 + dataOffsetInItems);
+    }
+  }
+
+  // ── Internal (index) node serialisation ──────────────────────────────
+  //
+  // Same 101-byte btrfs_header as a leaf, but level >= 1 and the body is a
+  // packed array of btrfs_key_ptr entries (fs/btrfs/ctree.h):
+  //   key:        objectid(8) + type(1) + offset(8)   = 17
+  //   blockptr:   logical address of the child node    = 8
+  //   generation: child generation                     = 8   → 33 bytes total
+  // Children must appear in ascending key order; each key is the lowest key
+  // present in the referenced child node.
+  private static void WriteInternalNode(byte[] image, int nodeOff, long ownerObjectId,
+      byte level, List<(long objId, byte type, long offset, long blockPtr)> keyPtrs) {
+    FsUuid.CopyTo(image.AsSpan(nodeOff + 32));
+    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(nodeOff + 48), nodeOff); // bytenr
+    const long WrittenFlag = 1L;
+    const long MixedBackrefRev = 1L << 56;
+    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(nodeOff + 56), WrittenFlag | MixedBackrefRev);
+    FsUuid.CopyTo(image.AsSpan(nodeOff + 64));                                    // chunk_tree_uuid
+    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(nodeOff + 80), 1);       // generation
+    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(nodeOff + 88), ownerObjectId);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(nodeOff + 96), (uint)keyPtrs.Count);
+    image[nodeOff + 100] = level;
+
+    for (var i = 0; i < keyPtrs.Count; i++) {
+      var (objId, type, offset, blockPtr) = keyPtrs[i];
+      var p = nodeOff + 101 + i * 33;
+      BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(p), objId);
+      image[p + 8] = type;
+      BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(p + 9), offset);
+      BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(p + 17), blockPtr);
+      BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(p + 25), 1); // generation
     }
   }
 
