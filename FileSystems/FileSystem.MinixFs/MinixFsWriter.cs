@@ -9,8 +9,10 @@ namespace FileSystem.MinixFs;
 /// real directory inodes for every path component, so a file added as
 /// <c>"a/b/c.txt"</c> is stored under nested directories <c>a</c> and <c>a/b</c>.
 /// Files are stored using direct zone pointers (up to 7 direct zones per file =
-/// up to 7168 bytes with 1K blocks). Each directory occupies a single zone, so a
-/// directory may hold at most 16 entries (including "." and "..").
+/// up to 7168 bytes with 1K blocks). Directories may span multiple zones: their
+/// fixed-size entries fill the 7 direct zones and then a single-indirect zone,
+/// allowing a directory to hold thousands of entries (7 + 1024/4 = 263 zones =
+/// 4208 entries with 1K blocks).
 /// </summary>
 public sealed class MinixFsWriter : IDisposable {
   private readonly Stream _output;
@@ -35,8 +37,16 @@ public sealed class MinixFsWriter : IDisposable {
   // V3 dir entry: uint32 inode (4 bytes) + char[60] name (60 bytes) = 64 bytes per entry.
   private const int DirEntrySize = 64;
   private const int MaxNameLength = 59; // 60-byte name field minus a trailing NUL.
-  // A directory occupies exactly one zone, so it can hold at most this many entries.
-  private const int MaxEntriesPerDir = BlockSize / DirEntrySize; // 16
+  // Fixed-size directory entries per zone.
+  private const int EntriesPerZone = BlockSize / DirEntrySize; // 16
+  // V3 inode zone slots: 7 direct, then single/double/triple indirect.
+  private const int DirectZones = 7;
+  private const int IndirectSlot = 7;
+  private const int ZonePointersPerBlock = BlockSize / 4; // 256
+  // A directory addresses its zones through 7 direct slots plus one
+  // single-indirect zone, so it can hold at most this many entries.
+  private const int MaxDirZones = DirectZones + ZonePointersPerBlock; // 263
+  private const int MaxEntriesPerDir = MaxDirZones * EntriesPerZone;   // 4208
 
   private const ushort ModeDirectory   = 0x41ED; // S_IFDIR | 0755
   private const ushort ModeRegularFile = 0x81A4; // S_IFREG | 0644
@@ -91,8 +101,8 @@ public sealed class MinixFsWriter : IDisposable {
       allFiles.Add(fileNode);
     }
 
-    // Enforce the single-zone-per-directory limit early with a clear message.
-    EnsureDirectoriesFitOneZone(root, "");
+    // Enforce the addressable-zone limit per directory early with a clear message.
+    EnsureDirectoriesAddressable(root, "");
 
     // --- Assign 1-based inode numbers: root = 1, then dirs, then files ---
     // Root keeps inode 1 so the reader (which starts at inode 1) finds it.
@@ -122,8 +132,14 @@ public sealed class MinixFsWriter : IDisposable {
     // Layout: block0 (boot) + block1 (superblock) + imapBlocks + zmapBlocks + inodeTableBlocks
     var firstdatazone = 2 + imapBlocks + zmapBlocks + inodeTableBlocks;
 
-    // Zones needed: one per directory (single zone each) + ceil(size/blocksize) per file.
-    var dataZonesNeeded = allDirs.Count;
+    // Zones needed: per directory, ceil(entries/EntriesPerZone) data zones plus
+    // one indirect zone when it spills past the 7 direct slots; per file,
+    // ceil(size/blocksize) data zones.
+    var dataZonesNeeded = 0;
+    foreach (var dir in allDirs) {
+      var dirZones = DirectoryDataZoneCount(dir);
+      dataZonesNeeded += dirZones + (dirZones > DirectZones ? 1 : 0);
+    }
     foreach (var file in allFiles)
       dataZonesNeeded += file.FileData.Length == 0 ? 0 : (file.FileData.Length + BlockSize - 1) / BlockSize;
 
@@ -152,26 +168,48 @@ public sealed class MinixFsWriter : IDisposable {
     // Parent link counts: a directory's i_nlinks = 2 (self "." + parent's entry)
     // plus one extra per child directory (the child's ".." points back).
     foreach (var dir in allDirs) {
-      var dirZone = nextZone++;
-      SetBit(disk, zmapOff, dirZone);
+      // The full entry stream: ".", "..", then one entry per child.
+      var entries = new List<(uint Inode, string Name)>(dir.Children.Count + 2) {
+        (dir.Inode, "."),
+        (ParentInode(root, dir), ".."),
+      };
+      foreach (var (childName, child) in dir.Children)
+        entries.Add((child.Inode, childName));
 
-      var dirData = new byte[BlockSize];
-      var pos = 0;
-      // "." -> self
-      WriteDirEntry(dirData, pos, dir.Inode, ".");
-      pos += DirEntrySize;
-      // ".." -> parent. The tree is walked parent-first, so we resolve the
-      // parent inode by carrying it in the recursion below; here we patch it
-      // after the fact via ParentOf lookup.
-      WriteDirEntry(dirData, pos, ParentInode(root, dir), "..");
-      pos += DirEntrySize;
+      var zoneCount = (entries.Count + EntriesPerZone - 1) / EntriesPerZone;
+      var dirZones = new uint[zoneCount];
 
-      foreach (var (childName, child) in dir.Children) {
-        WriteDirEntry(dirData, pos, child.Inode, childName);
-        pos += DirEntrySize;
+      // Render and place each data zone; entries never cross a zone boundary.
+      for (var z = 0; z < zoneCount; z++) {
+        var zone = (uint)nextZone++;
+        SetBit(disk, zmapOff, (int)zone);
+        dirZones[z] = zone;
+
+        var zoneData = new byte[BlockSize];
+        var first = z * EntriesPerZone;
+        var last = Math.Min(first + EntriesPerZone, entries.Count);
+        for (var e = first; e < last; e++) {
+          var (ino, name) = entries[e];
+          WriteDirEntry(zoneData, (e - first) * DirEntrySize, ino, name);
+        }
+        zoneData.CopyTo(disk, (int)zone * BlockSize);
       }
 
-      dirData.CopyTo(disk, dirZone * BlockSize);
+      // Inode zone slots: up to 7 direct, then a single-indirect zone listing
+      // the remaining data zones.
+      var inodeZones = new uint[10];
+      for (var z = 0; z < zoneCount && z < DirectZones; z++)
+        inodeZones[z] = dirZones[z];
+      if (zoneCount > DirectZones) {
+        var indirectZone = (uint)nextZone++;
+        SetBit(disk, zmapOff, (int)indirectZone);
+        inodeZones[IndirectSlot] = indirectZone;
+        var table = new byte[BlockSize];
+        for (var z = DirectZones; z < zoneCount; z++)
+          BinaryPrimitives.WriteUInt32LittleEndian(
+            table.AsSpan((z - DirectZones) * 4), dirZones[z]);
+        table.CopyTo(disk, (int)indirectZone * BlockSize);
+      }
 
       var childDirCount = 0;
       foreach (var (_, child) in dir.Children)
@@ -179,9 +217,9 @@ public sealed class MinixFsWriter : IDisposable {
 
       WriteV3Inode(disk, inodeTableOff, inodeIndex: (int)(dir.Inode - 1),
         mode: ModeDirectory,
-        size: (uint)BlockSize,
+        size: (uint)(zoneCount * BlockSize),
         nlinks: (ushort)(2 + childDirCount),
-        zones: [(uint)dirZone, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        zones: inodeZones);
     }
 
     // --- Allocate and write each file's zones, then its inode ---
@@ -278,17 +316,24 @@ public sealed class MinixFsWriter : IDisposable {
     return null;
   }
 
-  // A directory's entries (".", "..", plus children) must fit in a single zone.
-  private static void EnsureDirectoriesFitOneZone(TreeNode dir, string path) {
+  // Number of data zones a directory's entries (".", "..", children) occupy.
+  private static int DirectoryDataZoneCount(TreeNode dir) {
+    var entryCount = 2 + dir.Children.Count; // "." and ".."
+    return (entryCount + EntriesPerZone - 1) / EntriesPerZone;
+  }
+
+  // A directory's data zones must be reachable through 7 direct slots plus one
+  // single-indirect zone.
+  private static void EnsureDirectoriesAddressable(TreeNode dir, string path) {
     var entryCount = 2 + dir.Children.Count; // "." and ".."
     if (entryCount > MaxEntriesPerDir)
       throw new InvalidOperationException(
-        $"MinixFs writer stores each directory in a single {BlockSize}-byte zone " +
-        $"(max {MaxEntriesPerDir - 2} entries); directory " +
+        $"MinixFs writer addresses a directory through {DirectZones} direct zones plus one " +
+        $"single-indirect zone (max {MaxEntriesPerDir - 2} entries); directory " +
         $"'{(path.Length == 0 ? "/" : path)}' has {dir.Children.Count} entries.");
     foreach (var (name, child) in dir.Children)
       if (child.IsDirectory)
-        EnsureDirectoriesFitOneZone(child, path.Length == 0 ? name : $"{path}/{name}");
+        EnsureDirectoriesAddressable(child, path.Length == 0 ? name : $"{path}/{name}");
   }
 
   private static void WriteDirEntry(byte[] dirData, int offset, uint inode, string name) {
