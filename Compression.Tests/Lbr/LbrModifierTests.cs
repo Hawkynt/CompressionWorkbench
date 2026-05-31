@@ -24,13 +24,13 @@ public class LbrModifierTests {
   }
 
   [Test, Category("RoundTrip")]
-  public void AddFile_LowercaseName_StoredUppercase() {
+  public void AddFile_LowercaseName_PreservesCase() {
     var ms = BuildSeed();
     LbrModifier.AddFile(ms, "lower.txt", "x"u8.ToArray());
 
     ms.Position = 0;
     var r = new LbrReader(ms);
-    Assert.That(r.Entries.Select(e => e.FileName), Contains.Item("LOWER.TXT"));
+    Assert.That(r.Entries.Select(e => e.FileName), Contains.Item("lower.txt"));
   }
 
   [Test, Category("RoundTrip")]

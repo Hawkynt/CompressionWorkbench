@@ -36,14 +36,14 @@ public class LbrTests {
   }
 
   [Test, Category("HappyPath")]
-  public void FileNames_AreUppercase() {
+  public void FileNames_PreserveOriginalCase() {
     using var ms = new MemoryStream();
     using (var w = new FileFormat.Lbr.LbrWriter(ms, leaveOpen: true))
       w.AddFile("hello.txt", "data"u8.ToArray());
     ms.Position = 0;
 
     var r = new FileFormat.Lbr.LbrReader(ms);
-    Assert.That(r.Entries[0].FileName, Is.EqualTo("HELLO.TXT"));
+    Assert.That(r.Entries[0].FileName, Is.EqualTo("hello.txt"));
   }
 
   [Test, Category("HappyPath")]

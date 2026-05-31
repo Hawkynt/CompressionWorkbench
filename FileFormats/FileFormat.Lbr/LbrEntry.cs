@@ -121,7 +121,7 @@ public sealed class LbrEntry {
 
   private static void WritePaddedString(Span<byte> dest, string value, int maxLen) {
     dest.Fill(LbrConstants.PadChar);
-    var bytes = System.Text.Encoding.ASCII.GetBytes(value.ToUpperInvariant());
+    var bytes = System.Text.Encoding.ASCII.GetBytes(value);
     var len = Math.Min(bytes.Length, maxLen);
     bytes.AsSpan(0, len).CopyTo(dest);
   }

@@ -27,7 +27,6 @@ public static class LbrModifier {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
 
-    var upperName = name.ToUpperInvariant();
     var (dirSlots, slots) = ReadDirectory(lbr);
 
     // Find a free slot (skip slot 0 which is the self-referencing dir entry).
@@ -75,7 +74,7 @@ public static class LbrModifier {
     var crc16 = ComputeCrc16(data);
 
     var entry = new LbrEntry {
-      FileName = upperName,
+      FileName = name,
       Status = LbrConstants.StatusActive,
       SectorOffset = maxEnd,
       SectorCount = sectorCount,
@@ -97,13 +96,12 @@ public static class LbrModifier {
     ArgumentNullException.ThrowIfNull(lbr);
     ArgumentNullException.ThrowIfNull(name);
 
-    var upperName = name.ToUpperInvariant();
     var (dirSlots, slots) = ReadDirectory(lbr);
 
     for (var i = 1; i < dirSlots; i++) {
       var entry = slots[i];
       if (!entry.IsActive) continue;
-      if (!string.Equals(entry.FileName, upperName, StringComparison.OrdinalIgnoreCase))
+      if (!string.Equals(entry.FileName, name, StringComparison.OrdinalIgnoreCase))
         continue;
 
       if (wipeData && entry.SectorCount > 0) {

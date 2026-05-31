@@ -23,7 +23,7 @@ public sealed class LbrWriter : IDisposable {
   /// <summary>
   /// Adds a file to the archive.
   /// </summary>
-  /// <param name="name">Filename in 8.3 format (e.g., "README.TXT"). Converted to uppercase automatically.</param>
+  /// <param name="name">Filename in 8.3 format (e.g., "README.TXT"). The original case is preserved so that names round-trip exactly.</param>
   /// <param name="data">The raw file data.</param>
   /// <exception cref="ArgumentException">The filename is invalid for CP/M 8.3 format.</exception>
   public void AddFile(string name, byte[] data) {
@@ -32,9 +32,8 @@ public sealed class LbrWriter : IDisposable {
     if (_finished)
       throw new InvalidOperationException("Archive has already been finished.");
 
-    var upperName = name.ToUpperInvariant();
-    _ValidateFileName(upperName);
-    _files.Add((upperName, data));
+    _ValidateFileName(name);
+    _files.Add((name, data));
   }
 
   /// <summary>
@@ -139,8 +138,9 @@ public sealed class LbrWriter : IDisposable {
       if (c == '.')
         continue;
 
-      // Valid CP/M filename characters: A-Z, 0-9, and a few specials
-      if (c is (>= 'A' and <= 'Z') or (>= '0' and <= '9') or '_' or '-' or '$' or '#' or '!' or '@')
+      // Valid CP/M filename characters: A-Z (either case), 0-9, and a few specials.
+      // Case is preserved verbatim so filenames round-trip exactly.
+      if (c is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z') or (>= '0' and <= '9') or '_' or '-' or '$' or '#' or '!' or '@')
         continue;
 
       throw new ArgumentException($"Invalid character '{c}' in CP/M filename: '{name}'.", nameof(name));
