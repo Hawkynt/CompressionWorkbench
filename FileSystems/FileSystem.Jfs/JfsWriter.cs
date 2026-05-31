@@ -169,6 +169,11 @@ public sealed class JfsWriter {
     public int Block;                             // absolute block in the image
     public bool IsLeaf;                           // BT_LEAF vs BT_INTERNAL
     public readonly List<DtreeEntry> Entries = [];
+    // Sibling chain within the page's B+tree level. fsck walks each level in
+    // key order and requires header.next/prev to address the adjacent page in
+    // that level (0 at the ends). Block addresses, set by BuildExternalDtree.
+    public int NextSibling;                       // 0 ⇒ last in level
+    public int PrevSibling;                       // 0 ⇒ first in level
   }
 
   // One sorted directory key. For a leaf it addresses a child inode; for a
@@ -307,14 +312,16 @@ public sealed class JfsWriter {
       MarkRange(allocated, file.DataBlock, file.BlockCount);
 
     // ── write metadata structures ─────────────────────────────────────────
-    // Both primary and secondary AIM/AIT must be byte-for-byte identical (fsck
-    // verifies them as redundant copies). All di_ixpxd fields point at the
-    // PRIMARY AIT (AitBlock) regardless of where the inodes physically live.
-    // The fileset inode map counts every directory + file dinode (root + nodes).
-    WriteAggregateInodeMap(image, AimBlock, agStart: 0);
-    this.WriteAggregateInodeTable(image, AitBlock, ixpxdBlock: AitBlock);
-    WriteAggregateInodeMap(image, SecondaryAimBlock, agStart: 0);
-    this.WriteAggregateInodeTable(image, SecondaryAitBlock, ixpxdBlock: AitBlock);
+    // Primary and secondary AIM/AIT are redundant copies. fsck's AIS_inode_check
+    // compares every field EXCEPT di_ixpxd between the two AITs, then requires
+    // each copy's di_ixpxd to equal the extent it was read from: the primary
+    // inodes' di_ixpxd → AitBlock, the secondary inodes' di_ixpxd → the address
+    // recorded in s_ait2 (SecondaryAitBlock). They must therefore differ only in
+    // di_ixpxd. The fileset inode map counts every directory + file dinode.
+    WriteAggregateInodeMap(image, AimBlock, agStart: 0, inoextBlock: AitBlock);
+    this.WriteAggregateInodeTable(image, AitBlock, ixpxdBlock: AitBlock, aimBlock: AimBlock);
+    WriteAggregateInodeMap(image, SecondaryAimBlock, agStart: 0, inoextBlock: SecondaryAitBlock);
+    this.WriteAggregateInodeTable(image, SecondaryAitBlock, ixpxdBlock: SecondaryAitBlock, aimBlock: SecondaryAimBlock);
     this.WriteFilesetInodeMap(image, FilesetAimBlock, nodeCount: nodes.Count);
     this.WriteFilesetInodeTable(image, nodes);
     WriteBlockMap(image, usableBlocks, allocated);
@@ -393,7 +400,7 @@ public sealed class JfsWriter {
   // wmap[0] = pmap[0] = bits for inodes 0..4 (high bits) + bit for inode 16
   //                   = 0xF8000000 | 0x00008000 = 0xF8008000
   // The bit ordering in JFS bitmaps is MSB=lowest inode, LSB=highest.
-  private static void WriteAggregateInodeMap(byte[] image, int aimBlock, long agStart) {
+  private static void WriteAggregateInodeMap(byte[] image, int aimBlock, long agStart, int inoextBlock) {
     var dinomapOff = (long)aimBlock * BlockSize;
     var iagOff = dinomapOff + BlockSize;
 
@@ -451,8 +458,11 @@ public sealed class JfsWriter {
     const uint AggrUsedBitmap = 0xF8000000u | 0x00008000u;           // 0xF8008000
     BinaryPrimitives.WriteUInt32LittleEndian(iag[2048..], AggrUsedBitmap);   // wmap[0]
     BinaryPrimitives.WriteUInt32LittleEndian(iag[2560..], AggrUsedBitmap);   // pmap[0]
-    // inoext[0]: pxd(len=4, addr=AitBlock). All other inoext entries are zero.
-    WritePxd(iag[3072..], length: (uint)InodeExtentBlocks, address: (ulong)AitBlock);
+    // inoext[0]: pxd(len=4, addr=inoextBlock). fsck (AIM_inode_check) requires
+    // the secondary AIM's inoext[0] to equal s_ait2, so the secondary copy must
+    // address the secondary AIT extent rather than the primary. All other
+    // inoext entries are zero.
+    WritePxd(iag[3072..], length: (uint)InodeExtentBlocks, address: (ulong)inoextBlock);
   }
 
   // ── fileset inode map: block FilesetAimBlock=dinomap, +1=IAG #0 ─────────
@@ -536,9 +546,14 @@ public sealed class JfsWriter {
   // ── aggregate inode table (4 blocks at aitBlock) ─────────────────────────
   // Holds: 0=AGGR_RESERVED_I, 1=AGGREGATE_I, 2=BMAP_I, 3=LOG_I, 4=BADBLOCK_I, 16=FILESYSTEM_I.
   // All have di_fileset = AGGREGATE_I (1) and di_ixpxd = (length=4, addr=ixpxdBlock).
-  // <paramref name="ixpxdBlock"/> identifies the *canonical* AIT location (always
-  // the primary AitBlock) so secondary AIT inodes' ixpxd matches the primary.
-  private void WriteAggregateInodeTable(byte[] image, int aitBlock, int ixpxdBlock) {
+  // <paramref name="ixpxdBlock"/> is the location of THIS copy (primary AitBlock
+  // for the primary AIT, SecondaryAitBlock for the secondary), because fsck
+  // requires each copy's di_ixpxd to equal the extent it was read from.
+  // <paramref name="aimBlock"/> is the AIM this copy's AGGREGATE_I xtree points
+  // at: fsck's AIM_check requires the secondary AGGREGATE_I's xad to equal
+  // s_aim2 (the secondary AIM), while BMAP_I/LOG_I/BADBLOCK_I/FILESYSTEM_I
+  // xtrees must stay byte-identical between the two copies.
+  private void WriteAggregateInodeTable(byte[] image, int aitBlock, int ixpxdBlock, int aimBlock) {
     var aitOff = (long)aitBlock * BlockSize;
 
     // Inode 0: AGGR_RESERVED_I (di_nlink=1, IFJOURNAL|IFREG, no data)
@@ -546,11 +561,11 @@ public sealed class JfsWriter {
     this.WriteAitInode(image, ino0, AggrReservedI, IfJournal | IfReg, ixpxdBlock,
       size: 0, nblocks: 0, hasXtreeData: false, xtreeEntries: null);
 
-    // Inode 1: AGGREGATE_I — xtree → AIM (AimBlock, 2 blocks)
+    // Inode 1: AGGREGATE_I — xtree → AIM (this copy's AIM, 2 blocks)
     var ino1 = (int)(aitOff + (long)AggregateI * InodeSize);
     this.WriteAitInode(image, ino1, AggregateI, IfJournal | IfReg, ixpxdBlock,
       size: 2L * BlockSize, nblocks: 2, hasXtreeData: true,
-      xtreeEntries: [(0, 2u, (ulong)AimBlock)]);
+      xtreeEntries: [(0, 2u, (ulong)aimBlock)]);
 
     // Inode 2: BMAP_I — xtree → BMAP (BmapBlock, BmapTotalBlocks)
     var ino2 = (int)(aitOff + (long)BmapI * InodeSize);
@@ -673,8 +688,13 @@ public sealed class JfsWriter {
       long size, long nblocks, bool hasXtreeData,
       (ulong offset, uint length, ulong address)[]? xtreeEntries,
       uint nlink = 1, uint nextIndex = 2) {
+    // di_ixpxd must address the inode extent that physically contains THIS
+    // dinode, not the start of the table: fsck's inode_is_in_use compares each
+    // dinode's di_ixpxd against the extent it was read from, so an inode in the
+    // second extent (numbers 32..63) needs di_ixpxd = (4, FsitBlock + 4), etc.
+    var extentBlock = FsitBlock + (int)(ino / InodesPerExtent) * InodeExtentBlocks;
     this.WriteCommonInodeHeader(image, ioff, fileset: fileset, ino: ino, mode: mode,
-      ixpxdLength: (uint)InodeExtentBlocks, ixpxdAddress: (ulong)FsitBlock,
+      ixpxdLength: (uint)InodeExtentBlocks, ixpxdAddress: (ulong)extentBlock,
       size: size, nblocks: nblocks, nlink: nlink, nextIndex: nextIndex);
 
     if (hasXtreeData) {
@@ -764,6 +784,10 @@ public sealed class JfsWriter {
   private static void WriteInlineDtree(Span<byte> data, IReadOnlyList<Node> children, int parentIno) {
     data.Clear();
     var count = children.Count;
+    // fsck (dTree_key_compare_leaflvl) requires the sorted-entry table to list
+    // keys in strictly ascending UCS-2 ordinal order. Children arrive in
+    // insertion order, so sort by name here exactly as the external dtree does.
+    var sorted = children.OrderBy(c => c.Name, StringComparer.Ordinal).ToList();
     // DASD (16 bytes) at +0 — zero
     data[16] = BtRootLeafFlag;                                            // flag = 0x83
     data[17] = (byte)count;                                               // nextindex (count of populated stbl entries)
@@ -775,7 +799,7 @@ public sealed class JfsWriter {
     var usedSlots = new bool[InlineDirEntries + 1];
 
     for (var i = 0; i < count; i++) {
-      var child = children[i];
+      var child = sorted[i];
       var name = child.Name;
       var headSlot = nextSlot++;
       if (headSlot > InlineDirEntries)
@@ -887,6 +911,7 @@ public sealed class JfsWriter {
 
     var pages = new List<DtreePage>();
     var leaves = PackPages(leafEntries, leaf: true, ref nextBlock);
+    ChainSiblings(leaves);
     pages.AddRange(leaves);
 
     // Build internal layers until the current layer fits the 8-slot router.
@@ -896,6 +921,7 @@ public sealed class JfsWriter {
         .Select(p => new DtreeEntry(FirstKey(p), 0, p.Block))
         .ToList();
       var internals = PackPages(routers, leaf: false, ref nextBlock);
+      ChainSiblings(internals);
       pages.AddRange(internals);
       layer = internals;
     }
@@ -908,6 +934,16 @@ public sealed class JfsWriter {
 
   // The smallest (first) key in a page's subtree — used as a routing key.
   private static string FirstKey(DtreePage page) => page.Entries.Count > 0 ? page.Entries[0].Name : "";
+
+  // Threads the forward/backward sibling chain across one B+tree level. fsck
+  // (dTree_node_not_first/last_in_level) walks each level in key order and
+  // requires header.next/prev to address the adjacent page (0 at the ends).
+  private static void ChainSiblings(List<DtreePage> level) {
+    for (var i = 0; i < level.Count; i++) {
+      level[i].PrevSibling = i > 0 ? level[i - 1].Block : 0;
+      level[i].NextSibling = i < level.Count - 1 ? level[i + 1].Block : 0;
+    }
+  }
 
   // ── inline dtroot promoted to a router (idtentry slots) ─────────────────
   // Same on-disk dtroot layout as the inline leaf form, but flag = BT_ROOT |
@@ -1005,6 +1041,8 @@ public sealed class JfsWriter {
     data.Clear();
 
     var count = page.Entries.Count;
+    BinaryPrimitives.WriteInt64LittleEndian(data[0..], page.NextSibling); // header.next (block addr, 0 if last)
+    BinaryPrimitives.WriteInt64LittleEndian(data[8..], page.PrevSibling); // header.prev (block addr, 0 if first)
     data[16] = page.IsLeaf ? BtExternalLeafFlag : BtExternalInternalFlag;
     data[17] = (byte)count;                                            // nextindex
     data[20] = (byte)DtPageMaxSlot;                                    // maxslot = 128
