@@ -38,6 +38,14 @@ namespace FileSystem.Ntfs;
 /// thousands of entries) would need a second tree level, which is not yet
 /// implemented.
 /// </para>
+/// <para>
+/// 8.3 short names: by default every $FILE_NAME is recorded in the Win32&amp;DOS
+/// namespace (3) so the long name also serves as the 8.3 short name, the way a
+/// freshly formatted Windows volume does. Passing
+/// <c>generateShortNames: false</c> records names in the Win32-only namespace
+/// (1) and emits no DOS short name — the equivalent of
+/// <c>fsutil behavior set disable8dot3</c>.
+/// </para>
 /// </summary>
 public sealed class NtfsWriter {
 
@@ -68,6 +76,16 @@ public sealed class NtfsWriter {
 
   private readonly List<(string Name, byte[] Data)> _files = [];
   private readonly string _volumeLabel;
+
+  // $FILE_NAME namespace byte for the names this writer records. NTFS namespaces:
+  // 0 = POSIX, 1 = Win32, 2 = DOS, 3 = Win32&DOS (a single name that doubles as
+  // the 8.3 short name). A freshly formatted Windows volume records names as
+  // Win32&DOS; disabling 8.3 generation ("fsutil behavior set disable8dot3")
+  // records them Win32-only so no DOS short name is created. We mirror that:
+  // short names on → namespace 3, off → namespace 1.
+  private const byte NamespaceWin32 = 1;
+  private const byte NamespaceWin32AndDos = 3;
+  private readonly byte _fileNameNamespace;
 
   // A node in the directory tree the writer materialises before emitting MFT
   // records. Every node owns exactly one MFT record. Directories carry an $I30
@@ -110,10 +128,22 @@ public sealed class NtfsWriter {
   // block" field.
   private const int IndexBlockSize = 4096;
 
-  /// <summary>Creates a new NTFS writer. The volume label is stored in $Volume's $VOLUME_NAME attribute.</summary>
-  public NtfsWriter(string volumeLabel = "CWB-NTFS") {
+  /// <summary>
+  /// Creates a new NTFS writer. The volume label is stored in $Volume's
+  /// $VOLUME_NAME attribute.
+  /// </summary>
+  /// <param name="volumeLabel">Volume name stored in $VOLUME_NAME.</param>
+  /// <param name="generateShortNames">
+  /// When <see langword="true"/> (default, matching a freshly formatted Windows
+  /// volume) every $FILE_NAME is recorded in the combined Win32&amp;DOS namespace
+  /// so the long name doubles as the 8.3 short name. When <see langword="false"/>
+  /// — the equivalent of <c>fsutil behavior set disable8dot3</c> — names are
+  /// recorded in the Win32-only namespace and no DOS short name is created.
+  /// </param>
+  public NtfsWriter(string volumeLabel = "CWB-NTFS", bool generateShortNames = true) {
     ArgumentNullException.ThrowIfNull(volumeLabel);
     this._volumeLabel = volumeLabel;
+    this._fileNameNamespace = generateShortNames ? NamespaceWin32AndDos : NamespaceWin32;
   }
 
   /// <summary>Adds a file to the NTFS image.</summary>
@@ -776,7 +806,7 @@ public sealed class NtfsWriter {
     pos = WriteStandardInformationAttr(record, pos, isDirectory);
 
     // 0x30 $FILE_NAME — mandatory for every record including system files.
-    pos = WriteFileNameAttr(record, pos, fileName, parentRecord, sizeHintInFileName, isDirectory);
+    pos = this.WriteFileNameAttr(record, pos, fileName, parentRecord, sizeHintInFileName, isDirectory);
 
     // Caller-supplied extra resident attributes ($VOLUME_NAME/$VOLUME_INFORMATION for $Volume, etc.)
     if (extraAttrs != null) {
@@ -865,7 +895,7 @@ public sealed class NtfsWriter {
     return pos + attrLen;
   }
 
-  private static int WriteFileNameAttr(byte[] record, int pos, string fileName, uint parentRecord,
+  private int WriteFileNameAttr(byte[] record, int pos, string fileName, uint parentRecord,
     long allocatedAndRealSize, bool isDirectory) {
     var nameBytes = Encoding.Unicode.GetBytes(fileName);
     var nameChars = fileName.Length;
@@ -898,7 +928,7 @@ public sealed class NtfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(v + 56), isDirectory ? 0x10000000u : 0u);
 
     record[v + 64] = (byte)nameChars;
-    record[v + 65] = 3; // Win32+DOS namespace
+    record[v + 65] = this._fileNameNamespace; // Win32&DOS (short names on) or Win32-only (off)
     nameBytes.CopyTo(record, v + 66);
 
     return pos + attrLen;
@@ -1339,7 +1369,7 @@ public sealed class NtfsWriter {
   // Writes a single pointer index entry: an optional FILE_NAME key plus a
   // trailing 8-byte child VCN. The subnode flag (0x01) is set; the end marker
   // additionally sets 0x02 and carries no key.
-  private static void WritePointerEntry(MemoryStream ms, uint mftRecordNum, string fileName, uint parentRecord,
+  private void WritePointerEntry(MemoryStream ms, uint mftRecordNum, string fileName, uint parentRecord,
     long childVcn, bool isEnd) {
     if (isEnd) {
       // End marker with a subnode: 16-byte header + 8-byte VCN.
@@ -1367,7 +1397,7 @@ public sealed class NtfsWriter {
     BinaryPrimitives.WriteInt64LittleEndian(pointer.AsSpan(16), (long)parentRecord | (1L << 48));
     var nameBytes = Encoding.Unicode.GetBytes(fileName);
     pointer[16 + 64] = (byte)nameChars;
-    pointer[16 + 65] = 3;
+    pointer[16 + 65] = this._fileNameNamespace;
     nameBytes.CopyTo(pointer, 16 + 66);
 
     // Child VCN occupies the last 8 bytes of the entry.
@@ -1428,7 +1458,7 @@ public sealed class NtfsWriter {
     return ms.ToArray();
   }
 
-  private static void WriteIndexEntry(MemoryStream ms, uint mftRecordNum, string fileName, uint parentRecord) {
+  private void WriteIndexEntry(MemoryStream ms, uint mftRecordNum, string fileName, uint parentRecord) {
     var nameBytes = Encoding.Unicode.GetBytes(fileName);
     var nameChars = fileName.Length;
 
@@ -1445,7 +1475,7 @@ public sealed class NtfsWriter {
     // this index, so the entry is self-consistent with the child's own record.
     BinaryPrimitives.WriteInt64LittleEndian(entry.AsSpan(16), (long)parentRecord | (1L << 48));
     entry[16 + 64] = (byte)nameChars;
-    entry[16 + 65] = 3;
+    entry[16 + 65] = this._fileNameNamespace;
     nameBytes.CopyTo(entry, 16 + 66);
 
     ms.Write(entry);

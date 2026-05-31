@@ -18,6 +18,13 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     FilesystemSchemaPresets.PowerOfTwoSize(
       "MftRecordSize", "MFT record size", 512, 4096, "Auto",
       "Size of each $MFT file record. Smaller records pack tighter for many tiny files; larger records keep more attributes resident. Auto co-optimises with cluster size."),
+    new FormatOptionDescriptor(
+      Key: "Generate8Dot3",
+      DisplayName: "Generate 8.3 short names",
+      Kind: FormatOptionKind.Boolean,
+      Default: "true",
+      Description: "Records each $FILE_NAME in the Win32&DOS namespace so the long name doubles as an 8.3 short name (Windows default). " +
+        "Disable to suppress DOS short names (Win32-only names), the equivalent of 'fsutil behavior set disable8dot3'."),
   ];
 
   /// <summary>
@@ -213,7 +220,12 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var specific = options.FormatSpecific;
     var label = specific?.GetValueOrDefault("VolumeLabel");
-    var w = string.IsNullOrEmpty(label) ? new NtfsWriter() : new NtfsWriter(label);
+    // 8.3 short-name generation defaults on (matches a freshly formatted Windows
+    // volume); only an explicit "false" suppresses the DOS short name.
+    var generateShortNames = specific?.GetValueOrDefault("Generate8Dot3") != "false";
+    var w = string.IsNullOrEmpty(label)
+      ? new NtfsWriter(generateShortNames: generateShortNames)
+      : new NtfsWriter(label, generateShortNames);
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
 
