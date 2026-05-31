@@ -123,11 +123,20 @@ public sealed class UdfReader : IDisposable {
     var dirData = ReadAllocData(adStart, lAd, icbFlags & 0x07, infoLength);
     if (dirData == null) return;
 
-    // Parse File Identifier Descriptors
+    // Parse File Identifier Descriptors. FIDs are block-aligned: none crosses a
+    // logical-block boundary (ECMA-167 §14.4), so when a FID won't fit in the
+    // tail of a block the writer zero-pads to the next block. A zero tag thus
+    // means "rest of this block is padding" — advance to the next block start
+    // and keep reading instead of stopping.
     var pos = 0;
     while (pos + 38 < dirData.Length) {
       var fidTag = BinaryPrimitives.ReadUInt16LittleEndian(dirData.AsSpan(pos));
-      if (fidTag != 257) break;
+      if (fidTag != 257) {
+        var nextBlock = ((pos / _blockSize) + 1) * _blockSize;
+        if (nextBlock <= pos) break;
+        pos = nextBlock;
+        continue;
+      }
 
       var fidLen = 38;
       var lIu = BinaryPrimitives.ReadUInt16LittleEndian(dirData.AsSpan(pos + 36));

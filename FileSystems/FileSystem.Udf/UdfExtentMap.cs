@@ -189,10 +189,17 @@ public static class UdfExtentMap {
       var subdirs = new List<(int lbn, string path)>();
       var fileTargets = new List<(int lbn, string path)>();
 
+      // FIDs are block-aligned (ECMA-167 §14.4): a zero tag means the rest of
+      // the current logical block is padding — skip to the next block start.
       var pos = 0;
       while (pos + 38 < dirBytes.Length) {
         var fidTag = BinaryPrimitives.ReadUInt16LittleEndian(dirBytes.AsSpan(pos));
-        if (fidTag != 257) break;
+        if (fidTag != 257) {
+          var nextBlock = ((pos / SectorSize) + 1) * SectorSize;
+          if (nextBlock <= pos) break;
+          pos = nextBlock;
+          continue;
+        }
 
         var lIu = BinaryPrimitives.ReadUInt16LittleEndian(dirBytes.AsSpan(pos + 36));
         var fidIdLen = dirBytes[pos + 19];

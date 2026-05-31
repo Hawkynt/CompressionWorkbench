@@ -246,6 +246,13 @@ public sealed class UdfWriter {
   /// Builds the directory data for a directory node: a parent FID (zero-length
   /// identifier, parent + directory flags) pointing at the parent's FE,
   /// followed by one FID per child referencing the child's FE.
+  /// <para>
+  /// ECMA-167 §4/14.4: a File Identifier Descriptor may not cross a logical
+  /// block boundary. When the next FID would straddle the current block, the
+  /// remainder of that block is zero-padded and the FID starts at the next
+  /// block. The returned buffer is therefore a multiple of the block size, so
+  /// the directory spans whole blocks regardless of entry count.
+  /// </para>
   /// </summary>
   private static byte[] BuildFidData(Node dir) {
     using var ms = new MemoryStream();
@@ -253,14 +260,34 @@ public sealed class UdfWriter {
     // Parent FID (flags=0x0A: parent + directory). The parent of the root is
     // itself.
     var parentFeLbn = (dir.Parent ?? dir).FeLbn;
-    WriteFid(ms, 0x0A, parentFeLbn, "");
+    WriteFidBlockAligned(ms, 0x0A, parentFeLbn, "");
 
     foreach (var child in dir.Children) {
       var flags = child.IsDirectory ? (byte)0x02 : (byte)0x00;
-      WriteFid(ms, flags, child.FeLbn, child.Name);
+      WriteFidBlockAligned(ms, flags, child.FeLbn, child.Name);
     }
 
     return ms.ToArray();
+  }
+
+  /// <summary>
+  /// Writes one FID, first padding to the next logical block boundary if the
+  /// FID would otherwise cross it (ECMA-167 §14.4 forbids that crossing).
+  /// </summary>
+  private static void WriteFidBlockAligned(MemoryStream ms, byte flags, int icbLbn, string name) {
+    var fidLen = FidLength(name);
+    var posInBlock = (int)(ms.Length % Sector);
+    if (posInBlock + fidLen > Sector) {
+      var pad = Sector - posInBlock;
+      ms.Write(new byte[pad]);
+    }
+    WriteFid(ms, flags, icbLbn, name);
+  }
+
+  /// <summary>Padded on-disk byte length of a FID for the given identifier.</summary>
+  private static int FidLength(string name) {
+    var nameLen = name.Length == 0 ? 0 : EncodeCs0(name).Length;
+    return (38 + nameLen + 3) & ~3;
   }
 
   private static void WriteFid(Stream s, byte flags, int icbLbn, string name) {
@@ -418,17 +445,33 @@ public sealed class UdfWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(28), (ushort)(1 + subDirCount));
     // icb flags at offset 34: adType=0 (short ADs)
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(34), 0);
-    // info length at offset 56
+    // info length at offset 56 — the directory's FID data is block-aligned, so
+    // this covers whole blocks (one short AD each).
     BinaryPrimitives.WriteUInt64LittleEndian(buf.AsSpan(56), (ulong)dir.DataLength);
-    // L_EA at 168 = 0
-    // L_AD at 172 = 8 (one short AD)
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(172), 8);
-    // Short AD at 176: length(4) + position/LBN(4)
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(176), (uint)dir.DataLength);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(180), (uint)dir.DataLbn);
-    // File Entry body: fixed 176-byte header + L_EA + L_AD bytes of variable part.
-    // Tag covers 16 bytes, so CRC body = 176 - 16 (header) + L_EA(0) + L_AD(8) = 168.
-    FinalizeTag(buf, 0, FeBodyHeader + 0 + 8);
+
+    // One short AD per logical block. ECMA-167 forbids a FID from crossing a
+    // block boundary, so BuildFidData already padded the data to a block
+    // multiple; describe each block with its own descriptor (length always a
+    // full block). Multiple ADs lift the single-block directory cap.
+    var blocks = dir.DataSectors;
+    // Short ADs live inside the FE sector after the 176-byte header, so their
+    // count is bounded by the sector. ~234 blocks ≈ 478 KiB of FID data, which
+    // is thousands of small entries; beyond that an AD-continuation extent
+    // would be required (not yet implemented).
+    var maxAds = (Sector - 176) / 8;
+    if (blocks > maxAds)
+      throw new InvalidOperationException(
+        $"UDF directory '{dir.Name}' needs {blocks} data blocks but only {maxAds} short " +
+        "allocation descriptors fit in one File Entry; AD-continuation extents are not supported.");
+    var lAd = blocks * 8;
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(172), (uint)lAd);
+    for (var b = 0; b < blocks; b++) {
+      var adOff = 176 + b * 8;
+      BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(adOff), (uint)Sector);          // extent length
+      BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(adOff + 4), (uint)(dir.DataLbn + b)); // LBN
+    }
+    // File Entry body: 176-byte header (minus 16-byte tag) + L_EA(0) + L_AD bytes.
+    FinalizeTag(buf, 0, FeBodyHeader + 0 + lAd);
     output.Write(buf);
   }
 
