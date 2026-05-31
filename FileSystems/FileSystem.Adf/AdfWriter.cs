@@ -14,6 +14,8 @@ public sealed class AdfWriter {
   private const int RootSector = 880;
   private const int BitmapSector = 881;
   private const int HashTableCount = 72;
+  private const int HashTableOffset = 24;   // 72 × uint32 BE hash table entries
+  private const int HashChainOffset = 496;  // uint32 BE — next entry in same hash bucket
 
   private readonly List<(string Name, byte[] Data, DateTime? ModTime)> _files = [];
 
@@ -46,11 +48,20 @@ public sealed class AdfWriter {
     used[RootSector] = true;
     used[BitmapSector] = true;
 
-    // Build root hash table
-    var hashTable = new uint[HashTableCount];
+    // Maps a slash-separated directory path (e.g. "docs/api") to the sector of
+    // its user-directory header block. The empty path maps to the root block so
+    // that a directory's hash table can be located uniformly.
+    var dirSectors = new Dictionary<string, int> { [""] = RootSector };
 
     foreach (var (name, data, modTime) in _files) {
-      var hash = HashName(name);
+      // Split the incoming name into its directory components and leaf filename.
+      // Either '/' or '\' may appear as a separator; empty components are ignored.
+      var parts = name.Split('/', '\\', StringSplitOptions.RemoveEmptyEntries);
+      if (parts.Length == 0)
+        continue;
+
+      var leafName = parts[^1];
+      var parentSector = EnsureDirectoryPath(disk, used, dirSectors, parts[..^1], modTime);
 
       // Allocate file header block
       var headerSector = AllocateSector(used, RootSector + 2);
@@ -84,9 +95,9 @@ public sealed class AdfWriter {
       for (var i = 0; i < dataBlockCount && i < HashTableCount; i++)
         WriteUInt32BE(disk, hdrOff + 308 - i * 4, (uint)dataBlocks[i]);
       WriteUInt32BE(disk, hdrOff + 324, (uint)data.Length); // file size
-      WriteFilename(disk, hdrOff + 432, name); // filename
+      WriteFilename(disk, hdrOff + 432, leafName); // filename (leaf only)
       WriteUInt32BE(disk, hdrOff + 508, 0xFFFFFFFD); // sec_type = ST_FILE
-      WriteUInt32BE(disk, hdrOff + 504, (uint)RootSector); // parent
+      WriteUInt32BE(disk, hdrOff + 504, (uint)parentSector); // parent directory
 
       // Timestamp: days/mins/ticks since AmigaOS epoch (1978-01-01).
       var (fDays, fMins, fTicks) = ToAmigaTime(modTime ?? DateTime.Now);
@@ -94,22 +105,8 @@ public sealed class AdfWriter {
       WriteUInt32BE(disk, hdrOff + 424, fMins);
       WriteUInt32BE(disk, hdrOff + 428, fTicks);
 
-      // Hash chain: insert into hash table
-      if (hashTable[hash] == 0) {
-        hashTable[hash] = (uint)headerSector;
-      } else {
-        // Chain: follow existing entries to end
-        var current = (int)hashTable[hash];
-        while (true) {
-          var chainOff = current * SectorSize + 496;
-          var next = ReadUInt32BE(disk, chainOff);
-          if (next == 0) {
-            WriteUInt32BE(disk, chainOff, (uint)headerSector);
-            break;
-          }
-          current = (int)next;
-        }
-      }
+      // Link the file header into its parent directory's hash table.
+      LinkIntoHashTable(disk, parentSector, leafName, headerSector);
 
       // Compute header checksum
       ComputeChecksum(disk, hdrOff);
@@ -119,9 +116,8 @@ public sealed class AdfWriter {
     var rootOff = RootSector * SectorSize;
     WriteUInt32BE(disk, rootOff, 2); // T_HEADER
     WriteUInt32BE(disk, rootOff + 4, (uint)RootSector); // own key
-    // Hash table at offset 24
-    for (var i = 0; i < HashTableCount; i++)
-      WriteUInt32BE(disk, rootOff + 24 + i * 4, hashTable[i]);
+    // The root hash table was populated in place while linking entries; only the
+    // fixed root-block fields remain to be written here.
     // Bitmap flag at offset 312: -1 = valid
     WriteUInt32BE(disk, rootOff + 312, 0xFFFFFFFF);
     // Bitmap pointer at offset 316
@@ -141,10 +137,98 @@ public sealed class AdfWriter {
 
     ComputeChecksum(disk, rootOff);
 
+    // Checksum every user-directory block now that all children are linked into
+    // their hash tables (the root entry is keyed by the empty path and already
+    // checksummed above).
+    foreach (var (path, sector) in dirSectors) {
+      if (path.Length == 0)
+        continue;
+      ComputeChecksum(disk, sector * SectorSize);
+    }
+
     // Write bitmap block
     WriteBitmap(disk, used);
 
     return disk;
+  }
+
+  /// <summary>
+  /// Ensures every directory along <paramref name="components"/> (relative to the
+  /// root) exists as an AmigaDOS user-directory block, creating any missing level
+  /// and linking it into its parent's hash table. Returns the sector of the
+  /// deepest directory (the root sector when <paramref name="components"/> is empty).
+  /// </summary>
+  private int EnsureDirectoryPath(
+    byte[] disk, bool[] used, Dictionary<string, int> dirSectors,
+    string[] components, DateTime? modTime) {
+    var parentSector = RootSector;
+    var path = "";
+
+    foreach (var component in components) {
+      path = path.Length == 0 ? component : path + "/" + component;
+      if (dirSectors.TryGetValue(path, out var existing)) {
+        parentSector = existing;
+        continue;
+      }
+
+      // Allocate and write a new user-directory header block.
+      var dirSector = AllocateSector(used, RootSector + 2);
+      if (dirSector < 0)
+        throw new InvalidOperationException($"ADF: disk is full; cannot allocate a directory block for '{path}'.");
+
+      var dirOff = dirSector * SectorSize;
+      WriteUInt32BE(disk, dirOff, 2);                    // T_HEADER
+      WriteUInt32BE(disk, dirOff + 4, (uint)dirSector);  // own key
+      // Hash table (offset 24..) is left zeroed; it fills as children are linked.
+      WriteFilename(disk, dirOff + 432, component);      // directory name
+      WriteUInt32BE(disk, dirOff + 504, (uint)parentSector); // parent directory
+      WriteUInt32BE(disk, dirOff + 508, 2);              // sec_type = ST_USERDIR
+
+      var (dDays, dMins, dTicks) = ToAmigaTime(modTime ?? DateTime.Now);
+      WriteUInt32BE(disk, dirOff + 420, dDays);
+      WriteUInt32BE(disk, dirOff + 424, dMins);
+      WriteUInt32BE(disk, dirOff + 428, dTicks);
+
+      // Link this directory into its parent's hash table. The directory block's
+      // checksum is computed at the end of Build, once all of its children have
+      // been linked into its hash table.
+      LinkIntoHashTable(disk, parentSector, component, dirSector);
+
+      dirSectors[path] = dirSector;
+      parentSector = dirSector;
+    }
+
+    return parentSector;
+  }
+
+  /// <summary>
+  /// Links the block at <paramref name="entrySector"/> into the hash table of the
+  /// directory (or root) at <paramref name="dirSector"/>, using the AmigaDOS name
+  /// hash of <paramref name="entryName"/>. Bucket collisions are chained via the
+  /// hash-chain field (offset 496) of the last entry already in the bucket.
+  /// The owning directory/root block must be checksummed after its children are
+  /// linked, because the checksum covers the hash table this method mutates.
+  /// </summary>
+  private static void LinkIntoHashTable(byte[] disk, int dirSector, string entryName, int entrySector) {
+    var hash = HashName(entryName);
+    var bucketOff = dirSector * SectorSize + HashTableOffset + hash * 4;
+    var first = ReadUInt32BE(disk, bucketOff);
+    if (first == 0) {
+      WriteUInt32BE(disk, bucketOff, (uint)entrySector);
+      return;
+    }
+
+    // Walk the existing chain to its end and append.
+    var current = (int)first;
+    while (true) {
+      var chainOff = current * SectorSize + HashChainOffset;
+      var next = ReadUInt32BE(disk, chainOff);
+      if (next == 0) {
+        WriteUInt32BE(disk, chainOff, (uint)entrySector);
+        return;
+      }
+      current = (int)next;
+    }
   }
 
   private static int AllocateSector(bool[] used, int preferred) {
