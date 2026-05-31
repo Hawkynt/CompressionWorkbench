@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.SquashFs;
 
-public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
+public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "SquashFs";
   public string DisplayName => "SquashFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -91,6 +91,25 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
           foreach (var (n, d) in files) w.AddFile(n, d);
         return ms.ToArray();
       });
+
+  /// <summary>
+  /// SquashFS is a compressed, read-only image: superblock, compressed data
+  /// blocks, fragment table, inode/directory tables and the export/id/lookup
+  /// tables are packed back-to-back with no free regions and no cluster tips
+  /// (file data is stored at the compressed-block level, so there is no
+  /// allocation slack to wipe).
+  ///
+  /// <para>Note: <see cref="EnumerateExtents"/> reports Used runs at synthetic,
+  /// uncompressed-size offsets for the defrag preview — those offsets do
+  /// <em>not</em> map to real on-disk positions, so this method deliberately
+  /// does not drive the generic wiper from them (doing so would zero live
+  /// compressed bytes). Cluster tips are not applicable; this returns 0.</para>
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    // Fully packed, read-only image — no free regions or cluster tips exist.
+    return 0;
+  }
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     yield return new DefragBlockInfo(0, SquashFsConstants.SuperblockSize, DefragBlockKind.MetadataReserved, "superblock");
