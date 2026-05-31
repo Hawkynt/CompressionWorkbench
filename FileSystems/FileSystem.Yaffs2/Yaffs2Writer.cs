@@ -12,7 +12,7 @@ namespace FileSystem.Yaffs2;
 /// </summary>
 internal sealed class Yaffs2Writer {
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string[] Segments, byte[] Data)> _files = [];
 
   /// <summary>Chunk and spare sizes (mkyaffs2image default).</summary>
   internal const int ChunkSize = 2048;
@@ -26,40 +26,74 @@ internal sealed class Yaffs2Writer {
   /// <summary>Root directory object ID (YAFFS2 convention).</summary>
   private const int RootObjectId = 1;
 
-  /// <summary>Adds a file to the image.</summary>
+  /// <summary>Highest reserved object id (root=1, lost+found and friends up to 4).
+  /// Freshly allocated objects start above this range.</summary>
+  private const int ReservedObjectIdCeiling = 4;
+
+  /// <summary>Adds a file to the image. The name may contain '/' separators,
+  /// in which case the leading segments become real YAFFS2 directory objects.</summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    // Flatten to filename only (no subdirectories in our minimal image).
-    var flat = Path.GetFileName(name);
-    if (string.IsNullOrEmpty(flat))
+    // Normalise separators and drop empty / "." segments so a path such as
+    // "docs/api/reference.txt" yields the segments ["docs", "api", "reference.txt"].
+    var segments = name.Replace('\\', '/')
+      .Split('/', StringSplitOptions.RemoveEmptyEntries)
+      .Where(s => s != ".")
+      .ToArray();
+    if (segments.Length == 0)
       throw new ArgumentException("File name must not be empty.", nameof(name));
-    _files.Add((flat, data));
+    _files.Add((segments, data));
   }
 
   /// <summary>
   /// Builds a complete YAFFS2 image. Layout:
   /// 1. Root directory object header (object ID 1, type=directory, parent=1)
-  /// 2. For each file: object header (type=file, parent=1) + data chunks
+  /// 2. Directory object headers for every intermediate path segment
+  /// 3. For each file: object header (type=file, parent=its directory) + data chunks
   /// </summary>
   public byte[] Build() {
     var chunks = new List<byte[]>();
     uint seqNumber = 0x1000; // Sequence numbers start at a conventional value.
-    var nextObjectId = 2;    // Object 1 = root directory.
+    var nextObjectId = ReservedObjectIdCeiling + 1; // Allocate fresh ids above the reserved range.
 
     // 1. Root directory object header
     chunks.Add(BuildChunkWithSpare(
       BuildObjectHeader(TypeDirectory, RootObjectId, "", 0),
       seqNumber, RootObjectId, chunkId: 0, nBytes: 0));
 
-    // 2. Per-file: object header + data chunks
-    foreach (var (name, data) in _files) {
+    // Maps a directory path (e.g. "docs/api") to the object id of its directory.
+    // The empty path maps to the root directory.
+    var dirIds = new Dictionary<string, int> { [""] = RootObjectId };
+
+    // 2. + 3. Per-file: ensure parent directories exist, then write the file.
+    foreach (var (segments, data) in _files) {
+      // Ensure every directory along the path (all segments except the leaf) exists.
+      var parentId = RootObjectId;
+      var prefix = "";
+      for (var i = 0; i < segments.Length - 1; i++) {
+        prefix = prefix.Length == 0 ? segments[i] : prefix + "/" + segments[i];
+        if (dirIds.TryGetValue(prefix, out var existing)) {
+          parentId = existing;
+          continue;
+        }
+
+        var dirObjId = nextObjectId++;
+        seqNumber++;
+        chunks.Add(BuildChunkWithSpare(
+          BuildObjectHeader(TypeDirectory, parentId, segments[i], 0),
+          seqNumber, dirObjId, chunkId: 0, nBytes: 0));
+        dirIds[prefix] = dirObjId;
+        parentId = dirObjId;
+      }
+
+      var leaf = segments[^1];
       var fileObjId = nextObjectId++;
       seqNumber++;
 
       // Object header for this file
       chunks.Add(BuildChunkWithSpare(
-        BuildObjectHeader(TypeFile, RootObjectId, name, data.Length),
+        BuildObjectHeader(TypeFile, parentId, leaf, data.Length),
         seqNumber, fileObjId, chunkId: 0, nBytes: 0));
 
       // Data chunks (each carries up to ChunkSize bytes)

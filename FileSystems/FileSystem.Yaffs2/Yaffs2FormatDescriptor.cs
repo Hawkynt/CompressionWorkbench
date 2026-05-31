@@ -217,9 +217,8 @@ public sealed class Yaffs2FormatDescriptor
       if (!scan.DataChunks.TryGetValue(obj.ObjectId, out var chunks) || chunks.Count == 0) continue;
       var path = paths.TryGetValue(obj.ObjectId, out var p) ? p : obj.Name;
       if (string.IsNullOrEmpty(path)) continue;
-      // Use the leaf filename for round-trip (writer flattens paths)
-      var leafName = Path.GetFileName(path);
-      yield return (leafName, Concat(chunks, obj.Size));
+      // Preserve the full nested path so the writer rebuilds the directory tree.
+      yield return (path, Concat(chunks, obj.Size));
     }
   }
 
