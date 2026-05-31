@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Udf;
 
-public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks AVDP@LBA 256 → VDS → FSD → root FE, then recurses through
@@ -15,6 +15,47 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => UdfExtentMap.Enumerate(image);
+
+  /// <summary>
+  /// Zeros all unused space in a UDF image: every sector not claimed by the
+  /// system area, VRS, AVDP, VDS, FSD, a File Entry, or a file's allocated data
+  /// run. Driven by the generic <see cref="UnusedSpaceWiper"/> over the UDF
+  /// extent map.
+  ///
+  /// <para>Cluster tips are wiped: a UDF allocation descriptor records the
+  /// file's logical byte length, so a file's Used extent ends exactly at its
+  /// real size. The sector padding between that size and the next 2048-byte
+  /// boundary is left uncovered and is zeroed as ordinary free space. A
+  /// file-size lookup keyed on the entry name is also supplied so the wiper can
+  /// trim any tail explicitly; only contiguous file-data extents (whose
+  /// <c>FileName</c> matches a non-directory entry) are affected — metadata and
+  /// directory File Entries are skipped, so live data and on-disk structures
+  /// are never touched.</para>
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        var reader = new UdfReader(image);
+        var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var entry in reader.Entries)
+          if (!entry.IsDirectory)
+            sizeMap[entry.Name] = entry.Size;
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    var extents = UdfExtentMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
+  }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 

@@ -144,6 +144,43 @@ public static class UdfExtentMap {
 
       // Decode ADs to gather directory bytes — streaming reads via cache.
       var adType = icbFlags & 0x07;
+
+      // Emit the directory's FID-data block(s) as Used+Directory extents. These
+      // sit in the partition data region separate from the FE sector; without an
+      // explicit extent they would read as Free and the unused-space wiper would
+      // zero the directory's File Identifier Descriptors, orphaning every entry.
+      // Embedded directories (adType 3) keep their FIDs inside the FE sector,
+      // already covered by the FE extent yielded above.
+      if (adType is 0 or 1) {
+        long? dirRunOff = null;
+        var dirRunLen = 0L;
+        var dpos = adRel;
+        var dend = adRel + lAd;
+        if (dend > SectorSize) dend = SectorSize;
+        var dstride = adType == 0 ? 8 : 16;
+        while (dpos + dstride <= dend) {
+          var extLen = BinaryPrimitives.ReadUInt32LittleEndian(feSector.AsSpan(dpos)) & 0x3FFFFFFF;
+          var extLbn = (int)BinaryPrimitives.ReadUInt32LittleEndian(feSector.AsSpan(dpos + 4));
+          var extByteOff = (long)(partStart + extLbn) * SectorSize;
+          dpos += dstride;
+          if (extLen <= 0) continue;
+          if (dirRunOff is { } ro && ro + dirRunLen == extByteOff) {
+            dirRunLen += extLen;
+          } else {
+            if (dirRunOff is { } prev)
+              yield return new DefragBlockInfo(prev, dirRunLen, DefragBlockKind.Used,
+                FileName: isRoot ? "UDF root FID data" : $"FID:{basePath}",
+                Classification: DefragBlockClass.Directory);
+            dirRunOff = extByteOff;
+            dirRunLen = extLen;
+          }
+        }
+        if (dirRunOff is { } finalOff)
+          yield return new DefragBlockInfo(finalOff, dirRunLen, DefragBlockKind.Used,
+            FileName: isRoot ? "UDF root FID data" : $"FID:{basePath}",
+            Classification: DefragBlockClass.Directory);
+      }
+
       var dirBytes = ReadAllocDataStream(image, cache, feSector, partStart, adRel, lAd, adType, infoLength);
       if (dirBytes == null) yield break;
 
