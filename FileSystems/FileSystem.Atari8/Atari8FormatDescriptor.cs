@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Atari8;
 
-public sealed class Atari8FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class Atari8FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks the ATR header + VTOC + directory + per-file sector chains
@@ -148,5 +148,30 @@ public sealed class Atari8FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     var moves = Compression.Core.Layout.DefragPlanner.Plan(extents, 0, imageSize, 128, options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
     if (moves.Count == 0) return;
     DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize);
+  }
+
+  // ── IWipeEmpty ─────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros all unused space in an Atari 8-bit ATR (AtariDOS 2) image: the ATR
+  /// header is preserved, and every sector not claimed by the VTOC, the
+  /// directory, or a live file's sector chain is zeroed. Driven by the generic
+  /// <see cref="UnusedSpaceWiper"/> over the Atari8 extent map.
+  ///
+  /// <para>Per-file cluster-tip wiping is <em>not</em> applied: AtariDOS stores
+  /// a 3-byte link trailer (file number, next sector, byte count) at the end of
+  /// every data sector, so each sector mixes data with metadata and the file's
+  /// logical bytes are not a flat <c>offset..offset+size</c> region. Treating a
+  /// run's tail as slack would clobber a sector's link bytes, so tip wiping is
+  /// N/A here; only genuinely free sectors are zeroed.</para>
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = Atari8ExtentMap.Enumerate(image);
+    // Tips are N/A for AtariDOS (each sector ends with a 3-byte link trailer
+    // interleaving data and metadata); wipe free sectors only.
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 }
