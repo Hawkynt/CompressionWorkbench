@@ -696,7 +696,13 @@ public class FatWriterTests {
 
       ms.Position = 0;
       var entries = desc.List(ms, null);
-      Assert.That(entries, Has.Count.EqualTo(80), "All 80 files must be listed without corruption");
+      var files = entries.Where(e => !e.IsDirectory).ToList();
+      Assert.That(files, Has.Count.EqualTo(80), "All 80 files must be listed without corruption");
+      // Each file lives inside its own subdirectory rather than being flattened
+      // into the root, so the 80 LongPathNNNN directories are present too.
+      Assert.That(entries.Count(e => e.IsDirectory), Is.EqualTo(80), "subdirectories preserved, not flattened");
+      Assert.That(files.All(e => e.Name.Replace('\\', '/').Contains('/')), Is.True,
+        "every file is reported at its full nested path");
     } finally {
       tmpFiles.ForEach(File.Delete);
     }

@@ -221,86 +221,46 @@ public sealed class FatWriter {
     // ── Root directory and file data ──────────────────────────────────────
     var clusterSize = sectorsPerCluster * bytesPerSector;
 
-    // Pre-compute the per-file directory-entry blob. Each plain 8.3 file
-    // contributes 32 bytes; every LFN-eligible file contributes
-    // ceil(len/13)·32 bytes of LFN slots followed by 32 bytes of 8.3 entry.
-    // We need the total up-front to know how many clusters the FAT32 root
-    // directory needs (it lives in the cluster chain, so root may span > 1
-    // cluster) — and to honour FAT12/16's BPB_RootEntCnt limit.
-    var existingShortNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    var perFileSlots = new List<byte[]>(_files.Count);
-    foreach (var (name, _, modTime) in _files) {
-      perFileSlots.Add(BuildDirentSlots(name, existingShortNames, modTime, enableLfn));
-    }
-    var totalDirentBytes = perFileSlots.Sum(s => s.Length);
+    // Lay out the directory tree: each subdirectory and file gets a contiguous
+    // cluster chain in the data area; the FAT12/16 root lives in its fixed
+    // region, the FAT32 root in the cluster chain at cluster 2.
+    var dataAreaOffset = firstDataSector * bytesPerSector;
+    var placement = PlaceTree(BuildTree(), fatType, clusterSize, enableLfn);
 
     // For FAT12/16 the root directory is a fixed-size region. Overflow would
     // silently write directory entries into the data clusters that follow it,
     // corrupting both the directory and the file data stored there.
-    if (fatType != 32 && totalDirentBytes > rootEntryCount * 32)
+    if (fatType != 32 && placement.RootContentBytes > rootEntryCount * 32)
       throw new InvalidOperationException(
-        $"FAT{fatType}: the {_files.Count} files require {totalDirentBytes / 32} directory entries " +
-        $"but the root directory holds at most {rootEntryCount}. " +
+        $"FAT{fatType}: the root directory needs {placement.RootContentBytes / 32} entries " +
+        $"but holds at most {rootEntryCount}. " +
         $"Pass totalSectors ≥ 200 000 to get a FAT32 image with an unbounded root directory, " +
         $"or use BuildAutoSized() to let the writer choose automatically.");
 
-    int dirEntryPos;
-    int nextCluster;
-    var dataAreaOffset = firstDataSector * bytesPerSector;
-    if (fatType == 32) {
-      // Root lives in the cluster chain at cluster 2 — possibly spanning
-      // multiple clusters if many LFN slots accumulate. Allocate enough
-      // contiguous clusters to fit all root dirents, mark them as a chain
-      // ending in EOC, and start file clusters after the last root cluster.
-      var rootClustersNeeded = Math.Max(1, (totalDirentBytes + clusterSize - 1) / clusterSize);
-      for (var rc = 0; rc < rootClustersNeeded; rc++) {
-        var cluster = 2 + rc;
-        var nextVal = (rc + 1 < rootClustersNeeded) ? cluster + 1 : 0x0FFFFFFF;
-        WriteFatEntry(disk, fatOffset, cluster, nextVal, fatType);
-      }
-      var rootStart = firstDataSector * bytesPerSector;
-      dirEntryPos = rootStart;
-      nextCluster = 2 + rootClustersNeeded;
-    } else {
-      dirEntryPos = (reservedSectors + fatCount * fatSize) * bytesPerSector;
-      nextCluster = 2;
-    }
 
-    // Place each file: copy its dirent slots into the root, then write data
-    // into the next free cluster run + chain it in the FAT.
-    for (var i = 0; i < _files.Count; i++) {
-      var (_, data, _) = _files[i];
-      var slots = perFileSlots[i];
-      // Patch the start-cluster fields of the *short-name entry* (always the
-      // last 32 bytes of the slot blob) now that we know where its data
-      // will live.
-      var sn = slots.AsSpan(slots.Length - 32, 32);
-      if (fatType == 32)
-        BinaryPrimitives.WriteUInt16LittleEndian(sn[20..], (ushort)((nextCluster >> 16) & 0xFFFF));
-      BinaryPrimitives.WriteUInt16LittleEndian(sn[26..], (ushort)(nextCluster & 0xFFFF));
-      BinaryPrimitives.WriteUInt32LittleEndian(sn[28..], (uint)data.Length);
-
-      // Copy dirent slots into the root directory area.
-      slots.CopyTo(disk.AsSpan(dirEntryPos));
-      dirEntryPos += slots.Length;
-
-      // Write file data to clusters
-      var clustersNeeded = Math.Max(1, (data.Length + clusterSize - 1) / clusterSize);
-      var clusterOffset = dataAreaOffset + (long)(nextCluster - 2) * clusterSize;
-      if (clusterOffset + data.Length <= disk.Length && data.Length > 0)
-        Buffer.BlockCopy(data, 0, disk, (int)clusterOffset, data.Length);
-
-      // Write FAT chain
-      for (var c = 0; c < clustersNeeded; c++) {
-        var cluster = nextCluster + c;
-        var nextVal = (c + 1 < clustersNeeded)
+    // FAT chains for every allocated run (FAT2 is mirrored from FAT1 below).
+    foreach (var (start, count) in placement.Runs)
+      for (var c = 0; c < count; c++) {
+        var cluster = start + c;
+        var nextVal = (c + 1 < count)
           ? cluster + 1
           : (fatType == 12 ? 0xFFF : fatType == 16 ? 0xFFFF : 0x0FFFFFFF);
         WriteFatEntry(disk, fatOffset, cluster, nextVal, fatType);
       }
 
-      nextCluster += clustersNeeded;
+    // FAT12/16 root directory in its fixed region.
+    if (placement.RootFixed is { } rootFixed)
+      rootFixed.CopyTo(disk.AsSpan((reservedSectors + fatCount * fatSize) * bytesPerSector));
+
+    // Subdirectory contents (incl. the FAT32 root) and file data, each at its
+    // first cluster's byte offset.
+    foreach (var (start, content) in placement.DataWrites) {
+      var clusterOffset = dataAreaOffset + (long)(start - 2) * clusterSize;
+      if (content.Length > 0 && clusterOffset + content.Length <= disk.Length)
+        Buffer.BlockCopy(content, 0, disk, (int)clusterOffset, content.Length);
     }
+
+    var nextCluster = placement.LastUsedCluster + 1;
 
     // ── FSInfo accounting (FAT32 only) ───────────────────────────────────
     if (fatType == 32) {
@@ -407,42 +367,18 @@ public sealed class FatWriter {
       2400 => (15, 2), 2880 => (18, 2), 3360 => (21, 2), 5760 => (36, 2), _ => (63, 255),
     };
 
-    // Build per-file dirent slots + assign contiguous clusters (no image allocation).
-    var existingShortNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    var perFileSlots = new List<byte[]>(_files.Count);
-    foreach (var (name, _, modTime) in _files)
-      perFileSlots.Add(BuildDirentSlots(name, existingShortNames, modTime, enableLfn));
-    var totalDirentBytes = perFileSlots.Sum(s => s.Length);
-
-    var maxRootEntries = fatType == 32 ? int.MaxValue : rootEntryCount;
-    if (fatType != 32 && totalDirentBytes > maxRootEntries * 32)
+    // Lay out the directory tree onto contiguous cluster runs (no image
+    // allocation). The same planner drives Build, so output is byte-identical.
+    var placement = PlaceTree(BuildTree(), fatType, (int)clusterSize, enableLfn);
+    if (fatType != 32 && placement.RootContentBytes > rootEntryCount * 32)
       throw new InvalidOperationException(
-        $"FAT{fatType}: the {_files.Count} files require {totalDirentBytes / 32} directory entries " +
-        $"but the root directory holds at most {rootEntryCount}.");
+        $"FAT{fatType}: the root directory needs {placement.RootContentBytes / 32} entries " +
+        $"but holds at most {rootEntryCount}.");
 
-    var rootClustersNeeded = fatType == 32
-      ? (int)Math.Max(1, (totalDirentBytes + clusterSize - 1) / clusterSize) : 0;
-    var nextCluster = fatType == 32 ? 2 + rootClustersNeeded : 2;
-
-    // Per-file (startCluster, clusterCount); also collect run-end clusters for the FAT.
-    var fileRuns = new (int start, int count)[_files.Count];
+    var lastUsedCluster = placement.LastUsedCluster;
+    var nextCluster = lastUsedCluster + 1;          // for FSInfo accounting
     var runEnds = new HashSet<int>();
-    if (fatType == 32) // root chain: clusters 2..(1+rootClustersNeeded), EOC at the last.
-      runEnds.Add(2 + rootClustersNeeded - 1);
-    for (var i = 0; i < _files.Count; i++) {
-      var data = _files[i].Data;
-      var clustersNeeded = (int)Math.Max(1, (data.Length + clusterSize - 1) / clusterSize);
-      fileRuns[i] = (nextCluster, clustersNeeded);
-      runEnds.Add(nextCluster + clustersNeeded - 1);
-      // Patch start-cluster + size into the short-name entry.
-      var sn = perFileSlots[i].AsSpan(perFileSlots[i].Length - 32, 32);
-      if (fatType == 32)
-        BinaryPrimitives.WriteUInt16LittleEndian(sn[20..], (ushort)((nextCluster >> 16) & 0xFFFF));
-      BinaryPrimitives.WriteUInt16LittleEndian(sn[26..], (ushort)(nextCluster & 0xFFFF));
-      BinaryPrimitives.WriteUInt32LittleEndian(sn[28..], (uint)data.Length);
-      nextCluster += clustersNeeded;
-    }
-    var lastUsedCluster = nextCluster - 1;
+    foreach (var (start, count) in placement.Runs) runEnds.Add(start + count - 1);
 
     // ── Lay out the physical image sparsely ──────────────────────────────
     var totalBytes = (long)totalSectors * bytesPerSector;
@@ -517,7 +453,7 @@ public sealed class FatWriter {
       var fat = new byte[fatByteLen];
       if (fatType == 12) { fat[0] = 0xF8; fat[1] = 0xFF; fat[2] = 0xFF; }
       else { fat[0] = 0xF8; fat[1] = 0xFF; fat[2] = 0xFF; fat[3] = 0xFF; }
-      foreach (var (start, count) in fileRuns)
+      foreach (var (start, count) in placement.Runs)
         for (var c = 0; c < count; c++) {
           var cluster = start + c;
           var nextVal = c + 1 < count ? cluster + 1 : (fatType == 12 ? 0xFFF : 0xFFFF);
@@ -527,22 +463,19 @@ public sealed class FatWriter {
       output.Position = fatByteOffset1 + fatByteLen; output.Write(fat);
     }
 
-    // 4. Root directory dirents.
+    // 4. FAT12/16 root directory in its fixed region.
     var dataAreaOffset = (long)firstDataSector * bytesPerSector;
-    if (fatType == 32) {
-      output.Position = dataAreaOffset; // root lives at cluster 2 = start of data area
-      foreach (var slots in perFileSlots) output.Write(slots);
-    } else {
+    if (placement.RootFixed is { } rootFixed) {
       output.Position = (long)(reservedSectors + fatCount * fatSize) * bytesPerSector;
-      foreach (var slots in perFileSlots) output.Write(slots);
+      output.Write(rootFixed);
     }
 
-    // 5. File data — seek to each file's first cluster and write its bytes.
-    for (var i = 0; i < _files.Count; i++) {
-      var data = _files[i].Data;
-      if (data.Length == 0) continue;
-      output.Position = dataAreaOffset + (long)(fileRuns[i].start - 2) * clusterSize;
-      output.Write(data);
+    // 5. Subdirectory contents (incl. the FAT32 root) and file data — seek to
+    // each object's first cluster and write its bytes.
+    foreach (var (start, content) in placement.DataWrites) {
+      if (content.Length == 0) continue;
+      output.Position = dataAreaOffset + (start - 2) * clusterSize;
+      output.Write(content);
     }
 
     output.Flush();
@@ -755,7 +688,7 @@ public sealed class FatWriter {
   /// VFAT/NTFS case-preservation flags: bit 3 (0x08) = base is lowercase,
   /// bit 4 (0x10) = extension is lowercase. The 11-byte name field always
   /// stores uppercase; the reader applies the case bits on display.</summary>
-  private static byte[] BuildShortEntry(string shortName, byte ntCaseBits = 0, DateTime? modTime = null) {
+  private static byte[] BuildShortEntry(string shortName, byte ntCaseBits = 0, DateTime? modTime = null, byte attr = 0x20) {
     var entry = new byte[32];
     var dotIdx = shortName.LastIndexOf('.');
     var basePart = dotIdx >= 0 ? shortName[..dotIdx] : shortName;
@@ -764,7 +697,7 @@ public sealed class FatWriter {
     var extPad = extPart.ToUpperInvariant().PadRight(3).Substring(0, 3);
     Encoding.ASCII.GetBytes(basePad).CopyTo(entry, 0);
     Encoding.ASCII.GetBytes(extPad).CopyTo(entry, 8);
-    entry[11] = 0x20; // Archive attribute
+    entry[11] = attr; // 0x20 archive (file) or 0x10 directory
     entry[12] = ntCaseBits;
 
     // FAT timestamps: clamp to the representable range [1980-01-01, 2107-12-31].
@@ -786,14 +719,14 @@ public sealed class FatWriter {
   /// long name needs them, then the 8.3 entry). Updates <paramref
   /// name="existingShortNames"/> with the chosen alias to detect ~N
   /// collisions across subsequent files.</summary>
-  private static byte[] BuildDirentSlots(string longName, HashSet<string> existingShortNames, DateTime? modTime = null, bool enableLfn = true) {
+  private static byte[] BuildDirentSlots(string longName, HashSet<string> existingShortNames, DateTime? modTime = null, bool enableLfn = true, byte attr = 0x20) {
     if (!enableLfn) {
       // Strict 8.3 mode: no LFN slots, just generate a short-name alias.
       var shortAlias = IsPlain8Dot3(longName)
         ? longName.ToUpperInvariant()
         : GenerateShortName(longName, existingShortNames);
       existingShortNames.Add(shortAlias.ToUpperInvariant());
-      return BuildShortEntry(shortAlias, 0, modTime);
+      return BuildShortEntry(shortAlias, 0, modTime, attr);
     }
     if (IsPlain8Dot3(longName)) {
       existingShortNames.Add(longName.ToUpperInvariant());
@@ -806,11 +739,11 @@ public sealed class FatWriter {
       byte caseBits = 0;
       if (HasLowerCaseAscii(basePart)) caseBits |= 0x08;
       if (HasLowerCaseAscii(extPart)) caseBits |= 0x10;
-      return BuildShortEntry(longName.ToUpperInvariant(), caseBits, modTime);
+      return BuildShortEntry(longName.ToUpperInvariant(), caseBits, modTime, attr);
     }
 
     var shortName = GenerateShortName(longName, existingShortNames);
-    var shortEntry = BuildShortEntry(shortName, 0, modTime);
+    var shortEntry = BuildShortEntry(shortName, 0, modTime, attr);
     var checksum = LfnChecksum(shortEntry.AsSpan(0, 11));
 
     // Each LFN slot carries 13 UTF-16 units: pad with NUL (after the real
@@ -866,6 +799,182 @@ public sealed class FatWriter {
     }
   }
 
+  // ── Directory tree ───────────────────────────────────────────────────
+  //
+  // AddFile names may contain path separators ('/' or '\'). Rather than
+  // flattening every file into the root directory — which both loses the
+  // structure and overflows the fixed FAT12/16 root (forcing FAT32 and a
+  // needlessly large image) — we build a tree, give each subdirectory its
+  // own cluster chain in the data area, and write proper '.'/'..' entries.
+
+  private sealed class DirNode(string name) {
+    public string Name { get; } = name;
+    public List<DirNode> Dirs { get; } = [];
+    public List<FileNode> Files { get; } = [];
+    private Dictionary<string, DirNode> Index { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public int StartCluster { get; set; }
+    public int ClusterCount { get; set; }
+    /// <summary>One entry per child (files first, then subdirs): the raw dirent
+    /// slot bytes plus the child it points to, so the caller can patch the
+    /// start-cluster field once allocation is known.</summary>
+    public List<(byte[] Slots, FileNode? File, DirNode? Dir)> ChildSlots { get; } = [];
+    public DirNode GetOrAddDir(string childName) {
+      if (Index.TryGetValue(childName, out var existing)) return existing;
+      var created = new DirNode(childName);
+      Index[childName] = created;
+      Dirs.Add(created);
+      return created;
+    }
+  }
+
+  private sealed class FileNode(string name, byte[] data, DateTime? modTime) {
+    public string Name { get; } = name;
+    public byte[] Data { get; } = data;
+    public DateTime? ModTime { get; } = modTime;
+    public int StartCluster { get; set; }
+    public int ClusterCount { get; set; }
+  }
+
+  /// <summary>Splits each added file's name on path separators and inserts it
+  /// into a directory tree rooted at the (anonymous) volume root.</summary>
+  private DirNode BuildTree() {
+    var root = new DirNode("");
+    foreach (var (name, data, modTime) in _files) {
+      var parts = name.Split('/', '\\', StringSplitOptions.RemoveEmptyEntries);
+      if (parts.Length == 0) continue;
+      var dir = root;
+      for (var i = 0; i < parts.Length - 1; i++) dir = dir.GetOrAddDir(parts[i]);
+      dir.Files.Add(new FileNode(parts[^1], data, modTime));
+    }
+    return root;
+  }
+
+  /// <summary>Builds the child-entry slot blobs for every directory in the
+  /// tree. Short-name uniqueness is scoped per directory (FAT requires unique
+  /// 8.3 names only within a single directory). Files are listed before
+  /// subdirectories. Leaves the start-cluster/size fields as placeholders.</summary>
+  private static void BuildSlots(DirNode dir, bool enableLfn) {
+    var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var f in dir.Files)
+      dir.ChildSlots.Add((BuildDirentSlots(f.Name, names, f.ModTime, enableLfn, 0x20), f, null));
+    foreach (var d in dir.Dirs)
+      dir.ChildSlots.Add((BuildDirentSlots(d.Name, names, null, enableLfn, 0x10), null, d));
+    foreach (var d in dir.Dirs) BuildSlots(d, enableLfn);
+  }
+
+  /// <summary>Byte length of a directory's on-disk content: '.'/'..' (64 bytes,
+  /// non-root only) plus every child's dirent slots.</summary>
+  private static int ContentLength(DirNode dir, bool isRoot) {
+    var n = isRoot ? 0 : 64;
+    foreach (var (slots, _, _) in dir.ChildSlots) n += slots.Length;
+    return n;
+  }
+
+  /// <summary>Builds the raw 32-byte '.' or '..' directory entry pointing at
+  /// <paramref name="startCluster"/> (0 when the parent is the root, per the
+  /// FAT spec). Marked ATTR_DIRECTORY with zero size.</summary>
+  private static byte[] BuildDotEntry(bool parent, int startCluster, int fatType, DateTime? modTime) {
+    var e = new byte[32];
+    e[0] = (byte)'.';
+    for (var i = 1; i < 11; i++) e[i] = (byte)' ';
+    if (parent) e[1] = (byte)'.';
+    e[11] = 0x10; // ATTR_DIRECTORY
+    var dt = modTime ?? DateTime.Now;
+    if (dt.Year < 1980) dt = new DateTime(1980, 1, 1);
+    else if (dt.Year > 2107) dt = new DateTime(2107, 12, 31, 23, 59, 58);
+    var fatDate = (ushort)(((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day);
+    var fatTime = (ushort)((dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2));
+    BinaryPrimitives.WriteUInt16LittleEndian(e.AsSpan(14), fatTime);
+    BinaryPrimitives.WriteUInt16LittleEndian(e.AsSpan(16), fatDate);
+    BinaryPrimitives.WriteUInt16LittleEndian(e.AsSpan(18), fatDate);
+    BinaryPrimitives.WriteUInt16LittleEndian(e.AsSpan(22), fatTime);
+    BinaryPrimitives.WriteUInt16LittleEndian(e.AsSpan(24), fatDate);
+    if (fatType == 32)
+      BinaryPrimitives.WriteUInt16LittleEndian(e.AsSpan(20), (ushort)((startCluster >> 16) & 0xFFFF));
+    BinaryPrimitives.WriteUInt16LittleEndian(e.AsSpan(26), (ushort)(startCluster & 0xFFFF));
+    return e;
+  }
+
+  /// <summary>Result of laying out the directory tree onto a cluster space:
+  /// the FAT chains (contiguous runs), the byte blobs to drop into the data
+  /// area (subdirectories + file data), and — for FAT12/16 — the fixed-region
+  /// root directory content.</summary>
+  private sealed class Placement {
+    public byte[]? RootFixed { get; set; }                              // FAT12/16 root dirents
+    public List<(int Start, byte[] Content)> DataWrites { get; } = [];  // subdirs (& FAT32 root) + file data
+    public List<(int Start, int Count)> Runs { get; } = [];             // contiguous cluster chains
+    public int LastUsedCluster { get; set; }
+    public int RootContentBytes { get; set; }                           // for the FAT12/16 root-overflow check
+  }
+
+  /// <summary>Allocates contiguous cluster runs for every subdirectory and
+  /// file, fills in their content (patching child start-cluster/size fields
+  /// and writing '.'/'..'), and returns a <see cref="Placement"/> that both
+  /// <see cref="Build"/> and <see cref="BuildTo"/> render identically.</summary>
+  private static Placement PlaceTree(DirNode root, int fatType, int clusterSize, bool enableLfn) {
+    BuildSlots(root, enableLfn);
+    var p = new Placement { RootContentBytes = ContentLength(root, true) };
+
+    // The root either occupies a fixed region (FAT12/16) or a cluster chain at
+    // cluster 2 (FAT32). Everything else is allocated after it.
+    var nextCluster = 2;
+    if (fatType == 32) {
+      var rootClusters = Math.Max(1, (p.RootContentBytes + clusterSize - 1) / clusterSize);
+      root.StartCluster = 2;
+      root.ClusterCount = rootClusters;
+      p.Runs.Add((2, rootClusters));
+      nextCluster = 2 + rootClusters;
+    } else {
+      root.StartCluster = 0; // fixed root region; FAT entry/cluster 0 means "root"
+    }
+
+    void Allocate(DirNode dir) {
+      foreach (var f in dir.Files) {
+        f.ClusterCount = Math.Max(1, (f.Data.Length + clusterSize - 1) / clusterSize);
+        f.StartCluster = nextCluster;
+        p.Runs.Add((nextCluster, f.ClusterCount));
+        nextCluster += f.ClusterCount;
+      }
+      foreach (var d in dir.Dirs) {
+        d.ClusterCount = Math.Max(1, (ContentLength(d, false) + clusterSize - 1) / clusterSize);
+        d.StartCluster = nextCluster;
+        p.Runs.Add((nextCluster, d.ClusterCount));
+        nextCluster += d.ClusterCount;
+      }
+      foreach (var d in dir.Dirs) Allocate(d);
+    }
+    Allocate(root);
+    p.LastUsedCluster = nextCluster - 1;
+
+    void Fill(DirNode dir, int parentStart, bool isRoot) {
+      var content = new byte[ContentLength(dir, isRoot)];
+      var pos = 0;
+      if (!isRoot) {
+        BuildDotEntry(false, dir.StartCluster, fatType, null).CopyTo(content, pos); pos += 32;
+        BuildDotEntry(true, parentStart, fatType, null).CopyTo(content, pos); pos += 32;
+      }
+      foreach (var (slots, file, sub) in dir.ChildSlots) {
+        var sn = slots.AsSpan(slots.Length - 32, 32);
+        var start = file is not null ? file.StartCluster : sub!.StartCluster;
+        var size = file?.Data.Length ?? 0;
+        if (fatType == 32)
+          BinaryPrimitives.WriteUInt16LittleEndian(sn[20..], (ushort)((start >> 16) & 0xFFFF));
+        BinaryPrimitives.WriteUInt16LittleEndian(sn[26..], (ushort)(start & 0xFFFF));
+        BinaryPrimitives.WriteUInt32LittleEndian(sn[28..], (uint)size);
+        slots.CopyTo(content, pos); pos += slots.Length;
+      }
+      if (isRoot && fatType != 32) p.RootFixed = content;
+      else p.DataWrites.Add((dir.StartCluster, content));
+
+      foreach (var f in dir.Files)
+        if (f.Data.Length > 0) p.DataWrites.Add((f.StartCluster, f.Data));
+      foreach (var d in dir.Dirs) Fill(d, isRoot ? 0 : dir.StartCluster, false);
+    }
+    Fill(root, 0, true);
+
+    return p;
+  }
+
   /// <summary>
   /// Builds the FAT image using the smallest sector count that fits all file data
   /// <em>and</em> directory entries. Automatically selects FAT32 (≥ 200 000 sectors)
@@ -876,11 +985,21 @@ public sealed class FatWriter {
   public byte[] BuildAutoSized(int bytesPerSector = 512, int requestedClusterSize = 0,
     string? volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false,
     int requestedRootEntries = 0) {
-    // Estimate directory-entry bytes with a scratch name set so the real build
-    // gets a fresh, unaffected existingShortNames.
-    var scratch = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    var totalDirentBytes = _files.Sum(f => BuildDirentSlots(f.Name, scratch, enableLfn: enableLfn).Length);
-    var fileSizes = _files.Select(f => (long)f.Data.Length).ToList();
+    // Lay out the directory tree to size the image. Only the root's *direct*
+    // children bound the fixed FAT12/16 root directory; files inside
+    // subdirectories live in the subdir's own cluster chain, so they add data
+    // clusters but never overflow the root.
+    var tree = BuildTree();
+    BuildSlots(tree, enableLfn);
+    var rootDirentBytes = ContentLength(tree, isRoot: true);
+    var fileSizes = new List<long>();
+    var dirContentBytes = new List<long>();
+    void CollectSizes(DirNode dir, bool isRoot) {
+      if (!isRoot) dirContentBytes.Add(ContentLength(dir, isRoot: false));
+      foreach (var f in dir.Files) fileSizes.Add(f.Data.Length);
+      foreach (var sub in dir.Dirs) CollectSizes(sub, false);
+    }
+    CollectSizes(tree, true);
 
     // Pick the cluster size that minimises slack + FAT overhead without
     // escalating to a higher FAT variant than strictly necessary.
@@ -888,7 +1007,7 @@ public sealed class FatWriter {
       ? requestedClusterSize
       : SelectOptimalClusterSize(fileSizes, bytesPerSector, forcedFatType, requestedRootEntries);
 
-    var totalDataBytes = fileSizes.Sum();
+    var totalDataBytes = fileSizes.Sum() + dirContentBytes.Sum();
     var neededBytes = Math.Max(totalDataBytes * 3 / 2 + 32768, 1440 * 1024);
     var totalSectors = Math.Max(2880, (int)((neededBytes + bytesPerSector - 1) / bytesPerSector));
 
@@ -901,14 +1020,15 @@ public sealed class FatWriter {
     // needlessly huge image just because long filenames forced FAT32.
     var maxRootEntries = requestedRootEntries > 0 ? requestedRootEntries : 224;
     var needFat32 = forcedFatType == 32
-      || (forcedFatType == 0 && totalDirentBytes > maxRootEntries * 32);
+      || (forcedFatType == 0 && rootDirentBytes > maxRootEntries * 32);
     if (needFat32) {
       const long fat32MinClusters = 65525;
       const long margin = 2048;             // headroom so Build's own FAT-size recompute stays > the minimum
       const int reservedSectors = 32;       // FAT32 convention (boot + FSInfo + backup)
       var spc = Math.Max(1, clusterBytes / bytesPerSector);
-      var dataClusters = fileSizes.Sum(s => s <= 0 ? 0L : (s + clusterBytes - 1) / clusterBytes);
-      var rootClusters = Math.Max(1L, (totalDirentBytes + clusterBytes - 1) / clusterBytes);
+      var dataClusters = fileSizes.Sum(s => s <= 0 ? 0L : (s + clusterBytes - 1) / clusterBytes)
+        + dirContentBytes.Sum(b => Math.Max(1L, (b + clusterBytes - 1) / clusterBytes));
+      var rootClusters = Math.Max(1L, (rootDirentBytes + clusterBytes - 1) / clusterBytes);
       var targetClusters = Math.Max(fat32MinClusters + margin, dataClusters + rootClusters + margin);
       var fatSectors = (targetClusters * 4 + bytesPerSector - 1) / bytesPerSector;
       var fat32Sectors = reservedSectors + 2 * fatSectors + targetClusters * spc;
