@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Vdfs;
 
-public sealed class VdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
+public sealed class VdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "Vdfs";
   public string DisplayName => "VDFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -83,6 +83,29 @@ public sealed class VdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       if (e.IsDirectory || e.Size <= 0) continue;
       yield return new DefragBlockInfo(e.DataOffset, e.Size, DefragBlockKind.Used, e.Name);
     }
+  }
+
+  // ── IWipeEmpty ─────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros every byte of a VDFS container not claimed by the header/entry
+  /// table or a live file extent — dead bytes left behind by editing or
+  /// truncation. VDFS is a packed archive: each entry's data is contiguous and
+  /// its extent length equals its logical size, so there is no cluster-tip
+  /// slack to scrub (<paramref name="wipeClusterTips"/> has no effect here).
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    image.Position = 0;
+    var extents = this.EnumerateExtents(image).ToList();
+
+    // Packed archive — file extents already end exactly at the logical size, so
+    // there are no cluster tips. Wipe free regions only.
+    image.Position = 0;
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 
   // ── Shared helpers ─────────────────────────────────────────────────────
