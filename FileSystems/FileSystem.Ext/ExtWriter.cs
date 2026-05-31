@@ -26,6 +26,7 @@ public sealed class ExtWriter {
   /// <param name="requestedBlockSize">Block size in bytes (0 = auto-select).</param>
   public byte[] BuildAutoSized(int requestedBlockSize = 0) {
     var fileSizes = _files.Select(f => (long)f.Data.Length).ToList();
+    var estimatedInodes = ChooseInodeCount(_files.Count + 1);
 
     // ext block sizes: 1 KB, 2 KB, 4 KB (this minimal writer supports up to 4 KB).
     int[] candidates = [1024, 2048, 4096];
@@ -37,28 +38,47 @@ public sealed class ExtWriter {
             var clusters = Compression.Core.Layout.FilesystemLayoutOptimizer.DataClusters(fileSizes, bs);
             var slack    = Compression.Core.Layout.FilesystemLayoutOptimizer.Slack(fileSizes, bs);
             // ext metadata: superblock + group desc + 2 bitmaps + inode table.
-            const int inodeTableBytes = 128 * 128; // inodesPerGroup × inodeSize
+            var inodeTableBytes = estimatedInodes * 128; // inodesPerGroup × inodeSize
             var metaBytes = 4L * bs + inodeTableBytes;
             return slack + metaBytes;
           });
 
     // Distinct directories implied by the nested paths (the root plus every
-    // path prefix) — each consumes one directory data block.
+    // path prefix), and the number of entries (children) each holds — a
+    // directory's entries can span several data blocks once they overflow one.
     var dirPaths = new HashSet<string> { "" };
+    var dirEntryCount = new Dictionary<string, int>();
     foreach (var (name, _) in _files) {
       var segments = name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
       var prefix = "";
       for (var s = 0; s < segments.Length - 1; ++s) {
+        var parent = prefix;
         prefix = prefix.Length == 0 ? segments[s] : prefix + "/" + segments[s];
-        dirPaths.Add(prefix);
+        if (dirPaths.Add(prefix))
+          dirEntryCount[parent] = dirEntryCount.GetValueOrDefault(parent) + 1; // subdir adds an entry to its parent
       }
+      // The leaf file adds an entry to its immediate parent directory.
+      dirEntryCount[prefix] = dirEntryCount.GetValueOrDefault(prefix) + 1;
     }
 
-    // Size block count: metadata (≈ 4 blocks + inode table) + one block per
-    // directory + file data blocks + 10 % headroom.
-    var inodeTableBlocks = (128 * 128 + blockSize - 1) / blockSize;
+    // Each directory needs enough data blocks to hold its entries (its own
+    // "."/".." plus children), so estimate per-directory block usage and add a
+    // singly-indirect block whenever a directory needs more than 12 blocks.
+    var dirBlocks = 0L;
+    foreach (var dir in dirPaths) {
+      var entries = dirEntryCount.GetValueOrDefault(dir) + 2; // + "." + ".."
+      // Worst-case entry size for the short names this tool produces is small,
+      // but reserve a generous fixed slot so the estimate never under-shoots.
+      var perBlock = Math.Max(1, blockSize / 32);
+      var blocks = (entries + perBlock - 1) / perBlock;
+      dirBlocks += blocks + (blocks > 12 ? 1 : 0); // + singly-indirect block
+    }
+
+    // Inode table must hold the reserved inodes, every directory and every file.
+    var inodeCount = ChooseInodeCount(dirPaths.Count + _files.Count);
+    var inodeTableBlocks = (inodeCount * 128 + blockSize - 1) / blockSize;
     var dataBlocks = fileSizes.Sum(s => s <= 0 ? 0L : (s + blockSize - 1) / blockSize);
-    var totalBlocks = (int)Math.Max(4096, (4 + dirPaths.Count + inodeTableBlocks + dataBlocks) * 11 / 10);
+    var totalBlocks = (int)Math.Max(4096, (4 + dirBlocks + inodeTableBlocks + dataBlocks) * 11 / 10);
     return Build(blockSize, totalBlocks);
   }
 
@@ -78,7 +98,9 @@ public sealed class ExtWriter {
 
     var firstDataBlock = blockSize == 1024 ? 1u : 0u;
     const int inodeSize = 128;
-    const int inodesPerGroup = 128;
+    // The inode table must hold the reserved inodes plus one inode per directory
+    // and per file; a single block group's inode count is sized to fit them all.
+    var inodesPerGroup = ChooseInodeCount((int)FirstUserInode + CountDirectories() + _files.Count);
     var inodeTableBlocks = (inodesPerGroup * inodeSize + blockSize - 1) / blockSize;
     // Metadata layout: SB(1) + BGD(1) + block_bitmap(1) + inode_bitmap(1) +
     // inode_table(inodeTableBlocks). First free block = after all metadata.
@@ -151,55 +173,104 @@ public sealed class ExtWriter {
       disk[inodeBitmapOffset + bit / 8] |= (byte)(1 << (bit % 8));
     }
 
-    // --- Allocate one data block per directory and emit its entries. ---
-    // Each directory's entries (its "." / ".." plus children) must fit a single
-    // block; a deeper writer would chain blocks, but a single block holds tens
-    // of entries which is ample for the images this tool builds.
+    // --- Lay out each directory's entries across one or more data blocks. ---
+    // Records never straddle a block boundary: when the next record would not
+    // fit, the current block's last record has its rec_len padded to the block
+    // end and the next record opens a fresh block. "." / ".." remain the first
+    // two records of the first block. Up to 12 direct blocks are used, after
+    // which a singly-indirect block chains the rest.
     var sectorsPerBlock = blockSize / 512;
+    const int MaxDirEntryBytes = 8 + 255 + 3 & ~3; // largest possible single dirent
+    var dirBlockLists = new Dictionary<uint, List<int>>();
     foreach (var node in allDirs) {
-      node.Block = nextBlock++;
-      MarkBlockUsed(disk, blockBitmapOffset, node.Block);
+      // Assemble the ordered list of entries this directory holds.
+      var entries = new List<(uint Inode, string Name, byte FileType)> {
+        (node.Inode, ".", 2),
+        (node.Parent, "..", 2),
+      };
+      foreach (var child in node.Subdirs.Values)
+        entries.Add((child.Inode, child.Name, 2));
+      foreach (var (leaf, fileInode) in node.Files)
+        entries.Add((fileInode, leaf, 1));
 
-      var dirData = new byte[blockSize];
-      var dirPos = 0;
-      dirPos = WriteDirEntry(dirData, dirPos, node.Inode, ".", fileType: 2, blockSize, isLast: false);
+      // Split the entries into per-block runs, then emit each block, padding the
+      // final record of every block to the block end.
+      var blockList = new List<int>();
+      var idx = 0;
+      while (idx < entries.Count) {
+        var blockData = new byte[blockSize];
+        var pos = 0;
+        var firstInBlock = idx;
+        while (idx < entries.Count) {
+          var nameLen = Encoding.UTF8.GetByteCount(entries[idx].Name);
+          var size = 8 + nameLen + 3 & ~3;
+          if (pos + size > blockSize) break; // does not fit; close this block
+          pos += size;
+          ++idx;
+        }
+        pos = 0; // reset for the write pass below
+        if (idx == firstInBlock)
+          throw new InvalidOperationException(
+            $"ext2 writer: directory entry '{entries[firstInBlock].Name}' exceeds a single {blockSize}-byte block.");
 
-      var childDirs = node.Subdirs.Values.ToList();
-      var lastIsFile = node.Files.Count > 0;
-      var dotDotIsLast = childDirs.Count == 0 && node.Files.Count == 0;
-      dirPos = WriteDirEntry(dirData, dirPos, node.Parent, "..", fileType: 2, blockSize, isLast: dotDotIsLast);
+        for (var e = firstInBlock; e < idx; ++e) {
+          var (inode, name, fileType) = entries[e];
+          var isLast = e == idx - 1; // last record in this block gets padded rec_len
+          pos = WriteDirEntry(blockData, pos, inode, name, fileType, blockSize, isLast);
+        }
 
-      for (var i = 0; i < childDirs.Count; ++i) {
-        var isLast = !lastIsFile && i == childDirs.Count - 1;
-        dirPos = WriteDirEntry(dirData, dirPos, childDirs[i].Inode, childDirs[i].Name, fileType: 2, blockSize, isLast);
+        var blockNum = nextBlock++;
+        MarkBlockUsed(disk, blockBitmapOffset, blockNum);
+        blockData.CopyTo(disk, blockNum * blockSize);
+        blockList.Add(blockNum);
       }
-      for (var i = 0; i < node.Files.Count; ++i) {
-        var (leaf, fileInode) = node.Files[i];
-        var isLast = i == node.Files.Count - 1;
-        dirPos = WriteDirEntry(dirData, dirPos, fileInode, leaf, fileType: 1, blockSize, isLast);
-      }
 
-      if (dirPos > blockSize)
+      node.Block = blockList[0];
+      dirBlockLists[node.Inode] = blockList;
+
+      const int MaxDirectBlocks = 12;
+      var pointersPerBlock = blockSize / 4;
+      var maxDirBlocks = MaxDirectBlocks + pointersPerBlock;
+      if (blockList.Count > maxDirBlocks)
         throw new InvalidOperationException(
-          $"ext2 writer: directory '{(node.Inode == RootInode ? "/" : node.Name)}' has too many entries for a single {blockSize}-byte block.");
-
-      dirData.CopyTo(disk, node.Block * blockSize);
+          $"ext2 writer: directory '{(node.Inode == RootInode ? "/" : node.Name)}' needs {blockList.Count} blocks " +
+          $"but only direct + singly-indirect blocks are supported (max {maxDirBlocks} blocks, " +
+          $"≈ {maxDirBlocks * (blockSize / MaxDirEntryBytes)} entries at {blockSize}-byte blocks).");
     }
 
     // --- Directory inodes (root + every subdirectory). ---
     // i_links_count for a directory = 2 (its own "." and the parent's entry for
     // it) + one per child subdirectory (each child's ".." links back here).
     foreach (var node in allDirs) {
+      var blockList = dirBlockLists[node.Inode];
+      const int MaxDirectBlocks = 12;
+
+      // A singly-indirect block holds the block pointers past the first 12.
+      var indirectBlockNum = 0;
+      var allocatedBlocks = blockList.Count;
+      if (blockList.Count > MaxDirectBlocks) {
+        indirectBlockNum = nextBlock++;
+        MarkBlockUsed(disk, blockBitmapOffset, indirectBlockNum);
+        ++allocatedBlocks; // the indirect block itself counts toward i_blocks
+        var indOff = indirectBlockNum * blockSize;
+        for (var p = MaxDirectBlocks; p < blockList.Count; ++p)
+          BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(indOff + (p - MaxDirectBlocks) * 4), (uint)blockList[p]);
+      }
+
       var dirInodeOffset = inodeTableOffset + (int)(node.Inode - 1) * inodeSize;
       var dirIno = disk.AsSpan(dirInodeOffset, inodeSize);
       BinaryPrimitives.WriteUInt16LittleEndian(dirIno, 0x4000 | 0x01ED);             // i_mode: directory, 0755
-      BinaryPrimitives.WriteUInt32LittleEndian(dirIno[4..], (uint)blockSize);        // i_size
+      BinaryPrimitives.WriteUInt32LittleEndian(dirIno[4..], (uint)(blockList.Count * blockSize)); // i_size
       BinaryPrimitives.WriteUInt32LittleEndian(dirIno[8..], now);                    // i_atime
       BinaryPrimitives.WriteUInt32LittleEndian(dirIno[12..], now);                   // i_ctime
       BinaryPrimitives.WriteUInt32LittleEndian(dirIno[16..], now);                   // i_mtime
       BinaryPrimitives.WriteUInt16LittleEndian(dirIno[26..], (ushort)(2 + node.Subdirs.Count)); // i_links_count
-      BinaryPrimitives.WriteUInt32LittleEndian(dirIno[28..], (uint)sectorsPerBlock); // i_blocks
-      BinaryPrimitives.WriteUInt32LittleEndian(dirIno[40..], (uint)node.Block);      // direct block 0
+      BinaryPrimitives.WriteUInt32LittleEndian(dirIno[28..], (uint)(allocatedBlocks * sectorsPerBlock)); // i_blocks
+      var directCount = Math.Min(MaxDirectBlocks, blockList.Count);
+      for (var b = 0; b < directCount; ++b)
+        BinaryPrimitives.WriteUInt32LittleEndian(dirIno[(40 + b * 4)..], (uint)blockList[b]); // direct blocks 0..11
+      if (indirectBlockNum != 0)
+        BinaryPrimitives.WriteUInt32LittleEndian(dirIno[88..], (uint)indirectBlockNum); // singly-indirect pointer
     }
 
     // --- File inodes + data blocks ---
@@ -322,8 +393,31 @@ public sealed class ExtWriter {
     return disk;
   }
 
+  // Rounds the required inode count up to a sensible group size. The minimal
+  // writer keeps a single block group, so the inode count is simply sized to
+  // hold every reserved/dir/file inode with headroom, never below the classic 128.
+  private static int ChooseInodeCount(int needed) {
+    var withHeadroom = Math.Max(128, needed + needed / 10 + 16);
+    // Round up to a multiple of 8 so the inode bitmap byte boundaries stay tidy.
+    return withHeadroom + 7 & ~7;
+  }
+
+  // Counts the distinct directories (root + every path prefix) the added files imply.
+  private int CountDirectories() {
+    var dirs = new HashSet<string> { "" };
+    foreach (var (name, _) in _files) {
+      var segments = name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+      var prefix = "";
+      for (var s = 0; s < segments.Length - 1; ++s) {
+        prefix = prefix.Length == 0 ? segments[s] : prefix + "/" + segments[s];
+        dirs.Add(prefix);
+      }
+    }
+    return dirs.Count;
+  }
+
   // A node in the directory tree assembled from the added file paths. Each node
-  // becomes one directory inode with a single data block holding its entries.
+  // becomes one directory inode whose entries span one or more data blocks.
   private sealed class DirNode {
     public uint Inode;
     public uint Parent;
