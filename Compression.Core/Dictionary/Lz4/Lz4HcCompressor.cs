@@ -41,9 +41,12 @@ internal static class Lz4HcCompressor {
       var dstPos = 0;
       var anchor = 0;
       var pos = 0;
-      var matchLimit = srcLen - Lz4Constants.MfLimit;
+      // No match may start within MFLIMIT (12) bytes of the end; the final
+      // LASTLITERALS (5) bytes must always remain literals.
+      var searchLimit = srcLen - Lz4Constants.MfLimit;
+      var matchLimit = srcLen - Lz4Constants.LastLiterals;
 
-      while (pos < matchLimit) {
+      while (pos < searchLimit) {
         var bestOffset = 0;
         var bestLength = 0;
 
@@ -66,7 +69,7 @@ internal static class Lz4HcCompressor {
                 src[candidate + 2] == src[pos + 2] &&
                 src[candidate + 3] == src[pos + 3]) {
               var len = 4;
-              while (pos + len < srcLen && src[candidate + len] == src[pos + len])
+              while (pos + len < matchLimit && src[candidate + len] == src[pos + len])
                 ++len;
 
               if (len > bestLength) {
@@ -100,7 +103,11 @@ internal static class Lz4HcCompressor {
                 src[candidate + 1] == src[pos + 2] &&
                 src[candidate + 2] == src[pos + 3]) {
               var len = 3;
-              while (pos + 1 + len < srcLen && src[candidate + len] == src[pos + 1 + len])
+              // Use the same end bound as the primary match (never into the
+              // final LASTLITERALS bytes); otherwise the lazy match looks up to
+              // LASTLITERALS bytes longer than any primary match near the tail
+              // and the encoder defers every position, emitting only literals.
+              while (pos + 1 + len < matchLimit && src[candidate + len] == src[pos + 1 + len])
                 ++len;
               if (len > lazyBest)
                 lazyBest = len;

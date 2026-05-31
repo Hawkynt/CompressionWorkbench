@@ -24,12 +24,14 @@ internal static class ZstdLiterals {
   /// </summary>
   /// <param name="blockData">The compressed block data.</param>
   /// <param name="pos">The current position in the block data; updated on return.</param>
-  /// <param name="huffmanWeights">
-  /// The Huffman weight table from the previous block, updated if a new table is present.
+  /// <param name="huffmanTable">
+  /// The Huffman table parsed from the previous block, updated whenever a new tree is
+  /// transmitted; reused by subsequent Treeless literal blocks.
   /// </param>
   /// <returns>The decompressed literal bytes.</returns>
   /// <exception cref="InvalidDataException">The literal section is malformed.</exception>
-  public static byte[] DecompressLiterals(ReadOnlySpan<byte> blockData, ref int pos, ref int[]? huffmanWeights) {
+  public static byte[] DecompressLiterals(ReadOnlySpan<byte> blockData, ref int pos,
+    ref ZstdHuffmanLiterals.HuffTable? huffmanTable) {
     if (pos >= blockData.Length)
       throw new InvalidDataException("Truncated Zstandard literals header.");
 
@@ -43,9 +45,9 @@ internal static class ZstdLiterals {
       case LitTypeRle:
         return DecompressRleLiterals(blockData, ref pos, sizeFormat);
       case LitTypeHuffman:
-        return DecompressHuffmanLiterals(blockData, ref pos, sizeFormat, ref huffmanWeights);
+        return DecompressHuffmanLiterals(blockData, ref pos, sizeFormat, ref huffmanTable);
       case LitTypeTreeless:
-        return DecompressTreelessLiterals(blockData, ref pos, sizeFormat, huffmanWeights);
+        return DecompressTreelessLiterals(blockData, ref pos, sizeFormat, huffmanTable);
       default:
         throw new InvalidDataException($"Unknown Zstandard literal type: {litType}");
     }
@@ -65,19 +67,19 @@ internal static class ZstdLiterals {
     var regenSize = literals.Length;
 
     if (regenSize < 32) {
-      // 1-byte header: sizeFormat=0 or 1, size in bits [7:3]
+      // Size_Format 0 (binary 00): 1-byte header, 5-bit size in bits [7:3].
       output[outputPos++] = (byte)((regenSize << 3) | (0 << 2) | LitTypeRaw);
     }
     else if (regenSize < 4096) {
-      // 2-byte header: sizeFormat=2 (bits [3:2]=10)
+      // Size_Format 1 (binary 01): 2-byte header, 12-bit size.
       // Byte0: type(2) | sizeFormat(2) | size[3:0](4)
       // Byte1: size[11:4](8)
-      var header = LitTypeRaw | (2 << 2) | ((regenSize & 0x0F) << 4);
+      var header = LitTypeRaw | (1 << 2) | ((regenSize & 0x0F) << 4);
       output[outputPos++] = (byte)(header & 0xFF);
       output[outputPos++] = (byte)(regenSize >> 4);
     }
     else {
-      // 3-byte header: sizeFormat=3 (bits [3:2]=11)
+      // Size_Format 3 (binary 11): 3-byte header, 20-bit size.
       // Byte0: type(2) | sizeFormat(2) | size[3:0](4)
       // Byte1: size[11:4](8)
       // Byte2: size[19:12](8)
@@ -127,7 +129,7 @@ internal static class ZstdLiterals {
   /// Decompresses Huffman-encoded literals (includes a Huffman weight table).
   /// </summary>
   private static byte[] DecompressHuffmanLiterals(ReadOnlySpan<byte> blockData, ref int pos,
-    int sizeFormat, ref int[]? huffmanWeights) {
+    int sizeFormat, ref ZstdHuffmanLiterals.HuffTable? huffmanTable) {
     var (regenSize, compressedSize) = ReadCompressedLiteralSizes(blockData, ref pos, sizeFormat);
 
     if (pos + compressedSize > blockData.Length)
@@ -136,19 +138,19 @@ internal static class ZstdLiterals {
     var compressedData = blockData.Slice(pos, compressedSize);
     pos += compressedSize;
 
-    // Read Huffman weight table and decode
-    var result = HuffmanFse.DecompressHuffman(compressedData, regenSize);
-    // Save the weights for potential Treeless reuse
-    huffmanWeights = HuffmanFse.ReadWeights(compressedData, out _);
+    // sizeFormat 0 => a single Huffman stream; 1/2/3 => four streams with a jump table.
+    var fourStreams = sizeFormat != 0;
+    var (result, table) = ZstdHuffmanLiterals.Decode(compressedData, regenSize, fourStreams);
+    huffmanTable = table; // remember for subsequent Treeless blocks
     return result;
   }
 
   /// <summary>
-  /// Decompresses Treeless Huffman literals (reuses previous Huffman table).
+  /// Decompresses Treeless Huffman literals (reuses the previous block's Huffman table).
   /// </summary>
   private static byte[] DecompressTreelessLiterals(ReadOnlySpan<byte> blockData, ref int pos,
-    int sizeFormat, int[]? savedWeights) {
-    if (savedWeights == null)
+    int sizeFormat, ZstdHuffmanLiterals.HuffTable? savedTable) {
+    if (savedTable == null)
       throw new InvalidDataException("Treeless literal block requires a previous Huffman table.");
 
     var (regenSize, compressedSize) = ReadCompressedLiteralSizes(blockData, ref pos, sizeFormat);
@@ -156,16 +158,11 @@ internal static class ZstdLiterals {
     if (pos + compressedSize > blockData.Length)
       throw new InvalidDataException("Truncated Treeless literal data.");
 
-    // Build the weight header and prepend it
-    var weightHeader = new byte[256];
-    var weightHeaderLen = HuffmanFse.WriteWeights(weightHeader, 0, savedWeights, FindMaxWeight(savedWeights));
-
-    var combined = new byte[weightHeaderLen + compressedSize];
-    weightHeader.AsSpan(0, weightHeaderLen).CopyTo(combined);
-    blockData.Slice(pos, compressedSize).CopyTo(combined.AsSpan(weightHeaderLen));
+    var streams = blockData.Slice(pos, compressedSize);
     pos += compressedSize;
 
-    return HuffmanFse.DecompressHuffman(combined, regenSize);
+    var fourStreams = sizeFormat != 0;
+    return ZstdHuffmanLiterals.DecodeTreeless(streams, regenSize, fourStreams, savedTable.Value);
   }
 
   /// <summary>
@@ -175,20 +172,20 @@ internal static class ZstdLiterals {
     int regenSize;
     int headerByte = blockData[pos];
 
-    if (sizeFormat is 0 or 1) {
-      // 1-byte header: size in bits [7:3]
+    if (sizeFormat is 0 or 2) {
+      // Size_Format 00 / 10: 1-byte header, 5-bit size in bits [7:3].
       regenSize = headerByte >> 3;
       pos += 1;
     }
-    else if (sizeFormat == 2) {
-      // 2-byte header: size in bits [7:4] of byte0 + byte1
+    else if (sizeFormat == 1) {
+      // Size_Format 01: 2-byte header, 12-bit size (byte0[7:4] + byte1).
       if (pos + 1 >= blockData.Length)
         throw new InvalidDataException("Truncated literal header.");
       regenSize = ((headerByte >> 4) & 0x0F) | (blockData[pos + 1] << 4);
       pos += 2;
     }
     else {
-      // 3-byte header: size in bits [7:4] of byte0 + byte1 + byte2
+      // Size_Format 11: 3-byte header, 20-bit size (byte0[7:4] + byte1 + byte2).
       if (pos + 2 >= blockData.Length)
         throw new InvalidDataException("Truncated literal header.");
       regenSize = ((headerByte >> 4) & 0x0F) | (blockData[pos + 1] << 4) | (blockData[pos + 2] << 12);
@@ -248,17 +245,5 @@ internal static class ZstdLiterals {
     }
 
     return (regenSize, compressedSize);
-  }
-
-  /// <summary>
-  /// Finds the maximum non-zero weight index.
-  /// </summary>
-  private static int FindMaxWeight(int[] weights) {
-    for (var i = weights.Length - 1; i >= 0; --i) {
-      if (weights[i] > 0)
-        return i;
-    }
-
-    return 0;
   }
 }

@@ -59,14 +59,17 @@ public static class Lz4BlockCompressor {
       var dstPos = 0;
       var anchor = 0; // Start of current literal run
       var pos = 0;
-      var matchLimit = srcLen - Lz4Constants.MfLimit;
+      // No match may start within MFLIMIT (12) bytes of the end; matches may not
+      // extend into the final LASTLITERALS (5) bytes, which must stay literals.
+      var searchLimit = srcLen - Lz4Constants.MfLimit;
+      var matchLimit = srcLen - Lz4Constants.LastLiterals;
 
-      while (pos < matchLimit) {
+      while (pos < searchLimit) {
         // Find a match
         var matchOffset = 0;
         var matchLength = 0;
 
-        if (pos + 3 < srcLen) {
+        {
           var h = Hash4(src, pos);
           var candidate = hashTable[h];
           hashTable[h] = pos;
@@ -79,8 +82,8 @@ public static class Lz4BlockCompressor {
               src[candidate + 3] == src[pos + 3]) {
               matchOffset = pos - candidate;
               matchLength = 4;
-              // Extend match
-              while (pos + matchLength < srcLen &&
+              // Extend match, but never into the final LASTLITERALS bytes.
+              while (pos + matchLength < matchLimit &&
                 src[candidate + matchLength] == src[pos + matchLength])
                 ++matchLength;
             }

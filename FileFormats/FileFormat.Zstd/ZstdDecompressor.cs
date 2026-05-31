@@ -23,7 +23,7 @@ internal sealed class ZstdDecompressor {
   private readonly SlidingWindow _window;
   private readonly XxHash64 _hasher;
   private int[] _repeatOffsets;
-  private int[]? _huffmanWeights;
+  private ZstdHuffmanLiterals.HuffTable? _huffmanTable;
   private FseTable? _prevLlTable;
   private FseTable? _prevOfTable;
   private FseTable? _prevMlTable;
@@ -47,7 +47,15 @@ internal sealed class ZstdDecompressor {
     // Read frame header
     var header = ZstdFrameHeader.Read(input, out _);
 
+    // The back-reference window must hold at least the declared window size; when the
+    // content size is known it can never exceed that, so sizing the buffer to the larger
+    // of the two guarantees every valid match distance stays addressable even across
+    // block boundaries (the reference encoder may emit window descriptors smaller than
+    // the data when streaming, but a single decoded frame never references further back
+    // than its own content).
     var windowSize = Math.Max(header.WindowSize, 1024);
+    if (header.ContentSize > 0 && header.ContentSize <= int.MaxValue)
+      windowSize = Math.Max(windowSize, (int)header.ContentSize);
     this._verifyChecksum = header.ContentChecksum;
 
     this._window = new SlidingWindow(windowSize);
@@ -191,7 +199,7 @@ internal sealed class ZstdDecompressor {
     var pos = 0;
 
     // Decode literals section
-    var literals = ZstdLiterals.DecompressLiterals(blockData, ref pos, ref this._huffmanWeights);
+    var literals = ZstdLiterals.DecompressLiterals(blockData, ref pos, ref this._huffmanTable);
 
     // Decode sequences section
     var remainingSize = compressedBlock.Length - pos;

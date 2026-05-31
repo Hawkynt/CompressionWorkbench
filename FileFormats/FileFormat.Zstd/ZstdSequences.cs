@@ -175,15 +175,17 @@ internal static class ZstdSequences {
       case ModePredefined:
         return FseTable.Build(defaultCounts, defaultMaxSymbol, defaultTableLog);
       case ModeRle:
+        // RLE mode: one symbol, a single-state table (Accuracy_Log 0). The decoder
+        // reads zero bits for this symbol's state — it always yields the same code.
         if (pos >= data.Length)
           throw new InvalidDataException("Truncated RLE sequence mode data.");
         var rleSymbol = data[pos++];
         var rleCounts = new short[rleSymbol + 1];
-        rleCounts[rleSymbol] = (short)(1 << defaultTableLog);
-        return FseTable.Build(rleCounts, rleSymbol, defaultTableLog);
+        rleCounts[rleSymbol] = 1;
+        return FseTable.Build(rleCounts, rleSymbol, 0);
       case ModeFseCompressed:
         var (normalizedCounts, maxSymbol, tableLog, bytesRead) =
-          FseDecoder.ReadNormalizedCounts(data.Slice(pos));
+          ZstdFseTableReader.Read(data.Slice(pos));
         pos += bytesRead;
         return FseTable.Build(normalizedCounts, maxSymbol, tableLog);
       case ModeRepeat:

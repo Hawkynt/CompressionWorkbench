@@ -19,8 +19,13 @@ public static class Lz4Constants {
   /// <summary>Number of bytes always kept as literals at end of input.</summary>
   public const int LastLiterals = 5;
 
-  /// <summary>Minimum input length that supports match finding.</summary>
-  public const int MfLimit = Lz4Constants.MinMatch + Lz4Constants.LastLiterals;
+  /// <summary>
+  /// Distance from end of input within which no match may start. The LZ4 block
+  /// specification fixes this at 12 (the reference encoder's MFLIMIT); the last
+  /// match must end at least <see cref="LastLiterals"/> bytes before the end and
+  /// the final sequence is always literals only.
+  /// </summary>
+  public const int MfLimit = 12;
 
   /// <summary>Token high nibble limit before overflow encoding.</summary>
   public const int RunMask = 15;
