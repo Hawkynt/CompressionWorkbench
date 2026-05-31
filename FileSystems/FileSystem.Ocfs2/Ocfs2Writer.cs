@@ -148,6 +148,24 @@ internal sealed class Ocfs2Writer {
       nextBlk += clusters;
     }
 
+    // Directories whose entries overflow the dinode's inline area become
+    // extent-backed: their ocfs2_dir_entry records are written into freshly
+    // allocated data clusters instead of the dinode. Build the block data here
+    // so each such directory's cluster count is known before image sizing.
+    // The root directory (fixed RootDirBlkno) participates too.
+    var maxInline = BlockSize - Id2Offset - 2;
+    foreach (var dir in dirs.Prepend(root)) {
+      var parentBlk = dir == root ? RootDirBlkno : dir.ParentBlkno;
+      var inline = BuildInlineDirEntries(dir, dir.DinodeBlkno, parentBlk);
+      if (inline.Length <= maxInline) continue; // stays inline
+
+      var blockData = BuildExtentDirBlocks(dir, dir.DinodeBlkno, parentBlk);
+      dir.Data = blockData;                 // reuse Data to carry the dir blocks
+      dir.DataBlkno = nextBlk;
+      dir.DataClusters = blockData.Length / ClusterSize;
+      nextBlk += dir.DataClusters;
+    }
+
     var totalBlocks = Math.Max(nextBlk, 64); // minimum image size
     var image = new byte[totalBlocks * BlockSize];
 
@@ -172,6 +190,12 @@ internal sealed class Ocfs2Writer {
     // 7. Subdirectory dinodes (inline dirs referencing their own children)
     foreach (var dir in dirs)
       WriteDirDinode(image, dir, dir.DinodeBlkno, dir.ParentBlkno, (uint)(dir.DinodeBlkno + 200));
+
+    // 7b. Extent-backed directory block data (root + subdirs that overflowed
+    // the inline area). Each carries its dir-entry blocks in Data.
+    foreach (var dir in dirs.Prepend(root))
+      if (dir.DataClusters > 0 && dir.Data.Length > 0)
+        Buffer.BlockCopy(dir.Data, 0, image, (int)(dir.DataBlkno * BlockSize), dir.Data.Length);
 
     // 8. File dinodes and data
     foreach (var f in files) {
@@ -330,15 +354,39 @@ internal sealed class Ocfs2Writer {
   /// links.
   /// </summary>
   private void WriteDirDinode(byte[] image, TreeNode node, long blkno, long parentBlkno, uint generation) {
-    var inlineData = BuildInlineDirEntries(node, blkno, parentBlkno);
     var childDirs = node.Order.Count(c => c.IsDir);
     var links = (ushort)(2 + childDirs);
+    var dinodeOff = (int)(blkno * BlockSize);
+
+    // Extent-backed directory: its dir-entry records were laid out in data
+    // clusters during planning (node.DataClusters > 0). Clear the inline flag,
+    // record i_size as the directory's byte length, and point a single extent
+    // record at the contiguous run of directory blocks.
+    if (node.DataClusters > 0) {
+      var dirSize = (long)node.DataClusters * ClusterSize;
+      WriteDinodeHeader(image, blkno, ModeDir,
+        InodeValid | InodeIsDir, dirSize, links, generation);
+      // i_dyn_features = 0 (no inline data).
+      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(dinodeOff + 0x4C, 2), 0);
+
+      var extOff = dinodeOff + Id2Offset;
+      // ocfs2_extent_list header: l_tree_depth=0, l_count=1, l_next_free_rec=1.
+      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(extOff + 0, 2), 0);
+      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(extOff + 2, 2), 1);
+      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(extOff + 4, 2), 1);
+      // extent record: e_cpos=0, e_int_clusters, e_blkno.
+      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(extOff + 8, 4), 0);
+      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(extOff + 12, 2), (ushort)node.DataClusters);
+      BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(extOff + 16, 8), (ulong)node.DataBlkno);
+      return;
+    }
+
+    var inlineData = BuildInlineDirEntries(node, blkno, parentBlkno);
 
     WriteDinodeHeader(image, blkno, ModeDir,
       InodeValid | InodeIsDir | InodeInlineData,
       inlineData.Length, links, generation);
 
-    var dinodeOff = (int)(blkno * BlockSize);
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(dinodeOff + 0x4C, 2), DynInlineData);
 
     var off = dinodeOff + Id2Offset;
@@ -351,10 +399,67 @@ internal sealed class Ocfs2Writer {
 
     if (inlineData.Length > maxInline)
       throw new InvalidOperationException(
-        $"OCFS2 writer only supports inline directories; '{node.Name}' has too many entries to fit one block.");
+        $"OCFS2 writer: '{node.Name}' overflows inline but was not planned as extent-backed.");
 
     if (inlineData.Length > 0)
       Buffer.BlockCopy(inlineData, 0, image, off + 2, inlineData.Length);
+  }
+
+  /// <summary>
+  /// Lays out a directory's <c>ocfs2_dir_entry</c> records across whole 4 KB
+  /// directory blocks for an extent-backed directory. "." and ".." come first;
+  /// then one entry per child. No entry crosses a block boundary: when the next
+  /// entry would not fit, the current entry's rec_len is stretched to the block
+  /// end (OCFS2 fills each block exactly) and the next entry starts in a fresh
+  /// block. The returned buffer is a whole number of clusters.
+  /// </summary>
+  private static byte[] BuildExtentDirBlocks(TreeNode node, long selfBlkno, long parentBlkno) {
+    var entries = new List<(ulong Inode, string Name, byte Type)> {
+      (((ulong)selfBlkno), ".", FtDir),
+      (((ulong)parentBlkno), "..", FtDir),
+    };
+    foreach (var child in node.Order)
+      entries.Add(((ulong)child.DinodeBlkno, child.Name, child.IsDir ? FtDir : FtRegFile));
+
+    // Worst-case sizing: assume each block ends with stretched slack, so size by
+    // packing greedily.
+    var blocks = new List<byte[]>();
+    var block = new byte[BlockSize];
+    var pos = 0;
+    var lastEntryOff = -1;
+
+    void FlushBlock() {
+      // Stretch the last entry of the block to fill the remainder (OCFS2 leaves
+      // no gap between an entry's end and the block boundary).
+      if (lastEntryOff >= 0)
+        BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(lastEntryOff + 8, 2), (ushort)(BlockSize - lastEntryOff));
+      blocks.Add(block);
+      block = new byte[BlockSize];
+      pos = 0;
+      lastEntryOff = -1;
+    }
+
+    foreach (var (inode, name, type) in entries) {
+      var nameBytes = Encoding.UTF8.GetBytes(name);
+      var recLen = (8 + 2 + 1 + 1 + nameBytes.Length + 3) & ~3;
+      if (pos + recLen > BlockSize) FlushBlock();
+      BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(pos, 8), inode);
+      BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(pos + 8, 2), (ushort)recLen);
+      block[pos + 10] = (byte)nameBytes.Length;
+      block[pos + 11] = type;
+      nameBytes.CopyTo(block.AsSpan(pos + 12, nameBytes.Length));
+      lastEntryOff = pos;
+      pos += recLen;
+    }
+    FlushBlock();
+
+    // Round up to a whole cluster (block size == cluster size here, so blocks
+    // already align, but keep the intent explicit).
+    var clusters = (blocks.Count * BlockSize + ClusterSize - 1) / ClusterSize;
+    var result = new byte[clusters * ClusterSize];
+    for (var i = 0; i < blocks.Count; i++)
+      Buffer.BlockCopy(blocks[i], 0, result, i * BlockSize, BlockSize);
+    return result;
   }
 
   /// <summary>
