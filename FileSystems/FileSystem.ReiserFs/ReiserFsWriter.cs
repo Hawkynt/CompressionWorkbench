@@ -136,6 +136,14 @@ public sealed class ReiserFsWriter {
     // super_block root points at it (tree_height grows from 2 to 3).
     var leaves = PackLeaves(items);
 
+    // Patch each object's sd_blocks now that the final leaf placement is known.
+    // reiserfsck (vpf-10680 / vpf-10690) requires the StatData block count to
+    // equal the number of distinct FORMATTED leaf blocks that hold the object's
+    // BODY items (DIRENTRY for directories, DIRECT/INDIRECT for files); the SD
+    // item itself does not count. Objects whose body fits in a single leaf keep
+    // blocks = 1, matching mkreiserfs' freshly-created root directory.
+    PatchStatDataBlockCounts(leaves);
+
     // Layout (reiserfsprogs journal.c — journal MUST start at
     // (REISERFS_DISK_OFFSET_IN_BYTES / blocksize) + 2 = 16 + 2 = 18):
     //   blocks 0..15     = reserved for boot (up to 64 KB)
@@ -371,12 +379,17 @@ public sealed class ReiserFsWriter {
     for (var i = 0; i < keyCount; i++)
       KeyOf(leaves[i + 1][0]).CopyTo(blk[(keysOff + i * 16)..]);
 
-    // disk_child pointers (8 bytes each) follow the keys.
+    // disk_child pointers (8 bytes each) follow the keys. dc_size is the child's
+    // USED space in bytes — reiserfsprogs B_CHILD_SIZE = MAX_CHILD_SIZE - free =
+    // (blocksize - BLKH_SIZE) - blk_free_space = sum of all item bodies and their
+    // item_heads in the child leaf. reiserfsck's bad_path test rejects any other
+    // value.
     var ptrsOff = keysOff + keyCount * 16;
     for (var i = 0; i < childCount; i++) {
+      var usedSpace = leaves[i].Sum(it => it.Body.Length + ItemHeaderSize);
       var dc = blk[(ptrsOff + i * 8)..];
       BinaryPrimitives.WriteUInt32LittleEndian(dc[0..], (uint)(firstLeafBlock + i)); // dc_block_number
-      BinaryPrimitives.WriteUInt16LittleEndian(dc[4..], (ushort)leaves[i].Count);    // dc_size (item count)
+      BinaryPrimitives.WriteUInt16LittleEndian(dc[4..], (ushort)usedSpace);          // dc_size (used bytes)
       BinaryPrimitives.WriteUInt16LittleEndian(dc[6..], 0);                          // dc reserved/padding
     }
   }
@@ -432,6 +445,64 @@ public sealed class ReiserFsWriter {
     if (current.Count > 0 || leaves.Count == 0)
       leaves.Add(current);
     return leaves;
+  }
+
+  // Offset of sd_blocks within a stat_data_v2 body.
+  private const int SdBlocksOffset = 36;
+
+  // 512-byte sectors per filesystem block — the unit of sd_blocks (st_blocks).
+  private const int SectorsPerBlock = BlockSize / 512;
+
+  /// <summary>
+  /// Rewrites every object's <c>sd_blocks</c> in place once the leaf packing is
+  /// fixed. ReiserFS records sd_blocks in 512-byte sectors and computes it
+  /// differently per object type (matching reiserfsck vpf-10680 / vpf-10690):
+  /// <list type="bullet">
+  ///   <item>Regular files store tails (DIRECT items) inside shared formatted
+  ///   leaves; each leaf that holds a piece of the body is charged one whole
+  ///   filesystem block, i.e. <c>distinctLeaves × (blocksize / 512)</c>.</item>
+  ///   <item>Directories charge their on-disk directory-item byte count rounded
+  ///   up to 512-byte sectors, <c>ceil(totalDirEntryBytes / 512)</c>.</item>
+  /// </list>
+  /// Objects with no body item (empty files) get 0.
+  /// </summary>
+  private static void PatchStatDataBlockCounts(List<List<LeafItem>> leaves) {
+    // Per object key: the SD body handle, the set of distinct leaves its DIRECT/
+    // INDIRECT items occupy, the total DIRENTRY byte count, and whether the
+    // object is a directory.
+    var sdBodies = new Dictionary<(uint, uint), byte[]>();
+    var fileLeaves = new Dictionary<(uint, uint), HashSet<int>>();
+    var dirBytes = new Dictionary<(uint, uint), int>();
+    for (var li = 0; li < leaves.Count; li++) {
+      foreach (var it in leaves[li]) {
+        var key = (it.DirId, it.ObjectId);
+        switch (it.ItemType) {
+          case 0: // STAT_DATA
+            sdBodies[key] = it.Body;
+            break;
+          case 3: // DIRENTRY — directory body, counted by byte size
+            dirBytes[key] = dirBytes.GetValueOrDefault(key) + it.Body.Length;
+            break;
+          default: // DIRECT (2) / INDIRECT (1) — file body, counted by leaf
+            if (!fileLeaves.TryGetValue(key, out var set))
+              fileLeaves[key] = set = [];
+            set.Add(li);
+            break;
+        }
+      }
+    }
+
+    foreach (var (key, sd) in sdBodies) {
+      if (sd.Length < SdBlocksOffset + 4) continue;
+      uint blocks;
+      if (dirBytes.TryGetValue(key, out var bytes))
+        blocks = (uint)((bytes + 511) / 512);
+      else if (fileLeaves.TryGetValue(key, out var set))
+        blocks = (uint)(set.Count * SectorsPerBlock);
+      else
+        blocks = 0u;
+      BinaryPrimitives.WriteUInt32LittleEndian(sd.AsSpan(SdBlocksOffset), blocks);
+    }
   }
 
   // ── Tree model ──────────────────────────────────────────────────────────
@@ -531,13 +602,13 @@ public sealed class ReiserFsWriter {
         items.Add(new LeafItem {
           DirId = obj.ParentObjectId, ObjectId = obj.ObjectId,
           OffsetV2 = TypeStatDataV2 | 0u, OffsetV1 = 0, UniquenessV1 = V1SdUniqueness,
-          KeyFormat = KeyFormat2, UField = 0, Body = sd,
+          KeyFormat = KeyFormat2, UField = 0, Body = sd, ItemType = 0,
         });
 
         // DIRENTRY — "." (self), ".." (parent), then each child. A directory
         // with many entries overflows one leaf, so the entries are split across
         // several DIRENTRY items (each keyed by its first entry's deh_offset).
-        items.AddRange(BuildDirEntryItems(obj));
+        items.AddRange(BuildDirEntryItems(tree, obj));
       } else {
         // STAT_DATA — mode S_IFREG | 0644, single DIRECT item.
         var sd = new byte[SdV2Size];
@@ -546,14 +617,14 @@ public sealed class ReiserFsWriter {
         items.Add(new LeafItem {
           DirId = obj.ParentObjectId, ObjectId = obj.ObjectId,
           OffsetV2 = TypeStatDataV2 | 0u, OffsetV1 = 0, UniquenessV1 = V1SdUniqueness,
-          KeyFormat = KeyFormat2, UField = 0, Body = sd,
+          KeyFormat = KeyFormat2, UField = 0, Body = sd, ItemType = 0,
         });
 
         // DIRECT — inline body at offset 1.
         items.Add(new LeafItem {
           DirId = obj.ParentObjectId, ObjectId = obj.ObjectId,
           OffsetV2 = TypeDirectV2 | 1u, OffsetV1 = 1, UniquenessV1 = V1DirectUniqueness,
-          KeyFormat = KeyFormat2, UField = 0, Body = obj.Data,
+          KeyFormat = KeyFormat2, UField = 0, Body = obj.Data, ItemType = 2,
         });
       }
     }
@@ -579,10 +650,29 @@ public sealed class ReiserFsWriter {
   /// ascending; the reader merges all items of one directory by (dir_id,
   /// objectid).
   /// </summary>
-  private List<LeafItem> BuildDirEntryItems(TreeObject dir) {
+  private List<LeafItem> BuildDirEntryItems(TreeModel tree, TreeObject dir) {
+    // Each directory entry's (deh_dir_id, deh_objectid) is the KEY of the object
+    // the entry points at — i.e. (parent's objectid, target's objectid):
+    //   "."  → this directory's own key      = (dir.ParentObjectId, dir.ObjectId)
+    //   ".." → the parent directory's own key = (parent.ParentObjectId, parent.ObjectId)
+    //          For the root the parent is the reserved key (0, 1)
+    //          (reiserfsprogs parent_root_dir_key).
+    //   child → (dir.ObjectId, child.ObjectId)
+    // This matches reiserfsprogs (reiserfslib.c make_sure_root_dir_exists /
+    // reiserfs_add_entry) and what reiserfsck's get_next_directory_item verifies.
+    uint dotDirId = dir.ParentObjectId, dotObjId = dir.ObjectId;
+    uint dotDotDirId, dotDotObjId;
+    if (dir.ObjectId == RootObjectId) {
+      dotDotDirId = 0;
+      dotDotObjId = RootParentObjectId; // (0, 1)
+    } else {
+      var parent = tree.Objects.Find(o => o.ObjectId == dir.ParentObjectId)!;
+      dotDotDirId = parent.ParentObjectId;
+      dotDotObjId = parent.ObjectId;
+    }
     var entries = new List<DirEntry> {
-      new(".", dir.ObjectId, dir.ObjectId, 1),
-      new("..", dir.ObjectId, dir.ParentObjectId, 2),
+      new(".", dotDirId, dotObjId, 1),
+      new("..", dotDotDirId, dotDotObjId, 2),
     };
     foreach (var (name, childId) in dir.Children) {
       // deh points to the child SD key (dir_id = this dir's objectid, objectid = child).
@@ -657,7 +747,7 @@ public sealed class ReiserFsWriter {
       DirId = dir.ParentObjectId, ObjectId = dir.ObjectId,
       OffsetV2 = TypeDirentryV2 | firstOffset, OffsetV1 = firstOffset,
       UniquenessV1 = V1DirentryUniqueness,
-      KeyFormat = KeyFormat1, UField = (ushort)entryCount, Body = body,
+      KeyFormat = KeyFormat1, UField = (ushort)entryCount, Body = body, ItemType = 3,
     };
   }
 
@@ -751,5 +841,10 @@ public sealed class ReiserFsWriter {
     public required ushort KeyFormat;
     public required ushort UField;
     public required byte[] Body;
+
+    // Item type (0=SD, 2=DIRECT, 3=DIRENTRY) and the owning object's id, used to
+    // compute each object's sd_blocks (count of distinct leaves its BODY items —
+    // DIRENTRY / DIRECT / INDIRECT — occupy) once the final packing is known.
+    public int ItemType;
   }
 }
