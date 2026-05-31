@@ -39,4 +39,7 @@ public sealed class FormatCreateOptions {
 
   /// <summary>Set of file paths detected as incompressible (null = not computed).</summary>
   public HashSet<string>? IncompressiblePaths { get; init; }
+
+  /// <summary>Format-specific knob values collected from <see cref="IFormatOptionsSchema"/>, keyed by <see cref="FormatOptionDescriptor.Key"/>.</summary>
+  public IReadOnlyDictionary<string, string>? FormatSpecific { get; init; }
 }

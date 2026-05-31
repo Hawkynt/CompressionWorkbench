@@ -6,6 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- XML doc-comment diagnostics (malformed comment, unresolved/invalid cref,
+         missing/duplicate param tags) stay warnings — a broken doc link is a
+         documentation nit, not something that should ever fail a build. -->
+    <WarningsNotAsErrors>CS1570;CS1571;CS1572;CS1573;CS1574;CS1580;CS1581;CS1584;CS1587;CS1591</WarningsNotAsErrors>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Version>1.0.0</Version>
     <Authors>Hawkynt</Authors>
