@@ -418,15 +418,14 @@ public sealed class HfsPlusWriter {
       keyed.Add((fm.Cnid, "", BuildFileThreadRecord(fm.Cnid, fm.Parent, fm.LeafName), -1, null, 0u));
     }
 
-    // Sort by HFS+ catalog key (parentCNID, then binary UTF-16BE name compare).
+    // Sort by HFS+ catalog key: parentCNID first, then the name under the
+    // volume's declared keyCompareType. The catalog header advertises
+    // kHFSCaseFolding (0xCF), so the name order must follow TN1150's
+    // case-folding FastUnicodeCompare — not a raw UTF-16 byte compare, which
+    // would put 'Z' before 'a' and make fsck report "Keys out of order".
     keyed.Sort((a, b) => {
       if (a.Parent != b.Parent) return a.Parent.CompareTo(b.Parent);
-      var an = Encoding.BigEndianUnicode.GetBytes(a.Name);
-      var bn = Encoding.BigEndianUnicode.GetBytes(b.Name);
-      var min = Math.Min(an.Length, bn.Length);
-      for (var i = 0; i < min; i++)
-        if (an[i] != bn[i]) return an[i].CompareTo(bn[i]);
-      return an.Length.CompareTo(bn.Length);
+      return HfsPlusCaseFold.Compare(a.Name, b.Name);
     });
 
     var records = new List<byte[]>(keyed.Count);
@@ -485,11 +484,19 @@ public sealed class HfsPlusWriter {
         var thisLevelNodes = new List<uint>();
         var thisLevelKeys = new List<byte[]>();
 
-        foreach (var grp in groups) {
+        // Node numbers for this level are assigned contiguously so the
+        // forward/backward sibling chain can be computed up front. Every node
+        // at one B-tree level must be linked to its neighbours via fLink/bLink
+        // (first node bLink = 0, last node fLink = 0); fsck rejects the volume
+        // with "Invalid sibling link" when index nodes are left unlinked.
+        var levelBaseNode = nextNodeNumber;
+        for (var g = 0; g < groups.Count; g++) {
           var nodeNo = nextNodeNumber++;
           thisLevelNodes.Add(nodeNo);
-          thisLevelKeys.Add(grp[0].Key);
-          var img = BuildIndexNode(grp, nodeSize, (byte)(2 + level));
+          thisLevelKeys.Add(groups[g][0].Key);
+          var fLink = g + 1 < groups.Count ? levelBaseNode + (uint)(g + 1) : 0u;
+          var bLink = g > 0 ? levelBaseNode + (uint)(g - 1) : 0u;
+          var img = BuildIndexNode(groups[g], nodeSize, (byte)(2 + level), fLink, bLink);
           indexNodeImages.Add((nodeNo, img));
         }
 
@@ -627,9 +634,13 @@ public sealed class HfsPlusWriter {
   /// <summary>
   /// Lays out an index node image (kind = 0). Each record is a full catalog key
   /// (with its 2-byte length prefix) followed by a 4-byte child node number.
+  /// <paramref name="fLink"/>/<paramref name="bLink"/> chain the node to its
+  /// siblings at the same B-tree level (0 at the ends of the chain).
   /// </summary>
-  private static byte[] BuildIndexNode(List<(byte[] Key, uint Child)> entries, int nodeSize, byte height) {
+  private static byte[] BuildIndexNode(List<(byte[] Key, uint Child)> entries, int nodeSize, byte height, uint fLink, uint bLink) {
     var node = new byte[nodeSize];
+    BinaryPrimitives.WriteUInt32BigEndian(node, fLink);
+    BinaryPrimitives.WriteUInt32BigEndian(node.AsSpan(4), bLink);
     node[8] = 0;       // kind = kBTIndexNode (0)
     node[9] = height;  // height above the leaves + 1
     BinaryPrimitives.WriteUInt16BigEndian(node.AsSpan(10), (ushort)entries.Count);
