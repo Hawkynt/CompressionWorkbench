@@ -18,7 +18,7 @@ namespace FileSystem.Ext1;
 /// vintage pre-1993 Linux disk images and forensic tooling for early Linux installs
 /// are the consumers.
 /// </summary>
-public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks the rev-0 superblock + BGD table + inode tree and yields the
@@ -28,6 +28,44 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => Ext1ExtentMap.Enumerate(image);
+
+  // ── IWipeEmpty ─────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros all unused space in the ext1 image: free blocks, inter-file gaps and
+  /// the block-tip slack between a file's logical size and the end of its last
+  /// allocated 1024-byte block. The extent map clamps each file's run to its
+  /// logical byte length, so any trailing slack inside the final block presents
+  /// as a free gap that the generic <see cref="UnusedSpaceWiper"/> zero-fills.
+  /// A directory-path-keyed size lookup makes the explicit cluster-tip pass
+  /// exact for the (rare) case where an extent reports a block-rounded length.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        using var reader = new Ext1Reader(image);
+        // Ext1 extent FileName is the full directory path; the reader keys
+        // entries by the same full path — they match directly.
+        var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var entry in reader.Entries)
+          if (!entry.IsDirectory)
+            sizeMap[entry.Name] = entry.Size;
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    var extents = Ext1ExtentMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
+  }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 

@@ -82,7 +82,23 @@ public static class Ext1ExtentMap {
     }
 
     var files = new List<(uint inode, string name, long size)>();
-    WalkDir(cache, blockSize, inodesPerGroup, bgInodeTable, RootInode, "", files, new HashSet<uint>());
+    var dirs = new List<(uint inode, string name, long size)>();
+    // The root directory inode itself holds the top-level directory block(s); seed it
+    // so its data blocks are protected from the unused-space wiper.
+    var rootInode = ReadInode(cache, blockSize, inodesPerGroup, bgInodeTable, RootInode);
+    if (rootInode != null)
+      dirs.Add((RootInode, "", (long)BinaryPrimitives.ReadUInt32LittleEndian(rootInode.AsSpan(4))));
+    WalkDir(cache, blockSize, inodesPerGroup, bgInodeTable, RootInode, "", files, dirs, new HashSet<uint>());
+
+    // Directory data blocks are filesystem structure, not free space — surface
+    // them as MetadataReserved so callers (defrag preview, unused-space wiper)
+    // never treat them as reclaimable.
+    foreach (var (inode, name, size) in dirs) {
+      foreach (var ext in EnumerateFileExtents(cache, blockSize, inodesPerGroup, bgInodeTable,
+                 inode, size, name.Length == 0 ? "ext1 root directory" : $"ext1 directory: {name}"))
+        yield return ext with { Kind = DefragBlockKind.MetadataReserved };
+    }
+
     foreach (var (inode, name, size) in files) {
       foreach (var ext in EnumerateFileExtents(cache, blockSize, inodesPerGroup, bgInodeTable,
                  inode, size, name))
@@ -154,7 +170,7 @@ public static class Ext1ExtentMap {
 
   private static void WalkDir(SectorCache cache, int blockSize, uint inodesPerGroup,
       uint[] bgInodeTable, uint dirInode, string path,
-      List<(uint, string, long)> files, HashSet<uint> seen) {
+      List<(uint, string, long)> files, List<(uint, string, long)> dirs, HashSet<uint> seen) {
     if (!seen.Add(dirInode)) return;
     var inode = ReadInode(cache, blockSize, inodesPerGroup, bgInodeTable, dirInode);
     if (inode == null) return;
@@ -178,9 +194,10 @@ public static class Ext1ExtentMap {
           if (inoData != null) {
             var m = BinaryPrimitives.ReadUInt16LittleEndian(inoData);
             var size = (long)BinaryPrimitives.ReadUInt32LittleEndian(inoData.AsSpan(4));
-            if ((m & InodeModeDir) != 0)
-              WalkDir(cache, blockSize, inodesPerGroup, bgInodeTable, ino, full, files, seen);
-            else
+            if ((m & InodeModeDir) != 0) {
+              dirs.Add((ino, full, size));
+              WalkDir(cache, blockSize, inodesPerGroup, bgInodeTable, ino, full, files, dirs, seen);
+            } else
               files.Add((ino, full, size));
           }
         }
