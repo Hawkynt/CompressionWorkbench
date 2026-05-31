@@ -13,7 +13,7 @@ namespace FileSystem.Cpm;
 /// matches this layout.
 /// </summary>
 public sealed class CpmFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks the 64-entry CP/M directory and yields the actual on-disk byte
@@ -112,6 +112,40 @@ public sealed class CpmFormatDescriptor :
   public void Remove(Stream archive, string[] entryNames) {
     foreach (var name in entryNames)
       CpmModifier.RemoveFile(archive, name, userCode: 0, wipeData: true);
+  }
+
+  /// <summary>
+  /// Zeros all unused space in a CP/M image: unreferenced 1024-byte allocation
+  /// blocks and the cluster-tip slack at the tail of each file's last block.
+  /// CP/M allocates whole blocks but tracks length to 128-byte record
+  /// granularity, so the bytes between a file's real length and its last
+  /// allocated block boundary are slack and get zero-filled when
+  /// <paramref name="wipeClusterTips"/> is set. Live file data, the BIOS
+  /// reserved tracks, and the 2 KB directory are preserved.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    // The extent map names Used runs by the CP/M "name.ext" full name, which is
+    // exactly CpmFile.FullName — so cluster-tip detection lines up.
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        var volume = ReadVolume(image);
+        var sizeMap = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in volume.Files)
+          sizeMap[file.FullName] = file.Data.LongLength;
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    var extents = CpmExtentMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
   }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
