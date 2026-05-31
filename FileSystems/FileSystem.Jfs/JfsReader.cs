@@ -119,16 +119,17 @@ public sealed class JfsReader : IDisposable {
       var slotOff = dtOff + slotIdx * 32;
       if (slotOff + 32 > _data.Length) continue;
 
-      // ldtentry: inumber(le32) + next(s8) + namlen(u8) + name[11] UCS-2 LE + index(le32)
+      // ldtentry (head): inumber(le32) + next(s8) + namlen(u8) +
+      //   name[DTLHDRDATALEN=11] UCS-2 LE + index(le32). Names longer than 11
+      //   UCS-2 units spill into continuation dtslots chained by the `next` byte:
+      //   dtslot = next(s8) + cnt(u8) + name[DTSLOTDATALEN=15] UCS-2 LE.
       var childIno = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(slotOff));
       if (childIno < 2) continue;
       var namLen = _data[slotOff + 5];
-      if (namLen == 0 || namLen > 11) continue;
+      if (namLen == 0) continue;
 
-      // Decode UCS-2 LE name from slot bytes [6 .. 6+2*namLen)
-      var nameBytes = _data.AsSpan(slotOff + 6, namLen * 2);
-      var name = Encoding.Unicode.GetString(nameBytes);
-      if (name == "." || name == "..") continue;
+      var name = ReadDtreeName(dtOff, slotOff, namLen);
+      if (name.Length == 0 || name == "." || name == "..") continue;
 
       var fullPath = string.IsNullOrEmpty(basePath) ? name : $"{basePath}/{name}";
       var childInodeOff = InodeOffset(childIno);
@@ -155,6 +156,33 @@ public sealed class JfsReader : IDisposable {
 
       if (isDir) ReadDirectory(childIno, fullPath);
     }
+  }
+
+  // Reassembles a directory-entry name from its head ldtentry slot and any
+  // chained continuation dtslots. <paramref name="dtBase"/> is the dtree-area
+  // byte offset (so slot index → byte offset = dtBase + index*32).
+  private string ReadDtreeName(int dtBase, int headSlotOff, int namLen) {
+    const int DtHeadNameChars = 11;   // DTLHDRDATALEN
+    const int DtSlotNameChars = 15;   // DTSLOTDATALEN
+    var sb = new StringBuilder(namLen);
+
+    var headChars = Math.Min(namLen, DtHeadNameChars);
+    if (headSlotOff + 6 + headChars * 2 > _data.Length) return "";
+    sb.Append(Encoding.Unicode.GetString(_data.AsSpan(headSlotOff + 6, headChars * 2)));
+
+    var next = (sbyte)_data[headSlotOff + 4];
+    var remaining = namLen - headChars;
+    var guard = 0;
+    while (remaining > 0 && next > 0 && next <= 8 && guard++ < 8) {
+      var contOff = dtBase + next * 32;
+      if (contOff + 32 > _data.Length) break;
+      var contChars = Math.Min(remaining, DtSlotNameChars);
+      sb.Append(Encoding.Unicode.GetString(_data.AsSpan(contOff + 2, contChars * 2)));
+      remaining -= contChars;
+      next = (sbyte)_data[contOff];
+    }
+
+    return sb.ToString();
   }
 
   public byte[] Extract(JfsEntry entry) {

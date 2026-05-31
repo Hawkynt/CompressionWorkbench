@@ -44,7 +44,9 @@ public sealed class JfsWriter {
   internal const int XtreeDataOffset = 224;       // di_data/dtroot offset inside 512-byte dinode
   internal const int DiDataSize = 288;            // size of _dtroot / _xtroot union (512 - 224)
   internal const int InostampFixed = unchecked((int)0x87878787);
-  internal const int MaxFilesInRoot = 8;          // inline dtree has 9 slots (1 header + 8 entries)
+  internal const int MaxDirEntries = 8;           // inline dtree has 9 slots (1 header + 8 entries)
+  internal const int FsitInodeCount = 32;         // 4 blocks × 32 inodes/extent = 32 inodes in the fileset table
+  internal const int MaxNodes = FsitInodeCount - FirstFileIno; // dirs + files addressable in the inline fileset table
 
   // ── inode numbers (jfs_filsys.h) ─────────────────────────────────────────
   private const int AggrReservedI = 0;
@@ -114,7 +116,23 @@ public sealed class JfsWriter {
   private const int DataStartBlock = 34;          // user file data starts here
   private const int MinUsableBlocks = 4096;       // 16 MB minimum (kernel hard floor)
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  // ── directory tree node ──────────────────────────────────────────────────
+  // A node is either a directory (Data == null) or a regular file. Directories
+  // hold their children in insertion order; the inline dtree carries them as
+  // dtree leaf slots {name, inode}. The root directory is the implicit parent
+  // of every top-level entry and always keeps inode RootIno (2).
+  private sealed class Node {
+    public required string Name;                  // single path component (leaf name)
+    public byte[]? Data;                          // null ⇒ directory
+    public int Ino;                               // assigned fileset inode number
+    public int ParentIno;                         // inode of the containing directory
+    public readonly List<Node> Children = [];     // directory children (empty for files)
+    public int DataBlock;                         // first data block (files only)
+    public int BlockCount;                        // data blocks (files only)
+    public bool IsDirectory => this.Data == null;
+  }
+
+  private readonly Node _root = new() { Name = "", ParentIno = RootIno };
   private readonly byte[] _volumeUuid = Guid.NewGuid().ToByteArray();
   private readonly byte[] _logUuid = Guid.NewGuid().ToByteArray();
   private uint _writeTimestamp;                                                           // captured at WriteTo() start so primary/secondary copies match byte-for-byte
@@ -122,10 +140,56 @@ public sealed class JfsWriter {
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    if (this._files.Count >= MaxFilesInRoot)
-      throw new InvalidOperationException($"JfsWriter supports at most {MaxFilesInRoot} files in the inline root dtree.");
-    var leaf = Path.GetFileName(name);
-    this._files.Add((leaf, data));
+    this._root.Ino = RootIno;
+
+    // Split the path into components, creating intermediate directories as we
+    // descend. Backslashes are accepted as separators too (Windows-style input).
+    var parts = name.Split('/', '\\').Where(p => p.Length > 0).ToArray();
+    if (parts.Length == 0)
+      throw new ArgumentException("File name must contain at least one path component.", nameof(name));
+
+    var dir = this._root;
+    for (var i = 0; i < parts.Length - 1; i++) {
+      var part = parts[i];
+      var child = dir.Children.FirstOrDefault(c => c.IsDirectory && c.Name == part);
+      if (child == null) {
+        child = new Node { Name = part };
+        if (dir.Children.Count >= MaxDirEntries)
+          throw new InvalidOperationException($"JfsWriter supports at most {MaxDirEntries} entries per inline directory.");
+        dir.Children.Add(child);
+      }
+      dir = child;
+    }
+
+    var leaf = parts[^1];
+    if (dir.Children.Any(c => c.Name == leaf))
+      throw new InvalidOperationException($"Duplicate entry '{leaf}' in the same directory.");
+    if (dir.Children.Count >= MaxDirEntries)
+      throw new InvalidOperationException($"JfsWriter supports at most {MaxDirEntries} entries per inline directory.");
+    dir.Children.Add(new Node { Name = leaf, Data = data });
+  }
+
+  /// <summary>
+  /// Assigns fileset inode numbers (4+) to every directory and file in the tree
+  /// (root keeps <see cref="RootIno"/>), in a deterministic pre-order walk, and
+  /// returns the flat node list excluding the root.
+  /// </summary>
+  private List<Node> AssignInodes() {
+    var ordered = new List<Node>();
+    var nextIno = FirstFileIno;
+    void Walk(Node dir) {
+      foreach (var child in dir.Children) {
+        child.Ino = nextIno++;
+        child.ParentIno = dir.Ino;
+        ordered.Add(child);
+        if (child.IsDirectory) Walk(child);
+      }
+    }
+    this._root.Ino = RootIno;
+    Walk(this._root);
+    if (ordered.Count > MaxNodes)
+      throw new InvalidOperationException($"JfsWriter supports at most {MaxNodes} directories+files in the inline fileset inode table.");
+    return ordered;
   }
 
   public void WriteTo(Stream output) {
@@ -133,14 +197,18 @@ public sealed class JfsWriter {
 
     this._writeTimestamp = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
+    // ── lay out the directory tree and assign inodes ──────────────────────
+    var nodes = this.AssignInodes();
+    var files = nodes.Where(n => !n.IsDirectory).ToList();
+
     // ── allocate file data blocks ─────────────────────────────────────────
-    var fileDataBlocks = new int[this._files.Count];
-    var fileBlockCounts = new int[this._files.Count];
+    // Directories are stored inline in their dinode, so they consume no data
+    // blocks; only regular files claim blocks here.
     var nextBlock = DataStartBlock;
-    for (var i = 0; i < this._files.Count; i++) {
-      fileDataBlocks[i] = nextBlock;
-      fileBlockCounts[i] = Math.Max(1, (this._files[i].Data.Length + BlockSize - 1) / BlockSize);
-      nextBlock += fileBlockCounts[i];
+    foreach (var file in files) {
+      file.DataBlock = nextBlock;
+      file.BlockCount = Math.Max(1, (file.Data!.Length + BlockSize - 1) / BlockSize);
+      nextBlock += file.BlockCount;
     }
 
     // ── image sizing ──────────────────────────────────────────────────────
@@ -167,26 +235,27 @@ public sealed class JfsWriter {
     MarkRange(allocated, SecondaryAitBlock, InodeExtentBlocks);    // secondary AIT
     MarkRange(allocated, FilesetAimBlock, 2);                      // fileset AIM
     MarkRange(allocated, FsitBlock, InodeExtentBlocks);            // fileset inode table
-    for (var i = 0; i < this._files.Count; i++)
-      MarkRange(allocated, fileDataBlocks[i], fileBlockCounts[i]);
+    foreach (var file in files)
+      MarkRange(allocated, file.DataBlock, file.BlockCount);
 
     // ── write metadata structures ─────────────────────────────────────────
     // Both primary and secondary AIM/AIT must be byte-for-byte identical (fsck
     // verifies them as redundant copies). All di_ixpxd fields point at the
     // PRIMARY AIT (AitBlock) regardless of where the inodes physically live.
+    // The fileset inode map counts every directory + file dinode (root + nodes).
     WriteAggregateInodeMap(image, AimBlock, agStart: 0);
     this.WriteAggregateInodeTable(image, AitBlock, ixpxdBlock: AitBlock);
     WriteAggregateInodeMap(image, SecondaryAimBlock, agStart: 0);
     this.WriteAggregateInodeTable(image, SecondaryAitBlock, ixpxdBlock: AitBlock);
-    WriteFilesetInodeMap(image, FilesetAimBlock, fileCount: this._files.Count);
-    WriteFilesetInodeTable(image, fileDataBlocks, fileBlockCounts);
+    WriteFilesetInodeMap(image, FilesetAimBlock, nodeCount: nodes.Count);
+    this.WriteFilesetInodeTable(image, nodes);
     WriteBlockMap(image, usableBlocks, allocated);
 
     // File data
-    for (var i = 0; i < this._files.Count; i++) {
-      var data = this._files[i].Data;
+    foreach (var file in files) {
+      var data = file.Data!;
       if (data.Length > 0)
-        data.CopyTo(image, (long)fileDataBlocks[i] * BlockSize);
+        data.CopyTo(image, (long)file.DataBlock * BlockSize);
     }
 
     output.Write(image);
@@ -315,10 +384,10 @@ public sealed class JfsWriter {
   // ── fileset inode map: block FilesetAimBlock=dinomap, +1=IAG #0 ─────────
   // Fileset AIM has FILESET_RSVD_I (0), FILESET_EXT_I (1), ROOT_I (2), ACL_I (3)
   // always allocated, plus user file inodes at index 4+.
-  private static void WriteFilesetInodeMap(byte[] image, int aimBlock, int fileCount) {
+  private static void WriteFilesetInodeMap(byte[] image, int aimBlock, int nodeCount) {
     var dinomapOff = (long)aimBlock * BlockSize;
     var iagOff = dinomapOff + BlockSize;
-    var inodesUsed = 4 + fileCount;                                   // 0,1,2,3 + files
+    var inodesUsed = 4 + nodeCount;                                  // 0,1,2(root),3(acl) + dir/file nodes
 
     var dm = image.AsSpan((int)dinomapOff, BlockSize);
     dm.Clear();
@@ -412,8 +481,9 @@ public sealed class JfsWriter {
 
   // ── fileset inode table: 4 blocks at FsitBlock ───────────────────────────
   // Holds: 0=FILESET_RSVD_I, 1=FILESET_EXT_I, 2=ROOT_I (dtroot inline),
-  // 3=ACL_I, 4+=user file inodes (one xtree extent each).
-  private void WriteFilesetInodeTable(byte[] image, int[] fileDataBlocks, int[] fileBlockCounts) {
+  // 3=ACL_I, 4+=directory and user file inodes (one xtree extent per file,
+  // inline dtree per directory).
+  private void WriteFilesetInodeTable(byte[] image, List<Node> nodes) {
     var fsitOff = (long)FsitBlock * BlockSize;
 
     // FILESET_RSVD_I (0)
@@ -428,18 +498,8 @@ public sealed class JfsWriter {
       mode: IfJournal | IfReg, size: 0, nblocks: 0,
       hasXtreeData: true, xtreeEntries: []);
 
-    // ROOT_I (2) — directory with inline dtroot.
-    // di_size for an inline-rooted directory is IDATASIZE = 256 (sizeof(dinode)
-    // - offsetof(di_inlinedata)); fsck enforces di_size <= IDATASIZE when
-    // this_inode.data_size == 0 (no out-of-line blocks).
-    const int IdataSize = 256;
-    var ino2 = (int)(fsitOff + 2 * InodeSize);
-    this.WriteFsitInode(image, ino2, ino: RootIno, fileset: FilesetIno,
-      mode: IfJournal | IfDir | 0x1ED, // 0755
-      size: IdataSize, nblocks: 0,
-      hasXtreeData: false, xtreeEntries: null,
-      nlink: 2, nextIndex: 2);
-    WriteRootDtree(image.AsSpan(ino2 + XtreeDataOffset, DiDataSize));
+    // ROOT_I (2) — directory with inline dtroot. The root's parent is itself.
+    this.WriteDirectoryInode(image, (int)(fsitOff + RootIno * InodeSize), this._root, parentIno: RootIno);
 
     // ACL_I (3)
     var ino3 = (int)(fsitOff + 3 * InodeSize);
@@ -447,17 +507,37 @@ public sealed class JfsWriter {
       mode: IfJournal | IfReg, size: 0, nblocks: 0,
       hasXtreeData: true, xtreeEntries: []);
 
-    // User file inodes start at FirstFileIno = 4
-    for (var i = 0; i < this._files.Count; i++) {
-      var inoNum = FirstFileIno + i;
-      var inoOff = (int)(fsitOff + (long)inoNum * InodeSize);
-      var data = this._files[i].Data;
-      this.WriteFsitInode(image, inoOff, ino: (uint)inoNum, fileset: FilesetIno,
-        mode: IfJournal | IfReg | 0x1A4,                            // 0644
-        size: data.Length, nblocks: fileBlockCounts[i],
-        hasXtreeData: true,
-        xtreeEntries: [(0, (uint)fileBlockCounts[i], (ulong)fileDataBlocks[i])]);
+    // Directory and file inodes start at FirstFileIno = 4.
+    foreach (var node in nodes) {
+      var inoOff = (int)(fsitOff + (long)node.Ino * InodeSize);
+      if (node.IsDirectory) {
+        this.WriteDirectoryInode(image, inoOff, node, parentIno: node.ParentIno);
+      } else {
+        var data = node.Data!;
+        this.WriteFsitInode(image, inoOff, ino: (uint)node.Ino, fileset: FilesetIno,
+          mode: IfJournal | IfReg | 0x1A4,                          // 0644
+          size: data.Length, nblocks: node.BlockCount,
+          hasXtreeData: true,
+          xtreeEntries: [(0, (uint)node.BlockCount, (ulong)node.DataBlock)]);
+      }
     }
+  }
+
+  // ── directory inode (inline dtroot) ──────────────────────────────────────
+  // A directory stores its child entries inline in the dinode's di_data union.
+  // di_size for an inline-rooted directory is IDATASIZE = 256 (sizeof(dinode)
+  // - offsetof(di_inlinedata)); fsck enforces di_size <= IDATASIZE when there
+  // are no out-of-line blocks. di_nlink = 2 (self + ".") plus one for each
+  // child subdirectory's ".." back-link. idotdot is set to the parent inode.
+  private void WriteDirectoryInode(byte[] image, int inoOff, Node dir, int parentIno) {
+    const int IdataSize = 256;
+    var subdirs = dir.Children.Count(c => c.IsDirectory);
+    this.WriteFsitInode(image, inoOff, ino: (uint)dir.Ino, fileset: FilesetIno,
+      mode: IfJournal | IfDir | 0x1ED,                              // 0755
+      size: IdataSize, nblocks: 0,
+      hasXtreeData: false, xtreeEntries: null,
+      nlink: (uint)(2 + subdirs), nextIndex: 2);
+    WriteDtree(image.AsSpan(inoOff + XtreeDataOffset, DiDataSize), dir.Children, parentIno);
   }
 
   // ── helpers: writing inodes ──────────────────────────────────────────────
@@ -554,45 +634,91 @@ public sealed class JfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(dst[4..], (uint)(address & 0xFFFFFFFF));
   }
 
-  // ── dtroot inline directory at offset 224, 288 bytes total ──────────────
+  // ── inline dtroot directory at offset 224, 288 bytes total ──────────────
   // Slot 0 = header (DASD 16 + flag 1 + nextindex 1 + freecnt 1 + freelist 1 +
-  //          idotdot 4 + stbl[8]). Slots 1..8 = dtslot[32] each (ldtentry per file).
-  private void WriteRootDtree(Span<byte> data) {
+  //          idotdot 4 + stbl[8]). Slots 1..8 = dtslot[32]: a head ldtentry per
+  //          entry plus chained continuation slots for names longer than the
+  //          head's inline capacity. Each entry references a child inode (a file
+  //          or subdirectory) by its UCS-2 leaf name. "." and ".." are not stored
+  //          as slots; "." is the directory's own inode and ".." is recorded in
+  //          idotdot.
+  //
+  // ldtentry (head) layout: inumber(le32) + next(s8) + namlen(u8) +
+  //   name[DTLHDRDATALEN=11] UCS-2 (22 bytes) + index(le32). The `next` byte is
+  //   the slot index of the first continuation dtslot (or -1).
+  // dtslot (continuation) layout: next(s8) + cnt(u8) + name[DTSLOTDATALEN=15]
+  //   UCS-2 (30 bytes). `cnt` is the number of UCS-2 chars carried in this slot.
+  private const int DtHeadNameChars = 11;   // DTLHDRDATALEN
+  private const int DtSlotNameChars = 15;    // DTSLOTDATALEN
+
+  private static void WriteDtree(Span<byte> data, IReadOnlyList<Node> children, int parentIno) {
     data.Clear();
+    var count = children.Count;
     // DASD (16 bytes) at +0 — zero
     data[16] = BtRootLeafFlag;                                            // flag = 0x83
-    data[17] = (byte)this._files.Count;                                   // nextindex (count of populated stbl entries)
-    var freeStart = 1 + this._files.Count;
-    sbyte freecnt = (sbyte)Math.Max(0, 8 - this._files.Count);
-    data[18] = (byte)freecnt;                                             // freecnt
-    data[19] = (byte)(freecnt == 0 ? -1 : freeStart);                     // freelist head
-    BinaryPrimitives.WriteUInt32LittleEndian(data[20..], RootIno);        // idotdot
-    // stbl[8]: populated entries point at slot indices 1..count; unused stay 0
-    // (per mkfs.jfs init_fileset_inode_table; not -1 / 0xFF).
-    for (var i = 0; i < this._files.Count; i++)
-      data[24 + i] = (byte)(i + 1);
+    data[17] = (byte)count;                                               // nextindex (count of populated stbl entries)
+    BinaryPrimitives.WriteUInt32LittleEndian(data[20..], (uint)parentIno);// idotdot (".." inode)
 
-    for (var i = 0; i < this._files.Count; i++) {
-      var slotOff = (i + 1) * 32;
-      var childIno = (uint)(FirstFileIno + i);
-      BinaryPrimitives.WriteUInt32LittleEndian(data[slotOff..], childIno);
-      var name = this._files[i].Name;
-      var nameLen = Math.Min(name.Length, 11);
-      data[slotOff + 4] = unchecked((byte)-1);
-      data[slotOff + 5] = (byte)nameLen;
-      for (var c = 0; c < nameLen; c++)
-        BinaryPrimitives.WriteUInt16LittleEndian(data[(slotOff + 6 + c * 2)..], name[c]);
-      BinaryPrimitives.WriteUInt32LittleEndian(data[(slotOff + 28)..], (uint)i);
+    // Allocate dtslots sequentially (indices 1..8). Each entry takes one head
+    // slot plus one continuation slot per extra DtSlotNameChars of its name.
+    var nextSlot = 1;
+    var usedSlots = new bool[MaxDirEntries + 1];
+
+    for (var i = 0; i < count; i++) {
+      var child = children[i];
+      var name = child.Name;
+      var headSlot = nextSlot++;
+      if (headSlot > MaxDirEntries)
+        throw new InvalidOperationException($"Directory entries (including long-name continuation slots) exceed the {MaxDirEntries}-slot inline dtree.");
+      usedSlots[headSlot] = true;
+      data[24 + i] = (byte)headSlot;                                      // stbl[i]
+
+      var headOff = headSlot * 32;
+      BinaryPrimitives.WriteUInt32LittleEndian(data[headOff..], (uint)child.Ino);
+      var headChars = Math.Min(name.Length, DtHeadNameChars);
+      data[headOff + 5] = (byte)name.Length;                             // total namlen
+      for (var c = 0; c < headChars; c++)
+        BinaryPrimitives.WriteUInt16LittleEndian(data[(headOff + 6 + c * 2)..], name[c]);
+      BinaryPrimitives.WriteUInt32LittleEndian(data[(headOff + 28)..], (uint)i);
+
+      // Chain continuation slots for any characters beyond the head capacity.
+      var prevNextOff = headOff + 4;                                      // head ldtentry `next` byte
+      var written = headChars;
+      while (written < name.Length) {
+        var contSlot = nextSlot++;
+        if (contSlot > MaxDirEntries)
+          throw new InvalidOperationException($"Directory entries (including long-name continuation slots) exceed the {MaxDirEntries}-slot inline dtree.");
+        usedSlots[contSlot] = true;
+        data[prevNextOff] = (byte)contSlot;                              // link from previous slot
+        var contOff = contSlot * 32;
+        var contChars = Math.Min(name.Length - written, DtSlotNameChars);
+        data[contOff + 1] = (byte)contChars;                             // cnt
+        for (var c = 0; c < contChars; c++)
+          BinaryPrimitives.WriteUInt16LittleEndian(data[(contOff + 2 + c * 2)..], name[written + c]);
+        written += contChars;
+        prevNextOff = contOff;                                           // continuation `next` byte at +0
+      }
+      data[prevNextOff] = unchecked((byte)-1);                           // terminate the name chain
     }
 
-    // Free-list chain over remaining dtslots (indices freeStart..8). Each free
-    // slot has next = next-free-slot (-1 for the last) and cnt = 1, mirroring
-    // mkfs.jfs init_fileset_inode_table.
-    for (var s = freeStart; s <= 8; s++) {
+    // Free-list chain over the unused dtslots. Each free slot points at the next
+    // free slot (-1 for the last) and carries cnt = 1, mirroring mkfs.jfs.
+    var firstFree = -1;
+    var freeCount = 0;
+    var prevFreeOff = -1;
+    for (var s = 1; s <= MaxDirEntries; s++) {
+      if (usedSlots[s]) continue;
+      ++freeCount;
+      if (firstFree < 0) firstFree = s;
       var slotOff = s * 32;
-      data[slotOff] = (byte)(s < 8 ? s + 1 : unchecked((byte)-1));      // next
+      if (prevFreeOff >= 0) data[prevFreeOff] = (byte)s;
+      data[slotOff] = unchecked((byte)-1);                               // next (overwritten if a later free slot follows)
       data[slotOff + 1] = 1;                                             // cnt = 1
+      prevFreeOff = slotOff;
     }
+
+    data[18] = (byte)freeCount;                                          // freecnt
+    data[19] = (byte)(freeCount == 0 ? -1 : firstFree);                  // freelist head
   }
 
   // ── block allocation map (BMAP) ────────────────────────────────────────
