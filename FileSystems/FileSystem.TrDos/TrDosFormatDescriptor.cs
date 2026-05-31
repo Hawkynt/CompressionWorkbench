@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.TrDos;
 
-public sealed class TrDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class TrDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks the 128-entry directory at track 0 sectors 0-7 and yields the
@@ -16,6 +16,28 @@ public sealed class TrDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => TrDosExtentMap.Enumerate(image);
+
+  /// <summary>
+  /// Zeros all unused space in a TR-DOS image: every free sector not claimed by
+  /// the directory, the disk-info sector, or a file's contiguous sector run.
+  /// Driven by the generic <see cref="UnusedSpaceWiper"/> over the TR-DOS
+  /// extent map.
+  ///
+  /// <para>Cluster tips are not applicable: a TR-DOS directory entry sizes a
+  /// file in whole 256-byte sectors, and the reader exposes — and round-trips —
+  /// the full sector run as the file's content (no truncation to a sub-sector
+  /// logical length). There is therefore no slack tail the wiper could zero
+  /// without changing the extracted bytes, so <paramref name="wipeClusterTips"/>
+  /// is forced off.</para>
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = TrDosExtentMap.Enumerate(image);
+    // Files are whole-sector runs with no sub-sector logical length — tips N/A.
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
+  }
 
   public string Id => "TrDos";
   public string DisplayName => "TR-DOS";
