@@ -109,9 +109,14 @@ public static class DefragPlanner {
       list.Add(e);
     }
 
-    // Sort each file's extents by offset.
-    foreach (var list in byFile.Values)
-      list.Sort((a, b) => a.Offset.CompareTo(b.Offset));
+    // NOTE: extents are intentionally kept in the order the extent map yielded
+    // them, which is CHAIN / logical order (the map walks each owner's cluster
+    // or block chain run by run). Sorting by physical offset would scramble a
+    // fragmented owner's logical sequence, so when the executor relinks the
+    // packed run it would carry the owner's content out of order — corrupting a
+    // file's bytes and, for a directory, its entry list. Packing in chain order
+    // produces a single ascending contiguous run that reads back correctly,
+    // which is exactly what "fusing the parts of one owner together" requires.
 
     // Compute per-file total size.
     var fileSizes = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
@@ -223,20 +228,29 @@ public static class DefragPlanner {
     // put the bigger one first). Offset-sort makes the planner emit O(moved
     // files) instead of O(zone reorderings).
     long FileOffset(string n) => byFile[n][0].Offset;
+    // The "middle" bucket holds Normal AND every owner that isn't one of the
+    // three temperature extremes — most importantly Directory-classified
+    // extents (FAT subdirectory chains, B-tree dir nodes). Without this, those
+    // owners were silently dropped from the layout and never moved, so a
+    // fragmented directory could never be fused. Treat them like Normal so they
+    // get consolidated inline with file data.
+    static bool IsMiddle(DefragBlockClass z)
+      => z is not (DefragBlockClass.Hot or DefragBlockClass.Cold or DefragBlockClass.Frozen);
+
     List<(string FileName, long Size, DefragBlockClass Zone)> ordered;
     if (mode == DefragMode.ConsolidateAtEnd) {
       // Frozen at front (low offsets = leading free), Hot at end.
       ordered = [
         .. classified.Where(f => f.Zone == DefragBlockClass.Frozen).OrderBy(f => FileOffset(f.FileName)),
         .. classified.Where(f => f.Zone == DefragBlockClass.Cold).OrderBy(f => FileOffset(f.FileName)),
-        .. classified.Where(f => f.Zone == DefragBlockClass.Normal).OrderBy(f => FileOffset(f.FileName)),
+        .. classified.Where(f => IsMiddle(f.Zone)).OrderBy(f => FileOffset(f.FileName)),
         .. classified.Where(f => f.Zone == DefragBlockClass.Hot).OrderBy(f => FileOffset(f.FileName)),
       ];
     } else {
       // ConsolidateAtStart (default): Hot at front, Frozen at end.
       ordered = [
         .. classified.Where(f => f.Zone == DefragBlockClass.Hot).OrderBy(f => FileOffset(f.FileName)),
-        .. classified.Where(f => f.Zone == DefragBlockClass.Normal).OrderBy(f => FileOffset(f.FileName)),
+        .. classified.Where(f => IsMiddle(f.Zone)).OrderBy(f => FileOffset(f.FileName)),
         .. classified.Where(f => f.Zone == DefragBlockClass.Cold).OrderBy(f => FileOffset(f.FileName)),
         .. classified.Where(f => f.Zone == DefragBlockClass.Frozen).OrderBy(f => FileOffset(f.FileName)),
       ];
@@ -417,18 +431,22 @@ public static class DefragPlanner {
     // Step 2: Determine zone order. Within each zone, sort by current offset
     // (not by size) to minimise moves — same rationale as PlanPerformance.
     long FileOffset(string n) => byFile[n][0].Offset;
+    // Middle bucket = Normal plus anything that isn't a temperature extreme,
+    // so Directory-classified owners are placed (not silently dropped).
+    static bool IsMiddle(DefragBlockClass z)
+      => z is not (DefragBlockClass.Hot or DefragBlockClass.Cold or DefragBlockClass.Frozen);
     List<(string FileName, long Size, DefragBlockClass Zone)> ordered;
     if (mode == DefragMode.ConsolidateAtEnd) {
       ordered = [
         .. classified.Where(f => f.Zone == DefragBlockClass.Frozen).OrderBy(f => FileOffset(f.FileName)),
         .. classified.Where(f => f.Zone == DefragBlockClass.Cold).OrderBy(f => FileOffset(f.FileName)),
-        .. classified.Where(f => f.Zone == DefragBlockClass.Normal).OrderBy(f => FileOffset(f.FileName)),
+        .. classified.Where(f => IsMiddle(f.Zone)).OrderBy(f => FileOffset(f.FileName)),
         .. classified.Where(f => f.Zone == DefragBlockClass.Hot).OrderBy(f => FileOffset(f.FileName)),
       ];
     } else {
       ordered = [
         .. classified.Where(f => f.Zone == DefragBlockClass.Hot).OrderBy(f => FileOffset(f.FileName)),
-        .. classified.Where(f => f.Zone == DefragBlockClass.Normal).OrderBy(f => FileOffset(f.FileName)),
+        .. classified.Where(f => IsMiddle(f.Zone)).OrderBy(f => FileOffset(f.FileName)),
         .. classified.Where(f => f.Zone == DefragBlockClass.Cold).OrderBy(f => FileOffset(f.FileName)),
         .. classified.Where(f => f.Zone == DefragBlockClass.Frozen).OrderBy(f => FileOffset(f.FileName)),
       ];
