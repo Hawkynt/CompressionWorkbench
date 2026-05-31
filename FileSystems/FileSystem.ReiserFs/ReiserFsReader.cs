@@ -25,10 +25,22 @@ public sealed class ReiserFsReader : IDisposable {
     "ReIsEr3Fs"u8.ToArray(),  // 3.6 w/ non-standard journal
   ];
 
+  private const uint RootParentObjectId = 1; // dir_id of "/"
+  private const uint RootObjectId = 2;        // objectid of "/"
+
   private readonly byte[] _data;
   private readonly List<ReiserFsEntry> _entries = [];
   private int _blockSize;
   private int _rootBlock;
+
+  // All STAT_DATA items indexed by (dirId, objectId) → sd_mode (for dir/file
+  // classification). Populated by the leaf scan before the directory walk.
+  private readonly Dictionary<(uint DirId, uint ObjId), ushort> _statMode = [];
+  // All DIRENTRY items indexed by (dirId, objectId). dirId here is the parent
+  // of the directory; objectId is the directory's own id.
+  private readonly Dictionary<(uint DirId, uint ObjId), List<DirEntry>> _dirEntries = [];
+
+  private readonly record struct DirEntry(string Name, uint PointedDirId, uint PointedObjId);
 
   public IReadOnlyList<ReiserFsEntry> Entries => _entries;
 
@@ -56,12 +68,14 @@ public sealed class ReiserFsReader : IDisposable {
     if (_blockSize == 0) _blockSize = 4096;
     _rootBlock = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(SuperblockOffset + Off_RootBlock));
 
-    ReadTree(_rootBlock, "");
+    // Pass 1: scan every leaf, indexing stat-data modes and directory entries.
+    ScanTree(_rootBlock);
+    // Pass 2: walk the directory graph from the root, materialising full paths.
+    var visited = new HashSet<(uint, uint)>();
+    WalkDirectory(RootParentObjectId, RootObjectId, "", visited);
   }
 
-  private void ReadTree(int blockNum, string basePath) {
-    // block_head = 24 bytes: blk_level(2) + blk_nr_item(2) + blk_free_space(2)
-    //   + blk_reserved(2) + blk_right_delim_key(16)
+  private void ScanTree(int blockNum) {
     var blockOff = (long)blockNum * _blockSize;
     if (blockOff < 0 || blockOff + 24 > _data.Length) return;
     var boff = (int)blockOff;
@@ -70,26 +84,24 @@ public sealed class ReiserFsReader : IDisposable {
     var nrItems = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(boff + 2));
 
     if (level > 1) {
-      // Internal node: (nrItems+1) block-number pointers after keys.
-      // Keys start at offset 24, 16 bytes each; pointers each 8 bytes.
-      var keysOff = boff + 24;
-      var ptrsOff = keysOff + nrItems * 16;
-
+      // Internal node: (nrItems+1) block-number pointers after the keys.
+      var ptrsOff = boff + 24 + nrItems * 16;
       for (int i = 0; i <= nrItems && i < 1000; i++) {
         var ptrOff = ptrsOff + i * 8;
         if (ptrOff + 4 > _data.Length) break;
         var childBlock = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ptrOff));
         if (childBlock > 0 && childBlock < _data.Length / _blockSize)
-          ReadTree(childBlock, basePath);
+          ScanTree(childBlock);
       }
       return;
     }
 
-    // Leaf node
     for (int i = 0; i < nrItems && i < 1000; i++) {
       var ihOff = boff + 24 + i * 24;
       if (ihOff + 24 > _data.Length) break;
 
+      var keyDirId = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ihOff + 0));
+      var keyObjId = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ihOff + 4));
       var ihCount = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(ihOff + 16));
       var ihLength = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(ihOff + 18));
       var ihLocation = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(ihOff + 20));
@@ -97,70 +109,108 @@ public sealed class ReiserFsReader : IDisposable {
       var dataOff = boff + ihLocation;
       if (dataOff < 0 || dataOff + ihLength > _data.Length) continue;
 
-      // Resolve item type from the key (see FindFileData for the algorithm).
-      // Treat TYPE_DIRENTRY (3) as a directory item.
-      var keyOffsetV2 = BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan(ihOff + 8));
-      var typeV2 = (uint)(keyOffsetV2 >> 60);
-      int itemType;
-      if (typeV2 == 0 || typeV2 == 15) {
-        var uniqueness = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ihOff + 12));
-        itemType = uniqueness switch {
-          0u => 0, 0xfffffffeu => 1, 0xffffffffu => 2, 500u => 3, _ => -1,
-        };
-      } else {
-        itemType = (int)typeV2;
+      var itemType = ResolveItemType(ihOff);
+
+      if (itemType == 0) {
+        // STAT_DATA — record sd_mode (le16 at body +0) for dir/file detection.
+        if (ihLength >= 2)
+          _statMode[(keyDirId, keyObjId)] = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(dataOff));
+        continue;
       }
 
       if (itemType == 3 && ihCount > 0 && ihCount < 0x4000 && ihLength >= ihCount * 16) {
-        // Per kernel layout, names are packed at the END of the item and grow
-        // backward: entry[0]'s name sits at the highest offset (item_end - len[0]);
-        // entry[i]'s name ends at entry[i-1]'s location (strictly decreasing).
-        // Read each name from deh_location to deh_location of previous entry
-        // (or to end-of-item for the first entry). Don't rely on null terminators
-        // — stock mkreiserfs does not write any.
-        for (int e = 0; e < ihCount; e++) {
-          var dehOff = dataOff + e * 16;
-          if (dehOff + 16 > _data.Length) break;
-
-          var childDirId = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(dehOff + 4));
-          var childObjId = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(dehOff + 8));
-          var nameLoc = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(dehOff + 12));
-          var state = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(dehOff + 14));
-
-          if ((state & 4) == 0) continue; // not visible
-          var nameOff = dataOff + nameLoc;
-          if (nameOff < dataOff || nameOff >= dataOff + ihLength) continue;
-
-          // Determine name end: the item_end for the first entry, or the previous
-          // entry's deh_location (names are in REVERSE order inside item).
-          int nameEndInItem;
-          if (e == 0) {
-            nameEndInItem = ihLength;
-          } else {
-            var prevLoc = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(dataOff + (e - 1) * 16 + 12));
-            nameEndInItem = prevLoc;
-          }
-          var nameEnd = dataOff + nameEndInItem;
-          // Also stop at null for backward compatibility with readers that padded with \0.
-          for (var k = nameOff; k < nameEnd && k < _data.Length; k++) {
-            if (_data[k] == 0) { nameEnd = k; break; }
-          }
-          if (nameEnd <= nameOff) continue;
-
-          var name = Encoding.UTF8.GetString(_data, nameOff, nameEnd - nameOff);
-          if (name == "." || name == "..") continue;
-          if (!name.All(c => c >= 0x20 && c < 0x7F)) continue;
-
-          var fullPath = string.IsNullOrEmpty(basePath) ? name : $"{basePath}/{name}";
-          _entries.Add(new ReiserFsEntry {
-            Name = fullPath,
-            Size = ihLength, // approximation; overwritten during Extract from direct-item length
-            DirId = childDirId,
-            ObjectId = childObjId,
-          });
-        }
+        var list = ReadDirEntries(dataOff, ihLength, ihCount);
+        // A directory's entries can span multiple DIRENTRY items; merge.
+        if (_dirEntries.TryGetValue((keyDirId, keyObjId), out var existing))
+          existing.AddRange(list);
+        else
+          _dirEntries[(keyDirId, keyObjId)] = list;
       }
     }
+  }
+
+  private List<DirEntry> ReadDirEntries(int dataOff, int ihLength, int ihCount) {
+    var result = new List<DirEntry>(ihCount);
+    // Names are packed at the END of the item and grow backward: entry[0]'s
+    // name ends at item_end; entry[i]'s name ends at entry[i-1]'s deh_location.
+    for (int e = 0; e < ihCount; e++) {
+      var dehOff = dataOff + e * 16;
+      if (dehOff + 16 > _data.Length) break;
+
+      var pointedDirId = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(dehOff + 4));
+      var pointedObjId = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(dehOff + 8));
+      var nameLoc = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(dehOff + 12));
+      var state = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(dehOff + 14));
+
+      if ((state & 4) == 0) continue; // not visible
+      var nameOff = dataOff + nameLoc;
+      if (nameOff < dataOff || nameOff >= dataOff + ihLength) continue;
+
+      int nameEndInItem;
+      if (e == 0) {
+        nameEndInItem = ihLength;
+      } else {
+        var prevLoc = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(dataOff + (e - 1) * 16 + 12));
+        nameEndInItem = prevLoc;
+      }
+      var nameEnd = dataOff + nameEndInItem;
+      // Trailing NULs are slot padding (ROUND_UP8); stop at the first one.
+      for (var k = nameOff; k < nameEnd && k < _data.Length; k++) {
+        if (_data[k] == 0) { nameEnd = k; break; }
+      }
+      if (nameEnd <= nameOff) continue;
+
+      var name = Encoding.UTF8.GetString(_data, nameOff, nameEnd - nameOff);
+      if (name == "." || name == "..") continue;
+      if (!name.All(c => c >= 0x20 && c < 0x7F)) continue;
+      result.Add(new DirEntry(name, pointedDirId, pointedObjId));
+    }
+    return result;
+  }
+
+  /// <summary>
+  /// Recursively materialises every visible entry under the directory whose key
+  /// is (parentDirId, dirObjId). Files are added at their full path; directory
+  /// children are emitted as directory entries and recursed into.
+  /// </summary>
+  private void WalkDirectory(uint parentDirId, uint dirObjId, string basePath, HashSet<(uint, uint)> visited) {
+    if (!visited.Add((parentDirId, dirObjId))) return; // guard against cycles
+    if (!_dirEntries.TryGetValue((parentDirId, dirObjId), out var entries)) return;
+
+    foreach (var entry in entries) {
+      var childKey = (entry.PointedDirId, entry.PointedObjId);
+      var fullPath = string.IsNullOrEmpty(basePath) ? entry.Name : $"{basePath}/{entry.Name}";
+      var isDir = _statMode.TryGetValue(childKey, out var mode) && (mode & 0xF000) == 0x4000;
+
+      _entries.Add(new ReiserFsEntry {
+        Name = fullPath,
+        Size = 0, // overwritten for files during Extract from the DIRECT item length
+        IsDirectory = isDir,
+        DirId = entry.PointedDirId,
+        ObjectId = entry.PointedObjId,
+      });
+
+      if (isDir)
+        WalkDirectory(entry.PointedDirId, entry.PointedObjId, fullPath, visited);
+    }
+  }
+
+  /// <summary>
+  /// Resolves an item's TYPE from its key. ReiserFS encodes the type either in
+  /// offset_v1.k_uniqueness (KEY_FORMAT_1, when bits 60-63 of the offset_v2
+  /// union are 0 or 15) or directly in bits 60-63 of offset_v2 (KEY_FORMAT_2).
+  /// Returns 0=SD, 1=INDIRECT, 2=DIRECT, 3=DIRENTRY, -1=unknown.
+  /// </summary>
+  private int ResolveItemType(int ihOff) {
+    var keyOffsetV2 = BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan(ihOff + 8));
+    var typeV2 = (uint)(keyOffsetV2 >> 60);
+    if (typeV2 == 0 || typeV2 == 15) {
+      var uniqueness = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ihOff + 12));
+      return uniqueness switch {
+        0u => 0, 0xfffffffeu => 1, 0xffffffffu => 2, 500u => 3, _ => -1,
+      };
+    }
+    return (int)typeV2;
   }
 
   public byte[] Extract(ReiserFsEntry entry) {
@@ -202,30 +252,9 @@ public sealed class ReiserFsReader : IDisposable {
       var ihLength = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(ihOff + 18));
       var ihLocation = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(ihOff + 20));
 
-      // Determine the item's TYPE from the key. ReiserFS encodes the type
-      // either in offset_v1.k_uniqueness (KEY_FORMAT_1, when bits 60-63 of
-      // the offset_v2 union are 0 or 15) or directly in bits 60-63 of
-      // offset_v2 (KEY_FORMAT_2). We accept only TYPE_DIRECT (=2) here.
-      // TYPE_STAT_DATA (=0) and TYPE_DIRENTRY (=3) and TYPE_INDIRECT (=1)
-      // must be skipped — otherwise we'd hand back the SD's 44 bytes.
-      var keyOffsetV2 = BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan(ihOff + 8));
-      var typeV2 = (uint)(keyOffsetV2 >> 60);
-      int itemType;
-      if (typeV2 == 0 || typeV2 == 15) {
-        // KEY_FORMAT_1 — type encoded in uniqueness field.
-        var uniqueness = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ihOff + 12));
-        itemType = uniqueness switch {
-          0u => 0,           // V1_SD_UNIQUENESS = TYPE_STAT_DATA
-          0xfffffffeu => 1,  // V1_INDIRECT_UNIQUENESS
-          0xffffffffu => 2,  // V1_DIRECT_UNIQUENESS
-          500u => 3,         // V1_DIRENTRY_UNIQUENESS
-          _ => -1,
-        };
-      } else {
-        // KEY_FORMAT_2 — type is bits 60-63.
-        itemType = (int)typeV2;
-      }
-      if (itemType != 2) continue; // not TYPE_DIRECT
+      // Accept only TYPE_DIRECT (=2). TYPE_STAT_DATA / TYPE_DIRENTRY /
+      // TYPE_INDIRECT must be skipped — otherwise we'd hand back the SD's bytes.
+      if (ResolveItemType(ihOff) != 2) continue;
 
       var dataOff = boff + ihLocation;
       if (dataOff >= 0 && dataOff + ihLength <= _data.Length && ihLength > 0)

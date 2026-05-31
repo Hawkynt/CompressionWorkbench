@@ -102,18 +102,27 @@ public sealed class ReiserFsWriter {
   // Superblock magic for ReiserFS 3.6.
   private static readonly byte[] Magic36 = "ReIsEr2Fs"u8.ToArray();
 
-  private readonly List<(string name, byte[] data)> _files = [];
+  private readonly List<(string path, byte[] data)> _files = [];
 
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    var leaf = Path.GetFileName(name);
-    if (leaf.Length > 200) leaf = leaf[..200];
-    _files.Add((leaf, data));
+    // Preserve the FULL relative path. Path components may carry '/' or '\'
+    // separators; the tree builder in WriteTo materialises a real directory
+    // object (SD with mode S_IFDIR + DIRENTRY item) for each intermediate
+    // component, exactly as reiserfs_add_entry would.
+    var normalised = name.Replace('\\', '/').Trim('/');
+    _files.Add((normalised, data));
   }
 
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
+
+    // Materialise the directory tree (root + intermediate dirs + files) into a
+    // flat list of OBJECTS, each with a stable objectid. The root is object 2
+    // (parent dir_id 1); every other object is assigned a user objectid from
+    // FirstUserObjectId upward in the order it is first encountered.
+    var tree = BuildTree();
 
     // Layout (reiserfsprogs journal.c — journal MUST start at
     // (REISERFS_DISK_OFFSET_IN_BYTES / blocksize) + 2 = 16 + 2 = 18):
@@ -166,20 +175,21 @@ public sealed class ReiserFsWriter {
     //   (block_size - SB_SIZE) / sizeof(__u32) / 2 * 2.
     var oidMaxsize = (ushort)(((BlockSize - SuperblockSize) / 4 / 2) * 2); // 972 for 4K
     BinaryPrimitives.WriteUInt16LittleEndian(sb[46..], oidMaxsize);   // s_oid_maxsize
-    // We use objectids: 1 (root parent), 2 (root), then 100..100+n-1.
+    // We use objectids: 1 (root parent), 2 (root), then 100..100+m-1, where m
+    // is the number of NON-root objects (intermediate directories + files).
     // The objectid map encodes used ranges as ascending pairs
     // [start, end_exclusive, start, end_exclusive, ...].
-    //   marker1: 1..3 (id 1 and 2 used)         → {1, 3}
-    //   marker2: 100..100+n_files (n IDs used)  → {100, 100+n}
+    //   marker1: 1..3 (id 1 and 2 used)             → {1, 3}
+    //   marker2: 100..100+m (m IDs used)            → {100, 100+m}
     //   final entry must be > all used (acts as sentinel "everything else free").
     // cursize = number of __le32 entries in the map.
-    var n = _files.Count;
-    var oidMap = new uint[n > 0 ? 4 : 2];
+    var userObjectCount = tree.Objects.Count - 1; // exclude root (objid 2)
+    var oidMap = new uint[userObjectCount > 0 ? 4 : 2];
     oidMap[0] = 1;
     oidMap[1] = 3; // ids 1, 2 used
-    if (n > 0) {
+    if (userObjectCount > 0) {
       oidMap[2] = FirstUserObjectId;
-      oidMap[3] = (uint)(FirstUserObjectId + n);
+      oidMap[3] = (uint)(FirstUserObjectId + userObjectCount);
     }
     BinaryPrimitives.WriteUInt16LittleEndian(sb[48..], (ushort)oidMap.Length); // s_oid_cursize
     BinaryPrimitives.WriteUInt16LittleEndian(sb[50..], 1);            // s_umount_state = REISERFS_VALID_FS
@@ -248,186 +258,48 @@ public sealed class ReiserFsWriter {
     // leaf_count_ih requires:  ih[i].location + ih[i].length == ih[i-1].location
     // and ih[0].location + ih[0].length == blocksize.
     //
-    // Per fsck/check_tree.c:bad_pair, items follow the rule:
-    //   - SD: left neighbour must belong to a different (smaller) short-key.
-    //   - DIRECT: left must be SD-of-same-file (with offset 1) or INDIRECT
-    //             continuation.
-    //   - INDIRECT/DIRENTRY: left must be SD-of-same-file.
-    // Therefore each user file requires its OWN STAT_DATA item, which the
-    // previous version of this writer was missing (causing pass-1 "wrong
-    // order of items" rejection).
-    //
-    // Order in the leaf for our layout (one root + N user files):
-    //   0:  SD  (dir_id=1, obj_id=2,  offset=0, type=SD)        ← root dir SD
-    //   1:  DIR (dir_id=1, obj_id=2,  offset=1, type=DIRENTRY)  ← root entries
-    //   2k: SD  (dir_id=2, obj_id=100+k, offset=0, type=SD)     ← file k SD
-    //   2k+1: DIRECT (dir_id=2, obj_id=100+k, offset=1, type=DIRECT)
+    // Per fsck/check_tree.c:bad_pair the per-object items must appear in
+    // (dir_id, objectid, offset, type) ascending order — for a directory that
+    // is SD (offset 0) then DIRENTRY (offset 1); for a file SD then DIRECT.
+    // We materialise every object's items, sort the whole set by the reiserfs
+    // key comparison (comp_keys), then lay them out into the single leaf.
     var boff = rootBlockNum * BlockSize;
     var blk = image.AsSpan(boff, BlockSize);
-    var nrItems = 2 + 2 * n; // root SD + root DIRENTRY + per file (SD + DIRECT)
 
-    // Build item bodies from END of block backward; ih array forward.
+    var items = BuildLeafItems(tree);
+    items.Sort(static (a, b) => CompareKeys(a, b));
+    var nrItems = items.Count;
+
+    // Bodies pack from the END of the block backward; ih array grows forward
+    // from BlockHeadSize. item[0] (smallest key) gets the HIGHEST location.
     var dataEnd = BlockSize;
-    var ihIndex = 0;
+    for (var i = 0; i < nrItems; i++) {
+      var it = items[i];
+      dataEnd -= it.Body.Length;
+      var loc = dataEnd;
+      if (loc < 0)
+        throw new InvalidOperationException(
+          $"ReiserFsWriter: leaf block overflow — {nrItems} items + data exceed {BlockSize} bytes. " +
+          "Multi-leaf S+tree balancing is not implemented; reduce the number/size of files.");
+      it.Body.CopyTo(blk[loc..]);
 
-    // ---- Item 0: root directory STAT_DATA (KEY_FORMAT_2, 44 bytes) -------
-    // Per reiserfscore/node_formats.c:make_dir_stat_data:
-    //   sd_mode = S_IFDIR | 0755 = 040755 = 0x41ED
-    //   sd_nlink = 2 (kernel counts root with "." link)
-    //   sd_size = EMPTY_DIR_SIZE (item bytes used by "." and ".." entries)
-    //   sd_blocks = 1 (one leaf block holds the dir item)
-    //   sd_uid = sd_gid = 0; sd_atime = sd_mtime = sd_ctime = now
-    //   ih.ih_free_space = 0   (kernel macro set_ih_free_space ALWAYS writes 0)
-    //   key = (1, 2, offset=0, uniqueness=V1_SD_UNIQUENESS=0)
-    //   ih_format = KEY_FORMAT_2.
-    var rootSdLen = SdV2Size;
-    dataEnd -= rootSdLen;
-    var rootSdLoc = dataEnd;
-    var rootSdBody = blk[rootSdLoc..(rootSdLoc + rootSdLen)];
-    WriteStatDataV2(
-      rootSdBody,
-      mode: 0x41ED, // S_IFDIR | 0755
-      nlink: 2,
-      size: ComputeRootDirSize(),
-      uid: 0, gid: 0,
-      blocks: 1);
-    WriteItemHead(
-      blk[(BlockHeadSize + ihIndex * ItemHeaderSize)..],
-      dirId: RootParentObjectId, objectId: RootObjectId,
-      offsetV1: 0, uniquenessV1: V1SdUniqueness,
-      uField: 0, length: (ushort)rootSdLen, location: (ushort)rootSdLoc,
-      keyFormat: KeyFormat2);
-    ihIndex++;
-
-    // ---- Item 1: root directory DIRENTRY ---------------------------------
-    // Per reiserfscore/reiserfslib.c:reiserfs_add_entry, the dir item is
-    // KEY_FORMAT_1 (offset_v1=DOT_OFFSET=1, uniqueness=DIRENTRY_UNIQUENESS=500)
-    // even on a v3.6 filesystem. Names are however length-padded with
-    // ROUND_UP-to-8-bytes when v3.6 is the on-disk format (per
-    // make_sure_root_dir_exists which calls name_length(KEY_FORMAT_2)).
-    //
-    // Body layout (entries sorted by deh_offset ascending; locations
-    // strictly DECREASING; names packed at the END of the item):
-    //   [deh[0], deh[1], ..., deh[E-1], names[E-1], ..., names[1], names[0]]
-    var entryCount = 2 + n;
-    var entries = new DirEntry[entryCount];
-    // "." and ".." (kernel: DOT_OFFSET=1, DOT_DOT_OFFSET=2).
-    entries[0] = new DirEntry(".", RootParentObjectId, RootObjectId, 1);
-    entries[1] = new DirEntry("..", 0, RootParentObjectId, 2);
-    for (var i = 0; i < n; i++) {
-      var name = _files[i].name;
-      var hash = HashValueR5(name);
-      // The pointed-to key is the file's SD key: (dir_id=root_objid=2,
-      // objectid=FirstUserObjectId+i). dir_id is the parent directory's
-      // objectid in reiserfs key conventions.
-      entries[2 + i] = new DirEntry(name, RootObjectId, (uint)(FirstUserObjectId + i), hash);
-    }
-    // Stable sort by deh_offset ascending. Real R5 collisions on tiny dirs
-    // are astronomically unlikely; we skip explicit gen_counter handling.
-    Array.Sort(entries, 2, n, DirEntryOffsetComparer.Instance);
-
-    // Per make_sure_root_dir_exists, name slots are ROUND_UP(name_len, 8)
-    // for KEY_FORMAT_2 filesystems. Compute slot lengths and total body size.
-    var slotLengths = new int[entryCount];
-    var totalNamesLen = 0;
-    for (var i = 0; i < entryCount; i++) {
-      slotLengths[i] = RoundUp8(Encoding.UTF8.GetByteCount(entries[i].Name));
-      totalNamesLen += slotLengths[i];
-    }
-    var dirItemLen = entryCount * DehSize + totalNamesLen;
-
-    dataEnd -= dirItemLen;
-    var dirItemLoc = dataEnd;
-    var dirItemBody = blk.Slice(dirItemLoc, dirItemLen);
-
-    // Pack names from END of item backward. entry[0] occupies the highest
-    // slot, entry[E-1] the lowest. deh_location is an offset measured from
-    // the start of the item body.
-    var nameRunningEnd = dirItemLen;
-    for (var i = 0; i < entryCount; i++) {
-      var slot = slotLengths[i];
-      var slotStart = nameRunningEnd - slot;
-      // Zero the slot first (NULs are the kernel's padding marker —
-      // name_in_entry_length scans for first NUL or end of slot).
-      dirItemBody.Slice(slotStart, slot).Clear();
-      var bytes = Encoding.UTF8.GetBytes(entries[i].Name);
-      bytes.CopyTo(dirItemBody[slotStart..]);
-      entries[i] = entries[i] with { Location = (ushort)slotStart };
-      nameRunningEnd = slotStart;
-    }
-
-    // Write deh array forward at the start of the item body.
-    for (var i = 0; i < entryCount; i++) {
-      var dehOff = i * DehSize;
-      BinaryPrimitives.WriteUInt32LittleEndian(dirItemBody[(dehOff + 0)..], entries[i].DehOffset);
-      BinaryPrimitives.WriteUInt32LittleEndian(dirItemBody[(dehOff + 4)..], entries[i].PointedDirId);
-      BinaryPrimitives.WriteUInt32LittleEndian(dirItemBody[(dehOff + 8)..], entries[i].PointedObjectId);
-      BinaryPrimitives.WriteUInt16LittleEndian(dirItemBody[(dehOff + 12)..], entries[i].Location);
-      // deh_state — DEH_Visible2 = bit 2 (mkfs writes value 4 = 1<<2).
-      BinaryPrimitives.WriteUInt16LittleEndian(dirItemBody[(dehOff + 14)..], 4);
-    }
-
-    WriteItemHead(
-      blk[(BlockHeadSize + ihIndex * ItemHeaderSize)..],
-      dirId: RootParentObjectId, objectId: RootObjectId,
-      offsetV1: 1, uniquenessV1: V1DirentryUniqueness,
-      uField: (ushort)entryCount, length: (ushort)dirItemLen, location: (ushort)dirItemLoc,
-      keyFormat: KeyFormat1);
-    ihIndex++;
-
-    // ---- Per-file items: SD followed by DIRECT ---------------------------
-    for (var i = 0; i < n; i++) {
-      var file = _files[i];
-      var fileObjId = FirstUserObjectId + (uint)i;
-      var fileNameUtf8 = Encoding.UTF8.GetBytes(file.name);
-
-      // SD for the file: KEY_FORMAT_2 stat_data_v2.
-      //   sd_mode = S_IFREG | 0644 = 0x81A4
-      //   sd_nlink = 1
-      //   sd_size = file.data.Length
-      //   sd_blocks = 0  (data stored inline as a DIRECT item, not in unfm)
-      var sdLen = SdV2Size;
-      dataEnd -= sdLen;
-      var sdLoc = dataEnd;
-      var sdBody = blk.Slice(sdLoc, sdLen);
-      // sd_blocks for a DIRECT-item file = (fs_blocksize >> 9) = 8.
-      // Reference: fsck/ufile.c:are_file_items_correct — when an item with
-      // type=TYPE_DIRECT is seen and no prior direct, *blocks += (fs_blocksize/512).
-      WriteStatDataV2(
-        sdBody,
-        mode: 0x81A4, // S_IFREG | 0644
-        nlink: 1,
-        size: (ulong)file.data.Length,
-        uid: 0, gid: 0,
-        blocks: file.data.Length > 0 ? (uint)(BlockSize >> 9) : 0u);
-      WriteItemHead(
-        blk[(BlockHeadSize + ihIndex * ItemHeaderSize)..],
-        dirId: RootObjectId, objectId: fileObjId,
-        offsetV1: 0, uniquenessV1: V1SdUniqueness,
-        uField: 0, length: (ushort)sdLen, location: (ushort)sdLoc,
-        keyFormat: KeyFormat2);
-      ihIndex++;
-
-      // DIRECT item: file body inline. Use KEY_FORMAT_2 (offset_v2 with
-      // type=TYPE_DIRECT=2, offset=1).
-      var directLen = file.data.Length;
-      dataEnd -= directLen;
-      var directLoc = dataEnd;
-      if (directLen > 0)
-        file.data.CopyTo(blk[directLoc..]);
-      // For KEY_FORMAT_2: offset_v2 carries (type<<60 | offset). We pack it
-      // by writing the v2 value into the offset_v1+uniqueness 8 bytes; this
-      // is the same memory as offset_v2 (union).
-      var fihOff = BlockHeadSize + ihIndex * ItemHeaderSize;
-      var fih = blk[fihOff..];
-      BinaryPrimitives.WriteUInt32LittleEndian(fih[0..], RootObjectId);   // k_dir_id
-      BinaryPrimitives.WriteUInt32LittleEndian(fih[4..], fileObjId);      // k_objectid
-      BinaryPrimitives.WriteUInt64LittleEndian(fih[8..], TypeDirectV2 | 1u); // offset=1, type=DIRECT
-      BinaryPrimitives.WriteUInt16LittleEndian(fih[16..], 0);             // ih_free_space (kernel macro writes 0)
-      BinaryPrimitives.WriteUInt16LittleEndian(fih[18..], (ushort)directLen);
-      BinaryPrimitives.WriteUInt16LittleEndian(fih[20..], (ushort)directLoc);
-      BinaryPrimitives.WriteUInt16LittleEndian(fih[22..], KeyFormat2);
-      ihIndex++;
+      var ih = blk[(BlockHeadSize + i * ItemHeaderSize)..];
+      BinaryPrimitives.WriteUInt32LittleEndian(ih[0..], it.DirId);
+      BinaryPrimitives.WriteUInt32LittleEndian(ih[4..], it.ObjectId);
+      // The offset_v1+uniqueness pair (KEY_FORMAT_1) and offset_v2 (KEY_FORMAT_2)
+      // share the same 8 bytes; CompareKeys already normalised both into the
+      // single 64-bit OffsetV2 sort key, but on disk we must reproduce the
+      // exact bytes the kernel expects per format.
+      if (it.KeyFormat == KeyFormat1) {
+        BinaryPrimitives.WriteUInt32LittleEndian(ih[8..], it.OffsetV1);
+        BinaryPrimitives.WriteUInt32LittleEndian(ih[12..], it.UniquenessV1);
+      } else {
+        BinaryPrimitives.WriteUInt64LittleEndian(ih[8..], it.OffsetV2);
+      }
+      BinaryPrimitives.WriteUInt16LittleEndian(ih[16..], it.UField);
+      BinaryPrimitives.WriteUInt16LittleEndian(ih[18..], (ushort)it.Body.Length);
+      BinaryPrimitives.WriteUInt16LittleEndian(ih[20..], (ushort)loc);
+      BinaryPrimitives.WriteUInt16LittleEndian(ih[22..], it.KeyFormat);
     }
 
     // ── Block head (24 bytes) ───────────────────────────────────────────────
@@ -452,40 +324,208 @@ public sealed class ReiserFsWriter {
     output.Write(image);
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── Tree model ──────────────────────────────────────────────────────────
 
-  /// <summary>EMPTY_DIR_SIZE for KEY_FORMAT_2 dir = 16*2 + ROUND_UP(1) + ROUND_UP(2) = 48.
-  /// We expand for additional entries: 16*entryCount + sum(ROUND_UP(name_len)).</summary>
-  private ulong ComputeRootDirSize() {
-    var size = (2 + _files.Count) * DehSize;
+  /// <summary>
+  /// A filesystem object materialised from the input paths: the root directory,
+  /// every intermediate directory, and every file. Directories carry their
+  /// child entries; files carry their inline body.
+  /// </summary>
+  private sealed class TreeObject {
+    public required uint ObjectId;        // own objectid
+    public required uint ParentObjectId;  // parent's objectid (== this object's key dir_id)
+    public required bool IsDirectory;
+    public required string Name;          // leaf name within its parent ("" for root)
+    public byte[] Data = [];              // file body (files only)
+    public readonly List<(string Name, uint ChildObjectId)> Children = []; // dirs only
+  }
+
+  private sealed class TreeModel {
+    public required TreeObject Root;
+    public required List<TreeObject> Objects; // Root first, then children in allocation order
+  }
+
+  /// <summary>
+  /// Builds the object tree from the recorded full paths. Each path component
+  /// before the final segment becomes a directory object (created once, shared
+  /// by all files beneath it); the final segment becomes a file object. Object
+  /// IDs are allocated densely from <see cref="FirstUserObjectId"/> in
+  /// first-encounter order; the root keeps the reserved id 2.
+  /// </summary>
+  private TreeModel BuildTree() {
+    var root = new TreeObject {
+      ObjectId = RootObjectId, ParentObjectId = RootParentObjectId,
+      IsDirectory = true, Name = "",
+    };
+    var objects = new List<TreeObject> { root };
+    var nextId = FirstUserObjectId;
+
+    // Maps a directory's full path ("a/b") to its object. "" == root.
+    var dirByPath = new Dictionary<string, TreeObject>(StringComparer.Ordinal) { [""] = root };
+
+    foreach (var (path, data) in _files) {
+      if (path.Length == 0) continue;
+      var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+      if (segments.Length == 0) continue;
+
+      // Resolve / create every intermediate directory.
+      var parent = root;
+      var accumulated = "";
+      for (var s = 0; s < segments.Length - 1; s++) {
+        accumulated = accumulated.Length == 0 ? segments[s] : $"{accumulated}/{segments[s]}";
+        if (!dirByPath.TryGetValue(accumulated, out var dir)) {
+          dir = new TreeObject {
+            ObjectId = nextId++, ParentObjectId = parent.ObjectId,
+            IsDirectory = true, Name = segments[s],
+          };
+          objects.Add(dir);
+          parent.Children.Add((segments[s], dir.ObjectId));
+          dirByPath[accumulated] = dir;
+        }
+        parent = dir;
+      }
+
+      var leaf = segments[^1];
+      if (leaf.Length > 200) leaf = leaf[..200];
+      var file = new TreeObject {
+        ObjectId = nextId++, ParentObjectId = parent.ObjectId,
+        IsDirectory = false, Name = leaf, Data = data,
+      };
+      objects.Add(file);
+      parent.Children.Add((leaf, file.ObjectId));
+    }
+
+    return new TreeModel { Root = root, Objects = objects };
+  }
+
+  /// <summary>
+  /// Produces every leaf item (SD + DIRENTRY for directories, SD + DIRECT for
+  /// files) for the whole tree. The caller sorts the result by the reiserfs
+  /// key comparison before laying it out.
+  /// </summary>
+  private List<LeafItem> BuildLeafItems(TreeModel tree) {
+    var items = new List<LeafItem>(tree.Objects.Count * 2);
+    foreach (var obj in tree.Objects) {
+      if (obj.IsDirectory) {
+        // STAT_DATA — mode S_IFDIR | 0755. nlink = 2 + (number of child dirs)
+        // because each subdirectory's ".." links back to this directory.
+        var childDirCount = 0;
+        foreach (var c in obj.Children) {
+          // child object id → is it a directory? Look it up.
+          if (tree.Objects.Exists(o => o.ObjectId == c.ChildObjectId && o.IsDirectory))
+            childDirCount++;
+        }
+        var sd = new byte[SdV2Size];
+        WriteStatDataV2(sd, mode: 0x41ED, nlink: (uint)(2 + childDirCount),
+          size: ComputeDirItemSize(obj), uid: 0, gid: 0, blocks: 1);
+        items.Add(new LeafItem {
+          DirId = obj.ParentObjectId, ObjectId = obj.ObjectId,
+          OffsetV2 = TypeStatDataV2 | 0u, OffsetV1 = 0, UniquenessV1 = V1SdUniqueness,
+          KeyFormat = KeyFormat2, UField = 0, Body = sd,
+        });
+
+        // DIRENTRY — "." (self), ".." (parent), then each child.
+        items.Add(BuildDirEntryItem(obj));
+      } else {
+        // STAT_DATA — mode S_IFREG | 0644, single DIRECT item.
+        var sd = new byte[SdV2Size];
+        WriteStatDataV2(sd, mode: 0x81A4, nlink: 1, size: (ulong)obj.Data.Length,
+          uid: 0, gid: 0, blocks: obj.Data.Length > 0 ? (uint)(BlockSize >> 9) : 0u);
+        items.Add(new LeafItem {
+          DirId = obj.ParentObjectId, ObjectId = obj.ObjectId,
+          OffsetV2 = TypeStatDataV2 | 0u, OffsetV1 = 0, UniquenessV1 = V1SdUniqueness,
+          KeyFormat = KeyFormat2, UField = 0, Body = sd,
+        });
+
+        // DIRECT — inline body at offset 1.
+        items.Add(new LeafItem {
+          DirId = obj.ParentObjectId, ObjectId = obj.ObjectId,
+          OffsetV2 = TypeDirectV2 | 1u, OffsetV1 = 1, UniquenessV1 = V1DirectUniqueness,
+          KeyFormat = KeyFormat2, UField = 0, Body = obj.Data,
+        });
+      }
+    }
+    return items;
+  }
+
+  /// <summary>
+  /// Builds the DIRENTRY item body for a directory object. Layout per
+  /// reiserfscore/node_formats.c: a forward reiserfs_de_head array followed by
+  /// names packed at the END of the item (entry[0] highest, entry[E-1] lowest).
+  /// Entries are sorted by deh_offset ("." = 1, ".." = 2, children by R5 hash).
+  /// </summary>
+  private LeafItem BuildDirEntryItem(TreeObject dir) {
+    var entries = new List<DirEntry> {
+      new(".", dir.ObjectId, dir.ObjectId, 1),
+      new("..", dir.ObjectId, dir.ParentObjectId, 2),
+    };
+    foreach (var (name, childId) in dir.Children) {
+      // deh points to the child SD key (dir_id = this dir's objectid, objectid = child).
+      entries.Add(new DirEntry(name, dir.ObjectId, childId, HashValueR5(name)));
+    }
+    // Stable sort by deh_offset ascending ("." and ".." sort first via 1/2).
+    var sorted = entries.OrderBy(e => e.DehOffset).ToArray();
+
+    var entryCount = sorted.Length;
+    var slotLengths = new int[entryCount];
+    var totalNamesLen = 0;
+    for (var i = 0; i < entryCount; i++) {
+      slotLengths[i] = RoundUp8(Encoding.UTF8.GetByteCount(sorted[i].Name));
+      totalNamesLen += slotLengths[i];
+    }
+    var bodyLen = entryCount * DehSize + totalNamesLen;
+    var body = new byte[bodyLen];
+
+    // Pack names from END backward; entry[0] takes the highest slot.
+    var nameRunningEnd = bodyLen;
+    for (var i = 0; i < entryCount; i++) {
+      var slot = slotLengths[i];
+      var slotStart = nameRunningEnd - slot;
+      var bytes = Encoding.UTF8.GetBytes(sorted[i].Name);
+      bytes.CopyTo(body.AsSpan(slotStart));
+      sorted[i] = sorted[i] with { Location = (ushort)slotStart };
+      nameRunningEnd = slotStart;
+    }
+    // deh array forward at the start.
+    for (var i = 0; i < entryCount; i++) {
+      var off = i * DehSize;
+      BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(off + 0), sorted[i].DehOffset);
+      BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(off + 4), sorted[i].PointedDirId);
+      BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(off + 8), sorted[i].PointedObjectId);
+      BinaryPrimitives.WriteUInt16LittleEndian(body.AsSpan(off + 12), sorted[i].Location);
+      BinaryPrimitives.WriteUInt16LittleEndian(body.AsSpan(off + 14), 4); // DEH_Visible2
+    }
+
+    return new LeafItem {
+      DirId = dir.ParentObjectId, ObjectId = dir.ObjectId,
+      OffsetV2 = TypeDirentryV2 | 1u, OffsetV1 = 1, UniquenessV1 = V1DirentryUniqueness,
+      KeyFormat = KeyFormat1, UField = (ushort)entryCount, Body = body,
+    };
+  }
+
+  /// <summary>Directory item byte size = 16*entryCount + sum(ROUND_UP8(name)).</summary>
+  private static ulong ComputeDirItemSize(TreeObject dir) {
+    var size = (2 + dir.Children.Count) * DehSize;
     size += RoundUp8(1) + RoundUp8(2); // "." and ".."
-    foreach (var f in _files)
-      size += RoundUp8(Encoding.UTF8.GetByteCount(f.name));
+    foreach (var (name, _) in dir.Children)
+      size += RoundUp8(Encoding.UTF8.GetByteCount(name));
     return (ulong)size;
   }
 
-  private static int RoundUp8(int v) => (v + 7) & ~7;
-
   /// <summary>
-  /// Writes a 24-byte item_head: key (16) + u (2) + ih_item_len (2) +
-  /// ih_item_location (2) + ih_format (2). The key encodes as
-  /// dir_id(4) + objectid(4) + offset_v1(4) + uniqueness(4) when
-  /// keyFormat=KEY_FORMAT_1, or as dir_id(4) + objectid(4) + offset_v2(8)
-  /// otherwise (the offset_v1/uniqueness and offset_v2 share the same 8 bytes).
+  /// reiserfs key comparison (reiserfscore/stree.c:comp_keys): compare dir_id,
+  /// then objectid, then the 64-bit offset (which embeds the type in the top
+  /// 4 bits so SD &lt; INDIRECT &lt; DIRECT &lt; DIRENTRY at equal offset).
   /// </summary>
-  private static void WriteItemHead(
-    Span<byte> ih, uint dirId, uint objectId,
-    uint offsetV1, uint uniquenessV1,
-    ushort uField, ushort length, ushort location, ushort keyFormat) {
-    BinaryPrimitives.WriteUInt32LittleEndian(ih[0..], dirId);
-    BinaryPrimitives.WriteUInt32LittleEndian(ih[4..], objectId);
-    BinaryPrimitives.WriteUInt32LittleEndian(ih[8..], offsetV1);
-    BinaryPrimitives.WriteUInt32LittleEndian(ih[12..], uniquenessV1);
-    BinaryPrimitives.WriteUInt16LittleEndian(ih[16..], uField);
-    BinaryPrimitives.WriteUInt16LittleEndian(ih[18..], length);
-    BinaryPrimitives.WriteUInt16LittleEndian(ih[20..], location);
-    BinaryPrimitives.WriteUInt16LittleEndian(ih[22..], keyFormat);
+  private static int CompareKeys(LeafItem a, LeafItem b) {
+    if (a.DirId != b.DirId) return a.DirId.CompareTo(b.DirId);
+    if (a.ObjectId != b.ObjectId) return a.ObjectId.CompareTo(b.ObjectId);
+    return a.OffsetV2.CompareTo(b.OffsetV2);
   }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  private static int RoundUp8(int v) => (v + 7) & ~7;
 
   /// <summary>
   /// Writes a 44-byte stat_data_v2 (kernel struct stat_data):
@@ -539,8 +579,19 @@ public sealed class ReiserFsWriter {
   private readonly record struct DirEntry(
     string Name, uint PointedDirId, uint PointedObjectId, uint DehOffset, ushort Location = 0);
 
-  private sealed class DirEntryOffsetComparer : IComparer<DirEntry> {
-    public static readonly DirEntryOffsetComparer Instance = new();
-    public int Compare(DirEntry x, DirEntry y) => x.DehOffset.CompareTo(y.DehOffset);
+  /// <summary>
+  /// A single S+tree leaf item awaiting layout: its full reiserfs key (dir_id,
+  /// objectid, offset) in both v1 and v2 forms, on-disk key format, the
+  /// item_head u-field (entry count for DIRENTRY, else 0) and the packed body.
+  /// </summary>
+  private sealed class LeafItem {
+    public required uint DirId;
+    public required uint ObjectId;
+    public required ulong OffsetV2;     // sort key + on-disk bytes for KEY_FORMAT_2
+    public required uint OffsetV1;      // on-disk offset for KEY_FORMAT_1
+    public required uint UniquenessV1;  // on-disk uniqueness for KEY_FORMAT_1
+    public required ushort KeyFormat;
+    public required ushort UField;
+    public required byte[] Body;
   }
 }
