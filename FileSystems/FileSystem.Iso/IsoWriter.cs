@@ -26,6 +26,15 @@ public sealed class IsoWriter {
   // Joliet name length limit: 64 UCS-2 characters (128 bytes) per the spec.
   private const int JolietMaxNameChars = 64;
 
+  // Trailing zero-sector padding appended after the file data. mkisofs/genisoimage
+  // append a 150-sector (300 KiB) post-gap to every image by default; cdrtools
+  // isoinfo refuses to open an image whose backing file is shorter than its own
+  // fixed start-up read window (~48 sectors) and reports "Short read on old image"
+  // regardless of how well-formed the descriptors are. Matching the mkisofs
+  // convention keeps the image readable by isoinfo and any reader that relies on
+  // the post-gap, while the recorded Volume Space Size still spans the whole file.
+  private const int TrailingPadSectors = 150;
+
   private readonly List<(string Name, byte[] Data)> _files = [];
 
   /// <summary>
@@ -131,7 +140,10 @@ public sealed class IsoWriter {
         cursor += sectors;
       }
 
-    var totalSectors = cursor;
+    // Append the conventional trailing post-gap so the recorded Volume Space Size
+    // (and the backing file) clear the minimum size real readers such as cdrtools
+    // isoinfo expect. The padding sectors are zero-filled slack at the tail.
+    var totalSectors = cursor + TrailingPadSectors;
     var image = new byte[totalSectors * SectorSize];
 
     // Primary Volume Descriptor (sector 16).
