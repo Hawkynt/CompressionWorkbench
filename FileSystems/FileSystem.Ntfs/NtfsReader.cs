@@ -102,6 +102,14 @@ public sealed class NtfsReader : IDisposable {
         _mftRecords[(uint)i] = record;
     }
 
+    // For every directory whose index spilled into $INDEX_ALLOCATION, read the
+    // INDX blocks and fold their FILE_NAME references into the directory's index
+    // entry set so large directories enumerate completely.
+    foreach (var rec in _mftRecords.Values) {
+      if (rec.IsDirectory && rec.IndexAllocationRuns is { Count: > 0 })
+        CollectIndexAllocationRefs(rec);
+    }
+
     // Enumerate files from root directory (record 5)
     EnumerateDirectory(5, "");
   }
@@ -160,6 +168,12 @@ public sealed class NtfsReader : IDisposable {
           break;
         case 0x90: // $INDEX_ROOT
           ParseIndexRoot(record, attrPos, mft);
+          break;
+        case 0xA0: // $INDEX_ALLOCATION — non-resident INDX blocks for large dirs
+          if (nonResident != 0 && attrPos + 34 <= record.Length) {
+            var dataRunsOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attrPos + 32));
+            mft.IndexAllocationRuns = ParseDataRuns(record, attrPos + dataRunsOffset);
+          }
           break;
       }
 
@@ -268,6 +282,10 @@ public sealed class NtfsReader : IDisposable {
     var entriesOffset = BinaryPrimitives.ReadInt32LittleEndian(record.AsSpan(dataStart + 16));
     var totalSize = BinaryPrimitives.ReadInt32LittleEndian(record.AsSpan(dataStart + 20));
 
+    // Bytes per INDX block, advertised in the index-root header (offset 8). Used
+    // to step through the $INDEX_ALLOCATION stream when the index is large.
+    mft.IndexBlockSize = BinaryPrimitives.ReadInt32LittleEndian(record.AsSpan(dataStart + 8));
+
     var indexStart = dataStart + 16 + entriesOffset;
     var indexEnd = dataStart + 16 + totalSize;
 
@@ -280,13 +298,76 @@ public sealed class NtfsReader : IDisposable {
 
       if (entryLen < 16) break;
 
-      if ((flags & 0x02) != 0) break; // last entry
-
+      // Real FILE_NAME entries (ref != 0) contribute a child; pure routing
+      // pointers (ref 0) only steer the descent into a subnode.
       var refRecord = (uint)(mftRef & 0x0000FFFFFFFFFFFF);
       if (refRecord > 0)
         mft.IndexEntryRefs.Add(refRecord);
 
+      if ((flags & 0x02) != 0) break; // last entry (may still carry a subnode VCN, read above)
+
       indexStart += entryLen;
+    }
+  }
+
+  // Walks a directory's $INDEX_ALLOCATION: reads each referenced INDX block,
+  // undoes its USA fixups and collects the MFT references of every FILE_NAME
+  // entry it holds. A single B+tree level is produced by the writer, so the
+  // subnode VCNs from the root point directly at leaf blocks; we additionally
+  // read every block the allocation stream covers so no leaf is missed.
+  private void CollectIndexAllocationRefs(MftRecord dir) {
+    if (dir.IndexAllocationRuns == null || dir.IndexAllocationRuns.Count == 0) return;
+    dir.IndexEntryRefs ??= [];
+
+    var blockSize = dir.IndexBlockSize > 0 ? dir.IndexBlockSize : 4096;
+
+    foreach (var run in dir.IndexAllocationRuns) {
+      var runBytes = run.ClusterCount * _clusterSize;
+      var blocksInRun = runBytes / blockSize;
+      for (long b = 0; b < blocksInRun; b++) {
+        var byteOffset = run.Lcn * _clusterSize + b * blockSize;
+        if (byteOffset < 0 || byteOffset + blockSize > _data.Length) continue;
+        ReadIndexBlock(byteOffset, blockSize, dir.IndexEntryRefs);
+      }
+    }
+  }
+
+  // Reads one INDX block: validates the magic, undoes USA fixups, then walks its
+  // index entries adding each non-zero MFT reference to refs.
+  private void ReadIndexBlock(long offset, int blockSize, List<uint> refs) {
+    var block = _data.AsSpan((int)offset, blockSize).ToArray();
+    if (block[0] != (byte)'I' || block[1] != (byte)'N' || block[2] != (byte)'D' || block[3] != (byte)'X')
+      return;
+
+    ApplyFixup(block);
+
+    // Index sub-header lives right after the USA, 8-byte aligned. Its entries
+    // offset is relative to the sub-header start.
+    var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(4));
+    var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(6));
+    var subHeaderOffset = (usaOffset + usaCount * 2 + 7) & ~7;
+    if (subHeaderOffset + 16 > block.Length) return;
+
+    var entriesOffset = BinaryPrimitives.ReadInt32LittleEndian(block.AsSpan(subHeaderOffset));
+    var indexContentSize = BinaryPrimitives.ReadInt32LittleEndian(block.AsSpan(subHeaderOffset + 4));
+
+    var entryPos = subHeaderOffset + entriesOffset;
+    var entryEnd = subHeaderOffset + indexContentSize;
+
+    while (entryPos + 16 <= entryEnd && entryPos + 16 <= block.Length) {
+      var mftRef = BinaryPrimitives.ReadInt64LittleEndian(block.AsSpan(entryPos));
+      var entryLen = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(entryPos + 8));
+      var flags = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(entryPos + 12));
+
+      if (entryLen < 16) break;
+
+      var refRecord = (uint)(mftRef & 0x0000FFFFFFFFFFFF);
+      if (refRecord > 0)
+        refs.Add(refRecord);
+
+      if ((flags & 0x02) != 0) break; // last entry in this block
+
+      entryPos += entryLen;
     }
   }
 
@@ -428,6 +509,8 @@ public sealed class NtfsReader : IDisposable {
 
     // Index
     public List<uint>? IndexEntryRefs;
+    public List<DataRun>? IndexAllocationRuns;
+    public int IndexBlockSize;
   }
 
   private sealed class DataRun {
