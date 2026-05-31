@@ -32,6 +32,7 @@ public sealed class UfsWriter {
   internal const int InodesPerGroup = 2048;       // fs_ipg
   internal const int RootIno = 2;
   internal const int MaxDirectBlocks = 12;        // UFS_NDADDR
+  internal const int PointersPerBlock = BlockSize / 4; // single-indirect fan-out (2048)
 
   // Layout inside CG 0:
   //   sb at frag 8 (byte 8192), cg header at frag 16 (byte 16384),
@@ -129,35 +130,62 @@ public sealed class UfsWriter {
       }
     }
 
-    // Each directory must fit in a single 8-KB block (this minimal writer does
-    // not allocate additional directory blocks or indirect blocks).
-    foreach (var dir in directories)
-      EnsureDirectoryFitsOneBlock(dir);
+    // A directory's entries are packed into 8-KB blocks (no entry crosses a
+    // block boundary). The number of data blocks must not exceed what the inode
+    // can address via its direct pointers plus one single-indirect block.
+    var dirBlockOffsets = new Dictionary<TreeNode, IReadOnlyList<int>>();
+    foreach (var dir in directories) {
+      var parentIno = dir.Parent?.Inode ?? RootIno;
+      var offsets = PackDirectoryEntries(dir, parentIno);
+      dirBlockOffsets[dir] = offsets;
+      EnsureDirectoryAddressable(dir, offsets.Count);
+    }
 
-    // Files are limited to direct blocks (no indirect-block support).
+    // Files are limited to what direct blocks plus one single-indirect block
+    // can address.
+    const int MaxAddressableBlocks = MaxDirectBlocks + PointersPerBlock;
     foreach (var file in regularFiles) {
       var blocks = (file.Data.Length + BlockSize - 1) / BlockSize;
-      if (blocks > MaxDirectBlocks)
+      if (blocks > MaxAddressableBlocks)
         throw new InvalidOperationException(
-          $"UFS writer only supports direct blocks (max {MaxDirectBlocks * BlockSize} bytes per file); " +
+          $"UFS writer supports direct blocks plus one single-indirect block " +
+          $"(max {(long)MaxAddressableBlocks * BlockSize} bytes per file); " +
           $"'{file.Name}' needs {file.Data.Length} bytes.");
     }
 
-    // ── layout: one block per directory, then file data ──────────────────
+    // ── layout: directory data blocks (+ indirect), then file data ───────
     var currentFrag = DblkNo + Frag;               // skip 1 block for fs_cs summary
-    var dirFrag = new Dictionary<TreeNode, int>();
+    // For each directory: the frags of its data blocks, plus (if it spills past
+    // the direct pointers) one frag-block holding the single-indirect table.
+    var dirDataFrags = new Dictionary<TreeNode, int[]>();
+    var dirIndirectFrag = new Dictionary<TreeNode, int>();
     foreach (var dir in directories) {
-      dirFrag[dir] = currentFrag;
-      currentFrag += Frag;                         // one 8-KB block per directory
+      var blockCount = dirBlockOffsets[dir].Count;
+      var frags = new int[blockCount];
+      for (var b = 0; b < blockCount; b++) {
+        frags[b] = currentFrag;
+        currentFrag += Frag;
+      }
+      dirDataFrags[dir] = frags;
+      if (blockCount > MaxDirectBlocks) {
+        dirIndirectFrag[dir] = currentFrag;
+        currentFrag += Frag;                       // one block for the indirect pointer table
+      }
     }
 
     var fileFirstFrag = new Dictionary<TreeNode, int>();
     var fileFrags = new Dictionary<TreeNode, int>();
+    var fileIndirectFrag = new Dictionary<TreeNode, int>();
     foreach (var file in regularFiles) {
       fileFirstFrag[file] = currentFrag;
       var frags = Math.Max(1, (file.Data.Length + FragSize - 1) / FragSize);
       fileFrags[file] = frags;
       currentFrag += frags;
+      var blocks = Math.Max(1, (file.Data.Length + BlockSize - 1) / BlockSize);
+      if (blocks > MaxDirectBlocks) {
+        fileIndirectFrag[file] = currentFrag;
+        currentFrag += Frag;                       // one block for the indirect pointer table
+      }
     }
 
     // Round used-frag count up to a whole block to keep the bitmap simple.
@@ -177,16 +205,39 @@ public sealed class UfsWriter {
     // ── directory blocks + directory inodes ──────────────────────────────
     foreach (var dir in directories) {
       var parentIno = dir.Parent?.Inode ?? RootIno;     // root's ".." points at itself
-      var block = BuildDirectoryBlock(dir, parentIno);
-      block.CopyTo(disk, (long)dirFrag[dir] * FragSize);
+      var offsets = dirBlockOffsets[dir];
+      var blockFrags = dirDataFrags[dir];
+
+      // Render every data block. Each block packs the entries assigned to it by
+      // PackDirectoryEntries; the final entry per block pads to the block end.
+      var allEntries = EnumerateEntries(dir, parentIno).ToList();
+      for (var b = 0; b < offsets.Count; b++) {
+        var startEntry = offsets[b];
+        var endEntry = b + 1 < offsets.Count ? offsets[b + 1] : allEntries.Count;
+        var block = BuildDirectoryBlock(allEntries, startEntry, endEntry);
+        block.CopyTo(disk, (long)blockFrags[b] * FragSize);
+      }
+
+      // Direct + single-indirect block pointers.
+      var directBlocks = new int[MaxDirectBlocks];
+      for (var b = 0; b < blockFrags.Length && b < MaxDirectBlocks; b++)
+        directBlocks[b] = blockFrags[b];
+      var indirectFrag = 0;
+      var totalFragsUsed = blockFrags.Length * Frag;
+      if (blockFrags.Length > MaxDirectBlocks) {
+        indirectFrag = dirIndirectFrag[dir];
+        WriteIndirectBlock(disk, indirectFrag, blockFrags, MaxDirectBlocks);
+        totalFragsUsed += Frag;                    // the indirect table block counts too
+      }
 
       // di_nlink for a directory = 2 ("." + entry in parent) + one extra link
       // per child subdirectory (each child's ".." points back here).
       var childDirs = dir.Order.Count(c => c.IsDirectory);
       WriteUfs1Inode(disk, inodeTableOffset + dir.Inode * InodeSize,
-        mode: 0x41ED, nlink: (ushort)(2 + childDirs), size: BlockSize,
-        blocksUsed512: (uint)(Frag * FragSize / 512),
-        directBlocks: [dirFrag[dir]]);
+        mode: 0x41ED, nlink: (ushort)(2 + childDirs),
+        size: (ulong)((long)offsets.Count * BlockSize),
+        blocksUsed512: (uint)((long)totalFragsUsed * FragSize / 512),
+        directBlocks: directBlocks, indirectBlock: indirectFrag);
     }
 
     // ── file blocks + file inodes ─────────────────────────────────────────
@@ -197,10 +248,21 @@ public sealed class UfsWriter {
       // One direct-block pointer per 8-KB block; each block is Frag frags.
       var blocks = Math.Max(1, (data.Length + BlockSize - 1) / BlockSize);
       for (var b = 0; b < blocks && b < MaxDirectBlocks; b++) dblks[b] = first + b * Frag;
+
+      var indirectFrag = 0;
+      var totalFragsUsed = fileFrags[file];
+      if (blocks > MaxDirectBlocks) {
+        indirectFrag = fileIndirectFrag[file];
+        var blockFrags = new int[blocks];
+        for (var b = 0; b < blocks; b++) blockFrags[b] = first + b * Frag;
+        WriteIndirectBlock(disk, indirectFrag, blockFrags, MaxDirectBlocks);
+        totalFragsUsed += Frag;                    // the indirect table block counts too
+      }
+
       WriteUfs1Inode(disk, inodeTableOffset + file.Inode * InodeSize,
         mode: 0x81A4, nlink: 1, size: (ulong)data.Length,
-        blocksUsed512: (uint)(fileFrags[file] * FragSize / 512),
-        directBlocks: dblks);
+        blocksUsed512: (uint)((long)totalFragsUsed * FragSize / 512),
+        directBlocks: dblks, indirectBlock: indirectFrag);
       if (data.Length > 0) data.CopyTo(disk, (long)first * FragSize);
     }
 
@@ -222,16 +284,46 @@ public sealed class UfsWriter {
     output.Write(disk);
   }
 
-  // Lays out a directory's data block: ".", "..", then one entry per child.
-  private static byte[] BuildDirectoryBlock(TreeNode dir, int parentIno) {
+  // The flat sequence of directory entries: ".", "..", then one per child.
+  private readonly record struct DirEntry(int Inode, string Name, byte Type);
+
+  private static IEnumerable<DirEntry> EnumerateEntries(TreeNode dir, int parentIno) {
+    yield return new DirEntry(dir.Inode, ".", 4);   // DT_DIR = 4
+    yield return new DirEntry(parentIno, "..", 4);
+    foreach (var child in dir.Order)
+      yield return new DirEntry(child.Inode, child.Name, child.IsDirectory ? (byte)4 : (byte)8); // DT_DIR / DT_REG
+  }
+
+  // Packs a directory's entries into 8-KB blocks so that no entry crosses a
+  // block boundary. Returns the index (into the entry sequence) of the first
+  // entry of each block; the block count is the returned list's length. "."/".."
+  // are always the first two entries, hence at the start of block 0.
+  private static IReadOnlyList<int> PackDirectoryEntries(TreeNode dir, int parentIno) {
+    var blockStarts = new List<int> { 0 };
+    var used = 0;
+    var index = 0;
+    foreach (var entry in EnumerateEntries(dir, parentIno)) {
+      var reclen = DirEntryReclen(entry.Name);
+      if (used + reclen > BlockSize) {
+        blockStarts.Add(index);                     // entry begins a fresh block
+        used = 0;
+      }
+      used += reclen;
+      index++;
+    }
+    return blockStarts;
+  }
+
+  // Renders one directory data block holding entries [startEntry, endEntry).
+  // The last entry's reclen is extended to cover the rest of the block.
+  private static byte[] BuildDirectoryBlock(IReadOnlyList<DirEntry> entries, int startEntry, int endEntry) {
     var block = new byte[BlockSize];
     var dirPos = 0;
-    WriteDirEntry(block, ref dirPos, dir.Inode, ".", 4);     // DT_DIR = 4
-    WriteDirEntry(block, ref dirPos, parentIno, "..", 4);
-    foreach (var child in dir.Order)
-      WriteDirEntry(block, ref dirPos, child.Inode, child.Name, child.IsDirectory ? (byte)4 : (byte)8); // DT_DIR / DT_REG
+    for (var i = startEntry; i < endEntry; i++) {
+      var e = entries[i];
+      WriteDirEntry(block, ref dirPos, e.Inode, e.Name, e.Type);
+    }
     if (dirPos < BlockSize) {
-      // Extend the last entry's reclen to cover the rest of the block (UFS convention).
       var lastEntryStart = FindLastEntryStart(block, dirPos);
       var newLastReclen = BlockSize - lastEntryStart;
       BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(lastEntryStart + 4), (ushort)newLastReclen);
@@ -239,14 +331,24 @@ public sealed class UfsWriter {
     return block;
   }
 
-  // Verifies the directory's entries (".", "..", children) fit one 8-KB block.
-  private static void EnsureDirectoryFitsOneBlock(TreeNode dir) {
-    var used = DirEntryReclen(".") + DirEntryReclen("..");
-    foreach (var child in dir.Order) used += DirEntryReclen(child.Name);
-    if (used > BlockSize)
+  // Verifies a directory's data blocks are reachable through the inode's direct
+  // pointers plus one single-indirect block.
+  private static void EnsureDirectoryAddressable(TreeNode dir, int blockCount) {
+    var maxBlocks = MaxDirectBlocks + PointersPerBlock;
+    if (blockCount > maxBlocks)
       throw new InvalidOperationException(
-        $"UFS writer keeps each directory in a single {BlockSize}-byte block; " +
-        $"directory '{(dir.Name.Length == 0 ? "/" : dir.Name)}' with {dir.Order.Count} entries does not fit.");
+        $"UFS writer addresses a directory through {MaxDirectBlocks} direct blocks plus one " +
+        $"single-indirect block (max {maxBlocks} blocks); directory " +
+        $"'{(dir.Name.Length == 0 ? "/" : dir.Name)}' with {dir.Order.Count} entries needs {blockCount}.");
+  }
+
+  // Writes a single-indirect pointer table: the frag numbers of every data block
+  // beyond the direct pointers, one int32 each.
+  private static void WriteIndirectBlock(byte[] disk, int indirectFrag, int[] blockFrags, int firstIndirectBlock) {
+    var tableOffset = (long)indirectFrag * FragSize;
+    for (var b = firstIndirectBlock; b < blockFrags.Length; b++)
+      BinaryPrimitives.WriteInt32LittleEndian(
+        disk.AsSpan((int)(tableOffset + (long)(b - firstIndirectBlock) * 4)), blockFrags[b]);
   }
 
   private static int DirEntryReclen(string name) {
@@ -396,7 +498,7 @@ public sealed class UfsWriter {
   private static void WriteUfs1Inode(
     byte[] disk, long inodeByteOffset,
     uint mode, ushort nlink, ulong size, uint blocksUsed512,
-    ReadOnlySpan<int> directBlocks
+    ReadOnlySpan<int> directBlocks, int indirectBlock = 0
   ) {
     var di = disk.AsSpan((int)inodeByteOffset, InodeSize);
     di.Clear();
@@ -410,6 +512,8 @@ public sealed class UfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(di[32..], now);                 // di_ctime
     for (var i = 0; i < MaxDirectBlocks && i < directBlocks.Length; i++)
       BinaryPrimitives.WriteInt32LittleEndian(di[(40 + i * 4)..], directBlocks[i]);
+    // di_ib[0] (first single-indirect) immediately follows the 12 direct blocks.
+    BinaryPrimitives.WriteInt32LittleEndian(di[(40 + MaxDirectBlocks * 4)..], indirectBlock);
     BinaryPrimitives.WriteUInt32LittleEndian(di[104..], blocksUsed512);      // di_blocks
     BinaryPrimitives.WriteUInt32LittleEndian(di[108..], 1);                  // di_gen
     BinaryPrimitives.WriteUInt32LittleEndian(di[112..], 0);                  // di_uid

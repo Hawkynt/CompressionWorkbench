@@ -130,19 +130,44 @@ public sealed class UfsReader : IDisposable {
     if (inodeOff + InodeSize > _data.Length) return null;
     var ioff = (int)inodeOff;
     var size = (long)BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan(ioff + 8));
-    if (size <= 0 || size > 64L * 1024 * 1024) return null;
+    if (size <= 0 || size > 256L * 1024 * 1024) return null;
 
     using var ms = new MemoryStream();
+
+    // Direct blocks (di_db[0..11]).
     for (var i = 0; i < MaxDirectBlocks && ms.Length < size; i++) {
       var blk = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(ioff + 40 + i * 4));
-      if (blk == 0) continue;
-      var off = (long)blk * _fragSize;
-      var remaining = size - ms.Length;
-      var chunk = (int)Math.Min(_blockSize, remaining);
-      if (off + chunk <= _data.Length)
-        ms.Write(_data, (int)off, chunk);
+      AppendBlock(ms, blk, size);
+    }
+
+    // Single-indirect block (di_ib[0]): a table of block pointers immediately
+    // following the 12 direct pointers.
+    if (ms.Length < size) {
+      var indirect = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(ioff + 40 + MaxDirectBlocks * 4));
+      if (indirect != 0) {
+        var tableOff = (long)indirect * _fragSize;
+        var ptrs = _blockSize / 4;
+        for (var i = 0; i < ptrs && ms.Length < size; i++) {
+          var ptrOff = tableOff + (long)i * 4;
+          if (ptrOff + 4 > _data.Length) break;
+          var blk = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan((int)ptrOff));
+          if (blk == 0) break;
+          AppendBlock(ms, blk, size);
+        }
+      }
     }
     return ms.ToArray();
+  }
+
+  // Appends up to one block of payload from frag-block `blk`, stopping at `size`.
+  private void AppendBlock(MemoryStream ms, int blk, long size) {
+    if (blk == 0) return;
+    var off = (long)blk * _fragSize;
+    var remaining = size - ms.Length;
+    if (remaining <= 0) return;
+    var chunk = (int)Math.Min(_blockSize, remaining);
+    if (off + chunk <= _data.Length)
+      ms.Write(_data, (int)off, chunk);
   }
 
   public byte[] Extract(UfsEntry entry) {
