@@ -42,9 +42,11 @@ public sealed class BfsFormatDescriptor
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     try {
       var r = new BfsReader(stream);
-      return r.Entries.Select((e, i) => new ArchiveEntryInfo(
-        i, e.Name, e.Size, e.Size, "Stored", false, false, null
-      )).ToList();
+      return r.Entries
+        .Where(e => !e.IsDirectory)
+        .Select((e, i) => new ArchiveEntryInfo(
+          i, e.Name, e.Size, e.Size, "Stored", false, false, null
+        )).ToList();
     } catch {
       // Fallback: surface raw image + metadata like the old R-only descriptor
       return ListFallback(stream);
@@ -55,6 +57,7 @@ public sealed class BfsFormatDescriptor
     try {
       var r = new BfsReader(stream);
       foreach (var e in r.Entries) {
+        if (e.IsDirectory) continue;
         if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
         WriteFile(outputDir, e.Name, r.Extract(e));
       }
@@ -68,7 +71,7 @@ public sealed class BfsFormatDescriptor
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new BfsWriter();
-    foreach (var (name, data) in FlatFiles(inputs))
+    foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());
   }
@@ -154,8 +157,18 @@ public sealed class BfsFormatDescriptor
 
     foreach (var entry in reader.Entries) {
       var inodeOff = entry.InodeBlock * blockSize;
-      // Inode block itself
+      // Inode block itself (and, for directories, the B+ tree node it points at)
       yield return new DefragBlockInfo(inodeOff, blockSize, DefragBlockKind.MetadataReserved, $"Inode: {entry.Name}");
+
+      if (entry.IsDirectory) {
+        if (inodeOff + 72 + 8 <= imageBytes.Length) {
+          var dirBtree = ReadBlockRunFromImage(imageBytes, inodeOff + 72);
+          if (dirBtree.Length > 0)
+            yield return new DefragBlockInfo((long)dirBtree.Start * blockSize, (long)dirBtree.Length * blockSize,
+              DefragBlockKind.MetadataReserved, $"Dir B+Tree: {entry.Name}");
+        }
+        continue;
+      }
 
       // Data blocks from direct extents
       if (entry.Size > 0 && inodeOff + 72 + NumDirectBlocks * 8 <= imageBytes.Length) {
@@ -177,7 +190,7 @@ public sealed class BfsFormatDescriptor
 
   private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
     var r = new BfsReader(stream);
-    return r.Entries.Select(e => (e.Name, r.Extract(e)));
+    return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
   }
 
   private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {

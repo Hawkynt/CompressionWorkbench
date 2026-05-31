@@ -131,37 +131,75 @@ internal sealed class BfsWriter {
   private const int InodeDataStreamOffset = 72;
   private const int NumDirectBlocks = 12;
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Path, byte[] Data)> _files = [];
 
-  /// <summary>Adds a file to the image. Name is flattened to filename-only.</summary>
+  /// <summary>
+  /// Adds a file to the image. The name may contain '/' (or '\') separators,
+  /// in which case the leading segments become real subdirectory inodes and the
+  /// file is stored inside the corresponding directory tree.
+  /// </summary>
   public void AddFile(string name, byte[] data) {
-    var flat = Path.GetFileName(name);
-    if (string.IsNullOrEmpty(flat))
+    var normalized = name.Replace('\\', '/').Trim('/');
+    if (string.IsNullOrEmpty(normalized))
       throw new ArgumentException("File name must not be empty.", nameof(name));
-    _files.Add((flat, data));
+    _files.Add((normalized, data));
+  }
+
+  /// <summary>
+  /// In-memory directory tree node assembled from the flat file list before
+  /// blocks are allocated. Directories own a child map (sorted by name for a
+  /// stable B+ tree order); files carry their payload.
+  /// </summary>
+  private sealed class TreeNode {
+    public required string Name;
+    public bool IsDir;
+    public byte[]? Data;
+    public readonly SortedDictionary<string, TreeNode> Children =
+      new(StringComparer.Ordinal);
+
+    // Block assignments filled in during layout.
+    public int InodeBlock;
+    public int BtreeBlock;       // directories only
+    public int DataStartBlock;   // files only
+    public int DataBlocks;       // files only
+    public int ParentInodeBlock;
   }
 
   /// <summary>Builds the BFS image and returns the raw bytes.</summary>
   public byte[] Build() {
-    var fileCount = _files.Count;
-
-    // Calculate data blocks needed per file
-    var fileLayouts = new List<(string Name, byte[] Data, int InodeBlock, int DataStartBlock, int DataBlocks)>();
-    var nextBlock = FirstFileInodeBlock;
-    // Reserve inode blocks first (one per file)
-    var firstInodeBlock = nextBlock;
-    nextBlock += fileCount;
-    // Then data blocks
-    var dataStartBlock = nextBlock;
-    foreach (var (name, data) in _files) {
-      var dataBlocks = (data.Length + BlockSize - 1) / BlockSize;
-      if (dataBlocks == 0) dataBlocks = 0; // empty files have no data blocks
-      fileLayouts.Add((name, data, firstInodeBlock, dataStartBlock, dataBlocks));
-      firstInodeBlock++;
-      dataStartBlock += dataBlocks;
+    // 1) Build the directory tree from the flat file list. The synthetic root
+    //    uses the fixed root-dir inode/B+ tree blocks (11/12).
+    var root = new TreeNode { Name = string.Empty, IsDir = true, InodeBlock = RootDirInodeBlock, BtreeBlock = RootDirBtreeBlock };
+    foreach (var (path, data) in _files) {
+      var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+      var cursor = root;
+      for (var i = 0; i < segments.Length; i++) {
+        var seg = segments[i];
+        var isLast = i == segments.Length - 1;
+        if (isLast) {
+          // Leaf segment: the file itself. Reject collisions with a directory.
+          if (cursor.Children.TryGetValue(seg, out var existing) && existing.IsDir)
+            throw new InvalidOperationException($"BFS: '{path}' collides with an existing directory of the same name.");
+          cursor.Children[seg] = new TreeNode { Name = seg, IsDir = false, Data = data };
+        } else {
+          if (!cursor.Children.TryGetValue(seg, out var child)) {
+            child = new TreeNode { Name = seg, IsDir = true };
+            cursor.Children[seg] = child;
+          } else if (!child.IsDir) {
+            throw new InvalidOperationException($"BFS: '{path}' uses '{seg}' as a directory, but it is already a file.");
+          }
+          cursor = child;
+        }
+      }
     }
 
-    var totalUsedBlocks = dataStartBlock;
+    // 2) Allocate blocks. Fixed metadata occupies blocks 0..14; everything we
+    //    create starts at block 15. Each directory needs an inode block plus a
+    //    B+ tree block; each file needs an inode block plus its data blocks.
+    var nextBlock = FirstFileInodeBlock;
+    AssignBlocks(root, root.InodeBlock, ref nextBlock);
+
+    var totalUsedBlocks = nextBlock;
     var numBlocks = Math.Max(DefaultImageBlocks, totalUsedBlocks);
     var image = new byte[numBlocks * BlockSize];
 
@@ -169,31 +207,68 @@ internal sealed class BfsWriter {
     WriteSuperblock(image, numBlocks, totalUsedBlocks);
 
     // --- Log area (blocks 2..9) — all zeroes = clean ---
-    // Already zero from allocation.
 
     // --- AG bitmap at block 10 ---
     WriteAgBitmap(image, totalUsedBlocks);
 
-    // --- Root dir inode at block 11 ---
-    WriteDirectoryInode(image, RootDirInodeBlock, RootDirBtreeBlock, 0, 0);
+    // --- Root dir inode (block 11) + its B+ tree (block 12) ---
+    WriteDirectoryInode(image, root.InodeBlock, root.BtreeBlock, 0, 0);
+    WriteDirBtreeLeaf(image, root);
 
-    // --- Root dir B+ tree leaf at block 12 ---
-    WriteRootDirBtreeLeaf(image, fileLayouts);
-
-    // --- Indices dir inode at block 13 ---
+    // --- Indices dir inode at block 13, empty B+ tree at block 14 ---
     WriteDirectoryInode(image, IndicesInodeBlock, IndicesBtreeBlock, RootDirInodeBlock, 0);
-
-    // --- Indices dir B+ tree leaf at block 14 (empty) ---
     WriteEmptyBtreeLeaf(image, IndicesBtreeBlock);
 
-    // --- File inodes and data ---
-    foreach (var (name, data, inodeBlock, dataStart, dataBlocks) in fileLayouts) {
-      WriteFileInode(image, inodeBlock, dataStart, dataBlocks, data.Length);
-      if (data.Length > 0)
-        data.CopyTo(image.AsSpan(dataStart * BlockSize));
-    }
+    // --- All non-root directories and files (depth-first) ---
+    WriteNode(image, root);
 
     return image;
+  }
+
+  /// <summary>
+  /// Walks the tree depth-first assigning on-disk blocks. The current
+  /// directory's inode/B+ tree blocks are assumed pre-assigned; this routine
+  /// assigns blocks for its children and recurses into subdirectories.
+  /// </summary>
+  private static void AssignBlocks(TreeNode dir, int dirInodeBlock, ref int nextBlock) {
+    foreach (var child in dir.Children.Values) {
+      child.ParentInodeBlock = dirInodeBlock;
+      if (child.IsDir) {
+        child.InodeBlock = nextBlock++;
+        child.BtreeBlock = nextBlock++;
+      } else {
+        child.InodeBlock = nextBlock++;
+        var data = child.Data ?? [];
+        child.DataBlocks = (data.Length + BlockSize - 1) / BlockSize;
+        child.DataStartBlock = nextBlock;
+        nextBlock += child.DataBlocks;
+      }
+    }
+
+    // Recurse only after all direct children are laid out, so each directory's
+    // data blocks stay contiguous behind its inode.
+    foreach (var child in dir.Children.Values)
+      if (child.IsDir)
+        AssignBlocks(child, child.InodeBlock, ref nextBlock);
+  }
+
+  /// <summary>Writes every non-root node (inodes, B+ trees, file data) depth-first.</summary>
+  private void WriteNode(byte[] image, TreeNode dir) {
+    foreach (var child in dir.Children.Values) {
+      if (child.IsDir) {
+        WriteDirectoryInode(image, child.InodeBlock, child.BtreeBlock, child.ParentInodeBlock, 0);
+        WriteDirBtreeLeaf(image, child);
+      } else {
+        var data = child.Data ?? [];
+        WriteFileInode(image, child.InodeBlock, child.ParentInodeBlock, child.DataStartBlock, child.DataBlocks, data.Length);
+        if (data.Length > 0)
+          data.CopyTo(image.AsSpan(child.DataStartBlock * BlockSize));
+      }
+    }
+
+    foreach (var child in dir.Children.Values)
+      if (child.IsDir)
+        WriteNode(image, child);
   }
 
   private static void WriteSuperblock(byte[] image, int numBlocks, int usedBlocks) {
@@ -304,8 +379,17 @@ internal sealed class BfsWriter {
     BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + InodeDataStreamOffset + 136), BlockSize);
   }
 
-  private void WriteRootDirBtreeLeaf(byte[] image, List<(string Name, byte[] Data, int InodeBlock, int DataStartBlock, int DataBlocks)> files) {
-    var off = RootDirBtreeBlock * BlockSize;
+  private static void WriteDirBtreeLeaf(byte[] image, TreeNode dir) {
+    // Children are already ordered (SortedDictionary, ordinal). The BFS B+ tree
+    // requires entries sorted by key; this provides a stable, sorted order.
+    var entries = dir.Children.Values
+      .Select(c => (c.Name, c.InodeBlock))
+      .ToList();
+    WriteBtreeLeaf(image, dir.BtreeBlock, entries);
+  }
+
+  private static void WriteBtreeLeaf(byte[] image, int btreeBlock, List<(string Name, int InodeBlock)> entries) {
+    var off = btreeBlock * BlockSize;
 
     // BFS B+ tree header (node header):
     // Per Giampaolo's book (p.170-175):
@@ -320,7 +404,7 @@ internal sealed class BfsWriter {
     BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off), -1L);      // left_link
     BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + 8), -1L);  // right_link
     BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + 16), -1L); // overflow_link
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 24), (ushort)files.Count); // all_key_count
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 24), (ushort)entries.Count); // all_key_count
     // all_key_length computed below
 
     // After the 28-byte header:
@@ -338,24 +422,24 @@ internal sealed class BfsWriter {
 
     var headerSize = 28;
     var keyLenTableOffset = off + headerSize;
-    var keyLenTableSize = files.Count * 2; // u16 per key
+    var keyLenTableSize = entries.Count * 2; // u16 per key
     var keyDataOffset = keyLenTableOffset + keyLenTableSize;
 
-    // Build key data (concatenated filenames)
+    // Build key data (concatenated entry names)
     var keyBytes = new List<byte>();
     var cumulativeLengths = new List<ushort>();
-    foreach (var (name, _, _, _, _) in files) {
+    foreach (var (name, _) in entries) {
       var nameBytes = Encoding.UTF8.GetBytes(name);
       keyBytes.AddRange(nameBytes);
       cumulativeLengths.Add((ushort)keyBytes.Count);
     }
 
-    // Check that everything fits in one block
-    var valuesSize = files.Count * 8; // u64 per value
+    // Check that everything fits in one block (single-leaf node limitation)
+    var valuesSize = entries.Count * 8; // u64 per value
     var totalUsed = headerSize + keyLenTableSize + keyBytes.Count + valuesSize;
     if (totalUsed > BlockSize)
       throw new InvalidOperationException(
-        $"BFS B+ tree leaf overflow: {totalUsed} bytes needed but block size is {BlockSize}. Reduce the number of files.");
+        $"BFS B+ tree leaf overflow: {totalUsed} bytes needed but block size is {BlockSize}. Reduce the number of entries in a single directory.");
 
     // Write all_key_length
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 26), (ushort)keyBytes.Count);
@@ -370,10 +454,9 @@ internal sealed class BfsWriter {
     // Write values from the END of the block (growing downward)
     // Values are at: block_end - (key_count * 8) + (i * 8)
     var valuesStart = off + BlockSize - valuesSize;
-    for (var i = 0; i < files.Count; i++) {
-      var (_, _, inodeBlock, _, _) = files[i];
+    for (var i = 0; i < entries.Count; i++) {
       // off_t = block number for single-AG (AG=0, shift irrelevant when AG=0)
-      BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(valuesStart + i * 8), inodeBlock);
+      BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(valuesStart + i * 8), entries[i].InodeBlock);
     }
   }
 
@@ -385,7 +468,7 @@ internal sealed class BfsWriter {
     // all_key_count = 0, all_key_length = 0 — already zero
   }
 
-  private static void WriteFileInode(byte[] image, int inodeBlock, int dataStartBlock, int dataBlocks, int fileSize) {
+  private static void WriteFileInode(byte[] image, int inodeBlock, int parentInodeBlock, int dataStartBlock, int dataBlocks, int fileSize) {
     var off = inodeBlock * BlockSize;
 
     // magic1
@@ -402,8 +485,8 @@ internal sealed class BfsWriter {
     // create_time at 28 = 0
     // last_modified_time at 36 = 0
 
-    // parent = root dir inode
-    WriteBlockRun(image, off + 44, 0, RootDirInodeBlock, 1);
+    // parent = containing directory inode
+    WriteBlockRun(image, off + 44, 0, (ushort)parentInodeBlock, 1);
 
     // inode_size at 64
     BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(off + 64), InodeSize);

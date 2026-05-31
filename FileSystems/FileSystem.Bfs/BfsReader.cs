@@ -15,6 +15,9 @@ internal sealed class BfsReader {
   private const uint InodeMagic = 0x3BDE0AD9;
   private const int InodeDataStreamOffset = 72;
   private const int NumDirectBlocks = 12;
+  private const uint S_IFDIR = 0x4000;
+  private const uint S_IFMT = 0xF000;
+  private const int MaxDirectoryDepth = 64; // guard against cyclic/corrupt trees
 
   private readonly byte[] _image;
   private readonly int _blockSize;
@@ -48,16 +51,55 @@ internal sealed class BfsReader {
     if (inodeMagic != InodeMagic)
       throw new InvalidDataException($"BFS: root dir inode magic mismatch: 0x{inodeMagic:X8}.");
 
-    // data_stream.direct[0] = B+ tree leaf block_run
-    var btreeRun = ReadBlockRun(_image, rootDirInodeOffset + InodeDataStreamOffset);
-    var btreeOffset = btreeRun.Start * _blockSize;
-
-    Entries = ParseBtreeLeaf(btreeOffset);
+    // Walk the directory tree starting at the root directory, descending into
+    // subdirectory inodes and surfacing each file (and directory) at its full
+    // path. Names are joined with '/'.
+    var entries = new List<BfsFileEntry>();
+    var visited = new HashSet<int>();
+    WalkDirectory(rootDirRun.Start, prefix: string.Empty, depth: 0, entries, visited);
+    Entries = entries;
   }
 
-  /// <summary>Extracts file data for the given entry.</summary>
+  private void WalkDirectory(int dirInodeBlock, string prefix, int depth, List<BfsFileEntry> entries, HashSet<int> visited) {
+    if (depth > MaxDirectoryDepth) return;
+    if (!visited.Add(dirInodeBlock)) return; // already walked — avoid cycles
+
+    var dirInodeOffset = dirInodeBlock * _blockSize;
+    if (dirInodeOffset < 0 || dirInodeOffset + InodeDataStreamOffset + 8 > _image.Length) return;
+    if (BinaryPrimitives.ReadUInt32LittleEndian(_image.AsSpan(dirInodeOffset)) != InodeMagic) return;
+
+    var btreeRun = ReadBlockRun(_image, dirInodeOffset + InodeDataStreamOffset);
+    var btreeOffset = btreeRun.Start * _blockSize;
+
+    foreach (var (name, inodeBlock) in ParseBtreeLeafEntries(btreeOffset)) {
+      var fullName = prefix.Length == 0 ? name : prefix + "/" + name;
+      var inodeOffset = inodeBlock * _blockSize;
+      var (isDir, size) = ReadInodeKindAndSize(inodeOffset);
+
+      entries.Add(new BfsFileEntry(fullName, size, inodeBlock, isDir));
+
+      if (isDir)
+        WalkDirectory(inodeBlock, fullName, depth + 1, entries, visited);
+    }
+  }
+
+  /// <summary>Reads an inode's mode/size; returns whether it is a directory and its logical size.</summary>
+  private (bool IsDir, long Size) ReadInodeKindAndSize(int inodeOffset) {
+    if (inodeOffset < 0 || inodeOffset + InodeDataStreamOffset + 136 + 8 > _image.Length) return (false, 0);
+    if (BinaryPrimitives.ReadUInt32LittleEndian(_image.AsSpan(inodeOffset)) != InodeMagic) return (false, 0);
+
+    var mode = BinaryPrimitives.ReadUInt32LittleEndian(_image.AsSpan(inodeOffset + 20));
+    var isDir = (mode & S_IFMT) == S_IFDIR;
+    var size = isDir
+      ? 0L
+      : BinaryPrimitives.ReadInt64LittleEndian(_image.AsSpan(inodeOffset + InodeDataStreamOffset + 136));
+    if (size < 0 || size > _image.Length) size = 0;
+    return (isDir, size);
+  }
+
+  /// <summary>Extracts file data for the given entry. Directories yield no bytes.</summary>
   public byte[] Extract(BfsFileEntry entry) {
-    if (entry.Size == 0) return [];
+    if (entry.IsDirectory || entry.Size == 0) return [];
 
     // Read the file inode
     var inodeOffset = entry.InodeBlock * _blockSize;
@@ -95,10 +137,10 @@ internal sealed class BfsReader {
     return result;
   }
 
-  private List<BfsFileEntry> ParseBtreeLeaf(int leafOffset) {
-    var entries = new List<BfsFileEntry>();
+  private List<(string Name, int InodeBlock)> ParseBtreeLeafEntries(int leafOffset) {
+    var entries = new List<(string Name, int InodeBlock)>();
 
-    if (leafOffset + 28 > _image.Length)
+    if (leafOffset < 0 || leafOffset + 28 > _image.Length)
       return entries;
 
     // B+ tree leaf header:
@@ -141,17 +183,7 @@ internal sealed class BfsReader {
       // For single-AG with AG=0: off_t = block number
       var inodeBlock = (int)inodeBlockOffT;
 
-      // Read file size from the inode's data_stream
-      var size = 0L;
-      var inodeOffset = inodeBlock * _blockSize;
-      if (inodeOffset + InodeDataStreamOffset + 136 + 8 <= _image.Length) {
-        var magic = BinaryPrimitives.ReadUInt32LittleEndian(_image.AsSpan(inodeOffset));
-        if (magic == InodeMagic)
-          size = BinaryPrimitives.ReadInt64LittleEndian(
-            _image.AsSpan(inodeOffset + InodeDataStreamOffset + 136));
-      }
-
-      entries.Add(new BfsFileEntry(name, size, inodeBlock));
+      entries.Add((name, inodeBlock));
     }
 
     return entries;
@@ -167,5 +199,5 @@ internal sealed class BfsReader {
   }
 }
 
-/// <summary>Represents a file entry in a BFS image.</summary>
-internal sealed record BfsFileEntry(string Name, long Size, int InodeBlock);
+/// <summary>Represents a file or directory entry in a BFS image, named by its full path.</summary>
+internal sealed record BfsFileEntry(string Name, long Size, int InodeBlock, bool IsDirectory = false);
