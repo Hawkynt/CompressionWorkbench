@@ -633,13 +633,37 @@ public class OsIntegrationTests {
     var inputs = files.Keys.Select(n => new ArchiveInput(Path.Combine(dir, n), n)).ToList();
     ArchiveOperations.Create(fatPath, inputs, new CompressionOptions());
 
-    // Use mdir to list the FAT image
-    var result = RunToolChecked("mdir", $"-i \"{fatPath}\"");
+    // Use mdir in brief recursive mode (-b -/): it prints one dotted full path
+    // per entry (e.g. "::/REPEAT.TXT"), unlike the default 8.3 columnar form.
+    var result = RunToolChecked("mdir", $"-b -/ -i \"{fatPath}\"");
     foreach (var name in files.Keys) {
       // mdir shows 8.3 names, check case-insensitively
       Assert.That(result.StdOut.ToUpperInvariant(), Does.Contain(Path.GetFileName(name).ToUpperInvariant()),
         $"mdir output does not contain '{name}'");
     }
+  }
+
+  [Test]
+  public void Linux_Mtools_OurFat_NestedDirs_ReadByMdir() {
+    if (!IsLinux) Assert.Ignore("Linux-only test");
+    if (!HasCommand("mdir")) Assert.Ignore("mtools not installed");
+
+    // Build an image with a real subdirectory tree and verify an independent
+    // FAT implementation (mtools) reads the nested files at their full paths —
+    // proving the writer no longer flattens directories into the root.
+    var (dir, files) = CreateDirectoryTree();
+    var fatPath = Path.Combine(_tmpDir, "nested.fat");
+    var inputs = files.Keys
+      .Select(n => new ArchiveInput(Path.Combine(dir, n), n.Replace('\\', '/')))
+      .ToList();
+    ArchiveOperations.Create(fatPath, inputs, new CompressionOptions());
+
+    var result = RunToolChecked("mdir", $"-b -/ -i \"{fatPath}\"").StdOut.ToUpperInvariant().Replace('\\', '/');
+    Assert.Multiple(() => {
+      Assert.That(result, Does.Contain("/ROOT.TXT"), "root file present");
+      Assert.That(result, Does.Contain("/SUBDIR/DATA.TXT"), "one-level nested file at its path");
+      Assert.That(result, Does.Contain("/SUBDIR/NESTED/DEEP.BIN"), "two-level nested file at its path");
+    });
   }
 
   [Test]

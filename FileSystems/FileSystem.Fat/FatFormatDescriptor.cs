@@ -358,7 +358,7 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".img";
-  public IReadOnlyList<string> Extensions => [".img", ".ima", ".flp"];
+  public IReadOnlyList<string> Extensions => [".img", ".ima", ".flp", ".fat"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
