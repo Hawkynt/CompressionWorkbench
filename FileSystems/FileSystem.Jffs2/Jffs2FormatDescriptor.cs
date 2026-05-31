@@ -11,7 +11,7 @@ namespace FileSystem.Jffs2;
 /// JFFS2 (Journaling Flash File System v2) format descriptor.
 /// Supports: list, extract, create (WORM), modify (rebuild-based), defragment, extent map.
 /// </summary>
-public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
+public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "Jffs2";
   public string DisplayName => "JFFS2";
   public FormatCategory Category => FormatCategory.Archive;
@@ -213,6 +213,28 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       result.Add(new DefragBlockInfo(off, data.Length - off, DefragBlockKind.Free));
 
     return result;
+  }
+
+  // ── IWipeEmpty ────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros the unused (free) regions of a JFFS2 image. JFFS2 is a
+  /// log-structured flash filesystem: file data lives in variably-sized inode
+  /// nodes packed back to back, with no fixed cluster/block allocation — there
+  /// are no cluster tips to wipe. Free space is the erased-flash tail and any
+  /// padding/clean gaps, which the generic wiper zero-fills.
+  ///
+  /// <para>Cluster-tip wiping is therefore N/A here: no file-size lookup is
+  /// supplied and <paramref name="wipeClusterTips"/> is forced off so the
+  /// per-node log layout is never mistaken for cluster-aligned runs.</para>
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = this.EnumerateExtents(image);
+    // Log-structured: no cluster tips. Zero only free regions.
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 
   // ── Shared helpers ────────────────────────────────────────────────────
