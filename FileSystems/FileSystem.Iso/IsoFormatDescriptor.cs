@@ -7,7 +7,7 @@ namespace FileSystem.Iso;
 /// <summary>
 /// Format descriptor for ISO 9660 optical disc images.
 /// </summary>
-public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks the 32 KiB system area, the volume descriptor sequence, the path
@@ -17,6 +17,43 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => IsoExtentMap.Enumerate(image);
+
+  // ── IWipeEmpty ─────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros all unused space in the ISO 9660 image: the unused remainder of the
+  /// system area, free sectors and the sector-tip slack at the tail of each
+  /// file's last 2048-byte sector. ECMA-119 stores every file contiguously and
+  /// pads its final sector with zeros — the bytes between the file's logical
+  /// length and the sector boundary are the cluster tip. The extent map clamps
+  /// each Used run to the file's logical length, so the tip presents as a free
+  /// gap that the generic <see cref="UnusedSpaceWiper"/> zero-fills. The size
+  /// lookup is keyed by the reader's full path, matching the extent FileName.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        using var reader = new IsoReader(image, leaveOpen: true);
+        var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var entry in reader.Entries)
+          if (!entry.IsDirectory)
+            sizeMap[entry.Name] = entry.Size;
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    var extents = IsoExtentMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
+  }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
