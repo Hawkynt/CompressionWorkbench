@@ -21,10 +21,12 @@ namespace FileSystem.ProDos;
 /// with seedling / sapling / tree storage types as appropriate.
 /// </para>
 /// <para>
-/// Subdirectories occupy a single 512-byte block in this writer, so a subdirectory holds at
-/// most twelve children (one slot is the subdirectory header). The volume directory keeps its
-/// 4-block chain (51 root children). Deeper or wider trees that exceed a single subdirectory
-/// block are rejected with a clear error rather than silently corrupting the image.
+/// Subdirectories grow their block chain on demand: each subdirectory is allocated
+/// ceil((childCount + 1) / 13) blocks, chained through the prev/next pointer pair at each
+/// block's start, so a single subdirectory can hold hundreds of children (limited only by the
+/// volume's free-block count). The volume (root) directory keeps the canonical fixed 4-block
+/// chain at blocks 2..5 — a genuine ProDOS layout constraint — and therefore still holds at
+/// most 51 children; place large fan-outs in a subdirectory rather than the volume root.
 /// </para>
 /// </remarks>
 public sealed class ProDosWriter {
@@ -62,8 +64,10 @@ public sealed class ProDosWriter {
     public readonly Dictionary<string, DirNode> SubDirs = new(StringComparer.Ordinal);
     public readonly List<DirNode> SubDirOrder = [];
 
-    /// <summary>Block that holds this directory's first (only, in this writer) block.</summary>
-    public int FirstBlock;
+    /// <summary>The blocks (in chain order) that hold this directory's entries.</summary>
+    public int[] Blocks = [];
+    /// <summary>Block that holds this directory's first block (header block).</summary>
+    public int FirstBlock => this.Blocks.Length > 0 ? this.Blocks[0] : 0;
     /// <summary>Parent directory's block where this directory's 0xD entry lives.</summary>
     public int ParentBlock;
     /// <summary>1-based slot index of this directory's 0xD entry within the parent block.</summary>
@@ -216,10 +220,20 @@ public sealed class ProDosWriter {
     return new FileNode { Name = name, FileType = fileType, StorageType = 3, KeyPointer = masterKey, BlocksUsed = blocksUsed, Eof = data.Length };
   }
 
-  /// <summary>Allocates one block for each subdirectory (depth-first), recording its first block.</summary>
+  /// <summary>
+  /// Allocates a directory block chain for each subdirectory (depth-first), sizing the chain to
+  /// hold the subdirectory header plus one entry per child. With thirteen 39-byte entries per
+  /// 512-byte block, a directory needs ceil((childCount + 1) / 13) blocks; they are chained via
+  /// the prev/next pointers at each block's start so the directory can hold hundreds of entries.
+  /// </summary>
   private static void AllocateSubDirBlocks(DirNode dir, bool[] used, ref int nextFreeBlock) {
     foreach (var sub in dir.SubDirOrder) {
-      sub.FirstBlock = AllocateBlock(used, ref nextFreeBlock);
+      // Header occupies slot 0 of the first block, so total slots needed = ChildCount + 1.
+      var blockCount = Math.Max(1, (sub.ChildCount + 1 + EntriesPerBlock - 1) / EntriesPerBlock);
+      var blocks = new int[blockCount];
+      for (var i = 0; i < blockCount; i++)
+        blocks[i] = AllocateBlock(used, ref nextFreeBlock);
+      sub.Blocks = blocks;
       AllocateSubDirBlocks(sub, used, ref nextFreeBlock);
     }
   }
@@ -267,42 +281,50 @@ public sealed class ProDosWriter {
       (ushort)totalBlocks);                            // total_blocks
 
     // Write children starting at slot 1 of block 2 (slot 0 is the header), then into blocks 3/4/5.
-    WriteDirectoryChildren(image, root, VolumeDirStartBlock, VolumeDirBlockCount, firstSlot: 1);
+    var volumeBlocks = new int[VolumeDirBlockCount];
+    for (var i = 0; i < VolumeDirBlockCount; i++) volumeBlocks[i] = VolumeDirStartBlock + i;
+    WriteDirectoryChildren(image, root, volumeBlocks, firstSlot: 1);
   }
 
   /// <summary>
-  /// Writes a directory's file and subdirectory entries into its block chain starting at
-  /// <paramref name="firstSlot"/>. Subdirectory entries (0xD) record their first block, and the
-  /// subdirectory node remembers the parent block + slot so its 0xE header can back-reference them.
+  /// Writes a directory's file and subdirectory entries into its block chain (given as the ordered
+  /// list of blocks holding the directory) starting at <paramref name="firstSlot"/>. The header
+  /// block is <paramref name="blocks"/>[0]; every entry's header_pointer references it. Subdirectory
+  /// entries (0xD) record their first block, and the subdirectory node remembers the parent block +
+  /// 1-based slot so its 0xE header can back-reference them.
   /// </summary>
   private static void WriteDirectoryChildren(byte[] image, DirNode dir,
-      int firstBlock, int blockCount, int firstSlot) {
+      int[] blocks, int firstSlot) {
 
+    var headerBlock = blocks[0];
+    var blockCount = blocks.Length;
     var slot = firstSlot;
 
-    int PlaceEntry() {
+    (int Offset, int Block, int SlotInBlock) PlaceEntry() {
       var dirBlockIndex = slot / EntriesPerBlock;
       var slotInBlock = slot % EntriesPerBlock;
       if (dirBlockIndex >= blockCount)
         throw new InvalidOperationException(
           $"ProDOS: directory '{dir.Name}' has too many entries for its {blockCount}-block capacity " +
-          $"({EntriesPerBlock * blockCount - 1} max). Wider directory growth is not supported.");
+          $"({EntriesPerBlock * blockCount - 1} max).");
 
-      var entryOff = (firstBlock + dirBlockIndex) * BlockSize + 4 + slotInBlock * EntrySize;
-      return entryOff;
+      var block = blocks[dirBlockIndex];
+      var entryOff = block * BlockSize + 4 + slotInBlock * EntrySize;
+      return (entryOff, block, slotInBlock);
     }
 
     // Files first, then subdirectories — order is not semantically significant.
     foreach (var file in dir.Files) {
-      WriteFileEntry(image, PlaceEntry(), file, firstBlock);
+      WriteFileEntry(image, PlaceEntry().Offset, file, headerBlock);
       slot++;
     }
 
     foreach (var sub in dir.SubDirOrder) {
-      WriteSubDirEntry(image, PlaceEntry(), sub, firstBlock);
+      var (offset, block, slotInBlock) = PlaceEntry();
+      WriteSubDirEntry(image, offset, sub, headerBlock);
       // The consumed slot pins the parent block + 1-based entry number for the 0xE header.
-      sub.ParentBlock = firstBlock + slot / EntriesPerBlock;
-      sub.ParentEntryNumber = (slot % EntriesPerBlock) + 1;
+      sub.ParentBlock = block;
+      sub.ParentEntryNumber = slotInBlock + 1;
       slot++;
     }
   }
@@ -335,9 +357,10 @@ public sealed class ProDosWriter {
       image[entryOff + 1 + i] = (byte)sub.Name[i];
     image[entryOff + 0x10] = 0x0F;  // file_type DIR ($0F)
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(entryOff + 0x11), (ushort)sub.FirstBlock);  // key_pointer
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(entryOff + 0x13), 1);   // blocks_used (single-block dir)
+    var dirBlockCount = Math.Max(1, sub.Blocks.Length);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(entryOff + 0x13), (ushort)dirBlockCount);   // blocks_used
     // EOF = directory size in bytes = blocks * 512.
-    var eof = BlockSize;
+    var eof = dirBlockCount * BlockSize;
     image[entryOff + 0x15] = (byte)(eof & 0xFF);
     image[entryOff + 0x16] = (byte)((eof >> 8) & 0xFF);
     image[entryOff + 0x17] = (byte)((eof >> 16) & 0xFF);
@@ -355,11 +378,17 @@ public sealed class ProDosWriter {
   /// </summary>
   private static void WriteSubDirectories(byte[] image, DirNode dir) {
     foreach (var sub in dir.SubDirOrder) {
-      var off = sub.FirstBlock * BlockSize;
-      // Single-block directory: prev = next = 0.
-      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0), 0);
-      BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 2), 0);
+      // Link the subdirectory's block chain via the prev/next pointer pair at each block start.
+      var blocks = sub.Blocks;
+      for (var i = 0; i < blocks.Length; i++) {
+        var bOff = blocks[i] * BlockSize;
+        BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(bOff + 0),
+          (ushort)(i == 0 ? 0 : blocks[i - 1]));                       // prev
+        BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(bOff + 2),
+          (ushort)(i == blocks.Length - 1 ? 0 : blocks[i + 1]));       // next
+      }
 
+      var off = sub.FirstBlock * BlockSize;
       // Subdirectory header at entry 0 (offset 4): storage_type nibble 0xE.
       var hdr = off + 4;
       image[hdr + 0] = (byte)((0x0E << 4) | (sub.Name.Length & 0x0F));
@@ -376,8 +405,8 @@ public sealed class ProDosWriter {
       image[hdr + 0x28] = (byte)sub.ParentEntryNumber;  // parent_entry_number
       image[hdr + 0x29] = (byte)EntrySize;              // parent_entry_length
 
-      // Write this subdirectory's children into its single block (slot 0 is the header).
-      WriteDirectoryChildren(image, sub, sub.FirstBlock, blockCount: 1, firstSlot: 1);
+      // Write this subdirectory's children across its block chain (slot 0 is the header).
+      WriteDirectoryChildren(image, sub, sub.Blocks, firstSlot: 1);
 
       // Recurse into deeper subdirectories.
       WriteSubDirectories(image, sub);
