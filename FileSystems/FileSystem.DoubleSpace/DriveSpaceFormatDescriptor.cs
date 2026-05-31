@@ -6,7 +6,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.DoubleSpace;
 
-public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
   public string Id => "DriveSpace";
   public string DisplayName => "DriveSpace CVF";
   public FormatCategory Category => FormatCategory.Archive;
@@ -81,6 +81,28 @@ public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveForm
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => DoubleSpaceExtentMap.Enumerate(image);
+
+  /// <summary>
+  /// Zeros all unused space in the CVF image: every physical sector in the DATA
+  /// region not claimed by a live file/directory run, plus any gaps outside the
+  /// metadata regions, is overwritten with zeros.
+  /// <para>
+  /// Cluster-tip wiping is not applicable to a CVF: the DATA region holds
+  /// <em>compressed/stored</em> sector runs whose physical byte length is
+  /// unrelated to the logical (uncompressed) file size recorded in the inner
+  /// FAT directory. Zeroing a tail by logical-size offset would corrupt the
+  /// encoded run, so only whole free sectors are cleared.
+  /// </para>
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = DoubleSpaceExtentMap.Enumerate(image);
+    // Compressed/stored physical runs — logical file size does not map to a
+    // physical cluster-aligned tail, so cluster-tip wiping is disabled.
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
+  }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
