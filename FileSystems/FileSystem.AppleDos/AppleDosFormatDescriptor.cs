@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.AppleDos;
 
-public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks the VTOC + catalog (track 17) and per-file T/S list chains,
@@ -146,5 +146,30 @@ public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormat
     var moves = Compression.Core.Layout.DefragPlanner.Plan(extents, 0, imageSize, 256, options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
     if (moves.Count == 0) return;
     DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize);
+  }
+
+  // ── IWipeEmpty ─────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros all unused space in an Apple DOS 3.3 image: every 256-byte sector not
+  /// claimed by the VTOC/catalog (track 17) or by a live file's track/sector
+  /// list and data sectors. Driven by the generic <see cref="UnusedSpaceWiper"/>
+  /// over the AppleDOS extent map.
+  ///
+  /// <para>Per-file cluster-tip wiping is <em>not</em> applied: an AppleDOS
+  /// file's extent is a coalesced run that interleaves its track/sector-list
+  /// sectors with the data sectors, so the file's logical bytes are not a flat
+  /// <c>offset..offset+size</c> region. Treating the run's tail as slack would
+  /// clobber a T/S-list sector or a neighbouring file, so tip wiping is N/A
+  /// here; only genuinely free sectors are zeroed.</para>
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = AppleDosExtentMap.Enumerate(image);
+    // Tips are N/A for AppleDOS (track/sector-list sectors interleave with data
+    // in a file's run); wipe free sectors only, never per-extent tails.
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 }
