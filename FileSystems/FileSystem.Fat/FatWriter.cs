@@ -46,6 +46,8 @@ public sealed class FatWriter {
   /// <param name="transactionFat">Mark the image for transaction-based FAT writes (TFAT / Windows CE style).</param>
   /// <param name="requestedRootEntries">Override the root directory entry count for FAT12/16 (0 = use defaults:
   /// 224 for FAT12, 512 for FAT16). DMF distribution disks used 16 to reclaim sectors for data.</param>
+  /// <param name="forceLfn">Emit a VFAT long-name entry for every file/dir (with a generated 8.3 alias),
+  /// even names that already fit 8.3 — the way Windows always records a long name. Implies <paramref name="enableLfn"/>.</param>
   /// <returns>Complete disk image as byte array.</returns>
   public byte[] Build(int totalSectors = 2880, int bytesPerSector = 512, int requestedClusterSize = 0,
     string? volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false,
