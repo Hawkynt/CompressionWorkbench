@@ -188,6 +188,106 @@ public class F2fsTests {
     Assert.Throws<InvalidOperationException>(() => w.AddFile("big.bin", new byte[924 * 4096]));
   }
 
+  // ------------------------------------------------------------------
+  // Image-size options / auto-sizing
+  // ------------------------------------------------------------------
+
+  private const long SegmentSizeBytes = 2L * 1024 * 1024;
+
+  private static string WriteTempFile(byte[] data) {
+    var path = Path.GetTempFileName();
+    File.WriteAllBytes(path, data);
+    return path;
+  }
+
+  private static FormatCreateOptions MakeOptions(params (string Key, string Value)[] kv)
+    => new() { FormatSpecific = kv.ToDictionary(x => x.Key, x => x.Value) };
+
+  private static List<ArchiveInputInfo> MakeInputs(params (string Name, byte[] Data)[] files)
+    => files.Select(f => new ArchiveInputInfo(WriteTempFile(f.Data), f.Name, false)).ToList();
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_ExposesImageSizeSchema() {
+    var desc = new F2fsFormatDescriptor();
+    Assert.That(desc, Is.InstanceOf<IFormatOptionsSchema>());
+
+    var schema = ((IFormatOptionsSchema)desc).OptionsSchema;
+    var imageSize = schema.SingleOrDefault(o => o.Key == "ImageSize");
+    Assert.That(imageSize, Is.Not.Null);
+    Assert.That(imageSize!.AllowedValues, Does.Contain("Auto (fit to files)"));
+    Assert.That(imageSize.AllowedValues, Does.Contain("64 MB"));
+    Assert.That(imageSize.AllowedValues, Does.Contain("128 MB"));
+
+    Assert.That(schema.Any(o => o.Key == "VolumeLabel"), Is.True);
+  }
+
+  [Test, Category("HappyPath")]
+  public void BuildAutoSized_RoundTripsViaReader() {
+    var w = new F2fsWriter();
+    var payload = Encoding.UTF8.GetBytes("auto-sized payload");
+    w.AddFile("a", payload);
+    var img = w.BuildAutoSized();
+
+    using var ms = new MemoryStream(img);
+    var r = new F2fsReader(ms);
+    Assert.That(r.Entries, Has.Count.EqualTo(1));
+    Assert.That(r.Extract(r.Entries[0]), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath")]
+  public void BuildAutoSized_NeverBelowMinimum() {
+    var w = new F2fsWriter();
+    w.AddFile("t", new byte[] { 1 });
+    var img = w.BuildAutoSized();
+    Assert.That(img.Length, Is.GreaterThanOrEqualTo(F2fsWriter.MinimumSegmentCount * (int)SegmentSizeBytes));
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void Build_BelowMinimumSegments_Throws() {
+    var w = new F2fsWriter();
+    w.AddFile("t", new byte[] { 1 });
+    Assert.Throws<ArgumentOutOfRangeException>(() => w.Build(F2fsWriter.MinimumSegmentCount - 1));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Create_ExplicitSizeIsLargerThanAuto() {
+    var desc = new F2fsFormatDescriptor();
+    var inputs = MakeInputs(("small.bin", new byte[] { 1, 2, 3, 4 }));
+
+    using var autoStream = new MemoryStream();
+    desc.Create(autoStream, inputs, MakeOptions(("ImageSize", "Auto (fit to files)")));
+
+    using var explicitStream = new MemoryStream();
+    desc.Create(explicitStream, inputs, MakeOptions(("ImageSize", "128 MB")));
+
+    Assert.That(explicitStream.Length, Is.EqualTo(128L * 1024 * 1024));
+    Assert.That(explicitStream.Length, Is.GreaterThan(autoStream.Length));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Create_RoundTripsContentAndLabel() {
+    var desc = new F2fsFormatDescriptor();
+    var payload = Encoding.UTF8.GetBytes("hi");
+    var inputs = MakeInputs(("greeting.txt", payload));
+
+    using var stream = new MemoryStream();
+    desc.Create(stream, inputs, MakeOptions(
+      ("ImageSize", "Auto (fit to files)"),
+      ("VolumeLabel", "MYVOL")));
+
+    var img = stream.ToArray();
+
+    // Content round-trips.
+    using var ms = new MemoryStream(img);
+    var r = new F2fsReader(ms);
+    Assert.That(r.Entries, Has.Count.EqualTo(1));
+    Assert.That(r.Extract(r.Entries[0]), Is.EqualTo(payload));
+
+    // Volume label is written as UTF-16LE at superblock offset 1024 + 124.
+    var label = Encoding.Unicode.GetString(img, 1024 + 124, "MYVOL".Length * 2);
+    Assert.That(label, Is.EqualTo("MYVOL"));
+  }
+
   /// <summary>
   /// Lock the F2FS capability surface at WORM. The writer emits a real
   /// kernel-spec multi-segment image (SIT/NAT journals, checkpoint pack,

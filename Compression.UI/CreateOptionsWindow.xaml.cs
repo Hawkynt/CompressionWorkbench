@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using Compression.Lib;
+using System.Collections.ObjectModel;
 using F = Compression.Lib.FormatDetector.Format;
 
 namespace Compression.UI;
@@ -52,6 +53,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
     _selectedSfxType = SfxTypeOptions[0];
     _selectedSfxTarget = SfxTargetOptions[0];
     PopulateAll();
+    PopulateFormatSpecific();
   }
 
   // ── Bound properties ────────────────────────────────────────────────
@@ -857,6 +859,10 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
     var dictSize = ParseDictSizeBytes(SelectedDictSize);
     var solidSize = ParseSolidSizeBytes(SelectedSolidSize);
 
+    Dictionary<string, string>? formatSpecific = null;
+    if (FormatSpecificOptions.Count > 0)
+      formatSpecific = FormatSpecificOptions.ToDictionary(o => o.Key, o => o.CurrentValue);
+
     return new CompressionOptions {
       Method = method,
       Level = level,
@@ -867,6 +873,7 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
       Password = string.IsNullOrEmpty(Password) ? null : Password,
       EncryptFilenames = EncryptFilenames,
       ZipEncryption = SelectedEncryptionMethod?.Contains("ZipCrypto") == true ? "zipcrypto" : null,
+      FormatSpecific = formatSpecific,
     };
   }
 
@@ -1010,4 +1017,95 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
     OnPropertyChanged(name);
     return true;
   }
+
+  // ── Format-specific options (IFormatOptionsSchema) ──────────────────────
+
+  public ObservableCollection<FormatOptionViewModel> FormatSpecificOptions { get; } = [];
+  public bool ShowFormatSpecific => FormatSpecificOptions.Count > 0;
+
+  private void PopulateFormatSpecific() {
+    FormatSpecificOptions.Clear();
+    try {
+      Compression.Lib.FormatRegistration.EnsureInitialized();
+      var ops = Compression.Registry.FormatRegistry.GetArchiveOps(_format.ToString());
+      if (ops is Compression.Registry.IFormatOptionsSchema schema) {
+        foreach (var descriptor in schema.OptionsSchema)
+          FormatSpecificOptions.Add(new FormatOptionViewModel(descriptor));
+      }
+    } catch { /* registry not ready or format unknown — no options shown */ }
+
+    // Wire DependsOn: give each option access to its siblings, then when any
+    // option's value changes re-evaluate visibility for the whole group.
+    var all = FormatSpecificOptions.ToList();
+    foreach (var opt in all)
+      opt.Initialize(all);
+    foreach (var opt in all) {
+      opt.PropertyChanged += (_, e) => {
+        if (e.PropertyName == nameof(FormatOptionViewModel.CurrentValue))
+          foreach (var sibling in all)
+            sibling.NotifyVisibilityChanged();
+      };
+    }
+
+    OnPropertyChanged(nameof(ShowFormatSpecific));
+  }
+}
+
+/// <summary>ViewModel for one knob from <see cref="Compression.Registry.IFormatOptionsSchema"/>.</summary>
+internal sealed class FormatOptionViewModel : INotifyPropertyChanged {
+  private string _currentValue;
+  private IReadOnlyList<FormatOptionViewModel>? _siblings;
+
+  public Compression.Registry.FormatOptionDescriptor Descriptor { get; }
+  public string Key => Descriptor.Key;
+  public string DisplayName => Descriptor.DisplayName;
+  public string? ToolTip => Descriptor.Description;
+
+  public bool IsEnum => Descriptor.Kind is Compression.Registry.FormatOptionKind.Enum
+    || (Descriptor.Kind is Compression.Registry.FormatOptionKind.Integer
+        && Descriptor.AllowedValues is { Count: > 0 });
+  public bool IsBool => Descriptor.Kind == Compression.Registry.FormatOptionKind.Boolean;
+  public bool IsText => !IsEnum && !IsBool;
+
+  public string[] AllowedValues => Descriptor.AllowedValues?.ToArray() ?? [];
+
+  /// <summary>Whether this option should be visible (false when its DependsOn condition is not met).</summary>
+  public bool IsVisible {
+    get {
+      if (Descriptor.DependsOn is null || _siblings is null) return true;
+      var eq = Descriptor.DependsOn.IndexOf('=');
+      if (eq < 0) return true;
+      var depKey  = Descriptor.DependsOn[..eq];
+      var allowed = Descriptor.DependsOn[(eq + 1)..].Split('|');
+      var dep = _siblings.FirstOrDefault(o => o.Key == depKey);
+      return dep == null || allowed.Contains(dep.CurrentValue, StringComparer.OrdinalIgnoreCase);
+    }
+  }
+
+  /// <summary>The current string value of this option (two-way bound for text and combo controls).</summary>
+  public string CurrentValue {
+    get => _currentValue;
+    set { _currentValue = value; OnPropertyChanged(); }
+  }
+
+  /// <summary>Two-way bound for Boolean checkboxes; syncs to/from <see cref="CurrentValue"/>.</summary>
+  public bool IsChecked {
+    get => _currentValue == "true";
+    set { CurrentValue = value ? "true" : "false"; OnPropertyChanged(); }
+  }
+
+  public FormatOptionViewModel(Compression.Registry.FormatOptionDescriptor descriptor) {
+    Descriptor = descriptor;
+    _currentValue = descriptor.Default;
+  }
+
+  /// <summary>Called by <see cref="CreateOptionsViewModel"/> after all siblings are created.</summary>
+  public void Initialize(IReadOnlyList<FormatOptionViewModel> siblings) => _siblings = siblings;
+
+  /// <summary>Broadcasts a visibility re-evaluation (called when any sibling value changes).</summary>
+  public void NotifyVisibilityChanged() => OnPropertyChanged(nameof(IsVisible));
+
+  public event PropertyChangedEventHandler? PropertyChanged;
+  private void OnPropertyChanged([CallerMemberName] string? n = null)
+    => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
 }

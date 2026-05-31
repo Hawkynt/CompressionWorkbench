@@ -5,7 +5,33 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ExFat;
 
-public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "ImageSize",
+      DisplayName: "Image size",
+      Kind: FormatOptionKind.Enum,
+      Default: "Auto (fit to files)",
+      AllowedValues: ["Auto (fit to files)", "32 MB", "128 MB", "256 MB", "512 MB", "1 GB", "2 GB", "4 GB", "16 GB", "32 GB", "128 GB"],
+      Description: "Total image capacity. Auto sizes the image to exactly hold the files (recommended)."),
+    new FormatOptionDescriptor(
+      Key: "VolumeLabel",
+      DisplayName: "Volume label",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Volume name (max 15 chars, Unicode)."),
+    new FormatOptionDescriptor(
+      Key: "ClusterSize",
+      DisplayName: "Cluster size",
+      Kind: FormatOptionKind.Enum,
+      Default: "Auto",
+      AllowedValues: ["Auto", "4 KB", "8 KB", "16 KB", "32 KB", "64 KB", "128 KB"],
+      Description: "Allocation unit size. Auto picks the size that minimises slack + FAT overhead " +
+        "for the files being stored. Larger clusters reduce FAT overhead but waste more space per file."),
+  ];
 
   /// <summary>
   /// Walks the VBR + FAT + cluster heap and yields the actual on-disk
@@ -128,10 +154,31 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new ExFatWriter();
-    foreach (var (name, data) in FlatFiles(inputs))
-      w.AddFile(name, data);
-    output.Write(w.Build());
+    foreach (var input in inputs.Where(i => !i.IsDirectory))
+      w.AddFile(input.ArchiveName, File.ReadAllBytes(input.FullPath));
+
+    var specific = options.FormatSpecific;
+    var sizeMB = ParseExFatImageSizeMB(specific?.GetValueOrDefault("ImageSize"));
+    var clusterBytes = ParseExFatClusterSize(specific?.GetValueOrDefault("ClusterSize"));
+
+    var disk = sizeMB > 0
+      ? w.Build(sizeMB, clusterBytes)
+      : w.BuildAutoSized(clusterBytes);
+    output.Write(disk);
   }
+
+  private static int ParseExFatImageSizeMB(string? s) => s?.Trim() switch {
+    "32 MB"  => 32,  "128 MB" => 128,  "256 MB" => 256,
+    "512 MB" => 512, "1 GB"   => 1024, "2 GB"   => 2048,
+    "4 GB"   => 4096,"16 GB"  => 16384,"32 GB"  => 32768,"128 GB" => 131072,
+    _ => 0,
+  };
+
+  private static int ParseExFatClusterSize(string? s) => s?.Trim() switch {
+    "4 KB"  => 4096,  "8 KB"  => 8192,  "16 KB" => 16384,
+    "32 KB" => 32768, "64 KB" => 65536, "128 KB"=> 131072,
+    _ => 0,
+  };
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new ExFatReader(stream);

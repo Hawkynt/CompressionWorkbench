@@ -5,7 +5,27 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ProDos;
 
-public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+  // ProDOS uses fixed 512-byte blocks (no cluster-size knob), so the tunable
+  // parameters are the volume size (only 140 KB or 800 KB are supported by the
+  // writer) and the volume name.
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "ImageSize",
+      DisplayName: "Image size",
+      Kind: FormatOptionKind.Enum,
+      Default: "Auto (fit to files)",
+      AllowedValues: ["Auto (fit to files)", "140 KB (5.25\")", "800 KB (3.5\")"],
+      Description: "ProDOS volume size. Auto uses 140 KB and promotes to 800 KB when the files don't fit."),
+    new FormatOptionDescriptor(
+      Key: "VolumeLabel",
+      DisplayName: "Volume name",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "ProDOS volume name (max 15 chars; letters, digits and periods; must start with a letter)."),
+  ];
 
   /// <summary>
   /// Walks the volume directory + bitmap + per-file storage tiers
@@ -101,11 +121,19 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     var w = new ProDosWriter();
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
-    // Use the smaller floppy size by default; auto-promote to 800 KB when the 140 KB floppy
-    // would not fit. This keeps round-trip tests tiny while still allowing larger corpora.
+
+    // Honour an explicit volume size if the user picked one; otherwise use the
+    // smaller floppy and auto-promote to 800 KB when the 140 KB floppy won't fit.
     var floppyCap = (ProDosWriter.FloppyTotalBlocks - 10) * 512L;  // rough free-space cap
-    var totalBlocks = total > floppyCap ? ProDosWriter.Disk800KTotalBlocks : ProDosWriter.FloppyTotalBlocks;
-    output.Write(w.Build(totalBlocks: totalBlocks));
+    var totalBlocks = (options.FormatSpecific?.GetValueOrDefault("ImageSize")?.Trim()) switch {
+      "140 KB (5.25\")" => ProDosWriter.FloppyTotalBlocks,
+      "800 KB (3.5\")"  => ProDosWriter.Disk800KTotalBlocks,
+      _ => total > floppyCap ? ProDosWriter.Disk800KTotalBlocks : ProDosWriter.FloppyTotalBlocks,
+    };
+
+    var label = options.FormatSpecific?.GetValueOrDefault("VolumeLabel");
+    var volumeName = string.IsNullOrWhiteSpace(label) ? "WORM" : label!;
+    output.Write(w.Build(volumeName, totalBlocks));
   }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────

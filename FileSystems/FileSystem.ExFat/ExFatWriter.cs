@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using System.Numerics;
 using System.Text;
 
 namespace FileSystem.ExFat;
@@ -26,12 +27,57 @@ public sealed class ExFatWriter {
 
   public void AddFile(string name, byte[] data) => _files.Add((name, data));
 
-  public byte[] Build(int totalSizeMB = 8) {
+  /// <summary>
+  /// Builds the exFAT image using the smallest size that fits all files, with
+  /// the cluster size chosen by <see cref="Compression.Core.Layout.FilesystemLayoutOptimizer"/>
+  /// to minimise internal slack + FAT overhead.
+  /// </summary>
+  public byte[] BuildAutoSized(int requestedClusterBytes = 0) {
+    var fileSizes = _files.Select(f => (long)f.Data.Length).ToList();
     const int bytesPerSector = 512;
-    const int sectorsPerClusterShift = 3;
-    const int sectorsPerCluster = 1 << sectorsPerClusterShift;
-    const int clusterSize = bytesPerSector * sectorsPerCluster;
-    const int bytesPerSectorShift = 9;
+
+    // exFAT's conventional minimum cluster for volumes in this range is 4 KiB —
+    // Microsoft's formatter never goes smaller and our writer's layout assumes it.
+    // Candidates therefore start at 4 KiB so an empty/small format doesn't collapse
+    // to a 512-byte cluster (which broke the partition Add / round-trip path).
+    const int minClusterBytes = 4096;
+    int[] clusterCandidates = [4096, 8192, 16384, 32768, 65536, 131072];
+
+    var clusterBytes = requestedClusterBytes >= minClusterBytes
+      ? requestedClusterBytes
+      : Compression.Core.Layout.FilesystemLayoutOptimizer.SelectClusterSize(
+          clusterCandidates,
+          cb => {
+            if (cb < minClusterBytes) return null; // honour the 4 KiB floor
+            var clusters = Compression.Core.Layout.FilesystemLayoutOptimizer.DataClusters(fileSizes, cb);
+            var slack    = Compression.Core.Layout.FilesystemLayoutOptimizer.Slack(fileSizes, cb);
+            // exFAT FAT overhead: 4 bytes per cluster entry, 1 FAT copy.
+            var fatBytes = (clusters + 2) * 4L;
+            // Allocation bitmap: 1 bit per cluster.
+            var bitmapBytes = (clusters + 7) / 8;
+            return slack + fatBytes + bitmapBytes;
+          });
+
+    var totalDataBytes = fileSizes.Sum();
+    // Generous headroom: data + overhead + upcase table (~128 KB) + 5 % slack.
+    var neededBytes = (long)(totalDataBytes * 1.05) + clusterBytes * 8 + 128 * 1024 + 24 * bytesPerSector;
+    var totalSizeMB = (int)Math.Max(8, (neededBytes + 1024 * 1024 - 1) / (1024 * 1024));
+    return Build(totalSizeMB, clusterBytes);
+  }
+
+  /// <summary>Builds the exFAT image.</summary>
+  /// <param name="totalSizeMB">Total image size in megabytes.</param>
+  /// <param name="requestedClusterBytes">Cluster size in bytes (0 = use 4 KB default).</param>
+  public byte[] Build(int totalSizeMB = 8, int requestedClusterBytes = 0) {
+    const int bytesPerSector = 512;
+    var clusterBytes = requestedClusterBytes > 0 ? requestedClusterBytes : 4096;
+    // exFAT requires cluster size to be a power-of-two multiple of the sector size.
+    // Clamp to valid range and express as a shift.
+    clusterBytes = Math.Max(bytesPerSector, clusterBytes);
+    var sectorsPerClusterShift = BitOperations.Log2((uint)(clusterBytes / bytesPerSector));
+    var sectorsPerCluster = 1 << sectorsPerClusterShift;
+    var clusterSize = bytesPerSector * sectorsPerCluster;
+    const int bytesPerSectorShift = 9; // log2(512)
     const int fatOffsetSectors = 24;
     const int fatCount = 1;
 

@@ -22,6 +22,11 @@ public sealed class HfsPlusWriter {
   private const uint RootFolderCnid = 2;
   private const uint FirstUserCnid = 16;
 
+  // HFS+ B-tree node size. This is fixed independent of the allocation block
+  // size (real HFS+ stores it in the B-tree header), so the catalog always
+  // holds 4096-byte nodes regardless of how big an allocation block is.
+  internal const ushort CatalogNodeSize = 4096;
+
   // TN1150 HFSPlusCatalogFile layout.
   internal const int CatalogFileRecordSize = 248;
   internal const int CatalogForkDataSize = 80;
@@ -41,11 +46,60 @@ public sealed class HfsPlusWriter {
   public void AddFile(string name, byte[] data) => this._files.Add((name, data));
 
   /// <summary>
-  /// Builds and returns the complete HFS+ volume image.
+  /// Picks the allocation block size that minimises slack + structural overhead
+  /// via <see cref="Compression.Core.Layout.FilesystemLayoutOptimizer"/>, then
+  /// builds the image. The candidate set is [4&#160;KB … 64&#160;KB]; most HFS+
+  /// images stay at 4&#160;KB — the optimizer only bumps the block size for
+  /// large-file sets where the bigger allocation unit cuts table overhead.
   /// </summary>
+  /// <param name="requestedBlockSize">
+  /// Explicit allocation block size in bytes (0 = auto-select). Must be a power
+  /// of two &gt;= 512 when non-zero.
+  /// </param>
   /// <returns>A byte array containing the HFS+ filesystem image.</returns>
-  public byte[] Build() {
-    var blockSize = DefaultBlockSize;
+  public byte[] BuildAutoSized(int requestedBlockSize = 0) {
+    var fileSizes = this._files.Select(f => (long)f.Data.Length).ToList();
+
+    // HFS+ allocation block size is a power of two >= 512. The newfs_hfs default
+    // for typical volumes is 4 KB; we offer 4 KB … 64 KB. The B-tree node size
+    // (CatalogNodeSize) is fixed independent of the allocation block size, so
+    // every candidate produces a reader-parseable layout.
+    int[] candidates = [4096, 8192, 16384, 32768, 65536];
+    var blockSize = requestedBlockSize > 0
+      ? (uint)requestedBlockSize
+      : (uint)Compression.Core.Layout.FilesystemLayoutOptimizer.SelectClusterSize(
+          candidates,
+          bs => {
+            var clusters = Compression.Core.Layout.FilesystemLayoutOptimizer.DataClusters(fileSizes, bs);
+            var slack    = Compression.Core.Layout.FilesystemLayoutOptimizer.Slack(fileSizes, bs);
+            // System overhead at this block size: the allocation bitmap covers
+            // every cluster (1 bit each, rounded up to whole bytes), and the
+            // catalog + extents B-trees occupy whole allocation blocks (so a
+            // larger block enlarges their fixed footprint).
+            var totalClusters = clusters + DefaultImageBlocks; // bitmap sizes the whole volume
+            var bitmapBytes   = (totalClusters + 7) / 8;
+            // Catalog (2 nodes) + extents (1 node) rounded up to blocks.
+            var catalogBytes  = (long)CatalogBlocks((uint)bs) * bs;
+            var extentsBytes  = (long)bs; // 1 block for the empty extents B-tree
+            return slack + bitmapBytes + catalogBytes + extentsBytes;
+          });
+
+    return Build(blockSize);
+  }
+
+  /// <summary>
+  /// Builds and returns the complete HFS+ volume image with the given allocation
+  /// block size.
+  /// </summary>
+  /// <param name="blockSize">
+  /// HFS+ allocation block size in bytes. Must be a power of two &gt;= 512.
+  /// Defaults to <see cref="DefaultBlockSize"/> (4&#160;KB).
+  /// </param>
+  /// <returns>A byte array containing the HFS+ filesystem image.</returns>
+  public byte[] Build(uint blockSize = DefaultBlockSize) {
+    if (blockSize < 512 || (blockSize & (blockSize - 1)) != 0)
+      throw new ArgumentOutOfRangeException(nameof(blockSize),
+        blockSize, "HFS+ allocation block size must be a power of two >= 512.");
 
     var dataBlocksNeeded = 0;
     foreach (var (_, data) in this._files)
@@ -55,16 +109,18 @@ public sealed class HfsPlusWriter {
     //   block 0:        boot blocks (sectors 0,1) + primary VHB (sector 2)
     //   block 1:        allocation bitmap (1 block fits up to 32768 alloc blocks)
     //   block 2:        extents-overflow B-tree (1 block, header only — empty)
-    //   blocks 3..4:    catalog B-tree (header + leaf node)
-    //   blocks 5..N:    user file data
+    //   blocks 3..:     catalog B-tree (header + leaf node)
+    //   blocks ..N:     user file data
     //   block totalBlocks-1: alternate VHB at sector (totalSectors-2)
     const uint AllocBlock = 1;
     const uint ExtentsBlock = 2;
     const uint CatalogStartBlock = 3;
-    const uint CatalogBlockCount = 2;
+    // The catalog holds two CatalogNodeSize-byte B-tree nodes (header + leaf).
+    // At 4 KB blocks that's 2 blocks; at >= 8 KB blocks it collapses to 1.
+    var catalogBlockCount = CatalogBlocks(blockSize);
 
-    var minBlocks = 5u + (uint)dataBlocksNeeded + 1u; // +1 for last (alt VHB)
-    var totalBlocks = Math.Max(DefaultImageBlocks, minBlocks);
+    var minBlocks = (3u + catalogBlockCount) + (uint)dataBlocksNeeded + 1u; // boot+alloc+ext+catalog+data+altVHB
+    var totalBlocks = Math.Max((uint)DefaultImageBlocks, minBlocks);
     var imageSize = (int)(totalBlocks * blockSize);
 
     var disk = new byte[imageSize];
@@ -99,7 +155,6 @@ public sealed class HfsPlusWriter {
     BinaryPrimitives.WriteUInt64BigEndian(vh[72..], 1UL);
 
     var catalogStartBlock = CatalogStartBlock;
-    var catalogBlockCount = CatalogBlockCount;
 
     // ── Special-file ForkData descriptors per TN1150 §3.2 ─────────────────
     // VolumeHeader special-file ForkData offsets:
@@ -136,7 +191,7 @@ public sealed class HfsPlusWriter {
     // extentsFile fork descriptor in the volume header has totalBlocks=0.
     // We allocate 1 block (=1 node) at ExtentsBlock containing only a
     // header node with no leaf records.
-    const ushort nodeSize = 4096;
+    const ushort nodeSize = CatalogNodeSize;
     {
       var extBase = (int)(ExtentsBlock * blockSize);
       var extHeader = disk.AsSpan(extBase, nodeSize);
@@ -210,10 +265,12 @@ public sealed class HfsPlusWriter {
     BinaryPrimitives.WriteUInt32BigEndian(hdr[14..], 1);            // lastLeafNode = 1
     BinaryPrimitives.WriteUInt16BigEndian(hdr[18..], nodeSize);     // nodeSize
     BinaryPrimitives.WriteUInt16BigEndian(hdr[20..], 516);          // maxKeyLength (HFS+ catalog max)
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[22..], catalogBlockCount * (blockSize / nodeSize)); // totalNodes
-    // freeNodes: totalNodes − (header + leaf used). 1 leaf + 1 header = 2 used.
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[26..],
-        Math.Max(0u, (catalogBlockCount * (blockSize / nodeSize)) - 2u));
+    // totalNodes: this minimal catalog always has exactly 2 nodes — node 0
+    // (header) + node 1 (leaf). The catalog fork may span 1 or 2 allocation
+    // blocks depending on block size, but the node count is fixed because the
+    // B-tree node size (CatalogNodeSize) is independent of the block size.
+    BinaryPrimitives.WriteUInt32BigEndian(hdr[22..], 2);            // totalNodes
+    BinaryPrimitives.WriteUInt32BigEndian(hdr[26..], 0);           // freeNodes (both nodes in use)
     BinaryPrimitives.WriteUInt32BigEndian(hdr[32..], blockSize);    // clumpSize
     hdr[36] = 0;                                                    // btreeType = kHFSBTreeType (0)
     hdr[37] = 0xCF;                                                 // keyCompareType = kHFSBinaryCompare (0xCF)
@@ -256,8 +313,9 @@ public sealed class HfsPlusWriter {
     // Root folder thread: key = (rootCNID=2, "").
     keyed.Add((RootFolderCnid, "", BuildFolderThreadRecord(1, VolumeName)));
 
-    // First free block for user data: catalog starts at block 3, takes 2 blocks → start at 5.
-    var nextBlock = CatalogStartBlock + CatalogBlockCount;
+    // First free block for user data: catalog starts at block 3 and takes
+    // catalogBlockCount blocks, so user data begins right after it.
+    var nextBlock = catalogStartBlock + catalogBlockCount;
     var nextCnid = FirstUserCnid;
 
     foreach (var (name, data) in this._files) {
@@ -340,7 +398,7 @@ public sealed class HfsPlusWriter {
     // Alt VHB lives in the last allocation block.
     MarkUsed(totalBlocks - 1);
 
-    var usedBlocks = 5u + (uint)dataBlocksNeeded + 1u; // boot+alloc+ext+catalog(2)+data+altVH
+    var usedBlocks = (3u + catalogBlockCount) + (uint)dataBlocksNeeded + 1u; // boot+alloc+ext+catalog+data+altVH
     BinaryPrimitives.WriteUInt32BigEndian(vh[48..], totalBlocks - usedBlocks); // freeBlocks
     BinaryPrimitives.WriteUInt32BigEndian(vh[52..], nextBlock); // nextAllocation
     BinaryPrimitives.WriteUInt32BigEndian(vh[64..], nextCnid);  // nextCatalogID
@@ -483,6 +541,12 @@ public sealed class HfsPlusWriter {
     BinaryPrimitives.WriteUInt32BigEndian(dst[20..], blockCount);
     // Remaining 7 extent descriptors are zero (no fragmentation in our writer).
   }
+
+  // Number of allocation blocks the catalog fork occupies: enough to hold the
+  // two fixed-size B-tree nodes (header + leaf). At 4 KB blocks → 2; at >= 8 KB
+  // blocks both nodes fit in a single allocation block → 1.
+  private static uint CatalogBlocks(uint blockSize)
+    => (uint)((2 * CatalogNodeSize + blockSize - 1) / blockSize);
 
   private static uint HfsTimestamp(DateTime dt) {
     if (dt < HfsEpoch) return 0;

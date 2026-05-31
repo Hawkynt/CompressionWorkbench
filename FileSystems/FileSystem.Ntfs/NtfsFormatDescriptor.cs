@@ -5,7 +5,20 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Ntfs;
 
-public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.ImageSize(
+      ["16 MB", "64 MB", "256 MB", "1 GB", "4 GB", "16 GB"]),
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 32),
+    FilesystemSchemaPresets.ClusterSize(min: 4096,
+      description: "NTFS allocation unit size. Auto picks the size that minimises slack + MFT-zone overhead."),
+    FilesystemSchemaPresets.PowerOfTwoSize(
+      "MftRecordSize", "MFT record size", 512, 4096, "Auto",
+      "Size of each $MFT file record. Smaller records pack tighter for many tiny files; larger records keep more attributes resident. Auto co-optimises with cluster size."),
+  ];
 
   /// <summary>
   /// Walks the boot sector + $MFT + each MFT record's $DATA attribute and
@@ -147,11 +160,38 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var w = new NtfsWriter();
+    var specific = options.FormatSpecific;
+    var label = specific?.GetValueOrDefault("VolumeLabel");
+    var w = string.IsNullOrEmpty(label) ? new NtfsWriter() : new NtfsWriter(label);
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
-    output.Write(w.Build());
+
+    var totalSize     = ParseImageSizeBytes(specific?.GetValueOrDefault("ImageSize"));
+    var clusterSize   = FilesystemSchemaPresets.ParseSize(specific?.GetValueOrDefault("ClusterSize"));
+    var mftRecordSize = FilesystemSchemaPresets.ParseSize(specific?.GetValueOrDefault("MftRecordSize"));
+
+    // Explicit image size → fixed Build with whatever cluster/MFT sizes were
+    // requested (falling back to the writer defaults when 0). Auto image size →
+    // BuildAutoSized, which co-optimises cluster + MFT record size for the
+    // payload (honouring any explicit cluster/MFT request).
+    var disk = totalSize > 0
+      ? w.Build(totalSize,
+                clusterSize   > 0 ? clusterSize   : 4096,
+                mftRecordSize > 0 ? mftRecordSize : 1024)
+      : w.BuildAutoSized(clusterSize, mftRecordSize);
+    output.Write(disk);
   }
+
+  // Parses the NTFS image-size labels ("16 MB".."16 GB"); "Auto …" → 0.
+  private static int ParseImageSizeBytes(string? s) => s?.Trim() switch {
+    "16 MB"  => 16  * 1024 * 1024,
+    "64 MB"  => 64  * 1024 * 1024,
+    "256 MB" => 256 * 1024 * 1024,
+    "1 GB"   => 1024 * 1024 * 1024,
+    "4 GB"   => int.MaxValue,            // capped at int range; writer rounds to clusters
+    "16 GB"  => int.MaxValue,            // capped at int range
+    _        => 0,                       // "Auto (fit to files)" or unknown → auto-size
+  };
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new NtfsReader(stream);

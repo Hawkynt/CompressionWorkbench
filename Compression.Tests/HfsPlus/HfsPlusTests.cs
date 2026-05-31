@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Compression.Registry;
 using FileSystem.HfsPlus;
 
 namespace Compression.Tests.HfsPlus;
@@ -204,5 +205,146 @@ public class HfsPlusTests {
     // recordType at offset 0 of body.
     var recordType = BinaryPrimitives.ReadInt16BigEndian(leaf[bodyStart..]);
     Assert.That(recordType, Is.EqualTo((short)2), "kHFSPlusFileRecord = 2.");
+  }
+
+  // ── Tunable / auto-optimized allocation block size ─────────────────────
+
+  /// <summary>
+  /// Round-trips files through an image built with an explicit 8 KB allocation
+  /// block size. Verifies the volume header records the requested block size and
+  /// the reader can still parse the catalog + extract the data fork.
+  /// </summary>
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void RoundTrip_Explicit8KBlock() {
+    var data1 = new byte[5000]; // > 4 KB, spans one 8 KB block
+    var data2 = new byte[12345];
+    new Random(7).NextBytes(data1);
+    new Random(8).NextBytes(data2);
+
+    var w = new HfsPlusWriter();
+    w.AddFile("a.bin", data1);
+    w.AddFile("b.bin", data2);
+    var image = w.Build(blockSize: 8192);
+
+    // Volume header blockSize field (offset 1024 + 40) must read back as 8 KB.
+    var blockSize = BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(1024 + 40));
+    Assert.That(blockSize, Is.EqualTo(8192u));
+
+    using var ms = new MemoryStream(image);
+    var r = new HfsPlusReader(ms);
+    var files = r.Entries.Where(e => !e.IsDirectory).ToDictionary(e => e.Name, e => e);
+    Assert.That(files, Has.Count.EqualTo(2));
+    Assert.That(r.Extract(files["a.bin"]), Is.EqualTo(data1));
+    Assert.That(r.Extract(files["b.bin"]), Is.EqualTo(data2));
+  }
+
+  /// <summary>
+  /// Round-trips through <see cref="HfsPlusWriter.BuildAutoSized"/> with the
+  /// optimizer choosing the block size. The reader must parse whatever block
+  /// size it picked.
+  /// </summary>
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void RoundTrip_BuildAutoSized() {
+    var small = new byte[] { 1, 2, 3, 4, 5 };
+    var big = new byte[200 * 1024];
+    new Random(99).NextBytes(big);
+
+    var w = new HfsPlusWriter();
+    w.AddFile("small.txt", small);
+    w.AddFile("big.bin", big);
+    var image = w.BuildAutoSized();
+
+    // Whatever block size the optimizer picked must be a power of two >= 4 KB.
+    var blockSize = BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(1024 + 40));
+    Assert.That(blockSize, Is.GreaterThanOrEqualTo(4096u));
+    Assert.That(blockSize & (blockSize - 1), Is.EqualTo(0u), "block size must be a power of two.");
+
+    using var ms = new MemoryStream(image);
+    var r = new HfsPlusReader(ms);
+    var files = r.Entries.Where(e => !e.IsDirectory).ToDictionary(e => e.Name, e => e);
+    Assert.That(files, Has.Count.EqualTo(2));
+    Assert.That(r.Extract(files["small.txt"]), Is.EqualTo(small));
+    Assert.That(r.Extract(files["big.bin"]), Is.EqualTo(big));
+  }
+
+  /// <summary>
+  /// The parameterless <see cref="HfsPlusWriter.Build()"/> must keep producing a
+  /// 4 KB-block image (unchanged default behaviour).
+  /// </summary>
+  [Category("Spec")]
+  [Test]
+  public void Build_DefaultBlockSizeIs4K() {
+    var w = new HfsPlusWriter();
+    w.AddFile("x.txt", new byte[] { 0xAB });
+    var image = w.Build();
+    var blockSize = BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(1024 + 40));
+    Assert.That(blockSize, Is.EqualTo(4096u));
+  }
+
+  /// <summary>
+  /// The descriptor exposes the "BlockSize" knob through its options schema with
+  /// the expected Auto + power-of-two presets.
+  /// </summary>
+  [Category("HappyPath")]
+  [Test]
+  public void Descriptor_ExposesBlockSizeSchema() {
+    var desc = new HfsPlusFormatDescriptor();
+    var schema = ((IFormatOptionsSchema)desc).OptionsSchema;
+
+    var blockSizeOpt = schema.FirstOrDefault(o => o.Key == "BlockSize");
+    Assert.That(blockSizeOpt, Is.Not.Null, "descriptor must expose a BlockSize option.");
+    Assert.That(blockSizeOpt!.DisplayName, Is.EqualTo("Allocation block size"));
+    Assert.That(blockSizeOpt.AllowedValues, Does.Contain("Auto"));
+    Assert.That(blockSizeOpt.AllowedValues, Does.Contain("4 KB"));
+    Assert.That(blockSizeOpt.AllowedValues, Does.Contain("64 KB"));
+
+    Assert.That(schema.Any(o => o.Key == "VolumeLabel"), Is.True,
+      "descriptor must also expose a VolumeLabel option.");
+  }
+
+  /// <summary>
+  /// Drives <see cref="HfsPlusFormatDescriptor.Create"/> with an explicit
+  /// BlockSize in FormatSpecific and verifies the resulting image round-trips.
+  /// </summary>
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Create_WithExplicitBlockSize_RoundTrips() {
+    var payload = new byte[10000];
+    new Random(123).NextBytes(payload);
+
+    var dir = Path.Combine(Path.GetTempPath(), "hfsplus_blk_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(dir);
+    try {
+      var filePath = Path.Combine(dir, "data.bin");
+      File.WriteAllBytes(filePath, payload);
+
+      var desc = new HfsPlusFormatDescriptor();
+      var inputs = new List<ArchiveInputInfo> {
+        new(FullPath: filePath, ArchiveName: "data.bin", IsDirectory: false),
+      };
+      var options = new FormatCreateOptions {
+        FormatSpecific = new Dictionary<string, string> { ["BlockSize"] = "16 KB" },
+      };
+
+      using var output = new MemoryStream();
+      desc.Create(output, inputs, options);
+      var image = output.ToArray();
+
+      var blockSize = BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(1024 + 40));
+      Assert.That(blockSize, Is.EqualTo(16384u));
+
+      using var ms = new MemoryStream(image);
+      var r = new HfsPlusReader(ms);
+      var file = r.Entries.Single(e => !e.IsDirectory);
+      Assert.That(file.Name, Is.EqualTo("data.bin"));
+      Assert.That(r.Extract(file), Is.EqualTo(payload));
+    } finally {
+      Directory.Delete(dir, recursive: true);
+    }
   }
 }

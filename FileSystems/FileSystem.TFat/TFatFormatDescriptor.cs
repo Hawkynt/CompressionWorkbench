@@ -37,7 +37,29 @@ namespace FileSystem.TFat;
 /// supplemented by forensic-literature summaries. The runtime protocol
 /// itself is documented in Microsoft's WinCE TFAT design notes.</para>
 /// </summary>
-public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
+public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+  //
+  // TFAT is FAT with a transaction-safe dual-FAT marker, so it honours the same
+  // geometry knobs FAT does: image size, cluster size, FAT type and volume
+  // label. TFAT targets embedded / Windows CE devices, so the image-size presets
+  // skew towards floppy + small-card sizes rather than optical media.
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.ImageSize(
+      sizes: ["1.44 MB (3.5\" HD)", "32 MB", "128 MB", "512 MB", "1 GB", "2 GB", "4 GB"],
+      description: "Total image capacity. Auto sizes the image to exactly hold the files (recommended). " +
+        "Fixed presets match the floppy and embedded/WinCE card sizes TFAT is typically used on."),
+    FilesystemSchemaPresets.ClusterSize(),
+    FilesystemSchemaPresets.VolumeLabel(),
+    new FormatOptionDescriptor(
+      Key: "FatType",
+      DisplayName: "FAT type",
+      Kind: FormatOptionKind.Enum,
+      Default: "Auto",
+      AllowedValues: ["Auto", "FAT12", "FAT16", "FAT32"],
+      Description: "Auto selects FAT12/16/32 by cluster count. Force a type when the target device requires it."),
+  ];
 
   public string Id => "TFat";
   public string DisplayName => "Transactional FAT (TFAT)";
@@ -85,8 +107,45 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var w = new TFatWriter();
     foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
-    output.Write(w.Build());
+
+    var specific = options.FormatSpecific;
+    var totalSectors  = ParseImageSizeSectors(specific?.GetValueOrDefault("ImageSize"));
+    var clusterBytes  = FilesystemSchemaPresets.ParseSize(specific?.GetValueOrDefault("ClusterSize"));
+    var forcedFatType = ParseFatType(specific?.GetValueOrDefault("FatType"));
+    var label         = specific?.GetValueOrDefault("VolumeLabel");
+
+    // Fixed image size + cluster on Auto: optimise the cluster size *within* that
+    // fixed size to minimise slack waste (mirrors FatFormatDescriptor.Create).
+    if (totalSectors > 0 && clusterBytes == 0) {
+      var picked = w.PickClusterForFixedImage(totalSectors, 512, forcedFatType, 0, enableLfn: true);
+      if (picked > 0) clusterBytes = picked;
+    }
+
+    var disk = totalSectors > 0
+      ? w.Build(totalSectors, requestedClusterSize: clusterBytes, volumeLabel: label,
+                forcedFatType: forcedFatType)
+      : w.BuildAutoSized(requestedClusterSize: clusterBytes, volumeLabel: label,
+                         forcedFatType: forcedFatType);
+    output.Write(disk);
   }
+
+  private static int ParseFatType(string? s) => s?.Trim() switch {
+    "FAT12" => 12,
+    "FAT16" => 16,
+    "FAT32" => 32,
+    _       => 0,  // Auto
+  };
+
+  private static int ParseImageSizeSectors(string? s) => s?.Trim() switch {
+    "1.44 MB (3.5\" HD)" => 2880,
+    "32 MB"   => 65536,
+    "128 MB"  => 262144,
+    "512 MB"  => 1048576,
+    "1 GB"    => 2097152,
+    "2 GB"    => 4194304,
+    "4 GB"    => 8388608,
+    _         => 0,  // "Auto (fit to files)" or anything else → auto-size
+  };
 
   /// <summary>
   /// Adds files to an existing TFAT image using the alternating-FAT

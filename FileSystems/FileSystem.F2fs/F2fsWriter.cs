@@ -152,7 +152,30 @@ public sealed class F2fsWriter {
   internal const int SumJournalSize = 507;
   internal const int SumFooterSize = 5;
 
+  // Minimum total segment count the writer can build. Build() requires at least
+  // SegMain + 8 segments (the metadata area at SegMain=8 plus 6 active main segments
+  // and slack). At 2 MiB per segment this is a 32 MiB hard floor — matching the
+  // real-world mkfs.f2fs minimum-image constraint.
+  internal const int MinTotalSegments = SegMain + 8; // 16
+
+  /// <summary>
+  /// The smallest total segment count <see cref="Build(int)"/> accepts. Equals the
+  /// metadata area plus the six active main segments and slack (16 segments = 32 MiB).
+  /// </summary>
+  public const int MinimumSegmentCount = MinTotalSegments;
+
   private readonly List<(string Name, byte[] Data)> _files = [];
+  private string _volumeLabel = "CompressionWorkbench";
+
+  /// <summary>
+  /// Sets the UTF-16 volume label stored in the superblock's <c>volume_name</c> field.
+  /// Empty or null leaves the default label. F2FS allows up to 512 UTF-16 code units.
+  /// </summary>
+  /// <param name="label">The desired volume label.</param>
+  public void SetVolumeLabel(string? label) {
+    if (!string.IsNullOrEmpty(label))
+      this._volumeLabel = label;
+  }
 
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
@@ -164,9 +187,9 @@ public sealed class F2fsWriter {
   }
 
   public byte[] Build(int totalSegments = DefaultSegmentCount) {
-    if (totalSegments < SegMain + 8)
+    if (totalSegments < MinTotalSegments)
       throw new ArgumentOutOfRangeException(nameof(totalSegments),
-        $"F2FS image needs at least {SegMain + 8} segments (need 6 active main segments + slack).");
+        $"F2FS image needs at least {MinTotalSegments} segments (need 6 active main segments + slack).");
 
     // Inline dentry budget: NrInlineDentry slots minus 2 for "." and "..".
     const int dotsSlots = 2;
@@ -360,15 +383,41 @@ public sealed class F2fsWriter {
       cpBlkAddr: (uint)cpBlkAddr,
       sitBlkAddr: (uint)sitBlkAddr, natBlkAddr: (uint)natBlkAddr,
       ssaBlkAddr: (uint)(SegSsa * BlocksPerSeg), mainBlkAddr: (uint)mainStart,
-      segmentCountMain: (uint)segmentCountMain);
+      segmentCountMain: (uint)segmentCountMain, volumeLabel: this._volumeLabel);
     WriteSuperblock(disk, blockOffset: BlockSize, totalBlocks: totalBlocks, totalSegments: (uint)countedSegments,
       totalSections: (uint)totalSections, totalZones: (uint)totalZones, seg0BlkAddr: seg0BlkAddr,
       cpBlkAddr: (uint)cpBlkAddr,
       sitBlkAddr: (uint)sitBlkAddr, natBlkAddr: (uint)natBlkAddr,
       ssaBlkAddr: (uint)(SegSsa * BlocksPerSeg), mainBlkAddr: (uint)mainStart,
-      segmentCountMain: (uint)segmentCountMain);
+      segmentCountMain: (uint)segmentCountMain, volumeLabel: this._volumeLabel);
 
     return disk;
+  }
+
+  /// <summary>
+  /// Builds an F2FS image sized to just hold the added files, plus metadata overhead and
+  /// roughly ten percent headroom, clamped to <see cref="MinimumSegmentCount"/> (32 MiB).
+  /// </summary>
+  /// <returns>The generated image bytes.</returns>
+  public byte[] BuildAutoSized() => this.Build(this.ComputeAutoSegmentCount());
+
+  /// <summary>
+  /// Computes the minimum total segment count needed to hold all added files. The single-segment
+  /// writer caps each WARM segment at one segment, so the file payload is bounded by the main area;
+  /// this adds the fixed metadata area, six active main segments and ~10% headroom, then clamps to
+  /// <see cref="MinimumSegmentCount"/>.
+  /// </summary>
+  /// <returns>The total segment count to pass to <see cref="Build(int)"/>.</returns>
+  public int ComputeAutoSegmentCount() {
+    // File data lives in the WARM_DATA segment; file inodes in WARM_NODE; the root inode in
+    // HOT_NODE. The six active main segments (HOT/WARM/COLD × NODE/DATA) plus the metadata area
+    // (SegMain segments) form the fixed cost. The writer is single-segment-per-curseg, so the
+    // active main footprint is fixed at 6 segments regardless of payload size; payload that
+    // exceeds one segment is rejected by Build(). We therefore size by the fixed cost plus
+    // headroom — which always lands at the MinTotalSegments floor for valid inputs.
+    var baseSegments = SegMain + 6; // metadata area + 6 active main segments = 14.
+    var withHeadroom = baseSegments + Math.Max(1, baseSegments / 10);
+    return Math.Max(MinTotalSegments, withHeadroom);
   }
 
   public void WriteTo(Stream output) {
@@ -394,7 +443,7 @@ public sealed class F2fsWriter {
   private static void WriteSuperblock(
     byte[] disk, int blockOffset, int totalBlocks, uint totalSegments, uint totalSections,
     uint totalZones, uint seg0BlkAddr, uint cpBlkAddr, uint sitBlkAddr, uint natBlkAddr,
-    uint ssaBlkAddr, uint mainBlkAddr, uint segmentCountMain) {
+    uint ssaBlkAddr, uint mainBlkAddr, uint segmentCountMain, string volumeLabel) {
 
     var off = blockOffset + SuperOffset;
 
@@ -437,12 +486,10 @@ public sealed class F2fsWriter {
     var uuid = Guid.NewGuid().ToByteArray();
     Array.Copy(uuid, 0, sb, 108, 16);
 
-    // volume_name[512] __le16 — "CompressionWorkbench" as UTF-16LE.
-    var name = "CompressionWorkbench"u8;
-    for (var i = 0; i < name.Length && i < 511; ++i) {
-      sb[124 + i * 2] = name[i];
-      sb[124 + i * 2 + 1] = 0;
-    }
+    // volume_name[512] __le16 — UTF-16LE, up to 511 code units + null terminator.
+    var nameChars = volumeLabel;
+    for (var i = 0; i < nameChars.Length && i < 511; ++i)
+      BinaryPrimitives.WriteUInt16LittleEndian(sb.AsSpan(124 + i * 2), nameChars[i]);
     // end offset: 124 + 512*2 = 1148.
 
     BinaryPrimitives.WriteUInt32LittleEndian(sb.AsSpan(1148), 0); // extension_count

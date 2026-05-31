@@ -35,6 +35,10 @@ public sealed class CompressionOptions {
   /// <summary>ZIP encryption method: "aes256" (default) or "zipcrypto".</summary>
   public string? ZipEncryption { get; init; }
 
+  /// <summary>Format-specific knob values from <see cref="Compression.Registry.IFormatOptionsSchema"/>,
+  /// keyed by <see cref="Compression.Registry.FormatOptionDescriptor.Key"/>.</summary>
+  public IReadOnlyDictionary<string, string>? FormatSpecific { get; init; }
+
   /// <summary>Resolves the ZIP encryption method enum from the string option.</summary>
   public FileFormat.Zip.ZipEncryptionMethod ResolveZipEncryption() => ZipEncryption switch {
     "zipcrypto" => FileFormat.Zip.ZipEncryptionMethod.PkzipTraditional,

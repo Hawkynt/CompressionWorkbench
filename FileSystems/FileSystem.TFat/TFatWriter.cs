@@ -44,9 +44,54 @@ public sealed class TFatWriter {
   /// (a 1.44 MB image) which yields FAT12; for FAT32 testing pass a larger
   /// value (e.g. 131072 for ~64 MB).
   /// </summary>
-  public byte[] Build(int totalSectors = 2880, int bytesPerSector = 512, int requestedClusterSize = 0) {
-    var disk = _inner.Build(totalSectors, bytesPerSector, requestedClusterSize);
+  /// <param name="totalSectors">Total sectors (default 2880 = 1.44 MB floppy).</param>
+  /// <param name="bytesPerSector">Bytes per sector (default 512).</param>
+  /// <param name="requestedClusterSize">Desired cluster size in bytes (0 = auto-select).</param>
+  /// <param name="volumeLabel">Optional volume label (up to 11 chars). Defaults to "NO NAME" when null.</param>
+  /// <param name="forcedFatType">Force a specific FAT variant: 12, 16, or 32. 0 = auto-select by cluster count.</param>
+  public byte[] Build(int totalSectors = 2880, int bytesPerSector = 512, int requestedClusterSize = 0,
+    string? volumeLabel = null, int forcedFatType = 0) {
+    // transactionFat: true sets BS_Reserved1 = 0x01 directly in the BPB; StampTfat
+    // re-applies it (plus the FilSysType tag + per-FAT sequence numbers) so both
+    // paths converge on identical markers.
+    var disk = _inner.Build(totalSectors, bytesPerSector, requestedClusterSize,
+      volumeLabel: volumeLabel, forcedFatType: forcedFatType, transactionFat: true);
+    return StampTfat(disk);
+  }
 
+  /// <summary>
+  /// Builds a TFAT image auto-sized to fit the added files (delegates sizing to
+  /// <see cref="FatWriter.BuildAutoSized"/>), then stamps the TFAT markers.
+  /// Prefer this over <see cref="Build"/> when the file count / total size is
+  /// not known up-front (e.g. from a directory walk) so the writer picks an
+  /// image size and FAT type that fit.
+  /// </summary>
+  /// <param name="bytesPerSector">Bytes per sector (default 512).</param>
+  /// <param name="requestedClusterSize">Desired cluster size in bytes (0 = auto-select).</param>
+  /// <param name="volumeLabel">Optional volume label (up to 11 chars). Defaults to "NO NAME" when null.</param>
+  /// <param name="forcedFatType">Force a specific FAT variant: 12, 16, or 32. 0 = auto-select by cluster count.</param>
+  public byte[] BuildAutoSized(int bytesPerSector = 512, int requestedClusterSize = 0,
+    string? volumeLabel = null, int forcedFatType = 0) {
+    var disk = _inner.BuildAutoSized(bytesPerSector, requestedClusterSize,
+      volumeLabel: volumeLabel, forcedFatType: forcedFatType, transactionFat: true);
+    return StampTfat(disk);
+  }
+
+  /// <summary>
+  /// Picks the cluster size that minimises slack + FAT overhead for a fixed
+  /// image size. Pure delegation to <see cref="FatWriter.PickClusterForFixedImage"/>
+  /// — TFAT shares FAT's exact geometry, so the same optimiser applies.
+  /// Returns 0 if no candidate fits (caller falls back to the writer default).
+  /// </summary>
+  public int PickClusterForFixedImage(int totalSectors, int bytesPerSector,
+    int forcedFatType, int requestedRootEntries, bool enableLfn) =>
+    _inner.PickClusterForFixedImage(totalSectors, bytesPerSector, forcedFatType, requestedRootEntries, enableLfn);
+
+  /// <summary>
+  /// Post-processes a freshly built FAT image to add the TFAT-specific
+  /// detection markers and per-FAT transaction sequence numbers.
+  /// </summary>
+  private byte[] StampTfat(byte[] disk) {
     // Derive FAT parameters from the BPB we just wrote, so we know where the
     // FAT regions live and which extended-BPB layout was used.
     var bps = BinaryPrimitives.ReadUInt16LittleEndian(disk.AsSpan(11));

@@ -56,15 +56,25 @@ public sealed class FatReader : IDisposable {
     if (_totalSectors == 0)
       _totalSectors = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(32));
 
-    _fatSize = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(22));
-    if (_fatSize == 0)
-      _fatSize = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(36));
+    // BPB_FATSz16 == 0 is the definitive FAT32 indicator (FAT32 always zeroes this
+    // field and stores the FAT size in BPB_FATSz32 at offset 36 instead).
+    var fatSz16 = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(22));
+    var isFat32ByBpb = fatSz16 == 0;
+    _fatSize = isFat32ByBpb
+      ? BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(36))
+      : fatSz16;
 
     _rootDirSectors = (_rootEntryCount * 32 + _bytesPerSector - 1) / _bytesPerSector;
     _firstDataSector = _reservedSectors + _fatCount * _fatSize + _rootDirSectors;
     _totalDataClusters = (_totalSectors - _firstDataSector) / _sectorsPerCluster;
 
-    FatType = _totalDataClusters < 4085 ? 12 : _totalDataClusters < 65525 ? 16 : 32;
+    // Prefer the BPB-level FAT32 indicator over the cluster-count heuristic so
+    // that images explicitly formatted as FAT32 (even small floppy-sized ones)
+    // are read correctly.
+    FatType = isFat32ByBpb ? 32
+      : _totalDataClusters < 4085 ? 12
+      : _totalDataClusters < 65525 ? 16
+      : 32;
 
     if (FatType == 32)
       _rootCluster = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(44));

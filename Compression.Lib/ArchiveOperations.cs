@@ -147,6 +147,7 @@ public static class ArchiveOperations {
       EncryptFilenames = opts.EncryptFilenames,
       EncryptionMethod = opts.ZipEncryption,
       IncompressiblePaths = incompressible,
+      FormatSpecific = opts.FormatSpecific,
     };
 
     AtomicFileWriter.WriteAtomic(outputPath, fs => creator.Create(fs, registryInputs, registryOpts));

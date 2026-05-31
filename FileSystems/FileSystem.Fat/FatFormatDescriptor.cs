@@ -5,7 +5,81 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Fat;
 
-public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "FatType",
+      DisplayName: "FAT type",
+      Kind: FormatOptionKind.Enum,
+      Default: "Auto",
+      AllowedValues: ["Auto", "FAT12", "FAT16", "FAT32"],
+      Description: "Auto selects FAT12/16/32 by cluster count. Force a type when the target system requires it (e.g. FAT32 on a floppy-sized image for a game console)."),
+    new FormatOptionDescriptor(
+      Key: "ImageSize",
+      DisplayName: "Image size",
+      Kind: FormatOptionKind.Enum,
+      Default: "Auto (fit to files)",
+      AllowedValues: [
+        // Auto
+        "Auto (fit to files)",
+        // 3.5" floppies
+        "720 KB (3.5\" DD)", "1.44 MB (3.5\" HD)", "1.68 MB (DMF)", "2.88 MB (3.5\" ED)",
+        // 5.25" floppies
+        "160 KB (5.25\" SS/SD)", "180 KB (5.25\" SS/SD)", "320 KB (5.25\" DS/DD)",
+        "360 KB (5.25\" DS/DD)", "1.2 MB (5.25\" HD)",
+        // CD / DVD / Blu-ray / HD DVD
+        "650 MB (CD)", "700 MB (CD)", "4.7 GB (DVD-5)", "8.5 GB (DVD-9)",
+        "25 GB (BD-SL)", "50 GB (BD-DL)", "100 GB (BD-XL)", "128 GB (BD-XL)",
+        "15 GB (HD DVD-SL)", "30 GB (HD DVD-DL)",
+        // Hard disk / USB card sizes
+        "32 MB", "128 MB", "512 MB", "1 GB", "2 GB", "4 GB"],
+      Description: "Auto sizes the image to exactly hold the files being stored (recommended). " +
+        "Fixed presets match floppy, optical and card formats."),
+    new FormatOptionDescriptor(
+      Key: "VolumeLabel",
+      DisplayName: "Volume label",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Volume name shown by file managers (max 11 chars, ASCII only)."),
+    new FormatOptionDescriptor(
+      Key: "ClusterSize",
+      DisplayName: "Cluster size",
+      Kind: FormatOptionKind.Enum,
+      Default: "Auto",
+      AllowedValues: ["Auto", "512 B", "1 KB", "2 KB", "4 KB", "8 KB", "16 KB", "32 KB", "64 KB"],
+      Description: "Allocation unit size. Auto picks the best fit for the image size and FAT type."),
+    new FormatOptionDescriptor(
+      Key: "RootEntries",
+      DisplayName: "Root entries",
+      Kind: FormatOptionKind.Enum,
+      Default: "Auto",
+      AllowedValues: ["Auto", "16 (DMF)", "32", "64", "112", "224", "512"],
+      Description: "Max items in the root directory (FAT12/16 only; FAT32 has no limit). " +
+        "Microsoft DMF Win95 disks used 16 to reclaim those sectors for data. " +
+        "Auto: 224 for FAT12, 512 for FAT16.",
+      DependsOn: "FatType=Auto|FAT12|FAT16"),
+    new FormatOptionDescriptor(
+      Key: "LongFilenames",
+      DisplayName: "Long filenames (VFAT)",
+      Kind: FormatOptionKind.Boolean,
+      Default: "true",
+      Description: "VFAT LFN entries preserve mixed-case names and names > 8.3 chars. Disable only for strict DOS 8.3 compatibility."),
+    new FormatOptionDescriptor(
+      Key: "TransactionFat",
+      DisplayName: "Transaction FAT (TFAT)",
+      Kind: FormatOptionKind.Boolean,
+      Default: "false",
+      Description: "Marks the image for transaction-based FAT updates (Windows Embedded/CE crash-safe style). Sets BS_Reserved1 = 0x01 in the boot sector."),
+    new FormatOptionDescriptor(
+      Key: "FatPlus",
+      DisplayName: "FAT+ timestamps",
+      Kind: FormatOptionKind.Boolean,
+      Default: "false",
+      Description: "FAT+: stores sub-second creation-time precision in DIR_CrtTimeTenth (10 ms granularity instead of 2-second rounding)."),
+  ];
 
   /// <summary>
   /// Walks the boot sector + FAT chains and emits the actual on-disk layout
@@ -310,10 +384,100 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new FatWriter();
-    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
-      w.AddFile(name, data);
-    output.Write(w.Build());
+    foreach (var input in inputs.Where(i => !i.IsDirectory))
+      w.AddFile(input.ArchiveName, File.ReadAllBytes(input.FullPath),
+                File.GetLastWriteTime(input.FullPath));
+
+    var specific = options.FormatSpecific;
+    var totalSectors  = ParseImageSizeSectors(specific?.GetValueOrDefault("ImageSize"));
+    var clusterBytes  = ParseClusterSizeBytes(specific?.GetValueOrDefault("ClusterSize"));
+    var forcedFatType = ParseFatType(specific?.GetValueOrDefault("FatType"));
+    var rootEntries   = ParseRootEntries(specific?.GetValueOrDefault("RootEntries"));
+    var label         = specific?.GetValueOrDefault("VolumeLabel");
+    var enableLfn     = specific?.GetValueOrDefault("LongFilenames") != "false";
+    var tfat          = specific?.GetValueOrDefault("TransactionFat") == "true";
+    var fatPlus       = specific?.GetValueOrDefault("FatPlus") == "true";
+    _ = fatPlus; // modTime always written; DIR_CrtTimeTenth provides sub-second precision
+
+    // Fixed image size + cluster on Auto: optimise the cluster size *within* that
+    // fixed size to minimise slack waste (e.g. a 1.44 MB floppy packed tightly)
+    // instead of falling back to the FATGEN default heuristic.
+    if (totalSectors > 0 && clusterBytes == 0) {
+      var picked = w.PickClusterForFixedImage(totalSectors, 512, forcedFatType, rootEntries, enableLfn);
+      if (picked > 0) clusterBytes = picked;
+    }
+
+    var disk = totalSectors > 0
+      ? w.Build(totalSectors, requestedClusterSize: clusterBytes, volumeLabel: label,
+                forcedFatType: forcedFatType, enableLfn: enableLfn, transactionFat: tfat,
+                requestedRootEntries: rootEntries)
+      : w.BuildAutoSized(requestedClusterSize: clusterBytes, volumeLabel: label,
+                         forcedFatType: forcedFatType, enableLfn: enableLfn, transactionFat: tfat,
+                         requestedRootEntries: rootEntries);
+    output.Write(disk);
   }
+
+  private static int ParseRootEntries(string? s) => s?.Trim() switch {
+    "16 (DMF)" => 16,
+    "32"  => 32,
+    "64"  => 64,
+    "112" => 112,
+    "224" => 224,
+    "512" => 512,
+    _     => 0,  // Auto
+  };
+
+  private static int ParseFatType(string? s) => s?.Trim() switch {
+    "FAT12" => 12,
+    "FAT16" => 16,
+    "FAT32" => 32,
+    _       => 0,  // Auto
+  };
+
+  private static int ParseImageSizeSectors(string? s) => s?.Trim() switch {
+    // 3.5" floppies
+    "720 KB (3.5\" DD)"    => 1440,
+    "1.44 MB (3.5\" HD)"   => 2880,
+    "1.68 MB (DMF)"        => 3360,
+    "2.88 MB (3.5\" ED)"   => 5760,
+    // 5.25" floppies
+    "160 KB (5.25\" SS/SD)" => 320,
+    "180 KB (5.25\" SS/SD)" => 360,
+    "320 KB (5.25\" DS/DD)" => 640,
+    "360 KB (5.25\" DS/DD)" => 720,
+    "1.2 MB (5.25\" HD)"    => 2400,
+    // Optical
+    "650 MB (CD)"   => 1330200,
+    "700 MB (CD)"   => 1433600,
+    "4.7 GB (DVD-5)"  => 9830400,
+    "8.5 GB (DVD-9)"  => 17825792,
+    "25 GB (BD-SL)"   => 52428800,
+    "50 GB (BD-DL)"   => 104857600,
+    "100 GB (BD-XL)"  => 209715200,
+    "128 GB (BD-XL)"  => 268435456,
+    "15 GB (HD DVD-SL)" => 31457280,
+    "30 GB (HD DVD-DL)" => 62914560,
+    // Generic sizes
+    "32 MB"   => 65536,
+    "128 MB"  => 262144,
+    "512 MB"  => 1048576,
+    "1 GB"    => 2097152,
+    "2 GB"    => 4194304,
+    "4 GB"    => 8388608,
+    _         => 0,  // "Auto (fit to files)" or anything else → auto-size
+  };
+
+  private static int ParseClusterSizeBytes(string? s) => s?.Trim() switch {
+    "512 B"  => 512,
+    "1 KB"   => 1024,
+    "2 KB"   => 2048,
+    "4 KB"   => 4096,
+    "8 KB"   => 8192,
+    "16 KB"  => 16384,
+    "32 KB"  => 32768,
+    "64 KB"  => 65536,
+    _        => 0,  // 0 → auto
+  };
 
   /// <summary>
   /// Add files to an existing FAT image. Current implementation re-builds the image
@@ -327,8 +491,9 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var combined = new FatWriter();
     foreach (var entry in reader.Entries.Where(e => !e.IsDirectory))
       combined.AddFile(entry.Name, reader.Extract(entry));
-    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
-      combined.AddFile(name, data);
+    foreach (var input in inputs.Where(i => !i.IsDirectory))
+      combined.AddFile(input.ArchiveName, File.ReadAllBytes(input.FullPath),
+                       File.GetLastWriteTime(input.FullPath));
     var totalSectors = (int)(archive.Length / 512);
     var rebuilt = combined.Build(totalSectors: totalSectors);
     archive.Position = 0;

@@ -65,14 +65,22 @@ public sealed class FatPlusWriter {
   /// (cluster count &gt; 65525).</param>
   /// <param name="bytesPerSector">Bytes per sector (default 512).</param>
   /// <param name="requestedClusterSize">Desired cluster size in bytes (0 = auto).</param>
-  public byte[] Build(int totalSectors = 200_000, int bytesPerSector = 512, int requestedClusterSize = 0) {
+  /// <param name="volumeLabel">Optional volume label (up to 11 chars, ASCII). Null = "NO NAME".
+  /// Passed straight through to the underlying <see cref="FatWriter"/>; the dirent-size
+  /// patch loop skips the volume-label entry so the FAT+ encoding is unaffected.</param>
+  public byte[] Build(int totalSectors = 200_000, int bytesPerSector = 512, int requestedClusterSize = 0,
+    string? volumeLabel = null) {
     // Delegate to FatWriter for the bulk of the work. We feed it the same files
     // (with their actual byte payloads) and then post-process the resulting image
     // to (1) patch the OEM signature and (2) patch per-file dirent NTRes + size.
-    var inner = new FatWriter();
-    foreach (var (name, data, _) in this._files)
-      inner.AddFile(name, data);
-    var image = inner.Build(totalSectors, bytesPerSector, requestedClusterSize);
+    var inner = this.NewInnerWriter();
+    // Force FAT32: FAT+ is a FAT32 extension, and the dirent-size patch below
+    // assumes the FAT32 on-disk layout (root directory in the data area, located
+    // via BPB_FATSz32 at offset 36). A small payload would otherwise let the
+    // underlying writer pick FAT12/16 — whose root directory lives in a fixed
+    // region the patch can't locate — so we pin FAT32 to keep the encoding valid.
+    var image = inner.Build(totalSectors, bytesPerSector, requestedClusterSize,
+      volumeLabel: volumeLabel, forcedFatType: 32);
 
     // (1) OEM signature → "FAT+    ".
     FatPlusReader.OemSignature.CopyTo(image, 3);
@@ -87,6 +95,56 @@ public sealed class FatPlusWriter {
     this.PatchDirentSizes(image, rootStart, image.Length);
 
     return image;
+  }
+
+  /// <summary>
+  /// Builds the smallest FAT+ image that still holds all file data plus FAT
+  /// overhead, while never dropping below the 200_000-sector floor that keeps
+  /// the volume in FAT32 (the cluster-count range FAT+ extends). Prefer this
+  /// over <see cref="Build"/> when the caller has not pinned an image size.
+  /// </summary>
+  /// <param name="requestedClusterSize">Desired cluster size in bytes (0 = auto).</param>
+  /// <param name="bytesPerSector">Bytes per sector (default 512).</param>
+  /// <param name="volumeLabel">Optional volume label (up to 11 chars, ASCII).</param>
+  public byte[] BuildAutoSized(int requestedClusterSize = 0, int bytesPerSector = 512,
+    string? volumeLabel = null) {
+    // Size to the actual payload (data + ~50 % headroom for directory entries and
+    // cluster-tail slack), but never below the FAT32 floor so the FAT+ extension
+    // stays meaningful.
+    var totalDataBytes = this._files.Sum(f => (long)f.Data.Length);
+    var neededBytes = totalDataBytes * 3 / 2 + 16L * 1024 * 1024;
+    var neededSectors = (neededBytes + bytesPerSector - 1) / bytesPerSector;
+    var totalSectors = (int)Math.Min(int.MaxValue, Math.Max(200_000L, neededSectors));
+    return this.Build(totalSectors, bytesPerSector, requestedClusterSize, volumeLabel);
+  }
+
+  /// <summary>
+  /// Picks the cluster size that minimises slack + FAT-table overhead for a
+  /// <em>fixed</em> image size, mirroring <see cref="FatWriter.PickClusterForFixedImage"/>.
+  /// FAT+ is always FAT32, so the FAT-type tier is fixed at 32. Returns 0 when no
+  /// candidate fits (caller should fall back to the writer's default).
+  /// </summary>
+  /// <param name="totalSectors">The pinned image size in sectors.</param>
+  /// <param name="bytesPerSector">Bytes per sector (default 512).</param>
+  public int PickClusterForFixedImage(int totalSectors, int bytesPerSector = 512) {
+    // FAT+ always produces a FAT32 volume; delegate to the FAT writer's fixed-image
+    // optimiser with the FAT type forced to 32 so it never tries a smaller tier.
+    var inner = this.NewInnerWriter();
+    return inner.PickClusterForFixedImage(totalSectors, bytesPerSector,
+      forcedFatType: 32, requestedRootEntries: 0, enableLfn: true);
+  }
+
+  /// <summary>
+  /// Creates a <see cref="FatWriter"/> seeded with this writer's files (actual
+  /// byte payloads only — the FAT+ extended sizes are patched into the image
+  /// afterwards). Shared by <see cref="Build"/> and
+  /// <see cref="PickClusterForFixedImage"/>.
+  /// </summary>
+  private FatWriter NewInnerWriter() {
+    var inner = new FatWriter();
+    foreach (var (name, data, _) in this._files)
+      inner.AddFile(name, data);
+    return inner;
   }
 
   /// <summary>

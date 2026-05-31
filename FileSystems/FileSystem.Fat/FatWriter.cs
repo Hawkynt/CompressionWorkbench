@@ -21,14 +21,14 @@ namespace FileSystem.Fat;
 /// checksum of the associated short name.
 /// </remarks>
 public sealed class FatWriter {
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, byte[] Data, DateTime? ModTime)> _files = [];
 
   /// <summary>
   /// Adds a file to the image. Long names (mixed case, > 8.3, non-ASCII,
   /// multiple dots) are written as VFAT/LFN entries with an auto-generated
   /// 8.3 short-name alias. Plain 8.3 names are written as a single dirent.
   /// </summary>
-  public void AddFile(string name, byte[] data) => _files.Add((name, data));
+  public void AddFile(string name, byte[] data, DateTime? modTime = null) => _files.Add((name, data, modTime));
 
   /// <summary>
   /// Builds the FAT filesystem image.
@@ -39,8 +39,17 @@ public sealed class FatWriter {
   /// Must be a power of two and a multiple of <paramref name="bytesPerSector"/>.
   /// The actual cluster size may differ if the requested value is incompatible
   /// with the resulting FAT type (e.g. a 64 KB cluster on a tiny FAT12 image).</param>
+  /// <param name="volumeLabel">Optional volume label (up to 11 chars). Defaults to "NO NAME" when null.</param>
+  /// <param name="forcedFatType">Force a specific FAT variant: 12, 16, or 32. 0 = auto-select by cluster count.</param>
+  /// <param name="enableLfn">When false, only 8.3 short-name entries are written (strict DOS compatibility).
+  /// Names that exceed 8.3 chars are silently truncated to a short alias.</param>
+  /// <param name="transactionFat">Mark the image for transaction-based FAT writes (TFAT / Windows CE style).</param>
+  /// <param name="requestedRootEntries">Override the root directory entry count for FAT12/16 (0 = use defaults:
+  /// 224 for FAT12, 512 for FAT16). DMF distribution disks used 16 to reclaim sectors for data.</param>
   /// <returns>Complete disk image as byte array.</returns>
-  public byte[] Build(int totalSectors = 2880, int bytesPerSector = 512, int requestedClusterSize = 0) {
+  public byte[] Build(int totalSectors = 2880, int bytesPerSector = 512, int requestedClusterSize = 0,
+    string? volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false,
+    int requestedRootEntries = 0) {
     const int fatCount = 2;
 
     // Start with FAT12 floppy defaults
@@ -55,18 +64,27 @@ public sealed class FatWriter {
         && requestedClusterSize % bytesPerSector == 0)
       sectorsPerCluster = requestedClusterSize / bytesPerSector;
 
-    // Determine FAT type
+    // Determine FAT type: honour the caller's override or auto-select by cluster count.
     var rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
     var firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
     var totalDataClusters = (totalSectors - firstDataSector) / sectorsPerCluster;
-    var fatType = totalDataClusters < 4085 ? 12 : totalDataClusters < 65525 ? 16 : 32;
+    var fatType = forcedFatType is 12 or 16 or 32
+      ? forcedFatType
+      : (totalDataClusters < 4085 ? 12 : totalDataClusters < 65525 ? 16 : 32);
 
-    // Adjust parameters for FAT16/32.
+    // Adjust parameters for each FAT type.
+    // requestedRootEntries overrides the per-type default (224/512) for FAT12/16.
+    // DMF distribution disks used 16 entries; zero means "use the type's default".
     if (fatType == 16) {
       if (requestedClusterSize <= 0) sectorsPerCluster = 4;
-      rootEntryCount = 512;
+      rootEntryCount = requestedRootEntries > 0 ? requestedRootEntries : 512;
       rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
       fatSize = (totalSectors * 2 / bytesPerSector) + 1;
+      firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
+    } else if (fatType == 12 && requestedRootEntries > 0) {
+      // FAT12 custom root entry count: recompute rootDirSectors and firstDataSector.
+      rootEntryCount = requestedRootEntries;
+      rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
       firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
     } else if (fatType == 32) {
       reservedSectors = 32; // FAT32 requires >=1 but convention is 32 (leaves room for FSInfo+BackupBoot)
@@ -88,6 +106,19 @@ public sealed class FatWriter {
       firstDataSector = reservedSectors + fatCount * fatSize;
     }
 
+    // Validate forced-type constraints after the layout is finalised.
+    if (forcedFatType != 0) {
+      var finalClusters = (totalSectors - firstDataSector) / sectorsPerCluster;
+      if (forcedFatType == 12 && finalClusters >= 4085)
+        throw new InvalidOperationException(
+          $"FAT12 supports at most 4084 data clusters but this image has {finalClusters}. " +
+          "Reduce the image size or increase the cluster size.");
+      if (forcedFatType == 16 && finalClusters >= 65525)
+        throw new InvalidOperationException(
+          $"FAT16 supports at most 65524 data clusters but this image has {finalClusters}. " +
+          "Reduce the image size or switch to FAT32.");
+    }
+
     var disk = new byte[(long)totalSectors * bytesPerSector];
 
     // ── Boot sector (shared base) ──────────────────────────────────────────
@@ -107,9 +138,29 @@ public sealed class FatWriter {
     if (fatType != 32)
       BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(22), (ushort)fatSize);
     // (FAT32 writes fat_size_32 at offset 36 below.)
-    BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(24), 63); // sectors per track
-    BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(26), 255); // heads
+    // BPB geometry: match the physical layout of the target medium.
+    // Floppy geometries use 2 heads; everything else uses 63 spt / 255 heads
+    // (the standard hard-disk / USB-stick / optical-image convention).
+    var (spt, numHeads) = totalSectors switch {
+      320  => (8,  1),   // 5.25" SS/DD 160 KB
+      360  => (9,  1),   // 5.25" SS/DD 180 KB
+      640  => (8,  2),   // 5.25" DS/DD 320 KB
+      720  => (9,  2),   // 5.25" DS/DD 360 KB
+      1440 => (9,  2),   // 3.5" DS/DD 720 KB
+      2400 => (15, 2),   // 5.25" DS/HD 1.2 MB
+      2880 => (18, 2),   // 3.5" DS/HD 1.44 MB
+      3360 => (21, 2),   // DMF 1.68 MB
+      5760 => (36, 2),   // 3.5" DS/ED 2.88 MB
+      _    => (63, 255), // hard disk / USB / optical image
+    };
+    BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(24), (ushort)spt);
+    BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(26), (ushort)numHeads);
     BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(28), 0u);  // hidden sectors
+
+    // Volume label: up to 11 ASCII chars, space-padded, upper-cased.
+    var label = string.IsNullOrWhiteSpace(volumeLabel)
+      ? "NO NAME    "
+      : volumeLabel.ToUpperInvariant().PadRight(11)[..11];
 
     if (fatType == 32) {
       // ── FAT32 extended BPB ───────────────────────────────────────────────
@@ -121,16 +172,18 @@ public sealed class FatWriter {
       BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(50), 6);               // BPB_BkBootSec: backup at sector 6
       // 52-63 reserved (already zero)
       disk[64] = 0x80;                                                             // BS_DrvNum
+      disk[65] = transactionFat ? (byte)0x01 : (byte)0x00;                        // BS_Reserved1: TFAT marker
       disk[66] = 0x29;                                                             // BS_BootSig: extended BPB present
       BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(67), 0x12345678u);     // BS_VolID
-      Encoding.ASCII.GetBytes("NO NAME    ").CopyTo(disk, 71);                     // BS_VolLab (11 bytes)
-      Encoding.ASCII.GetBytes("FAT32   ").CopyTo(disk, 82);                        // BS_FilSysType (8 bytes)
+      Encoding.ASCII.GetBytes(label).CopyTo(disk, 71);                            // BS_VolLab (11 bytes)
+      Encoding.ASCII.GetBytes("FAT32   ").CopyTo(disk, 82);                       // BS_FilSysType (8 bytes)
     } else {
       // Short extended BPB (FAT12/16)
       disk[36] = 0x80;
+      disk[37] = transactionFat ? (byte)0x01 : (byte)0x00;  // BS_Reserved1: TFAT marker
       disk[38] = 0x29;
       BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(39), 0x12345678u);
-      Encoding.ASCII.GetBytes("NO NAME    ").CopyTo(disk, 43);
+      Encoding.ASCII.GetBytes(label).CopyTo(disk, 43);
       Encoding.ASCII.GetBytes(fatType == 12 ? "FAT12   " : "FAT16   ").CopyTo(disk, 54);
     }
 
@@ -176,10 +229,20 @@ public sealed class FatWriter {
     // cluster) — and to honour FAT12/16's BPB_RootEntCnt limit.
     var existingShortNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     var perFileSlots = new List<byte[]>(_files.Count);
-    foreach (var (name, _) in _files) {
-      perFileSlots.Add(BuildDirentSlots(name, existingShortNames));
+    foreach (var (name, _, modTime) in _files) {
+      perFileSlots.Add(BuildDirentSlots(name, existingShortNames, modTime, enableLfn));
     }
     var totalDirentBytes = perFileSlots.Sum(s => s.Length);
+
+    // For FAT12/16 the root directory is a fixed-size region. Overflow would
+    // silently write directory entries into the data clusters that follow it,
+    // corrupting both the directory and the file data stored there.
+    if (fatType != 32 && totalDirentBytes > rootEntryCount * 32)
+      throw new InvalidOperationException(
+        $"FAT{fatType}: the {_files.Count} files require {totalDirentBytes / 32} directory entries " +
+        $"but the root directory holds at most {rootEntryCount}. " +
+        $"Pass totalSectors ≥ 200 000 to get a FAT32 image with an unbounded root directory, " +
+        $"or use BuildAutoSized() to let the writer choose automatically.");
 
     int dirEntryPos;
     int nextCluster;
@@ -206,7 +269,7 @@ public sealed class FatWriter {
     // Place each file: copy its dirent slots into the root, then write data
     // into the next free cluster run + chain it in the FAT.
     for (var i = 0; i < _files.Count; i++) {
-      var (_, data) = _files[i];
+      var (_, data, _) = _files[i];
       var slots = perFileSlots[i];
       // Patch the start-cluster fields of the *short-name entry* (always the
       // last 32 bytes of the slot blob) now that we know where its data
@@ -258,6 +321,280 @@ public sealed class FatWriter {
     Buffer.BlockCopy(disk, fatOffset, disk, fatOffset + fatSize * bytesPerSector, fatSize * bytesPerSector);
 
     return disk;
+  }
+
+  /// <summary>
+  /// Streams a FAT image to <paramref name="output"/> without ever materialising the
+  /// whole volume in memory, enabling images of any size (e.g. multi-TB FAT32).
+  /// Requires a writable, seekable stream: free space is left as sparse zeros via
+  /// <see cref="Stream.SetLength"/>, so only metadata + actual file data is physically
+  /// written. Produces byte-for-byte identical output to <see cref="Build"/> (verified
+  /// by parity tests) for any configuration both can express.
+  ///
+  /// <para>Peak memory is bounded by O(sector + 64&#160;KB FAT chunk + largest file +
+  /// largest dirent blob) — independent of total image size.</para>
+  /// </summary>
+  public void BuildTo(Stream output, int totalSectors = 2880, int bytesPerSector = 512,
+    int requestedClusterSize = 0, string? volumeLabel = null, int forcedFatType = 0,
+    bool enableLfn = true, bool transactionFat = false, int requestedRootEntries = 0) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildTo requires a writable, seekable stream.", nameof(output));
+
+    const int fatCount = 2;
+    var reservedSectors = 1;
+    var sectorsPerCluster = 1;
+    var rootEntryCount = 224;
+    var fatSize = 9;
+
+    if (requestedClusterSize > 0 && requestedClusterSize >= bytesPerSector
+        && (requestedClusterSize & (requestedClusterSize - 1)) == 0
+        && requestedClusterSize % bytesPerSector == 0)
+      sectorsPerCluster = requestedClusterSize / bytesPerSector;
+
+    var rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
+    var firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
+    var totalDataClusters = (totalSectors - firstDataSector) / sectorsPerCluster;
+    var fatType = forcedFatType is 12 or 16 or 32
+      ? forcedFatType
+      : (totalDataClusters < 4085 ? 12 : totalDataClusters < 65525 ? 16 : 32);
+
+    if (fatType == 16) {
+      if (requestedClusterSize <= 0) sectorsPerCluster = 4;
+      rootEntryCount = requestedRootEntries > 0 ? requestedRootEntries : 512;
+      rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
+      fatSize = (totalSectors * 2 / bytesPerSector) + 1;
+      firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
+    } else if (fatType == 12 && requestedRootEntries > 0) {
+      rootEntryCount = requestedRootEntries;
+      rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
+      firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
+    } else if (fatType == 32) {
+      reservedSectors = 32;
+      rootEntryCount = 0;
+      rootDirSectors = 0;
+      if (requestedClusterSize <= 0) {
+        sectorsPerCluster = totalSectors < 66600 ? 1
+          : totalSectors < 532480 ? 1
+          : totalSectors < 16777216 ? 8
+          : totalSectors < 33554432 ? 16
+          : totalSectors < 67108864 ? 32
+          : 64;
+      }
+      var dataSectorsEstimate = totalSectors - reservedSectors;
+      var dataClustersEstimate = dataSectorsEstimate / sectorsPerCluster;
+      fatSize = (int)(((long)dataClustersEstimate * 4 + bytesPerSector - 1) / bytesPerSector);
+      firstDataSector = reservedSectors + fatCount * fatSize;
+    }
+
+    if (forcedFatType != 0) {
+      var finalClusters = (totalSectors - firstDataSector) / sectorsPerCluster;
+      if (forcedFatType == 12 && finalClusters >= 4085)
+        throw new InvalidOperationException(
+          $"FAT12 supports at most 4084 data clusters but this image has {finalClusters}. " +
+          "Reduce the image size or increase the cluster size.");
+      if (forcedFatType == 16 && finalClusters >= 65525)
+        throw new InvalidOperationException(
+          $"FAT16 supports at most 65524 data clusters but this image has {finalClusters}. " +
+          "Reduce the image size or switch to FAT32.");
+    }
+
+    var clusterSize = (long)sectorsPerCluster * bytesPerSector;
+    var label = string.IsNullOrWhiteSpace(volumeLabel)
+      ? "NO NAME    " : volumeLabel.ToUpperInvariant().PadRight(11)[..11];
+    var (spt, numHeads) = totalSectors switch {
+      320 => (8, 1), 360 => (9, 1), 640 => (8, 2), 720 => (9, 2), 1440 => (9, 2),
+      2400 => (15, 2), 2880 => (18, 2), 3360 => (21, 2), 5760 => (36, 2), _ => (63, 255),
+    };
+
+    // Build per-file dirent slots + assign contiguous clusters (no image allocation).
+    var existingShortNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var perFileSlots = new List<byte[]>(_files.Count);
+    foreach (var (name, _, modTime) in _files)
+      perFileSlots.Add(BuildDirentSlots(name, existingShortNames, modTime, enableLfn));
+    var totalDirentBytes = perFileSlots.Sum(s => s.Length);
+
+    var maxRootEntries = fatType == 32 ? int.MaxValue : rootEntryCount;
+    if (fatType != 32 && totalDirentBytes > maxRootEntries * 32)
+      throw new InvalidOperationException(
+        $"FAT{fatType}: the {_files.Count} files require {totalDirentBytes / 32} directory entries " +
+        $"but the root directory holds at most {rootEntryCount}.");
+
+    var rootClustersNeeded = fatType == 32
+      ? (int)Math.Max(1, (totalDirentBytes + clusterSize - 1) / clusterSize) : 0;
+    var nextCluster = fatType == 32 ? 2 + rootClustersNeeded : 2;
+
+    // Per-file (startCluster, clusterCount); also collect run-end clusters for the FAT.
+    var fileRuns = new (int start, int count)[_files.Count];
+    var runEnds = new HashSet<int>();
+    if (fatType == 32) // root chain: clusters 2..(1+rootClustersNeeded), EOC at the last.
+      runEnds.Add(2 + rootClustersNeeded - 1);
+    for (var i = 0; i < _files.Count; i++) {
+      var data = _files[i].Data;
+      var clustersNeeded = (int)Math.Max(1, (data.Length + clusterSize - 1) / clusterSize);
+      fileRuns[i] = (nextCluster, clustersNeeded);
+      runEnds.Add(nextCluster + clustersNeeded - 1);
+      // Patch start-cluster + size into the short-name entry.
+      var sn = perFileSlots[i].AsSpan(perFileSlots[i].Length - 32, 32);
+      if (fatType == 32)
+        BinaryPrimitives.WriteUInt16LittleEndian(sn[20..], (ushort)((nextCluster >> 16) & 0xFFFF));
+      BinaryPrimitives.WriteUInt16LittleEndian(sn[26..], (ushort)(nextCluster & 0xFFFF));
+      BinaryPrimitives.WriteUInt32LittleEndian(sn[28..], (uint)data.Length);
+      nextCluster += clustersNeeded;
+    }
+    var lastUsedCluster = nextCluster - 1;
+
+    // ── Lay out the physical image sparsely ──────────────────────────────
+    var totalBytes = (long)totalSectors * bytesPerSector;
+    output.SetLength(totalBytes); // free space becomes sparse zeros
+
+    // 1. Boot sector (+ FAT32 extended BPB).
+    var boot = new byte[bytesPerSector];
+    if (fatType == 32) { boot[0] = 0xEB; boot[1] = 0x58; boot[2] = 0x90; }
+    else { boot[0] = 0xEB; boot[1] = 0x3C; boot[2] = 0x90; }
+    Encoding.ASCII.GetBytes("MSDOS5.0").CopyTo(boot, 3);
+    BinaryPrimitives.WriteUInt16LittleEndian(boot.AsSpan(11), (ushort)bytesPerSector);
+    boot[13] = (byte)sectorsPerCluster;
+    BinaryPrimitives.WriteUInt16LittleEndian(boot.AsSpan(14), (ushort)reservedSectors);
+    boot[16] = (byte)fatCount;
+    BinaryPrimitives.WriteUInt16LittleEndian(boot.AsSpan(17), (ushort)rootEntryCount);
+    if (fatType != 32 && totalSectors < 65536)
+      BinaryPrimitives.WriteUInt16LittleEndian(boot.AsSpan(19), (ushort)totalSectors);
+    else
+      BinaryPrimitives.WriteUInt32LittleEndian(boot.AsSpan(32), (uint)totalSectors);
+    boot[21] = 0xF8;
+    if (fatType != 32)
+      BinaryPrimitives.WriteUInt16LittleEndian(boot.AsSpan(22), (ushort)fatSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(boot.AsSpan(24), (ushort)spt);
+    BinaryPrimitives.WriteUInt16LittleEndian(boot.AsSpan(26), (ushort)numHeads);
+    if (fatType == 32) {
+      BinaryPrimitives.WriteUInt32LittleEndian(boot.AsSpan(36), (uint)fatSize);
+      BinaryPrimitives.WriteUInt32LittleEndian(boot.AsSpan(44), 2u);
+      BinaryPrimitives.WriteUInt16LittleEndian(boot.AsSpan(48), 1);
+      BinaryPrimitives.WriteUInt16LittleEndian(boot.AsSpan(50), 6);
+      boot[64] = 0x80;
+      boot[65] = transactionFat ? (byte)0x01 : (byte)0x00;
+      boot[66] = 0x29;
+      BinaryPrimitives.WriteUInt32LittleEndian(boot.AsSpan(67), 0x12345678u);
+      Encoding.ASCII.GetBytes(label).CopyTo(boot, 71);
+      Encoding.ASCII.GetBytes("FAT32   ").CopyTo(boot, 82);
+    } else {
+      boot[36] = 0x80;
+      boot[37] = transactionFat ? (byte)0x01 : (byte)0x00;
+      boot[38] = 0x29;
+      BinaryPrimitives.WriteUInt32LittleEndian(boot.AsSpan(39), 0x12345678u);
+      Encoding.ASCII.GetBytes(label).CopyTo(boot, 43);
+      Encoding.ASCII.GetBytes(fatType == 12 ? "FAT12   " : "FAT16   ").CopyTo(boot, 54);
+    }
+    boot[510] = 0x55; boot[511] = 0xAA;
+    output.Position = 0;
+    output.Write(boot);
+
+    // 2. FAT32 FSInfo (sector 1) + backup boot (6) + backup FSInfo (7).
+    if (fatType == 32) {
+      var fsi = new byte[bytesPerSector];
+      BinaryPrimitives.WriteUInt32LittleEndian(fsi.AsSpan(0), 0x41615252u);
+      BinaryPrimitives.WriteUInt32LittleEndian(fsi.AsSpan(484), 0x61417272u);
+      var dataSec = totalSectors - firstDataSector;
+      var totalClusters = (uint)(dataSec / sectorsPerCluster);
+      var used = (uint)(nextCluster - 2);
+      var freeC = used <= totalClusters ? totalClusters - used : 0u;
+      BinaryPrimitives.WriteUInt32LittleEndian(fsi.AsSpan(488), freeC);
+      BinaryPrimitives.WriteUInt32LittleEndian(fsi.AsSpan(492), (uint)(nextCluster - 1));
+      BinaryPrimitives.WriteUInt32LittleEndian(fsi.AsSpan(508), 0xAA550000u);
+      output.Position = 1L * bytesPerSector; output.Write(fsi);
+      output.Position = 6L * bytesPerSector; output.Write(boot);
+      output.Position = 7L * bytesPerSector; output.Write(fsi);
+    }
+
+    // 3. FAT tables (×2). FAT12/16 are tiny → build in memory. FAT32 → stream in chunks.
+    var fatByteOffset1 = (long)reservedSectors * bytesPerSector;
+    var fatByteLen = (long)fatSize * bytesPerSector;
+    if (fatType == 32) {
+      WriteFat32Streaming(output, fatByteOffset1, fatByteLen, lastUsedCluster, runEnds, bytesPerSector);
+      WriteFat32Streaming(output, fatByteOffset1 + fatByteLen, fatByteLen, lastUsedCluster, runEnds, bytesPerSector);
+    } else {
+      var fat = new byte[fatByteLen];
+      if (fatType == 12) { fat[0] = 0xF8; fat[1] = 0xFF; fat[2] = 0xFF; }
+      else { fat[0] = 0xF8; fat[1] = 0xFF; fat[2] = 0xFF; fat[3] = 0xFF; }
+      foreach (var (start, count) in fileRuns)
+        for (var c = 0; c < count; c++) {
+          var cluster = start + c;
+          var nextVal = c + 1 < count ? cluster + 1 : (fatType == 12 ? 0xFFF : 0xFFFF);
+          WriteFatEntryBuf(fat, cluster, nextVal, fatType);
+        }
+      output.Position = fatByteOffset1; output.Write(fat);
+      output.Position = fatByteOffset1 + fatByteLen; output.Write(fat);
+    }
+
+    // 4. Root directory dirents.
+    var dataAreaOffset = (long)firstDataSector * bytesPerSector;
+    if (fatType == 32) {
+      output.Position = dataAreaOffset; // root lives at cluster 2 = start of data area
+      foreach (var slots in perFileSlots) output.Write(slots);
+    } else {
+      output.Position = (long)(reservedSectors + fatCount * fatSize) * bytesPerSector;
+      foreach (var slots in perFileSlots) output.Write(slots);
+    }
+
+    // 5. File data — seek to each file's first cluster and write its bytes.
+    for (var i = 0; i < _files.Count; i++) {
+      var data = _files[i].Data;
+      if (data.Length == 0) continue;
+      output.Position = dataAreaOffset + (long)(fileRuns[i].start - 2) * clusterSize;
+      output.Write(data);
+    }
+
+    output.Flush();
+  }
+
+  /// <summary>Streams one FAT32 table to <paramref name="output"/> at <paramref name="offset"/>
+  /// using contiguous-allocation knowledge: entry(c) = c+1 unless c is a run-end (→ EOC),
+  /// with markers at 0/1 and zeros past the last used cluster. Never allocates the whole table.</summary>
+  private static void WriteFat32Streaming(
+      Stream output, long offset, long fatByteLen, int lastUsedCluster,
+      HashSet<int> runEnds, int bytesPerSector) {
+    const int chunkBytes = 64 * 1024;
+    var chunk = new byte[chunkBytes];
+    var entriesPerChunk = chunkBytes / 4;
+    var totalEntries = fatByteLen / 4;
+    output.Position = offset;
+    long entry = 0;
+    while (entry < totalEntries) {
+      var n = (int)Math.Min(entriesPerChunk, totalEntries - entry);
+      var span = chunk.AsSpan(0, n * 4);
+      span.Clear();
+      for (var j = 0; j < n; j++) {
+        var c = (int)(entry + j);
+        uint val;
+        if (c == 0) val = 0x0FFFFFF8u;
+        else if (c == 1) val = 0x0FFFFFFFu;
+        else if (c > lastUsedCluster) val = 0u;
+        else val = runEnds.Contains(c) ? 0x0FFFFFFFu : (uint)(c + 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(span[(j * 4)..], val);
+      }
+      output.Write(span);
+      entry += n;
+    }
+  }
+
+  /// <summary>Writes a single FAT12/16 entry into an in-memory table buffer.</summary>
+  private static void WriteFatEntryBuf(byte[] fat, int cluster, int value, int fatType) {
+    if (fatType == 12) {
+      var bytePos = cluster * 3 / 2;
+      if (bytePos + 1 >= fat.Length) return;
+      if ((cluster & 1) == 0) {
+        fat[bytePos] = (byte)(value & 0xFF);
+        fat[bytePos + 1] = (byte)((fat[bytePos + 1] & 0xF0) | ((value >> 8) & 0x0F));
+      } else {
+        fat[bytePos] = (byte)((fat[bytePos] & 0x0F) | ((value << 4) & 0xF0));
+        fat[bytePos + 1] = (byte)((value >> 4) & 0xFF);
+      }
+    } else { // FAT16
+      var pos = cluster * 2;
+      if (pos + 2 <= fat.Length)
+        BinaryPrimitives.WriteUInt16LittleEndian(fat.AsSpan(pos), (ushort)value);
+    }
   }
 
   // ── VFAT/LFN encoding ────────────────────────────────────────────────
@@ -418,7 +755,7 @@ public sealed class FatWriter {
   /// VFAT/NTFS case-preservation flags: bit 3 (0x08) = base is lowercase,
   /// bit 4 (0x10) = extension is lowercase. The 11-byte name field always
   /// stores uppercase; the reader applies the case bits on display.</summary>
-  private static byte[] BuildShortEntry(string shortName, byte ntCaseBits = 0) {
+  private static byte[] BuildShortEntry(string shortName, byte ntCaseBits = 0, DateTime? modTime = null) {
     var entry = new byte[32];
     var dotIdx = shortName.LastIndexOf('.');
     var basePart = dotIdx >= 0 ? shortName[..dotIdx] : shortName;
@@ -429,6 +766,19 @@ public sealed class FatWriter {
     Encoding.ASCII.GetBytes(extPad).CopyTo(entry, 8);
     entry[11] = 0x20; // Archive attribute
     entry[12] = ntCaseBits;
+
+    // FAT timestamps: clamp to the representable range [1980-01-01, 2107-12-31].
+    var dt = modTime ?? DateTime.Now;
+    if (dt.Year < 1980) dt = new DateTime(1980, 1, 1);
+    else if (dt.Year > 2107) dt = new DateTime(2107, 12, 31, 23, 59, 58);
+    var fatDate = (ushort)(((dt.Year - 1980) << 9) | (dt.Month << 5) | dt.Day);
+    var fatTime = (ushort)((dt.Hour << 11) | (dt.Minute << 5) | (dt.Second / 2));
+    BinaryPrimitives.WriteUInt16LittleEndian(entry.AsSpan(14), fatTime);  // creation time
+    BinaryPrimitives.WriteUInt16LittleEndian(entry.AsSpan(16), fatDate);  // creation date
+    BinaryPrimitives.WriteUInt16LittleEndian(entry.AsSpan(18), fatDate);  // last-access date
+    BinaryPrimitives.WriteUInt16LittleEndian(entry.AsSpan(22), fatTime);  // write time
+    BinaryPrimitives.WriteUInt16LittleEndian(entry.AsSpan(24), fatDate);  // write date
+
     return entry;
   }
 
@@ -436,7 +786,15 @@ public sealed class FatWriter {
   /// long name needs them, then the 8.3 entry). Updates <paramref
   /// name="existingShortNames"/> with the chosen alias to detect ~N
   /// collisions across subsequent files.</summary>
-  private static byte[] BuildDirentSlots(string longName, HashSet<string> existingShortNames) {
+  private static byte[] BuildDirentSlots(string longName, HashSet<string> existingShortNames, DateTime? modTime = null, bool enableLfn = true) {
+    if (!enableLfn) {
+      // Strict 8.3 mode: no LFN slots, just generate a short-name alias.
+      var shortAlias = IsPlain8Dot3(longName)
+        ? longName.ToUpperInvariant()
+        : GenerateShortName(longName, existingShortNames);
+      existingShortNames.Add(shortAlias.ToUpperInvariant());
+      return BuildShortEntry(shortAlias, 0, modTime);
+    }
     if (IsPlain8Dot3(longName)) {
       existingShortNames.Add(longName.ToUpperInvariant());
       // Compute NT case bits so the reader can restore lower-case spelling
@@ -448,11 +806,11 @@ public sealed class FatWriter {
       byte caseBits = 0;
       if (HasLowerCaseAscii(basePart)) caseBits |= 0x08;
       if (HasLowerCaseAscii(extPart)) caseBits |= 0x10;
-      return BuildShortEntry(longName.ToUpperInvariant(), caseBits);
+      return BuildShortEntry(longName.ToUpperInvariant(), caseBits, modTime);
     }
 
     var shortName = GenerateShortName(longName, existingShortNames);
-    var shortEntry = BuildShortEntry(shortName);
+    var shortEntry = BuildShortEntry(shortName, 0, modTime);
     var checksum = LfnChecksum(shortEntry.AsSpan(0, 11));
 
     // Each LFN slot carries 13 UTF-16 units: pad with NUL (after the real
@@ -506,6 +864,147 @@ public sealed class FatWriter {
       }
       BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(offset + j * 2), code);
     }
+  }
+
+  /// <summary>
+  /// Builds the FAT image using the smallest sector count that fits all file data
+  /// <em>and</em> directory entries. Automatically selects FAT32 (≥ 200 000 sectors)
+  /// when the file count or total data would overflow the fixed root directory of a
+  /// FAT12/FAT16 image. Prefer this over <see cref="Build"/> when the caller does
+  /// not know the file count ahead of time (e.g. from a directory walk).
+  /// </summary>
+  public byte[] BuildAutoSized(int bytesPerSector = 512, int requestedClusterSize = 0,
+    string? volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false,
+    int requestedRootEntries = 0) {
+    // Estimate directory-entry bytes with a scratch name set so the real build
+    // gets a fresh, unaffected existingShortNames.
+    var scratch = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var totalDirentBytes = _files.Sum(f => BuildDirentSlots(f.Name, scratch, enableLfn: enableLfn).Length);
+    var fileSizes = _files.Select(f => (long)f.Data.Length).ToList();
+
+    // Pick the cluster size that minimises slack + FAT overhead without
+    // escalating to a higher FAT variant than strictly necessary.
+    var clusterBytes = requestedClusterSize > 0
+      ? requestedClusterSize
+      : SelectOptimalClusterSize(fileSizes, bytesPerSector, forcedFatType, requestedRootEntries);
+
+    var totalDataBytes = fileSizes.Sum();
+    var neededBytes = Math.Max(totalDataBytes * 3 / 2 + 32768, 1440 * 1024);
+    var totalSectors = Math.Max(2880, (int)((neededBytes + bytesPerSector - 1) / bytesPerSector));
+
+    // FAT12/16 root directories are fixed at most 224 (FAT12) or 512 (FAT16) entries.
+    // If our directory won't fit there — or the caller forces FAT32 — we must use
+    // FAT32. FAT32 is only *recognised* as FAT32 when it has >= 65,525 data clusters
+    // (readers pick the FAT variant purely from the cluster count), so we size to
+    // exactly that minimum plus the data and a safety margin — NOT to an arbitrary
+    // large constant. This is what keeps a small file set from ballooning into a
+    // needlessly huge image just because long filenames forced FAT32.
+    var maxRootEntries = requestedRootEntries > 0 ? requestedRootEntries : 224;
+    var needFat32 = forcedFatType == 32
+      || (forcedFatType == 0 && totalDirentBytes > maxRootEntries * 32);
+    if (needFat32) {
+      const long fat32MinClusters = 65525;
+      const long margin = 2048;             // headroom so Build's own FAT-size recompute stays > the minimum
+      const int reservedSectors = 32;       // FAT32 convention (boot + FSInfo + backup)
+      var spc = Math.Max(1, clusterBytes / bytesPerSector);
+      var dataClusters = fileSizes.Sum(s => s <= 0 ? 0L : (s + clusterBytes - 1) / clusterBytes);
+      var rootClusters = Math.Max(1L, (totalDirentBytes + clusterBytes - 1) / clusterBytes);
+      var targetClusters = Math.Max(fat32MinClusters + margin, dataClusters + rootClusters + margin);
+      var fatSectors = (targetClusters * 4 + bytesPerSector - 1) / bytesPerSector;
+      var fat32Sectors = reservedSectors + 2 * fatSectors + targetClusters * spc;
+      totalSectors = Math.Max(totalSectors, (int)fat32Sectors);
+    }
+
+    return Build(totalSectors, bytesPerSector, clusterBytes, volumeLabel, forcedFatType, enableLfn, transactionFat, requestedRootEntries);
+  }
+
+  /// <summary>
+  /// Picks the cluster size (bytes) that minimises slack + FAT-table overhead
+  /// without escalating to a higher FAT variant than strictly necessary.
+  /// Delegates to <see cref="Compression.Core.Layout.FilesystemLayoutOptimizer"/>
+  /// for the generic optimisation logic; FAT-specific tier and cost knowledge
+  /// lives here.
+  /// </summary>
+  /// <summary>
+  /// Picks the cluster size that minimises slack + FAT overhead for a <em>fixed</em>
+  /// image size (e.g. a 1.44 MB floppy whose total size must not change). Only cluster
+  /// sizes under which all files + metadata still fit inside <paramref name="totalSectors"/>
+  /// are considered. Use when the user pinned the image size but left cluster size on Auto.
+  /// Returns 0 if no candidate fits (caller should fall back to the writer's default).
+  /// </summary>
+  public int PickClusterForFixedImage(
+      int totalSectors, int bytesPerSector, int forcedFatType, int requestedRootEntries, bool enableLfn) {
+    var fileSizes = _files.Select(f => (long)f.Data.Length).ToList();
+
+    int best = 0;
+    long bestCost = long.MaxValue;
+    int bestTier = int.MaxValue;
+    foreach (var cb in Compression.Core.Layout.FilesystemLayoutOptimizer.StandardClusterSizes) {
+      if (cb < bytesPerSector || cb % bytesPerSector != 0) continue;
+      var spc = cb / bytesPerSector;
+      var dataClusters = Compression.Core.Layout.FilesystemLayoutOptimizer.DataClusters(fileSizes, cb);
+      var fatType = forcedFatType is 12 or 16 or 32 ? forcedFatType
+        : dataClusters < 4085 ? 12 : dataClusters < 65525 ? 16 : 32;
+      if (forcedFatType == 12 && dataClusters >= 4085) continue;
+      if (forcedFatType == 16 && dataClusters >= 65525) continue;
+
+      var rootEntries = fatType == 32 ? 0
+        : requestedRootEntries > 0 ? requestedRootEntries
+        : fatType == 16 ? 512 : 224;
+      var rootSectors = (rootEntries * 32 + bytesPerSector - 1) / bytesPerSector;
+      var bpe = fatType == 12 ? 12 : fatType == 16 ? 16 : 32;
+      var fatSectors = (dataClusters + 2) * bpe / 8 / bytesPerSector + 1;
+      var reserved = fatType == 32 ? 32L : 1L;
+
+      // Feasibility: everything must fit inside the fixed image.
+      var usedSectors = reserved + 2 * fatSectors + rootSectors + dataClusters * spc;
+      if (usedSectors > totalSectors) continue;
+
+      var overhead = (reserved + 2 * fatSectors + rootSectors) * bytesPerSector;
+      var slack = Compression.Core.Layout.FilesystemLayoutOptimizer.Slack(fileSizes, cb);
+      var cost = overhead + slack;
+
+      // Prefer the lowest FAT tier, then lowest cost (least wasted space).
+      if (fatType < bestTier || (fatType == bestTier && cost < bestCost)) {
+        bestTier = fatType; bestCost = cost; best = cb;
+      }
+    }
+    return best;
+  }
+
+  private static int SelectOptimalClusterSize(
+      IReadOnlyList<long> fileSizes, int bytesPerSector, int forcedFatType, int requestedRootEntries) {
+    // Candidate cluster sizes in bytes (all standard FAT power-of-two values).
+    var candidates = Compression.Core.Layout.FilesystemLayoutOptimizer.StandardClusterSizes;
+
+    return Compression.Core.Layout.FilesystemLayoutOptimizer.SelectClusterSizeTiered(
+      candidates,
+      tierFn: cb => {
+        var dataClusters = Compression.Core.Layout.FilesystemLayoutOptimizer.DataClusters(fileSizes, cb);
+        var fatType = forcedFatType is 12 or 16 or 32 ? forcedFatType
+          : dataClusters < 4085 ? 12 : dataClusters < 65525 ? 16 : 32;
+        if (forcedFatType == 12 && dataClusters >= 4085) return null; // constraint violated
+        if (forcedFatType == 16 && dataClusters >= 65525) return null;
+        return fatType; // tier = FAT variant (12 < 16 < 32)
+      },
+      costFn: cb => {
+        var dataClusters = Compression.Core.Layout.FilesystemLayoutOptimizer.DataClusters(fileSizes, cb);
+        var fatType = forcedFatType is 12 or 16 or 32 ? forcedFatType
+          : dataClusters < 4085 ? 12 : dataClusters < 65525 ? 16 : 32;
+        if (forcedFatType == 12 && dataClusters >= 4085) return null;
+        if (forcedFatType == 16 && dataClusters >= 65525) return null;
+
+        var rootEntries = fatType == 32 ? 0
+          : requestedRootEntries > 0 ? requestedRootEntries
+          : fatType == 16 ? 512 : 224;
+        var rootSectors = (rootEntries * 32 + bytesPerSector - 1) / bytesPerSector;
+        var bpe = fatType == 12 ? 12 : fatType == 16 ? 16 : 32;
+        var fatSectors = (dataClusters + 2) * bpe / 8 / bytesPerSector + 1;
+        var reserved = fatType == 32 ? 32L : 1L;
+        var overhead = (reserved + 2 * fatSectors + rootSectors) * bytesPerSector;
+        var slack = Compression.Core.Layout.FilesystemLayoutOptimizer.Slack(fileSizes, cb);
+        return overhead + slack;
+      });
   }
 
   /// <summary>

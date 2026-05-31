@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using Compression.Lib;
+using Compression.Registry;
 using FileSystem.Fat;
 using FileSystem.FatPlus;
 
@@ -217,6 +218,70 @@ public class FatPlusTests {
     var fmt = FormatDetector.DetectByMagic(image.AsSpan(0, 512));
     Assert.That(fmt.ToString(), Is.EqualTo("FatPlus").IgnoreCase,
       $"FormatDetector must recognise FAT+ via the OEM signature. Got: {fmt}");
+  }
+
+  // ── Creation-options schema ───────────────────────────────────────────
+
+  [Test]
+  public void Descriptor_OptionsSchema_ExposesClusterAndImageSize() {
+    var descriptor = new FatPlusFormatDescriptor();
+    var keys = descriptor.OptionsSchema.Select(o => o.Key).ToList();
+
+    Assert.That(keys, Does.Contain("ClusterSize"));
+    Assert.That(keys, Does.Contain("ImageSize"));
+    Assert.That(keys, Does.Contain("VolumeLabel"));
+
+    // ImageSize must offer the large FAT+ presets plus the Auto entry.
+    var imageSize = descriptor.OptionsSchema.Single(o => o.Key == "ImageSize");
+    Assert.That(imageSize.AllowedValues, Does.Contain("64 GB"));
+    Assert.That(imageSize.AllowedValues, Does.Contain("Auto (fit to files)"));
+  }
+
+  [Test]
+  public void Descriptor_CreateWithExplicitCluster_RoundTripsThroughReader() {
+    var data = new byte[] { 9, 8, 7, 6, 5, 4, 3, 2, 1, 0 };
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, data);
+      var inputs = new[] { new ArchiveInputInfo(tmp, "DATA.BIN", false) };
+      // Pin a fixed image size so the explicit cluster size is exercised against a
+      // known geometry (the "fixed image + explicit cluster" branch of Create()).
+      var options = new FormatCreateOptions {
+        FormatSpecific = new Dictionary<string, string> {
+          ["ImageSize"] = "512 MB",
+          ["ClusterSize"] = "4 KB",
+        },
+      };
+
+      using var output = new MemoryStream();
+      new FatPlusFormatDescriptor().Create(output, inputs, options);
+      var img = output.ToArray();
+
+      // FAT+ OEM signature must be present and the file must round-trip exactly.
+      // (The 8.3 short name is derived from the temp file path, so we assert on
+      // the preserved extension and the byte content rather than the base name.)
+      Assert.That(Encoding.ASCII.GetString(img, 3, 8), Is.EqualTo("FAT+    "));
+      using var r = new FatPlusReader(new MemoryStream(img));
+      var entry = r.Entries.Single(e => !e.IsDirectory);
+      Assert.That(entry.Name.ToUpperInvariant(), Does.EndWith(".BIN"));
+      Assert.That(r.Extract(entry), Is.EqualTo(data));
+    } finally {
+      File.Delete(tmp);
+    }
+  }
+
+  [Test]
+  public void BuildAutoSized_RoundTripsThroughReader() {
+    var data = new byte[] { 11, 22, 33, 44, 55, 66 };
+    var w = new FatPlusWriter();
+    w.AddFile("AUTO.BIN", data);
+    var img = w.BuildAutoSized();
+
+    Assert.That(Encoding.ASCII.GetString(img, 3, 8), Is.EqualTo("FAT+    "));
+    using var r = new FatPlusReader(new MemoryStream(img));
+    var entry = r.Entries.Single(e => !e.IsDirectory);
+    Assert.That(entry.Name.ToUpperInvariant(), Does.StartWith("AUTO"));
+    Assert.That(r.Extract(entry), Is.EqualTo(data));
   }
 }
 

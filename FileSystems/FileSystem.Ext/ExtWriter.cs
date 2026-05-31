@@ -18,6 +18,37 @@ public sealed class ExtWriter {
 
   public void AddFile(string name, byte[] data) => _files.Add((name, data));
 
+  /// <summary>
+  /// Builds the image with the block size chosen by
+  /// <see cref="Compression.Core.Layout.FilesystemLayoutOptimizer"/> to minimise
+  /// slack + metadata overhead, and the block count sized to exactly hold the files.
+  /// </summary>
+  /// <param name="requestedBlockSize">Block size in bytes (0 = auto-select).</param>
+  public byte[] BuildAutoSized(int requestedBlockSize = 0) {
+    var fileSizes = _files.Select(f => (long)f.Data.Length).ToList();
+
+    // ext block sizes: 1 KB, 2 KB, 4 KB (this minimal writer supports up to 4 KB).
+    int[] candidates = [1024, 2048, 4096];
+    var blockSize = requestedBlockSize > 0
+      ? requestedBlockSize
+      : Compression.Core.Layout.FilesystemLayoutOptimizer.SelectClusterSize(
+          candidates,
+          bs => {
+            var clusters = Compression.Core.Layout.FilesystemLayoutOptimizer.DataClusters(fileSizes, bs);
+            var slack    = Compression.Core.Layout.FilesystemLayoutOptimizer.Slack(fileSizes, bs);
+            // ext metadata: superblock + group desc + 2 bitmaps + inode table.
+            const int inodeTableBytes = 128 * 128; // inodesPerGroup × inodeSize
+            var metaBytes = 4L * bs + inodeTableBytes;
+            return slack + metaBytes;
+          });
+
+    // Size block count: metadata (≈ 4 blocks + inode table) + data blocks + 10 % headroom.
+    var inodeTableBlocks = (128 * 128 + blockSize - 1) / blockSize;
+    var dataBlocks = fileSizes.Sum(s => s <= 0 ? 0L : (s + blockSize - 1) / blockSize);
+    var totalBlocks = (int)Math.Max(4096, (5 + inodeTableBlocks + dataBlocks) * 11 / 10);
+    return Build(blockSize, totalBlocks);
+  }
+
   public byte[] Build(int blockSize = 1024, int totalBlocks = 4096) {
     const ushort ExtMagic = 0xEF53;
     // EXT2_GOOD_OLD_FIRST_INO — first inode available for user files on a

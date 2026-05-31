@@ -29,11 +29,18 @@ public sealed class NtfsWriter {
   // existing tests (e.g. expecting the first user file at record 16) stay
   // valid.
   private const int BytesPerSector = 512;
-  private const int SectorsPerCluster = 8;
-  private const int ClusterSize = BytesPerSector * SectorsPerCluster; // 4096
-  private const int MftRecordSize = 1024;
+  private const int DefaultSectorsPerCluster = 8;
+  private const int DefaultClusterSize = BytesPerSector * DefaultSectorsPerCluster; // 4096
+  private const int DefaultMftRecordSize = 1024;
   private const int MftReservedRecords = 16; // records 0..15 are system files
   private const int ResidentThreshold = 700;
+
+  // Per-build geometry — set by Build() before any record is emitted. These
+  // replace the former compile-time constants so cluster + MFT-record size are
+  // tunable. Defaults keep the parameterless Build() byte-identical to before.
+  private int _sectorsPerCluster = DefaultSectorsPerCluster;
+  private int _clusterSize = DefaultClusterSize;
+  private int _mftRecordSize = DefaultMftRecordSize;
 
   // Size of the $LogFile data region in bytes. Real NTFS typically uses
   // ≥2 MiB; for our minimal images we size proportionally to the volume
@@ -60,19 +67,101 @@ public sealed class NtfsWriter {
   }
 
   /// <summary>
-  /// Builds the NTFS filesystem image.
+  /// Builds the NTFS filesystem image with the default geometry (4 MiB volume,
+  /// 4 KiB clusters, 1024-byte MFT records). Kept as a parameterless-default
+  /// overload so existing callers/tests remain byte-compatible.
   /// </summary>
   /// <param name="totalSize">Total image size in bytes (default 4MB).</param>
   /// <returns>Complete NTFS image as byte array.</returns>
-  public byte[] Build(int totalSize = 4 * 1024 * 1024) {
+  public byte[] Build(int totalSize = 4 * 1024 * 1024)
+    => this.Build(totalSize, DefaultClusterSize, DefaultMftRecordSize);
+
+  /// <summary>
+  /// Builds the image with the cluster size and MFT record size chosen by
+  /// <see cref="Compression.Core.Layout.FilesystemLayoutOptimizer"/> to minimise
+  /// file slack + MFT-zone reservation + per-file MFT-record waste, and the
+  /// volume sized to exactly hold the files plus structural overhead.
+  /// </summary>
+  /// <param name="requestedClusterSize">Cluster size in bytes (0 = auto-select).</param>
+  /// <param name="requestedMftRecordSize">MFT record size in bytes (0 = auto-select).</param>
+  /// <returns>Complete NTFS image as byte array.</returns>
+  public byte[] BuildAutoSized(int requestedClusterSize = 0, int requestedMftRecordSize = 0) {
+    var fileSizes = this._files.Select(f => (long)f.Data.Length).ToList();
+    var fileCount = this._files.Count;
+
+    // Candidate spaces. Cluster sizes start at 4 KiB (the practical NTFS floor
+    // for our images); MFT records at the three power-of-two sizes real NTFS
+    // uses. Honour an explicit request by collapsing the matching candidate
+    // list to that single value.
+    int[] clusterCandidates = requestedClusterSize > 0
+      ? [requestedClusterSize]
+      : [4096, 8192, 16384, 32768, 65536];
+    int[] mftCandidates = requestedMftRecordSize > 0
+      ? [requestedMftRecordSize]
+      : [1024, 2048, 4096];
+
+    var (clusterSize, mftRecordSize) = Compression.Core.Layout.FilesystemLayoutOptimizer.SelectPair(
+      clusterCandidates,
+      mftCandidates,
+      (cb, mftSz) => {
+        var clusters = Compression.Core.Layout.FilesystemLayoutOptimizer.DataClusters(fileSizes, cb);
+        var slack    = Compression.Core.Layout.FilesystemLayoutOptimizer.Slack(fileSizes, cb);
+        // MFT-zone reservation: real NTFS reserves ≈12.5 % of the volume for MFT
+        // growth. Approximate as 12.5 % of the data-cluster bytes.
+        var mftZone  = (long)(clusters * (long)cb * 0.125);
+        // Per-file MFT-record waste: every file consumes one whole MFT record.
+        // Resident-data files (≤ ResidentThreshold) keep their data inside the
+        // record; the waste is the record bytes their data does not fill. Larger
+        // files keep only metadata in the record, so the whole record minus the
+        // metadata is "non-data" — approximate the waste as the full record.
+        long mftWaste = 0;
+        foreach (var s in fileSizes) {
+          var residentBytes = s <= ResidentThreshold ? s : 0;
+          mftWaste += Math.Max(0, mftSz - residentBytes);
+        }
+        return slack + mftZone + mftWaste;
+      });
+
+    // Size the volume to hold metadata + data + headroom.
+    var totalMftRecords = MftReservedRecords + fileCount;
+    var mftBytes = (long)totalMftRecords * mftRecordSize;
+    var dataBytes = fileSizes.Sum(s => s <= ResidentThreshold ? 0L : ((s + clusterSize - 1) / clusterSize) * clusterSize);
+    long overhead = (long)LogFileBytes + UpCaseBytes
+      + 16L * clusterSize   // boot + bitmaps + mirror + slack
+      + mftBytes;
+    var total = (overhead + dataBytes) * 11 / 10; // 10 % headroom
+    if (total < 4 * 1024 * 1024) total = 4 * 1024 * 1024; // never smaller than the default
+    if (total > int.MaxValue) total = int.MaxValue;
+
+    return this.Build((int)total, clusterSize, mftRecordSize);
+  }
+
+  /// <summary>
+  /// Builds the NTFS filesystem image with a tunable cluster size and MFT record
+  /// size.
+  /// </summary>
+  /// <param name="totalSize">Total image size in bytes (rounded up to a whole cluster).</param>
+  /// <param name="clusterSize">
+  /// Cluster size in bytes — a power-of-two multiple of the 512-byte sector size (512..65536).
+  /// </param>
+  /// <param name="mftRecordSize">
+  /// MFT record size in bytes — a power of two (512/1024/2048/4096).
+  /// </param>
+  /// <returns>Complete NTFS image as byte array.</returns>
+  public byte[] Build(int totalSize, int clusterSize, int mftRecordSize) {
+    ValidateGeometry(clusterSize, mftRecordSize);
+    this._clusterSize = clusterSize;
+    this._sectorsPerCluster = clusterSize / BytesPerSector;
+    this._mftRecordSize = mftRecordSize;
+
     // Pad to cluster boundary — a fractional cluster at the end confuses
     // readers computing totalClusters from volume size.
-    if (totalSize % ClusterSize != 0)
-      totalSize += ClusterSize - totalSize % ClusterSize;
+    if (totalSize % this._clusterSize != 0)
+      totalSize += this._clusterSize - totalSize % this._clusterSize;
 
     var disk = new byte[totalSize];
     var totalSectors = totalSize / BytesPerSector;
-    var totalClusters = totalSize / ClusterSize;
+    var totalClusters = totalSize / this._clusterSize;
 
     // Deterministic volume serial (high 32 bits derived from time, low from
     // magic) so Windows recognises the volume as distinct. Must be non-zero.
@@ -91,9 +180,9 @@ public sealed class NtfsWriter {
 
     const int mftStartCluster = 2;
     var totalMftRecords = MftReservedRecords + this._files.Count;
-    var mftTotalBytes = totalMftRecords * MftRecordSize;
-    var mftClusters = (mftTotalBytes + ClusterSize - 1) / ClusterSize;
-    var mftOffset = mftStartCluster * ClusterSize;
+    var mftTotalBytes = totalMftRecords * this._mftRecordSize;
+    var mftClusters = (mftTotalBytes + this._clusterSize - 1) / this._clusterSize;
+    var mftOffset = mftStartCluster * this._clusterSize;
 
     var nextCluster = mftStartCluster + mftClusters;
 
@@ -101,20 +190,20 @@ public sealed class NtfsWriter {
     // single bad sector can't take out both copies; we honour that.
     var mftMirrCluster = totalClusters / 2;
     if (mftMirrCluster <= nextCluster) mftMirrCluster = nextCluster;
-    var mftMirrClusters = (4 * MftRecordSize + ClusterSize - 1) / ClusterSize;
+    var mftMirrClusters = (4 * this._mftRecordSize + this._clusterSize - 1) / this._clusterSize;
     // Reserve that region before placing other files.
 
     var logFileCluster = nextCluster;
-    var logFileClusters = (LogFileBytes + ClusterSize - 1) / ClusterSize;
+    var logFileClusters = (LogFileBytes + this._clusterSize - 1) / this._clusterSize;
     nextCluster += logFileClusters;
 
     var upCaseCluster = nextCluster;
-    var upCaseClusters = (UpCaseBytes + ClusterSize - 1) / ClusterSize;
+    var upCaseClusters = (UpCaseBytes + this._clusterSize - 1) / this._clusterSize;
     nextCluster += upCaseClusters;
 
     var bitmapBytes = (totalClusters + 7) / 8;
     var bitmapCluster = nextCluster;
-    var bitmapClusters = (bitmapBytes + ClusterSize - 1) / ClusterSize;
+    var bitmapClusters = (bitmapBytes + this._clusterSize - 1) / this._clusterSize;
     nextCluster += bitmapClusters;
 
     // $MFT's own $BITMAP attribute (type 0xB0) — tracks which MFT records are
@@ -123,7 +212,7 @@ public sealed class NtfsWriter {
     // is allocated. Stored non-resident in its own cluster.
     var mftBitmapBitsBytes = (totalMftRecords + 7) / 8;
     var mftBitmapCluster = nextCluster;
-    var mftBitmapClusters = (mftBitmapBitsBytes + ClusterSize - 1) / ClusterSize;
+    var mftBitmapClusters = (mftBitmapBitsBytes + this._clusterSize - 1) / this._clusterSize;
     if (mftBitmapClusters < 1) mftBitmapClusters = 1;
     nextCluster += mftBitmapClusters;
 
@@ -139,7 +228,7 @@ public sealed class NtfsWriter {
         fileInfos.Add((name, data, true, 0, 0));
         continue;
       }
-      var clusters = (data.Length + ClusterSize - 1) / ClusterSize;
+      var clusters = (data.Length + this._clusterSize - 1) / this._clusterSize;
       // Skip over the mirror region if necessary.
       if (nextCluster < mftMirrCluster && nextCluster + clusters > mftMirrCluster) {
         nextCluster = mftMirrCluster + mftMirrClusters;
@@ -154,7 +243,7 @@ public sealed class NtfsWriter {
     // --- Build the $MFT bitmap data and write it to its cluster -------------
     // Bit i set ⇔ MFT record i is currently allocated. We allocate records 0..15
     // (system) plus one per user file. Bits beyond `totalMftRecords-1` stay 0.
-    var mftBitmapBytesActual = mftBitmapClusters * ClusterSize;
+    var mftBitmapBytesActual = mftBitmapClusters * this._clusterSize;
     var mftBitmap = new byte[mftBitmapBytesActual];
     for (var r = 0; r < totalMftRecords; r++)
       mftBitmap[r / 8] |= (byte)(1 << (r % 8));
@@ -185,8 +274,8 @@ public sealed class NtfsWriter {
       isDirectory: false,
       residentData: null,
       nonResidentRuns: [(mftMirrCluster, mftMirrClusters)],
-      dataSize: 4L * MftRecordSize,
-      sizeHintInFileName: 4L * MftRecordSize);
+      dataSize: 4L * this._mftRecordSize,
+      sizeHintInFileName: 4L * this._mftRecordSize);
 
     // Record 2: $LogFile
     WriteMftRecord(
@@ -230,7 +319,7 @@ public sealed class NtfsWriter {
       // Allocate clusters at the end for $AttrDef if it grows beyond resident.
       // In practice the 22-entry table is ~3 KiB so this branch rarely hits,
       // but keep it for safety.
-      var attrDefClusters = (attrDef.Length + ClusterSize - 1) / ClusterSize;
+      var attrDefClusters = (attrDef.Length + this._clusterSize - 1) / this._clusterSize;
       var attrDefCluster = nextCluster;
       nextCluster += attrDefClusters;
       WriteBytesToClusters(disk, attrDefCluster, attrDef);
@@ -379,7 +468,7 @@ public sealed class NtfsWriter {
           dataSize: data.Length,
           sizeHintInFileName: data.Length);
 
-        var clusterOffset = (long)startCluster * ClusterSize;
+        var clusterOffset = (long)startCluster * this._clusterSize;
         if (clusterOffset + data.Length <= disk.Length)
           data.CopyTo(disk, (int)clusterOffset);
       }
@@ -387,62 +476,103 @@ public sealed class NtfsWriter {
 
     // --- $LogFile data region: real NTFS initialises it to "clean" (0xFF)
     //     pages so recovery treats the log as empty. ---
-    var logByteOffset = (long)logFileCluster * ClusterSize;
+    var logByteOffset = (long)logFileCluster * this._clusterSize;
     if (logByteOffset + LogFileBytes <= disk.Length)
       Array.Fill(disk, (byte)0xFF, (int)logByteOffset, LogFileBytes);
 
     // --- $MFTMirr data: mirror the first 4 MFT records. ---------------------
-    var mirrByteOffset = (long)mftMirrCluster * ClusterSize;
-    if (mirrByteOffset + 4 * MftRecordSize <= disk.Length) {
-      Array.Copy(disk, mftOffset, disk, (int)mirrByteOffset, 4 * MftRecordSize);
+    var mirrByteOffset = (long)mftMirrCluster * this._clusterSize;
+    if (mirrByteOffset + 4 * this._mftRecordSize <= disk.Length) {
+      Array.Copy(disk, mftOffset, disk, (int)mirrByteOffset, 4 * this._mftRecordSize);
     }
 
     return disk;
   }
 
-  private static void WriteBootSector(byte[] disk, long totalSectors, long mftCluster, long mftMirrCluster, long volumeSerial) {
+  private void WriteBootSector(byte[] disk, long totalSectors, long mftCluster, long mftMirrCluster, long volumeSerial) {
     disk[0] = 0xEB; disk[1] = 0x52; disk[2] = 0x90;
     Encoding.ASCII.GetBytes("NTFS    ").CopyTo(disk, 3);
     BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(11), BytesPerSector);
-    disk[13] = SectorsPerCluster;
+    disk[13] = (byte)this._sectorsPerCluster;
     disk[21] = 0xF8; // media descriptor
     BinaryPrimitives.WriteInt64LittleEndian(disk.AsSpan(40), totalSectors - 1);
     BinaryPrimitives.WriteInt64LittleEndian(disk.AsSpan(48), mftCluster);
     BinaryPrimitives.WriteInt64LittleEndian(disk.AsSpan(56), mftMirrCluster);
-    disk[64] = unchecked((byte)-10); // 2^10 = 1024 bytes per MFT record
+    // clusters_per_mft_record (offset 64): NTFS encodes this specially.
+    //   • record >= cluster  → store the positive cluster count per record.
+    //   • record  < cluster  → store the negative base-2 log of the byte size
+    //                          (e.g. 1024-byte record → -10, since 2^10 = 1024).
+    disk[64] = EncodeClustersPerRecord(this._mftRecordSize, this._clusterSize);
     disk[68] = 4;                    // 4 clusters per index block
     BinaryPrimitives.WriteInt64LittleEndian(disk.AsSpan(72), volumeSerial);
     disk[510] = 0x55; disk[511] = 0xAA;
   }
 
+  // Encodes the boot-sector clusters_per_mft_record field (offset 64). When the
+  // record fits in a single cluster (record < cluster) the field is the signed
+  // negative base-2 log of the record's byte size; otherwise it is the positive
+  // number of clusters per record. Mirrors NtfsReader's decode.
+  private static byte EncodeClustersPerRecord(int recordSize, int clusterSize) {
+    if (recordSize >= clusterSize)
+      return (byte)(recordSize / clusterSize);
+    var log2 = (int)Math.Log2(recordSize);
+    return unchecked((byte)(-log2));
+  }
+
+  // Validates the tunable geometry. Cluster size must be a power-of-two multiple
+  // of the 512-byte sector size in [512, 65536]; MFT record size must be a power
+  // of two in [512, 4096].
+  private void ValidateGeometry(int clusterSize, int mftRecordSize) {
+    if (clusterSize < BytesPerSector || clusterSize > 65536 ||
+        (clusterSize & (clusterSize - 1)) != 0 || clusterSize % BytesPerSector != 0)
+      throw new ArgumentOutOfRangeException(nameof(clusterSize),
+        clusterSize, "Cluster size must be a power-of-two multiple of 512 in [512, 65536].");
+    if (mftRecordSize < 512 || mftRecordSize > 4096 ||
+        (mftRecordSize & (mftRecordSize - 1)) != 0)
+      throw new ArgumentOutOfRangeException(nameof(mftRecordSize),
+        mftRecordSize, "MFT record size must be a power of two in {512, 1024, 2048, 4096}.");
+  }
+
+  // Number of Update-Sequence-Array entries: 1 record-wide USN + one per
+  // 512-byte sector spanned by the record.
+  private int UsaCount => 1 + this._mftRecordSize / BytesPerSector;
+
+  // Offset of the first attribute. The USA lives at byte 42 and occupies
+  // 2*UsaCount bytes; the attribute region starts after it, 8-byte aligned.
+  // Floored at 56 so the default 1024-byte record stays byte-identical to the
+  // original writer (which padded attrStart to 56).
+  private int AttrStart => Math.Max(56, (42 + 2 * this.UsaCount + 7) & ~7);
+
   // Writes a reserved (not-in-use) MFT record with FILE magic but no
   // attributes and the "in use" flag cleared. chkdsk treats these as empty
   // slots awaiting allocation rather than corruption.
-  private static void WriteReservedMftRecord(byte[] disk, int mftBaseOffset, uint recordNum) {
-    var recordOffset = mftBaseOffset + (int)recordNum * MftRecordSize;
-    if (recordOffset + MftRecordSize > disk.Length) return;
+  private void WriteReservedMftRecord(byte[] disk, int mftBaseOffset, uint recordNum) {
+    var recordOffset = mftBaseOffset + (int)recordNum * this._mftRecordSize;
+    if (recordOffset + this._mftRecordSize > disk.Length) return;
 
-    var record = new byte[MftRecordSize];
+    var usaCount = this.UsaCount;
+    var attrStart = this.AttrStart;
+    var record = new byte[this._mftRecordSize];
     record[0] = (byte)'F'; record[1] = (byte)'I'; record[2] = (byte)'L'; record[3] = (byte)'E';
 
     // USA offset/count.
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(4), 42);
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(6), 3);
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(6), (ushort)usaCount);
     // Sequence number.
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(16), 1);
     // Attrs offset, flags = 0 (not in use).
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(20), 56);
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(20), (ushort)attrStart);
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(22), 0);
     // Allocated size.
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(28), MftRecordSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(28), (uint)this._mftRecordSize);
     // MFT record number.
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(44), recordNum);
     // End-of-attributes marker at attrs offset.
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(56), 0xFFFFFFFF);
+    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(attrStart), 0xFFFFFFFF);
     // Used size = attrs offset + 8 (end marker + alignment pad).
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(24), 56 + 8u);
+    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(24), (uint)(attrStart + 8));
 
-    ApplyUsaFixup(record);
+    this.ApplyUsaFixup(record);
     record.CopyTo(disk, recordOffset);
   }
 
@@ -454,7 +584,7 @@ public sealed class NtfsWriter {
   // after $DATA. Logical/physical sizes are derived from the cluster runs.
   private readonly record struct NonResidentAttr(uint Type, List<(int Cluster, int Count)> Runs, long DataSize);
 
-  private static void WriteMftRecord(byte[] disk, int mftBaseOffset, uint recordNum, ushort sequence,
+  private void WriteMftRecord(byte[] disk, int mftBaseOffset, uint recordNum, ushort sequence,
     string fileName, uint parentRecord, bool isDirectory,
     byte[]? residentData, List<(int Cluster, int Count)>? nonResidentRuns, long dataSize,
     long sizeHintInFileName,
@@ -462,23 +592,24 @@ public sealed class NtfsWriter {
     ResidentAttr[]? extraAttrs = null,
     NonResidentAttr[]? extraNonResidentAttrs = null) {
 
-    var recordOffset = mftBaseOffset + (int)recordNum * MftRecordSize;
-    if (recordOffset + MftRecordSize > disk.Length) return;
+    var recordOffset = mftBaseOffset + (int)recordNum * this._mftRecordSize;
+    if (recordOffset + this._mftRecordSize > disk.Length) return;
 
-    var record = new byte[MftRecordSize];
+    var usaCount = this.UsaCount;
+    var attrStart = this.AttrStart;
+    var record = new byte[this._mftRecordSize];
 
     // --- Header ---
     record[0] = (byte)'F'; record[1] = (byte)'I'; record[2] = (byte)'L'; record[3] = (byte)'E';
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(4), 42); // USA offset
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(6), 3);  // USA count (1 USN + 2 sector USNs)
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(6), (ushort)usaCount); // 1 USN + one per sector
     BinaryPrimitives.WriteUInt64LittleEndian(record.AsSpan(8), 0);  // LSN
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(16), sequence);
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(18), 1); // hard link count
 
-    const int attrStart = 56; // header (48) + USA (8) = 56; align to 8
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(20), attrStart);
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(20), (ushort)attrStart);
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(22), (ushort)(0x01 | (isDirectory ? 0x02 : 0)));
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(28), MftRecordSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(28), (uint)this._mftRecordSize);
     BinaryPrimitives.WriteUInt64LittleEndian(record.AsSpan(32), 0); // base MFT ref
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(40), 0); // next attribute instance
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(44), recordNum);
@@ -530,16 +661,22 @@ public sealed class NtfsWriter {
   // bytes must equal the record-wide USN on disk; the overwritten originals
   // live in the USA so the reader can restore them. CHKDSK and ntfs-3g use
   // the matching USN as a torn-write detector.
-  private static void ApplyUsaFixup(byte[] record) {
+  private void ApplyUsaFixup(byte[] record) {
     const ushort usn = 0x0001;
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(42), usn);
 
-    // Sector 1 (offsets 510-511).
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(44), BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(510)));
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(510), usn);
-    // Sector 2 (offsets 1022-1023).
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(46), BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(1022)));
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(1022), usn);
+    // One fixup per 512-byte sector spanned by the record: stash the sector's
+    // trailing two bytes into the USA slot, then stamp the USN at the sector
+    // tail. Matches NtfsReader's general usaCount-driven decode. For the default
+    // 1024-byte record this covers sectors at offsets 510 and 1022 exactly as
+    // the original two-sector code did.
+    var sectors = this._mftRecordSize / BytesPerSector;
+    for (var s = 0; s < sectors; s++) {
+      var sectorEnd = s * BytesPerSector + 510;
+      var usaSlot = 44 + s * 2; // 42 holds the USN; per-sector slots start at 44
+      BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(usaSlot), BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(sectorEnd)));
+      BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(sectorEnd), usn);
+    }
   }
 
   private static int WriteStandardInformationAttr(byte[] record, int pos, bool isDirectory) {
@@ -629,10 +766,10 @@ public sealed class NtfsWriter {
     return pos + attrLen;
   }
 
-  private static int WriteNonResidentDataAttr(byte[] record, int pos, List<(int Cluster, int Count)> runs, long dataSize)
-    => WriteNonResidentAttr(record, pos, 0x80, runs, dataSize);
+  private int WriteNonResidentDataAttr(byte[] record, int pos, List<(int Cluster, int Count)> runs, long dataSize)
+    => this.WriteNonResidentAttr(record, pos, 0x80, runs, dataSize);
 
-  private static int WriteNonResidentAttr(byte[] record, int pos, uint type, List<(int Cluster, int Count)> runs, long dataSize) {
+  private int WriteNonResidentAttr(byte[] record, int pos, uint type, List<(int Cluster, int Count)> runs, long dataSize) {
     var dataRuns = EncodeDataRuns(runs);
     var dataRunsOffset = 64;
     var attrLen = dataRunsOffset + dataRuns.Length;
@@ -648,7 +785,7 @@ public sealed class NtfsWriter {
     foreach (var (_, c) in runs) totalClusters += c;
     BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 24), totalClusters - 1);
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(pos + 32), (ushort)dataRunsOffset);
-    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 40), totalClusters * ClusterSize);
+    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 40), totalClusters * this._clusterSize);
     BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 48), dataSize);
     BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 56), dataSize);
 
@@ -931,8 +1068,8 @@ public sealed class NtfsWriter {
 
   // ── Low-level helpers ────────────────────────────────────────────────────
 
-  private static void WriteBytesToClusters(byte[] disk, int startCluster, byte[] data) {
-    var offset = (long)startCluster * ClusterSize;
+  private void WriteBytesToClusters(byte[] disk, int startCluster, byte[] data) {
+    var offset = (long)startCluster * this._clusterSize;
     if (offset + data.Length > disk.Length) return;
     data.CopyTo(disk, (int)offset);
   }

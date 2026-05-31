@@ -4,7 +4,24 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.HfsPlus;
 
-public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// HFS+ creation knobs: volume label and the allocation block size. The block
+  /// size dropdown offers Auto (slack + table-overhead minimisation) plus the
+  /// power-of-two sizes 4 KB … 64 KB that the writer supports.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(),
+    FilesystemSchemaPresets.ClusterSize(
+      key: "BlockSize",
+      displayName: "Allocation block size",
+      min: 4096, max: 65536,
+      description: "HFS+ allocation block size (power of two, 4 KB … 64 KB). " +
+        "Auto picks the size that minimises slack + allocation-bitmap and B-tree overhead."),
+  ];
 
   /// <summary>
   /// Walks the HFS+ catalog B-tree leaf chain and yields the actual on-disk
@@ -89,7 +106,11 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     var w = new HfsPlusWriter();
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
-    output.Write(w.Build());
+
+    // "BlockSize" → bytes (0 = Auto). The writer's optimizer confirms or bumps.
+    var blockSize = FilesystemSchemaPresets.ParseSize(
+      options.FormatSpecific?.GetValueOrDefault("BlockSize"));
+    output.Write(w.BuildAutoSized(blockSize));
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {

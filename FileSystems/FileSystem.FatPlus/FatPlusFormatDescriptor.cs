@@ -33,7 +33,24 @@ namespace FileSystem.FatPlus;
 /// <see cref="DefragRebuilder"/> rebuild path.</para>
 /// </remarks>
 public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
+    IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  // FAT+ is always a FAT32 volume aimed at large media, so we expose only the
+  // knobs the writer actually honours: image size (large presets + Auto),
+  // cluster size, and the volume label (plumbed through to the inner FatWriter).
+  // FAT type / root-entry count are NOT exposed — FAT+ is fixed to FAT32 and the
+  // writer does not accept those parameters.
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.ImageSize(
+      ["512 MB", "1 GB", "2 GB", "4 GB", "16 GB", "64 GB"],
+      "Total image capacity. Auto fits the files (minimum 100 MB to stay in FAT32). " +
+      "FAT+ targets large volumes, so the fixed presets start at 512 MB."),
+    FilesystemSchemaPresets.ClusterSize(
+      description: "Allocation unit size. Auto picks the size that minimises slack + FAT overhead."),
+    FilesystemSchemaPresets.VolumeLabel(),
+  ];
 
   public string Id => "FatPlus";
   public string DisplayName => "FAT+ Filesystem Image (large-file extension)";
@@ -94,17 +111,39 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new FatPlusWriter();
-    var totalBytes = 0L;
-    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs)) {
+    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
       w.AddFile(name, data);
-      totalBytes += data.Length;
+
+    var specific = options.FormatSpecific;
+    var totalSectors = ParseImageSizeSectors(specific?.GetValueOrDefault("ImageSize"));
+    // ClusterSize uses the standard FormatSize labels, so the shared inverse
+    // parser handles it (same as NTFS/F2fs/exFAT). ImageSize needs its own parser
+    // because it offers GB presets and must yield sectors, not bytes.
+    var clusterBytes = FilesystemSchemaPresets.ParseSize(specific?.GetValueOrDefault("ClusterSize"));
+    var label        = specific?.GetValueOrDefault("VolumeLabel");
+
+    // Fixed image size + cluster on Auto: optimise the cluster size *within* that
+    // fixed size to minimise slack waste instead of using the default heuristic.
+    if (totalSectors > 0 && clusterBytes == 0) {
+      var picked = w.PickClusterForFixedImage(totalSectors);
+      if (picked > 0) clusterBytes = picked;
     }
-    // Auto-size: must be at least large enough to fit the payload plus FAT
-    // overhead. Default 100 MB; scale up if needed.
-    var minBytes = Math.Max(totalBytes * 2 + 16 * 1024 * 1024, 100L * 1024 * 1024);
-    var totalSectors = (int)Math.Min(int.MaxValue, (minBytes + 511) / 512);
-    output.Write(w.Build(totalSectors: totalSectors));
+
+    var disk = totalSectors > 0
+      ? w.Build(totalSectors, requestedClusterSize: clusterBytes, volumeLabel: label)
+      : w.BuildAutoSized(requestedClusterSize: clusterBytes, volumeLabel: label);
+    output.Write(disk);
   }
+
+  private static int ParseImageSizeSectors(string? s) => s?.Trim() switch {
+    "512 MB" => 1048576,
+    "1 GB"   => 2097152,
+    "2 GB"   => 4194304,
+    "4 GB"   => 8388608,
+    "16 GB"  => 33554432,
+    "64 GB"  => 134217728,
+    _        => 0,  // "Auto (fit to files)" or anything else → auto-size
+  };
 
   /// <summary>
   /// Adds files to an existing FAT+ image. Implemented as full rebuild via

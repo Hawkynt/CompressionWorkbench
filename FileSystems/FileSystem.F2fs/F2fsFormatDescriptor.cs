@@ -4,7 +4,19 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.F2fs;
 
-public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable {
+public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema {
+
+  // A F2FS segment is 2 MiB; image size in bytes = segment count × 2 MiB.
+  private const long SegmentSizeBytes = 2L * 1024 * 1024;
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+  // Image-size presets all map to a segment count (MB / 2 = segments). The smallest
+  // offered preset (64 MB = 32 segments) is well above the writer's 16-segment floor.
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.ImageSize(["64 MB", "128 MB", "256 MB", "512 MB", "1 GB", "2 GB"]),
+    FilesystemSchemaPresets.VolumeLabel(16),
+  ];
+
   public string Id => "F2fs";
   public string DisplayName => "F2FS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -72,11 +84,30 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var specific = options.FormatSpecific;
+    var segments = ParseImageSizeSegments(specific?.GetValueOrDefault("ImageSize"));
+    var label = specific?.GetValueOrDefault("VolumeLabel");
+
     var w = new F2fsWriter();
+    w.SetVolumeLabel(label);
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
-    w.WriteTo(output);
+
+    var image = segments > 0 ? w.Build(segments) : w.BuildAutoSized();
+    output.Write(image, 0, image.Length);
   }
+
+  // Maps an image-size preset label to a F2FS segment count (2 MiB per segment).
+  // "Auto (fit to files)" / unknown → 0, signalling BuildAutoSized().
+  private static int ParseImageSizeSegments(string? s) => s?.Trim() switch {
+    "64 MB"  => (int)(64L * 1024 * 1024 / SegmentSizeBytes),    // 32
+    "128 MB" => (int)(128L * 1024 * 1024 / SegmentSizeBytes),   // 64
+    "256 MB" => (int)(256L * 1024 * 1024 / SegmentSizeBytes),   // 128
+    "512 MB" => (int)(512L * 1024 * 1024 / SegmentSizeBytes),   // 256
+    "1 GB"   => (int)(1024L * 1024 * 1024 / SegmentSizeBytes),  // 512
+    "2 GB"   => (int)(2L * 1024 * 1024 * 1024 / SegmentSizeBytes), // 1024
+    _        => 0, // Auto (fit to files)
+  };
 
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
