@@ -16,31 +16,30 @@ namespace FileSystem.F2fs;
 ///   <item><description>Segments 1-2: checkpoint pair. Each pack = 6 blocks (cp1 + compact-summary + 3 node summaries + cp2).</description></item>
 ///   <item><description>Segments 3-4: SIT pair (Segment Information Table).</description></item>
 ///   <item><description>Segments 5-6: NAT pair (Node Address Table).</description></item>
-///   <item><description>Segment 7: SSA (Segment Summary Area).</description></item>
-///   <item><description>Segments 8+: Main area. Six "current" segments host root inode,
-///       file inodes, dentry data, and file data with type-correct SIT entries.</description></item>
+///   <item><description>Segment 7: SSA (Segment Summary Area) — one f2fs_summary_block per main segment.</description></item>
+///   <item><description>Segments 8+: Main area, laid out as contiguous multi-segment regions.</description></item>
 /// </list>
 /// <para>
-/// Main-area segment assignment (relative to <c>main_blkaddr</c>):
-/// </para>
-/// <list type="bullet">
-///   <item><description>Main seg 0 = HOT_NODE — root inode at block 0.</description></item>
-///   <item><description>Main seg 1 = WARM_NODE — regular-file inodes at blocks 0..N-1.</description></item>
-///   <item><description>Main seg 2 = COLD_NODE — unused (kept type-tagged for fsck).</description></item>
-///   <item><description>Main seg 3 = HOT_DATA — root dentry blocks (when not using inline-dentry; typically empty).</description></item>
-///   <item><description>Main seg 4 = WARM_DATA — file data blocks.</description></item>
-///   <item><description>Main seg 5 = COLD_DATA — unused (kept type-tagged for fsck).</description></item>
-/// </list>
-/// <para>
-/// The root inode uses inline dentries (<c>F2FS_INLINE_DENTRY</c>) with the kernel-spec
-/// layout starting at <c>i_addr[1]</c> (offset 364 — i.e. one reserved address pointer for
-/// the inline-data flag): bitmap[24] + reserved[16] + dir_entry[192] + filename[192][8].
+/// The main area holds, in order, the populated regions sized to their actual block counts —
+/// HOT_NODE (root inode), WARM_NODE (subdirectory + file inodes), HOT_DATA (directory dentry
+/// data blocks), WARM_DATA (file data blocks) — followed by six reserved, empty "current"
+/// segments (one per <c>CURSEG_*</c> type). Every written block therefore lives in an
+/// ordinary, non-current segment whose owner is recorded in the on-disk SSA, and the
+/// checkpoint's <c>cur_*_blkoff</c> are all zero. This keeps fsck's two summary sources (the
+/// checkpoint for current segments, the SSA for everything else) from ever disagreeing.
 /// </para>
 /// <para>
-/// SIT entries encode both the valid-block count (low 10 bits) and the segment type
-/// (high 6 bits). Each "current" segment in the checkpoint must carry a SIT entry whose
-/// type matches the corresponding <c>CURSEG_*</c> constant, and whose valid_map covers
-/// exactly the blocks 0..(blkoff-1) — fsck cross-checks this.
+/// Small directories use inline dentries (<c>F2FS_INLINE_DENTRY</c>) embedded in the inode at
+/// <c>i_addr[1]</c> (offset 364). Larger directories spill into regular 4 KiB dentry data
+/// blocks organised by the kernel's multi-level hash-bucket scheme (see
+/// <c>PlanHashBucketDentries</c>): a name lands in bucket <c>hash % dir_buckets(level)</c> at
+/// the lowest level whose target bucket has room, so <c>fsck.f2fs</c>'s
+/// <c>f2fs_check_dirent_position</c> agrees with where each name is stored.
+/// </para>
+/// <para>
+/// SIT entries (written for every main segment) encode the valid-block count (low 10 bits)
+/// and the segment type (high 6 bits); the SSA footer entry_type classifies each segment as
+/// node or data. fsck cross-checks all of these against the reachable inode/dentry tree.
 /// </para>
 /// </summary>
 public sealed class F2fsWriter {
@@ -127,14 +126,6 @@ public sealed class F2fsWriter {
   internal const int SegSsa = SegNat + 2; // 7
   internal const int SegMain = SegSsa + 1; // 8
 
-  // Main-area segment offsets (from main_blkaddr in segments — NOT absolute).
-  internal const int MainSegHotNode = 0;
-  internal const int MainSegWarmNode = 1;
-  internal const int MainSegColdNode = 2;
-  internal const int MainSegHotData = 3;
-  internal const int MainSegWarmData = 4;
-  internal const int MainSegColdData = 5;
-
   // Default 64 MiB image — 32 segments at 2 MiB each.
   internal const int DefaultSegmentCount = 32;
 
@@ -152,15 +143,17 @@ public sealed class F2fsWriter {
   internal const int SumJournalSize = 507;
   internal const int SumFooterSize = 5;
 
-  // Minimum total segment count the writer can build. Build() requires at least
-  // SegMain + 8 segments (the metadata area at SegMain=8 plus 6 active main segments
-  // and slack). At 2 MiB per segment this is a 32 MiB hard floor — matching the
-  // real-world mkfs.f2fs minimum-image constraint.
-  internal const int MinTotalSegments = SegMain + 8; // 16
+  // Minimum total segment count the writer can build. The main area must hold the populated
+  // node/data regions (HOT_NODE + WARM_NODE + HOT_DATA + WARM_DATA, up to one segment each in
+  // the smallest case) PLUS the six reserved current segments, PLUS slack. With the metadata
+  // area at SegMain=8 and one segment of pre-roll padding, segment_count_main = total - 9, so
+  // we need total >= 9 (meta+pad) + 10 (4 worst-case small regions + 6 cursegs) + slack.
+  internal const int MinTotalSegments = SegMain + 12; // 20 → 40 MiB hard floor.
 
   /// <summary>
-  /// The smallest total segment count <see cref="Build(int)"/> accepts. Equals the
-  /// metadata area plus the six active main segments and slack (16 segments = 32 MiB).
+  /// The smallest total segment count <see cref="Build(int)"/> accepts. Equals the metadata
+  /// area, the populated regions and the six reserved current segments plus slack
+  /// (20 segments = 40 MiB).
   /// </summary>
   public const int MinimumSegmentCount = MinTotalSegments;
 
@@ -256,20 +249,17 @@ public sealed class F2fsWriter {
     }
 
     // Decide each directory's dentry storage: inline when the children (plus "." and
-    // "..") fit the inline slot count, otherwise regular dentry data blocks.
+    // "..") fit the inline slot count, otherwise regular dentry data blocks laid out per
+    // the F2FS multi-level hash-bucket scheme (fs/f2fs/dir.c).
     const int dotsSlots = 2;
     var allDirs = subdirPlan.Prepend(root).ToList();
     foreach (var d in allDirs) {
       var slots = dotsSlots + d.Children.Sum(c => DentrySlotsFor(c.Name));
       if (slots <= NrInlineDentry) {
         d.UsesInlineDentry = true;
-        d.DentryBlockCount = 0;
       } else {
         d.UsesInlineDentry = false;
-        // Linear data-block layout: pack dentry slots into consecutive blocks, each
-        // holding NrDentryInBlock slots. "." and ".." occupy the first two slots of
-        // block 0. A multi-slot name never straddles a block boundary.
-        d.DentryBlockCount = PlanDentryBlockCount(d.Children);
+        PlanHashBucketDentries(d);
       }
     }
 
@@ -283,24 +273,37 @@ public sealed class F2fsWriter {
     // Each region spans ceil(blocks / BlocksPerSeg) segments so it can hold far more
     // than a single segment's worth of blocks.
     var warmNodeBlockCount = subdirPlan.Count + filePlan.Count;
-    var dentryBlockTotal = allDirs.Sum(d => d.DentryBlockCount);
+    var dentryBlockTotal = allDirs.Sum(d => d.DentryLayout.Count);
     var dataBlockTotal = filePlan.Sum(f => f.Data.Length == 0
       ? 0 : (f.Data.Length + BlockSize - 1) / BlockSize);
 
+    // Each populated region spans as many segments as its block count needs. The root
+    // inode lives alone in HOT_NODE; subdir/file inodes in WARM_NODE; dentry blocks in
+    // HOT_DATA; file data in WARM_DATA. COLD_NODE/COLD_DATA hold nothing.
     var hotNodeSegs = 1;
     var warmNodeSegs = Math.Max(1, (warmNodeBlockCount + BlocksPerSeg - 1) / BlocksPerSeg);
-    var coldNodeSegs = 1;
-    var hotDataSegs = Math.Max(1, (dentryBlockTotal + BlocksPerSeg - 1) / BlocksPerSeg);
-    var warmDataSegs = Math.Max(1, (dataBlockTotal + BlocksPerSeg - 1) / BlocksPerSeg);
-    var coldDataSegs = 1;
+    var hotDataSegs = dentryBlockTotal == 0 ? 0 : (dentryBlockTotal + BlocksPerSeg - 1) / BlocksPerSeg;
+    var warmDataSegs = dataBlockTotal == 0 ? 0 : (dataBlockTotal + BlocksPerSeg - 1) / BlocksPerSeg;
 
     var hotNodeSegStart = 0;
     var warmNodeSegStart = hotNodeSegStart + hotNodeSegs;
-    var coldNodeSegStart = warmNodeSegStart + warmNodeSegs;
-    var hotDataSegStart = coldNodeSegStart + coldNodeSegs;
+    var hotDataSegStart = warmNodeSegStart + warmNodeSegs;
     var warmDataSegStart = hotDataSegStart + hotDataSegs;
-    var coldDataSegStart = warmDataSegStart + warmDataSegs;
-    var usedMainSegs = coldDataSegStart + coldDataSegs;
+    var populatedMainSegs = warmDataSegStart + warmDataSegs;
+
+    // F2FS keeps one "current" (open-for-append) segment per CURSEG_* type. fsck reads the
+    // segment-summary entries for blocks in a current segment from the checkpoint, and for
+    // every other block from the on-disk SSA. To keep the two sources from disagreeing we
+    // place ALL written blocks into ordinary (non-current) segments — fully described by the
+    // SSA — and reserve six fresh, EMPTY current segments after them (blkoff 0). The
+    // checkpoint then describes six empty cursegs, which is trivially consistent.
+    var cursegHotDataSeg = populatedMainSegs + 0;
+    var cursegWarmDataSeg = populatedMainSegs + 1;
+    var cursegColdDataSeg = populatedMainSegs + 2;
+    var cursegHotNodeSeg = populatedMainSegs + 3;
+    var cursegWarmNodeSeg = populatedMainSegs + 4;
+    var cursegColdNodeSeg = populatedMainSegs + 5;
+    var usedMainSegs = populatedMainSegs + 6;
 
     if (usedMainSegs > segmentCountMain)
       throw new InvalidOperationException(
@@ -311,32 +314,52 @@ public sealed class F2fsWriter {
     var hotDataBlkBase = mainStart + hotDataSegStart * BlocksPerSeg;
     var warmDataBlkBase = mainStart + warmDataSegStart * BlocksPerSeg;
 
+    // Per-block segment-summary entries, keyed by absolute block address: each tells fsck
+    // which node owns the block and (for data) the block's index within that node. These
+    // populate the on-disk SSA so fsck can validate every reachable node/data block.
+    var blockSummaries = new Dictionary<int, BlockSummary>();
+
     // Root inode lives at HOT_NODE block 0.
     var rootInodeBlock = mainStart + hotNodeSegStart * BlocksPerSeg + 0;
     root.InodeBlock = rootInodeBlock;
+    blockSummaries[rootInodeBlock] = new BlockSummary(RootIno, 0, IsNode: true);
 
-    // Assign WARM_NODE inode blocks (subdirectory inodes first, then file inodes).
+    // Assign WARM_NODE inode blocks (subdirectory inodes first, then file inodes). A node
+    // block's summary records its own nid; ofs_in_node is 0 for an inode block.
     var nextWarmNodeBlk = 0;
-    foreach (var d in subdirPlan)
+    foreach (var d in subdirPlan) {
       d.InodeBlock = warmNodeBlkBase + nextWarmNodeBlk++;
-    foreach (var f in filePlan)
+      blockSummaries[d.InodeBlock] = new BlockSummary(d.Nid, 0, IsNode: true);
+    }
+    foreach (var f in filePlan) {
       f.InodeBlock = warmNodeBlkBase + nextWarmNodeBlk++;
+      blockSummaries[f.InodeBlock] = new BlockSummary(f.Nid, 0, IsNode: true);
+    }
 
-    // Assign HOT_DATA dentry blocks to every non-inline directory.
+    // Assign HOT_DATA dentry blocks to every non-inline directory. Each used logical block
+    // index (pgofs) gets a physical block; the summary records the owning directory inode
+    // and the block's logical index (ofs_in_node = pgofs).
     var nextHotDataBlk = 0;
     foreach (var d in allDirs) {
       if (d.UsesInlineDentry)
         continue;
-      for (var b = 0; b < d.DentryBlockCount; ++b)
-        d.DentryBlocks.Add(hotDataBlkBase + nextHotDataBlk++);
+      foreach (var pgofs in d.DentryLayout.Keys.OrderBy(k => k)) {
+        var blk = hotDataBlkBase + nextHotDataBlk++;
+        d.DentryBlocks[pgofs] = blk;
+        blockSummaries[blk] = new BlockSummary(d.Nid, (ushort)pgofs, IsNode: false);
+      }
     }
 
-    // Assign WARM_DATA blocks to each file.
+    // Assign WARM_DATA blocks to each file; the summary records the owning file inode and
+    // the block's index within that inode.
     var nextWarmDataBlk = 0;
     foreach (var f in filePlan) {
       var blocksNeeded = f.Data.Length == 0 ? 0 : (f.Data.Length + BlockSize - 1) / BlockSize;
-      for (var i = 0; i < blocksNeeded; ++i)
-        f.DataBlocks.Add(warmDataBlkBase + nextWarmDataBlk++);
+      for (var i = 0; i < blocksNeeded; ++i) {
+        var blk = warmDataBlkBase + nextWarmDataBlk++;
+        f.DataBlocks.Add(blk);
+        blockSummaries[blk] = new BlockSummary(f.Nid, (ushort)i, IsNode: false);
+      }
     }
 
     // Warm-node inodes are the subdirectory inodes plus the regular-file inodes, laid out
@@ -373,7 +396,7 @@ public sealed class F2fsWriter {
           d.Children, isRoot: isRoot);
       else
         WriteDirectoryInodeWithDataBlocks(disk, d.InodeBlock * BlockSize, d.Nid, parentNid: dirParent,
-          d.Children, d.DentryBlocks, isRoot: isRoot);
+          d.Children, d, isRoot: isRoot);
     }
 
     // ---- 3) Write NAT entries on disk (file/dir entries; root NAT also lives in journal) ----
@@ -411,26 +434,32 @@ public sealed class F2fsWriter {
       }
     }
 
-    // HOT_NODE: root inode (1 block).
-    MarkRegion(hotNodeSegStart, hotNodeSegs, 1, CursegHotNode);
-    // WARM_NODE: subdirectory + file inodes.
-    MarkRegion(warmNodeSegStart, warmNodeSegs, warmNodeCount, CursegWarmNode);
-    // COLD_NODE: empty (type-tagged).
-    MarkRegion(coldNodeSegStart, coldNodeSegs, 0, CursegColdNode);
-    // HOT_DATA: directory dentry data blocks (non-inline directories).
-    MarkRegion(hotDataSegStart, hotDataSegs, dentryBlockTotal, CursegHotData);
-    // WARM_DATA: file data blocks.
-    MarkRegion(warmDataSegStart, warmDataSegs, dataBlockTotal, CursegWarmData);
-    // COLD_DATA: empty (type-tagged).
-    MarkRegion(coldDataSegStart, coldDataSegs, 0, CursegColdData);
+    // Populated regions: typed to match the content they hold and with their valid-block
+    // bitmaps reflecting the blocks actually written.
+    MarkRegion(hotNodeSegStart, hotNodeSegs, 1, CursegHotNode);                  // root inode.
+    MarkRegion(warmNodeSegStart, warmNodeSegs, warmNodeCount, CursegWarmNode);   // subdir + file inodes.
+    MarkRegion(hotDataSegStart, hotDataSegs, dentryBlockTotal, CursegHotData);   // dentry data blocks.
+    MarkRegion(warmDataSegStart, warmDataSegs, dataBlockTotal, CursegWarmData);  // file data blocks.
 
-    // Write SIT entries to disk. mkfs.f2fs leaves the SIT region zero-filled and stores
-    // entries for active segments in the SIT journal of the checkpoint pack. We follow the
-    // same pattern: disk SIT remains zero (which fsck interprets as type=HOT_DATA, count=0
-    // for "free" segments), and the journal carries the entries for the 6 active cursegs.
-    // Writing typed entries to disk is also accepted by fsck — but mkfs's behaviour is more
-    // tested, so we mirror it.
-    // (No-op: SIT region stays zero-initialised in `disk`.)
+    // The six reserved current segments are empty but must carry their CURSEG_* type so
+    // the checkpoint's cur_*_segno/blkoff and the SIT type agree.
+    sitTypes[cursegHotDataSeg] = CursegHotData;
+    sitTypes[cursegWarmDataSeg] = CursegWarmData;
+    sitTypes[cursegColdDataSeg] = CursegColdData;
+    sitTypes[cursegHotNodeSeg] = CursegHotNode;
+    sitTypes[cursegWarmNodeSeg] = CursegWarmNode;
+    sitTypes[cursegColdNodeSeg] = CursegColdNode;
+
+    // Write SIT entries for every main segment to disk. fsck reads the on-disk SIT for any
+    // segment not carried in the checkpoint's SIT journal; we write them all so the typed,
+    // valid-block-counted entries are authoritative.
+    for (var seg = 0; seg < segmentCountMain; ++seg)
+      WriteSitEntry(disk, sitBlkAddr, seg,
+        (ushort)((sitTypes[seg] << 10) | (sitVblocks[seg] & 0x3FF)), sitMaps[seg], nowSecs);
+
+    // ---- Write the on-disk Segment Summary Area (one f2fs_summary_block per main segment). ----
+    var ssaBlkAddr = SegSsa * BlocksPerSeg;
+    WriteSegmentSummaryArea(disk, ssaBlkAddr, segmentCountMain, mainStart, sitTypes, blockSummaries);
 
     // ---- 5) Write checkpoint pack (both copies). ----
     var cpBlkAddr = SegCp * BlocksPerSeg;
@@ -441,48 +470,34 @@ public sealed class F2fsWriter {
     var ovpSegments = 6u;         // > rsvd; modest reservation.
     var userBlockCount = ((ulong)(freeSegments + usedMainSegs) - ovpSegments) * BlocksPerSeg;
 
-    // Build the 6 CP-pack blocks once and copy into both pack slots.
-    var cpPack = BuildCheckpointPack(
-      validBlockCount: (ulong)validBlockCount,
-      validInodeCount: (uint)validInodeCount,
-      validNodeCount: (uint)validNodeCount,
-      nextFreeNid: nextNid,
-      userBlockCount: userBlockCount,
-      countedSegments: (uint)countedSegments,
-      freeSegments: (uint)freeSegments,
-      rsvdSegments: rsvdSegments,
-      ovpSegments: ovpSegments,
-      sitTypes: sitTypes,
-      sitVblocks: sitVblocks,
-      sitMaps: sitMaps,
-      filePlan: filePlan,
-      warmNodeNids: warmNodeInodes.Select(n => n.Nid).ToArray(),
-      mainBlkAddr: mainStart,
-      nowSecs: nowSecs,
-      checkpointVer: 1UL);
+    // The six current segments (one per CURSEG_* type), as main-relative segment numbers.
+    // Data types come first (HOT=0, WARM=1, COLD=2), then node types (HOT=3, WARM=4, COLD=5),
+    // matching the kernel CURSEG_* enum ordering used throughout the checkpoint.
+    int[] curSegnos = [
+      cursegHotDataSeg, cursegWarmDataSeg, cursegColdDataSeg,
+      cursegHotNodeSeg, cursegWarmNodeSeg, cursegColdNodeSeg,
+    ];
 
-    // Copy CP pack to slot 0 (segment 1).
+    var cpArgs = new CheckpointArgs {
+      ValidBlockCount = (ulong)validBlockCount,
+      ValidInodeCount = (uint)validInodeCount,
+      ValidNodeCount = (uint)validNodeCount,
+      NextFreeNid = nextNid,
+      UserBlockCount = userBlockCount,
+      CountedSegments = (uint)countedSegments,
+      FreeSegments = (uint)freeSegments,
+      RsvdSegments = rsvdSegments,
+      OvpSegments = ovpSegments,
+      CurSegnos = curSegnos,
+      NowSecs = nowSecs,
+    };
+
+    // Copy CP pack to slot 0 (segment 1) with the newer version (1).
+    var cpPack = BuildCheckpointPack(cpArgs, checkpointVer: 1UL);
     Array.Copy(cpPack, 0, disk, cpBlkAddr * BlockSize, cpPack.Length);
-    // Copy CP pack to slot 1 (segment 2). Build a separate copy with checkpoint_ver = 0 for the
-    // older pack — mkfs uses 0 for the unused pack so the newer one (ver=1) is selected.
-    var cpPack2 = BuildCheckpointPack(
-      validBlockCount: (ulong)validBlockCount,
-      validInodeCount: (uint)validInodeCount,
-      validNodeCount: (uint)validNodeCount,
-      nextFreeNid: nextNid,
-      userBlockCount: userBlockCount,
-      countedSegments: (uint)countedSegments,
-      freeSegments: (uint)freeSegments,
-      rsvdSegments: rsvdSegments,
-      ovpSegments: ovpSegments,
-      sitTypes: sitTypes,
-      sitVblocks: sitVblocks,
-      sitMaps: sitMaps,
-      filePlan: filePlan,
-      warmNodeNids: warmNodeInodes.Select(n => n.Nid).ToArray(),
-      mainBlkAddr: mainStart,
-      nowSecs: nowSecs,
-      checkpointVer: 0UL);
+    // Copy CP pack to slot 1 (segment 2). mkfs uses checkpoint_ver 0 for the unused pack so
+    // the newer one (ver 1) is selected.
+    var cpPack2 = BuildCheckpointPack(cpArgs, checkpointVer: 0UL);
     Array.Copy(cpPack2, 0, disk, (cpBlkAddr + BlocksPerSeg) * BlockSize, cpPack2.Length);
 
     // ---- 6) Write both superblock copies ----
@@ -491,13 +506,13 @@ public sealed class F2fsWriter {
       totalSections: (uint)totalSections, totalZones: (uint)totalZones, seg0BlkAddr: seg0BlkAddr,
       cpBlkAddr: (uint)cpBlkAddr,
       sitBlkAddr: (uint)sitBlkAddr, natBlkAddr: (uint)natBlkAddr,
-      ssaBlkAddr: (uint)(SegSsa * BlocksPerSeg), mainBlkAddr: (uint)mainStart,
+      ssaBlkAddr: (uint)ssaBlkAddr, mainBlkAddr: (uint)mainStart,
       segmentCountMain: (uint)segmentCountMain, volumeLabel: this._volumeLabel);
     WriteSuperblock(disk, blockOffset: BlockSize, totalBlocks: totalBlocks, totalSegments: (uint)countedSegments,
       totalSections: (uint)totalSections, totalZones: (uint)totalZones, seg0BlkAddr: seg0BlkAddr,
       cpBlkAddr: (uint)cpBlkAddr,
       sitBlkAddr: (uint)sitBlkAddr, natBlkAddr: (uint)natBlkAddr,
-      ssaBlkAddr: (uint)(SegSsa * BlocksPerSeg), mainBlkAddr: (uint)mainStart,
+      ssaBlkAddr: (uint)ssaBlkAddr, mainBlkAddr: (uint)mainStart,
       segmentCountMain: (uint)segmentCountMain, volumeLabel: this._volumeLabel);
 
     return disk;
@@ -505,28 +520,34 @@ public sealed class F2fsWriter {
 
   /// <summary>
   /// Builds an F2FS image sized to just hold the added files, plus metadata overhead and
-  /// roughly ten percent headroom, clamped to <see cref="MinimumSegmentCount"/> (32 MiB).
+  /// roughly ten percent headroom, clamped to <see cref="MinimumSegmentCount"/> (40 MiB).
   /// </summary>
   /// <returns>The generated image bytes.</returns>
   public byte[] BuildAutoSized() => this.Build(this.ComputeAutoSegmentCount());
 
   /// <summary>
-  /// Computes the minimum total segment count needed to hold all added files. The single-segment
-  /// writer caps each WARM segment at one segment, so the file payload is bounded by the main area;
-  /// this adds the fixed metadata area, six active main segments and ~10% headroom, then clamps to
-  /// <see cref="MinimumSegmentCount"/>.
+  /// Computes the total segment count needed to hold all added files: the metadata area, the
+  /// payload's node/data/dentry regions sized to the actual block counts, the six reserved
+  /// current segments, plus ~10% headroom — clamped to <see cref="MinimumSegmentCount"/>.
   /// </summary>
   /// <returns>The total segment count to pass to <see cref="Build(int)"/>.</returns>
   public int ComputeAutoSegmentCount() {
-    // File data lives in the WARM_DATA segment; file inodes in WARM_NODE; the root inode in
-    // HOT_NODE. The six active main segments (HOT/WARM/COLD × NODE/DATA) plus the metadata area
-    // (SegMain segments) form the fixed cost. The writer is single-segment-per-curseg, so the
-    // active main footprint is fixed at 6 segments regardless of payload size; payload that
-    // exceeds one segment is rejected by Build(). We therefore size by the fixed cost plus
-    // headroom — which always lands at the MinTotalSegments floor for valid inputs.
-    var baseSegments = SegMain + 6; // metadata area + 6 active main segments = 14.
+    // Estimate node/data/dentry blocks conservatively without running the full layout: every
+    // file is one inode (WARM_NODE) plus ceil(size/block) data blocks (WARM_DATA); each path
+    // component beyond the file is at most one subdirectory inode; dentry storage is bounded by
+    // the number of children. Over-estimating only adds slack.
+    var dataBlocks = this._files.Sum(f => f.Data.Length == 0 ? 0L : (f.Data.Length + BlockSize - 1) / BlockSize);
+    var nodeBlocks = this._files.Count * 2L + 1; // file + at most one dir inode per file, + root.
+    var dentryBlocks = Math.Max(1L, this._files.Count / 100); // generous bound on hash-bucket blocks.
+
+    var dataSegs = (dataBlocks + BlocksPerSeg - 1) / BlocksPerSeg;
+    var nodeSegs = (nodeBlocks + BlocksPerSeg - 1) / BlocksPerSeg;
+    var dentrySegs = (dentryBlocks + BlocksPerSeg - 1) / BlocksPerSeg;
+
+    // Metadata area (SegMain) + one pre-roll padding segment + payload regions + 6 cursegs.
+    var baseSegments = SegMain + 1 + nodeSegs + dataSegs + dentrySegs + 6;
     var withHeadroom = baseSegments + Math.Max(1, baseSegments / 10);
-    return Math.Max(MinTotalSegments, withHeadroom);
+    return (int)Math.Max(MinTotalSegments, withHeadroom);
   }
 
   public void WriteTo(Stream output) {
@@ -537,6 +558,26 @@ public sealed class F2fsWriter {
   // ==================================================================
   // Internal types
   // ==================================================================
+
+  // A segment-summary entry for one main-area block: the owning node id, the block's index
+  // within that node (0 for an inode block), and whether the block is a node or data block.
+  private readonly record struct BlockSummary(uint Nid, ushort OfsInNode, bool IsNode);
+
+  // Bundled checkpoint inputs shared by both checkpoint packs.
+  private sealed class CheckpointArgs {
+    public ulong ValidBlockCount;
+    public uint ValidInodeCount;
+    public uint ValidNodeCount;
+    public uint NextFreeNid;
+    public ulong UserBlockCount;
+    public uint CountedSegments;
+    public uint FreeSegments;
+    public uint RsvdSegments;
+    public uint OvpSegments;
+    public int[] CurSegnos = [];
+    public ulong NowSecs;
+  }
+
   private sealed class FilePlan {
     public uint Nid;
     public string Name = string.Empty;
@@ -556,11 +597,16 @@ public sealed class F2fsWriter {
     public readonly List<(uint Nid, string Name, byte Type)> Children = [];
 
     // Dentry storage: inline (in the inode block) for small directories, or regular
-    // 4 KiB dentry data blocks for large ones. DentryBlocks holds the absolute block
-    // addresses of those data blocks when not inline.
+    // 4 KiB dentry data blocks for large ones laid out per the F2FS multi-level hash-bucket
+    // scheme. For a non-inline directory, DentryLayout maps each used logical block index
+    // (pgofs, i.e. the i_addr index) to the children placed in that block, and DentryBlocks
+    // maps the same pgofs to the absolute disk-block address assigned to it.
     public bool UsesInlineDentry = true;
-    public int DentryBlockCount;
-    public readonly List<int> DentryBlocks = [];
+    public readonly Dictionary<int, List<(uint Nid, string Name, byte Type)>> DentryLayout = [];
+    public readonly Dictionary<int, int> DentryBlocks = [];
+
+    // Highest used logical block index + 1 (the directory's block span; holes allowed).
+    public int DentryBlockSpan;
   }
 
   // ==================================================================
@@ -629,39 +675,26 @@ public sealed class F2fsWriter {
 
   // ==================================================================
   // Checkpoint pack: 6 blocks (cp1 + compact_summary + 3 node summaries + cp2).
+  //
+  // Every written node/data block lives in an ordinary (non-current) segment and is
+  // described by the on-disk SSA. The six current segments are empty, so the pack's
+  // data/node summaries and the checkpoint's cur_*_blkoff are all zero.
   // ==================================================================
-  private static byte[] BuildCheckpointPack(ulong validBlockCount, uint validInodeCount,
-    uint validNodeCount, uint nextFreeNid, ulong userBlockCount, uint countedSegments,
-    uint freeSegments, uint rsvdSegments, uint ovpSegments,
-    int[] sitTypes, int[] sitVblocks, byte[][] sitMaps,
-    List<FilePlan> filePlan, uint[] warmNodeNids, int mainBlkAddr, ulong nowSecs, ulong checkpointVer) {
-
+  private static byte[] BuildCheckpointPack(CheckpointArgs a, ulong checkpointVer) {
     var pack = new byte[CpPackTotalBlockCount * BlockSize];
 
     // ---- Block 0 / 5: f2fs_checkpoint header ----
-    var cp = BuildCheckpointBlock(
-      validBlockCount, validInodeCount, validNodeCount, nextFreeNid, userBlockCount,
-      countedSegments, freeSegments, rsvdSegments, ovpSegments, mainBlkAddr,
-      warmNodeCount: warmNodeNids.Length, totalDataBlocks: filePlan.Sum(f => f.DataBlocks.Count),
-      checkpointVer: checkpointVer);
-
+    var cp = BuildCheckpointBlock(a, checkpointVer);
     Array.Copy(cp, 0, pack, 0 * BlockSize, BlockSize);
 
-    // ---- Block 1: compact summary block ----
-    var compact = BuildCompactSummaryBlock(filePlan, mainBlkAddr, sitTypes, sitVblocks, sitMaps, nowSecs);
+    // ---- Block 1: compact summary block (NAT/SIT journals; no data summaries — empty cursegs) ----
+    var compact = BuildCompactSummaryBlock(a);
     Array.Copy(compact, 0, pack, 1 * BlockSize, BlockSize);
 
-    // ---- Block 2: HOT_NODE summary (root inode) ----
-    var hotNodeSum = BuildNodeSummaryBlock([RootIno]);
-    Array.Copy(hotNodeSum, 0, pack, 2 * BlockSize, BlockSize);
-
-    // ---- Block 3: WARM_NODE summary (subdirectory + file inodes) ----
-    var warmNodeSum = BuildNodeSummaryBlock(warmNodeNids);
-    Array.Copy(warmNodeSum, 0, pack, 3 * BlockSize, BlockSize);
-
-    // ---- Block 4: COLD_NODE summary (empty) ----
-    var coldNodeSum = BuildNodeSummaryBlock([]);
-    Array.Copy(coldNodeSum, 0, pack, 4 * BlockSize, BlockSize);
+    // ---- Blocks 2-4: HOT/WARM/COLD node summaries — all empty (current node segments are empty) ----
+    Array.Copy(BuildNodeSummaryBlock([]), 0, pack, 2 * BlockSize, BlockSize);
+    Array.Copy(BuildNodeSummaryBlock([]), 0, pack, 3 * BlockSize, BlockSize);
+    Array.Copy(BuildNodeSummaryBlock([]), 0, pack, 4 * BlockSize, BlockSize);
 
     // ---- Block 5: cp_page_2 (same as cp_page_1) ----
     Array.Copy(cp, 0, pack, 5 * BlockSize, BlockSize);
@@ -670,22 +703,19 @@ public sealed class F2fsWriter {
   }
 
   // Build the checkpoint header (cp_page_1 / cp_page_2 — same content, same CRC).
-  private static byte[] BuildCheckpointBlock(ulong validBlockCount, uint validInodeCount,
-    uint validNodeCount, uint nextFreeNid, ulong userBlockCount, uint countedSegments,
-    uint freeSegments, uint rsvdSegments, uint ovpSegments, int mainBlkAddr,
-    int warmNodeCount, int totalDataBlocks, ulong checkpointVer) {
-
+  private static byte[] BuildCheckpointBlock(CheckpointArgs a, ulong checkpointVer) {
     var cp = new byte[BlockSize];
 
-    BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(0), checkpointVer);    // checkpoint_ver
-    BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(8), userBlockCount);   // user_block_count
-    BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(16), validBlockCount); // valid_block_count
-    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(24), rsvdSegments);    // rsvd_segment_count
-    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(28), ovpSegments);     // overprov_segment_count
-    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(32), freeSegments);    // free_segment_count
+    BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(0), checkpointVer);      // checkpoint_ver
+    BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(8), a.UserBlockCount);   // user_block_count
+    BinaryPrimitives.WriteUInt64LittleEndian(cp.AsSpan(16), a.ValidBlockCount); // valid_block_count
+    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(24), a.RsvdSegments);    // rsvd_segment_count
+    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(28), a.OvpSegments);     // overprov_segment_count
+    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(32), a.FreeSegments);    // free_segment_count
 
-    // cur_node_segno[8] at 36 (×4 = 32), cur_node_blkoff[8] at 68 (×2 = 16).
-    // cur_data_segno[8] at 84 (×4 = 32), cur_data_blkoff[8] at 116 (×2 = 16).
+    // cur_node_segno[8] at 36 (×4), cur_node_blkoff[8] at 68 (×2).
+    // cur_data_segno[8] at 84 (×4), cur_data_blkoff[8] at 116 (×2).
+    // CurSegnos = [HOT_DATA, WARM_DATA, COLD_DATA, HOT_NODE, WARM_NODE, COLD_NODE].
     var unused = 0xFFFFFFFFu;
     for (var i = 0; i < 8; ++i) {
       BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(36 + i * 4), unused);
@@ -693,29 +723,21 @@ public sealed class F2fsWriter {
       BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(84 + i * 4), unused);
       BinaryPrimitives.WriteUInt16LittleEndian(cp.AsSpan(116 + i * 2), 0);
     }
-    // cur_node_segno[0..2] = HOT/WARM/COLD node main-relative segno.
-    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(36 + 0 * 4), (uint)MainSegHotNode);
-    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(36 + 1 * 4), (uint)MainSegWarmNode);
-    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(36 + 2 * 4), (uint)MainSegColdNode);
-    BinaryPrimitives.WriteUInt16LittleEndian(cp.AsSpan(68 + 0 * 2), 1);                    // 1 valid node block (root).
-    BinaryPrimitives.WriteUInt16LittleEndian(cp.AsSpan(68 + 1 * 2), (ushort)warmNodeCount); // subdir + file inodes.
-    BinaryPrimitives.WriteUInt16LittleEndian(cp.AsSpan(68 + 2 * 2), 0);
-    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(84 + 0 * 4), (uint)MainSegHotData);
-    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(84 + 1 * 4), (uint)MainSegWarmData);
-    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(84 + 2 * 4), (uint)MainSegColdData);
-    BinaryPrimitives.WriteUInt16LittleEndian(cp.AsSpan(116 + 0 * 2), 0);                       // no HOT_DATA blocks (inline-dentry root).
-    BinaryPrimitives.WriteUInt16LittleEndian(cp.AsSpan(116 + 1 * 2), (ushort)totalDataBlocks); // file data blocks.
-    BinaryPrimitives.WriteUInt16LittleEndian(cp.AsSpan(116 + 2 * 2), 0);
+    // Data cursegs occupy indices 0..2 of CurSegnos; node cursegs occupy 3..5. All blkoffs
+    // stay 0 because the current segments are empty.
+    for (var i = 0; i < 3; ++i) {
+      BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(84 + i * 4), (uint)a.CurSegnos[i]);     // cur_data_segno
+      BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(36 + i * 4), (uint)a.CurSegnos[3 + i]); // cur_node_segno
+    }
 
     BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(132), CpUmountFlag | CpCompactSumFlag); // ckpt_flags
     BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(136), CpPackTotalBlockCount);           // cp_pack_total_block_count
     BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(140), 1);                               // cp_pack_start_sum (= 1 + cp_payload).
-    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(144), validNodeCount);                  // valid_node_count
-    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(148), validInodeCount);                 // valid_inode_count
-    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(152), nextFreeNid);                     // next_free_nid
+    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(144), a.ValidNodeCount);                // valid_node_count
+    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(148), a.ValidInodeCount);               // valid_inode_count
+    BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(152), a.NextFreeNid);                   // next_free_nid
     // sit_ver_bitmap_bytesize / nat_ver_bitmap_bytesize per fsck sanity check:
-    //   ((segment_count_(sit|nat) / 2) << log_blocks_per_seg) / 8
-    //   = ((2/2) * 512) / 8 = 64 bytes each.
+    //   ((segment_count_(sit|nat) / 2) << log_blocks_per_seg) / 8 = ((2/2)*512)/8 = 64 bytes each.
     BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(156), 64); // sit_ver_bitmap_bytesize
     BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(160), 64); // nat_ver_bitmap_bytesize
 
@@ -725,8 +747,8 @@ public sealed class F2fsWriter {
     // alloc_type[16] at 176 — all zero (LFS).
     // sit_nat_version_bitmap at 192 — leave zero (0 set bits ⇒ NAT/SIT pack 1 only).
 
-    // Sentinel magic immediately before the checksum (kernel doesn't require this — it's a
-    // round-trip / spec-offset convention shared with our reader and existing tests).
+    // Sentinel magic immediately before the checksum (round-trip / spec-offset convention
+    // shared with our reader and existing tests).
     BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(checksumOffset - 4), F2fsMagic);
 
     // f2fs-tools lib/libf2fs.c:f2fs_checkpoint_chksum: CRC seed = F2FS_SUPER_MAGIC, range = bytes [0, checksum_offset).
@@ -736,69 +758,63 @@ public sealed class F2fsWriter {
     return cp;
   }
 
-  // Compact summary block: { NAT journal[507], SIT journal[507], data summaries…, footer[5] }.
-  // The data summaries cover HOT_DATA, WARM_DATA, COLD_DATA in order; each curseg writes
-  // `cur_data_blkoff[i]` summary entries (7 bytes each).
-  private static byte[] BuildCompactSummaryBlock(List<FilePlan> filePlan, int mainBlkAddr,
-    int[] sitTypes, int[] sitVblocks, byte[][] sitMaps, ulong nowSecs) {
-
+  // Compact summary block: { f2fs_journal (NAT journal[507]), SIT journal[507], data summaries…, footer[5] }.
+  // With empty current segments there are no data-summary entries; the journals merely
+  // mirror the on-disk NAT root entry and the six current SIT entries.
+  private static byte[] BuildCompactSummaryBlock(CheckpointArgs a) {
     var block = new byte[BlockSize];
 
-    // ---- NAT journal (root + ino 0 padding) ----
-    // Layout: __le16 n_nats then nat_journal_entry[NAT_JOURNAL_ENTRIES] (38 entries × 13 bytes = 494) + reserved[11].
-    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(0), 1); // n_nats = 1 (root only).
-    // Entry 0 = root NAT entry: {nid(4), version(1), ino(4), block_addr(4)}.
-    var rootInodeBlock = mainBlkAddr + MainSegHotNode * BlocksPerSeg + 0;
-    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(2), RootIno);          // nid (in journal entry)
-    block[6] = 0;                                                                // version
-    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(7), RootIno);          // ino
-    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(11), (uint)rootInodeBlock); // block_addr
+    // ---- NAT journal: n_nats(2) then nat_journal_entry[] (each 13 bytes: nid, version, ino, block_addr). ----
+    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(0), 0); // n_nats = 0 (root NAT is on disk).
 
-    // ---- SIT journal at offset 507 (SUM_JOURNAL_SIZE) ----
-    // Layout: __le16 n_sits then sit_journal_entry[SIT_JOURNAL_ENTRIES] (6 × 78 = 468) + reserved[37].
+    // ---- SIT journal at offset SUM_JOURNAL_SIZE (507): n_sits(2) then sit_journal_entry[] (each 78 bytes). ----
     const int sitJournalOff = SumJournalSize;
-    var nSits = 6;
-    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(sitJournalOff), (ushort)nSits);
-
-    // Each sit_journal_entry = { __le32 segno, f2fs_sit_entry se(74) } = 78 bytes.
-    int[] cursegs = [
-      MainSegHotData, MainSegWarmData, MainSegColdData,
-      MainSegHotNode, MainSegWarmNode, MainSegColdNode,
-    ];
-    for (var i = 0; i < cursegs.Length; ++i) {
+    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(sitJournalOff), 6);
+    for (var i = 0; i < a.CurSegnos.Length; ++i) {
       var entryOff = sitJournalOff + 2 + i * 78;
-      var seg = cursegs[i];
-      BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(entryOff), (uint)seg);
-      // f2fs_sit_entry inside: vblocks(2) + valid_map[64] + mtime(8) = 74 bytes.
+      // f2fs_sit_entry: vblocks(2) + valid_map[64] + mtime(8) = 74 bytes. Current segments are
+      // empty; the type bits live in vblocks but with valid count 0.
+      var type = i < 3 ? CursegHotData + i : CursegHotNode + (i - 3);
+      BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(entryOff), (uint)a.CurSegnos[i]);
       var seOff = entryOff + 4;
-      BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(seOff),
-        (ushort)((sitTypes[seg] << 10) | (sitVblocks[seg] & 0x3FF)));
-      sitMaps[seg].AsSpan(0, 64).CopyTo(block.AsSpan(seOff + 2, 64));
-      BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(seOff + 66), nowSecs);
+      BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(seOff), (ushort)(type << 10));
+      BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(seOff + 66), a.NowSecs);
     }
 
-    // ---- Data summary entries at offset 2 * SUM_JOURNAL_SIZE = 1014 ----
-    // Order: HOT_DATA, WARM_DATA, COLD_DATA (matching read_compacted_summaries loop).
-    // Each curseg contributes `cur_data_blkoff[type]` entries; HOT_DATA=0, WARM_DATA=#data, COLD_DATA=0.
-    var summaryOff = 2 * SumJournalSize; // 1014
-    foreach (var f in filePlan) {
-      // For each WARM_DATA block: nid = file inode nid, ofs_in_node = 0..N-1.
-      for (var j = 0; j < f.DataBlocks.Count; ++j) {
-        // The compact-summary block holds a single block's worth of data summaries.
-        // Once it is full we stop; this metadata is advisory for our reader, which
-        // recovers data-block locations from the inode i_addr pointers, not the summary.
-        if (summaryOff + 7 > BlockSize - SumFooterSize)
-          return block;
-        BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(summaryOff), f.Nid);
-        block[summaryOff + 4] = 1; // version
-        BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(summaryOff + 5), (ushort)j); // ofs_in_node
-        summaryOff += 7;
-      }
-    }
-
-    // No footer entry is written here — the footer is at byte 4091..4095 of the data summary block,
-    // but the compact-summary path treats that region as zero.
+    // Data summaries (offset 2 * SUM_JOURNAL_SIZE) and the footer are left zero: empty cursegs.
     return block;
+  }
+
+  // ==================================================================
+  // On-disk Segment Summary Area: one f2fs_summary_block per main segment at
+  // ssa_blkaddr + segno. fsck validates each reachable node/data block against the
+  // summary entry at its block-offset within the owning segment's SSA block.
+  // ==================================================================
+  private static void WriteSegmentSummaryArea(byte[] disk, int ssaBlkAddr, int segmentCountMain,
+    int mainBlkAddr, int[] sitTypes, Dictionary<int, BlockSummary> blockSummaries) {
+
+    for (var seg = 0; seg < segmentCountMain; ++seg) {
+      var ssaOff = (ssaBlkAddr + seg) * BlockSize;
+      var firstBlock = mainBlkAddr + seg * BlocksPerSeg;
+
+      // Footer entry_type follows the segment's content type: node segments → SUM_TYPE_NODE.
+      var type = sitTypes[seg];
+      var isNodeSeg = type is CursegHotNode or CursegWarmNode or CursegColdNode;
+
+      for (var b = 0; b < BlocksPerSeg; ++b) {
+        if (!blockSummaries.TryGetValue(firstBlock + b, out var bs))
+          continue;
+        var entryOff = ssaOff + b * 7;
+        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(entryOff), bs.Nid); // parent nid
+        disk[entryOff + 4] = 1;                                                  // version
+        BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(entryOff + 5), bs.OfsInNode); // ofs_in_node
+      }
+
+      // summary_footer follows the entries AND the journal: offset = SUM_ENTRIES_SIZE +
+      // SUM_JOURNAL_SIZE = 3584 + 507 = 4091. Layout: entry_type(1) + check_sum(4). fsck reads
+      // entry_type for node/data classification; the SSA check_sum is not validated.
+      disk[ssaOff + SumEntriesSize + SumJournalSize] = (byte)(isNodeSeg ? 1 : 0); // SUM_TYPE_NODE : SUM_TYPE_DATA
+    }
   }
 
   // Build a node summary block (HOT_NODE / WARM_NODE / COLD_NODE).
@@ -960,17 +976,86 @@ public sealed class F2fsWriter {
   }
 
   // ==================================================================
-  // Directory inode whose dentries live in regular 4 KiB data blocks
-  // (used when the directory has more children than the inline area holds).
+  // F2FS multi-level hash-bucket directory layout (fs/f2fs/dir.c).
   //
-  // Each data block is an f2fs_dentry_block:
-  //   dentry_bitmap[27] + reserved[3] + f2fs_dir_entry[214] + filename[214][8] = 4096.
-  // "." and ".." are the first two dentries of block 0. The directory inode carries no
-  // inline-dentry flag; its i_addr[] direct pointers reference the dentry data blocks in
-  // order, exactly as the reader's traditional-layout path walks them.
+  // A non-inline directory's dentries are spread across levels. Level n holds
+  // dir_buckets(n) buckets of bucket_blocks(n) blocks each; a name lands in bucket
+  // (hash % dir_buckets(level)) at the lowest level whose target bucket still has room.
+  // "." and ".." occupy slots 0 and 1 of level-0 block 0. The directory inode's i_addr[]
+  // index equals the block's logical offset (pgofs); unused buckets leave i_addr holes.
   // ==================================================================
+  internal const int MaxDirHashDepth = 63;
+  internal static int MaxDirBuckets => 1 << (MaxDirHashDepth / 2 - 1);
+
+  private static int DirBuckets(int level) =>
+    level < MaxDirHashDepth / 2 ? 1 << level : MaxDirBuckets;
+
+  private static int BucketBlocks(int level) => level < MaxDirHashDepth / 2 ? 2 : 4;
+
+  // First logical block (pgofs) of the given level's bucket 0.
+  private static int DirLevelBaseBlock(int level) {
+    var bidx = 0;
+    for (var i = 0; i < level; ++i)
+      bidx += DirBuckets(i) * BucketBlocks(i);
+    return bidx;
+  }
+
+  // First logical block of a specific bucket at a level.
+  private static int DirBlockIndex(int level, int bucket) =>
+    DirLevelBaseBlock(level) + bucket * BucketBlocks(level);
+
+  /// <summary>
+  /// Plans the hash-bucket placement for a non-inline directory: assigns "." , ".." and
+  /// every child to a logical block (pgofs) per the kernel's <c>f2fs_add_link</c> rule, so
+  /// <c>fsck.f2fs</c>'s <c>f2fs_check_dirent_position</c> agrees with where each name sits.
+  /// </summary>
+  private static void PlanHashBucketDentries(DirPlan d) {
+    // Per-logical-block remaining free slots (NrDentryInBlock minus what is placed).
+    var freeSlots = new Dictionary<int, int>();
+    int Remaining(int blk) => freeSlots.TryGetValue(blk, out var r) ? r : NrDentryInBlock;
+
+    void PlaceInBlock(int blk, (uint Nid, string Name, byte Type) child, int slots) {
+      if (!d.DentryLayout.TryGetValue(blk, out var list)) {
+        list = [];
+        d.DentryLayout[blk] = list;
+      }
+      list.Add(child);
+      freeSlots[blk] = Remaining(blk) - slots;
+      if (blk + 1 > d.DentryBlockSpan)
+        d.DentryBlockSpan = blk + 1;
+    }
+
+    // "." and ".." live in level-0 block 0.
+    PlaceInBlock(0, (d.Nid, ".", FtDir), 1);
+    PlaceInBlock(0, (d.Nid == RootIno ? RootIno : d.ParentNid, "..", FtDir), 1);
+
+    foreach (var child in d.Children) {
+      var slots = DentrySlotsFor(child.Name);
+      var hash = F2fsNameHash(Encoding.UTF8.GetBytes(child.Name));
+      var placed = false;
+      for (var level = 0; level < MaxDirHashDepth && !placed; ++level) {
+        var nbucket = DirBuckets(level);
+        var bucket = (int)(hash % (uint)nbucket);
+        var startBlk = DirBlockIndex(level, bucket);
+        var nblock = BucketBlocks(level);
+        for (var b = 0; b < nblock; ++b) {
+          var blk = startBlk + b;
+          if (Remaining(blk) >= slots) {
+            PlaceInBlock(blk, child, slots);
+            placed = true;
+            break;
+          }
+        }
+      }
+      if (!placed)
+        throw new InvalidOperationException(
+          $"F2FS writer: directory '{d.Nid}' exceeds the maximum hash-bucket depth.");
+    }
+  }
+
+  // Directory inode whose dentries live in regular 4 KiB hash-bucket data blocks.
   private static void WriteDirectoryInodeWithDataBlocks(byte[] disk, int off, uint ino, uint parentNid,
-    IReadOnlyList<(uint Nid, string Name, byte Type)> children, IReadOnlyList<int> dentryBlocks, bool isRoot) {
+    IReadOnlyList<(uint Nid, string Name, byte Type)> children, DirPlan d, bool isRoot) {
     var s = disk.AsSpan(off, BlockSize);
 
     BinaryPrimitives.WriteUInt16LittleEndian(s[0..], 0x41ED); // i_mode: S_IFDIR | 0755
@@ -980,9 +1065,9 @@ public sealed class F2fsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(s[8..], 0);       // i_gid
     var childDirCount = children.Count(c => c.Type == FtDir);
     BinaryPrimitives.WriteUInt32LittleEndian(s[12..], (uint)(2 + childDirCount)); // i_links
-    // i_size spans every dentry data block.
-    BinaryPrimitives.WriteUInt64LittleEndian(s[16..], (ulong)((long)dentryBlocks.Count * BlockSize));
-    BinaryPrimitives.WriteUInt64LittleEndian(s[24..], (ulong)(1 + dentryBlocks.Count)); // i_blocks (inode + data blocks).
+    // i_size spans the directory's logical block range (including holes for empty buckets).
+    BinaryPrimitives.WriteUInt64LittleEndian(s[16..], (ulong)((long)d.DentryBlockSpan * BlockSize));
+    BinaryPrimitives.WriteUInt64LittleEndian(s[24..], (ulong)(1 + d.DentryBlocks.Count)); // i_blocks (inode + allocated data blocks).
     var now = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     BinaryPrimitives.WriteUInt64LittleEndian(s[32..], now);
     BinaryPrimitives.WriteUInt64LittleEndian(s[40..], now);
@@ -991,16 +1076,17 @@ public sealed class F2fsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(s[60..], 0);
     BinaryPrimitives.WriteUInt32LittleEndian(s[64..], 0);
     BinaryPrimitives.WriteUInt32LittleEndian(s[68..], 0);
-    BinaryPrimitives.WriteUInt32LittleEndian(s[72..], 1);      // i_current_depth
+    // i_current_depth = number of hash levels in use (kernel increments past level 0).
+    BinaryPrimitives.WriteUInt32LittleEndian(s[72..], (uint)DirCurrentDepth(d.DentryBlockSpan));
     BinaryPrimitives.WriteUInt32LittleEndian(s[76..], 0);      // i_xattr_nid
     BinaryPrimitives.WriteUInt32LittleEndian(s[80..], 0);      // i_flags
     BinaryPrimitives.WriteUInt32LittleEndian(s[84..], isRoot ? 0 : parentNid); // i_pino
     BinaryPrimitives.WriteUInt32LittleEndian(s[88..], 0);      // i_namelen = 0
 
-    // Direct block pointers: i_addr[923] at offset 360, one per dentry data block.
+    // Direct block pointers: i_addr[923] at offset 360, indexed by logical block (pgofs).
     const int iAddrOff = 360;
-    for (var i = 0; i < dentryBlocks.Count; ++i)
-      BinaryPrimitives.WriteUInt32LittleEndian(s[(iAddrOff + i * 4)..], (uint)dentryBlocks[i]);
+    foreach (var (pgofs, blk) in d.DentryBlocks)
+      BinaryPrimitives.WriteUInt32LittleEndian(s[(iAddrOff + pgofs * 4)..], (uint)blk);
 
     // Node footer at end of block.
     var footerOff = BlockSize - 24;
@@ -1010,62 +1096,29 @@ public sealed class F2fsWriter {
     BinaryPrimitives.WriteUInt64LittleEndian(s[(footerOff + 12)..], 1UL);
     BinaryPrimitives.WriteUInt32LittleEndian(s[(footerOff + 20)..], 0);
 
-    // Fill the dentry data blocks with "." , ".." and every child, packed linearly.
-    FillDentryDataBlocks(disk, ino, isRoot ? RootIno : parentNid, children, dentryBlocks);
+    // Fill each allocated dentry block with the children planned for it.
+    foreach (var (pgofs, list) in d.DentryLayout) {
+      var blockOff = d.DentryBlocks[pgofs] * BlockSize;
+      var bitmapOff = blockOff;
+      var dentryBase = blockOff + DentryBlockBitmapSize + DentryBlockReserved;
+      var nameBase = dentryBase + NrDentryInBlock * 11;
+      var slot = 0;
+      foreach (var (childNid, name, type) in list)
+        slot += WriteDentry(disk.AsSpan(), bitmapOff, dentryBase, nameBase, slot, childNid, name, type);
+    }
   }
 
-  /// <summary>
-  /// Number of regular 4 KiB dentry data blocks a directory needs: "." and ".." occupy the
-  /// first two slots, then every child consumes <see cref="DentrySlotsFor"/> slots. A name
-  /// never straddles a block boundary (kernel GET_DENTRY_SLOTS / f2fs_dentry_block rule), so a
-  /// name that does not fit the remaining slots of the current block starts the next block.
-  /// </summary>
-  private static int PlanDentryBlockCount(IReadOnlyList<(uint Nid, string Name, byte Type)> children) {
-    var blocks = 1;
-    var slotInBlock = 2; // "." and ".." occupy slots 0 and 1 of block 0.
-    foreach (var (_, name, _) in children) {
-      var slots = DentrySlotsFor(name);
-      if (slotInBlock + slots > NrDentryInBlock) {
-        ++blocks;
-        slotInBlock = 0;
-      }
-      slotInBlock += slots;
+  // i_current_depth: the number of hash levels the directory's block span reaches into. A
+  // directory that fits in level 0 (blocks 0..1) reports depth 1; each further level adds 1.
+  private static int DirCurrentDepth(int blockSpan) {
+    var depth = 1;
+    for (var level = 0; level < MaxDirHashDepth; ++level) {
+      var end = DirLevelBaseBlock(level) + DirBuckets(level) * BucketBlocks(level);
+      if (blockSpan <= end)
+        return level + 1;
+      depth = level + 2;
     }
-    return blocks;
-  }
-
-  /// <summary>
-  /// Writes the f2fs_dentry_block payloads for a non-inline directory: "." and ".." first,
-  /// then every child packed into consecutive slots/blocks with the same name-never-straddles
-  /// rule used by <see cref="PlanDentryBlockCount"/>.
-  /// </summary>
-  private static void FillDentryDataBlocks(byte[] disk, uint ino, uint parentNid,
-    IReadOnlyList<(uint Nid, string Name, byte Type)> children, IReadOnlyList<int> dentryBlocks) {
-    var blockIndex = 0;
-    var slot = 0;
-
-    void StartBlock(int idx) {
-      blockIndex = idx;
-      slot = 0;
-    }
-
-    int BitmapOff() => dentryBlocks[blockIndex] * BlockSize;
-    int DentryBase() => BitmapOff() + DentryBlockBitmapSize + DentryBlockReserved;
-    int NameBase() => DentryBase() + NrDentryInBlock * 11;
-
-    void Place(uint childNid, string name, byte type) {
-      var slots = DentrySlotsFor(name);
-      if (slot + slots > NrDentryInBlock)
-        StartBlock(blockIndex + 1);
-      var s = disk.AsSpan();
-      slot += WriteDentry(s, BitmapOff(), DentryBase(), NameBase(), slot, childNid, name, type);
-    }
-
-    StartBlock(0);
-    Place(ino, ".", FtDir);
-    Place(parentNid, "..", FtDir);
-    foreach (var (childNid, name, type) in children)
-      Place(childNid, name, type);
+    return depth;
   }
 
   /// <summary>
