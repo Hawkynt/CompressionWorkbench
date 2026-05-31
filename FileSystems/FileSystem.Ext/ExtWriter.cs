@@ -220,7 +220,7 @@ public sealed class ExtWriter {
         }
 
         var blockNum = nextBlock++;
-        MarkBlockUsed(disk, blockBitmapOffset, blockNum);
+        MarkBlockUsed(disk, blockBitmapOffset, blockNum, (int)firstDataBlock);
         blockData.CopyTo(disk, blockNum * blockSize);
         blockList.Add(blockNum);
       }
@@ -250,7 +250,7 @@ public sealed class ExtWriter {
       var allocatedBlocks = blockList.Count;
       if (blockList.Count > MaxDirectBlocks) {
         indirectBlockNum = nextBlock++;
-        MarkBlockUsed(disk, blockBitmapOffset, indirectBlockNum);
+        MarkBlockUsed(disk, blockBitmapOffset, indirectBlockNum, (int)firstDataBlock);
         ++allocatedBlocks; // the indirect block itself counts toward i_blocks
         var indOff = indirectBlockNum * blockSize;
         for (var p = MaxDirectBlocks; p < blockList.Count; ++p)
@@ -274,18 +274,25 @@ public sealed class ExtWriter {
     }
 
     // --- File inodes + data blocks ---
+    // Files use up to 12 direct block pointers, then a singly-indirect block
+    // (blockSize/4 further pointers). The indirect block itself counts toward
+    // i_blocks (e2fsck tallies it in the 512-byte sector count).
+    const int MaxDirectFileBlocks = 12;
+    var filerPointersPerBlock = blockSize / 4;
+    var maxFileBlocks = MaxDirectFileBlocks + filerPointersPerBlock;
     foreach (var (fileInode, _, _, data) in fileInodes) {
       var fileInodeOffset = inodeTableOffset + (int)(fileInode - 1) * inodeSize;
 
       var blocksNeeded = data.Length == 0 ? 0 : (data.Length + blockSize - 1) / blockSize;
-      if (blocksNeeded > 12)
+      if (blocksNeeded > maxFileBlocks)
         throw new InvalidOperationException(
-          $"ext2 writer only supports direct blocks (max {12 * blockSize} bytes per file).");
+          $"ext2 writer supports direct + singly-indirect blocks only " +
+          $"(max {maxFileBlocks * blockSize} bytes per file at {blockSize}-byte blocks).");
 
       var fileBlocks = new List<int>(blocksNeeded);
       for (var b = 0; b < blocksNeeded; ++b) {
         fileBlocks.Add(nextBlock);
-        MarkBlockUsed(disk, blockBitmapOffset, nextBlock);
+        MarkBlockUsed(disk, blockBitmapOffset, nextBlock, (int)firstDataBlock);
         ++nextBlock;
       }
 
@@ -296,6 +303,18 @@ public sealed class ExtWriter {
         written += toWrite;
       }
 
+      // Past the first 12 data blocks, a singly-indirect block holds the rest.
+      var fileIndirectBlockNum = 0;
+      var fileAllocatedBlocks = fileBlocks.Count;
+      if (fileBlocks.Count > MaxDirectFileBlocks) {
+        fileIndirectBlockNum = nextBlock++;
+        MarkBlockUsed(disk, blockBitmapOffset, fileIndirectBlockNum, (int)firstDataBlock);
+        ++fileAllocatedBlocks; // the indirect block itself counts toward i_blocks
+        var indOff = fileIndirectBlockNum * blockSize;
+        for (var p = MaxDirectFileBlocks; p < fileBlocks.Count; ++p)
+          BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(indOff + (p - MaxDirectFileBlocks) * 4), (uint)fileBlocks[p]);
+      }
+
       var ino = disk.AsSpan(fileInodeOffset, inodeSize);
       BinaryPrimitives.WriteUInt16LittleEndian(ino, 0x8000 | 0x01A4);           // i_mode: regular file, 0644
       BinaryPrimitives.WriteUInt32LittleEndian(ino[4..], (uint)data.Length);    // i_size
@@ -303,9 +322,12 @@ public sealed class ExtWriter {
       BinaryPrimitives.WriteUInt32LittleEndian(ino[12..], now);                 // i_ctime
       BinaryPrimitives.WriteUInt32LittleEndian(ino[16..], now);                 // i_mtime
       BinaryPrimitives.WriteUInt16LittleEndian(ino[26..], 1);                   // i_links_count
-      BinaryPrimitives.WriteUInt32LittleEndian(ino[28..], (uint)(fileBlocks.Count * sectorsPerBlock)); // i_blocks (512-byte sectors)
-      for (var b = 0; b < fileBlocks.Count; ++b)
-        BinaryPrimitives.WriteUInt32LittleEndian(ino[(40 + b * 4)..], (uint)fileBlocks[b]);
+      BinaryPrimitives.WriteUInt32LittleEndian(ino[28..], (uint)(fileAllocatedBlocks * sectorsPerBlock)); // i_blocks (512-byte sectors)
+      var fileDirectCount = Math.Min(MaxDirectFileBlocks, fileBlocks.Count);
+      for (var b = 0; b < fileDirectCount; ++b)
+        BinaryPrimitives.WriteUInt32LittleEndian(ino[(40 + b * 4)..], (uint)fileBlocks[b]); // direct blocks 0..11
+      if (fileIndirectBlockNum != 0)
+        BinaryPrimitives.WriteUInt32LittleEndian(ino[88..], (uint)fileIndirectBlockNum);    // singly-indirect pointer
     }
 
     // --- Free-count accounting (what fsck scrutinises) ---
@@ -448,11 +470,12 @@ public sealed class ExtWriter {
     return pos + entrySize;
   }
 
-  // Marks a block as "used" in the block bitmap. The bitmap's bit 0 refers
-  // to block (firstDataBlock), so the caller-supplied block number must be
-  // adjusted by firstDataBlock before indexing. Callers in this file always
-  // pass firstDataBlock=1 (1 KiB-block default) so we hard-code the bias.
-  private static void MarkBlockUsed(byte[] disk, int bitmapOffset, int blockNum, int firstDataBlock = 1) {
+  // Marks a block as "used" in the block bitmap. The bitmap's bit 0 refers to
+  // block s_first_data_block (1 on 1 KiB filesystems, 0 otherwise), so the
+  // caller-supplied absolute block number must be biased by firstDataBlock
+  // before indexing — otherwise every bit is off by one and e2fsck reports a
+  // block-bitmap difference plus a wrong free-block count.
+  private static void MarkBlockUsed(byte[] disk, int bitmapOffset, int blockNum, int firstDataBlock) {
     var bit = blockNum - firstDataBlock;
     disk[bitmapOffset + bit / 8] |= (byte)(1 << (bit % 8));
   }
