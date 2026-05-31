@@ -66,8 +66,11 @@ internal static class ZfsConstants {
   // Dnode flags.
   public const byte DnodeFlagUsedBytes = 1;
 
-  // ZAP magics.
+  // ZAP magics / block types (<c>include/sys/zap_impl.h</c>, <c>zap_leaf.h</c>).
   public const ulong ZbtMicro = 0x8000000000000003UL;  // MZAP_ENT_PHYS / microzap
+  public const ulong ZbtHeader = 0x8000000000000001UL; // zap_phys_t header block
+  public const ulong ZbtLeaf = 0x8000000000000000UL;   // zap_leaf_phys_t leaf block
+  public const ulong ZapMagic = 0x2F52AB2ABUL;         // zap_phys_t.zap_magic
 
   // ZFS directory ZAP entry value encoding (<c>include/sys/zfs_znode.h</c>):
   // the object id occupies the low 48 bits and the file type (the upper nibble of

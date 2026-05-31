@@ -233,29 +233,97 @@ public sealed class ZfsWriter {
         (ZfsConstants.ZfsDirentTypeReg << ZfsConstants.ZfsDirentTypeShift) | fileObjId));
     }
 
-    var zapBytes = MicroZap.Encode(zapEntries, (int)ZfsConstants.SectorSize);
-    dnodes[(int)dirObjId] = BuildDirectoryDnode(zapBytes, alloc, output, txg);
+    dnodes[(int)dirObjId] = BuildDirectoryDnode(zapEntries, alloc, output, txg);
   }
 
   // ---------- Helpers ----------
 
+  /// <summary>Largest entry count that still fits a single 512-byte micro-ZAP block.</summary>
+  private static readonly int MicroZapCapacity =
+    ((int)ZfsConstants.SectorSize - MicroZap.HeaderSize) / MicroZap.EntrySize;
+
+  /// <summary>Block size used for the leaves and header of a fat ZAP.</summary>
+  private const int FatZapBlockSize = 4096;
+
   /// <summary>
-  /// Builds a directory dnode whose data block is the supplied ZAP, with a znode bonus
-  /// carrying the <c>S_IFDIR</c> mode so the directory is self-describing on disk.
+  /// Builds a directory dnode for the supplied child entries, with a znode bonus carrying the
+  /// <c>S_IFDIR</c> mode so the directory is self-describing on disk. Small directories use a
+  /// single micro-ZAP block; directories whose entries overflow a micro-ZAP spill into a fat
+  /// ZAP whose blocks are referenced through a level-1 indirect block.
   /// </summary>
-  private static Dnode.Builder BuildDirectoryDnode(byte[] zapBlock, SectorAllocator alloc, Stream output, ulong txg) {
-    var bp = WriteBlock(zapBlock, alloc, output, txg,
-      ZfsConstants.ZioChecksumFletcher4,
-      type: ZfsConstants.DmuOtDirectoryContents);
+  private static Dnode.Builder BuildDirectoryDnode(
+    List<(string Name, ulong Value)> zapEntries, SectorAllocator alloc, Stream output, ulong txg) {
+
     var bonus = new byte[8];
     BinaryPrimitives.WriteUInt64LittleEndian(bonus, ZfsConstants.ModeIfDir);
+
+    if (zapEntries.Count <= MicroZapCapacity && zapEntries.All(e => e.Name.Length < MicroZap.NameSize)) {
+      var zapBlock = MicroZap.Encode(zapEntries, (int)ZfsConstants.SectorSize);
+      var bp = WriteBlock(zapBlock, alloc, output, txg,
+        ZfsConstants.ZioChecksumFletcher4,
+        type: ZfsConstants.DmuOtDirectoryContents);
+      return new Dnode.Builder {
+        Type = ZfsConstants.DmuOtDirectoryContents,
+        Levels = 1,
+        NumBlkPtr = 1,
+        DataBlockSizeInSectors = (uint)(zapBlock.Length / ZfsConstants.SectorSize),
+        UsedBytes = (ulong)zapBlock.Length,
+        BlkPtr0 = bp,
+        Bonus = bonus,
+        BonusLen = 8,
+      };
+    }
+
+    return BuildFatZapDirectoryDnode(zapEntries, bonus, alloc, output, txg);
+  }
+
+  /// <summary>
+  /// Materialises a fat-ZAP directory: each fat-ZAP block (header + leaves) is written as a
+  /// separate data block, and a level-1 indirect block holding their block pointers is
+  /// written and referenced by the dnode's single block pointer.
+  /// </summary>
+  private static Dnode.Builder BuildFatZapDirectoryDnode(
+    List<(string Name, ulong Value)> zapEntries, byte[] bonus,
+    SectorAllocator alloc, Stream output, ulong txg) {
+
+    var fat = FatZap.Encode(zapEntries, FatZapBlockSize);
+    var blockSize = fat.BlockSize;
+    var blockCount = fat.BlockCount;
+
+    // Indirect block: an array of blkptr_t, one per fat-ZAP block, sized to a power-of-two
+    // block of its own (independent of the leaf block size). A single 128 KB indirect block
+    // holds 1024 block pointers, which bounds this writer to ~1023 leaves — far beyond the
+    // directory sizes targeted here.
+    var indirectBytes = blockCount * BlockPointer.Size;
+    var indirectBlockSize = NextPow2Ge(indirectBytes);
+    if (indirectBlockSize < (int)ZfsConstants.SectorSize) indirectBlockSize = (int)ZfsConstants.SectorSize;
+    if (indirectBlockSize > 128 * 1024)
+      throw new NotSupportedException(
+        "Fat-ZAP directory too large for a single-level indirect block in this writer.");
+
+    var indirectBlock = new byte[indirectBlockSize];
+    for (var i = 0; i < blockCount; i++) {
+      var blockData = fat.Body.AsSpan(i * blockSize, blockSize).ToArray();
+      var childBp = WriteBlock(blockData, alloc, output, txg,
+        ZfsConstants.ZioChecksumFletcher4,
+        type: ZfsConstants.DmuOtDirectoryContents);
+      childBp.Level = 0;
+      BlockPointer.Write(indirectBlock.AsSpan(i * BlockPointer.Size, BlockPointer.Size), childBp);
+    }
+
+    var indirectBp = WriteBlock(indirectBlock, alloc, output, txg,
+      ZfsConstants.ZioChecksumFletcher4,
+      type: ZfsConstants.DmuOtDirectoryContents);
+    indirectBp.Level = 1;
+
     return new Dnode.Builder {
       Type = ZfsConstants.DmuOtDirectoryContents,
-      Levels = 1,
+      Levels = 2,
       NumBlkPtr = 1,
-      DataBlockSizeInSectors = (uint)(zapBlock.Length / ZfsConstants.SectorSize),
-      UsedBytes = (ulong)zapBlock.Length,
-      BlkPtr0 = bp,
+      DataBlockSizeInSectors = (uint)(blockSize / ZfsConstants.SectorSize),
+      MaxBlockId = (ulong)(blockCount - 1),
+      UsedBytes = (ulong)(blockCount * blockSize),
+      BlkPtr0 = indirectBp,
       Bonus = bonus,
       BonusLen = 8,
     };

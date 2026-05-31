@@ -208,12 +208,57 @@ public sealed class ZfsReader : IDisposable {
     return dnodes;
   }
 
-  /// <summary>Reads a ZAP (microzap) from a dnode.</summary>
+  /// <summary>
+  /// Reads a ZAP from a dnode, detecting micro-ZAP vs fat ZAP by the leading block type. A
+  /// micro-ZAP fits in a single block; a fat ZAP spans a header block plus leaf blocks that
+  /// are reached through the dnode's indirect block(s).
+  /// </summary>
   private List<(string Name, ulong Value)> ReadZap(Dnode.Builder dnode) {
     if (dnode.BlkPtr0 == null)
       throw new InvalidDataException("ZFS: ZAP dnode has no block pointer.");
-    var block = this.ReadBlock(dnode.BlkPtr0);
-    return MicroZap.Decode(block);
+
+    var firstBlock = this.ReadDnodeDataBlock(dnode, 0);
+    if (firstBlock.Length >= 8) {
+      var blockType = BinaryPrimitives.ReadUInt64LittleEndian(firstBlock.AsSpan(0, 8));
+      if (blockType == ZfsConstants.ZbtMicro)
+        return MicroZap.Decode(firstBlock);
+      if (blockType == ZfsConstants.ZbtHeader)
+        return FatZap.Decode(this.ReadDnodeBody(dnode));
+    }
+    return MicroZap.Decode(firstBlock);
+  }
+
+  /// <summary>
+  /// Reads logical block <paramref name="blockId"/> of a dnode, walking the indirect tree
+  /// when <c>Levels &gt; 1</c>.
+  /// </summary>
+  private byte[] ReadDnodeDataBlock(Dnode.Builder dnode, ulong blockId) {
+    if (dnode.BlkPtr0 == null)
+      throw new InvalidDataException("ZFS: dnode has no block pointer.");
+    if (dnode.Levels <= 1)
+      return this.ReadBlock(dnode.BlkPtr0);
+
+    // Single level of indirection: BlkPtr0 references an L1 block of blkptr_t entries.
+    var indirect = this.ReadBlock(dnode.BlkPtr0);
+    var ptrOffset = (int)(blockId * (ulong)BlockPointer.Size);
+    if (ptrOffset + BlockPointer.Size > indirect.Length)
+      throw new InvalidDataException("ZFS: dnode block id out of range of indirect block.");
+    var childBp = BlockPointer.Read(indirect.AsSpan(ptrOffset, BlockPointer.Size));
+    return this.ReadBlock(childBp);
+  }
+
+  /// <summary>Concatenates all logical data blocks of a dnode into one contiguous buffer.</summary>
+  private byte[] ReadDnodeBody(Dnode.Builder dnode) {
+    var blockCount = dnode.Levels <= 1 ? 1 : (int)(dnode.MaxBlockId + 1);
+    if (blockCount == 1)
+      return this.ReadDnodeDataBlock(dnode, 0);
+    var blockSize = (int)dnode.DataBlockSizeInSectors * (int)ZfsConstants.SectorSize;
+    var body = new byte[blockCount * blockSize];
+    for (var i = 0; i < blockCount; i++) {
+      var block = this.ReadDnodeDataBlock(dnode, (ulong)i);
+      block.AsSpan(0, Math.Min(block.Length, blockSize)).CopyTo(body.AsSpan(i * blockSize));
+    }
+    return body;
   }
 
   public byte[] Extract(ZfsEntry entry) {
