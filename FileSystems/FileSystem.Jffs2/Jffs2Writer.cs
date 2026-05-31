@@ -10,8 +10,12 @@ namespace FileSystem.Jffs2;
 /// Produces a valid log-structured image with cleanmarkers, inode nodes,
 /// and dirent nodes. Data is stored uncompressed (compr=0x00 NONE).
 /// Default erase block size: 128 KiB (common NOR flash).
+/// Files whose name contains path separators ('/' or '\') are placed inside a
+/// real directory tree: each intermediate path segment becomes its own
+/// directory inode plus a dirent in its parent, so nested paths round-trip
+/// through the reader instead of being flattened into the root.
 /// </summary>
-internal sealed class Jffs2Writer {
+public sealed class Jffs2Writer {
   private readonly List<(string Name, byte[] Data)> _files = [];
   private readonly int _eraseBlockSize;
 
@@ -38,6 +42,12 @@ internal sealed class Jffs2Writer {
   /// <summary>DT_REG — regular file.</summary>
   private const byte DtReg = 8;
 
+  /// <summary>DT_DIR — directory.</summary>
+  private const byte DtDir = 4;
+
+  /// <summary>Root directory inode number (JFFS2 convention).</summary>
+  private const uint RootInode = 1;
+
   /// <summary>S_IFREG | 0644</summary>
   private const uint ModeRegular = 0x81A4;
 
@@ -61,7 +71,9 @@ internal sealed class Jffs2Writer {
   /// Builds a complete JFFS2 image. Layout:
   /// 1. Cleanmarker at offset 0
   /// 2. Root directory inode node (inode 1, mode=dir)
-  /// 3. For each file: inode node (data in body) + dirent node (parent=1)
+  /// 3. For each path component a directory inode + dirent (parent=enclosing dir),
+  ///    created once and shared; for each file an inode node (data in body) +
+  ///    dirent node (parent=enclosing dir).
   /// 4. Remainder filled with 0xFF
   /// Image is padded to a multiple of the erase block size.
   /// </summary>
@@ -75,7 +87,7 @@ internal sealed class Jffs2Writer {
 
     // 2. Root directory inode (inode 1)
     nodes.Add(BuildInodeNode(
-      inode: 1,
+      inode: RootInode,
       version: 1,
       mode: ModeDirectory,
       size: 0,
@@ -83,11 +95,55 @@ internal sealed class Jffs2Writer {
       mtime: now
     ));
 
-    // 3. Per-file: inode node + dirent node
-    foreach (var (name, data) in this._files) {
+    // Maps a normalized directory path (e.g. "docs/api") to its inode number.
+    // The empty path maps to the root inode.
+    var directoryInodes = new Dictionary<string, uint>(StringComparer.Ordinal) {
+      [string.Empty] = RootInode,
+    };
+
+    // 3. Per-file: ensure parent directory tree exists, then emit the file.
+    foreach (var (rawName, data) in this._files) {
+      var segments = SplitPath(rawName);
+      if (segments.Length == 0)
+        continue;
+
+      // Walk/create the chain of parent directories.
+      var parentInode = RootInode;
+      var pathSoFar = string.Empty;
+      for (var i = 0; i < segments.Length - 1; ++i) {
+        pathSoFar = pathSoFar.Length == 0 ? segments[i] : pathSoFar + "/" + segments[i];
+        if (!directoryInodes.TryGetValue(pathSoFar, out var dirInode)) {
+          dirInode = nextInode++;
+          directoryInodes[pathSoFar] = dirInode;
+
+          // Directory inode node.
+          nodes.Add(BuildInodeNode(
+            inode: dirInode,
+            version: 1,
+            mode: ModeDirectory,
+            size: 0,
+            data: [],
+            mtime: now
+          ));
+
+          // Dirent linking this directory's leaf name into its parent.
+          nodes.Add(BuildDirentNode(
+            parentInode: parentInode,
+            inode: dirInode,
+            name: segments[i],
+            type: DtDir,
+            version: 1,
+            mtime: now
+          ));
+        }
+
+        parentInode = dirInode;
+      }
+
+      // File inode node with data, named under its (now existing) parent dir.
+      var leafName = segments[^1];
       var fileInode = nextInode++;
 
-      // Inode node with file data
       nodes.Add(BuildInodeNode(
         inode: fileInode,
         version: 1,
@@ -97,11 +153,10 @@ internal sealed class Jffs2Writer {
         mtime: now
       ));
 
-      // Dirent node linking name to inode under root (parent=1)
       nodes.Add(BuildDirentNode(
-        parentInode: 1,
+        parentInode: parentInode,
         inode: fileInode,
-        name: name,
+        name: leafName,
         type: DtReg,
         version: 1,
         mtime: now
@@ -262,4 +317,11 @@ internal sealed class Jffs2Writer {
 
   /// <summary>Aligns a value up to the next 4-byte boundary.</summary>
   private static int Align4(int value) => (value + 3) & ~3;
+
+  /// <summary>
+  /// Splits an entry name into its path components on '/' and '\' separators,
+  /// dropping empty segments (leading/trailing/duplicate separators).
+  /// </summary>
+  private static string[] SplitPath(string name)
+    => name.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
 }

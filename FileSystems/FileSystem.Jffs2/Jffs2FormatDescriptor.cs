@@ -58,6 +58,7 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     try {
       var reader = new Jffs2FileReader(image);
       foreach (var entry in reader.Entries) {
+        if (entry.IsDirectory) continue;
         var data = reader.Extract(entry);
         entries.Add(new ArchiveEntryInfo(entries.Count, entry.Name, data.LongLength, data.LongLength, "stored", false, false, null));
       }
@@ -97,6 +98,7 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     try {
       var reader = new Jffs2FileReader(image);
       foreach (var entry in reader.Entries) {
+        if (entry.IsDirectory) continue;
         if (files != null && files.Length > 0 && !MatchesFilter(entry.Name, files)) continue;
         var data = reader.Extract(entry);
         WriteFile(outputDir, entry.Name, data);
@@ -110,7 +112,7 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new Jffs2Writer();
-    foreach (var (name, data) in FlatFiles(inputs))
+    foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
     w.WriteTo(output);
   }
@@ -217,7 +219,7 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   private static IEnumerable<(string Name, byte[] Data)> ReadFileEntries(Stream stream) {
     var reader = new Jffs2FileReader(stream);
-    return reader.Entries.Select(e => (e.Name, reader.Extract(e)));
+    return reader.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, reader.Extract(e)));
   }
 
   private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
