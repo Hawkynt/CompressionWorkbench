@@ -284,17 +284,41 @@ public sealed class IsoWriter {
     var off = sectorLba * SectorSize;
     image[off] = type; // 1 = PVD, 2 = SVD
     "CD001"u8.CopyTo(image.AsSpan(off + 1));
-    image[off + 6] = 1;
+    image[off + 6] = 1; // Volume Descriptor Version
 
-    // Joliet volume identifier is UCS-2BE; the primary one is ASCII.
+    // Offset 7: unused (PVD) / Volume Flags (SVD). Zero in both our cases.
+
+    // ── String identifier fields ────────────────────────────────────────────
+    // ECMA-119 8.4.x require every a-character / d-character identifier field to
+    // be filled: with content where present, otherwise space-padded (0x20). The
+    // Joliet SVD carries the same fields as UCS-2BE (a1/d1-characters), space
+    // padded with the UCS-2BE space 0x0020. A leading 0x00 in these fields is
+    // what makes libisofs reject the descriptor as "damaged".
     if (joliet) {
-      // Escape sequence selecting UCS-2 level 3: 0x25 0x2F 0x45 ("%/E"), at offset 88.
+      PadUcs2(image, off + 8, 32, "");          // System Identifier (a1)
+      PadUcs2(image, off + 40, 32, "CDROM");    // Volume Identifier (d1)
+      // Escape sequences (offset 88): UCS-2 level 3 -> 0x25 0x2F 0x45 ("%/E").
       image[off + 88] = 0x25;
       image[off + 89] = 0x2F;
       image[off + 90] = 0x45;
-      PadUcs2(image, off + 40, 32, "CDROM");
+      PadUcs2(image, off + 190, 128, "");       // Volume Set Identifier (d1)
+      PadUcs2(image, off + 318, 128, "");       // Publisher Identifier (a1)
+      PadUcs2(image, off + 446, 128, "");       // Data Preparer Identifier (a1)
+      PadUcs2(image, off + 574, 128, "");       // Application Identifier (a1)
+      PadUcs2(image, off + 702, 37, "");        // Copyright File Identifier (d1)
+      PadUcs2(image, off + 739, 37, "");        // Abstract File Identifier (d1)
+      PadUcs2(image, off + 776, 37, "");        // Bibliographic File Identifier (d1)
     } else {
-      PadString(image, off + 40, 32, "CDROM");
+      PadString(image, off + 8, 32, "");        // System Identifier (a)
+      PadString(image, off + 40, 32, "CDROM");  // Volume Identifier (d)
+      // Offset 88..119 unused on the PVD; left zero per spec.
+      PadString(image, off + 190, 128, "");     // Volume Set Identifier (d)
+      PadString(image, off + 318, 128, "");     // Publisher Identifier (a)
+      PadString(image, off + 446, 128, "");     // Data Preparer Identifier (a)
+      PadString(image, off + 574, 128, "");     // Application Identifier (a)
+      PadString(image, off + 702, 37, "");      // Copyright File Identifier (d)
+      PadString(image, off + 739, 37, "");      // Abstract File Identifier (d)
+      PadString(image, off + 776, 37, "");      // Bibliographic File Identifier (d)
     }
 
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 80), (uint)totalSectors);
@@ -311,11 +335,45 @@ public sealed class IsoWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 132), (uint)pathTableSize);
     BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(off + 136), (uint)pathTableSize);
 
+    // Both path-table locations must be set: little-endian L table (offset 140)
+    // and big-endian M table (offset 148). The optional L/M tables (offsets 144
+    // and 152) stay zero — there is no second copy.
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 140), (uint)lPathLba);
     BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(off + 148), (uint)mPathLba);
 
     // Root directory record (offset 156). Single-byte 0x00 identifier.
     WriteDirectoryRecord(image, off + 156, rootLba, rootSize, 0x02, [0]);
+
+    // ── Volume date-and-time fields (4 × 17 bytes, offsets 813..880) ─────────
+    // ECMA-119 8.4.26-8.4.29: 16 ASCII digits (YYYYMMDDHHMMSShh) plus a signed
+    // GMT-offset byte. Creation and modification carry "now"; expiration and
+    // effective are "no date specified" = sixteen ASCII '0' digits + offset 0.
+    var now = DateTime.UtcNow;
+    WriteVolumeDateTime(image, off + 813, now);   // Creation
+    WriteVolumeDateTime(image, off + 830, now);   // Modification
+    WriteVolumeDateTime(image, off + 847, null);  // Expiration (none)
+    WriteVolumeDateTime(image, off + 864, null);  // Effective (none)
+
+    // File Structure Version (offset 881) — mandatory; libisofs requires 1.
+    image[off + 881] = 1;
+    // Offset 882 reserved (0x00); offsets 883..1394 "Application Used" and
+    // 1395..2047 reserved are left zero per ECMA-119.
+  }
+
+  // ECMA-119 17-byte volume date-and-time: "YYYYMMDDHHMMSShh" (16 ASCII digits,
+  // hundredths of a second) followed by one signed-byte GMT offset in 15-minute
+  // intervals. A null value writes the "no date specified" form (all '0' digits,
+  // zero offset) which the spec mandates instead of a zero-filled field.
+  private static void WriteVolumeDateTime(byte[] image, int offset, DateTime? when) {
+    if (when is null) {
+      for (var i = 0; i < 16; i++) image[offset + i] = (byte)'0';
+      image[offset + 16] = 0;
+      return;
+    }
+    var t = when.Value;
+    var s = $"{t.Year:D4}{t.Month:D2}{t.Day:D2}{t.Hour:D2}{t.Minute:D2}{t.Second:D2}{t.Millisecond / 10:D2}";
+    Encoding.ASCII.GetBytes(s).CopyTo(image, offset);
+    image[offset + 16] = 0; // GMT offset 0 (UTC)
   }
 
   // ── Directory record / extent writers ─────────────────────────────────────
