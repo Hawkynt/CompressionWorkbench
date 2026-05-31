@@ -124,88 +124,20 @@ public sealed class ExFatWriter {
     const uint bitmapCluster = 3u;
     var bitmapSize = ((int)clusterCount + 7) / 8;
 
-    // --- Root Directory (cluster 2) ---
-    var rootOffset = clusterHeapOffset + (int)(2 - 2) * clusterSize;
-    var dirPos = rootOffset;
+    // --- Directory tree ---
+    // Files whose name carries '/' path separators belong inside a directory
+    // tree, not flattened into the root. Build the tree, then in a single
+    // depth-first pass allocate a contiguous cluster chain for every directory
+    // (root included) and every file, and write each directory's entry sets so
+    // a subdirectory's File entry set points at its own cluster chain.
+    var root = BuildTree();
 
-    // Volume label entry (0x83) with zero characters; Windows tolerates this.
-    disk[dirPos] = 0x83;
-    disk[dirPos + 1] = 0;
-    dirPos += 32;
-
-    // Allocation Bitmap entry (0x81)
-    disk[dirPos] = 0x81;
-    disk[dirPos + 1] = 0; // BitmapFlags: bit 0 = 0 → first bitmap (only bitmap)
-    BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(dirPos + 20), bitmapCluster);
-    BinaryPrimitives.WriteInt64LittleEndian(disk.AsSpan(dirPos + 24), bitmapSize);
-    dirPos += 32;
-
-    // Up-Case Table entry (0x82) — with TableChecksum at bytes 4-7.
-    disk[dirPos] = 0x82;
-    BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(dirPos + 4), upcaseChecksum);
-    BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(dirPos + 20), upcaseCluster);
-    BinaryPrimitives.WriteInt64LittleEndian(disk.AsSpan(dirPos + 24), upcaseBytes);
-    dirPos += 32;
-
-    // --- File entry sets ---
-    foreach (var (name, data) in _files) {
-      var clustersNeeded = Math.Max(1, (data.Length + clusterSize - 1) / clusterSize);
-      var fileFirstCluster = nextCluster;
-
-      var dataOffset = clusterHeapOffset + (int)(fileFirstCluster - 2) * clusterSize;
-      if (dataOffset + data.Length <= disk.Length)
-        data.CopyTo(disk, dataOffset);
-
-      // Chain file clusters through FAT.
-      for (var c = 0; c < clustersNeeded; ++c) {
-        var cluster = fileFirstCluster + (uint)c;
-        var nextVal = (c + 1 < clustersNeeded) ? cluster + 1 : EocMarker;
-        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(fatOffset + (int)cluster * 4), nextVal);
-      }
-      nextCluster += (uint)clustersNeeded;
-
-      var nameChars = name.ToCharArray();
-      var nameEntries = (nameChars.Length + 14) / 15;
-      var secondaryCount = 1 + nameEntries;
-
-      var setStart = dirPos;
-
-      // File entry (0x85) — fill everything except SetChecksum, compute it at the end.
-      disk[dirPos] = 0x85;
-      disk[dirPos + 1] = (byte)secondaryCount;
-      // bytes 2-3 = SetChecksum (write later)
-      BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(dirPos + 4), 0x0020);      // FileAttributes: archive
-      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(dirPos + 8), nowStamp);    // CreateTimestamp
-      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(dirPos + 12), nowStamp);   // LastModifiedTimestamp
-      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(dirPos + 16), nowStamp);   // LastAccessedTimestamp
-      dirPos += 32;
-
-      // Stream Extension (0xC0)
-      disk[dirPos] = 0xC0;
-      disk[dirPos + 1] = 0x01; // AllocationPossible; NoFatChain=0 → cluster chain read from FAT.
-      disk[dirPos + 3] = (byte)nameChars.Length;
-      BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(dirPos + 4), ComputeNameHash(name));
-      BinaryPrimitives.WriteInt64LittleEndian(disk.AsSpan(dirPos + 8), data.Length);      // ValidDataLength
-      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(dirPos + 20), fileFirstCluster);
-      BinaryPrimitives.WriteInt64LittleEndian(disk.AsSpan(dirPos + 24), data.Length);      // DataLength
-      dirPos += 32;
-
-      // File Name entries (0xC1)
-      for (var n = 0; n < nameEntries; ++n) {
-        disk[dirPos] = 0xC1;
-        disk[dirPos + 1] = 0;
-        var startChar = n * 15;
-        var charsToWrite = Math.Min(15, nameChars.Length - startChar);
-        for (var c = 0; c < charsToWrite; ++c)
-          BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(dirPos + 2 + c * 2), nameChars[startChar + c]);
-        dirPos += 32;
-      }
-
-      // Compute and write SetChecksum now that the whole entry-set is laid out.
-      var setBytes = 32 * (1 + secondaryCount);
-      var checksum = EntrySetChecksum(disk.AsSpan(setStart, setBytes));
-      BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(setStart + 2), checksum);
-    }
+    // The root directory occupies cluster 2; the free pool for file data and
+    // subdirectory chains starts after bitmap (3) and upcase (4).
+    nextCluster = 5u;
+    WriteDirectory(root, 2u, disk, clusterHeapOffset, clusterSize, fatOffset,
+      nowStamp, ref nextCluster,
+      bitmapCluster, bitmapSize, upcaseCluster, upcaseBytes, upcaseChecksum);
 
     // --- Fill Allocation Bitmap ---
     var bitmapOffset = clusterHeapOffset + (int)(bitmapCluster - 2) * clusterSize;
@@ -312,5 +244,249 @@ public sealed class ExFatWriter {
     uint time = ((uint)dt.Hour << 11) | ((uint)dt.Minute << 5) | ((uint)(dt.Second / 2));
     uint date = (year << 9) | ((uint)dt.Month << 5) | (uint)dt.Day;
     return (date << 16) | time;
+  }
+
+  // ── Directory tree ────────────────────────────────────────────────────
+  //
+  // A FileNode is a leaf carrying file data; a DirNode is an exFAT
+  // subdirectory holding ordered child entries (subdirectories first, then
+  // files, both in insertion order). The root DirNode models the volume root.
+
+  private sealed class FileNode {
+    public required string Name;
+    public required byte[] Data;
+  }
+
+  private sealed class DirNode {
+    public required string Name;
+    public readonly List<DirNode> SubDirs = [];
+    public readonly List<FileNode> Files = [];
+
+    public DirNode GetOrAddSubDir(string name) {
+      foreach (var d in this.SubDirs)
+        if (d.Name == name) return d;
+      var created = new DirNode { Name = name };
+      this.SubDirs.Add(created);
+      return created;
+    }
+  }
+
+  /// <summary>
+  /// Splits each added file's name on '/' (and '\') into a directory path and a
+  /// leaf, creating intermediate <see cref="DirNode"/>s as needed, so the root
+  /// holds a real tree instead of flattened slash-bearing names.
+  /// </summary>
+  private DirNode BuildTree() {
+    var root = new DirNode { Name = "" };
+    foreach (var (name, data) in _files) {
+      var parts = name.Split('/', '\\');
+      var dir = root;
+      for (var i = 0; i < parts.Length - 1; ++i) {
+        if (parts[i].Length == 0) continue; // tolerate leading/double separators
+        dir = dir.GetOrAddSubDir(parts[i]);
+      }
+      var leaf = parts[^1];
+      dir.Files.Add(new FileNode { Name = leaf, Data = data });
+    }
+    return root;
+  }
+
+  /// <summary>Number of 32-byte entries a single File entry set occupies:
+  /// the File entry, the Stream Extension, and ceil(len/15) File Name entries.</summary>
+  private static int EntrySetCount(string name) {
+    var nameLength = name.Length;
+    var nameEntries = (nameLength + 14) / 15;
+    return 2 + nameEntries; // File + Stream + name entries
+  }
+
+  /// <summary>
+  /// Lays out and writes one directory's entry sets, recursing depth-first so
+  /// every subdirectory gets its own cluster chain before the parent references
+  /// it. <paramref name="firstCluster"/> is this directory's already-reserved
+  /// starting cluster (cluster 2 for the root). Any further clusters this
+  /// directory needs, plus all file-data and subdirectory chains, are taken
+  /// from the free pool tracked by <paramref name="nextCluster"/>.
+  /// The root additionally carries the Volume Label, Allocation Bitmap and
+  /// Up-Case Table system entry sets.
+  /// </summary>
+  private void WriteDirectory(DirNode dir, uint firstCluster, byte[] disk,
+    int clusterHeapOffset, int clusterSize, int fatOffset, uint nowStamp,
+    ref uint nextCluster,
+    uint bitmapCluster, int bitmapSize,
+    uint upcaseCluster, int upcaseBytes, uint upcaseChecksum) {
+
+    var isRoot = firstCluster == 2;
+
+    // 1. Size this directory's own entry region (in 32-byte entries), so we
+    //    know how many clusters it spans and can reserve the overflow ones
+    //    before allocating children.
+    var entries = 0;
+    if (isRoot)
+      entries += 3; // VolumeLabel + Bitmap + UpCase system entry sets (1 each)
+    foreach (var sub in dir.SubDirs)
+      entries += EntrySetCount(sub.Name);
+    foreach (var file in dir.Files)
+      entries += EntrySetCount(file.Name);
+
+    var dirBytes = entries * 32;
+    var dirClusters = Math.Max(1, (dirBytes + clusterSize - 1) / clusterSize);
+
+    // Reserve this directory's cluster chain. The first cluster is given; any
+    // overflow clusters come from the pool and must be claimed up-front so
+    // children don't reuse them.
+    var dirChain = new uint[dirClusters];
+    dirChain[0] = firstCluster;
+    for (var c = 1; c < dirClusters; ++c)
+      dirChain[c] = nextCluster++;
+
+    // 2. Allocate child storage and remember each child's first cluster.
+    var subFirst = new uint[dir.SubDirs.Count];
+    for (var s = 0; s < dir.SubDirs.Count; ++s)
+      subFirst[s] = nextCluster++; // each subdir starts a fresh chain
+    var fileFirst = new uint[dir.Files.Count];
+    for (var f = 0; f < dir.Files.Count; ++f) {
+      var data = dir.Files[f].Data;
+      var clustersNeeded = Math.Max(1, (data.Length + clusterSize - 1) / clusterSize);
+      fileFirst[f] = nextCluster;
+      nextCluster += (uint)clustersNeeded;
+    }
+
+    // 3. Recurse into subdirectories first (depth-first), giving each its
+    //    reserved first cluster; this fixes their final on-disk size.
+    for (var s = 0; s < dir.SubDirs.Count; ++s)
+      WriteDirectory(dir.SubDirs[s], subFirst[s], disk,
+        clusterHeapOffset, clusterSize, fatOffset, nowStamp, ref nextCluster,
+        bitmapCluster, bitmapSize, upcaseCluster, upcaseBytes, upcaseChecksum);
+
+    // 4. Build this directory's entry region into a contiguous buffer.
+    var buffer = new byte[dirClusters * clusterSize];
+    var pos = 0;
+
+    if (isRoot) {
+      // Volume label entry (0x83) with zero characters; Windows tolerates this.
+      buffer[pos] = 0x83;
+      buffer[pos + 1] = 0;
+      pos += 32;
+
+      // Allocation Bitmap entry (0x81)
+      buffer[pos] = 0x81;
+      buffer[pos + 1] = 0; // BitmapFlags: bit 0 = 0 → first bitmap (only bitmap)
+      BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(pos + 20), bitmapCluster);
+      BinaryPrimitives.WriteInt64LittleEndian(buffer.AsSpan(pos + 24), bitmapSize);
+      pos += 32;
+
+      // Up-Case Table entry (0x82) — with TableChecksum at bytes 4-7.
+      buffer[pos] = 0x82;
+      BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(pos + 4), upcaseChecksum);
+      BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(pos + 20), upcaseCluster);
+      BinaryPrimitives.WriteInt64LittleEndian(buffer.AsSpan(pos + 24), upcaseBytes);
+      pos += 32;
+    }
+
+    // Subdirectory File entry sets — directory attribute, stream points at the
+    // subdirectory's own cluster chain; DataLength == its full cluster span.
+    for (var s = 0; s < dir.SubDirs.Count; ++s) {
+      var sub = dir.SubDirs[s];
+      var subBytes = SubDirByteLength(sub, clusterSize);
+      WriteEntrySet(buffer, ref pos, sub.Name, subFirst[s], subBytes, nowStamp,
+        isDirectory: true);
+    }
+
+    // File entry sets — archive attribute, stream points at file data.
+    for (var f = 0; f < dir.Files.Count; ++f) {
+      var file = dir.Files[f];
+      WriteEntrySet(buffer, ref pos, file.Name, fileFirst[f], file.Data.Length,
+        nowStamp, isDirectory: false);
+    }
+
+    // 5. Write file data into the cluster heap and chain file clusters.
+    for (var f = 0; f < dir.Files.Count; ++f) {
+      var data = dir.Files[f].Data;
+      var clustersNeeded = Math.Max(1, (data.Length + clusterSize - 1) / clusterSize);
+      var dataOffset = clusterHeapOffset + (int)(fileFirst[f] - 2) * clusterSize;
+      if (data.Length > 0 && dataOffset + data.Length <= disk.Length)
+        data.CopyTo(disk, dataOffset);
+      for (var c = 0; c < clustersNeeded; ++c) {
+        var cluster = fileFirst[f] + (uint)c;
+        var nextVal = (c + 1 < clustersNeeded) ? cluster + 1 : EocMarker;
+        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(fatOffset + (int)cluster * 4), nextVal);
+      }
+    }
+
+    // 6. Spill this directory's entry buffer across its cluster chain and
+    //    write the directory's own FAT chain.
+    for (var c = 0; c < dirClusters; ++c) {
+      var cluster = dirChain[c];
+      var clusterOffset = clusterHeapOffset + (int)(cluster - 2) * clusterSize;
+      if (clusterOffset + clusterSize <= disk.Length)
+        Array.Copy(buffer, c * clusterSize, disk, clusterOffset, clusterSize);
+      var nextVal = (c + 1 < dirClusters) ? dirChain[c + 1] : EocMarker;
+      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(fatOffset + (int)cluster * 4), nextVal);
+    }
+  }
+
+  /// <summary>Total byte length of a subdirectory's on-disk entry region,
+  /// rounded up to whole clusters — the value stored in its File entry set's
+  /// Stream Extension DataLength / ValidDataLength.</summary>
+  private static long SubDirByteLength(DirNode dir, int clusterSize) {
+    var entries = 0;
+    foreach (var sub in dir.SubDirs)
+      entries += EntrySetCount(sub.Name);
+    foreach (var file in dir.Files)
+      entries += EntrySetCount(file.Name);
+    var bytes = entries * 32;
+    var clusters = Math.Max(1, (bytes + clusterSize - 1) / clusterSize);
+    return (long)clusters * clusterSize;
+  }
+
+  /// <summary>
+  /// Emits one exFAT entry set (File 0x85 + Stream Extension 0xC0 + File Name
+  /// 0xC1 entries) into <paramref name="buffer"/> at <paramref name="pos"/>,
+  /// computing the mandatory set checksum. Directories set the directory
+  /// attribute (0x10); files set the archive attribute (0x20).
+  /// </summary>
+  private static void WriteEntrySet(byte[] buffer, ref int pos, string name,
+    uint firstCluster, long dataLength, uint nowStamp, bool isDirectory) {
+    var nameChars = name.ToCharArray();
+    var nameEntries = (nameChars.Length + 14) / 15;
+    var secondaryCount = 1 + nameEntries;
+
+    var setStart = pos;
+
+    // File entry (0x85)
+    buffer[pos] = 0x85;
+    buffer[pos + 1] = (byte)secondaryCount;
+    // bytes 2-3 = SetChecksum (written after the set is laid out)
+    BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(pos + 4),
+      (ushort)(isDirectory ? 0x0010 : 0x0020)); // FileAttributes: directory or archive
+    BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(pos + 8), nowStamp);   // CreateTimestamp
+    BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(pos + 12), nowStamp);  // LastModifiedTimestamp
+    BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(pos + 16), nowStamp);  // LastAccessedTimestamp
+    pos += 32;
+
+    // Stream Extension (0xC0)
+    buffer[pos] = 0xC0;
+    buffer[pos + 1] = 0x01; // AllocationPossible; NoFatChain=0 → chain read from FAT.
+    buffer[pos + 3] = (byte)nameChars.Length;
+    BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(pos + 4), ComputeNameHash(name));
+    BinaryPrimitives.WriteInt64LittleEndian(buffer.AsSpan(pos + 8), dataLength);     // ValidDataLength
+    BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(pos + 20), firstCluster);
+    BinaryPrimitives.WriteInt64LittleEndian(buffer.AsSpan(pos + 24), dataLength);    // DataLength
+    pos += 32;
+
+    // File Name entries (0xC1)
+    for (var n = 0; n < nameEntries; ++n) {
+      buffer[pos] = 0xC1;
+      buffer[pos + 1] = 0;
+      var startChar = n * 15;
+      var charsToWrite = Math.Min(15, nameChars.Length - startChar);
+      for (var c = 0; c < charsToWrite; ++c)
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(pos + 2 + c * 2), nameChars[startChar + c]);
+      pos += 32;
+    }
+
+    var setBytes = 32 * (1 + secondaryCount);
+    var checksum = EntrySetChecksum(buffer.AsSpan(setStart, setBytes));
+    BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(setStart + 2), checksum);
   }
 }
