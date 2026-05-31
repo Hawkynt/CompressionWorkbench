@@ -44,8 +44,10 @@ public class VhdxWriterTests {
       Assert.That(parsed.PrimaryHeaderInfo!.SequenceNumber, Is.EqualTo(1ul));
       Assert.That(parsed.BackupHeaderInfo!.SequenceNumber, Is.EqualTo(2ul));
       Assert.That(parsed.PrimaryHeaderInfo.Version, Is.EqualTo((ushort)1));
-      Assert.That(parsed.PrimaryHeaderInfo.LogLength, Is.EqualTo(0u));
-      Assert.That(parsed.PrimaryHeaderInfo.LogOffset, Is.EqualTo(0ul));
+      // A spec-valid, 1 MiB-aligned, 1 MiB-long log region is mandatory even
+      // though it is empty (LogGuid stays zero, so no replay is performed).
+      Assert.That(parsed.PrimaryHeaderInfo.LogLength, Is.EqualTo(0x100000u));
+      Assert.That(parsed.PrimaryHeaderInfo.LogOffset, Is.EqualTo(0x100000ul));
     });
 
     // The first 1 MiB of disk data lands at the start of the first BAT-mapped
@@ -89,8 +91,10 @@ public class VhdxWriterTests {
       $"{label} signature");
     var stored = BinaryPrimitives.ReadUInt32LittleEndian(region[4..]);
 
-    // Recompute: zero out the checksum field, run CRC-32C over the whole region.
-    var copy = region.ToArray();
+    // The VHDX Header structure is exactly 4 KiB; its CRC-32C covers only those
+    // 4096 bytes (with the checksum field zeroed), not the whole 64 KiB slot.
+    const int headerStructureSize = 4096;
+    var copy = region[..headerStructureSize].ToArray();
     BinaryPrimitives.WriteUInt32LittleEndian(copy.AsSpan(4, 4), 0);
     var actual = Crc32.Compute(copy, Crc32.Castagnoli);
     Assert.That(stored, Is.EqualTo(actual), $"{label} CRC-32C mismatch");

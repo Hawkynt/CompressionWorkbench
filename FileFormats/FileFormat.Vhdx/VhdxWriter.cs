@@ -18,9 +18,10 @@ namespace FileFormat.Vhdx;
 ///   0x030000  Region Table 1        (64 KiB; BAT + Metadata entries, CRC-32C valid)
 ///   0x040000  Region Table 2        (64 KiB; identical copy of Region Table 1)
 ///   0x050000  reserved              (zeroed; up to 1 MiB)
-///   0x100000  Metadata Region       (64 KiB; 5 required items)
-///   0x110000  BAT                   (≥64 KiB, 1 MiB-aligned, ⌈disk/16MiB⌉ entries)
-///   ≥1 MiB    Block Data            (16 MiB blocks, 1 MiB-aligned)
+///   0x100000  Log Region            (1 MiB; empty, LogGuid=0 so no replay)
+///   0x200000  Metadata Region       (1 MiB span; 5 required items)
+///   0x300000  BAT                   (≥1 MiB, 1 MiB-aligned, ⌈disk/16MiB⌉ entries)
+///   ≥4 MiB    Block Data            (16 MiB blocks, 1 MiB-aligned)
 /// </code>
 /// All multi-byte integers in VHDX are little-endian per the spec.
 /// CRC-32C (Castagnoli polynomial) per [MS-VHDX] 3.1.x — uses
@@ -34,10 +35,18 @@ public sealed class VhdxWriter {
   private const long Header2Offset = 0x20000;
   private const long RegionTable1Offset = 0x30000;
   private const long RegionTable2Offset = 0x40000;
-  private const long MetadataRegionOffset = 0x100000;   // 1 MiB-aligned
+  // The Log must occupy a valid, 1 MiB-aligned region whose length is a
+  // multiple of 1 MiB; consumers (qemu) reject log_offset == 0 or a
+  // sub-1-MiB log_length even when no replay is required (LogGuid == 0).
+  private const long LogOffset = 0x100000;              // 1 MiB-aligned
+  private const long LogLength = 0x100000;              // 1 MiB (empty, no replay)
+  private const long MetadataRegionOffset = 0x200000;   // 1 MiB-aligned, after the log
   private const int RegionSize = 0x10000;               // 64 KiB
   private const int MetadataRegionSize = 0x10000;       // 64 KiB
   private const long OneMib = 0x100000;
+  // The VHDX Header structure is defined as exactly 4 KiB; its CRC-32C covers
+  // only those 4096 bytes even though each header occupies a 64 KiB slot.
+  private const int HeaderStructureSize = 4096;
   private const int FixedBlockSize = 16 * 1024 * 1024;  // 16 MiB
   private const ushort LogicalSectorSize = 512;
   private const uint PhysicalSectorSize = 4096;
@@ -96,12 +105,16 @@ public sealed class VhdxWriter {
       batOffset: batRegionOffset,
       batLength: (uint)batRegionLength,
       metadataOffset: MetadataRegionOffset,
-      metadataLength: MetadataRegionSize);
+      // Region Table Entry lengths must be a multiple of 1 MiB ([MS-VHDX] 2.4);
+      // the metadata items occupy only the first 64 KiB but the region spans 1 MiB.
+      metadataLength: (uint)AlignUp(MetadataRegionSize, OneMib));
     // Region Table 2 is a byte-for-byte copy of Region Table 1.
     span.Slice((int)RegionTable1Offset, RegionSize)
         .CopyTo(span.Slice((int)RegionTable2Offset, RegionSize));
 
-    WriteMetadataRegion(span.Slice((int)MetadataRegionOffset, MetadataRegionSize), virtualDiskSize);
+    WriteMetadataRegion(
+      span.Slice((int)MetadataRegionOffset, (int)AlignUp(MetadataRegionSize, OneMib)),
+      virtualDiskSize);
     WriteBat(span.Slice((int)batRegionOffset, (int)batRegionLength), payloadOffset, blockCount);
 
     // Disk data: copy provided bytes; remainder of the last block is left zero.
@@ -147,11 +160,15 @@ public sealed class VhdxWriter {
 
     BinaryPrimitives.WriteUInt16LittleEndian(region[64..], 0);            // LogVersion = 0
     BinaryPrimitives.WriteUInt16LittleEndian(region[66..], 1);            // Version = 1
-    BinaryPrimitives.WriteUInt32LittleEndian(region[68..], 0);            // LogLength = 0
-    BinaryPrimitives.WriteUInt64LittleEndian(region[72..], 0);            // LogOffset = 0
+    // A valid, 1 MiB-aligned, 1 MiB-long log region is mandatory even when it
+    // holds no replay data; LogGuid stays zero so consumers skip replay.
+    BinaryPrimitives.WriteUInt32LittleEndian(region[68..], (uint)LogLength); // LogLength
+    BinaryPrimitives.WriteUInt64LittleEndian(region[72..], (ulong)LogOffset); // LogOffset
     // Reserved[4016] already zeroed.
 
-    var crc = Crc32.Compute(region, Crc32.Castagnoli);
+    // CRC-32C covers the 4 KiB Header structure only, with the checksum
+    // field (offset 4..7) treated as zero during computation.
+    var crc = Crc32.Compute(region[..HeaderStructureSize], Crc32.Castagnoli);
     BinaryPrimitives.WriteUInt32LittleEndian(region[4..], crc);
   }
 
@@ -201,10 +218,10 @@ public sealed class VhdxWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(region[10..], 5);            // EntryCount = 5
     // Reserved2[20] zero (offset 12..31).
 
-    // Item payloads packed at the end of the region for simplicity.
-    // Sizes: FileParameters=8, VirtualDiskSize=8, Page83=16, LogicalSector=4, PhysicalSector=4.
-    // Total = 40 bytes; place at MetadataRegionSize - 64 (16-byte alignment).
-    var payloadStart = MetadataRegionSize - 64;
+    // Item payloads must begin at or beyond the 64 KiB metadata-table area:
+    // qemu rejects any item whose Offset is < VHDX_METADATA_TABLE_MAX_SIZE
+    // (0x10000). Pack the five small items just past that boundary.
+    var payloadStart = 0x10000;
 
     // Layout of each metadata item (5 entries, 32 bytes each, starting at offset 32):
     //   ItemId (16)  Offset (4)  Length (4)  Flags (4)  Reserved2 (4)

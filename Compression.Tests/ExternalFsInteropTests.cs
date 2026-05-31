@@ -365,13 +365,28 @@ public class ExternalFsInteropTests {
     fat.AddFile("HELLO.TXT", SmallText);
     var inner = fat.Build();
 
+    // A dynamic VHD carries a footer copy at offset 0 ("conectix"), so qemu's
+    // format probe recognises it as "vpc"; a fixed VHD has the footer only at
+    // the tail and probes as raw. We emit dynamic here to exercise the vpc path.
     var vhd = new VhdWriter();
     vhd.SetDiskData(inner);
     var imgPath = Path.Combine(this._tmpDir, "check.vhd");
-    File.WriteAllBytes(imgPath, vhd.Build());
+    File.WriteAllBytes(imgPath, vhd.BuildDynamic());
 
+    // qemu identifies the container as vpc.
+    var info = FsInteropToolbox.RunQemuImg($"info {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(info.ExitCode, Is.EqualTo(0),
+      $"qemu-img info rejected our VHD:\nstdout:\n{info.StdOut}\nstderr:\n{info.StdErr}");
+    Assert.That(info.StdOut, Does.Contain("vpc"),
+      $"qemu-img info did not report our VHD as the vpc format:\nstdout:\n{info.StdOut}");
+
+    // The vpc block driver implements no consistency-check operation, so
+    // `qemu-img check` answers "does not support checks" (exit 63) for ALL vpc
+    // images — including qemu's own. That response still means the container
+    // opened cleanly; only an actual rejection (the image failing to open)
+    // would surface as a different, error-level exit code.
     var r = FsInteropToolbox.RunQemuImg($"check {FsInteropToolbox.WinToWsl(imgPath)}");
-    Assert.That(r.ExitCode, Is.EqualTo(0),
+    Assert.That(r.ExitCode, Is.AnyOf(0, 63),
       $"qemu-img check rejected our VHD:\nstdout:\n{r.StdOut}\nstderr:\n{r.StdErr}");
   }
 
@@ -382,10 +397,12 @@ public class ExternalFsInteropTests {
     fat.AddFile("HELLO.TXT", SmallText);
     var inner = fat.Build();
 
+    // Dynamic so qemu opens it as vpc (not raw) and the round-trip exercises
+    // the BAT/footer decode path rather than a plain raw passthrough.
     var vhd = new VhdWriter();
     vhd.SetDiskData(inner);
     var imgPath = Path.Combine(this._tmpDir, "convert.vhd");
-    File.WriteAllBytes(imgPath, vhd.Build());
+    File.WriteAllBytes(imgPath, vhd.BuildDynamic());
 
     var rawPath = Path.Combine(this._tmpDir, "extracted_vhd.raw");
     var conv = FsInteropToolbox.RunQemuImg(
