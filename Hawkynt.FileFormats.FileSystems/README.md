@@ -23,8 +23,20 @@ elevated privileges.
   / CP/M disks straight from emulator captures
 - **Cloud / VM image inspection**: peek inside QCOW2 / VMDK / VDI / VHDX without spinning up a
   hypervisor
-- **WORM-creatable images**: build minimal filesystem images for tests / fuzzing / firmware
+- **WORM-creatable images**: build filesystem images for tests / fuzzing / firmware
   packaging — see the source repo's WSL-validated mkfs-parity tests
+
+Every creatable filesystem builds **real nested directory trees** (not flattened paths) of
+**arbitrary size** — multi-block / multi-leaf directory growth (B-tree node splitting on
+btrfs / xfs / jfs / reiserfs / apfs / hfs+ / ntfs `$INDEX_ALLOCATION`, fat-ZAP on zfs,
+multi-segment dentry blocks on f2fs, indirect/extent-backed directories on ext / ufs / minix /
+udf / ocfs2 / prodos / bfs / hpfs). Creatable images can also **wipe unused space and
+cluster-tip slack** (`IWipeEmpty`), **defragment** (including fusing fragmented directory
+extents), and pick optimal cluster/block sizes via the layout optimizer. Where an external
+tool exists, image conformance is **validated against the real OS utility** — `fsck.fat`,
+`fsck.exfat`, `e2fsck`, `xfs_repair`, `btrfs check`, `fsck.f2fs`, `fsck.hfsplus`, `fsck.jfs`,
+`reiserfsck`, `ntfs-3g`, `xorriso`, `mtools` — in the test suite (`setup-test-environment.sh`
+installs them).
 
 Skip it when:
 
@@ -119,10 +131,10 @@ State legend:
 | `FileSystem.Ext`      | R/W   | ext2 / ext3 / ext4 — DYNAMIC_REV, FILETYPE feature, files at inode 11 — [more →](https://en.wikipedia.org/wiki/Ext4) |
 | `FileSystem.Xfs`      | R/W   | XFS v5 — `xfs_repair`-validated, AGF/AGI/AGFL, full B-tree set — [more →](https://en.wikipedia.org/wiki/XFS) |
 | `FileSystem.Ext1`     | R/W   | ext1 — Theodore Ts'o 1992 original (magic 0xEF51, no `mkfs.ext1` exists); add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Extended_file_system) |
-| `FileSystem.ReiserFs` | WORM  | ReiserFS 3.6 — spec-correct single-leaf image (root SD + DIRENTRY + per-file SD/DIRECT, R5-hashed key ordering). In-flight Add/Remove needs S+tree split/merge with comp_keys ordering, bitmap chain, objectid map (multi-week) — [more →](https://en.wikipedia.org/wiki/ReiserFS) |
+| `FileSystem.ReiserFs` | WORM  | ReiserFS 3.6 — `reiserfsck`-clean; multi-leaf S+tree with an internal node, R5-hashed keys, nested subdirectories of arbitrary size, correct `dc_size` / `.`/`..` keys / `sd_blocks`. In-place Add/Remove (multi-week S+tree split/merge balancing) is the remaining gap to R/W — [more →](https://en.wikipedia.org/wiki/ReiserFS) |
 | `FileSystem.Reiser4`  | WORM  | Reiser4 — empty-FS only via 7 byte-exact reference blocks — [more →](https://en.wikipedia.org/wiki/Reiser4) |
-| `FileSystem.Jfs`      | WORM  | IBM JFS1 — `fsck.jfs -n -f -v` clean; inline dtroot ≤8 files, no B+ tree split/grow yet — [more →](https://en.wikipedia.org/wiki/JFS_(file_system)) |
-| `FileSystem.F2fs`     | WORM  | Flash-Friendly Filesystem — superblock + checkpoint pack + SIT/NAT/SSA + Main with HOT/WARM/COLD nodes + inline-dentry root. In-flight Add/Remove needs NAT/SIT journal mutation, segment-typed valid_map allocation, checkpoint CRC recompute (multi-week) — [more →](https://en.wikipedia.org/wiki/F2FS) |
+| `FileSystem.Jfs`      | WORM  | IBM JFS1 — `fsck.jfs -n` clean; nested subdirectories with external dtree B+ pages (large directories), sorted+sibling-chained pages, correct secondary AIT/AIM. In-place Add/Remove (dmap/IAG mutation) is the gap to R/W — [more →](https://en.wikipedia.org/wiki/JFS_(file_system)) |
+| `FileSystem.F2fs`     | WORM  | Flash-Friendly Filesystem — `fsck.f2fs`-clean; superblock + checkpoint + SIT/NAT/SSA + kernel hash-bucket directory blocks (large directories). In-place Add/Remove (NAT/SIT journal mutation, checkpoint CRC recompute) is the gap to R/W — [more →](https://en.wikipedia.org/wiki/F2FS) |
 | `FileSystem.Zfs`      | R     | Sun ZFS — read existing pools — [more →](https://en.wikipedia.org/wiki/ZFS)                          |
 | `FileSystem.Ufs`      | R     | UNIX File System (BSD) — `fs_magic=0x011954` — [more →](https://en.wikipedia.org/wiki/Unix_File_System) |
 | `FileSystem.BcacheFs` | WORM  | bcachefs — superblock-only WORM (fsck parity multi-week, B-trees TODO) — [more →](https://en.wikipedia.org/wiki/Bcachefs) |
@@ -139,7 +151,7 @@ State legend:
 
 | Filesystem           | State | Notes                                                                 |
 | -------------------- | ----- | --------------------------------------------------------------------- |
-| `FileSystem.HfsPlus` | R/W   | Mac OS Extended — TN1150-compliant catalog file record (248 B); add/remove via read-extract-rebuild — [more →](https://en.wikipedia.org/wiki/HFS_Plus) |
+| `FileSystem.HfsPlus` | R/W   | Mac OS Extended — `fsck.hfsplus`-clean; multi-node catalog B-tree (chained index/leaf nodes), TN1150 case-folding key order, nested subdirectories of arbitrary size; add/remove via read-extract-rebuild — [more →](https://en.wikipedia.org/wiki/HFS_Plus) |
 | `FileSystem.Hfs`     | R/W   | Classic Mac OS HFS — real B-tree catalog + extents trees; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Hierarchical_File_System_(Apple)) |
 | `FileSystem.Apfs`    | WORM  | Apple File System (macOS High Sierra+) — single container/volume, real NXSB/APSB + omap + FS-tree B-tree under Fletcher-64. In-flight Add/Remove needs B-tree split/merge, xid-keyed omap updates, checkpoint advance, spaceman bitmap, per-block Fletcher-64 recompute (multi-week) — [more →](https://en.wikipedia.org/wiki/Apple_File_System) |
 | `FileSystem.Mfs`     | R/W   | Macintosh File System (1984) — pre-HFS flat FS, `drSigWord=0xD2D7`; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Macintosh_File_System) |
@@ -159,7 +171,7 @@ State legend:
 
 | Filesystem       | State | Notes                                                                 |
 | ---------------- | ----- | --------------------------------------------------------------------- |
-| `FileSystem.Iso` | R/W   | ISO 9660 + Joliet — PVD@16, VDST@17, L+M path tables; in-place add / remove via read-extract-rebuild (overwrites the source stream, secure-wipes removed bytes) — [more →](https://en.wikipedia.org/wiki/ISO_9660) |
+| `FileSystem.Iso` | R/W   | ISO 9660 + Joliet — `xorriso`-validated (all mandatory PVD/SVD fields), Joliet UCS-2 long names, multi-sector directories, L+M path tables; in-place add / remove via read-extract-rebuild (overwrites the source stream, secure-wipes removed bytes) — [more →](https://en.wikipedia.org/wiki/ISO_9660) |
 | `FileSystem.Udf` | R/W   | UDF (DVD / Blu-ray) — ECMA-167, VRS@16-18, AVDP@256, CRC-16-XMODEM; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Universal_Disk_Format) |
 | `FileSystem.Sfs` | R     | Smart File System (Amiga) — root block surfacing only; full R/W requires the object-container B+ tree, bitmap chain, and directory hash table (multi-week Amiga-spec work, no external validator on Windows/WSL) — [more →](https://en.wikipedia.org/wiki/Smart_File_System) |
 
