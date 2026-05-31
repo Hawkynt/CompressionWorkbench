@@ -11,7 +11,7 @@ namespace FileSystem.Lif;
 /// computers and compatible HP-IL/HP-IB peripherals from the early 1980s.
 /// </summary>
 public sealed class LifFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks the LIF directory and yields the actual on-disk byte layout — the
@@ -188,6 +188,26 @@ public sealed class LifFormatDescriptor :
         return v.Files.Select(f => (f.Name, LifReader.Extract(v, f)));
       },
       buildImage: files => LifWriter.Build(files.ToList()));
+  }
+
+  // ── IWipeEmpty ─────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros the unused (free) sectors of a LIF volume. LIF stores each file as a
+  /// contiguous run of 256-byte sectors, but the directory entry records the
+  /// file length only in whole sectors — there is no byte-precise logical size
+  /// on disk, so a file exactly fills its allocated sectors and there is no
+  /// recoverable cluster tip. Cluster-tip wiping is therefore N/A: no file-size
+  /// lookup is supplied and <paramref name="wipeClusterTips"/> is forced off so
+  /// a sector-rounded run is never trimmed below its real on-disk extent.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = LifExtentMap.Enumerate(image);
+    // No byte-precise file size on disk → no cluster tips. Zero only free sectors.
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 
   private static LifReader.Volume ReadVolume(Stream stream) {
