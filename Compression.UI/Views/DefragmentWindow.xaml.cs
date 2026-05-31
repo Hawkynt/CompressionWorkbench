@@ -821,6 +821,17 @@ public partial class DefragmentWindow : Window {
       : Visibility.Collapsed;
   }
 
+  /// <summary>Switches the block map between the linear grid, the 2-D circular
+  /// platter, and the 3-D cylinder-stack projection.</summary>
+  private void OnBlockMapViewModeChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) {
+    if (BlockMap == null || BlockMapViewCombo == null) return; // not yet inflated
+    BlockMap.ViewMode = BlockMapViewCombo.SelectedIndex switch {
+      1 => Compression.Core.Layout.BlockMapView.CircularPlatter,
+      2 => Compression.Core.Layout.BlockMapView.CylinderStack,
+      _ => Compression.Core.Layout.BlockMapView.LinearBlocks,
+    };
+  }
+
   private void OnRun(object sender, RoutedEventArgs e) {
     if (this._imagePath == null) return;
 

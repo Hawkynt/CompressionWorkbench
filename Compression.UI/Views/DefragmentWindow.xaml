@@ -179,6 +179,16 @@
           <TextBlock DockPanel.Dock="Top" x:Name="LayoutStatusLbl"
                      Text="—" Foreground="DimGray" FontStyle="Italic"
                      Margin="6,2,6,0" />
+          <!-- View switcher: linear grid, 2-D platter, or 3-D cylinder stack -->
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="6,2,6,0">
+            <TextBlock Text="View:" VerticalAlignment="Center" Margin="0,0,6,0" />
+            <ComboBox x:Name="BlockMapViewCombo" SelectedIndex="0" Width="200"
+                      SelectionChanged="OnBlockMapViewModeChanged">
+              <ComboBoxItem Content="Linear blocks" />
+              <ComboBoxItem Content="Circular platter (2-D)" />
+              <ComboBoxItem Content="Cylinder stack (3-D)" />
+            </ComboBox>
+          </StackPanel>
           <!-- Color legend -->
           <WrapPanel DockPanel.Dock="Bottom" Margin="6,4,6,4">
             <StackPanel Orientation="Horizontal" Margin="0,0,12,0">

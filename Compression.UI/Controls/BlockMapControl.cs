@@ -143,6 +143,24 @@ public sealed class BlockMapControl : FrameworkElement {
     set => SetValue(WriteHeadProperty, value);
   }
 
+  /// <summary>Which projection the block map is drawn in: the classic linear
+  /// tile grid, a 2-D circular platter, or a 3-D cylinder stack. Lets the user
+  /// see roughly where data would physically reside on the medium.</summary>
+  public Compression.Core.Layout.BlockMapView ViewMode {
+    get => (Compression.Core.Layout.BlockMapView)GetValue(ViewModeProperty);
+    set => SetValue(ViewModeProperty, value);
+  }
+
+  public static readonly DependencyProperty ViewModeProperty =
+    DependencyProperty.Register(nameof(ViewMode), typeof(Compression.Core.Layout.BlockMapView),
+      typeof(BlockMapControl), new FrameworkPropertyMetadata(
+        Compression.Core.Layout.BlockMapView.LinearBlocks, FrameworkPropertyMetadataOptions.AffectsRender));
+
+  /// <summary>Physical CHS geometry used by the circular/cylinder projections.
+  /// Set from the image's BPB when known; defaults to standard 63×255 geometry
+  /// derived from <see cref="ImageSize"/>.</summary>
+  public Compression.Core.Layout.MediaGeometry? Geometry { get; set; }
+
   public static readonly DependencyProperty BlockMapProperty =
     DependencyProperty.Register(nameof(BlockMap), typeof(IReadOnlyList<DefragBlockInfo>),
       typeof(BlockMapControl), new FrameworkPropertyMetadata(null,
@@ -371,20 +389,54 @@ public sealed class BlockMapControl : FrameworkElement {
     // and 10% Used renders as a blend of light-gray and the Used color
     // proportional to the byte counts, so even small Used regions tint
     // visibly without ALSO hiding the dominant context.
-    for (var i = 0; i < totalTiles; i++) {
-      var col = i % cols;
-      var row = i / cols;
-      var x = col * tileW;
-      var y = row * tileH;
-      var rect = new Rect(x, y, tileW + 0.5, tileH + 0.5);
-      var brush = BlendedBrush(tileKinds[i], tileClasses[i],
-        tileFreeBytes[i], tileUsedBytes[i], tileMetaBytes[i], tileBadBytes[i]);
-      dc.DrawRectangle(brush, null, rect);
-    }
+    var view = ViewMode;
+    if (view is Compression.Core.Layout.BlockMapView.CircularPlatter
+             or Compression.Core.Layout.BlockMapView.CylinderStack) {
+      // Projected views: place each tile where its bytes would physically
+      // reside on the medium (cylinder/head/sector geometry).
+      var geom = Geometry ?? Compression.Core.Layout.MediaGeometry.Standard(imageSize);
+      var dot = Math.Max(1.5, Math.Min(tileW, tileH) * 0.6);
+      var cx = w / 2;
+      for (var i = 0; i < totalTiles; i++) {
+        if (tileKinds[i] == DefragBlockKind.Free
+            && tileUsedBytes[i] == 0 && tileMetaBytes[i] == 0 && tileBadBytes[i] == 0)
+          continue; // don't clutter the platter with empty space
+        var centerByte = (long)((i + 0.5) * bytesPerTile);
+        var lba = geom.LbaOfByte(centerByte);
+        var brush = BlendedBrush(tileKinds[i], tileClasses[i],
+          tileFreeBytes[i], tileUsedBytes[i], tileMetaBytes[i], tileBadBytes[i]);
+        Point p;
+        if (view == Compression.Core.Layout.BlockMapView.CircularPlatter) {
+          var (angle, radius) = Compression.Core.Layout.MediaProjection.CircularPlatter(geom, lba);
+          var rr = Math.Min(w, h) * 0.45 * radius;
+          p = new Point(cx + rr * Math.Sin(angle), h / 2 - rr * Math.Cos(angle));
+        } else {
+          var (angle, radius, z) = Compression.Core.Layout.MediaProjection.CylinderStack(geom, lba);
+          var rx = w * 0.40 * radius;
+          var ry = h * 0.16 * radius;          // foreshortened depth for a 3-D feel
+          var zTop = h * 0.78;                  // head 0 baseline near the bottom
+          var zSpan = h * 0.55;                 // platter stack height
+          p = new Point(cx + rx * Math.Sin(angle), zTop - z * zSpan - ry * Math.Cos(angle));
+        }
+        dc.DrawEllipse(brush, null, p, dot, dot);
+      }
+    } else {
+      // Linear tile grid (LinearBlocks / LinearLba): row-major by byte offset.
+      for (var i = 0; i < totalTiles; i++) {
+        var col = i % cols;
+        var row = i / cols;
+        var x = col * tileW;
+        var y = row * tileH;
+        var rect = new Rect(x, y, tileW + 0.5, tileH + 0.5);
+        var brush = BlendedBrush(tileKinds[i], tileClasses[i],
+          tileFreeBytes[i], tileUsedBytes[i], tileMetaBytes[i], tileBadBytes[i]);
+        dc.DrawRectangle(brush, null, rect);
+      }
 
-    // Draw read/write heads as vertical lines over the tile grid.
-    DrawHead(dc, ReadHead, imageSize, w, h, ReadHeadPen);
-    DrawHead(dc, WriteHead, imageSize, w, h, WriteHeadPen);
+      // Read/write head markers only make sense over the linear grid.
+      DrawHead(dc, ReadHead, imageSize, w, h, ReadHeadPen);
+      DrawHead(dc, WriteHead, imageSize, w, h, WriteHeadPen);
+    }
 
     // Cache the layout for hit-testing in OnMouseMove.
     this._cols = cols;
@@ -411,6 +463,15 @@ public sealed class BlockMapControl : FrameworkElement {
 
   protected override void OnMouseMove(MouseEventArgs e) {
     base.OnMouseMove(e);
+
+    // Hit-testing assumes the linear tile grid; the projected (platter/cylinder)
+    // views map screen position non-linearly, so we don't offer per-tile hover
+    // there (the grid's row/col math would point at the wrong block).
+    if (ViewMode is Compression.Core.Layout.BlockMapView.CircularPlatter
+                 or Compression.Core.Layout.BlockMapView.CylinderStack) {
+      SetTooltipContent(null);
+      return;
+    }
 
     var kinds = this._tileKinds;
     var classes = this._tileClasses;
