@@ -8,10 +8,10 @@ namespace FileFormat.Qcow2;
 /// wraps it in a QCOW2 container with uncompressed clusters.
 /// <para>
 /// Layout: header (cluster&#160;0) → L1 table (cluster&#160;1) → L2 tables → refcount table
-/// → refcount block → data clusters. Each cluster has a refcount of&#160;1. This is the
-/// arrangement <c>qemu-img create</c> produces, and <c>qemu-img check</c> now passes
-/// without the previous "Image contains errors or warnings" output that came from
-/// the zeroed refcount table.
+/// → refcount block → data clusters. Each cluster has a refcount of&#160;1, and every
+/// L1/L2 entry that points at such a single-refcount cluster carries the
+/// <c>QCOW_OFLAG_COPIED</c> flag (bit&#160;63). This matches the arrangement
+/// <c>qemu-img create</c> produces, so <c>qemu-img check</c> reports no errors.
 /// </para>
 /// </summary>
 public sealed class Qcow2Writer {
@@ -20,6 +20,12 @@ public sealed class Qcow2Writer {
   private const int ClusterSize = 1 << ClusterBits;               // 65536
   private const int L2EntriesPerCluster = ClusterSize / 8;        // 8192
   private const int RefcountEntriesPerCluster = ClusterSize / 2;  // 32768 (16-bit refcounts at order 4)
+
+  // QCOW_OFLAG_COPIED: set on an L1/L2 entry whose target cluster has a refcount
+  // of exactly 1, signalling that the cluster can be written in place without a
+  // copy-on-write. qemu-img check reports an OFLAG_COPIED error for every
+  // single-refcount entry that omits this bit.
+  private const ulong CopiedFlag = 1UL << 63;
 
   private byte[]? _diskData;
 
@@ -67,7 +73,8 @@ public sealed class Qcow2Writer {
     var l1 = new byte[ClusterSize];
     for (var i = 0; i < numL2Tables; ++i) {
       var l2Offset = l2TablesStart + (long)i * ClusterSize;
-      BinaryPrimitives.WriteUInt64BigEndian(l1.AsSpan(i * 8), (ulong)l2Offset);
+      // The L2 table cluster has refcount 1, so flag it COPIED.
+      BinaryPrimitives.WriteUInt64BigEndian(l1.AsSpan(i * 8), (ulong)l2Offset | CopiedFlag);
     }
     output.Write(l1);
 
@@ -77,7 +84,8 @@ public sealed class Qcow2Writer {
       var l2 = new byte[ClusterSize];
       for (var j = 0; j < L2EntriesPerCluster && clusterIdx < numDataClusters; ++j, ++clusterIdx) {
         var hostOffset = dataStart + (long)clusterIdx * ClusterSize;
-        BinaryPrimitives.WriteUInt64BigEndian(l2.AsSpan(j * 8), (ulong)hostOffset);
+        // Each data cluster has refcount 1, so flag the L2 entry COPIED.
+        BinaryPrimitives.WriteUInt64BigEndian(l2.AsSpan(j * 8), (ulong)hostOffset | CopiedFlag);
       }
       output.Write(l2);
     }
