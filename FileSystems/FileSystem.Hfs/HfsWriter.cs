@@ -10,7 +10,12 @@ namespace FileSystem.Hfs;
 /// Layout matches what hfsutils' libhfs expects: 512-byte B*-tree nodes
 /// (libhfs hardcodes <c>HFS_BLOCKSZ</c>=512 and validates header-record
 /// offsets at exactly 0x00e/0x078/0x0f8/0x1f8). When records can't fit a
-/// single leaf, an index node is added and the tree depth becomes 2.
+/// single leaf, the catalog grows into multiple leaf nodes (chained via the
+/// node-descriptor fLink/bLink) and one or more index levels are stacked above
+/// them, increasing the tree depth until a single root node fans out over the
+/// whole level below it. The header node's BTMapRec caps the catalog at 2048
+/// nodes (no chained map nodes), which still permits well over a thousand
+/// entries in a single directory.
 /// </para>
 /// <para>
 /// Names passed to <see cref="AddFile(string, byte[])"/> may contain
@@ -121,8 +126,15 @@ public sealed class HfsWriter {
     // we know where file data lives.
     var leafAssignments = PlanCatalogLeaves(files, folders, this._volumeName);
     var hasIndexNode = leafAssignments.Count > 1;
-    // catalog node count: header + N leaves [+ index node if N > 1]
-    var catalogNodeCount = 1 + leafAssignments.Count + (hasIndexNode ? 1 : 0);
+    // When there is more than one leaf the tree grows an index level above the
+    // leaves. A single index node holds at most IndexRecordsPerNode pointers, so
+    // very large directories need several index nodes plus higher index levels
+    // until one node fans out over the whole level below it. Compute the per-level
+    // node counts (bottom index level first, root last) so we can size the file.
+    var indexLevelCounts = PlanIndexLevels(leafAssignments.Count);
+    var indexNodeTotal = indexLevelCounts.Sum();
+    // catalog node count: header + N leaves + every index node
+    var catalogNodeCount = 1 + leafAssignments.Count + indexNodeTotal;
     var catalogTotalBytes = catalogNodeCount * CatalogNodeSize;
     var catalogBlockCount = (catalogTotalBytes + (int)AllocBlockSize - 1) / (int)AllocBlockSize;
 
@@ -274,16 +286,21 @@ public sealed class HfsWriter {
       throw new InvalidDataException("HFS: catalog leaf-plan record-count mismatch.");
 
     var catalogBaseOffset = allocBase + CatalogStartAbs * (int)AllocBlockSize;
-    var rootNodeNum = hasIndexNode ? (uint)(1 + leafAssignments.Count) : 1u;
+    var leafCount = leafAssignments.Count;
     var firstLeafNum = 1u;
-    var lastLeafNum = (uint)leafAssignments.Count;
+    var lastLeafNum = (uint)leafCount;
     var totalNodes = (uint)catalogActualNodeCountFromBytes(catalogBlockCount);
-    // freeNodes = totalNodes - (1 header + leaves [+ 1 index])
-    var usedCatNodes = 1u + (uint)leafAssignments.Count + (hasIndexNode ? 1u : 0u);
+    // bthDepth counts every level: 1 leaf level + one per index level. The root
+    // is the single node of the topmost level (the last index node we write, or
+    // leaf node 1 when there is no index at all). Index nodes are numbered after
+    // the leaves, bottom index level first, so the root node is the very last.
+    var usedCatNodes = 1u + (uint)leafCount + (uint)indexNodeTotal;
     var freeNodes = totalNodes - usedCatNodes;
+    var treeDepth = (ushort)(1 + indexLevelCounts.Count);
+    var rootNodeNum = hasIndexNode ? (uint)(1 + leafCount + indexNodeTotal - 1) : 1u;
 
     WriteBTreeHeaderNode(image.AsSpan(catalogBaseOffset, CatalogNodeSize),
-      treeDepth: hasIndexNode ? (ushort)2 : (ushort)1,
+      treeDepth: treeDepth,
       rootNode: rootNodeNum,
       leafRecords: (uint)catRecs.Count,
       firstLeaf: firstLeafNum, lastLeaf: lastLeafNum,
@@ -291,34 +308,54 @@ public sealed class HfsWriter {
       maxKeyLen: MaxCatalogKeyLen, nodeSize: CatalogNodeSize,
       allocatedNodeCount: (int)usedCatNodes);
 
-    // Write each leaf node, threading fLink/bLink between siblings.
+    // Write each leaf node, threading fLink/bLink between siblings. Remember the
+    // first record (its key) and node number of each leaf so the index level
+    // above can point at them.
     var recIdx = 0;
-    for (var leafIdx = 0; leafIdx < leafAssignments.Count; leafIdx++) {
+    // childKeyAndNode[i] = (firstRecordOfChild, childNodeNumber) for the level
+    // directly below the one we are currently building an index for.
+    var childRefs = new List<(byte[] FirstRec, uint Node)>();
+    for (var leafIdx = 0; leafIdx < leafCount; leafIdx++) {
       var nodeNum = (uint)(1 + leafIdx);
       var recCountInLeaf = leafAssignments[leafIdx];
       var leafRecs = catRecs.GetRange(recIdx, recCountInLeaf);
+      childRefs.Add((leafRecs[0], nodeNum));
       recIdx += recCountInLeaf;
       var prev = leafIdx == 0 ? 0u : (uint)leafIdx;
-      var next = leafIdx == leafAssignments.Count - 1 ? 0u : (uint)(leafIdx + 2);
+      var next = leafIdx == leafCount - 1 ? 0u : (uint)(leafIdx + 2);
       WriteLeafNode(image.AsSpan(catalogBaseOffset + (int)nodeNum * CatalogNodeSize, CatalogNodeSize),
         leafRecs, prevLeaf: prev, nextLeaf: next, height: 1, nodeSize: CatalogNodeSize);
     }
 
-    // If we have multiple leaves, write an index node pointing at each.
-    if (hasIndexNode) {
-      // Each index record: catalog key (always padded to keyLen=0x25 per
-      // libhfs n_index()) + 4-byte child node number = 38 + 4 = 42 bytes.
-      var indexRecs = new List<byte[]>();
-      var leafStartRec = 0;
-      for (var leafIdx = 0; leafIdx < leafAssignments.Count; leafIdx++) {
-        var firstRecOfLeaf = catRecs[leafStartRec];
-        leafStartRec += leafAssignments[leafIdx];
-        var childNode = (uint)(1 + leafIdx);
-        indexRecs.Add(BuildCatalogIndexRecord(firstRecOfLeaf, childNode));
+    // Build each index level bottom-up. Each index node holds one record per
+    // child: the child's first key (padded to keyLen=0x25 as libhfs n_index()
+    // expects) plus the child node number. Index nodes within a level are
+    // chained via fLink/bLink just like leaves. Node numbers continue past the
+    // leaves in the same level order, so the single top-level node ends up last.
+    var nextIndexNode = (uint)(1 + leafCount);
+    for (var level = 0; level < indexLevelCounts.Count; level++) {
+      var nodesThisLevel = indexLevelCounts[level];
+      var height = (byte)(2 + level); // leaves are height 1
+      // Distribute the children across this level's nodes, IndexRecordsPerNode
+      // per node (the planner sized the level the same way).
+      var nextLevelChildRefs = new List<(byte[] FirstRec, uint Node)>();
+      var childPos = 0;
+      for (var n = 0; n < nodesThisLevel; n++) {
+        var nodeNum = nextIndexNode++;
+        var take = Math.Min(IndexRecordsPerNode, childRefs.Count - childPos);
+        var indexRecs = new List<byte[]>(take);
+        for (var k = 0; k < take; k++)
+          indexRecs.Add(BuildCatalogIndexRecord(childRefs[childPos + k].FirstRec, childRefs[childPos + k].Node));
+        // The key that represents this index node to the level above is the
+        // first key of its first child.
+        nextLevelChildRefs.Add((childRefs[childPos].FirstRec, nodeNum));
+        var prev = n == 0 ? 0u : nodeNum - 1;
+        var next = n == nodesThisLevel - 1 ? 0u : nodeNum + 1;
+        WriteIndexNode(image.AsSpan(catalogBaseOffset + (int)nodeNum * CatalogNodeSize, CatalogNodeSize),
+          indexRecs, height: height, prevNode: prev, nextNode: next, nodeSize: CatalogNodeSize);
+        childPos += take;
       }
-      var indexNodeNum = (uint)(1 + leafAssignments.Count);
-      WriteIndexNode(image.AsSpan(catalogBaseOffset + (int)indexNodeNum * CatalogNodeSize, CatalogNodeSize),
-        indexRecs, height: 2, nodeSize: CatalogNodeSize);
+      childRefs = nextLevelChildRefs;
     }
 
     static int catalogActualNodeCountFromBytes(int blockCount) {
@@ -458,10 +495,14 @@ public sealed class HfsWriter {
     var bitmap = node[mapRecOffset..(mapRecOffset + 256)];
     // Mark `allocatedNodeCount` nodes as in-use (libhfs refuses to read a
     // node whose bitmap bit is 0 — see bt_getnode "read unallocated b*-tree
-    // node"). The first 256-byte map covers nodes 0..2047, more than enough
-    // for our small images.
-    var clamped = Math.Min(allocatedNodeCount, 256 * 8);
-    for (var i = 0; i < clamped; i++)
+    // node"). The 256-byte BTMapRec inside the header node covers nodes
+    // 0..2047. Holding more nodes would require chained B*-tree map nodes,
+    // which we don't emit; fail loudly rather than leave nodes unallocated.
+    const int HeaderBitmapNodeCapacity = 256 * 8;
+    if (allocatedNodeCount > HeaderBitmapNodeCapacity)
+      throw new InvalidDataException(
+        $"HFS: catalog needs {allocatedNodeCount} B*-tree nodes but the header bitmap caps it at {HeaderBitmapNodeCapacity}. Split into multiple directories.");
+    for (var i = 0; i < allocatedNodeCount; i++)
       bitmap[i >> 3] |= (byte)(0x80 >> (i & 7));
 
     // Pointer list at end: 4 offsets (numRecords + 1 free-space pointer),
@@ -647,6 +688,33 @@ public sealed class HfsWriter {
   private const int FilRecDataLen = 102;
   private const int ThdRecDataLen = 46;
 
+  // Each catalog index record is a key padded to keyLen=0x25 (38 bytes incl. the
+  // length prefix) plus a 4-byte child node number = 42 bytes. A 512-byte node
+  // reserves 14 for the descriptor and 2*(r+1) for the offset list, so the
+  // record count r satisfies 14 + 42r + 2(r+1) <= 512  =>  44r <= 496  =>  r <= 11.
+  private const int IndexRecordBytes = 42;
+  private const int IndexRecordsPerNode = (BTreeNodeSize - 14 - 2) / (IndexRecordBytes + 2);
+
+  /// <summary>
+  /// Plans the index levels stacked above <paramref name="leafCount"/> catalog
+  /// leaf nodes. Returns the node count of each index level, bottom level first
+  /// and the single-node root level last; an empty list means the leaves need no
+  /// index (a one-leaf tree). Each index node fans out over at most
+  /// <see cref="IndexRecordsPerNode"/> children, so levels are added until one
+  /// node spans the whole level below it.
+  /// </summary>
+  private static List<int> PlanIndexLevels(int leafCount) {
+    var levels = new List<int>();
+    if (leafCount <= 1) return levels;
+    var children = leafCount;
+    while (children > 1) {
+      var nodes = (children + IndexRecordsPerNode - 1) / IndexRecordsPerNode;
+      levels.Add(nodes);
+      children = nodes;
+    }
+    return levels;
+  }
+
   /// <summary>
   /// Builds an index-node record pointing at <paramref name="childNode"/>.
   /// libhfs <c>n_index()</c> always pads the catalog index key to keyLen=0x25
@@ -668,12 +736,12 @@ public sealed class HfsWriter {
   }
 
   private static void WriteIndexNode(Span<byte> node, List<byte[]> records,
-    byte height, int nodeSize) {
+    byte height, uint prevNode, uint nextNode, int nodeSize) {
     if (nodeSize != BTreeNodeSize)
       throw new InvalidOperationException("HFS B*-tree node size must be 512.");
     node.Clear();
-    BinaryPrimitives.WriteUInt32BigEndian(node[0..], 0);   // ndFLink (no sibling at root)
-    BinaryPrimitives.WriteUInt32BigEndian(node[4..], 0);   // ndBLink
+    BinaryPrimitives.WriteUInt32BigEndian(node[0..], nextNode); // ndFLink (sibling in same level)
+    BinaryPrimitives.WriteUInt32BigEndian(node[4..], prevNode); // ndBLink
     node[8] = unchecked((byte)KindIndex);                  // ndType = ndIndxNode (0)
     node[9] = height;                                      // ndNHeight (>=2)
     BinaryPrimitives.WriteUInt16BigEndian(node[10..], (ushort)records.Count);
