@@ -98,6 +98,12 @@ public static class XfsExtentMap {
       // Extents-format directory: read extent list, parse block-form entries.
       var nextents = BinaryPrimitives.ReadUInt32BigEndian(rootInode.AsSpan(76));
       if (nextents > 0 && nextents <= 100) {
+        var dirBlkLog = sb[192];
+        var dirFsBlocks = 1 << dirBlkLog;
+        var blockShift = 0;
+        while ((1u << blockShift) < blockSize) blockShift++;
+        var leafFsBlockOffset = 1L << (35 - blockShift);
+
         var extOff = forkOff;
         for (uint e = 0; e < nextents; e++) {
           if (extOff + 16 > rootInode.Length) break;
@@ -106,14 +112,18 @@ public static class XfsExtentMap {
           extOff += 16;
           var blockCount = (int)(lo & 0x1FFFFF);
           var startBlock = ((hi & 0x1FF) << 43) | (lo >> 21);
-          for (var b = 0; b < blockCount; b++) {
+          var startOff = (long)((hi >> 9) & 0x3FFFFFFFFFFFFFUL);
+          var isData = startOff < leafFsBlockOffset;
+          for (var b = 0; b < blockCount; b += dirFsBlocks) {
             var blockOff = (long)(startBlock + (ulong)b) * blockSize;
             if (blockOff + 8 > image.Length) continue;
-            // Yield directory data blocks as metadata.
-            yield return new DefragBlockInfo(blockOff, blockSize,
+            var dirBlockBytes = (long)dirFsBlocks * blockSize;
+            // Yield directory blocks (data + leaf/free index) as metadata.
+            yield return new DefragBlockInfo(blockOff, dirBlockBytes,
               DefragBlockKind.MetadataReserved, FileName: "XFS dir block");
-            var dirBlock = cache.Read(blockOff, (int)blockSize);
-            ReadBlockFormDirEntries(dirBlock, (int)blockSize, children);
+            if (!isData) continue;
+            var dirBlock = cache.Read(blockOff, (int)dirBlockBytes);
+            ReadDirDataBlockEntries(dirBlock, (int)dirBlockBytes, hasFtype, children);
           }
         }
       }
@@ -216,22 +226,32 @@ public static class XfsExtentMap {
     }
   }
 
-  private static void ReadBlockFormDirEntries(byte[] data, int blockLen,
+  private static void ReadDirDataBlockEntries(byte[] data, int blockLen, bool hasFtype,
       List<(ulong, string)> children) {
     var pos = 0;
     var end = blockLen;
-    if (pos + 4 <= data.Length) {
-      var bMagic = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos));
-      if (bMagic == 0x58443242 || bMagic == 0x58444233) pos += 48;
-    }
+    if (pos + 4 > data.Length) return;
+    var bMagic = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(pos));
+    var isV3 = bMagic is 0x58444233 or 0x58444433; // XDB3 / XDD3
+    var isV2 = bMagic is 0x58443242 or 0x58443244; // XD2B / XD2D
+    if (!isV3 && !isV2) return;
+    pos += isV3 ? 64 : 16;
+
+    var ftypeLen = hasFtype ? 1 : 0;
     while (pos + 12 <= end && pos + 12 <= data.Length) {
+      if (BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos)) == 0xFFFF) {
+        var freeLen = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(pos + 2));
+        if (freeLen < 8) break;
+        pos += freeLen;
+        continue;
+      }
       var entIno = BinaryPrimitives.ReadUInt64BigEndian(data.AsSpan(pos));
       var nameLen = data[pos + 8];
-      if (nameLen == 0 || entIno == 0) { pos += 12; continue; }
-      if (pos + 11 + nameLen > data.Length) break;
+      if (nameLen == 0 || entIno == 0) { pos += 8; continue; }
+      if (pos + 9 + nameLen + ftypeLen + 2 > data.Length) break;
       var name = Encoding.UTF8.GetString(data, pos + 9, nameLen);
       if (name != "." && name != "..") children.Add((entIno, name));
-      var entLen = 8 + 1 + nameLen + 2;
+      var entLen = 8 + 1 + nameLen + ftypeLen + 2;
       entLen = (entLen + 7) & ~7;
       pos += entLen;
     }

@@ -60,7 +60,7 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // WORM write constraints — XFS has no inherent ceiling; real mkfs.xfs minimum ≈ 16 MB.
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 16 * 1024 * 1024;
-  public string AcceptedInputsDescription => "XFS v4 filesystem image; flat root directory, short-form entries.";
+  public string AcceptedInputsDescription => "XFS v5 (CRC) filesystem image; nested directory trees with short-form, single-block and leaf-form dir2 directories.";
   public bool CanAccept(ArchiveInputInfo input, out string? reason) { reason = null; return true; }
 
   // ── IWipeEmpty ─────────────────────────────────────────────────────────

@@ -20,9 +20,12 @@ namespace FileSystem.Xfs;
 /// <para>All v5 metadata blocks (SB, AGF, AGI, AGFL, btree blocks, dinodes) are
 /// stamped with CRC-32C using the Castagnoli polynomial. Big-endian for most
 /// on-disk fields; CRC fields are little-endian per XFS v5 convention.</para>
-/// <para>Scope: short-form root directory; extent-based file data inline in one
-/// BMBT record; no RMAP, no REFCOUNT, no quotas, no realtime volume, no
-/// sparse-inode feature.</para>
+/// <para>Scope: nested directory trees using short-form (inline), single-block
+/// ("XDB3") and leaf-form ("XDD3" data blocks + a "XFS_DIR3_LEAF1" hash index)
+/// dir2 directories; extent-based file data in one BMBT record per file; no
+/// RMAP, no REFCOUNT, no quotas, no realtime volume, no sparse-inode feature,
+/// no node-form (da-btree) directories — the directory block size is enlarged
+/// so the largest directory's hash index fits in a single leaf block.</para>
 /// </summary>
 public sealed class XfsWriter {
   private const int BlockSize = 4096;
@@ -135,8 +138,7 @@ public sealed class XfsWriter {
     public int Slot;                        // slot index in the root inode chunk
     public int DataBlock;                   // first data block (files / block-form dirs)
     public int BlockCount;                  // data blocks (files / block-form dirs)
-    public bool BlockFormDirectory;         // directory uses out-of-line dir2 data blocks
-    public long DirByteSize;                // di_size for a block-form directory
+    public bool BlockFormDirectory;         // out-of-line dir2 in leaf form (false = single-block)
   }
 
   /// <summary>
@@ -208,6 +210,12 @@ public sealed class XfsWriter {
 
     var (_, nodes) = BuildTree(FirstNodeSlot);
 
+    // ── Choose the directory block size ──
+    // The leaf-form index must fit in one directory block; pick the smallest
+    // power-of-two multiple of the fs block size that keeps every out-of-line
+    // directory in block or leaf (not node) form.
+    this.ChooseDirBlockSize(nodes);
+
     // Used slots = root + rbm + rsum + every tree node beyond the root.
     // The inode space grows in whole 64-inode chunks (4 blocks each) so the
     // tree can hold far more than a single chunk's worth of inodes.
@@ -227,17 +235,24 @@ public sealed class XfsWriter {
       nextBlock += node.BlockCount;
     }
 
-    // ── Allocate directory data blocks for any directory whose short-form
-    //    encoding overflows the inode literal area (block-form dir2) ──
+    // ── Allocate directory blocks for any directory whose short-form encoding
+    //    overflows the inode literal area (block- or leaf-form dir2) ──
+    // The first fs block of each out-of-line directory is aligned to a
+    // directory-block boundary so its logical block address maps cleanly.
+    var dirFsBlocks = DirFsBlocks;
     foreach (var node in nodes) {
       if (!node.IsDirectory) continue;
       if (FitsShortForm(node)) continue;
-      var (blocks, byteSize) = MeasureBlockFormDirectory(node);
-      node.BlockFormDirectory = true;
+      var (dataDirBlocks, leaf, byteSize) = MeasureOutOfLineDirectory(node);
+      // Align the directory's starting fs block to a directory-block boundary.
+      if (dirFsBlocks > 1 && nextBlock % dirFsBlocks != 0)
+        nextBlock += dirFsBlocks - (nextBlock % dirFsBlocks);
+      node.BlockFormDirectory = leaf;           // false => single-block form
       node.DataBlock = nextBlock;
-      node.BlockCount = blocks;
-      node.DirByteSize = byteSize;
-      nextBlock += blocks;
+      var totalDirBlocks = dataDirBlocks + (leaf ? 1 : 0);
+      node.BlockCount = totalDirBlocks * dirFsBlocks;
+      _ = byteSize;                              // di_size is recomputed during layout
+      nextBlock += node.BlockCount;
     }
     // Reserve 64 blocks (256 KiB) for an internal log at the tail of AG 0.
     const int LogBlocks = 64;
@@ -275,7 +290,8 @@ public sealed class XfsWriter {
         logBlocks: LogBlocks,
         icount: (ulong)(ag == 0 ? totalInodeSlots : 0),
         ifree: (ulong)(ag == 0 ? freeInodeSlots : 0),
-        fdblocks: (ulong)(freeLenAg0 + (AgCount - 1) * freeLenAgN));
+        fdblocks: (ulong)(freeLenAg0 + (AgCount - 1) * freeLenAgN),
+        dirBlockLog: this._dirBlockLog);
 
       WriteAgf(image.AsSpan(agByteOffset + AgfSector * SectorSize),
         agNumber: (uint)ag,
@@ -335,12 +351,12 @@ public sealed class XfsWriter {
       // A directory's link count is 2 (self "." plus parent's reference) plus
       // one for each child subdirectory (whose ".." points back here).
       var childDirCount = node.Children.Count(c => c.IsDirectory);
-      if (node.BlockFormDirectory) {
+      if (!FitsShortForm(node)) {
         // Out-of-line dir2: the entry list lives in directory data blocks
         // (di_format = extents), not the inode literal area.
         WriteInodeCoreV3(image, ioff, node.Ino, mode: 0x41ED /* S_IFDIR|0755 */,
           format: 2 /* extents */, nlink: (uint)(2 + childDirCount));
-        WriteBlockFormDirectory(image, ioff, node, parentOf);
+        this.WriteOutOfLineDirectory(image, ioff, node, parentOf);
       } else {
         WriteInodeCoreV3(image, ioff, node.Ino, mode: 0x41ED /* S_IFDIR|0755 */,
           format: 1 /* local short-form */, nlink: (uint)(2 + childDirCount));
@@ -412,6 +428,9 @@ public sealed class XfsWriter {
       var ioff = InodeOffsetForSlot(slot);
       BackfillCrc(image.AsSpan(ioff, InodeSize), DiCrcOffset);
     }
+    // Directory data/leaf blocks (v5) each carry a CRC over the whole dir block.
+    foreach (var (byteOffset, crcOffset) in this._dirBlockCrcs)
+      BackfillCrc(image.AsSpan(byteOffset, this._dirBlockSize), crcOffset);
 
     output.Write(image);
   }
@@ -441,6 +460,50 @@ public sealed class XfsWriter {
   /// </summary>
   private const int ShortFormForkCapacity = InodeSize - 176; // 80 bytes
 
+  // ── dir2/dir3 on-disk directory structures (xfs_da_format.h) ──
+  //
+  // Four directory forms exist; this writer emits three of them:
+  //   • short-form   — inline in the inode literal area (di_format = local)
+  //   • single block — one directory block: data entries + embedded leaf index
+  //                    + block tail (magic "XDB3"); di_format = extents
+  //   • leaf         — N data blocks (magic "XDD3") + one leaf index block
+  //                    (magic 0x3df1, XFS_DIR3_LEAF1) carrying the per-name hash
+  //                    index and the per-data-block free-space "bests" array.
+  //
+  // The directory block size is a power-of-two multiple of the fs block size
+  // (sb_dirblklog); the leaf-form index must fit in a single directory block,
+  // so the writer picks the smallest directory block size that keeps the
+  // largest directory in leaf (rather than node) form.
+
+  private const uint Dir3BlockMagic = 0x58444233; // "XDB3" — single-block dir data
+  private const uint Dir3DataMagic = 0x58444433;  // "XDD3" — multi-block dir data
+  private const ushort Dir3Leaf1Magic = 0x3DF1;   // XFS_DIR3_LEAF1_MAGIC
+  private const int Dir3DataHdrSize = 64;          // blk_hdr(48)+bestfree[3](12)+pad(4)
+  private const int Dir3LeafHdrSize = 64;          // da3_blkinfo(56)+count(2)+stale(2)+pad(4)
+  private const int Dir3DataCrcOffset = 4;         // xfs_dir3_blk_hdr.crc
+  private const int Dir3LeafCrcOffset = 12;        // xfs_da3_blkinfo.crc
+  private const ushort Dir2DataFreeTag = 0xFFFF;
+
+  // The leaf-space and free-space sections of a directory's logical block
+  // address space start 32 GiB apart (XFS_DIR2_SPACE_SIZE = 1 << (32 + 3)
+  // bytes), counted in fs blocks regardless of the directory block size.
+  private const long Dir2LeafFsBlockOffset = 1L << (35 - BlockLog); // 32 GiB / 4 KiB = 8388608
+
+  // The chosen directory block size for the whole image (≥ BlockSize). Picked
+  // in WriteTo before any directory is laid out.
+  private int _dirBlockSize = BlockSize;
+  private byte _dirBlockLog = 0;
+  private int DirFsBlocks => this._dirBlockSize / BlockSize;
+
+  // Directory blocks (byte offset, CRC field offset) needing a v5 CRC backfill.
+  private readonly List<(int ByteOffset, int CrcOffset)> _dirBlockCrcs = [];
+
+  /// <summary>The on-disk size of one dir2 data entry (with FTYPE), 8-aligned.</summary>
+  private static int Dir2EntrySize(int nameLen) => (8 + 1 + nameLen + 1 + 2 + 7) & ~7;
+
+  /// <summary>UTF-8 byte length of a directory entry name, capped at 250.</summary>
+  private static int NameLen(string name) => Math.Min(Encoding.UTF8.GetByteCount(name), 250);
+
   /// <summary>
   /// True when <paramref name="dir"/>'s children fit in the inode literal area
   /// as a short-form directory. Each entry needs namelen(1)+offset(2)+name+
@@ -449,39 +512,129 @@ public sealed class XfsWriter {
   private static bool FitsShortForm(TreeNode dir) {
     var total = 6; // xfs_dir2_sf_hdr (count, i8count, 4-byte parent)
     foreach (var child in dir.Children) {
-      var nameLen = Math.Min(Encoding.UTF8.GetByteCount(child.Name), 250);
-      total += 3 + nameLen + 1 + 4;
+      total += 3 + NameLen(child.Name) + 1 + 4;
       if (total > ShortFormForkCapacity) return false;
     }
     return total <= ShortFormForkCapacity;
   }
 
-  // dir2 data-block header size we emit (xfs_dir3_blk_hdr, v5). The reader skips
-  // exactly this many bytes before the first packed data entry.
-  private const int Dir2DataHeaderSize = 48;
-  private const uint Dir2BlockMagicV5 = 0x58444233; // "XDB3"
-
-  /// <summary>The on-disk size of one dir2 data entry (with FTYPE), 8-aligned.</summary>
-  private static int Dir2EntrySize(int nameLen) => (8 + 1 + nameLen + 1 + 2 + 7) & ~7;
+  /// <summary>
+  /// True when <paramref name="dir"/> (with its implied "." and "..") fits in a
+  /// single directory block in block form: all data entries, a minimum free
+  /// region, the embedded leaf index (8 bytes per entry) and the 8-byte block
+  /// tail must coexist in one directory block.
+  /// </summary>
+  private bool FitsSingleBlock(TreeNode dir) {
+    var entryCount = dir.Children.Count + 2; // "." + ".."
+    var dataBytes = Dir3DataHdrSize + Dir2EntrySize(1) + Dir2EntrySize(2);
+    foreach (var child in dir.Children)
+      dataBytes += Dir2EntrySize(NameLen(child.Name));
+    var tailBytes = 8 + entryCount * 8; // xfs_dir2_block_tail + leaf entries
+    return dataBytes + tailBytes <= this._dirBlockSize;
+  }
 
   /// <summary>
-  /// Measures how many 4 KiB directory data blocks a block-form directory needs
-  /// and the resulting di_size. Each block carries its own header plus "." and
-  /// ".." in the first block; an entry never straddles a block boundary.
+  /// Largest number of directory entries (names, including "." and "..") whose
+  /// leaf index — header + 8 bytes per entry + the per-data-block "bests" array
+  /// + tail — fits in one directory block of the given size.
   /// </summary>
-  private static (int Blocks, long ByteSize) MeasureBlockFormDirectory(TreeNode dir) {
-    var blocks = 1;
-    var used = Dir2DataHeaderSize + Dir2EntrySize(1) + Dir2EntrySize(2); // "." + ".."
-    foreach (var child in dir.Children) {
-      var nameLen = Math.Min(Encoding.UTF8.GetByteCount(child.Name), 250);
-      var entry = Dir2EntrySize(nameLen);
-      if (used + entry > BlockSize) {
-        blocks++;
-        used = Dir2DataHeaderSize;
+  private static int Leaf1Capacity(int dirBlockSize, int dataBlockCount) {
+    var avail = dirBlockSize - Dir3LeafHdrSize - 4 /*ltail.bestcount*/ - dataBlockCount * 2;
+    return avail / 8;
+  }
+
+  /// <summary>
+  /// Packs a directory's entries ("." , ".." then children) into directory data
+  /// blocks of <see cref="_dirBlockSize"/> bytes, returning the per-block entry
+  /// lists. An entry never straddles a block boundary.
+  /// </summary>
+  private List<List<(ulong Ino, string Name, bool IsDir)>> PackDataBlocks(TreeNode dir, ulong parentIno) {
+    var blocks = new List<List<(ulong, string, bool)>>();
+    var current = new List<(ulong, string, bool)>();
+    var used = Dir3DataHdrSize;
+
+    void Place(ulong ino, string name, bool isDir) {
+      var entLen = Dir2EntrySize(NameLen(name));
+      if (used + entLen > this._dirBlockSize) {
+        blocks.Add(current);
+        current = [];
+        used = Dir3DataHdrSize;
       }
-      used += entry;
+      current.Add((ino, name, isDir));
+      used += entLen;
     }
-    return (blocks, (long)blocks * BlockSize);
+
+    Place(dir.Ino, ".", true);
+    Place(parentIno, "..", true);
+    foreach (var child in dir.Children)
+      Place(child.Ino, child.Name, child.IsDirectory);
+    blocks.Add(current);
+    return blocks;
+  }
+
+  /// <summary>
+  /// Determines a directory's on-disk form and, for the out-of-line forms, the
+  /// number of directory data blocks and the resulting <c>di_size</c>. Block
+  /// form occupies one directory block; leaf form occupies the data blocks plus
+  /// one leaf index block. <c>di_size</c> covers only the data space (the leaf
+  /// block lives 32 GiB further up the logical address space and does not count).
+  /// </summary>
+  private (int DataDirBlocks, bool Leaf, long ByteSize) MeasureOutOfLineDirectory(TreeNode dir) {
+    if (this.FitsSingleBlock(dir))
+      return (1, false, this._dirBlockSize);
+    var dataBlocks = this.PackDataBlocks(dir, dir.Ino).Count;
+    return (dataBlocks, true, (long)dataBlocks * this._dirBlockSize);
+  }
+
+  /// <summary>
+  /// Picks the image-wide directory block size: the smallest power-of-two
+  /// multiple of the fs block size such that every out-of-line directory's leaf
+  /// index fits in a single directory block (i.e. stays in block or leaf form,
+  /// never node form). Sets <see cref="_dirBlockSize"/> and <c>sb_dirblklog</c>.
+  /// </summary>
+  private void ChooseDirBlockSize(IReadOnlyList<TreeNode> nodes) {
+    for (var log = (byte)0; log <= 4; log++) {           // up to 64 KiB dir blocks
+      this._dirBlockLog = log;
+      this._dirBlockSize = BlockSize << log;
+      if (nodes.All(n => !n.IsDirectory || FitsShortForm(n) || this.FitsLeafForm(n)))
+        return;
+    }
+    // Fall back to the largest tried size; oversize directories surface as a
+    // capacity error during layout rather than producing node-form output.
+    this._dirBlockLog = 4;
+    this._dirBlockSize = BlockSize << 4;
+  }
+
+  /// <summary>
+  /// True when a directory fits in block form or in leaf form (one leaf index
+  /// block) at the current directory block size.
+  /// </summary>
+  private bool FitsLeafForm(TreeNode dir) {
+    if (this.FitsSingleBlock(dir)) return true;
+    var dataBlocks = this.PackDataBlocks(dir, dir.Ino).Count;
+    var entryCount = dir.Children.Count + 2;
+    return entryCount <= Leaf1Capacity(this._dirBlockSize, dataBlocks);
+  }
+
+  /// <summary>
+  /// XFS directory name hash (<c>xfs_da_hashname</c>): a rolling 7-bit-shift
+  /// hash used to key directory leaf entries. Names sort by this value.
+  /// </summary>
+  private static uint HashName(string name) {
+    var bytes = Encoding.UTF8.GetBytes(name);
+    var len = Math.Min(bytes.Length, 250);
+    uint hash = 0;
+    var i = 0;
+    for (; len >= 4; len -= 4, i += 4)
+      hash = ((uint)bytes[i] << 21) ^ ((uint)bytes[i + 1] << 14)
+           ^ ((uint)bytes[i + 2] << 7) ^ bytes[i + 3]
+           ^ ((hash << 28) | (hash >> 4));
+    return len switch {
+      3 => ((uint)bytes[i] << 14) ^ ((uint)bytes[i + 1] << 7) ^ bytes[i + 2] ^ ((hash << 21) | (hash >> 11)),
+      2 => ((uint)bytes[i] << 7) ^ bytes[i + 1] ^ ((hash << 14) | (hash >> 18)),
+      1 => bytes[i] ^ ((hash << 7) | (hash >> 25)),
+      _ => hash,
+    };
   }
 
   /// <summary>
@@ -527,91 +680,224 @@ public sealed class XfsWriter {
   }
 
   /// <summary>
-  /// Writes a block-form directory: the entry list lives in one or more
-  /// contiguous 4 KiB directory data blocks (xfs_dir2 "XDB3" data blocks) rather
-  /// than the inode literal area. The inode is in extents format with a single
-  /// extent covering every directory data block. Each data block starts with a
-  /// 48-byte v5 data-block header followed by packed
-  /// <c>xfs_dir2_data_entry</c> records: inumber(8), namelen(1), name, ftype(1),
-  /// tag(2), padded to an 8-byte boundary. "." and ".." occupy the first block;
-  /// an entry never straddles a block boundary, so trailing slack in a block is
-  /// left zero (the reader treats a zero inumber as a free slot).
+  /// One placed directory entry plus the byte offset (within its data block)
+  /// where it lives — needed to build the leaf hash index.
   /// </summary>
-  private static void WriteBlockFormDirectory(byte[] image, int inodeOff, TreeNode dir,
+  private readonly record struct PlacedEntry(ulong Ino, string Name, bool IsDir, int DirBlock, int OffsetInBlock);
+
+  /// <summary>
+  /// Writes a directory in block or leaf form. The inode is in extents format.
+  /// Block form: a single directory block whose data entries are followed by an
+  /// embedded leaf index and a block tail (magic "XDB3"). Leaf form: the data
+  /// entries fill <c>DataDirBlocks</c> directory blocks (magic "XDD3") and the
+  /// hash index plus per-block free-space "bests" live in a separate leaf block
+  /// (magic 0x3df1) placed 32 GiB further up the logical address space.
+  /// </summary>
+  private void WriteOutOfLineDirectory(byte[] image, int inodeOff, TreeNode dir,
       IReadOnlyDictionary<TreeNode, TreeNode> parentOf) {
     var parentIno = parentOf.TryGetValue(dir, out var parent) ? parent.Ino : dir.Ino;
-    var firstBlock = dir.DataBlock;
-    var blockCount = dir.BlockCount;
+    var firstBlock = dir.DataBlock;       // first fs block of the data space
+    var dirFsBlocks = DirFsBlocks;        // fs blocks per directory block
+    var leaf = dir.BlockFormDirectory;    // true => leaf form, false => single block
 
-    // Initialise every data block's header up front.
-    for (var b = 0; b < blockCount; b++) {
-      var blockOff = (firstBlock + b) * BlockSize;
-      WriteDir2DataBlockHeader(image, blockOff, firstBlock + b);
+    var packed = this.PackDataBlocks(dir, parentIno);
+    var dataDirBlocks = packed.Count;
+    var placed = new List<PlacedEntry>();
+    var blockBestFree = new int[dataDirBlocks]; // largest free run per data block
+
+    // ── Write each directory data block ──
+    for (var db = 0; db < dataDirBlocks; db++) {
+      var blockByteOff = (firstBlock + db * dirFsBlocks) * BlockSize;
+      var firstFsBlock = firstBlock + db * dirFsBlocks;
+      var magic = leaf ? Dir3DataMagic : Dir3BlockMagic;
+      WriteDir3DataHeader(image, blockByteOff, firstFsBlock, dir.Ino, magic);
+      this._dirBlockCrcs.Add((blockByteOff, Dir3DataCrcOffset));
+
+      var pos = Dir3DataHdrSize;
+      foreach (var (ino, name, isDir) in packed[db]) {
+        WriteDir3DataEntry(image, blockByteOff + pos, ino, name, isDir, (ushort)pos);
+        placed.Add(new PlacedEntry(ino, name, isDir, db, pos));
+        pos += Dir2EntrySize(NameLen(name));
+      }
+
+      // Trailing free space (if any) as an xfs_dir2_data_unused entry. In block
+      // form the leaf index + tail occupy the block tail, so the usable area
+      // stops short of the block end.
+      var usableEnd = this._dirBlockSize;
+      if (!leaf) {
+        var entryCount = packed[db].Count; // single block holds every entry
+        usableEnd = this._dirBlockSize - (8 + entryCount * 8);
+      }
+      var freeLen = usableEnd - pos;
+      if (freeLen >= 8) {
+        WriteDir2DataUnused(image, blockByteOff + pos, freeLen);
+        blockBestFree[db] = freeLen;
+      } else {
+        blockBestFree[db] = 0;
+      }
+
+      // bestfree[0] in the data header tracks the largest free run.
+      if (blockBestFree[db] > 0) {
+        BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(blockByteOff + 48), (ushort)pos);            // offset
+        BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(blockByteOff + 50), (ushort)blockBestFree[db]); // length
+      }
     }
 
-    var curBlock = 0;
-    var pos = firstBlock * BlockSize + Dir2DataHeaderSize;
+    // ── Build the sorted leaf hash index ──
+    // address = (logical data-space byte offset) >> 3, where the logical byte
+    // offset of a data block is its index × directory-block size.
+    var leafEntries = placed
+      .Select(p => (Hash: HashName(p.Name),
+                    Address: (uint)(((long)p.DirBlock * this._dirBlockSize + p.OffsetInBlock) >> 3)))
+      .OrderBy(e => e.Hash).ThenBy(e => e.Address)
+      .ToList();
 
-    // "." → self, ".." → parent. Both carry DT_DIR.
-    pos = WriteDir2DataEntry(image, ref curBlock, firstBlock, pos, dir.Ino, ".", isDir: true);
-    pos = WriteDir2DataEntry(image, ref curBlock, firstBlock, pos, parentIno, "..", isDir: true);
+    if (!leaf) {
+      // ── Single-block form: leaf entries + tail live at the tail of block 0 ──
+      var blockByteOff = firstBlock * BlockSize;
+      var count = leafEntries.Count;
+      var tailOff = blockByteOff + this._dirBlockSize - 8;
+      var leafStart = tailOff - count * 8;
+      for (var i = 0; i < count; i++) {
+        BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(leafStart + i * 8), leafEntries[i].Hash);
+        BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(leafStart + i * 8 + 4), leafEntries[i].Address);
+      }
+      BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(tailOff), (uint)count); // btail.count
+      BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(tailOff + 4), 0);       // btail.stale
 
-    foreach (var child in dir.Children)
-      pos = WriteDir2DataEntry(image, ref curBlock, firstBlock, pos, child.Ino, child.Name, child.IsDirectory);
+      WriteDirInodeExtents(image, inodeOff, [(0, (ulong)firstBlock, dirFsBlocks)],
+        byteSize: this._dirBlockSize, nblocks: dirFsBlocks);
+      return;
+    }
 
-    _ = pos;
+    // ── Leaf form: one separate leaf index block (magic 0x3df1) ──
+    var leafFsBlock = firstBlock + dataDirBlocks * dirFsBlocks;
+    var leafByteOff = leafFsBlock * BlockSize;
+    WriteDir3Leaf1(image, leafByteOff, leafFsBlock, dir.Ino, leafEntries, blockBestFree);
+    this._dirBlockCrcs.Add((leafByteOff, Dir3LeafCrcOffset));
 
-    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(inodeOff + 56), (ulong)dir.DirByteSize); // di_size
-    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(inodeOff + 64), (ulong)blockCount);       // di_nblocks
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(inodeOff + 76), 1);                       // di_nextents
+    // Inode extents: each data directory block (logical offset = db × dirFsBlocks)
+    // then the leaf block at the 32 GiB leaf-space offset.
+    var extents = new List<(long LogicalFsBlock, ulong PhysFsBlock, int FsBlockCount)>();
+    for (var db = 0; db < dataDirBlocks; db++)
+      extents.Add((db * dirFsBlocks, (ulong)(firstBlock + db * dirFsBlocks), dirFsBlocks));
+    extents.Add((Dir2LeafFsBlockOffset, (ulong)leafFsBlock, dirFsBlocks));
 
-    // Single extent: logical dir block 0, physical firstBlock, blockCount blocks.
-    var startBlock = (ulong)firstBlock;
-    var hi = (startBlock >> 43) & 0x1FF;
-    var lo = (startBlock << 21) | ((ulong)blockCount & 0x1FFFFF);
-    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(inodeOff + 176), hi);
-    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(inodeOff + 184), lo);
+    WriteDirInodeExtents(image, inodeOff, extents,
+      byteSize: (long)dataDirBlocks * this._dirBlockSize,
+      nblocks: (dataDirBlocks + 1) * dirFsBlocks);
   }
 
   /// <summary>
-  /// Writes one dir2 data entry, advancing to the next data block first if it
-  /// would not fit in the current one. Returns the position past the entry.
+  /// Writes the data fork extent list of a directory inode plus di_size,
+  /// di_nblocks and di_nextents. Each extent is a BMBT_REC packed 128-bit record
+  /// carrying the logical fs-block offset, physical fs-block, and fs-block count.
   /// </summary>
-  private static int WriteDir2DataEntry(byte[] image, ref int curBlock, int firstBlock,
-      int pos, ulong ino, string name, bool isDir) {
-    var nameBytes = Encoding.UTF8.GetBytes(name);
-    var nameLen = Math.Min(nameBytes.Length, 250);
-    var entLen = Dir2EntrySize(nameLen);
+  private static void WriteDirInodeExtents(byte[] image, int inodeOff,
+      IReadOnlyList<(long LogicalFsBlock, ulong PhysFsBlock, int FsBlockCount)> extents,
+      long byteSize, int nblocks) {
+    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(inodeOff + 56), (ulong)byteSize); // di_size
+    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(inodeOff + 64), (ulong)nblocks);  // di_nblocks
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(inodeOff + 76), (uint)extents.Count); // di_nextents
 
-    var blockStart = (firstBlock + curBlock) * BlockSize;
-    if (pos - blockStart + entLen > BlockSize) {
-      curBlock++;
-      blockStart = (firstBlock + curBlock) * BlockSize;
-      pos = blockStart + Dir2DataHeaderSize;
+    var extPos = inodeOff + 176;
+    foreach (var (logical, phys, count) in extents) {
+      // BMBT_REC: startoff(bits 73..126, 54b), startblock(bits 21..72, 52b),
+      // blockcount(bits 0..20, 21b), flag at bit 127 (0 = normal).
+      var hi = (((ulong)logical & 0x3FFFFFFFFFFFFFUL) << 9) | ((phys >> 43) & 0x1FF);
+      var lo = (phys << 21) | ((ulong)count & 0x1FFFFF);
+      BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(extPos), hi);
+      BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(extPos + 8), lo);
+      extPos += 16;
     }
-
-    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(pos), ino);
-    image[pos + 8] = (byte)nameLen;
-    nameBytes.AsSpan(0, nameLen).CopyTo(image.AsSpan(pos + 9));
-    image[pos + 9 + nameLen] = isDir ? (byte)2 : (byte)1; // DT_DIR / DT_REG
-    // tag = byte offset of this entry within its data block.
-    BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(pos + 10 + nameLen), (ushort)(pos - blockStart));
-    return pos + entLen;
   }
 
-  /// <summary>Writes the 48-byte v5 dir2 data-block header (XDB3 magic).</summary>
-  private static void WriteDir2DataBlockHeader(byte[] image, int blockOff, int fsBlock) {
+  /// <summary>Writes the 64-byte v5 dir3 data-block header (XDB3/XDD3 magic).</summary>
+  private static void WriteDir3DataHeader(byte[] image, int blockOff, int fsBlock, ulong ownerIno, uint magic) {
     var h = image.AsSpan(blockOff);
-    BinaryPrimitives.WriteUInt32BigEndian(h[0..], Dir2BlockMagicV5); // magic
-    BinaryPrimitives.WriteUInt32LittleEndian(h[4..], 0);            // crc (left zero — v4-style dir, see class doc)
-    BinaryPrimitives.WriteUInt64BigEndian(h[8..], (ulong)fsBlock * (BlockSize / SectorSize)); // blkno (sector)
-    BinaryPrimitives.WriteUInt64BigEndian(h[16..], 0);             // lsn
-    UuidBytes.CopyTo(h[24..]);                                     // uuid
-    BinaryPrimitives.WriteUInt64BigEndian(h[40..], 0);            // owner (set to 0; reader ignores)
+    BinaryPrimitives.WriteUInt32BigEndian(h[0..], magic);                                         // magic
+    BinaryPrimitives.WriteUInt32LittleEndian(h[4..], 0);                                          // crc (later)
+    BinaryPrimitives.WriteUInt64BigEndian(h[8..], (ulong)fsBlock * (BlockSize / SectorSize));     // blkno (sector)
+    BinaryPrimitives.WriteUInt64BigEndian(h[16..], 0);                                            // lsn
+    UuidBytes.CopyTo(h[24..]);                                                                     // uuid
+    BinaryPrimitives.WriteUInt64BigEndian(h[40..], ownerIno);                                     // owner inode
+    // bestfree[3] (offset 48..59) + pad (60..63) left zero; bestfree[0] filled by caller.
+  }
+
+  /// <summary>
+  /// Writes one <c>xfs_dir2_data_entry</c> at <paramref name="entryOff"/>:
+  /// inumber(8), namelen(1), name, filetype(1), then the 2-byte tag at the very
+  /// end of the 8-aligned record (any rounding padding sits between the file
+  /// type and the tag). <paramref name="tag"/> is the entry's offset within the
+  /// directory block.
+  /// </summary>
+  private static void WriteDir3DataEntry(byte[] image, int entryOff, ulong ino, string name,
+      bool isDir, ushort tag) {
+    var nameBytes = Encoding.UTF8.GetBytes(name);
+    var nameLen = Math.Min(nameBytes.Length, 250);
+    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(entryOff), ino);
+    image[entryOff + 8] = (byte)nameLen;
+    nameBytes.AsSpan(0, nameLen).CopyTo(image.AsSpan(entryOff + 9));
+    image[entryOff + 9 + nameLen] = isDir ? (byte)2 : (byte)1; // DT_DIR / DT_REG
+    var entLen = Dir2EntrySize(nameLen);
+    BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(entryOff + entLen - 2), tag);
+  }
+
+  /// <summary>
+  /// Writes an <c>xfs_dir2_data_unused</c> free entry of <paramref name="length"/>
+  /// bytes at <paramref name="off"/>: freetag(0xffff), length, then a trailing
+  /// tag word (= start offset) at length-2.
+  /// </summary>
+  private void WriteDir2DataUnused(byte[] image, int off, int length) {
+    BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(off), Dir2DataFreeTag);
+    BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(off + 2), (ushort)length);
+    // The tag stores the entry's offset within the directory block.
+    var blockStart = off - (off % this._dirBlockSize);
+    BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(off + length - 2), (ushort)(off - blockStart));
+  }
+
+  /// <summary>
+  /// Writes a single-leaf directory index block (<c>xfs_dir3_leaf</c>, magic
+  /// 0x3df1): the sorted hash/address leaf entries, the per-data-block "bests"
+  /// free-length array, and the <c>ltail.bestcount</c> trailer.
+  /// </summary>
+  private void WriteDir3Leaf1(byte[] image, int blockOff, int fsBlock, ulong ownerIno,
+      IReadOnlyList<(uint Hash, uint Address)> entries, IReadOnlyList<int> bestFree) {
+    var h = image.AsSpan(blockOff);
+    // xfs_da3_blkinfo
+    BinaryPrimitives.WriteUInt32BigEndian(h[0..], 0);                                         // forw
+    BinaryPrimitives.WriteUInt32BigEndian(h[4..], 0);                                         // back
+    BinaryPrimitives.WriteUInt16BigEndian(h[8..], Dir3Leaf1Magic);                            // magic
+    BinaryPrimitives.WriteUInt16BigEndian(h[10..], 0);                                        // pad
+    BinaryPrimitives.WriteUInt32LittleEndian(h[12..], 0);                                     // crc (later)
+    BinaryPrimitives.WriteUInt64BigEndian(h[16..], (ulong)fsBlock * (BlockSize / SectorSize)); // blkno
+    BinaryPrimitives.WriteUInt64BigEndian(h[24..], 0);                                        // lsn
+    UuidBytes.CopyTo(h[32..]);                                                                 // uuid
+    BinaryPrimitives.WriteUInt64BigEndian(h[48..], ownerIno);                                 // owner
+    BinaryPrimitives.WriteUInt16BigEndian(h[56..], (ushort)entries.Count);                    // count
+    BinaryPrimitives.WriteUInt16BigEndian(h[58..], 0);                                        // stale
+    BinaryPrimitives.WriteUInt32BigEndian(h[60..], 0);                                        // pad
+
+    // Leaf entries (hashval, address) immediately after the header.
+    var pos = Dir3LeafHdrSize;
+    foreach (var (hash, address) in entries) {
+      BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(blockOff + pos), hash);
+      BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(blockOff + pos + 4), address);
+      pos += 8;
+    }
+
+    // ltail.bestcount at the very end; the bests array grows down from it,
+    // one __be16 per data block (= that block's largest free run, or 0).
+    var tailOff = blockOff + this._dirBlockSize - 4;
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(tailOff), (uint)bestFree.Count);
+    for (var i = 0; i < bestFree.Count; i++) {
+      var bestOff = tailOff - (bestFree.Count - i) * 2;
+      BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(bestOff), (ushort)bestFree[i]);
+    }
   }
 
   private static void WriteSuperblock(Span<byte> sb, ulong totalBlocks, ulong logStart,
-      int logBlocks, ulong icount, ulong ifree, ulong fdblocks) {
+      int logBlocks, ulong icount, ulong ifree, ulong fdblocks, byte dirBlockLog) {
     BinaryPrimitives.WriteUInt32BigEndian(sb[0..], XfsMagic);
     BinaryPrimitives.WriteUInt32BigEndian(sb[4..], BlockSize);
     BinaryPrimitives.WriteUInt64BigEndian(sb[8..], totalBlocks);        // sb_dblocks
@@ -664,7 +950,7 @@ public sealed class XfsWriter {
     BinaryPrimitives.WriteUInt32BigEndian(sb[180..], 2);                // sb_inoalignmt
     BinaryPrimitives.WriteUInt32BigEndian(sb[184..], 0);                // sb_unit
     BinaryPrimitives.WriteUInt32BigEndian(sb[188..], 0);                // sb_width
-    sb[192] = 0;                                                        // sb_dirblklog
+    sb[192] = dirBlockLog;                                              // sb_dirblklog
     sb[193] = 0;                                                        // sb_logsectlog
     BinaryPrimitives.WriteUInt16BigEndian(sb[194..], 0);                // sb_logsectsize
     BinaryPrimitives.WriteUInt32BigEndian(sb[196..], 1);                // sb_logsunit

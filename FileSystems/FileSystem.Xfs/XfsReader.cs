@@ -17,6 +17,7 @@ public sealed class XfsReader : IDisposable {
   private uint _agBlocks;
   private uint _agCount;
   private byte _agBlkLog;
+  private byte _dirBlkLog;
   private ushort _versionNum;
   private uint _featuresIncompat;
 
@@ -47,6 +48,7 @@ public sealed class XfsReader : IDisposable {
     _versionNum = BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(100));
     _inodeSize = BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(104));
     _agBlkLog = _data[124];
+    _dirBlkLog = _data[192]; // sb_dirblklog — directory block = blocksize << this
     // sb_features_incompat lives at offset 216 on v5 superblocks. Only read
     // when sb is v5 (low nibble of sb_versionnum == 5); otherwise leave zero.
     if ((_versionNum & 0xF) >= 5 && _data.Length >= 220)
@@ -163,12 +165,27 @@ public sealed class XfsReader : IDisposable {
     }
   }
 
+  // dir2/dir3 directory data block magics. XD2B/XDB3 are single-block dirs;
+  // XD2D/XDD3 are multi-block (leaf/node) dir data blocks. Leaf and free-index
+  // blocks carry other magics and must not be parsed as data entries.
+  private const uint Dir2BlockMagic = 0x58443242; // "XD2B"
+  private const uint Dir3BlockMagic = 0x58444233; // "XDB3"
+  private const uint Dir2DataMagic = 0x58443244;  // "XD2D"
+  private const uint Dir3DataMagic = 0x58444433;  // "XDD3"
+
   private void ReadExtentDir(int inodeOff, string basePath) {
     // Extent list starts at the inode's fork offset.
     var forkOff = InodeForkOffset;
     if (inodeOff + forkOff + 4 > _data.Length) return;
     var nextents = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(inodeOff + 76));
     if (nextents == 0 || nextents > 100) return;
+
+    // A directory block can span several fs blocks (sb_dirblklog); parse each
+    // logical directory block as a unit. The leaf and free-index blocks live in
+    // a higher region of the logical address space (≥ 32 GiB / blocksize) and
+    // are skipped here.
+    var dirFsBlocks = 1 << _dirBlkLog;
+    var leafFsBlockOffset = 1L << (35 - BlockShift(_blockSize));
 
     var extOff = inodeOff + forkOff;
     for (uint e = 0; e < nextents; e++) {
@@ -179,33 +196,48 @@ public sealed class XfsReader : IDisposable {
 
       var blockCount = (int)(lo & 0x1FFFFF);
       var startBlock = ((hi & 0x1FF) << 43) | (lo >> 21);
+      var startOff = (long)((hi >> 9) & 0x3FFFFFFFFFFFFFUL);
+      if (startOff >= leafFsBlockOffset) continue; // leaf/free-index space
 
-      for (int b = 0; b < blockCount; b++) {
+      // Walk the extent one directory block at a time.
+      for (var b = 0; b < blockCount; b += dirFsBlocks) {
         var blockOff = (long)(startBlock + (ulong)b) * _blockSize;
         if (blockOff + 8 > _data.Length) continue;
-        // Parse as data block directory entries
-        ReadBlockFormDirEntries((int)blockOff, (int)_blockSize, basePath);
+        ReadDirDataBlock((int)blockOff, dirFsBlocks * (int)_blockSize, basePath);
       }
     }
   }
 
-  private void ReadBlockFormDirEntries(int blockOff, int blockLen, string basePath) {
-    // Skip block header (magic + metadata) — look for entries
+  private static int BlockShift(uint blockSize) {
+    var log = 0;
+    while ((1u << log) < blockSize) log++;
+    return log;
+  }
+
+  private void ReadDirDataBlock(int blockOff, int blockLen, string basePath) {
     var pos = blockOff;
     var end = blockOff + blockLen;
 
-    // Check for block-form magic
-    if (pos + 4 <= _data.Length) {
-      var bMagic = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(pos));
-      if (bMagic == 0x58443242 || bMagic == 0x58444233) // XD2B or XDB3
-        pos += 48; // skip data block header
-    }
+    // Only parse blocks that are directory data blocks; skip everything else.
+    if (pos + 4 > _data.Length) return;
+    var bMagic = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(pos));
+    var isV3 = bMagic is Dir3BlockMagic or Dir3DataMagic;
+    var isV2 = bMagic is Dir2BlockMagic or Dir2DataMagic;
+    if (!isV3 && !isV2) return;
+    pos += isV3 ? 64 : 16; // dir3 hdr is 64 bytes; dir2 hdr is 16 bytes
 
     // dir2 data entry: inumber(8), namelen(1), name(namelen), [ftype(1) when the
-    // FTYPE feature is set], tag(2), padded to 8 bytes. Free slots (which the
-    // writer leaves as block slack) start with a zero inumber.
+    // FTYPE feature is set], tag(2), padded to 8 bytes. An unused (free) region
+    // begins with the 0xffff free-tag in the first 2 bytes.
     var ftypeLen = this.HasFtype ? 1 : 0;
     while (pos + 12 <= end && pos + 12 <= _data.Length) {
+      // Skip an xfs_dir2_data_unused free region (freetag 0xffff, then length).
+      if (BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(pos)) == 0xFFFF) {
+        var freeLen = BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(pos + 2));
+        if (freeLen < 8) break;
+        pos += freeLen;
+        continue;
+      }
       var entIno = BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(pos));
       var nameLen = _data[pos + 8];
       if (nameLen == 0 || entIno == 0) { pos += 8; continue; }
