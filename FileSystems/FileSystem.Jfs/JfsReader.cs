@@ -96,6 +96,11 @@ public sealed class JfsReader : IDisposable {
 
   private long InodeOffset(int ino) => _filesetInodeTableOffset + (long)ino * InodeSize;
 
+  // dtree flag bits (jfs_btree.h).
+  private const byte BtRoot = 0x01;
+  private const byte BtLeaf = 0x02;
+  private const byte BtInternal = 0x04;
+
   private void ReadDirectory(int ino, string basePath) {
     var inodeOff = InodeOffset(ino);
     if (inodeOff < 0 || inodeOff + InodeSize > _data.Length) return;
@@ -105,57 +110,113 @@ public sealed class JfsReader : IDisposable {
     var mode = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ioff + 52));
     if ((mode & 0xF000) != 0x4000) return; // not directory
 
-    // Directory data: inline dtree at di_data offset +256. First 32 bytes = header:
+    // Directory data: inline dtroot at di_data offset +224. First 32 bytes = header:
     //   DASD(16) + flag(1) + nextindex(1) + freecnt(1) + freelist(1) + idotdot(le32) + stbl[8]
     var dtOff = ioff + XtreeDataOffset;
     if (dtOff + 32 > _data.Length) return;
 
-    var nextIndex = _data[dtOff + 17];  // nextindex byte
-    var stblOff = dtOff + 24;
+    var flag = _data[dtOff + 16];
+    var nextIndex = _data[dtOff + 17];
 
+    if ((flag & BtInternal) != 0 && (flag & BtLeaf) == 0) {
+      // Router root: each stbl idtentry addresses an external dtree page.
+      // idtentry: pxd xd(8) + next(s8) + namlen(u8) + name[11]. Follow the
+      // pxd to the child page and walk the subtree.
+      var stblOff = dtOff + 24;
+      for (var i = 0; i < nextIndex && i < 8; i++) {
+        var slotIdx = (sbyte)_data[stblOff + i];
+        if (slotIdx <= 0 || slotIdx > 8) continue;
+        var slotOff = dtOff + slotIdx * 32;
+        if (slotOff + 8 > _data.Length) continue;
+        var childBlock = (long)ReadPxdAddress(_data.AsSpan(slotOff));
+        ReadExternalDtreePage(childBlock, basePath);
+      }
+      return;
+    }
+
+    // Inline leaf dtroot: stbl slots are ldtentry heads directly in di_data.
+    var inlineStblOff = dtOff + 24;
     for (var i = 0; i < nextIndex && i < 8; i++) {
-      var slotIdx = (sbyte)_data[stblOff + i];
+      var slotIdx = (sbyte)_data[inlineStblOff + i];
       if (slotIdx <= 0 || slotIdx > 8) continue;
       var slotOff = dtOff + slotIdx * 32;
       if (slotOff + 32 > _data.Length) continue;
-
-      // ldtentry (head): inumber(le32) + next(s8) + namlen(u8) +
-      //   name[DTLHDRDATALEN=11] UCS-2 LE + index(le32). Names longer than 11
-      //   UCS-2 units spill into continuation dtslots chained by the `next` byte:
-      //   dtslot = next(s8) + cnt(u8) + name[DTSLOTDATALEN=15] UCS-2 LE.
-      var childIno = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(slotOff));
-      if (childIno < 2) continue;
-      var namLen = _data[slotOff + 5];
-      if (namLen == 0) continue;
-
-      var name = ReadDtreeName(dtOff, slotOff, namLen);
-      if (name.Length == 0 || name == "." || name == "..") continue;
-
-      var fullPath = string.IsNullOrEmpty(basePath) ? name : $"{basePath}/{name}";
-      var childInodeOff = InodeOffset(childIno);
-      var isDir = false;
-      long childSize = 0;
-      DateTime? mtime = null;
-
-      if (childInodeOff >= 0 && childInodeOff + InodeSize <= _data.Length) {
-        var cioff = (int)childInodeOff;
-        var childMode = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(cioff + 52));
-        isDir = (childMode & 0xF000) == 0x4000;
-        childSize = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(cioff + 24));
-        var ts = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(cioff + 80));  // di_mtime sec
-        if (ts != 0) mtime = DateTimeOffset.FromUnixTimeSeconds(ts).UtcDateTime;
-      }
-
-      _entries.Add(new JfsEntry {
-        Name = fullPath,
-        Size = isDir ? 0 : childSize,
-        IsDirectory = isDir,
-        InodeNumber = childIno,
-        LastModified = mtime,
-      });
-
-      if (isDir) ReadDirectory(childIno, fullPath);
+      AddLeafEntry(dtOff, slotOff, basePath);
     }
+  }
+
+  // Walks one external dtree page (and, for internal pages, the subtree it
+  // routes to). Leaf pages add their ldtentry children; internal pages follow
+  // each idtentry's pxd to the next page. The stbl is located via the page
+  // header's stblindex field.
+  private void ReadExternalDtreePage(long pageBlock, string basePath) {
+    var pageOff = pageBlock * _blockSize;
+    if (pageOff <= 0 || pageOff + _blockSize > _data.Length) return;
+    var p = (int)pageOff;
+
+    var flag = _data[p + 16];
+    var nextIndex = _data[p + 17];
+    var stblIndex = _data[p + 21];
+    var stblOff = p + stblIndex * 32;
+    var isLeaf = (flag & BtLeaf) != 0;
+
+    var guard = 0;
+    for (var i = 0; i < nextIndex && i < 128 && guard < 4096; i++, guard++) {
+      var slotIdx = (byte)_data[stblOff + i];
+      if (slotIdx == 0 || slotIdx >= 128) continue;
+      var slotOff = p + slotIdx * 32;
+      if (slotOff + 32 > _data.Length) continue;
+
+      if (isLeaf) {
+        AddLeafEntry(p, slotOff, basePath);
+      } else {
+        // idtentry: pxd xd(8) at slot start → child page block.
+        var childBlock = (long)ReadPxdAddress(_data.AsSpan(slotOff));
+        if (childBlock > 0) ReadExternalDtreePage(childBlock, basePath);
+      }
+    }
+  }
+
+  // Reads one ldtentry head slot (inline dtroot or external leaf page), adds
+  // the entry, and recurses into subdirectories. <paramref name="pageBase"/>
+  // is the byte offset of the slot array's owning page/area so name
+  // continuation slots resolve as pageBase + index*32.
+  private void AddLeafEntry(int pageBase, int slotOff, string basePath) {
+    // ldtentry (head): inumber(le32) + next(s8) + namlen(u8) +
+    //   name[DTLHDRDATALEN=11] UCS-2 LE + index(le32). Names longer than 11
+    //   UCS-2 units spill into continuation dtslots chained by the `next` byte.
+    var childIno = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(slotOff));
+    if (childIno < 2) return;
+    var namLen = _data[slotOff + 5];
+    if (namLen == 0) return;
+
+    var name = ReadDtreeName(pageBase, slotOff, namLen);
+    if (name.Length == 0 || name == "." || name == "..") return;
+
+    var fullPath = string.IsNullOrEmpty(basePath) ? name : $"{basePath}/{name}";
+    var childInodeOff = InodeOffset(childIno);
+    var isDir = false;
+    long childSize = 0;
+    DateTime? mtime = null;
+
+    if (childInodeOff >= 0 && childInodeOff + InodeSize <= _data.Length) {
+      var cioff = (int)childInodeOff;
+      var childMode = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(cioff + 52));
+      isDir = (childMode & 0xF000) == 0x4000;
+      childSize = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(cioff + 24));
+      var ts = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(cioff + 80));  // di_mtime sec
+      if (ts != 0) mtime = DateTimeOffset.FromUnixTimeSeconds(ts).UtcDateTime;
+    }
+
+    _entries.Add(new JfsEntry {
+      Name = fullPath,
+      Size = isDir ? 0 : childSize,
+      IsDirectory = isDir,
+      InodeNumber = childIno,
+      LastModified = mtime,
+    });
+
+    if (isDir) ReadDirectory(childIno, fullPath);
   }
 
   // Reassembles a directory-entry name from its head ldtentry slot and any
@@ -164,6 +225,10 @@ public sealed class JfsReader : IDisposable {
   private string ReadDtreeName(int dtBase, int headSlotOff, int namLen) {
     const int DtHeadNameChars = 11;   // DTLHDRDATALEN
     const int DtSlotNameChars = 15;   // DTSLOTDATALEN
+    // The slot array spans at most 128 slots: an inline dtroot uses 1..8, an
+    // external dtpage uses 1..127. Continuation slots are chained by the head's
+    // `next` byte; bound the walk by the maximum slot count.
+    var maxSlot = (dtBase + 128 * 32 <= _data.Length) ? 127 : 8;
     var sb = new StringBuilder(namLen);
 
     var headChars = Math.Min(namLen, DtHeadNameChars);
@@ -173,7 +238,7 @@ public sealed class JfsReader : IDisposable {
     var next = (sbyte)_data[headSlotOff + 4];
     var remaining = namLen - headChars;
     var guard = 0;
-    while (remaining > 0 && next > 0 && next <= 8 && guard++ < 8) {
+    while (remaining > 0 && next > 0 && next <= maxSlot && guard++ < 128) {
       var contOff = dtBase + next * 32;
       if (contOff + 32 > _data.Length) break;
       var contChars = Math.Min(remaining, DtSlotNameChars);

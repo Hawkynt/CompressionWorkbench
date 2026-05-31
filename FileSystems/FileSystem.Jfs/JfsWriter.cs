@@ -44,9 +44,8 @@ public sealed class JfsWriter {
   internal const int XtreeDataOffset = 224;       // di_data/dtroot offset inside 512-byte dinode
   internal const int DiDataSize = 288;            // size of _dtroot / _xtroot union (512 - 224)
   internal const int InostampFixed = unchecked((int)0x87878787);
-  internal const int MaxDirEntries = 8;           // inline dtree has 9 slots (1 header + 8 entries)
-  internal const int FsitInodeCount = 32;         // 4 blocks × 32 inodes/extent = 32 inodes in the fileset table
-  internal const int MaxNodes = FsitInodeCount - FirstFileIno; // dirs + files addressable in the inline fileset table
+  internal const int InlineDirEntries = 8;        // inline dtroot has 9 slots (1 header + 8 entries)
+  internal const int MaxNodesPerIag = Iag_Extsperiag * InodesPerExtent; // 128 extents × 32 = 4096 inodes per IAG
 
   // ── inode numbers (jfs_filsys.h) ─────────────────────────────────────────
   private const int AggrReservedI = 0;
@@ -65,9 +64,27 @@ public sealed class JfsWriter {
   // ── btree flags (jfs_btree.h, jfs_types.h) ──────────────────────────────
   private const byte BtRoot = 0x01;
   private const byte BtLeaf = 0x02;
+  private const byte BtInternal = 0x04;
   private const byte DxdIndex = 0x80;
   // For B+-tree root pages on-disk: flag = DXD_INDEX | BT_ROOT | BT_LEAF = 0x83
   private const byte BtRootLeafFlag = DxdIndex | BtRoot | BtLeaf;
+  // Inline dtroot promoted to a router: DXD_INDEX | BT_ROOT | BT_INTERNAL = 0x85.
+  private const byte BtRootInternalFlag = DxdIndex | BtRoot | BtInternal;
+  // External directory B+tree leaf / internal pages (no BT_ROOT).
+  private const byte BtExternalLeafFlag = BtLeaf;
+  private const byte BtExternalInternalFlag = BtInternal;
+
+  // ── directory B+tree (dtpage_t / dtslot, jfs_dtree.h) ────────────────────
+  // dtslot = 32 bytes. An external dtpage is one 4 KiB block = 128 slots.
+  //   header (slot 0): next(8) prev(8) flag(1) nextindex(1) freecnt(1)
+  //     freelist(1) maxslot(1) stblindex(1) rsrvd(2) self pxd(8) = 32 bytes.
+  //   The sorted-entry table (stbl) occupies whole 32-byte slots starting at
+  //   header.stblindex; the kernel locates it via that field, so its position
+  //   is flexible. We place it immediately after the header.
+  private const int DtSlotSize = 32;
+  private const int DtPageMaxSlot = 128;          // DTPAGEMAXSLOT (4096 / 32)
+  private const int DtStblSlotIndex = 1;          // stbl starts at slot 1 in our external pages
+  private const int DtRootStblOffset = 24;        // dtroot.header.stbl[8] byte offset in di_data area
 
   // ── dmap constants (jfs_dmap.h) ──────────────────────────────────────────
   private const int Dmap_Treesize = 256 + 64 + 16 + 4 + 1;   // 341
@@ -112,9 +129,14 @@ public sealed class JfsWriter {
   private const int SecondaryAimBlock = 22;       // 2 blocks
   private const int SecondaryAitBlock = 24;       // 4 blocks
   private const int FilesetAimBlock = 28;         // 2 blocks (dinomap + fileset IAG)
-  private const int FsitBlock = 30;               // fileset inode table (4 blocks)
-  private const int DataStartBlock = 34;          // user file data starts here
+  private const int FsitBlock = 30;               // fileset inode table (first extent at this fixed block)
   private const int MinUsableBlocks = 4096;       // 16 MB minimum (kernel hard floor)
+
+  // The fileset inode table grows to as many contiguous 4-block extents as the
+  // node count needs; external directory B+tree pages and file data follow it.
+  // These two are computed per-image in WriteTo and recorded for the writers.
+  private int _fsitExtentCount = 1;               // contiguous inode extents in the fileset table
+  private int _dataStartBlock = FsitBlock + InodeExtentBlocks; // first block past the FSIT
 
   // ── directory tree node ──────────────────────────────────────────────────
   // A node is either a directory (Data == null) or a regular file. Directories
@@ -130,6 +152,31 @@ public sealed class JfsWriter {
     public int DataBlock;                         // first data block (files only)
     public int BlockCount;                        // data blocks (files only)
     public bool IsDirectory => this.Data == null;
+
+    // External directory B+tree (directories with more children than the
+    // inline dtroot can hold). DtreePages is the flat list of allocated pages
+    // (leaf pages first, then internal pages, root-router last); the dinode's
+    // inline dtroot routes to RootChildPages.
+    public List<DtreePage>? DtreePages;           // null ⇒ inline dtroot
+    public List<DtreePage>? TopLayer;             // top-level pages the inline router addresses
+  }
+
+  // A built directory B+tree page (leaf or internal) ready to be serialised.
+  // `Block` is its absolute image block; `Entries` are the sorted directory
+  // entries it carries (for a leaf: child file/dir entries; for an internal
+  // page or the root router: one routing key per child page).
+  private sealed class DtreePage {
+    public int Block;                             // absolute block in the image
+    public bool IsLeaf;                           // BT_LEAF vs BT_INTERNAL
+    public readonly List<DtreeEntry> Entries = [];
+  }
+
+  // One sorted directory key. For a leaf it addresses a child inode; for a
+  // router it addresses a child dtree page (single-block extent at ChildBlock).
+  private readonly struct DtreeEntry(string name, int childIno, int childBlock) {
+    public string Name { get; } = name;
+    public int ChildIno { get; } = childIno;      // leaf entries only
+    public int ChildBlock { get; } = childBlock;  // router entries only
   }
 
   private readonly Node _root = new() { Name = "", ParentIno = RootIno };
@@ -154,8 +201,6 @@ public sealed class JfsWriter {
       var child = dir.Children.FirstOrDefault(c => c.IsDirectory && c.Name == part);
       if (child == null) {
         child = new Node { Name = part };
-        if (dir.Children.Count >= MaxDirEntries)
-          throw new InvalidOperationException($"JfsWriter supports at most {MaxDirEntries} entries per inline directory.");
         dir.Children.Add(child);
       }
       dir = child;
@@ -164,8 +209,6 @@ public sealed class JfsWriter {
     var leaf = parts[^1];
     if (dir.Children.Any(c => c.Name == leaf))
       throw new InvalidOperationException($"Duplicate entry '{leaf}' in the same directory.");
-    if (dir.Children.Count >= MaxDirEntries)
-      throw new InvalidOperationException($"JfsWriter supports at most {MaxDirEntries} entries per inline directory.");
     dir.Children.Add(new Node { Name = leaf, Data = data });
   }
 
@@ -187,8 +230,10 @@ public sealed class JfsWriter {
     }
     this._root.Ino = RootIno;
     Walk(this._root);
-    if (ordered.Count > MaxNodes)
-      throw new InvalidOperationException($"JfsWriter supports at most {MaxNodes} directories+files in the inline fileset inode table.");
+    // The fileset inode map is a single IAG, which addresses MaxNodesPerIag
+    // inodes (4096). Reserve 4 for the always-present metadata inodes (0..3).
+    if (FirstFileIno + ordered.Count > MaxNodesPerIag)
+      throw new InvalidOperationException($"JfsWriter supports at most {MaxNodesPerIag - FirstFileIno} directories+files in a single fileset IAG.");
     return ordered;
   }
 
@@ -200,11 +245,30 @@ public sealed class JfsWriter {
     // ── lay out the directory tree and assign inodes ──────────────────────
     var nodes = this.AssignInodes();
     var files = nodes.Where(n => !n.IsDirectory).ToList();
+    var directories = nodes.Where(n => n.IsDirectory).ToList();
+
+    // ── size the fileset inode table ───────────────────────────────────────
+    // Every directory + file gets one dinode; inodes 0..3 are metadata. Pack
+    // them into contiguous 16 KiB (4-block) extents so the reader can resolve
+    // any inode as FsitBlock-relative offset.
+    var inodesUsed = FirstFileIno + nodes.Count;
+    this._fsitExtentCount = (inodesUsed + InodesPerExtent - 1) / InodesPerExtent;
+    if (this._fsitExtentCount < 1) this._fsitExtentCount = 1;
+    var fsitBlocks = this._fsitExtentCount * InodeExtentBlocks;
+    this._dataStartBlock = FsitBlock + fsitBlocks;
+
+    // ── build external directory B+trees and allocate their pages ──────────
+    // A directory whose children exceed the inline dtroot spills into external
+    // dtpage_t leaf pages with the inline dtroot promoted to a router. Pages are
+    // single-block extents laid out right after the fileset inode table.
+    var nextBlock = this._dataStartBlock;
+    foreach (var dir in directories.Prepend(this._root))
+      if (dir.Children.Count > InlineDirEntries)
+        nextBlock = BuildExternalDtree(dir, nextBlock);
 
     // ── allocate file data blocks ─────────────────────────────────────────
-    // Directories are stored inline in their dinode, so they consume no data
-    // blocks; only regular files claim blocks here.
-    var nextBlock = DataStartBlock;
+    // Directories are stored inline (or in external dtree pages above); only
+    // regular files claim data blocks here.
     foreach (var file in files) {
       file.DataBlock = nextBlock;
       file.BlockCount = Math.Max(1, (file.Data!.Length + BlockSize - 1) / BlockSize);
@@ -234,7 +298,11 @@ public sealed class JfsWriter {
     MarkRange(allocated, SecondaryAimBlock, 2);                    // secondary AIM
     MarkRange(allocated, SecondaryAitBlock, InodeExtentBlocks);    // secondary AIT
     MarkRange(allocated, FilesetAimBlock, 2);                      // fileset AIM
-    MarkRange(allocated, FsitBlock, InodeExtentBlocks);            // fileset inode table
+    MarkRange(allocated, FsitBlock, fsitBlocks);                   // fileset inode table (all extents)
+    foreach (var dir in directories.Prepend(this._root))
+      if (dir.DtreePages != null)
+        foreach (var page in dir.DtreePages)
+          MarkRange(allocated, page.Block, 1);                     // external dtree page
     foreach (var file in files)
       MarkRange(allocated, file.DataBlock, file.BlockCount);
 
@@ -247,9 +315,15 @@ public sealed class JfsWriter {
     this.WriteAggregateInodeTable(image, AitBlock, ixpxdBlock: AitBlock);
     WriteAggregateInodeMap(image, SecondaryAimBlock, agStart: 0);
     this.WriteAggregateInodeTable(image, SecondaryAitBlock, ixpxdBlock: AitBlock);
-    WriteFilesetInodeMap(image, FilesetAimBlock, nodeCount: nodes.Count);
+    this.WriteFilesetInodeMap(image, FilesetAimBlock, nodeCount: nodes.Count);
     this.WriteFilesetInodeTable(image, nodes);
     WriteBlockMap(image, usableBlocks, allocated);
+
+    // External directory B+tree pages (leaves + internal/router pages).
+    foreach (var dir in directories.Prepend(this._root))
+      if (dir.DtreePages != null)
+        foreach (var page in dir.DtreePages)
+          WriteExternalDtreePage(image, page);
 
     // File data
     foreach (var file in files) {
@@ -384,25 +458,28 @@ public sealed class JfsWriter {
   // ── fileset inode map: block FilesetAimBlock=dinomap, +1=IAG #0 ─────────
   // Fileset AIM has FILESET_RSVD_I (0), FILESET_EXT_I (1), ROOT_I (2), ACL_I (3)
   // always allocated, plus user file inodes at index 4+.
-  private static void WriteFilesetInodeMap(byte[] image, int aimBlock, int nodeCount) {
+  private void WriteFilesetInodeMap(byte[] image, int aimBlock, int nodeCount) {
     var dinomapOff = (long)aimBlock * BlockSize;
     var iagOff = dinomapOff + BlockSize;
     var inodesUsed = 4 + nodeCount;                                  // 0,1,2(root),3(acl) + dir/file nodes
+    var nExtents = this._fsitExtentCount;                            // backed inode extents
+    var backedInodes = nExtents * InodesPerExtent;                   // total dinodes the table can hold
+    var freeInodes = backedInodes - inodesUsed;
 
     var dm = image.AsSpan((int)dinomapOff, BlockSize);
     dm.Clear();
     BinaryPrimitives.WriteInt32LittleEndian(dm[0..], -1);
     BinaryPrimitives.WriteInt32LittleEndian(dm[4..], 1);
-    BinaryPrimitives.WriteInt32LittleEndian(dm[8..], InodesPerExtent);
-    BinaryPrimitives.WriteInt32LittleEndian(dm[12..], InodesPerExtent - inodesUsed);
+    BinaryPrimitives.WriteInt32LittleEndian(dm[8..], backedInodes);
+    BinaryPrimitives.WriteInt32LittleEndian(dm[12..], freeInodes);
     BinaryPrimitives.WriteInt32LittleEndian(dm[16..], InodeExtentBlocks);
     BinaryPrimitives.WriteInt32LittleEndian(dm[20..], 2);
     BinaryPrimitives.WriteInt32LittleEndian(dm[24..], 0);
     BinaryPrimitives.WriteInt32LittleEndian(dm[28..], 0);
     BinaryPrimitives.WriteInt32LittleEndian(dm[2048..], 0);          // in_agctl[0].inofree
     BinaryPrimitives.WriteInt32LittleEndian(dm[2052..], 0);          // .extfree
-    BinaryPrimitives.WriteInt32LittleEndian(dm[2056..], InodesPerExtent);
-    BinaryPrimitives.WriteInt32LittleEndian(dm[2060..], InodesPerExtent - inodesUsed);
+    BinaryPrimitives.WriteInt32LittleEndian(dm[2056..], backedInodes);
+    BinaryPrimitives.WriteInt32LittleEndian(dm[2060..], freeInodes);
     for (var i = 1; i < 128; i++) {
       var off = 2048 + i * 16;
       BinaryPrimitives.WriteInt32LittleEndian(dm[off..], -1);
@@ -418,23 +495,42 @@ public sealed class JfsWriter {
     BinaryPrimitives.WriteInt32LittleEndian(iag[20..], -1);
     BinaryPrimitives.WriteInt32LittleEndian(iag[24..], -1);
     BinaryPrimitives.WriteInt32LittleEndian(iag[28..], -1);
-    // inosmap[0]: bit 31 = 0 (extent 0 has free); bits 30..0 = 1.
-    BinaryPrimitives.WriteUInt32LittleEndian(iag[32..], 0x7FFFFFFFu);
-    BinaryPrimitives.WriteUInt32LittleEndian(iag[36..], 0xFFFFFFFFu);
-    BinaryPrimitives.WriteUInt32LittleEndian(iag[40..], 0xFFFFFFFFu);
-    BinaryPrimitives.WriteUInt32LittleEndian(iag[44..], 0xFFFFFFFFu);
-    BinaryPrimitives.WriteUInt32LittleEndian(iag[48..], 0x80000000u);
-    BinaryPrimitives.WriteUInt32LittleEndian(iag[52..], 0u);
-    BinaryPrimitives.WriteUInt32LittleEndian(iag[56..], 0u);
-    BinaryPrimitives.WriteUInt32LittleEndian(iag[60..], 0u);
-    BinaryPrimitives.WriteInt32LittleEndian(iag[64..], InodesPerExtent - inodesUsed);
-    BinaryPrimitives.WriteInt32LittleEndian(iag[68..], Iag_Extsperiag - 1);
-    // wmap[0]/pmap[0]: top `inodesUsed` bits set (0xF0000000 base for 4 + 1 per file).
-    var bitmap = 0u;
-    for (var i = 0; i < inodesUsed && i < 32; i++) bitmap |= 0x80000000u >> i;
-    BinaryPrimitives.WriteUInt32LittleEndian(iag[2048..], bitmap);   // wmap[0]
-    BinaryPrimitives.WriteUInt32LittleEndian(iag[2560..], bitmap);   // pmap[0]
-    WritePxd(iag[3072..], length: (uint)InodeExtentBlocks, address: (ulong)FsitBlock);
+    // inosmap[e]/extsmap[e]: 4 words × 32 bits, MSB = lowest extent. extsmap bit
+    // set ⇒ extent backed; inosmap bit set ⇒ extent fully allocated OR not backed.
+    // All used inodes are packed into the lowest extents; the first extent that
+    // still has free inodes is the only backed extent with inosmap bit 0.
+    var fullExtents = inodesUsed / InodesPerExtent;                 // extents with no free inode
+    Span<uint> inosmap = stackalloc uint[Iag_Smapsz];
+    Span<uint> extsmap = stackalloc uint[Iag_Smapsz];
+    for (var e = 0; e < Iag_Extsperiag; e++) {
+      var word = e >> 5;
+      var bit = 0x80000000u >> (e & 31);
+      var backed = e < nExtents;
+      if (backed) extsmap[word] |= bit;
+      // inosmap bit set when not backed, or backed and fully allocated.
+      if (!backed || e < fullExtents) inosmap[word] |= bit;
+    }
+    for (var w = 0; w < Iag_Smapsz; w++) {
+      BinaryPrimitives.WriteUInt32LittleEndian(iag[(32 + w * 4)..], inosmap[w]);
+      BinaryPrimitives.WriteUInt32LittleEndian(iag[(48 + w * 4)..], extsmap[w]);
+    }
+    BinaryPrimitives.WriteInt32LittleEndian(iag[64..], freeInodes);
+    BinaryPrimitives.WriteInt32LittleEndian(iag[68..], Iag_Extsperiag - nExtents);
+    // wmap[]/pmap[]: one bit per inode (MSB = lowest inode). The lowest
+    // `inodesUsed` inodes are allocated; the rest are free.
+    for (var i = 0; i < inodesUsed; i++) {
+      var word = i >> 5;
+      var bit = 0x80000000u >> (i & 31);
+      var wmapOff = 2048 + word * 4;
+      var pmapOff = 2560 + word * 4;
+      var w = BinaryPrimitives.ReadUInt32LittleEndian(iag[wmapOff..]) | bit;
+      BinaryPrimitives.WriteUInt32LittleEndian(iag[wmapOff..], w);
+      BinaryPrimitives.WriteUInt32LittleEndian(iag[pmapOff..], w);
+    }
+    // inoext[e]: pxd(len=4, addr=FsitBlock + e*4) for each backed extent.
+    for (var e = 0; e < nExtents; e++)
+      WritePxd(iag[(3072 + e * 8)..], length: (uint)InodeExtentBlocks,
+        address: (ulong)(FsitBlock + e * InodeExtentBlocks));
   }
 
   // ── aggregate inode table (4 blocks at aitBlock) ─────────────────────────
@@ -532,12 +628,26 @@ public sealed class JfsWriter {
   private void WriteDirectoryInode(byte[] image, int inoOff, Node dir, int parentIno) {
     const int IdataSize = 256;
     var subdirs = dir.Children.Count(c => c.IsDirectory);
+
+    if (dir.DtreePages == null) {
+      // Inline dtroot: every child fits in the dinode's 8-slot dtroot.
+      this.WriteFsitInode(image, inoOff, ino: (uint)dir.Ino, fileset: FilesetIno,
+        mode: IfJournal | IfDir | 0x1ED,                            // 0755
+        size: IdataSize, nblocks: 0,
+        hasXtreeData: false, xtreeEntries: null,
+        nlink: (uint)(2 + subdirs), nextIndex: 2);
+      WriteInlineDtree(image.AsSpan(inoOff + XtreeDataOffset, DiDataSize), dir.Children, parentIno);
+      return;
+    }
+
+    // External dtree: the inline dtroot is promoted to a router addressing the
+    // top-level dtree pages; di_size/di_nblocks reflect the out-of-line pages.
     this.WriteFsitInode(image, inoOff, ino: (uint)dir.Ino, fileset: FilesetIno,
       mode: IfJournal | IfDir | 0x1ED,                              // 0755
-      size: IdataSize, nblocks: 0,
+      size: (long)dir.DtreePages.Count * BlockSize, nblocks: dir.DtreePages.Count,
       hasXtreeData: false, xtreeEntries: null,
       nlink: (uint)(2 + subdirs), nextIndex: 2);
-    WriteDtree(image.AsSpan(inoOff + XtreeDataOffset, DiDataSize), dir.Children, parentIno);
+    WriteRouterDtree(image.AsSpan(inoOff + XtreeDataOffset, DiDataSize), dir, parentIno);
   }
 
   // ── helpers: writing inodes ──────────────────────────────────────────────
@@ -651,7 +761,7 @@ public sealed class JfsWriter {
   private const int DtHeadNameChars = 11;   // DTLHDRDATALEN
   private const int DtSlotNameChars = 15;    // DTSLOTDATALEN
 
-  private static void WriteDtree(Span<byte> data, IReadOnlyList<Node> children, int parentIno) {
+  private static void WriteInlineDtree(Span<byte> data, IReadOnlyList<Node> children, int parentIno) {
     data.Clear();
     var count = children.Count;
     // DASD (16 bytes) at +0 — zero
@@ -662,14 +772,14 @@ public sealed class JfsWriter {
     // Allocate dtslots sequentially (indices 1..8). Each entry takes one head
     // slot plus one continuation slot per extra DtSlotNameChars of its name.
     var nextSlot = 1;
-    var usedSlots = new bool[MaxDirEntries + 1];
+    var usedSlots = new bool[InlineDirEntries + 1];
 
     for (var i = 0; i < count; i++) {
       var child = children[i];
       var name = child.Name;
       var headSlot = nextSlot++;
-      if (headSlot > MaxDirEntries)
-        throw new InvalidOperationException($"Directory entries (including long-name continuation slots) exceed the {MaxDirEntries}-slot inline dtree.");
+      if (headSlot > InlineDirEntries)
+        throw new InvalidOperationException($"Directory entries (including long-name continuation slots) exceed the {InlineDirEntries}-slot inline dtree.");
       usedSlots[headSlot] = true;
       data[24 + i] = (byte)headSlot;                                      // stbl[i]
 
@@ -686,8 +796,8 @@ public sealed class JfsWriter {
       var written = headChars;
       while (written < name.Length) {
         var contSlot = nextSlot++;
-        if (contSlot > MaxDirEntries)
-          throw new InvalidOperationException($"Directory entries (including long-name continuation slots) exceed the {MaxDirEntries}-slot inline dtree.");
+        if (contSlot > InlineDirEntries)
+          throw new InvalidOperationException($"Directory entries (including long-name continuation slots) exceed the {InlineDirEntries}-slot inline dtree.");
         usedSlots[contSlot] = true;
         data[prevNextOff] = (byte)contSlot;                              // link from previous slot
         var contOff = contSlot * 32;
@@ -706,7 +816,7 @@ public sealed class JfsWriter {
     var firstFree = -1;
     var freeCount = 0;
     var prevFreeOff = -1;
-    for (var s = 1; s <= MaxDirEntries; s++) {
+    for (var s = 1; s <= InlineDirEntries; s++) {
       if (usedSlots[s]) continue;
       ++freeCount;
       if (firstFree < 0) firstFree = s;
@@ -719,6 +829,230 @@ public sealed class JfsWriter {
 
     data[18] = (byte)freeCount;                                          // freecnt
     data[19] = (byte)(freeCount == 0 ? -1 : firstFree);                  // freelist head
+  }
+
+  // ── external directory B+tree ───────────────────────────────────────────
+  // When a directory's children outgrow the inline dtroot's 8 slots, the
+  // entries spill into external dtpage_t leaf pages (one 4 KiB block each).
+  // The inline dtroot is promoted to an internal router whose idtentry slots
+  // address the top-level pages. For directories large enough that the top
+  // layer would itself exceed the 8-slot inline router, we add intermediate
+  // internal page layers, forming a real (bottom-up balanced) B+tree.
+  //
+  // Page slot budget (128 slots of 32 bytes): slot 0 = header; slots
+  // DtStblSlotIndex..DtStblSlotIndex+ExternalStblSlots-1 = sorted-table; the
+  // remainder hold entry head slots + long-name continuation slots.
+  private const int ExternalStblSlots = 4;                          // 4 stbl slots ⇒ ≤128 sorted entries
+  private const int ExternalFirstEntrySlot = DtStblSlotIndex + ExternalStblSlots; // first usable entry slot (5)
+  private const int ExternalEntrySlots = DtPageMaxSlot - ExternalFirstEntrySlot;  // 123 slots for entries
+
+  // Greedily fills pages of the given kind from the sorted entry list. Returns
+  // the built pages (each carrying the entries assigned to it), allocating one
+  // image block per page starting at <paramref name="nextBlock"/> (updated by ref).
+  private static List<DtreePage> PackPages(List<DtreeEntry> entries, bool leaf, ref int nextBlock) {
+    var pages = new List<DtreePage>();
+    var page = new DtreePage { Block = nextBlock++, IsLeaf = leaf };
+    var slotsLeft = ExternalEntrySlots;
+    foreach (var e in entries) {
+      var cost = EntrySlotCost(e.Name);
+      if (cost > slotsLeft && page.Entries.Count > 0) {
+        pages.Add(page);
+        page = new DtreePage { Block = nextBlock++, IsLeaf = leaf };
+        slotsLeft = ExternalEntrySlots;
+      }
+      page.Entries.Add(e);
+      slotsLeft -= cost;
+    }
+    pages.Add(page);
+    return pages;
+  }
+
+  // dtslots one entry consumes: one head slot + one continuation slot per
+  // name chunk beyond the head's inline capacity.
+  private static int EntrySlotCost(string name) {
+    if (name.Length <= DtHeadNameChars) return 1;
+    return 1 + (name.Length - DtHeadNameChars + DtSlotNameChars - 1) / DtSlotNameChars;
+  }
+
+  // Builds the directory's external B+tree (leaves bottom-up, then internal
+  // layers until the top layer fits the inline router) and records the page
+  // list and the top-layer pages the inline router must address.
+  private static int BuildExternalDtree(Node dir, int nextBlock) {
+    // Sorted leaf entries — ordinal (UCS-2 code-unit) order matches the JFS key
+    // ordering. Children are file/subdirectory leaf entries.
+    var leafEntries = dir.Children
+      .Select(c => new DtreeEntry(c.Name, c.Ino, 0))
+      .OrderBy(e => e.Name, StringComparer.Ordinal)
+      .ToList();
+
+    var pages = new List<DtreePage>();
+    var leaves = PackPages(leafEntries, leaf: true, ref nextBlock);
+    pages.AddRange(leaves);
+
+    // Build internal layers until the current layer fits the 8-slot router.
+    var layer = leaves;
+    while (layer.Count > InlineDirEntries) {
+      var routers = layer
+        .Select(p => new DtreeEntry(FirstKey(p), 0, p.Block))
+        .ToList();
+      var internals = PackPages(routers, leaf: false, ref nextBlock);
+      pages.AddRange(internals);
+      layer = internals;
+    }
+
+    dir.DtreePages = pages;
+    // The inline router addresses the surviving top layer.
+    dir.TopLayer = layer;
+    return nextBlock;
+  }
+
+  // The smallest (first) key in a page's subtree — used as a routing key.
+  private static string FirstKey(DtreePage page) => page.Entries.Count > 0 ? page.Entries[0].Name : "";
+
+  // ── inline dtroot promoted to a router (idtentry slots) ─────────────────
+  // Same on-disk dtroot layout as the inline leaf form, but flag = BT_ROOT |
+  // BT_INTERNAL and the entries are idtentry (pxd → child page + routing key).
+  private static void WriteRouterDtree(Span<byte> data, Node dir, int parentIno) {
+    data.Clear();
+    var top = dir.TopLayer!;
+    data[16] = BtRootInternalFlag;                                       // flag = 0x85
+    data[17] = (byte)top.Count;                                          // nextindex
+    BinaryPrimitives.WriteUInt32LittleEndian(data[20..], (uint)parentIno); // idotdot
+
+    var nextSlot = 1;
+    var usedSlots = new bool[InlineDirEntries + 1];
+    for (var i = 0; i < top.Count; i++) {
+      var key = FirstKey(top[i]);
+      var headSlot = nextSlot++;
+      if (headSlot > InlineDirEntries)
+        throw new InvalidOperationException($"Router entries exceed the {InlineDirEntries}-slot inline dtroot.");
+      usedSlots[headSlot] = true;
+      data[DtRootStblOffset + i] = (byte)headSlot;                       // stbl[i]
+      nextSlot = WriteIdtentry(data, headSlot, top[i].Block, key, nextSlot, InlineDirEntries, usedSlots);
+    }
+
+    WriteFreelist(data, InlineDirEntries, usedSlots);
+  }
+
+  // Writes one idtentry head (pxd + next + namlen + inline name) plus any
+  // continuation dtslots into the slot array, returning the next free slot.
+  private static int WriteIdtentry(Span<byte> data, int headSlot, int childBlock, string name,
+      int nextSlot, int maxSlot, bool[] usedSlots) {
+    var headOff = headSlot * DtSlotSize;
+    WritePxd(data[headOff..], length: 1, address: (ulong)childBlock);    // idtentry.xd
+    data[headOff + 9] = (byte)name.Length;                              // namlen at +9 (after pxd 8 + next 1)
+    var headChars = Math.Min(name.Length, DtHeadNameChars);
+    for (var c = 0; c < headChars; c++)
+      BinaryPrimitives.WriteUInt16LittleEndian(data[(headOff + 10 + c * 2)..], name[c]); // name at +10
+    nextSlot = WriteNameContinuation(data, headOff + 8, name, headChars, nextSlot, maxSlot, usedSlots);
+    return nextSlot;
+  }
+
+  // Chains continuation dtslots for the part of <paramref name="name"/> beyond
+  // the head's inline capacity. <paramref name="headNextOff"/> is the byte
+  // offset of the head entry's `next` field (idtentry: +8, ldtentry: +4).
+  private static int WriteNameContinuation(Span<byte> data, int headNextOff, string name,
+      int headChars, int nextSlot, int maxSlot, bool[] usedSlots) {
+    var prevNextOff = headNextOff;
+    var written = headChars;
+    while (written < name.Length) {
+      var contSlot = nextSlot++;
+      if (contSlot > maxSlot)
+        throw new InvalidOperationException($"Directory entry name overflows the {maxSlot}-slot dtree page.");
+      usedSlots[contSlot] = true;
+      data[prevNextOff] = (byte)contSlot;
+      var contOff = contSlot * DtSlotSize;
+      var contChars = Math.Min(name.Length - written, DtSlotNameChars);
+      data[contOff + 1] = (byte)contChars;                             // cnt
+      for (var c = 0; c < contChars; c++)
+        BinaryPrimitives.WriteUInt16LittleEndian(data[(contOff + 2 + c * 2)..], name[written + c]);
+      written += contChars;
+      prevNextOff = contOff;
+    }
+    data[prevNextOff] = unchecked((byte)-1);                           // terminate name chain
+    return nextSlot;
+  }
+
+  // Threads the freelist over the unused slots [1..maxSlot] of a dtroot.
+  private static void WriteFreelist(Span<byte> data, int maxSlot, bool[] usedSlots) {
+    var firstFree = -1;
+    var freeCount = 0;
+    var prevFreeOff = -1;
+    for (var s = 1; s <= maxSlot; s++) {
+      if (usedSlots[s]) continue;
+      ++freeCount;
+      if (firstFree < 0) firstFree = s;
+      var slotOff = s * DtSlotSize;
+      if (prevFreeOff >= 0) data[prevFreeOff] = (byte)s;
+      data[slotOff] = unchecked((byte)-1);
+      data[slotOff + 1] = 1;
+      prevFreeOff = slotOff;
+    }
+    data[18] = (byte)freeCount;                                        // freecnt
+    data[19] = (byte)(freeCount == 0 ? -1 : firstFree);                // freelist head
+  }
+
+  // ── external dtpage_t (one 4 KiB block) ─────────────────────────────────
+  // header (slot 0): next(8) prev(8) flag(1) nextindex(1) freecnt(1)
+  //   freelist(1) maxslot(1) stblindex(1) rsrvd(2) self pxd(8). The sorted
+  //   table lives at slot DtStblSlotIndex; entries occupy slots from
+  //   ExternalFirstEntrySlot onward. Leaf pages carry ldtentry, internal pages
+  //   carry idtentry. A full-tree traversal by the reader follows every entry,
+  //   so router keys need not be search-exact.
+  private static void WriteExternalDtreePage(byte[] image, DtreePage page) {
+    var pageOff = page.Block * BlockSize;
+    var data = image.AsSpan(pageOff, BlockSize);
+    data.Clear();
+
+    var count = page.Entries.Count;
+    data[16] = page.IsLeaf ? BtExternalLeafFlag : BtExternalInternalFlag;
+    data[17] = (byte)count;                                            // nextindex
+    data[20] = (byte)DtPageMaxSlot;                                    // maxslot = 128
+    data[21] = (byte)DtStblSlotIndex;                                  // stblindex
+    WritePxd(data[24..], length: 1, address: (ulong)page.Block);       // self pxd
+
+    var stblOff = DtStblSlotIndex * DtSlotSize;
+    var nextSlot = ExternalFirstEntrySlot;
+    var usedSlots = new bool[DtPageMaxSlot];
+    for (var s = DtStblSlotIndex; s < ExternalFirstEntrySlot; s++) usedSlots[s] = true; // stbl slots
+
+    for (var i = 0; i < count; i++) {
+      var e = page.Entries[i];
+      var headSlot = nextSlot++;
+      if (headSlot >= DtPageMaxSlot)
+        throw new InvalidOperationException("dtree page entry slot overflow.");
+      usedSlots[headSlot] = true;
+      data[stblOff + i] = (byte)headSlot;                              // stbl[i]
+      if (page.IsLeaf) {
+        var headOff = headSlot * DtSlotSize;
+        BinaryPrimitives.WriteUInt32LittleEndian(data[headOff..], (uint)e.ChildIno);
+        data[headOff + 5] = (byte)e.Name.Length;                       // namlen
+        var headChars = Math.Min(e.Name.Length, DtHeadNameChars);
+        for (var c = 0; c < headChars; c++)
+          BinaryPrimitives.WriteUInt16LittleEndian(data[(headOff + 6 + c * 2)..], e.Name[c]);
+        BinaryPrimitives.WriteUInt32LittleEndian(data[(headOff + 28)..], (uint)i); // index
+        nextSlot = WriteNameContinuation(data, headOff + 4, e.Name, headChars, nextSlot, DtPageMaxSlot - 1, usedSlots);
+      } else {
+        nextSlot = WriteIdtentry(data, headSlot, e.ChildBlock, e.Name, nextSlot, DtPageMaxSlot - 1, usedSlots);
+      }
+    }
+
+    // Freelist over the remaining unused slots [1..127] (slot 0 = header).
+    var firstFree = -1;
+    var freeCount = 0;
+    var prevFreeOff = -1;
+    for (var s = 1; s < DtPageMaxSlot; s++) {
+      if (usedSlots[s]) continue;
+      ++freeCount;
+      if (firstFree < 0) firstFree = s;
+      var slotOff = s * DtSlotSize;
+      if (prevFreeOff >= 0) data[prevFreeOff] = (byte)s;
+      data[slotOff] = unchecked((byte)-1);
+      data[slotOff + 1] = 1;
+      prevFreeOff = slotOff;
+    }
+    data[18] = (byte)freeCount;                                         // freecnt (≤127, fits sbyte)
+    data[19] = (byte)(freeCount == 0 ? -1 : firstFree);                 // freelist head
   }
 
   // ── block allocation map (BMAP) ────────────────────────────────────────
