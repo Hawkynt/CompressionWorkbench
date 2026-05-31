@@ -14,7 +14,7 @@ namespace FileSystem.Yaffs2;
 /// </summary>
 public sealed class Yaffs2FormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
-      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
+      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "Yaffs2";
   public string DisplayName => "YAFFS2";
   public FormatCategory Category => FormatCategory.Archive;
@@ -202,6 +202,32 @@ public sealed class Yaffs2FormatDescriptor
     } catch {
       return (0, 0, 0);
     }
+  }
+
+  // ── IWipeEmpty ────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros every free (unallocated) chunk in a YAFFS2 raw-NAND image while
+  /// leaving live object headers and data chunks untouched.
+  /// <para>YAFFS2 is log-structured: each 2 KiB data chunk carries its used
+  /// byte count in its packed-tags2 spare, and the unused tail of a partial
+  /// chunk is an inseparable part of the logged chunk (not in-place slack).
+  /// A file's data therefore spans many same-named chunk extents, so a
+  /// per-file size lookup cannot map to a single extent — cluster-tip wiping
+  /// is not applicable. Free chunks (and trailing bytes) are scrubbed; the
+  /// <paramref name="wipeClusterTips"/> flag has no effect.</para>
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    image.Position = 0;
+    var extents = this.EnumerateExtents(image).ToList();
+
+    // Log-structured per-chunk layout — no in-place tip slack. Wipe free chunks only.
+    image.Position = 0;
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 
   // ── Shared helpers ────────────────────────────────────────────────────
