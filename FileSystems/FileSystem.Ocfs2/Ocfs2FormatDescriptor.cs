@@ -81,7 +81,7 @@ public sealed class Ocfs2FormatDescriptor
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new Ocfs2Writer();
-    foreach (var (name, data) in FlatFiles(inputs))
+    foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
     w.WriteTo(output);
   }
@@ -191,52 +191,80 @@ public sealed class Ocfs2FormatDescriptor
 
   /// <summary>
   /// Reads file entries from an OCFS2 image by walking the root directory dinode's
-  /// inline directory entries and extracting file data from extent records.
+  /// inline directory entries, recursing into subdirectories, and extracting file
+  /// data from extent records. Files are surfaced at their full nested path.
   /// </summary>
   private static List<(string Name, byte[] Data)> ReadFilesFromImage(byte[] image) {
     var result = new List<(string Name, byte[] Data)>();
-    const int blockSize = Ocfs2Writer.BlockSize;
-    const int id2Off = 0xC0;
 
-    // Locate root dir dinode at block 5
-    var rootOff = Ocfs2Writer.RootDirBlkno * blockSize;
-    if (rootOff + blockSize > image.Length) return result;
+    var rootOff = Ocfs2Writer.RootDirBlkno * Ocfs2Writer.BlockSize;
+    if (rootOff + Ocfs2Writer.BlockSize > image.Length) return result;
 
-    // Verify signature
+    // Verify signature of the root directory dinode.
     if (!image.AsSpan(rootOff, 6).SequenceEqual(Ocfs2Superblock.SignatureBytes))
       return result;
 
-    // Check if it has inline data (i_dyn_features at +0x4C)
-    var dynFeatures = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(rootOff + 0x4C, 2));
-    if ((dynFeatures & 0x0001) == 0) return result; // No inline data — can't parse
+    var visited = new HashSet<long>();
+    WalkDirectory(image, Ocfs2Writer.RootDirBlkno, "", result, visited);
+    return result;
+  }
 
-    // Inline data starts at id2 + 2 (after id_count u16)
-    var inlineStart = rootOff + id2Off + 2;
-    var dirSize = (int)BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(rootOff + 0x1C, 8));
+  /// <summary>
+  /// Walks an inline directory dinode, appending regular files (with their full
+  /// path prefix) to <paramref name="result"/> and recursing into subdirectories.
+  /// "." / ".." and already-visited inodes are skipped to avoid cycles.
+  /// </summary>
+  private static void WalkDirectory(
+      byte[] image, long dirBlkno, string prefix,
+      List<(string Name, byte[] Data)> result, HashSet<long> visited) {
+    const int blockSize = Ocfs2Writer.BlockSize;
+    const int id2Off = 0xC0;
+
+    if (!visited.Add(dirBlkno)) return;
+
+    var dirOff = (int)(dirBlkno * blockSize);
+    if (dirOff + blockSize > image.Length) return;
+    if (!image.AsSpan(dirOff, 6).SequenceEqual(Ocfs2Superblock.SignatureBytes)) return;
+
+    // Inline data flag (i_dyn_features at +0x4C).
+    var dynFeatures = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(dirOff + 0x4C, 2));
+    if ((dynFeatures & 0x0001) == 0) return; // Non-inline directories are not supported.
+
+    var inlineStart = dirOff + id2Off + 2; // after id_count (u16)
+    var dirSize = (int)BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(dirOff + 0x1C, 8));
     var inlineEnd = inlineStart + Math.Min(dirSize, blockSize - id2Off - 2);
 
-    // Walk directory entries
+    // Collect subdirectories to recurse into after this directory is fully read.
+    var subdirs = new List<(long Blkno, string Path)>();
+
     var cursor = inlineStart;
-    while (cursor + 12 < inlineEnd && cursor + 12 < image.Length) {
+    while (cursor + 12 <= inlineEnd && cursor + 12 <= image.Length) {
       var inode = BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(cursor, 8));
       var recLen = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(cursor + 8, 2));
       var nameLen = image[cursor + 10];
       var fileType = image[cursor + 11];
 
       if (recLen < 12 || cursor + recLen > inlineEnd) break;
-      if (inode == 0) { cursor += recLen; continue; }
-
-      if (fileType == 1 && nameLen > 0 && cursor + 12 + nameLen <= image.Length) {
-        // Regular file
-        var name = Encoding.UTF8.GetString(image, cursor + 12, nameLen);
-        var fileData = ExtractFileData(image, (long)inode);
-        result.Add((name, fileData));
+      if (inode == 0 || nameLen == 0 || cursor + 12 + nameLen > image.Length) {
+        cursor += recLen;
+        continue;
       }
 
+      var name = Encoding.UTF8.GetString(image, cursor + 12, nameLen);
       cursor += recLen;
+
+      if (name is "." or "..") continue;
+      var path = prefix.Length == 0 ? name : prefix + "/" + name;
+
+      if (fileType == 1) {
+        result.Add((path, ExtractFileData(image, (long)inode)));
+      } else if (fileType == 2) {
+        subdirs.Add(((long)inode, path));
+      }
     }
 
-    return result;
+    foreach (var (blkno, path) in subdirs)
+      WalkDirectory(image, blkno, path, result, visited);
   }
 
   /// <summary>Extracts file data from a file dinode's extent records.</summary>

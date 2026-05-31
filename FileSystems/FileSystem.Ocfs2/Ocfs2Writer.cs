@@ -58,39 +58,93 @@ internal sealed class Ocfs2Writer {
   private const uint ModeDir = S_IFDIR | 0x1FF;  // drwxrwxrwx
   private const uint ModeFile = S_IFREG | 0x1B4;  // -rw-r--r--
 
-  /// <summary>Adds a file to the image.</summary>
+  /// <summary>Adds a file to the image. The name may contain '/' separators,
+  /// which place the file inside the corresponding directory tree.</summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    var flat = Path.GetFileName(name);
-    if (string.IsNullOrEmpty(flat))
+    var normalized = name.Replace('\\', '/').Trim('/');
+    if (string.IsNullOrEmpty(Path.GetFileName(normalized)))
       throw new ArgumentException("File name must not be empty.", nameof(name));
-    _files.Add((flat, data));
+    _files.Add((normalized, data));
+  }
+
+  /// <summary>A node in the directory tree assembled from the added file paths.</summary>
+  private sealed class TreeNode {
+    public required string Name;
+    public bool IsDir;
+    public byte[] Data = [];
+    // Children keyed by name, in insertion order, for directories.
+    public readonly Dictionary<string, TreeNode> Children = new(StringComparer.Ordinal);
+    public readonly List<TreeNode> Order = [];
+
+    // Layout assignment (filled in during planning).
+    public long DinodeBlkno;
+    public long ParentBlkno;
+    public long DataBlkno;
+    public int DataClusters;
+  }
+
+  /// <summary>Builds the directory tree from the flat list of path-named files.</summary>
+  private TreeNode BuildTree() {
+    var root = new TreeNode { Name = "", IsDir = true };
+    foreach (var (path, data) in _files) {
+      var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+      var cur = root;
+      for (var i = 0; i < parts.Length; i++) {
+        var part = parts[i];
+        var isLeaf = i == parts.Length - 1;
+        if (cur.Children.TryGetValue(part, out var child)) {
+          // Existing node — must remain a directory if more path follows.
+          if (!isLeaf) child.IsDir = true;
+        } else {
+          child = new TreeNode { Name = part, IsDir = !isLeaf };
+          cur.Children[part] = child;
+          cur.Order.Add(child);
+        }
+        if (isLeaf && !child.IsDir) child.Data = data;
+        cur = child;
+      }
+    }
+    return root;
   }
 
   /// <summary>Builds the OCFS2 image and returns the raw bytes.</summary>
   public byte[] Build() {
-    var fileCount = _files.Count;
+    var root = BuildTree();
 
-    // Calculate layout: each file gets 1 dinode block + ceil(size/clusterSize) data clusters
-    var fileDinodeBlknos = new long[fileCount];
-    var fileDataBlknos = new long[fileCount];
-    var fileDataClusters = new int[fileCount];
-
+    // Plan block layout. Every directory and file gets one dinode block; file
+    // data follows, cluster-aligned. The root directory reuses the fixed
+    // RootDirBlkno so the superblock's s_root_blkno stays valid.
+    var dirs = new List<TreeNode>();
+    var files = new List<TreeNode>();
     var nextBlk = (long)FirstFileBlkno;
 
-    // Assign dinode blocks
-    for (var i = 0; i < fileCount; i++) {
-      fileDinodeBlknos[i] = nextBlk;
-      nextBlk++;
+    void Plan(TreeNode node) {
+      // node is a directory; assign dinode blocks to its children first so a
+      // parent can reference them, then recurse.
+      foreach (var child in node.Order) {
+        child.DinodeBlkno = nextBlk++;
+        child.ParentBlkno = node.DinodeBlkno;
+        if (child.IsDir)
+          dirs.Add(child);
+        else
+          files.Add(child);
+      }
+      foreach (var child in node.Order)
+        if (child.IsDir)
+          Plan(child);
     }
 
-    // Assign data blocks
-    for (var i = 0; i < fileCount; i++) {
-      fileDataBlknos[i] = nextBlk;
-      var clusters = (_files[i].Data.Length + ClusterSize - 1) / ClusterSize;
-      if (clusters == 0 && _files[i].Data.Length > 0) clusters = 1;
-      fileDataClusters[i] = clusters;
+    root.DinodeBlkno = RootDirBlkno;
+    Plan(root);
+
+    // Assign data clusters to files.
+    foreach (var f in files) {
+      f.DataBlkno = nextBlk;
+      var clusters = (f.Data.Length + ClusterSize - 1) / ClusterSize;
+      if (clusters == 0 && f.Data.Length > 0) clusters = 1;
+      f.DataClusters = clusters;
       nextBlk += clusters;
     }
 
@@ -106,8 +160,8 @@ internal sealed class Ocfs2Writer {
     // 3. Bitmap data at block 4
     WriteBitmapData(image, (int)nextBlk);
 
-    // 4. Root directory dinode at block 5 (inline dir with file entries)
-    WriteRootDirDinode(image, fileDinodeBlknos);
+    // 4. Root directory dinode at block 5 (inline dir referencing children)
+    WriteDirDinode(image, root, RootDirBlkno, RootDirBlkno, 3);
 
     // 5. System directory dinode at block 6
     WriteSystemDirDinode(image);
@@ -115,11 +169,15 @@ internal sealed class Ocfs2Writer {
     // 6. Inode alloc dinode at block 7
     WriteInodeAllocDinode(image);
 
-    // 7. File dinodes and data
-    for (var i = 0; i < fileCount; i++) {
-      WriteFileDinode(image, fileDinodeBlknos[i], fileDataBlknos[i], fileDataClusters[i], _files[i].Data.Length);
-      if (_files[i].Data.Length > 0)
-        Buffer.BlockCopy(_files[i].Data, 0, image, (int)(fileDataBlknos[i] * BlockSize), _files[i].Data.Length);
+    // 7. Subdirectory dinodes (inline dirs referencing their own children)
+    foreach (var dir in dirs)
+      WriteDirDinode(image, dir, dir.DinodeBlkno, dir.ParentBlkno, (uint)(dir.DinodeBlkno + 200));
+
+    // 8. File dinodes and data
+    foreach (var f in files) {
+      WriteFileDinode(image, f.DinodeBlkno, f.DataBlkno, f.DataClusters, f.Data.Length);
+      if (f.Data.Length > 0)
+        Buffer.BlockCopy(f.Data, 0, image, (int)(f.DataBlkno * BlockSize), f.Data.Length);
     }
 
     return image;
@@ -259,20 +317,30 @@ internal sealed class Ocfs2Writer {
     }
   }
 
-  private void WriteRootDirDinode(byte[] image, long[] fileDinodeBlknos) {
-    // Build inline directory data first to compute size
-    var inlineData = BuildInlineDirEntries(fileDinodeBlknos);
-    var dirSize = inlineData.Length;
+  // OCFS2 directory-entry file types.
+  private const byte FtRegFile = 1;
+  private const byte FtDir = 2;
 
-    WriteDinodeHeader(image, RootDirBlkno, ModeDir,
+  /// <summary>
+  /// Writes an inline directory dinode for <paramref name="node"/> at
+  /// <paramref name="blkno"/>. Emits "." / ".." plus a directory entry for each
+  /// child (file_type 1 for regular files, 2 for subdirectories). The link count
+  /// is 2 (for "." and the parent's reference) plus one per child directory,
+  /// matching how each child's ".." back-reference inflates this directory's
+  /// links.
+  /// </summary>
+  private void WriteDirDinode(byte[] image, TreeNode node, long blkno, long parentBlkno, uint generation) {
+    var inlineData = BuildInlineDirEntries(node, blkno, parentBlkno);
+    var childDirs = node.Order.Count(c => c.IsDir);
+    var links = (ushort)(2 + childDirs);
+
+    WriteDinodeHeader(image, blkno, ModeDir,
       InodeValid | InodeIsDir | InodeInlineData,
-      dirSize, 2, 3);
+      inlineData.Length, links, generation);
 
-    // Set i_dyn_features for inline data
-    var dinodeOff = (int)(RootDirBlkno * BlockSize);
+    var dinodeOff = (int)(blkno * BlockSize);
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(dinodeOff + 0x4C, 2), DynInlineData);
 
-    // Inline data goes at id2 offset
     var off = dinodeOff + Id2Offset;
 
     // For inline directories, the id2 area starts with:
@@ -281,34 +349,34 @@ internal sealed class Ocfs2Writer {
     var maxInline = BlockSize - Id2Offset - 2;
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off, 2), (ushort)maxInline);
 
-    // Copy inline dir entries
-    if (inlineData.Length > 0 && inlineData.Length <= maxInline)
+    if (inlineData.Length > maxInline)
+      throw new InvalidOperationException(
+        $"OCFS2 writer only supports inline directories; '{node.Name}' has too many entries to fit one block.");
+
+    if (inlineData.Length > 0)
       Buffer.BlockCopy(inlineData, 0, image, off + 2, inlineData.Length);
   }
 
   /// <summary>
-  /// Builds OCFS2 directory entries in the inline-data format.
+  /// Builds OCFS2 directory entries in the inline-data format for one directory.
   /// Each entry: u64 inode, u16 rec_len, u8 name_len, u8 file_type, name[].
+  /// Starts with "." (self) and ".." (parent), then one entry per child.
   /// </summary>
-  private byte[] BuildInlineDirEntries(long[] fileDinodeBlknos) {
-    var entries = new List<byte[]>();
+  private static byte[] BuildInlineDirEntries(TreeNode node, long selfBlkno, long parentBlkno) {
+    var entries = new List<byte[]> {
+      BuildDirEntry((ulong)selfBlkno, ".", FtDir),
+      BuildDirEntry((ulong)parentBlkno, "..", FtDir),
+    };
 
-    // "." entry pointing at root
-    entries.Add(BuildDirEntry(RootDirBlkno, ".", 2)); // file_type=2 = directory
-    // ".." entry pointing at root (root's parent is itself)
-    entries.Add(BuildDirEntry(RootDirBlkno, "..", 2));
+    foreach (var child in node.Order)
+      entries.Add(BuildDirEntry((ulong)child.DinodeBlkno, child.Name, child.IsDir ? FtDir : FtRegFile));
 
-    // File entries
-    for (var i = 0; i < _files.Count; i++)
-      entries.Add(BuildDirEntry((ulong)fileDinodeBlknos[i], _files[i].Name, 1)); // file_type=1 = regular
-
-    // Concatenate, fix rec_len for last entry to fill remaining space
     var totalLen = entries.Sum(e => e.Length);
     var result = new byte[totalLen];
     var pos = 0;
-    for (var i = 0; i < entries.Count; i++) {
-      Buffer.BlockCopy(entries[i], 0, result, pos, entries[i].Length);
-      pos += entries[i].Length;
+    foreach (var e in entries) {
+      Buffer.BlockCopy(e, 0, result, pos, e.Length);
+      pos += e.Length;
     }
     return result;
   }
