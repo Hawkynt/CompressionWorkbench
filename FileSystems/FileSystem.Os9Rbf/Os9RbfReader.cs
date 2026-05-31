@@ -8,8 +8,9 @@ namespace FileSystem.Os9Rbf;
 /// Reader for Microware OS-9 RBF (Random-Block-File) disk images. The format
 /// was used on the Tandy CoCo (OS-9 Level 1/2), Sharp MZ-2500, Atari MSX-OS-9
 /// machines, and embedded systems running OS-9/68000 and OS-9000. Sector size
-/// is 256 bytes; multi-byte fields are big-endian. Only the root directory is
-/// enumerated by this reader.
+/// is 256 bytes; multi-byte fields are big-endian. The directory tree is walked
+/// recursively: files in subdirectories surface with their full slash-separated
+/// path and each intermediate directory is reported as its own entry.
 /// </summary>
 public sealed class Os9RbfReader {
 
@@ -56,36 +57,7 @@ public sealed class Os9RbfReader {
       if ((attrs & Os9Layout.FAttr_Directory) == 0)
         throw new InvalidDataException("OS-9 RBF: root descriptor is not flagged as a directory.");
 
-      // Walk segment list — concatenate the directory contents.
-      var dirData = ReadFileBytes(image, rootFd, out _);
-
-      for (var off = 0; off + Os9Layout.DirEntryBytes <= dirData.Length; off += Os9Layout.DirEntryBytes) {
-        // First byte == 0 → empty entry.
-        if (dirData[off] == 0) continue;
-        // Name is high-bit-terminated within the first 29 bytes.
-        var name = ReadHighBitTerminatedAscii(dirData.AsSpan(off, Os9Layout.DirEntryNameMaxBytes),
-                                              Os9Layout.DirEntryNameMaxBytes);
-        if (name == "." || name == "..") continue; // self/parent links
-        if (string.IsNullOrEmpty(name)) continue;
-
-        var fdLsn = ReadU24Be(dirData.AsSpan(), off + Os9Layout.DirEntryFdLsnOffset);
-        if (fdLsn == 0 || fdLsn * Os9Layout.SectorSize + Os9Layout.SectorSize > image.Length) continue;
-
-        var fd = image.Slice(fdLsn * Os9Layout.SectorSize, Os9Layout.SectorSize);
-        var entryAttrs = fd[Os9Layout.FD_ATT];
-        var size = (long)BinaryPrimitives.ReadUInt32BigEndian(fd[Os9Layout.FD_SIZ..]);
-        var creYy = fd[Os9Layout.FD_CRE + 0];
-        var creMm = fd[Os9Layout.FD_CRE + 1];
-        var creDd = fd[Os9Layout.FD_CRE + 2];
-        var created = TryDate(creYy, creMm, creDd);
-
-        files.Add(new FileEntry(
-          Name: name,
-          FdLsn: fdLsn,
-          ByteLength: size,
-          IsDirectory: (entryAttrs & Os9Layout.FAttr_Directory) != 0,
-          Created: created));
-      }
+      WalkDirectory(image, rootLsn, prefix: string.Empty, files, new HashSet<int> { rootLsn });
     }
 
     return new Volume(
@@ -94,6 +66,56 @@ public sealed class Os9RbfReader {
       RootDirLsn: rootLsn,
       Files: files,
       Image: image.ToArray());
+  }
+
+  /// <summary>
+  /// Recursively enumerates a directory descriptor's entries. Leaf files surface
+  /// with their full slash-separated path; each subdirectory is reported as its
+  /// own entry and then descended into. The <paramref name="visited"/> set of FD
+  /// LSNs guards against cyclic or self-referential directory links.
+  /// </summary>
+  private static void WalkDirectory(
+    ReadOnlySpan<byte> image, int dirFdLsn, string prefix, List<FileEntry> files, HashSet<int> visited) {
+
+    if (dirFdLsn * Os9Layout.SectorSize + Os9Layout.SectorSize > image.Length) return;
+    var dirFd = image.Slice(dirFdLsn * Os9Layout.SectorSize, Os9Layout.SectorSize);
+    var dirData = ReadFileBytes(image, dirFd, out _);
+
+    // Collect this level's children first so recursion isn't tangled with the
+    // span-bound directory buffer.
+    var subdirs = new List<(string Path, int FdLsn)>();
+
+    for (var off = 0; off + Os9Layout.DirEntryBytes <= dirData.Length; off += Os9Layout.DirEntryBytes) {
+      if (dirData[off] == 0) continue; // empty slot
+      var name = ReadHighBitTerminatedAscii(dirData.AsSpan(off, Os9Layout.DirEntryNameMaxBytes),
+                                            Os9Layout.DirEntryNameMaxBytes);
+      if (name == "." || name == "..") continue; // self / parent links
+      if (string.IsNullOrEmpty(name)) continue;
+
+      var fdLsn = ReadU24Be(dirData.AsSpan(), off + Os9Layout.DirEntryFdLsnOffset);
+      if (fdLsn == 0 || fdLsn * Os9Layout.SectorSize + Os9Layout.SectorSize > image.Length) continue;
+
+      var fd = image.Slice(fdLsn * Os9Layout.SectorSize, Os9Layout.SectorSize);
+      var entryAttrs = fd[Os9Layout.FD_ATT];
+      var isDir = (entryAttrs & Os9Layout.FAttr_Directory) != 0;
+      var size = (long)BinaryPrimitives.ReadUInt32BigEndian(fd[Os9Layout.FD_SIZ..]);
+      var created = TryDate(fd[Os9Layout.FD_CRE + 0], fd[Os9Layout.FD_CRE + 1], fd[Os9Layout.FD_CRE + 2]);
+
+      var fullPath = prefix.Length == 0 ? name : prefix + "/" + name;
+
+      files.Add(new FileEntry(
+        Name: fullPath,
+        FdLsn: fdLsn,
+        ByteLength: size,
+        IsDirectory: isDir,
+        Created: created));
+
+      if (isDir && visited.Add(fdLsn))
+        subdirs.Add((fullPath, fdLsn));
+    }
+
+    foreach (var (path, fdLsn) in subdirs)
+      WalkDirectory(image, fdLsn, path, files, visited);
   }
 
   /// <summary>Returns the file's byte contents, honouring its FD.SIZ length.</summary>
