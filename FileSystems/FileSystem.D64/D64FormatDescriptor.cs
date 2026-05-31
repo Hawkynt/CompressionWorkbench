@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.D64;
 
-public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks the directory chain on track 18 and yields the actual on-disk
@@ -16,6 +16,123 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => D64ExtentMap.Enumerate(image);
+
+  // D64 1541 geometry — zoned sectors per track (track 0 doesn't exist).
+  private const int D64SectorSize = 256;
+  private const int D64DirTrack = 18;
+  private const int D64DirStartSector = 1;
+  private static readonly int[] D64SectorsPerTrack = [
+    0,
+    21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21,
+    19, 19, 19, 19, 19, 19, 19,
+    18, 18, 18, 18, 18, 18,
+    17, 17, 17, 17, 17,
+  ];
+
+  private static int D64SectorOffset(int track, int sector) {
+    if (track < 1 || track >= D64SectorsPerTrack.Length) return -1;
+    if (sector < 0 || sector >= D64SectorsPerTrack[track]) return -1;
+    var offset = 0;
+    for (var t = 1; t < track; t++) offset += D64SectorsPerTrack[t] * D64SectorSize;
+    return offset + sector * D64SectorSize;
+  }
+
+  /// <summary>
+  /// Zeros all unused space in a D64 image: unallocated sectors and the
+  /// cluster-tip slack at the tail of each file's <em>last</em> sector. A D64
+  /// file is a linked chain of 256-byte sectors — each carries a 2-byte
+  /// next-track/next-sector link followed by up to 254 data bytes. The final
+  /// sector's link is <c>(0, used+1)</c>, so the bytes after the last used
+  /// data byte up to the sector boundary are slack. Those slack bytes are
+  /// zero-filled when <paramref name="wipeClusterTips"/> is set, while the
+  /// 2-byte link headers, live file data, and the track-18 BAM/directory are
+  /// preserved.
+  ///
+  /// <para>Because file content is interleaved with per-sector link bytes and
+  /// chains may be fragmented, the simple "offset + size" cluster-tip model of
+  /// the generic wiper does not apply; tip wiping is done here by walking each
+  /// chain to its final sector. Free-space wiping is delegated to the generic
+  /// wiper using the extent map.</para>
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+
+    using var ms = new MemoryStream();
+    image.Position = 0;
+    image.CopyTo(ms);
+    var data = ms.GetBuffer();
+    var length = (int)ms.Length;
+
+    var totalWiped = 0L;
+
+    // 1. Wipe the tail slack of every file chain's final sector.
+    if (wipeClusterTips && length >= 174848) {
+      var t = D64DirTrack;
+      var s = D64DirStartSector;
+      var visitedDir = new HashSet<(int, int)>();
+      while (t != 0 && visitedDir.Add((t, s))) {
+        var dirOff = D64SectorOffset(t, s);
+        if (dirOff < 0 || dirOff + D64SectorSize > length) break;
+        var nextTrack = data[dirOff];
+        var nextSector = data[dirOff + 1];
+        for (var i = 0; i < 8; i++) {
+          var entryOff = dirOff + i * 32;
+          var fileType = data[entryOff + 2];
+          if ((fileType & 0x07) == 0) continue;
+          totalWiped += WipeChainTail(data, length, data[entryOff + 3], data[entryOff + 4]);
+        }
+        t = nextTrack;
+        s = nextSector;
+      }
+    }
+
+    // 2. Wipe free sectors via the generic wiper. Tips are handled above, so
+    //    disable the generic cluster-tip path (its offset+size model is wrong
+    //    for chained sectors).
+    var msStream = new MemoryStream(data, 0, length, writable: true);
+    msStream.Position = 0;
+    var extents = D64ExtentMap.Enumerate(msStream);
+    msStream.Position = 0;
+    totalWiped += UnusedSpaceWiper.Wipe(msStream, extents, length, wipeClusterTips: false, fileSizeLookup: null);
+    msStream.Flush();
+
+    // Persist back to the caller's stream.
+    image.Position = 0;
+    image.Write(data, 0, length);
+    image.SetLength(length);
+    image.Flush();
+    return totalWiped;
+  }
+
+  /// <summary>
+  /// Walks one file's sector chain to its final sector and zeros the slack
+  /// bytes between the last used data byte and the 256-byte sector boundary,
+  /// preserving the 2-byte link header. Returns bytes actually changed.
+  /// </summary>
+  private static long WipeChainTail(byte[] data, int length, int startTrack, int startSector) {
+    var t = startTrack;
+    var s = startSector;
+    var visited = new HashSet<(int, int)>();
+    while (t != 0 && visited.Add((t, s))) {
+      var off = D64SectorOffset(t, s);
+      if (off < 0 || off + D64SectorSize > length) return 0;
+      var nextTrack = data[off];
+      var nextSector = data[off + 1];
+      if (nextTrack == 0) {
+        // Final sector: nextSector = bytes used + 1, data starts at off+2.
+        var bytesUsed = nextSector > 1 ? nextSector - 1 : 254;
+        var tipStart = off + 2 + bytesUsed;
+        var changed = 0L;
+        for (var p = tipStart; p < off + D64SectorSize; p++) {
+          if (data[p] != 0) { data[p] = 0; changed++; }
+        }
+        return changed;
+      }
+      t = nextTrack;
+      s = nextSector;
+    }
+    return 0;
+  }
 
   public long? MaxTotalArchiveSize => 174848;  // standard 1541 single-sided D64 image size
   public string AcceptedInputsDescription =>
