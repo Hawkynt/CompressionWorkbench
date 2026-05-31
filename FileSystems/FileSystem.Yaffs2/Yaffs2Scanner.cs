@@ -60,12 +60,30 @@ internal static class Yaffs2Scanner {
   private static int ScoreLayout(ReadOnlySpan<byte> image, int chunk, int spare) {
     var stride = chunk + spare;
     if (stride <= 0) return 0;
+
+    // Score over a fixed byte span rather than a fixed number of strides, so a
+    // coarse layout whose stride is a multiple of the true stride cannot win by
+    // sampling fewer-but-aligned chunks. A header chunk only counts when the
+    // packed spare tags corroborate it (chunk_id == 0 and a plausible object id);
+    // a misaligned layout reads its "spare" from the middle of real data, so the
+    // tags do not line up and it scores far lower than the genuine layout.
+    const int ScanSpan = 1 << 20; // 1 MiB window is enough to distinguish layouts.
+    var limit = Math.Min(image.Length, ScanSpan);
+
     var score = 0;
-    for (var off = 0; off + stride <= image.Length && off < 64 * stride; off += stride) {
+    for (var off = 0; off + stride <= limit; off += stride) {
       var hdr = ParseHeader(image.Slice(off, chunk));
       if (hdr == null) continue;
-      // A plausible header has a type in {1..5} and a non-empty, printable name (or empty + type=Special).
-      if ((int)hdr.Type is >= 1 and <= 5) ++score;
+      if ((int)hdr.Type is < 1 or > 5) continue;
+
+      var (objId, chunkId, _) = ParseSpare(image.Slice(off + chunk, spare));
+      // Genuine object-header chunks carry chunk_id == 0 and a non-zero object id
+      // in the spare. Reward that corroboration heavily so the correct geometry
+      // outscores any stride that merely happens to land on header bytes.
+      if (chunkId == 0 && objId > 0)
+        score += 4;
+      else
+        ++score;
     }
     return score;
   }
