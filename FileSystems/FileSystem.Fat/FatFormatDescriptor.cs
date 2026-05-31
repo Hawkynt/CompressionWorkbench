@@ -210,83 +210,148 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       return;
     }
 
-    if (stride > 1) {
-      // Interleaved placement: two-phase approach.
-      // Phase 1: Execute all raw byte moves.
-      for (var i = 0; i < moves.Count; i++) {
-        var move = moves[i];
-        options.OnProgress?.Invoke(new DefragProgressEvent(
-          Phase: "writing",
-          Fraction: (double)i / moves.Count * 0.5,
-          CurrentReadOffset: move.SrcOffset,
-          CurrentWriteOffset: move.DstOffset,
-          ImageSize: imageSize,
-          BlockMap: null,
-          Status: $"Moving block {i + 1} of {moves.Count}: {move.FileName}"));
-        // zeroSource: false — same crash-safety rationale as DefragPlannerExecutor.
-        // Old bytes become orphan data after the FAT-chain repatch below; they're
-        // unreferenced but recoverable until the next allocation reuses the cluster.
-        mover.MoveExtent(archive, move.SrcOffset, move.DstOffset, move.Length, zeroSource: false);
-      }
+    // Two-phase execution for BOTH contiguous (stride == 1) and interleaved
+    // (stride > 1) placement:
+    //   Phase 1 — execute every raw byte move in the planner's dependency order
+    //             (staging moves included), leaving the FAT/dir metadata stale.
+    //   Phase 2 — for each OWNER (file OR subdirectory), relink its complete
+    //             cluster chain once via UpdateAllocationScattered and repatch
+    //             the parent dirent + (for directories) the '.'/'..' pointers.
+    //
+    // A single per-owner relink is essential for FRAGMENTED owners: a file or
+    // directory whose data spans several non-adjacent runs produces several
+    // ClusterMoves, but its chain must be rewritten as ONE chain. The old
+    // per-move UpdateAllocationAfterMove treated each run as an independent
+    // file, which truncated multi-run directories (losing entries) and broke
+    // multi-run files. Fusing the runs into one contiguous chain happens here.
 
-      // Phase 2: Patch FAT chains per file using UpdateAllocationScattered.
-      // Group moves by file, then for each file compute old and new cluster lists.
-      // BPB is unchanged by data moves; no need to re-Init.
-      var movesByFile = new Dictionary<string, List<ClusterMove>>(StringComparer.OrdinalIgnoreCase);
-      foreach (var move in moves) {
-        if (!movesByFile.TryGetValue(move.FileName, out var list))
-          movesByFile[move.FileName] = list = [];
-        list.Add(move);
-      }
-
-      // For each file, also gather the original full chain and compute the new chain.
-      // We need the original chain (before any moves) to know the start cluster for
-      // the directory-entry lookup. Fortunately, extent map gives us the per-file
-      // source offsets, and the moves tell us which ones moved.
-      var fileIdx = 0;
-      foreach (var (fileName, fileMoves) in movesByFile) {
-        // Build the mapping from old offset → new offset for this file's blocks.
-        var offsetMap = new Dictionary<long, long>();
-        foreach (var m in fileMoves)
-          offsetMap[m.SrcOffset] = m.DstOffset;
-
-        // Reconstruct the file's old cluster chain from the extent map.
-        var fileExtents = extents
-          .Where(e => e.Kind == DefragBlockKind.Used &&
-                      string.Equals(e.FileName, fileName, StringComparison.OrdinalIgnoreCase))
-          .OrderBy(e => e.Offset)
-          .ToList();
-
-        var oldClusters = new List<int>();
-        var newClusters = new List<int>();
-        foreach (var ext in fileExtents) {
-          var blocks = (int)((ext.Length + mover.ClusterSize - 1) / mover.ClusterSize);
-          for (var b = 0; b < blocks; b++) {
-            var srcOff = ext.Offset + (long)b * mover.ClusterSize;
-            oldClusters.Add(mover.OffsetCluster(srcOff));
-            var dstOff = offsetMap.TryGetValue(srcOff, out var mapped) ? mapped : srcOff;
-            newClusters.Add(mover.OffsetCluster(dstOff));
-          }
-        }
-
-        mover.UpdateAllocationScattered(archive, fileName, oldClusters, newClusters);
-        // BPB unchanged — no re-Init needed. UpdateAllocationScattered already
-        // does targeted writes + per-step flushes.
-        fileIdx++;
-        options.OnProgress?.Invoke(new DefragProgressEvent(
-          Phase: "writing",
-          Fraction: 0.5 + 0.5 * fileIdx / movesByFile.Count,
-          CurrentReadOffset: -1,
-          CurrentWriteOffset: -1,
-          ImageSize: imageSize,
-          BlockMap: null,
-          Status: $"Patching chain {fileIdx} of {movesByFile.Count}: {fileName}"));
-      }
-    } else {
-      // Contiguous placement: shared executor with per-move progress. BPB
-      // doesn't change during defrag so no per-move re-Init is needed.
-      DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize, reinitAfterMove: null);
+    // Phase 1: raw byte moves, in planner order.
+    for (var i = 0; i < moves.Count; i++) {
+      var move = moves[i];
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        Phase: "writing",
+        Fraction: (double)i / moves.Count * 0.5,
+        CurrentReadOffset: move.SrcOffset,
+        CurrentWriteOffset: move.DstOffset,
+        ImageSize: imageSize,
+        BlockMap: null,
+        Status: $"Moving block {i + 1} of {moves.Count}: {move.FileName}"));
+      // zeroSource: false — same crash-safety rationale as DefragPlannerExecutor.
+      // Old bytes become orphan data after the FAT-chain repatch below; they're
+      // unreferenced but recoverable until the next allocation reuses the cluster.
+      mover.MoveExtent(archive, move.SrcOffset, move.DstOffset, move.Length, zeroSource: false);
     }
+
+    // Phase 2: per-owner chain relink + dir-pointer repatch. Group the original
+    // extents by owner so each owner's full chain is rebuilt exactly once.
+    var extentsByOwner = new Dictionary<string, List<DefragBlockInfo>>(StringComparer.OrdinalIgnoreCase);
+    var originalClusterOffsets = new HashSet<long>();
+    foreach (var e in extents) {
+      if (e.Kind != DefragBlockKind.Used) continue;
+      var owner = e.FileName ?? "<unknown>";
+      if (!extentsByOwner.TryGetValue(owner, out var list))
+        extentsByOwner[owner] = list = [];
+      list.Add(e);
+      var blocks = (int)((e.Length + mover.ClusterSize - 1) / mover.ClusterSize);
+      for (var b = 0; b < blocks; b++)
+        originalClusterOffsets.Add(e.Offset + (long)b * mover.ClusterSize);
+    }
+
+    // Where did each ORIGINAL cluster's bytes finally land? Simulate the byte
+    // moves in planner order — exactly mirroring phase 1 — tracking which
+    // original offset currently occupies each cluster slot. A move src→dst takes
+    // whatever bytes are at `src` right now and relocates them to `dst`; if
+    // those bytes belong to an original cluster, that cluster's final location
+    // becomes `dst`. This correctly handles plain shuffles, slot swaps, and the
+    // planner's staging hops (src → free-stage → dst) without any heuristics.
+    var occupant = new Dictionary<long, long>(); // cluster slot offset → original offset currently there
+    foreach (var off in originalClusterOffsets) occupant[off] = off;
+    var finalOf = new Dictionary<long, long>();  // original offset → its final cluster offset
+    foreach (var off in originalClusterOffsets) finalOf[off] = off;
+    var clusterBytes = (long)mover.ClusterSize;
+    foreach (var move in moves) {
+      // A single move can span SEVERAL clusters (the planner emits one move per
+      // contiguous run). Track every cluster slot the move touches, not just the
+      // start, so multi-cluster files/directories relink to the right place.
+      var slotCount = (int)((move.Length + clusterBytes - 1) / clusterBytes);
+      for (var k = 0; k < slotCount; k++) {
+        var src = move.SrcOffset + k * clusterBytes;
+        var dst = move.DstOffset + k * clusterBytes;
+        if (occupant.TryGetValue(src, out var origin)) {
+          occupant[dst] = origin;
+          finalOf[origin] = dst;
+          if (src != dst) occupant.Remove(src);
+        } else {
+          // Source slot holds no tracked original (e.g. free staging bytes).
+          occupant[dst] = dst;
+        }
+      }
+    }
+    long FinalOffset(long srcOff) => finalOf.TryGetValue(srcOff, out var f) ? f : srcOff;
+    // Owners that actually have at least one block moved.
+    var movedOwners = new HashSet<string>(moves.Select(m => m.FileName), StringComparer.OrdinalIgnoreCase);
+
+    // Old-first-cluster → new-first-cluster remap for every DIRECTORY whose
+    // start cluster changed. After all chains are relinked, a single tree walk
+    // uses this to fix the '.' self-pointers and '..' parent-pointers so the
+    // on-disk tree stays internally consistent (fsck / Windows clean).
+    var dirStartRemap = new Dictionary<int, int>();
+
+    // Relink DIRECTORIES before FILES, and shallower directories before deeper
+    // ones. PatchDirectoryEntriesStream walks the tree from the root following
+    // the live FAT chains + parent dirents, so a directory's chain and its
+    // parent-dirent pointer must already be correct before we patch any entry
+    // that lives INSIDE it (a child file, or a deeper subdirectory). Depth =
+    // number of path separators; directories (owner ends with '/') sort first.
+    static int Depth(string owner) => owner.Count(c => c == '/');
+    var orderedOwners = extentsByOwner.Keys
+      .Where(movedOwners.Contains)
+      .OrderBy(o => o.EndsWith('/') ? 0 : 1)   // directories before files
+      .ThenBy(Depth)                            // shallow before deep
+      .ThenBy(o => o, StringComparer.OrdinalIgnoreCase)
+      .ToList();
+
+    var ownerIdx = 0;
+    foreach (var owner in orderedOwners) {
+      // Extents arrive from the extent map in CHAIN order (the map walks each
+      // owner's cluster chain run by run). Preserve that order — sorting by
+      // offset would scramble a fragmented owner's logical sequence and the
+      // relinked chain would carry its clusters in the wrong order, truncating
+      // or corrupting the content (lost directory entries / shuffled file data).
+      var ownerExtents = extentsByOwner[owner];
+
+      var oldClusters = new List<int>();
+      var newClusters = new List<int>();
+      foreach (var ext in ownerExtents) {
+        var blocks = (int)((ext.Length + mover.ClusterSize - 1) / mover.ClusterSize);
+        for (var b = 0; b < blocks; b++) {
+          var srcOff = ext.Offset + (long)b * mover.ClusterSize;
+          oldClusters.Add(mover.OffsetCluster(srcOff));
+          newClusters.Add(mover.OffsetCluster(FinalOffset(srcOff)));
+        }
+      }
+      if (oldClusters.Count == 0) continue;
+
+      mover.UpdateAllocationScattered(archive, owner, oldClusters, newClusters);
+
+      if (owner.EndsWith('/') && oldClusters[0] != newClusters[0])
+        dirStartRemap[oldClusters[0]] = newClusters[0];
+
+      ++ownerIdx;
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        Phase: "writing",
+        Fraction: 0.5 + 0.5 * ownerIdx / Math.Max(1, movedOwners.Count),
+        CurrentReadOffset: -1,
+        CurrentWriteOffset: -1,
+        ImageSize: imageSize,
+        BlockMap: null,
+        Status: $"Patching chain {ownerIdx} of {movedOwners.Count}: {owner}"));
+    }
+
+    // After every chain is relinked, repatch the '.' / '..' self/parent
+    // pointers of relocated subdirectories so the on-disk tree is consistent.
+    if (dirStartRemap.Count > 0)
+      mover.RepatchDotEntries(archive, dirStartRemap);
 
     // Emit complete event with post-defrag block map. Re-walk the archive
     // directly — no need to load it into memory.

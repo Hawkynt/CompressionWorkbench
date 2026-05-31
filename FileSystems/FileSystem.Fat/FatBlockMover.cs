@@ -450,6 +450,147 @@ public sealed class FatBlockMover : IFilesystemBlockMover {
     }
   }
 
+  /// <summary>
+  /// After relocated subdirectories have had their cluster chains relinked,
+  /// repatches the '.' (self) and '..' (parent) directory entries so they point
+  /// at the directories' NEW start clusters. <paramref name="remap"/> maps each
+  /// moved directory's OLD first cluster to its NEW first cluster.
+  ///
+  /// <para>Walks the live directory tree (using the already-corrected FAT chains
+  /// and parent dirents), reading one cluster at a time. For a non-root
+  /// directory the first 32-byte entry is '.' and the second is '..'; their
+  /// start-cluster fields are rewritten in place when their current value is a
+  /// key in <paramref name="remap"/>. The root directory has no '.'/'..' to fix.</para>
+  /// </summary>
+  public void RepatchDotEntries(Stream image, IReadOnlyDictionary<int, int> remap) {
+    ArgumentNullException.ThrowIfNull(remap);
+    if (remap.Count == 0) return;
+
+    var seenDirs = new HashSet<int>();
+    if (_fatType == 32) {
+      Span<byte> rcBuf = stackalloc byte[4];
+      image.Position = 44;
+      image.ReadExactly(rcBuf);
+      var rootCluster = BinaryPrimitives.ReadInt32LittleEndian(rcBuf);
+      seenDirs.Add(rootCluster);
+      WalkRepatchClusterDir(image, rootCluster, remap, seenDirs);
+    } else {
+      var rootOff = (long)(_reservedSectors + _fatCount * _fatSize) * _bytesPerSector;
+      WalkRepatchFixedRoot(image, rootOff, remap, seenDirs);
+    }
+  }
+
+  private void WalkRepatchFixedRoot(Stream image, long rootOff, IReadOnlyDictionary<int, int> remap, HashSet<int> seenDirs) {
+    var chunkSize = _bytesPerSector;
+    var chunkCount = (_rootDirSectors * _bytesPerSector + chunkSize - 1) / chunkSize;
+    var buf = ArrayPool<byte>.Shared.Rent(chunkSize);
+    try {
+      for (var ci = 0; ci < chunkCount; ci++) {
+        var chunkAbsOff = rootOff + (long)ci * chunkSize;
+        image.Position = chunkAbsOff;
+        image.ReadExactly(buf, 0, chunkSize);
+        if (ScanRepatchChunk(image, buf, chunkSize, chunkAbsOff, remap, seenDirs, isRootEntries: true))
+          return;
+      }
+    } finally {
+      ArrayPool<byte>.Shared.Return(buf);
+    }
+  }
+
+  private void WalkRepatchClusterDir(Stream image, int dirCluster, IReadOnlyDictionary<int, int> remap, HashSet<int> seenDirs) {
+    // Gather the (already-correct) cluster chain for this directory.
+    var fatBase = _reservedSectors * _bytesPerSector;
+    var clusters = new List<int>();
+    var seen = new HashSet<int>();
+    var cluster = dirCluster;
+    while (cluster >= 2 && cluster <= _totalDataClusters + 1 && !IsEoc(cluster) && seen.Add(cluster)) {
+      clusters.Add(cluster);
+      cluster = ReadFatEntryStream(image, fatBase, cluster);
+    }
+
+    var buf = ArrayPool<byte>.Shared.Rent(_clusterSize);
+    try {
+      var firstClusterOfDir = clusters.Count > 0 ? clusters[0] : dirCluster;
+      for (var ci = 0; ci < clusters.Count; ci++) {
+        var chunkAbsOff = _firstDataByte + (long)(clusters[ci] - 2) * _clusterSize;
+        image.Position = chunkAbsOff;
+        image.ReadExactly(buf, 0, _clusterSize);
+
+        // '.' and '..' only live in the FIRST cluster of a subdirectory.
+        if (ci == 0)
+          PatchDotEntriesInFirstCluster(image, buf, chunkAbsOff, firstClusterOfDir, remap);
+
+        if (ScanRepatchChunk(image, buf, _clusterSize, chunkAbsOff, remap, seenDirs, isRootEntries: false))
+          return;
+      }
+    } finally {
+      ArrayPool<byte>.Shared.Return(buf);
+    }
+  }
+
+  /// <summary>
+  /// Rewrites the '.' (entry 0) and '..' (entry 1) start-cluster fields in a
+  /// subdirectory's first cluster when their stored value appears in the remap.
+  /// </summary>
+  private void PatchDotEntriesInFirstCluster(Stream image, byte[] buf, long chunkAbsOff, int dirFirstCluster, IReadOnlyDictionary<int, int> remap) {
+    // Entry 0 must be '.', entry 1 must be '..' for a well-formed subdir.
+    var dirty = false;
+    for (var idx = 0; idx < 2; idx++) {
+      var entryOff = idx * 32;
+      if (entryOff + 32 > buf.Length) break;
+      // Only touch genuine dot entries (name begins with '.').
+      if (buf[entryOff] != (byte)'.') continue;
+
+      var stored = (int)BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(entryOff + 26));
+      if (_fatType == 32)
+        stored |= BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(entryOff + 20)) << 16;
+
+      // '.' (idx 0) should equal this directory's own first cluster; if the dir
+      // moved its stored value is the OLD start → remap to NEW. '..' (idx 1)
+      // names the parent; remap likewise when the parent moved.
+      if (stored >= 2 && remap.TryGetValue(stored, out var mapped) && mapped != stored) {
+        BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(entryOff + 26), (ushort)(mapped & 0xFFFF));
+        if (_fatType == 32)
+          BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(entryOff + 20), (ushort)((mapped >> 16) & 0xFFFF));
+        dirty = true;
+      }
+    }
+    if (dirty) {
+      image.Position = chunkAbsOff;
+      image.Write(buf, 0, Math.Min(64, buf.Length));
+      image.Flush();
+    }
+  }
+
+  /// <summary>
+  /// Scans a directory chunk for child subdirectory entries, recursing into each
+  /// to repatch its '.'/'..' pointers. Tracks LFN runs so a real 8.3 entry is
+  /// recognised. Returns true if the end-of-directory marker (0x00) was hit.
+  /// </summary>
+  private bool ScanRepatchChunk(Stream image, byte[] buf, int chunkSize, long chunkAbsOff,
+      IReadOnlyDictionary<int, int> remap, HashSet<int> seenDirs, bool isRootEntries) {
+    _ = chunkAbsOff;
+    var entries = chunkSize / 32;
+    for (var i = 0; i < entries; i++) {
+      var entryOff = i * 32;
+      var firstByte = buf[entryOff];
+      if (firstByte == 0x00) return true;          // end of directory
+      if (firstByte == 0xE5) continue;             // deleted
+      if (firstByte == (byte)'.') continue;        // '.' / '..' handled separately
+      var attr = buf[entryOff + 11];
+      if ((attr & 0x3F) == 0x0F) continue;         // LFN
+      if ((attr & 0x08) != 0) continue;            // volume label
+      if ((attr & 0x10) == 0) continue;            // not a directory
+
+      var startCluster = (int)BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(entryOff + 26));
+      if (_fatType == 32)
+        startCluster |= BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(entryOff + 20)) << 16;
+      if (startCluster >= 2 && seenDirs.Add(startCluster))
+        WalkRepatchClusterDir(image, startCluster, remap, seenDirs);
+    }
+    return false;
+  }
+
   // ── Directory entry patching ───────────────────────────────────────────
 
   private void PatchDirectoryEntries(byte[] data, string fileName, int oldFirstCluster, int newFirstCluster) {
