@@ -14,7 +14,7 @@ namespace FileSystem.Bfs;
 /// </summary>
 public sealed class BfsFormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
-      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
+      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
 
   public string Id => "Bfs";
   public string DisplayName => "BFS";
@@ -185,6 +185,42 @@ public sealed class BfsFormatDescriptor
   }
 
   private const int NumDirectBlocks = 12;
+
+  // ── IWipeEmpty ─────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros all unused space in a BFS image: every block not claimed by a live
+  /// inode, B+ tree node, journal, bitmap or file data run — and the cluster-tip
+  /// slack inside the last data block of each file. The BFS extent map emits a
+  /// file's data run clamped to its logical size, so the trailing bytes of its
+  /// final allocated block fall outside any live extent and are zeroed by the
+  /// generic <see cref="UnusedSpaceWiper"/> as free space; the file-size lookup
+  /// covers any reader that reports a block-aligned extent.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        var reader = new BfsReader(image);
+        var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var entry in reader.Entries)
+          if (!entry.IsDirectory)
+            sizeMap[entry.Name] = entry.Size;
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    var extents = EnumerateExtents(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
+  }
 
   // ── Shared delegates ───────────────────────────────────────────────
 
