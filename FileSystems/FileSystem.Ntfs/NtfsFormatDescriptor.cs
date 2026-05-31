@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Ntfs;
 
-public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IFormatOptionsSchema {
+public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -38,6 +38,57 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+
+  /// <summary>
+  /// Zeros all unused space in the NTFS image: unallocated clusters, the slack
+  /// between a non-resident file's logical size and the end of its last
+  /// allocated cluster (the cluster tip), and any region not claimed by a live
+  /// extent. Resident files (≤ 700 bytes) live inside their MFT record and own
+  /// no data cluster, so they have no cluster tip — those are left untouched.
+  /// Cluster-tip wiping is applied only to files whose <c>$DATA</c> is a single
+  /// contiguous run; a fragmented file's tip lives in its final run only, which
+  /// the coalesced extent map cannot pinpoint per-extent, so such files are
+  /// omitted from the tip pass to avoid clobbering live clusters.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    image.Position = 0;
+    var extents = NtfsExtentMap.Enumerate(image).ToList();
+
+    // Build a cluster-tip lookup keyed by the extent-map file name (the MFT
+    // record's $FILE_NAME leaf). Only single-run files are eligible: the
+    // generic wiper trims each extent's tail using the file's logical size, so
+    // a multi-run file would have its tip mis-attributed to the wrong run.
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        var usedExtentCount = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var ex in extents)
+          if (ex.Kind == DefragBlockKind.Used && ex.FileName != null)
+            usedExtentCount[ex.FileName] = usedExtentCount.GetValueOrDefault(ex.FileName) + 1;
+
+        image.Position = 0;
+        using var reader = new NtfsReader(image);
+        var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var entry in reader.Entries) {
+          if (entry.IsDirectory) continue;
+          // The extent map keys regular files by their leaf $FILE_NAME; the
+          // reader surfaces the full path. Re-key to the leaf to line them up.
+          var leaf = entry.Name.Contains('/') ? entry.Name[(entry.Name.LastIndexOf('/') + 1)..] : entry.Name;
+          if (usedExtentCount.GetValueOrDefault(leaf) == 1)
+            sizeMap[leaf] = entry.Size;
+        }
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
+  }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
