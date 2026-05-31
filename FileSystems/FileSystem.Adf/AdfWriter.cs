@@ -15,14 +15,15 @@ public sealed class AdfWriter {
   private const int BitmapSector = 881;
   private const int HashTableCount = 72;
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, byte[] Data, DateTime? ModTime)> _files = [];
 
   /// <summary>
   /// Adds a file to the disk image being built.
   /// </summary>
   /// <param name="name">The filename (up to 30 ASCII characters).</param>
   /// <param name="data">The file content.</param>
-  public void AddFile(string name, byte[] data) => _files.Add((name, data));
+  /// <param name="modTime">File modification time. Uses current time when null.</param>
+  public void AddFile(string name, byte[] data, DateTime? modTime = null) => _files.Add((name, data, modTime));
 
   /// <summary>
   /// Builds and returns the complete 901,120-byte ADF disk image.
@@ -48,20 +49,21 @@ public sealed class AdfWriter {
     // Build root hash table
     var hashTable = new uint[HashTableCount];
 
-    foreach (var (name, data) in _files) {
+    foreach (var (name, data, modTime) in _files) {
       var hash = HashName(name);
 
       // Allocate file header block
       var headerSector = AllocateSector(used, RootSector + 2);
-      if (headerSector < 0) break;
+      if (headerSector < 0)
+        throw new InvalidOperationException($"ADF: disk is full; cannot allocate a header sector for '{name}'.");
 
       // Allocate data blocks
       var dataBlockCount = (data.Length + SectorSize - 1) / SectorSize;
-      if (dataBlockCount == 0) dataBlockCount = 0; // empty file is ok
       var dataBlocks = new int[dataBlockCount];
       for (var i = 0; i < dataBlockCount; i++) {
         dataBlocks[i] = AllocateSector(used, headerSector + 1);
-        if (dataBlocks[i] < 0) break;
+        if (dataBlocks[i] < 0)
+          throw new InvalidOperationException($"ADF: disk is full; cannot allocate data block {i} for '{name}'.");
       }
 
       // Write data blocks (FFS: pure data, no header)
@@ -85,6 +87,12 @@ public sealed class AdfWriter {
       WriteFilename(disk, hdrOff + 432, name); // filename
       WriteUInt32BE(disk, hdrOff + 508, 0xFFFFFFFD); // sec_type = ST_FILE
       WriteUInt32BE(disk, hdrOff + 504, (uint)RootSector); // parent
+
+      // Timestamp: days/mins/ticks since AmigaOS epoch (1978-01-01).
+      var (fDays, fMins, fTicks) = ToAmigaTime(modTime ?? DateTime.Now);
+      WriteUInt32BE(disk, hdrOff + 420, fDays);
+      WriteUInt32BE(disk, hdrOff + 424, fMins);
+      WriteUInt32BE(disk, hdrOff + 428, fTicks);
 
       // Hash chain: insert into hash table
       if (hashTable[hash] == 0) {
@@ -120,6 +128,17 @@ public sealed class AdfWriter {
     WriteUInt32BE(disk, rootOff + 316, (uint)BitmapSector);
     WriteFilename(disk, rootOff + 432, diskName);
     WriteUInt32BE(disk, rootOff + 508, 1); // sec_type = ST_ROOT
+
+    // Root block timestamps: last-modified (offset 420) and disk-creation (offset 472).
+    var now = DateTime.Now;
+    var (rDays, rMins, rTicks) = ToAmigaTime(now);
+    WriteUInt32BE(disk, rootOff + 420, rDays);   // r_days  — last root alteration
+    WriteUInt32BE(disk, rootOff + 424, rMins);   // r_mins
+    WriteUInt32BE(disk, rootOff + 428, rTicks);  // r_ticks
+    WriteUInt32BE(disk, rootOff + 472, rDays);   // v_days  — disk creation date
+    WriteUInt32BE(disk, rootOff + 476, rMins);   // v_mins
+    WriteUInt32BE(disk, rootOff + 480, rTicks);  // v_ticks
+
     ComputeChecksum(disk, rootOff);
 
     // Write bitmap block
@@ -169,6 +188,17 @@ public sealed class AdfWriter {
     for (var i = 0; i < SectorSize / 4; i++)
       sum += ReadUInt32BE(disk, blockOffset + i * 4);
     WriteUInt32BE(disk, blockOffset + 20, (uint)(-(int)sum));
+  }
+
+  private static (uint days, uint mins, uint ticks) ToAmigaTime(DateTime dt) {
+    var epoch = new DateTime(1978, 1, 1);
+    if (dt < epoch) dt = epoch;
+    var span = dt - epoch;
+    var days = (uint)span.Days;
+    var secsInDay = (long)(span.TotalSeconds - span.Days * 86400.0);
+    var mins = (uint)(secsInDay / 60);
+    var ticks = (uint)(secsInDay % 60 * 50);
+    return (days, mins, ticks);
   }
 
   private static void WriteBitmap(byte[] disk, bool[] used) {

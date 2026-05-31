@@ -43,14 +43,24 @@ public readonly record struct ArchiveInput(string FullPath, string EntryName) {
     // Add the directory entry itself
     result.Add(new("", baseName + "/"));
 
+    // IgnoreInaccessible skips entries we lack permission to read instead of
+    // throwing UnauthorizedAccessException mid-walk — which would otherwise
+    // abort the whole "Create archive" operation when a single subtree under the
+    // chosen folder is locked down (e.g. a permission-restricted cache dir, or a
+    // Wine Z:\ home mapping where some paths are denied).
+    var options = new EnumerationOptions {
+      RecurseSubdirectories = true,
+      IgnoreInaccessible = true,
+    };
+
     // Add all subdirectories
-    foreach (var sub in Directory.GetDirectories(dirPath, "*", SearchOption.AllDirectories)) {
+    foreach (var sub in Directory.EnumerateDirectories(dirPath, "*", options)) {
       var relative = Path.GetRelativePath(parentDir, sub).Replace('\\', '/');
       result.Add(new("", relative + "/"));
     }
 
     // Add all files
-    foreach (var file in Directory.GetFiles(dirPath, "*", SearchOption.AllDirectories)) {
+    foreach (var file in Directory.EnumerateFiles(dirPath, "*", options)) {
       var relative = Path.GetRelativePath(parentDir, file).Replace('\\', '/');
       result.Add(new(Path.GetFullPath(file), relative));
     }

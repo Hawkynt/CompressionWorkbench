@@ -84,4 +84,68 @@ public class AdfWriterTests {
       File.Delete(tmpFile);
     }
   }
+
+  // ── Timestamp tests ───────────────────────────────────────────────────────
+
+  [Test, Category("Spec")]
+  public void Timestamps_AreNonZero_InFileHeader() {
+    // File header block is always allocated at sector 882 (first free sector
+    // after root=880 and bitmap=881 on a fresh empty disk).
+    var w = new FileSystem.Adf.AdfWriter();
+    w.AddFile("test.txt", new byte[10]);
+    var disk = w.Build();
+
+    const int headerSector = 882;
+    var days = ReadUInt32BE(disk, headerSector * 512 + 420);
+    Assert.That(days, Is.GreaterThan(0u),
+      "File header timestamp (days since 1978-01-01) should be non-zero");
+  }
+
+  [Test, Category("Spec")]
+  public void Timestamps_RoundTrip_WhenProvided() {
+    var target = new DateTime(2024, 3, 15, 12, 30, 0);
+    var w = new FileSystem.Adf.AdfWriter();
+    w.AddFile("test.txt", new byte[10], target);
+    var disk = w.Build();
+
+    // Amiga epoch = Jan 1, 1978.
+    var epoch = new DateTime(1978, 1, 1);
+    var expectedDays = (uint)(target - epoch).Days;
+    var expectedMins = (uint)(target.Hour * 60 + target.Minute);
+
+    const int headerSector = 882;
+    var days = ReadUInt32BE(disk, headerSector * 512 + 420);
+    var mins = ReadUInt32BE(disk, headerSector * 512 + 424);
+    Assert.That(days, Is.EqualTo(expectedDays));
+    Assert.That(mins, Is.EqualTo(expectedMins));
+  }
+
+  [Test, Category("Spec")]
+  public void RootBlock_HasNonZeroTimestamp() {
+    var w = new FileSystem.Adf.AdfWriter();
+    w.AddFile("f", new byte[1]);
+    var disk = w.Build();
+
+    // Root block last-alteration timestamp at offset 420 within sector 880.
+    var days = ReadUInt32BE(disk, 880 * 512 + 420);
+    Assert.That(days, Is.GreaterThan(0u), "Root block modification timestamp must be non-zero");
+  }
+
+  // ── Disk-full test ────────────────────────────────────────────────────────
+
+  [Test, Category("ErrorHandling")]
+  public void DiskFull_ThrowsInsteadOfSilentlyTruncating() {
+    // 1755 data sectors + 1 header sector = 1756 = all 1756 usable sectors
+    // consumed by the first file. The second file cannot fit.
+    var w = new FileSystem.Adf.AdfWriter();
+    w.AddFile("big", new byte[1755 * 512]);
+    w.AddFile("overflow", new byte[1]);
+
+    var ex = Assert.Throws<InvalidOperationException>(() => w.Build());
+    Assert.That(ex!.Message, Does.Contain("full"),
+      "Exception should mention that the disk is full");
+  }
+
+  private static uint ReadUInt32BE(byte[] data, int offset) =>
+    (uint)((data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3]);
 }
