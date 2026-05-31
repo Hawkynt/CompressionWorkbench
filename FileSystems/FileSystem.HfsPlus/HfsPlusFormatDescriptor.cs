@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.HfsPlus;
 
-public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IFormatOptionsSchema {
+public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -33,6 +33,42 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => HfsPlusExtentMap.Enumerate(image);
+
+  // ── IWipeEmpty ─────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros all unused space in the HFS+ image: free allocation blocks, gaps
+  /// between files and the block-tip slack between a file's logical size and
+  /// the end of its last allocated block. The catalog extent map clamps each
+  /// file's first-fork run to its logical byte length, so trailing slack
+  /// inside the final block presents as a free gap that the generic
+  /// <see cref="UnusedSpaceWiper"/> zero-fills. The size lookup is keyed by the
+  /// reader's full path, matching the extent map's FileName.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        using var reader = new HfsPlusReader(image, leaveOpen: true);
+        var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var entry in reader.Entries)
+          if (!entry.IsDirectory)
+            sizeMap[entry.FullPath] = entry.Size;
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    var extents = HfsPlusExtentMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
+  }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 

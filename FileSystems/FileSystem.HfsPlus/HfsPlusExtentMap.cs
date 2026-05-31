@@ -121,6 +121,14 @@ public static class HfsPlusExtentMap {
           case 1: { // Folder
             if (dataOffset + 12 > nd.Length) break;
             var cnid = BinaryPrimitives.ReadUInt32BigEndian(nd.AsSpan(dataOffset + 8, 4));
+            // The volume root folder (parent CNID 1) carries the VOLUME NAME but
+            // anchors paths at the empty root — mirror HfsPlusReader so a file's
+            // FileName resolves to a bare path ("secret.bin"), not
+            // "<volume>/secret.bin". Keeps extent FileName == reader FullPath.
+            if (parentCnid == 1) {
+              dirPaths[cnid] = "";
+              break;
+            }
             var parentPath = dirPaths.GetValueOrDefault(parentCnid, "");
             var fullPath = parentPath.Length > 0 ? parentPath + "/" + name : name;
             dirPaths[cnid] = fullPath;
