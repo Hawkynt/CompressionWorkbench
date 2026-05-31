@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.RomFs;
 
-public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
   public string Id => "RomFs";
   public string DisplayName => "ROMFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -113,17 +113,28 @@ public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return ms.ToArray();
   }
 
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
-    var r = new RomFsReader(image);
-    // Superblock: magic (8) + fullSize (4) + checksum (4) + padded volume name
-    yield return new DefragBlockInfo(0, 32, DefragBlockKind.MetadataReserved, "superblock");
-    // Emit directory entries as Used with trailing "/" — the planner recognises
-    // the marker as directory metadata. Without this dir blocks would be
-    // counted as Free and could be clobbered by a relocation pass.
-    foreach (var e in r.Entries) {
-      if (e.Size <= 0) continue;
-      var emitName = e.IsDirectory ? e.Name + "/" : e.Name;
-      yield return new DefragBlockInfo(e.DataOffset, e.Size, DefragBlockKind.Used, emitName);
-    }
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => RomFsExtentMap.Enumerate(image);
+
+  /// <summary>
+  /// Zeros the unused space in a ROMFS image: the 16-byte alignment padding
+  /// after each file's data and any trailing slack before the image's declared
+  /// full size. ROMFS is a packed, read-only image — every file's data is
+  /// stored byte-exact (no cluster rounding), so there is no cluster tip to
+  /// wipe; cluster-tip wiping is therefore not applicable and is a no-op here.
+  /// All file headers, names and live data are reported as live extents by the
+  /// extent map, so the generic wiper only touches genuine gaps.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    image.Position = 0;
+    var extents = RomFsExtentMap.Enumerate(image);
+
+    // Tips are not applicable to a packed read-only image; pass null lookup so
+    // only the inter-record alignment padding and trailing slack are zeroed.
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 }

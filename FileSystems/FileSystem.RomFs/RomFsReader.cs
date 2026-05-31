@@ -108,6 +108,7 @@ public sealed class RomFsReader {
             Name = fullPath,
             Size = 0,
             DataOffset = dataOffset,
+            HeaderOffset = offset,
             IsDirectory = true
           });
           if (specInfo != 0 && specInfo < _data.Length)
@@ -118,6 +119,7 @@ public sealed class RomFsReader {
             Name = fullPath,
             Size = size,
             DataOffset = dataOffset,
+            HeaderOffset = offset,
             IsDirectory = false
           });
         }
