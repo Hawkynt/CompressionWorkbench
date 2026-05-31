@@ -14,7 +14,7 @@ namespace FileSystem.Os9Rbf;
 /// directory descriptor is reachable via the identification sector.
 /// </summary>
 public sealed class Os9RbfFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks the OS-9 RBF root directory and yields the actual on-disk byte
@@ -115,6 +115,51 @@ public sealed class Os9RbfFormatDescriptor :
   public void Remove(Stream archive, string[] entryNames) {
     foreach (var name in entryNames)
       Os9RbfModifier.RemoveFile(archive, Path.GetFileName(name), wipeData: true);
+  }
+
+  /// <summary>
+  /// Zeros all unused space in the OS-9 RBF image: unallocated sectors and the
+  /// sector-tip slack between a file's logical size (FD.SIZ) and the end of its
+  /// last allocated 256-byte sector. Cluster-tip wiping is applied only to files
+  /// whose data is a single contiguous segment; a file spread across several
+  /// segments keeps its tip in its final segment only, which the per-segment
+  /// extent map cannot pinpoint by total size alone, so such files are omitted
+  /// from the tip pass to avoid clobbering live sectors.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    image.Position = 0;
+    var extents = Os9RbfExtentMap.Enumerate(image).ToList();
+
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        // A file with exactly one Used extent occupies a single contiguous
+        // segment, so its tip is the trailing slack of that one run.
+        var usedExtentCount = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var ex in extents)
+          if (ex.Kind == DefragBlockKind.Used && ex.FileName != null
+              && ex.Classification != DefragBlockClass.Directory)
+            usedExtentCount[ex.FileName] = usedExtentCount.GetValueOrDefault(ex.FileName) + 1;
+
+        image.Position = 0;
+        var volume = ReadVolume(image);
+        var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var f in volume.Files) {
+          if (f.IsDirectory) continue;
+          if (usedExtentCount.GetValueOrDefault(f.Name) == 1)
+            sizeMap[f.Name] = f.ByteLength;
+        }
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
   }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
