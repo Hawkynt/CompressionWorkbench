@@ -16,6 +16,14 @@ public sealed class VdiWriter : IDisposable {
   private const uint VdiTypeDynamic = 1u;
   private const uint SectorSize = 512u;
 
+  /// <summary>
+  /// Default block size in bytes (1 MiB). VirtualBox and qemu both treat
+  /// 1 MiB as the canonical VDI block size; qemu-img rejects any other value
+  /// outright ("unsupported VDI image (block size N is not 1048576)"), so we
+  /// keep this as the default for maximum cross-tool compatibility.
+  /// </summary>
+  private const uint DefaultBlockSize = 1u << 20;
+
   private readonly Stream _output;
   private readonly bool _leaveOpen;
   private readonly long _virtualSize;
@@ -24,12 +32,16 @@ public sealed class VdiWriter : IDisposable {
   /// <param name="output">Output stream to write VDI into.</param>
   /// <param name="leaveOpen">If false, the stream is disposed when this writer is disposed.</param>
   /// <param name="virtualSize">Virtual disk size in bytes.</param>
-  /// <param name="blockSize">Block size in bytes (default 65536).</param>
-  public VdiWriter(Stream output, bool leaveOpen = false, long virtualSize = 0, uint blockSize = 65536) {
+  /// <param name="blockSize">
+  /// Block size in bytes (default 1 MiB). qemu-img only accepts 1 MiB VDI
+  /// blocks; other values produce a readable-by-us image that external tools
+  /// reject.
+  /// </param>
+  public VdiWriter(Stream output, bool leaveOpen = false, long virtualSize = 0, uint blockSize = DefaultBlockSize) {
     _output = output;
     _leaveOpen = leaveOpen;
     _virtualSize = virtualSize;
-    _blockSize = blockSize > 0 ? blockSize : 65536;
+    _blockSize = blockSize > 0 ? blockSize : DefaultBlockSize;
   }
 
   /// <summary>
@@ -109,11 +121,16 @@ public sealed class VdiWriter : IDisposable {
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(384), blockCount);
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(388), allocatedCount);
 
-    // UUIDs (random) @ 392, 408, 424, 440
-    WriteGuid(buf, 392);
-    WriteGuid(buf, 408);
-    WriteGuid(buf, 424);
-    WriteGuid(buf, 440);
+    // UUIDs @ 392 (image), 408 (last snapshot), 424 (link/parent), 440 (parent modify).
+    // qemu-img requires the link UUID to be all-zero for a standalone (non-child)
+    // image and rejects the file with "non-NULL link UUID" otherwise. We give the
+    // image its own random UUID, leave the last-snapshot UUID random (VirtualBox
+    // does the same), and keep the link and parent-modify UUIDs NULL since this is
+    // not a differencing image.
+    WriteGuid(buf, 392); // image UUID
+    WriteGuid(buf, 408); // last-snapshot UUID
+    // 424 link UUID  → left NULL
+    // 440 parent-modify UUID → left NULL
 
     // --- Block allocation map ---
     for (uint i = 0; i < blockCount; i++) {
