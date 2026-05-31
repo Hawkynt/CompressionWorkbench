@@ -105,16 +105,22 @@ public sealed class BtrfsWriter {
 
   private readonly List<(string name, byte[] data)> _files = [];
 
-  /// <summary>Adds a file to the image. File data becomes an inline
+  /// <summary>Adds a file to the image. The <paramref name="name"/> may
+  /// contain '/' (or '\\') separators; each path component becomes a real
+  /// directory inode in the FS tree. File data becomes an inline
   /// <c>EXTENT_DATA</c> item in the FS tree leaf.</summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     if (this._files.Count >= 64)
       throw new InvalidOperationException("BtrfsWriter supports at most 64 files in a single leaf node.");
-    var leaf = Path.GetFileName(name);
-    if (leaf.Length > 255) leaf = leaf[..255];
-    this._files.Add((leaf, data));
+    // Normalise separators and drop empty components (leading "/", "a//b").
+    var parts = name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+    if (parts.Length == 0)
+      throw new ArgumentException("File name must contain at least one path component.", nameof(name));
+    for (var i = 0; i < parts.Length; i++)
+      if (parts[i].Length > 255) parts[i] = parts[i][..255];
+    this._files.Add((string.Join('/', parts), data));
   }
 
   public void WriteTo(Stream output) {
@@ -484,76 +490,166 @@ public sealed class BtrfsWriter {
 
   // ── FS tree ─────────────────────────────────────────────────────────
 
+  // A node in the directory tree assembled from the added file paths. Each
+  // directory and file is assigned its own sequential objectid; directories
+  // accumulate their children so the FS-tree builder can emit one INODE_ITEM,
+  // the parent DIR_ITEM/DIR_INDEX pair, and a child→parent INODE_REF per link.
+  private sealed class DirNode {
+    public long ObjectId;
+    public long ParentObjectId;
+    public string Name = "";
+    // child name → directory node (deterministic insertion order).
+    public readonly Dictionary<string, DirNode> SubDirs = new(StringComparer.Ordinal);
+    // file name → payload, in insertion order.
+    public readonly List<(string name, byte[] data)> Files = [];
+    // file name → its allocated inode objectid.
+    public readonly Dictionary<string, long> FileObjectIds = new(StringComparer.Ordinal);
+  }
+
   private void BuildFsTree(byte[] image) {
+    // ── Phase 1: assemble the directory tree ────────────────────────────
+    // The FS-tree root directory is BTRFS_FIRST_FREE_OBJECTID (256); every
+    // other inode gets the next sequential objectid as it is first seen.
+    var nextObjectId = FirstFreeObjectId;
+    var root = new DirNode {
+      ObjectId = nextObjectId++,
+      ParentObjectId = FirstFreeObjectId, // root's parent is itself in btrfs
+      Name = "",
+    };
+
+    foreach (var (path, data) in this._files) {
+      var parts = path.Split('/');
+      var dir = root;
+      for (var p = 0; p < parts.Length - 1; p++) {
+        var component = parts[p];
+        if (!dir.SubDirs.TryGetValue(component, out var child)) {
+          child = new DirNode {
+            ObjectId = nextObjectId++,
+            ParentObjectId = dir.ObjectId,
+            Name = component,
+          };
+          dir.SubDirs[component] = child;
+        }
+        dir = child;
+      }
+      var fileName = parts[^1];
+      dir.Files.Add((fileName, data));
+      dir.FileObjectIds[fileName] = nextObjectId++;
+    }
+
+    // ── Phase 2: emit FS-tree items inode-by-inode ──────────────────────
     var items = new List<(long objId, byte type, long offset, byte[] data)>();
+    EmitDirectory(items, root, isRoot: true);
 
-    // Root directory inode size = sum of (name_len * 2) across its dir
-    // entries. Per fs/btrfs/inode.c btrfs_i_size_write each link adds
-    // name_len*2 (once for DIR_ITEM, once for DIR_INDEX). btrfs check
-    // validates dir_isize matches this exact accounting.
-    long rootDirSize = 0;
-    foreach (var (name, _) in this._files)
-      rootDirSize += Encoding.UTF8.GetBytes(name).Length * 2;
+    SortLeafItems(items);
+    WriteLeafNode(image, FsTreeOff, FsTreeObjectId, items);
+  }
 
-    // Root directory INODE_ITEM (objectid = 256). Btrfs counts only "." as
-    // a link against directory nlink — not ".." and not children — so
-    // nlink=1 for every directory regardless of child count.
-    var rootInode = BuildInodeItem(mode: 0x41ED /* S_IFDIR | 0755 */, size: rootDirSize, nlink: 1);
-    items.Add((FirstFreeObjectId, InodeItem, 0L, rootInode));
+  // Emits all FS-tree items for a directory inode and recurses into its
+  // children. Order of allocation matches phase-1 discovery so objectids are
+  // monotonic across the produced item set.
+  private static void EmitDirectory(
+      List<(long objId, byte type, long offset, byte[] data)> items,
+      DirNode dir, bool isRoot) {
+    // Directory inode size = sum of (name_len * 2) across its entries: per
+    // fs/btrfs/inode.c btrfs_i_size_write each link adds name_len once for the
+    // DIR_ITEM and once for the DIR_INDEX. btrfs check validates this exactly.
+    long dirSize = 0;
+    foreach (var sub in dir.SubDirs.Values)
+      dirSize += Encoding.UTF8.GetBytes(sub.Name).Length * 2;
+    foreach (var (name, _) in dir.Files)
+      dirSize += Encoding.UTF8.GetBytes(name).Length * 2;
 
-    // INODE_REF for the root directory. mkfs stores (256, INODE_REF, 256)
-    // with name "..". btrfs check happily accepts a self-reference here.
-    var rootDotDot = "..\0"u8[..2].ToArray();
-    var rootRef = new byte[10 + rootDotDot.Length];
-    BinaryPrimitives.WriteInt64LittleEndian(rootRef.AsSpan(0), 0); // index
-    BinaryPrimitives.WriteUInt16LittleEndian(rootRef.AsSpan(8), (ushort)rootDotDot.Length);
-    rootDotDot.CopyTo(rootRef, 10);
-    items.Add((FirstFreeObjectId, InodeRef, FirstFreeObjectId, rootRef));
+    // Btrfs counts only "." against a directory's nlink — not ".." and not
+    // children — so every directory has nlink=1 regardless of child count.
+    var dirInode = BuildInodeItem(mode: 0x41ED /* S_IFDIR | 0755 */, size: dirSize, nlink: 1);
+    items.Add((dir.ObjectId, InodeItem, 0L, dirInode));
 
-    for (var i = 0; i < this._files.Count; i++) {
-      var childInode = FirstFreeObjectId + 1 + i;
-      var (name, data) = this._files[i];
+    if (isRoot) {
+      // INODE_REF for the root directory. mkfs stores (256, INODE_REF, 256)
+      // with name "..". btrfs check accepts this self-reference.
+      var rootDotDot = ".."u8.ToArray();
+      var rootRef = new byte[10 + rootDotDot.Length];
+      BinaryPrimitives.WriteInt64LittleEndian(rootRef.AsSpan(0), 0); // index
+      BinaryPrimitives.WriteUInt16LittleEndian(rootRef.AsSpan(8), (ushort)rootDotDot.Length);
+      rootDotDot.CopyTo(rootRef, 10);
+      items.Add((dir.ObjectId, InodeRef, dir.ObjectId, rootRef));
+    }
 
+    // DIR_INDEX key offsets start at 2 to reserve 0/1 for "." / "..".
+    long index = 2;
+
+    // Subdirectory links first, then file links — deterministic per discovery.
+    foreach (var sub in dir.SubDirs.Values) {
+      EmitChildLink(items, dir.ObjectId, sub.ObjectId, sub.Name, isDir: true, ref index);
+      EmitChildBackRef(items, sub.ObjectId, dir.ObjectId, sub.Name, index - 1);
+    }
+
+    foreach (var (name, data) in dir.Files) {
+      var fileObjectId = AllocateFileObjectId(dir, name);
       var fileInode = BuildInodeItem(mode: 0x81A4 /* S_IFREG | 0644 */, size: data.Length, nlink: 1);
-      items.Add((childInode, InodeItem, 0L, fileInode));
+      items.Add((fileObjectId, InodeItem, 0L, fileInode));
 
-      // INODE_REF links the child to its parent directory. Index = DIR_INDEX
-      // key offset used below (starts at 2 to reserve 0/1 for "." / "..").
-      var nameBytes = Encoding.UTF8.GetBytes(name);
-      var inodeRef = new byte[10 + nameBytes.Length];
-      BinaryPrimitives.WriteInt64LittleEndian(inodeRef.AsSpan(0), 2 + i);
-      BinaryPrimitives.WriteUInt16LittleEndian(inodeRef.AsSpan(8), (ushort)nameBytes.Length);
-      nameBytes.CopyTo(inodeRef, 10);
-      items.Add((childInode, InodeRef, FirstFreeObjectId, inodeRef));
-
-      // DIR_INDEX entry in the parent dir; reader uses this for enumeration.
-      var dirEntry = BuildDirItemValue(childInode, name, isDir: false);
-      items.Add((FirstFreeObjectId, DirIndex, 2 + i, dirEntry));
-
-      // DIR_ITEM with btrfs_name_hash-keyed offset for name lookup. btrfs
-      // uses CRC-32C seeded with ~1 (0xFFFFFFFE) and omits the final XOR
-      // inversion — see fs/btrfs/crc32c.h btrfs_name_hash.
-      items.Add((FirstFreeObjectId, DirItem, BtrfsNameHash(nameBytes), dirEntry));
+      EmitChildLink(items, dir.ObjectId, fileObjectId, name, isDir: false, ref index);
+      EmitChildBackRef(items, fileObjectId, dir.ObjectId, name, index - 1);
 
       // Inline EXTENT_DATA (btrfs_file_extent_item). Layout:
-      //   0..7  generation
-      //   8..15 ram_bytes
-      //   16    compression (0=none)
-      //   17    encryption  (0)
-      //   18..19 other_encoding
-      //   20    type (0=inline)
-      //   21..  inline payload
+      //   0..7  generation, 8..15 ram_bytes, 16 compression (0=none),
+      //   17 encryption (0), 18..19 other_encoding, 20 type (0=inline),
+      //   21.. inline payload.
       var extent = new byte[21 + data.Length];
       BinaryPrimitives.WriteInt64LittleEndian(extent.AsSpan(0), 1);           // generation
       BinaryPrimitives.WriteInt64LittleEndian(extent.AsSpan(8), data.Length); // ram_bytes
       extent[16] = 0; // compression = none
       extent[20] = 0; // type = inline
       data.CopyTo(extent, 21);
-      items.Add((childInode, ExtentData, 0L, extent));
+      items.Add((fileObjectId, ExtentData, 0L, extent));
     }
 
-    SortLeafItems(items);
-    WriteLeafNode(image, FsTreeOff, FsTreeObjectId, items);
+    // Recurse after emitting this directory's own links so the produced item
+    // set still sorts cleanly by (objectid, type, offset).
+    foreach (var sub in dir.SubDirs.Values)
+      EmitDirectory(items, sub, isRoot: false);
+  }
+
+  // Files are allocated objectids lazily here so that, within a directory,
+  // subdirectory inodes (allocated during phase 1) keep their lower ids and
+  // files take the ids following the entire subtree. The mapping is stored on
+  // the node the first time it is needed and reused for the link/inode/extent.
+  private static long AllocateFileObjectId(DirNode dir, string name) {
+    return dir.FileObjectIds[name];
+  }
+
+  // Adds a DIR_INDEX (enumeration) and DIR_ITEM (name-hash lookup) entry for a
+  // child in its parent directory. Both carry the same btrfs_dir_item value.
+  private static void EmitChildLink(
+      List<(long objId, byte type, long offset, byte[] data)> items,
+      long parentObjectId, long childObjectId, string name, bool isDir, ref long index) {
+    var entry = BuildDirItemValue(childObjectId, name, isDir);
+
+    // DIR_INDEX entry — the reader uses this for enumeration.
+    items.Add((parentObjectId, DirIndex, index, entry));
+
+    // DIR_ITEM with btrfs_name_hash-keyed offset for name lookup. btrfs uses
+    // CRC-32C seeded with ~1 (0xFFFFFFFE) without the final XOR inversion —
+    // see fs/btrfs/crc32c.h btrfs_name_hash.
+    var nameBytes = Encoding.UTF8.GetBytes(name);
+    items.Add((parentObjectId, DirItem, BtrfsNameHash(nameBytes), entry));
+
+    index++;
+  }
+
+  // Adds the child→parent INODE_REF (key = (childObjectId, INODE_REF,
+  // parentObjectId)) naming the link and recording the DIR_INDEX index.
+  private static void EmitChildBackRef(
+      List<(long objId, byte type, long offset, byte[] data)> items,
+      long childObjectId, long parentObjectId, string name, long index) {
+    var nameBytes = Encoding.UTF8.GetBytes(name);
+    var inodeRef = new byte[10 + nameBytes.Length];
+    BinaryPrimitives.WriteInt64LittleEndian(inodeRef.AsSpan(0), index);
+    BinaryPrimitives.WriteUInt16LittleEndian(inodeRef.AsSpan(8), (ushort)nameBytes.Length);
+    nameBytes.CopyTo(inodeRef, 10);
+    items.Add((childObjectId, InodeRef, parentObjectId, inodeRef));
   }
 
   // Builds a 160-byte INODE_ITEM. Size at offset 16 is what our reader
