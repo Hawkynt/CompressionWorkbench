@@ -149,7 +149,9 @@ public sealed class ApfsReader : IDisposable {
     var flags = BinaryPrimitives.ReadUInt16LittleEndian(node[32..]);
     var level = BinaryPrimitives.ReadUInt16LittleEndian(node[34..]);
     var nkeys = BinaryPrimitives.ReadUInt32LittleEndian(node[36..]);
-    if (level != 0) return results; // internal node not supported for this minimal tree
+    // Both leaf (level 0) and internal (level > 0) nodes use the same TOC layout;
+    // callers interpret the values differently (records vs. child addresses).
+    _ = level;
     if (nkeys == 0) return results;
 
     // btn_table_space.off at +40; data[] starts after the btn header (at +56).
@@ -198,9 +200,38 @@ public sealed class ApfsReader : IDisposable {
 
   // ── FS-tree parsing ─────────────────────────────────────────────────────
 
-  private void ParseFsTree(long treePhys) {
-    var tree = this.BlockSpan(treePhys);
+  /// <summary>
+  /// Collects every leaf (key, value) record of a B-tree, descending internal
+  /// (btn_level &gt; 0) nodes via their child block addresses. The writer stores
+  /// internal-node values as 8-byte physical block numbers of the child nodes,
+  /// so the walk follows those addresses directly. A single root-leaf node is the
+  /// common case and is returned as-is. A visited set guards against malformed
+  /// cyclic child references.
+  /// </summary>
+  private List<(byte[] Key, byte[] Value)> CollectAllLeafRecords(long rootPhys) {
+    var results = new List<(byte[], byte[])>();
+    var visited = new HashSet<long>();
+    Descend(rootPhys, isRoot: true);
+    return results;
 
+    void Descend(long blockNum, bool isRoot) {
+      if (!visited.Add(blockNum)) return;
+      var node = this.BlockSpan(blockNum);
+      var level = BinaryPrimitives.ReadUInt16LittleEndian(node[34..]);
+      if (level == 0) {
+        results.AddRange(EnumerateBtreeLeafRecords(node, isRoot));
+        return;
+      }
+      // Internal node: each value is the physical block number of a child node.
+      foreach (var (_, value) in EnumerateBtreeLeafRecords(node, isRoot)) {
+        if (value.Length < 8) continue;
+        var childBlock = (long)BinaryPrimitives.ReadUInt64LittleEndian(value);
+        Descend(childBlock, isRoot: false);
+      }
+    }
+  }
+
+  private void ParseFsTree(long treePhys) {
     // Collect: inode name + size + isDir, drec: parent -> (name, child_ino), file_extent: ino -> (size, paddr).
     var inodeName = new Dictionary<ulong, string>();
     var inodeSize = new Dictionary<ulong, long>();
@@ -209,7 +240,7 @@ public sealed class ApfsReader : IDisposable {
     var fileExtent = new Dictionary<ulong, (long Length, ulong PhysBlock)>();
     var inodeTimestamps = new Dictionary<ulong, DateTime>();
 
-    foreach (var (key, val) in EnumerateBtreeLeafRecords(tree, isRoot: true)) {
+    foreach (var (key, val) in this.CollectAllLeafRecords(treePhys)) {
       if (key.Length < 8) continue;
       var oidAndType = BinaryPrimitives.ReadUInt64LittleEndian(key);
       var keyType = (int)(oidAndType >> 60);

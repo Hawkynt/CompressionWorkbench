@@ -15,11 +15,18 @@ namespace FileSystem.Apfs;
 /// checksums per the spec.
 /// </para>
 /// <para>
+/// The FS B-tree grows automatically: when the inode / directory-record /
+/// file-extent records overflow a single node, they spill into several leaf
+/// nodes beneath an internal index node (a 2-level tree), so directories with
+/// many entries round-trip correctly. The tree depth is capped at two levels —
+/// the internal root holds one separator per leaf, which bounds the volume at a
+/// few hundred thousand small files (ample for image creation); a deeper tree is
+/// not emitted.
+/// </para>
+/// <para>
 /// <b>Scope cuts</b>:
-/// single container / single volume / single checkpoint / single-leaf
-/// FS B-tree (nested subdirectories are supported via real directory inodes,
-/// but the leaf is not split, so total record count is bounded by one node)
-/// / no snapshots / no encryption / no clones / no inline
+/// single container / single volume / single checkpoint / FS B-tree limited to
+/// two levels (root + leaves) / no snapshots / no encryption / no clones / no inline
 /// compression / no reaper / no spaceman (the allocation file is unused in
 /// a read-only writer context — macOS would require it for mount, but
 /// <c>fsck_apfs</c> structural validation of the superblocks and B-trees
@@ -69,7 +76,10 @@ public sealed class ApfsWriter {
     const int fsTreeBlock = 8;
     const int extrefTreeBlock = 9;
     const int snapMetaTreeBlock = 10;
-    const int fileDataStartBlock = 11;
+    // Block 11 onward is dynamically partitioned: first any extra FS-tree leaf
+    // nodes needed when the directory records overflow a single node, then the
+    // file data blocks.
+    const int dynamicStartBlock = 11;
 
     // OIDs.
     const ulong ctrOmapOid = 0x400; // ephemeral/physical; we use physical-semantic OIDs
@@ -80,16 +90,31 @@ public sealed class ApfsWriter {
     const ulong snapMetaTreeVirtOid = 0x406;
     const ulong xid = 4;
 
-    // Compute image size.
+    // ── Build the directory tree (real directory inodes for path components) ──
+    var tree = BuildTree(this._files);
+
+    // ── Build the FS-tree records and decide on the node layout ───────────
+    // The records are first sorted into APFS key order, then packed into one or
+    // more leaf nodes. When everything fits in one node the FS-tree is a single
+    // root-leaf (as before). When it overflows, the records spill into several
+    // dedicated leaf nodes beneath an internal root node (a 2-level B-tree).
+    var fileRecords = BuildFsTreeLeaf(tree);
+    var leafPartitions = PartitionIntoLeaves(fileRecords);
+    var isMultiLevel = leafPartitions.Count > 1;
+
+    // Extra leaf node blocks (only when multi-level). They occupy the dynamic
+    // region starting at block 11; file data follows after them.
+    var extraLeafBlocks = isMultiLevel ? leafPartitions.Count : 0;
+    var firstLeafBlock = (ulong)dynamicStartBlock;
+    var fileDataStartBlock = dynamicStartBlock + extraLeafBlocks;
+
+    // Compute image size (extra leaf nodes + file data blocks).
     var fileDataBlocks = 0;
     foreach (var (_, d) in this._files)
       fileDataBlocks += (int)((d.Length + BlockSize - 1) / BlockSize);
     var usedBlocks = fileDataStartBlock + fileDataBlocks;
     var totalBlocks = Math.Max(usedBlocks + 1, (int)(this._minImageSize / BlockSize));
     var disk = new byte[(long)totalBlocks * BlockSize];
-
-    // ── Build the directory tree (real directory inodes for path components) ──
-    var tree = BuildTree(this._files);
 
     // Allocate file data blocks and record extents (one per regular file node).
     var nextDataBlock = (ulong)fileDataStartBlock;
@@ -103,10 +128,31 @@ public sealed class ApfsWriter {
       nextDataBlock += blocks;
     }
 
-    // ── FS tree (block 8): leaf-root holding inodes + drec + file_extent ──
-    var fileRecords = BuildFsTreeLeaf(tree);
-    WriteBtreeRootLeaf(BlockOf(disk, fsTreeBlock),
-      fileRecords, (ulong)fsTreeBlock, OBJECT_TYPE_FSTREE | OBJ_VIRTUAL, xid);
+    // The file-extent records were built with placeholder physical block numbers
+    // (the node objects are mutated above), so rebuild them now that the data
+    // blocks are pinned.
+    fileRecords = BuildFsTreeLeaf(tree);
+    leafPartitions = PartitionIntoLeaves(fileRecords);
+
+    // ── FS tree (block 8 is the root) ─────────────────────────────────────
+    if (!isMultiLevel) {
+      // Single root-leaf node holding inodes + drec + file_extent.
+      WriteBtreeRootLeaf(BlockOf(disk, fsTreeBlock),
+        fileRecords, (ulong)fsTreeBlock, OBJECT_TYPE_FSTREE | OBJ_VIRTUAL, xid);
+    } else {
+      // 2-level tree: an internal root at block 8 indexing dedicated leaf nodes.
+      var childAddrs = new List<ulong>(leafPartitions.Count);
+      var childFirstKeys = new List<byte[]>(leafPartitions.Count);
+      for (var i = 0; i < leafPartitions.Count; i++) {
+        var leafBlock = firstLeafBlock + (ulong)i;
+        WriteBtreeLeafNode(BlockOf(disk, (long)leafBlock), leafPartitions[i],
+          leafBlock, OBJECT_TYPE_FSTREE | OBJ_VIRTUAL, xid);
+        childAddrs.Add(leafBlock);
+        childFirstKeys.Add(leafPartitions[i][0].Key);
+      }
+      WriteBtreeRootInternal(BlockOf(disk, fsTreeBlock), childFirstKeys, childAddrs,
+        fileRecords, (ulong)fsTreeBlock, OBJECT_TYPE_FSTREE | OBJ_VIRTUAL, xid);
+    }
 
     // ── Extent-ref tree (block 9): empty root ─────────────────────────────
     WriteBtreeRootLeaf(BlockOf(disk, extrefTreeBlock),
@@ -384,6 +430,62 @@ public sealed class ApfsWriter {
     public byte[] Value { get; } = value;
   }
 
+  // btn_phys header occupies bytes [32..56); record data begins at offset 56.
+  private const int BtnHeaderEnd = 56;
+  // Each TOC entry (kvloc_t) is key_off/key_len/val_off/val_len, u16 each = 8 bytes.
+  private const int TocEntrySize = 8;
+
+  /// <summary>
+  /// Bytes a node can devote to TOC + keys + values, after the object header,
+  /// the btn_phys header and (for a root node) the trailing btree_info footer.
+  /// </summary>
+  private static int NodePayloadCapacity(bool isRoot) =>
+    (int)BlockSize - BtnHeaderEnd - (isRoot ? BtreeInfoSize : 0);
+
+  /// <summary>
+  /// Splits the key-sorted FS-tree records into the minimum number of leaf nodes
+  /// so that each leaf's TOC + key area + value area fits one block. When all the
+  /// records fit in a single root-leaf node, a single partition is returned and
+  /// the caller keeps the original single-level layout. Records are never
+  /// reordered, so the per-leaf order remains the global APFS key ordering and a
+  /// leaf's first key is a valid separator for the internal index.
+  /// </summary>
+  private static List<List<BtreeRecord>> PartitionIntoLeaves(IReadOnlyList<BtreeRecord> records) {
+    var partitions = new List<List<BtreeRecord>>();
+    if (records.Count == 0) {
+      partitions.Add([]);
+      return partitions;
+    }
+
+    // First try: does everything fit in one root-leaf node?
+    var rootLeafCap = NodePayloadCapacity(isRoot: true);
+    var totalUsed = 0;
+    foreach (var r in records)
+      totalUsed += TocEntrySize + r.Key.Length + r.Value.Length;
+    if (totalUsed <= rootLeafCap) {
+      partitions.Add([.. records]);
+      return partitions;
+    }
+
+    // Overflow: pack into non-root leaf nodes (no btree_info footer).
+    var leafCap = NodePayloadCapacity(isRoot: false);
+    var current = new List<BtreeRecord>();
+    var used = 0;
+    foreach (var r in records) {
+      var cost = TocEntrySize + r.Key.Length + r.Value.Length;
+      if (current.Count > 0 && used + cost > leafCap) {
+        partitions.Add(current);
+        current = [];
+        used = 0;
+      }
+      current.Add(r);
+      used += cost;
+    }
+    if (current.Count > 0)
+      partitions.Add(current);
+    return partitions;
+  }
+
   /// <summary>
   /// Writes a B-tree root-leaf node (single-level tree). Layout per spec:
   /// <code>
@@ -393,7 +495,51 @@ public sealed class ApfsWriter {
   /// </code>
   /// </summary>
   private static void WriteBtreeRootLeaf(Span<byte> block, IReadOnlyList<BtreeRecord> records,
-      ulong oid, uint type, ulong xid) {
+      ulong oid, uint type, ulong xid)
+    => WriteBtreeNode(block, records, oid, type, xid,
+         flags: (ushort)(BTNODE_ROOT | BTNODE_LEAF), level: 0,
+         isRoot: true, nodeCount: 1);
+
+  /// <summary>
+  /// Writes a non-root leaf node (level 0): a child of an internal index node.
+  /// Holds variable-length key/value records and carries no btree_info footer.
+  /// </summary>
+  private static void WriteBtreeLeafNode(Span<byte> block, IReadOnlyList<BtreeRecord> records,
+      ulong oid, uint type, ulong xid)
+    => WriteBtreeNode(block, records, oid, type, xid,
+         flags: BTNODE_LEAF, level: 0, isRoot: false, nodeCount: 0);
+
+  /// <summary>
+  /// Writes the internal root node (level 1) of a 2-level FS-tree. Its records map
+  /// each child leaf's first key to that leaf's physical block address (an 8-byte
+  /// oid_t value). The btree_info footer reports the whole tree's key/node counts.
+  /// </summary>
+  private static void WriteBtreeRootInternal(Span<byte> block,
+      IReadOnlyList<byte[]> childFirstKeys, IReadOnlyList<ulong> childAddrs,
+      IReadOnlyList<BtreeRecord> allRecords, ulong oid, uint type, ulong xid) {
+    var indexRecords = new List<BtreeRecord>(childAddrs.Count);
+    for (var i = 0; i < childAddrs.Count; i++) {
+      var val = new byte[8];
+      BinaryPrimitives.WriteUInt64LittleEndian(val, childAddrs[i]);
+      indexRecords.Add(new BtreeRecord(childFirstKeys[i], val));
+    }
+    // Whole-tree key count = all leaf records; node count = internal + leaves.
+    var totalKeys = (ulong)allRecords.Count;
+    var totalNodes = (ulong)(1 + childAddrs.Count);
+    WriteBtreeNode(block, indexRecords, oid, type, xid,
+      flags: BTNODE_ROOT, level: 1, isRoot: true,
+      nodeCount: totalNodes, keyCountOverride: totalKeys);
+  }
+
+  /// <summary>
+  /// Shared B-tree node serializer. Writes the object header, btn_phys header,
+  /// table of contents, the key area (growing forward) and the value area
+  /// (growing backward), and — for root nodes — the trailing btree_info footer.
+  /// Finishes by stamping the Fletcher-64 checksum.
+  /// </summary>
+  private static void WriteBtreeNode(Span<byte> block, IReadOnlyList<BtreeRecord> records,
+      ulong oid, uint type, ulong xid, ushort flags, ushort level, bool isRoot,
+      ulong nodeCount, ulong? keyCountOverride = null) {
     WriteObjectHeader(block, oid, xid, type, subtype: 0);
 
     // btn_phys layout at offset 32:
@@ -405,87 +551,71 @@ public sealed class ApfsWriter {
     //   btn_key_free_list (nloc_t) at 48
     //   btn_val_free_list (nloc_t) at 52
     //   data[] starts at 56
-    var flags = (ushort)(BTNODE_ROOT | BTNODE_LEAF);
     BinaryPrimitives.WriteUInt16LittleEndian(block[32..], flags);
-    BinaryPrimitives.WriteUInt16LittleEndian(block[34..], 0); // level 0 = leaf
+    BinaryPrimitives.WriteUInt16LittleEndian(block[34..], level);
     BinaryPrimitives.WriteUInt32LittleEndian(block[36..], (uint)records.Count);
 
-    const int btnHeaderEnd = 56;
-    // TOC: each entry kvloc_t = (key_off u16, key_len u16, val_off u16, val_len u16) = 8 bytes.
-    var tocOff = btnHeaderEnd;
-    var tocLen = records.Count * 8;
-    BinaryPrimitives.WriteUInt16LittleEndian(block[40..], 0);                  // btn_table_space.off (relative to data area start)
-    BinaryPrimitives.WriteUInt16LittleEndian(block[42..], (ushort)tocLen);      // btn_table_space.len
+    var tocOff = BtnHeaderEnd;
+    var tocLen = records.Count * TocEntrySize;
+    BinaryPrimitives.WriteUInt16LittleEndian(block[40..], 0);              // btn_table_space.off
+    BinaryPrimitives.WriteUInt16LittleEndian(block[42..], (ushort)tocLen); // btn_table_space.len
 
     var keyAreaStart = tocOff + tocLen;
-    var valAreaEnd = block.Length - BtreeInfoSize; // btree_info at very end of root node
+    // Root nodes reserve the trailing btree_info; non-root nodes use the whole block.
+    var valAreaEnd = isRoot ? block.Length - BtreeInfoSize : block.Length;
 
     var keyCursor = keyAreaStart;
     var valCursor = valAreaEnd;
 
-    var totalKeyBytes = 0;
-    var totalValBytes = 0;
     for (var i = 0; i < records.Count; i++) {
       var rec = records[i];
-      // Write key at keyCursor (relative offset = keyCursor - keyAreaStart).
       var keyRelOff = (ushort)(keyCursor - keyAreaStart);
       rec.Key.CopyTo(block[keyCursor..]);
       keyCursor += rec.Key.Length;
 
-      // Write value at (valCursor - rec.Value.Length). Relative offset = valAreaEnd - valCursor.
       valCursor -= rec.Value.Length;
       rec.Value.CopyTo(block[valCursor..]);
       var valRelOff = (ushort)(valAreaEnd - valCursor);
 
-      // TOC entry.
-      var entryOff = tocOff + i * 8;
+      var entryOff = tocOff + i * TocEntrySize;
       BinaryPrimitives.WriteUInt16LittleEndian(block[entryOff..], keyRelOff);
       BinaryPrimitives.WriteUInt16LittleEndian(block[(entryOff + 2)..], (ushort)rec.Key.Length);
       BinaryPrimitives.WriteUInt16LittleEndian(block[(entryOff + 4)..], valRelOff);
       BinaryPrimitives.WriteUInt16LittleEndian(block[(entryOff + 6)..], (ushort)rec.Value.Length);
-
-      totalKeyBytes += rec.Key.Length;
-      totalValBytes += rec.Value.Length;
     }
 
+    if (keyCursor > valCursor)
+      throw new InvalidOperationException(
+        $"APFS B-tree node overflow: {records.Count} records exceed one block.");
+
     // btn_free_space: free area between keyCursor and valCursor.
-    var freeOff = (ushort)(keyCursor - keyAreaStart);
-    var freeLen = (ushort)(valCursor - keyCursor);
-    BinaryPrimitives.WriteUInt16LittleEndian(block[44..], freeOff);
-    BinaryPrimitives.WriteUInt16LittleEndian(block[46..], freeLen);
-    // btn_key_free_list / btn_val_free_list: empty (off=BTOFF_INVALID, len=0).
+    BinaryPrimitives.WriteUInt16LittleEndian(block[44..], (ushort)(keyCursor - keyAreaStart));
+    BinaryPrimitives.WriteUInt16LittleEndian(block[46..], (ushort)(valCursor - keyCursor));
+    // btn_key_free_list / btn_val_free_list: empty.
     BinaryPrimitives.WriteUInt16LittleEndian(block[48..], BTOFF_INVALID);
     BinaryPrimitives.WriteUInt16LittleEndian(block[50..], 0);
     BinaryPrimitives.WriteUInt16LittleEndian(block[52..], BTOFF_INVALID);
     BinaryPrimitives.WriteUInt16LittleEndian(block[54..], 0);
 
-    // btree_info (40 bytes) at end of root node:
-    //   btree_info_fixed bt_fixed {
-    //     u32 bt_flags
-    //     u32 bt_node_size
-    //     u32 bt_key_size
-    //     u32 bt_val_size
-    //   }  // 16 bytes
-    //   u32 bt_longest_key
-    //   u32 bt_longest_val
-    //   u64 bt_key_count
-    //   u64 bt_node_count
-    // Total = 40 bytes.
-    var infoOff = block.Length - BtreeInfoSize;
-    BinaryPrimitives.WriteUInt32LittleEndian(block[infoOff..], 0);           // bt_flags
-    BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 4)..], (uint)block.Length); // bt_node_size
-    BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 8)..], 0);     // bt_key_size (variable)
-    BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 12)..], 0);    // bt_val_size (variable)
-    var longestKey = 0;
-    var longestVal = 0;
-    foreach (var r in records) {
-      if (r.Key.Length > longestKey) longestKey = r.Key.Length;
-      if (r.Value.Length > longestVal) longestVal = r.Value.Length;
+    if (isRoot) {
+      // btree_info (40 bytes) at end of root node.
+      var infoOff = block.Length - BtreeInfoSize;
+      BinaryPrimitives.WriteUInt32LittleEndian(block[infoOff..], 0);                       // bt_flags
+      BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 4)..], (uint)block.Length); // bt_node_size
+      BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 8)..], 0);                 // bt_key_size (variable)
+      BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 12)..], 0);                // bt_val_size (variable)
+      var longestKey = 0;
+      var longestVal = 0;
+      foreach (var r in records) {
+        if (r.Key.Length > longestKey) longestKey = r.Key.Length;
+        if (r.Value.Length > longestVal) longestVal = r.Value.Length;
+      }
+      BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 16)..], (uint)longestKey);
+      BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 20)..], (uint)longestVal);
+      BinaryPrimitives.WriteUInt64LittleEndian(block[(infoOff + 24)..],
+        keyCountOverride ?? (ulong)records.Count);
+      BinaryPrimitives.WriteUInt64LittleEndian(block[(infoOff + 32)..], nodeCount);
     }
-    BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 16)..], (uint)longestKey);
-    BinaryPrimitives.WriteUInt32LittleEndian(block[(infoOff + 20)..], (uint)longestVal);
-    BinaryPrimitives.WriteUInt64LittleEndian(block[(infoOff + 24)..], (ulong)records.Count);
-    BinaryPrimitives.WriteUInt64LittleEndian(block[(infoOff + 32)..], 1);
 
     ApfsFletcher64.Stamp(block);
   }
