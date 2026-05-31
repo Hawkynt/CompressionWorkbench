@@ -53,6 +53,29 @@ public sealed class NtfsWriter {
   private readonly List<(string Name, byte[] Data)> _files = [];
   private readonly string _volumeLabel;
 
+  // A node in the directory tree the writer materialises before emitting MFT
+  // records. Every node owns exactly one MFT record. Directories carry an $I30
+  // index listing their immediate children; files carry their data + (for the
+  // non-resident case) the cluster run assigned during layout.
+  private sealed class TreeNode {
+    public required string Name;            // leaf name (no path separators)
+    public uint RecordNumber;               // this node's MFT record number
+    public uint ParentRecord;               // parent directory's MFT record number
+    public bool IsDirectory;
+
+    // File payload (directories leave these unset).
+    public byte[]? Data;
+    public bool Resident;
+    public int StartCluster;
+    public int ClusterCount;
+
+    // Directory children, in insertion order (re-sorted by name when the $I30
+    // index is built).
+    public readonly List<TreeNode> Children = [];
+    public readonly Dictionary<string, TreeNode> ChildByName =
+      new(StringComparer.OrdinalIgnoreCase);
+  }
+
   /// <summary>Creates a new NTFS writer. The volume label is stored in $Volume's $VOLUME_NAME attribute.</summary>
   public NtfsWriter(string volumeLabel = "CWB-NTFS") {
     ArgumentNullException.ThrowIfNull(volumeLabel);
@@ -122,8 +145,14 @@ public sealed class NtfsWriter {
         return slack + mftZone + mftWaste;
       });
 
-    // Size the volume to hold metadata + data + headroom.
-    var totalMftRecords = MftReservedRecords + fileCount;
+    // Size the volume to hold metadata + data + headroom. Each path segment
+    // that is not the file's leaf becomes a directory MFT record, so count the
+    // distinct directories the tree will materialise alongside the files.
+    var directoryCount = this._files
+      .SelectMany(f => EnumerateAncestorDirectories(f.Name))
+      .Distinct(StringComparer.OrdinalIgnoreCase)
+      .Count();
+    var totalMftRecords = MftReservedRecords + fileCount + directoryCount;
     var mftBytes = (long)totalMftRecords * mftRecordSize;
     var dataBytes = fileSizes.Sum(s => s <= ResidentThreshold ? 0L : ((s + clusterSize - 1) / clusterSize) * clusterSize);
     long overhead = (long)LogFileBytes + UpCaseBytes
@@ -154,6 +183,8 @@ public sealed class NtfsWriter {
     this._sectorsPerCluster = clusterSize / BytesPerSector;
     this._mftRecordSize = mftRecordSize;
 
+    var (rootNode, treeNodes) = this.BuildTree();
+
     // Pad to cluster boundary — a fractional cluster at the end confuses
     // readers computing totalClusters from volume size.
     if (totalSize % this._clusterSize != 0)
@@ -179,7 +210,7 @@ public sealed class NtfsWriter {
     // bigger $Bitmap and user-data regions.
 
     const int mftStartCluster = 2;
-    var totalMftRecords = MftReservedRecords + this._files.Count;
+    var totalMftRecords = MftReservedRecords + treeNodes.Count;
     var mftTotalBytes = totalMftRecords * this._mftRecordSize;
     var mftClusters = (mftTotalBytes + this._clusterSize - 1) / this._clusterSize;
     var mftOffset = mftStartCluster * this._clusterSize;
@@ -221,11 +252,14 @@ public sealed class NtfsWriter {
       nextCluster = mftMirrCluster + mftMirrClusters;
     }
 
-    // Reserve clusters for user file data (non-resident only).
-    var fileInfos = new List<(string Name, byte[] Data, bool Resident, int StartCluster, int ClusterCount)>();
-    foreach (var (name, data) in this._files) {
+    // Reserve clusters for user file data (non-resident only). Directories own
+    // no $DATA, so only file nodes consume clusters; small files stay resident
+    // inside their MFT record. Cluster runs are recorded back onto the node.
+    var fileNodes = treeNodes.Where(n => !n.IsDirectory).ToList();
+    foreach (var node in fileNodes) {
+      var data = node.Data!;
       if (data.Length <= ResidentThreshold) {
-        fileInfos.Add((name, data, true, 0, 0));
+        node.Resident = true;
         continue;
       }
       var clusters = (data.Length + this._clusterSize - 1) / this._clusterSize;
@@ -233,7 +267,9 @@ public sealed class NtfsWriter {
       if (nextCluster < mftMirrCluster && nextCluster + clusters > mftMirrCluster) {
         nextCluster = mftMirrCluster + mftMirrClusters;
       }
-      fileInfos.Add((name, data, false, nextCluster, clusters));
+      node.Resident = false;
+      node.StartCluster = nextCluster;
+      node.ClusterCount = clusters;
       nextCluster += clusters;
     }
 
@@ -334,8 +370,10 @@ public sealed class NtfsWriter {
         sizeHintInFileName: attrDef.Length);
     }
 
-    // Record 5: root directory "."
-    var rootIndexEntries = BuildIndexRoot(fileInfos, MftReservedRecords);
+    // Record 5: root directory "." — its $I30 index lists the system files
+    // resolved by name at mount time plus every direct child (top-level files
+    // and top-level subdirectories).
+    var rootIndexEntries = BuildDirectoryIndexRoot(rootNode, includeSystemEntries: true);
     WriteMftRecord(
       disk, mftOffset, 5, sequence: 5,
       fileName: ".",
@@ -356,7 +394,7 @@ public sealed class NtfsWriter {
       upCaseCluster, upCaseClusters,
       bitmapCluster, bitmapClusters,
       mftBitmapCluster, mftBitmapClusters,
-      fileInfos);
+      fileNodes);
     WriteBytesToClusters(disk, bitmapCluster, bitmap);
     WriteMftRecord(
       disk, mftOffset, 6, sequence: 1,
@@ -442,16 +480,32 @@ public sealed class NtfsWriter {
       WriteReservedMftRecord(disk, mftOffset, r);
     }
 
-    // --- User file records starting at record 16 ----------------------------
-    for (var i = 0; i < fileInfos.Count; i++) {
-      var (name, data, resident, startCluster, clusterCount) = fileInfos[i];
-      var recNum = (uint)(MftReservedRecords + i);
-
-      if (resident) {
+    // --- User records starting at record 16 ---------------------------------
+    // Directory and file nodes share the >= 16 record space. Directories carry
+    // a $FILE_NAME pointing at their parent plus an $I30 index over their own
+    // children; files carry their parent reference and $DATA (resident or via
+    // cluster runs).
+    foreach (var node in treeNodes) {
+      if (node.IsDirectory) {
         WriteMftRecord(
-          disk, mftOffset, recNum, sequence: 1,
-          fileName: name,
-          parentRecord: 5,
+          disk, mftOffset, node.RecordNumber, sequence: 1,
+          fileName: node.Name,
+          parentRecord: node.ParentRecord,
+          isDirectory: true,
+          residentData: null,
+          nonResidentRuns: null,
+          dataSize: 0,
+          sizeHintInFileName: 0,
+          indexRootData: BuildDirectoryIndexRoot(node, includeSystemEntries: false));
+        continue;
+      }
+
+      var data = node.Data!;
+      if (node.Resident) {
+        WriteMftRecord(
+          disk, mftOffset, node.RecordNumber, sequence: 1,
+          fileName: node.Name,
+          parentRecord: node.ParentRecord,
           isDirectory: false,
           residentData: data,
           nonResidentRuns: null,
@@ -459,16 +513,16 @@ public sealed class NtfsWriter {
           sizeHintInFileName: data.Length);
       } else {
         WriteMftRecord(
-          disk, mftOffset, recNum, sequence: 1,
-          fileName: name,
-          parentRecord: 5,
+          disk, mftOffset, node.RecordNumber, sequence: 1,
+          fileName: node.Name,
+          parentRecord: node.ParentRecord,
           isDirectory: false,
           residentData: null,
-          nonResidentRuns: [(startCluster, clusterCount)],
+          nonResidentRuns: [(node.StartCluster, node.ClusterCount)],
           dataSize: data.Length,
           sizeHintInFileName: data.Length);
 
-        var clusterOffset = (long)startCluster * this._clusterSize;
+        var clusterOffset = (long)node.StartCluster * this._clusterSize;
         if (clusterOffset + data.Length <= disk.Length)
           data.CopyTo(disk, (int)clusterOffset);
       }
@@ -487,6 +541,70 @@ public sealed class NtfsWriter {
     }
 
     return disk;
+  }
+
+  // Materialises the directory tree from the flat (slashed-name, data) list.
+  // The root directory is MFT record 5 and is not part of the returned node
+  // list. Intermediate directories are created on demand and assigned MFT
+  // record numbers in encounter order, interleaved with files, starting at
+  // MftReservedRecords. For a tree with no separators this yields the
+  // historical layout: files at records 16, 17, … with parent 5.
+  private (TreeNode Root, List<TreeNode> Nodes) BuildTree() {
+    var root = new TreeNode { Name = ".", RecordNumber = 5, ParentRecord = 5, IsDirectory = true };
+    var nodes = new List<TreeNode>();
+    var nextRecord = (uint)MftReservedRecords;
+
+    foreach (var (rawName, data) in this._files) {
+      var segments = rawName.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+      if (segments.Length == 0) continue;
+
+      var dir = root;
+      // Walk/create the directory chain for everything but the final segment.
+      for (var s = 0; s < segments.Length - 1; s++) {
+        var segment = segments[s];
+        if (!dir.ChildByName.TryGetValue(segment, out var child)) {
+          child = new TreeNode {
+            Name = segment,
+            RecordNumber = nextRecord++,
+            ParentRecord = dir.RecordNumber,
+            IsDirectory = true,
+          };
+          dir.Children.Add(child);
+          dir.ChildByName[segment] = child;
+          nodes.Add(child);
+        }
+        dir = child;
+      }
+
+      var leaf = segments[^1];
+      // A duplicate leaf path overwrites the previous file's data (last-wins),
+      // matching how a real filesystem would treat the same target path twice.
+      if (dir.ChildByName.TryGetValue(leaf, out var existing) && !existing.IsDirectory) {
+        existing.Data = data;
+        continue;
+      }
+
+      var fileNode = new TreeNode {
+        Name = leaf,
+        RecordNumber = nextRecord++,
+        ParentRecord = dir.RecordNumber,
+        IsDirectory = false,
+        Data = data,
+      };
+      dir.Children.Add(fileNode);
+      dir.ChildByName[leaf] = fileNode;
+      nodes.Add(fileNode);
+    }
+
+    return (root, nodes);
+  }
+
+  // Yields the cumulative directory paths a slashed file name implies, e.g.
+  // "docs/api/reference.txt" → "docs", "docs/api". Used only for sizing.
+  private static IEnumerable<string> EnumerateAncestorDirectories(string name) {
+    var segments = name.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+    for (var s = 0; s < segments.Length - 1; s++)
+      yield return string.Join('/', segments.Take(s + 1));
   }
 
   private void WriteBootSector(byte[] disk, long totalSectors, long mftCluster, long mftMirrCluster, long volumeSerial) {
@@ -855,7 +973,11 @@ public sealed class NtfsWriter {
       ms.WriteByte((byte)(value >> (i * 8)));
   }
 
-  private static byte[] BuildIndexRoot(List<(string Name, byte[] Data, bool Resident, int StartCluster, int ClusterCount)> files, int firstUserRecord) {
+  // Builds a directory's $INDEX_ROOT ($I30) payload listing one index entry per
+  // immediate child (sorted by case-insensitive name, matching NTFS file-name
+  // collation via $UpCase). For the root directory, the system files resolved
+  // by name at mount time are included as well.
+  private static byte[] BuildDirectoryIndexRoot(TreeNode dir, bool includeSystemEntries) {
     using var ms = new MemoryStream();
 
     var header = new byte[16];
@@ -867,28 +989,24 @@ public sealed class NtfsWriter {
 
     // ntfs-3g resolves system files like $Secure via path lookup through the
     // root directory's $I30 index, NOT by hard-coded record number — so the
-    // root index must list every reserved metadata file we populate. The
-    // index entries are large enough that a fully-populated index won't fit
-    // in a resident $INDEX_ROOT, so we'd normally need an $INDEX_ALLOCATION;
-    // we instead keep the index minimal (only the system files ntfs-3g
-    // actually opens by name during mount-time `secure_init` plus all user
-    // files) which fits comfortably in the 1 KiB MFT record.
-    // Records 12-15 are reserved and not exposed (matches `mkfs.ntfs`).
-    var indexed = new List<(uint Record, string Name)> {
-      (9,  "$Secure"),  // ntfs_open_secure() does pathname_to_inode("$Secure")
-    };
-    for (var i = 0; i < files.Count; i++)
-      indexed.Add(((uint)(firstUserRecord + i), files[i].Name));
+    // root index must list the reserved metadata files we populate. Records
+    // 12-15 are reserved and not exposed (matches `mkfs.ntfs`).
+    var indexed = new List<(uint Record, string Name)>();
+    if (includeSystemEntries)
+      indexed.Add((9, "$Secure")); // ntfs_open_secure() does pathname_to_inode("$Secure")
+
+    foreach (var child in dir.Children)
+      indexed.Add((child.RecordNumber, child.Name));
 
     // NTFS file-name collation: case-insensitive Unicode code-point order via
     // $UpCase. char.ToUpperInvariant matches our $UpCase table for all of the
-    // names above (they're ASCII), so it's an order-preserving substitute.
+    // ASCII names we emit, so it's an order-preserving substitute.
     indexed.Sort((a, b) => string.Compare(
       a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
 
     using var entries = new MemoryStream();
     foreach (var (recNum, name) in indexed)
-      WriteIndexEntry(entries, recNum, name);
+      WriteIndexEntry(entries, recNum, name, dir.RecordNumber);
     var last = new byte[16];
     BinaryPrimitives.WriteUInt16LittleEndian(last.AsSpan(8), 16);
     BinaryPrimitives.WriteUInt16LittleEndian(last.AsSpan(12), 0x02);
@@ -931,7 +1049,7 @@ public sealed class NtfsWriter {
     return ms.ToArray();
   }
 
-  private static void WriteIndexEntry(MemoryStream ms, uint mftRecordNum, string fileName) {
+  private static void WriteIndexEntry(MemoryStream ms, uint mftRecordNum, string fileName, uint parentRecord) {
     var nameBytes = Encoding.Unicode.GetBytes(fileName);
     var nameChars = fileName.Length;
 
@@ -944,7 +1062,9 @@ public sealed class NtfsWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(entry.AsSpan(8), (ushort)entryLen);
     BinaryPrimitives.WriteUInt16LittleEndian(entry.AsSpan(10), (ushort)contentLen);
 
-    BinaryPrimitives.WriteInt64LittleEndian(entry.AsSpan(16), 5L | (1L << 48));
+    // Embedded $FILE_NAME parent reference points at the directory that owns
+    // this index, so the entry is self-consistent with the child's own record.
+    BinaryPrimitives.WriteInt64LittleEndian(entry.AsSpan(16), (long)parentRecord | (1L << 48));
     entry[16 + 64] = (byte)nameChars;
     entry[16 + 65] = 3;
     nameBytes.CopyTo(entry, 16 + 66);
@@ -1039,7 +1159,7 @@ public sealed class NtfsWriter {
     int upCaseStart, int upCaseCount,
     int bitmapStart, int bitmapCount,
     int mftBitmapStart, int mftBitmapCount,
-    List<(string Name, byte[] Data, bool Resident, int StartCluster, int ClusterCount)> files) {
+    List<TreeNode> fileNodes) {
     var bytes = (int)((totalClusters + 7) / 8);
     var bitmap = new byte[bytes];
 
@@ -1052,7 +1172,7 @@ public sealed class NtfsWriter {
     SetRange(bitmap, bitmapStart, bitmapCount);
     SetRange(bitmap, mftBitmapStart, mftBitmapCount);
 
-    foreach (var f in files) {
+    foreach (var f in fileNodes) {
       if (!f.Resident) SetRange(bitmap, f.StartCluster, f.ClusterCount);
     }
 
