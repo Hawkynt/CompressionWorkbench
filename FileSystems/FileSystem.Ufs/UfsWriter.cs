@@ -53,22 +53,111 @@ public sealed class UfsWriter {
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    _files.Add((Path.GetFileName(name), data));
+    _files.Add((name, data));
+  }
+
+  // ── in-memory directory tree ───────────────────────────────────────────
+  // A node is either the root, an intermediate directory, or a regular file.
+  // Directories are laid out as a single 8-KB block of UFS dir entries; files
+  // occupy direct-block extents.
+  private sealed class TreeNode {
+    public string Name = "";              // leaf name (no path separators)
+    public bool IsDirectory;
+    public byte[] Data = [];              // file payload (empty for directories)
+    public int Inode;                     // assigned inode number
+    public TreeNode? Parent;
+    // Children keyed by leaf name; insertion order preserved for stable layout.
+    public readonly Dictionary<string, TreeNode> Children = new(StringComparer.Ordinal);
+    public readonly List<TreeNode> Order = [];
+  }
+
+  // Builds the directory tree from the flat list of '/'-separated paths,
+  // creating intermediate directory nodes on demand and sharing them between
+  // siblings.
+  private TreeNode BuildTree() {
+    var root = new TreeNode { IsDirectory = true, Name = "" };
+    foreach (var (rawName, data) in _files) {
+      var parts = rawName.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+      if (parts.Length == 0) continue;
+      var cursor = root;
+      for (var i = 0; i < parts.Length; i++) {
+        var part = parts[i];
+        var isLeaf = i == parts.Length - 1;
+        if (cursor.Children.TryGetValue(part, out var existing)) {
+          if (isLeaf && !existing.IsDirectory)
+            existing.Data = data; // duplicate file path → last write wins
+          cursor = existing;
+          continue;
+        }
+
+        var node = new TreeNode {
+          Name = part,
+          IsDirectory = !isLeaf,
+          Data = isLeaf ? data : [],
+          Parent = cursor,
+        };
+        cursor.Children[part] = node;
+        cursor.Order.Add(node);
+        cursor = node;
+      }
+    }
+    return root;
   }
 
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 
-    // ── layout: root-dir block + file data ───────────────────────────────
-    var rootDirFrag = DblkNo + Frag;               // skip 1 block for fs_cs summary
-    var currentFrag = rootDirFrag + Frag;          // one 8-KB block for root directory
+    var root = BuildTree();
+    root.Inode = RootIno;
 
-    var fileFirstFrag = new int[_files.Count];
-    var fileFrags = new int[_files.Count];
-    for (var i = 0; i < _files.Count; i++) {
-      fileFirstFrag[i] = currentFrag;
-      fileFrags[i] = Math.Max(1, (_files[i].Data.Length + FragSize - 1) / FragSize);
-      currentFrag += fileFrags[i];
+    // ── inode assignment (root = 2, then every directory and file) ───────
+    var directories = new List<TreeNode> { root };
+    var regularFiles = new List<TreeNode>();
+    var nextIno = RootIno + 1;
+    var queue = new Queue<TreeNode>();
+    queue.Enqueue(root);
+    while (queue.Count > 0) {
+      var dir = queue.Dequeue();
+      foreach (var child in dir.Order) {
+        child.Inode = nextIno++;
+        if (child.IsDirectory) {
+          directories.Add(child);
+          queue.Enqueue(child);
+        } else {
+          regularFiles.Add(child);
+        }
+      }
+    }
+
+    // Each directory must fit in a single 8-KB block (this minimal writer does
+    // not allocate additional directory blocks or indirect blocks).
+    foreach (var dir in directories)
+      EnsureDirectoryFitsOneBlock(dir);
+
+    // Files are limited to direct blocks (no indirect-block support).
+    foreach (var file in regularFiles) {
+      var blocks = (file.Data.Length + BlockSize - 1) / BlockSize;
+      if (blocks > MaxDirectBlocks)
+        throw new InvalidOperationException(
+          $"UFS writer only supports direct blocks (max {MaxDirectBlocks * BlockSize} bytes per file); " +
+          $"'{file.Name}' needs {file.Data.Length} bytes.");
+    }
+
+    // ── layout: one block per directory, then file data ──────────────────
+    var currentFrag = DblkNo + Frag;               // skip 1 block for fs_cs summary
+    var dirFrag = new Dictionary<TreeNode, int>();
+    foreach (var dir in directories) {
+      dirFrag[dir] = currentFrag;
+      currentFrag += Frag;                         // one 8-KB block per directory
+    }
+
+    var fileFirstFrag = new Dictionary<TreeNode, int>();
+    var fileFrags = new Dictionary<TreeNode, int>();
+    foreach (var file in regularFiles) {
+      fileFirstFrag[file] = currentFrag;
+      var frags = Math.Max(1, (file.Data.Length + FragSize - 1) / FragSize);
+      fileFrags[file] = frags;
+      currentFrag += frags;
     }
 
     // Round used-frag count up to a whole block to keep the bitmap simple.
@@ -78,62 +167,95 @@ public sealed class UfsWriter {
     totalFrags = imageBytes / FragSize;
     var disk = new byte[imageBytes];
 
-    // ── build root directory data (one 8-KB block) ──────────────────────
-    var rootDirBlock = new byte[BlockSize];
-    var dirPos = 0;
-    WriteDirEntry(rootDirBlock, ref dirPos, RootIno, ".", 4);                   // DT_DIR = 4
-    WriteDirEntry(rootDirBlock, ref dirPos, RootIno, "..", 4);
-    var nextIno = 3;
-    var childInos = new int[_files.Count];
-    for (var i = 0; i < _files.Count; i++) {
-      childInos[i] = nextIno++;
-      WriteDirEntry(rootDirBlock, ref dirPos, childInos[i], _files[i].Name, 8); // DT_REG = 8
-    }
-    if (dirPos < BlockSize) {
-      // Extend the last entry's reclen to cover the rest of the block (UFS convention).
-      var lastEntryStart = FindLastEntryStart(rootDirBlock, dirPos);
-      var newLastReclen = BlockSize - lastEntryStart;
-      BinaryPrimitives.WriteUInt16LittleEndian(rootDirBlock.AsSpan(lastEntryStart + 4), (ushort)newLastReclen);
-    }
-    rootDirBlock.AsSpan(0, BlockSize).CopyTo(disk.AsSpan(rootDirFrag * FragSize));
-
-    // ── inodes ──────────────────────────────────────────────────────────
     var inodeTableOffset = IblkNo * FragSize;
-    var usedInodes = 2 + _files.Count;
-    WriteUfs1Inode(disk, inodeTableOffset + RootIno * InodeSize,
-      mode: 0x41ED, nlink: 2, size: BlockSize,
-      blocksUsed512: (uint)(Frag * FragSize / 512),
-      directBlocks: [rootDirFrag]);
-    for (var i = 0; i < _files.Count; i++) {
-      var data = _files[i].Data;
+    // Accounting matches the historical flat-layout convention: the two reserved
+    // inodes (0,1) plus every allocated inode (root + subdirectories + files).
+    // nextIno is the first unused inode number, so nextIno-1 counts inodes
+    // 1..nextIno-1, i.e. one reserved slot + the live tree.
+    var usedInodes = nextIno - 1;
+
+    // ── directory blocks + directory inodes ──────────────────────────────
+    foreach (var dir in directories) {
+      var parentIno = dir.Parent?.Inode ?? RootIno;     // root's ".." points at itself
+      var block = BuildDirectoryBlock(dir, parentIno);
+      block.CopyTo(disk, (long)dirFrag[dir] * FragSize);
+
+      // di_nlink for a directory = 2 ("." + entry in parent) + one extra link
+      // per child subdirectory (each child's ".." points back here).
+      var childDirs = dir.Order.Count(c => c.IsDirectory);
+      WriteUfs1Inode(disk, inodeTableOffset + dir.Inode * InodeSize,
+        mode: 0x41ED, nlink: (ushort)(2 + childDirs), size: BlockSize,
+        blocksUsed512: (uint)(Frag * FragSize / 512),
+        directBlocks: [dirFrag[dir]]);
+    }
+
+    // ── file blocks + file inodes ─────────────────────────────────────────
+    foreach (var file in regularFiles) {
+      var data = file.Data;
+      var first = fileFirstFrag[file];
       var dblks = new int[MaxDirectBlocks];
-      for (var j = 0; j < fileFrags[i] && j < MaxDirectBlocks; j++) dblks[j] = fileFirstFrag[i] + j;
-      WriteUfs1Inode(disk, inodeTableOffset + childInos[i] * InodeSize,
+      // One direct-block pointer per 8-KB block; each block is Frag frags.
+      var blocks = Math.Max(1, (data.Length + BlockSize - 1) / BlockSize);
+      for (var b = 0; b < blocks && b < MaxDirectBlocks; b++) dblks[b] = first + b * Frag;
+      WriteUfs1Inode(disk, inodeTableOffset + file.Inode * InodeSize,
         mode: 0x81A4, nlink: 1, size: (ulong)data.Length,
-        blocksUsed512: (uint)(fileFrags[i] * FragSize / 512),
+        blocksUsed512: (uint)(fileFrags[file] * FragSize / 512),
         directBlocks: dblks);
-      if (data.Length > 0) data.CopyTo(disk, (long)fileFirstFrag[i] * FragSize);
+      if (data.Length > 0) data.CopyTo(disk, (long)first * FragSize);
     }
 
     // ── cylinder group header + bitmaps ─────────────────────────────────
     var usedFragsTotal = currentFrag;
-    WriteCylinderGroup(disk, usedInodes, usedFragsTotal, totalFrags);
+    var dirCount = directories.Count;
+    WriteCylinderGroup(disk, usedInodes, usedFragsTotal, totalFrags, dirCount);
 
     // ── fs_cs summary block (first data block, referenced by fs_csaddr) ──
     var csOffset = (long)FsCsAddrBlock * FragSize;
-    BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan((int)csOffset + 0), 1);                          // cs_ndir (root)
+    BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan((int)csOffset + 0), dirCount);                   // cs_ndir
     BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan((int)csOffset + 4), (totalFrags - usedFragsTotal) / Frag); // cs_nbfree
     BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan((int)csOffset + 8), InodesPerGroup - usedInodes); // cs_nifree
     BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan((int)csOffset + 12), 0);                         // cs_nffree
 
     // ── superblock ──────────────────────────────────────────────────────
-    WriteSuperblock(disk, totalFrags, usedInodes, usedFragsTotal);
+    WriteSuperblock(disk, totalFrags, usedInodes, usedFragsTotal, dirCount);
 
     output.Write(disk);
   }
 
+  // Lays out a directory's data block: ".", "..", then one entry per child.
+  private static byte[] BuildDirectoryBlock(TreeNode dir, int parentIno) {
+    var block = new byte[BlockSize];
+    var dirPos = 0;
+    WriteDirEntry(block, ref dirPos, dir.Inode, ".", 4);     // DT_DIR = 4
+    WriteDirEntry(block, ref dirPos, parentIno, "..", 4);
+    foreach (var child in dir.Order)
+      WriteDirEntry(block, ref dirPos, child.Inode, child.Name, child.IsDirectory ? (byte)4 : (byte)8); // DT_DIR / DT_REG
+    if (dirPos < BlockSize) {
+      // Extend the last entry's reclen to cover the rest of the block (UFS convention).
+      var lastEntryStart = FindLastEntryStart(block, dirPos);
+      var newLastReclen = BlockSize - lastEntryStart;
+      BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(lastEntryStart + 4), (ushort)newLastReclen);
+    }
+    return block;
+  }
+
+  // Verifies the directory's entries (".", "..", children) fit one 8-KB block.
+  private static void EnsureDirectoryFitsOneBlock(TreeNode dir) {
+    var used = DirEntryReclen(".") + DirEntryReclen("..");
+    foreach (var child in dir.Order) used += DirEntryReclen(child.Name);
+    if (used > BlockSize)
+      throw new InvalidOperationException(
+        $"UFS writer keeps each directory in a single {BlockSize}-byte block; " +
+        $"directory '{(dir.Name.Length == 0 ? "/" : dir.Name)}' with {dir.Order.Count} entries does not fit.");
+  }
+
+  private static int DirEntryReclen(string name) {
+    var nameLen = Encoding.ASCII.GetByteCount(name);
+    return (8 + nameLen + 3) & ~3;
+  }
+
   // ── struct fs (superblock) ────────────────────────────────────────────
-  private void WriteSuperblock(byte[] disk, int totalFrags, int usedInodes, int usedFragsTotal) {
+  private void WriteSuperblock(byte[] disk, int totalFrags, int usedInodes, int usedFragsTotal, int dirCount) {
     var sb = disk.AsSpan(SuperblockOffset, SuperblockSize);
     sb.Clear();
 
@@ -170,7 +292,7 @@ public sealed class UfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(sb[184..], InodesPerGroup);  // fs_ipg
     BinaryPrimitives.WriteInt32LittleEndian(sb[188..], FragsPerGroup);    // fs_fpg
     // fs_old_cstotal at 192..207
-    BinaryPrimitives.WriteInt32LittleEndian(sb[192..], 1);
+    BinaryPrimitives.WriteInt32LittleEndian(sb[192..], dirCount);
     BinaryPrimitives.WriteInt32LittleEndian(sb[196..], (totalFrags - usedFragsTotal) / Frag);
     BinaryPrimitives.WriteInt32LittleEndian(sb[200..], InodesPerGroup - usedInodes);
     BinaryPrimitives.WriteInt32LittleEndian(sb[204..], 0);
@@ -186,7 +308,7 @@ public sealed class UfsWriter {
     BinaryPrimitives.WriteInt64LittleEndian(sb[992..], SuperblockOffset);  // fs_sblockactualloc
     BinaryPrimitives.WriteInt64LittleEndian(sb[1000..], SuperblockOffset); // fs_sblockloc
     // fs_cstotal (csum_total, 8 int64s) at 1008
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1008..], 1);
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1008..], dirCount);
     BinaryPrimitives.WriteInt64LittleEndian(sb[1016..], (totalFrags - usedFragsTotal) / Frag);
     BinaryPrimitives.WriteInt64LittleEndian(sb[1024..], InodesPerGroup - usedInodes);
     BinaryPrimitives.WriteInt64LittleEndian(sb[1032..], 0);
@@ -207,7 +329,7 @@ public sealed class UfsWriter {
   }
 
   // ── struct cg (cylinder-group header) ─────────────────────────────────
-  private static void WriteCylinderGroup(byte[] disk, int usedInodes, int usedFragsTotal, int totalFrags) {
+  private static void WriteCylinderGroup(byte[] disk, int usedInodes, int usedFragsTotal, int totalFrags, int dirCount) {
     var cgOffset = CblkNo * FragSize;
     var cg = disk.AsSpan(cgOffset, BlockSize);
     cg.Clear();
@@ -220,7 +342,7 @@ public sealed class UfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(cg[20..], (uint)Math.Min(FragsPerGroup, totalFrags)); // cg_ndblk
     // cg_cs (csum) @ 24
     var freeBlocks = (Math.Min(FragsPerGroup, totalFrags) - usedFragsTotal) / Frag;
-    BinaryPrimitives.WriteInt32LittleEndian(cg[24..], 1);
+    BinaryPrimitives.WriteInt32LittleEndian(cg[24..], dirCount);
     BinaryPrimitives.WriteInt32LittleEndian(cg[28..], freeBlocks);
     BinaryPrimitives.WriteInt32LittleEndian(cg[32..], InodesPerGroup - usedInodes);
     BinaryPrimitives.WriteInt32LittleEndian(cg[36..], 0);
