@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Msa;
 
-public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
+public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "Msa";
   public string DisplayName => "MSA (Magic Shadow Archiver)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -133,5 +133,44 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     using var fatStream = new MemoryStream(flat, writable: false);
     foreach (var extent in FatExtentMap.Enumerate(fatStream))
       yield return extent;
+  }
+
+  // ── IWipeEmpty ─────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros all unused space in the FAT12 filesystem inside an MSA image. MSA is
+  /// an outer RLE-compressed container whose track bytes hold no in-place free
+  /// space — the extent map's offsets are relative to the decoded flat image,
+  /// not the container — so wiping is performed the only honest way: decode the
+  /// tracks to the flat FAT12 image, run the FAT descriptor's wiper (free
+  /// clusters + cluster tips) on it, then re-encode preserving the original
+  /// geometry. Cluster-tip wiping applies to the inner FAT layer.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+
+    image.Position = 0;
+    var reader = new MsaReader(image);
+    if (reader.Entries.Count == 0) return 0;
+    var flat = reader.Extract(reader.Entries[0]);
+    var geom = (reader.SectorsPerTrack, reader.Sides);
+
+    // Wipe the inner flat FAT image in memory via the FAT descriptor.
+    long wiped;
+    using (var flatStream = new MemoryStream(flat, writable: true)) {
+      wiped = new FatFormatDescriptor().WipeUnusedSpace(flatStream, wipeClusterTips, wipeDeletedEntries);
+      flat = flatStream.ToArray();
+    }
+
+    if (wiped == 0) return 0;
+
+    // Re-encode the cleaned flat image, preserving geometry.
+    using var ms = new MemoryStream();
+    MsaWriter.Write(ms, flat, geom.SectorsPerTrack, geom.Sides);
+    var rebuilt = ms.ToArray();
+    image.Position = 0;
+    image.Write(rebuilt, 0, rebuilt.Length);
+    image.SetLength(rebuilt.Length);
+    return wiped;
   }
 }
