@@ -7,8 +7,9 @@ namespace FileSystem.Bfs;
 /// <summary>
 /// Builds a minimal BFS (BeOS / Haiku) filesystem image from scratch.
 /// Produces a 4 MB image with 1024-byte blocks, 1 allocation group,
-/// a single B+ tree leaf for the root directory, and direct block_run
-/// extents for file data (no indirect/double-indirect).
+/// a chain of B+ tree leaves per directory (entries spill across sibling
+/// leaves linked by left_link/right_link when they exceed one node), and
+/// direct block_run extents for file data (no indirect/double-indirect).
 /// </summary>
 /// <remarks>
 /// <para><b>On-disk layout:</b></para>
@@ -24,9 +25,10 @@ namespace FileSystem.Bfs;
 ///   <item>Blocks 15..: file inodes (1 block each) then file data blocks</item>
 /// </list>
 /// <para>
-/// Throws if too many entries would overflow the single B+ tree leaf node
-/// (each entry costs ~12 + name_length bytes in the leaf; a 1024-byte leaf
-/// can hold roughly 40–60 short-named files).
+/// Each entry costs ~10 + name_length bytes in a leaf; a 1024-byte leaf holds
+/// roughly 40–60 short-named files. Directories larger than that spill across
+/// additional leaf blocks chained via right_link, so a single directory can hold
+/// thousands of entries (bounded only by the image size).
 /// </para>
 /// </remarks>
 internal sealed class BfsWriter {
@@ -159,7 +161,9 @@ internal sealed class BfsWriter {
 
     // Block assignments filled in during layout.
     public int InodeBlock;
-    public int BtreeBlock;       // directories only
+    public int BtreeBlock;       // directories only — first B+ tree leaf block
+    public int BtreeBlocks = 1;  // directories only — number of chained leaf blocks
+    public readonly List<int> LeafBlocks = []; // directories only — every leaf block, in chain order
     public int DataStartBlock;   // files only
     public int DataBlocks;       // files only
     public int ParentInodeBlock;
@@ -195,8 +199,20 @@ internal sealed class BfsWriter {
 
     // 2) Allocate blocks. Fixed metadata occupies blocks 0..14; everything we
     //    create starts at block 15. Each directory needs an inode block plus a
-    //    B+ tree block; each file needs an inode block plus its data blocks.
+    //    chain of B+ tree leaf blocks (one leaf per ~40-60 short entries); each
+    //    file needs an inode block plus its data blocks.
+    //
+    //    The root directory already owns its inode (block 11) and its first leaf
+    //    (block 12). If the root needs more leaves, the overflow leaves come from
+    //    the free pool (block 15+); the reader chains them via right_link, so they
+    //    need not be contiguous with block 12.
     var nextBlock = FirstFileInodeBlock;
+    // Root's first leaf is the fixed block 12; overflow leaves come from the pool.
+    root.LeafBlocks.Add(root.BtreeBlock);
+    var rootLeaves = CountLeafBlocks(root);
+    for (var i = 1; i < rootLeaves; i++)
+      root.LeafBlocks.Add(nextBlock++);
+    root.BtreeBlocks = root.LeafBlocks.Count;
     AssignBlocks(root, root.InodeBlock, ref nextBlock);
 
     var totalUsedBlocks = nextBlock;
@@ -235,7 +251,13 @@ internal sealed class BfsWriter {
       child.ParentInodeBlock = dirInodeBlock;
       if (child.IsDir) {
         child.InodeBlock = nextBlock++;
-        child.BtreeBlock = nextBlock++;
+        // A directory's children are spilled across one or more chained B+ tree
+        // leaves; allocate that many contiguous blocks. The first is BtreeBlock.
+        var leafCount = CountLeafBlocks(child);
+        child.BtreeBlock = nextBlock;
+        for (var i = 0; i < leafCount; i++)
+          child.LeafBlocks.Add(nextBlock++);
+        child.BtreeBlocks = leafCount;
       } else {
         child.InodeBlock = nextBlock++;
         var data = child.Data ?? [];
@@ -251,6 +273,44 @@ internal sealed class BfsWriter {
       if (child.IsDir)
         AssignBlocks(child, child.InodeBlock, ref nextBlock);
   }
+
+  private const int BtreeLeafHeaderSize = 28;
+
+  /// <summary>
+  /// Greedily partitions a directory's (sorted) children into leaf-sized groups.
+  /// Each leaf holds the 28-byte header, a u16 key-length table entry plus the UTF-8
+  /// name bytes per child, and a u64 value per child written from the block's tail.
+  /// An entry is placed in the current leaf if it still fits; otherwise a new leaf
+  /// is started. A single name that cannot fit even alone is rejected.
+  /// </summary>
+  private static List<List<(string Name, int InodeBlock)>> PartitionEntries(TreeNode dir) {
+    var leaves = new List<List<(string Name, int InodeBlock)>>();
+    var current = new List<(string Name, int InodeBlock)>();
+    var used = BtreeLeafHeaderSize;
+
+    foreach (var child in dir.Children.Values) {
+      var nameLen = Encoding.UTF8.GetByteCount(child.Name);
+      var cost = 2 + nameLen + 8; // key-length table slot + name bytes + value slot
+      if (BtreeLeafHeaderSize + cost > BlockSize)
+        throw new InvalidOperationException(
+          $"BFS: directory entry '{child.Name}' is too large to fit in a single {BlockSize}-byte B+ tree leaf.");
+
+      if (used + cost > BlockSize) {
+        leaves.Add(current);
+        current = [];
+        used = BtreeLeafHeaderSize;
+      }
+
+      current.Add((child.Name, child.InodeBlock));
+      used += cost;
+    }
+
+    leaves.Add(current); // always at least one leaf, even for an empty directory
+    return leaves;
+  }
+
+  /// <summary>Number of chained B+ tree leaf blocks a directory's children require.</summary>
+  private static int CountLeafBlocks(TreeNode dir) => PartitionEntries(dir).Count;
 
   /// <summary>Writes every non-root node (inodes, B+ trees, file data) depth-first.</summary>
   private void WriteNode(byte[] image, TreeNode dir) {
@@ -381,14 +441,21 @@ internal sealed class BfsWriter {
 
   private static void WriteDirBtreeLeaf(byte[] image, TreeNode dir) {
     // Children are already ordered (SortedDictionary, ordinal). The BFS B+ tree
-    // requires entries sorted by key; this provides a stable, sorted order.
-    var entries = dir.Children.Values
-      .Select(c => (c.Name, c.InodeBlock))
-      .ToList();
-    WriteBtreeLeaf(image, dir.BtreeBlock, entries);
+    // requires entries sorted by key; this provides a stable, sorted order. When
+    // they do not all fit in one 1024-byte leaf the entries spill across several
+    // leaf blocks chained through left_link/right_link; the reader follows
+    // right_link from the first leaf to read every entry.
+    var partitions = PartitionEntries(dir);
+    var leafBlocks = dir.LeafBlocks;
+
+    for (var i = 0; i < partitions.Count; i++) {
+      var leftLink = i > 0 ? leafBlocks[i - 1] : -1L;
+      var rightLink = i < partitions.Count - 1 ? leafBlocks[i + 1] : -1L;
+      WriteBtreeLeaf(image, leafBlocks[i], partitions[i], leftLink, rightLink);
+    }
   }
 
-  private static void WriteBtreeLeaf(byte[] image, int btreeBlock, List<(string Name, int InodeBlock)> entries) {
+  private static void WriteBtreeLeaf(byte[] image, int btreeBlock, List<(string Name, int InodeBlock)> entries, long leftLink, long rightLink) {
     var off = btreeBlock * BlockSize;
 
     // BFS B+ tree header (node header):
@@ -400,10 +467,11 @@ internal sealed class BfsWriter {
     //  26: all_key_length (u16) = total bytes of all key strings
     //  28: (padding/reserved)
 
-    // B+ tree node header
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off), -1L);      // left_link
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + 8), -1L);  // right_link
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + 16), -1L); // overflow_link
+    // B+ tree node header. left_link/right_link chain sibling leaves so the
+    // reader can walk every leaf of an over-large directory in key order.
+    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off), leftLink);      // left_link
+    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + 8), rightLink); // right_link
+    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(off + 16), -1L);      // overflow_link
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 24), (ushort)entries.Count); // all_key_count
     // all_key_length computed below
 
@@ -420,7 +488,7 @@ internal sealed class BfsWriter {
     //   where shiftValue = blocks_per_ag_shift + 16 (for the block_run bit layout)
     //   But for a single-AG image with AG=0: off_t = start_block (since AG << X = 0)
 
-    var headerSize = 28;
+    var headerSize = BtreeLeafHeaderSize;
     var keyLenTableOffset = off + headerSize;
     var keyLenTableSize = entries.Count * 2; // u16 per key
     var keyDataOffset = keyLenTableOffset + keyLenTableSize;
@@ -434,12 +502,12 @@ internal sealed class BfsWriter {
       cumulativeLengths.Add((ushort)keyBytes.Count);
     }
 
-    // Check that everything fits in one block (single-leaf node limitation)
+    // Invariant: PartitionEntries already sized this leaf to fit one block.
     var valuesSize = entries.Count * 8; // u64 per value
     var totalUsed = headerSize + keyLenTableSize + keyBytes.Count + valuesSize;
     if (totalUsed > BlockSize)
       throw new InvalidOperationException(
-        $"BFS B+ tree leaf overflow: {totalUsed} bytes needed but block size is {BlockSize}. Reduce the number of entries in a single directory.");
+        $"BFS B+ tree leaf overflow: {totalUsed} bytes needed but block size is {BlockSize} (partitioning invariant violated).");
 
     // Write all_key_length
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 26), (ushort)keyBytes.Count);

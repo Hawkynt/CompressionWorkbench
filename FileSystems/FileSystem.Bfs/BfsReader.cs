@@ -5,10 +5,11 @@ using System.Text;
 namespace FileSystem.Bfs;
 
 /// <summary>
-/// Reads files from a BFS filesystem image. Parses the superblock, walks
-/// the root directory B+ tree leaf, and extracts file data from direct
-/// block_run extents. Only supports single-leaf B+ trees (no interior
-/// node traversal) and direct extents (no indirect/double-indirect).
+/// Reads files from a BFS filesystem image. Parses the superblock, walks each
+/// directory's B+ tree leaf chain (following right_link across sibling leaves),
+/// and extracts file data from direct block_run extents. Supports directories
+/// whose entries span multiple chained leaves; does not traverse interior/index
+/// nodes or indirect/double-indirect extents.
 /// </summary>
 internal sealed class BfsReader {
 
@@ -69,9 +70,8 @@ internal sealed class BfsReader {
     if (BinaryPrimitives.ReadUInt32LittleEndian(_image.AsSpan(dirInodeOffset)) != InodeMagic) return;
 
     var btreeRun = ReadBlockRun(_image, dirInodeOffset + InodeDataStreamOffset);
-    var btreeOffset = btreeRun.Start * _blockSize;
 
-    foreach (var (name, inodeBlock) in ParseBtreeLeafEntries(btreeOffset)) {
+    foreach (var (name, inodeBlock) in ReadAllBtreeEntries(btreeRun.Start)) {
       var fullName = prefix.Length == 0 ? name : prefix + "/" + name;
       var inodeOffset = inodeBlock * _blockSize;
       var (isDir, size) = ReadInodeKindAndSize(inodeOffset);
@@ -135,6 +135,30 @@ internal sealed class BfsReader {
     }
 
     return result;
+  }
+
+  /// <summary>
+  /// Reads every directory entry by walking the chain of B+ tree leaf nodes
+  /// starting at <paramref name="firstLeafBlock"/> and following each leaf's
+  /// right_link. A directory whose children overflow a single 1024-byte leaf is
+  /// stored across several sibling leaves linked this way.
+  /// </summary>
+  private List<(string Name, int InodeBlock)> ReadAllBtreeEntries(int firstLeafBlock) {
+    var all = new List<(string Name, int InodeBlock)>();
+    var visited = new HashSet<long>();
+    var leafBlock = (long)firstLeafBlock;
+
+    while (leafBlock >= 0 && visited.Add(leafBlock)) {
+      var leafOffset = (int)(leafBlock * _blockSize);
+      if (leafOffset < 0 || leafOffset + 28 > _image.Length) break;
+
+      all.AddRange(ParseBtreeLeafEntries(leafOffset));
+
+      // right_link (i64) at leaf offset +8 points at the next sibling leaf, or -1.
+      leafBlock = BinaryPrimitives.ReadInt64LittleEndian(_image.AsSpan(leafOffset + 8));
+    }
+
+    return all;
   }
 
   private List<(string Name, int InodeBlock)> ParseBtreeLeafEntries(int leafOffset) {
