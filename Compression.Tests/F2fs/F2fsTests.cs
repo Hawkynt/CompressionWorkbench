@@ -150,9 +150,9 @@ public class F2fsTests {
     using var ms = new MemoryStream(img);
     var r = new F2fsReader(ms);
     Assert.That(r.Entries, Has.Count.EqualTo(1));
-    // Inline-dentry single-slot store = 7 chars of the name survive the round-trip
-    // (F2FS_SLOT_LEN is 8 bytes total — 1 for null terminator in some readers, 7 usable).
-    Assert.That(r.Entries[0].Name, Is.EqualTo("greetin"));
+    // Inline dentries store names across as many 8-byte slots as needed, so the full
+    // filename survives the round-trip (long names are no longer truncated to one slot).
+    Assert.That(r.Entries[0].Name, Is.EqualTo("greeting.txt"));
     var extracted = r.Extract(r.Entries[0]);
     Assert.That(extracted, Is.EqualTo(payload));
   }
@@ -175,7 +175,7 @@ public class F2fsTests {
     Assert.That(r.Entries, Has.Count.EqualTo(5));
 
     foreach (var entry in r.Entries) {
-      // Names are truncated to 7 bytes per inline-slot limit; single-char names fit exactly.
+      // Full names round-trip — inline dentries span multiple slots for longer names.
       Assert.That(files.ContainsKey(entry.Name), Is.True, $"Unexpected entry: {entry.Name}");
       var data = r.Extract(entry);
       Assert.That(data, Is.EqualTo(files[entry.Name]), $"Roundtrip failed for {entry.Name}");

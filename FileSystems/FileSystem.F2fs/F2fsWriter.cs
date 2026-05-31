@@ -191,12 +191,6 @@ public sealed class F2fsWriter {
       throw new ArgumentOutOfRangeException(nameof(totalSegments),
         $"F2FS image needs at least {MinTotalSegments} segments (need 6 active main segments + slack).");
 
-    // Inline dentry budget: NrInlineDentry slots minus 2 for "." and "..".
-    const int dotsSlots = 2;
-    if (this._files.Count + dotsSlots > NrInlineDentry)
-      throw new InvalidOperationException(
-        $"F2FS writer: inline dentry supports at most {NrInlineDentry - dotsSlots} files in root.");
-
     var totalBlocks = totalSegments * BlocksPerSeg;
     var disk = new byte[totalBlocks * BlockSize];
 
@@ -208,39 +202,89 @@ public sealed class F2fsWriter {
     // Root inode block (HOT_NODE seg, block 0).
     var rootInodeBlock = mainStart + MainSegHotNode * BlocksPerSeg + 0;
 
-    // File inode and data block planning.
-    var filePlan = new List<FilePlan>();
+    // ---- Build the directory tree from slash-separated names ----
+    // The root directory keeps RootIno; every intermediate path component becomes a
+    // subdirectory inode with its own nid. Files become regular-file inodes. Each
+    // directory carries inline dentries naming its direct children, so the reader's
+    // recursive walk reconstructs the exact nested path.
     uint nextNid = RootIno + 1; // 4, 5, 6, ...
-    var nextWarmNodeBlk = 0;
-    var nextWarmDataBlk = 0;
     var warmNodeSegStart = mainStart + MainSegWarmNode * BlocksPerSeg;
     var warmDataSegStart = mainStart + MainSegWarmData * BlocksPerSeg;
+    var nextWarmNodeBlk = 0;
+    var nextWarmDataBlk = 0;
+
+    var root = new DirPlan { Nid = RootIno, InodeBlock = rootInodeBlock };
+    var filePlan = new List<FilePlan>();
+    var subdirPlan = new List<DirPlan>();
+
     foreach (var (name, data) in this._files) {
+      var parts = name.Split('/', StringSplitOptions.RemoveEmptyEntries);
+      if (parts.Length == 0)
+        continue;
+
+      // Descend/create the directory chain for every component except the last.
+      var dir = root;
+      for (var p = 0; p < parts.Length - 1; ++p) {
+        var component = parts[p];
+        if (!dir.SubDirs.TryGetValue(component, out var child)) {
+          if (nextWarmNodeBlk + 1 > BlocksPerSeg)
+            throw new InvalidOperationException(
+              "F2FS writer: WARM_NODE segment full (single-segment writer limit).");
+          child = new DirPlan {
+            Nid = nextNid++,
+            InodeBlock = warmNodeSegStart + nextWarmNodeBlk++,
+            ParentNid = dir.Nid,
+          };
+          dir.SubDirs.Add(component, child);
+          dir.Children.Add((child.Nid, component, FtDir));
+          subdirPlan.Add(child);
+        }
+        dir = child;
+      }
+
+      // The final component is the file itself.
+      var fileName = parts[^1];
       var dataBlocksNeeded = data.Length == 0 ? 0 : (data.Length + BlockSize - 1) / BlockSize;
       if (nextWarmNodeBlk + 1 > BlocksPerSeg
           || nextWarmDataBlk + dataBlocksNeeded > BlocksPerSeg)
         throw new InvalidOperationException(
           "F2FS writer: WARM_NODE/WARM_DATA segment full (single-segment writer limit).");
 
-      var inodeBlock = warmNodeSegStart + nextWarmNodeBlk;
-      ++nextWarmNodeBlk;
-
+      var inodeBlock = warmNodeSegStart + nextWarmNodeBlk++;
       var dataBlocks = new List<int>(dataBlocksNeeded);
-      for (var i = 0; i < dataBlocksNeeded; ++i) {
-        dataBlocks.Add(warmDataSegStart + nextWarmDataBlk);
-        ++nextWarmDataBlk;
-      }
+      for (var i = 0; i < dataBlocksNeeded; ++i)
+        dataBlocks.Add(warmDataSegStart + nextWarmDataBlk++);
 
+      var fileNid = nextNid++;
       filePlan.Add(new FilePlan {
-        Nid = nextNid++,
-        Name = name,
+        Nid = fileNid,
+        Name = fileName,
         Data = data,
         InodeBlock = inodeBlock,
         DataBlocks = dataBlocks,
+        ParentNid = dir.Nid,
       });
+      dir.Children.Add((fileNid, fileName, FtRegFile));
     }
 
-    var validNodeCount = 1 + filePlan.Count;
+    // Every directory's inline dentry area must fit its children plus "." and "..".
+    const int dotsSlots = 2;
+    foreach (var d in subdirPlan.Prepend(root)) {
+      var slots = dotsSlots + d.Children.Sum(c => DentrySlotsFor(c.Name));
+      if (slots > NrInlineDentry)
+        throw new InvalidOperationException(
+          $"F2FS writer: a directory has too many/too-long children for an inline dentry ({slots} slots > {NrInlineDentry}).");
+    }
+
+    // Warm-node inodes are the subdirectory inodes plus the regular-file inodes, laid out
+    // in allocation order (the order in which their blocks were assigned above).
+    var warmNodeInodes = new List<(uint Nid, int Block)>();
+    warmNodeInodes.AddRange(subdirPlan.Select(d => (d.Nid, d.InodeBlock)));
+    warmNodeInodes.AddRange(filePlan.Select(f => (f.Nid, f.InodeBlock)));
+    warmNodeInodes.Sort((a, b) => a.Block.CompareTo(b.Block));
+
+    var warmNodeCount = warmNodeInodes.Count;
+    var validNodeCount = 1 + warmNodeCount; // root + warm-node inodes.
     var validInodeCount = validNodeCount;
     var totalDataBlocks = filePlan.Sum(f => f.DataBlocks.Count);
     var validBlockCount = validNodeCount + totalDataBlocks;
@@ -261,21 +305,24 @@ public sealed class F2fsWriter {
         Buffer.BlockCopy(f.Data, i * BlockSize, disk, f.DataBlocks[i] * BlockSize, len);
         remaining -= len;
       }
-      WriteRegularFileInode(disk, f.InodeBlock * BlockSize, f.Nid, f.Name, f.Data.Length, f.DataBlocks);
+      WriteRegularFileInode(disk, f.InodeBlock * BlockSize, f.Nid, f.Name, f.Data.Length, f.DataBlocks, f.ParentNid);
     }
 
-    // ---- 2) Write root inode with inline dentries ----
-    WriteRootInodeInline(disk, rootInodeBlock * BlockSize,
-      filePlan.Select(f => (f.Nid, f.Name)).ToList());
+    // ---- 2) Write directory inodes (root + subdirectories) with inline dentries ----
+    WriteDirectoryInodeInline(disk, root.InodeBlock * BlockSize, root.Nid, parentNid: RootIno,
+      root.Children, isRoot: true);
+    foreach (var d in subdirPlan)
+      WriteDirectoryInodeInline(disk, d.InodeBlock * BlockSize, d.Nid, parentNid: d.ParentNid,
+        d.Children, isRoot: false);
 
-    // ---- 3) Write NAT entries on disk (file entries; root NAT also lives in journal) ----
+    // ---- 3) Write NAT entries on disk (file/dir entries; root NAT also lives in journal) ----
     var natBlkAddr = SegNat * BlocksPerSeg;
     // mkfs uses block_addr=1 for reserved node/meta inodes (a sentinel — a real block address would be 0 or main).
     WriteNatEntry(disk, natBlkAddr, NodeIno, NodeIno, 1u);
     WriteNatEntry(disk, natBlkAddr, MetaIno, MetaIno, 1u);
     WriteNatEntry(disk, natBlkAddr, RootIno, RootIno, (uint)rootInodeBlock);
-    foreach (var f in filePlan)
-      WriteNatEntry(disk, natBlkAddr, f.Nid, f.Nid, (uint)f.InodeBlock);
+    foreach (var (nid, block) in warmNodeInodes)
+      WriteNatEntry(disk, natBlkAddr, nid, nid, (uint)block);
 
     // ---- 4) Write SIT entries for ALL main-area segments (typed correctly). ----
     var sitBlkAddr = SegSit * BlocksPerSeg;
@@ -296,10 +343,10 @@ public sealed class F2fsWriter {
     sitVblocks[MainSegHotNode] = 1;
     SetBit(sitMaps[MainSegHotNode], 0);
 
-    // WARM_NODE: file inode count.
+    // WARM_NODE: subdirectory + file inode count (all warm-node inodes).
     sitTypes[MainSegWarmNode] = CursegWarmNode;
-    sitVblocks[MainSegWarmNode] = filePlan.Count;
-    for (var i = 0; i < filePlan.Count; ++i)
+    sitVblocks[MainSegWarmNode] = warmNodeCount;
+    for (var i = 0; i < warmNodeCount; ++i)
       SetBit(sitMaps[MainSegWarmNode], i);
 
     // COLD_NODE: empty.
@@ -349,6 +396,7 @@ public sealed class F2fsWriter {
       sitVblocks: sitVblocks,
       sitMaps: sitMaps,
       filePlan: filePlan,
+      warmNodeNids: warmNodeInodes.Select(n => n.Nid).ToArray(),
       mainBlkAddr: mainStart,
       nowSecs: nowSecs,
       checkpointVer: 1UL);
@@ -371,6 +419,7 @@ public sealed class F2fsWriter {
       sitVblocks: sitVblocks,
       sitMaps: sitMaps,
       filePlan: filePlan,
+      warmNodeNids: warmNodeInodes.Select(n => n.Nid).ToArray(),
       mainBlkAddr: mainStart,
       nowSecs: nowSecs,
       checkpointVer: 0UL);
@@ -434,6 +483,17 @@ public sealed class F2fsWriter {
     public byte[] Data = [];
     public int InodeBlock;
     public List<int> DataBlocks = [];
+    public uint ParentNid;
+  }
+
+  // A planned directory inode (root or subdirectory). Children are the direct entries
+  // this directory's inline dentry block names: (child nid, leaf name, file type).
+  private sealed class DirPlan {
+    public uint Nid;
+    public int InodeBlock;
+    public uint ParentNid;
+    public readonly Dictionary<string, DirPlan> SubDirs = new(StringComparer.Ordinal);
+    public readonly List<(uint Nid, string Name, byte Type)> Children = [];
   }
 
   // ==================================================================
@@ -507,7 +567,7 @@ public sealed class F2fsWriter {
     uint validNodeCount, uint nextFreeNid, ulong userBlockCount, uint countedSegments,
     uint freeSegments, uint rsvdSegments, uint ovpSegments,
     int[] sitTypes, int[] sitVblocks, byte[][] sitMaps,
-    List<FilePlan> filePlan, int mainBlkAddr, ulong nowSecs, ulong checkpointVer) {
+    List<FilePlan> filePlan, uint[] warmNodeNids, int mainBlkAddr, ulong nowSecs, ulong checkpointVer) {
 
     var pack = new byte[CpPackTotalBlockCount * BlockSize];
 
@@ -515,7 +575,7 @@ public sealed class F2fsWriter {
     var cp = BuildCheckpointBlock(
       validBlockCount, validInodeCount, validNodeCount, nextFreeNid, userBlockCount,
       countedSegments, freeSegments, rsvdSegments, ovpSegments, mainBlkAddr,
-      filePlanCount: filePlan.Count, totalDataBlocks: filePlan.Sum(f => f.DataBlocks.Count),
+      warmNodeCount: warmNodeNids.Length, totalDataBlocks: filePlan.Sum(f => f.DataBlocks.Count),
       checkpointVer: checkpointVer);
 
     Array.Copy(cp, 0, pack, 0 * BlockSize, BlockSize);
@@ -528,8 +588,8 @@ public sealed class F2fsWriter {
     var hotNodeSum = BuildNodeSummaryBlock([RootIno]);
     Array.Copy(hotNodeSum, 0, pack, 2 * BlockSize, BlockSize);
 
-    // ---- Block 3: WARM_NODE summary (file inodes) ----
-    var warmNodeSum = BuildNodeSummaryBlock(filePlan.Select(f => f.Nid).ToArray());
+    // ---- Block 3: WARM_NODE summary (subdirectory + file inodes) ----
+    var warmNodeSum = BuildNodeSummaryBlock(warmNodeNids);
     Array.Copy(warmNodeSum, 0, pack, 3 * BlockSize, BlockSize);
 
     // ---- Block 4: COLD_NODE summary (empty) ----
@@ -546,7 +606,7 @@ public sealed class F2fsWriter {
   private static byte[] BuildCheckpointBlock(ulong validBlockCount, uint validInodeCount,
     uint validNodeCount, uint nextFreeNid, ulong userBlockCount, uint countedSegments,
     uint freeSegments, uint rsvdSegments, uint ovpSegments, int mainBlkAddr,
-    int filePlanCount, int totalDataBlocks, ulong checkpointVer) {
+    int warmNodeCount, int totalDataBlocks, ulong checkpointVer) {
 
     var cp = new byte[BlockSize];
 
@@ -571,7 +631,7 @@ public sealed class F2fsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(36 + 1 * 4), (uint)MainSegWarmNode);
     BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(36 + 2 * 4), (uint)MainSegColdNode);
     BinaryPrimitives.WriteUInt16LittleEndian(cp.AsSpan(68 + 0 * 2), 1);                    // 1 valid node block (root).
-    BinaryPrimitives.WriteUInt16LittleEndian(cp.AsSpan(68 + 1 * 2), (ushort)filePlanCount); // file inodes.
+    BinaryPrimitives.WriteUInt16LittleEndian(cp.AsSpan(68 + 1 * 2), (ushort)warmNodeCount); // subdir + file inodes.
     BinaryPrimitives.WriteUInt16LittleEndian(cp.AsSpan(68 + 2 * 2), 0);
     BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(84 + 0 * 4), (uint)MainSegHotData);
     BinaryPrimitives.WriteUInt32LittleEndian(cp.AsSpan(84 + 1 * 4), (uint)MainSegWarmData);
@@ -724,7 +784,7 @@ public sealed class F2fsWriter {
   // File inode (f2fs_inode). Regular file with direct block pointers.
   // ==================================================================
   private static void WriteRegularFileInode(byte[] disk, int off, uint ino, string name,
-    int size, List<int> dataBlocks) {
+    int size, List<int> dataBlocks, uint parentNid) {
     var s = disk.AsSpan(off, BlockSize);
 
     BinaryPrimitives.WriteUInt16LittleEndian(s[0..], 0x81A4); // i_mode: S_IFREG | 0644
@@ -746,7 +806,7 @@ public sealed class F2fsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(s[72..], 0);   // i_current_depth
     BinaryPrimitives.WriteUInt32LittleEndian(s[76..], 0);   // i_xattr_nid
     BinaryPrimitives.WriteUInt32LittleEndian(s[80..], 0);   // i_flags
-    BinaryPrimitives.WriteUInt32LittleEndian(s[84..], RootIno); // i_pino (parent = root)
+    BinaryPrimitives.WriteUInt32LittleEndian(s[84..], parentNid); // i_pino (parent directory)
 
     var nameBytes = Encoding.UTF8.GetBytes(name);
     var namelen = Math.Min(nameBytes.Length, 255);
@@ -774,11 +834,14 @@ public sealed class F2fsWriter {
   }
 
   // ==================================================================
-  // Root inode with inline dentry entries. Layout matches kernel:
-  //   At i_addr[1] (offset 364): bitmap[24] + reserved[16] + dentry[192][11] + filename[192][8].
-  // i_addr[0] is the "inline reserved" slot — must remain 0.
+  // Directory inode with inline dentry entries (root or subdirectory). Layout matches kernel:
+  //   At i_addr[1] (offset 364): bitmap[23] + reserved[7] + dentry[182][11] + filename[182][8].
+  // i_addr[0] is the "inline reserved" slot — must remain 0. Long names span multiple
+  // consecutive filename slots (each F2FS_SLOT_LEN = 8 bytes); the bitmap marks every
+  // occupied slot but only the first slot of a name carries the f2fs_dir_entry.
   // ==================================================================
-  private static void WriteRootInodeInline(byte[] disk, int off, List<(uint Nid, string Name)> children) {
+  private static void WriteDirectoryInodeInline(byte[] disk, int off, uint ino, uint parentNid,
+    IReadOnlyList<(uint Nid, string Name, byte Type)> children, bool isRoot) {
     var s = disk.AsSpan(off, BlockSize);
 
     BinaryPrimitives.WriteUInt16LittleEndian(s[0..], 0x41ED); // i_mode: S_IFDIR | 0755
@@ -786,8 +849,10 @@ public sealed class F2fsWriter {
     s[3] = (byte)(F2fsInlineDentry | F2fsDataExist);          // i_inline (kernel: INLINE_DENTRY implies DATA_EXIST)
     BinaryPrimitives.WriteUInt32LittleEndian(s[4..], 0);       // i_uid
     BinaryPrimitives.WriteUInt32LittleEndian(s[8..], 0);       // i_gid
-    BinaryPrimitives.WriteUInt32LittleEndian(s[12..], 2);      // i_links (directory)
-    // i_size: with inline_dentry, mkfs uses one block size (4096) for an empty root dentry block.
+    // i_links: 2 for self+"." plus one per child subdirectory ("..").
+    var childDirCount = children.Count(c => c.Type == FtDir);
+    BinaryPrimitives.WriteUInt32LittleEndian(s[12..], (uint)(2 + childDirCount));
+    // i_size: with inline_dentry, mkfs uses one block size (4096) for the dentry block.
     BinaryPrimitives.WriteUInt64LittleEndian(s[16..], (ulong)BlockSize);
     BinaryPrimitives.WriteUInt64LittleEndian(s[24..], 1UL);    // i_blocks (the inode itself counts).
     var now = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -801,8 +866,8 @@ public sealed class F2fsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(s[72..], 1);      // i_current_depth
     BinaryPrimitives.WriteUInt32LittleEndian(s[76..], 0);      // i_xattr_nid
     BinaryPrimitives.WriteUInt32LittleEndian(s[80..], 0);      // i_flags
-    BinaryPrimitives.WriteUInt32LittleEndian(s[84..], 0);      // i_pino (root has no parent)
-    BinaryPrimitives.WriteUInt32LittleEndian(s[88..], 0);      // i_namelen = 0 for root
+    BinaryPrimitives.WriteUInt32LittleEndian(s[84..], isRoot ? 0 : parentNid); // i_pino (root has no parent).
+    BinaryPrimitives.WriteUInt32LittleEndian(s[88..], 0);      // i_namelen = 0 (the inode does not name itself).
 
     // i_addr starts at offset 360. i_addr[0] is the "inline reserved" slot — keep 0.
     // Inline dentry data starts at i_addr[1] (offset 364).
@@ -811,39 +876,59 @@ public sealed class F2fsWriter {
     var dentryOff = inlineDataOffset + InlineDentryBitmapSize + InlineDentryReserved;
     var nameOff = dentryOff + NrInlineDentry * 11;
 
+    // "." points at this directory; ".." points at the parent (root's parent is itself).
     var slot = 0;
-    // ".":
-    WriteDentrySlot(s, bitmapOff, dentryOff, nameOff, slot++, RootIno, ".", FtDir);
-    // "..":
-    WriteDentrySlot(s, bitmapOff, dentryOff, nameOff, slot++, RootIno, "..", FtDir);
-    foreach (var (nid, name) in children)
-      WriteDentrySlot(s, bitmapOff, dentryOff, nameOff, slot++, nid, name, FtRegFile);
+    slot += WriteDentry(s, bitmapOff, dentryOff, nameOff, slot, ino, ".", FtDir);
+    slot += WriteDentry(s, bitmapOff, dentryOff, nameOff, slot, isRoot ? RootIno : parentNid, "..", FtDir);
+    foreach (var (childNid, name, type) in children)
+      slot += WriteDentry(s, bitmapOff, dentryOff, nameOff, slot, childNid, name, type);
 
     // Node footer at end of block.
     var footerOff = BlockSize - 24;
-    BinaryPrimitives.WriteUInt32LittleEndian(s[footerOff..], RootIno);
-    BinaryPrimitives.WriteUInt32LittleEndian(s[(footerOff + 4)..], RootIno);
+    BinaryPrimitives.WriteUInt32LittleEndian(s[footerOff..], ino);
+    BinaryPrimitives.WriteUInt32LittleEndian(s[(footerOff + 4)..], ino);
     BinaryPrimitives.WriteUInt32LittleEndian(s[(footerOff + 8)..], 0);
     BinaryPrimitives.WriteUInt64LittleEndian(s[(footerOff + 12)..], 1UL);
     BinaryPrimitives.WriteUInt32LittleEndian(s[(footerOff + 20)..], 0);
   }
 
-  private static void WriteDentrySlot(Span<byte> s, int bitmapOff, int dentryBase,
+  /// <summary>
+  /// Number of inline-dentry slots a name occupies: the filename area stores the UTF-8 name
+  /// across <c>ceil(byteLength / F2FS_SLOT_LEN)</c> consecutive slots (kernel GET_DENTRY_SLOTS).
+  /// </summary>
+  private static int DentrySlotsFor(string name) {
+    var len = Encoding.UTF8.GetByteCount(name);
+    var slots = (len + SlotLen - 1) / SlotLen;
+    return slots < 1 ? 1 : slots;
+  }
+
+  // Writes one directory entry starting at the given slot, spanning as many filename slots
+  // as the name needs. Returns the number of slots consumed.
+  private static int WriteDentry(Span<byte> s, int bitmapOff, int dentryBase,
     int nameBase, int slot, uint ino, string name, byte fileType) {
-    s[bitmapOff + slot / 8] |= (byte)(1 << (slot % 8));
-
-    var entryOff = dentryBase + slot * 11;
     var nameBytes = Encoding.UTF8.GetBytes(name);
-    var nameLen = (ushort)Math.Min(nameBytes.Length, SlotLen - 1); // single-slot fit
-    var hash = F2fsNameHash(nameBytes.AsSpan(0, nameLen));
+    var nameLen = Math.Min(nameBytes.Length, 255);
+    var slots = DentrySlotsFor(name);
 
+    // Mark every occupied slot in the bitmap (LSB-first, matching the reader).
+    for (var i = 0; i < slots; ++i) {
+      var b = slot + i;
+      s[bitmapOff + b / 8] |= (byte)(1 << (b % 8));
+    }
+
+    // f2fs_dir_entry lives in the first slot's dentry array position.
+    var entryOff = dentryBase + slot * 11;
+    var hash = F2fsNameHash(nameBytes.AsSpan(0, nameLen));
     BinaryPrimitives.WriteUInt32LittleEndian(s[entryOff..], hash);
     BinaryPrimitives.WriteUInt32LittleEndian(s[(entryOff + 4)..], ino);
-    BinaryPrimitives.WriteUInt16LittleEndian(s[(entryOff + 8)..], nameLen);
+    BinaryPrimitives.WriteUInt16LittleEndian(s[(entryOff + 8)..], (ushort)nameLen);
     s[entryOff + 10] = fileType;
 
+    // Filename bytes fill consecutive 8-byte slots in the filename area.
     var fnOff = nameBase + slot * SlotLen;
-    nameBytes.AsSpan(0, nameLen).CopyTo(s[fnOff..(fnOff + SlotLen)]);
+    nameBytes.AsSpan(0, nameLen).CopyTo(s[fnOff..]);
+
+    return slots;
   }
 
   // ==================================================================
