@@ -55,7 +55,15 @@ public sealed class BtrfsWriter {
   private const long SystemChunkStart = 0x10000;
   private const long SystemChunkLength = 0x20000;  // 128 KiB (sb gap + chunk tree)
   private const long MetadataChunkStart = 0x30000;
-  private const long DataChunkLength = 0x40000;    // 256 KiB data region
+  // Minimum data region (also the floor when an image holds only inline files).
+  private const long MinDataChunkLength = 0x40000; // 256 KiB
+
+  // Inline EXTENT_DATA is only legal for files strictly smaller than one
+  // sector — btrfs check reports "inline file extent too large" (inode error
+  // 0x8000) once an inline extent's ram_bytes reaches the sector size. Files
+  // at or above this threshold are stored as regular (non-inline) extents in
+  // the DATA chunk.
+  private const int MaxInlineDataSize = SectorSize;
 
   // The dev/root trees plus the extent and csum trees and the data region are
   // sized at write time once the FS-tree block count is known. These fields are
@@ -65,7 +73,21 @@ public sealed class BtrfsWriter {
   private long _csumTreeOff;
   private long _metadataChunkLength;
   private long _dataChunkStart;
+  private long _dataChunkLength;
   private long _totalSize;
+
+  // A regular (non-inline) file extent: the file's data, its sector-aligned
+  // on-disk length, and the logical/physical address it is placed at inside
+  // the DATA chunk (assigned in ComputeLayout once _dataChunkStart is known).
+  // The EXTENT_DATA item carrying disk_bytenr is patched in place after layout.
+  private sealed class DataExtent {
+    public required long FileObjectId;
+    public required byte[] Payload;
+    public required long AlignedLength;
+    public required byte[] ExtentDataItem; // the FS-tree EXTENT_DATA value bytes
+    public long DiskBytenr;                // assigned in ComputeLayout
+  }
+  private readonly List<DataExtent> _dataExtents = [];
 
   // Logical/physical offsets of every FS-tree block, in write order. Index 0 is
   // the root node (an internal node when _fsTreeBlockCount > 2, otherwise the
@@ -159,6 +181,7 @@ public sealed class BtrfsWriter {
     WriteFsTree(image, fsLeaves);
     WriteExtentTree(image);
     WriteEmptyTree(image, (int)this._csumTreeOff, CsumTreeObjectId);
+    WriteDataExtents(image);
 
     // Every metadata block starts with a 32-byte csum field whose first
     // 4 bytes hold CRC-32C over bytes [32..blockSize).
@@ -172,6 +195,17 @@ public sealed class BtrfsWriter {
     WriteBlockChecksum(image, (int)this._csumTreeOff, NodeSize);
 
     output.Write(image);
+  }
+
+  // Copies each regular file's payload into its sector-aligned slot in the
+  // DATA chunk (logical == physical, so DiskBytenr is also the byte offset).
+  // Data extents carry no metadata csum — Btrfs stores data checksums in the
+  // CSUM_TREE; this minimal image declares no NODATASUM flag, so btrfs check
+  // would normally expect CSUM_ITEMs. We instead mark the inode NODATASUM (see
+  // BuildInodeItem flags) so the checker does not demand data checksums.
+  private void WriteDataExtents(byte[] image) {
+    foreach (var ext in this._dataExtents)
+      ext.Payload.CopyTo(image.AsSpan((int)ext.DiskBytenr));
   }
 
   // Decides the physical placement of every block whose offset depends on the
@@ -197,7 +231,20 @@ public sealed class BtrfsWriter {
     this._metadataChunkLength = RoundUpToStripe(metadataRawLength);
 
     this._dataChunkStart = MetadataChunkStart + this._metadataChunkLength;
-    this._totalSize = this._dataChunkStart + DataChunkLength;
+
+    // Size the DATA chunk to hold every regular (non-inline) file extent,
+    // sector-packed, rounded up to a whole BTRFS_STRIPE_LEN. Keep a minimum
+    // region so images with only inline files still carry a usable data chunk.
+    long dataBytes = 0;
+    foreach (var ext in this._dataExtents) {
+      ext.DiskBytenr = this._dataChunkStart + dataBytes;
+      // Patch the file_extent_item's disk_bytenr (offset 21) now that the
+      // logical address of the data region is known.
+      BinaryPrimitives.WriteInt64LittleEndian(ext.ExtentDataItem.AsSpan(21), ext.DiskBytenr);
+      dataBytes += ext.AlignedLength;
+    }
+    this._dataChunkLength = Math.Max(MinDataChunkLength, RoundUpToStripe(dataBytes));
+    this._totalSize = this._dataChunkStart + this._dataChunkLength;
   }
 
   private static long RoundUpToStripe(long length) {
@@ -205,9 +252,14 @@ public sealed class BtrfsWriter {
     return rem == 0 ? length : length + (StripeLen - rem);
   }
 
+  private static long RoundUpToSector(long length) {
+    var rem = length % SectorSize;
+    return rem == 0 ? length : length + (SectorSize - rem);
+  }
+
   // Number of metadata tree blocks the extent tree must account for:
-  // chunk + dev + root + every FS-tree block + extent + csum.
-  private int MetadataBlockCount => 4 + this._fsTreeBlockCount;
+  // chunk + dev + root + extent + csum (5 fixed) + every FS-tree block.
+  private int MetadataBlockCount => 5 + this._fsTreeBlockCount;
 
   // Builds an empty leaf block (no items). Used for CSUM_TREE where the
   // only requirement is a valid node header — no CSUM_ITEM entries needed
@@ -229,16 +281,31 @@ public sealed class BtrfsWriter {
   private void WriteExtentTree(byte[] image) {
     var items = new List<(long objId, byte type, long offset, byte[] data)>();
 
-    // Tree block extent items — one per metadata node.
-    AddTreeBlockExtent(items, ChunkTreeOff, ChunkTreeObjectId);
-    AddTreeBlockExtent(items, DevTreeOff,   DevTreeObjectId);
-    AddTreeBlockExtent(items, RootTreeOff,  RootTreeObjectId);
+    // Tree block extent items — one per metadata node. The tree_block_info.level
+    // recorded here must match the block header's level; btrfs check reports
+    // "metadata level mismatch" otherwise. Every single-leaf tree is level 0;
+    // the FS-tree root is level 1 when it spans an internal node over leaves.
+    AddTreeBlockExtent(items, ChunkTreeOff, ChunkTreeObjectId, level: 0);
+    AddTreeBlockExtent(items, DevTreeOff,   DevTreeObjectId,   level: 0);
+    AddTreeBlockExtent(items, RootTreeOff,  RootTreeObjectId,  level: 0);
     // Every FS-tree block — the root node (internal when the tree has grown)
-    // and each leaf — is an owned metadata extent of FS_TREE.
-    foreach (var off in this._fsTreeBlockOffsets)
-      AddTreeBlockExtent(items, off, FsTreeObjectId);
-    AddTreeBlockExtent(items, this._extentTreeOff, ExtentTreeObjectId);
-    AddTreeBlockExtent(items, this._csumTreeOff,  CsumTreeObjectId);
+    // and each leaf — is an owned metadata extent of FS_TREE. Index 0 is the
+    // root: level 1 when leaves follow, otherwise the sole leaf at level 0.
+    var fsRootLevel = (byte)(this._fsTreeBlockCount == 1 ? 0 : 1);
+    for (var i = 0; i < this._fsTreeBlockOffsets.Count; i++)
+      AddTreeBlockExtent(items, this._fsTreeBlockOffsets[i], FsTreeObjectId,
+        level: i == 0 ? fsRootLevel : (byte)0);
+    AddTreeBlockExtent(items, this._extentTreeOff, ExtentTreeObjectId, level: 0);
+    AddTreeBlockExtent(items, this._csumTreeOff,  CsumTreeObjectId,    level: 0);
+
+    // Data extent items — one EXTENT_ITEM (flags=DATA) with an inline
+    // EXTENT_DATA_REF per regular file extent. btrfs check cross-references
+    // each FS-tree EXTENT_DATA's disk_bytenr against these.
+    long dataUsed = 0;
+    foreach (var ext in this._dataExtents) {
+      AddDataExtent(items, ext.DiskBytenr, ext.AlignedLength, FsTreeObjectId, ext.FileObjectId);
+      dataUsed += ext.AlignedLength;
+    }
 
     // Block groups — one per chunk. Used bytes must match what
     // update_block_group_used() accumulates from the extent items that
@@ -249,15 +316,15 @@ public sealed class BtrfsWriter {
       BuildBlockGroupItem(used: CountMetadataUseInRange(SystemChunkStart, SystemChunkLength), FirstChunkTreeObjectId, BlockGroupSystem)));
     items.Add((MetadataChunkStart, BlockGroupItem, this._metadataChunkLength,
       BuildBlockGroupItem(used: CountMetadataUseInRange(MetadataChunkStart, this._metadataChunkLength), FirstChunkTreeObjectId, BlockGroupMetadata)));
-    items.Add((this._dataChunkStart, BlockGroupItem, DataChunkLength,
-      BuildBlockGroupItem(used: 0, FirstChunkTreeObjectId, BlockGroupData)));
+    items.Add((this._dataChunkStart, BlockGroupItem, this._dataChunkLength,
+      BuildBlockGroupItem(used: dataUsed, FirstChunkTreeObjectId, BlockGroupData)));
 
     SortLeafItems(items);
     WriteLeafNode(image, (int)this._extentTreeOff, ExtentTreeObjectId, items);
   }
 
   private static void AddTreeBlockExtent(List<(long, byte, long, byte[])> items,
-      long bytenr, long ownerRoot) {
+      long bytenr, long ownerRoot, byte level) {
     // EXTENT_ITEM value layout for a tree block:
     //   btrfs_extent_item (24): refs(8) + generation(8) + flags(8)
     //   btrfs_tree_block_info (18): disk_key(17) + level(1)
@@ -269,11 +336,34 @@ public sealed class BtrfsWriter {
     BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(16), ExtentFlagTreeBlock);            // flags
     // tree_block_info.key (17 bytes at offset 24) = lowest key in the block.
     // Zeroing is tolerated by btrfs check for structural validation.
-    v[24 + 17] = 0;  // level — leaf
+    v[24 + 17] = level;  // tree_block_info.level (0 = leaf)
     // Inline TREE_BLOCK_REF (type=176, offset=owning root objectid).
     v[24 + 18] = TreeBlockRef;
     BinaryPrimitives.WriteInt64LittleEndian(v.AsSpan(24 + 18 + 1), ownerRoot);
     items.Add((bytenr, ExtentItem, NodeSize, v));
+  }
+
+  // Adds a data EXTENT_ITEM (key = (bytenr, EXTENT_ITEM, length)) with one
+  // inline EXTENT_DATA_REF naming the FS_TREE inode that owns the extent.
+  //   btrfs_extent_item (24): refs(8) + generation(8) + flags(8)
+  //   inline ref: type(1=EXTENT_DATA_REF) + btrfs_extent_data_ref(28):
+  //               root(8) + objectid(8) + offset(8) + count(4)
+  // Total: 24 + 29 = 53 bytes. The inline-ref hash is implicit (no separate
+  // key); btrfs check recomputes hash_extent_data_ref over (root, objectid,
+  // file_offset) only when a standalone EXTENT_DATA_REF key exists — for the
+  // inline form it just walks the embedded struct, so no hash is stored here.
+  private static void AddDataExtent(List<(long, byte, long, byte[])> items,
+      long bytenr, long length, long ownerRoot, long ownerInode) {
+    var v = new byte[24 + 1 + 28];
+    BinaryPrimitives.WriteInt64LittleEndian(v.AsSpan(0), 1);                       // refs
+    BinaryPrimitives.WriteInt64LittleEndian(v.AsSpan(8), 1);                       // generation
+    BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(16), ExtentFlagData);        // flags = DATA
+    v[24] = ExtentDataRef;                                                         // inline ref type
+    BinaryPrimitives.WriteInt64LittleEndian(v.AsSpan(25), ownerRoot);             // root
+    BinaryPrimitives.WriteInt64LittleEndian(v.AsSpan(33), ownerInode);            // objectid (inode)
+    BinaryPrimitives.WriteInt64LittleEndian(v.AsSpan(41), 0);                     // offset (file offset)
+    BinaryPrimitives.WriteUInt32LittleEndian(v.AsSpan(49), 1);                    // count (refs)
+    items.Add((bytenr, ExtentItem, length, v));
   }
 
   private static byte[] BuildBlockGroupItem(long used, long chunkObjectId, ulong flags) {
@@ -355,11 +445,15 @@ public sealed class BtrfsWriter {
     BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(0x58), ChunkTreeOff);
     BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(0x70), this._totalSize);
     // bytes_used: actual bytes consumed by metadata + data. btrfs check
-    // compares this against the sum of every allocated extent it walks;
-    // we account every metadata tree block (chunk/dev/root, the FS-tree
-    // root+leaves, extent, csum) and no file data extents (files live inline
-    // in FS_TREE EXTENT_DATA items which do not contribute to bytes_used).
-    BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(0x78), (long)this.MetadataBlockCount * NodeSize);
+    // compares this against the sum of every allocated extent it walks; we
+    // account every metadata tree block (chunk/dev/root, the FS-tree
+    // root+leaves, extent, csum) plus every regular (non-inline) data extent.
+    // Inline files live inside FS_TREE EXTENT_DATA items and do not add to
+    // bytes_used; files >= one sector are sector-aligned data extents that do.
+    long dataBytesUsed = 0;
+    foreach (var ext in this._dataExtents) dataBytesUsed += ext.AlignedLength;
+    BinaryPrimitives.WriteInt64LittleEndian(sb.Slice(0x78),
+      (long)this.MetadataBlockCount * NodeSize + dataBytesUsed);
     // root_dir_objectid at 0x80 is the default directory inode inside the
     // default subvolume (fs tree root). Per fs/btrfs/ctree.h this is
     // BTRFS_FIRST_FREE_OBJECTID (256), NOT the fs-tree objectid.
@@ -401,7 +495,7 @@ public sealed class BtrfsWriter {
     // references this device. btrfs check complains with
     // "Dev extent's total-byte(X) is not equal to byte-used(Y)" otherwise.
     BinaryPrimitives.WriteInt64LittleEndian(d.AsSpan(16),
-      SystemChunkLength + this._metadataChunkLength + DataChunkLength);
+      SystemChunkLength + this._metadataChunkLength + this._dataChunkLength);
     BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(24), SectorSize);   // io_align
     BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(28), SectorSize);   // io_width
     BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(32), SectorSize);   // sector_size
@@ -463,7 +557,7 @@ public sealed class BtrfsWriter {
       (FirstChunkTreeObjectId, ChunkItem, MetadataChunkStart,
         BuildChunkItem(this._metadataChunkLength, BlockGroupMetadata, MetadataChunkStart)),
       (FirstChunkTreeObjectId, ChunkItem, this._dataChunkStart,
-        BuildChunkItem(DataChunkLength, BlockGroupData, this._dataChunkStart)),
+        BuildChunkItem(this._dataChunkLength, BlockGroupData, this._dataChunkStart)),
     };
     SortLeafItems(items);
     WriteLeafNode(image, ChunkTreeOff, ChunkTreeObjectId, items);
@@ -504,7 +598,7 @@ public sealed class BtrfsWriter {
       (1, DevExtent, MetadataChunkStart,
         BuildDevExtent(ChunkTreeObjectId, FirstChunkTreeObjectId, MetadataChunkStart, this._metadataChunkLength)),
       (1, DevExtent, this._dataChunkStart,
-        BuildDevExtent(ChunkTreeObjectId, FirstChunkTreeObjectId, this._dataChunkStart, DataChunkLength)),
+        BuildDevExtent(ChunkTreeObjectId, FirstChunkTreeObjectId, this._dataChunkStart, this._dataChunkLength)),
     };
     SortLeafItems(items);
     WriteLeafNode(image, DevTreeOff, DevTreeObjectId, items);
@@ -533,11 +627,17 @@ public sealed class BtrfsWriter {
     // _fsTreeBlockOffsets[0] (== FsTreeOff): the sole leaf when the tree fits
     // one node, otherwise the internal index node atop the leaves. Its level is
     // recorded in the block header, not here.
+    // The FS-tree root block is a leaf (level 0) when the whole item set fits a
+    // single node, otherwise a level-1 internal node atop the leaves. btrfs
+    // check cross-checks root_item.level against the block header's level
+    // ("root [5 0] level N does not match M"), so the ROOT_ITEM must record the
+    // real root level. Every other tree here is a single leaf (level 0).
+    var fsRootLevel = (byte)(this._fsTreeBlockCount == 1 ? 0 : 1);
     var items = new List<(long objId, byte type, long offset, byte[] data)> {
-      (ExtentTreeObjectId, RootItem, 0, BuildRootItem(this._extentTreeOff, rootDirId: 0)),
-      (DevTreeObjectId,    RootItem, 0, BuildRootItem(DevTreeOff,          rootDirId: 0)),
-      (FsTreeObjectId,     RootItem, 0, BuildRootItem(FsTreeOff,           rootDirId: FirstFreeObjectId)),
-      (CsumTreeObjectId,   RootItem, 0, BuildRootItem(this._csumTreeOff,   rootDirId: 0)),
+      (ExtentTreeObjectId, RootItem, 0, BuildRootItem(this._extentTreeOff, rootDirId: 0, level: 0)),
+      (DevTreeObjectId,    RootItem, 0, BuildRootItem(DevTreeOff,          rootDirId: 0, level: 0)),
+      (FsTreeObjectId,     RootItem, 0, BuildRootItem(FsTreeOff,           rootDirId: FirstFreeObjectId, level: fsRootLevel)),
+      (CsumTreeObjectId,   RootItem, 0, BuildRootItem(this._csumTreeOff,   rootDirId: 0, level: 0)),
     };
     SortLeafItems(items);
     WriteLeafNode(image, RootTreeOff, RootTreeObjectId, items);
@@ -545,8 +645,12 @@ public sealed class BtrfsWriter {
 
   // 439-byte ROOT_ITEM (fs/btrfs/ctree.h btrfs_root_item). Only a few
   // fields need sensible values for btrfs check to accept the image:
-  // bytenr points at the tree root, generation matches, refs>=1.
-  private static byte[] BuildRootItem(long bytenr, long rootDirId) {
+  // bytenr points at the tree root, generation matches, refs>=1, and level
+  // matches the root block's header level. Field offsets (after the 160-byte
+  // embedded btrfs_inode_item): generation@160, root_dirid@168, bytenr@176,
+  // byte_limit@184, bytes_used@192, last_snapshot@200, flags@208, refs@216,
+  // drop_progress(17)@220, drop_level@237, level@238.
+  private static byte[] BuildRootItem(long bytenr, long rootDirId, byte level) {
     var d = new byte[439];
     BinaryPrimitives.WriteInt64LittleEndian(d.AsSpan(160), 1);           // generation
     BinaryPrimitives.WriteInt64LittleEndian(d.AsSpan(168), rootDirId);   // root_dirid
@@ -554,6 +658,7 @@ public sealed class BtrfsWriter {
     BinaryPrimitives.WriteInt64LittleEndian(d.AsSpan(184), NodeSize);    // byte_limit
     BinaryPrimitives.WriteInt64LittleEndian(d.AsSpan(192), NodeSize);    // bytes_used
     BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(216), 1);          // refs
+    d[238] = level;                                                      // level
     return d;
   }
 
@@ -702,7 +807,7 @@ public sealed class BtrfsWriter {
   // Emits all FS-tree items for a directory inode and recurses into its
   // children. Order of allocation matches phase-1 discovery so objectids are
   // monotonic across the produced item set.
-  private static void EmitDirectory(
+  private void EmitDirectory(
       List<(long objId, byte type, long offset, byte[] data)> items,
       DirNode dir, bool isRoot) {
     // Directory inode size = sum of (name_len * 2) across its entries: per
@@ -716,7 +821,7 @@ public sealed class BtrfsWriter {
 
     // Btrfs counts only "." against a directory's nlink — not ".." and not
     // children — so every directory has nlink=1 regardless of child count.
-    var dirInode = BuildInodeItem(mode: 0x41ED /* S_IFDIR | 0755 */, size: dirSize, nlink: 1);
+    var dirInode = BuildInodeItem(mode: 0x41ED /* S_IFDIR | 0755 */, size: dirSize, bytes: 0, nlink: 1);
     items.Add((dir.ObjectId, InodeItem, 0L, dirInode));
 
     if (isRoot) {
@@ -741,23 +846,57 @@ public sealed class BtrfsWriter {
 
     foreach (var (name, data) in dir.Files) {
       var fileObjectId = AllocateFileObjectId(dir, name);
-      var fileInode = BuildInodeItem(mode: 0x81A4 /* S_IFREG | 0644 */, size: data.Length, nlink: 1);
-      items.Add((fileObjectId, InodeItem, 0L, fileInode));
 
       EmitChildLink(items, dir.ObjectId, fileObjectId, name, isDir: false, ref index);
       EmitChildBackRef(items, fileObjectId, dir.ObjectId, name, index - 1);
 
-      // Inline EXTENT_DATA (btrfs_file_extent_item). Layout:
-      //   0..7  generation, 8..15 ram_bytes, 16 compression (0=none),
-      //   17 encryption (0), 18..19 other_encoding, 20 type (0=inline),
-      //   21.. inline payload.
-      var extent = new byte[21 + data.Length];
-      BinaryPrimitives.WriteInt64LittleEndian(extent.AsSpan(0), 1);           // generation
-      BinaryPrimitives.WriteInt64LittleEndian(extent.AsSpan(8), data.Length); // ram_bytes
-      extent[16] = 0; // compression = none
-      extent[20] = 0; // type = inline
-      data.CopyTo(extent, 21);
-      items.Add((fileObjectId, ExtentData, 0L, extent));
+      if (data.Length < MaxInlineDataSize) {
+        // Inline EXTENT_DATA (btrfs_file_extent_item). Layout:
+        //   0..7  generation, 8..15 ram_bytes, 16 compression (0=none),
+        //   17 encryption (0), 18..19 other_encoding, 20 type (0=inline),
+        //   21.. inline payload.
+        // An inline file consumes no separate data extent, so the inode's
+        // on-disk byte count equals its logical size.
+        var fileInode = BuildInodeItem(mode: 0x81A4 /* S_IFREG | 0644 */, size: data.Length, bytes: data.Length, nlink: 1);
+        items.Add((fileObjectId, InodeItem, 0L, fileInode));
+
+        var extent = new byte[21 + data.Length];
+        BinaryPrimitives.WriteInt64LittleEndian(extent.AsSpan(0), 1);           // generation
+        BinaryPrimitives.WriteInt64LittleEndian(extent.AsSpan(8), data.Length); // ram_bytes
+        extent[16] = 0; // compression = none
+        extent[20] = 0; // type = inline
+        data.CopyTo(extent, 21);
+        items.Add((fileObjectId, ExtentData, 0L, extent));
+        continue;
+      }
+
+      // Regular (non-inline) EXTENT_DATA. The payload lives in the DATA chunk
+      // as a sector-aligned extent; its disk_bytenr is filled in after layout
+      // (ComputeLayout) once the data region's logical address is known. The
+      // inode's on-disk byte count is the sector-aligned extent length.
+      var alignedLength = RoundUpToSector(data.Length);
+      var fileInodeReg = BuildInodeItem(mode: 0x81A4, size: data.Length, bytes: alignedLength, nlink: 1, flags: InodeNoDataSum);
+      items.Add((fileObjectId, InodeItem, 0L, fileInodeReg));
+
+      // btrfs_file_extent_item (regular): 21-byte header then disk_bytenr(8)@21,
+      // disk_num_bytes(8)@29, offset(8)@37, num_bytes(8)@45 = 53 bytes.
+      var reg = new byte[53];
+      BinaryPrimitives.WriteInt64LittleEndian(reg.AsSpan(0), 1);              // generation
+      BinaryPrimitives.WriteInt64LittleEndian(reg.AsSpan(8), alignedLength);  // ram_bytes
+      reg[16] = 0; // compression = none
+      reg[20] = 1; // type = regular
+      // disk_bytenr (offset 21) patched in ComputeLayout.
+      BinaryPrimitives.WriteInt64LittleEndian(reg.AsSpan(29), alignedLength); // disk_num_bytes
+      BinaryPrimitives.WriteInt64LittleEndian(reg.AsSpan(37), 0);             // offset into extent
+      BinaryPrimitives.WriteInt64LittleEndian(reg.AsSpan(45), alignedLength); // num_bytes
+      items.Add((fileObjectId, ExtentData, 0L, reg));
+
+      this._dataExtents.Add(new DataExtent {
+        FileObjectId = fileObjectId,
+        Payload = data,
+        AlignedLength = alignedLength,
+        ExtentDataItem = reg,
+      });
     }
 
     // Recurse after emitting this directory's own links so the produced item
@@ -806,18 +945,28 @@ public sealed class BtrfsWriter {
     items.Add((childObjectId, InodeRef, parentObjectId, inodeRef));
   }
 
-  // Builds a 160-byte INODE_ITEM. Size at offset 16 is what our reader
-  // inspects; the rest is canonical shape for btrfs-progs.
-  private static byte[] BuildInodeItem(uint mode, long size, uint nlink) {
+  // Builds a 160-byte INODE_ITEM. size (offset 16) is the logical i_size;
+  // bytes (offset 24) is the on-disk byte count btrfs check sums against the
+  // file's data extents (== sector-aligned extent length for regular files,
+  // == logical size for inline files, 0 for directories). The rest is the
+  // canonical shape for btrfs-progs.
+  private static byte[] BuildInodeItem(uint mode, long size, long bytes, uint nlink, ulong flags = 0) {
     var d = new byte[160];
     BinaryPrimitives.WriteInt64LittleEndian(d.AsSpan(0), 1);   // generation
     BinaryPrimitives.WriteInt64LittleEndian(d.AsSpan(8), 1);   // transid
     BinaryPrimitives.WriteInt64LittleEndian(d.AsSpan(16), size);
-    BinaryPrimitives.WriteInt64LittleEndian(d.AsSpan(24), size); // bytes
+    BinaryPrimitives.WriteInt64LittleEndian(d.AsSpan(24), bytes);
     BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(40), nlink);
     BinaryPrimitives.WriteUInt32LittleEndian(d.AsSpan(52), mode);
+    // btrfs_inode_item.flags at offset 64 (after rdev@56). NODATASUM (bit 0)
+    // tells btrfs check the file's data extents carry no CSUM_TREE entries.
+    BinaryPrimitives.WriteUInt64LittleEndian(d.AsSpan(64), flags);
     return d;
   }
+
+  // BTRFS_INODE_NODATASUM (linux/btrfs_tree.h): the file's data has no
+  // checksums in the CSUM_TREE.
+  private const ulong InodeNoDataSum = 1UL << 0;
 
   private static byte[] BuildDirItemValue(long childInode, string name, bool isDir) {
     var nameBytes = Encoding.UTF8.GetBytes(name);
