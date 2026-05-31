@@ -113,11 +113,27 @@ if [ "$DRY_RUN" -eq 1 ] || [ -z "$PM" ]; then
   exit 0
 fi
 
+# ── AUR helper (Arch): several packages (e2tools, hfsprogs, hfsutils,
+# reiserfsprogs, ocfs2-tools) live only in the AUR, not the official repos.
+AUR=""
+if [ "$PM" = "pacman" ]; then
+  for h in yay paru pikaur trizen; do
+    if command -v "$h" >/dev/null 2>&1; then AUR="$h"; break; fi
+  done
+fi
+
 # ── Install command per package manager ───────────────────────────────────
 install_one() {
   local pkg="$1"
   case "$PM" in
-    pacman)  $SUDO pacman -S --needed --noconfirm "$pkg" ;;
+    pacman)
+      # Official repo first; fall back to the AUR helper for AUR-only packages.
+      if $SUDO pacman -S --needed --noconfirm "$pkg" 2>/dev/null; then return 0; fi
+      if [ -n "$AUR" ]; then
+        echo "   .. not in official repos; trying AUR via $AUR"
+        "$AUR" -S --needed --noconfirm "$pkg"; return $?
+      fi
+      return 1 ;;
     apt-get) $SUDO apt-get install -y "$pkg" ;;
     dnf)     $SUDO dnf install -y "$pkg" ;;
     zypper)  $SUDO zypper install -y "$pkg" ;;
@@ -125,12 +141,15 @@ install_one() {
 }
 
 if [ "$PM" = "apt-get" ]; then $SUDO apt-get update -y || true; fi
+if [ "$PM" = "pacman" ] && [ -z "$AUR" ]; then
+  echo "Note: no AUR helper (yay/paru) found — AUR-only packages (e2tools, hfsprogs, hfsutils, reiserfsprogs, ocfs2-tools) will be skipped."
+fi
 
 FAILED=()
 for pkg in "${!WANT[@]}"; do
   echo "── installing $pkg (${WANT[$pkg]})"
   if ! install_one "$pkg"; then
-    echo "   !! could not install $pkg (may be in AUR/EPEL/another repo) — skipping"
+    echo "   !! could not install $pkg (try an AUR helper / EPEL / another repo) — skipping"
     FAILED+=("$pkg")
   fi
 done
@@ -140,7 +159,9 @@ echo "── Summary ──"
 if [ "${#FAILED[@]}" -gt 0 ]; then
   echo "Not installed automatically (install manually if you need those tests):"
   printf '  %s\n' "${FAILED[@]}"
-  echo "Arch users: several (hfsprogs, e2tools) live in the AUR."
+  if [ "$PM" = "pacman" ]; then
+    echo "On Arch these are AUR packages — install an AUR helper (e.g. 'pacman -S --needed yay' from an AUR build, or paru) and re-run, or build them from the AUR manually."
+  fi
 else
   echo "All requested packages installed."
 fi
