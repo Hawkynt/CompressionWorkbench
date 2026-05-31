@@ -120,7 +120,12 @@ public sealed class HfsPlusReader : IDisposable {
     // Root folder CNID = 2.
     var dirPaths = new Dictionary<uint, string> { [2] = "" };
 
-    // Walk all leaf nodes.
+    // Walk the whole leaf chain. Catalogs that outgrow a single leaf node grow
+    // index nodes above several leaves, but every record still lives on a leaf
+    // and the leaves are doubly linked (fLink/bLink). Starting at firstLeafNode
+    // and following fLink therefore visits every record without descending the
+    // index level — the records arrive in catalog-key order, so a single
+    // forward pass resolves each folder before the files that live inside it.
     var currentNode = firstLeafNode;
     var visited = new HashSet<uint>();
 

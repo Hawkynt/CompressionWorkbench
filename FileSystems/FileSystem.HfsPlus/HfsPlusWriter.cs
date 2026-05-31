@@ -109,17 +109,23 @@ public sealed class HfsPlusWriter {
     //   block 0:        boot blocks (sectors 0,1) + primary VHB (sector 2)
     //   block 1:        allocation bitmap (1 block fits up to 32768 alloc blocks)
     //   block 2:        extents-overflow B-tree (1 block, header only — empty)
-    //   blocks 3..:     catalog B-tree (header + leaf node)
+    //   blocks 3..:     catalog B-tree (header + index + leaf nodes)
     //   blocks ..N:     user file data
     //   block totalBlocks-1: alternate VHB at sector (totalSectors-2)
     const uint AllocBlock = 1;
     const uint ExtentsBlock = 2;
     const uint CatalogStartBlock = 3;
-    // The catalog holds two CatalogNodeSize-byte B-tree nodes (header + leaf).
-    // At 4 KB blocks that's 2 blocks; at >= 8 KB blocks it collapses to 1.
-    var catalogBlockCount = CatalogBlocks(blockSize);
+    const ushort nodeSize = CatalogNodeSize;
 
-    var minBlocks = (3u + catalogBlockCount) + (uint)dataBlocksNeeded + 1u; // boot+alloc+ext+catalog+data+altVHB
+    // ── Build the catalog leaf records up front ───────────────────────────
+    // The number of B-tree nodes (and therefore the catalog fork size and the
+    // image geometry) depends on how many records there are and how they pack
+    // into leaf nodes, so the tree is planned before any blocks are allocated.
+    var catalog = BuildCatalogTree(blockSize, CatalogStartBlock, out var catalogBlockCount,
+        out var userDataStartBlock, out var nextBlockAfterData, out var nextCnid,
+        out var folderCount);
+
+    var minBlocks = CatalogStartBlock + catalogBlockCount + (uint)dataBlocksNeeded + 1u; // boot+alloc+ext+catalog+data+altVHB
     var totalBlocks = Math.Max((uint)DefaultImageBlocks, minBlocks);
     var imageSize = (int)(totalBlocks * blockSize);
 
@@ -156,6 +162,7 @@ public sealed class HfsPlusWriter {
     BinaryPrimitives.WriteUInt64BigEndian(vh[72..], 1UL);
 
     var catalogStartBlock = CatalogStartBlock;
+    var nextBlock = nextBlockAfterData;
 
     // ── Special-file ForkData descriptors per TN1150 §3.2 ─────────────────
     // VolumeHeader special-file ForkData offsets:
@@ -192,7 +199,6 @@ public sealed class HfsPlusWriter {
     // extentsFile fork descriptor in the volume header has totalBlocks=0.
     // We allocate 1 block (=1 node) at ExtentsBlock containing only a
     // header node with no leaf records.
-    const ushort nodeSize = CatalogNodeSize;
     {
       var extBase = (int)(ExtentsBlock * blockSize);
       var extHeader = disk.AsSpan(extBase, nodeSize);
@@ -224,225 +230,26 @@ public sealed class HfsPlusWriter {
       extHeader[248] = 0x80;
     }
 
-    // ── Build catalog B-tree ──────────────────────────────────────────────
+    // ── Write catalog B-tree nodes ────────────────────────────────────────
+    // The catalog tree (header + index + leaf nodes) was fully planned by
+    // BuildCatalogTree; here we just blit each node image into its block.
     var catalogBase = (int)(catalogStartBlock * blockSize);
+    for (var n = 0; n < catalog.Nodes.Count; n++)
+      catalog.Nodes[n].CopyTo(disk.AsSpan(catalogBase + n * nodeSize, nodeSize));
 
-    // -- Node 0: Header node (TN1150 §2.5) --
-    // Header node has exactly 3 records:
-    //   #0 BTHeaderRec     @ offset 14, size 106 → ends at 120
-    //   #1 UserDataRec     @ offset 120, size 128 → ends at 248
-    //   #2 BTMapRec        @ offset 248, fills to (nodeSize - offset table - 8) bytes
-    // Record offset table (uint16 BE each, written in reverse at end of node):
-    //   slot[0] @ nodeSize-2 = 14   (BTHeaderRec start)
-    //   slot[1] @ nodeSize-4 = 120  (UserDataRec start)
-    //   slot[2] @ nodeSize-6 = 248  (BTMapRec start)
-    //   slot[3] @ nodeSize-8 = freeOffset (one past BTMapRec)
-    var headerNode = disk.AsSpan(catalogBase, nodeSize);
-    headerNode[8] = 1; // kind = kBTHeaderNode (1)
-    headerNode[9] = 0; // height = 0 for header node
-    BinaryPrimitives.WriteUInt16BigEndian(headerNode[10..], 3); // numRecords = 3
-
-    // BTHeaderRec at offset 14. Field offsets per TN1150 §2.5.1:
-    //   +0  treeDepth      (u16)
-    //   +2  rootNode       (u32)
-    //   +6  leafRecords    (u32)
-    //   +10 firstLeafNode  (u32)
-    //   +14 lastLeafNode   (u32)
-    //   +18 nodeSize       (u16)
-    //   +20 maxKeyLength   (u16)
-    //   +22 totalNodes     (u32)
-    //   +26 freeNodes      (u32)
-    //   +30 reserved1      (u16)
-    //   +32 clumpSize      (u32)
-    //   +36 btreeType      (u8)
-    //   +37 keyCompareType (u8)
-    //   +38 attributes     (u32)
-    //   +42 reserved3[16]  (u32×16)
-    var hdr = headerNode[14..];
-    BinaryPrimitives.WriteUInt16BigEndian(hdr, 1);                  // treeDepth = 1 (only leaves)
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[2..], 1);             // rootNode = 1
-    // leafRecords filled in after records computed, below.
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[10..], 1);            // firstLeafNode = 1
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[14..], 1);            // lastLeafNode = 1
-    BinaryPrimitives.WriteUInt16BigEndian(hdr[18..], nodeSize);     // nodeSize
-    BinaryPrimitives.WriteUInt16BigEndian(hdr[20..], 516);          // maxKeyLength (HFS+ catalog max)
-    // totalNodes: this minimal catalog always has exactly 2 nodes — node 0
-    // (header) + node 1 (leaf). The catalog fork may span 1 or 2 allocation
-    // blocks depending on block size, but the node count is fixed because the
-    // B-tree node size (CatalogNodeSize) is independent of the block size.
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[22..], 2);            // totalNodes
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[26..], 0);           // freeNodes (both nodes in use)
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[32..], blockSize);    // clumpSize
-    hdr[36] = 0;                                                    // btreeType = kHFSBTreeType (0)
-    hdr[37] = 0xCF;                                                 // keyCompareType = kHFSBinaryCompare (0xCF)
-    // attributes: kBTBigKeysMask (2) | kBTVariableIndexKeysMask (4) = 6.
-    // The HFS+ catalog uses big keys (u16 keyLength) and variable-length index keys.
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[38..], 6);
-
-    // Record offsets (in reverse from end of node).
-    BinaryPrimitives.WriteUInt16BigEndian(headerNode[(nodeSize - 2)..], 14);  // BTHeaderRec
-    BinaryPrimitives.WriteUInt16BigEndian(headerNode[(nodeSize - 4)..], 120); // UserDataRec
-    BinaryPrimitives.WriteUInt16BigEndian(headerNode[(nodeSize - 6)..], 248); // BTMapRec
-    // Free-space record marker = where BTMapRec ends. BTMapRec fills the space
-    // between offset 248 and the offset table (at nodeSize-8). So freeOffset
-    // = nodeSize - 8.
-    BinaryPrimitives.WriteUInt16BigEndian(headerNode[(nodeSize - 8)..], (ushort)(nodeSize - 8));
-
-    // Mark node 0 (header) and node 1 (leaf) as used in the BT map record.
-    // BTMapRec is a bitmap of node usage starting at offset 248. Bit 0 of byte 0
-    // covers node 0 (header), bit 1 covers node 1 (leaf), etc. MSB = lowest node.
-    headerNode[248] = 0xC0; // bits 7,6 set → nodes 0 and 1 used
-
-    // -- Node 1: Leaf node --
-    var leafBase = catalogBase + nodeSize;
-    var leafNode = disk.AsSpan(leafBase, nodeSize);
-    leafNode[8] = 0xFF; // kind = -1 (leaf)
-    leafNode[9] = 1;    // height = 1
-
-    // Build catalog records. HFS+ B-tree leaf records MUST be sorted by their
-    // catalog key (parentCNID ascending, then name binary-ascending). We collect
-    // (sortParentCnid, sortName, recordBytes) tuples then sort.
-    var keyed = new List<(uint Parent, string Name, byte[] Bytes)>();
-
-    // First free block for user data: catalog starts at block 3 and takes
-    // catalogBlockCount blocks, so user data begins right after it.
-    var nextBlock = catalogStartBlock + catalogBlockCount;
-    var nextCnid = FirstUserCnid;
-
-    // ── Resolve the folder hierarchy implied by the slash-separated names ──
-    // Each file name may carry intermediate folders ("docs/api/reference.txt").
-    // We materialise one folder record + folder thread record per distinct
-    // directory and place every file under its real parent folder CNID, so the
-    // reader rebuilds the nested path from the catalog rather than seeing a flat
-    // root with embedded slashes.
-    //
-    // Folders are allocated CNIDs in discovery order, which guarantees a parent
-    // folder always receives a smaller CNID than its children. Because catalog
-    // leaf records are sorted by (parentCNID, name), this keeps every folder
-    // record ahead of its descendants in the leaf — the order the reader relies
-    // on to resolve parent paths in a single forward pass.
-    var folderCnids = new Dictionary<string, uint> { [""] = RootFolderCnid };
-    var folderValence = new Dictionary<uint, uint> { [RootFolderCnid] = 0 };
-    // Folder display name and parent CNID, keyed by the folder's own CNID.
-    var folderInfo = new Dictionary<uint, (uint Parent, string Name)>();
-
-    uint EnsureFolder(string path) {
-      if (folderCnids.TryGetValue(path, out var existing))
-        return existing;
-
-      var slash = path.LastIndexOf('/');
-      var parentPath = slash < 0 ? "" : path[..slash];
-      var leaf = slash < 0 ? path : path[(slash + 1)..];
-      var parentCnid = EnsureFolder(parentPath);
-
-      var cnid = nextCnid++;
-      folderCnids[path] = cnid;
-      folderValence[cnid] = 0;
-      folderInfo[cnid] = (parentCnid, leaf);
-      folderValence[parentCnid]++;
-      return cnid;
+    // ── Write user file data into its allocation blocks ───────────────────
+    foreach (var (startBlock, data) in catalog.FileData) {
+      if (data.Length == 0) continue;
+      var destOffset = (int)((long)startBlock * blockSize);
+      if (destOffset + data.Length <= disk.Length)
+        data.CopyTo(disk, destOffset);
     }
-
-    // Materialise every directory referenced by a file path first so CNID
-    // assignment follows discovery order (parents before children).
-    foreach (var (name, _) in this._files) {
-      var normalized = name.Replace('\\', '/').Trim('/');
-      var slash = normalized.LastIndexOf('/');
-      if (slash >= 0)
-        EnsureFolder(normalized[..slash]);
-    }
-
-    var fileRecords = new List<(uint Parent, string Name, byte[] Bytes)>();
-    foreach (var (rawName, data) in this._files) {
-      var normalized = rawName.Replace('\\', '/').Trim('/');
-      var slash = normalized.LastIndexOf('/');
-      var parentPath = slash < 0 ? "" : normalized[..slash];
-      var leafName = slash < 0 ? normalized : normalized[(slash + 1)..];
-      var parentCnid = folderCnids[parentPath];
-
-      var dataBlockCount2 = (uint)((data.Length + blockSize - 1) / blockSize);
-      var startBlock = nextBlock;
-      var fileCnid = nextCnid++;
-
-      if (data.Length > 0) {
-        var destOffset = (int)(startBlock * blockSize);
-        if (destOffset + data.Length <= disk.Length)
-          data.CopyTo(disk, destOffset);
-      }
-
-      nextBlock += dataBlockCount2;
-      folderValence[parentCnid]++;
-
-      // File record: key = (parentCNID, leafName).
-      fileRecords.Add((parentCnid, leafName,
-          BuildFileRecord(fileCnid, parentCnid, leafName, (long)data.Length, startBlock, dataBlockCount2)));
-      // File thread record: key = (fileCNID, ""). fsck.hfsplus checks
-      // "fileCount == fileThread" (thread record count matches file count).
-      fileRecords.Add((fileCnid, "",
-          BuildFileThreadRecord(fileCnid, parentCnid, leafName)));
-    }
-
-    // Root folder record: key = (parentOfRoot=1, volumeName).
-    // Per TN1150 §6.3, the root directory's catalog key uses the VOLUME NAME
-    // as the directory name (not an empty string). The folder thread record's
-    // body then names the root with the same volume name. fsck.hfsplus rejects
-    // "" with "Invalid catalog record type (4, 1)".
-    const string VolumeName = "untitled";
-    keyed.Add((1u, VolumeName,
-        BuildFolderRecord(RootFolderCnid, 1u, folderValence[RootFolderCnid], VolumeName)));
-    // Root folder thread: key = (rootCNID=2, "").
-    keyed.Add((RootFolderCnid, "", BuildFolderThreadRecord(RootFolderCnid, 1, VolumeName)));
-
-    // Subdirectory folder + folder thread records.
-    var folderCount = 0u;
-    foreach (var (cnid, info) in folderInfo) {
-      ++folderCount;
-      keyed.Add((info.Parent, info.Name,
-          BuildFolderRecord(cnid, info.Parent, folderValence[cnid], info.Name)));
-      keyed.Add((cnid, "", BuildFolderThreadRecord(cnid, info.Parent, info.Name)));
-    }
-
-    keyed.AddRange(fileRecords);
-
-    // Sort records by (parent, name) — HFS+ binary compare uses UTF-16BE.
-    keyed.Sort((a, b) => {
-      if (a.Parent != b.Parent) return a.Parent.CompareTo(b.Parent);
-      var an = Encoding.BigEndianUnicode.GetBytes(a.Name);
-      var bn = Encoding.BigEndianUnicode.GetBytes(b.Name);
-      var min = Math.Min(an.Length, bn.Length);
-      for (var i = 0; i < min; i++) {
-        if (an[i] != bn[i]) return an[i].CompareTo(bn[i]);
-      }
-      return an.Length.CompareTo(bn.Length);
-    });
-
-    var records = new List<byte[]>(keyed.Count);
-    foreach (var kr in keyed) records.Add(kr.Bytes);
-
-    // Write records into the leaf node.
-    var recCount = (ushort)records.Count;
-    BinaryPrimitives.WriteUInt16BigEndian(leafNode[10..], recCount);
-
-    var writePos = 14;
-    for (var i = 0; i < records.Count; i++) {
-      var rec = records[i];
-      rec.CopyTo(disk, leafBase + writePos);
-      var offsetSlot = nodeSize - 2 * (i + 1);
-      BinaryPrimitives.WriteUInt16BigEndian(leafNode[offsetSlot..], (ushort)writePos);
-      writePos += rec.Length;
-      if ((writePos & 1) != 0) writePos++;
-    }
-    var freeSlot = nodeSize - 2 * (records.Count + 1);
-    if (freeSlot >= 0)
-      BinaryPrimitives.WriteUInt16BigEndian(leafNode[freeSlot..], (ushort)writePos);
-
-    // Now we know the leaf record count, fill in BTHeaderRec.leafRecords.
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[6..], (uint)records.Count);
 
     // ── Allocation bitmap at AllocBlock ──────────────────────────────────
-    // Mark used blocks: 0 (boot+VHB), 1 (alloc), 2 (extents), 3..3+catBlocks-1
-    // (catalog), CatalogStartBlock+catalogBlockCount..nextBlock-1 (user data),
-    // and totalBlocks-1 (alternate VHB sector resides in last block).
+    // Mark used blocks: 0 (boot+VHB), 1 (alloc), 2 (extents),
+    // catalogStartBlock..catalogStartBlock+catalogBlockCount-1 (catalog),
+    // userDataStartBlock..nextBlock-1 (user data), and totalBlocks-1
+    // (alternate VHB sector resides in the last block).
     var allocBase = (int)(AllocBlock * blockSize);
     void MarkUsed(uint blk) {
       if (blk >= totalBlocks) return;
@@ -457,11 +264,11 @@ public sealed class HfsPlusWriter {
     MarkUsed(ExtentsBlock);
     for (var b = catalogStartBlock; b < catalogStartBlock + catalogBlockCount; b++) MarkUsed(b);
     // User data blocks.
-    for (var b = catalogStartBlock + catalogBlockCount; b < nextBlock; b++) MarkUsed(b);
+    for (var b = userDataStartBlock; b < nextBlock; b++) MarkUsed(b);
     // Alt VHB lives in the last allocation block.
     MarkUsed(totalBlocks - 1);
 
-    var usedBlocks = (3u + catalogBlockCount) + (uint)dataBlocksNeeded + 1u; // boot+alloc+ext+catalog+data+altVH
+    var usedBlocks = CatalogStartBlock + catalogBlockCount + (uint)dataBlocksNeeded + 1u; // boot+alloc+ext+catalog+data+altVH
     BinaryPrimitives.WriteUInt32BigEndian(vh[48..], totalBlocks - usedBlocks); // freeBlocks
     BinaryPrimitives.WriteUInt32BigEndian(vh[52..], nextBlock); // nextAllocation
     BinaryPrimitives.WriteUInt32BigEndian(vh[36..], folderCount); // folderCount (subdirectories; root excluded)
@@ -474,6 +281,430 @@ public sealed class HfsPlusWriter {
     disk.AsSpan(VolumeHeaderOffset, 512).CopyTo(disk.AsSpan(alternateVhOffset, 512));
 
     return disk;
+  }
+
+  // ── Catalog B-tree planning ──────────────────────────────────────────────
+
+  /// <summary>
+  /// The fully planned catalog B-tree: the byte image of every node (node 0 is
+  /// the header node, followed by leaf nodes and index nodes) plus the user
+  /// file-data placements so the caller can blit both into the image.
+  /// </summary>
+  private sealed class CatalogTree {
+    public required List<byte[]> Nodes { get; init; }
+    public required List<(uint StartBlock, byte[] Data)> FileData { get; init; }
+  }
+
+  /// <summary>
+  /// Resolves the folder hierarchy, builds and sorts all catalog records, packs
+  /// them into one or more leaf nodes (chained via fLink/bLink), builds the
+  /// index level(s) above the leaves, and emits the B-tree header node with a
+  /// node-allocation bitmap covering every node. A single leaf still collapses
+  /// to the classic 2-node tree (header + leaf, treeDepth 1); larger catalogs
+  /// grow extra leaves plus index nodes so a directory with thousands of entries
+  /// round-trips.
+  /// </summary>
+  private CatalogTree BuildCatalogTree(uint blockSize, uint catalogStartBlock,
+      out uint catalogBlockCount, out uint userDataStartBlock,
+      out uint nextBlockAfterData, out uint nextCnid, out uint folderCount) {
+    const ushort nodeSize = CatalogNodeSize;
+
+    nextCnid = FirstUserCnid;
+
+    // ── Resolve the folder hierarchy implied by the slash-separated names ──
+    // Each file name may carry intermediate folders ("docs/api/reference.txt").
+    // We materialise one folder record + folder thread record per distinct
+    // directory and place every file under its real parent folder CNID, so the
+    // reader rebuilds the nested path from the catalog rather than seeing a flat
+    // root with embedded slashes.
+    //
+    // Folders are allocated CNIDs in discovery order, which guarantees a parent
+    // folder always receives a smaller CNID than its children. Because catalog
+    // leaf records are sorted by (parentCNID, name), this keeps every folder
+    // record ahead of its descendants — the order the reader relies on to
+    // resolve parent paths in a single forward pass over the leaf chain.
+    var folderCnids = new Dictionary<string, uint> { [""] = RootFolderCnid };
+    var folderValence = new Dictionary<uint, uint> { [RootFolderCnid] = 0 };
+    var folderInfo = new Dictionary<uint, (uint Parent, string Name)>();
+    var localNextCnid = nextCnid;
+
+    uint EnsureFolder(string path) {
+      if (folderCnids.TryGetValue(path, out var existing))
+        return existing;
+
+      var slash = path.LastIndexOf('/');
+      var parentPath = slash < 0 ? "" : path[..slash];
+      var leaf = slash < 0 ? path : path[(slash + 1)..];
+      var parentCnid = EnsureFolder(parentPath);
+
+      var cnid = localNextCnid++;
+      folderCnids[path] = cnid;
+      folderValence[cnid] = 0;
+      folderInfo[cnid] = (parentCnid, leaf);
+      folderValence[parentCnid]++;
+      return cnid;
+    }
+
+    foreach (var (name, _) in this._files) {
+      var normalized = name.Replace('\\', '/').Trim('/');
+      var slash = normalized.LastIndexOf('/');
+      if (slash >= 0)
+        EnsureFolder(normalized[..slash]);
+    }
+
+    // ── File data placement ───────────────────────────────────────────────
+    // User data begins right after the catalog fork. The catalog fork size is
+    // unknown until the node count is known, but node packing needs the file
+    // start blocks. We resolve this in two passes: first compute how many leaf
+    // and index nodes the records need, then assign data blocks.
+    var fileData = new List<(uint StartBlock, byte[] Data)>();
+
+    // Pass 1: build records to discover the node count. File records reference
+    // start blocks, so we use placeholder start blocks here and rewrite the
+    // fork descriptors once the real layout is known. To avoid a second record
+    // build we instead compute the catalog node count from the record sizes and
+    // only assign start blocks afterward — so we build records lazily below.
+    var fileMeta = new List<(uint Cnid, uint Parent, string LeafName, byte[] Data, uint BlockCount)>();
+    foreach (var (rawName, data) in this._files) {
+      var normalized = rawName.Replace('\\', '/').Trim('/');
+      var slash = normalized.LastIndexOf('/');
+      var parentPath = slash < 0 ? "" : normalized[..slash];
+      var leafName = slash < 0 ? normalized : normalized[(slash + 1)..];
+      var parentCnid = folderCnids[parentPath];
+      var blockCount = (uint)((data.Length + blockSize - 1) / blockSize);
+      var fileCnid = localNextCnid++;
+      folderValence[parentCnid]++;
+      fileMeta.Add((fileCnid, parentCnid, leafName, data, blockCount));
+    }
+
+    nextCnid = localNextCnid;
+
+    // ── Compute the catalog fork size (node count) ─────────────────────────
+    // Catalog node count = 1 header + leaves + index nodes. To size the fork we
+    // need the leaf count, which depends on record sizes — and the record sizes
+    // for files do not depend on the (yet unknown) start block. So we build the
+    // records with the correct sizes using a provisional start block of 0, pack
+    // them to count nodes, derive the fork size, assign real start blocks, then
+    // rewrite only the fork-descriptor bytes inside the already-packed records.
+
+    // Build all records (sorted) with provisional file start blocks = 0.
+    // File records carry the fork-descriptor patch offset and their data so the
+    // real start block can be written in once the catalog fork size is known;
+    // non-file records leave ForkPatchOffset = -1 and Data = null.
+    const string VolumeName = "untitled";
+    var keyed = new List<(uint Parent, string Name, byte[] Bytes, int ForkPatchOffset, byte[]? Data, uint BlockCount)>();
+
+    // Root folder + thread.
+    keyed.Add((1u, VolumeName,
+        BuildFolderRecord(RootFolderCnid, 1u, folderValence[RootFolderCnid], VolumeName), -1, null, 0u));
+    keyed.Add((RootFolderCnid, "", BuildFolderThreadRecord(RootFolderCnid, 1, VolumeName), -1, null, 0u));
+
+    folderCount = 0u;
+    foreach (var (cnid, info) in folderInfo) {
+      ++folderCount;
+      keyed.Add((info.Parent, info.Name,
+          BuildFolderRecord(cnid, info.Parent, folderValence[cnid], info.Name), -1, null, 0u));
+      keyed.Add((cnid, "", BuildFolderThreadRecord(cnid, info.Parent, info.Name), -1, null, 0u));
+    }
+
+    foreach (var fm in fileMeta) {
+      var rec = BuildFileRecord(fm.Cnid, fm.Parent, fm.LeafName, fm.Data.Length, 0u, fm.BlockCount);
+      // Offset of extents[0].startBlock inside the record = keyLength prefix +
+      // key body + DataForkOffset + 16 (logicalSize+clumpSize+totalBlocks).
+      var keyLen = BinaryPrimitives.ReadUInt16BigEndian(rec) + 2;
+      var patchOffset = keyLen + DataForkOffset + 16;
+      keyed.Add((fm.Parent, fm.LeafName, rec, patchOffset, fm.Data, fm.BlockCount));
+      // File thread record.
+      keyed.Add((fm.Cnid, "", BuildFileThreadRecord(fm.Cnid, fm.Parent, fm.LeafName), -1, null, 0u));
+    }
+
+    // Sort by HFS+ catalog key (parentCNID, then binary UTF-16BE name compare).
+    keyed.Sort((a, b) => {
+      if (a.Parent != b.Parent) return a.Parent.CompareTo(b.Parent);
+      var an = Encoding.BigEndianUnicode.GetBytes(a.Name);
+      var bn = Encoding.BigEndianUnicode.GetBytes(b.Name);
+      var min = Math.Min(an.Length, bn.Length);
+      for (var i = 0; i < min; i++)
+        if (an[i] != bn[i]) return an[i].CompareTo(bn[i]);
+      return an.Length.CompareTo(bn.Length);
+    });
+
+    var records = new List<byte[]>(keyed.Count);
+    foreach (var kr in keyed) records.Add(kr.Bytes);
+
+    // ── Pack records into leaf nodes ───────────────────────────────────────
+    // A node's usable record area is nodeSize - 14 (descriptor); each record
+    // also costs a 2-byte offset-table slot, and one extra slot stores the
+    // free-space marker. Record bodies are padded to a 2-byte boundary.
+    var leafGroups = PackRecords(records, nodeSize);
+    var leafCount = leafGroups.Count;
+
+    // Node numbering: node 0 = header, nodes 1..leafCount = leaves, then index
+    // nodes. We build index levels bottom-up; the first index level points to
+    // the leaves, higher levels point to lower index nodes.
+    var firstLeafNodeNumber = 1u;
+
+    // ── Build the index level(s) ───────────────────────────────────────────
+    // Each index record = full catalog key of the child's first record + a u32
+    // child node number (2-byte aligned). One index node may not hold pointers
+    // to every leaf, so index levels are built repeatedly until a single root
+    // node remains.
+    var nextNodeNumber = firstLeafNodeNumber + (uint)leafCount;
+
+    // The first-record key of each leaf (key bytes WITHOUT the 2-byte length
+    // prefix already include it; here we keep the full key incl. length prefix
+    // for the index entry, matching kBTBigKeysMask layout).
+    var leafFirstKeys = new List<byte[]>(leafCount);
+    foreach (var group in leafGroups) {
+      var first = group[0];
+      var keyLen = BinaryPrimitives.ReadUInt16BigEndian(first) + 2;
+      leafFirstKeys.Add(first[..keyLen]);
+    }
+
+    uint treeDepth;
+    uint rootNode;
+    var indexNodeImages = new List<(uint NodeNumber, byte[] Image)>();
+
+    if (leafCount == 1) {
+      // Single leaf: classic 2-node tree, the leaf is the root, depth 1.
+      treeDepth = 1;
+      rootNode = firstLeafNodeNumber;
+    } else {
+      // Build index levels over the children below.
+      var childKeys = leafFirstKeys;
+      var childNodes = new List<uint>();
+      for (var i = 0; i < leafCount; i++) childNodes.Add(firstLeafNodeNumber + (uint)i);
+      var level = 0;
+
+      while (true) {
+        // Pack (key, childNode) entries into index nodes.
+        var entries = new List<(byte[] Key, uint Child)>(childKeys.Count);
+        for (var i = 0; i < childKeys.Count; i++) entries.Add((childKeys[i], childNodes[i]));
+
+        var groups = PackIndexEntries(entries, nodeSize);
+        var thisLevelNodes = new List<uint>();
+        var thisLevelKeys = new List<byte[]>();
+
+        foreach (var grp in groups) {
+          var nodeNo = nextNodeNumber++;
+          thisLevelNodes.Add(nodeNo);
+          thisLevelKeys.Add(grp[0].Key);
+          var img = BuildIndexNode(grp, nodeSize, (byte)(2 + level));
+          indexNodeImages.Add((nodeNo, img));
+        }
+
+        if (groups.Count == 1) {
+          rootNode = thisLevelNodes[0];
+          treeDepth = (uint)(2 + level); // leaves are depth 1
+          break;
+        }
+
+        childKeys = thisLevelKeys;
+        childNodes = thisLevelNodes;
+        ++level;
+      }
+    }
+
+    var totalNodes = nextNodeNumber; // node numbers 0..nextNodeNumber-1 are used
+    catalogBlockCount = (uint)(((long)totalNodes * nodeSize + blockSize - 1) / blockSize);
+
+    // ── Assign user-data start blocks now that the fork size is known ──────
+    // Walk the sorted records; every file record (ForkPatchOffset >= 0) gets the
+    // next run of data blocks and its data-fork extent patched in place.
+    userDataStartBlock = catalogStartBlock + catalogBlockCount;
+    nextBlockAfterData = userDataStartBlock;
+    for (var i = 0; i < keyed.Count; i++) {
+      var entry = keyed[i];
+      if (entry.ForkPatchOffset < 0) continue;
+      var startBlock = nextBlockAfterData;
+      var rec = records[i];
+      BinaryPrimitives.WriteUInt32BigEndian(rec.AsSpan(entry.ForkPatchOffset), startBlock);
+      BinaryPrimitives.WriteUInt32BigEndian(rec.AsSpan(entry.ForkPatchOffset + 4), entry.BlockCount);
+      if (entry.Data is { Length: > 0 })
+        fileData.Add((startBlock, entry.Data));
+      nextBlockAfterData += entry.BlockCount;
+    }
+
+    // ── Emit leaf node images (now that start blocks are patched) ──────────
+    var leafImages = new byte[leafCount][];
+    for (var i = 0; i < leafCount; i++) {
+      var fLink = i + 1 < leafCount ? firstLeafNodeNumber + (uint)(i + 1) : 0u;
+      var bLink = i > 0 ? firstLeafNodeNumber + (uint)(i - 1) : 0u;
+      leafImages[i] = BuildLeafNode(leafGroups[i], nodeSize, fLink, bLink);
+    }
+
+    // ── Assemble all node images in node-number order ──────────────────────
+    var nodes = new byte[totalNodes][];
+    nodes[0] = BuildCatalogHeaderNode(nodeSize, treeDepth, rootNode,
+        (uint)records.Count, firstLeafNodeNumber,
+        firstLeafNodeNumber + (uint)leafCount - 1, totalNodes);
+    for (var i = 0; i < leafCount; i++)
+      nodes[firstLeafNodeNumber + i] = leafImages[i];
+    foreach (var (nodeNo, img) in indexNodeImages)
+      nodes[nodeNo] = img;
+
+    return new CatalogTree {
+      Nodes = [.. nodes],
+      FileData = fileData,
+    };
+  }
+
+  /// <summary>
+  /// Greedily packs leaf records into the smallest run of leaf nodes that fits.
+  /// Each node reserves 14 bytes for the descriptor and 2 bytes per record (plus
+  /// one free-space slot) for the trailing offset table; record bodies pad to a
+  /// 2-byte boundary. Returns one list of records per leaf node, in order.
+  /// </summary>
+  private static List<List<byte[]>> PackRecords(List<byte[]> records, int nodeSize) {
+    var groups = new List<List<byte[]>>();
+    var current = new List<byte[]>();
+    var used = 14; // node descriptor
+
+    foreach (var rec in records) {
+      var padded = rec.Length + (rec.Length & 1);
+      // Cost of adding: record body (padded) + its offset slot, while still
+      // leaving room for the free-space offset slot.
+      var slots = 2 * (current.Count + 1) + 2; // existing+new offsets + free slot
+      if (current.Count > 0 && used + padded + slots > nodeSize) {
+        groups.Add(current);
+        current = [];
+        used = 14;
+      }
+      current.Add(rec);
+      used += padded;
+    }
+    if (current.Count > 0) groups.Add(current);
+    return groups;
+  }
+
+  /// <summary>
+  /// Packs index entries (full catalog key + 4-byte child pointer) into index
+  /// nodes the same way leaves are packed.
+  /// </summary>
+  private static List<List<(byte[] Key, uint Child)>> PackIndexEntries(
+      List<(byte[] Key, uint Child)> entries, int nodeSize) {
+    var groups = new List<List<(byte[] Key, uint Child)>>();
+    var current = new List<(byte[] Key, uint Child)>();
+    var used = 14;
+
+    foreach (var e in entries) {
+      var recLen = e.Key.Length + 4;            // key + child pointer
+      var padded = recLen + (recLen & 1);
+      var slots = 2 * (current.Count + 1) + 2;
+      if (current.Count > 0 && used + padded + slots > nodeSize) {
+        groups.Add(current);
+        current = [];
+        used = 14;
+      }
+      current.Add(e);
+      used += padded;
+    }
+    if (current.Count > 0) groups.Add(current);
+    return groups;
+  }
+
+  /// <summary>Lays out a leaf node image (kind = -1, height = 1).</summary>
+  private static byte[] BuildLeafNode(List<byte[]> records, int nodeSize, uint fLink, uint bLink) {
+    var node = new byte[nodeSize];
+    BinaryPrimitives.WriteUInt32BigEndian(node, fLink);
+    BinaryPrimitives.WriteUInt32BigEndian(node.AsSpan(4), bLink);
+    node[8] = 0xFF; // kind = kBTLeafNode (-1)
+    node[9] = 1;    // height
+    BinaryPrimitives.WriteUInt16BigEndian(node.AsSpan(10), (ushort)records.Count);
+
+    var writePos = 14;
+    for (var i = 0; i < records.Count; i++) {
+      var rec = records[i];
+      rec.CopyTo(node, writePos);
+      BinaryPrimitives.WriteUInt16BigEndian(node.AsSpan(nodeSize - 2 * (i + 1)), (ushort)writePos);
+      writePos += rec.Length;
+      if ((writePos & 1) != 0) writePos++;
+    }
+    BinaryPrimitives.WriteUInt16BigEndian(node.AsSpan(nodeSize - 2 * (records.Count + 1)), (ushort)writePos);
+    return node;
+  }
+
+  /// <summary>
+  /// Lays out an index node image (kind = 0). Each record is a full catalog key
+  /// (with its 2-byte length prefix) followed by a 4-byte child node number.
+  /// </summary>
+  private static byte[] BuildIndexNode(List<(byte[] Key, uint Child)> entries, int nodeSize, byte height) {
+    var node = new byte[nodeSize];
+    node[8] = 0;       // kind = kBTIndexNode (0)
+    node[9] = height;  // height above the leaves + 1
+    BinaryPrimitives.WriteUInt16BigEndian(node.AsSpan(10), (ushort)entries.Count);
+
+    var writePos = 14;
+    for (var i = 0; i < entries.Count; i++) {
+      var (key, child) = entries[i];
+      key.CopyTo(node, writePos);
+      BinaryPrimitives.WriteUInt32BigEndian(node.AsSpan(writePos + key.Length), child);
+      BinaryPrimitives.WriteUInt16BigEndian(node.AsSpan(nodeSize - 2 * (i + 1)), (ushort)writePos);
+      writePos += key.Length + 4;
+      if ((writePos & 1) != 0) writePos++;
+    }
+    BinaryPrimitives.WriteUInt16BigEndian(node.AsSpan(nodeSize - 2 * (entries.Count + 1)), (ushort)writePos);
+    return node;
+  }
+
+  /// <summary>
+  /// Lays out the catalog B-tree header node (node 0) with the BTHeaderRec, a
+  /// 128-byte UserDataRec, and a BTMapRec whose bits mark every allocated node
+  /// (and map nodes if the bitmap overflows the header node). For the node
+  /// counts this writer produces (catalogs of a few thousand nodes) the bitmap
+  /// always fits the header node's map record.
+  /// </summary>
+  private static byte[] BuildCatalogHeaderNode(int nodeSize, uint treeDepth, uint rootNode,
+      uint leafRecords, uint firstLeafNode, uint lastLeafNode, uint totalNodes) {
+    var node = new byte[nodeSize];
+    node[8] = 1; // kind = kBTHeaderNode
+    node[9] = 0; // height
+    BinaryPrimitives.WriteUInt16BigEndian(node.AsSpan(10), 3); // numRecords
+
+    var hdr = node.AsSpan(14);
+    BinaryPrimitives.WriteUInt16BigEndian(hdr, (ushort)treeDepth);
+    BinaryPrimitives.WriteUInt32BigEndian(hdr[2..], rootNode);
+    BinaryPrimitives.WriteUInt32BigEndian(hdr[6..], leafRecords);
+    BinaryPrimitives.WriteUInt32BigEndian(hdr[10..], firstLeafNode);
+    BinaryPrimitives.WriteUInt32BigEndian(hdr[14..], lastLeafNode);
+    BinaryPrimitives.WriteUInt16BigEndian(hdr[18..], (ushort)nodeSize);
+    BinaryPrimitives.WriteUInt16BigEndian(hdr[20..], 516); // maxKeyLength (HFS+ catalog)
+
+    // The map record in the header node covers (nodeSize - 256) * 8 nodes; if
+    // the catalog ever needed more nodes than that, dedicated map nodes would
+    // follow. The catalogs produced here stay well under that ceiling, so every
+    // node is recorded in the header map and there are no free nodes.
+    var mapBytesInHeader = nodeSize - 256;
+    var mapCapacity = (uint)(mapBytesInHeader * 8);
+    if (totalNodes > mapCapacity)
+      throw new NotSupportedException(
+        $"HFS+ catalog requires {totalNodes} nodes, exceeding the {mapCapacity}-node "
+        + "single-header-map limit; map nodes are not implemented.");
+
+    BinaryPrimitives.WriteUInt32BigEndian(hdr[22..], totalNodes); // totalNodes
+    BinaryPrimitives.WriteUInt32BigEndian(hdr[26..], 0);          // freeNodes
+    hdr[36] = 0;    // btreeType = kHFSBTreeType
+    hdr[37] = 0xCF; // keyCompareType = kHFSBinaryCompare
+    // attributes: kBTBigKeysMask (2) | kBTVariableIndexKeysMask (4) = 6.
+    BinaryPrimitives.WriteUInt32BigEndian(hdr[38..], 6);
+
+    // Record offsets (reverse from end of node):
+    //   #0 BTHeaderRec @ 14, #1 UserDataRec @ 120, #2 BTMapRec @ 248,
+    //   free-space marker @ end of the map record.
+    BinaryPrimitives.WriteUInt16BigEndian(node.AsSpan(nodeSize - 2), 14);
+    BinaryPrimitives.WriteUInt16BigEndian(node.AsSpan(nodeSize - 4), 120);
+    BinaryPrimitives.WriteUInt16BigEndian(node.AsSpan(nodeSize - 6), 248);
+    BinaryPrimitives.WriteUInt16BigEndian(node.AsSpan(nodeSize - 8), (ushort)(nodeSize - 8));
+
+    // Map record at offset 248: one bit per node, MSB = lowest node. Mark the
+    // first `totalNodes` bits used.
+    for (var n = 0u; n < totalNodes; n++) {
+      var byteIndex = 248 + (int)(n / 8);
+      var bitIndex = 7 - (int)(n % 8);
+      node[byteIndex] |= (byte)(1 << bitIndex);
+    }
+
+    return node;
   }
 
   // ── Record builders ─────────────────────────────────────────────────────
