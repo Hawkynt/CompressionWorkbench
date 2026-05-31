@@ -58,6 +58,11 @@ public sealed class HfsReader : IDisposable {
 
   private int BlockToOffset(int block) => this._firstBlockOffset + (int)(block * this._blockSize);
 
+  // The volume root directory dirID per Inside Macintosh. The root-dir catalog
+  // record is keyed under CNID 1 (RootParent); the root itself is dirID 2.
+  private const uint CnidRootParent = 1;
+  private const uint CnidRootDir = 2;
+
   private void ReadCatalogTree(int catalogBase) {
     if (catalogBase + 32 > this._data.Length) return;
 
@@ -70,6 +75,12 @@ public sealed class HfsReader : IDisposable {
     var firstLeaf = BinaryPrimitives.ReadUInt32BigEndian(hdr[10..]);
     var nodeSize = BinaryPrimitives.ReadUInt16BigEndian(hdr[18..]);
     if (nodeSize == 0) nodeSize = 512;
+
+    // First pass: collect every folder and file record with its parent dirID so
+    // we can reconstruct full nested paths from the (parentDirID, CName) keying.
+    var folderNamesByDirId = new Dictionary<uint, (uint Parent, string Name)>();
+    var pendingFolders = new List<(uint DirId, uint Parent, string Name)>();
+    var pendingFiles = new List<(uint Parent, string Name, uint Size, ushort Start, ushort Blocks)>();
 
     var node = (int)firstLeaf;
     var visited = new HashSet<int>();
@@ -115,23 +126,18 @@ public sealed class HfsReader : IDisposable {
             var filLgLen = BinaryPrimitives.ReadUInt32BigEndian(this._data.AsSpan(dataPos + 26));
             var extStart = BinaryPrimitives.ReadUInt16BigEndian(this._data.AsSpan(dataPos + 74));
             var extBlocks = BinaryPrimitives.ReadUInt16BigEndian(this._data.AsSpan(dataPos + 76));
-
-            this._entries.Add(new HfsEntry {
-              Name = name,
-              Size = filLgLen,
-              IsDirectory = false,
-              StartBlock = extStart,
-              BlockCount = extBlocks,
-            });
+            pendingFiles.Add((parentDirId, name, filLgLen, extStart, extBlocks));
             break;
           }
-          case RecFolder when !string.IsNullOrEmpty(name) && parentDirId != 1: {
-            // Skip the root-dir record (parentDirId == 1 means it's the volume root
-            // itself — we don't want to surface the volume name as a directory entry).
-            this._entries.Add(new HfsEntry {
-              Name = name,
-              IsDirectory = true,
-            });
+          case RecFolder when !string.IsNullOrEmpty(name): {
+            // Folder record: dirDirID at offset 6 into the record data. The root
+            // directory itself (keyed under RootParent) is recorded so it can
+            // anchor the path walk, but is not surfaced as a directory entry.
+            if (dataPos + 10 > this._data.Length) continue;
+            var dirId = BinaryPrimitives.ReadUInt32BigEndian(this._data.AsSpan(dataPos + 6));
+            folderNamesByDirId[dirId] = (parentDirId, name);
+            if (parentDirId != CnidRootParent)
+              pendingFolders.Add((dirId, parentDirId, name));
             break;
           }
           case RecFolderThread:
@@ -144,6 +150,44 @@ public sealed class HfsReader : IDisposable {
       // Follow fLink to next leaf.
       node = (int)BinaryPrimitives.ReadUInt32BigEndian(this._data.AsSpan(nodeOffset));
     }
+
+    // Second pass: resolve each record's full nested path from its parent chain.
+    foreach (var (dirId, parent, name) in pendingFolders) {
+      _ = dirId;
+      this._entries.Add(new HfsEntry {
+        Name = this.ResolvePath(folderNamesByDirId, parent, name),
+        IsDirectory = true,
+      });
+    }
+    foreach (var (parent, name, size, start, blocks) in pendingFiles) {
+      this._entries.Add(new HfsEntry {
+        Name = this.ResolvePath(folderNamesByDirId, parent, name),
+        Size = size,
+        IsDirectory = false,
+        StartBlock = start,
+        BlockCount = blocks,
+      });
+    }
+  }
+
+  /// <summary>
+  /// Builds the full slash-separated path of an entry from its parent dirID
+  /// chain, stopping at the volume root (dirID 2). The volume name itself is not
+  /// part of any entry path.
+  /// </summary>
+  private string ResolvePath(
+    Dictionary<uint, (uint Parent, string Name)> folderNamesByDirId,
+    uint parentDirId, string leafName) {
+    var parts = new List<string> { leafName };
+    var current = parentDirId;
+    var guard = 0;
+    while (current != CnidRootDir && current != CnidRootParent && guard++ < 256) {
+      if (!folderNamesByDirId.TryGetValue(current, out var folder)) break;
+      parts.Add(folder.Name);
+      current = folder.Parent;
+    }
+    parts.Reverse();
+    return string.Join('/', parts);
   }
 
   public byte[] Extract(HfsEntry entry) {

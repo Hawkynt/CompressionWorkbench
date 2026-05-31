@@ -13,9 +13,15 @@ namespace FileSystem.Hfs;
 /// single leaf, an index node is added and the tree depth becomes 2.
 /// </para>
 /// <para>
+/// Names passed to <see cref="AddFile(string, byte[])"/> may contain
+/// <c>'/'</c> separators denoting subdirectories. Each path component below the
+/// final one becomes a real catalog folder (directory record type 1 + directory
+/// thread type 3) with its own dirID, inserted under its parent's dirID; the
+/// file lands keyed under its immediate parent folder's dirID.
+/// </para>
+/// <para>
 /// Current scope cuts:
 /// <list type="bullet">
-///   <item>Flat root directory only (no subdirectories).</item>
 ///   <item>Allocation block size fixed at 512 bytes.</item>
 ///   <item>ASCII-only filenames (no MacRoman high-byte handling).</item>
 ///   <item>No resource forks; resource-fork fields in file records are zero.</item>
@@ -70,29 +76,50 @@ public sealed class HfsWriter {
     _volumeName = name;
   }
 
-  /// <summary>Adds a file to the image root directory.</summary>
+  /// <summary>
+  /// Adds a file to the image. The <paramref name="name"/> may contain
+  /// <c>'/'</c> (or <c>'\'</c>) separators to place the file inside a
+  /// subdirectory tree; each path component must be 1–31 chars. A name with no
+  /// separator lands in the volume root.
+  /// </summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    if (name.Length is 0 or > 31) throw new ArgumentOutOfRangeException(nameof(name), "HFS file name must be 1–31 chars.");
+    var components = SplitPath(name);
+    if (components.Length == 0)
+      throw new ArgumentOutOfRangeException(nameof(name), "HFS path must contain at least one component.");
+    foreach (var component in components)
+      if (component.Length is 0 or > 31)
+        throw new ArgumentOutOfRangeException(nameof(name), "Each HFS path component must be 1–31 chars.");
     this._files.Add((name, data));
   }
+
+  /// <summary>Splits an AddFile path into its non-empty components.</summary>
+  private static string[] SplitPath(string name)
+    => name.Split('/', '\\').Where(c => c.Length > 0).ToArray();
 
   /// <summary>Builds the HFS disk image.</summary>
   public byte[] Build() {
     // --- 1. Compute layout -------------------------------------------------
 
-    // Sort files by (parentID, name) — all have parent = root (cnid=2),
-    // so a simple name sort is stable for catalog key ordering.
-    var files = this._files
-      .Select((f, i) => (f.Name, f.Data, Cnid: CnidFirstUser + (uint)i))
-      .OrderBy(f => f.Name, StringComparer.Ordinal)
+    // Resolve the AddFile path set into a folder hierarchy: every intermediate
+    // path component becomes a folder with its own dirID, and each file records
+    // the dirID of its immediate parent folder. Folders are numbered first so
+    // their CNIDs stay stable regardless of file count.
+    var tree = BuildDirectoryTree(this._files);
+    var folders = tree.Folders;
+
+    // Each file is assigned a CNID after all folders. Sort the (parent, name)
+    // keyspace later when laying out the catalog leaves; here we just attach a
+    // CNID and the parent folder dirID resolved from the tree.
+    var files = tree.Files
+      .Select((f, i) => (f.LeafName, f.Data, f.ParentDirId, Cnid: tree.FirstFileCnid + (uint)i))
       .ToList();
 
     // Plan catalog leaf assignment based on record SIZES (which only depend on
     // names, not extent positions). This lets us size the catalog file before
     // we know where file data lives.
-    var leafAssignments = PlanCatalogLeaves(files, this._volumeName);
+    var leafAssignments = PlanCatalogLeaves(files, folders, this._volumeName);
     var hasIndexNode = leafAssignments.Count > 1;
     // catalog node count: header + N leaves [+ index node if N > 1]
     var catalogNodeCount = 1 + leafAssignments.Count + (hasIndexNode ? 1 : 0);
@@ -188,56 +215,59 @@ public sealed class HfsWriter {
 
     // --- 5. Catalog B-tree ------------------------------------------------
     //
-    // Leaf records (sorted by HFS key order — (parentID, name) ASCII):
-    //   1. Thread record for root directory itself:
-    //        key = (parentID=CnidRootDir, name="")
-    //        data = file-thread/dir-thread pointing to its parent (CnidRootParent)
-    //             and the volume name.
-    //   2. Directory record for root:
-    //        key = (parentID=CnidRootParent, name=<volumeName>)
-    //   3..N. For each user file:
-    //        a. File record: key=(CnidRootDir, fileName), data=file record
-    //        b. File-thread record: key=(CnidOfFile, ""), data points back to root
-    //
-    // With a simple ASCII keyspace and a flat root, the sort order is:
-    //   thread(root, "") then everything in parent=CnidRootDir sorted by name.
-    //   The root-dir record lives under parent=CnidRootParent which sorts BEFORE
-    //   CnidRootDir numerically.
-    //
-    // File-thread records are keyed by (fileCnid, "") so they sort after all
-    // entries under CnidRootDir. We'll emit them in ascending CNID order.
+    // The catalog B*-tree is keyed by (parentDirID, CName) and must hold its
+    // leaf records in HFS key order: parentDirID ascending, then CName by the
+    // case-insensitive MacRoman comparison libhfs uses. For each folder we emit
+    // a directory record (type 1, keyed under its parent) plus a directory
+    // thread (type 3, keyed under its own dirID, name=""). For each file we emit
+    // a file record (type 2, keyed under its parent folder) plus a file thread
+    // (type 4, keyed under its own CNID, name=""). The volume root is folder
+    // dirID=2 keyed under CnidRootParent (=1) with the volume name.
 
     var now = (uint)ToHfsTime(DateTime.UtcNow);
 
-    // Build catalog records in HFS key order:
-    //   A. Root-dir record  (parent=1)
-    //   B. Root thread      (parent=2, name="")
-    //   C. File records     (parent=2, name=<file>)  in ascending ASCII order
-    //   D. File threads     (parent=fileCnid, name="")  ascending fileCnid
-    var catRecs = new List<byte[]>();
-    catRecs.Add(BuildDirRecord(
+    // Collect every catalog record with its (parentDirID, CName) sort key, then
+    // sort into HFS key order before laying them into leaves.
+    var keyed = new List<(uint Parent, string Name, byte[] Record)>();
+
+    // Root directory record (parent=1, name=<volume>) and its thread (parent=2).
+    keyed.Add((CnidRootParent, this._volumeName, BuildDirRecord(
       parentID: CnidRootParent, name: this._volumeName,
-      dirID: CnidRootDir, valence: (ushort)files.Count,
-      crDate: now, mdDate: now));
-    catRecs.Add(BuildThreadRecord(
+      dirID: CnidRootDir, valence: (ushort)tree.RootValence,
+      crDate: now, mdDate: now)));
+    keyed.Add((CnidRootDir, "", BuildThreadRecord(
       type: RecFolderThread,
       keyParentID: CnidRootDir, keyName: "",
-      targetParent: CnidRootParent, targetName: this._volumeName));
-    for (var i = 0; i < files.Count; i++) {
-      var (fname, fdata, cnid) = files[i];
-      var (startAbs, bcount) = fileExtents[i];
-      catRecs.Add(BuildFileRecord(
-        parentID: CnidRootDir, name: fname, fileID: cnid,
-        dataStart: startAbs, dataBlocks: bcount, dataSize: (uint)fdata.Length,
-        crDate: now, mdDate: now));
+      targetParent: CnidRootParent, targetName: this._volumeName)));
+
+    // Subdirectory folders: directory record (under parent) + directory thread.
+    foreach (var folder in folders) {
+      keyed.Add((folder.ParentDirId, folder.Name, BuildDirRecord(
+        parentID: folder.ParentDirId, name: folder.Name,
+        dirID: folder.DirId, valence: (ushort)folder.Valence,
+        crDate: now, mdDate: now)));
+      keyed.Add((folder.DirId, "", BuildThreadRecord(
+        type: RecFolderThread,
+        keyParentID: folder.DirId, keyName: "",
+        targetParent: folder.ParentDirId, targetName: folder.Name)));
     }
+
+    // Files: file record (under parent folder) + file thread.
     for (var i = 0; i < files.Count; i++) {
-      var (fname, _, cnid) = files[i];
-      catRecs.Add(BuildThreadRecord(
+      var (fname, fdata, parentDirId, cnid) = files[i];
+      var (startAbs, bcount) = fileExtents[i];
+      keyed.Add((parentDirId, fname, BuildFileRecord(
+        parentID: parentDirId, name: fname, fileID: cnid,
+        dataStart: startAbs, dataBlocks: bcount, dataSize: (uint)fdata.Length,
+        crDate: now, mdDate: now)));
+      keyed.Add((cnid, "", BuildThreadRecord(
         type: RecFileThread,
         keyParentID: cnid, keyName: "",
-        targetParent: CnidRootDir, targetName: fname));
+        targetParent: parentDirId, targetName: fname)));
     }
+
+    keyed.Sort((a, b) => CompareCatalogKey(a.Parent, a.Name, b.Parent, b.Name));
+    var catRecs = keyed.Select(k => k.Record).ToList();
 
     // Verify our pre-computed leaf assignment still fits the actual records.
     if (leafAssignments.Sum() != catRecs.Count)
@@ -298,18 +328,22 @@ public sealed class HfsWriter {
 
     // --- 6. Master Directory Block ----------------------------------------
 
-    var nRtFiles = (ushort)files.Count;
+    // drNmFls is the count of files directly in the root directory; drDirCnt /
+    // drFilCnt are the volume-wide directory / file totals (root excluded from
+    // drDirCnt per Inside Macintosh). drNxtCNID is the first unused CNID, which
+    // sits past every allocated folder and file CNID.
+    var rootFileCount = (ushort)files.Count(f => f.ParentDirId == CnidRootDir);
     WriteMdb(image.AsSpan(MdbOffset, MdbSize),
       crDate: now, mdDate: now,
-      drNmFls: nRtFiles,
+      drNmFls: rootFileCount,
       drVBMSt: drVBMSt,
       drAllocPtr: (ushort)used,
       drNmAlBlks: drNmAlBlks,
       drAlBlSt: drAlBlSt,
-      drNxtCNID: CnidFirstUser + (uint)files.Count,
+      drNxtCNID: tree.NextCnid,
       drFreeBks: drFreeBks,
       drFilCnt: (uint)files.Count,
-      drDirCnt: 0,
+      drDirCnt: (uint)folders.Count,
       extentsStartAbs: ExtentsStartAbs, extentsBlockCount: ExtentsBlockCount,
       catalogStartAbs: CatalogStartAbs, catalogBlockCount: (ushort)catalogBlockCount,
       volumeName: this._volumeName);
@@ -440,24 +474,142 @@ public sealed class HfsWriter {
   }
 
   // ------------------------------------------------------------------------
+  // Directory tree
+  // ------------------------------------------------------------------------
+
+  /// <summary>A folder discovered while resolving AddFile paths.</summary>
+  private sealed class FolderNode {
+    public required uint DirId { get; init; }
+    public required uint ParentDirId { get; init; }
+    public required string Name { get; init; }
+    public int Valence { get; set; }
+  }
+
+  /// <summary>The resolved folder hierarchy plus per-file parent linkage.</summary>
+  private sealed class DirectoryTree {
+    public required List<FolderNode> Folders { get; init; }
+    public required List<(string LeafName, byte[] Data, uint ParentDirId)> Files { get; init; }
+    public required int RootValence { get; init; }   // entries directly under the root dir
+    public required uint FirstFileCnid { get; init; } // first CNID assigned to a file
+    public required uint NextCnid { get; init; }      // first unused CNID
+  }
+
+  /// <summary>
+  /// Resolves the AddFile path set into a folder hierarchy. Every intermediate
+  /// path component becomes a <see cref="FolderNode"/> with its own dirID, and
+  /// each file is linked to the dirID of its immediate parent folder. Folder
+  /// dirIDs are allocated first (in discovery order) starting at
+  /// <see cref="CnidFirstUser"/>; file CNIDs follow them.
+  /// </summary>
+  private static DirectoryTree BuildDirectoryTree(List<(string Name, byte[] Data)> entries) {
+    var folders = new List<FolderNode>();
+    // Maps a normalized directory path ("a", "a/b") to its allocated dirID.
+    var dirIdByPath = new Dictionary<string, uint>(StringComparer.Ordinal);
+    // Valence counter per dirID (root counted separately).
+    var valence = new Dictionary<uint, int>();
+    var rootValence = 0;
+    var nextCnid = CnidFirstUser;
+
+    var files = new List<(string LeafName, byte[] Data, uint ParentDirId)>();
+
+    foreach (var (name, data) in entries) {
+      var components = SplitPath(name);
+      // Walk/create the folder chain for everything but the final component.
+      var parentDirId = CnidRootDir;
+      var pathSoFar = "";
+      for (var i = 0; i < components.Length - 1; i++) {
+        pathSoFar = pathSoFar.Length == 0 ? components[i] : pathSoFar + "/" + components[i];
+        if (!dirIdByPath.TryGetValue(pathSoFar, out var dirId)) {
+          dirId = nextCnid++;
+          dirIdByPath[pathSoFar] = dirId;
+          folders.Add(new FolderNode {
+            DirId = dirId,
+            ParentDirId = parentDirId,
+            Name = components[i],
+          });
+          valence[dirId] = 0;
+          // The new folder bumps its parent's valence.
+          if (parentDirId == CnidRootDir) rootValence++;
+          else valence[parentDirId] = valence[parentDirId] + 1;
+        }
+        parentDirId = dirId;
+      }
+
+      // The file itself bumps its immediate parent's valence.
+      if (parentDirId == CnidRootDir) rootValence++;
+      else valence[parentDirId] = valence[parentDirId] + 1;
+      files.Add((components[^1], data, parentDirId));
+    }
+
+    // Files take CNIDs after all folders.
+    var firstFileCnid = nextCnid;
+    nextCnid += (uint)files.Count;
+
+    // Push the accumulated valences back onto the folder nodes.
+    foreach (var folder in folders)
+      folder.Valence = valence[folder.DirId];
+
+    return new DirectoryTree {
+      Folders = folders,
+      Files = files,
+      RootValence = rootValence,
+      FirstFileCnid = firstFileCnid,
+      NextCnid = nextCnid,
+    };
+  }
+
+  /// <summary>
+  /// Compares two catalog keys per the HFS B*-tree ordering: parentDirID
+  /// ascending, then CName by the case-insensitive MacRoman collation libhfs
+  /// applies. The empty thread-record name sorts before any real name.
+  /// </summary>
+  private static int CompareCatalogKey(uint parentA, string nameA, uint parentB, string nameB) {
+    if (parentA != parentB) return parentA.CompareTo(parentB);
+    var a = Encoding.ASCII.GetBytes(nameA);
+    var b = Encoding.ASCII.GetBytes(nameB);
+    var min = Math.Min(a.Length, b.Length);
+    for (var i = 0; i < min; i++) {
+      // libhfs lowercases ASCII letters before comparing (HFS is case-insensitive
+      // but case-preserving). Match that so our key order is consistent.
+      var ca = ToLowerMacRoman(a[i]);
+      var cb = ToLowerMacRoman(b[i]);
+      if (ca != cb) return ca.CompareTo(cb);
+    }
+    return a.Length.CompareTo(b.Length);
+  }
+
+  private static byte ToLowerMacRoman(byte c)
+    => c is >= (byte)'A' and <= (byte)'Z' ? (byte)(c + 0x20) : c;
+
+  // ------------------------------------------------------------------------
   // Catalog leaf planning
   // ------------------------------------------------------------------------
 
   /// <summary>
   /// Plans how to distribute catalog records across one or more 512-byte leaf
-  /// nodes by computing per-record sizes (which are name-dependent only).
-  /// Returns one count per leaf node, in HFS-key order.
+  /// nodes by computing per-record sizes (which are name-dependent only) in the
+  /// exact HFS key order the records will be written. Returns one count per leaf
+  /// node, in key order.
   /// </summary>
   private static List<int> PlanCatalogLeaves(
-    List<(string Name, byte[] Data, uint Cnid)> files, string volumeName) {
-    // Per-record sizes in HFS key order (root dir, root thread, file recs, file threads).
-    var sizes = new List<int>();
-    sizes.Add(RecordSize(keyForCatalog(volumeName), DirRecDataLen));    // root dir
-    sizes.Add(RecordSize(keyForCatalog(""), ThdRecDataLen));            // root thread
-    foreach (var f in files)
-      sizes.Add(RecordSize(keyForCatalog(f.Name), FilRecDataLen));      // file rec
-    for (var i = 0; i < files.Count; i++)
-      sizes.Add(RecordSize(keyForCatalog(""), ThdRecDataLen));          // file thread
+    List<(string LeafName, byte[] Data, uint ParentDirId, uint Cnid)> files,
+    List<FolderNode> folders, string volumeName) {
+    // Per-record (parent, name, size) tuples for every catalog record, then sort
+    // by the same key comparison used when the records are laid out so the
+    // greedy bin-pack matches the real on-disk order exactly.
+    var sized = new List<(uint Parent, string Name, int Size)>();
+    sized.Add((CnidRootParent, volumeName, RecordSize(keyForCatalog(volumeName), DirRecDataLen)));
+    sized.Add((CnidRootDir, "", RecordSize(keyForCatalog(""), ThdRecDataLen)));
+    foreach (var folder in folders) {
+      sized.Add((folder.ParentDirId, folder.Name, RecordSize(keyForCatalog(folder.Name), DirRecDataLen)));
+      sized.Add((folder.DirId, "", RecordSize(keyForCatalog(""), ThdRecDataLen)));
+    }
+    foreach (var f in files) {
+      sized.Add((f.ParentDirId, f.LeafName, RecordSize(keyForCatalog(f.LeafName), FilRecDataLen)));
+      sized.Add((f.Cnid, "", RecordSize(keyForCatalog(""), ThdRecDataLen)));
+    }
+    sized.Sort((a, b) => CompareCatalogKey(a.Parent, a.Name, b.Parent, b.Name));
+    var sizes = sized.Select(s => s.Size).ToList();
 
     // Per-leaf budget: nodeSize - 14 (NodeDescriptor) - 2*(N+1) (offset list).
     // Greedy bin-pack: keep filling current leaf until next record won't fit.
