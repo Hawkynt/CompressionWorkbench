@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.MinixFs;
 
-public sealed class MinixFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class MinixFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
   public string Id => "MinixFs";
   public string DisplayName => "Minix FS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -142,20 +142,47 @@ public sealed class MinixFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       });
   }
 
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
-    var r = new MinixFsReader(image);
-    long offset = 0;
-    // Metadata region: boot block + superblock + bitmaps + inode table
-    // For a v3 image, the first data zone offset gives us the metadata size
-    // We approximate from the image: everything before the first file data is metadata
-    yield return new DefragBlockInfo(0, 2 * 1024, DefragBlockKind.MetadataReserved, "boot+superblock");
-    // Emit directories alongside files (trailing "/" marks them); without this
-    // dir blocks would be invisible to the planner and counted as Free space.
-    foreach (var e in r.Entries) {
-      if (e.Size <= 0) continue;
-      var emitName = e.IsDirectory ? e.Name + "/" : e.Name;
-      yield return new DefragBlockInfo(offset + 2048, e.Size, DefragBlockKind.Used, emitName);
-      offset += e.Size;
+  /// <summary>
+  /// Walks the superblock, inode table and per-inode zone pointers to yield the
+  /// real on-disk byte layout — metadata region, directory zones, and each
+  /// file's data-zone runs at their true offsets. See
+  /// <see cref="MinixFsExtentMap"/>.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    => MinixFsExtentMap.Enumerate(image);
+
+  // ── IWipeEmpty ─────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros all unused space in a Minix image: free zones and the cluster-tip
+  /// slack between a file's logical size (i_size) and the end of its last
+  /// 1024-byte zone. Data zones are reached through the inode's zone pointers
+  /// and the writer allocates them contiguously per file, so a size lookup keyed
+  /// by file name lets the generic <see cref="UnusedSpaceWiper"/> trim each tip
+  /// precisely without touching the inode table, bitmaps or directory zones.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        var reader = new MinixFsReader(image);
+        var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var entry in reader.Entries)
+          if (!entry.IsDirectory)
+            sizeMap[entry.Name] = entry.Size;
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
     }
+
+    image.Position = 0;
+    var extents = MinixFsExtentMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
   }
 }
