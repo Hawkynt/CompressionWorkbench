@@ -59,7 +59,7 @@ public sealed class HpfsFormatDescriptor
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new HpfsWriter();
-    foreach (var (name, data) in FlatFiles(inputs))
+    foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
     w.WriteTo(output);
   }

@@ -10,7 +10,8 @@ namespace FileSystem.Hpfs;
 /// <remarks>
 /// <para>Scope (intentionally narrow — enough for typical test images):</para>
 /// <list type="bullet">
-///   <item>Root directory only (no subdirectory descent).</item>
+///   <item>Hierarchical: subdirectories are descended and files are surfaced at
+///   their full nested path (segments joined with '/').</item>
 ///   <item>Small files using the fnode's direct allocation list (no AllocSec B-tree traversal).</item>
 /// </list>
 /// <para>Larger files (those whose fnode height field is non-zero, indicating an
@@ -97,7 +98,21 @@ public sealed class HpfsReader : IDisposable {
     }
 
     if (rootDirLba == 0) return;
-    ParseDirectoryBlock(rootDirLba);
+    ParseDirectoryBlock(rootDirLba, pathPrefix: "", depth: 0);
+  }
+
+  /// <summary>Resolves the dirent block of a (sub)directory from its fnode's first
+  /// direct-allocation entry, then parses it.</summary>
+  private void ParseSubdirectory(uint dirFnodeLba, string pathPrefix, int depth) {
+    var fnodeOff = LbaOffset(dirFnodeLba);
+    if (fnodeOff < 0 || fnodeOff + LbaSize > _data.Length) return;
+
+    // The directory's dirent block is the physical LBA of the fnode's first
+    // direct-allocation entry (offset 0xC4 + 8). Direct-allocation only.
+    if (IsBtreeFnode(dirFnodeLba)) return; // dirent-block B-tree spill not supported
+    var dirBlockLba = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(fnodeOff + 0xC4 + 8));
+    if (dirBlockLba == 0) return;
+    ParseDirectoryBlock(dirBlockLba, pathPrefix, depth);
   }
 
   private uint ScanForDirBlockLba(int fnodeOff) {
@@ -111,7 +126,12 @@ public sealed class HpfsReader : IDisposable {
     return 0;
   }
 
-  private void ParseDirectoryBlock(uint dirLba) {
+  /// <summary>Maximum directory nesting depth we will descend, as a guard against
+  /// cyclic or corrupt parent/child fnode references.</summary>
+  private const int MaxDepth = 64;
+
+  private void ParseDirectoryBlock(uint dirLba, string pathPrefix, int depth) {
+    if (depth > MaxDepth) return;
     var off = LbaOffset(dirLba);
     if (off + DirBlockSize > _data.Length) return;
 
@@ -143,17 +163,26 @@ public sealed class HpfsReader : IDisposable {
       if (!isSpecial && nameLen > 0 && cursor + 31 + nameLen <= blockEnd) {
         var name = Encoding.Latin1.GetString(_data, cursor + 31, nameLen);
 
-        // Detect files using the allocation B-tree (unsupported scope).
-        var btree = IsBtreeFnode(fnodeLba);
+        // Skip the "." / ".." self/parent links rather than recursing into them.
+        if (name is not ("." or "..")) {
+          var fullPath = pathPrefix.Length == 0 ? name : pathPrefix + "/" + name;
 
-        _entries.Add(new HpfsEntry {
-          Name = name,
-          Size = fileSize,
-          IsDirectory = isDirectory,
-          FnodeLba = fnodeLba,
-          DataLba = btree || isDirectory ? 0u : GetFirstDataLbaFromFnode(fnodeLba),
-          IsBtreeFile = btree && !isDirectory,
-        });
+          // Detect files using the allocation B-tree (unsupported scope).
+          var btree = IsBtreeFnode(fnodeLba);
+
+          _entries.Add(new HpfsEntry {
+            Name = fullPath,
+            Size = isDirectory ? 0 : fileSize,
+            IsDirectory = isDirectory,
+            FnodeLba = fnodeLba,
+            DataLba = btree || isDirectory ? 0u : GetFirstDataLbaFromFnode(fnodeLba),
+            IsBtreeFile = btree && !isDirectory,
+          });
+
+          // Descend into subdirectories, surfacing their files at nested paths.
+          if (isDirectory)
+            ParseSubdirectory(fnodeLba, fullPath, depth + 1);
+        }
       }
 
       cursor += recLen;
