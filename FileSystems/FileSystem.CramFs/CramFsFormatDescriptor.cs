@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.CramFs;
 
-public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
+public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "CramFs";
   public string DisplayName => "CramFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -88,6 +88,25 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
           foreach (var (n, d) in files) w.AddFile(n, d);
         return ms.ToArray();
       });
+
+  /// <summary>
+  /// CramFS is a compressed, read-only ROM filesystem: the superblock, inode
+  /// tables, block-pointer tables and zlib-compressed page blocks are laid out
+  /// tightly back-to-back (only 4-byte alignment padding, which is already
+  /// zero) with no free space and no cluster tips. File data is packed at the
+  /// compressed-block level, so there is no allocation slack to wipe.
+  ///
+  /// <para>Note: <see cref="EnumerateExtents"/> reports Used runs at synthetic,
+  /// uncompressed-size offsets for the defrag preview — those offsets do
+  /// <em>not</em> map to real on-disk positions, so this method deliberately
+  /// does not drive the generic wiper from them (doing so would zero live
+  /// compressed bytes). Nothing is reclaimable; this returns 0.</para>
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    // Fully packed, read-only image — no free regions or cluster tips exist.
+    return 0;
+  }
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     yield return new DefragBlockInfo(0, CramFsConstants.SuperblockSize, DefragBlockKind.MetadataReserved, "superblock");
