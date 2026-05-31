@@ -251,27 +251,53 @@ public sealed class ApfsReader : IDisposable {
       }
     }
 
-    // Emit entries for each DREC.
+    // Index directory records by their parent directory inode so the tree can be
+    // walked from the root. APFS stores a child's name only in the DIR_REC under
+    // its parent, so full paths are reconstructed by recursive descent.
+    var childrenByParent = new Dictionary<ulong, List<(string Name, ulong ChildIno, bool IsDir)>>();
     foreach (var (parent, name, childIno, isDir) in drec) {
       if (string.IsNullOrEmpty(name)) continue;
-      long sz = inodeSize.GetValueOrDefault(childIno, 0);
-      bool dir = isDir || inodeIsDir.GetValueOrDefault(childIno, false);
-      DateTime? ts = inodeTimestamps.TryGetValue(childIno, out var t) ? t : null;
-      ulong firstBlock = 0;
-      long extentLen = 0;
-      if (!dir && fileExtent.TryGetValue(childIno, out var fx)) {
-        firstBlock = fx.PhysBlock;
-        extentLen = fx.Length;
+      if (!childrenByParent.TryGetValue(parent, out var bucket))
+        childrenByParent[parent] = bucket = [];
+      bucket.Add((name, childIno, isDir));
+    }
+
+    // Recurse from the root directory, building full nested paths. A visited set
+    // guards against malformed cyclic DIR_REC chains.
+    var visited = new HashSet<ulong>();
+    EmitSubtree(APFS_ROOT_DIR_INO_NUM, parentPath: "");
+    return;
+
+    void EmitSubtree(ulong dirIno, string parentPath) {
+      if (!visited.Add(dirIno)) return;
+      if (!childrenByParent.TryGetValue(dirIno, out var children)) return;
+
+      foreach (var (name, childIno, drecIsDir) in children) {
+        var dir = drecIsDir || inodeIsDir.GetValueOrDefault(childIno, false);
+        var fullPath = parentPath.Length == 0 ? name : parentPath + "/" + name;
+        DateTime? ts = inodeTimestamps.TryGetValue(childIno, out var t) ? t : null;
+
+        ulong firstBlock = 0;
+        long extentLen = 0;
+        var sz = inodeSize.GetValueOrDefault(childIno, 0);
+        if (!dir && fileExtent.TryGetValue(childIno, out var fx)) {
+          firstBlock = fx.PhysBlock;
+          extentLen = fx.Length;
+        }
+
+        this._entries.Add(new ApfsEntry {
+          Name = fullPath,
+          Size = sz,
+          IsDirectory = dir,
+          ObjectId = childIno,
+          LastModified = ts,
+          FirstBlock = firstBlock,
+          ExtentLength = extentLen,
+        });
+
+        if (dir)
+          EmitSubtree(childIno, fullPath);
       }
-      this._entries.Add(new ApfsEntry {
-        Name = name,
-        Size = sz,
-        IsDirectory = dir,
-        ObjectId = childIno,
-        LastModified = ts,
-        FirstBlock = firstBlock,
-        ExtentLength = extentLen,
-      });
     }
   }
 

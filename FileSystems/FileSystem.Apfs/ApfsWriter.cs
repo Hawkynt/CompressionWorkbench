@@ -16,8 +16,10 @@ namespace FileSystem.Apfs;
 /// </para>
 /// <para>
 /// <b>Scope cuts</b>:
-/// single container / single volume / single checkpoint / flat directory
-/// (no subdirs) / no snapshots / no encryption / no clones / no inline
+/// single container / single volume / single checkpoint / single-leaf
+/// FS B-tree (nested subdirectories are supported via real directory inodes,
+/// but the leaf is not split, so total record count is bounded by one node)
+/// / no snapshots / no encryption / no clones / no inline
 /// compression / no reaper / no spaceman (the allocation file is unused in
 /// a read-only writer context — macOS would require it for mount, but
 /// <c>fsck_apfs</c> structural validation of the superblocks and B-trees
@@ -86,24 +88,23 @@ public sealed class ApfsWriter {
     var totalBlocks = Math.Max(usedBlocks + 1, (int)(this._minImageSize / BlockSize));
     var disk = new byte[(long)totalBlocks * BlockSize];
 
-    // Allocate file data blocks and record extents.
-    var fileExtents = new List<(ulong Ino, long Size, ulong PhysBlock, ulong BlockCount)>();
-    var nextDataBlock = (ulong)fileDataStartBlock;
-    var nextIno = APFS_MIN_USER_INO_NUM;
+    // ── Build the directory tree (real directory inodes for path components) ──
+    var tree = BuildTree(this._files);
 
-    foreach (var (_, data) in this._files) {
+    // Allocate file data blocks and record extents (one per regular file node).
+    var nextDataBlock = (ulong)fileDataStartBlock;
+    foreach (var node in tree.Nodes) {
+      if (node.IsDir || node.Data is not { Length: > 0 } data)
+        continue;
       var blocks = (ulong)((data.Length + BlockSize - 1) / BlockSize);
-      if (data.Length > 0) {
-        var dst = (long)nextDataBlock * BlockSize;
-        Array.Copy(data, 0, disk, dst, data.Length);
-      }
-      fileExtents.Add((nextIno, data.Length, nextDataBlock, blocks));
+      var dst = (long)nextDataBlock * BlockSize;
+      Array.Copy(data, 0, disk, dst, data.Length);
+      node.PhysBlock = nextDataBlock;
       nextDataBlock += blocks;
-      nextIno++;
     }
 
     // ── FS tree (block 8): leaf-root holding inodes + drec + file_extent ──
-    var fileRecords = BuildFsTreeLeaf(this._files, fileExtents);
+    var fileRecords = BuildFsTreeLeaf(tree);
     WriteBtreeRootLeaf(BlockOf(disk, fsTreeBlock),
       fileRecords, (ulong)fsTreeBlock, OBJECT_TYPE_FSTREE | OBJ_VIRTUAL, xid);
 
@@ -132,7 +133,8 @@ public sealed class ApfsWriter {
     WriteVolumeSuperblock(BlockOf(disk, apsbBlock),
       apsbVirtOid, xid, volOmapPhysOid: (ulong)volOmapBlock,
       fsTreeVirtOid, extrefTreeVirtOid, snapMetaTreeVirtOid,
-      (uint)this._files.Count, nextIno);
+      fileCount: tree.FileCount, dirCount: tree.DirectoryCount,
+      nextObjId: tree.NextObjId);
 
     // ── Container OMAP B-tree root (block 4): maps APSB virtual OID → phys ─
     var ctrOmapRecs = new List<BtreeRecord> {
@@ -251,7 +253,7 @@ public sealed class ApfsWriter {
 
   private static void WriteVolumeSuperblock(Span<byte> block, ulong oid, ulong xid,
       ulong volOmapPhysOid, ulong rootTreeOid, ulong extrefTreeOid, ulong snapMetaTreeOid,
-      uint fileCount, ulong nextObjId) {
+      ulong fileCount, ulong dirCount, ulong nextObjId) {
     WriteObjectHeader(block, oid, xid, OBJECT_TYPE_FS | OBJ_VIRTUAL, subtype: 0);
 
     // apfs_magic at offset 32 — "APSB" stored LE as 0x42535041.
@@ -295,8 +297,8 @@ public sealed class ApfsWriter {
     BinaryPrimitives.WriteUInt64LittleEndian(block[440..], nextObjId);
     // apfs_num_files (u64) at 448.
     BinaryPrimitives.WriteUInt64LittleEndian(block[448..], fileCount);
-    // apfs_num_directories (u64) at 456.
-    BinaryPrimitives.WriteUInt64LittleEndian(block[456..], 1); // just the root
+    // apfs_num_directories (u64) at 456 — created directories plus the root.
+    BinaryPrimitives.WriteUInt64LittleEndian(block[456..], dirCount);
     // apfs_num_symlinks (u64) at 464 — 0.
     // apfs_num_other_fsobjects (u64) at 472 — 0.
     // apfs_num_snapshots (u64) at 480 — 0.
@@ -490,51 +492,141 @@ public sealed class ApfsWriter {
 
   // ── FS-tree record builders ─────────────────────────────────────────────
 
-  /// <summary>
-  /// Builds the complete leaf contents for the filesystem B-tree:
-  /// one INODE record for the root dir, one DIR_REC per file, one INODE per file,
-  /// and one FILE_EXTENT per non-empty file. Records are emitted in key-sorted order.
-  /// </summary>
-  private static List<BtreeRecord> BuildFsTreeLeaf(
-      IReadOnlyList<(string Name, byte[] Data)> files,
-      IReadOnlyList<(ulong Ino, long Size, ulong PhysBlock, ulong BlockCount)> extents) {
-    var list = new List<(ulong KeyOid, int KeyType, byte[] Key, byte[] Value)>();
+  // ── Directory tree model ─────────────────────────────────────────────────
 
-    // Root inode.
-    list.Add((APFS_ROOT_DIR_INO_NUM, APFS_TYPE_INODE,
+  /// <summary>A single node (file or directory inode) in the volume's directory tree.</summary>
+  private sealed class FsNode {
+    public required ulong Ino { get; init; }
+    public required ulong ParentIno { get; init; }
+    public required string Name { get; init; }
+    public required bool IsDir { get; init; }
+    public byte[]? Data { get; init; }
+    /// <summary>Direct children (for directory inodes) used to compute nchildren.</summary>
+    public int ChildCount { get; set; }
+    /// <summary>First physical data block; assigned for non-empty regular files.</summary>
+    public ulong PhysBlock { get; set; }
+  }
+
+  /// <summary>The fully expanded directory tree, including synthesised directory inodes.</summary>
+  private sealed class FsTree {
+    public required List<FsNode> Nodes { get; init; }
+    public required ulong NextObjId { get; init; }
+    public required ulong FileCount { get; init; }
+    public required ulong DirectoryCount { get; init; }
+  }
+
+  /// <summary>
+  /// Expands the flat <c>AddFile(name, data)</c> list — where <c>name</c> may carry
+  /// '/' or '\\' path separators — into a tree of real inodes: one regular-file
+  /// inode per file and one directory inode per intermediate path component, each
+  /// with its own object id and a DIR_REC entry under its parent. The root
+  /// directory (oid 2) is the implicit common parent.
+  /// </summary>
+  private static FsTree BuildTree(IReadOnlyList<(string Name, byte[] Data)> files) {
+    var nodes = new List<FsNode>();
+    // Map of directory path (forward-slash, no leading/trailing slash) → inode number.
+    // The empty path is the root directory.
+    var dirIno = new Dictionary<string, ulong>(StringComparer.Ordinal) {
+      [string.Empty] = APFS_ROOT_DIR_INO_NUM,
+    };
+    var childCounts = new Dictionary<ulong, int> { [APFS_ROOT_DIR_INO_NUM] = 0 };
+
+    var nextIno = APFS_MIN_USER_INO_NUM;
+    var dirCount = 0UL; // does not include the root (counted separately in the superblock)
+
+    foreach (var (rawName, data) in files) {
+      var parts = rawName.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+      if (parts.Length == 0)
+        continue;
+
+      // Ensure every intermediate directory exists, allocating inodes on first sight.
+      var parentIno = APFS_ROOT_DIR_INO_NUM;
+      var accumulated = string.Empty;
+      for (var d = 0; d < parts.Length - 1; d++) {
+        var component = parts[d];
+        accumulated = accumulated.Length == 0 ? component : accumulated + "/" + component;
+        if (!dirIno.TryGetValue(accumulated, out var ino)) {
+          ino = nextIno++;
+          dirIno[accumulated] = ino;
+          childCounts[ino] = 0;
+          ++childCounts[parentIno];
+          ++dirCount;
+          nodes.Add(new FsNode {
+            Ino = ino, ParentIno = parentIno, Name = component, IsDir = true,
+          });
+        }
+        parentIno = ino;
+      }
+
+      // The file inode itself.
+      var fileName = parts[^1];
+      var fileIno = nextIno++;
+      ++childCounts[parentIno];
+      nodes.Add(new FsNode {
+        Ino = fileIno, ParentIno = parentIno, Name = fileName, IsDir = false, Data = data,
+      });
+    }
+
+    // Propagate computed child counts back onto the directory nodes.
+    foreach (var node in nodes)
+      if (node.IsDir && childCounts.TryGetValue(node.Ino, out var count))
+        node.ChildCount = count;
+
+    var fileCount = (ulong)nodes.Count(n => !n.IsDir);
+    return new FsTree {
+      Nodes = nodes,
+      NextObjId = nextIno,
+      FileCount = fileCount,
+      // +1 for the root directory.
+      DirectoryCount = dirCount + 1,
+    };
+  }
+
+  /// <summary>
+  /// Builds the complete leaf contents for the filesystem B-tree from the expanded
+  /// directory tree: one INODE record for the root dir, one INODE plus a DIR_REC in
+  /// the parent for every node, and one FILE_EXTENT per non-empty regular file.
+  /// Records are emitted in APFS key-sorted (oid asc, type asc, name asc) order.
+  /// </summary>
+  private static List<BtreeRecord> BuildFsTreeLeaf(FsTree tree) {
+    var list = new List<(ulong KeyOid, int KeyType, string Name, byte[] Key, byte[] Value)>();
+
+    // Root directory inode — nchildren = number of entries directly under it.
+    var rootChildren = tree.Nodes.Count(n => n.ParentIno == APFS_ROOT_DIR_INO_NUM);
+    list.Add((APFS_ROOT_DIR_INO_NUM, APFS_TYPE_INODE, string.Empty,
       BuildInodeKey(APFS_ROOT_DIR_INO_NUM),
       BuildInodeValue(APFS_ROOT_DIR_INO_NUM, parentId: APFS_ROOT_DIR_INO_NUM,
-        size: 0, isDir: true, name: "root")));
+        size: 0, isDir: true, nchildren: (uint)rootChildren)));
 
-    // Directory records for each file — one per filename under the root dir.
-    for (var i = 0; i < files.Count; i++) {
-      var (name, data) = files[i];
-      var ino = extents[i].Ino;
-      list.Add((APFS_ROOT_DIR_INO_NUM, APFS_TYPE_DIR_REC,
-        BuildDrecKey(APFS_ROOT_DIR_INO_NUM, name),
-        BuildDrecValue(ino, isDir: false)));
+    foreach (var node in tree.Nodes) {
+      // DIR_REC under the parent directory pointing at this node.
+      list.Add((node.ParentIno, APFS_TYPE_DIR_REC, node.Name,
+        BuildDrecKey(node.ParentIno, node.Name),
+        BuildDrecValue(node.Ino, isDir: node.IsDir)));
 
-      // File inode.
-      list.Add((ino, APFS_TYPE_INODE,
-        BuildInodeKey(ino),
-        BuildInodeValue(ino, parentId: APFS_ROOT_DIR_INO_NUM,
-          size: data.LongLength, isDir: false, name: name)));
+      // The node's own inode.
+      var size = node.IsDir ? 0L : (node.Data?.LongLength ?? 0L);
+      list.Add((node.Ino, APFS_TYPE_INODE, string.Empty,
+        BuildInodeKey(node.Ino),
+        BuildInodeValue(node.Ino, parentId: node.ParentIno, size: size,
+          isDir: node.IsDir, nchildren: node.IsDir ? (uint)node.ChildCount : 1u)));
 
-      // File extent (only if file is nonempty).
-      if (data.Length > 0) {
-        var ex = extents[i];
-        list.Add((ino, APFS_TYPE_FILE_EXTENT,
-          BuildFileExtentKey(ino, logicalOffset: 0),
+      // FILE_EXTENT for non-empty regular files.
+      if (!node.IsDir && node.Data is { Length: > 0 } data) {
+        list.Add((node.Ino, APFS_TYPE_FILE_EXTENT, string.Empty,
+          BuildFileExtentKey(node.Ino, logicalOffset: 0),
           BuildFileExtentValue(lengthBytes: (ulong)data.LongLength,
-            physBlockNum: ex.PhysBlock)));
+            physBlockNum: node.PhysBlock)));
       }
     }
 
-    // Sort by (oid asc, type asc) — APFS B-tree ordering rule.
+    // Sort by (oid asc, type asc, name asc) — APFS B-tree leaf ordering rule.
     list.Sort((a, b) => {
       var cmp = a.KeyOid.CompareTo(b.KeyOid);
       if (cmp != 0) return cmp;
-      return a.KeyType.CompareTo(b.KeyType);
+      cmp = a.KeyType.CompareTo(b.KeyType);
+      if (cmp != 0) return cmp;
+      return string.CompareOrdinal(a.Name, b.Name);
     });
 
     return list.Select(t => new BtreeRecord(t.Key, t.Value)).ToList();
@@ -573,7 +665,7 @@ public sealed class ApfsWriter {
 
   // Value helpers.
 
-  private static byte[] BuildInodeValue(ulong ino, ulong parentId, long size, bool isDir, string name) {
+  private static byte[] BuildInodeValue(ulong ino, ulong parentId, long size, bool isDir, uint nchildren) {
     // j_inode_val_t (simplified fixed prefix, 92 bytes + optional xfields):
     //   u64 parent_id
     //   u64 private_id
@@ -598,7 +690,7 @@ public sealed class ApfsWriter {
     BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(32), nowNs); // change_time
     BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(40), nowNs); // access_time
     BinaryPrimitives.WriteUInt64LittleEndian(v.AsSpan(48), 0);     // internal_flags
-    BinaryPrimitives.WriteUInt32LittleEndian(v.AsSpan(56), isDir ? 0u : 1u); // nchildren or nlink
+    BinaryPrimitives.WriteUInt32LittleEndian(v.AsSpan(56), nchildren); // nchildren (dir) or nlink (file)
     BinaryPrimitives.WriteUInt32LittleEndian(v.AsSpan(60), 0);     // default_protection_class
     BinaryPrimitives.WriteUInt32LittleEndian(v.AsSpan(64), 0);     // write_generation_counter
     BinaryPrimitives.WriteUInt32LittleEndian(v.AsSpan(68), 0);     // bsd_flags
