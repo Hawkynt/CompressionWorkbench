@@ -124,6 +124,18 @@ public sealed class ReiserFsWriter {
     // FirstUserObjectId upward in the order it is first encountered.
     var tree = BuildTree();
 
+    // Materialise every leaf item, sorted by reiserfs key (comp_keys). Large
+    // directory items are already split across DIRENTRY-item boundaries by
+    // BuildLeafItems so that no single item exceeds the leaf payload budget.
+    var items = BuildLeafItems(tree);
+    items.Sort(static (a, b) => CompareKeys(a, b));
+
+    // Pack the sorted items into one or more formatted LEAF blocks. When more
+    // than one leaf is needed an INTERNAL block (blk_level >= 2) is added above
+    // them; its key array + disk_child pointers index the leaves and the
+    // super_block root points at it (tree_height grows from 2 to 3).
+    var leaves = PackLeaves(items);
+
     // Layout (reiserfsprogs journal.c — journal MUST start at
     // (REISERFS_DISK_OFFSET_IN_BYTES / blocksize) + 2 = 16 + 2 = 18):
     //   blocks 0..15     = reserved for boot (up to 64 KB)
@@ -131,17 +143,28 @@ public sealed class ReiserFsWriter {
     //   block 17         = bitmap (one block covers 32 768 blocks)
     //   blocks 18..8209  = journal body (8192 blocks = JOURNAL_DEFAULT_SIZE)
     //   block 8210       = journal header
-    //   block 8211       = root leaf (single leaf, tree_height = 2)
+    //   block 8211..     = S+tree blocks (leaves, then internal block if any)
+    // With a single leaf the tree is just that leaf (tree_height = 2). With
+    // several leaves they occupy 8211..8211+L-1 and the internal block sits at
+    // 8211+L (tree_height = 3, root_block = internal block).
     const int journalFirstBlock = 18;
     const int journalSize = 8192;                                      // JOURNAL_DEFAULT_SIZE
     const int journalHeaderBlock = journalFirstBlock + journalSize;    // 8210
-    var rootBlockNum = journalHeaderBlock + 1;                         // 8211
-    var totalBlocks = rootBlockNum + 1;                                // 8212
+    var firstTreeBlock = journalHeaderBlock + 1;                       // 8211
+    var leafCount = leaves.Count;
+    var hasInternal = leafCount > 1;
+    // Leaves occupy [firstTreeBlock .. firstTreeBlock+leafCount-1]; the internal
+    // block (when present) follows them and becomes the tree root.
+    var internalBlockNum = firstTreeBlock + leafCount;                 // valid only if hasInternal
+    var rootBlockNum = hasInternal ? internalBlockNum : firstTreeBlock;
+    var treeHeight = (ushort)(hasInternal ? 3 : 2);
+    var lastTreeBlock = hasInternal ? internalBlockNum : firstTreeBlock + leafCount - 1;
+    var totalBlocks = lastTreeBlock + 1;
     var imageSize = totalBlocks * BlockSize;
     var image = new byte[imageSize];
 
-    // For free-block accounting: blocks 0..rootBlockNum are all in use.
-    var usedBlocks = rootBlockNum + 1;
+    // For free-block accounting: blocks 0..lastTreeBlock are all in use.
+    var usedBlocks = lastTreeBlock + 1;
     var freeBlocks = totalBlocks - usedBlocks;
 
     // ── Superblock ──────────────────────────────────────────────────────────
@@ -197,7 +220,7 @@ public sealed class ReiserFsWriter {
     sb[52 + 9] = 0;
     BinaryPrimitives.WriteUInt16LittleEndian(sb[62..], 0);            // s_fs_state = 0 (consistent)
     BinaryPrimitives.WriteUInt32LittleEndian(sb[64..], R5Hash);       // s_hash_function_code = R5
-    BinaryPrimitives.WriteUInt16LittleEndian(sb[68..], 2);            // s_tree_height (root_leaf only)
+    BinaryPrimitives.WriteUInt16LittleEndian(sb[68..], treeHeight);   // s_tree_height (2 = single leaf, 3 = +internal)
     var bmapNr = (ushort)((totalBlocks + (BlockSize * 8) - 1) / (BlockSize * 8));
     BinaryPrimitives.WriteUInt16LittleEndian(sb[70..], bmapNr);       // s_bmap_nr
     BinaryPrimitives.WriteUInt16LittleEndian(sb[72..], 2);            // s_version = REISERFS_VERSION_2 (3.6)
@@ -226,8 +249,8 @@ public sealed class ReiserFsWriter {
     // Even within the last byte that contains valid bits, the bits beyond
     // s_block_count must be set to 1.
     var bmap = image.AsSpan(17 * BlockSize, BlockSize);
-    // Mark blocks 0..rootBlockNum used.
-    for (var b = 0; b <= rootBlockNum; b++)
+    // Mark blocks 0..lastTreeBlock used (boot + sb + bitmap + journal + tree).
+    for (var b = 0; b <= lastTreeBlock; b++)
       bmap[b >> 3] |= (byte)(1 << (b & 7));
     // Tail-fill: from totalBlocks bit through end of bitmap block, every bit
     // must be 1. Set the remainder of the partial last byte.
@@ -250,7 +273,7 @@ public sealed class ReiserFsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(jh[8..], 0);        // mount id
     sb.Slice(12, 32).CopyTo(jh[12..]);
 
-    // ── Root leaf block ────────────────────────────────────────────────────
+    // ── Leaf blocks ──────────────────────────────────────────────────────────
     // Per fsck/pass0.c:leaf_structure_check + reiserfscore/node_formats.c,
     // items inside a leaf are ordered by key (comp_keys ascending) and their
     // BODIES are packed from the END of the block toward the beginning, with
@@ -261,35 +284,52 @@ public sealed class ReiserFsWriter {
     // Per fsck/check_tree.c:bad_pair the per-object items must appear in
     // (dir_id, objectid, offset, type) ascending order — for a directory that
     // is SD (offset 0) then DIRENTRY (offset 1); for a file SD then DIRECT.
-    // We materialise every object's items, sort the whole set by the reiserfs
-    // key comparison (comp_keys), then lay them out into the single leaf.
-    var boff = rootBlockNum * BlockSize;
-    var blk = image.AsSpan(boff, BlockSize);
+    // PackLeaves already split the global sorted item list onto leaves keeping
+    // that order; here we just serialise each leaf into its block.
+    for (var li = 0; li < leafCount; li++) {
+      var leafItems = leaves[li];
+      var blockNum = firstTreeBlock + li;
+      // Right-delimiting key: the key of the FIRST item of the next leaf, or
+      // MAX_KEY for the rightmost leaf (no right sibling).
+      var rdk = li + 1 < leafCount ? KeyOf(leaves[li + 1][0]) : MaxKey;
+      WriteLeaf(image.AsSpan(blockNum * BlockSize, BlockSize), leafItems, rdk);
+    }
 
-    var items = BuildLeafItems(tree);
-    items.Sort(static (a, b) => CompareKeys(a, b));
-    var nrItems = items.Count;
+    // ── Internal block ────────────────────────────────────────────────────────
+    // reiserfscore/node_formats.c: an internal node holds blk_nr_item KEYS
+    // (16 bytes each) followed by (blk_nr_item + 1) disk_child pointers
+    // (struct disk_child = le32 dc_block_number + le16 dc_size + le16 reserved).
+    // key[i] is the left-delimiting key of child[i+1]; comp_keys ordering across
+    // the children is therefore preserved by the leaf order from PackLeaves.
+    if (hasInternal)
+      WriteInternal(image.AsSpan(internalBlockNum * BlockSize, BlockSize), leaves, firstTreeBlock);
 
-    // Bodies pack from the END of the block backward; ih array grows forward
-    // from BlockHeadSize. item[0] (smallest key) gets the HIGHEST location.
+    output.Write(image);
+  }
+
+  /// <summary>
+  /// Serialises a single leaf block: block_head (blk_level = 1) + forward
+  /// item_head array + bodies packed from the block end backward.
+  /// <paramref name="rightDelimKey"/> is the 16-byte right-delimiting key.
+  /// </summary>
+  private static void WriteLeaf(Span<byte> blk, List<LeafItem> leafItems, ReadOnlySpan<byte> rightDelimKey) {
+    var nrItems = leafItems.Count;
     var dataEnd = BlockSize;
     for (var i = 0; i < nrItems; i++) {
-      var it = items[i];
+      var it = leafItems[i];
       dataEnd -= it.Body.Length;
       var loc = dataEnd;
-      if (loc < 0)
+      var ihEnd = BlockHeadSize + (i + 1) * ItemHeaderSize;
+      if (loc < ihEnd)
         throw new InvalidOperationException(
-          $"ReiserFsWriter: leaf block overflow — {nrItems} items + data exceed {BlockSize} bytes. " +
-          "Multi-leaf S+tree balancing is not implemented; reduce the number/size of files.");
+          $"ReiserFsWriter: leaf block overflow — item {i} would collide with the item-head array.");
       it.Body.CopyTo(blk[loc..]);
 
       var ih = blk[(BlockHeadSize + i * ItemHeaderSize)..];
       BinaryPrimitives.WriteUInt32LittleEndian(ih[0..], it.DirId);
       BinaryPrimitives.WriteUInt32LittleEndian(ih[4..], it.ObjectId);
       // The offset_v1+uniqueness pair (KEY_FORMAT_1) and offset_v2 (KEY_FORMAT_2)
-      // share the same 8 bytes; CompareKeys already normalised both into the
-      // single 64-bit OffsetV2 sort key, but on disk we must reproduce the
-      // exact bytes the kernel expects per format.
+      // share the same 8 bytes; on disk we reproduce the exact bytes per format.
       if (it.KeyFormat == KeyFormat1) {
         BinaryPrimitives.WriteUInt32LittleEndian(ih[8..], it.OffsetV1);
         BinaryPrimitives.WriteUInt32LittleEndian(ih[12..], it.UniquenessV1);
@@ -302,26 +342,96 @@ public sealed class ReiserFsWriter {
       BinaryPrimitives.WriteUInt16LittleEndian(ih[22..], it.KeyFormat);
     }
 
-    // ── Block head (24 bytes) ───────────────────────────────────────────────
     var itemsEnd = BlockHeadSize + nrItems * ItemHeaderSize;
     var freeSpace = dataEnd - itemsEnd;
-    if (freeSpace < 0)
-      throw new InvalidOperationException(
-        $"ReiserFsWriter: leaf block overflow — {nrItems} items + data exceed {BlockSize} bytes.");
 
     BinaryPrimitives.WriteUInt16LittleEndian(blk[0..], LeafLevel);
     BinaryPrimitives.WriteUInt16LittleEndian(blk[2..], (ushort)nrItems);
     BinaryPrimitives.WriteUInt16LittleEndian(blk[4..], (ushort)freeSpace);
     BinaryPrimitives.WriteUInt16LittleEndian(blk[6..], 0); // blk_reserved
-    // blk_right_delim_key — fsck does not validate this for the rightmost
-    // leaf. mkfs.reiserfs leaves it zero; we set MAX_KEY here so existing
-    // self-tests (which assert "must be non-zero") still pass and so a
-    // reader sees a clear sentinel for "no right sibling".
-    BinaryPrimitives.WriteUInt32LittleEndian(blk[8..], 0xFFFFFFFF);
-    BinaryPrimitives.WriteUInt32LittleEndian(blk[12..], 0xFFFFFFFF);
-    BinaryPrimitives.WriteUInt64LittleEndian(blk[16..], 0xFFFFFFFFFFFFFFFFUL);
+    rightDelimKey[..16].CopyTo(blk[8..]);
+  }
 
-    output.Write(image);
+  /// <summary>
+  /// Serialises the internal block above the leaves: block_head (blk_level = 2)
+  /// + a key for every child after the first + one disk_child per child.
+  /// </summary>
+  private static void WriteInternal(Span<byte> blk, List<List<LeafItem>> leaves, int firstLeafBlock) {
+    var childCount = leaves.Count;
+    var keyCount = childCount - 1; // blk_nr_item for an internal node
+
+    BinaryPrimitives.WriteUInt16LittleEndian(blk[0..], 2);              // blk_level (internal)
+    BinaryPrimitives.WriteUInt16LittleEndian(blk[2..], (ushort)keyCount);
+    BinaryPrimitives.WriteUInt16LittleEndian(blk[4..], 0);              // blk_free_space (unused by reader)
+    BinaryPrimitives.WriteUInt16LittleEndian(blk[6..], 0);             // blk_reserved
+    MaxKey.CopyTo(blk[8..]);                                            // right-delim key (tree root)
+
+    // Keys: key[i] = left-delimiting key of child[i+1] = first item of leaf i+1.
+    var keysOff = BlockHeadSize;
+    for (var i = 0; i < keyCount; i++)
+      KeyOf(leaves[i + 1][0]).CopyTo(blk[(keysOff + i * 16)..]);
+
+    // disk_child pointers (8 bytes each) follow the keys.
+    var ptrsOff = keysOff + keyCount * 16;
+    for (var i = 0; i < childCount; i++) {
+      var dc = blk[(ptrsOff + i * 8)..];
+      BinaryPrimitives.WriteUInt32LittleEndian(dc[0..], (uint)(firstLeafBlock + i)); // dc_block_number
+      BinaryPrimitives.WriteUInt16LittleEndian(dc[4..], (ushort)leaves[i].Count);    // dc_size (item count)
+      BinaryPrimitives.WriteUInt16LittleEndian(dc[6..], 0);                          // dc reserved/padding
+    }
+  }
+
+  // 16-byte MAX_KEY sentinel (all 0xFF) — "no right sibling".
+  private static ReadOnlySpan<byte> MaxKey => [
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+  ];
+
+  /// <summary>Returns the 16-byte on-disk key of a leaf item (dir_id, objectid, offset).</summary>
+  private static byte[] KeyOf(LeafItem it) {
+    var key = new byte[16];
+    BinaryPrimitives.WriteUInt32LittleEndian(key.AsSpan(0), it.DirId);
+    BinaryPrimitives.WriteUInt32LittleEndian(key.AsSpan(4), it.ObjectId);
+    if (it.KeyFormat == KeyFormat1) {
+      BinaryPrimitives.WriteUInt32LittleEndian(key.AsSpan(8), it.OffsetV1);
+      BinaryPrimitives.WriteUInt32LittleEndian(key.AsSpan(12), it.UniquenessV1);
+    } else {
+      BinaryPrimitives.WriteUInt64LittleEndian(key.AsSpan(8), it.OffsetV2);
+    }
+    return key;
+  }
+
+  /// <summary>
+  /// Distributes the globally key-sorted item list across leaf blocks using a
+  /// greedy first-fit: items are appended to the current leaf until the next
+  /// one would overflow the leaf payload (block minus block_head, accounting
+  /// for each item's item_head). A single item never spans leaves — large
+  /// directory items were already split on entry boundaries by BuildLeafItems.
+  /// </summary>
+  private static List<List<LeafItem>> PackLeaves(List<LeafItem> items) {
+    // Usable payload per leaf = block - block_head; each item costs its body
+    // length + one item_head.
+    const int leafPayload = BlockSize - BlockHeadSize;
+    var leaves = new List<List<LeafItem>>();
+    var current = new List<LeafItem>();
+    var used = 0;
+    foreach (var it in items) {
+      var cost = it.Body.Length + ItemHeaderSize;
+      if (cost > leafPayload)
+        throw new InvalidOperationException(
+          $"ReiserFsWriter: single item of {it.Body.Length} bytes exceeds the leaf payload; " +
+          "indirect items for large file bodies are not implemented.");
+      if (current.Count > 0 && used + cost > leafPayload) {
+        leaves.Add(current);
+        current = [];
+        used = 0;
+      }
+      current.Add(it);
+      used += cost;
+    }
+    if (current.Count > 0 || leaves.Count == 0)
+      leaves.Add(current);
+    return leaves;
   }
 
   // ── Tree model ──────────────────────────────────────────────────────────
@@ -424,8 +534,10 @@ public sealed class ReiserFsWriter {
           KeyFormat = KeyFormat2, UField = 0, Body = sd,
         });
 
-        // DIRENTRY — "." (self), ".." (parent), then each child.
-        items.Add(BuildDirEntryItem(obj));
+        // DIRENTRY — "." (self), ".." (parent), then each child. A directory
+        // with many entries overflows one leaf, so the entries are split across
+        // several DIRENTRY items (each keyed by its first entry's deh_offset).
+        items.AddRange(BuildDirEntryItems(obj));
       } else {
         // STAT_DATA — mode S_IFREG | 0644, single DIRECT item.
         var sd = new byte[SdV2Size];
@@ -449,12 +561,25 @@ public sealed class ReiserFsWriter {
   }
 
   /// <summary>
-  /// Builds the DIRENTRY item body for a directory object. Layout per
-  /// reiserfscore/node_formats.c: a forward reiserfs_de_head array followed by
-  /// names packed at the END of the item (entry[0] highest, entry[E-1] lowest).
-  /// Entries are sorted by deh_offset ("." = 1, ".." = 2, children by R5 hash).
+  /// Maximum byte size of one DIRENTRY item body. A directory with many entries
+  /// is split into several items each no larger than this, so each fits inside a
+  /// leaf with room for its item_head and a neighbouring stat-data item.
   /// </summary>
-  private LeafItem BuildDirEntryItem(TreeObject dir) {
+  private const int MaxDirItemBody = BlockSize - BlockHeadSize - ItemHeaderSize - 256;
+
+  /// <summary>
+  /// Builds one or more DIRENTRY items for a directory object. Layout per
+  /// reiserfscore/node_formats.c: each item is a forward reiserfs_de_head array
+  /// followed by names packed at the END of the item (entry[0] highest,
+  /// entry[E-1] lowest). Entries are globally sorted by deh_offset ("." = 1,
+  /// ".." = 2, children by R5 hash, with a generation counter in the low 7 bits
+  /// to disambiguate hash collisions) and then chunked so that no item body
+  /// exceeds <see cref="MaxDirItemBody"/>. Each item's reiserfs key offset is the
+  /// deh_offset of its FIRST entry, keeping the directory's items strictly
+  /// ascending; the reader merges all items of one directory by (dir_id,
+  /// objectid).
+  /// </summary>
+  private List<LeafItem> BuildDirEntryItems(TreeObject dir) {
     var entries = new List<DirEntry> {
       new(".", dir.ObjectId, dir.ObjectId, 1),
       new("..", dir.ObjectId, dir.ParentObjectId, 2),
@@ -463,42 +588,75 @@ public sealed class ReiserFsWriter {
       // deh points to the child SD key (dir_id = this dir's objectid, objectid = child).
       entries.Add(new DirEntry(name, dir.ObjectId, childId, HashValueR5(name)));
     }
-    // Stable sort by deh_offset ascending ("." and ".." sort first via 1/2).
-    var sorted = entries.OrderBy(e => e.DehOffset).ToArray();
+    // Sort by deh_offset ascending ("." and ".." sort first via 1/2). Names that
+    // hash to the same masked value collide; assign a generation counter in the
+    // low 7 bits so every entry — and thus every item key — stays unique and
+    // ascending, exactly as the kernel does via set_deh_offset / generation.
+    var sorted = entries.OrderBy(e => e.DehOffset).ToList();
+    for (var i = 1; i < sorted.Count; i++) {
+      if (sorted[i].DehOffset <= sorted[i - 1].DehOffset)
+        sorted[i] = sorted[i] with { DehOffset = sorted[i - 1].DehOffset + 1 };
+    }
 
-    var entryCount = sorted.Length;
+    var result = new List<LeafItem>();
+    var start = 0;
+    while (start < sorted.Count) {
+      // Greedily grow this chunk while its body stays within budget.
+      var bodyLen = 0;
+      var end = start;
+      while (end < sorted.Count) {
+        var slot = DehSize + RoundUp8(Encoding.UTF8.GetByteCount(sorted[end].Name));
+        if (end > start && bodyLen + slot > MaxDirItemBody) break;
+        bodyLen += slot;
+        end++;
+      }
+      result.Add(BuildDirEntryChunk(dir, sorted, start, end));
+      start = end;
+    }
+    return result;
+  }
+
+  /// <summary>
+  /// Serialises entries [start, end) of a directory into a single DIRENTRY
+  /// item, packing names from the body end backward and pointing each
+  /// reiserfs_de_head at its name slot.
+  /// </summary>
+  private static LeafItem BuildDirEntryChunk(TreeObject dir, List<DirEntry> sorted, int start, int end) {
+    var entryCount = end - start;
     var slotLengths = new int[entryCount];
     var totalNamesLen = 0;
     for (var i = 0; i < entryCount; i++) {
-      slotLengths[i] = RoundUp8(Encoding.UTF8.GetByteCount(sorted[i].Name));
+      slotLengths[i] = RoundUp8(Encoding.UTF8.GetByteCount(sorted[start + i].Name));
       totalNamesLen += slotLengths[i];
     }
     var bodyLen = entryCount * DehSize + totalNamesLen;
     var body = new byte[bodyLen];
+    var slice = new DirEntry[entryCount];
 
     // Pack names from END backward; entry[0] takes the highest slot.
     var nameRunningEnd = bodyLen;
     for (var i = 0; i < entryCount; i++) {
       var slot = slotLengths[i];
       var slotStart = nameRunningEnd - slot;
-      var bytes = Encoding.UTF8.GetBytes(sorted[i].Name);
-      bytes.CopyTo(body.AsSpan(slotStart));
-      sorted[i] = sorted[i] with { Location = (ushort)slotStart };
+      Encoding.UTF8.GetBytes(sorted[start + i].Name).CopyTo(body.AsSpan(slotStart));
+      slice[i] = sorted[start + i] with { Location = (ushort)slotStart };
       nameRunningEnd = slotStart;
     }
     // deh array forward at the start.
     for (var i = 0; i < entryCount; i++) {
       var off = i * DehSize;
-      BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(off + 0), sorted[i].DehOffset);
-      BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(off + 4), sorted[i].PointedDirId);
-      BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(off + 8), sorted[i].PointedObjectId);
-      BinaryPrimitives.WriteUInt16LittleEndian(body.AsSpan(off + 12), sorted[i].Location);
+      BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(off + 0), slice[i].DehOffset);
+      BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(off + 4), slice[i].PointedDirId);
+      BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(off + 8), slice[i].PointedObjectId);
+      BinaryPrimitives.WriteUInt16LittleEndian(body.AsSpan(off + 12), slice[i].Location);
       BinaryPrimitives.WriteUInt16LittleEndian(body.AsSpan(off + 14), 4); // DEH_Visible2
     }
 
+    var firstOffset = slice[0].DehOffset;
     return new LeafItem {
       DirId = dir.ParentObjectId, ObjectId = dir.ObjectId,
-      OffsetV2 = TypeDirentryV2 | 1u, OffsetV1 = 1, UniquenessV1 = V1DirentryUniqueness,
+      OffsetV2 = TypeDirentryV2 | firstOffset, OffsetV1 = firstOffset,
+      UniquenessV1 = V1DirentryUniqueness,
       KeyFormat = KeyFormat1, UField = (ushort)entryCount, Body = body,
     };
   }
