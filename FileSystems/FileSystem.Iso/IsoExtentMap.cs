@@ -82,31 +82,48 @@ public static class IsoExtentMap {
         DefragBlockKind.MetadataReserved, FileName: $"ISO9660 VD@{s}");
     }
 
-    // Path tables (L + M) from PVD: location at offset 140 (L) and 148 (M-big-endian).
-    var pathTableSize = BinaryPrimitives.ReadUInt32LittleEndian(pvdSector.AsSpan(132));
-    var lPathLba = BinaryPrimitives.ReadUInt32LittleEndian(pvdSector.AsSpan(140));
-    var mPathLba = BinaryPrimitives.ReadUInt32BigEndian(pvdSector.AsSpan(148));
+    // Path tables (L + M) from the PVD (offset 140 = L, 148 = M big-endian) and,
+    // when present, from the Joliet SVD. Both sets are live metadata and must be
+    // surfaced so the unused-space wiper does not reclaim them.
+    foreach (var ext in PathTableExtents(pvdSector, "ISO9660"))
+      yield return ext;
+    if (jolietSector != null)
+      foreach (var ext in PathTableExtents(jolietSector, "Joliet"))
+        yield return ext;
+
+    // The directory extents of BOTH trees are live metadata: the primary
+    // ECMA-119 tree (short names) and, when present, the Joliet tree (long
+    // UCS-2 names). They share the same file-data extents, so emitting both
+    // walks yields each shared file extent twice — harmless for the wiper /
+    // visualiser, which treat extents as occupied regions. The Joliet walk is
+    // emitted first so its long names win when a consumer keys by file path.
+    if (jolietSector != null) {
+      var jRootLba = (int)BinaryPrimitives.ReadUInt32LittleEndian(jolietSector.AsSpan(156 + 2));
+      var jRootLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(jolietSector.AsSpan(156 + 10));
+      foreach (var ext in WalkDirectory(image, cache, jRootLba, jRootLen, "", joliet: true, isRoot: true))
+        yield return ext;
+    }
+
+    var rootLba = (int)BinaryPrimitives.ReadUInt32LittleEndian(pvdSector.AsSpan(156 + 2));
+    var rootLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(pvdSector.AsSpan(156 + 10));
+    foreach (var ext in WalkDirectory(image, cache, rootLba, rootLen, "", joliet: false, isRoot: true))
+      yield return ext;
+  }
+
+  private static IEnumerable<DefragBlockInfo> PathTableExtents(byte[] descSector, string label) {
+    var pathTableSize = BinaryPrimitives.ReadUInt32LittleEndian(descSector.AsSpan(132));
+    var lPathLba = BinaryPrimitives.ReadUInt32LittleEndian(descSector.AsSpan(140));
+    var mPathLba = BinaryPrimitives.ReadUInt32BigEndian(descSector.AsSpan(148));
     if (pathTableSize > 0 && lPathLba > 0) {
       var sectors = (long)((pathTableSize + SectorSize - 1) / SectorSize);
       yield return new DefragBlockInfo((long)lPathLba * SectorSize, sectors * SectorSize,
-        DefragBlockKind.MetadataReserved, FileName: "ISO9660 L-path table");
+        DefragBlockKind.MetadataReserved, FileName: $"{label} L-path table");
     }
     if (pathTableSize > 0 && mPathLba > 0) {
       var sectors = (long)((pathTableSize + SectorSize - 1) / SectorSize);
       yield return new DefragBlockInfo((long)mPathLba * SectorSize, sectors * SectorSize,
-        DefragBlockKind.MetadataReserved, FileName: "ISO9660 M-path table");
+        DefragBlockKind.MetadataReserved, FileName: $"{label} M-path table");
     }
-
-    // Pick descriptor — Joliet preferred for filenames.
-    var descSector = jolietSector ?? pvdSector;
-    var joliet = jolietSector != null;
-
-    // Root directory record at offset 156 of the chosen descriptor.
-    var rootLba = (int)BinaryPrimitives.ReadUInt32LittleEndian(descSector.AsSpan(156 + 2));
-    var rootLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(descSector.AsSpan(156 + 10));
-
-    foreach (var ext in WalkDirectory(image, cache, rootLba, rootLen, "", joliet, isRoot: true))
-      yield return ext;
   }
 
   private static bool IsCD001(byte[] data) =>

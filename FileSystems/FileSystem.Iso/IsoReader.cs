@@ -11,15 +11,21 @@ public sealed class IsoReader : IDisposable {
   private const int SectorSize = 2048;
   private readonly byte[] _data;
   private readonly List<IsoEntry> _entries = [];
+  private readonly bool _preferJoliet;
   private bool _joliet;
 
   /// <summary>All entries found in the image.</summary>
   public IReadOnlyList<IsoEntry> Entries => _entries;
 
   /// <summary>
-  /// Opens an ISO 9660 image from the given stream.
+  /// Opens an ISO 9660 image from the given stream. When <paramref name="useJoliet"/>
+  /// is <see langword="true"/> (the default) and the image carries a Joliet
+  /// Supplementary Volume Descriptor, the long UCS-2 names from the Joliet
+  /// directory tree are returned; otherwise the primary ECMA-119 tree (short
+  /// uppercased names) is read.
   /// </summary>
-  public IsoReader(Stream stream, bool leaveOpen = false) {
+  public IsoReader(Stream stream, bool leaveOpen = false, bool useJoliet = true) {
+    _preferJoliet = useJoliet;
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -45,7 +51,7 @@ public sealed class IsoReader : IDisposable {
 
       if (type == 1 && pvdOffset < 0)
         pvdOffset = off;
-      else if (type == 2 && jolietOffset < 0) {
+      else if (type == 2 && jolietOffset < 0 && _preferJoliet) {
         // Check escape sequences at offset 88 for Joliet
         var esc = _data.AsSpan(off + 88, 3);
         if (esc[0] == 0x25 && esc[1] == 0x2F && (esc[2] == 0x40 || esc[2] == 0x43 || esc[2] == 0x45))

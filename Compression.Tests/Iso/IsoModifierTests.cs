@@ -111,11 +111,19 @@ public class IsoModifierTests {
 
   [Test, Category("RoundTrip")]
   public void AddFile_SanitizesLowercaseToUppercase() {
+    // ECMA-119 (the primary tree) sanitizes identifiers to uppercase 8.3; the
+    // parallel Joliet tree preserves the original mixed case. Inspect the
+    // primary tree (Joliet disabled) to pin the sanitization behaviour.
     var ms = BuildEmptyImage();
     IsoModifier.AddFile(ms, "lower.txt", "x"u8.ToArray());
     ms.Position = 0;
-    var reader = new IsoReader(ms);
-    Assert.That(reader.Entries.Any(e => e.Name == "LOWER.TXT"), Is.True);
+    var primary = new IsoReader(ms, useJoliet: false);
+    Assert.That(primary.Entries.Any(e => e.Name == "LOWER.TXT"), Is.True);
+
+    // The default (Joliet-preferred) reader returns the original mixed-case name.
+    ms.Position = 0;
+    var joliet = new IsoReader(ms);
+    Assert.That(joliet.Entries.Any(e => e.Name == "lower.txt"), Is.True);
   }
 
   [Test, Category("Performance")]

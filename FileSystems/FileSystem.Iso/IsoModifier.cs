@@ -12,14 +12,16 @@ namespace FileSystem.Iso;
 /// <para>Layout assumptions (matching <see cref="IsoWriter"/>):
 /// <list type="bullet">
 ///   <item>2048-byte sectors, single-level root directory (no subdirectories).</item>
-///   <item>PVD at LBA 16, VDST at 17, L/M path tables at 18/19, root directory at 20+.</item>
-///   <item>File data laid out sequentially after the root directory extent.</item>
-///   <item>Plain ECMA-119 only — no Joliet SVD, no Rock Ridge System Use entries.</item>
+///   <item>PVD at LBA 16; an optional Joliet SVD follows before the VDST.</item>
+///   <item>File data laid out sequentially after the directory extents.</item>
+///   <item>No Rock Ridge System Use entries.</item>
 /// </list>
 /// New file data is appended after the current volume space; the PVD's volume
 /// space size is updated and a directory record is inserted into a free slot
 /// of the existing root directory extent. Removal shifts subsequent records
-/// in-place within their sector and optionally wipes the data sectors.</para>
+/// in-place within their sector and optionally wipes the data sectors. When the
+/// image carries a Joliet SVD, the same add/remove is mirrored into the parallel
+/// Joliet root directory (UCS-2BE long names) so both trees stay consistent.</para>
 /// </summary>
 public static class IsoModifier {
   private const int SectorSize = 2048;
@@ -78,6 +80,25 @@ public static class IsoModifier {
     BinaryPrimitives.WriteUInt32BigEndian(pvd.AsSpan(84), (uint)newVolumeSpace);
     WriteSector(image, PvdLba, pvd);
 
+    // Mirror the new record into the Joliet tree (if present) so both trees
+    // describe the same file-data extent. The Joliet record carries the long,
+    // mixed-case name as UCS-2BE.
+    var svdLba = FindJolietSvdLba(image);
+    if (svdLba >= 0) {
+      var svd = ReadSector(image, svdLba);
+      var jRootLba = (int)BinaryPrimitives.ReadUInt32LittleEndian(svd.AsSpan(156 + 2));
+      var jRootLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(svd.AsSpan(156 + 10));
+      var jIdentifier = BuildJolietIdentifier(name);
+      var jRecLen = 33 + jIdentifier.Length;
+      if ((jRecLen & 1) != 0) jRecLen++;
+      var jSlot = FindFreeRootSlot(image, jRootLba, jRootLen, jRecLen);
+      if (jSlot is not null) {
+        var jSectorBytes = ReadSector(image, jSlot.SectorLba);
+        WriteDirectoryRecord(jSectorBytes.AsSpan(jSlot.OffsetInSector), fileLba, data.Length, flags: 0x00, jIdentifier);
+        WriteSector(image, jSlot.SectorLba, jSectorBytes);
+      }
+    }
+
     // Stream length must match the volume space; SetLength is harmless if already correct.
     var requiredLength = (long)newVolumeSpace * SectorSize;
     if (image.Length < requiredLength) image.SetLength(requiredLength);
@@ -107,6 +128,21 @@ public static class IsoModifier {
     var sectorBytes = ReadSector(image, match.SectorLba);
     RemoveRecordFromSector(sectorBytes, match.OffsetInSector, match.RecordLength);
     WriteSector(image, match.SectorLba, sectorBytes);
+
+    // Mirror the removal into the Joliet tree (if present): match the parallel
+    // record by the shared data extent LBA, since the Joliet name is UCS-2.
+    var svdLba = FindJolietSvdLba(image);
+    if (svdLba >= 0) {
+      var svd = ReadSector(image, svdLba);
+      var jRootLba = (int)BinaryPrimitives.ReadUInt32LittleEndian(svd.AsSpan(156 + 2));
+      var jRootLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(svd.AsSpan(156 + 10));
+      var jMatch = FindEntryByDataLba(image, jRootLba, jRootLen, match.DataLba);
+      if (jMatch is not null) {
+        var jSectorBytes = ReadSector(image, jMatch.SectorLba);
+        RemoveRecordFromSector(jSectorBytes, jMatch.OffsetInSector, jMatch.RecordLength);
+        WriteSector(image, jMatch.SectorLba, jSectorBytes);
+      }
+    }
 
     if (wipeData && match.DataLength > 0) {
       var dataBytes = match.DataLength;
@@ -188,6 +224,63 @@ public static class IsoModifier {
       }
     }
     return null;
+  }
+
+  // Locates a directory record in a single-level root extent whose file-data
+  // extent LBA matches the given value. Used to mirror removals across trees.
+  private static EntryMatch? FindEntryByDataLba(Stream image, int rootLba, int rootLen, int dataLba) {
+    var sectorCount = (rootLen + SectorSize - 1) / SectorSize;
+    for (var s = 0; s < sectorCount; s++) {
+      var sectorBytes = ReadSector(image, rootLba + s);
+      var pos = 0;
+      while (pos < SectorSize) {
+        var len = sectorBytes[pos];
+        if (len == 0) break;
+        if (pos + len > SectorSize) break;
+        if (len < 33) break;
+        var nameLen = sectorBytes[pos + 32];
+        var first = nameLen > 0 ? sectorBytes[pos + 33] : (byte)0xFF;
+        var isDotEntry = nameLen == 1 && (first == 0 || first == 1);
+        if (!isDotEntry) {
+          var recDataLba = (int)BinaryPrimitives.ReadUInt32LittleEndian(sectorBytes.AsSpan(pos + 2));
+          if (recDataLba == dataLba) {
+            var recDataLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(sectorBytes.AsSpan(pos + 10));
+            return new EntryMatch(rootLba + s, pos, len, recDataLba, recDataLen);
+          }
+        }
+        pos += len;
+      }
+    }
+    return null;
+  }
+
+  // ── Joliet helpers ───────────────────────────────────────────────────────
+
+  // Scans the volume-descriptor set for a type-2 descriptor carrying a UCS-2
+  // escape sequence (Joliet) at offset 88; returns its LBA or -1 if absent.
+  private static int FindJolietSvdLba(Stream image) {
+    for (var lba = PvdLba + 1; lba < 64; lba++) {
+      if ((long)(lba + 1) * SectorSize > image.Length) break;
+      var sector = ReadSector(image, lba);
+      if (sector[0] == 0xFF) break; // terminator
+      if (!(sector[1] == 'C' && sector[2] == 'D' && sector[3] == '0' && sector[4] == '0' && sector[5] == '1'))
+        continue;
+      if (sector[0] != 2) continue;
+      var e0 = sector[88];
+      var e1 = sector[89];
+      var e2 = sector[90];
+      if (e0 == 0x25 && e1 == 0x2F && (e2 == 0x40 || e2 == 0x43 || e2 == 0x45))
+        return lba;
+    }
+    return -1;
+  }
+
+  // The Joliet identifier is the long, mixed-case name as UCS-2BE, truncated to
+  // 64 UCS-2 characters (128 bytes). No ';1' version suffix is appended.
+  internal static byte[] BuildJolietIdentifier(string name) {
+    var raw = StripVersion(name).TrimEnd();
+    if (raw.Length > 64) raw = raw[..64];
+    return Encoding.BigEndianUnicode.GetBytes(raw);
   }
 
   // ── Record shifting ────────────────────────────────────────────────────
