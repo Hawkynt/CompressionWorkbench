@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ProDos;
 
-public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IFormatOptionsSchema {
+public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
   // ProDOS uses fixed 512-byte blocks (no cluster-size knob), so the tunable
@@ -134,6 +134,46 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     var label = options.FormatSpecific?.GetValueOrDefault("VolumeLabel");
     var volumeName = string.IsNullOrWhiteSpace(label) ? "WORM" : label!;
     output.Write(w.Build(volumeName, totalBlocks));
+  }
+
+  /// <summary>
+  /// Zeros all unused space in the ProDOS image: unallocated blocks and the
+  /// block-tip slack between a file's logical EOF and the end of its last
+  /// 512-byte block. Cluster-tip wiping is applied only to seedling files
+  /// (storage type 1, a single data block). Sapling and tree files interleave
+  /// index and master-index blocks with their data inside one coalesced Used
+  /// extent, so a logical-size lookup cannot tell data slack from a live index
+  /// block — those files are omitted from the tip pass to avoid corrupting the
+  /// block pointers; their free blocks are still zeroed.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    image.Position = 0;
+    var extents = ProDosExtentMap.Enumerate(image).ToList();
+
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        using var reader = new ProDosReader(image);
+        var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var entry in reader.Entries) {
+          if (entry.IsDirectory) continue;
+          // Only seedlings have a single data block with no index block sharing
+          // its extent, so only their block tip can be wiped safely.
+          if (entry.StorageType == 1)
+            sizeMap[entry.FullPath] = entry.Size;
+        }
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
   }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
