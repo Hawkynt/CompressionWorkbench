@@ -7,7 +7,7 @@ namespace FileSystem.Ufs;
 
 public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
                                           IArchiveCreatable, IArchiveWriteConstraints,
-                                          IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+                                          IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks the UFS1 superblock, CG 0 inode table, and root directory tree;
@@ -19,6 +19,45 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => UfsExtentMap.Enumerate(image);
+
+  /// <summary>
+  /// Zeros all unused space in a UFS1 image: every block not claimed by the
+  /// superblock, the CG inode table, a directory's data blocks, or a file's
+  /// direct-block run. Driven by the generic <see cref="UnusedSpaceWiper"/>
+  /// over the UFS extent map.
+  ///
+  /// <para>Cluster tips are wiped: each file's Used extent ends at its logical
+  /// inode size (<c>di_size</c>), so the block/fragment padding between the
+  /// file's last byte and the block boundary is left uncovered and zeroed as
+  /// free space. A file-size lookup keyed on the entry name is also supplied so
+  /// the wiper can trim the tail explicitly. Directory data blocks surface in
+  /// the extent map with a trailing <c>"/"</c> in their <c>FileName</c> and so
+  /// never match a file-size key — they (and all metadata) are preserved.</para>
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    Func<string, long>? fileSizeLookup = null;
+    if (wipeClusterTips) {
+      try {
+        image.Position = 0;
+        var reader = new UfsReader(image);
+        var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var entry in reader.Entries)
+          if (!entry.IsDirectory)
+            sizeMap[entry.Name] = entry.Size;
+        fileSizeLookup = name => sizeMap.TryGetValue(name, out var s) ? s : -1;
+      } catch {
+        fileSizeLookup = null;
+      }
+    }
+
+    image.Position = 0;
+    var extents = UfsExtentMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
+  }
 
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 16L * 1024 * 1024;

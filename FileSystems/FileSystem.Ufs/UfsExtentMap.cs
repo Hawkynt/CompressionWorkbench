@@ -41,9 +41,11 @@ public static class UfsExtentMap {
     var magic = BinaryPrimitives.ReadUInt32LittleEndian(sb[FsMagicOffset..]);
     if (magic != Ufs1Magic) yield break;
 
+    var cblkno = BinaryPrimitives.ReadInt32LittleEndian(sb[12..]);   // fs_old_cblkno (cg header, in frags)
     var iblkno = BinaryPrimitives.ReadInt32LittleEndian(sb[16..]);
     var blockSize = BinaryPrimitives.ReadInt32LittleEndian(sb[48..]);
     var fragSize = BinaryPrimitives.ReadInt32LittleEndian(sb[52..]);
+    var csaddr = BinaryPrimitives.ReadInt32LittleEndian(sb[152..]);  // fs_old_csaddr (fs_cs summary, in frags)
     var inodesPerBlock = (int)BinaryPrimitives.ReadUInt32LittleEndian(sb[120..]);
     var inodesPerGroup = (int)BinaryPrimitives.ReadUInt32LittleEndian(sb[184..]);
     var fpg = BinaryPrimitives.ReadInt32LittleEndian(sb[188..]);
@@ -61,12 +63,60 @@ public static class UfsExtentMap {
     yield return new DefragBlockInfo(SuperblockOffset, blockSize,
       DefragBlockKind.MetadataReserved, FileName: "UFS superblock");
 
+    // Cylinder-group header block for CG 0 — holds cg_magic plus the free-frag,
+    // inode-used and cluster bitmaps. It sits between the superblock and the
+    // inode table and is NOT covered by either; without an explicit metadata
+    // extent the generic unused-space wiper would zero the allocation bitmaps
+    // and destroy the filesystem.
+    if (cblkno > 0) {
+      var cgOff = (long)cblkno * fragSize;
+      if (cgOff + blockSize <= image.Length)
+        yield return new DefragBlockInfo(cgOff, blockSize,
+          DefragBlockKind.MetadataReserved, FileName: "UFS cylinder-group header (CG 0)");
+    }
+
     // Inode table for CG 0 (single-CG profile our writer emits).
     var inodeTableOff = (long)iblkno * fragSize;
     var inodeTableBytes = (long)inodesPerGroup * InodeSize;
     if (inodeTableOff > 0 && inodeTableOff + inodeTableBytes <= image.Length) {
       yield return new DefragBlockInfo(inodeTableOff, inodeTableBytes,
         DefragBlockKind.MetadataReserved, FileName: "UFS inode table (CG 0)");
+    }
+
+    // fs_cs summary block (first data block, referenced by fs_csaddr). It lives
+    // in the data region but is filesystem metadata — reserve it so the wiper
+    // never zeros the cylinder-summary counts.
+    if (csaddr > 0) {
+      var csOff = (long)csaddr * fragSize;
+      if (csOff + blockSize <= image.Length)
+        yield return new DefragBlockInfo(csOff, blockSize,
+          DefragBlockKind.MetadataReserved, FileName: "UFS cylinder-summary block");
+    }
+
+    // Root directory data block(s). The root inode (2) is the anchor of the
+    // whole tree; its direct-block run is emitted as MetadataReserved rather
+    // than a movable Used+Directory extent because the block mover repatches
+    // directory pointers by entry name and the root has no name to look up —
+    // relocating it would orphan the entire filesystem. Reserving it also keeps
+    // the unused-space wiper from zeroing the root's File Identifier table.
+    {
+      var rootInodeOff = InodeOffset(RootInode, fpg, fragSize, iblkno, inodesPerGroup);
+      if (rootInodeOff + InodeSize <= cache.Length) {
+        var rootInode = cache.Read(rootInodeOff, InodeSize);
+        var rootSize = (long)BinaryPrimitives.ReadUInt64LittleEndian(rootInode.AsSpan(8));
+        var remaining = rootSize;
+        for (var i = 0; i < MaxDirectBlocks && remaining > 0; i++) {
+          var blk = BinaryPrimitives.ReadInt32LittleEndian(rootInode.AsSpan(40 + i * 4));
+          if (blk == 0) { remaining -= blockSize; continue; }
+          var byteOff = (long)blk * fragSize;
+          var byteLen = Math.Min((long)blockSize, remaining);
+          if (byteOff + byteLen > cache.Length) byteLen = Math.Max(0, cache.Length - byteOff);
+          if (byteLen > 0)
+            yield return new DefragBlockInfo(byteOff, byteLen,
+              DefragBlockKind.MetadataReserved, FileName: "UFS root directory");
+          remaining -= blockSize;
+        }
+      }
     }
 
     // Walk root directory and collect (inode, name).
