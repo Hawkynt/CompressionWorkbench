@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Adf;
 
-public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover {
+public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks the boot blocks + root block + bitmap blocks + per-file
@@ -140,5 +140,31 @@ public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var moves = Compression.Core.Layout.DefragPlanner.Plan(extents, 0, imageSize, 512, options.Profile, options.Mode, holeSize: options.HoleSize, holeAt: options.HoleAt);
     if (moves.Count == 0) return;
     DefragPlannerExecutor.Execute(archive, options, mover, moves, imageSize);
+  }
+
+  // ── IWipeEmpty ─────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros all unused space in an Amiga ADF image: every 512-byte sector not
+  /// claimed by a boot/root/bitmap block, a directory or file header, a file
+  /// extension block, or a file data block. Driven by the generic
+  /// <see cref="UnusedSpaceWiper"/> over the ADF extent map.
+  ///
+  /// <para>Per-file cluster-tip wiping is <em>not</em> applied: an ADF file's
+  /// extent is a coalesced run that interleaves the file header block, optional
+  /// extension blocks and the data blocks (and, under OFS, every data block
+  /// carries a 24-byte block header), so the file's logical bytes are not laid
+  /// out as a flat <c>offset..offset+size</c> region. Treating the trailing
+  /// bytes of that run as slack would clobber live metadata, so tip wiping is
+  /// N/A here; only genuinely free sectors are zeroed.</para>
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = AdfExtentMap.Enumerate(image);
+    // Tips are N/A for ADF (header/extension/data blocks interleave within a
+    // file's run); wipe free sectors only, never per-extent tails.
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 }
