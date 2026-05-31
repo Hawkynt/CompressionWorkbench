@@ -23,6 +23,28 @@ public sealed record ArchiveInputInfo(
   public static ArchiveInputInfo InMemory(string archiveName, byte[] content)
     => new(FullPath: archiveName, ArchiveName: archiveName, IsDirectory: false, InMemoryContent: content);
 
+  /// <summary>Creates an in-memory input from a byte span (copied into the
+  /// input, so the caller's buffer may be reused/stack-allocated).</summary>
+  public static ArchiveInputInfo InMemory(string archiveName, ReadOnlySpan<byte> content)
+    => new(FullPath: archiveName, ArchiveName: archiveName, IsDirectory: false, InMemoryContent: content.ToArray());
+
+  /// <summary>Creates an in-memory input by reading <paramref name="content"/>
+  /// fully into memory. Reads from the stream's current position to its end.</summary>
+  public static ArchiveInputInfo InMemory(string archiveName, System.IO.Stream content) {
+    ArgumentNullException.ThrowIfNull(content);
+    using var ms = new System.IO.MemoryStream();
+    content.CopyTo(ms);
+    return new(FullPath: archiveName, ArchiveName: archiveName, IsDirectory: false, InMemoryContent: ms.ToArray());
+  }
+
+  /// <summary>Creates an on-disk input from a <see cref="System.IO.FileInfo"/>.
+  /// Content is read lazily from the file via <see cref="ReadContent"/>;
+  /// the archive name defaults to the file's leaf name.</summary>
+  public static ArchiveInputInfo FromFile(System.IO.FileInfo file, string? archiveName = null) {
+    ArgumentNullException.ThrowIfNull(file);
+    return new(FullPath: file.FullName, ArchiveName: archiveName ?? file.Name, IsDirectory: false);
+  }
+
   /// <summary>Returns the input's bytes: the in-memory content when present,
   /// otherwise the file at <see cref="FullPath"/>. Descriptors should call this
   /// instead of <c>File.ReadAllBytes(FullPath)</c> so they transparently support

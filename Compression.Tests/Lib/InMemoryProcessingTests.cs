@@ -26,6 +26,31 @@ public class InMemoryProcessingTests {
   }
 
   [Test, Category("RoundTrip")]
+  public void InMemoryInputs_FromSpanStreamAndFile_AllRoundTrip() {
+    var desc = new FatFormatDescriptor();
+    var tmp = Path.Combine(Path.GetTempPath(), $"cwb_in_{Guid.NewGuid():N}.bin");
+    File.WriteAllBytes(tmp, "from a real file"u8.ToArray());
+    try {
+      var inputs = new List<ArchiveInputInfo> {
+        ArchiveInputInfo.InMemory("span.txt", "from a span"u8.ToArray().AsSpan()),
+        ArchiveInputInfo.InMemory("stream.txt", new MemoryStream("from a stream"u8.ToArray())),
+        ArchiveInputInfo.FromFile(new FileInfo(tmp), "onfile.txt"),
+      };
+      var image = InMemoryProcessing.BuildInMemory(desc, inputs, new FormatCreateOptions());
+
+      using var ms = new MemoryStream(image);
+      var r = new FileSystem.Fat.FatReader(ms);
+      var byName = r.Entries.Where(e => !e.IsDirectory)
+                            .ToDictionary(e => e.Name.Replace('\\', '/'), e => r.Extract(e));
+      Assert.That(byName["span.txt"], Is.EqualTo("from a span"u8.ToArray()), "span input round-trips");
+      Assert.That(byName["stream.txt"], Is.EqualTo("from a stream"u8.ToArray()), "stream input round-trips");
+      Assert.That(byName["onfile.txt"], Is.EqualTo("from a real file"u8.ToArray()), "FileInfo input round-trips");
+    } finally {
+      File.Delete(tmp);
+    }
+  }
+
+  [Test, Category("RoundTrip")]
   public void Build_FromInMemoryInputs_NeverTouchesDisk() {
     var desc = new FatFormatDescriptor();
     // The archive names are nested paths that do NOT exist on disk. If Create
