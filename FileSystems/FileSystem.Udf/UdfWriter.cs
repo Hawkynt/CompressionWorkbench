@@ -6,8 +6,9 @@ using Compression.Core.Checksums;
 namespace FileSystem.Udf;
 
 /// <summary>
-/// Writes a minimal UDF 1.02 filesystem image (ECMA-167). Flat file layout,
-/// short allocation descriptors. Computes ECMA-167 §7.2.1 DescriptorCRC
+/// Writes a minimal UDF 1.02 filesystem image (ECMA-167). Builds a real
+/// directory tree from slash-separated file paths, short allocation
+/// descriptors. Computes ECMA-167 §7.2.1 DescriptorCRC
 /// (CRC-16/CCITT, init=0, poly=0x1021, non-reflected) and TagChecksum for
 /// every descriptor tag so that strict readers (xorriso, Linux udf.ko,
 /// mkudffs fsck) accept the produced images.
@@ -18,13 +19,19 @@ namespace FileSystem.Udf;
 /// Sector   16:     VRS BEA01
 /// Sector   17:     VRS NSR02
 /// Sector   18:     VRS TEA01
-/// Sector   32-34:  Main VDS (PVD + Partition + LVD + Terminator)
+/// Sector   32-35:  Main VDS (PVD + Partition + LVD + Terminator)
 /// Sector  256:     AVDP
-/// Sector  257:     Partition start: File Set Descriptor (FSD)
-/// Sector  258:     Root directory File Entry
-/// Sector  259+:    Root directory FID data
-/// Then per file:   File Entry sector + data sectors
+/// Sector  257:     Partition start: File Set Descriptor (FSD) at LBN 0
+/// Sector  258:     Root directory File Entry at LBN 1
+/// Sector  259+:    Per-node File Entries, directory FID data, file data
 /// </code>
+///
+/// A directory's data is a sequence of File Identifier Descriptors (FID,
+/// tag 257). The first FID of every directory is the parent entry (Parent
+/// flag 0x08, zero-length identifier, ICB pointing at the parent FE). Every
+/// directory and file is a File Entry (FE, tag 261); directories carry file
+/// type 4, regular files file type 5. A subdirectory FID carries the
+/// Directory flag 0x02 and points at the child directory's FE.
 /// </summary>
 public sealed class UdfWriter {
   private const int Sector = 2048;
@@ -50,18 +57,37 @@ public sealed class UdfWriter {
     _files.Add((name, data));
   }
 
-  public void WriteTo(Stream output) {
-    // Pre-compute layout within partition (LBNs relative to partition start).
-    //   LBN 0: FSD
-    //   LBN 1: Root dir FE
-    //   LBN 2: Root dir FID data (may span multiple sectors)
-    var fidData = BuildFidData(out var fileEntryLbns, out var fileDataLbns);
-    var fidSectors = (fidData.Length + Sector - 1) / Sector;
-    // fileEntryLbns[i] and fileDataLbns[i] are assigned inside BuildFidData.
+  // ── Directory tree ──────────────────────────────────────────────────────
 
-    var totalPartitionSectors = 2 + fidSectors; // FSD + rootFE + FIDs
-    foreach (var (_, data) in _files)
-      totalPartitionSectors += 1 + (data.Length + Sector - 1) / Sector; // FE + data
+  /// <summary>
+  /// A node in the directory tree built from the slash-separated input paths.
+  /// Directories carry children; files carry their payload. Layout fields are
+  /// filled during <see cref="AssignLayout"/>.
+  /// </summary>
+  private sealed class Node {
+    public required string Name;
+    public required bool IsDirectory;
+    public byte[] Data = [];
+    public readonly List<Node> Children = [];
+    public Node? Parent;
+
+    // Assigned during layout (LBNs relative to the partition start).
+    public int FeLbn;          // File Entry block
+    public int DataLbn;        // first data block (FID data for dirs, payload for files)
+    public int DataSectors;    // sectors occupied by data
+    public int DataLength;     // exact byte length of the (directory or file) data
+  }
+
+  public void WriteTo(Stream output) {
+    var root = BuildTree();
+
+    // LBN 0 is the FSD; the root File Entry lives at LBN 1. Everything else
+    // (per-node FEs, directory FID data, file payloads) is laid out after.
+    root.FeLbn = 1;
+    var nextLbn = 2;
+    AssignLayout(root, ref nextLbn);
+
+    var totalPartitionSectors = nextLbn; // LBNs 0..nextLbn-1 are all in use
     var totalImageSectors = PartitionStartSector + totalPartitionSectors;
 
     // ── Write system area (sectors 0-15) ──
@@ -88,59 +114,153 @@ public sealed class UdfWriter {
     WriteAvdp(output, 256, mainVdsLoc: 32, mainVdsLen: 4 * Sector);
 
     // ── Partition data (starting at sector 257 = LBN 0) ──
-    WriteFsd(output, lbn: 0, rootIcbLbn: 1);
-    WriteDirectoryFe(output, lbn: 1, fidData.Length);
-    // FID data (padded to sector boundary)
-    output.Write(fidData);
-    var fidPad = fidSectors * Sector - fidData.Length;
-    if (fidPad > 0) output.Write(new byte[fidPad]);
+    WriteFsd(output, lbn: 0, rootIcbLbn: root.FeLbn);
 
-    // Per-file: File Entry + data
-    for (var i = 0; i < _files.Count; i++) {
-      var (_, data) = _files[i];
-      WriteFileFe(output, fileEntryLbns[i], data.Length, fileDataLbns[i]);
-      output.Write(data);
-      var dataPad = ((data.Length + Sector - 1) / Sector) * Sector - data.Length;
-      if (dataPad > 0) output.Write(new byte[dataPad]);
+    // Emit blocks in LBN order so the stream stays sequential. Gather every
+    // block-producing action keyed by its starting LBN, then drain in order.
+    blocksOutput = output;
+    var blocks = new SortedDictionary<int, Action>();
+    CollectBlocks(root, blocks);
+
+    var written = 1; // LBN 0 (FSD) already written
+    foreach (var (lbn, emit) in blocks) {
+      if (lbn != written)
+        throw new InvalidOperationException($"UDF layout gap: expected LBN {written}, got {lbn}.");
+      var before = output.Position;
+      emit();
+      var produced = (int)((output.Position - before) / Sector);
+      written += produced;
+    }
+
+    if (written != totalPartitionSectors)
+      throw new InvalidOperationException(
+        $"UDF layout mismatch: wrote {written} partition sectors, expected {totalPartitionSectors}.");
+  }
+
+  /// <summary>
+  /// Builds the directory tree from the recorded slash-separated paths,
+  /// creating intermediate directory nodes on demand.
+  /// </summary>
+  private Node BuildTree() {
+    var root = new Node { Name = "", IsDirectory = true };
+
+    foreach (var (path, data) in _files) {
+      var parts = path.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+      if (parts.Length == 0) continue;
+
+      var current = root;
+      for (var i = 0; i < parts.Length - 1; i++) {
+        var dirName = parts[i];
+        var child = current.Children.FirstOrDefault(c => c.IsDirectory && c.Name == dirName);
+        if (child == null) {
+          child = new Node { Name = dirName, IsDirectory = true, Parent = current };
+          current.Children.Add(child);
+        }
+        current = child;
+      }
+
+      var fileName = parts[^1];
+      // A file path collapsing onto an existing entry is ignored (last writer
+      // would otherwise silently overwrite); keep the first occurrence.
+      if (current.Children.Any(c => c.Name == fileName)) continue;
+      current.Children.Add(new Node {
+        Name = fileName,
+        IsDirectory = false,
+        Data = data,
+        Parent = current,
+      });
+    }
+
+    return root;
+  }
+
+  /// <summary>
+  /// Assigns File Entry and data block numbers depth-first. The node's own FE
+  /// LBN must already be set by the caller; this method assigns FE LBNs for
+  /// all children first (so a directory's FID data can reference them), then
+  /// the directory's own FID-data block(s), then recurses.
+  /// </summary>
+  private void AssignLayout(Node node, ref int nextLbn) {
+    if (node.IsDirectory) {
+      // Reserve FE blocks for every child up front.
+      foreach (var child in node.Children)
+        child.FeLbn = nextLbn++;
+
+      // Reserve this directory's FID-data block(s).
+      var fidData = BuildFidData(node);
+      node.DataLength = fidData.Length;
+      node.DataSectors = Math.Max(1, (fidData.Length + Sector - 1) / Sector);
+      node.DataLbn = nextLbn;
+      nextLbn += node.DataSectors;
+
+      // Recurse into children so their own subtree blocks are laid out.
+      foreach (var child in node.Children)
+        AssignLayout(child, ref nextLbn);
+    } else {
+      node.DataLength = node.Data.Length;
+      node.DataSectors = Math.Max(1, (node.Data.Length + Sector - 1) / Sector);
+      node.DataLbn = nextLbn;
+      nextLbn += node.DataSectors;
     }
   }
+
+  /// <summary>
+  /// Queues the block-emitting actions for a node and its subtree, keyed by
+  /// the starting LBN of each block group, so the writer can drain them in
+  /// strictly ascending order.
+  /// </summary>
+  private void CollectBlocks(Node node, SortedDictionary<int, Action> blocks) {
+    if (node.IsDirectory) {
+      // This directory's File Entry.
+      var dirNode = node;
+      blocks[node.FeLbn] = () => WriteDirectoryFe(blocksOutput, dirNode);
+
+      // This directory's FID data.
+      blocks[node.DataLbn] = () => {
+        var fidData = BuildFidData(dirNode);
+        blocksOutput.Write(fidData);
+        var pad = dirNode.DataSectors * Sector - fidData.Length;
+        if (pad > 0) blocksOutput.Write(new byte[pad]);
+      };
+
+      foreach (var child in node.Children)
+        CollectBlocks(child, blocks);
+    } else {
+      var fileNode = node;
+      blocks[node.FeLbn] = () => WriteFileFe(blocksOutput, fileNode.FeLbn, fileNode.Data.Length, fileNode.DataLbn);
+      blocks[node.DataLbn] = () => {
+        blocksOutput.Write(fileNode.Data);
+        var pad = fileNode.DataSectors * Sector - fileNode.Data.Length;
+        if (pad > 0) blocksOutput.Write(new byte[pad]);
+      };
+    }
+  }
+
+  // The output stream is captured for the duration of WriteTo so the block
+  // actions stay simple closures; set before CollectBlocks runs.
+  private Stream blocksOutput = Stream.Null;
 
   // ── FID building ──────────────────────────────────────────────────────────
 
-  private byte[] BuildFidData(out int[] feEntryLbns, out int[] dataLbns) {
-    feEntryLbns = new int[_files.Count];
-    dataLbns = new int[_files.Count];
-
+  /// <summary>
+  /// Builds the directory data for a directory node: a parent FID (zero-length
+  /// identifier, parent + directory flags) pointing at the parent's FE,
+  /// followed by one FID per child referencing the child's FE.
+  /// </summary>
+  private static byte[] BuildFidData(Node dir) {
     using var ms = new MemoryStream();
 
-    // Parent FID (flags=0x0A: parent + directory)
-    WriteFid(ms, 0x0A, 1, "");
+    // Parent FID (flags=0x0A: parent + directory). The parent of the root is
+    // itself.
+    var parentFeLbn = (dir.Parent ?? dir).FeLbn;
+    WriteFid(ms, 0x0A, parentFeLbn, "");
 
-    // Compute where file FEs and data will go.
-    // After FSD (1) + rootFE (1) + fidSectors(?), we have file entries.
-    // This is circular: fidData length depends on file count, and file LBNs
-    // depend on fidData length. Pre-compute fidData size to break the loop.
-    var fidSizeEstimate = FidSize(""); // parent FID
-    foreach (var (name, _) in _files)
-      fidSizeEstimate += FidSize(name);
-    var fidSectors = (fidSizeEstimate + Sector - 1) / Sector;
-    var nextLbn = 2 + fidSectors; // after FSD(0) + rootFE(1) + fids(2..2+fidSectors-1)
-
-    for (var i = 0; i < _files.Count; i++) {
-      var (name, data) = _files[i];
-      feEntryLbns[i] = nextLbn++;
-      dataLbns[i] = nextLbn;
-      nextLbn += Math.Max(1, (data.Length + Sector - 1) / Sector);
-      WriteFid(ms, 0x00, feEntryLbns[i], name); // flags=0 = file
+    foreach (var child in dir.Children) {
+      var flags = child.IsDirectory ? (byte)0x02 : (byte)0x00;
+      WriteFid(ms, flags, child.FeLbn, child.Name);
     }
 
     return ms.ToArray();
-  }
-
-  private static int FidSize(string name) {
-    var nameBytes = name.Length == 0 ? 0 : 1 + Encoding.UTF8.GetByteCount(name); // CS0 byte + UTF8
-    var size = 38 + nameBytes;
-    return (size + 3) & ~3; // pad to 4
   }
 
   private static void WriteFid(Stream s, byte flags, int icbLbn, string name) {
@@ -283,21 +403,29 @@ public sealed class UdfWriter {
     output.Write(buf);
   }
 
-  private static void WriteDirectoryFe(Stream output, int lbn, int dirDataLen) {
+  /// <summary>
+  /// Writes a directory File Entry (file type 4). The file link count is set
+  /// to 1 (the parent's reference) plus one per subdirectory child, matching
+  /// ECMA-167's accounting of incoming directory links.
+  /// </summary>
+  private static void WriteDirectoryFe(Stream output, Node dir) {
     var buf = new byte[Sector];
-    WriteTag(buf, 0, 261, (uint)lbn);
+    WriteTag(buf, 0, 261, (uint)dir.FeLbn);
     // ICB tag at offset 16: strategy type etc — keep zeros
     buf[27] = 4; // file type = directory
+    // File link count at offset 28 (uint16): parent link + one per child dir.
+    var subDirCount = dir.Children.Count(c => c.IsDirectory);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(28), (ushort)(1 + subDirCount));
     // icb flags at offset 34: adType=0 (short ADs)
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(34), 0);
     // info length at offset 56
-    BinaryPrimitives.WriteUInt64LittleEndian(buf.AsSpan(56), (ulong)dirDataLen);
+    BinaryPrimitives.WriteUInt64LittleEndian(buf.AsSpan(56), (ulong)dir.DataLength);
     // L_EA at 168 = 0
     // L_AD at 172 = 8 (one short AD)
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(172), 8);
     // Short AD at 176: length(4) + position/LBN(4)
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(176), (uint)dirDataLen);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(180), 2); // LBN 2 = FID data
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(176), (uint)dir.DataLength);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(180), (uint)dir.DataLbn);
     // File Entry body: fixed 176-byte header + L_EA + L_AD bytes of variable part.
     // Tag covers 16 bytes, so CRC body = 176 - 16 (header) + L_EA(0) + L_AD(8) = 168.
     FinalizeTag(buf, 0, FeBodyHeader + 0 + 8);
@@ -308,6 +436,7 @@ public sealed class UdfWriter {
     var buf = new byte[Sector];
     WriteTag(buf, 0, 261, (uint)lbn);
     buf[27] = 5; // file type = file (regular)
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(28), 1); // file link count
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(34), 0); // adType=0 short
     BinaryPrimitives.WriteUInt64LittleEndian(buf.AsSpan(56), (ulong)fileSize);
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(172), 8); // L_AD = 8
