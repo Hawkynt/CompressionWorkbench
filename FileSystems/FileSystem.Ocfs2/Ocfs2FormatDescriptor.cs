@@ -15,7 +15,7 @@ namespace FileSystem.Ocfs2;
 /// </summary>
 public sealed class Ocfs2FormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
-      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
+      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "Ocfs2";
   public string DisplayName => "OCFS2 (Oracle Cluster Filesystem 2)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -174,6 +174,30 @@ public sealed class Ocfs2FormatDescriptor
     }
 
     return result;
+  }
+
+  // ── IWipeEmpty ────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zeros all unused space in the OCFS2 image: unallocated clusters and the
+  /// cluster-tip slack between a file's logical size and the end of its last
+  /// 4 KB cluster. The extent map already clamps each Used data extent to the
+  /// file's logical length, so the cluster tip surfaces as a free gap and is
+  /// zeroed by the generic wiper without a size lookup. Small directories are
+  /// stored inline inside their dinode (no data cluster), so they have no tip.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+
+    image.Position = 0;
+    var extents = EnumerateExtents(image);
+
+    // No fileSizeLookup is needed: the OCFS2 extent map reports each file's
+    // Used data extent at its logical length, leaving the cluster tip exposed
+    // as a free gap that Wipe zero-fills.
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup: null);
   }
 
   // ── Shared helpers ────────────────────────────────────────────────────
