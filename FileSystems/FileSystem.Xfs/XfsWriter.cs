@@ -69,7 +69,6 @@ public sealed class XfsWriter {
   // "root inode chunk not found" fatal error in phase 2.
   private const int InodeChunkBlock = 72;
   private const int InodeChunkEndBlock = InodeChunkBlock + InodeChunkBlocks; // 76
-  private const int DataStartBlock = InodeChunkEndBlock;
 
   // Inode numbering in AG 0: rootino = (agbno << InoPbLog) = 72 << 4 = 1152.
   private const ulong RootIno = (ulong)InodeChunkBlock * InodesPerBlock; // 1152
@@ -134,8 +133,10 @@ public sealed class XfsWriter {
     public readonly List<TreeNode> Children = [];
     public ulong Ino;                       // assigned inode number
     public int Slot;                        // slot index in the root inode chunk
-    public int DataBlock;                   // first data block (files only)
-    public int BlockCount;                  // data blocks (files only)
+    public int DataBlock;                   // first data block (files / block-form dirs)
+    public int BlockCount;                  // data blocks (files / block-form dirs)
+    public bool BlockFormDirectory;         // directory uses out-of-line dir2 data blocks
+    public long DirByteSize;                // di_size for a block-form directory
   }
 
   /// <summary>
@@ -207,26 +208,48 @@ public sealed class XfsWriter {
 
     var (_, nodes) = BuildTree(FirstNodeSlot);
 
-    // The whole tree (dirs + files, plus root/rbm/rsum) must fit in one
-    // 64-inode chunk. nodes already includes the root; rbm/rsum take 2 more.
-    var inodesNeeded = nodes.Count + 2;
-    if (inodesNeeded > InodesPerChunk)
-      throw new InvalidOperationException(
-        $"XfsWriter supports at most {InodesPerChunk - 3} directory and file entries; got {nodes.Count - 1}.");
+    // Used slots = root + rbm + rsum + every tree node beyond the root.
+    // The inode space grows in whole 64-inode chunks (4 blocks each) so the
+    // tree can hold far more than a single chunk's worth of inodes.
+    var usedInodeSlots = 2 + nodes.Count;  // (root counted in nodes) + rbm + rsum
+    var chunkCount = (usedInodeSlots + InodesPerChunk - 1) / InodesPerChunk;
+    if (chunkCount < 1) chunkCount = 1;
+    var totalInodeSlots = chunkCount * InodesPerChunk;
+    var inodeBlocks = chunkCount * InodeChunkBlocks;
+    var dataStartBlock = InodeChunkBlock + inodeBlocks;
 
     // ── Allocate data blocks for regular-file nodes, in slot order ──
-    var nextBlock = DataStartBlock;
+    var nextBlock = dataStartBlock;
     foreach (var node in nodes) {
       if (node.IsDirectory) continue;
       node.DataBlock = nextBlock;
       node.BlockCount = Math.Max(1, (node.Data.Length + BlockSize - 1) / BlockSize);
       nextBlock += node.BlockCount;
     }
+
+    // ── Allocate directory data blocks for any directory whose short-form
+    //    encoding overflows the inode literal area (block-form dir2) ──
+    foreach (var node in nodes) {
+      if (!node.IsDirectory) continue;
+      if (FitsShortForm(node)) continue;
+      var (blocks, byteSize) = MeasureBlockFormDirectory(node);
+      node.BlockFormDirectory = true;
+      node.DataBlock = nextBlock;
+      node.BlockCount = blocks;
+      node.DirByteSize = byteSize;
+      nextBlock += blocks;
+    }
     // Reserve 64 blocks (256 KiB) for an internal log at the tail of AG 0.
     const int LogBlocks = 64;
     var logStartAgBno = nextBlock;
     nextBlock += LogBlocks;
     var logStartFsBno = (ulong)logStartAgBno;
+
+    // All inodes, file/dir data and the log live in AG 0. If they would spill
+    // past the AG boundary they'd overwrite AG 1's metadata, so refuse instead.
+    if (nextBlock > AgBlocks)
+      throw new InvalidOperationException(
+        $"XfsWriter: total content exceeds one allocation group ({nextBlock} of {AgBlocks} blocks).");
 
     // Total blocks: pad to AgCount × AgBlocks so every AG has the same size.
     var totalBlocks = Math.Max(nextBlock, AgBlocks * AgCount);
@@ -235,14 +258,12 @@ public sealed class XfsWriter {
     // Free-extent bookkeeping (AG 0: single trailing extent after log).
     var freeStartAg0 = logStartAgBno + LogBlocks;
     var freeLenAg0 = AgBlocks - freeStartAg0;
-    // Free-extent bookkeeping (AG 1+): no inode chunk, no files — entire post-
-    // metadata region is free.
-    var freeStartAgN = DataStartBlock - InodeChunkBlocks;  // no inode chunk in AG 1+
+    // Free-extent bookkeeping (AG 1+): no inode chunk, no files — the region
+    // past the per-AG metadata header is entirely free.
+    var freeStartAgN = InodeChunkBlock;  // no inode chunk in AG 1+
     var freeLenAgN = AgBlocks - freeStartAgN;
 
-    // Used slots = root + rbm + rsum + every tree node beyond the root.
-    var usedInodeSlots = 2 + nodes.Count;  // (root counted in nodes) + rbm + rsum
-    var freeInodeSlots = InodesPerChunk - usedInodeSlots;
+    var freeInodeSlots = totalInodeSlots - usedInodeSlots;
 
     // ── Per-AG metadata ──
     for (var ag = 0; ag < AgCount; ag++) {
@@ -252,7 +273,7 @@ public sealed class XfsWriter {
         totalBlocks: (ulong)(AgBlocks * AgCount),
         logStart: logStartFsBno,
         logBlocks: LogBlocks,
-        icount: (ulong)(ag == 0 ? InodesPerChunk : 0),
+        icount: (ulong)(ag == 0 ? totalInodeSlots : 0),
         ifree: (ulong)(ag == 0 ? freeInodeSlots : 0),
         fdblocks: (ulong)(freeLenAg0 + (AgCount - 1) * freeLenAgN));
 
@@ -267,7 +288,7 @@ public sealed class XfsWriter {
       WriteAgi(image.AsSpan(agByteOffset + AgiSector * SectorSize),
         agNumber: (uint)ag,
         agBlocks: AgBlocks,
-        inodeCount: ag == 0 ? (uint)InodesPerChunk : 0u,
+        inodeCount: ag == 0 ? (uint)totalInodeSlots : 0u,
         freeInodes: ag == 0 ? (uint)freeInodeSlots : 0u,
         inobtRoot: InobtBlock,
         inobtLevel: 1u,  // always 1 — an empty btree still has a root leaf
@@ -294,9 +315,9 @@ public sealed class XfsWriter {
       WriteInobt(image.AsSpan(agByteOffset + InobtBlock * BlockSize),
         agNumber: (uint)ag,
         selfSector: (ulong)(ag * AgBlocks + InobtBlock) * SectorsPerBlock,
-        hasChunk: ag == 0,
+        chunkCount: ag == 0 ? chunkCount : 0,
         startAgino: (uint)RootIno,
-        freeMask: ComputeFreeMask(usedInodeSlots));
+        usedSlots: usedInodeSlots);
     }
 
     // ── Directory inodes (root + every subdirectory) ──
@@ -310,28 +331,36 @@ public sealed class XfsWriter {
 
     foreach (var node in nodes) {
       if (!node.IsDirectory) continue;
-      var ioff = InodeChunkBlock * BlockSize + node.Slot * InodeSize;
+      var ioff = InodeOffsetForSlot(node.Slot);
       // A directory's link count is 2 (self "." plus parent's reference) plus
       // one for each child subdirectory (whose ".." points back here).
       var childDirCount = node.Children.Count(c => c.IsDirectory);
-      WriteInodeCoreV3(image, ioff, node.Ino, mode: 0x41ED /* S_IFDIR|0755 */,
-        format: 1 /* local short-form */, nlink: (uint)(2 + childDirCount));
-      WriteShortFormDirectory(image, ioff, node, parentOf);
+      if (node.BlockFormDirectory) {
+        // Out-of-line dir2: the entry list lives in directory data blocks
+        // (di_format = extents), not the inode literal area.
+        WriteInodeCoreV3(image, ioff, node.Ino, mode: 0x41ED /* S_IFDIR|0755 */,
+          format: 2 /* extents */, nlink: (uint)(2 + childDirCount));
+        WriteBlockFormDirectory(image, ioff, node, parentOf);
+      } else {
+        WriteInodeCoreV3(image, ioff, node.Ino, mode: 0x41ED /* S_IFDIR|0755 */,
+          format: 1 /* local short-form */, nlink: (uint)(2 + childDirCount));
+        WriteShortFormDirectory(image, ioff, node, parentOf);
+      }
     }
 
     // ── Realtime bitmap inode (slot 1) — empty S_IFREG|0 (mkfs convention) ──
-    var rbmOff = InodeChunkBlock * BlockSize + 1 * InodeSize;
+    var rbmOff = InodeOffsetForSlot(1);
     WriteInodeCoreV3(image, rbmOff, RootIno + 1, mode: 0x8000 /* S_IFREG, no perm bits */,
       format: 2 /* extents, 0 extents */, nlink: 1);
 
     // ── Realtime summary inode (slot 2) ──
-    var rsumOff = InodeChunkBlock * BlockSize + 2 * InodeSize;
+    var rsumOff = InodeOffsetForSlot(2);
     WriteInodeCoreV3(image, rsumOff, RootIno + 2, mode: 0x8000, format: 2, nlink: 1);
 
     // ── Regular-file inodes ──
     foreach (var node in nodes) {
       if (node.IsDirectory) continue;
-      var ioff = InodeChunkBlock * BlockSize + node.Slot * InodeSize;
+      var ioff = InodeOffsetForSlot(node.Slot);
       WriteInodeCoreV3(image, ioff, node.Ino,
         mode: 0x81A4 /* S_IFREG|0644 */, format: 2, nlink: 1);
       BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(ioff + 56), (ulong)node.Data.Length);
@@ -361,8 +390,8 @@ public sealed class XfsWriter {
     // mkfs.xfs writes valid IN-magic inodes (mode=0, nlink=0) for every slot
     // in the chunk, not just allocated ones. xfs_repair walks the chunk and
     // validates each slot; zero-filled slots are flagged as corrupt.
-    for (var slot = usedInodeSlots; slot < InodesPerChunk; slot++) {
-      var ioff = InodeChunkBlock * BlockSize + slot * InodeSize;
+    for (var slot = usedInodeSlots; slot < totalInodeSlots; slot++) {
+      var ioff = InodeOffsetForSlot(slot);
       WriteInodeCoreV3(image, ioff, RootIno + (ulong)slot, mode: 0,
         format: 0 /* XFS_DINODE_FMT_DEV */, nlink: 0, aformat: 0);
     }
@@ -378,9 +407,9 @@ public sealed class XfsWriter {
       BackfillCrc(image.AsSpan(agOff + CntbtBlock * BlockSize, BlockSize), BtreeCrcOffset);
       BackfillCrc(image.AsSpan(agOff + InobtBlock * BlockSize, BlockSize), BtreeCrcOffset);
     }
-    // Every inode slot in the root chunk needs a valid CRC.
-    for (var slot = 0; slot < InodesPerChunk; slot++) {
-      var ioff = InodeChunkBlock * BlockSize + slot * InodeSize;
+    // Every inode slot across all allocated chunks needs a valid CRC.
+    for (var slot = 0; slot < totalInodeSlots; slot++) {
+      var ioff = InodeOffsetForSlot(slot);
       BackfillCrc(image.AsSpan(ioff, InodeSize), DiCrcOffset);
     }
 
@@ -395,6 +424,64 @@ public sealed class XfsWriter {
     if (usedSlots >= InodesPerChunk) return 0UL;
     if (usedSlots <= 0) return ulong.MaxValue;
     return ulong.MaxValue << usedSlots;
+  }
+
+  /// <summary>
+  /// Byte offset of an inode <paramref name="slot"/> within the contiguous run
+  /// of inode chunks that begins at <see cref="InodeChunkBlock"/>. Chunks are
+  /// laid out back-to-back, so the slot index maps linearly onto block and
+  /// in-block position — matching the agino encoding the reader uses.
+  /// </summary>
+  private static int InodeOffsetForSlot(int slot)
+    => (InodeChunkBlock + slot / InodesPerBlock) * BlockSize + (slot % InodesPerBlock) * InodeSize;
+
+  /// <summary>
+  /// The number of bytes available for an inline short-form directory in the
+  /// inode literal area (everything past the v3 dinode core at offset 176).
+  /// </summary>
+  private const int ShortFormForkCapacity = InodeSize - 176; // 80 bytes
+
+  /// <summary>
+  /// True when <paramref name="dir"/>'s children fit in the inode literal area
+  /// as a short-form directory. Each entry needs namelen(1)+offset(2)+name+
+  /// ftype(1)+ino(4) bytes on top of the 6-byte header.
+  /// </summary>
+  private static bool FitsShortForm(TreeNode dir) {
+    var total = 6; // xfs_dir2_sf_hdr (count, i8count, 4-byte parent)
+    foreach (var child in dir.Children) {
+      var nameLen = Math.Min(Encoding.UTF8.GetByteCount(child.Name), 250);
+      total += 3 + nameLen + 1 + 4;
+      if (total > ShortFormForkCapacity) return false;
+    }
+    return total <= ShortFormForkCapacity;
+  }
+
+  // dir2 data-block header size we emit (xfs_dir3_blk_hdr, v5). The reader skips
+  // exactly this many bytes before the first packed data entry.
+  private const int Dir2DataHeaderSize = 48;
+  private const uint Dir2BlockMagicV5 = 0x58444233; // "XDB3"
+
+  /// <summary>The on-disk size of one dir2 data entry (with FTYPE), 8-aligned.</summary>
+  private static int Dir2EntrySize(int nameLen) => (8 + 1 + nameLen + 1 + 2 + 7) & ~7;
+
+  /// <summary>
+  /// Measures how many 4 KiB directory data blocks a block-form directory needs
+  /// and the resulting di_size. Each block carries its own header plus "." and
+  /// ".." in the first block; an entry never straddles a block boundary.
+  /// </summary>
+  private static (int Blocks, long ByteSize) MeasureBlockFormDirectory(TreeNode dir) {
+    var blocks = 1;
+    var used = Dir2DataHeaderSize + Dir2EntrySize(1) + Dir2EntrySize(2); // "." + ".."
+    foreach (var child in dir.Children) {
+      var nameLen = Math.Min(Encoding.UTF8.GetByteCount(child.Name), 250);
+      var entry = Dir2EntrySize(nameLen);
+      if (used + entry > BlockSize) {
+        blocks++;
+        used = Dir2DataHeaderSize;
+      }
+      used += entry;
+    }
+    return (blocks, (long)blocks * BlockSize);
   }
 
   /// <summary>
@@ -437,6 +524,90 @@ public sealed class XfsWriter {
     var dirSize = entryPos - dirOff;
     BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(inodeOff + 56), (ulong)dirSize); // di_size
     BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(inodeOff + 64), 0);               // di_nblocks
+  }
+
+  /// <summary>
+  /// Writes a block-form directory: the entry list lives in one or more
+  /// contiguous 4 KiB directory data blocks (xfs_dir2 "XDB3" data blocks) rather
+  /// than the inode literal area. The inode is in extents format with a single
+  /// extent covering every directory data block. Each data block starts with a
+  /// 48-byte v5 data-block header followed by packed
+  /// <c>xfs_dir2_data_entry</c> records: inumber(8), namelen(1), name, ftype(1),
+  /// tag(2), padded to an 8-byte boundary. "." and ".." occupy the first block;
+  /// an entry never straddles a block boundary, so trailing slack in a block is
+  /// left zero (the reader treats a zero inumber as a free slot).
+  /// </summary>
+  private static void WriteBlockFormDirectory(byte[] image, int inodeOff, TreeNode dir,
+      IReadOnlyDictionary<TreeNode, TreeNode> parentOf) {
+    var parentIno = parentOf.TryGetValue(dir, out var parent) ? parent.Ino : dir.Ino;
+    var firstBlock = dir.DataBlock;
+    var blockCount = dir.BlockCount;
+
+    // Initialise every data block's header up front.
+    for (var b = 0; b < blockCount; b++) {
+      var blockOff = (firstBlock + b) * BlockSize;
+      WriteDir2DataBlockHeader(image, blockOff, firstBlock + b);
+    }
+
+    var curBlock = 0;
+    var pos = firstBlock * BlockSize + Dir2DataHeaderSize;
+
+    // "." → self, ".." → parent. Both carry DT_DIR.
+    pos = WriteDir2DataEntry(image, ref curBlock, firstBlock, pos, dir.Ino, ".", isDir: true);
+    pos = WriteDir2DataEntry(image, ref curBlock, firstBlock, pos, parentIno, "..", isDir: true);
+
+    foreach (var child in dir.Children)
+      pos = WriteDir2DataEntry(image, ref curBlock, firstBlock, pos, child.Ino, child.Name, child.IsDirectory);
+
+    _ = pos;
+
+    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(inodeOff + 56), (ulong)dir.DirByteSize); // di_size
+    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(inodeOff + 64), (ulong)blockCount);       // di_nblocks
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(inodeOff + 76), 1);                       // di_nextents
+
+    // Single extent: logical dir block 0, physical firstBlock, blockCount blocks.
+    var startBlock = (ulong)firstBlock;
+    var hi = (startBlock >> 43) & 0x1FF;
+    var lo = (startBlock << 21) | ((ulong)blockCount & 0x1FFFFF);
+    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(inodeOff + 176), hi);
+    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(inodeOff + 184), lo);
+  }
+
+  /// <summary>
+  /// Writes one dir2 data entry, advancing to the next data block first if it
+  /// would not fit in the current one. Returns the position past the entry.
+  /// </summary>
+  private static int WriteDir2DataEntry(byte[] image, ref int curBlock, int firstBlock,
+      int pos, ulong ino, string name, bool isDir) {
+    var nameBytes = Encoding.UTF8.GetBytes(name);
+    var nameLen = Math.Min(nameBytes.Length, 250);
+    var entLen = Dir2EntrySize(nameLen);
+
+    var blockStart = (firstBlock + curBlock) * BlockSize;
+    if (pos - blockStart + entLen > BlockSize) {
+      curBlock++;
+      blockStart = (firstBlock + curBlock) * BlockSize;
+      pos = blockStart + Dir2DataHeaderSize;
+    }
+
+    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(pos), ino);
+    image[pos + 8] = (byte)nameLen;
+    nameBytes.AsSpan(0, nameLen).CopyTo(image.AsSpan(pos + 9));
+    image[pos + 9 + nameLen] = isDir ? (byte)2 : (byte)1; // DT_DIR / DT_REG
+    // tag = byte offset of this entry within its data block.
+    BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(pos + 10 + nameLen), (ushort)(pos - blockStart));
+    return pos + entLen;
+  }
+
+  /// <summary>Writes the 48-byte v5 dir2 data-block header (XDB3 magic).</summary>
+  private static void WriteDir2DataBlockHeader(byte[] image, int blockOff, int fsBlock) {
+    var h = image.AsSpan(blockOff);
+    BinaryPrimitives.WriteUInt32BigEndian(h[0..], Dir2BlockMagicV5); // magic
+    BinaryPrimitives.WriteUInt32LittleEndian(h[4..], 0);            // crc (left zero — v4-style dir, see class doc)
+    BinaryPrimitives.WriteUInt64BigEndian(h[8..], (ulong)fsBlock * (BlockSize / SectorSize)); // blkno (sector)
+    BinaryPrimitives.WriteUInt64BigEndian(h[16..], 0);             // lsn
+    UuidBytes.CopyTo(h[24..]);                                     // uuid
+    BinaryPrimitives.WriteUInt64BigEndian(h[40..], 0);            // owner (set to 0; reader ignores)
   }
 
   private static void WriteSuperblock(Span<byte> sb, ulong totalBlocks, ulong logStart,
@@ -610,23 +781,27 @@ public sealed class XfsWriter {
   }
 
   /// <summary>
-  /// Writes an inobt leaf with 0 or 1 records. When <paramref name="hasChunk"/>
-  /// is true, emits a record describing a full 64-inode chunk starting at
-  /// <paramref name="startAgino"/> with the given free-slot bitmask.
+  /// Writes an inobt leaf with one record per allocated 64-inode chunk
+  /// (<paramref name="chunkCount"/> records). The first chunk starts at
+  /// <paramref name="startAgino"/>; each record's free-slot bitmask is derived
+  /// from how many of the <paramref name="usedSlots"/> inodes fall in it.
   /// </summary>
   private static void WriteInobt(Span<byte> block, uint agNumber, ulong selfSector,
-      bool hasChunk, uint startAgino, ulong freeMask) {
+      int chunkCount, uint startAgino, int usedSlots) {
     WriteBtreeSblockHeader(block, InobtV5Magic, agNumber, selfSector,
-      level: 0, numrecs: hasChunk ? (ushort)1 : (ushort)0);
-    if (hasChunk) {
-      // Non-sparse inobt record (16 bytes):
-      //   __be32 ir_startino;
-      //   __be32 ir_freecount;  // count of free inodes in chunk
-      //   __be64 ir_free;       // bitmask — bit=1 means slot is free
+      level: 0, numrecs: (ushort)chunkCount);
+    // One non-sparse inobt record per 64-inode chunk (16 bytes each):
+    //   __be32 ir_startino;
+    //   __be32 ir_freecount;  // count of free inodes in chunk
+    //   __be64 ir_free;       // bitmask — bit=1 means slot is free
+    for (var c = 0; c < chunkCount; c++) {
+      var chunkUsed = Math.Clamp(usedSlots - c * InodesPerChunk, 0, InodesPerChunk);
+      var freeMask = ComputeFreeMask(chunkUsed);
       var freeCount = (uint)System.Numerics.BitOperations.PopCount(freeMask);
-      BinaryPrimitives.WriteUInt32BigEndian(block[BtreeRecOffset..], startAgino);
-      BinaryPrimitives.WriteUInt32BigEndian(block[(BtreeRecOffset + 4)..], freeCount);
-      BinaryPrimitives.WriteUInt64BigEndian(block[(BtreeRecOffset + 8)..], freeMask);
+      var rec = BtreeRecOffset + c * 16;
+      BinaryPrimitives.WriteUInt32BigEndian(block[rec..], startAgino + (uint)(c * InodesPerChunk));
+      BinaryPrimitives.WriteUInt32BigEndian(block[(rec + 4)..], freeCount);
+      BinaryPrimitives.WriteUInt64BigEndian(block[(rec + 8)..], freeMask);
     }
   }
 

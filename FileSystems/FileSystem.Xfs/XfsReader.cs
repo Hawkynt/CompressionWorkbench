@@ -201,13 +201,16 @@ public sealed class XfsReader : IDisposable {
         pos += 48; // skip data block header
     }
 
+    // dir2 data entry: inumber(8), namelen(1), name(namelen), [ftype(1) when the
+    // FTYPE feature is set], tag(2), padded to 8 bytes. Free slots (which the
+    // writer leaves as block slack) start with a zero inumber.
+    var ftypeLen = this.HasFtype ? 1 : 0;
     while (pos + 12 <= end && pos + 12 <= _data.Length) {
       var entIno = BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(pos));
       var nameLen = _data[pos + 8];
-      if (nameLen == 0 || entIno == 0) { pos += 12; continue; }
-      if (pos + 11 + nameLen > _data.Length) break;
+      if (nameLen == 0 || entIno == 0) { pos += 8; continue; }
+      if (pos + 9 + nameLen + ftypeLen + 2 > _data.Length) break;
       var name = Encoding.UTF8.GetString(_data, pos + 9, nameLen);
-      var tag = BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(pos + 9 + nameLen));
 
       if (name != "." && name != "..") {
         var fullPath = string.IsNullOrEmpty(basePath) ? name : $"{basePath}/{name}";
@@ -229,8 +232,8 @@ public sealed class XfsReader : IDisposable {
         });
       }
 
-      // Entry size: 8 (ino) + 1 (namelen) + nameLen + 2 (tag), aligned to 8
-      var entLen = 8 + 1 + nameLen + 2;
+      // Entry size: 8 (ino) + 1 (namelen) + nameLen + ftype + 2 (tag), aligned to 8.
+      var entLen = 8 + 1 + nameLen + ftypeLen + 2;
       entLen = (entLen + 7) & ~7;
       pos += entLen;
     }
