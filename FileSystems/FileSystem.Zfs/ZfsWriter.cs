@@ -55,18 +55,12 @@ public sealed class ZfsWriter {
     var rootDirSlot = datasetDnodes.Count;
     datasetDnodes.Add(new Dnode.Builder { Type = ZfsConstants.DmuOtDirectoryContents }); // obj 2 (ZAP) — placeholder
 
-    var rootDirEntries = new List<(string, ulong)>();
-    foreach (var (name, data) in this._files) {
-      var fileObjId = (ulong)datasetDnodes.Count;
-      var fileDnode = BuildFileDnode(data, alloc, output, txg);
-      datasetDnodes.Add(fileDnode);
-      rootDirEntries.Add((name, fileObjId));
-    }
-
-    // Now fill in root dir ZAP
-    var rootDirZapBytes = MicroZap.Encode(rootDirEntries, (int)ZfsConstants.SectorSize);
-    datasetDnodes[rootDirSlot] = BuildZapDnode(rootDirZapBytes, alloc, output, txg,
-      ZfsConstants.DmuOtDirectoryContents);
+    // Build a directory tree from the (possibly path-separated) file names, then
+    // materialise it into directory and file dnodes. The root directory occupies the
+    // slot reserved above; every nested directory gets a fresh dnode whose data is a
+    // ZAP mapping child name -> (type<<60 | childObjId).
+    var root = DirectoryTree.Build(this._files);
+    this.MaterialiseDirectory(root, (ulong)rootDirSlot, datasetDnodes, alloc, output, txg);
 
     // Master node ZAP → "ROOT" = rootDirSlot
     var masterZapBytes = MicroZap.Encode(new[] { ("ROOT", (ulong)rootDirSlot) }, (int)ZfsConstants.SectorSize);
@@ -179,7 +173,93 @@ public sealed class ZfsWriter {
     output.Flush();
   }
 
+  // ---------- Directory tree ----------
+
+  /// <summary>
+  /// An in-memory directory tree assembled from path-separated file names before any
+  /// dnodes are allocated. Subdirectories are created on demand so that a file added as
+  /// <c>a/b/c.txt</c> produces real directory objects for <c>a</c> and <c>a/b</c>.
+  /// </summary>
+  private sealed class DirectoryTree {
+    public readonly SortedDictionary<string, DirectoryTree> SubDirs = new(StringComparer.Ordinal);
+    public readonly SortedDictionary<string, byte[]> Files = new(StringComparer.Ordinal);
+
+    public static DirectoryTree Build(IEnumerable<(string Name, byte[] Data)> files) {
+      var root = new DirectoryTree();
+      foreach (var (name, data) in files) {
+        var parts = name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+          continue;
+        var dir = root;
+        for (var i = 0; i < parts.Length - 1; i++) {
+          var segment = parts[i];
+          if (!dir.SubDirs.TryGetValue(segment, out var child)) {
+            child = new DirectoryTree();
+            dir.SubDirs[segment] = child;
+          }
+          dir = child;
+        }
+        dir.Files[parts[^1]] = data;
+      }
+      return root;
+    }
+  }
+
+  /// <summary>
+  /// Writes the contents of <paramref name="dir"/> into the dnode at
+  /// <paramref name="dirObjId"/>: every child file and subdirectory is allocated a dnode,
+  /// subdirectories are materialised recursively, and the directory's own ZAP (mapping each
+  /// child name to <c>(type&lt;&lt;60 | childObjId)</c>) is written last.
+  /// </summary>
+  private void MaterialiseDirectory(
+    DirectoryTree dir, ulong dirObjId, List<Dnode.Builder> dnodes,
+    SectorAllocator alloc, Stream output, ulong txg) {
+
+    var zapEntries = new List<(string, ulong)>();
+
+    foreach (var (childName, childDir) in dir.SubDirs) {
+      var childObjId = (ulong)dnodes.Count;
+      // Reserve the slot up front so child objects allocated during recursion get later ids.
+      dnodes.Add(new Dnode.Builder { Type = ZfsConstants.DmuOtDirectoryContents });
+      this.MaterialiseDirectory(childDir, childObjId, dnodes, alloc, output, txg);
+      zapEntries.Add((childName,
+        (ZfsConstants.ZfsDirentTypeDir << ZfsConstants.ZfsDirentTypeShift) | childObjId));
+    }
+
+    foreach (var (fileName, data) in dir.Files) {
+      var fileObjId = (ulong)dnodes.Count;
+      dnodes.Add(BuildFileDnode(data, alloc, output, txg));
+      zapEntries.Add((fileName,
+        (ZfsConstants.ZfsDirentTypeReg << ZfsConstants.ZfsDirentTypeShift) | fileObjId));
+    }
+
+    var zapBytes = MicroZap.Encode(zapEntries, (int)ZfsConstants.SectorSize);
+    dnodes[(int)dirObjId] = BuildDirectoryDnode(zapBytes, alloc, output, txg);
+  }
+
   // ---------- Helpers ----------
+
+  /// <summary>
+  /// Builds a directory dnode whose data block is the supplied ZAP, with a znode bonus
+  /// carrying the <c>S_IFDIR</c> mode so the directory is self-describing on disk.
+  /// </summary>
+  private static Dnode.Builder BuildDirectoryDnode(byte[] zapBlock, SectorAllocator alloc, Stream output, ulong txg) {
+    var bp = WriteBlock(zapBlock, alloc, output, txg,
+      ZfsConstants.ZioChecksumFletcher4,
+      type: ZfsConstants.DmuOtDirectoryContents);
+    var bonus = new byte[8];
+    BinaryPrimitives.WriteUInt64LittleEndian(bonus, ZfsConstants.ModeIfDir);
+    return new Dnode.Builder {
+      Type = ZfsConstants.DmuOtDirectoryContents,
+      Levels = 1,
+      NumBlkPtr = 1,
+      DataBlockSizeInSectors = (uint)(zapBlock.Length / ZfsConstants.SectorSize),
+      UsedBytes = (ulong)zapBlock.Length,
+      BlkPtr0 = bp,
+      Bonus = bonus,
+      BonusLen = 8,
+    };
+  }
 
   /// <summary>Builds a file dnode and writes its data block(s).</summary>
   private static Dnode.Builder BuildFileDnode(

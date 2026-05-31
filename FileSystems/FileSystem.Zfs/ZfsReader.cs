@@ -105,16 +105,52 @@ public sealed class ZfsReader : IDisposable {
 
     if ((ulong)dsDnodes.Count <= rootDirObj)
       throw new InvalidDataException("ZFS: root dir obj out of range.");
-    var rootDirZap = this.ReadZap(dsDnodes[(int)rootDirObj.Value]);
 
-    foreach (var (name, objId) in rootDirZap) {
+    // Walk the directory tree starting at ROOT. Directory ZAP entry values encode the
+    // child object id in the low bits and the file type in the high bits.
+    this.CollectDirectory(dsDnodes, rootDirObj.Value, parentPath: "", depth: 0);
+  }
+
+  /// <summary>
+  /// Recursively walks a directory dnode's ZAP, emitting a <see cref="ZfsEntry"/> for each
+  /// file (with its full path) and for each subdirectory, then descending into the latter.
+  /// </summary>
+  private void CollectDirectory(List<Dnode.Builder> dsDnodes, ulong dirObjId, string parentPath, int depth) {
+    if (depth > 64)
+      throw new InvalidDataException("ZFS: directory tree too deep (possible cycle).");
+    if ((ulong)dsDnodes.Count <= dirObjId)
+      throw new InvalidDataException("ZFS: directory dnode out of range.");
+
+    foreach (var (name, rawValue) in this.ReadZap(dsDnodes[(int)dirObjId])) {
+      var objId = rawValue & ZfsConstants.ZfsDirentObjMask;
+      var type = rawValue >> ZfsConstants.ZfsDirentTypeShift;
       if ((ulong)dsDnodes.Count <= objId) continue;
-      var fileDnode = dsDnodes[(int)objId];
-      long size = (long)fileDnode.UsedBytes;
-      if (fileDnode.Bonus != null && fileDnode.Bonus.Length >= 8)
-        size = (long)BinaryPrimitives.ReadUInt64LittleEndian(fileDnode.Bonus);
+      var childDnode = dsDnodes[(int)objId];
+      var fullPath = parentPath.Length == 0 ? name : parentPath + "/" + name;
+
+      var isDir = type == ZfsConstants.ZfsDirentTypeDir
+                  || (type == 0 && childDnode.Type == ZfsConstants.DmuOtDirectoryContents
+                      && childDnode.Bonus != null
+                      && childDnode.Bonus.Length >= 8
+                      && BinaryPrimitives.ReadUInt64LittleEndian(childDnode.Bonus) == ZfsConstants.ModeIfDir);
+
+      if (isDir) {
+        this._entries.Add(new ZfsEntry {
+          Name = fullPath,
+          Size = 0,
+          IsDirectory = true,
+          LastModified = null,
+          ObjectId = objId,
+        });
+        this.CollectDirectory(dsDnodes, objId, fullPath, depth + 1);
+        continue;
+      }
+
+      long size = (long)childDnode.UsedBytes;
+      if (childDnode.Bonus != null && childDnode.Bonus.Length >= 8)
+        size = (long)BinaryPrimitives.ReadUInt64LittleEndian(childDnode.Bonus);
       this._entries.Add(new ZfsEntry {
-        Name = name,
+        Name = fullPath,
         Size = size,
         IsDirectory = false,
         LastModified = null,

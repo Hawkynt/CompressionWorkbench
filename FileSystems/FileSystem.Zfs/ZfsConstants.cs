@@ -69,6 +69,21 @@ internal static class ZfsConstants {
   // ZAP magics.
   public const ulong ZbtMicro = 0x8000000000000003UL;  // MZAP_ENT_PHYS / microzap
 
+  // ZFS directory ZAP entry value encoding (<c>include/sys/zfs_znode.h</c>):
+  // the object id occupies the low 48 bits and the file type (the upper nibble of
+  // the POSIX mode, i.e. <c>IFTODT</c>) occupies the high 4 bits:
+  //   value = (uint64)type &lt;&lt; 60 | objid
+  public const int ZfsDirentTypeShift = 60;
+  public const ulong ZfsDirentObjMask = (1UL << 48) - 1;
+
+  // File types as stored in the directory-entry value high bits (BSD d_type / IFTODT).
+  public const ulong ZfsDirentTypeDir = 4;   // DT_DIR
+  public const ulong ZfsDirentTypeReg = 8;   // DT_REG
+
+  // POSIX mode bits for the znode bonus (<c>S_IFDIR</c> / <c>S_IFREG</c>).
+  public const ulong ModeIfDir = 0x4000;
+  public const ulong ModeIfReg = 0x8000;
+
   // Objset header size within an objset_phys_t block.
   public const int ObjsetPhysSize = 1024;
 
