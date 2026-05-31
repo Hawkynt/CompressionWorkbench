@@ -204,13 +204,18 @@ public sealed class HfsPlusReader : IDisposable {
     var modDateRaw = BinaryPrimitives.ReadUInt32BigEndian(nd[(dataOffset + 16)..]);
     var modDate = modDateRaw > 0 ? HfsEpoch.AddSeconds(modDateRaw) : (DateTime?)null;
 
+    // The volume root folder (parent CNID 1) carries the VOLUME NAME as its
+    // catalog name, but it anchors paths at the empty root — its children must
+    // resolve to bare paths ("docs/guide.txt"), not "<volume>/docs/guide.txt".
+    if (parentCnid == 1) {
+      dirPaths[cnid] = "";
+      return;
+    }
+
     var parentPath = dirPaths.GetValueOrDefault(parentCnid, "");
     var fullPath = parentPath.Length > 0 ? parentPath + "/" + name : name;
 
     dirPaths[cnid] = fullPath;
-
-    // Skip root folder itself (CNID 2 with empty name or parent CNID 1).
-    if (parentCnid == 1) return;
 
     entries.Add(new HfsPlusEntry {
       Name = name,

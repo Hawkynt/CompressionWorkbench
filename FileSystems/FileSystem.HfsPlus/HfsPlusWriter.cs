@@ -145,7 +145,8 @@ public sealed class HfsPlusWriter {
     BinaryPrimitives.WriteUInt32BigEndian(vh[20..], nowTs);      // modifyDate
     BinaryPrimitives.WriteUInt32BigEndian(vh[28..], nowTs);      // checkedDate
     BinaryPrimitives.WriteUInt32BigEndian(vh[32..], (uint)this._files.Count); // fileCount (root excluded)
-    BinaryPrimitives.WriteUInt32BigEndian(vh[36..], 0);          // folderCount (root excluded per TN1150)
+    // folderCount @ 36 (root excluded per TN1150) is filled after the catalog
+    // tree is built and the subdirectory count is known.
     BinaryPrimitives.WriteUInt32BigEndian(vh[40..], blockSize);
     BinaryPrimitives.WriteUInt32BigEndian(vh[44..], totalBlocks);
     // rsrcClumpSize, dataClumpSize @ 56, 60: TN1150 recommends 64 KB.
@@ -303,24 +304,63 @@ public sealed class HfsPlusWriter {
     // (sortParentCnid, sortName, recordBytes) tuples then sort.
     var keyed = new List<(uint Parent, string Name, byte[] Bytes)>();
 
-    // Root folder record: key = (parentOfRoot=1, volumeName).
-    // Per TN1150 §6.3, the root directory's catalog key uses the VOLUME NAME
-    // as the directory name (not an empty string). The folder thread record's
-    // body then names the root with the same volume name. fsck.hfsplus rejects
-    // "" with "Invalid catalog record type (4, 1)".
-    const string VolumeName = "untitled";
-    keyed.Add((1u, VolumeName, BuildFolderRecord(RootFolderCnid, (uint)this._files.Count, VolumeName)));
-    // Root folder thread: key = (rootCNID=2, "").
-    keyed.Add((RootFolderCnid, "", BuildFolderThreadRecord(1, VolumeName)));
-
     // First free block for user data: catalog starts at block 3 and takes
     // catalogBlockCount blocks, so user data begins right after it.
     var nextBlock = catalogStartBlock + catalogBlockCount;
     var nextCnid = FirstUserCnid;
 
-    foreach (var (name, data) in this._files) {
-      var dataBlockCount2 = (uint)((data.Length + blockSize - 1) / blockSize);
+    // ── Resolve the folder hierarchy implied by the slash-separated names ──
+    // Each file name may carry intermediate folders ("docs/api/reference.txt").
+    // We materialise one folder record + folder thread record per distinct
+    // directory and place every file under its real parent folder CNID, so the
+    // reader rebuilds the nested path from the catalog rather than seeing a flat
+    // root with embedded slashes.
+    //
+    // Folders are allocated CNIDs in discovery order, which guarantees a parent
+    // folder always receives a smaller CNID than its children. Because catalog
+    // leaf records are sorted by (parentCNID, name), this keeps every folder
+    // record ahead of its descendants in the leaf — the order the reader relies
+    // on to resolve parent paths in a single forward pass.
+    var folderCnids = new Dictionary<string, uint> { [""] = RootFolderCnid };
+    var folderValence = new Dictionary<uint, uint> { [RootFolderCnid] = 0 };
+    // Folder display name and parent CNID, keyed by the folder's own CNID.
+    var folderInfo = new Dictionary<uint, (uint Parent, string Name)>();
 
+    uint EnsureFolder(string path) {
+      if (folderCnids.TryGetValue(path, out var existing))
+        return existing;
+
+      var slash = path.LastIndexOf('/');
+      var parentPath = slash < 0 ? "" : path[..slash];
+      var leaf = slash < 0 ? path : path[(slash + 1)..];
+      var parentCnid = EnsureFolder(parentPath);
+
+      var cnid = nextCnid++;
+      folderCnids[path] = cnid;
+      folderValence[cnid] = 0;
+      folderInfo[cnid] = (parentCnid, leaf);
+      folderValence[parentCnid]++;
+      return cnid;
+    }
+
+    // Materialise every directory referenced by a file path first so CNID
+    // assignment follows discovery order (parents before children).
+    foreach (var (name, _) in this._files) {
+      var normalized = name.Replace('\\', '/').Trim('/');
+      var slash = normalized.LastIndexOf('/');
+      if (slash >= 0)
+        EnsureFolder(normalized[..slash]);
+    }
+
+    var fileRecords = new List<(uint Parent, string Name, byte[] Bytes)>();
+    foreach (var (rawName, data) in this._files) {
+      var normalized = rawName.Replace('\\', '/').Trim('/');
+      var slash = normalized.LastIndexOf('/');
+      var parentPath = slash < 0 ? "" : normalized[..slash];
+      var leafName = slash < 0 ? normalized : normalized[(slash + 1)..];
+      var parentCnid = folderCnids[parentPath];
+
+      var dataBlockCount2 = (uint)((data.Length + blockSize - 1) / blockSize);
       var startBlock = nextBlock;
       var fileCnid = nextCnid++;
 
@@ -331,15 +371,38 @@ public sealed class HfsPlusWriter {
       }
 
       nextBlock += dataBlockCount2;
+      folderValence[parentCnid]++;
 
-      // File record: key = (parentCNID, name).
-      keyed.Add((RootFolderCnid, name,
-          BuildFileRecord(fileCnid, RootFolderCnid, name, (long)data.Length, startBlock, dataBlockCount2)));
+      // File record: key = (parentCNID, leafName).
+      fileRecords.Add((parentCnid, leafName,
+          BuildFileRecord(fileCnid, parentCnid, leafName, (long)data.Length, startBlock, dataBlockCount2)));
       // File thread record: key = (fileCNID, ""). fsck.hfsplus checks
       // "fileCount == fileThread" (thread record count matches file count).
-      keyed.Add((fileCnid, "",
-          BuildFileThreadRecord(fileCnid, RootFolderCnid, name)));
+      fileRecords.Add((fileCnid, "",
+          BuildFileThreadRecord(fileCnid, parentCnid, leafName)));
     }
+
+    // Root folder record: key = (parentOfRoot=1, volumeName).
+    // Per TN1150 §6.3, the root directory's catalog key uses the VOLUME NAME
+    // as the directory name (not an empty string). The folder thread record's
+    // body then names the root with the same volume name. fsck.hfsplus rejects
+    // "" with "Invalid catalog record type (4, 1)".
+    const string VolumeName = "untitled";
+    keyed.Add((1u, VolumeName,
+        BuildFolderRecord(RootFolderCnid, 1u, folderValence[RootFolderCnid], VolumeName)));
+    // Root folder thread: key = (rootCNID=2, "").
+    keyed.Add((RootFolderCnid, "", BuildFolderThreadRecord(RootFolderCnid, 1, VolumeName)));
+
+    // Subdirectory folder + folder thread records.
+    var folderCount = 0u;
+    foreach (var (cnid, info) in folderInfo) {
+      ++folderCount;
+      keyed.Add((info.Parent, info.Name,
+          BuildFolderRecord(cnid, info.Parent, folderValence[cnid], info.Name)));
+      keyed.Add((cnid, "", BuildFolderThreadRecord(cnid, info.Parent, info.Name)));
+    }
+
+    keyed.AddRange(fileRecords);
 
     // Sort records by (parent, name) — HFS+ binary compare uses UTF-16BE.
     keyed.Sort((a, b) => {
@@ -401,6 +464,7 @@ public sealed class HfsPlusWriter {
     var usedBlocks = (3u + catalogBlockCount) + (uint)dataBlocksNeeded + 1u; // boot+alloc+ext+catalog+data+altVH
     BinaryPrimitives.WriteUInt32BigEndian(vh[48..], totalBlocks - usedBlocks); // freeBlocks
     BinaryPrimitives.WriteUInt32BigEndian(vh[52..], nextBlock); // nextAllocation
+    BinaryPrimitives.WriteUInt32BigEndian(vh[36..], folderCount); // folderCount (subdirectories; root excluded)
     BinaryPrimitives.WriteUInt32BigEndian(vh[64..], nextCnid);  // nextCatalogID
 
     // ── Alternate Volume Header — byte-identical mirror of primary ───────
@@ -426,10 +490,10 @@ public sealed class HfsPlusWriter {
     return key;
   }
 
-  private static byte[] BuildFolderRecord(uint cnid, uint valence, string name) {
+  private static byte[] BuildFolderRecord(uint cnid, uint parentCnid, uint valence, string name) {
     // For the root folder, key = (parentID=1, volumeName). For other folders,
     // key = (parentID, folderName).
-    var key = BuildCatalogKey(1, name);
+    var key = BuildCatalogKey(parentCnid, name);
     // TN1150 HFSPlusCatalogFolder = 88 bytes min (recordType + flags + valence +
     // folderID + dates + perms + userInfo + finderInfo + textEncoding + reserved).
     var recData = new byte[88];
@@ -452,10 +516,9 @@ public sealed class HfsPlusWriter {
   /// Builds a folder thread record (recordType=3). The key is (myCNID, "")
   /// and the body contains parentCnid + my name.
   /// </summary>
-  private static byte[] BuildFolderThreadRecord(uint parentCnid, string name) {
-    // Thread record key uses the FOLDER's own CNID (always RootFolderCnid here
-    // since this minimal writer only creates a single root folder).
-    var key = BuildCatalogKey(RootFolderCnid, "");
+  private static byte[] BuildFolderThreadRecord(uint folderCnid, uint parentCnid, string name) {
+    // Thread record key uses the FOLDER's own CNID.
+    var key = BuildCatalogKey(folderCnid, "");
     var nameBytes = Encoding.BigEndianUnicode.GetBytes(name);
     var nameLen = (ushort)(nameBytes.Length / 2);
     var recData = new byte[10 + nameBytes.Length];
