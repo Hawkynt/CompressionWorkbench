@@ -12,12 +12,12 @@ namespace FileSystem.MinixV1;
 /// names) or 0x138F (30-byte names — Coherent variant). Predecessor to
 /// Linux's ext filesystem family.
 /// </summary>
-public sealed class MinixV1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
+public sealed class MinixV1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
   public string Id => "MinixV1";
   public string DisplayName => "Minix V1 FS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".minix1";
   public IReadOnlyList<string> Extensions => [".minix1"];
@@ -73,8 +73,20 @@ public sealed class MinixV1FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Creates a fresh Minix v1 image holding the supplied inputs. Path
+  /// separators in an input's archive name produce nested directory inodes,
+  /// each with its own <c>"."</c>/<c>".."</c> entries.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    using var w = new MinixV1Writer(output, leaveOpen: true);
+    foreach (var (name, data) in FilesOnly(inputs))
+      w.AddFile(name, data);
+    w.Finish();
+  }
+
   public void Defragment(Stream archive)
-    => throw new NotSupportedException("MinixV1 read-only — defragmentation requires a writer.");
+    => throw new NotSupportedException("MinixV1 defragmentation requires an in-place mover.");
 
   public void Defragment(Stream archive, DefragOptions options)
     => throw new NotSupportedException("MinixV1 read-only — defragmentation requires a writer.");

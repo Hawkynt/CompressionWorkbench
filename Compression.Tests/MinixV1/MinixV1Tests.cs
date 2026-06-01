@@ -136,10 +136,10 @@ public class MinixV1Tests {
     Assert.Throws<NotSupportedException>(() => d.Defragment(ms, new DefragOptions()));
   }
 
-  [Test, Category("Sad")]
-  public void NoCreatable_Interface() {
+  [Test, Category("HappyPath")]
+  public void Creatable_Interface() {
     var d = new FileSystem.MinixV1.MinixV1FormatDescriptor();
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>());
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
   }
 
   [Test, Category("HappyPath")]
