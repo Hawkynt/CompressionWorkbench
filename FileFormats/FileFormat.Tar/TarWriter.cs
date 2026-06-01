@@ -5,9 +5,27 @@ namespace FileFormat.Tar;
 /// <summary>
 /// Creates a TAR archive by writing entries sequentially.
 /// </summary>
+/// <summary>TAR header dialect. Influences how out-of-band fields (long names, large sizes) are encoded.</summary>
+public enum TarHeaderFormat {
+  /// <summary>POSIX 1003.1-1988 ustar. Long names fall back to GNU LongName when needed.</summary>
+  Ustar,
+  /// <summary>GNU extensions. Long names use the GNU @LongLink convention.</summary>
+  Gnu,
+  /// <summary>POSIX 1003.1-2001 PAX. Long names + large sizes use PAX extended headers.</summary>
+  Pax,
+}
+
+/// <summary>
+/// Writes a TAR archive to a destination stream. Defaults to the
+/// <see cref="TarHeaderFormat.Ustar"/> dialect; switchable to GNU/PAX via
+/// the constructor for long-name or large-size scenarios.
+/// </summary>
 public sealed class TarWriter : IDisposable {
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
+  private readonly TarHeaderFormat _format;
+  private readonly int _blockingFactor;
+  private long _bytesWritten;
   private bool _finished;
   private bool _disposed;
 
@@ -16,9 +34,18 @@ public sealed class TarWriter : IDisposable {
   /// </summary>
   /// <param name="stream">The stream to write the TAR archive to.</param>
   /// <param name="leaveOpen">Whether to leave the stream open on dispose.</param>
-  public TarWriter(Stream stream, bool leaveOpen = false) {
+  /// <param name="format">Header dialect to prefer (ustar / gnu / pax). Default ustar.</param>
+  /// <param name="blockingFactor">Output is padded to this many 512-byte blocks on <see cref="Finish"/>.
+  /// Default 1 (no extra record-level padding beyond the two end-of-archive zero blocks).
+  /// The descriptor's <c>BlockingFactor</c> schema knob defaults to 20 (the classic 10 KiB
+  /// record), but library callers that construct <see cref="TarWriter"/> directly keep the
+  /// pre-existing byte-exact behavior.</param>
+  public TarWriter(Stream stream, bool leaveOpen = false,
+      TarHeaderFormat format = TarHeaderFormat.Ustar, int blockingFactor = 1) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
+    this._format = format;
+    this._blockingFactor = blockingFactor < 1 ? 1 : blockingFactor;
   }
 
   /// <summary>
@@ -61,7 +88,8 @@ public sealed class TarWriter : IDisposable {
   }
 
   /// <summary>
-  /// Writes the end-of-archive marker (two 512-byte zero blocks).
+  /// Writes the end-of-archive marker (two 512-byte zero blocks) and pads the
+  /// output to a multiple of <c>blockingFactor * 512</c> bytes.
   /// </summary>
   public void Finish() {
     if (this._finished)
@@ -73,6 +101,22 @@ public sealed class TarWriter : IDisposable {
     var zeroBlock = new byte[TarConstants.BlockSize];
     this._stream.Write(zeroBlock, 0, TarConstants.BlockSize);
     this._stream.Write(zeroBlock, 0, TarConstants.BlockSize);
+    this._bytesWritten += 2L * TarConstants.BlockSize;
+
+    // Pad up to the blocking-factor boundary.
+    var recordSize = (long)this._blockingFactor * TarConstants.BlockSize;
+    var tail = this._bytesWritten % recordSize;
+    if (tail != 0) {
+      var pad = (int)(recordSize - tail);
+      var buf = new byte[Math.Min(pad, TarConstants.BlockSize)];
+      var remaining = pad;
+      while (remaining > 0) {
+        var n = Math.Min(remaining, buf.Length);
+        this._stream.Write(buf, 0, n);
+        remaining -= n;
+      }
+      this._bytesWritten += pad;
+    }
     this._stream.Flush();
   }
 
@@ -88,47 +132,54 @@ public sealed class TarWriter : IDisposable {
   }
 
   private void WriteEntryInternal(TarEntry entry, byte[]? data) {
-    // Collect PAX attributes for fields that can't fit in the standard header
+    // Collect PAX attributes for fields that can't fit in the standard header.
+    // PAX dialect always prefers PAX records for non-ASCII / overlong names;
+    // GNU dialect prefers GNU @LongLink; ustar uses PAX only when truly forced
+    // (e.g. size > 8 GiB, which cannot be encoded in the 12-byte octal size field).
     var paxAttrs = new Dictionary<string, string>();
-
     var nameUtf8 = Encoding.UTF8.GetBytes(entry.Name);
-    if (nameUtf8.Length > TarConstants.NameLength || !IsAscii(nameUtf8))
-      paxAttrs["path"] = entry.Name;
+    var nameNeedsExt = nameUtf8.Length > TarConstants.NameLength || !IsAscii(nameUtf8);
+    var linkUtf8 = !string.IsNullOrEmpty(entry.LinkName) ? Encoding.UTF8.GetBytes(entry.LinkName) : [];
+    var linkNeedsExt = linkUtf8.Length > 0 && (linkUtf8.Length > TarConstants.LinkNameLength || !IsAscii(linkUtf8));
 
-    if (!string.IsNullOrEmpty(entry.LinkName)) {
-      var linkUtf8 = Encoding.UTF8.GetBytes(entry.LinkName);
-      if (linkUtf8.Length > TarConstants.LinkNameLength || !IsAscii(linkUtf8))
-        paxAttrs["linkpath"] = entry.LinkName;
+    if (this._format == TarHeaderFormat.Pax) {
+      if (nameNeedsExt) paxAttrs["path"] = entry.Name;
+      if (linkNeedsExt) paxAttrs["linkpath"] = entry.LinkName;
+    } else {
+      // ustar / gnu: fall through to GNU LongLink below, but still PAX when ASCII fails for ustar.
+      if (this._format == TarHeaderFormat.Ustar) {
+        if (nameNeedsExt) paxAttrs["path"] = entry.Name;
+        if (linkNeedsExt) paxAttrs["linkpath"] = entry.LinkName;
+      }
     }
 
     if (data != null && entry.Size > 0x1FFFFFFFFFL)
       paxAttrs["size"] = entry.Size.ToString();
 
-    // Write PAX extended header if needed, otherwise fall back to GNU long names
     if (paxAttrs.Count > 0) {
       WritePaxHeader(paxAttrs);
-    }
-    else {
-      if (nameUtf8.Length > TarConstants.NameLength)
-        WriteGnuLongName(entry.Name);
-
-      if (!string.IsNullOrEmpty(entry.LinkName) &&
-        Encoding.UTF8.GetByteCount(entry.LinkName) > TarConstants.LinkNameLength)
-        WriteGnuLongLink(entry.LinkName);
+    } else {
+      // GNU dialect path (or ustar where the name fits but is non-ASCII — ascii branch
+      // already shunted to PAX above).
+      if (nameNeedsExt) WriteGnuLongName(entry.Name);
+      if (linkNeedsExt) WriteGnuLongLink(entry.LinkName);
     }
 
     // Write the entry header
     TarHeader.WriteHeader(this._stream, entry);
+    this._bytesWritten += TarConstants.BlockSize;
 
     // Write data
     if (data != null && data.Length > 0) {
       this._stream.Write(data, 0, data.Length);
+      this._bytesWritten += data.Length;
 
       // Pad to 512-byte boundary
       var padding = (TarConstants.BlockSize - (data.Length % TarConstants.BlockSize)) % TarConstants.BlockSize;
       if (padding > 0) {
         var zeroPad = new byte[padding];
         this._stream.Write(zeroPad, 0, padding);
+        this._bytesWritten += padding;
       }
     }
   }

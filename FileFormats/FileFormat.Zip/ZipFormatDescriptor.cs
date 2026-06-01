@@ -4,7 +4,20 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Zip;
 
-public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
+public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema {
+
+  /// <inheritdoc />
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
+    new("Method", "Compression method", FormatOptionKind.Enum, "deflate",
+      AllowedValues: ["deflate", "store", "deflate64", "bzip2", "lzma", "zstd"]),
+    new("Level", "Compression level", FormatOptionKind.Integer, "5",
+      AllowedValues: ["0", "1", "3", "5", "7", "9"],
+      Description: "Compression level. 0 = fastest, 9 = max."),
+    new("Password", "Password", FormatOptionKind.String, "",
+      Description: "Optional ZipCrypto / AES password."),
+    new("EncryptionMethod", "Encryption method", FormatOptionKind.Enum, "none",
+      AllowedValues: ["none", "zipcrypto", "aes-128", "aes-192", "aes-256"]),
+  ];
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
@@ -98,19 +111,32 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// password, encryption mode, and incompressibility hints.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var (zipMethod, level) = ZipOptionsResolver.ResolveMethod(options.MethodName, options.Optimize);
-    if (options.Level.HasValue)
-      level = ZipOptionsResolver.ResolveDeflateLevel(options.Level, options.Optimize);
-    var encryption = ZipOptionsResolver.ResolveEncryption(options.EncryptionMethod);
+    // Three-tier fallback: FormatSpecific (schema) → direct property → hardcoded default.
+    // The direct properties remain authoritative when set (legacy tests), but
+    // when they're null/zero the schema knobs from FormatSpecific take over.
+    var methodName = options.MethodName ?? options.GetOption("Method", "deflate");
+    var passwordFromSchema = options.GetOption("Password", "");
+    var password = !string.IsNullOrEmpty(options.Password) ? options.Password
+      : !string.IsNullOrEmpty(passwordFromSchema) ? passwordFromSchema : null;
+    var encryptionName = options.EncryptionMethod ?? options.GetOption("EncryptionMethod", "none");
+    // Resolve explicit Level: direct property wins; otherwise fall back to schema
+    // (sentinel -1 means "use the method default"). Hardcoded default stays in
+    // ZipOptionsResolver.ResolveMethod.
+    var explicitLevel = options.Level ?? (options.GetOptionInt("Level", -1) is var lv && lv >= 0 ? lv : (int?)null);
+
+    var (zipMethod, level) = ZipOptionsResolver.ResolveMethod(methodName, options.Optimize);
+    if (explicitLevel.HasValue)
+      level = ZipOptionsResolver.ResolveDeflateLevel(explicitLevel.Value, options.Optimize);
+    var encryption = ZipOptionsResolver.ResolveEncryption(encryptionName);
 
     if (options.Threads > 1 && inputs.Count(i => !i.IsDirectory) > 1) {
-      ParallelZipCreator.CreateZipParallel(output, inputs, options.Password, zipMethod, level,
+      ParallelZipCreator.CreateZipParallel(output, inputs, password, zipMethod, level,
         options.IncompressiblePaths, options.Threads, encryption);
       return;
     }
 
     var w = new ZipWriter(output, leaveOpen: true, compressionLevel: level,
-      password: options.Password, encryptionMethod: encryption);
+      password: password, encryptionMethod: encryption);
 
     if (options.DictSize > 0 && zipMethod == ZipCompressionMethod.Lzma)
       w.LzmaDictionarySize = ZipOptionsResolver.NormalizeDictSize(

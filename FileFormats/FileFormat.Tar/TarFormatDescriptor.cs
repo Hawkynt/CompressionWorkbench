@@ -4,7 +4,17 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Tar;
 
-public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFormatOptionsSchema {
+
+  /// <inheritdoc />
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
+    new("BlockingFactor", "Blocking factor", FormatOptionKind.Integer, "20",
+      AllowedValues: ["1", "10", "20"],
+      Description: "Output is padded to N × 512-byte blocks. 20 = classic 10 KiB record."),
+    new("Format", "Header format", FormatOptionKind.Enum, "ustar",
+      AllowedValues: ["ustar", "gnu", "pax"],
+      Description: "TAR header format. ustar = POSIX, gnu = GNU extensions for long names, pax = extended headers."),
+  ];
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the TAR archive in listing order.</summary>
   public void Defragment(Stream archive)
@@ -102,7 +112,14 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var w = new TarWriter(output);
+    var blockingFactor = options.GetOptionInt("BlockingFactor", 20);
+    var formatName = options.GetOption("Format", "ustar").ToLowerInvariant();
+    var headerFormat = formatName switch {
+      "gnu" => TarHeaderFormat.Gnu,
+      "pax" => TarHeaderFormat.Pax,
+      _ => TarHeaderFormat.Ustar,
+    };
+    var w = new TarWriter(output, leaveOpen: false, format: headerFormat, blockingFactor: blockingFactor);
     foreach (var i in inputs) {
       if (i.IsDirectory) {
         w.AddEntry(new TarEntry { Name = i.ArchiveName, Size = 0, TypeFlag = (byte)'5' }, []);

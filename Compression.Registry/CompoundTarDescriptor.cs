@@ -5,7 +5,27 @@ namespace Compression.Registry;
 /// Auto-generated descriptor for compound tar formats (tar.gz, tar.bz2, etc.).
 /// Wraps tar archive operations with a stream compression layer via the registry.
 /// </summary>
-public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
+
+  /// <summary>
+  /// Inherits the inner TAR descriptor's schema and adds a <c>CompressionLevel</c>
+  /// knob for the wrapping stream compressor (gzip / bzip2 / xz / zstd / etc.).
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema {
+    get {
+      var tarOps = FormatRegistry.GetArchiveOps("Tar");
+      var baseSchema = (tarOps as IFormatOptionsSchema)?.OptionsSchema ?? [];
+      var compressionKnob = new FormatOptionDescriptor(
+        "CompressionLevel", "Compression level", FormatOptionKind.Integer, "5",
+        AllowedValues: ["1", "5", "9"],
+        Description: "Wrapping stream's compression level (inner format picks its own interpretation).");
+      var result = new List<FormatOptionDescriptor>(baseSchema.Count + 1);
+      result.AddRange(baseSchema);
+      result.Add(compressionKnob);
+      return result;
+    }
+  }
+
   private readonly string _id;
   private readonly string _displayName;
   private readonly string _streamFormatId;

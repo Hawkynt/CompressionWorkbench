@@ -4,7 +4,22 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.SevenZip;
 
-public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IFormatOptionsSchema {
+
+  /// <inheritdoc />
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
+    new("Method", "Compression method", FormatOptionKind.Enum, "lzma2",
+      AllowedValues: ["lzma2", "lzma", "ppmd", "bzip2", "deflate", "copy"]),
+    new("Level", "Compression level", FormatOptionKind.Integer, "5",
+      AllowedValues: ["1", "3", "5", "7", "9"]),
+    new("DictSize", "Dictionary size", FormatOptionKind.Integer, "16777216",
+      AllowedValues: ["65536", "1048576", "16777216", "67108864", "268435456"],
+      Description: "LZMA/LZMA2 dictionary size in bytes (64 KiB - 256 MiB)."),
+    new("SolidSize", "Solid block size", FormatOptionKind.Integer, "16777216",
+      AllowedValues: ["0", "1048576", "16777216", "67108864", "1073741824"],
+      Description: "Max solid block size in bytes. 0 = non-solid (each file independent)."),
+    new("Password", "Password", FormatOptionKind.String, ""),
+  ];
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the 7z archive in listing order.</summary>
   public void Defragment(Stream archive)
@@ -79,18 +94,31 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// recommends BCJ x86 filter for executables.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var defaultCodec = string.IsNullOrEmpty(options.MethodName)
-      ? SevenZipCodec.Lzma2
-      : SevenZipOptionsResolver.ResolveCodec(options.MethodName);
+    // Three-tier fallback: FormatSpecific (schema) → direct property → hardcoded default.
+    var methodName = !string.IsNullOrEmpty(options.MethodName)
+      ? options.MethodName
+      : options.GetOption("Method", "lzma2");
+    var defaultCodec = SevenZipOptionsResolver.ResolveCodec(methodName);
+
+    var directDict = options.DictSize;
+    var schemaDict = options.GetOptionInt("DictSize", -1);
+    var effectiveDict = directDict > 0 ? directDict : (schemaDict > 0 ? schemaDict : 0L);
 
     var dictSize = defaultCodec == SevenZipCodec.PPMd
-      ? SevenZipOptionsResolver.ResolvePpmdMemorySize(options.DictSize)
+      ? SevenZipOptionsResolver.ResolvePpmdMemorySize(effectiveDict)
       : defaultCodec == SevenZipCodec.BZip2
-        ? SevenZipOptionsResolver.ResolveBzip2BlockSize(options.DictSize) * 100 * 1024
-        : SevenZipOptionsResolver.ResolveLzmaDictSize(options.DictSize, options.Optimize);
+        ? SevenZipOptionsResolver.ResolveBzip2BlockSize(effectiveDict) * 100 * 1024
+        : SevenZipOptionsResolver.ResolveLzmaDictSize(effectiveDict, options.Optimize);
     var ppmdOrder = SevenZipOptionsResolver.ResolvePpmdOrder(options.WordSize);
-    var ppmdMem = SevenZipOptionsResolver.ResolvePpmdMemorySize(options.DictSize);
-    var blockSize = options.SolidSize > 0 ? options.SolidSize : SolidBlockPlanner.DefaultMaxBlockSize;
+    var ppmdMem = SevenZipOptionsResolver.ResolvePpmdMemorySize(effectiveDict);
+    var directSolid = options.SolidSize;
+    var schemaSolid = (long)options.GetOptionInt("SolidSize", -1);
+    var solid = directSolid > 0 ? directSolid : (schemaSolid >= 0 ? schemaSolid : 0L);
+    var blockSize = solid > 0 ? solid : SolidBlockPlanner.DefaultMaxBlockSize;
+
+    var passwordFromSchema = options.GetOption("Password", "");
+    var password = !string.IsNullOrEmpty(options.Password) ? options.Password
+      : !string.IsNullOrEmpty(passwordFromSchema) ? passwordFromSchema : null;
 
     // Detect incompressible files via entropy unless caller already passed a set
     // or explicitly disabled detection with ForceCompress.
@@ -105,7 +133,7 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       SolidBlockPlanner.RecommendFilter(b) != SevenZipFilter.None);
 
     var w = new SevenZipWriter(output, defaultCodec, dictionarySize: dictSize,
-      ppmdOrder: ppmdOrder, ppmdMemorySize: ppmdMem, password: options.Password,
+      ppmdOrder: ppmdOrder, ppmdMemorySize: ppmdMem, password: password,
       encryptHeaders: options.EncryptFilenames);
 
     foreach (var i in inputs)
