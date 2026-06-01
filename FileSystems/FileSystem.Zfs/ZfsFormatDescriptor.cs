@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Zfs;
 
 public sealed class ZfsFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
 
   public string Id => "Zfs";
   public string DisplayName => "ZFS";
@@ -84,21 +84,37 @@ public sealed class ZfsFormatDescriptor :
   /// land at the expected start/end positions.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
-    // Capture original image size before the rebuild rewrites the archive —
-    // ZFS labels live at fixed start + end positions so the rebuilt image
-    // must keep the same overall footprint.
+    // ZFS labels live at fixed start + end positions, so keep the original
+    // footprint. Capture it before the rebuild rewrites the archive.
     var originalSize = archive.Length;
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new ZfsReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new ZfsWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        using var ms = new MemoryStream();
-        w.WriteTo(ms, originalSize);
-        return ms.ToArray();
-      });
+    DefragRebuilder.Rebuild(archive, options, ReadEntries, files => BuildImage(files, originalSize));
+  }
+
+  // ── IArchiveModifiable (rebuild-based add / replace / remove) ──────────
+  // ZFS in-place mutation needs DMU/ZAP/space-map + uberblock advance; instead
+  // we read every file and rebuild a fresh fat-ZAP-capable image with the
+  // writer (keeping the image footprint), the same path the defragmentor uses.
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    var size = archive.Length;
+    ModifyRebuilder.Add(archive, inputs, ReadEntries, files => BuildImage(files, size));
+  }
+
+  public void Remove(Stream archive, string[] entryNames) {
+    var size = archive.Length;
+    ModifyRebuilder.Remove(archive, entryNames, ReadEntries, files => BuildImage(files, size));
+  }
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    var r = new ZfsReader(stream);
+    return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files, long imageSize) {
+    var w = new ZfsWriter();
+    foreach (var (n, d) in files) w.AddFile(n, d);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms, imageSize);
+    return ms.ToArray();
   }
 }
