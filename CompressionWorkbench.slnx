@@ -382,6 +382,7 @@
     <Project Path="FileSystems/FileSystem.ZxScl/FileSystem.ZxScl.csproj" />
     <Project Path="FileSystems/FileSystem.Zfs/FileSystem.Zfs.csproj" />
     <Project Path="FileSystems/FileSystem.ApplePascal/FileSystem.ApplePascal.csproj" />
+    <Project Path="FileSystems/FileSystem.Cromemco/FileSystem.Cromemco.csproj" />
     <Project Path="FileFormats/FileFormat.Zip/FileFormat.Zip.csproj" />
     <Project Path="FileFormats/FileFormat.Zlib/FileFormat.Zlib.csproj" />
     <Project Path="FileFormats/FileFormat.Zling/FileFormat.Zling.csproj" />
