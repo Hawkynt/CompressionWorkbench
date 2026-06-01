@@ -78,6 +78,36 @@ public static class PcmCodec {
   }
 
   /// <summary>
+  /// Weaves per-channel mono PCM blobs back into one interleaved buffer — the inverse
+  /// of <see cref="SplitInterleavedPcm"/>. All channels must share the same byte length
+  /// (i.e. the same frame count at the given <paramref name="bitsPerSample"/>). Channels
+  /// are interleaved in the order supplied. A single channel is returned unchanged.
+  /// </summary>
+  public static byte[] Interleave(IReadOnlyList<byte[]> monoChannels, int bitsPerSample) {
+    if (monoChannels.Count == 0) return [];
+    if (monoChannels.Count == 1) return monoChannels[0];
+
+    var bytesPerSample = bitsPerSample / 8;
+    var monoLength = monoChannels[0].Length;
+    if (monoChannels.Any(c => c.Length != monoLength))
+      throw new ArgumentException("All channel PCM buffers must have the same length (frame count).");
+    if (monoLength % bytesPerSample != 0)
+      throw new ArgumentException("Channel PCM length is not a multiple of the sample size.");
+
+    var channels = monoChannels.Count;
+    var frameCount = monoLength / bytesPerSample;
+    var interleaved = new byte[frameCount * channels * bytesPerSample];
+    for (var f = 0; f < frameCount; ++f) {
+      var srcOff = f * bytesPerSample;
+      for (var c = 0; c < channels; ++c) {
+        var dstOff = (f * channels + c) * bytesPerSample;
+        Buffer.BlockCopy(monoChannels[c], srcOff, interleaved, dstOff, bytesPerSample);
+      }
+    }
+    return interleaved;
+  }
+
+  /// <summary>
   /// Wraps raw little-endian PCM bytes in a minimal RIFF/WAVE header.
   /// <paramref name="formatCode"/>: 1 = PCM integer, 3 = IEEE float.
   /// </summary>

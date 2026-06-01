@@ -128,14 +128,7 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (channels.Any(c => c.InterleavedPcm.Length / bytesPerSample != frameCount))
       throw new InvalidOperationException("All channel WAVs must have the same frame count.");
 
-    var interleaved = new byte[frameCount * channels.Count * bytesPerSample];
-    for (var f = 0; f < frameCount; ++f) {
-      for (var c = 0; c < channels.Count; ++c) {
-        var srcOff = f * bytesPerSample;
-        var dstOff = (f * channels.Count + c) * bytesPerSample;
-        Buffer.BlockCopy(channels[c].InterleavedPcm, srcOff, interleaved, dstOff, bytesPerSample);
-      }
-    }
+    var interleaved = PcmCodec.Interleave(channels.Select(c => c.InterleavedPcm).ToList(), first.BitsPerSample);
 
     var blob = Codec.Pcm.PcmCodec.ToWavBlob(
       interleaved, channels.Count, first.SampleRate, first.BitsPerSample, formatCode: 1);
