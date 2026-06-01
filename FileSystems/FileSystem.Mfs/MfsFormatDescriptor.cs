@@ -5,7 +5,19 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Mfs;
 
-public sealed class MfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class MfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for Classic Macintosh MFS creation. MFS is a flat
+  /// 400 KB floppy filesystem with a single MDB-stored volume name; the
+  /// writer emits the canonical 400 KB image, so VolumeLabel is the only
+  /// meaningful per-volume knob.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 27),
+  ];
 
   /// <summary>
   /// Walks the MDB + directory area + per-file allocation and yields
@@ -161,7 +173,10 @@ public sealed class MfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var w = new MfsWriter();
+    var w = new MfsWriter {
+      VolumeName = string.IsNullOrEmpty(options?.GetOption("VolumeLabel", ""))
+        ? "Untitled" : options!.GetOption("VolumeLabel", "Untitled"),
+    };
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());

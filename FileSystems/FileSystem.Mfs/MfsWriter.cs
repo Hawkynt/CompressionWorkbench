@@ -7,6 +7,13 @@ namespace FileSystem.Mfs;
 public sealed class MfsWriter {
   private readonly List<(string Name, byte[] Data)> _files = [];
 
+  /// <summary>
+  /// MFS volume name written into the MDB at offset 36 (Pascal string,
+  /// max 27 chars). Shown by the classic Mac Finder as the disk's name.
+  /// Default "Untitled".
+  /// </summary>
+  public string VolumeName { get; set; } = "Untitled";
+
   /// <summary>Adds a file to the image.</summary>
   public void AddFile(string name, byte[] data) => _files.Add((name, data));
 
@@ -31,9 +38,12 @@ public sealed class MfsWriter {
     var firstAllocBlockSector = 12;
     BinaryPrimitives.WriteUInt16BigEndian(mdb[28..], (ushort)firstAllocBlockSector);
 
-    // Volume name
-    mdb[36] = 8;
-    "Untitled"u8.CopyTo(mdb[37..]);
+    // Volume name — MDB offset 36 (Pascal string, length byte + ASCII).
+    var volName = string.IsNullOrEmpty(this.VolumeName) ? "Untitled" : this.VolumeName;
+    if (volName.Length > 27) volName = volName[..27];
+    var volBytes = Encoding.ASCII.GetBytes(volName);
+    mdb[36] = (byte)volBytes.Length;
+    volBytes.CopyTo(mdb[37..]);
 
     // Write file directory entries starting at offset 1024+128
     var dirPos = 1024 + 128;
