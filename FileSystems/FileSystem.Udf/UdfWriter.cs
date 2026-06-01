@@ -51,6 +51,13 @@ public sealed class UdfWriter {
 
   private readonly List<(string name, byte[] data)> _files = [];
 
+  /// <summary>
+  /// ECMA-167 PVD Volume Identifier (dstring at PVD offset 24, 32 bytes).
+  /// Linux's udf driver surfaces this as the volume label. Default "UDF Volume".
+  /// Truncated to 31 bytes (ECMA-167 dstring length byte caps at 31).
+  /// </summary>
+  public string VolumeIdentifier { get; set; } = "UDF Volume";
+
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
@@ -102,7 +109,7 @@ public sealed class UdfWriter {
     WritePadding(output, 32 - 19);
 
     // ── Main VDS at sectors 32-35 ──
-    WritePvd(output, 32, totalImageSectors);
+    this.WritePvd(output, 32, totalImageSectors);
     WritePartitionDescriptor(output, 33, PartitionStartSector, totalPartitionSectors);
     WriteLvd(output, 34);
     WriteTerminator(output, 35);
@@ -383,11 +390,14 @@ public sealed class UdfWriter {
     output.Write(buf);
   }
 
-  private static void WritePvd(Stream output, int sectorNum, int totalSectors) {
+  private void WritePvd(Stream output, int sectorNum, int totalSectors) {
     var buf = new byte[Sector];
     WriteTag(buf, 0, 1, (uint)sectorNum); // Primary Volume Descriptor
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(16), 1); // VDS number
-    Encoding.ASCII.GetBytes("UDF Volume").CopyTo(buf, 24); // volume identifier (dstring at 24, 32 bytes)
+    // Volume Identifier — ECMA-167 dstring (max 31 ASCII bytes + length byte at offset+31).
+    var volId = string.IsNullOrEmpty(this.VolumeIdentifier) ? "UDF Volume" : this.VolumeIdentifier;
+    if (volId.Length > 31) volId = volId[..31];
+    Encoding.ASCII.GetBytes(volId).CopyTo(buf, 24);
     FinalizeTag(buf, 0, PvdBodySize);
     output.Write(buf);
   }

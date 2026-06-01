@@ -4,7 +4,25 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Udf;
 
-public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for UDF 2.01 creation. The natural per-volume knob is the
+  /// PVD Volume Identifier (ECMA-167 §7.2.5) — Linux's udf driver surfaces
+  /// this string as the volume label. Image geometry is auto-sized to fit
+  /// the file content.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "VolumeLabel",
+      DisplayName: "Volume identifier",
+      Kind: FormatOptionKind.String,
+      Default: "UDF Volume",
+      Description: "ECMA-167 PVD Volume Identifier (dstring, max 31 ASCII chars). " +
+        "Shown by file managers and the udf driver as the volume label."),
+  ];
 
   /// <summary>
   /// Walks AVDP@LBA 256 → VDS → FSD → root FE, then recurses through
@@ -134,7 +152,9 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var w = new UdfWriter();
+    var w = new UdfWriter {
+      VolumeIdentifier = options?.GetOption("VolumeLabel", "UDF Volume") ?? "UDF Volume",
+    };
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
       w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
