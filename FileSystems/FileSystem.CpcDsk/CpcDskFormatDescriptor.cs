@@ -5,7 +5,34 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.CpcDsk;
 
-public sealed class CpcDskFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class CpcDskFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for CPC DSK creation. AMSDOS has no volume label; the
+  /// only per-image knobs are the physical disk geometry the FDC presents.
+  /// Default Tracks=40, Sides=1 (1 × 40 × 9 × 512 = 180 KB; the canonical
+  /// CPC 3" floppy size used by AMSDOS).
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "Tracks",
+      DisplayName: "Tracks",
+      Kind: FormatOptionKind.Enum,
+      Default: "40",
+      AllowedValues: ["40", "80"],
+      Description: "Number of cylinders per side. 40 = standard CPC 3\" / PCW 720 KB " +
+        "side; 80 = double-stepped 3.5\" floppy."),
+    new FormatOptionDescriptor(
+      Key: "Sides",
+      DisplayName: "Sides",
+      Kind: FormatOptionKind.Enum,
+      Default: "1",
+      AllowedValues: ["1", "2"],
+      Description: "Number of magnetic surfaces. 1 = single-sided (CPC default); " +
+        "2 = double-sided (PCW / DSDD)."),
+  ];
 
   /// <summary>
   /// Walks a Standard or Extended CPC DSK image and yields the actual on-disk
@@ -53,7 +80,11 @@ public sealed class CpcDskFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    using var w = new CpcDskWriter(output, leaveOpen: true);
+    var tracks = options?.GetOptionInt("Tracks", 40) ?? 40;
+    var sides  = options?.GetOptionInt("Sides", 1) ?? 1;
+    if (tracks is not (40 or 80)) tracks = 40;
+    if (sides is not (1 or 2)) sides = 1;
+    using var w = new CpcDskWriter(output, leaveOpen: true, tracks: tracks, sides: sides);
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     w.Finish();
