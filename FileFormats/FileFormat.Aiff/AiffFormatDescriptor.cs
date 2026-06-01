@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Text;
 using Codec.Pcm;
 using Compression.Registry;
+using FileFormat.Wav;
 
 namespace FileFormat.Aiff;
 
@@ -15,7 +16,7 @@ namespace FileFormat.Aiff;
 /// through as raw bytes in the <c>FULL.aif</c> entry only).
 /// </summary>
 public sealed class AiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-  IArchiveInMemoryExtract, IArchiveWriteConstraints {
+  IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
 
   public string Id => "Aiff";
   public string DisplayName => "AIFF / AIFC (Apple audio)";
@@ -73,6 +74,74 @@ public sealed class AiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     reason = $"not an AIFF-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
     return false;
   }
+
+  // ── IArchiveCreatable: assemble a multi-channel AIFF from per-channel mono WAVs ──
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var fileList = FormatHelpers.FilesOnly(inputs).ToList();
+
+    // FULL.aif/.aiff/.aifc → passthrough verbatim (archive-view semantics).
+    var full = fileList.FirstOrDefault(f => {
+      var n = Path.GetFileName(f.Name).ToLowerInvariant();
+      return n is "full.aif" or "full.aiff" or "full.aifc";
+    });
+    if (full.Data != null) {
+      output.Write(full.Data);
+      return;
+    }
+
+    var channelBlobs = fileList
+      .Where(f => {
+        var name = Path.GetFileName(f.Name);
+        return name.EndsWith(".wav", StringComparison.OrdinalIgnoreCase);
+      })
+      .OrderBy(f => ChannelOrder(Path.GetFileNameWithoutExtension(f.Name)))
+      .ToList();
+
+    if (channelBlobs.Count == 0)
+      throw new InvalidOperationException("AIFF archive create needs either FULL.aif or one or more per-channel WAVs.");
+
+    var channels = channelBlobs.Select(b => new WavReader().Read(b.Data)).ToList();
+    var first = channels[0];
+    if (channels.Any(c => c.SampleRate != first.SampleRate || c.BitsPerSample != first.BitsPerSample || c.NumChannels != 1))
+      throw new InvalidOperationException("All channel WAVs must be mono and share sample rate + bit depth.");
+
+    var bytesPerSample = first.BitsPerSample / 8;
+    if (channels.Any(c => c.InterleavedPcm.Length != first.InterleavedPcm.Length))
+      throw new InvalidOperationException("All channel WAVs must have the same frame count.");
+
+    // Interleave the little-endian channels, then byte-swap each sample to the
+    // big-endian order AIFF stores PCM in.
+    var interleavedLe = PcmCodec.Interleave(channels.Select(c => c.InterleavedPcm).ToList(), first.BitsPerSample);
+    var interleavedBe = SwapSampleEndianness(interleavedLe, bytesPerSample);
+
+    var blob = new AiffWriter().Write(interleavedBe, channels.Count, first.SampleRate, first.BitsPerSample);
+    output.Write(blob);
+  }
+
+  /// <summary>Reverses the byte order within each fixed-width sample (LE↔BE).</summary>
+  private static byte[] SwapSampleEndianness(byte[] pcm, int bytesPerSample) {
+    if (bytesPerSample <= 1) return pcm;
+    var swapped = new byte[pcm.Length];
+    for (var i = 0; i + bytesPerSample <= pcm.Length; i += bytesPerSample)
+      for (var j = 0; j < bytesPerSample; ++j)
+        swapped[i + j] = pcm[i + bytesPerSample - 1 - j];
+    return swapped;
+  }
+
+  private static int ChannelOrder(string name) => name.ToUpperInvariant() switch {
+    "LEFT" or "FRONT_LEFT" => 0,
+    "RIGHT" or "FRONT_RIGHT" => 1,
+    "CENTER" => 2,
+    "LFE" => 3,
+    "BACK_LEFT" => 4,
+    "BACK_RIGHT" => 5,
+    "SIDE_LEFT" => 6,
+    "SIDE_RIGHT" => 7,
+    "MONO" => 0,
+    _ => int.Parse(name.StartsWith("CH_", StringComparison.Ordinal) ? name[3..] : "0",
+                    System.Globalization.CultureInfo.InvariantCulture),
+  };
 
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
