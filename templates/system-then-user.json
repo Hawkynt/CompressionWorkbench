@@ -1,0 +1,30 @@
+{
+  "name": "System / boot files first, user files by recency",
+  "metadataZone": "Front",
+  "leftoverStrategy": "fill_gaps",
+  "zones": [
+    {
+      "name": "boot",
+      "range": "0%-5%",
+      "filter": "name matches '^(boot|grub|kernel|ntldr|bootmgr|win|vmlinuz|initrd|loader|efi).*'",
+      "sortBy": ["name asc"]
+    },
+    {
+      "name": "system",
+      "range": "5%-25%",
+      "filter": "attributes > 0 or path contains '/system' or path contains '/windows' or path contains '/etc'",
+      "sortBy": ["path asc"]
+    },
+    {
+      "name": "user-recent",
+      "range": "25%-70%",
+      "filter": "lastModified >= quartile(0.5)",
+      "sortBy": ["lastModified desc"]
+    },
+    {
+      "name": "user-archive",
+      "range": "70%-100%",
+      "sortBy": ["lastModified asc"]
+    }
+  ]
+}

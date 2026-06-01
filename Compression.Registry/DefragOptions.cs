@@ -1,3 +1,5 @@
+using Compression.Registry.Layout;
+
 namespace Compression.Registry;
 
 /// <summary>
@@ -128,4 +130,15 @@ public sealed record class DefragOptions {
   /// filesystem images; ignored for archive optimization and file-internal layout.
   /// </summary>
   public MetadataZone MetadataZonePlacement { get; init; } = MetadataZone.Unchanged;
+
+  /// <summary>
+  /// Optional layout template that overrides <see cref="Mode"/> /
+  /// <see cref="MetadataZonePlacement"/> with a fine-grained per-zone plan.
+  /// When set, the planner uses <see cref="LayoutTemplateResolver"/> to
+  /// assign files to byte ranges; <see cref="Mode"/> is interpreted as the
+  /// fallback strategy for files outside all zones (per the template's
+  /// leftover strategy). When <c>null</c> (default), the planner uses the
+  /// classic mode/profile/metadata-zone pipeline.
+  /// </summary>
+  public LayoutTemplate? LayoutTemplate { get; init; }
 }

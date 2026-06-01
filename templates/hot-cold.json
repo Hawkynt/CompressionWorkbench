@@ -1,0 +1,30 @@
+{
+  "name": "Hot at start, cold at end",
+  "metadataZone": "Middle",
+  "leftoverStrategy": "fill_gaps",
+  "zones": [
+    {
+      "name": "hot",
+      "range": "0%-35%",
+      "filter": "lastModified >= quartile(0.75)",
+      "sortBy": ["lastModified desc", "size desc"]
+    },
+    {
+      "name": "warm",
+      "range": "35%-70%",
+      "filter": "lastModified >= quartile(0.25)",
+      "sortBy": ["lastModified desc"]
+    },
+    {
+      "name": "cold",
+      "range": "70%-90%",
+      "sortBy": ["size desc"]
+    },
+    {
+      "name": "frozen",
+      "range": "90%-100%",
+      "filter": "lastModified <= quartile(0.25)",
+      "sortBy": ["lastModified asc"]
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using Compression.Registry;
+using Compression.Registry.Layout;
 
 namespace Compression.Core.Layout;
 
@@ -58,6 +59,11 @@ public static class DefragPlanner {
   /// <param name="holeAt">Byte offset at which to create the hole (-1 = no hole).</param>
   /// <param name="metadataZone">Controls where metadata and directory extents are placed.
   /// <see cref="MetadataZone.Unchanged"/> (default) preserves current positions.</param>
+  /// <param name="layoutTemplate">Optional fine-grained layout template. When
+  /// non-null, the template drives zone assignment via
+  /// <see cref="LayoutTemplateResolver"/>; <paramref name="profile"/> /
+  /// <paramref name="metadataZone"/> are bypassed. When null (default), the
+  /// classic mode/profile/metadata-zone pipeline is used.</param>
   /// <returns>Ordered list of moves to execute.</returns>
   public static IReadOnlyList<ClusterMove> Plan(
     IReadOnlyList<DefragBlockInfo> extents,
@@ -69,7 +75,8 @@ public static class DefragPlanner {
     int interleaveStride = 1,
     long holeSize = 0,
     long holeAt = -1,
-    MetadataZone metadataZone = MetadataZone.Unchanged) {
+    MetadataZone metadataZone = MetadataZone.Unchanged,
+    LayoutTemplate? layoutTemplate = null) {
     ArgumentNullException.ThrowIfNull(extents);
     if (clusterSize <= 0) throw new ArgumentOutOfRangeException(nameof(clusterSize));
     if (interleaveStride < 1 || interleaveStride > 256)
@@ -125,6 +132,19 @@ public static class DefragPlanner {
 
     if (mode == DefragMode.CarveHole)
       return PlanCarveHole(byFile, fileSizes, fileExtents, dataOrigin, imageSize, clusterSize, freeRegions, holeSize, holeAt);
+
+    // Layout-template path takes precedence over the classic metadata-zone /
+    // profile pipeline. The template captures (a) per-zone byte ranges, (b)
+    // filters that route files to zones, (c) sort keys applied within each
+    // zone. Files matching no zone fall through per the template's leftover
+    // strategy. The classic mode/profile path is used as a fallback only
+    // when the template is null.
+    if (layoutTemplate is not null) {
+      return PlanFromTemplate(
+        byFile, fileSizes, extents,
+        dataOrigin, imageSize, clusterSize,
+        freeRegions, forbidden, mode, layoutTemplate);
+    }
 
     // When metadata zone placement is requested, separate metadata/directory
     // extents from file-data extents and apply zone-based ordering.
@@ -1007,4 +1027,136 @@ public static class DefragPlanner {
 
   private static long AlignUp(long value, long alignment)
     => alignment <= 1 ? value : (value + alignment - 1) / alignment * alignment;
+
+  // ── Layout-template path ───────────────────────────────────────────────
+
+  /// <summary>
+  /// Plans moves driven by a <see cref="LayoutTemplate"/>. Builds an
+  /// <see cref="IFilterFileContext"/> per file from the extent map, calls
+  /// <see cref="LayoutTemplateResolver.Resolve"/> to assign each file to a
+  /// zone, then emits one packed run per zone within the resolved byte
+  /// bounds. Files in the leftover bucket are placed per the template's
+  /// <see cref="LeftoverStrategy"/>: <c>FillGaps</c> drops them into the
+  /// trailing slot after all zones, <c>AppendAtEnd</c> appends them after
+  /// the highest zone end.
+  /// </summary>
+  private static IReadOnlyList<ClusterMove> PlanFromTemplate(
+    Dictionary<string, List<DefragBlockInfo>> byFile,
+    Dictionary<string, long> fileSizes,
+    IReadOnlyList<DefragBlockInfo> extents,
+    long dataOrigin, long imageSize, int clusterSize,
+    List<(long Offset, long Length)> freeRegions,
+    IReadOnlyList<(long Start, long End)> forbidden,
+    DefragMode mode,
+    LayoutTemplate template) {
+
+    // Build filter contexts from each file. mtime/atime/ctime aren't carried
+    // on DefragBlockInfo today — Wave 2 will plumb them through. For now the
+    // contexts surface what's available (name, path, size, attributes derived
+    // from DefragBlockClass) and leave timestamps null. Filters that compare
+    // a missing field always evaluate false, which is the safe default
+    // (those files end up in the leftover bucket).
+    var fileNames = byFile.Keys.ToList();
+    var contexts = new List<IFilterFileContext>(fileNames.Count);
+    var allSizes = new List<long>(fileNames.Count);
+    foreach (var n in fileNames) allSizes.Add(fileSizes[n]);
+
+    foreach (var n in fileNames) {
+      var firstExt = byFile[n][0];
+      var nameOnly = ExtractFileName(n);
+      var ext = ExtractExtension(nameOnly);
+      // Derive a coarse "attributes" bit from the DefragBlockClass when
+      // available: Directory => 0x10 (FAT-style dir bit), other classes 0.
+      uint attrs = firstExt.Classification == DefragBlockClass.Directory ? 0x10u : 0u;
+      contexts.Add(new FilterFileContext {
+        Name = nameOnly,
+        Path = n,
+        Extension = ext,
+        Size = fileSizes[n],
+        Attributes = attrs,
+        AllSizes = allSizes,
+      });
+    }
+
+    var placements = LayoutTemplateResolver.Resolve(template, contexts, imageSize);
+
+    // Group placements by zone (preserving SortIndex order) so we can emit
+    // packed runs.
+    var byZone = new Dictionary<string, List<ResolvedFilePlacement>>(StringComparer.Ordinal);
+    foreach (var p in placements) {
+      if (!byZone.TryGetValue(p.ZoneName, out var list))
+        byZone[p.ZoneName] = list = [];
+      list.Add(p);
+    }
+    foreach (var kv in byZone) kv.Value.Sort((a, b) => a.SortIndex.CompareTo(b.SortIndex));
+
+    var moves = new List<ClusterMove>();
+
+    // Place zone-resolved files first, in template order so adjacent zone
+    // packing stays predictable. Within a zone, walk sorted placements and
+    // emit per-file moves starting at the zone's start offset (clamped to
+    // dataOrigin and away from forbidden regions).
+    foreach (var zone in template.Zones) {
+      if (!byZone.TryGetValue(zone.Name, out var zonePlacements)) continue;
+      var (zStart, zEnd) = RangeSpec.Parse(zone.Range).Resolve(imageSize);
+      zStart = Math.Max(zStart, dataOrigin);
+      var cursor = AlignUpFrom(zStart, dataOrigin, clusterSize);
+      foreach (var p in zonePlacements) {
+        var fileName = fileNames[p.FileIndex];
+        var totalSize = fileSizes[fileName];
+        var alignedSize = AlignUp(totalSize, clusterSize);
+        // Honor zEnd as a soft ceiling — but if a file doesn't fit in its
+        // zone, allow it to spill past the zone (FillGaps semantics for
+        // overflows). FindNextSlot keeps it clear of forbidden regions.
+        var ceiling = mode == DefragMode.ConsolidateAtEnd ? imageSize : imageSize;
+        var target = FindNextSlot(cursor, alignedSize, ceiling, dataOrigin, clusterSize, forbidden);
+        if (target < 0) break;
+        EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize);
+        cursor = target + alignedSize;
+        _ = zEnd; // zEnd is informational only at this layer; planner allows spill
+      }
+    }
+
+    // Now place leftover files per the template's strategy. They go after
+    // the highest used cursor (which already accounts for any spill from
+    // zones) — both FillGaps and AppendAtEnd resolve to the same trailing
+    // append in this Wave-1 implementation; the difference materialises in
+    // Wave 2 when the streaming coordinator gains hole-aware allocation.
+    if (byZone.TryGetValue(LayoutTemplateResolver.LeftoverZoneName, out var leftovers)) {
+      // Anchor leftover cursor at the highest written offset so far, or at
+      // dataOrigin if no zones were placed.
+      long startCursor = dataOrigin;
+      if (moves.Count > 0) {
+        long highest = 0;
+        foreach (var m in moves) {
+          var end = m.DstOffset + AlignUp(m.Length, clusterSize);
+          if (end > highest) highest = end;
+        }
+        startCursor = Math.Max(startCursor, highest);
+      }
+      var cursor = AlignUpFrom(startCursor, dataOrigin, clusterSize);
+      foreach (var p in leftovers) {
+        var fileName = fileNames[p.FileIndex];
+        var totalSize = fileSizes[fileName];
+        var alignedSize = AlignUp(totalSize, clusterSize);
+        var target = FindNextSlot(cursor, alignedSize, imageSize, dataOrigin, clusterSize, forbidden);
+        if (target < 0) break;
+        EmitFileMoves(moves, byFile[fileName], target, totalSize, fileName, clusterSize);
+        cursor = target + alignedSize;
+      }
+    }
+
+    return ResolveDependencies(moves, freeRegions, clusterSize);
+  }
+
+  private static string ExtractFileName(string fullName) {
+    var slash = fullName.LastIndexOf('/');
+    return slash < 0 ? fullName : fullName[(slash + 1)..];
+  }
+
+  private static string ExtractExtension(string name) {
+    var dot = name.LastIndexOf('.');
+    if (dot < 0 || dot == name.Length - 1) return string.Empty;
+    return name[dot..].ToLowerInvariant();
+  }
 }

@@ -1,0 +1,12 @@
+{
+  "name": "Strict alphabetical",
+  "metadataZone": "Front",
+  "leftoverStrategy": "append_at_end",
+  "zones": [
+    {
+      "name": "all",
+      "range": "0%-100%",
+      "sortBy": ["path asc", "name asc"]
+    }
+  ]
+}
