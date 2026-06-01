@@ -5,7 +5,26 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.AppleDos;
 
-public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for Apple DOS 3.3 creation. The format has exactly one
+  /// canonical geometry (35 tracks × 16 sectors × 256 bytes) and no concept
+  /// of a volume name, so the only meaningful knob is the VTOC's disk
+  /// volume number — used by DOS to disambiguate disks in a multi-volume
+  /// session. Valid range 1..254 (0 = unset; 255 reserved).
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "VolumeNumber",
+      DisplayName: "Volume number",
+      Kind: FormatOptionKind.Integer,
+      Default: "254",
+      Description: "Disk volume number stored at VTOC offset 0x06. Apple DOS uses this " +
+        "to identify which physical floppy is in the drive. Range 1..254 (default 254)."),
+  ];
 
   /// <summary>
   /// Walks the VTOC + catalog (track 17) and per-file T/S list chains,
@@ -91,6 +110,8 @@ public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormat
         $"AppleDOS: combined input size {total} bytes exceeds disk capacity ({cap} bytes).");
 
     var w = new AppleDosWriter();
+    var volNum = options?.GetOptionInt("VolumeNumber", 254) ?? 254;
+    if (volNum is >= 1 and <= 254) w.VolumeNumber = (byte)volNum;
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());

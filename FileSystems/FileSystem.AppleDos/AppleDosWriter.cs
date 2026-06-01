@@ -35,6 +35,13 @@ public sealed class AppleDosWriter {
 
   private readonly List<(string Name, byte FileType, byte[] Data)> _files = [];
 
+  /// <summary>
+  /// VTOC disk-volume number (byte at VTOC offset 0x06). DOS 3.3 uses 254 by
+  /// default; ProDOS-style images sometimes use 1..254 to disambiguate disks
+  /// in a multi-volume set. Range 0..254; 0xFF is reserved.
+  /// </summary>
+  public byte VolumeNumber { get; set; } = 254;
+
   /// <summary>Adds a file to the disk image (default type = Binary 'B').</summary>
   public void AddFile(string name, byte[] data) => this._files.Add((name, FileType: 0x04, data));
 
@@ -136,7 +143,7 @@ public sealed class AppleDosWriter {
     }
 
     WriteCatalog(disk, dirEntries);
-    WriteVtoc(disk, used);
+    WriteVtoc(disk, used, this.VolumeNumber);
     return disk;
   }
 
@@ -222,14 +229,14 @@ public sealed class AppleDosWriter {
     }
   }
 
-  private static void WriteVtoc(byte[] disk, bool[,] used) {
+  private static void WriteVtoc(byte[] disk, bool[,] used, byte volumeNumber) {
     var off = SectorOffset(CatalogTrack, VtocSector);
 
     disk[off + 0x00] = 0x00;                  // reserved
     disk[off + 0x01] = CatalogTrack;          // first catalog track
     disk[off + 0x02] = (byte)FirstCatalogSector;
     disk[off + 0x03] = 3;                     // DOS release
-    disk[off + 0x06] = 254;                   // disk volume number
+    disk[off + 0x06] = volumeNumber;          // disk volume number (caller-configurable, default 254)
     disk[off + 0x27] = (byte)TsListPairsPerSector;  // pairs per T/S-list sector
     disk[off + 0x30] = (byte)1;               // last-allocated track
     disk[off + 0x31] = 1;                     // allocation direction (+1)
