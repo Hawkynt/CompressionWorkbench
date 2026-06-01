@@ -40,6 +40,36 @@ public sealed class FormatCreateOptions {
   /// <summary>Set of file paths detected as incompressible (null = not computed).</summary>
   public HashSet<string>? IncompressiblePaths { get; init; }
 
-  /// <summary>Format-specific knob values collected from <see cref="IFormatOptionsSchema"/>, keyed by <see cref="FormatOptionDescriptor.Key"/>.</summary>
+  /// <summary>
+  /// Format-specific tunable knobs collected from a
+  /// <see cref="IFormatOptionsSchema"/>. Keys come from
+  /// <see cref="FormatOptionDescriptor.Key"/>; values are in canonical string
+  /// form (the format's writer parses them per its schema). Writers should
+  /// call <see cref="GetOption(string, string)"/> or
+  /// <see cref="GetOptionInt(string, int)"/> rather than reading the dict
+  /// directly, so a missing entry falls back to the schema default.
+  /// </summary>
   public IReadOnlyDictionary<string, string>? FormatSpecific { get; init; }
+
+  /// <summary>Reads a format-specific string option, returning <paramref name="fallback"/> if absent.</summary>
+  public string GetOption(string key, string fallback) {
+    if (this.FormatSpecific == null) return fallback;
+    return this.FormatSpecific.TryGetValue(key, out var v) ? v : fallback;
+  }
+
+  /// <summary>Reads a format-specific integer option. Returns <paramref name="fallback"/> if absent or unparsable.</summary>
+  public int GetOptionInt(string key, int fallback) {
+    if (this.FormatSpecific == null) return fallback;
+    if (!this.FormatSpecific.TryGetValue(key, out var v)) return fallback;
+    return int.TryParse(v, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : fallback;
+  }
+
+  /// <summary>Reads a format-specific boolean option. Accepts "true"/"false"/"1"/"0" (case-insensitive).</summary>
+  public bool GetOptionBool(string key, bool fallback) {
+    if (this.FormatSpecific == null) return fallback;
+    if (!this.FormatSpecific.TryGetValue(key, out var v)) return fallback;
+    return v.Equals("true", StringComparison.OrdinalIgnoreCase) || v == "1" ? true
+      : v.Equals("false", StringComparison.OrdinalIgnoreCase) || v == "0" ? false
+      : fallback;
+  }
 }

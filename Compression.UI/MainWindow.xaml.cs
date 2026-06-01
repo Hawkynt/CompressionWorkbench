@@ -254,8 +254,24 @@ public partial class MainWindow : Window {
     if (idx >= 0 && idx < orderedDescriptors.Count)
       targetFormatId = orderedDescriptors[idx].Id;
 
+    // If the target descriptor publishes a tunable schema, prompt the user
+    // for those knobs before we kick off the (potentially long) conversion.
+    // Cancelling the schema dialog aborts the conversion silently — no
+    // popup, just like cancelling the SaveFileDialog above.
+    Compression.Registry.FormatCreateOptions? createOptions = null;
+    if (!string.IsNullOrEmpty(targetFormatId)) {
+      var dstDescriptor = Compression.Registry.FormatRegistry.GetById(targetFormatId);
+      if (dstDescriptor is Compression.Registry.IFormatOptionsSchema schemaSrc
+          && schemaSrc.OptionsSchema is { Count: > 0 } schema) {
+        var optDlg = new Views.TargetOptionsDialog(schema, dstDescriptor.DisplayName) { Owner = this };
+        if (optDlg.ShowDialog() != true) return;
+        createOptions = new Compression.Registry.FormatCreateOptions { FormatSpecific = optDlg.Result };
+      }
+    }
+
     try {
-      var warnings = Compression.Lib.ArchiveOperations.ConvertArchive(sourcePath, saveDlg.FileName, targetFormatId);
+      var warnings = Compression.Lib.ArchiveOperations.ConvertArchive(
+        sourcePath, saveDlg.FileName, targetFormatId, createOptions);
       var msg = $"Conversion complete.\nOutput: {saveDlg.FileName}";
       if (warnings.Count > 0)
         msg += "\n\nWarnings:\n" + string.Join("\n", warnings);

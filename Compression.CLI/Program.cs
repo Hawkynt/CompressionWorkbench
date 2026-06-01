@@ -1749,6 +1749,9 @@ resizeCmd2.SetAction((ParseResult ctx) => {
 var cfsInputArg = new Argument<FileInfo>("input") { Description = "Source archive or filesystem image" };
 var cfsOutputArg = new Argument<FileInfo>("output") { Description = "Destination archive or filesystem image" };
 var cfsFormatOpt = new Option<string?>("--format", "-f") { Description = "Target format ID (e.g. fat, ext, d64, zip, tar, 7z). Auto-detected from extension if omitted" };
+var cfsOptOpt = new Option<string[]>("--opt") {
+  Description = "Format-specific tunable as KEY=VALUE (repeatable). Bare KEY = true. Later --opt for the same KEY overrides earlier ones."
+};
 
 var convertArchiveHelp = """
   Convert between any listable/creatable format pair. Works across categories:
@@ -1770,7 +1773,15 @@ var convertArchiveHelp = """
   restreaming (e.g. gz -> zlib without recompressing the Deflate stream),
   use 'cwb convert' instead — it has smart tier 1/2/3 dispatch.
 
+  Format-specific tunables (e.g. FAT type, cluster size, volume label) are
+  passed via repeatable --opt KEY=VALUE flags. The target descriptor
+  publishes the schema; unknown keys are forwarded to the writer as-is and
+  may be ignored. Use 'cwb convert-archive source.tar disk.fat --opt FatType=FAT16 --opt ClusterSize=4096'
+  to drive variants and geometry from the command line.
+
   Examples:
+    cwb convert-archive source.zip target.img                        # target type from extension
+    cwb convert-archive source.tar disk.fat --opt FatType=FAT16 --opt ClusterSize=4096
     cwb convert-archive input.d64 output.img --format fat
     cwb convert-archive disk.img output.d64
     cwb convert-archive old.img new.img --format ext
@@ -1778,23 +1789,45 @@ var convertArchiveHelp = """
     cwb convert-archive disk.d64 output.7z
   """;
 
-var convertArchiveCmd = new Command("convert-archive", convertArchiveHelp) { cfsInputArg, cfsOutputArg, cfsFormatOpt };
+var convertArchiveCmd = new Command("convert-archive", convertArchiveHelp) { cfsInputArg, cfsOutputArg, cfsFormatOpt, cfsOptOpt };
 
 Func<ParseResult, int> convertArchiveAction = (ParseResult ctx) => {
   var input = ctx.GetValue(cfsInputArg)!;
   var output = ctx.GetValue(cfsOutputArg)!;
   var formatId = ctx.GetValue(cfsFormatOpt);
+  var optPairs = ctx.GetValue(cfsOptOpt) ?? [];
 
   if (!input.Exists) { Console.Error.WriteLine($"File not found: {input.FullName}"); return 1; }
 
   FormatRegistration.EnsureInitialized();
+
+  // Parse --opt KEY=VALUE pairs. Bare KEY (no '=') is treated as a boolean
+  // flag set to "true". Later occurrences of the same KEY win — last write
+  // wins matches the convention of CLI override flags everywhere else.
+  Compression.Registry.FormatCreateOptions? createOptions = null;
+  if (optPairs.Length > 0) {
+    var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var raw in optPairs) {
+      if (string.IsNullOrEmpty(raw)) continue;
+      var eq = raw.IndexOf('=');
+      if (eq < 0) {
+        dict[raw] = "true";
+      } else {
+        var key = raw[..eq];
+        var value = raw[(eq + 1)..];
+        if (!string.IsNullOrEmpty(key)) dict[key] = value;
+      }
+    }
+    if (dict.Count > 0)
+      createOptions = new Compression.Registry.FormatCreateOptions { FormatSpecific = dict };
+  }
 
   var srcFormat = FormatDetector.Detect(input.FullName);
   Console.WriteLine($"Source: {input.Name} ({srcFormat})");
 
   Console.Write($"Converting...");
   var sw = Stopwatch.StartNew();
-  var warnings = ArchiveOperations.ConvertArchive(input.FullName, output.FullName, formatId);
+  var warnings = ArchiveOperations.ConvertArchive(input.FullName, output.FullName, formatId, createOptions);
   sw.Stop();
   Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
   Console.WriteLine($"Output: {output.FullName} ({FormatSize(new FileInfo(output.FullName).Length)})");
@@ -1812,7 +1845,7 @@ Func<ParseResult, int> convertArchiveAction = (ParseResult ctx) => {
 convertArchiveCmd.SetAction(convertArchiveAction);
 
 // Hidden back-compat alias for the old name; same handler, same arguments.
-var convertFsCmd = new Command("convert-fs", "[Deprecated] Alias for 'convert-archive'.") { cfsInputArg, cfsOutputArg, cfsFormatOpt };
+var convertFsCmd = new Command("convert-fs", "[Deprecated] Alias for 'convert-archive'.") { cfsInputArg, cfsOutputArg, cfsFormatOpt, cfsOptOpt };
 convertFsCmd.Hidden = true;
 convertFsCmd.SetAction(convertArchiveAction);
 

@@ -99,7 +99,19 @@ public static class ArchiveOperations {
   /// crash mid-write never leaves a partial archive in place.
   /// </remarks>
   public static void Create(string outputPath, IReadOnlyList<ArchiveInput> inputs,
-                            CompressionOptions opts, FormatDetector.Format format) {
+                            CompressionOptions opts, FormatDetector.Format format)
+    => Create(outputPath, inputs, opts, format, formatSpecific: null);
+
+  /// <summary>
+  /// Creates a new archive with caller-supplied format-specific tunables
+  /// (collected from an <see cref="Compression.Registry.IFormatOptionsSchema"/>
+  /// — e.g. <c>FatType=FAT16</c>, <c>ClusterSize=4096</c>). Threads the dict
+  /// straight into <see cref="Compression.Registry.FormatCreateOptions.FormatSpecific"/>
+  /// so target writers see it on the other side of the registry boundary.
+  /// </summary>
+  public static void Create(string outputPath, IReadOnlyList<ArchiveInput> inputs,
+                            CompressionOptions opts, FormatDetector.Format format,
+                            IReadOnlyDictionary<string, string>? formatSpecific) {
     var method = opts.Method.Name == null ? MethodSpec.Default : opts.Method;
     var password = opts.Password;
     if (format == F.Unknown)
@@ -147,7 +159,10 @@ public static class ArchiveOperations {
       EncryptFilenames = opts.EncryptFilenames,
       EncryptionMethod = opts.ZipEncryption,
       IncompressiblePaths = incompressible,
-      FormatSpecific = opts.FormatSpecific,
+      // Prefer the explicit per-call formatSpecific bag (threaded by
+      // ConvertArchive's target-options dialog); fall back to the one carried
+      // on the CompressionOptions for CLI callers that fill it in there.
+      FormatSpecific = formatSpecific ?? opts.FormatSpecific,
     };
 
     AtomicFileWriter.WriteAtomic(outputPath, fs => creator.Create(fs, registryInputs, registryOpts));
@@ -916,7 +931,16 @@ public static class ArchiveOperations {
   /// source and any creatable target.
   /// </summary>
   public static List<string> ConvertFs(string inputPath, string outputPath, string? targetFormatId = null)
-    => ConvertArchive(inputPath, outputPath, targetFormatId);
+    => ConvertArchive(inputPath, outputPath, targetFormatId, createOptions: null);
+
+  /// <summary>
+  /// Back-compat overload for the original 2-/3-arg signature. Older callers
+  /// (tests, UI before the options dialog was added) keep working unchanged;
+  /// no <c>FormatCreateOptions</c> is threaded, so target writers fall back
+  /// to their schema defaults.
+  /// </summary>
+  public static List<string> ConvertArchive(string inputPath, string outputPath, string? explicitTargetFormat = null)
+    => ConvertArchive(inputPath, outputPath, explicitTargetFormat, createOptions: null);
 
   /// <summary>
   /// Converts between ANY listable/creatable format pair. Works across format
@@ -954,7 +978,9 @@ public static class ArchiveOperations {
   /// up in a finally block. The source file is never deleted, even on
   /// successful conversion.
   /// </remarks>
-  public static List<string> ConvertArchive(string inputPath, string outputPath, string? explicitTargetFormat = null) {
+  public static List<string> ConvertArchive(string inputPath, string outputPath,
+                                            string? explicitTargetFormat,
+                                            Compression.Registry.FormatCreateOptions? createOptions) {
     var targetFormatId = explicitTargetFormat;
     var warnings = new List<string>();
 
@@ -984,7 +1010,13 @@ public static class ArchiveOperations {
     // InPlaceConverter handles them with no extract/rebuild. We honor the
     // existing fast path so callers that previously relied on ConvertFs
     // for variant-only conversions don't regress.
-    if (TryInPlaceConvert(inputPath, outputPath, srcFormat, dstFormat))
+    //
+    // If the user supplied format-specific tunables (cluster size, label,
+    // etc.) the in-place converter can't honor them — it only flips
+    // metadata. Fall through to extract+rebuild so the schema knobs
+    // actually take effect.
+    var hasFormatSpecific = createOptions?.FormatSpecific is { Count: > 0 };
+    if (!hasFormatSpecific && TryInPlaceConvert(inputPath, outputPath, srcFormat, dstFormat))
       return warnings;
 
     // Extract from source.
@@ -1042,7 +1074,7 @@ public static class ArchiveOperations {
         inputs = inputs.Where(i => !i.IsDirectory).ToList();
       }
 
-      Create(outputPath, inputs, new CompressionOptions(), dstFormat);
+      Create(outputPath, inputs, new CompressionOptions(), dstFormat, createOptions?.FormatSpecific);
     } finally {
       if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
     }
