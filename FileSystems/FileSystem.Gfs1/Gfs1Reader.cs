@@ -1,0 +1,83 @@
+#pragma warning disable CS1591
+using System.Buffers.Binary;
+using System.Text;
+
+namespace FileSystem.Gfs1;
+
+/// <summary>
+/// Read-side companion to <see cref="Gfs1Writer"/>. Walks the superblock at
+/// byte offset 65536, the inode table immediately following it, and every
+/// directory body, surfacing files at full nested paths.
+/// </summary>
+public sealed class Gfs1Reader {
+  private readonly byte[] _image;
+  private readonly int _inodeStart;
+  private readonly int _inodesPerBlock;
+  private readonly List<Gfs1Entry> _entries = [];
+
+  public Gfs1Reader(Stream stream) {
+    ArgumentNullException.ThrowIfNull(stream);
+    using var ms = new MemoryStream();
+    stream.CopyTo(ms);
+    _image = ms.ToArray();
+
+    var sb = Gfs1Superblock.TryParse(_image);
+    if (!sb.Valid) throw new InvalidDataException("Not a GFS1 image: superblock magic mismatch.");
+
+    _inodesPerBlock = Gfs1Writer.BlockSize / Gfs1Writer.InodeSize;
+    _inodeStart = (Gfs1Writer.SuperblockOffset / Gfs1Writer.BlockSize) + 1;
+    Recurse(2, "");
+  }
+
+  public IReadOnlyList<Gfs1Entry> Entries => _entries;
+
+  public byte[] Extract(Gfs1Entry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (entry.IsDirectory) return [];
+    if (entry.Size == 0 || entry.FirstBlock == 0) return [];
+    var start = entry.FirstBlock * Gfs1Writer.BlockSize;
+    if (start + (long)entry.Size > _image.Length)
+      throw new InvalidDataException("GFS1 extract: extent reaches past image end.");
+    return _image.AsSpan(start, (int)entry.Size).ToArray();
+  }
+
+  private void Recurse(int inode, string prefix) {
+    var info = ReadInode(inode);
+    if (!info.IsDirectory || info.FirstBlock == 0) return;
+    var off = (long)info.FirstBlock * Gfs1Writer.BlockSize;
+    if (off >= _image.Length) return;
+    var blk = _image.AsSpan((int)off, Math.Min(Gfs1Writer.BlockSize, _image.Length - (int)off));
+    if (blk.Length < 4) return;
+    var magic = BinaryPrimitives.ReadUInt16BigEndian(blk[..2]);
+    if (magic != Gfs1Writer.DirBlockMagicConst) return;
+    int slots = BinaryPrimitives.ReadUInt16BigEndian(blk[2..4]);
+    var cur = 4;
+    for (var i = 0; i < slots && cur + 5 <= blk.Length; i++) {
+      var childInode = BinaryPrimitives.ReadUInt32BigEndian(blk[cur..]);
+      int nlen = blk[cur + 4];
+      if (cur + 5 + nlen > blk.Length) break;
+      var name = Encoding.UTF8.GetString(blk.Slice(cur + 5, nlen));
+      cur += 5 + nlen;
+      if (name is "." or "..") continue;
+      var childInfo = ReadInode((int)childInode);
+      var full = prefix.Length == 0 ? name : $"{prefix}/{name}";
+      _entries.Add(new Gfs1Entry(full, (int)childInode, childInfo.IsDirectory, (long)childInfo.Size, childInfo.FirstBlock));
+      if (childInfo.IsDirectory) Recurse((int)childInode, full);
+    }
+  }
+
+  private InodeInfo ReadInode(int inode) {
+    var blockOff = (inode - 2) / _inodesPerBlock;
+    var slotOff = (inode - 2) % _inodesPerBlock;
+    var ip = _image.AsSpan((_inodeStart + blockOff) * Gfs1Writer.BlockSize + slotOff * Gfs1Writer.InodeSize, Gfs1Writer.InodeSize);
+    var mode = BinaryPrimitives.ReadUInt32BigEndian(ip[40..]);
+    var size = BinaryPrimitives.ReadUInt64BigEndian(ip[56..]);
+    var firstBlock = (int)BinaryPrimitives.ReadUInt64BigEndian(ip[24..]);
+    return new InodeInfo((mode & 0xF000) == 0x4000, size, firstBlock);
+  }
+
+  private readonly record struct InodeInfo(bool IsDirectory, ulong Size, int FirstBlock);
+}
+
+/// <summary>One entry surfaced by <see cref="Gfs1Reader"/>.</summary>
+public sealed record Gfs1Entry(string Name, int Inode, bool IsDirectory, long Size, int FirstBlock);
