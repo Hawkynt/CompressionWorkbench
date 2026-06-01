@@ -12,24 +12,33 @@
       <repo>/FileFormats/FileFormat.PngCrushAdapters/, three levels deep.
     -->
     <SiblingPresent>false</SiblingPresent>
-    <!-- Require EVERY adapter dependency, not just FileFormat.Core. The sibling
-         repo is sometimes mid-refactor with Core present but sub-projects (Apng,
-         Tiff, BigTiff, Mng, Fli, Dcx, Icns, Mpo, Jpeg, Png, Bmp) missing — that
-         half-state would still set this to true under a Core-only check and then
-         fail with CS0234 for the missing namespaces. -->
+    <!-- The sibling reorganized its leaf FileFormat.* projects into a
+         FileFormats/ subdirectory while keeping Compression.Core /
+         FileFormat.Core at the root. PngCrushFormatsDir captures whichever
+         layout we find on disk so the gate AND the ProjectReferences below
+         both pick the right path. Falls back to "" (= no sibling) when
+         neither layout matches — consumers see an empty assembly. -->
+    <PngCrushFormatsDir Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormats\FileFormat.Bmp\FileFormat.Bmp.csproj')">..\..\..\PNGCrushCS\FileFormats\</PngCrushFormatsDir>
+    <PngCrushFormatsDir Condition="'$(PngCrushFormatsDir)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Bmp\FileFormat.Bmp.csproj')">..\..\..\PNGCrushCS\</PngCrushFormatsDir>
+    <!-- Require EVERY adapter dependency. The sibling is sometimes mid-refactor
+         with Core present but sub-projects (Apng, Tiff, BigTiff, Mng, Fli, Dcx,
+         Icns, Mpo, Jpeg, Png, Bmp) missing — that half-state would still set
+         SiblingPresent to true under a Core-only check and then fail with CS0234
+         for the missing namespaces. -->
     <SiblingPresent Condition="
+      '$(PngCrushFormatsDir)' != '' and
       Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Png\FileFormat.Png.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Bmp\FileFormat.Bmp.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Apng\FileFormat.Apng.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Tiff\FileFormat.Tiff.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.BigTiff\FileFormat.BigTiff.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Mng\FileFormat.Mng.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Fli\FileFormat.Fli.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Dcx\FileFormat.Dcx.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Icns\FileFormat.Icns.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Mpo\FileFormat.Mpo.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\..\PNGCrushCS\FileFormat.Jpeg\FileFormat.Jpeg.csproj')
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Png\FileFormat.Png.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Bmp\FileFormat.Bmp.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Apng\FileFormat.Apng.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Tiff\FileFormat.Tiff.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.BigTiff\FileFormat.BigTiff.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Mng\FileFormat.Mng.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Fli\FileFormat.Fli.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Dcx\FileFormat.Dcx.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Icns\FileFormat.Icns.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Mpo\FileFormat.Mpo.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Jpeg\FileFormat.Jpeg.csproj')
       ">true</SiblingPresent>
     <!-- Suppress default *.cs compile globbing when sibling is absent so adapter sources don't try to build. -->
     <EnableDefaultCompileItems Condition="'$(SiblingPresent)' != 'true'">false</EnableDefaultCompileItems>
@@ -62,22 +71,22 @@
       disambiguate is more cost than the meta-package's convenience justifies.
     -->
     <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj" />
-    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Png\FileFormat.Png.csproj" />
-    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Bmp\FileFormat.Bmp.csproj" />
-    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Apng\FileFormat.Apng.csproj" />
-    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Tiff\FileFormat.Tiff.csproj" />
-    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.BigTiff\FileFormat.BigTiff.csproj" />
-    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Mng\FileFormat.Mng.csproj" />
-    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Fli\FileFormat.Fli.csproj" />
-    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Dcx\FileFormat.Dcx.csproj" />
-    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Icns\FileFormat.Icns.csproj" />
-    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Mpo\FileFormat.Mpo.csproj" />
+    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Png\FileFormat.Png.csproj" />
+    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Bmp\FileFormat.Bmp.csproj" />
+    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Apng\FileFormat.Apng.csproj" />
+    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Tiff\FileFormat.Tiff.csproj" />
+    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.BigTiff\FileFormat.BigTiff.csproj" />
+    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Mng\FileFormat.Mng.csproj" />
+    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Fli\FileFormat.Fli.csproj" />
+    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Dcx\FileFormat.Dcx.csproj" />
+    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Icns\FileFormat.Icns.csproj" />
+    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Mpo\FileFormat.Mpo.csproj" />
     <!-- PrivateAssets="all" keeps the dependency available to PngCrushAdapters'
          own JpegFormatDescriptor sources while preventing the transitive
          FrameworkExtensions.Backports (which exposes a duplicate
          Compression.Core.BitIO.BitOrder type, colliding with our own
          Compression.Core.dll, CS0433) from leaking to consumers. -->
-    <ProjectReference Include="..\..\..\PNGCrushCS\FileFormat.Jpeg\FileFormat.Jpeg.csproj" PrivateAssets="all" />
+    <ProjectReference Include="$(PngCrushFormatsDir)FileFormat.Jpeg\FileFormat.Jpeg.csproj" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>

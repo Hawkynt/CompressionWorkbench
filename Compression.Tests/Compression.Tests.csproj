@@ -10,23 +10,29 @@
          the sibling is checked out at ..\..\PNGCrushCS. CI without the sibling
          drops these tests instead of failing the build. -->
     <SiblingPresent>false</SiblingPresent>
+    <!-- Sibling reorganized leaf FileFormat.* projects into a FileFormats/
+         subdir but kept Compression.Core/FileFormat.Core at root. Probe both
+         layouts. -->
+    <PngCrushFormatsDir Condition="Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormats\FileFormat.Bmp\FileFormat.Bmp.csproj')">..\..\PNGCrushCS\FileFormats\</PngCrushFormatsDir>
+    <PngCrushFormatsDir Condition="'$(PngCrushFormatsDir)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Bmp\FileFormat.Bmp.csproj')">..\..\PNGCrushCS\</PngCrushFormatsDir>
     <!-- Require every adapter sub-project the tests import. Mirror the gate in
          FileFormat.PngCrushAdapters.csproj so a half-checked-out sibling (Core
          present, sub-projects missing) is treated as "no sibling" instead of
          producing CS0234 errors. -->
     <SiblingPresent Condition="
+      '$(PngCrushFormatsDir)' != '' and
       Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Png\FileFormat.Png.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Bmp\FileFormat.Bmp.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Apng\FileFormat.Apng.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Tiff\FileFormat.Tiff.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.BigTiff\FileFormat.BigTiff.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Mng\FileFormat.Mng.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Fli\FileFormat.Fli.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Dcx\FileFormat.Dcx.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Icns\FileFormat.Icns.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Mpo\FileFormat.Mpo.csproj') and
-      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Jpeg\FileFormat.Jpeg.csproj')
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Png\FileFormat.Png.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Bmp\FileFormat.Bmp.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Apng\FileFormat.Apng.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Tiff\FileFormat.Tiff.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.BigTiff\FileFormat.BigTiff.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Mng\FileFormat.Mng.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Fli\FileFormat.Fli.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Dcx\FileFormat.Dcx.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Icns\FileFormat.Icns.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Mpo\FileFormat.Mpo.csproj') and
+      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Jpeg\FileFormat.Jpeg.csproj')
       ">true</SiblingPresent>
   </PropertyGroup>
 

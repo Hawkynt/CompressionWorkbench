@@ -76,15 +76,21 @@ jobs:
                     FileFormat.Tiff FileFormat.BigTiff FileFormat.Mng FileFormat.Fli \
                     FileFormat.Dcx FileFormat.Icns FileFormat.Mpo FileFormat.Jpeg \
                     FileFormat.Png"
-          # Sibling repo is sometimes mid-refactor with some sub-projects missing
-          # (e.g. FileFormat.Bmp renamed/removed). When that happens, our
-          # FileFormat.PngCrushAdapters.csproj' SiblingPresent gate already
-          # builds the adapter as an empty assembly and tests gracefully skip
-          # any PngCrushAdapters-specific cases. So pre-building partial sibling
-          # state is wasted effort + breaks CI on transient sibling-main commits.
+          # Sibling reorganised most format projects into a FileFormats/ subdir
+          # but kept Compression.Core / FileFormat.Core at the root. Probe both
+          # locations per project so the script tolerates the layout move.
+          # Also tolerate transient sibling-mid-refactor commits where a project
+          # is missing entirely — our FileFormat.PngCrushAdapters.csproj has a
+          # matching SiblingPresent gate that falls back to an empty assembly.
+          locate() {
+            local proj="$1"
+            if [ -f "$proj/$proj.csproj" ]; then echo "$proj"; return 0; fi
+            if [ -f "FileFormats/$proj/$proj.csproj" ]; then echo "FileFormats/$proj"; return 0; fi
+            return 1
+          }
           MISSING=""
           for proj in $REQUIRED; do
-            if [ ! -f "$proj/$proj.csproj" ]; then
+            if ! locate "$proj" >/dev/null; then
               MISSING="$MISSING $proj"
             fi
           done
@@ -93,11 +99,12 @@ jobs:
             exit 0
           fi
           for proj in $REQUIRED; do
-            echo "::group::Building $proj"
-            dotnet build "$proj/$proj.csproj" --configuration Release --nologo
+            dir="$(locate "$proj")"
+            echo "::group::Building $proj ($dir)"
+            dotnet build "$dir/$proj.csproj" --configuration Release --nologo
             echo "::endgroup::"
-            test -f "$proj/bin/Release/net8.0/$proj.dll" || {
-              echo "::error::Pre-build did not produce $proj/bin/Release/net8.0/$proj.dll"
+            test -f "$dir/bin/Release/net8.0/$proj.dll" || {
+              echo "::error::Pre-build did not produce $dir/bin/Release/net8.0/$proj.dll"
               exit 1
             }
           done
