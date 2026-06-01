@@ -69,9 +69,13 @@ public sealed class Nilfs2Reader : IDisposable {
     if (magic != SuperMagic)
       throw new InvalidDataException($"Nilfs2: invalid magic 0x{magic:X4} at superblock+6 (expected 0x{SuperMagic:X4}).");
 
+    var rev = BinaryPrimitives.ReadUInt32LittleEndian(sb);
+    if (rev < 2)
+      throw new InvalidDataException($"Nilfs2: s_rev_level={rev} (NILFS2 requires rev>=2; rev==1 is NILFS v1, handled by Nilfs1 descriptor).");
+
     this.Magic = magic;
     this.ValidSuperblock = true;
-    this.RevLevel         = BinaryPrimitives.ReadUInt32LittleEndian(sb);
+    this.RevLevel         = rev;
     this.LogBlockSize     = BinaryPrimitives.ReadUInt32LittleEndian(sb.Slice(0x14));
     this.NumSegments      = BinaryPrimitives.ReadUInt64LittleEndian(sb.Slice(0x18));
     this.DevSize          = BinaryPrimitives.ReadUInt64LittleEndian(sb.Slice(0x20));
