@@ -81,6 +81,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Bzip2\FileFormat.Bzip2.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cab\FileFormat.Cab.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Caf\FileFormat.Caf.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Rf64\FileFormat.Rf64.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cbr\FileFormat.Cbr.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cbz\FileFormat.Cbz.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cdi\FileFormat.Cdi.csproj" />
