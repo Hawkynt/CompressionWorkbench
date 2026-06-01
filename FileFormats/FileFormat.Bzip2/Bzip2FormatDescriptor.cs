@@ -3,21 +3,45 @@ using Compression.Registry;
 
 namespace FileFormat.Bzip2;
 
-public sealed class Bzip2FormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatValidator {
+public sealed class Bzip2FormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatValidator, IFormatOptionsSchema {
   public string Id => "Bzip2";
   public string DisplayName => "BZip2";
   public FormatCategory Category => FormatCategory.Stream;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCompoundWithTar;
+    FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
   public string DefaultExtension => ".bz2";
   public IReadOnlyList<string> Extensions => [".bz2", ".bzip2"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x42, 0x5A, 0x68], Confidence: 0.85)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("bzip2", "BZip2")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("bzip2", "BZip2", SupportsOptimize: true)];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Classic;
   public string Description => "BWT + MTF + Huffman, good ratio for text data";
+
+  // ── IFormatOptionsSchema ───────────────────────────────────────────────
+  /// <summary>Block size 1..9 in units of 100 KB (1 = 100 KB blocks, 9 = 900 KB
+  /// blocks). A larger block lets the Burrows-Wheeler transform see more context
+  /// at once, which only helps once the input is bigger than the block. The
+  /// optimizer searches these to find the smallest output for the given input.</summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "BlockSize",
+      DisplayName: "Block size (×100 KB)",
+      Kind: FormatOptionKind.Enum,
+      Default: "9",
+      AllowedValues: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
+      Description: "BZip2 block size in units of 100 KB (1 = 100 KB, 9 = 900 KB)."),
+  ];
+
+  /// <summary>Parses the BZip2 block-size multiplier from the format-specific
+  /// options, clamped to the supported 1..9 range; falls back to the generic
+  /// compression level if set, otherwise the default (9).</summary>
+  internal static int ParseBlockSize(FormatCreateOptions options) {
+    var raw = options.FormatSpecific?.GetValueOrDefault("BlockSize");
+    if (raw is not null && int.TryParse(raw, out var bs)) return Math.Clamp(bs, 1, 9);
+    return options.Level is { } l ? Math.Clamp(l, 1, 9) : 9;
+  }
 
   public void Decompress(Stream input, Stream output) {
     using var ds = new Bzip2Stream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
@@ -25,6 +49,16 @@ public sealed class Bzip2FormatDescriptor : IFormatDescriptor, IStreamFormatOper
   }
   public void Compress(Stream input, Stream output) {
     using var cs = new Bzip2Stream(output, Compression.Core.Streams.CompressionStreamMode.Compress, leaveOpen: true);
+    input.CopyTo(cs);
+  }
+  public void Compress(Stream input, Stream output, FormatCreateOptions options) {
+    using var cs = new Bzip2Stream(output, Compression.Core.Streams.CompressionStreamMode.Compress,
+      blockSize100k: ParseBlockSize(options), leaveOpen: true);
+    input.CopyTo(cs);
+  }
+  public void CompressOptimal(Stream input, Stream output) {
+    using var cs = new Bzip2Stream(output, Compression.Core.Streams.CompressionStreamMode.Compress,
+      blockSize100k: 9, leaveOpen: true);
     input.CopyTo(cs);
   }
   public Stream? WrapDecompress(Stream input) =>
