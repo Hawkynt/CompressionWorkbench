@@ -5,7 +5,28 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Adf;
 
-public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for ADF creation: AmigaDOS file-system flavour (OFS vs FFS)
+  /// in the boot block and the AmigaDOS volume label written into the root
+  /// block. The image geometry is fixed at the standard DD floppy size
+  /// (880 KB, 1760 × 512-byte sectors) — Amiga DD ADF is the canonical
+  /// emulator/preservation image and is the only size this writer emits.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "FileSystemType",
+      DisplayName: "File system",
+      Kind: FormatOptionKind.Enum,
+      Default: "FFS",
+      AllowedValues: ["FFS", "OFS"],
+      Description: "AmigaDOS boot-block file-system tag: FFS (Fast File System, AmigaOS 2.0+) " +
+        "or OFS (Original File System, Kickstart 1.x). Stored at boot-block offset 3."),
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 30),
+  ];
 
   /// <summary>
   /// Walks the boot blocks + root block + bitmap blocks + per-file
@@ -86,7 +107,12 @@ public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new AdfWriter();
     foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
       w.AddFile(name, data);
-    output.Write(w.Build());
+
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (string.IsNullOrEmpty(label)) label = "DISK";
+    var fsType = (options?.GetOption("FileSystemType", "FFS") ?? "FFS")
+                   .Equals("OFS", StringComparison.OrdinalIgnoreCase) ? (byte)0 : (byte)1;
+    output.Write(w.Build(label, fsType));
   }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────

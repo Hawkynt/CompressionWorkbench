@@ -31,16 +31,23 @@ public sealed class AdfWriter {
   /// Builds and returns the complete 901,120-byte ADF disk image.
   /// </summary>
   /// <param name="diskName">The volume name written to the root block (up to 30 characters).</param>
+  /// <param name="fileSystemType">
+  /// Boot block file-system identifier byte at offset 3:
+  /// 0 = OFS (Original File System), 1 = FFS (Fast File System, default).
+  /// The on-disk block layout this writer emits matches the FFS family for
+  /// both values (pure data blocks, no per-data-block header); the boot byte
+  /// just advertises which AmigaDOS handler the volume targets.
+  /// </param>
   /// <returns>A byte array of exactly 901,120 bytes representing the disk image.</returns>
-  public byte[] Build(string diskName = "DISK") {
+  public byte[] Build(string diskName = "DISK", byte fileSystemType = 1) {
     var disk = new byte[DiskSize];
     var used = new bool[TotalSectors];
 
-    // Boot block: "DOS\1" (FFS)
+    // Boot block: "DOS\<fileSystemType>" — 0 = OFS, 1 = FFS (default).
     disk[0] = (byte)'D';
     disk[1] = (byte)'O';
     disk[2] = (byte)'S';
-    disk[3] = 1; // FFS
+    disk[3] = fileSystemType;
     used[0] = true;
     used[1] = true;
 
