@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Apfs;
 
 public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable {
+    IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
   public string Id => "Apfs";
   public string DisplayName => "APFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -74,20 +74,30 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// supported. The writer always emits a fresh contiguous-from-start image
   /// with valid Fletcher-64 checksums and a populated FS-tree B-tree.
   /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) {
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new ApfsReader(stream, leaveOpen: true);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new ApfsWriter();
-        // Cap the rebuilt image to the smallest valid APFS image — the
-        // original archive length governs the writer's footprint via
-        // DefragRebuilder.Rebuild's SetLength call.
-        w.SetMinImageSize(Math.Max(archive.Length, ApfsConstants.MIN_APFS_IMAGE_SIZE));
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+  public void Defragment(Stream archive, DefragOptions options)
+    => DefragRebuilder.Rebuild(archive, options, ReadEntries, files => BuildImage(files, archive.Length));
+
+  // ── IArchiveModifiable (rebuild-based add / replace / remove) ──────────
+  // APFS in-place B-tree mutation needs node split/merge + omap/checkpoint/
+  // spaceman advance; instead we read every file and rebuild a fresh image with
+  // the (Fletcher-64-valid, B-tree-growing) writer, the same path the
+  // defragmentor uses.
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => ModifyRebuilder.Add(archive, inputs, ReadEntries, files => BuildImage(files, archive.Length));
+
+  public void Remove(Stream archive, string[] entryNames)
+    => ModifyRebuilder.Remove(archive, entryNames, ReadEntries, files => BuildImage(files, archive.Length));
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    var r = new ApfsReader(stream, leaveOpen: true);
+    return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files, long currentLength) {
+    var w = new ApfsWriter();
+    w.SetMinImageSize(Math.Max(currentLength, ApfsConstants.MIN_APFS_IMAGE_SIZE));
+    foreach (var (n, d) in files) w.AddFile(n, d);
+    return w.Build();
   }
 }
