@@ -17,6 +17,7 @@
     <KeyBinding Key="N" Modifiers="Ctrl" Command="{Binding CreateCommand}" />
     <KeyBinding Key="Back" Command="{Binding NavigateUpCommand}" />
     <KeyBinding Key="Return" Modifiers="Alt" Command="{Binding PropertiesCommand}" />
+    <KeyBinding Key="Delete" Command="{Binding DeleteSelectedCommand}" />
   </Window.InputBindings>
 
   <Grid>
@@ -207,6 +208,10 @@
           </MenuItem>
           <MenuItem Header="Extract _All..." Command="{Binding ExtractAllCommand}">
             <MenuItem.Icon><Image Source="{StaticResource ExtractIcon}" Width="16" Height="16" /></MenuItem.Icon>
+          </MenuItem>
+          <MenuItem Header="_Delete" Command="{Binding DeleteSelectedCommand}" InputGestureText="Del"
+                    ToolTip="{Binding DeleteCommandTooltip}">
+            <MenuItem.Icon><Image Source="{StaticResource RemoveIcon}" Width="16" Height="16" /></MenuItem.Icon>
           </MenuItem>
           <Separator />
           <MenuItem Header="_Add Files..." Command="{Binding AddFilesCommand}">

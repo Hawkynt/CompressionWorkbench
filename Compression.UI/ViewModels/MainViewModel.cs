@@ -78,6 +78,34 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand BenchmarkCommand { get; }
   public ICommand FileAssociationsCommand { get; }
   public ICommand DefragmentEntryCommand { get; }
+  public ICommand DeleteSelectedCommand { get; }
+
+  // True after a successful in-archive delete on a format whose container leaves
+  // freed slots behind. The Defragment menu / status hint surfaces this so the
+  // user knows a compact pass will reclaim cluster-tip slack and tidy the
+  // directory. Real-FS deletion does NOT set this — the host filesystem handles
+  // its own free-space bookkeeping.
+  private bool _hasPendingFragmentation;
+  public bool HasPendingFragmentation {
+    get => _hasPendingFragmentation;
+    set => SetField(ref _hasPendingFragmentation, value);
+  }
+
+  // Tooltip surfaced over the context-menu Delete item. Switches between the
+  // descriptive enabled message and the "read-only" hint depending on whether
+  // the current container can actually accept a delete. Bound from the menu item.
+  public string DeleteCommandTooltip {
+    get {
+      var mode = Compression.Lib.DeleteCapability.Evaluate(
+        IsBrowsingOsFolder, ArchivePath, SelectedEntries.Count(e => !e.IsParentEntry));
+      return mode switch {
+        Compression.Lib.DeleteMode.RealFs => "Delete selected file(s) from disk",
+        Compression.Lib.DeleteMode.ModifiableArchive => "Delete selected entry from archive",
+        Compression.Lib.DeleteMode.ReadOnlyArchive => "This format is read-only.",
+        _ => "Select one or more entries to delete",
+      };
+    }
+  }
 
   public MainViewModel() {
     OpenCommand = new RelayCommand(_ => OpenDialog());
@@ -103,6 +131,140 @@ internal sealed class MainViewModel : ViewModelBase {
     BenchmarkCommand = new RelayCommand(_ => ShowBenchmark());
     FileAssociationsCommand = new RelayCommand(_ => ShowFileAssociations());
     DefragmentEntryCommand = new RelayCommand(_ => DefragmentSelected(), _ => CanDefragmentSelected);
+    DeleteSelectedCommand = new RelayCommand(_ => DeleteSelectedEntries(), _ => CanDeleteSelected);
+  }
+
+  /// <summary>
+  /// True when the Delete menu / Del keypress should be live. Always true while there is
+  /// at least one non-parent entry selected — even for read-only archives, where the
+  /// click surfaces a "this format is read-only" info dialog instead of doing nothing.
+  /// Only the RealFs and ModifiableArchive paths actually mutate state.
+  /// </summary>
+  internal bool CanDeleteSelected
+    => Compression.Lib.DeleteCapability.Evaluate(
+         IsBrowsingOsFolder, ArchivePath, SelectedEntries.Count(e => !e.IsParentEntry))
+       != Compression.Lib.DeleteMode.None;
+
+  /// <summary>
+  /// Branches between OS-filesystem delete (real <c>File.Delete</c> / recursive
+  /// <c>Directory.Delete</c>), modifiable-archive delete (routes through
+  /// <see cref="ArchiveOperations.Remove(string, string[], CompressionOptions?)"/> which
+  /// prefers <see cref="IArchiveModifiable"/>), and the read-only fallback (info
+  /// MessageBox, no destructive op). After a successful archive delete
+  /// <see cref="HasPendingFragmentation"/> is raised so the user can run Defragment
+  /// to compact freed slots.
+  /// </summary>
+  private void DeleteSelectedEntries() {
+    var selected = SelectedEntries.Where(e => !e.IsParentEntry).ToList();
+    if (selected.Count == 0) return;
+
+    var mode = Compression.Lib.DeleteCapability.Evaluate(
+      IsBrowsingOsFolder, ArchivePath, selected.Count);
+
+    if (mode == Compression.Lib.DeleteMode.ReadOnlyArchive) {
+      MessageBox.Show(
+        "This format is read-only — entries can't be removed without rebuilding the container.\n\nUse File → Create to write a new archive that excludes them.",
+        "Cannot delete",
+        MessageBoxButton.OK, MessageBoxImage.Information);
+      return;
+    }
+
+    if (mode == Compression.Lib.DeleteMode.None) return;
+
+    // Recursive count for directories so the confirmation prompt is honest.
+    long fileCount = 0;
+    long dirCount = 0;
+    if (mode == Compression.Lib.DeleteMode.RealFs) {
+      foreach (var entry in selected) {
+        var p = entry.Path;
+        if (Directory.Exists(p)) {
+          dirCount++;
+          try {
+            fileCount += Directory.EnumerateFiles(p, "*", SearchOption.AllDirectories).LongCount();
+          } catch {
+            // Best-effort count — denied subdirs still get the parent listed.
+          }
+        } else if (File.Exists(p)) {
+          fileCount++;
+        }
+      }
+    } else {
+      foreach (var entry in selected) {
+        if (entry.IsDirectory) {
+          var dirPrefix = entry.Path.EndsWith('/') ? entry.Path : entry.Path + "/";
+          dirCount++;
+          foreach (var e in _allEntries)
+            if (!e.IsDirectory && e.Path.StartsWith(dirPrefix, StringComparison.Ordinal))
+              fileCount++;
+        } else {
+          fileCount++;
+        }
+      }
+    }
+
+    var summary = dirCount switch {
+      0 => $"Delete {fileCount} file(s)?",
+      _ => $"Delete {fileCount} file(s) and {dirCount} folder(s)?",
+    };
+    var confirm = MessageBox.Show(summary, "Confirm Delete",
+                                  MessageBoxButton.YesNo, MessageBoxImage.Warning);
+    if (confirm != MessageBoxResult.Yes) return;
+
+    if (mode == Compression.Lib.DeleteMode.RealFs) {
+      var failed = 0;
+      foreach (var entry in selected) {
+        var path = entry.Path;
+        try {
+          if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+          else if (File.Exists(path)) File.Delete(path);
+        } catch (Exception ex) {
+          failed++;
+          StatusText = $"Failed to delete {entry.Name}: {ex.Message}";
+        }
+      }
+      RefreshVisibleEntries();
+      StatusText = failed == 0
+        ? $"Deleted {selected.Count} item(s)."
+        : $"Deleted {selected.Count - failed} of {selected.Count} item(s) ({failed} failed).";
+      return;
+    }
+
+    // ModifiableArchive — collect entry names (recurse into directories so the
+    // modifier sees every file). The trailing slash on directories matches how
+    // ArchiveEntry.Name is stored in _allEntries.
+    var names = new List<string>();
+    foreach (var entry in selected) {
+      if (entry.IsDirectory) {
+        var dirPrefix = entry.Path.EndsWith('/') ? entry.Path : entry.Path + "/";
+        foreach (var e in _allEntries)
+          if (e.Path.StartsWith(dirPrefix, StringComparison.Ordinal) && e.Path != dirPrefix)
+            names.Add(e.Path);
+        names.Add(dirPrefix);
+      } else {
+        names.Add(entry.Path);
+      }
+    }
+    if (names.Count == 0) return;
+
+    try {
+      IsBusy = true;
+      StatusText = $"Deleting {names.Count} entry(ies) from archive...";
+      ArchiveOperations.Remove(ArchivePath, [.. names]);
+      HasPendingFragmentation = true;
+      StatusText = $"Deleted {names.Count} entry(ies). Free space available — defragment to compact.";
+      // Reload so the EntryList reflects the new on-disk state. The modifier
+      // mutated the file in place; List() re-reads the directory.
+      Open(ArchivePath);
+      // Open() resets HasPendingFragmentation; re-raise it so the banner survives
+      // the reload triggered by our own delete.
+      HasPendingFragmentation = true;
+    } catch (Exception ex) {
+      StatusText = $"Delete failed: {ex.Message}";
+      MessageBox.Show($"Delete failed:\n\n{ex.GetType().Name}: {ex.Message}",
+                      "Delete", MessageBoxButton.OK, MessageBoxImage.Error);
+    } finally {
+      IsBusy = false;
+    }
   }
 
   /// <summary>
@@ -156,6 +318,11 @@ internal sealed class MainViewModel : ViewModelBase {
       if (!fromNestedDescent) {
         _archiveStack.Clear();
         CleanupNestedTempFiles();
+        // Fresh archive — assume no pending fragmentation until the user deletes
+        // something. The previous archive's flag would otherwise leak across
+        // reopens. The delete handler re-raises this flag after its own Open()
+        // refresh, so an in-archive delete still surfaces the hint.
+        HasPendingFragmentation = false;
         // Remember where the user was browsing so NavigateUp can return them
         // there. Only captured on top-level Open: nested descents preserve the
         // first capture so a multi-level descent still exits to the original
