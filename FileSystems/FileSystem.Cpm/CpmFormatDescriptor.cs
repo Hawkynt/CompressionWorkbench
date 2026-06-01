@@ -13,7 +13,27 @@ namespace FileSystem.Cpm;
 /// matches this layout.
 /// </summary>
 public sealed class CpmFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for CP/M creation. CP/M has no volume label; the only
+  /// per-volume knob the writer exposes is the user-area code (0..15) that
+  /// every directory entry is tagged with. CP/M 2.2 lets users switch
+  /// between user areas with the <c>USER n</c> command — choosing a non-zero
+  /// default puts the volume's entries in that user area at mount time.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "UserCode",
+      DisplayName: "User area (USER n)",
+      Kind: FormatOptionKind.Integer,
+      Default: "0",
+      Description: "User-area number stored in each CP/M directory entry (byte 0). " +
+        "Range 0..15. CP/M 2.2 uses 0 by default; the BDOS hides entries that don't " +
+        "match the current USER command."),
+  ];
 
   /// <summary>
   /// Walks the 64-entry CP/M directory and yields the actual on-disk byte
@@ -80,9 +100,10 @@ public sealed class CpmFormatDescriptor :
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var userCode = (byte)Math.Clamp(options?.GetOptionInt("UserCode", 0) ?? 0, 0, 15);
     var files = inputs
       .Where(i => !i.IsDirectory)
-      .Select(i => (i.ArchiveName, File.ReadAllBytes(i.FullPath), (byte)0))
+      .Select(i => (i.ArchiveName, File.ReadAllBytes(i.FullPath), userCode))
       .ToList();
     var image = CpmWriter.Build(files);
     output.Write(image);
