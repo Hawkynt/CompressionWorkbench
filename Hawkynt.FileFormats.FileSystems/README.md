@@ -168,8 +168,8 @@ State legend:
 | `FileSystem.CramFs`   | R/W   | Compressed RAM-FS for embedded — `0x28CD3D45`, CRC-32, zlib, rebuild-based modify — [more →](https://en.wikipedia.org/wiki/Cramfs)   |
 | `FileSystem.RomFs`    | R/W   | Read-only ROM FS — `-rom1fs-` magic, BE fields, rebuild-based modify — [more →](https://en.wikipedia.org/wiki/Romfs)                 |
 | `FileSystem.MinixFs`  | R/W   | Minix v1/2/3 — superblock magics `0x137F/0x138F/0x2468/...`, rebuild-based modify — [more →](https://en.wikipedia.org/wiki/MINIX_file_system) |
-| `FileSystem.Erofs`    | R     | Enhanced Read-Only FS (Android) — variable-length encoded inodes — [more →](https://en.wikipedia.org/wiki/EROFS) |
-| `FileSystem.LittleFs` | R     | LittleFS for microcontrollers — superblock surfacing only — [more →](https://github.com/littlefs-project/littlefs) |
+| `FileSystem.Erofs`    | WORM  | Enhanced Read-Only FS (Android) — reads inodes; writer emits compact inodes + FLAT_PLAIN data + nested directories (uncompressed) — [more →](https://en.wikipedia.org/wiki/EROFS) |
+| `FileSystem.LittleFs` | WORM  | LittleFS for microcontrollers — writer emits the metadata-pair commit log + CTZ/inline files + nested dirs; full commit-walking reader — [more →](https://github.com/littlefs-project/littlefs) |
 
 #### Optical
 
@@ -184,7 +184,7 @@ State legend:
 | Filesystem                       | State | Notes                                                       |
 | -------------------------------- | ----- | ----------------------------------------------------------- |
 | `FileSystem.D64` / `D71` / `D81` | R/W   | Commodore 1541 / 1571 / 1581 — directory at T18S1+; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Commodore_DOS) |
-| `FileSystem.CbmNibble`           | R     | Commodore raw nibble (`.g64` / `.nib`) — [more →](https://en.wikipedia.org/wiki/Commodore_DOS)        |
+| `FileSystem.CbmNibble`           | WORM  | Commodore raw nibble (`.g64` / `.nib`) — G64 writer GCR-encodes a D64-built 1541 image — [more →](https://en.wikipedia.org/wiki/Commodore_DOS)        |
 | `FileSystem.AppleDos`            | R/W   | Apple DOS 3.3 — 143 360 bytes, catalog at T17S15; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Apple_DOS) |
 | `FileSystem.ProDos`              | R/W   | ProDOS — 143 360 / 819 200, storage-type-3 trees; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/ProDOS) |
 | `FileSystem.Atari8`              | R/W   | Atari 8-bit DOS 2 — 16-byte hdr + VTOC at sector 360; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Atari_DOS) |
