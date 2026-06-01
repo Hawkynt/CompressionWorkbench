@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Text;
 using Codec.Pcm;
 using Compression.Registry;
+using FileFormat.Wav;
 
 namespace FileFormat.Au;
 
@@ -13,7 +14,7 @@ namespace FileFormat.Au;
 /// annotation string.
 /// </summary>
 public sealed class AuFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-  IArchiveInMemoryExtract, IArchiveWriteConstraints {
+  IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
 
   public string Id => "Au";
   public string DisplayName => "Sun/NeXT .au (.snd)";
@@ -70,6 +71,67 @@ public sealed class AuFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     reason = $"not a .au-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
     return false;
   }
+
+  // ── IArchiveCreatable: assemble a multi-channel .au from per-channel mono WAVs ──
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var fileList = FormatHelpers.FilesOnly(inputs).ToList();
+
+    var full = fileList.FirstOrDefault(f => {
+      var n = Path.GetFileName(f.Name).ToLowerInvariant();
+      return n is "full.au" or "full.snd";
+    });
+    if (full.Data != null) {
+      output.Write(full.Data);
+      return;
+    }
+
+    var channelBlobs = fileList
+      .Where(f => Path.GetFileName(f.Name).EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+      .OrderBy(f => ChannelOrder(Path.GetFileNameWithoutExtension(f.Name)))
+      .ToList();
+
+    if (channelBlobs.Count == 0)
+      throw new InvalidOperationException(".au archive create needs either FULL.au or one or more per-channel WAVs.");
+
+    var channels = channelBlobs.Select(b => new WavReader().Read(b.Data)).ToList();
+    var first = channels[0];
+    if (channels.Any(c => c.SampleRate != first.SampleRate || c.BitsPerSample != first.BitsPerSample || c.NumChannels != 1))
+      throw new InvalidOperationException("All channel WAVs must be mono and share sample rate + bit depth.");
+    if (channels.Any(c => c.InterleavedPcm.Length != first.InterleavedPcm.Length))
+      throw new InvalidOperationException("All channel WAVs must have the same frame count.");
+
+    // .au stores big-endian PCM; the per-channel WAVs are little-endian.
+    var interleavedLe = PcmCodec.Interleave(channels.Select(c => c.InterleavedPcm).ToList(), first.BitsPerSample);
+    var interleavedBe = SwapSampleEndianness(interleavedLe, first.BitsPerSample / 8);
+
+    var blob = new AuWriter().Write(interleavedBe, channels.Count, first.SampleRate, first.BitsPerSample);
+    output.Write(blob);
+  }
+
+  /// <summary>Reverses the byte order within each fixed-width sample (LE↔BE).</summary>
+  private static byte[] SwapSampleEndianness(byte[] pcm, int bytesPerSample) {
+    if (bytesPerSample <= 1) return pcm;
+    var swapped = new byte[pcm.Length];
+    for (var i = 0; i + bytesPerSample <= pcm.Length; i += bytesPerSample)
+      for (var j = 0; j < bytesPerSample; ++j)
+        swapped[i + j] = pcm[i + bytesPerSample - 1 - j];
+    return swapped;
+  }
+
+  private static int ChannelOrder(string name) => name.ToUpperInvariant() switch {
+    "LEFT" or "FRONT_LEFT" => 0,
+    "RIGHT" or "FRONT_RIGHT" => 1,
+    "CENTER" => 2,
+    "LFE" => 3,
+    "BACK_LEFT" => 4,
+    "BACK_RIGHT" => 5,
+    "SIDE_LEFT" => 6,
+    "SIDE_RIGHT" => 7,
+    "MONO" => 0,
+    _ => int.Parse(name.StartsWith("CH_", StringComparison.Ordinal) ? name[3..] : "0",
+                    System.Globalization.CultureInfo.InvariantCulture),
+  };
 
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
