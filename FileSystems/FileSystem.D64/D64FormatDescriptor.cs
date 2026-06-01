@@ -5,7 +5,26 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.D64;
 
-public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for D64 creation. The Commodore 1541 stores a 16-char
+  /// PETSCII disk name plus a 2-char disk ID in the BAM (track 18 sector 0);
+  /// both are user-visible from the C64 directory listing. Disk geometry is
+  /// fixed at the single-sided 1541 size (174 848 bytes).
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 16),
+    new FormatOptionDescriptor(
+      Key: "DiskId",
+      DisplayName: "Disk ID",
+      Kind: FormatOptionKind.String,
+      Default: "00",
+      Description: "Two-character disk ID at BAM offset 0xA2. Shown in the C64 directory " +
+        "header (\"0 \"DISKNAME\" ID 2A\"). Padded with '0' if shorter, truncated if longer."),
+  ];
 
   /// <summary>
   /// Walks the directory chain on track 18 and yields the actual on-disk
@@ -213,7 +232,11 @@ public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new D64Writer();
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name.Length > 16 ? name[..16] : name, data);
-    output.Write(w.Build());
+
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (string.IsNullOrEmpty(label)) label = "DISK";
+    var diskId = options?.GetOption("DiskId", "00") ?? "00";
+    output.Write(w.Build(label, diskId));
   }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
