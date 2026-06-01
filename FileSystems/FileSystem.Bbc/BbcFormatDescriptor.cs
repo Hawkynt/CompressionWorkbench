@@ -5,7 +5,27 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Bbc;
 
-public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for BBC DFS creation. DFS stores a 12-character disk title
+  /// across the two catalog sectors, plus a 2-bit "boot option" that controls
+  /// what SHIFT-BREAK does. Disk geometry is fixed at 40-track SSD (100 KB).
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 12),
+    new FormatOptionDescriptor(
+      Key: "BootOption",
+      DisplayName: "Boot option (*OPT 4)",
+      Kind: FormatOptionKind.Enum,
+      Default: "None",
+      AllowedValues: ["None", "LOAD", "RUN", "EXEC"],
+      Description: "What SHIFT-BREAK does with $.!BOOT: None = nothing; " +
+        "LOAD = *LOAD $.!BOOT; RUN = *RUN $.!BOOT; EXEC = *EXEC $.!BOOT. " +
+        "Stored at catalog sector 1 byte 6 bits 4-5."),
+  ];
 
   /// <summary>
   /// Walks the catalog (sectors 0-1 per side) and yields the actual
@@ -98,7 +118,16 @@ public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new BbcWriter();
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
-    output.Write(w.Build());
+
+    var title = options?.GetOption("VolumeLabel", "") ?? "";
+    if (string.IsNullOrEmpty(title)) title = "WORMDISK";
+    var bootOpt = (options?.GetOption("BootOption", "None") ?? "None") switch {
+      "LOAD" => 1,
+      "RUN"  => 2,
+      "EXEC" => 3,
+      _      => 0,
+    };
+    output.Write(w.Build(title, bootOpt));
   }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────

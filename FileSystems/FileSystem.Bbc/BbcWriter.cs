@@ -32,8 +32,15 @@ public sealed class BbcWriter {
   public void AddFile(string name, byte[] data, char directory = '$', uint loadAddr = 0x1900, uint execAddr = 0x1900, bool locked = false)
     => this._files.Add((name, directory, data, loadAddr, execAddr, locked));
 
-  /// <summary>Builds the complete 40-track SSD image (100 000 bytes).</summary>
-  public byte[] Build(string diskTitle = "WORMDISK") {
+  /// <summary>
+  /// Builds the complete 40-track SSD image (100 000 bytes).
+  /// </summary>
+  /// <param name="diskTitle">DFS volume title (12 ASCII chars; 8 in sector 0, 4 in sector 1).</param>
+  /// <param name="bootOption">
+  /// !BOOT action stored in catalog sector 1 byte 6, bits 4-5:
+  /// 0 = no action, 1 = *LOAD $.!BOOT, 2 = *RUN $.!BOOT, 3 = *EXEC $.!BOOT.
+  /// </param>
+  public byte[] Build(string diskTitle = "WORMDISK", int bootOption = 0) {
     if (this._files.Count > MaxEntries)
       throw new InvalidOperationException(
         $"BBC DFS: {this._files.Count} files exceeds catalog limit of {MaxEntries}.");
@@ -98,7 +105,9 @@ public sealed class BbcWriter {
     disk[SectorSize + 4] = 0x00;                         // cycle
     disk[SectorSize + 5] = (byte)(entryMeta.Length * 8);
     disk[SectorSize + 7] = TotalSectors40 & 0xFF;
-    disk[SectorSize + 6] = (byte)((TotalSectors40 >> 8) & 0x03);  // boot option = 0 in bits 4-5
+    // byte 6: bits 0-1 = total sectors high; bits 4-5 = boot option; bits 6-7 reserved.
+    var bootBits = (bootOption & 0x03) << 4;
+    disk[SectorSize + 6] = (byte)(((TotalSectors40 >> 8) & 0x03) | bootBits);
 
     for (var i = 0; i < entryMeta.Length; i++) {
       var m = SectorSize + 8 + i * 8;
