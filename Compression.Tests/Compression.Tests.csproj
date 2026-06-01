@@ -418,6 +418,7 @@
     <ProjectReference Include="..\FileSystems\FileSystem.Efs\FileSystem.Efs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Gemdos\FileSystem.Gemdos.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Gfs1\FileSystem.Gfs1.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Htfs\FileSystem.Htfs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zip\FileFormat.Zip.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zlib\FileFormat.Zlib.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zling\FileFormat.Zling.csproj" />

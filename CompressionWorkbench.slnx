@@ -386,6 +386,7 @@
     <Project Path="FileSystems/FileSystem.Efs/FileSystem.Efs.csproj" />
     <Project Path="FileSystems/FileSystem.Gemdos/FileSystem.Gemdos.csproj" />
     <Project Path="FileSystems/FileSystem.Gfs1/FileSystem.Gfs1.csproj" />
+    <Project Path="FileSystems/FileSystem.Htfs/FileSystem.Htfs.csproj" />
     <Project Path="FileFormats/FileFormat.Zip/FileFormat.Zip.csproj" />
     <Project Path="FileFormats/FileFormat.Zlib/FileFormat.Zlib.csproj" />
     <Project Path="FileFormats/FileFormat.Zling/FileFormat.Zling.csproj" />
