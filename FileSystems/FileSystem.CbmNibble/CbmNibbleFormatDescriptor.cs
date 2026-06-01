@@ -44,12 +44,12 @@ internal static class CbmNibbleEntries {
 /// Commodore G64 GCR track container (VICE emulator). Detected by the
 /// 8-byte "GCR-1541" ASCII magic at offset 0.
 /// </summary>
-public sealed class G64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class G64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "G64";
   public string DisplayName => "G64 (Commodore GCR)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".g64";
   public IReadOnlyList<string> Extensions => [".g64"];
@@ -66,6 +66,20 @@ public sealed class G64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
     CbmNibbleEntries.Extract(stream, outputDir, files, "image.g64");
+
+  /// <summary>
+  /// Builds a fresh G64 image from the inputs. The Commodore filesystem is flat,
+  /// so names are reduced to their filename component and stored in the single
+  /// track-18 directory by <see cref="CbmNibbleWriter"/>.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var writer = new CbmNibbleWriter();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      writer.AddFile(Path.GetFileName(input.ArchiveName), input.ReadContent());
+    }
+    writer.WriteTo(output);
+  }
 }
 
 /// <summary>
