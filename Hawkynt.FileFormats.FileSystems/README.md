@@ -131,11 +131,11 @@ State legend:
 | `FileSystem.Ext`      | R/W   | ext2 / ext3 / ext4 — DYNAMIC_REV, FILETYPE feature, files at inode 11 — [more →](https://en.wikipedia.org/wiki/Ext4) |
 | `FileSystem.Xfs`      | R/W   | XFS v5 — `xfs_repair`-validated, AGF/AGI/AGFL, full B-tree set — [more →](https://en.wikipedia.org/wiki/XFS) |
 | `FileSystem.Ext1`     | R/W   | ext1 — Theodore Ts'o 1992 original (magic 0xEF51, no `mkfs.ext1` exists); add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Extended_file_system) |
-| `FileSystem.ReiserFs` | WORM  | ReiserFS 3.6 — `reiserfsck`-clean; multi-leaf S+tree with an internal node, R5-hashed keys, nested subdirectories of arbitrary size, correct `dc_size` / `.`/`..` keys / `sd_blocks`. In-place Add/Remove (multi-week S+tree split/merge balancing) is the remaining gap to R/W — [more →](https://en.wikipedia.org/wiki/ReiserFS) |
+| `FileSystem.ReiserFs` | R/W   | ReiserFS 3.6 — `reiserfsck`-clean; multi-leaf S+tree with an internal node, R5-hashed keys, nested subdirectories of arbitrary size, correct `dc_size` / `.`/`..` keys / `sd_blocks`. Add/replace/remove via read-extract-rebuild — [more →](https://en.wikipedia.org/wiki/ReiserFS) |
 | `FileSystem.Reiser4`  | WORM  | Reiser4 — empty-FS only via 7 byte-exact reference blocks — [more →](https://en.wikipedia.org/wiki/Reiser4) |
-| `FileSystem.Jfs`      | WORM  | IBM JFS1 — `fsck.jfs -n` clean; nested subdirectories with external dtree B+ pages (large directories), sorted+sibling-chained pages, correct secondary AIT/AIM. In-place Add/Remove (dmap/IAG mutation) is the gap to R/W — [more →](https://en.wikipedia.org/wiki/JFS_(file_system)) |
-| `FileSystem.F2fs`     | WORM  | Flash-Friendly Filesystem — `fsck.f2fs`-clean; superblock + checkpoint + SIT/NAT/SSA + kernel hash-bucket directory blocks (large directories). In-place Add/Remove (NAT/SIT journal mutation, checkpoint CRC recompute) is the gap to R/W — [more →](https://en.wikipedia.org/wiki/F2FS) |
-| `FileSystem.Zfs`      | R     | Sun ZFS — read existing pools — [more →](https://en.wikipedia.org/wiki/ZFS)                          |
+| `FileSystem.Jfs`      | R/W   | IBM JFS1 — `fsck.jfs -n` clean; nested subdirectories with external dtree B+ pages (large directories), sorted+sibling-chained pages, correct secondary AIT/AIM. Add/replace/remove via read-extract-rebuild — [more →](https://en.wikipedia.org/wiki/JFS_(file_system)) |
+| `FileSystem.F2fs`     | R/W   | Flash-Friendly Filesystem — `fsck.f2fs`-clean; superblock + checkpoint + SIT/NAT/SSA + kernel hash-bucket directory blocks (large directories). Add/replace/remove via read-extract-rebuild — [more →](https://en.wikipedia.org/wiki/F2FS) |
+| `FileSystem.Zfs`      | R/W   | Sun ZFS — fat-ZAP directories (large directories), Fletcher-4 checksums, NV_BIG_ENDIAN XDR labels; add/replace/remove via read-extract-rebuild (label footprint preserved) — [more →](https://en.wikipedia.org/wiki/ZFS) |
 | `FileSystem.Ufs`      | R     | UNIX File System (BSD) — `fs_magic=0x011954` — [more →](https://en.wikipedia.org/wiki/Unix_File_System) |
 | `FileSystem.BcacheFs` | WORM  | bcachefs — superblock-only WORM (fsck parity multi-week, B-trees TODO) — [more →](https://en.wikipedia.org/wiki/Bcachefs) |
 | `FileSystem.Ubifs`    | R     | UBIFS — log-structured, no writer (LPT/TNC trees multi-week) — [more →](https://en.wikipedia.org/wiki/UBIFS) |
@@ -153,7 +153,7 @@ State legend:
 | -------------------- | ----- | --------------------------------------------------------------------- |
 | `FileSystem.HfsPlus` | R/W   | Mac OS Extended — `fsck.hfsplus`-clean; multi-node catalog B-tree (chained index/leaf nodes), TN1150 case-folding key order, nested subdirectories of arbitrary size; add/remove via read-extract-rebuild — [more →](https://en.wikipedia.org/wiki/HFS_Plus) |
 | `FileSystem.Hfs`     | R/W   | Classic Mac OS HFS — real B-tree catalog + extents trees; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Hierarchical_File_System_(Apple)) |
-| `FileSystem.Apfs`    | WORM  | Apple File System (macOS High Sierra+) — single container/volume, real NXSB/APSB + omap + FS-tree B-tree under Fletcher-64. In-flight Add/Remove needs B-tree split/merge, xid-keyed omap updates, checkpoint advance, spaceman bitmap, per-block Fletcher-64 recompute (multi-week) — [more →](https://en.wikipedia.org/wiki/Apple_File_System) |
+| `FileSystem.Apfs`    | R/W   | Apple File System (macOS High Sierra+) — single container/volume, real NXSB/APSB + omap + multi-leaf FS-tree B-tree under Fletcher-64, nested subdirectories of arbitrary size; add/replace/remove via read-extract-rebuild — [more →](https://en.wikipedia.org/wiki/Apple_File_System) |
 | `FileSystem.Mfs`     | R/W   | Macintosh File System (1984) — pre-HFS flat FS, `drSigWord=0xD2D7`; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Macintosh_File_System) |
 
 #### Compressed / embedded / flash
