@@ -9,6 +9,7 @@ using Brushes = System.Windows.Media.Brushes;
 using Color = System.Windows.Media.Color;
 using Brush = System.Windows.Media.Brush;
 using Point = System.Windows.Point;
+using Size = System.Windows.Size;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using MouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
 using ToolTip = System.Windows.Controls.ToolTip;
@@ -392,35 +393,44 @@ public sealed class BlockMapControl : FrameworkElement {
     var view = ViewMode;
     if (view is Compression.Core.Layout.BlockMapView.CircularPlatter
              or Compression.Core.Layout.BlockMapView.CylinderStack) {
-      // Projected views: place each tile where its bytes would physically
-      // reside on the medium (cylinder/head/sector geometry).
+      // Projected views: render each tile as a filled annular wedge sitting at
+      // its physical platter coordinate. The wedge spans the angular range of
+      // its sector(s) and the radial thickness of its track(s), so the result
+      // is a solid doughnut (2-D) or stack of platter discs (3-D) — no dot
+      // cloud, no gaps between tiles. Hit-testing is disabled because the
+      // wedge → byte-range mapping is non-trivial; the linear view stays the
+      // canonical interactive surface.
       var geom = Geometry ?? Compression.Core.Layout.MediaGeometry.Standard(imageSize);
-      var dot = Math.Max(1.5, Math.Min(tileW, tileH) * 0.6);
-      var cx = w / 2;
-      for (var i = 0; i < totalTiles; i++) {
-        if (tileKinds[i] == DefragBlockKind.Free
-            && tileUsedBytes[i] == 0 && tileMetaBytes[i] == 0 && tileBadBytes[i] == 0)
-          continue; // don't clutter the platter with empty space
-        var centerByte = (long)((i + 0.5) * bytesPerTile);
-        var lba = geom.LbaOfByte(centerByte);
-        var brush = BlendedBrush(tileKinds[i], tileClasses[i],
-          tileFreeBytes[i], tileUsedBytes[i], tileMetaBytes[i], tileBadBytes[i]);
-        Point p;
-        if (view == Compression.Core.Layout.BlockMapView.CircularPlatter) {
-          var (angle, radius) = Compression.Core.Layout.MediaProjection.CircularPlatter(geom, lba);
-          var rr = Math.Min(w, h) * 0.45 * radius;
-          p = new Point(cx + rr * Math.Sin(angle), h / 2 - rr * Math.Cos(angle));
-        } else {
-          var (angle, radius, z) = Compression.Core.Layout.MediaProjection.CylinderStack(geom, lba);
-          var rx = w * 0.40 * radius;
-          var ry = h * 0.16 * radius;          // foreshortened depth for a 3-D feel
-          var zTop = h * 0.78;                  // head 0 baseline near the bottom
-          var zSpan = h * 0.55;                 // platter stack height
-          p = new Point(cx + rx * Math.Sin(angle), zTop - z * zSpan - ry * Math.Cos(angle));
-        }
-        dc.DrawEllipse(brush, null, p, dot, dot);
+      if (view == Compression.Core.Layout.BlockMapView.CircularPlatter) {
+        DrawCircularPlatter(dc, w, h, geom, totalTiles, bytesPerTile,
+          tileKinds, tileClasses, tileFreeBytes, tileUsedBytes, tileMetaBytes, tileBadBytes);
+      } else {
+        DrawCylinderStack(dc, w, h, geom, totalTiles, bytesPerTile,
+          tileKinds, tileClasses, tileFreeBytes, tileUsedBytes, tileMetaBytes, tileBadBytes);
       }
-    } else {
+      // Disable grid hit-testing for the projected views — the linear→wedge
+      // mapping is many-to-one so a pixel can't reverse to a single tile.
+      this._cols = 0;
+      this._rows = 0;
+      this._tileW = 0;
+      this._tileH = 0;
+      this._bytesPerTile = bytesPerTile;
+      this._tileKinds = tileKinds;
+      this._tileClasses = tileClasses;
+      this._tileFiles = tileFiles;
+      this._tileLengths = tileLengths;
+      this._tileFreeBytes = tileFreeBytes;
+      this._tileUsedBytes = tileUsedBytes;
+      this._tileMetaBytes = tileMetaBytes;
+      this._tileBadBytes = tileBadBytes;
+      sw.Stop();
+      if (sw.ElapsedMilliseconds > SlowRedrawWarnMs) {
+        Debug.WriteLine($"[BlockMapControl] OnRender slow (projected): {sw.ElapsedMilliseconds} ms (blocks={map.Count:N0}, tiles={totalTiles}, cacheHit={cacheHit})");
+      }
+      return;
+    }
+
+    {
       // Linear tile grid (LinearBlocks / LinearLba): row-major by byte offset.
       for (var i = 0; i < totalTiles; i++) {
         var col = i % cols;
@@ -458,6 +468,224 @@ public sealed class BlockMapControl : FrameworkElement {
       Debug.WriteLine($"[BlockMapControl] OnRender slow: {sw.ElapsedMilliseconds} ms (blocks={map.Count:N0}, tiles={totalTiles}, cacheHit={cacheHit})");
     }
   }
+
+  // ── Projected (platter / cylinder-stack) rendering ────────────────
+  // Each tile renders as a filled annular wedge sitting at its physical
+  // (cylinder, head, sector) coordinate, the way a real defrag tool
+  // (UltimateDefrag etc.) draws data on a platter. Two simplifications
+  // vs. real hardware:
+  // 1. We aggregate by TILE (not by sector) so the wedge count caps at the
+  //    OnRender tile budget — high-LBA images don't explode into millions
+  //    of draw calls. The tile's dominant kind + per-kind byte breakdown
+  //    drives the same BlendedBrush as the linear view.
+  // 2. The 3-D stack flattens platter perspective to a Y-scaled annulus
+  //    (ellipse) so the cylinder math stays 2-D; no real 3-D transform is
+  //    required. The 3/4-view angle (looking down + side) is approximated
+  //    by ry = rx * PlatterPerspectiveYScale.
+
+  /// <summary>Aspect-ratio Y-scale for the 3-D stacked-platter view —
+  /// platters render as elliptical discs with vertical squash matching a
+  /// ~3/4 view angle (looking down + to the side).</summary>
+  private const double PlatterPerspectiveYScale = 0.42;
+
+  /// <summary>How many heads to show in the 3-D stack — capped so a
+  /// 255-head standard geometry doesn't draw 255 platters. Real consumer
+  /// drives top out around 8 platters anyway.</summary>
+  private const int MaxStackedPlatters = 8;
+
+  /// <summary>Spindle-hole fraction for the projected views — the inner
+  /// radius of the platter relative to its outer radius.</summary>
+  private const double PlatterInnerFraction = 0.22;
+
+  private static void DrawCircularPlatter(
+      DrawingContext dc, double w, double h,
+      Compression.Core.Layout.MediaGeometry geom,
+      int totalTiles, double bytesPerTile,
+      DefragBlockKind[] tileKinds, DefragBlockClass?[] tileClasses,
+      long[] tileFreeBytes, long[] tileUsedBytes, long[] tileMetaBytes, long[] tileBadBytes) {
+    var cx = w / 2;
+    var cy = h / 2;
+    var maxR = Math.Min(w, h) * 0.46;
+
+    // Base annulus — the platter surface — so even regions covered by
+    // light-coloured wedges still look like a disk and not transparent.
+    dc.DrawGeometry(FreeBrush, null, BuildAnnulus(cx, cy, maxR * PlatterInnerFraction, maxR));
+
+    for (var i = 0; i < totalTiles; i++) {
+      // Skip pure-Free tiles: the base annulus already paints them.
+      if (tileKinds[i] == DefragBlockKind.Free
+          && tileUsedBytes[i] == 0 && tileMetaBytes[i] == 0 && tileBadBytes[i] == 0)
+        continue;
+
+      var startByte = (long)(i * bytesPerTile);
+      var endByteExclusive = (long)((i + 1) * bytesPerTile);
+      var wedge = Compression.Core.Layout.PlatterWedgeLayout.ComputeWedge(geom, startByte, endByteExclusive, PlatterInnerFraction);
+      var brush = BlendedBrush(tileKinds[i], tileClasses[i],
+        tileFreeBytes[i], tileUsedBytes[i], tileMetaBytes[i], tileBadBytes[i]);
+      var geo = BuildWedgeGeometryElliptical(cx, cy, maxR, maxR, wedge);
+      dc.DrawGeometry(brush, null, geo);
+    }
+
+    // Spindle hole — flat black dot in the centre so the platter reads as
+    // a real disc with a centre bore.
+    dc.DrawEllipse(Brushes.Black, null, new Point(cx, cy),
+      maxR * PlatterInnerFraction * 0.4, maxR * PlatterInnerFraction * 0.4);
+  }
+
+  private static void DrawCylinderStack(
+      DrawingContext dc, double w, double h,
+      Compression.Core.Layout.MediaGeometry geom,
+      int totalTiles, double bytesPerTile,
+      DefragBlockKind[] tileKinds, DefragBlockClass?[] tileClasses,
+      long[] tileFreeBytes, long[] tileUsedBytes, long[] tileMetaBytes, long[] tileBadBytes) {
+    var heads = Math.Min(MaxStackedPlatters, Math.Max(1, geom.Heads));
+    var cx = w / 2;
+    // Platter horizontal radius — leave room for the stack spread (each
+    // platter offset downward so heads are vertically distinguishable).
+    var rx = Math.Min(w * 0.42, h * 0.42 / PlatterPerspectiveYScale);
+    if (rx <= 1) rx = Math.Min(w, h) * 0.3;
+    var ry = rx * PlatterPerspectiveYScale;
+
+    // Stack layout: vertical separation between platters proportional to
+    // height. Head 0 sits at the top, last head at the bottom.
+    var stackHeight = h * 0.55;
+    var platterSpacing = heads <= 1 ? 0.0 : stackHeight / (heads - 1);
+    var firstPlatterCy = (h - stackHeight) / 2 + ry; // top platter centre Y
+
+    // Pre-bin tiles by head so we can paint platters back-to-front (last
+    // head first → top head last) without z-fighting between overlapping
+    // wedges from different platters.
+    var tilesPerHead = new List<int>[heads];
+    for (var hh = 0; hh < heads; hh++) tilesPerHead[hh] = new List<int>(totalTiles / Math.Max(1, heads));
+    for (var i = 0; i < totalTiles; i++) {
+      var startByte = (long)(i * bytesPerTile);
+      var startLba = geom.LbaOfByte(startByte);
+      var (_, head, _) = geom.ChsFromLba(startLba);
+      // Quantize real head index into our [0..heads-1] range when the
+      // geometry has more heads than we'll draw (e.g. 255-head standard).
+      var bucket = geom.Heads <= heads ? head : (int)((long)head * heads / Math.Max(1, geom.Heads));
+      if (bucket < 0) bucket = 0;
+      if (bucket >= heads) bucket = heads - 1;
+      tilesPerHead[bucket].Add(i);
+    }
+
+    // Paint back-to-front: last head (lowest on screen) first, head 0 last.
+    for (var hh = heads - 1; hh >= 0; hh--) {
+      var cy = firstPlatterCy + hh * platterSpacing;
+
+      // Base platter surface — light grey ellipse so empty tracks read
+      // as visible disc surface (and not as background).
+      dc.DrawGeometry(FreeBrush, null,
+        BuildAnnulusElliptical(cx, cy, rx * PlatterInnerFraction, ry * PlatterInnerFraction, rx, ry));
+
+      foreach (var i in tilesPerHead[hh]) {
+        if (tileKinds[i] == DefragBlockKind.Free
+            && tileUsedBytes[i] == 0 && tileMetaBytes[i] == 0 && tileBadBytes[i] == 0)
+          continue;
+        var startByte = (long)(i * bytesPerTile);
+        var endByteExclusive = (long)((i + 1) * bytesPerTile);
+        var wedge = Compression.Core.Layout.PlatterWedgeLayout.ComputeWedge(geom, startByte, endByteExclusive, PlatterInnerFraction);
+        var brush = BlendedBrush(tileKinds[i], tileClasses[i],
+          tileFreeBytes[i], tileUsedBytes[i], tileMetaBytes[i], tileBadBytes[i]);
+        var geo = BuildWedgeGeometryElliptical(cx, cy, rx, ry, wedge);
+        dc.DrawGeometry(brush, null, geo);
+      }
+
+      // Spindle hole on this platter.
+      dc.DrawEllipse(Brushes.Black, null, new Point(cx, cy),
+        rx * PlatterInnerFraction * 0.35, ry * PlatterInnerFraction * 0.35);
+    }
+
+    // Spindle shaft — connects all platters vertically through the centre.
+    var shaftTop = firstPlatterCy - ry * PlatterInnerFraction * 0.4;
+    var shaftBottom = firstPlatterCy + (heads - 1) * platterSpacing + ry * PlatterInnerFraction * 0.4;
+    var shaftPen = new Pen(Brushes.DimGray, Math.Max(1.5, rx * PlatterInnerFraction * 0.18));
+    dc.DrawLine(shaftPen, new Point(cx, shaftTop), new Point(cx, shaftBottom));
+  }
+
+  /// <summary>Builds a filled circular annulus (donut) — used as the base
+  /// platter surface so empty regions still look like a disk.</summary>
+  private static Geometry BuildAnnulus(double cx, double cy, double rInner, double rOuter) {
+    var sg = new StreamGeometry { FillRule = FillRule.EvenOdd };
+    using (var ctx = sg.Open()) {
+      ctx.BeginFigure(new Point(cx + rOuter, cy), true, true);
+      ctx.ArcTo(new Point(cx - rOuter, cy), new Size(rOuter, rOuter), 0, false, SweepDirection.Clockwise, true, false);
+      ctx.ArcTo(new Point(cx + rOuter, cy), new Size(rOuter, rOuter), 0, false, SweepDirection.Clockwise, true, false);
+      if (rInner > 0.5) {
+        ctx.BeginFigure(new Point(cx + rInner, cy), true, true);
+        ctx.ArcTo(new Point(cx - rInner, cy), new Size(rInner, rInner), 0, false, SweepDirection.Counterclockwise, true, false);
+        ctx.ArcTo(new Point(cx + rInner, cy), new Size(rInner, rInner), 0, false, SweepDirection.Counterclockwise, true, false);
+      }
+    }
+    sg.Freeze();
+    return sg;
+  }
+
+  /// <summary>Elliptical annulus (foreshortened disk for the 3-D stack view).</summary>
+  private static Geometry BuildAnnulusElliptical(double cx, double cy, double rxInner, double ryInner, double rxOuter, double ryOuter) {
+    var sg = new StreamGeometry { FillRule = FillRule.EvenOdd };
+    using (var ctx = sg.Open()) {
+      ctx.BeginFigure(new Point(cx + rxOuter, cy), true, true);
+      ctx.ArcTo(new Point(cx - rxOuter, cy), new Size(rxOuter, ryOuter), 0, false, SweepDirection.Clockwise, true, false);
+      ctx.ArcTo(new Point(cx + rxOuter, cy), new Size(rxOuter, ryOuter), 0, false, SweepDirection.Clockwise, true, false);
+      if (rxInner > 0.5 && ryInner > 0.5) {
+        ctx.BeginFigure(new Point(cx + rxInner, cy), true, true);
+        ctx.ArcTo(new Point(cx - rxInner, cy), new Size(rxInner, ryInner), 0, false, SweepDirection.Counterclockwise, true, false);
+        ctx.ArcTo(new Point(cx + rxInner, cy), new Size(rxInner, ryInner), 0, false, SweepDirection.Counterclockwise, true, false);
+      }
+    }
+    sg.Freeze();
+    return sg;
+  }
+
+  /// <summary>
+  /// Builds the filled-arc-segment geometry (annular wedge) for one
+  /// <see cref="Compression.Core.Layout.PlatterWedge"/> on a (potentially
+  /// foreshortened) elliptical platter. Angles are CW from 12-o'clock so
+  /// the wedge reads the way data spirals on a real disk.
+  /// </summary>
+  private static Geometry BuildWedgeGeometryElliptical(double cx, double cy, double rxMax, double ryMax, Compression.Core.Layout.PlatterWedge wedge) {
+    var rxOuter = rxMax * wedge.OuterRadius;
+    var ryOuter = ryMax * wedge.OuterRadius;
+    var rxInner = rxMax * wedge.InnerRadius;
+    var ryInner = ryMax * wedge.InnerRadius;
+
+    // Full-ring fast path — just a filled annulus at that radial band.
+    if (wedge.IsFullRing)
+      return BuildAnnulusElliptical(cx, cy, rxInner, ryInner, rxOuter, ryOuter);
+
+    // CW from 12-o'clock: screen X = sin(θ), screen Y = -cos(θ) (Y axis
+    // grows downward in screen coords, so a "north" of -cos puts θ=0 at
+    // the top). The wedge fills from startAngle through startAngle+sweep.
+    var a0 = wedge.StartAngle;
+    var a1 = wedge.StartAngle + wedge.SweepAngle;
+    var isLargeArc = wedge.SweepAngle > Math.PI;
+
+    var p0Outer = AngleToPoint(cx, cy, rxOuter, ryOuter, a0);
+    var p1Outer = AngleToPoint(cx, cy, rxOuter, ryOuter, a1);
+    var p0Inner = AngleToPoint(cx, cy, rxInner, ryInner, a0);
+    var p1Inner = AngleToPoint(cx, cy, rxInner, ryInner, a1);
+
+    var sg = new StreamGeometry();
+    using (var ctx = sg.Open()) {
+      // Start at the outer-edge start, sweep CW to outer-edge end, drop
+      // down to inner-edge end, sweep back CCW to inner-edge start, close.
+      ctx.BeginFigure(p0Outer, true, true);
+      ctx.ArcTo(p1Outer, new Size(rxOuter, ryOuter), 0, isLargeArc, SweepDirection.Clockwise, true, false);
+      ctx.LineTo(p1Inner, true, false);
+      if (rxInner > 0.5 && ryInner > 0.5)
+        ctx.ArcTo(p0Inner, new Size(rxInner, ryInner), 0, isLargeArc, SweepDirection.Counterclockwise, true, false);
+      else
+        ctx.LineTo(p0Inner, true, false);
+    }
+    sg.Freeze();
+    return sg;
+  }
+
+  /// <summary>Converts a CW-from-north angle to a screen point on an
+  /// elliptical orbit around (cx, cy). 0 = 12-o'clock, π/2 = 3-o'clock.</summary>
+  private static Point AngleToPoint(double cx, double cy, double rx, double ry, double angle)
+    => new(cx + rx * Math.Sin(angle), cy - ry * Math.Cos(angle));
 
   // ── Hover / tooltip ────────────────────────────────────────────────
 
