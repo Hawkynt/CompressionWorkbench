@@ -121,6 +121,7 @@ State legend:
 | `FileSystem.Ntfs`        | R/W   | NTFS — all 16 system MFT files, USA fixup, LZNT1 compression — [more →](https://en.wikipedia.org/wiki/NTFS) |
 | `FileSystem.Refs`        | R     | Resilient File System (Server 2012+) — header + boot sector parse only — [more →](https://en.wikipedia.org/wiki/ReFS) |
 | `FileSystem.Hpfs`        | R/W   | OS/2 High Performance File System — rebuild-based add/remove, defragment, extent map — [more →](https://en.wikipedia.org/wiki/High_Performance_File_System) |
+| `FileSystem.Htfs`        | WORM  | SCO HTFS (High Throughput FS) — `s_magic=0x012FD15D` LE @sector 1; S5-style superblock + inode array + 16-byte dirent chain; nested subdirectories; 512/1024/2048 B blocks; defrag + purge + fileset optimizer — [more →](https://en.wikipedia.org/wiki/High_Throughput_File_System) |
 | `FileSystem.DoubleSpace` | R/W   | DOS 6 DoubleSpace / DriveSpace CVF — stored runs, rebuild-based modify — [more →](https://en.wikipedia.org/wiki/DriveSpace) |
 
 #### Unix / Linux
@@ -146,6 +147,9 @@ State legend:
 | `FileSystem.Hammer2`  | R     | DragonFly HAMMER 2 — [more →](https://en.wikipedia.org/wiki/HAMMER2)                                 |
 | `FileSystem.Ocfs2`    | R/W   | Oracle Cluster Filesystem 2 — rebuild-based modify — [more →](https://en.wikipedia.org/wiki/OCFS2)   |
 | `FileSystem.Nwfs`     | R     | Novell NetWare — [more →](https://en.wikipedia.org/wiki/Novell_Storage_Services)                     |
+| `FileSystem.Efs`      | WORM  | SGI EFS (pre-XFS IRIX FS) — `fs_magic=0x00072959`; spec-keyed superblock + single-CG inode table + per-file single-extent layout; nested subdirectories via inode chain; defrag + purge + fileset optimizer — [more →](https://en.wikipedia.org/wiki/Extent_File_System) |
+| `FileSystem.Gfs1`     | WORM  | Sistina GFS (pre-GFS2) — `mh_magic=0x01161970`, `sb_multihost_format=1900`; metaheader-tagged superblock at +65536 with `sb_lockproto`/`sb_locktable`; nested subdirectories via 256-byte GFS dinode; defrag + purge + fileset optimizer (lock_nolock/lock_dlm, journal count knob) — [more →](https://en.wikipedia.org/wiki/GFS2) |
+| `FileSystem.Jfs1`     | WORM  | OS/2 IBM JFS1 (pre-Linux JFS2) — `"JFS1"` magic + `s_version=1` (refuses JFS2 to avoid stealing `FileSystem.Jfs` detection); 256-byte dinodes with per-file single-extent layout; nested subdirectories; configurable 1024/2048/4096 block + aggregate block; defrag + purge + fileset optimizer — [more →](https://en.wikipedia.org/wiki/JFS_(file_system)) |
 
 #### Apple / classic Mac
 
@@ -201,6 +205,27 @@ State legend:
 | `FileSystem.Os9Rbf`   | R     | OS-9 Random Block File — Microware OS-9 Tech Reference — [more →](https://en.wikipedia.org/wiki/OS-9) |
 | `FileSystem.Rt11`     | R     | DEC RT-11 — 256 KB RX01 8" SSSD — [more →](https://en.wikipedia.org/wiki/RT-11)                       |
 | `FileSystem.Vdfs`     | R/W   | Gothic-engine VDFS archive — REGoth/VdfsSharp-documented — [more →](https://en.wikipedia.org/wiki/Gothic_(series)) |
+
+#### Stub-tier (detection-only / opaque-blob surface)
+
+These descriptors recognise the container and surface either the whole image or
+the inner payload as opaque entries plus a `metadata.ini`. No directory walk is
+attempted — either the on-disk spec is not public, the payload is encrypted, or
+the format is a proprietary compressed wrapper whose codec is out of scope.
+`CanCreate` / `CanModify` are intentionally **not** advertised; upgrading any of
+these to WORM requires the bullet under "what would be needed".
+
+| Filesystem                | State    | Why stub-tier / what would be needed                                                                 |
+| ------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `FileSystem.Tfs`          | detection only | BBN Trans-FS has no public on-disk spec; magic `0x54465301`. Upgrade requires BBN-internal docs (multi-week reverse-engineering, no public corpus). |
+| `FileSystem.Mfs1`         | detection only | Acorn MFS-1 magic is two-byte heuristic (0x00 0x80); extension-led. Upgrade requires period Acorn manuals (small but obscure spec). |
+| `FileSystem.Nwfs386`      | detection only | Novell NetWare 386 raw partitions, magic "NetW". Upgrade requires Novell proprietary spec (no public reference). |
+| `FileSystem.Stacker`      | detection only | Stac Electronics Stacker CVF (MS-DOS 5/6); SCB header parsed, inner LZS-compressed FAT surfaced opaque. Upgrade needs Stacker LZS decompressor + inner-FAT delegation. |
+| `FileSystem.DriveSpace3`  | detection only | Microsoft DriveSpace 3 CVF (`MS_DSP3`); MDBPB parsed, inner DS LZ77+Huffman region surfaced opaque. Upgrade needs the DS LZ77+Huffman codec + MDFAT walk (proprietary, ~weeks). |
+| `FileSystem.GsOs`         | header only    | Apple IIgs 2IMG wrapper; delegates to the inner ProDOS / HFS / DOS 3.3 volume. Already covered by `FileSystem.ProDos` — upgrade is just routing the surfaced payload back through the matching reader. |
+| `FileSystem.TahoeLafs`    | detection only | Tahoe-LAFS share buckets (v1 immutable / v2 mutable); payload is capability-encrypted Reed-Solomon ciphertext. Upgrade impossible without the read-cap (by design). |
+| `FileSystem.Ecryptfs`     | detection only | eCryptfs per-file containers (marker `0x3C81B7F5`); payload is AES-CBC ciphertext. Decryption requires mount passphrase + EFEK tag-3/tag-11 packets (out of scope). |
+| `FileSystem.OrangeFs`     | detection only | OrangeFS / PVFS2 DBPF (`PVFS` / `OGFP`); single distributed-FS server object. Upgrade requires the cluster's `fs.conf` + handle/fsid resolution + striping logic (distributed, multi-node). |
 
 ## WSL-validated filesystems
 

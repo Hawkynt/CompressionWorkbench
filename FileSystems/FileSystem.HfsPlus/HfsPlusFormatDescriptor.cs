@@ -9,11 +9,24 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
   /// <summary>
-  /// HFS+ creation knobs: volume label and the allocation block size. The block
+  /// HFS+ creation knobs: HFSX case-sensitivity toggle, journal enable +
+  /// journal-size selector, volume name and allocation block size. The block
   /// size dropdown offers Auto (slack + table-overhead minimisation) plus the
-  /// power-of-two sizes 4 KB … 64 KB that the writer supports.
+  /// power-of-two sizes 4 KB … 64 KB that the writer supports; the
+  /// journal-size knob is gated on Journal=true via DependsOn.
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "CaseSensitive", DisplayName: "Case-sensitive (HFSX)", Kind: FormatOptionKind.Boolean, Default: "false",
+      Description: "Make filename comparison case-sensitive (emit the HFSX 'HX' signature + binary comparator)."),
+    new FormatOptionDescriptor(
+      Key: "Journal", DisplayName: "Enable journal", Kind: FormatOptionKind.Boolean, Default: "true",
+      Description: "Enable the volume journal."),
+    new FormatOptionDescriptor(
+      Key: "JournalSize", DisplayName: "Journal size", Kind: FormatOptionKind.Integer, Default: "8388608",
+      AllowedValues: ["8388608", "16777216", "33554432", "67108864"],
+      Description: "Journal size in bytes (8/16/32/64 MiB).",
+      DependsOn: "Journal=true"),
     FilesystemSchemaPresets.VolumeLabel(),
     FilesystemSchemaPresets.ClusterSize(
       key: "BlockSize",
@@ -139,7 +152,14 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var w = new HfsPlusWriter();
+    var caseSensitive = options.GetOptionBool("CaseSensitive", false);
+    var journal = options.GetOptionBool("Journal", true);
+    var journalSize = options.GetOptionInt("JournalSize", 8 * 1024 * 1024);
+    // Honour VolumeLabel (preset key) first; fall back to VolumeName for the
+    // earlier stash schema; finally default to "Untitled".
+    var volumeName = options.GetOption("VolumeLabel", options.GetOption("VolumeName", "Untitled"));
+
+    var w = new HfsPlusWriter(caseSensitive, journal, journalSize, volumeName);
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
 

@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Ext;
 
-public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
 
   /// <summary>
   /// Zeros all unused space in the ext2/3/4 image: free blocks, block-tip slack
@@ -38,6 +38,34 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var extents = ExtExtentMap.Enumerate(image);
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
   }
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunables surfaced by the Convert Archive dialog / CLI for ext creation —
+  /// revision (ext2/3/4), block size, optional journal toggle (gated on the
+  /// revision selector via DependsOn), volume label, and inode size. The
+  /// Journal knob is hidden in the UI for ext2 (which has no journal); for
+  /// ext3/ext4 it defaults to enabled to match mkfs.ext{3,4} convention.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "Version", DisplayName: "Filesystem Version", Kind: FormatOptionKind.Enum, Default: "ext4",
+      AllowedValues: ["ext2", "ext3", "ext4"],
+      Description: "ext filesystem revision. ext3 adds journaling; ext4 adds extents + large file support."),
+    new FormatOptionDescriptor(
+      Key: "BlockSize", DisplayName: "Block Size (bytes)", Kind: FormatOptionKind.Integer, Default: "4096",
+      AllowedValues: ["1024", "2048", "4096"]),
+    new FormatOptionDescriptor(
+      Key: "Journal", DisplayName: "Enable Journal", Kind: FormatOptionKind.Boolean, Default: "true",
+      DependsOn: "Version=ext3|ext4",
+      Description: "Enable the journal (always on for ext3/ext4; ext2 has none)."),
+    new FormatOptionDescriptor(
+      Key: "VolumeLabel", DisplayName: "Volume Label", Kind: FormatOptionKind.String, Default: ""),
+    new FormatOptionDescriptor(
+      Key: "InodeSize", DisplayName: "Inode Size (bytes)", Kind: FormatOptionKind.Integer, Default: "256",
+      AllowedValues: ["128", "256"]),
+  ];
 
   /// <summary>
   /// Walks the superblock + BGD table + inode tree and yields the actual
@@ -155,7 +183,21 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new ExtWriter();
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
-    output.Write(w.Build());
+
+    // Resolve the schema-published knobs against the FormatCreateOptions bag,
+    // falling back to the schema defaults if the caller didn't fill any in.
+    var versionStr = options.GetOption("Version", "ext4");
+    var version = versionStr switch {
+      "ext2" => ExtWriter.ExtVersion.Ext2,
+      "ext3" => ExtWriter.ExtVersion.Ext3,
+      _ => ExtWriter.ExtVersion.Ext4,
+    };
+    var blockSize = options.GetOptionInt("BlockSize", 4096);
+    var journal = options.GetOptionBool("Journal", true);
+    var volumeLabel = options.GetOption("VolumeLabel", "");
+    var inodeSize = options.GetOptionInt("InodeSize", 256);
+
+    output.Write(w.Build(blockSize, totalBlocks: 4096, version, journal, volumeLabel, inodeSize));
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {

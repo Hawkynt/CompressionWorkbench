@@ -4,7 +4,33 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Btrfs;
 
-public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <inheritdoc />
+  /// <remarks>
+  /// Btrfs write support is currently the WORM-minimal writer (single-leaf fs-tree,
+  /// inline EXTENT_DATA). The knobs published here are reserved for future task #134
+  /// expansion; only their defaults round-trip through the current writer. Non-default
+  /// values are accepted but may be silently ignored — see <see cref="Create"/>.
+  /// </remarks>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "NodeSize", DisplayName: "B-tree node size", Kind: FormatOptionKind.Integer, Default: "16384",
+      AllowedValues: ["4096", "8192", "16384", "32768", "65536"],
+      Description: "B-tree node size in bytes. 16KB is the modern default."),
+    new FormatOptionDescriptor(
+      Key: "SectorSize", DisplayName: "Sector size", Kind: FormatOptionKind.Integer, Default: "4096",
+      AllowedValues: ["4096"],
+      Description: "Sector size — Linux mkfs.btrfs only supports 4096 today."),
+    new FormatOptionDescriptor(
+      Key: "Label", DisplayName: "Volume label", Kind: FormatOptionKind.String, Default: "",
+      Description: "Optional volume label."),
+    new FormatOptionDescriptor(
+      Key: "Features", DisplayName: "Feature flags", Kind: FormatOptionKind.String, Default: "mixed-bg,no-holes",
+      Description: "Comma-separated feature list; only the listed defaults are currently supported."),
+  ];
 
   /// <summary>
   /// Walks the superblock + chunk tree + root tree + fs-tree leaf and yields

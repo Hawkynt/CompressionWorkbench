@@ -9,6 +9,15 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
+  /// <summary>
+  /// NTFS creation knobs surfaced by the Convert Archive dialog / CLI: image
+  /// size (Auto + fixed presets), volume label (capped at 32 chars to match
+  /// $VOLUME_NAME), cluster size, MFT record size and the 8.3 short-name
+  /// toggle. Cluster + MFT record size cooperate via
+  /// <see cref="NtfsWriter.BuildAutoSized"/> when both are on Auto. The MFT
+  /// reserve % knob (stash) is not honoured by the upstream writer yet —
+  /// see Build()'s constant MFT zone — so it's not published here.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.ImageSize(
       ["16 MB", "64 MB", "256 MB", "1 GB", "4 GB", "16 GB"]),

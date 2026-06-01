@@ -18,7 +18,9 @@ public sealed class HfsPlusWriter {
   private const int DefaultImageBlocks = 1024; // 4 MB = 1024 * 4096
   private const int VolumeHeaderOffset = 1024;
   private const ushort HfsPlusSignature = 0x482B; // "H+"
+  private const ushort HfsxSignature = 0x4858;    // "HX" — case-sensitive HFSX variant.
   private const ushort HfsPlusVersion = 4;
+  private const ushort HfsxVersion = 5;
   private const uint RootFolderCnid = 2;
   private const uint FirstUserCnid = 16;
 
@@ -26,6 +28,32 @@ public sealed class HfsPlusWriter {
   // size (real HFS+ stores it in the B-tree header), so the catalog always
   // holds 4096-byte nodes regardless of how big an allocation block is.
   internal const ushort CatalogNodeSize = 4096;
+
+  // ── Construction-time options (case-sensitive HFSX, journal, name) ───────
+  private readonly bool _caseSensitive;
+  private readonly bool _journalEnabled;
+  private readonly int _journalSize;
+  private readonly string _volumeName;
+
+  /// <summary>
+  /// Creates a new HFS+ writer.
+  /// </summary>
+  /// <param name="caseSensitive">When <c>true</c>, emit the HFSX (<c>HX</c>) signature and
+  /// binary key comparator so filenames compare case-sensitively. Default <c>false</c> (classic <c>H+</c>).</param>
+  /// <param name="journalEnabled">When <c>true</c>, set the <c>kHFSVolumeJournaledBit</c>
+  /// attribute and reserve space for a journal info block. Default <c>true</c>.
+  /// The minimal writer reserves the slot but doesn't emit a full journal file yet.</param>
+  /// <param name="journalSize">Journal size in bytes (8/16/32/64 MiB). Default 8 MiB.
+  /// Recorded in the volume header reserved word for forward compatibility.</param>
+  /// <param name="volumeName">Volume name used as the root directory key. Default "Untitled".</param>
+  public HfsPlusWriter(bool caseSensitive = false, bool journalEnabled = true,
+      int journalSize = 8 * 1024 * 1024, string volumeName = "Untitled") {
+    ArgumentNullException.ThrowIfNull(volumeName);
+    this._caseSensitive = caseSensitive;
+    this._journalEnabled = journalEnabled;
+    this._journalSize = journalSize;
+    this._volumeName = volumeName;
+  }
 
   // TN1150 HFSPlusCatalogFile layout.
   internal const int CatalogFileRecordSize = 248;
@@ -140,10 +168,18 @@ public sealed class HfsPlusWriter {
 
     // ── Volume Header at offset 1024 ──────────────────────────────────────
     var vh = disk.AsSpan(VolumeHeaderOffset);
-    BinaryPrimitives.WriteUInt16BigEndian(vh, HfsPlusSignature);
-    BinaryPrimitives.WriteUInt16BigEndian(vh[2..], HfsPlusVersion);
-    // attributes: kHFSVolumeUnmountedBit (0x100) | kHFSVolumeUsedBit? (no, just unmount)
-    BinaryPrimitives.WriteUInt32BigEndian(vh[4..], 0x00000100u);
+    // HFSX (case-sensitive) uses signature 'HX' (0x4858) and version 5; the
+    // catalog B-tree's keyCompareType then becomes binary (0xBC) instead of
+    // case-insensitive (0xCF).
+    var sig = this._caseSensitive ? HfsxSignature : HfsPlusSignature;
+    var ver = this._caseSensitive ? HfsxVersion : HfsPlusVersion;
+    BinaryPrimitives.WriteUInt16BigEndian(vh, sig);
+    BinaryPrimitives.WriteUInt16BigEndian(vh[2..], ver);
+    // attributes: kHFSVolumeUnmountedBit (0x100); add kHFSVolumeJournaledBit (0x2000)
+    // when journaling is requested.
+    var attrs = 0x00000100u;
+    if (this._journalEnabled) attrs |= 0x00002000u;
+    BinaryPrimitives.WriteUInt32BigEndian(vh[4..], attrs);
     // lastMountedVersion: ASCII "10.0" (the value mkfs.hfsplus writes).
     "10.0"u8.ToArray().CopyTo(vh[8..12]);
     var nowTs = HfsTimestamp(DateTime.UtcNow);
@@ -391,7 +427,7 @@ public sealed class HfsPlusWriter {
     // File records carry the fork-descriptor patch offset and their data so the
     // real start block can be written in once the catalog fork size is known;
     // non-file records leave ForkPatchOffset = -1 and Data = null.
-    const string VolumeName = "untitled";
+    var VolumeName = string.IsNullOrEmpty(this._volumeName) ? "untitled" : this._volumeName;
     var keyed = new List<(uint Parent, string Name, byte[] Bytes, int ForkPatchOffset, byte[]? Data, uint BlockCount)>();
 
     // Root folder + thread.

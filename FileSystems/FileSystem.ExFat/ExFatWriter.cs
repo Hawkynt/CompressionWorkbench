@@ -32,7 +32,10 @@ public sealed class ExFatWriter {
   /// the cluster size chosen by <see cref="Compression.Core.Layout.FilesystemLayoutOptimizer"/>
   /// to minimise internal slack + FAT overhead.
   /// </summary>
-  public byte[] BuildAutoSized(int requestedClusterBytes = 0) {
+  /// <param name="requestedClusterBytes">Cluster size in bytes (0 = auto-select with the optimiser).</param>
+  /// <param name="volumeLabel">Volume label written into the root directory as a Volume Label
+  /// Directory Entry (type 0x83). Null/empty still emits the entry with character count 0.</param>
+  public byte[] BuildAutoSized(int requestedClusterBytes = 0, string? volumeLabel = null) {
     var fileSizes = _files.Select(f => (long)f.Data.Length).ToList();
     const int bytesPerSector = 512;
 
@@ -62,13 +65,16 @@ public sealed class ExFatWriter {
     // Generous headroom: data + overhead + upcase table (~128 KB) + 5 % slack.
     var neededBytes = (long)(totalDataBytes * 1.05) + clusterBytes * 8 + 128 * 1024 + 24 * bytesPerSector;
     var totalSizeMB = (int)Math.Max(8, (neededBytes + 1024 * 1024 - 1) / (1024 * 1024));
-    return Build(totalSizeMB, clusterBytes);
+    return Build(totalSizeMB, clusterBytes, volumeLabel);
   }
 
   /// <summary>Builds the exFAT image.</summary>
   /// <param name="totalSizeMB">Total image size in megabytes.</param>
   /// <param name="requestedClusterBytes">Cluster size in bytes (0 = use 4 KB default).</param>
-  public byte[] Build(int totalSizeMB = 8, int requestedClusterBytes = 0) {
+  /// <param name="volumeLabel">Volume label written into the root directory as a Volume Label
+  /// Directory Entry (type 0x83). Null/empty still emits the entry with character count 0
+  /// to match Windows format.com behaviour.</param>
+  public byte[] Build(int totalSizeMB = 8, int requestedClusterBytes = 0, string? volumeLabel = null) {
     const int bytesPerSector = 512;
     var clusterBytes = requestedClusterBytes > 0 ? requestedClusterBytes : 4096;
     // exFAT requires cluster size to be a power-of-two multiple of the sector size.
@@ -133,11 +139,14 @@ public sealed class ExFatWriter {
     var root = BuildTree();
 
     // The root directory occupies cluster 2; the free pool for file data and
-    // subdirectory chains starts after bitmap (3) and upcase (4).
+    // subdirectory chains starts after bitmap (3) and upcase (4). The volume
+    // label, if any, lives as a 0x83 entry inside the root's entry region —
+    // WriteDirectory emits it ahead of the Bitmap / UpCase / file entries.
     nextCluster = 5u;
     WriteDirectory(root, 2u, disk, clusterHeapOffset, clusterSize, fatOffset,
       nowStamp, ref nextCluster,
-      bitmapCluster, bitmapSize, upcaseCluster, upcaseBytes, upcaseChecksum);
+      bitmapCluster, bitmapSize, upcaseCluster, upcaseBytes, upcaseChecksum,
+      volumeLabel);
 
     // --- Fill Allocation Bitmap ---
     var bitmapOffset = clusterHeapOffset + (int)(bitmapCluster - 2) * clusterSize;
@@ -313,7 +322,8 @@ public sealed class ExFatWriter {
     int clusterHeapOffset, int clusterSize, int fatOffset, uint nowStamp,
     ref uint nextCluster,
     uint bitmapCluster, int bitmapSize,
-    uint upcaseCluster, int upcaseBytes, uint upcaseChecksum) {
+    uint upcaseCluster, int upcaseBytes, uint upcaseChecksum,
+    string? volumeLabel = null) {
 
     var isRoot = firstCluster == 2;
 
@@ -363,9 +373,22 @@ public sealed class ExFatWriter {
     var pos = 0;
 
     if (isRoot) {
-      // Volume label entry (0x83) with zero characters; Windows tolerates this.
+      // Volume label entry (0x83). Per exFAT spec §7.3 the slot carries a
+      // CharacterCount byte at offset 1 (max 11) followed by up to 11
+      // UTF-16LE code units at offset 2. An empty / null label still emits
+      // the entry with count 0 (Windows tolerates this — matches the
+      // historical "no label" behaviour).
       buffer[pos] = 0x83;
-      buffer[pos + 1] = 0;
+      if (!string.IsNullOrEmpty(volumeLabel)) {
+        var labelChars = volumeLabel.Length > 11
+          ? volumeLabel[..11].ToCharArray()
+          : volumeLabel.ToCharArray();
+        buffer[pos + 1] = (byte)labelChars.Length;
+        for (var i = 0; i < labelChars.Length; ++i)
+          BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(pos + 2 + i * 2), labelChars[i]);
+      } else {
+        buffer[pos + 1] = 0;
+      }
       pos += 32;
 
       // Allocation Bitmap entry (0x81)

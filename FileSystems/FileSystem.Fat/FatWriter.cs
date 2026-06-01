@@ -39,8 +39,13 @@ public sealed class FatWriter {
   /// Must be a power of two and a multiple of <paramref name="bytesPerSector"/>.
   /// The actual cluster size may differ if the requested value is incompatible
   /// with the resulting FAT type (e.g. a 64 KB cluster on a tiny FAT12 image).</param>
-  /// <param name="volumeLabel">Optional volume label (up to 11 chars). Defaults to "NO NAME" when null.</param>
-  /// <param name="forcedFatType">Force a specific FAT variant: 12, 16, or 32. 0 = auto-select by cluster count.</param>
+  /// <param name="volumeLabel">Optional volume label (up to 11 chars). Defaults to "NO NAME" when null.
+  /// Written into the BPB's BS_VolLab field (11 ASCII bytes, space-padded, uppercase) via
+  /// <see cref="BuildVolumeLabelBytes"/>.</param>
+  /// <param name="forcedFatType">Forces a specific FAT variant: 0 = auto-select (default), 12 = FAT12,
+  /// 16 = FAT16, 32 = FAT32. If the chosen geometry doesn't yield enough data clusters for the forced
+  /// type, throws <see cref="InvalidOperationException"/>. FAT16 requires at least 4085 data clusters;
+  /// FAT32 requires at least 65525.</param>
   /// <param name="enableLfn">When false, only 8.3 short-name entries are written (strict DOS compatibility).
   /// Names that exceed 8.3 chars are silently truncated to a short alias.</param>
   /// <param name="transactionFat">Mark the image for transaction-based FAT writes (TFAT / Windows CE style).</param>
@@ -67,7 +72,8 @@ public sealed class FatWriter {
         && requestedClusterSize % bytesPerSector == 0)
       sectorsPerCluster = requestedClusterSize / bytesPerSector;
 
-    // Determine FAT type: honour the caller's override or auto-select by cluster count.
+    // Determine FAT type — honour the caller's forced choice if any, else auto-select
+    // based on the data-cluster count for the chosen geometry.
     var rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
     var firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
     var totalDataClusters = (totalSectors - firstDataSector) / sectorsPerCluster;
@@ -109,7 +115,15 @@ public sealed class FatWriter {
       firstDataSector = reservedSectors + fatCount * fatSize;
     }
 
-    // Validate forced-type constraints after the layout is finalised.
+    // Validate forced-type upper-bound constraints after the layout is finalised.
+    // Upper bounds (FAT12 < 4085, FAT16 < 65525) are hard rules of the on-disk
+    // format — exceeding them produces an image no FAT driver can interpret
+    // correctly. The FAT32 lower bound (< 65525 clusters) is a *recommendation*
+    // from FATGEN103 §3.5 for auto-detection; when the caller explicitly forces
+    // FAT32 we honour their choice (e.g. forced FAT32 on a 1.44 MB floppy still
+    // emits a valid FAT32 BPB that our reader and most modern tools accept).
+    // The FAT16 lower bound is also a soft hint — we drop it for the same
+    // reason: forced FAT16 on a tiny image is a documented retro use-case.
     if (forcedFatType != 0) {
       var finalClusters = (totalSectors - firstDataSector) / sectorsPerCluster;
       if (forcedFatType == 12 && finalClusters >= 4085)
@@ -123,6 +137,10 @@ public sealed class FatWriter {
     }
 
     var disk = new byte[(long)totalSectors * bytesPerSector];
+
+    // Build the 11-byte BS_VolLab payload up front — uppercase ASCII, space-padded
+    // or truncated to exactly 11 bytes. Empty / null → the legacy "NO NAME    " default.
+    var labelBytes = BuildVolumeLabelBytes(volumeLabel);
 
     // ── Boot sector (shared base) ──────────────────────────────────────────
     if (fatType == 32) { disk[0] = 0xEB; disk[1] = 0x58; disk[2] = 0x90; }
@@ -178,15 +196,15 @@ public sealed class FatWriter {
       disk[65] = transactionFat ? (byte)0x01 : (byte)0x00;                        // BS_Reserved1: TFAT marker
       disk[66] = 0x29;                                                             // BS_BootSig: extended BPB present
       BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(67), 0x12345678u);     // BS_VolID
-      Encoding.ASCII.GetBytes(label).CopyTo(disk, 71);                            // BS_VolLab (11 bytes)
-      Encoding.ASCII.GetBytes("FAT32   ").CopyTo(disk, 82);                       // BS_FilSysType (8 bytes)
+      labelBytes.CopyTo(disk.AsSpan(71, 11));                                      // BS_VolLab (11 bytes, sanitised)
+      Encoding.ASCII.GetBytes("FAT32   ").CopyTo(disk, 82);                        // BS_FilSysType (8 bytes)
     } else {
       // Short extended BPB (FAT12/16)
       disk[36] = 0x80;
       disk[37] = transactionFat ? (byte)0x01 : (byte)0x00;  // BS_Reserved1: TFAT marker
       disk[38] = 0x29;
       BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(39), 0x12345678u);
-      Encoding.ASCII.GetBytes(label).CopyTo(disk, 43);
+      labelBytes.CopyTo(disk.AsSpan(43, 11));                                      // BS_VolLab (11 bytes, sanitised)
       Encoding.ASCII.GetBytes(fatType == 12 ? "FAT12   " : "FAT16   ").CopyTo(disk, 54);
     }
 
@@ -1164,6 +1182,33 @@ public sealed class FatWriter {
     if (basePart.Length > 8) basePart = basePart[..8];
     if (extPart.Length > 3) extPart = extPart[..3];
     return extPart.Length > 0 ? $"{basePart}.{extPart}" : basePart;
+  }
+
+  /// <summary>
+  /// Encodes a user-supplied volume label into the 11-byte BS_VolLab field. Per
+  /// FATGEN103 §3.5, the label is ASCII, uppercase, space-padded to exactly 11
+  /// bytes. Null / empty / whitespace-only input falls back to the historical
+  /// "NO NAME    " sentinel that fsck readers expect for unlabeled volumes.
+  /// Characters outside the allowed 8.3 set are replaced with underscore; the
+  /// result is truncated to 11 bytes if longer.
+  /// </summary>
+  private static byte[] BuildVolumeLabelBytes(string? label) {
+    if (string.IsNullOrWhiteSpace(label))
+      return Encoding.ASCII.GetBytes("NO NAME    ");
+    var upper = label.ToUpperInvariant();
+    var sanitized = new char[11];
+    var written = 0;
+    foreach (var c in upper) {
+      if (written >= 11) break;
+      // Volume labels permit a slightly wider char set than 8.3 short names
+      // (spaces are explicitly allowed inside the field), but DOS-era readers
+      // reject anything outside ASCII printables anyway. Be conservative.
+      if (c == ' ' || Is83Char(c)) sanitized[written++] = c;
+      else sanitized[written++] = '_';
+    }
+    // Pad remaining slots with spaces.
+    while (written < 11) sanitized[written++] = ' ';
+    return Encoding.ASCII.GetBytes(sanitized);
   }
 
   private static void WriteFatEntry(byte[] disk, int fatOffset, int cluster, int value, int fatType) {

@@ -41,6 +41,13 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
+  /// <summary>
+  /// Tunables surfaced by the Convert Archive dialog / CLI for exFAT creation:
+  /// image size (Auto / floppy-to-card presets), volume label (written as a
+  /// Volume Label Directory Entry, type 0x83), and cluster size. Auto sizing
+  /// runs the layout optimiser over the file set; an empty label still emits
+  /// the entry with character count 0 to match Windows' format.com behaviour.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new FormatOptionDescriptor(
       Key: "ImageSize",
@@ -192,10 +199,11 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     var specific = options.FormatSpecific;
     var sizeMB = ParseExFatImageSizeMB(specific?.GetValueOrDefault("ImageSize"));
     var clusterBytes = ParseExFatClusterSize(specific?.GetValueOrDefault("ClusterSize"));
+    var volumeLabel = options.GetOption("VolumeLabel", "");
 
     var disk = sizeMB > 0
-      ? w.Build(sizeMB, clusterBytes)
-      : w.BuildAutoSized(clusterBytes);
+      ? w.Build(sizeMB, clusterBytes, volumeLabel)
+      : w.BuildAutoSized(clusterBytes, volumeLabel);
     output.Write(disk);
   }
 

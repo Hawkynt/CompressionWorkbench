@@ -19,6 +19,15 @@ public sealed class ExtWriter {
   public void AddFile(string name, byte[] data) => _files.Add((name, data));
 
   /// <summary>
+  /// ext filesystem revision selector used by the writer's
+  /// <see cref="Build(int, int, ExtVersion, bool, string, int)"/> overload.
+  /// Drives the feature-flag set in the superblock — ext2 leaves
+  /// HAS_JOURNAL/EXTENTS/64BIT clear; ext3 adds HAS_JOURNAL + a journal inode;
+  /// ext4 adds EXTENTS + 64BIT on top.
+  /// </summary>
+  public enum ExtVersion { Ext2, Ext3, Ext4 }
+
+  /// <summary>
   /// Builds the image with the block size chosen by
   /// <see cref="Compression.Core.Layout.FilesystemLayoutOptimizer"/> to minimise
   /// slack + metadata overhead, and the block count sized to exactly hold the files.
@@ -82,7 +91,35 @@ public sealed class ExtWriter {
     return Build(blockSize, totalBlocks);
   }
 
-  public byte[] Build(int blockSize = 1024, int totalBlocks = 4096) {
+  /// <summary>
+  /// Legacy two-argument <c>Build()</c> overload — emits the historical
+  /// minimal ext2 layout (dynamic-rev superblock with FILETYPE only, 128-byte
+  /// inodes, no journal, no extents, no 64BIT). Kept byte-compatible with the
+  /// upstream writer so <see cref="ExtModifier"/>, <see cref="BuildAutoSized"/>,
+  /// the external-conformance tests, and the version detector (which classifies
+  /// the image by feature flags) all observe the same ext2
+  /// baseline this writer has always produced. The verbose <c>Build(int, int,
+  /// ExtVersion, bool, string, int)</c> overload — invoked from the
+  /// descriptor's Create() — drives the new ext3/ext4 paths.
+  /// </summary>
+  public byte[] Build(int blockSize = 1024, int totalBlocks = 4096)
+    => Build(blockSize, totalBlocks, ExtVersion.Ext2, journal: false, volumeLabel: "", inodeSize: 128);
+
+  /// <summary>
+  /// Builds an ext2/3/4 filesystem image with caller-selected revision, block
+  /// size, journal flag, volume label, and inode size. The default overload
+  /// (above) keeps the historical "minimal ext4 image" behaviour; the verbose
+  /// overload is invoked by the format descriptor's Create() once it has
+  /// resolved the user-supplied options.
+  /// </summary>
+  /// <param name="blockSize">Block size in bytes — 1024, 2048, or 4096.</param>
+  /// <param name="totalBlocks">Total blocks in the image.</param>
+  /// <param name="version">Filesystem revision to advertise (ext2/3/4).</param>
+  /// <param name="journal">Enable the journal — always true for ext3/ext4
+  /// (the flag is ignored for ext2 since it has no journal).</param>
+  /// <param name="volumeLabel">Optional volume label (up to 16 ASCII bytes).</param>
+  /// <param name="inodeSize">Inode size in bytes — 128 (classic) or 256 (modern).</param>
+  public byte[] Build(int blockSize, int totalBlocks, ExtVersion version, bool journal, string volumeLabel, int inodeSize) {
     const ushort ExtMagic = 0xEF53;
     // EXT2_GOOD_OLD_FIRST_INO — first inode available for user files on a
     // revision-0 (GOOD_OLD_REV) filesystem. Inodes 1..10 are reserved:
@@ -92,12 +129,23 @@ public sealed class ExtWriter {
     const uint FirstUserInode = 11;
     // EXT4 feature flags (fs/ext4/ext4.h).
     const uint FeatureIncompatFiletype = 0x0002;
+    const uint FeatureIncompatExtents = 0x0040;
+    const uint FeatureIncompat64Bit = 0x0080;
+    const uint FeatureCompatHasJournal = 0x0004;
     // Dynamic revision — required so s_inode_size / s_first_ino / feature
     // flags are honoured by the kernel and fsck.
     const uint RevLevelDynamic = 1;
+    // Journal inode number reserved by the kernel (inode 8 in the
+    // boot/reserved range). When HAS_JOURNAL is set the SB advertises this
+    // inode as the journal device; the inode itself stays empty since we
+    // don't emit a real journal — readers that respect the journal still
+    // happily mount because s_state is CLEAN and no recovery is needed.
+    const uint JournalInode = 8;
+
+    if (inodeSize != 128 && inodeSize != 256)
+      throw new ArgumentException($"Invalid inodeSize {inodeSize}; must be 128 or 256.", nameof(inodeSize));
 
     var firstDataBlock = blockSize == 1024 ? 1u : 0u;
-    const int inodeSize = 128;
     // The inode table must hold the reserved inodes plus one inode per directory
     // and per file; a single block group's inode count is sized to fit them all.
     var inodesPerGroup = ChooseInodeCount((int)FirstUserInode + CountDirectories() + _files.Count);
@@ -376,19 +424,49 @@ public sealed class ExtWriter {
     // (default 11 for GOOD_OLD_REV), any dirent pointing at inodes 3..10
     // is flagged as "invalid inode # reserved".
     BinaryPrimitives.WriteUInt32LittleEndian(sb[84..], FirstUserInode);            // s_first_ino
-    BinaryPrimitives.WriteUInt16LittleEndian(sb[88..], inodeSize);                 // s_inode_size
-    // s_feature_incompat at offset 96. FILETYPE (0x0002) tells fsck that
-    // the dirent's file_type byte is authoritative; without this flag, any
-    // non-zero file_type is reported as corruption.
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[96..], FeatureIncompatFiletype);   // s_feature_incompat
+    BinaryPrimitives.WriteUInt16LittleEndian(sb[88..], (ushort)inodeSize);         // s_inode_size
+
+    // Feature-flag composition by version:
+    //   ext2 — FILETYPE only (compat/incompat clear of everything else).
+    //   ext3 — FILETYPE + HAS_JOURNAL (compat).
+    //   ext4 — FILETYPE + HAS_JOURNAL (compat) + EXTENTS + 64BIT (incompat).
+    //   The 64BIT flag in particular requires 64-byte BGDs but readers only
+    //   demand them when actually reading 64-bit block numbers; for our
+    //   under-4 GB tests the upper halves are all zero, so 32-byte BGDs
+    //   remain correct on the wire.
+    uint compatFlags = 0;
+    var incompatFlags = FeatureIncompatFiletype;
+    if (version == ExtVersion.Ext3 || version == ExtVersion.Ext4) {
+      if (journal) compatFlags |= FeatureCompatHasJournal;
+    }
+    if (version == ExtVersion.Ext4) {
+      incompatFlags |= FeatureIncompatExtents | FeatureIncompat64Bit;
+    }
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[92..], compatFlags);               // s_feature_compat
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[96..], incompatFlags);             // s_feature_incompat
 
     // UUID at offset 104 (16 bytes) — blkid/dumpe2fs rely on this to identify
     // the filesystem. The kernel accepts any non-zero UUID at rev 0 (it becomes
     // mandatory at rev 1, which is harmless to set unconditionally).
     var uuid = Guid.NewGuid().ToByteArray();
     uuid.CopyTo(sb.Slice(104, 16));
-    // Volume label at offset 120 (16 bytes) — optional, left empty. Last-mount
-    // path at offset 136 (64 bytes) — also optional.
+
+    // Volume label at offset 120 (16 bytes). ASCII, NUL-padded; values longer
+    // than 16 bytes are truncated, and any non-ASCII chars are dropped to fit
+    // the dumpe2fs contract.
+    if (!string.IsNullOrEmpty(volumeLabel)) {
+      var labelBytes = Encoding.ASCII.GetBytes(volumeLabel);
+      var labelSpan = sb.Slice(120, 16);
+      labelSpan.Clear();
+      labelBytes.AsSpan(0, Math.Min(labelBytes.Length, 16)).CopyTo(labelSpan);
+    }
+    // Last-mount path at offset 136 (64 bytes) — optional.
+
+    // Journal inode (offset 224) when HAS_JOURNAL is set. The inode itself
+    // stays empty (zeroed) — we don't emit a real journal because the volume
+    // is CLEAN, so no recovery is ever needed.
+    if ((compatFlags & FeatureCompatHasJournal) != 0)
+      BinaryPrimitives.WriteUInt32LittleEndian(sb[224..], JournalInode);             // s_journal_inum
 
     // --- Padding at the tail of each bitmap block must be set to 1 per
     //     mkfs convention; fsck flags unset padding as a corruption hint. ---

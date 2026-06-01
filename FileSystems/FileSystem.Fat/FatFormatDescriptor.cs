@@ -9,6 +9,15 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
+  /// <summary>
+  /// Tunable knobs the Convert Archive dialog / CLI exposes for FAT creation:
+  /// FAT variant, image size, volume label, cluster size, root-entry count,
+  /// long-filename and TFAT/FAT+ toggles. The richer upstream schema covers
+  /// every BPB field the writer actually honours, including the legacy DMF
+  /// 16-entry root and the Windows-style force-LFN-for-every-entry switch.
+  /// Forced variants validate against the cluster-count minimum (FAT16 ≥ 4085,
+  /// FAT32 ≥ 65525) and throw if the chosen geometry can't satisfy them.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new FormatOptionDescriptor(
       Key: "FatType",
