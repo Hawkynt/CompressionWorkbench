@@ -400,7 +400,11 @@ public sealed class BlockMapControl : FrameworkElement {
       // cloud, no gaps between tiles. Hit-testing is disabled because the
       // wedge → byte-range mapping is non-trivial; the linear view stays the
       // canonical interactive surface.
-      var geom = Geometry ?? Compression.Core.Layout.MediaGeometry.Standard(imageSize);
+      // Default to Heuristic CHS so the donut reflects realistic geometry
+      // (80×2×18 for a 1.44 MB floppy, 96×64×32 for a Zip, scaled HDD for
+      // larger images) rather than Standard's fixed 255-head/63-spt that
+      // makes a floppy degenerate to a single ring.
+      var geom = Geometry ?? Compression.Core.Layout.MediaGeometry.Heuristic(imageSize);
       if (view == Compression.Core.Layout.BlockMapView.CircularPlatter) {
         DrawCircularPlatter(dc, w, h, geom, totalTiles, bytesPerTile,
           tileKinds, tileClasses, tileFreeBytes, tileUsedBytes, tileMetaBytes, tileBadBytes);
@@ -497,6 +501,25 @@ public sealed class BlockMapControl : FrameworkElement {
   /// radius of the platter relative to its outer radius.</summary>
   private const double PlatterInnerFraction = 0.22;
 
+  /// <summary>Vertical separation between consecutive platters in the 3D
+  /// stack, expressed as a fraction of <c>ry</c>. 0.5 = each platter sits
+  /// half a platter-height below the previous one (significant overlap →
+  /// clear stacked-disk look). Combined with <see cref="PlatterOpacity"/>
+  /// this is what gives the view its depth.</summary>
+  private const double PlatterSpacingFraction = 0.5;
+
+  /// <summary>Per-platter opacity in the 3D stack. Values below 1.0 let
+  /// back platters bleed through front ones so the whole stack is visible
+  /// at once instead of the top platter occluding everything behind it.
+  /// 0.72 is the sweet spot — bright enough to read individual platters,
+  /// transparent enough to see through to neighbours.</summary>
+  private const double PlatterOpacity = 0.72;
+
+  /// <summary>Target wedge count for the circular view — chosen so each
+  /// wedge spans ≥ 1 pixel on a typical 800-px window. Higher values give
+  /// finer LBA resolution; lower values give faster redraw.</summary>
+  private const int CircularTargetWedges = 8192;
+
   private static void DrawCircularPlatter(
       DrawingContext dc, double w, double h,
       Compression.Core.Layout.MediaGeometry geom,
@@ -511,25 +534,70 @@ public sealed class BlockMapControl : FrameworkElement {
     // light-coloured wedges still look like a disk and not transparent.
     dc.DrawGeometry(FreeBrush, null, BuildAnnulus(cx, cy, maxR * PlatterInnerFraction, maxR));
 
-    for (var i = 0; i < totalTiles; i++) {
-      // Skip pure-Free tiles: the base annulus already paints them.
-      if (tileKinds[i] == DefragBlockKind.Free
-          && tileUsedBytes[i] == 0 && tileMetaBytes[i] == 0 && tileBadBytes[i] == 0)
-        continue;
+    // Per-(track, sector-bucket) iteration: each wedge is a small angular
+    // slice of one concentric ring, NOT a full ring summarising a tile-range
+    // that spans tracks. Outer ring = low LBAs; inner ring = high LBAs.
+    // Track count comes from REAL geometry (geom.Cylinders) so the visual
+    // matches the medium's actual cylinder layout.
+    var (tracksToShow, sectorsToShow) = PickWedgeGrid(geom);
+    var lbasPerWedge = (double)geom.TotalSectors / (tracksToShow * sectorsToShow);
+    var ringThickness = (1.0 - PlatterInnerFraction) / tracksToShow;
+    var totalSectors = geom.TotalSectors;
+    for (var track = 0; track < tracksToShow; track++) {
+      var rOuterFrac = 1.0 - track * ringThickness;
+      var rInnerFrac = 1.0 - (track + 1) * ringThickness;
+      for (var sec = 0; sec < sectorsToShow; sec++) {
+        var wedgeIndex = track * (long)sectorsToShow + sec;
+        var lbaStart = (long)(wedgeIndex * lbasPerWedge);
+        if (lbaStart >= totalSectors) break;
+        var lbaEnd = Math.Min(totalSectors, (long)((wedgeIndex + 1) * lbasPerWedge)) - 1;
 
-      var startByte = (long)(i * bytesPerTile);
-      var endByteExclusive = (long)((i + 1) * bytesPerTile);
-      var wedge = Compression.Core.Layout.PlatterWedgeLayout.ComputeWedge(geom, startByte, endByteExclusive, PlatterInnerFraction);
-      var brush = BlendedBrush(tileKinds[i], tileClasses[i],
-        tileFreeBytes[i], tileUsedBytes[i], tileMetaBytes[i], tileBadBytes[i]);
-      var geo = BuildWedgeGeometryElliptical(cx, cy, maxR, maxR, wedge);
-      dc.DrawGeometry(brush, null, geo);
+        var byteStart = lbaStart * geom.BytesPerSector;
+        var byteEnd = Math.Min(byteStart + (lbaEnd - lbaStart + 1) * geom.BytesPerSector - 1,
+                               (long)(totalTiles * bytesPerTile) - 1);
+        // Pick the tile that owns the midpoint — adequate when each wedge
+        // covers a single tile, accurate enough when it covers many.
+        var midByte = (byteStart + byteEnd) / 2;
+        var tileIdx = (int)Math.Clamp((long)(midByte / bytesPerTile), 0, totalTiles - 1);
+        if (tileKinds[tileIdx] == DefragBlockKind.Free
+            && tileUsedBytes[tileIdx] == 0 && tileMetaBytes[tileIdx] == 0 && tileBadBytes[tileIdx] == 0)
+          continue;
+
+        var startAngle = 2.0 * Math.PI * sec / sectorsToShow;
+        var sweep = 2.0 * Math.PI / sectorsToShow;
+        var wedge = new Compression.Core.Layout.PlatterWedge(startAngle, sweep, rInnerFrac, rOuterFrac);
+        var brush = BlendedBrush(tileKinds[tileIdx], tileClasses[tileIdx],
+          tileFreeBytes[tileIdx], tileUsedBytes[tileIdx], tileMetaBytes[tileIdx], tileBadBytes[tileIdx]);
+        var geo = BuildWedgeGeometryElliptical(cx, cy, maxR, maxR, wedge);
+        dc.DrawGeometry(brush, null, geo);
+      }
     }
 
     // Spindle hole — flat black dot in the centre so the platter reads as
     // a real disc with a centre bore.
     dc.DrawEllipse(Brushes.Black, null, new Point(cx, cy),
       maxR * PlatterInnerFraction * 0.4, maxR * PlatterInnerFraction * 0.4);
+  }
+
+  /// <summary>
+  /// Picks (tracksToShow, sectorsToShow) using the medium's REAL CHS
+  /// geometry. When <c>Cylinders × SectorsPerTrack</c> fits in
+  /// <see cref="CircularTargetWedges"/>, every real cylinder gets its
+  /// own ring and every real sector its own wedge. When the product
+  /// exceeds the budget, both dimensions are scaled down by the same
+  /// factor so the aspect ratio of the real geometry is preserved.
+  /// </summary>
+  internal static (int Tracks, int SectorsPerTrack) PickWedgeGrid(Compression.Core.Layout.MediaGeometry geom) {
+    var realCyls = Math.Max(1, (int)Math.Min(geom.Cylinders, int.MaxValue));
+    var realSpt = Math.Max(1, geom.SectorsPerTrack);
+    var product = (long)realCyls * realSpt;
+    if (product <= CircularTargetWedges) return (realCyls, realSpt);
+    // Scale both dims by the same factor so the ratio of cylinders to
+    // sectors-per-track is preserved (= the real geometry's aspect).
+    var scale = Math.Sqrt((double)product / CircularTargetWedges);
+    var tracks = Math.Max(1, (int)Math.Ceiling(realCyls / scale));
+    var spt = Math.Max(1, (int)Math.Ceiling(realSpt / scale));
+    return (tracks, spt);
   }
 
   private static void DrawCylinderStack(
@@ -540,63 +608,85 @@ public sealed class BlockMapControl : FrameworkElement {
       long[] tileFreeBytes, long[] tileUsedBytes, long[] tileMetaBytes, long[] tileBadBytes) {
     var heads = Math.Min(MaxStackedPlatters, Math.Max(1, geom.Heads));
     var cx = w / 2;
-    // Platter horizontal radius — leave room for the stack spread (each
-    // platter offset downward so heads are vertically distinguishable).
-    var rx = Math.Min(w * 0.42, h * 0.42 / PlatterPerspectiveYScale);
-    if (rx <= 1) rx = Math.Min(w, h) * 0.3;
-    var ry = rx * PlatterPerspectiveYScale;
 
-    // Stack layout: vertical separation between platters proportional to
-    // height. Head 0 sits at the top, last head at the bottom.
-    var stackHeight = h * 0.55;
-    var platterSpacing = heads <= 1 ? 0.0 : stackHeight / (heads - 1);
-    var firstPlatterCy = (h - stackHeight) / 2 + ry; // top platter centre Y
+    // Solve for (rx, ry, platterSpacing) so the WHOLE stack fits inside the
+    // viewport with small margins. Each platter is an ellipse of half-axes
+    // (rx, ry); consecutive platters sit `platterSpacing` apart vertically.
+    // Total vertical span = 2·ry (top platter top → top platter bottom)
+    //                     + (heads-1) · spacing (drop from top to bottom centre)
+    // With spacing = ry · PlatterSpacingFraction, the constraint becomes
+    //   ry · (2 + (heads-1) · PlatterSpacingFraction) ≤ availableH
+    // and we ALSO require 2·rx ≤ availableW with ry = rx · PerspectiveYScale.
+    const double Margin = 8.0;
+    var availableH = Math.Max(40.0, h - 2 * Margin);
+    var availableW = Math.Max(40.0, w - 2 * Margin);
+    var rySpan = 2.0 + (heads - 1) * PlatterSpacingFraction;
+    var ryFromH = availableH / rySpan;
+    var ryFromW = (availableW / 2.0) * PlatterPerspectiveYScale;
+    var ry = Math.Max(1.0, Math.Min(ryFromH, ryFromW));
+    var rx = ry / PlatterPerspectiveYScale;
+    var platterSpacing = ry * PlatterSpacingFraction;
+    var firstPlatterCy = Margin + ry; // top platter centre Y
 
-    // Pre-bin tiles by head so we can paint platters back-to-front (last
-    // head first → top head last) without z-fighting between overlapping
-    // wedges from different platters.
-    var tilesPerHead = new List<int>[heads];
-    for (var hh = 0; hh < heads; hh++) tilesPerHead[hh] = new List<int>(totalTiles / Math.Max(1, heads));
-    for (var i = 0; i < totalTiles; i++) {
-      var startByte = (long)(i * bytesPerTile);
-      var startLba = geom.LbaOfByte(startByte);
-      var (_, head, _) = geom.ChsFromLba(startLba);
-      // Quantize real head index into our [0..heads-1] range when the
-      // geometry has more heads than we'll draw (e.g. 255-head standard).
-      var bucket = geom.Heads <= heads ? head : (int)((long)head * heads / Math.Max(1, geom.Heads));
-      if (bucket < 0) bucket = 0;
-      if (bucket >= heads) bucket = heads - 1;
-      tilesPerHead[bucket].Add(i);
-    }
+    // Per-platter (track × sector-bucket) iteration: each platter holds
+    // the slice of LBAs whose head index maps to that platter's bucket.
+    // Same wedge-grid sizing as the 2-D view, but scoped per-head.
+    var (tracksToShow, sectorsToShow) = PickWedgeGrid(geom);
+    var ringThickness = (1.0 - PlatterInnerFraction) / tracksToShow;
+    var sourceHeads = Math.Max(1, geom.Heads);
+    var spt = Math.Max(1, geom.SectorsPerTrack);
 
     // Paint back-to-front: last head (lowest on screen) first, head 0 last.
+    // Each platter is drawn inside its own PushOpacity scope so the layers
+    // composite with see-through depth (otherwise the front platter fully
+    // occludes everything behind it).
     for (var hh = heads - 1; hh >= 0; hh--) {
       var cy = firstPlatterCy + hh * platterSpacing;
+      dc.PushOpacity(PlatterOpacity);
 
       // Base platter surface — light grey ellipse so empty tracks read
       // as visible disc surface (and not as background).
       dc.DrawGeometry(FreeBrush, null,
         BuildAnnulusElliptical(cx, cy, rx * PlatterInnerFraction, ry * PlatterInnerFraction, rx, ry));
 
-      foreach (var i in tilesPerHead[hh]) {
-        if (tileKinds[i] == DefragBlockKind.Free
-            && tileUsedBytes[i] == 0 && tileMetaBytes[i] == 0 && tileBadBytes[i] == 0)
-          continue;
-        var startByte = (long)(i * bytesPerTile);
-        var endByteExclusive = (long)((i + 1) * bytesPerTile);
-        var wedge = Compression.Core.Layout.PlatterWedgeLayout.ComputeWedge(geom, startByte, endByteExclusive, PlatterInnerFraction);
-        var brush = BlendedBrush(tileKinds[i], tileClasses[i],
-          tileFreeBytes[i], tileUsedBytes[i], tileMetaBytes[i], tileBadBytes[i]);
-        var geo = BuildWedgeGeometryElliptical(cx, cy, rx, ry, wedge);
-        dc.DrawGeometry(brush, null, geo);
+      for (var track = 0; track < tracksToShow; track++) {
+        var rOuterFrac = 1.0 - track * ringThickness;
+        var rInnerFrac = 1.0 - (track + 1) * ringThickness;
+        for (var sec = 0; sec < sectorsToShow; sec++) {
+          var wedgeIndex = track * (long)sectorsToShow + sec;
+          var lbaStart = (long)(wedgeIndex * (double)geom.TotalSectors / (tracksToShow * sectorsToShow));
+          if (lbaStart >= geom.TotalSectors) break;
+
+          // Bucket this LBA's head into one of our drawn platters.
+          var realHead = (int)((lbaStart / spt) % sourceHeads);
+          var bucket = sourceHeads <= heads ? realHead : (int)((long)realHead * heads / sourceHeads);
+          if (bucket != hh) continue;
+
+          var byteStart = lbaStart * geom.BytesPerSector;
+          var tileIdx = (int)Math.Clamp((long)(byteStart / bytesPerTile), 0, totalTiles - 1);
+          if (tileKinds[tileIdx] == DefragBlockKind.Free
+              && tileUsedBytes[tileIdx] == 0 && tileMetaBytes[tileIdx] == 0 && tileBadBytes[tileIdx] == 0)
+            continue;
+
+          var startAngle = 2.0 * Math.PI * sec / sectorsToShow;
+          var sweep = 2.0 * Math.PI / sectorsToShow;
+          var wedge = new Compression.Core.Layout.PlatterWedge(startAngle, sweep, rInnerFrac, rOuterFrac);
+          var brush = BlendedBrush(tileKinds[tileIdx], tileClasses[tileIdx],
+            tileFreeBytes[tileIdx], tileUsedBytes[tileIdx], tileMetaBytes[tileIdx], tileBadBytes[tileIdx]);
+          var geo = BuildWedgeGeometryElliptical(cx, cy, rx, ry, wedge);
+          dc.DrawGeometry(brush, null, geo);
+        }
       }
 
       // Spindle hole on this platter.
       dc.DrawEllipse(Brushes.Black, null, new Point(cx, cy),
         rx * PlatterInnerFraction * 0.35, ry * PlatterInnerFraction * 0.35);
+      dc.Pop(); // PushOpacity(PlatterOpacity)
     }
 
     // Spindle shaft — connects all platters vertically through the centre.
+    // Drawn at full opacity so it reads as one continuous shaft above/below
+    // the see-through platters.
     var shaftTop = firstPlatterCy - ry * PlatterInnerFraction * 0.4;
     var shaftBottom = firstPlatterCy + (heads - 1) * platterSpacing + ry * PlatterInnerFraction * 0.4;
     var shaftPen = new Pen(Brushes.DimGray, Math.Max(1.5, rx * PlatterInnerFraction * 0.18));

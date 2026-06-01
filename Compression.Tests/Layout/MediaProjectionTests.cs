@@ -93,4 +93,52 @@ public class MediaProjectionTests {
     Assert.DoesNotThrow(() => MediaProjection.CircularPlatter(g, 0));
     Assert.DoesNotThrow(() => MediaProjection.CylinderStack(g, 0));
   }
+
+  [Test, Category("Spec")]
+  public void Heuristic_FloppySized_PicksFloppyGeometry() {
+    // 1.44 MB DSHD 3½ — should produce 80 × 2 × 18.
+    var g = MediaGeometry.Heuristic(1474560);
+    Assert.That(g.SectorsPerTrack, Is.EqualTo(18));
+    Assert.That(g.Heads, Is.EqualTo(2));
+    Assert.That(g.Cylinders, Is.EqualTo(80));
+    Assert.That(g.TotalSectors, Is.EqualTo(2880));
+  }
+
+  [Test, Category("Spec")]
+  public void Heuristic_720KbFloppy_Picks720KbGeometry() {
+    // 720 KB DSDD 3½ — should produce 80 × 2 × 9.
+    var g = MediaGeometry.Heuristic(720 * 1024);
+    Assert.That(g.SectorsPerTrack, Is.EqualTo(9));
+    Assert.That(g.Heads, Is.EqualTo(2));
+    Assert.That(g.Cylinders, Is.EqualTo(80));
+  }
+
+  [Test, Category("Spec")]
+  public void Heuristic_Empty_DoesNotThrow() {
+    Assert.DoesNotThrow(() => MediaGeometry.Heuristic(0));
+    var g = MediaGeometry.Heuristic(0);
+    Assert.That(g.TotalSectors, Is.EqualTo(0));
+  }
+
+  [Test, Category("Spec")]
+  public void Heuristic_LargeHdd_KeepsCylindersUnder4096() {
+    // 1 GB image — heads should scale so cylinder count stays in [128, 4096].
+    var g = MediaGeometry.Heuristic(1L * 1024 * 1024 * 1024);
+    Assert.That(g.SectorsPerTrack, Is.EqualTo(63));
+    Assert.That(g.Cylinders, Is.LessThanOrEqualTo(4096));
+    Assert.That(g.Cylinders, Is.GreaterThan(0));
+    Assert.That(g.Heads, Is.GreaterThanOrEqualTo(1));
+  }
+
+  [Test, Category("Spec")]
+  public void Heuristic_DegradesToOneRing_NeverHappens_ForRealisticSizes() {
+    // Regression: MediaGeometry.Standard returned 1 cylinder × 255 heads
+    // for a 1.44 MB floppy, collapsing the platter view to a single ring.
+    // Heuristic must give multiple cylinders for any sensible image size.
+    foreach (var sz in new long[] { 360 * 1024, 720 * 1024, 1474560, 10L * 1024 * 1024, 100L * 1024 * 1024 }) {
+      var g = MediaGeometry.Heuristic(sz);
+      Assert.That(g.Cylinders, Is.GreaterThan(1),
+        $"Heuristic({sz}) returned only {g.Cylinders} cylinder(s) — would collapse to a single ring");
+    }
+  }
 }

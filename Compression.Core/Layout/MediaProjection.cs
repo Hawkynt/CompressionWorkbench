@@ -31,6 +31,41 @@ public readonly record struct MediaGeometry(int BytesPerSector, int SectorsPerTr
   public static MediaGeometry Standard(long totalBytes, int bytesPerSector = 512)
     => new(bytesPerSector, 63, 255, totalBytes <= 0 ? 0 : (totalBytes + bytesPerSector - 1) / bytesPerSector);
 
+  /// <summary>
+  /// Picks plausible real-world CHS geometry for an image of
+  /// <paramref name="totalBytes"/>. Returns a known standard format
+  /// (5¼" / 3½" / Zip / Jaz / typical HDD) when the size matches one;
+  /// otherwise scales heads + cylinders proportionally to keep the cylinder
+  /// count in [128, 4096] and sectors-per-track at 63. Use this instead of
+  /// <see cref="Standard(long, int)"/> when you want the visualization to
+  /// reflect realistic geometry rather than the 255-head/63-spt HDD default.
+  /// </summary>
+  public static MediaGeometry Heuristic(long totalBytes, int bytesPerSector = 512) {
+    if (totalBytes <= 0) return new(bytesPerSector, 1, 1, 0);
+    var total = (totalBytes + bytesPerSector - 1) / bytesPerSector;
+
+    // Common floppies + retro removable media. Picked so that
+    // Cylinders × Heads × SectorsPerTrack covers `total` exactly (or with
+    // padding) and matches the medium's documented physical CHS.
+    if (total <= 360)    return new(bytesPerSector, 9, 1, total);   // 180 KB SSSD 5¼
+    if (total <= 720)    return new(bytesPerSector, 9, 2, total);   // 360 KB DSSD 5¼
+    if (total <= 1440)   return new(bytesPerSector, 9, 2, total);   // 720 KB DSDD 3½
+    if (total <= 2400)   return new(bytesPerSector, 15, 2, total);  // 1.2 MB DSHD 5¼
+    if (total <= 2880)   return new(bytesPerSector, 18, 2, total);  // 1.44 MB DSHD 3½
+    if (total <= 5760)   return new(bytesPerSector, 36, 2, total);  // 2.88 MB ED 3½
+    if (total <= 21437)  return new(bytesPerSector, 44, 2, total);  // 11 MB Floptical
+    if (total <= 196608) return new(bytesPerSector, 32, 64, total); // 100 MB Zip — 96 cylinders × 64 heads × 32 spt
+    if (total <= 491520) return new(bytesPerSector, 32, 64, total); // 250 MB Zip — 240 cyl × 64 head × 32 spt
+    if (total <= 1968128) return new(bytesPerSector, 32, 64, total); // 1 GB Jaz — 962 cyl × 64 head × 32 spt
+
+    // HDD-style: pick heads so cylinder count lands in [128, 4096], keep
+    // sectors-per-track = 63 (BIOS-style classic geometry).
+    const int spt = 63;
+    var heads = 1;
+    while (total / (heads * (long)spt) > 4096 && heads < 256) heads *= 2;
+    return new(bytesPerSector, spt, heads, total);
+  }
+
   /// <summary>Geometry from an explicit BPB-style description.</summary>
   public static MediaGeometry FromGeometry(long totalBytes, int bytesPerSector, int sectorsPerTrack, int heads)
     => new(bytesPerSector, Math.Max(1, sectorsPerTrack), Math.Max(1, heads),
