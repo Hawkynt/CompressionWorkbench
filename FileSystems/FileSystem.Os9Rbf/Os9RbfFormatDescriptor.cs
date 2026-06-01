@@ -14,7 +14,19 @@ namespace FileSystem.Os9Rbf;
 /// directory descriptor is reachable via the identification sector.
 /// </summary>
 public sealed class Os9RbfFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for Microware OS-9 RBF creation. The writer emits the
+  /// canonical 35-track DSDD CoCo reference geometry; only the volume label
+  /// stored at LSN 0 (DD.NAM, 32-byte high-bit-terminated string) is
+  /// per-volume tunable.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 31),
+  ];
 
   /// <summary>
   /// Walks the OS-9 RBF root directory and yields the actual on-disk byte
@@ -90,7 +102,9 @@ public sealed class Os9RbfFormatDescriptor :
       .Where(i => !i.IsDirectory)
       .Select(i => (Path.GetFileName(i.ArchiveName), File.ReadAllBytes(i.FullPath)))
       .ToList();
-    var image = Os9RbfWriter.Build(files);
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (string.IsNullOrEmpty(label)) label = "CWBOS9";
+    var image = Os9RbfWriter.Build(files, label);
     output.Write(image);
   }
 
