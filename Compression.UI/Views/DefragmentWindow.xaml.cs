@@ -1199,7 +1199,11 @@ public partial class DefragmentWindow : Window {
   private void OnShrink(object sender, RoutedEventArgs e) {
     if (this._imagePath == null) return;
     var path = this._imagePath;
-    var ops = FormatRegistry.GetArchiveOps(FormatLbl.Text);
+    // Capture FormatLbl.Text on the UI thread before Task.Run — accessing the
+    // TextBlock from the worker thread throws the WPF "thread that owns the
+    // object" exception (same pattern already used for `ops` above).
+    var formatId = FormatLbl.Text;
+    var ops = FormatRegistry.GetArchiveOps(formatId);
 
     Append($"=== {DateTime.Now:HH:mm:ss}  Shrinking {Path.GetFileName(path)} ===");
 
@@ -1216,7 +1220,6 @@ public partial class DefragmentWindow : Window {
       var summary = "";
 
       try {
-        var formatId = FormatLbl.Text;
         if (formatId == "Fat") {
           using var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite);
           Dispatcher.BeginInvoke(() => Progress.Value = 20);
