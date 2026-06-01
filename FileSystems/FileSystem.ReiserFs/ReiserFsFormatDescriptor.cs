@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ReiserFs;
 
-public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable {
+public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
   // WORM write constraints — ReiserFS has no inherent ceiling; real mkfs.reiserfs minimum ≈ 128 MB.
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 128L * 1024 * 1024;
@@ -75,18 +75,31 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// contiguous-from-start single-leaf image (superblock at +65536, root SD
   /// + DIRENTRY + per-file SD/DIRECT items, R5-hashed key ordering).
   /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) {
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new ReiserFsReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new ReiserFsWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        using var ms = new MemoryStream();
-        w.WriteTo(ms);
-        return ms.ToArray();
-      });
+  public void Defragment(Stream archive, DefragOptions options)
+    => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+
+  // ── IArchiveModifiable (rebuild-based add / replace / remove) ──────────
+  // ReiserFS in-place S+tree mutation needs node split/merge + bitmap/objectid
+  // bookkeeping; instead we read every file, rebuild a fresh image with the
+  // (large-directory-capable, reiserfsck-clean) writer, and write it back —
+  // the same read-extract-rebuild path the defragmentor uses.
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => ModifyRebuilder.Add(archive, inputs, ReadEntries, BuildImage);
+
+  public void Remove(Stream archive, string[] entryNames)
+    => ModifyRebuilder.Remove(archive, entryNames, ReadEntries, BuildImage);
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    var r = new ReiserFsReader(stream);
+    return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    var w = new ReiserFsWriter();
+    foreach (var (n, d) in files) w.AddFile(n, d);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    return ms.ToArray();
   }
 }
