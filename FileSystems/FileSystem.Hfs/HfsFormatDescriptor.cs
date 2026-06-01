@@ -4,7 +4,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Hfs;
 
-public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for Classic HFS creation. The Master Directory Block
+  /// stores a Pascal-string volume name at <c>drVN</c> (offset 36, max 27
+  /// bytes) — the classic Mac Finder surfaces this as the disk's name.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 27),
+  ];
 
   /// <summary>
   /// Walks the HFS catalog B-tree leaf chain and yields the actual on-disk
@@ -132,6 +143,8 @@ public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new HfsWriter();
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (!string.IsNullOrEmpty(label)) w.SetVolumeName(label);
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());
