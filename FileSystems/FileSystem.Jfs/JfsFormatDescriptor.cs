@@ -24,7 +24,7 @@ namespace FileSystem.Jfs;
 /// </para>
 /// </summary>
 public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-                                          IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable {
+                                          IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
   // WORM write constraints.
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 16L * 1024 * 1024;
@@ -93,18 +93,30 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// contiguous-from-start single-aggregate image with FILESYSTEM_I → AIM →
   /// IAG → FSIT, dual superblocks, dmap+dmapctl, and an inline-dtroot.
   /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) {
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new JfsReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new JfsWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        using var ms = new MemoryStream();
-        w.WriteTo(ms);
-        return ms.ToArray();
-      });
+  public void Defragment(Stream archive, DefragOptions options)
+    => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+
+  // ── IArchiveModifiable (rebuild-based add / replace / remove) ──────────
+  // True in-place JFS mutation needs dmap/IAG/dtree updates; instead we read
+  // every file and rebuild a fresh fsck.jfs-clean image with the writer (which
+  // supports nested + large directories), the same path the defragmentor uses.
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => ModifyRebuilder.Add(archive, inputs, ReadEntries, BuildImage);
+
+  public void Remove(Stream archive, string[] entryNames)
+    => ModifyRebuilder.Remove(archive, entryNames, ReadEntries, BuildImage);
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    var r = new JfsReader(stream);
+    return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    var w = new JfsWriter();
+    foreach (var (n, d) in files) w.AddFile(n, d);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    return ms.ToArray();
   }
 }
