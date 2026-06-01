@@ -44,6 +44,31 @@ public sealed class IsoWriter {
   public bool EnableJoliet { get; set; } = true;
 
   /// <summary>
+  /// ECMA-119 8.4.7 Volume Identifier (d-characters, 32 bytes max). Shown by
+  /// most OS file managers and the iso9660 driver as the disc label. Default
+  /// "CDROM". Truncated to 32 chars; upper-cased to fit the d-character set.
+  /// </summary>
+  public string VolumeIdentifier { get; set; } = "CDROM";
+
+  /// <summary>
+  /// ECMA-119 8.4.6 System Identifier (a-characters, 32 bytes max). Names the
+  /// system that wrote the image. Empty by default.
+  /// </summary>
+  public string SystemIdentifier { get; set; } = "";
+
+  /// <summary>
+  /// ECMA-119 8.4.10 Publisher Identifier (a-characters, 128 bytes max).
+  /// Empty by default.
+  /// </summary>
+  public string PublisherIdentifier { get; set; } = "";
+
+  /// <summary>
+  /// ECMA-119 8.4.12 Application Identifier (a-characters, 128 bytes max).
+  /// Empty by default.
+  /// </summary>
+  public string ApplicationIdentifier { get; set; } = "";
+
+  /// <summary>
   /// Adds a file to the image. The name may contain '/' path separators, in
   /// which case the intermediate segments are created as directories.
   /// </summary>
@@ -147,12 +172,12 @@ public sealed class IsoWriter {
     var image = new byte[totalSectors * SectorSize];
 
     // Primary Volume Descriptor (sector 16).
-    WriteVolumeDescriptor(image, 16, type: 1, totalSectors, root,
+    this.WriteVolumeDescriptor(image, 16, type: 1, totalSectors, root,
       pathTableSize, lPathLba, mPathLba, rootLba: root.Lba, rootSize: root.Size, joliet: false);
 
     // Joliet Supplementary Volume Descriptor (sector 17), if enabled.
     if (joliet)
-      WriteVolumeDescriptor(image, svdLba, type: 2, totalSectors, root,
+      this.WriteVolumeDescriptor(image, svdLba, type: 2, totalSectors, root,
         jolietPathTableSize, jolietLPathLba, jolietMPathLba,
         rootLba: root.JolietLba, rootSize: root.JolietSize, joliet: true);
 
@@ -290,7 +315,7 @@ public sealed class IsoWriter {
 
   // ── Volume descriptor ────────────────────────────────────────────────────
 
-  private static void WriteVolumeDescriptor(
+  private void WriteVolumeDescriptor(
       byte[] image, int sectorLba, byte type, int totalSectors, DirNode root,
       int pathTableSize, int lPathLba, int mPathLba, int rootLba, int rootSize, bool joliet) {
     var off = sectorLba * SectorSize;
@@ -306,28 +331,32 @@ public sealed class IsoWriter {
     // Joliet SVD carries the same fields as UCS-2BE (a1/d1-characters), space
     // padded with the UCS-2BE space 0x0020. A leading 0x00 in these fields is
     // what makes libisofs reject the descriptor as "damaged".
+    var sysId = this.SystemIdentifier ?? "";
+    var volId = string.IsNullOrEmpty(this.VolumeIdentifier) ? "CDROM" : this.VolumeIdentifier;
+    var pubId = this.PublisherIdentifier ?? "";
+    var appId = this.ApplicationIdentifier ?? "";
     if (joliet) {
-      PadUcs2(image, off + 8, 32, "");          // System Identifier (a1)
-      PadUcs2(image, off + 40, 32, "CDROM");    // Volume Identifier (d1)
+      PadUcs2(image, off + 8, 32, sysId);       // System Identifier (a1)
+      PadUcs2(image, off + 40, 32, volId);      // Volume Identifier (d1)
       // Escape sequences (offset 88): UCS-2 level 3 -> 0x25 0x2F 0x45 ("%/E").
       image[off + 88] = 0x25;
       image[off + 89] = 0x2F;
       image[off + 90] = 0x45;
       PadUcs2(image, off + 190, 128, "");       // Volume Set Identifier (d1)
-      PadUcs2(image, off + 318, 128, "");       // Publisher Identifier (a1)
+      PadUcs2(image, off + 318, 128, pubId);    // Publisher Identifier (a1)
       PadUcs2(image, off + 446, 128, "");       // Data Preparer Identifier (a1)
-      PadUcs2(image, off + 574, 128, "");       // Application Identifier (a1)
+      PadUcs2(image, off + 574, 128, appId);    // Application Identifier (a1)
       PadUcs2(image, off + 702, 37, "");        // Copyright File Identifier (d1)
       PadUcs2(image, off + 739, 37, "");        // Abstract File Identifier (d1)
       PadUcs2(image, off + 776, 37, "");        // Bibliographic File Identifier (d1)
     } else {
-      PadString(image, off + 8, 32, "");        // System Identifier (a)
-      PadString(image, off + 40, 32, "CDROM");  // Volume Identifier (d)
+      PadString(image, off + 8, 32, sysId);     // System Identifier (a)
+      PadString(image, off + 40, 32, volId);    // Volume Identifier (d)
       // Offset 88..119 unused on the PVD; left zero per spec.
       PadString(image, off + 190, 128, "");     // Volume Set Identifier (d)
-      PadString(image, off + 318, 128, "");     // Publisher Identifier (a)
+      PadString(image, off + 318, 128, pubId);  // Publisher Identifier (a)
       PadString(image, off + 446, 128, "");     // Data Preparer Identifier (a)
-      PadString(image, off + 574, 128, "");     // Application Identifier (a)
+      PadString(image, off + 574, 128, appId);  // Application Identifier (a)
       PadString(image, off + 702, 37, "");      // Copyright File Identifier (d)
       PadString(image, off + 739, 37, "");      // Abstract File Identifier (d)
       PadString(image, off + 776, 37, "");      // Bibliographic File Identifier (d)

@@ -7,7 +7,52 @@ namespace FileSystem.Iso;
 /// <summary>
 /// Format descriptor for ISO 9660 optical disc images.
 /// </summary>
-public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for ISO 9660 creation: ECMA-119 volume identifier, system
+  /// identifier, publisher, application, plus the Joliet extension toggle.
+  /// All identifier fields follow the ECMA-119 d/a-character rules and are
+  /// truncated to the field length defined by the spec (32 for vol/sys,
+  /// 128 for publisher/application).
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "VolumeLabel",
+      DisplayName: "Volume identifier",
+      Kind: FormatOptionKind.String,
+      Default: "CDROM",
+      Description: "ECMA-119 Volume Identifier shown by file managers as the disc " +
+        "label. Max 32 d-characters (A-Z, 0-9, _)."),
+    new FormatOptionDescriptor(
+      Key: "SystemId",
+      DisplayName: "System identifier",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "ECMA-119 System Identifier. Max 32 a-characters."),
+    new FormatOptionDescriptor(
+      Key: "Publisher",
+      DisplayName: "Publisher",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "ECMA-119 Publisher Identifier. Max 128 a-characters."),
+    new FormatOptionDescriptor(
+      Key: "Application",
+      DisplayName: "Application",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "ECMA-119 Application Identifier. Max 128 a-characters."),
+    new FormatOptionDescriptor(
+      Key: "Joliet",
+      DisplayName: "Joliet (long names)",
+      Kind: FormatOptionKind.Boolean,
+      Default: "true",
+      Description: "Emit a Joliet Supplementary Volume Descriptor with a parallel " +
+        "UCS-2 directory tree preserving long/mixed-case filenames. Disable for " +
+        "strict ECMA-119 8.3 uppercase only."),
+  ];
 
   /// <summary>
   /// Walks the 32 KiB system area, the volume descriptor sequence, the path
@@ -107,7 +152,13 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <inheritdoc/>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var w = new IsoWriter();
+    var w = new IsoWriter {
+      VolumeIdentifier      = options?.GetOption("VolumeLabel", "CDROM") ?? "CDROM",
+      SystemIdentifier      = options?.GetOption("SystemId", "") ?? "",
+      PublisherIdentifier   = options?.GetOption("Publisher", "") ?? "",
+      ApplicationIdentifier = options?.GetOption("Application", "") ?? "",
+      EnableJoliet          = options?.GetOptionBool("Joliet", true) ?? true,
+    };
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());
