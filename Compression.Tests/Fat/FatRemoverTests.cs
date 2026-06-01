@@ -89,6 +89,46 @@ public class FatRemoverTests {
     }
   }
 
+  [Test]
+  public void Remove_NestedPath_WipesContentAndDirEntry() {
+    // Regression: the explorer Delete flow on a real FAT image hit
+    // FileNotFoundException because FatRemover only searched the root dir.
+    // A path like "Documents/Pictures/Desktop.ini" must traverse the two
+    // subdir clusters and wipe the leaf entry + its content.
+    var marker = System.Text.Encoding.ASCII.GetBytes("NESTED-FILE-MARKER-12345");
+    var image = BuildImageWith(
+      ("README.TXT", System.Text.Encoding.ASCII.GetBytes("untouched")),
+      ("Documents/Pictures/Desktop.ini", marker));
+
+    Assert.That(FindMarker(image, marker), Is.True, "precondition: marker should be present");
+
+    FatRemover.Remove(image, "Documents/Pictures/Desktop.ini");
+
+    Assert.That(FindMarker(image, marker), Is.False,
+      "nested file's content must be zeroed after removal");
+
+    // The sibling untouched.
+    using var ms = new MemoryStream(image);
+    var reader = new FatReader(ms);
+    Assert.That(reader.Entries.Any(e => e.Name == "README.TXT"), Is.True);
+    Assert.That(reader.Entries.Any(e => e.Name == "Documents/Pictures/Desktop.ini"), Is.False,
+      "leaf entry should be gone from the listing");
+  }
+
+  [Test]
+  public void Remove_NestedPath_MissingDirectory_Throws() {
+    var image = BuildImageWith(("foo/bar.txt", new byte[] { 1, 2, 3 }));
+    Assert.Throws<FileNotFoundException>(
+      () => FatRemover.Remove(image, "nonexistent/bar.txt"));
+  }
+
+  [Test]
+  public void Remove_NestedPath_MissingLeaf_Throws() {
+    var image = BuildImageWith(("foo/bar.txt", new byte[] { 1, 2, 3 }));
+    Assert.Throws<FileNotFoundException>(
+      () => FatRemover.Remove(image, "foo/missing.txt"));
+  }
+
   private static bool FindMarker(byte[] image, byte[] marker) {
     for (var i = 0; i <= image.Length - marker.Length; ++i) {
       var match = true;
