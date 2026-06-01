@@ -390,6 +390,7 @@
     <Project Path="FileSystems/FileSystem.Human68k/FileSystem.Human68k.csproj" />
     <Project Path="FileSystems/FileSystem.Jfs1/FileSystem.Jfs1.csproj" />
     <Project Path="FileSystems/FileSystem.Nilfs1/FileSystem.Nilfs1.csproj" />
+    <Project Path="FileSystems/FileSystem.Pc98/FileSystem.Pc98.csproj" />
     <Project Path="FileFormats/FileFormat.Zip/FileFormat.Zip.csproj" />
     <Project Path="FileFormats/FileFormat.Zlib/FileFormat.Zlib.csproj" />
     <Project Path="FileFormats/FileFormat.Zling/FileFormat.Zling.csproj" />
