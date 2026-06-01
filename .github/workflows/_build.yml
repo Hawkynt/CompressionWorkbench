@@ -72,10 +72,27 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/../PNGCrushCS"
-          for proj in Compression.Core FileFormat.Core FileFormat.Bmp FileFormat.Apng \
-                      FileFormat.Tiff FileFormat.BigTiff FileFormat.Mng FileFormat.Fli \
-                      FileFormat.Dcx FileFormat.Icns FileFormat.Mpo FileFormat.Jpeg \
-                      FileFormat.Png; do
+          REQUIRED="Compression.Core FileFormat.Core FileFormat.Bmp FileFormat.Apng \
+                    FileFormat.Tiff FileFormat.BigTiff FileFormat.Mng FileFormat.Fli \
+                    FileFormat.Dcx FileFormat.Icns FileFormat.Mpo FileFormat.Jpeg \
+                    FileFormat.Png"
+          # Sibling repo is sometimes mid-refactor with some sub-projects missing
+          # (e.g. FileFormat.Bmp renamed/removed). When that happens, our
+          # FileFormat.PngCrushAdapters.csproj' SiblingPresent gate already
+          # builds the adapter as an empty assembly and tests gracefully skip
+          # any PngCrushAdapters-specific cases. So pre-building partial sibling
+          # state is wasted effort + breaks CI on transient sibling-main commits.
+          MISSING=""
+          for proj in $REQUIRED; do
+            if [ ! -f "$proj/$proj.csproj" ]; then
+              MISSING="$MISSING $proj"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::warning::PNGCrushCS sibling incomplete (missing:$MISSING). Skipping pre-build; consumer csproj SiblingPresent gate handles the fallback."
+            exit 0
+          fi
+          for proj in $REQUIRED; do
             echo "::group::Building $proj"
             dotnet build "$proj/$proj.csproj" --configuration Release --nologo
             echo "::endgroup::"
