@@ -34,7 +34,12 @@ public sealed class D71Writer {
 
   public void AddFile(string name, byte[] data) => _files.Add((name, 0x82, data)); // PRG default
 
-  public byte[] Build(string diskName = "DISK") {
+  /// <summary>
+  /// Builds the complete D71 image.
+  /// </summary>
+  /// <param name="diskName">PETSCII disk name (up to 16 chars; padded with 0xA0).</param>
+  /// <param name="diskId">Two-character disk ID stored at BAM offset 0xA2..0xA3 (default "00").</param>
+  public byte[] Build(string diskName = "DISK", string diskId = "00") {
     var disk = new byte[StandardSize];
     var bam = new bool[TotalTracks + 1][];
 
@@ -60,7 +65,7 @@ public sealed class D71Writer {
     WriteDirectory(disk, bam, dirEntries);
 
     // Write BAM
-    WriteBam(disk, bam, diskName);
+    WriteBam(disk, bam, diskName, diskId);
 
     return disk;
   }
@@ -173,7 +178,7 @@ public sealed class D71Writer {
     }
   }
 
-  private static void WriteBam(byte[] disk, bool[][] bam, string diskName) {
+  private static void WriteBam(byte[] disk, bool[][] bam, string diskName, string diskId) {
     var off = GetSectorOffset(DirTrack, 0);
 
     // Link to first directory sector
@@ -211,9 +216,10 @@ public sealed class D71Writer {
     for (var j = nameBytes.Length; j < 16; j++)
       disk[nameOff + j] = 0xA0;
 
-    // Disk ID at offset 0xA2 (162): 2 bytes
-    disk[off + 0xA2] = 0x30; // '0'
-    disk[off + 0xA3] = 0x30; // '0'
+    // Disk ID at offset 0xA2 (162): 2 bytes — caller-configurable.
+    var idStr = string.IsNullOrEmpty(diskId) ? "00" : diskId;
+    disk[off + 0xA2] = (byte)(idStr.Length > 0 ? idStr[0] : '0');
+    disk[off + 0xA3] = (byte)(idStr.Length > 1 ? idStr[1] : '0');
     disk[off + 0xA4] = 0xA0;
     // DOS type
     disk[off + 0xA5] = 0x32; // '2'
