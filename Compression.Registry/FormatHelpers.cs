@@ -31,12 +31,12 @@ public static class FormatHelpers {
   /// Returns only file entries (non-directories) with their data, preserving paths.
   /// </summary>
   public static IEnumerable<(string Name, byte[] Data)> FilesOnly(IReadOnlyList<ArchiveInputInfo> inputs)
-    => inputs.Where(i => !i.IsDirectory).Select(i => (i.ArchiveName, File.ReadAllBytes(i.FullPath)));
+    => inputs.Where(i => !i.IsDirectory).Select(i => (i.ArchiveName, i.ReadContent()));
 
   /// <summary>
   /// Flattens all entries to root level (filename only) with their data.
   /// For formats without path support.
   /// </summary>
   public static IEnumerable<(string Name, byte[] Data)> FlatFiles(IReadOnlyList<ArchiveInputInfo> inputs)
-    => inputs.Where(i => !i.IsDirectory).Select(i => (Path.GetFileName(i.ArchiveName), File.ReadAllBytes(i.FullPath)));
+    => inputs.Where(i => !i.IsDirectory).Select(i => (Path.GetFileName(i.ArchiveName), i.ReadContent()));
 }

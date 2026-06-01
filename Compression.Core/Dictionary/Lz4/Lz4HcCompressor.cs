@@ -59,10 +59,13 @@ internal static class Lz4HcCompressor {
           if (prev >= 0)
             chainTable[pos] = prev;
 
-          // Walk the chain to find the best match
+          // Walk the chain to find the best match. The lazy-match path below
+          // inserts pos+1 into the hash table and then re-enters the loop at that
+          // same position, so the chain head can point at pos itself; require a
+          // strictly earlier candidate so a match never has a zero offset.
           var candidate = prev;
           var depth = maxChainDepth;
-          while (candidate >= 0 && depth-- > 0 && pos - candidate <= Lz4Constants.MaxDistance) {
+          while (candidate >= 0 && candidate < pos && depth-- > 0 && pos - candidate <= Lz4Constants.MaxDistance) {
             // Check 4-byte prefix
             if (src[candidate] == src[pos] &&
                 src[candidate + 1] == src[pos + 1] &&
@@ -98,7 +101,7 @@ internal static class Lz4HcCompressor {
           var candidate = prev2;
           var depth = maxChainDepth;
           var lazyBest = 0;
-          while (candidate >= 0 && depth-- > 0 && (pos + 1) - candidate <= Lz4Constants.MaxDistance) {
+          while (candidate >= 0 && candidate < pos + 1 && depth-- > 0 && (pos + 1) - candidate <= Lz4Constants.MaxDistance) {
             if (src[candidate] == src[pos + 1] &&
                 src[candidate + 1] == src[pos + 2] &&
                 src[candidate + 2] == src[pos + 3]) {

@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.F2fs;
 
-public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema {
+public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema {
 
   // A F2FS segment is 2 MiB; image size in bytes = segment count × 2 MiB.
   private const long SegmentSizeBytes = 2L * 1024 * 1024;
@@ -118,18 +118,30 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// contiguous-from-start multi-segment image (SIT/NAT journals, checkpoint
   /// pack, inline-dentry root).
   /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) {
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new F2fsReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new F2fsWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        using var ms = new MemoryStream();
-        w.WriteTo(ms);
-        return ms.ToArray();
-      });
+  public void Defragment(Stream archive, DefragOptions options)
+    => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+
+  // ── IArchiveModifiable (rebuild-based add / replace / remove) ──────────
+  // F2FS in-place mutation needs NAT/SIT journal updates + checkpoint CRC
+  // recompute; instead we read every file and rebuild a fresh fsck.f2fs-clean
+  // image with the writer, the same path the defragmentor uses.
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => ModifyRebuilder.Add(archive, inputs, ReadEntries, BuildImage);
+
+  public void Remove(Stream archive, string[] entryNames)
+    => ModifyRebuilder.Remove(archive, entryNames, ReadEntries, BuildImage);
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    var r = new F2fsReader(stream);
+    return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    var w = new F2fsWriter();
+    foreach (var (n, d) in files) w.AddFile(n, d);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+    return ms.ToArray();
   }
 }

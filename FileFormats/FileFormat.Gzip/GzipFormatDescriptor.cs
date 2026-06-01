@@ -2,9 +2,11 @@
 
 using Compression.Registry;
 
+using Compression.Core.Deflate;
+
 namespace FileFormat.Gzip;
 
-public sealed class GzipFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatValidator {
+public sealed class GzipFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatValidator, IFormatOptionsSchema {
   public string Id => "Gzip";
   public string DisplayName => "GZIP";
   public FormatCategory Category => FormatCategory.Stream;
@@ -20,6 +22,25 @@ public sealed class GzipFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
   public string Description => "Deflate with CRC32, the ubiquitous HTTP/file compression standard";
 
+  // ── IFormatOptionsSchema ───────────────────────────────────────────────
+  /// <summary>The Deflate compression level applied to the GZIP payload. The
+  /// optimizer searches these tiers to find the smallest output for the input.</summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "Level",
+      DisplayName: "Compression level",
+      Kind: FormatOptionKind.Enum,
+      Default: "Default",
+      AllowedValues: ["None", "Fast", "Default", "Best", "Maximum"],
+      Description: "Deflate effort: None (stored) → Fast → Default → Best → Maximum (Zopfli-style optimal parsing; smallest, slowest)."),
+  ];
+
+  /// <summary>Resolves the requested <see cref="DeflateCompressionLevel"/> from the
+  /// format-specific options: the named <c>Level</c> string wins; otherwise a numeric
+  /// <see cref="FormatCreateOptions.Level"/> is mapped onto the nearest tier; failing
+  /// both, <see cref="DeflateCompressionLevel.Default"/>.</summary>
+  internal static DeflateCompressionLevel ParseLevel(FormatCreateOptions options) => DeflateLevelOption.Parse(options);
+
   public void Decompress(Stream input, Stream output) {
     using var ds = new GzipStream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
     ds.CopyTo(output);
@@ -30,9 +51,15 @@ public sealed class GzipFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
     input.CopyTo(cs);
   }
 
+  public void Compress(Stream input, Stream output, FormatCreateOptions options) {
+    using var cs = new GzipStream(output, Compression.Core.Streams.CompressionStreamMode.Compress,
+      ParseLevel(options), leaveOpen: true);
+    input.CopyTo(cs);
+  }
+
   public void CompressOptimal(Stream input, Stream output) {
     using var cs = new GzipStream(output, Compression.Core.Streams.CompressionStreamMode.Compress,
-      Compression.Core.Deflate.DeflateCompressionLevel.Maximum, leaveOpen: true);
+      DeflateCompressionLevel.Maximum, leaveOpen: true);
     input.CopyTo(cs);
   }
 
