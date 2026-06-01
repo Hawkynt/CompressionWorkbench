@@ -12,12 +12,13 @@ namespace FileSystem.LittleFs;
 /// pair commit log with CRC validation is intentionally out of scope — that's a
 /// full reference-implementation port. Detection + structural surfacing is the win.
 /// </summary>
-public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "LittleFs";
   public string DisplayName => "LittleFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".littlefs";
   public IReadOnlyList<string> Extensions => [".littlefs", ".lfs"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -84,6 +85,24 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(sb), files);
     if (sb.Valid)
       WriteIfMatch(outputDir, "superblock.bin", sb.RawBytes, files);
+  }
+
+  /// <summary>
+  /// Builds a fresh littlefs image from <paramref name="inputs"/>. Files keep
+  /// their archive-relative paths (forward-slash separated), so subdirectories
+  /// are recreated as littlefs directory metadata pairs. Small files are stored
+  /// inline; larger ones use CTZ skip-lists. The result round-trips through
+  /// <see cref="LittleFsReader"/>.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = new LittleFsWriter();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      w.AddFile(input.ArchiveName, input.ReadContent());
+    }
+    w.WriteTo(output);
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
