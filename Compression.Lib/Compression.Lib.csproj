@@ -393,6 +393,7 @@
     <ProjectReference Include="..\FileSystems\FileSystem.Gfs1\FileSystem.Gfs1.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Htfs\FileSystem.Htfs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Human68k\FileSystem.Human68k.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Jfs1\FileSystem.Jfs1.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zip\FileFormat.Zip.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zlib\FileFormat.Zlib.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zling\FileFormat.Zling.csproj" />
