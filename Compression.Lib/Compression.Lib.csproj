@@ -80,6 +80,7 @@
     <ProjectReference Include="..\FileSystems\FileSystem.Btrfs\FileSystem.Btrfs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Bzip2\FileFormat.Bzip2.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cab\FileFormat.Cab.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Caf\FileFormat.Caf.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cbr\FileFormat.Cbr.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cbz\FileFormat.Cbz.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cdi\FileFormat.Cdi.csproj" />

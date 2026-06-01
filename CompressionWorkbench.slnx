@@ -72,6 +72,7 @@
     <Project Path="FileSystems/FileSystem.Btrfs/FileSystem.Btrfs.csproj" />
     <Project Path="FileFormats/FileFormat.Bzip2/FileFormat.Bzip2.csproj" />
     <Project Path="FileFormats/FileFormat.Cab/FileFormat.Cab.csproj" />
+    <Project Path="FileFormats/FileFormat.Caf/FileFormat.Caf.csproj" />
     <Project Path="FileFormats/FileFormat.Cbr/FileFormat.Cbr.csproj" />
     <Project Path="FileFormats/FileFormat.Cbz/FileFormat.Cbz.csproj" />
     <Project Path="FileFormats/FileFormat.Cdi/FileFormat.Cdi.csproj" />
