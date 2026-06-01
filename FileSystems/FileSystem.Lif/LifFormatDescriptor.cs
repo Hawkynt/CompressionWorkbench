@@ -11,7 +11,35 @@ namespace FileSystem.Lif;
 /// computers and compatible HP-IL/HP-IB peripherals from the early 1980s.
 /// </summary>
 public sealed class LifFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for HP LIF creation: 6-char volume label, directory size
+  /// (one 256-byte sector holds 7 user files plus a terminator; raising
+  /// this lifts the 14-file ceiling), and the default LIF file type code
+  /// applied to every entry.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 6),
+    new FormatOptionDescriptor(
+      Key: "DirectorySectors",
+      DisplayName: "Directory sectors",
+      Kind: FormatOptionKind.Integer,
+      Default: "1",
+      Description: "Number of 256-byte sectors reserved for the directory. Each sector " +
+        "holds 8 entries (one is the terminator). Default 1 → max 7 files; raise " +
+        "to fit more."),
+    new FormatOptionDescriptor(
+      Key: "DefaultFileType",
+      DisplayName: "Default file type",
+      Kind: FormatOptionKind.Enum,
+      Default: "BIN (0xE020)",
+      AllowedValues: ["BIN (0xE020)", "BPGM (0xE204)", "DATA (0x0001)", "TEXT (0xE0F0)", "BAS (0xE0D0)"],
+      Description: "HP LIF 16-bit file-type code stored at directory entry offset 10. " +
+        "Determines how HP Series 80/HP-71 routines treat the file."),
+  ];
 
   /// <summary>
   /// Walks the LIF directory and yields the actual on-disk byte layout — the
@@ -78,7 +106,18 @@ public sealed class LifFormatDescriptor :
       .Where(i => !i.IsDirectory)
       .Select(i => (Path.GetFileName(i.ArchiveName), File.ReadAllBytes(i.FullPath)))
       .ToList();
-    var image = LifWriter.Build(files);
+
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (string.IsNullOrEmpty(label)) label = "CWB";
+    var dirSectors = Math.Max(1, options?.GetOptionInt("DirectorySectors", 1) ?? 1);
+    var fileType = (options?.GetOption("DefaultFileType", "BIN (0xE020)") ?? "BIN (0xE020)") switch {
+      "BPGM (0xE204)" => (ushort)0xE204,
+      "DATA (0x0001)" => (ushort)0x0001,
+      "TEXT (0xE0F0)" => (ushort)0xE0F0,
+      "BAS (0xE0D0)"  => (ushort)0xE0D0,
+      _               => (ushort)0xE020,
+    };
+    var image = LifWriter.Build(files, label, fileType, dirSectors);
     output.Write(image);
   }
 
