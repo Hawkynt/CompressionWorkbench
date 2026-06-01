@@ -144,6 +144,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Cab\FileFormat.Cab.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Caf\FileFormat.Caf.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Rf64\FileFormat.Rf64.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Voc\FileFormat.Voc.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cdi\FileFormat.Cdi.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Chm\FileFormat.Chm.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cmix\FileFormat.Cmix.csproj" />

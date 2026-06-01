@@ -74,6 +74,7 @@
     <Project Path="FileFormats/FileFormat.Cab/FileFormat.Cab.csproj" />
     <Project Path="FileFormats/FileFormat.Caf/FileFormat.Caf.csproj" />
     <Project Path="FileFormats/FileFormat.Rf64/FileFormat.Rf64.csproj" />
+    <Project Path="FileFormats/FileFormat.Voc/FileFormat.Voc.csproj" />
     <Project Path="FileFormats/FileFormat.Cbr/FileFormat.Cbr.csproj" />
     <Project Path="FileFormats/FileFormat.Cbz/FileFormat.Cbz.csproj" />
     <Project Path="FileFormats/FileFormat.Cdi/FileFormat.Cdi.csproj" />
