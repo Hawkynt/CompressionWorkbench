@@ -13,7 +13,26 @@ namespace FileSystem.Rt11;
 /// canonical RX01 single-density 8" floppy image (~256 KB).
 /// </summary>
 public sealed class Rt11FormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for DEC RT-11 creation. The home block carries a 12-char
+  /// ASCII volume identifier (offset 0x1D8) and the directory area's size is
+  /// configurable from 1..31 segments — each segment holds 71 entries plus a
+  /// terminator, so dirSegments controls the maximum file count.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 12),
+    new FormatOptionDescriptor(
+      Key: "DirectorySegments",
+      DisplayName: "Directory segments",
+      Kind: FormatOptionKind.Integer,
+      Default: "1",
+      Description: "Number of 1024-byte directory segments. Each segment holds 71 entries + " +
+        "terminator. Range 1..31; raise to fit more files."),
+  ];
 
   /// <summary>
   /// Walks the RT-11 directory segment chain and yields the actual on-disk
@@ -109,7 +128,10 @@ public sealed class Rt11FormatDescriptor :
       .Where(i => !i.IsDirectory)
       .Select(i => (Path.GetFileName(i.ArchiveName), File.ReadAllBytes(i.FullPath)))
       .ToList();
-    var image = Rt11Writer.Build(files);
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (string.IsNullOrEmpty(label)) label = "RT11A   ";
+    var dirSegs = Math.Clamp(options?.GetOptionInt("DirectorySegments", 1) ?? 1, 1, 31);
+    var image = Rt11Writer.Build(files, label, dirSegs);
     output.Write(image);
   }
 
