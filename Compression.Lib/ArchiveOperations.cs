@@ -687,6 +687,16 @@ public static class ArchiveOperations {
     FormatRegistration.EnsureInitialized();
     var ops = Compression.Registry.FormatRegistry.GetStreamOps(format.ToString())
       ?? throw new NotSupportedException($"No compressor for: {format}");
+    // When the format declares an option schema, search its parameter space for
+    // the smallest output on this actual data; otherwise use the format's own
+    // CompressOptimal heuristic.
+    if (ops is Compression.Registry.IFormatOptionsSchema schema && schema.OptionsSchema.Count > 0) {
+      using var raw = new MemoryStream();
+      input.CopyTo(raw);
+      var best = CompressionOptimizer.OptimizeStream(raw.ToArray(), ops, schema);
+      output.Write(best.Bytes);
+      return;
+    }
     ops.CompressOptimal(input, output);
   }
 

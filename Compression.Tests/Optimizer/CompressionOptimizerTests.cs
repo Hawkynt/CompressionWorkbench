@@ -80,6 +80,34 @@ public class CompressionOptimizerTests {
     }
   }
 
+  [Test, Category("RoundTrip")]
+  public void ArchiveOperations_Optimize_RoutesStreamFormatThroughSchemaSearch() {
+    var d = new ZstdFormatDescriptor();
+    var data = CompressibleSample();
+    var dir = Path.Combine(Path.GetTempPath(), $"cwb_opt_{Guid.NewGuid():N}");
+    Directory.CreateDirectory(dir);
+    try {
+      // Make a deliberately weak .zst (level 1), then optimize it.
+      var inPath = Path.Combine(dir, "in.zst");
+      using (var outMs = new MemoryStream()) {
+        using (var src = new MemoryStream(data))
+          d.Compress(src, outMs, new FormatCreateOptions {
+            FormatSpecific = new Dictionary<string, string> { ["Level"] = "1" },
+          });
+        File.WriteAllBytes(inPath, outMs.ToArray());
+      }
+      var outPath = Path.Combine(dir, "out.zst");
+      var (orig, optimized, _) = ArchiveOperations.Optimize(inPath, outPath, null);
+
+      Assert.That(optimized, Is.LessThanOrEqualTo(orig),
+        "optimize must not grow a weakly-compressed stream");
+      Assert.That(Decompress(d, File.ReadAllBytes(outPath)), Is.EqualTo(data),
+        "optimized .zst still decompresses to the original data");
+    } finally {
+      Directory.Delete(dir, true);
+    }
+  }
+
   [Test, Category("Spec")]
   public void Optimizer_NoSchemaAxes_StillCompresses() {
     // A schema with only an unsearchable option falls back to a single compress.
