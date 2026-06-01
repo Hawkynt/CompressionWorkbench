@@ -5,7 +5,25 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.D81;
 
-public sealed class D81FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class D81FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for D81 creation. The Commodore 1581 stores a 16-char
+  /// PETSCII disk name plus a 2-char disk ID in the header block (track 40
+  /// sector 0); both appear in the C128 directory header. Geometry is fixed
+  /// at the 1581 size (819 200 bytes).
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 16),
+    new FormatOptionDescriptor(
+      Key: "DiskId",
+      DisplayName: "Disk ID",
+      Kind: FormatOptionKind.String,
+      Default: "00",
+      Description: "Two-character disk ID at 1581 header offset 0x16."),
+  ];
 
   /// <summary>
   /// Zeros all unused space in the D81 image: every sector not claimed by a
@@ -107,7 +125,11 @@ public sealed class D81FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new D81Writer();
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name.Length > 16 ? name[..16] : name, data);
-    output.Write(w.Build());
+
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (string.IsNullOrEmpty(label)) label = "DISK";
+    var diskId = options?.GetOption("DiskId", "00") ?? "00";
+    output.Write(w.Build(label, diskId));
   }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────

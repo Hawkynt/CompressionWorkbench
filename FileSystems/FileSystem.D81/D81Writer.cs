@@ -22,7 +22,12 @@ public sealed class D81Writer {
 
   public void AddFile(string name, byte[] data) => _files.Add((name, 0x82, data)); // PRG default
 
-  public byte[] Build(string diskName = "DISK") {
+  /// <summary>
+  /// Builds the complete 1581 D81 image (819 200 bytes).
+  /// </summary>
+  /// <param name="diskName">PETSCII disk name (up to 16 chars; padded with 0xA0).</param>
+  /// <param name="diskId">Two-character disk ID stored at header offset 0x16..0x17 (default "00").</param>
+  public byte[] Build(string diskName = "DISK", string diskId = "00") {
     var disk = new byte[StandardSize];
     var bam = new bool[TotalTracks + 1][];
 
@@ -49,7 +54,7 @@ public sealed class D81Writer {
     WriteDirectory(disk, bam, dirEntries);
 
     // Write header and BAM
-    WriteHeader(disk, diskName);
+    WriteHeader(disk, diskName, diskId);
     WriteBam(disk, bam);
 
     return disk;
@@ -158,7 +163,7 @@ public sealed class D81Writer {
     }
   }
 
-  private static void WriteHeader(byte[] disk, string diskName) {
+  private static void WriteHeader(byte[] disk, string diskName, string diskId) {
     var off = GetSectorOffset(DirTrack, HeaderSector);
 
     // Link to directory start
@@ -175,9 +180,10 @@ public sealed class D81Writer {
     for (var j = nameBytes.Length; j < 16; j++)
       disk[off + 4 + j] = 0xA0;
 
-    // Disk ID at offset 0x16 (22): 2 bytes
-    disk[off + 0x16] = 0x30; // '0'
-    disk[off + 0x17] = 0x30; // '0'
+    // Disk ID at offset 0x16 (22): 2 bytes — caller-configurable.
+    var idStr = string.IsNullOrEmpty(diskId) ? "00" : diskId;
+    disk[off + 0x16] = (byte)(idStr.Length > 0 ? idStr[0] : '0');
+    disk[off + 0x17] = (byte)(idStr.Length > 1 ? idStr[1] : '0');
     disk[off + 0x18] = 0xA0;
     // DOS type
     disk[off + 0x19] = 0x33; // '3'
