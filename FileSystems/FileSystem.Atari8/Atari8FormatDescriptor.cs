@@ -5,7 +5,25 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Atari8;
 
-public sealed class Atari8FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class Atari8FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for ATR creation. AtariDOS 2.x has no concept of a volume
+  /// label and this writer emits only SS/SD geometry (720 × 128 = 92 160 bytes
+  /// of data plus a 16-byte ATR header), so the only meaningful knob is the
+  /// ATR header's write-protect flag at offset 15.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "WriteProtect",
+      DisplayName: "Write protect",
+      Kind: FormatOptionKind.Boolean,
+      Default: "false",
+      Description: "Sets the ATR header flags byte (offset 15, bit 0). Emulators that " +
+        "honour the flag (Atari800, Altirra, …) will refuse to write the image."),
+  ];
 
   /// <summary>
   /// Walks the ATR header + VTOC + directory + per-file sector chains
@@ -93,6 +111,7 @@ public sealed class Atari8FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
         $"AtariDOS: combined input size {total} bytes exceeds SS/SD capacity ({cap} bytes).");
 
     var w = new Atari8Writer();
+    w.WriteProtected = options?.GetOptionBool("WriteProtect", false) ?? false;
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());

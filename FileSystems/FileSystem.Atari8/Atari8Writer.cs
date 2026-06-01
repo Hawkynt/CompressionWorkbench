@@ -41,6 +41,13 @@ public sealed class Atari8Writer {
 
   public void AddFile(string name, byte[] data) => this._files.Add((name, data));
 
+  /// <summary>
+  /// When true, the ATR header's flags byte at offset 15 is set to 0x01,
+  /// marking the disk image as write-protected. Compatible emulators (Atari800,
+  /// Altirra, etc.) honour the flag and refuse writes through SIO patches.
+  /// </summary>
+  public bool WriteProtected { get; set; }
+
   /// <summary>Builds the complete SS/SD ATR image (92 176 bytes).</summary>
   public byte[] Build() {
     if (this._files.Count > MaxEntries)
@@ -73,7 +80,8 @@ public sealed class Atari8Writer {
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(4), SectorSize);
     // High paragraphs at offset 6 (0 for SS/SD — fits in 16 bits).
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(6), (ushort)(paragraphs >> 16));
-    // Remaining header bytes stay zero.
+    // ATR flags byte at offset 15: bit 0 = write protect. Remaining header bytes stay zero.
+    if (this.WriteProtected) image[15] = 0x01;
 
     // --- Allocate sectors for each file ---
     // used[i] = true when sector i (1-based) is taken.
