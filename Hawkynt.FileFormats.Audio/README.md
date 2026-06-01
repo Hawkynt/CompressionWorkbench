@@ -89,8 +89,12 @@ State legend:
 | `FileFormat.Akb`      | WORM  | Square Enix audio bank                                              |
 | `FileFormat.Awb`      | WORM  | CRI Audio Wave Bank                                                 |
 | `FileFormat.Psf`      | WORM  | PlayStation Sound Format (chiptune)                                 |
-| `FileFormat.Aiff`     | R     | Apple AIFF / AIFC — big-endian PCM container                        |
-| `FileFormat.Au`       | R     | Sun / NeXT `.au` / `.snd` — 24-byte header + PCM                    |
+| `FileFormat.Aiff`     | WORM  | Apple AIFF / AIFC — big-endian PCM container; assembles a multi-channel AIFF from per-channel WAVs |
+| `FileFormat.Au`       | WORM  | Sun / NeXT `.au` / `.snd` — 24-byte header + PCM; assembles from per-channel WAVs |
+| `FileFormat.Caf`      | WORM  | Apple Core Audio Format — LPCM `desc`/`data` chunks, per-channel split + assemble |
+| `FileFormat.Wave64`   | WORM  | Sony Wave64 (`.w64`) — GUID-keyed chunks, 64-bit sizes, per-channel split + assemble |
+| `FileFormat.Rf64`     | WORM  | RF64 / BWF (Broadcast Wave) — `ds64` 64-bit sizes + `bext`, per-channel split + assemble |
+| `FileFormat.Voc`      | WORM  | Creative Voice (`.voc`) — block-walking reader, per-channel split + assemble |
 | `FileFormat.Alac`     | R     | Apple Lossless inside MP4 atoms                                     |
 | `FileFormat.Ape`      | R     | Monkey's Audio (`.ape`) lossless                                    |
 | `FileFormat.WavPack`  | R     | WavPack lossless / hybrid                                           |
