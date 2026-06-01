@@ -393,6 +393,15 @@
     <Project Path="FileSystems/FileSystem.Pc98/FileSystem.Pc98.csproj" />
     <Project Path="FileSystems/FileSystem.Ti99/FileSystem.Ti99.csproj" />
     <Project Path="FileSystems/FileSystem.Trsdos/FileSystem.Trsdos.csproj" />
+    <Project Path="FileSystems/FileSystem.DriveSpace3/FileSystem.DriveSpace3.csproj" />
+    <Project Path="FileSystems/FileSystem.Ecryptfs/FileSystem.Ecryptfs.csproj" />
+    <Project Path="FileSystems/FileSystem.GsOs/FileSystem.GsOs.csproj" />
+    <Project Path="FileSystems/FileSystem.Mfs1/FileSystem.Mfs1.csproj" />
+    <Project Path="FileSystems/FileSystem.Nwfs386/FileSystem.Nwfs386.csproj" />
+    <Project Path="FileSystems/FileSystem.OrangeFs/FileSystem.OrangeFs.csproj" />
+    <Project Path="FileSystems/FileSystem.Stacker/FileSystem.Stacker.csproj" />
+    <Project Path="FileSystems/FileSystem.TahoeLafs/FileSystem.TahoeLafs.csproj" />
+    <Project Path="FileSystems/FileSystem.Tfs/FileSystem.Tfs.csproj" />
     <Project Path="FileFormats/FileFormat.Zip/FileFormat.Zip.csproj" />
     <Project Path="FileFormats/FileFormat.Zlib/FileFormat.Zlib.csproj" />
     <Project Path="FileFormats/FileFormat.Zling/FileFormat.Zling.csproj" />
