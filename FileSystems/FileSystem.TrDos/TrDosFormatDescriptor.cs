@@ -5,7 +5,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.TrDos;
 
-public sealed class TrDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class TrDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Tunable knobs for TR-DOS creation. TR-DOS stores an 8-character disk
+  /// label in the disk-info sector at offset 0xF5. Image geometry is fixed
+  /// at the canonical 80 × 16 × 2 × 256 = 640 KB layout.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 8),
+  ];
 
   /// <summary>
   /// Walks the 128-entry directory at track 0 sectors 0-7 and yields the
@@ -73,7 +84,9 @@ public sealed class TrDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     var w = new TrDosWriter();
     foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
       w.AddFile(name.Length > 8 ? name[..8] : name, 'C', data);
-    output.Write(w.Build());
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (string.IsNullOrEmpty(label)) label = "DISK";
+    output.Write(w.Build(label));
   }
 
   /// <summary>
