@@ -10,7 +10,16 @@ public interface IStreamFormatOperations {
   /// <summary>Compress the input stream to the output stream.</summary>
   void Compress(Stream input, Stream output);
 
-  /// <summary>Compress with maximum/optimal settings. Defaults to <see cref="Compress"/>.</summary>
+  /// <summary>
+  /// Compress honouring the format-specific tunables in <paramref name="options"/>
+  /// (the keys declared by this format's <see cref="IFormatOptionsSchema"/> — e.g.
+  /// compression level, dictionary size, lc/lp/pb). Formats that expose a schema
+  /// override this; the default ignores the options and falls back to
+  /// <see cref="Compress(Stream,Stream)"/>, so unparameterised formats keep working.
+  /// </summary>
+  void Compress(Stream input, Stream output, FormatCreateOptions options) => Compress(input, output);
+
+  /// <summary>Compress with maximum/optimal settings. Defaults to <see cref="Compress(Stream,Stream)"/>.</summary>
   void CompressOptimal(Stream input, Stream output) => Compress(input, output);
 
   /// <summary>
