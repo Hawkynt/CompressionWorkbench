@@ -1031,47 +1031,40 @@ public static class ArchiveOperations {
 
     // Extract from source.
     var srcEntries = List(inputPath, null);
+
+    // ── In-memory pipeline ────────────────────────────────────────────
+    // When the source fits in the configured RAM budget we extract every
+    // entry straight into byte[]s, build the target into a MemoryStream,
+    // and commit it atomically — no tempdir, no torn writes.
+    var srcSize = new FileInfo(inputPath).Length;
+    if (Compression.Lib.InMemoryProcessing.FitsInMemory(srcSize) &&
+        dstOps is Compression.Registry.IArchiveCreatable dstCreatable) {
+      AddConversionWarnings(srcFormat, dstFormat, srcEntries, warnings);
+
+      var inputs = ExtractAllToMemory(inputPath, null);
+
+      // Skip directory entries for formats that don't support them.
+      var dstDescriptorMem = Compression.Registry.FormatRegistry.GetById(dstFormat.ToString());
+      if (dstDescriptorMem != null &&
+          (dstDescriptorMem.Capabilities & Compression.Registry.FormatCapabilities.SupportsDirectories) == 0) {
+        inputs = inputs.Where(i => !i.IsDirectory).ToList();
+      }
+
+      var memOpts = new Compression.Registry.FormatCreateOptions {
+        FormatSpecific = createOptions?.FormatSpecific,
+      };
+      Compression.Lib.InMemoryProcessing.RebuildToFileAtomic(outputPath, dstCreatable, inputs, memOpts);
+      return warnings;
+    }
+
+    // ── Disk-tempdir fallback ─────────────────────────────────────────
+    // Source exceeds the in-memory budget — fall back to the original
+    // extract-to-tempdir then Create-from-disk path.
     var tempDir = Path.Combine(Path.GetTempPath(), "cwb_fsconv_" + Guid.NewGuid().ToString("N")[..8]);
     try {
       Extract(inputPath, tempDir, null, null);
 
-      // Check metadata preservation. Source entries with timestamps but no
-      // timestamp support in target => warning.
-      var srcHasTimestamps = srcEntries.Any(e => e.LastModified.HasValue);
-      // Simple heuristic: if source has timestamps and target is a retro FS
-      // (D64, T64, ADF, etc.), log a warning.
-      var retroFormats = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-        "D64", "D71", "D81", "T64", "Adf", "AppleDos", "Atari8", "Bbc",
-        "Cpm", "ZxScl", "TrDos", "Msa", "Mfs", "CpcDsk",
-      };
-      if (srcHasTimestamps && retroFormats.Contains(dstFormat.ToString()))
-        warnings.Add($"Target format {dstFormat} does not support timestamps; file dates will be lost.");
-
-      // Check for file name length restrictions.
-      var shortNameFormats = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-        "D64", "D71", "D81", "Cpm", "Atari8",
-      };
-      if (shortNameFormats.Contains(dstFormat.ToString())) {
-        foreach (var e in srcEntries) {
-          if (!e.IsDirectory && e.Name.Length > 16)
-            warnings.Add($"File name '{e.Name}' may be truncated in {dstFormat}.");
-        }
-      }
-
-      // Cross-category warnings: detect when source and target are from
-      // different domains (filesystem images vs archive containers vs streams).
-      var filesystemFormats = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-        "Fat", "ExFat", "Ntfs", "Ext", "Ext1", "Btrfs", "Xfs", "Hfs", "HfsPlus",
-        "Apfs", "Mfs", "Iso", "Udf", "Zfs", "Ufs", "Jfs", "ReiserFs", "Reiser4",
-        "F2fs", "SquashFs", "CramFs", "RomFs", "MinixFs", "D64", "D71", "D81",
-        "T64", "Adf", "AppleDos", "ProDos", "Atari8", "Bbc", "Cpm", "CpcDsk",
-        "ZxScl", "TrDos", "Msa", "Hpfs", "DoubleSpace", "Vdfs", "Bfs", "Ocfs2",
-        "Jffs2", "Yaffs2", "BcacheFs",
-      };
-      var srcIsFs = filesystemFormats.Contains(srcFormat.ToString());
-      var dstIsFs = filesystemFormats.Contains(dstFormat.ToString());
-      if (srcIsFs != dstIsFs)
-        warnings.Add($"Cross-category conversion: {srcFormat} ({(srcIsFs ? "filesystem" : "archive")}) -> {dstFormat} ({(dstIsFs ? "filesystem" : "archive")}).");
+      AddConversionWarnings(srcFormat, dstFormat, srcEntries, warnings);
 
       // Build inputs from extracted files.
       var inputs = EnumerateTempInputs(tempDir);
@@ -1090,6 +1083,84 @@ public static class ArchiveOperations {
     }
 
     return warnings;
+  }
+
+  /// <summary>
+  /// Reads an archive / FS image entirely into memory: every entry is extracted
+  /// via <see cref="IArchiveFormatOperations.ExtractEntryToMemory"/> and wrapped
+  /// as an <see cref="Compression.Registry.ArchiveInputInfo.InMemory(string, byte[])"/>
+  /// input. Directory entries pass through as in-memory placeholders. The source
+  /// FileStream stays open for the duration of the loop so per-entry overrides
+  /// that don't rewind can still read sequentially.
+  /// </summary>
+  public static IReadOnlyList<Compression.Registry.ArchiveInputInfo> ExtractAllToMemory(
+      string path, string? password) {
+    var format = FormatDetector.Detect(path);
+    FormatRegistration.EnsureInitialized();
+    var srcOps = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString())
+      ?? throw new NotSupportedException($"Cannot list format: {format}");
+
+    using var stream = File.OpenRead(path);
+    var entries = srcOps.List(stream, password);
+    var result = new List<Compression.Registry.ArchiveInputInfo>(entries.Count);
+    foreach (var e in entries) {
+      if (e.IsDirectory) {
+        result.Add(new Compression.Registry.ArchiveInputInfo(
+          FullPath: e.Name, ArchiveName: e.Name, IsDirectory: true));
+        continue;
+      }
+      var bytes = srcOps.ExtractEntryToMemory(stream, e.Name, password);
+      result.Add(Compression.Registry.ArchiveInputInfo.InMemory(e.Name, bytes));
+    }
+    return result;
+  }
+
+  /// <summary>
+  /// Appends cross-category, short-name and timestamp-loss warnings to the
+  /// supplied list. Shared between the in-memory and disk-tempdir branches of
+  /// <see cref="ConvertArchive(string, string, string?, Compression.Registry.FormatCreateOptions?)"/>
+  /// so both code paths report identical metadata-loss diagnostics regardless
+  /// of which branch ran.
+  /// </summary>
+  private static void AddConversionWarnings(
+      F srcFormat, F dstFormat,
+      IReadOnlyList<ArchiveEntry> srcEntries,
+      List<string> warnings) {
+    var dstId = dstFormat.ToString();
+
+    // Timestamp-loss warning: source has dates, target is a retro FS that doesn't.
+    var srcHasTimestamps = srcEntries.Any(e => e.LastModified.HasValue);
+    var retroFormats = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+      "D64", "D71", "D81", "T64", "Adf", "AppleDos", "Atari8", "Bbc",
+      "Cpm", "ZxScl", "TrDos", "Msa", "Mfs", "CpcDsk",
+    };
+    if (srcHasTimestamps && retroFormats.Contains(dstId))
+      warnings.Add($"Target format {dstFormat} does not support timestamps; file dates will be lost.");
+
+    // Short-name truncation warning: target has a ≤16-char name limit.
+    var shortNameFormats = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+      "D64", "D71", "D81", "Cpm", "Atari8",
+    };
+    if (shortNameFormats.Contains(dstId)) {
+      foreach (var e in srcEntries) {
+        if (!e.IsDirectory && e.Name.Length > 16)
+          warnings.Add($"File name '{e.Name}' may be truncated in {dstFormat}.");
+      }
+    }
+
+    // Cross-category warning: filesystem-image ↔ archive-container conversions.
+    var filesystemFormats = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+      "Fat", "ExFat", "Ntfs", "Ext", "Ext1", "Btrfs", "Xfs", "Hfs", "HfsPlus",
+      "Apfs", "Mfs", "Iso", "Udf", "Zfs", "Ufs", "Jfs", "ReiserFs", "Reiser4",
+      "F2fs", "SquashFs", "CramFs", "RomFs", "MinixFs", "D64", "D71", "D81",
+      "T64", "Adf", "AppleDos", "ProDos", "Atari8", "Bbc", "Cpm", "CpcDsk",
+      "ZxScl", "TrDos", "Msa", "Hpfs", "DoubleSpace", "Vdfs", "Bfs", "Ocfs2",
+      "Jffs2", "Yaffs2", "BcacheFs",
+    };
+    var srcIsFs = filesystemFormats.Contains(srcFormat.ToString());
+    var dstIsFs = filesystemFormats.Contains(dstId);
+    if (srcIsFs != dstIsFs)
+      warnings.Add($"Cross-category conversion: {srcFormat} ({(srcIsFs ? "filesystem" : "archive")}) -> {dstFormat} ({(dstIsFs ? "filesystem" : "archive")}).");
   }
 
   /// <summary>

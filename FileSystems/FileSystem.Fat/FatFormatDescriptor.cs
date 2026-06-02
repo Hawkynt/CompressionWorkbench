@@ -463,6 +463,24 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Native in-memory single-entry extraction — feeds the small-image
+  /// ConvertArchive pipeline that wires extracted bytes straight into the
+  /// target writer without ever touching disk.
+  /// </summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    var r = new FatReader(archive);
+    foreach (var e in r.Entries) {
+      if (e.IsDirectory) continue;
+      if (string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase))
+        return r.Extract(e);
+    }
+    return [];
+  }
+
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new FatWriter();
     foreach (var input in inputs.Where(i => !i.IsDirectory))

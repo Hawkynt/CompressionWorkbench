@@ -107,7 +107,12 @@ public static class SolidBlockPlanner {
     var result = new HashSet<string>();
     foreach (var input in inputs) {
       if (input.IsDirectory || string.IsNullOrEmpty(input.FullPath)) continue;
-      if (EntropyDetector.IsIncompressible(input.FullPath))
+      // In-memory inputs carry their bytes alongside the (synthetic) FullPath;
+      // sample from the byte array directly instead of trying to open it.
+      var inco = input.InMemoryContent != null
+        ? EntropyDetector.IsIncompressible(input.InMemoryContent)
+        : File.Exists(input.FullPath) && EntropyDetector.IsIncompressible(input.FullPath);
+      if (inco)
         result.Add(input.FullPath);
     }
     return result;
@@ -155,10 +160,10 @@ public static class SolidBlockPlanner {
     var files = inputs.Where(i => !i.IsDirectory && !string.IsNullOrEmpty(i.FullPath)).ToList();
     if (files.Count == 0) return [];
 
-    // Read all file contents
+    // Read all file contents (ReadContent transparently handles in-memory inputs).
     var contents = new byte[files.Count][];
     for (var i = 0; i < files.Count; i++)
-      contents[i] = File.ReadAllBytes(files[i].FullPath);
+      contents[i] = files[i].ReadContent();
 
     // Determine max groups: aim for ~DefaultMaxBlockSize per group
     var totalSize = contents.Sum(c => (long)c.Length);
@@ -181,7 +186,8 @@ public static class SolidBlockPlanner {
       long maxBlockSize, bool isIncompressible, int groupIndex) {
     var current = new SolidBlock { IsIncompressible = isIncompressible, GroupIndex = groupIndex };
     foreach (var f in files) {
-      var data = File.ReadAllBytes(f.FullPath);
+      // ReadContent transparently handles both on-disk and in-memory inputs.
+      var data = f.ReadContent();
       if (current.Files.Count > 0 && current.TotalSize + data.Length > maxBlockSize) {
         blocks.Add(current);
         current = new SolidBlock { IsIncompressible = isIncompressible, GroupIndex = groupIndex };

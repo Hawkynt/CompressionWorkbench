@@ -111,6 +111,29 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Native in-memory single-entry extraction — feeds the small-image
+  /// ConvertArchive pipeline that wires extracted bytes straight into the
+  /// target writer without ever touching disk.
+  /// </summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    var r = new TarReader(archive, leaveOpen: true);
+    while (r.GetNextEntry() is { } e) {
+      if (e.IsDirectory) { r.Skip(); continue; }
+      if (string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) {
+        using var es = r.GetEntryStream();
+        var data = new byte[e.Size];
+        es.ReadExactly(data);
+        return data;
+      }
+      r.Skip();
+    }
+    return [];
+  }
+
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var blockingFactor = options.GetOptionInt("BlockingFactor", 20);
     var formatName = options.GetOption("Format", "ustar").ToLowerInvariant();
@@ -124,7 +147,9 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (i.IsDirectory) {
         w.AddEntry(new TarEntry { Name = i.ArchiveName, Size = 0, TypeFlag = (byte)'5' }, []);
       } else {
-        var data = File.ReadAllBytes(i.FullPath);
+        // ReadContent() transparently handles both on-disk inputs and the
+        // in-memory variant fed by the small-image ConvertArchive pipeline.
+        var data = i.ReadContent();
         w.AddEntry(new TarEntry { Name = i.ArchiveName, Size = data.Length }, data);
       }
     }

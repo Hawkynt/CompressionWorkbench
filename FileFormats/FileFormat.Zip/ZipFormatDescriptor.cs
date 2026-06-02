@@ -106,6 +106,24 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
+  /// Native in-memory single-entry extraction — feeds the small-image
+  /// ConvertArchive pipeline that wires extracted bytes straight into the
+  /// target writer without ever touching disk.
+  /// </summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    var r = new ZipReader(archive, leaveOpen: true, password: password);
+    foreach (var e in r.Entries) {
+      if (e.IsDirectory) continue;
+      if (string.Equals(e.FileName, entryName, StringComparison.OrdinalIgnoreCase))
+        return r.ExtractEntry(e);
+    }
+    return [];
+  }
+
+  /// <summary>
   /// Builds a ZIP archive from <paramref name="inputs"/>. Honors all of
   /// <see cref="FormatCreateOptions"/>: method, level, dict-size, threads,
   /// password, encryption mode, and incompressibility hints.
@@ -151,7 +169,9 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     foreach (var i in inputs) {
       if (i.IsDirectory) { w.AddDirectory(i.ArchiveName); continue; }
-      var data = File.ReadAllBytes(i.FullPath);
+      // ReadContent() transparently handles both on-disk inputs and the
+      // in-memory variant fed by the small-image ConvertArchive pipeline.
+      var data = i.ReadContent();
       var entryMethod = options.IncompressiblePaths != null && options.IncompressiblePaths.Contains(i.FullPath)
         ? ZipCompressionMethod.Store
         : zipMethod;

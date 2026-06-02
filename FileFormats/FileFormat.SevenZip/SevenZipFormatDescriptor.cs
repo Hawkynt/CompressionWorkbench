@@ -89,6 +89,25 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <summary>
+  /// Native in-memory single-entry extraction — feeds the small-image
+  /// ConvertArchive pipeline that wires extracted bytes straight into the
+  /// target writer without ever touching disk.
+  /// </summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    var r = new SevenZipReader(archive, leaveOpen: true, password: password);
+    for (var i = 0; i < r.Entries.Count; ++i) {
+      var e = r.Entries[i];
+      if (e.IsDirectory) continue;
+      if (string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase))
+        return r.Extract(i);
+    }
+    return [];
+  }
+
+  /// <summary>
   /// Builds a 7z archive from <paramref name="inputs"/>. Plans solid blocks by
   /// extension similarity, segregates incompressible files, and per-block
   /// recommends BCJ x86 filter for executables.
