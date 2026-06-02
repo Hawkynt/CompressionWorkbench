@@ -1,0 +1,67 @@
+#pragma warning disable CS1591
+using Compression.Registry;
+using Compression.Registry.Streaming;
+using static Compression.Registry.FormatHelpers;
+
+namespace FileSystem.BeeGfs;
+
+/// <summary>
+/// Stage 0 detection-only descriptor for BeeGFS chunk-file / dump tags.
+/// Surfaces only a synthetic <c>metadata.ini</c> and the raw image bytes;
+/// no real file-walk is attempted because a BeeGFS volume has no
+/// standalone on-disk image.
+/// </summary>
+public sealed class BeeGfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+
+  public string Id => "BeeGfs";
+  public string DisplayName => "BeeGFS";
+  public FormatCategory Category => FormatCategory.Archive;
+  public FormatCapabilities Capabilities =>
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+  public string DefaultExtension => ".beegfs";
+  public IReadOnlyList<string> Extensions => [".beegfs"];
+  public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    // ASCII "BeeGFS" (6 bytes) at offset 0.
+    new("BeeGFS"u8.ToArray(), Offset: 0, Confidence: 0.90),
+    // ASCII "BeeG" (0x42656547 BE) at offset 0 — short tag form.
+    new("BeeG"u8.ToArray(), Offset: 0, Confidence: 0.85),
+  ];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description =>
+    "BeeGFS — Stage 0 detection only. Distributed parallel cluster FS (Fraunhofer, ex-FhGFS): " +
+    "the namespace lives across metadata-target processes (per-inode files + xattrs on a regular " +
+    "Linux FS like ext4/xfs), file payload lives across storage-target processes (chunk files in " +
+    "a hashed dir layout on a regular Linux FS). No standalone on-disk image — a volume cannot be " +
+    "represented as a single byte-stream. R/O promotion would require traversing a live metadata " +
+    "target directory tree + resolving the stripe pattern + target group map via beegfs-meta. " +
+    "Magic 'BeeGFS' / 0x42656547 at offset 0 of a chunk-file or dump-tool output is the only " +
+    "single-stream surface available.";
+
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    var r = new BeeGfsReader(stream);
+    return r.Entries.Select((e, i) => new ArchiveEntryInfo(
+      i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
+  }
+
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    var r = new BeeGfsReader(stream);
+    foreach (var e in r.Entries) {
+      if (e.IsDirectory) continue;
+      if (files != null && !MatchesFilter(e.Name, files)) continue;
+      WriteFile(outputDir, e.Name, r.Extract(e));
+    }
+  }
+
+  Stream IArchiveFormatOperations.OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    var r = new BeeGfsReader(archive);
+    var entry = r.Entries.FirstOrDefault(e => e.Name == entryName)
+      ?? throw new FileNotFoundException($"BeeGFS entry not found: {entryName}");
+    var data = r.Extract(entry);
+    return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
+  }
+}
