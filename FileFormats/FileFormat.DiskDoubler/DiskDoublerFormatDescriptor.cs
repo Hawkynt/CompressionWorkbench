@@ -62,6 +62,35 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
     }
   }
 
+  /// <summary>
+  /// Opens a single DiskDoubler entry as a bounded read-only stream. The
+  /// reader produces the decoded data; the matched bytes are wrapped in a
+  /// <see cref="Compression.Registry.Streaming.BoundedEntryStream"/> sized
+  /// to the entry's original length.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    var r = new DiskDoublerReader(archive, leaveOpen: true);
+    foreach (var e in r.Entries) {
+      if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      var bytes = r.Extract(e);
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+    }
+    return new Compression.Registry.Streaming.BoundedEntryStream(
+      new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
+  }
+
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // WORM: store the first input as a DiskDoubler data fork (method 0 = stored).
     // DiskDoubler wraps a single Macintosh file, not a multi-file archive.
