@@ -2,20 +2,27 @@
 using System.Globalization;
 using System.Text;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Mfs1;
 
 /// <summary>
-/// Read-only descriptor for Acorn Master File System v1 (MFS-1) disk images —
-/// the predecessor to ADFS / DFS, used on early Acorn BBC Micro / Master
-/// systems. Magic is weak (two byte signature plus heuristics) so detection is
-/// extension-led with a soft offset-0 byte gate.
+/// Read-only descriptor for Acorn MFS-1 (Master File System v1) disk images —
+/// the catalog-compatible evolution of Acorn DFS used on early Acorn / BBC Master
+/// systems. The on-disk catalog matches DFS (256-byte sectors, two-sector catalog
+/// at track 0 sectors 0-1, up to 31 entries with 7-char names + 1-char directory),
+/// so MFS-1 is parsed by walking those sectors directly.
 /// </summary>
 /// <remarks>
-/// <para><b>Heuristic</b>: byte 0 = <c>0x00</c>, byte 1 = <c>0x80</c>, and
-/// bytes 2-13 contain mostly printable ASCII (disk name). Not a strong magic
-/// — confidence is intentionally low so other better-magic'd formats win.</para>
+/// <para><b>Detection</b>: weak — magic is the optional <c>0x00 0x80</c> boot
+/// pattern at offsets 0-1, low confidence (0.20). Stronger magic'd formats win.
+/// Real detection is extension-led (<c>.mfs</c> / <c>.mfsd</c>).</para>
+/// <para><b>Write</b> is NOT supported. Producing a writeable MFS-1 image
+/// requires a real free-sector allocator + DFS sector-7-byte packed-high-bits
+/// encoder; the corpus of authentic MFS-1 images is also tiny and Windows-side
+/// has no validator. Per the project rule "never advertise CanCreate without
+/// real spec compliance + an external validator", this stays read-only.</para>
 /// <para>Distinct from <c>FileSystem.Mfs</c>, which targets the Macintosh File
 /// System with a strong <c>0xD2D7</c> magic.</para>
 /// </remarks>
@@ -24,7 +31,8 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string DisplayName => "MFS-1 (Acorn Master File System v1)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".mfs";
   public IReadOnlyList<string> Extensions => [".mfs", ".mfsd"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -38,7 +46,7 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Acorn MFS-1 (pre-ADFS) — opaque single-entry surface (weak magic).";
+  public string Description => "Acorn MFS-1 (BBC Master) — read-only DFS-tier catalog walker (write deferred — no Windows-side validator).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -51,8 +59,18 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       return entries;
     }
 
+    // Always surface FULL.mfs + metadata.ini for triage; add real catalog
+    // entries when the catalog parses successfully.
     entries.Add(new ArchiveEntryInfo(0, "FULL.mfs", image.LongLength, image.LongLength, "stored", false, false, null));
     entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
+
+    try {
+      var r = new Mfs1Reader(image);
+      foreach (var e in r.Entries)
+        entries.Add(new ArchiveEntryInfo(entries.Count, e.FullName, e.Size, e.Size, "stored", false, e.IsLocked, null));
+    } catch {
+      // best-effort: opaque-only surface
+    }
     return entries;
   }
 
@@ -69,11 +87,61 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var label = TryExtractLabel(image);
 
     WriteIfMatch(outputDir, "FULL.mfs", image, files);
+
+    // Catalog walk + per-file extract.
+    var entriesParsed = 0;
+    try {
+      var r = new Mfs1Reader(image);
+      foreach (var e in r.Entries) {
+        if (files != null && files.Length > 0 && !MatchesFilter(e.FullName, files)) continue;
+        var data = r.Extract(e);
+        WriteFile(outputDir, e.FullName, data);
+      }
+      entriesParsed = r.Entries.Count;
+      if (string.IsNullOrEmpty(label)) label = r.DiskTitle;
+    } catch {
+      // best-effort
+    }
+
     var bldr = new StringBuilder();
-    bldr.Append(CultureInfo.InvariantCulture, $"parse_status={(ok ? "ok" : "partial")}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"parse_status={(entriesParsed > 0 ? "ok" : (ok ? "ok" : "partial"))}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"detected_label={label}\n");
-    bldr.Append("note=Acorn MFS-1 directory walk is not implemented; image surfaced as opaque blob.\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"catalog_entries={entriesParsed}\n");
+    if (entriesParsed == 0)
+      bldr.Append("note=Acorn MFS-1 catalog walk produced no entries; image surfaced as opaque blob.\n");
     WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes(bldr.ToString()), files);
+  }
+
+  /// <summary>
+  /// Opens a single catalog entry as a bounded stream over its sector extent.
+  /// Reads past <see cref="Mfs1Entry.Size"/> return 0 (EOF). The FULL/metadata
+  /// placeholders are intentionally NOT openable via this path; use Extract.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    try {
+      var image = ReadAll(archive);
+      var r = new Mfs1Reader(image);
+      foreach (var e in r.Entries) {
+        if (!string.Equals(e.FullName, entryName, StringComparison.OrdinalIgnoreCase)
+          && !string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+        var data = r.Extract(e);
+        return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
+      }
+    } catch {
+      // fall through
+    }
+    return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
   }
 
   private static string TryExtractLabel(byte[] image) {
@@ -85,7 +153,7 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       if (b is < 0x20 or > 0x7E) break;
       chars[count++] = (char)b;
     }
-    return new string(chars.Slice(0, count));
+    return new string(chars[..count]);
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
@@ -93,7 +161,7 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     WriteFile(outputDir, name, data);
   }
 
-  private const int HeaderReadCap = 64 * 1024;
+  private const int HeaderReadCap = 1 << 20; // 1 MiB cap — a 40-track SSD is 100k, 80-track is 200k.
 
   private static byte[] ReadAll(Stream stream) {
     using var ms = new MemoryStream();

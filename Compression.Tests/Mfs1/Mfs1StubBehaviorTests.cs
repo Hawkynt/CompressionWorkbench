@@ -5,10 +5,11 @@ using FileSystem.Mfs1;
 namespace Compression.Tests.Mfs1;
 
 /// <summary>
-/// Pins the stub-tier surface for <see cref="Mfs1FormatDescriptor"/>. Acorn MFS-1
-/// has only weak two-byte heuristic magic and detection is extension-led —
-/// these tests prevent silent capability creep (CanCreate/CanModify) and stop the
-/// opaque-blob entry shape from drifting.
+/// Pins the read-only capability surface for <see cref="Mfs1FormatDescriptor"/>.
+/// MFS-1 is now promoted to a real DFS-tier catalog walker, but write support
+/// is still absent — this test prevents silent capability creep
+/// (CanCreate/CanModify) and verifies the opaque-blob entries are still
+/// surfaced for magic-only inputs that have no parseable catalog.
 /// </summary>
 [TestFixture]
 public class Mfs1StubBehaviorTests {
@@ -20,22 +21,30 @@ public class Mfs1StubBehaviorTests {
     return image;
   }
 
-  [Test, Category("Stub")]
-  public void Stub_DescriptorHonestlyAdvertisesCapabilities_AndOpaqueEntries() {
+  [Test, Category("Spec")]
+  public void Descriptor_HonestlyAdvertisesCapabilities_AndOpaqueEntriesOnMagicOnly() {
     var d = new Mfs1FormatDescriptor();
 
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False,
-      "MFS-1 is stub-tier (weak magic, no walker) — must not advertise CanCreate.");
+      "MFS-1 read-only — must not advertise CanCreate (write requires a real DFS allocator + validator).");
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
-      "MFS-1 is stub-tier (weak magic, no walker) — must not advertise CanModify.");
+      "MFS-1 read-only — must not advertise CanModify.");
+    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>(),
+      "MFS-1 read-only — must not implement IArchiveCreatable.");
+    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>(),
+      "MFS-1 read-only — must not implement IArchiveModifiable.");
 
+    // Magic-only image has no parseable catalog → reader produces zero entries.
+    // The descriptor still surfaces the opaque FULL.mfs + metadata.ini pair.
     var image = BuildMagicOnly();
     using var ms = new MemoryStream(image, writable: false);
     var entries = d.List(ms, null);
 
     var names = entries.Select(e => e.Name).ToList();
-    Assert.That(names, Is.EquivalentTo(new[] { "FULL.mfs", "metadata.ini" }),
-      "MFS-1 minimal-image surface must be exactly the documented opaque pair: FULL.mfs + metadata.ini.");
+    Assert.That(names, Does.Contain("FULL.mfs"),
+      "Even with no catalog entries, MFS-1 must surface FULL.mfs for triage.");
+    Assert.That(names, Does.Contain("metadata.ini"),
+      "Even with no catalog entries, MFS-1 must surface metadata.ini for triage.");
 
     var outDir = Path.Combine(Path.GetTempPath(), "Mfs1Stub_" + Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(outDir);
@@ -50,16 +59,5 @@ public class Mfs1StubBehaviorTests {
     } finally {
       Directory.Delete(outDir, recursive: true);
     }
-  }
-
-  [Test, Category("Stub")]
-  public void Stub_DoesNotAdvertiseWriteCapability() {
-    var d = new Mfs1FormatDescriptor();
-    var description = d.Description.ToLowerInvariant();
-    Assert.That(
-      description.Contains("stub") || description.Contains("opaque")
-      || description.Contains("skeleton") || description.Contains("detection"),
-      Is.True,
-      $"MFS-1 Description must honestly flag its stub/detection-only/opaque status. Got: '{d.Description}'.");
   }
 }
