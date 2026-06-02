@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 
 namespace Compression.Tests.Jffs2;
 
@@ -495,6 +496,58 @@ public class Jffs2Tests {
       d.Extract(output, outDir, null, ["large.bin"]);
       var extracted = File.ReadAllBytes(Path.Combine(outDir, "large.bin"));
       Assert.That(extracted, Is.EqualTo(data));
+    } finally {
+      try { Directory.Delete(tmpDir, recursive: true); } catch { /* ignore */ }
+    }
+  }
+
+  // ── OpenEntry tests ───────────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void OpenEntry_ReturnsBoundedStream_ReadPastSizeReturnsZero() {
+    var d = new FileSystem.Jffs2.Jffs2FormatDescriptor();
+    var tmpDir = Path.Combine(Path.GetTempPath(), "jffs2_open_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tmpDir);
+    try {
+      var content = Encoding.UTF8.GetBytes("Hello, JFFS2 OpenEntry!");
+      var filePath = Path.Combine(tmpDir, "hello.txt");
+      File.WriteAllBytes(filePath, content);
+
+      using var output = new MemoryStream();
+      d.Create(output, [new ArchiveInputInfo(filePath, "hello.txt", false)], new FormatCreateOptions());
+
+      using var readStream = new MemoryStream(output.ToArray());
+      using var s = d.OpenEntry(readStream, "hello.txt", null);
+      Assert.That(s, Is.InstanceOf<BoundedEntryStream>(), "OpenEntry must return BoundedEntryStream");
+      Assert.That(s.Length, Is.EqualTo(content.Length));
+
+      var buf = new byte[64];
+      var n = s.Read(buf, 0, buf.Length);
+      Assert.That(n, Is.EqualTo(content.Length));
+      Assert.That(buf.AsSpan(0, n).ToArray(), Is.EqualTo(content));
+
+      Assert.That(s.Read(buf, 0, buf.Length), Is.EqualTo(0), "read past LogicalSize returns 0 (EOF)");
+    } finally {
+      try { Directory.Delete(tmpDir, recursive: true); } catch { /* ignore */ }
+    }
+  }
+
+  [Test, Category("Sad")]
+  public void OpenEntry_UnknownName_ReturnsEmptyBoundedStream() {
+    var d = new FileSystem.Jffs2.Jffs2FormatDescriptor();
+    var tmpDir = Path.Combine(Path.GetTempPath(), "jffs2_unknown_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(tmpDir);
+    try {
+      var filePath = Path.Combine(tmpDir, "real.txt");
+      File.WriteAllBytes(filePath, Encoding.UTF8.GetBytes("real"));
+
+      using var output = new MemoryStream();
+      d.Create(output, [new ArchiveInputInfo(filePath, "real.txt", false)], new FormatCreateOptions());
+
+      using var readStream = new MemoryStream(output.ToArray());
+      using var s = d.OpenEntry(readStream, "does-not-exist", null);
+      Assert.That(s, Is.InstanceOf<BoundedEntryStream>());
+      Assert.That(s.Length, Is.EqualTo(0));
     } finally {
       try { Directory.Delete(tmpDir, recursive: true); } catch { /* ignore */ }
     }

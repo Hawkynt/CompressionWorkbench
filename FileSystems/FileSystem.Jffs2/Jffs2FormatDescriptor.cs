@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Jffs2;
@@ -106,6 +107,37 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     } catch {
       // Fall back to triage-only extraction
     }
+  }
+
+  /// <summary>
+  /// Opens a single file entry as a bounded stream over the inode's reassembled
+  /// data nodes. Reads past the entry's logical size return 0 (EOF). Unknown
+  /// names return an empty bounded stream.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    try {
+      var reader = new Jffs2FileReader(archive);
+      foreach (var entry in reader.Entries) {
+        if (entry.IsDirectory) continue;
+        if (!string.Equals(entry.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+        var bytes = reader.Extract(entry);
+        return new BoundedEntryStream(new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+      }
+    } catch {
+      // Fall through to empty bounded stream
+    }
+    return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
   }
 
   // ── IArchiveCreatable ─────────────────────────────────────────────────
