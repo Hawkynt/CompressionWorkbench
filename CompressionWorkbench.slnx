@@ -249,6 +249,7 @@
     <Project Path="FileFormats/FileFormat.Mp3/FileFormat.Mp3.csproj" />
     <Project Path="FileFormats/FileFormat.Mp4/FileFormat.Mp4.csproj" />
     <Project Path="FileFormats/FileFormat.Ogg/FileFormat.Ogg.csproj" />
+    <Project Path="FileFormats/FileFormat.Opus/FileFormat.Opus.csproj" />
     <Project Path="FileSystems/FileSystem.MinixFs/FileSystem.MinixFs.csproj" />
     <Project Path="FileSystems/FileSystem.MinixV1/FileSystem.MinixV1.csproj" />
     <Project Path="FileSystems/FileSystem.Fatx/FileSystem.Fatx.csproj" />

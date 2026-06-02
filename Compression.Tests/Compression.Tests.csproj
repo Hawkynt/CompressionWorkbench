@@ -295,6 +295,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Mp3\FileFormat.Mp3.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Mp4\FileFormat.Mp4.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ogg\FileFormat.Ogg.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Opus\FileFormat.Opus.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.MinixFs\FileSystem.MinixFs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.MinixV1\FileSystem.MinixV1.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Fatx\FileSystem.Fatx.csproj" />
