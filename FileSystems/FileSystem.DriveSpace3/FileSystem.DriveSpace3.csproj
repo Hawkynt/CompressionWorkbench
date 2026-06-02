@@ -3,6 +3,12 @@
     <RootNamespace>FileSystem.DriveSpace3</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <!-- DriveSpace 3 shares the MDBPB+MDFAT+BitFAT extent map / block mover /
+         planner-driven defrag with the DOS DBLSPACE/DRVSPACE family — only the
+         OEM bytes, CvfSignature and inner codec differ. The Plus! Pack writer
+         is the same DoubleSpaceWriter routed through CvfVariant.DriveSpace3. -->
+    <ProjectReference Include="..\FileSystem.DoubleSpace\FileSystem.DoubleSpace.csproj" />
   </ItemGroup>
 </Project>

@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Registry;
 
 namespace FileSystem.DoubleSpace;
 
@@ -8,12 +9,14 @@ namespace FileSystem.DoubleSpace;
 /// Variant of the CVF (Compressed Volume File) being produced.
 /// </summary>
 public enum CvfVariant {
-  /// <summary>MS-DOS 6.0 DoubleSpace. OEM name <c>MSDSP6.0</c>, CvfSignature <c>DBLS</c>.</summary>
+  /// <summary>MS-DOS 6.0 DoubleSpace. OEM name <c>MSDSP6.0</c>, CvfSignature <c>DBLS</c>. Codec: DS LZ77 (4 KiB window).</summary>
   DoubleSpace60,
-  /// <summary>MS-DOS 6.22 DriveSpace. OEM name <c>MSDSP6.2</c>, CvfSignature <c>DVRS</c>.</summary>
+  /// <summary>MS-DOS 6.22 DriveSpace. OEM name <c>MSDSP6.2</c>, CvfSignature <c>DVRS</c>. Codec: DS LZ77 (8 KiB window).</summary>
   DriveSpace62,
-  /// <summary>Windows 95 OSR2 DriveSpace 3.0. OEM name <c>DRVSPACE</c>, CvfSignature <c>DVRS</c>.</summary>
+  /// <summary>Windows 95 OSR2 DriveSpace 3.0. OEM name <c>DRVSPACE</c>, CvfSignature <c>DVRS</c>. Codec: DS LZ77 (8 KiB window).</summary>
   DriveSpace30,
+  /// <summary>Windows 95 Plus! Pack (1995) DriveSpace 3. OEM name <c>MS_DSP3</c>, CvfSignature <c>DVR3</c>. Codec: MS LZH (LZ77 + canonical Huffman).</summary>
+  DriveSpace3,
 }
 
 /// <summary>
@@ -45,12 +48,21 @@ public enum CvfVariant {
 ///     stored runs transparently.</item>
 /// </list>
 /// <para>
-/// <b>NOTE on JM/DSS compression:</b> DoubleSpace 3.0 uses a simple LZ77
-/// scheme with 16-bit length-prefixed tokens ("JM" encoding). Implementing
-/// it is a future enhancement; the on-disk layout here is already compatible
-/// — only the cluster payload bytes would change. Point of extension:
-/// replace the stored-run writer call in <see cref="BuildDataRegion"/> with
-/// a JM encoder and set MDFAT flag nibble to 2 instead of 1.
+/// <b>Codec selection:</b> driven by <see cref="Variant"/>:
+/// </para>
+/// <list type="bullet">
+///   <item><see cref="CvfVariant.DoubleSpace60"/> → DS LZ77 (4 KiB window).</item>
+///   <item><see cref="CvfVariant.DriveSpace62"/> / <see cref="CvfVariant.DriveSpace30"/>
+///     → DS LZ77 (8 KiB window).</item>
+///   <item><see cref="CvfVariant.DriveSpace3"/> (Win95 Plus! Pack 1995)
+///     → MS LZH (LZ77 + canonical Huffman), routed through
+///     <see cref="DsCompression.CompressMsLzh(ReadOnlySpan{byte}, int)"/>.</item>
+/// </list>
+/// <para>
+/// The 2-byte CVF run header (bit 15 = compressed, low 12 bits = size−1) is
+/// shared across all codecs, so the on-disk MDBPB + MDFAT + BitFAT layout
+/// is byte-compatible across the family — only the OEM bytes, CvfSignature
+/// and inner payload encoding change.
 /// </para>
 /// </summary>
 public sealed class DoubleSpaceWriter {
@@ -70,11 +82,21 @@ public sealed class DoubleSpaceWriter {
   /// <summary>Which CVF variant to produce (signatures and CvfVersion differ).</summary>
   public CvfVariant Variant { get => _variant; set => _variant = value; }
 
-  /// <summary>Back-compat shim: <c>true</c> = DriveSpace (6.2), <c>false</c> = DoubleSpace (6.0).</summary>
+  /// <summary>Back-compat shim: <c>true</c> = any DriveSpace flavour, <c>false</c> = DoubleSpace 6.0. Setter targets DriveSpace 6.22.</summary>
   public bool DriveSpace {
     get => _variant != CvfVariant.DoubleSpace60;
     set => _variant = value ? CvfVariant.DriveSpace62 : CvfVariant.DoubleSpace60;
   }
+
+  /// <summary>
+  /// DriveSpace 3 (Win95 Plus! Pack) compression-level byte stored at MDBPB
+  /// offset 76. Values 0..2 correspond to the "Standard", "HiPack", and
+  /// "UltraPack" UI labels in Microsoft's tooling. Ignored by the codec
+  /// itself; preserved for round-trip compatibility with third-party
+  /// readers. Only emitted when <see cref="Variant"/> is
+  /// <see cref="CvfVariant.DriveSpace3"/>.
+  /// </summary>
+  public byte CompressionLevel { get; set; } = 1;
 
   /// <summary>
   /// When <c>true</c> (default), per-cluster JM/LZ compression is attempted
@@ -82,6 +104,22 @@ public sealed class DoubleSpaceWriter {
   /// Clusters that do not compress are stored raw (MDFAT flags = 1).
   /// </summary>
   public bool EnableCompression { get; set; } = true;
+
+  /// <summary>
+  /// Compression method id, following the writer's published method list
+  /// (<c>stored</c>, <c>ds-lz77</c>, <c>ds-lz77+</c>, <c>ds-lz77++</c>).
+  /// Parsed via <see cref="MethodNameParser.Parse"/> on each
+  /// <see cref="Build"/>: an unknown base method falls back to
+  /// <c>ds-lz77</c>; a trailing <c>+</c> bumps the parse-effort tier (1 =
+  /// lazy matching, 2+ = iterated multi-pass). Defaults to <c>ds-lz77</c>
+  /// for parity with what real DOS DBLSPACE/DRVSPACE drivers produce.
+  /// <para>
+  /// Special id <c>stored</c> forces the legacy uncompressed-runs writer
+  /// even when <see cref="EnableCompression"/> is on — useful for diagnostic
+  /// images or for inputs where compression would only waste CPU.
+  /// </para>
+  /// </summary>
+  public string? MethodName { get; set; }
 
   /// <summary>Adds a file. <paramref name="name"/> may be a long filename; a VFAT LFN chain is emitted automatically.</summary>
   public void AddFile(string name, byte[] data) => this.AddFile(name, data, compress: true);
@@ -171,9 +209,16 @@ public sealed class DoubleSpaceWriter {
     var innerFatPlan = WriteRootDirectoryAndAssignClusters(disk, innerRootOffset, innerTotalClusters);
 
     // Step 6 — build the DATA region and populate MDFAT / BitFAT.
+    // Resolve the requested method into (storedOnly, effort). An unknown base
+    // method id silently falls back to "ds-lz77" (effort 0) — same behaviour
+    // a real DRVSPACE.BIN driver exhibits when reading an unknown method
+    // hint from the OEM area.
+    var (baseMethod, plusLevel) = MethodNameParser.Parse(this.MethodName);
+    var storedOnly = baseMethod.Equals("stored", StringComparison.OrdinalIgnoreCase);
+    var effort = storedOnly ? 0 : plusLevel;
     var innerDataOffset = innerFirstDataSector * BytesPerSector;
     this.BuildDataRegion(disk, innerFatOffset, innerFatPlan, innerDataOffset,
-      mdfatStart, bitFatStart, dataStart, maxDataSectors);
+      mdfatStart, bitFatStart, dataStart, maxDataSectors, storedOnly, effort);
 
     // Step 7 — mirror FAT1 to FAT2.
     Array.Copy(disk, innerFatOffset, disk,
@@ -222,6 +267,12 @@ public sealed class DoubleSpaceWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(68), 0);   // HostFatCopyStart (unused)
     BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(72), (uint)innerTotalClusters);
 
+    // DriveSpace 3 extension: compression-level byte at MDBPB offset 76.
+    // Only written when producing the Plus! Pack variant; other CVF flavours
+    // leave the byte at its default (0).
+    if (this._variant == CvfVariant.DriveSpace3)
+      disk[76] = this.CompressionLevel;
+
     // Boot signature.
     disk[510] = 0x55; disk[511] = 0xAA;
   }
@@ -230,11 +281,15 @@ public sealed class DoubleSpaceWriter {
     CvfVariant.DoubleSpace60 => "MSDSP6.0",
     CvfVariant.DriveSpace62 => "MSDSP6.2",
     CvfVariant.DriveSpace30 => "DRVSPACE",
+    // DriveSpace 3 (Win95 Plus! Pack 1995) — 7-char OEM "MS_DSP3" + 1-byte NUL pad
+    // to fill the 8-byte BPB OEM field (Microsoft's reference image uses this shape).
+    CvfVariant.DriveSpace3 => "MS_DSP3\0",
     _ => "MSDSP6.0",
   };
 
   private string CvfSignature() => this._variant switch {
     CvfVariant.DoubleSpace60 => "DBLS",
+    CvfVariant.DriveSpace3 => "DVR3",
     _ => "DVRS",
   };
 
@@ -242,6 +297,7 @@ public sealed class DoubleSpaceWriter {
     CvfVariant.DoubleSpace60 => 0x00030000u,
     CvfVariant.DriveSpace62 => 0x00030200u,
     CvfVariant.DriveSpace30 => 0x00030300u,
+    CvfVariant.DriveSpace3 => 0x00030300u,
     _ => 0x00030000u,
   };
 
@@ -410,11 +466,17 @@ public sealed class DoubleSpaceWriter {
 
   private void BuildDataRegion(
     byte[] disk, int innerFatOffset, List<PlannedFile> files, int innerDataOffset,
-    int mdfatStart, int bitFatStart, int dataStart, int dataSectors) {
+    int mdfatStart, int bitFatStart, int dataStart, int dataSectors,
+    bool storedOnly, int effort) {
 
     var physSectorPos = 0; // offset in sectors within the DATA region
     var clusterBytes = new byte[ClusterBytes];
-    var useDriveSpace = this._variant != CvfVariant.DoubleSpace60;
+    // Codec selection:
+    //   DoubleSpace60       → DS LZ77 4 KiB window
+    //   DriveSpace62/30     → DS LZ77 8 KiB window (useDriveSpace=true)
+    //   DriveSpace3 (Plus!) → MS LZH (LZ77 + canonical Huffman)
+    var useMsLzh = this._variant == CvfVariant.DriveSpace3;
+    var useDriveSpace = !useMsLzh && this._variant != CvfVariant.DoubleSpace60;
 
     foreach (var file in files) {
       // Walk the file's cluster chain. For each cluster, emit either a
@@ -443,12 +505,21 @@ public sealed class DoubleSpaceWriter {
         // Decide stored vs. compressed for this cluster. Compression is only
         // attempted when globally enabled, per-file opted-in, and the cluster
         // has >=32 bytes of real data (tiny inputs rarely shrink usefully).
+        // The "stored" method id forces the legacy uncompressed path.
         byte[] block;
         uint flagsNibble;
-        if (this.EnableCompression && file.Compress && validChunk >= 32) {
-          block = useDriveSpace
-            ? DsCompression.CompressDriveSpace(rawSpan)
-            : DsCompression.Compress(rawSpan);
+        if (!storedOnly && this.EnableCompression && file.Compress && validChunk >= 32) {
+          // The shrink-or-store fallback lives INSIDE each codec entry-point
+          // (CompressVariant in DsCompression.cs / MS LZH in DsCompression.cs):
+          // if the encoded payload doesn't fit the 12-bit size cap or is no
+          // smaller than the raw input, a stored CVF run is returned and the
+          // header-bit dispatch below records flags=1 (stored). This invariant
+          // is honored at every effort level.
+          block = useMsLzh
+            ? DsCompression.CompressMsLzh(rawSpan, effort)
+            : useDriveSpace
+              ? DsCompression.CompressDriveSpace(rawSpan, effort)
+              : DsCompression.Compress(rawSpan, effort);
           var headerWord = (ushort)(block[0] | (block[1] << 8));
           var wasCompressed = (headerWord & 0x8000) != 0;
           flagsNibble = wasCompressed ? 0x2u : 0x1u;

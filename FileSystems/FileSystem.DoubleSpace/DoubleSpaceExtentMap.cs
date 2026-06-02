@@ -29,7 +29,14 @@ public static class DoubleSpaceExtentMap {
     if (data.Length < 512) yield break;
 
     var signature = Encoding.ASCII.GetString(data, 3, 8);
-    if (signature is not ("MSDSP6.0" or "MSDSP6.2" or "DRVSPACE")) yield break;
+    // Accept all CVF variants: DoubleSpace 6.0 (MSDSP6.0), DriveSpace 6.22 (MSDSP6.2),
+    // DriveSpace 3 OSR2 (DRVSPACE), and DriveSpace 3 Plus! Pack (MS_DSP3 — 7 chars +
+    // optional NUL pad, so test the 7-char prefix). The MDBPB + MDFAT + BitFAT layout
+    // is byte-compatible across all four; only the OEM bytes and inner-cluster codec
+    // differ — and physical extents (what this method emits) are codec-agnostic.
+    var signature7 = Encoding.ASCII.GetString(data, 3, 7);
+    if (signature is not ("MSDSP6.0" or "MSDSP6.2" or "DRVSPACE") && signature7 != "MS_DSP3")
+      yield break;
 
     var bytesPerSector = (int)BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(11));
     if (bytesPerSector is 0 or > 4096) bytesPerSector = 512;

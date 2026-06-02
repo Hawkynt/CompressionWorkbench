@@ -68,8 +68,11 @@ public class DoubleSpaceTests {
     Assert.That(desc.Id, Is.EqualTo("DoubleSpace"));
     Assert.That(desc.DisplayName, Is.EqualTo("DoubleSpace CVF"));
     Assert.That(desc.Extensions, Does.Contain(".cvf"));
-    Assert.That(desc.MagicSignatures, Has.Count.EqualTo(1));
+    // 2 signatures: MSDSP6.0 @ offset 3 (primary BPB), DBLSPACE @ offset 0
+    // (plaintext fallback for CVF files missing the BPB signature).
+    Assert.That(desc.MagicSignatures, Has.Count.EqualTo(2));
     Assert.That(desc.MagicSignatures[0].Offset, Is.EqualTo(3));
+    Assert.That(desc.MagicSignatures[1].Offset, Is.EqualTo(0));
     Assert.That(desc.Family, Is.EqualTo(Compression.Registry.AlgorithmFamily.Archive));
   }
 
@@ -79,7 +82,8 @@ public class DoubleSpaceTests {
     Assert.That(desc.Id, Is.EqualTo("DriveSpace"));
     Assert.That(desc.DisplayName, Is.EqualTo("DriveSpace CVF"));
     Assert.That(desc.Extensions, Does.Contain(".cvf"));
-    Assert.That(desc.MagicSignatures, Has.Count.EqualTo(1));
+    // 2 signatures: MSDSP6.2 @ offset 3 + DRVSPACE @ offset 0 fallback.
+    Assert.That(desc.MagicSignatures, Has.Count.EqualTo(2));
     Assert.That(desc.Description, Does.Contain("DriveSpace"));
   }
 

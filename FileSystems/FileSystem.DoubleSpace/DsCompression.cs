@@ -1,5 +1,7 @@
 #pragma warning disable CS1591
 using Compression.Core.BuildingBlocks;
+using Compression.Core.Dictionary.DsLz77;
+using Compression.Core.Dictionary.MsLzh;
 
 namespace FileSystem.DoubleSpace;
 
@@ -31,7 +33,16 @@ public static class DsCompression {
   /// Falls back to a stored run if compression does not shrink the data.
   /// </summary>
   public static byte[] Compress(ReadOnlySpan<byte> input)
-    => CompressVariant(input, useDriveSpace: false);
+    => CompressVariant(input, useDriveSpace: false, effort: 0);
+
+  /// <summary>
+  /// Compresses with an explicit parse-effort tier (<c>0</c> = greedy,
+  /// <c>1</c> = lazy matching, <c>2+</c> = iterated multi-pass) routed
+  /// through <see cref="DsLz77Compressor"/>. Falls back to a stored run if
+  /// compression does not shrink the data.
+  /// </summary>
+  public static byte[] Compress(ReadOnlySpan<byte> input, int effort)
+    => CompressVariant(input, useDriveSpace: false, effort: effort);
 
   /// <summary>
   /// Compresses using the DriveSpace LZ algorithm (8 KiB window) instead of
@@ -39,7 +50,64 @@ public static class DsCompression {
   /// handles both transparently.
   /// </summary>
   public static byte[] CompressDriveSpace(ReadOnlySpan<byte> input)
-    => CompressVariant(input, useDriveSpace: true);
+    => CompressVariant(input, useDriveSpace: true, effort: 0);
+
+  /// <summary>
+  /// DriveSpace variant with an explicit parse-effort tier — see
+  /// <see cref="Compress(ReadOnlySpan{byte}, int)"/>.
+  /// </summary>
+  public static byte[] CompressDriveSpace(ReadOnlySpan<byte> input, int effort)
+    => CompressVariant(input, useDriveSpace: true, effort: effort);
+
+  /// <summary>
+  /// Compresses a single cluster with the MS LZH codec (Win95 Plus! Pack
+  /// DriveSpace 3) at the default effort 0 (greedy + fixed Huffman tables)
+  /// and wraps it in the shared CVF 2-byte header. Falls back to a stored
+  /// run when the compressed payload either exceeds the 12-bit CVF size cap
+  /// (&gt; 4096 B) or is no smaller than the raw input — the same
+  /// shrink-or-store invariant the DS LZ77 path honours.
+  /// </summary>
+  public static byte[] CompressMsLzh(ReadOnlySpan<byte> input)
+    => CompressMsLzh(input, effort: 0);
+
+  /// <summary>
+  /// Compresses a single cluster with the MS LZH codec at an explicit
+  /// parse-effort tier (<c>0</c> = greedy, <c>1</c> = lazy matching,
+  /// <c>2+</c> = iterated multi-pass). The shrink-or-store fallback applies
+  /// at every effort level — incompressible clusters always end up as
+  /// stored CVF runs regardless of effort.
+  /// </summary>
+  public static byte[] CompressMsLzh(ReadOnlySpan<byte> input, int effort) {
+    if (input.Length == 0)
+      return [0x00, 0x00];
+
+    var compressed = new MsLzhCompressor().Compress(input, effort);
+    if (compressed.Length <= 4096 && compressed.Length < input.Length)
+      return WrapRun(compressed, isCompressed: true);
+
+    return WrapRun(input, isCompressed: false);
+  }
+
+  /// <summary>
+  /// Decompresses a single CVF run produced by
+  /// <see cref="CompressMsLzh(ReadOnlySpan{byte})"/> /
+  /// <see cref="CompressMsLzh(ReadOnlySpan{byte}, int)"/>. Header bit 15
+  /// dispatches between MS LZH (set) and raw stored (clear).
+  /// </summary>
+  public static byte[] DecompressMsLzh(ReadOnlySpan<byte> block) {
+    if (block.Length < 2)
+      throw new InvalidDataException("MS LZH block: too small.");
+
+    var header = (ushort)(block[0] | (block[1] << 8));
+    var isCompressed = (header & 0x8000) != 0;
+    var dataSize = (header & 0x0FFF) + 1;
+
+    if (2 + dataSize > block.Length)
+      throw new InvalidDataException("MS LZH block: payload truncated.");
+
+    var data = block.Slice(2, dataSize);
+    return isCompressed ? new MsLzhDecompressor().Decompress(data) : data.ToArray();
+  }
 
   /// <summary>
   /// Decompresses a single CVF run (2-byte header + payload). The compressed
@@ -69,13 +137,22 @@ public static class DsCompression {
 
   // =========================================================================
 
-  private static byte[] CompressVariant(ReadOnlySpan<byte> input, bool useDriveSpace) {
+  private static byte[] CompressVariant(ReadOnlySpan<byte> input, bool useDriveSpace, int effort) {
     if (input.Length == 0)
       return [0x00, 0x00]; // empty stored run, size=1
 
-    var compressed = useDriveSpace
-      ? new DriveSpaceCompressor().Compress(input.ToArray())
-      : new DoubleSpaceCompressor().Compress(input.ToArray());
+    var window = useDriveSpace
+      ? DsLz77Compressor.DriveSpaceMaxDistance
+      : DsLz77Compressor.DefaultMaxDistance;
+
+    // Effort 0 stays on the historical building-block path so the existing
+    // sector tests still see the exact same bytes. Effort 1+ routes through
+    // DsLz77Compressor's lazy / iterated parses.
+    var compressed = effort <= 0
+      ? (useDriveSpace
+          ? new DriveSpaceCompressor().Compress(input.ToArray())
+          : new DoubleSpaceCompressor().Compress(input.ToArray()))
+      : DsLz77Compressor.Compress(input, window, effort);
 
     // Compressed payload must fit the 12-bit size field (max 4096 B) *and*
     // be smaller than the raw input to be worth emitting.

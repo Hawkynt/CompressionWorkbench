@@ -17,9 +17,19 @@ public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveForm
   public string DefaultExtension => ".cvf";
   public IReadOnlyList<string> Extensions => [".cvf"];
   public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures =>
-    [new(Encoding.ASCII.GetBytes("MSDSP6.2"), Offset: 3, Confidence: 0.85)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("ds-lz77", "DS LZ77")];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    new(Encoding.ASCII.GetBytes("MSDSP6.2"), Offset: 3, Confidence: 0.85),
+    // Some CVF files only expose the plaintext "DRVSPACE" name at offset 0
+    // instead of the MSDSP signature in the BPB. Catching that case here
+    // avoids duplicating the whole descriptor in a separate project.
+    new(Encoding.ASCII.GetBytes("DRVSPACE"), Offset: 0, Confidence: 0.80),
+  ];
+  public IReadOnlyList<FormatMethodInfo> Methods => [
+    new("stored",     "Stored (no compression)"),
+    new("ds-lz77",    "DS LZ77"),
+    new("ds-lz77+",   "DS LZ77 (lazy matching, slower better ratio)"),
+    new("ds-lz77++",  "DS LZ77 (Zopfli-style iteration, best ratio)"),
+  ];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
@@ -49,7 +59,10 @@ public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveForm
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var w = new DoubleSpaceWriter { Variant = CvfVariant.DriveSpace62 };
+    var w = new DoubleSpaceWriter {
+      Variant = CvfVariant.DriveSpace62,
+      MethodName = options.MethodName,
+    };
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());

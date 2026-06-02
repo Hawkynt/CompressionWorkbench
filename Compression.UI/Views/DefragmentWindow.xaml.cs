@@ -20,6 +20,11 @@ public partial class DefragmentWindow : Window {
   private string? _imagePath;
   private IArchiveDefragmentable? _defragmentable;
   private IArchiveFormatOperations? _archiveOps;
+  // Detected format id (e.g. "Zip", "DoubleSpace", "DriveSpace3"). Used by
+  // OnRunArchiveOptimize to special-case CVF formats through CvfOptimizer,
+  // which honours the per-cluster shrink-or-store fallback inside the writer
+  // instead of trying every method id at the container level.
+  private string? _formatId;
   private bool _isArchiveMode;
   private bool _isFileInternalMode;
   private bool _isSevenZipFormat;
@@ -136,12 +141,14 @@ public partial class DefragmentWindow : Window {
     this._isSevenZipFormat = false;
     this._archiveOps = null;
     this._chunkMover = null;
+    this._formatId = null;
     ImagePathBox.Text = path;
     ImagePathBox.Foreground = System.Windows.Media.Brushes.Black;
 
     Compression.Lib.FormatRegistration.EnsureInitialized();
     var format = FormatDetector.Detect(path);
     FormatLbl.Text = format.ToString();
+    this._formatId = format.ToString();
 
     var ops = FormatRegistry.GetArchiveOps(format.ToString());
     this._defragmentable = ops as IArchiveDefragmentable;
@@ -1039,12 +1046,24 @@ public partial class DefragmentWindow : Window {
 
     var path = this._imagePath!;
     var ops = this._archiveOps;
+    var formatId = this._formatId;
 
     Append($"=== {DateTime.Now:HH:mm:ss}  Optimizing {Path.GetFileName(path)} ===");
 
     RunBtn.IsEnabled = false;
     Progress.IsIndeterminate = false;
     Progress.Value = 0;
+
+    // CVF formats (DoubleSpace / DriveSpace / DriveSpace3) get a dedicated
+    // optimizer that picks the highest-effort method the descriptor publishes
+    // and lets the writer's per-cluster shrink-or-store fallback handle the
+    // rest. Trying every method at the container level would waste CPU —
+    // ds-lz77++ always >= ds-lz77+ >= ds-lz77 on compressible data.
+    var isCvfFormat = formatId is "DoubleSpace" or "DriveSpace" or "DriveSpace3";
+    if (isCvfFormat) {
+      OnRunCvfOptimize(path, formatId!);
+      return;
+    }
 
     Task.Run(() => {
       var sw = Stopwatch.StartNew();
@@ -1093,6 +1112,58 @@ public partial class DefragmentWindow : Window {
         Append("");
 
         // Refresh the block chart to show the new layout.
+        PreviewBlockMap(path, ops, wasMutated: err == null);
+      });
+    });
+  }
+
+  /// <summary>
+  /// CVF-specific optimization path: routes through
+  /// <see cref="Compression.Lib.CvfOptimizer.Optimize"/> which picks the
+  /// descriptor's highest-effort non-stored method (e.g. <c>ds-lz77++</c>)
+  /// and lets the writer's per-cluster shrink-or-store fallback handle
+  /// incompressible runs. Atomic commit via <see cref="Compression.Lib.AtomicFileWriter"/>;
+  /// the source is left untouched on any error.
+  /// </summary>
+  private void OnRunCvfOptimize(string path, string formatId) {
+    var ops = this._archiveOps;
+    var descriptor = FormatRegistry.GetById(formatId);
+    if (descriptor == null) {
+      Append($"FAILED: format descriptor '{formatId}' not registered.");
+      Append("");
+      RunBtn.IsEnabled = true;
+      return;
+    }
+
+    Task.Run(() => {
+      Exception? err = null;
+      Compression.Lib.CvfOptimizer.OptimizeResult? result = null;
+      try {
+        result = Compression.Lib.CvfOptimizer.Optimize(path, descriptor);
+      } catch (Exception ex) {
+        err = ex;
+      }
+
+      Dispatcher.Invoke(() => {
+        Progress.Value = 100;
+        RunBtn.IsEnabled = true;
+        BlockMap.ReadHead = -1;
+        BlockMap.WriteHead = -1;
+        if (err != null || result == null) {
+          var msg = err?.GetType().Name + ": " + err?.Message;
+          Append($"FAILED: {msg}");
+        } else {
+          var delta = result.OptimizedSize - result.OriginalSize;
+          var pct = result.OriginalSize > 0 ? (double)delta / result.OriginalSize * 100 : 0;
+          var origMb = result.OriginalSize / (1024.0 * 1024.0);
+          var optMb = result.OptimizedSize / (1024.0 * 1024.0);
+          Append($"Optimized via {result.MethodUsed}: {origMb:F2} MB → {optMb:F2} MB (Δ {pct:+0.0;-0.0;0.0}%)");
+          if (result.FilesCompressed >= 0 || result.FilesStoredVerbatim >= 0)
+            Append($"Cluster mix: {result.FilesCompressed} compressed, {result.FilesStoredVerbatim} stored verbatim (per-cluster shrink-or-store fallback)");
+          Append($"Elapsed: {result.Elapsed.TotalMilliseconds:F0} ms");
+          NotifyMutated(path);
+        }
+        Append("");
         PreviewBlockMap(path, ops, wasMutated: err == null);
       });
     });

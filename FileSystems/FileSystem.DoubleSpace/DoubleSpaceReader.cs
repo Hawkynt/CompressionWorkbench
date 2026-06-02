@@ -18,14 +18,21 @@ public sealed class DoubleSpaceReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<DoubleSpaceEntry> _entries = [];
 
-  /// <summary>OEM name in the MDBPB: <c>MSDSP6.0</c>, <c>MSDSP6.2</c>, or <c>DRVSPACE</c>.</summary>
+  /// <summary>OEM name in the MDBPB: <c>MSDSP6.0</c>, <c>MSDSP6.2</c>, <c>DRVSPACE</c>, or <c>MS_DSP3</c>.</summary>
   public string Signature { get; private set; } = "";
 
-  /// <summary>Raw CvfSignature at offset 36 (<c>DBLS</c> or <c>DVRS</c>).</summary>
+  /// <summary>Raw CvfSignature at offset 36 (<c>DBLS</c>, <c>DVRS</c>, or <c>DVR3</c>).</summary>
   public string CvfSignature { get; private set; } = "";
 
   /// <summary>True if DriveSpace (any), false if DoubleSpace 6.0.</summary>
   public bool IsDriveSpace => this.Signature != "MSDSP6.0";
+
+  /// <summary>
+  /// True for DriveSpace 3 (Win95 Plus! Pack, 1995) images — the variant that
+  /// uses the MS LZH codec rather than DS LZ77. Detected by the 7-char
+  /// <c>MS_DSP3</c> prefix in the OEM area (the 8th byte is a NUL pad).
+  /// </summary>
+  public bool IsDriveSpace3 => this.Signature.StartsWith("MS_DSP3", StringComparison.Ordinal);
 
   public IReadOnlyList<DoubleSpaceEntry> Entries => this._entries;
 
@@ -65,9 +72,14 @@ public sealed class DoubleSpaceReader : IDisposable {
     if (this._data.Length < 512)
       throw new InvalidDataException("DoubleSpace: image too small.");
 
-    // OEM name (8 bytes at offset 3).
+    // OEM name (8 bytes at offset 3). Accept all four CVF flavours: DoubleSpace
+    // 6.0 (MSDSP6.0), DriveSpace 6.22 (MSDSP6.2), DriveSpace 3 OSR2 (DRVSPACE),
+    // and DriveSpace 3 Plus! Pack (MS_DSP3 — 7 chars + NUL pad, so the full
+    // 8-byte read isn't a clean OR-compare). The MS LZH dispatch happens in
+    // ReadCluster — see IsDriveSpace3.
     this.Signature = Encoding.ASCII.GetString(this._data, 3, 8);
-    if (this.Signature is not ("MSDSP6.0" or "MSDSP6.2" or "DRVSPACE"))
+    var oem7 = Encoding.ASCII.GetString(this._data, 3, 7);
+    if (this.Signature is not ("MSDSP6.0" or "MSDSP6.2" or "DRVSPACE") && oem7 != "MS_DSP3")
       throw new InvalidDataException($"DoubleSpace: invalid OEM signature '{this.Signature}'.");
 
     this._bytesPerSector = BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(11));
@@ -246,7 +258,12 @@ public sealed class DoubleSpaceReader : IDisposable {
         if (physOffset + blockSize <= this._data.Length) {
           var block = this._data.AsSpan(physOffset, blockSize);
           try {
-            return DsCompression.Decompress(block);
+            // DriveSpace 3 (Plus! Pack) clusters use the MS LZH codec; the
+            // 2-byte CVF run header is identical, only the inner payload
+            // dictionary/coder differs.
+            return this.IsDriveSpace3
+              ? DsCompression.DecompressMsLzh(block)
+              : DsCompression.Decompress(block);
           } catch (InvalidDataException) {
             // Fall through to inner-volume read below.
           }

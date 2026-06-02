@@ -364,6 +364,27 @@ Update `Capabilities` ONLY after the corresponding gate is implemented and green
 
 ---
 
+## Compression-Method `+` Postfix Convention
+
+When a format publishes multiple compression methods, the convention for
+indicating "slower but better" variants is a trailing `+`:
+
+| Method id       | Meaning                                                    |
+| --------------- | ---------------------------------------------------------- |
+| `deflate`       | Default-fast variant                                        |
+| `deflate+`      | ~10× effort (lazy matching, deeper search)                  |
+| `deflate++`     | ~100× effort (Zopfli-style iteration, full optimisation)    |
+
+Writers parse the method name with `MethodNameParser.Parse(...)` to recover
+`(BaseMethod, PlusLevel)` and pick the effort tier. Round-trip tests must
+verify that "+" output is byte-equal-readable AND strictly smaller than the
+non-"+" baseline for compressible inputs.
+
+Apply to any format that can spend extra CPU for better ratio: deflate,
+LZ77 variants (DS LZ77, JM-LZH), Brotli, LZMA, etc.
+
+---
+
 ## Testing Requirements
 
 - All new code needs tests. At minimum, test the round-trip: compress then decompress (or create then extract) and verify the data matches.

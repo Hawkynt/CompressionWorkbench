@@ -108,6 +108,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Doc\FileFormat.Doc.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Docx\FileFormat.Docx.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.DoubleSpace\FileSystem.DoubleSpace.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.DriveSpace3\FileSystem.DriveSpace3.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ear\FileFormat.Ear.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Elf\FileFormat.Elf.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Epub\FileFormat.Epub.csproj" />
