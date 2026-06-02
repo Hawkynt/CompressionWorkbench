@@ -21,6 +21,7 @@
     <Project Path="Codecs/Codec.Vorbis/Codec.Vorbis.csproj" />
     <Project Path="Codecs/Codec.Opus/Codec.Opus.csproj" />
     <Project Path="Codecs/Codec.Aac/Codec.Aac.csproj" />
+    <Project Path="FileFormats/FileFormat.Aac/FileFormat.Aac.csproj" />
     <Project Path="FileFormats/FileFormat.Ace/FileFormat.Ace.csproj" />
     <Project Path="FileFormats/FileFormat.Ai/FileFormat.Ai.csproj" />
     <Project Path="FileFormats/FileFormat.Afs/FileFormat.Afs.csproj" />
