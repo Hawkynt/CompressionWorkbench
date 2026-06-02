@@ -1,10 +1,16 @@
 <Project>
 
   <!--
-    After each build, invoke `dotnet publish` with PublishSingleFile to produce a
-    framework-dependent single-exe bundle, then replace the multi-file build output
-    in bin\$(Configuration)\$(TargetFramework)\ with just the bundled exe (+ pdb
-    for Debug builds).
+    After each Release build, invoke `dotnet publish` with PublishSingleFile to
+    produce a framework-dependent single-exe bundle, then replace the multi-file
+    build output in bin\Release\$(TargetFramework)\ with just the bundled exe.
+
+    RELEASE-ONLY: Debug builds keep the multi-file output untouched. The
+    consuming projects set <RuntimeIdentifier>win-x64</RuntimeIdentifier>, so
+    their VS F5 debug profile expects the exe at
+    bin\Debug\$(TargetFramework)\win-x64\$(AssemblyName).exe. The bundle target
+    deletes that RID subfolder (see RemoveDir below) — if it runs in Debug the
+    multi-file exe vanishes and F5 / breakpoint debugging breaks.
 
     Triggered by <EnableSingleFileBundle>true</EnableSingleFileBundle> in each
     exe project. Guarded against recursion by the _InSingleFileBundle property
@@ -15,7 +21,7 @@
   -->
   <Target Name="PostBuildSingleFileBundle"
           AfterTargets="Build"
-          Condition="'$(EnableSingleFileBundle)' == 'true' And '$(_InSingleFileBundle)' != 'true' And '$(DesignTimeBuild)' != 'true' And '$(OS)' == 'Windows_NT'">
+          Condition="'$(EnableSingleFileBundle)' == 'true' And '$(_InSingleFileBundle)' != 'true' And '$(DesignTimeBuild)' != 'true' And '$(OS)' == 'Windows_NT' And '$(Configuration)' == 'Release'">
 
     <PropertyGroup>
       <_BundleTargetDir>$(MSBuildProjectDirectory)\$(BaseOutputPath.TrimEnd('\').TrimEnd('/'))\$(Configuration)\$(TargetFramework.TrimEnd('\').TrimEnd('/'))</_BundleTargetDir>
@@ -30,17 +36,17 @@
           ConsoleToMSBuild="true"
           IgnoreExitCode="false" />
 
-    <!-- The staging dir now contains $(AssemblyName).exe + $(AssemblyName).pdb (Debug) +
-         runtime JSON config files. Wipe the multi-file build output and move the staged
-         single file back. -->
+    <!-- The staging dir now contains $(AssemblyName).exe + runtime JSON config
+         files. Wipe the multi-file build output and move the staged single
+         file back. (Release only — Debug doesn't reach this code per the
+         target's Configuration='Release' guard.) -->
     <ItemGroup>
       <_MultiFileOutput Include="$(_BundleTargetDir)\*.dll" />
       <_MultiFileOutput Include="$(_BundleTargetDir)\*.exe" />
       <_MultiFileOutput Include="$(_BundleTargetDir)\*.json" />
       <_MultiFileOutput Include="$(_BundleTargetDir)\*.xml" />
-      <_MultiFileOutput Include="$(_BundleTargetDir)\*.pdb" Condition="'$(Configuration)' == 'Release'" />
+      <_MultiFileOutput Include="$(_BundleTargetDir)\*.pdb" />
       <_BundleKeepers Include="$(_BundleStagingDir)\$(AssemblyName).exe" />
-      <_BundleKeepers Include="$(_BundleStagingDir)\$(AssemblyName).pdb" Condition="'$(Configuration)' == 'Debug' And Exists('$(_BundleStagingDir)\$(AssemblyName).pdb')" />
     </ItemGroup>
 
     <Delete Files="@(_MultiFileOutput)" />
