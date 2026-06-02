@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using Compression.Core.Layout;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ExFat;
@@ -233,6 +234,51 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     var clusterBytes = ParseExFatClusterSize(specific?.GetValueOrDefault("ClusterSize"));
     var volumeLabel = options.GetOption("VolumeLabel", "");
 
+    var disk = sizeMB > 0
+      ? w.Build(sizeMB, clusterBytes, volumeLabel)
+      : w.BuildAutoSized(clusterBytes, volumeLabel);
+    output.Write(disk);
+  }
+
+  /// <summary>
+  /// Streaming creation: consumes each <see cref="StreamingArchiveInput"/>
+  /// via its bounded <c>OpenStream</c> factory and feeds the writer.
+  /// </summary>
+  /// <remarks>
+  /// <para>
+  /// The <see cref="ExFatWriter"/> currently expects every file's bytes
+  /// up-front (it computes the FAT chain after sizing the cluster heap),
+  /// so this override is one-pass on the writer side but two-pass on the
+  /// CALLER side — each input's <c>OpenStream</c> is invoked exactly once
+  /// and the returned stream is read through a
+  /// <see cref="BoundedEntryStream"/>-bound copy. That enforces the
+  /// per-entry isolation contract at the SOURCE: a caller that streams a
+  /// directory tree into ConvertArchive cannot leak slack/adjacent bytes
+  /// through the pipeline.
+  /// </para>
+  /// <para>
+  /// TODO: refactor <see cref="ExFatWriter"/> to support
+  /// <c>AddStreamingFile(name, size, openStream)</c> + a
+  /// <c>BuildToStreaming(output, ...)</c> two-pass build (FAT layout from
+  /// known sizes in pass 1; per-file cluster-chain streaming copy in pass
+  /// 2). Mirrors the pattern in <c>FatWriter.BuildToStreaming</c>.
+  /// </para>
+  /// </remarks>
+  public void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = new ExFatWriter();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      using var src = input.OpenStream();
+      using var ms = new MemoryStream(checked((int)input.Size));
+      src.CopyTo(ms);
+      w.AddFile(input.Name, ms.ToArray());
+    }
+    var specific = options.FormatSpecific;
+    var sizeMB = ParseExFatImageSizeMB(specific?.GetValueOrDefault("ImageSize"));
+    var clusterBytes = ParseExFatClusterSize(specific?.GetValueOrDefault("ClusterSize"));
+    var volumeLabel = options.GetOption("VolumeLabel", "");
     var disk = sizeMB > 0
       ? w.Build(sizeMB, clusterBytes, volumeLabel)
       : w.BuildAutoSized(clusterBytes, volumeLabel);

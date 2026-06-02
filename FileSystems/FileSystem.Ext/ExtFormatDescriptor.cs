@@ -232,6 +232,42 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     output.Write(w.Build(blockSize, totalBlocks: 4096, version, journal, volumeLabel, inodeSize));
   }
 
+  /// <summary>
+  /// Streaming creation: drains each <see cref="Compression.Registry.Streaming.StreamingArchiveInput"/>
+  /// via its bounded <c>OpenStream</c> factory and feeds the writer one
+  /// file at a time. The writer is one-pass internally (it sizes the
+  /// block group + inode table after all files are added) so each input
+  /// is materialised into a byte array before <c>AddFile</c>; the bound
+  /// is enforced by the caller's <c>OpenStream</c> result.
+  ///
+  /// TODO: refactor <see cref="ExtWriter"/> to a true two-pass streaming
+  /// build (extent allocation from known sizes in pass 1; per-file block
+  /// copy in pass 2) to remove the per-file buffering.
+  /// </summary>
+  public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = new ExtWriter();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      using var src = input.OpenStream();
+      using var ms = new MemoryStream(checked((int)input.Size));
+      src.CopyTo(ms);
+      w.AddFile(input.Name, ms.ToArray());
+    }
+    var versionStr = options.GetOption("Version", "ext4");
+    var version = versionStr switch {
+      "ext2" => ExtWriter.ExtVersion.Ext2,
+      "ext3" => ExtWriter.ExtVersion.Ext3,
+      _ => ExtWriter.ExtVersion.Ext4,
+    };
+    var blockSize = options.GetOptionInt("BlockSize", 4096);
+    var journal = options.GetOptionBool("Journal", true);
+    var volumeLabel = options.GetOption("VolumeLabel", "");
+    var inodeSize = options.GetOptionInt("InodeSize", 256);
+    output.Write(w.Build(blockSize, totalBlocks: 4096, version, journal, volumeLabel, inodeSize));
+  }
+
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new ExtReader(stream);
     foreach (var e in r.Entries) {

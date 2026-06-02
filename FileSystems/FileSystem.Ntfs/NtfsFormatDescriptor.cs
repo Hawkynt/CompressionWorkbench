@@ -286,6 +286,48 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     output.Write(disk);
   }
 
+  /// <summary>
+  /// Streaming creation: drains each <see cref="Compression.Registry.Streaming.StreamingArchiveInput"/>
+  /// via its bounded <c>OpenStream</c> factory and feeds the NTFS writer
+  /// one file at a time.
+  /// </summary>
+  /// <remarks>
+  /// The current <see cref="NtfsWriter"/> requires every file's bytes
+  /// up-front (it allocates MFT records + cluster runs after the full
+  /// content set is known); each input is buffered to a byte array.
+  /// The per-entry isolation contract is enforced at the SOURCE — the
+  /// caller's <c>OpenStream</c> result is a bounded stream so cluster
+  /// slack / adjacent-entry bytes can never enter the writer.
+  /// TODO: refactor NtfsWriter to true two-pass streaming (cluster
+  /// allocation from sizes in pass 1, data streaming in pass 2).
+  /// </remarks>
+  public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var specific = options.FormatSpecific;
+    var label = specific?.GetValueOrDefault("VolumeLabel");
+    var generateShortNames = specific?.GetValueOrDefault("Generate8Dot3") != "false";
+    var w = string.IsNullOrEmpty(label)
+      ? new NtfsWriter(generateShortNames: generateShortNames)
+      : new NtfsWriter(label, generateShortNames);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      using var src = input.OpenStream();
+      using var ms = new MemoryStream(checked((int)input.Size));
+      src.CopyTo(ms);
+      w.AddFile(input.Name, ms.ToArray());
+    }
+    var totalSize     = ParseImageSizeBytes(specific?.GetValueOrDefault("ImageSize"));
+    var clusterSize   = FilesystemSchemaPresets.ParseSize(specific?.GetValueOrDefault("ClusterSize"));
+    var mftRecordSize = FilesystemSchemaPresets.ParseSize(specific?.GetValueOrDefault("MftRecordSize"));
+    var disk = totalSize > 0
+      ? w.Build(totalSize,
+                clusterSize   > 0 ? clusterSize   : 4096,
+                mftRecordSize > 0 ? mftRecordSize : 1024)
+      : w.BuildAutoSized(clusterSize, mftRecordSize);
+    output.Write(disk);
+  }
+
   // Parses the NTFS image-size labels ("16 MB".."16 GB"); "Auto …" → 0.
   private static int ParseImageSizeBytes(string? s) => s?.Trim() switch {
     "16 MB"  => 16  * 1024 * 1024,
