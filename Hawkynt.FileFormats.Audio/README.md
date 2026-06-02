@@ -84,7 +84,7 @@ State legend:
 | Container             | State | Description                                                         |
 | --------------------- | ----- | ------------------------------------------------------------------- |
 | `FileFormat.Wav`      | WORM  | RIFF WAV — INFO / LIST / bext metadata, multi-channel layout        |
-| `FileFormat.Mp3`      | WORM  | MP3 file with ID3v1 / ID3v2 tag readers (creates new MP3 streams)   |
+| `FileFormat.Mp3`      | WORM  | MP3 — ID3v1/v2 tags + per-channel WAVs (decoded via `Codec.Mp3`); creates new MP3 streams |
 | `FileFormat.Flac`     | WORM  | FLAC stream + metadata blocks (STREAMINFO, VORBIS_COMMENT, PICTURE) |
 | `FileFormat.Akb`      | WORM  | Square Enix audio bank                                              |
 | `FileFormat.Awb`      | WORM  | CRI Audio Wave Bank                                                 |
@@ -98,7 +98,9 @@ State legend:
 | `FileFormat.Alac`     | R     | Apple Lossless inside MP4 atoms                                     |
 | `FileFormat.Ape`      | R     | Monkey's Audio (`.ape`) lossless                                    |
 | `FileFormat.WavPack`  | R     | WavPack lossless / hybrid                                           |
-| `FileFormat.Ogg`      | R     | OGG container — Vorbis / Opus / FLAC stream multiplexing            |
+| `FileFormat.Ogg`      | R     | OGG container — packet blobs + comments + per-channel WAVs (Vorbis/Opus decoded via `Codec.Vorbis`/`Codec.Opus`) |
+| `FileFormat.Opus`     | R     | Opus (Ogg) — per-channel WAVs decoded via `Codec.Opus` (graceful fallback when unsupported) |
+| `FileFormat.Aac`      | R     | AAC (ADTS) — per-channel WAVs decoded via `Codec.Aac` (AAC-LC; graceful fallback) |
 | `FileFormat.Midi`     | R     | Standard MIDI File (SMF 0 / 1 / 2) container                        |
 | `FileFormat.Mod`      | R     | ProTracker / SoundTracker MOD                                       |
 | `FileFormat.S3m`      | R     | Scream Tracker 3                                                    |
