@@ -223,6 +223,8 @@
           <MenuItem Header="_Defragment..." Command="{Binding DefragmentEntryCommand}">
             <MenuItem.Icon><Image Source="{StaticResource DefragmentIcon}" Width="16" Height="16" /></MenuItem.Icon>
           </MenuItem>
+          <MenuItem Header="Con_vert Archive..." Click="OnConvertArchive"
+                    ToolTip="Convert the selected file (or the open archive) to another format" />
           <MenuItem Header="A_nalyze..." Command="{Binding AnalyzeCommand}">
             <MenuItem.Icon><Image Source="{StaticResource AnalyzeIcon}" Width="16" Height="16" /></MenuItem.Icon>
           </MenuItem>

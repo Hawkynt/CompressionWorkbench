@@ -273,22 +273,50 @@ public partial class MainWindow : Window {
   }
 
   private void OnConvertArchive(object sender, RoutedEventArgs e) {
-    Compression.Lib.FormatRegistration.EnsureInitialized();
+    // Source preference order:
+    //   1. A single real-FS file selected in the explorer (so Convert is
+    //      reachable via the entry's context menu without opening the
+    //      archive first — user can right-click fat.img → Convert Archive).
+    //   2. Otherwise the currently open archive from the view model.
+    string? sourcePath = null;
+    if (ViewModel.IsBrowsingOsFolder
+        && ViewModel.SelectedEntries.Count == 1
+        && !ViewModel.SelectedEntries[0].IsParentEntry
+        && !ViewModel.SelectedEntries[0].IsDirectory
+        && System.IO.File.Exists(ViewModel.SelectedEntries[0].Path)) {
+      sourcePath = ViewModel.SelectedEntries[0].Path;
+    } else if (!string.IsNullOrEmpty(ViewModel.ArchivePath)
+        && System.IO.File.Exists(ViewModel.ArchivePath)) {
+      sourcePath = ViewModel.ArchivePath;
+    }
 
-    // Source = the currently open archive from the view model.
-    var sourcePath = ViewModel.ArchivePath;
-    if (string.IsNullOrEmpty(sourcePath) || !System.IO.File.Exists(sourcePath)) {
-      MessageBox.Show(this, "Open an archive or image first, then use Convert Archive to write it out in another format.",
+    if (sourcePath == null) {
+      MessageBox.Show(this,
+        "Select a file in the explorer or open an archive/image first, then use Convert Archive.",
         "Convert Archive", MessageBoxButton.OK, MessageBoxImage.Information);
       return;
     }
 
-    // Build a SaveFileDialog filter listing every IArchiveCreatable descriptor,
-    // grouped by FormatCategory (Archive | Stream | Audio | Video | ...).
+    RunConvertArchiveDialog(sourcePath);
+  }
+
+  /// <summary>
+  /// Shared conversion-dialog pipeline: pick target format + filename via
+  /// SaveFileDialog → optional schema dialog → <see cref="Compression.Lib.ArchiveOperations.ConvertArchive"/>.
+  /// Called from the menu (source = open archive) and from the explorer
+  /// context menu (source = selected real-FS file).
+  /// </summary>
+  private void RunConvertArchiveDialog(string sourcePath) {
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+
+    // Build a SaveFileDialog filter listing every IArchiveCreatable
+    // descriptor. No category prefix — filesystem descriptors share the
+    // Archive FormatCategory with real archives, so prefixing every entry
+    // with "Archive:" was misleading when users were picking ".fat" or
+    // ".img" targets. Just sort alphabetically by display name.
     var creatable = Compression.Registry.FormatRegistry.All
       .Where(d => d is Compression.Registry.IArchiveCreatable)
-      .OrderBy(d => d.Category.ToString())
-      .ThenBy(d => d.DisplayName, StringComparer.OrdinalIgnoreCase)
+      .OrderBy(d => d.DisplayName, StringComparer.OrdinalIgnoreCase)
       .ToList();
 
     if (creatable.Count == 0) {
@@ -300,15 +328,12 @@ public partial class MainWindow : Window {
     // Filter format: "Name (*.ext;*.ext2)|*.ext;*.ext2|...|All files (*.*)|*.*"
     var parts = new List<string>();
     var orderedDescriptors = new List<Compression.Registry.IFormatDescriptor>();
-    foreach (var group in creatable.GroupBy(d => d.Category)) {
-      foreach (var d in group) {
-        var exts = d.Extensions.Count > 0
-          ? string.Join(";", d.Extensions.Select(x => "*" + x))
-          : "*" + d.DefaultExtension;
-        var label = $"{group.Key}: {d.DisplayName} ({exts})";
-        parts.Add($"{label}|{exts}");
-        orderedDescriptors.Add(d);
-      }
+    foreach (var d in creatable) {
+      var exts = d.Extensions.Count > 0
+        ? string.Join(";", d.Extensions.Select(x => "*" + x))
+        : "*" + d.DefaultExtension;
+      parts.Add($"{d.DisplayName} ({exts})|{exts}");
+      orderedDescriptors.Add(d);
     }
     parts.Add("All files (*.*)|*.*");
 
