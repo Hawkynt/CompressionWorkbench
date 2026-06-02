@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 
 namespace Compression.Tests.Yaffs2;
 
@@ -315,5 +316,57 @@ public class Yaffs2Tests {
       .ToHashSet();
     Assert.That(fileNames, Does.Contain("one.txt"));
     Assert.That(fileNames, Does.Contain("two.txt"));
+  }
+
+  // ── OpenEntry tests ───────────────────────────────────────────────────
+
+  [Test, Category("HappyPath")]
+  public void OpenEntry_ReturnsBoundedStream_ReadPastSizeReturnsZero() {
+    var w = new FileSystem.Yaffs2.Yaffs2Writer();
+    var content = "Hello YAFFS2 OpenEntry"u8.ToArray();
+    w.AddFile("hello.txt", content);
+    var image = w.Build();
+
+    var d = new FileSystem.Yaffs2.Yaffs2FormatDescriptor();
+    using var ms = new MemoryStream(image);
+    using var s = d.OpenEntry(ms, "hello.txt", null);
+    Assert.That(s, Is.InstanceOf<BoundedEntryStream>(), "OpenEntry must return BoundedEntryStream");
+    Assert.That(s.Length, Is.EqualTo(content.Length));
+
+    var buf = new byte[128];
+    var n = s.Read(buf, 0, buf.Length);
+    Assert.That(n, Is.EqualTo(content.Length));
+    Assert.That(buf.AsSpan(0, n).ToArray(), Is.EqualTo(content));
+
+    Assert.That(s.Read(buf, 0, buf.Length), Is.EqualTo(0), "read past LogicalSize returns 0 (EOF)");
+  }
+
+  [Test, Category("HappyPath")]
+  public void OpenEntry_AcceptsFilesPrefix() {
+    var w = new FileSystem.Yaffs2.Yaffs2Writer();
+    var content = "prefix-test"u8.ToArray();
+    w.AddFile("hello.txt", content);
+    var image = w.Build();
+
+    var d = new FileSystem.Yaffs2.Yaffs2FormatDescriptor();
+    using var ms = new MemoryStream(image);
+    using var s = d.OpenEntry(ms, "files/hello.txt", null);
+    Assert.That(s.Length, Is.EqualTo(content.Length));
+    var buf = new byte[64];
+    var n = s.Read(buf, 0, buf.Length);
+    Assert.That(buf.AsSpan(0, n).ToArray(), Is.EqualTo(content));
+  }
+
+  [Test, Category("Sad")]
+  public void OpenEntry_UnknownName_ReturnsEmptyBoundedStream() {
+    var w = new FileSystem.Yaffs2.Yaffs2Writer();
+    w.AddFile("real.txt", "x"u8.ToArray());
+    var image = w.Build();
+
+    var d = new FileSystem.Yaffs2.Yaffs2FormatDescriptor();
+    using var ms = new MemoryStream(image);
+    using var s = d.OpenEntry(ms, "does-not-exist", null);
+    Assert.That(s, Is.InstanceOf<BoundedEntryStream>());
+    Assert.That(s.Length, Is.EqualTo(0));
   }
 }

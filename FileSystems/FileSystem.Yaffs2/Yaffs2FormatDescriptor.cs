@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Yaffs2;
@@ -105,6 +106,46 @@ public sealed class Yaffs2FormatDescriptor
       var data = Concat(chunks, obj.Size);
       WriteIfMatch(outputDir, "files/" + path, data, files);
     }
+  }
+
+  /// <summary>
+  /// Opens a single file entry as a bounded stream over the object's reassembled
+  /// data chunks. Accepts the path with or without the <c>files/</c> prefix used
+  /// by <see cref="Extract"/>. Reads past the entry's logical size return 0 (EOF).
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    try {
+      var image = ReadAll(archive);
+      var scan = Yaffs2Scanner.Scan(image);
+      if (!scan.ParseOk) goto Empty;
+      var paths = BuildPaths(scan);
+      var target = entryName.StartsWith("files/", StringComparison.Ordinal) ? entryName[6..] : entryName;
+      foreach (var obj in scan.Objects) {
+        if (obj.Type != Yaffs2Scanner.YObjectType.File) continue;
+        if (!scan.DataChunks.TryGetValue(obj.ObjectId, out var chunks) || chunks.Count == 0) continue;
+        var path = paths.TryGetValue(obj.ObjectId, out var p) ? p : obj.Name;
+        if (string.IsNullOrEmpty(path)) continue;
+        if (!string.Equals(path, target, StringComparison.OrdinalIgnoreCase)
+          && !string.Equals("files/" + path, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+        var data = Concat(chunks, obj.Size);
+        return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
+      }
+    } catch {
+      // fall through
+    }
+  Empty:
+    return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
   }
 
   // ── IArchiveCreatable ─────────────────────────────────────────────────
