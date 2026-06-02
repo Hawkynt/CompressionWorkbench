@@ -15,6 +15,22 @@ public static partial class FormatRegistration {
   private static int _initStarted;
   private static readonly ManualResetEventSlim _initDone = new(initialState: false);
 
+  /// <summary>True iff the registry is fully populated and safe to enumerate.</summary>
+  public static bool IsReady => _initDone.IsSet;
+
+  /// <summary>
+  /// Async-friendly variant of <see cref="EnsureInitialized"/>. Returns a
+  /// completed task immediately if the registry is already populated;
+  /// otherwise dispatches the registration to a worker thread and yields the
+  /// resulting task so UI callers can <c>await</c> it without blocking the
+  /// dispatcher. The UI sets a busy cursor + status line while awaiting,
+  /// giving the user a "loading…" hint instead of an apparent freeze.
+  /// </summary>
+  public static System.Threading.Tasks.Task EnsureInitializedAsync() {
+    if (_initDone.IsSet) return System.Threading.Tasks.Task.CompletedTask;
+    return System.Threading.Tasks.Task.Run(EnsureInitialized);
+  }
+
   /// <summary>
   /// Ensures all format descriptors and building blocks are registered exactly once.
   /// Thread-safe: the first caller runs the registration; concurrent callers

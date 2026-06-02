@@ -272,7 +272,13 @@ public partial class MainWindow : Window {
     }
   }
 
-  private void OnConvertArchive(object sender, RoutedEventArgs e) {
+  private async void OnConvertArchive(object sender, RoutedEventArgs e) {
+    // If the background warm-up Task launched at App.OnStartup hasn't
+    // finished yet, the registry is still being populated. Show a wait
+    // cursor and await it asynchronously instead of blocking the UI
+    // thread (which would freeze the right-click menu and the window).
+    await WaitForRegistryAsync("Loading formats…");
+
     // Source preference order:
     //   1. A single real-FS file selected in the explorer (so Convert is
     //      reachable via the entry's context menu without opening the
@@ -306,8 +312,26 @@ public partial class MainWindow : Window {
   /// Called from the menu (source = open archive) and from the explorer
   /// context menu (source = selected real-FS file).
   /// </summary>
+  /// <summary>
+  /// Waits asynchronously until the format registry is fully populated,
+  /// showing an app-starting cursor (and an optional message in the status
+  /// bar, if one exists) while the registration completes. Returns
+  /// immediately when the registry is already ready.
+  /// </summary>
+  private async System.Threading.Tasks.Task WaitForRegistryAsync(string message) {
+    if (Compression.Lib.FormatRegistration.IsReady) return;
+    var prevCursor = System.Windows.Input.Mouse.OverrideCursor;
+    System.Windows.Input.Mouse.OverrideCursor = System.Windows.Input.Cursors.AppStarting;
+    try {
+      await Compression.Lib.FormatRegistration.EnsureInitializedAsync();
+    } finally {
+      System.Windows.Input.Mouse.OverrideCursor = prevCursor;
+    }
+  }
+
   private void RunConvertArchiveDialog(string sourcePath) {
-    Compression.Lib.FormatRegistration.EnsureInitialized();
+    // Registry is guaranteed ready by the WaitForRegistryAsync call in the
+    // OnConvertArchive entry point — no redundant synchronous wait here.
 
     // Build a SaveFileDialog filter listing every IArchiveCreatable
     // descriptor. No category prefix — filesystem descriptors share the

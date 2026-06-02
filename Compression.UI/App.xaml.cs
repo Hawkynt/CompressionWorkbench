@@ -16,11 +16,18 @@ public partial class App : System.Windows.Application {
     // Warm the format registry on a background thread so the first user-driven
     // CanExecute / right-click that calls FormatDetector.DetectByExtension or
     // FormatRegistry.GetArchiveOps doesn't pay the ~180-descriptor registration
-    // tax inline. Fire-and-forget — any subsequent caller hits the warm cache
-    // (Interlocked guard inside EnsureInitialized makes the second call free).
+    // tax inline. Fire-and-forget; CanExecute predicates short-circuit on
+    // FormatRegistration.IsReady so the UI doesn't block while warming.
+    // When warm-up finishes we marshal back to the dispatcher and force
+    // CommandManager to re-query so the now-enabled commands light up.
     System.Threading.Tasks.Task.Run(() => {
       try { Compression.Lib.FormatRegistration.EnsureInitialized(); }
       catch { /* swallow — surfaced again on the next real call which throws normally */ }
+    }).ContinueWith(_ => {
+      // Dispatch back to the UI thread so command-binding re-evaluates.
+      // Without this the menu items stay grayed until something else
+      // triggers a requery (mouse move, focus change, etc.).
+      Dispatcher.BeginInvoke(System.Windows.Input.CommandManager.InvalidateRequerySuggested);
     });
 
     // Surface unhandled exceptions to a crash log so future "just crashed" reports

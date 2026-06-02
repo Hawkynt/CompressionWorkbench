@@ -285,7 +285,11 @@ internal sealed class MainViewModel : ViewModelBase {
       if (!IsBrowsingOsFolder) return false;
       var p = entry.Path;
       if (string.IsNullOrEmpty(p) || !File.Exists(p)) return false;
-      Compression.Lib.FormatRegistration.EnsureInitialized();
+      // Registry not yet warm → disable rather than blocking the UI thread
+      // on the warm-up Task. App.OnStartup fires
+      // CommandManager.InvalidateRequerySuggested when registration finishes
+      // so the menu re-evaluates and the item lights up.
+      if (!Compression.Lib.FormatRegistration.IsReady) return false;
       var format = FormatDetector.DetectByExtension(p);
       var ops = FormatRegistry.GetArchiveOps(format.ToString());
       return ops is IArchiveDefragmentable;
@@ -305,8 +309,13 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   private bool HasSelectedFile => SelectedEntries.Any(e => !e.IsDirectory && !e.IsParentEntry);
-  private bool CanAddFiles => !string.IsNullOrEmpty(ArchivePath) && FormatDetector.DetectByExtension(ArchivePath) is var f
-    && f != FormatDetector.Format.Unknown && !FormatDetector.IsStreamFormat(f);
+  // Same wait-free guard as CanDefragmentSelected — see note there.
+  private bool CanAddFiles
+    => !string.IsNullOrEmpty(ArchivePath)
+       && Compression.Lib.FormatRegistration.IsReady
+       && FormatDetector.DetectByExtension(ArchivePath) is var f
+       && f != FormatDetector.Format.Unknown
+       && !FormatDetector.IsStreamFormat(f);
 
   public void Open(string path) => Open(path, fromNestedDescent: false);
 
