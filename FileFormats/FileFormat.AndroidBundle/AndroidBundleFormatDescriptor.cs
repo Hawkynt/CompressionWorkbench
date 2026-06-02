@@ -71,6 +71,49 @@ public sealed class AndroidBundleFormatDescriptor : IFormatDescriptor, IArchiveF
   }
 
   /// <summary>
+  /// Opens a single entry as a bounded read-only stream. The synthetic
+  /// <c>metadata.ini</c> entry is materialised on the fly from
+  /// <c>BundleConfig.pb</c>; all other entries delegate to the inner
+  /// <see cref="ZipReader"/> and are wrapped in a
+  /// <see cref="Compression.Registry.Streaming.BoundedEntryStream"/> sized
+  /// to the entry's uncompressed length.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    using var r = new ZipReader(archive, leaveOpen: true, password: password);
+    if (string.Equals(entryName, "metadata.ini", StringComparison.OrdinalIgnoreCase)) {
+      foreach (var e in r.Entries) {
+        if (!e.FileName.Equals("BundleConfig.pb", StringComparison.OrdinalIgnoreCase)) continue;
+        var summary = SummarizeBundleConfig(r.ExtractEntry(e));
+        return new Compression.Registry.Streaming.BoundedEntryStream(
+          new MemoryStream(summary, writable: false), summary.Length, leaveOpen: false);
+      }
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+    }
+    foreach (var e in r.Entries) {
+      if (e.IsDirectory) continue;
+      var rewritten = RewriteName(e.FileName);
+      if (!string.Equals(rewritten, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      var bytes = r.ExtractEntry(e);
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+    }
+    return new Compression.Registry.Streaming.BoundedEntryStream(
+      new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
+  }
+
+  /// <summary>
   /// AAB entry names already carry the split structure (<c>base/</c>, <c>splits/</c>,
   /// <c>BundleConfig.pb</c>); this method is a no-op for recognised shapes and a
   /// passthrough otherwise so malformed bundles still extract.

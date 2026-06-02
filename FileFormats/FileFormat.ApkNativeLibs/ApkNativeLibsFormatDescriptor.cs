@@ -57,6 +57,44 @@ public sealed class ApkNativeLibsFormatDescriptor : IFormatDescriptor, IArchiveF
     }
   }
 
+  /// <summary>
+  /// Opens a single rewritten native-lib entry as a bounded stream. The
+  /// caller's <paramref name="entryName"/> uses the synthetic
+  /// <c>native_libs/&lt;abi&gt;/*.so</c> view; we reverse the rewrite back
+  /// to the underlying <c>lib/&lt;abi&gt;/*.so</c> ZIP entry, decode it, and
+  /// wrap the bytes in a
+  /// <see cref="Compression.Registry.Streaming.BoundedEntryStream"/> sized
+  /// to the entry's uncompressed length.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    // Reverse the rewrite: "native_libs/arm64-v8a/libfoo.so" → "lib/arm64-v8a/libfoo.so".
+    var innerName = entryName.StartsWith("native_libs/", StringComparison.Ordinal)
+      ? "lib/" + entryName.Substring("native_libs/".Length)
+      : entryName;
+    using var r = new ZipReader(archive, leaveOpen: true, password: password);
+    foreach (var e in r.Entries) {
+      if (e.IsDirectory) continue;
+      if (!IsNativeLib(e.FileName)) continue;
+      if (!string.Equals(e.FileName, innerName, StringComparison.OrdinalIgnoreCase)) continue;
+      var bytes = r.ExtractEntry(e);
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+    }
+    return new Compression.Registry.Streaming.BoundedEntryStream(
+      new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
+  }
+
   private static bool IsNativeLib(string path) =>
     path.StartsWith("lib/", StringComparison.Ordinal) &&
     path.EndsWith(".so", StringComparison.OrdinalIgnoreCase);

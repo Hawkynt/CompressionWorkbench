@@ -122,6 +122,46 @@ public sealed class WheelFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   }
 
   /// <summary>
+  /// Opens a single entry as a bounded read-only stream. The synthetic
+  /// <c>metadata.ini</c> entry is materialised on the fly; all other
+  /// entries are delegated to the inner <see cref="ZipReader"/> and wrapped
+  /// in a <see cref="Compression.Registry.Streaming.BoundedEntryStream"/>
+  /// sized to the entry's uncompressed length.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    using var zip = new ZipReader(archive, leaveOpen: true, password: password);
+    if (string.Equals(entryName, "metadata.ini", StringComparison.OrdinalIgnoreCase)) {
+      var distInfo = LocateDistInfo(zip);
+      var metadata = TryReadEntry(zip, distInfo + "/METADATA");
+      var wheel = TryReadEntry(zip, distInfo + "/WHEEL");
+      var record = TryReadEntry(zip, distInfo + "/RECORD");
+      var summary = BuildMetadata(distInfo, metadata, wheel, record);
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(summary, writable: false), summary.Length, leaveOpen: false);
+    }
+    foreach (var e in zip.Entries) {
+      if (e.IsDirectory) continue;
+      if (!string.Equals(e.FileName, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      var bytes = zip.ExtractEntry(e);
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+    }
+    return new Compression.Registry.Streaming.BoundedEntryStream(
+      new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
+  }
+
+  /// <summary>
   /// Returns the dist-info directory name (without trailing slash). Throws
   /// <see cref="InvalidDataException"/> if the ZIP doesn't contain exactly one
   /// <c>*.dist-info/METADATA</c> file at the root.
