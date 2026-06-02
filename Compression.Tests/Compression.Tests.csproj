@@ -449,6 +449,7 @@
     <ProjectReference Include="..\FileSystems\FileSystem.Lustre\FileSystem.Lustre.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.CephFs\FileSystem.CephFs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.GlusterFs\FileSystem.GlusterFs.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.MooseFs\FileSystem.MooseFs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Tfs\FileSystem.Tfs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zip\FileFormat.Zip.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zlib\FileFormat.Zlib.csproj" />
