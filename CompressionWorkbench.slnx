@@ -247,6 +247,7 @@
     <Project Path="FileFormats/FileFormat.Ogg/FileFormat.Ogg.csproj" />
     <Project Path="FileSystems/FileSystem.MinixFs/FileSystem.MinixFs.csproj" />
     <Project Path="FileSystems/FileSystem.MinixV1/FileSystem.MinixV1.csproj" />
+    <Project Path="FileSystems/FileSystem.Fatx/FileSystem.Fatx.csproj" />
     <Project Path="FileSystems/FileSystem.MinixV2/FileSystem.MinixV2.csproj" />
     <Project Path="FileSystems/FileSystem.Nilfs2/FileSystem.Nilfs2.csproj" />
     <Project Path="FileSystems/FileSystem.Tux2/FileSystem.Tux2.csproj" />
@@ -401,6 +402,7 @@
     <Project Path="FileSystems/FileSystem.OrangeFs/FileSystem.OrangeFs.csproj" />
     <Project Path="FileSystems/FileSystem.Stacker/FileSystem.Stacker.csproj" />
     <Project Path="FileSystems/FileSystem.TahoeLafs/FileSystem.TahoeLafs.csproj" />
+    <Project Path="FileSystems/FileSystem.Wafl/FileSystem.Wafl.csproj" />
     <Project Path="FileSystems/FileSystem.Tfs/FileSystem.Tfs.csproj" />
     <Project Path="FileFormats/FileFormat.Zip/FileFormat.Zip.csproj" />
     <Project Path="FileFormats/FileFormat.Zlib/FileFormat.Zlib.csproj" />

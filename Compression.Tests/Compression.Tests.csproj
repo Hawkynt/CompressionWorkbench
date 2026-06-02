@@ -293,6 +293,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Ogg\FileFormat.Ogg.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.MinixFs\FileSystem.MinixFs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.MinixV1\FileSystem.MinixV1.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Fatx\FileSystem.Fatx.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.MinixV2\FileSystem.MinixV2.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Nilfs2\FileSystem.Nilfs2.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Tux2\FileSystem.Tux2.csproj" />
@@ -439,6 +440,7 @@
     <ProjectReference Include="..\FileSystems\FileSystem.OrangeFs\FileSystem.OrangeFs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Stacker\FileSystem.Stacker.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.TahoeLafs\FileSystem.TahoeLafs.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Wafl\FileSystem.Wafl.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Tfs\FileSystem.Tfs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zip\FileFormat.Zip.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zlib\FileFormat.Zlib.csproj" />
