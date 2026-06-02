@@ -296,6 +296,11 @@ internal sealed class MainViewModel : ViewModelBase {
     if (!CanDefragmentSelected) return;
     var path = SelectedEntries[0].Path;
     var dlg = new Views.DefragmentWindow(path) { Owner = Application.Current.MainWindow };
+    // Re-list when the dialog mutates the currently-open archive.
+    dlg.ArchiveMutated += mutated => {
+      if (HasArchive && string.Equals(mutated, ArchivePath, StringComparison.OrdinalIgnoreCase))
+        Open(ArchivePath);
+    };
     dlg.Show();
   }
 

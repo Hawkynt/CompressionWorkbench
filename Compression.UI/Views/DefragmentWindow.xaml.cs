@@ -28,6 +28,29 @@ public partial class DefragmentWindow : Window {
   private string _filesSortDescription = "listing order";
   private LayoutTemplate? _selectedLayoutProfile;
 
+  /// <summary>
+  /// Path of the image last successfully mutated by this window (defrag,
+  /// shrink, wipe-empty, or archive repack). Stays null while the window
+  /// only previews. Hosts subscribe to <see cref="ArchiveMutated"/> to
+  /// refresh their explorer/views when the mutation lands.
+  /// </summary>
+  public string? MutatedImagePath { get; private set; }
+
+  /// <summary>
+  /// Raised when an operation has just modified the on-disk image. The
+  /// argument is the path that changed (always equals
+  /// <see cref="MutatedImagePath"/>). Hosts compare against their currently
+  /// loaded archive and reload if they match.
+  /// </summary>
+  public event Action<string>? ArchiveMutated;
+
+  /// <summary>Marks <paramref name="path"/> as just-mutated and fires the
+  /// event. Called from the success branch of OnRun / OnShrink / OnWipeEmpty.</summary>
+  private void NotifyMutated(string path) {
+    this.MutatedImagePath = path;
+    this.ArchiveMutated?.Invoke(path);
+  }
+
   public DefragmentWindow() {
     InitializeComponent();
     RefreshLayoutProfilesCombo();
@@ -229,7 +252,8 @@ public partial class DefragmentWindow : Window {
   /// (the original proxy behavior) so the visualization still has some
   /// structure.</para>
   /// </summary>
-  private void PreviewBlockMap(string path, IArchiveFormatOperations? ops) {
+  private void PreviewBlockMap(string path, IArchiveFormatOperations? ops, bool wasMutated = false) {
+    if (wasMutated) NotifyMutated(path);
     BlockMap.BlockMap = null;
     BlockMap.ImageSize = 0;
     FilesGrid.ItemsSource = null;
@@ -992,6 +1016,9 @@ public partial class DefragmentWindow : Window {
             Append($"Status: {lastCompleteStatus}");
           if (mode == DefragMode.ConsolidateAtEnd)
             Append("Tip: image byte size doesn't change for in-place end-pack — see the block chart for the new layout.");
+          // BlockMap was already refreshed incrementally via OnProgress;
+          // emit the mutated signal so the host explorer can re-list entries.
+          NotifyMutated(path);
         }
         Append("");
       });
@@ -1066,7 +1093,7 @@ public partial class DefragmentWindow : Window {
         Append("");
 
         // Refresh the block chart to show the new layout.
-        PreviewBlockMap(path, ops);
+        PreviewBlockMap(path, ops, wasMutated: err == null);
       });
     });
   }
@@ -1142,7 +1169,7 @@ public partial class DefragmentWindow : Window {
         Append("");
 
         // Refresh the block chart to show the new layout.
-        PreviewBlockMap(path, ops);
+        PreviewBlockMap(path, ops, wasMutated: err == null);
       });
     });
   }
@@ -1196,7 +1223,7 @@ public partial class DefragmentWindow : Window {
         Append("");
 
         // Refresh the block chart to show the new layout.
-        PreviewBlockMap(path, ops);
+        PreviewBlockMap(path, ops, wasMutated: err == null);
       });
     });
   }
@@ -1333,7 +1360,7 @@ public partial class DefragmentWindow : Window {
           SizeLbl.Text = $"{FormatSize(newSize)} ({newSize:N0} bytes)";
         }
         Append("");
-        PreviewBlockMap(path, ops);
+        PreviewBlockMap(path, ops, wasMutated: err == null);
       });
     });
   }
@@ -1428,7 +1455,7 @@ public partial class DefragmentWindow : Window {
         Append("");
 
         // Refresh the block chart to show the cleaned layout.
-        PreviewBlockMap(path, ops);
+        PreviewBlockMap(path, ops, wasMutated: err == null);
       });
     });
   }

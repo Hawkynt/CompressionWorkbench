@@ -170,6 +170,13 @@ public partial class MainWindow : Window {
     var dlg = preselected != null
       ? new Views.DefragmentWindow(preselected) { Owner = this }
       : new Views.DefragmentWindow { Owner = this };
+    // Re-list the explorer whenever the defragment window mutates the
+    // archive we currently have open (defrag, shrink, wipe-empty, optimize).
+    dlg.ArchiveMutated += path => {
+      if (ViewModel.HasArchive
+          && string.Equals(path, ViewModel.ArchivePath, StringComparison.OrdinalIgnoreCase))
+        ViewModel.Open(ViewModel.ArchivePath);
+    };
     dlg.Show();
   }
 
