@@ -294,6 +294,76 @@ The source generator discovers `IBuildingBlock` implementations automatically. T
 
 ---
 
+## Format Capability Tiers — Promoting a Format Stepwise
+
+A format's `Capabilities` advertise what the descriptor can actually do. Promote in stages, each with its own acceptance gate. **Never advertise a capability you haven't verified at its gate.**
+
+```
+[golden sample]  ──►  R/O  ──►  WORM  ──►  R/W
+   (optional         (read   (write+      (modify
+    bootstrap)       only)   read-back)   in place)
+```
+
+### Stage 0 (optional) — Golden sample
+
+Bootstrap a known-good image using a third-party tool (`mkfs.ext4`, `zip`, `bsdtar`, `mformat`, `mkisofs`, `genisoimage`, etc.) and check it into `test-corpus/` (gitignored — users drop their own files), OR generate one programmatically in test setup using a published reference implementation. This is the **independent oracle** — your reader is correct iff it reads this sample correctly.
+
+### Stage 1 — R/O
+
+**What:** parse the on-disk structure, list entries, extract per-entry bytes.
+
+**Capabilities:** `CanList | CanExtract | CanTest`
+
+**Acceptance gate:**
+- `Reader_ReadsGoldenSample` — list+extract matches expected entries.
+- `OpenEntry_ReturnsBoundedStream` — bounded by `entry.Size`, never leaks slack / adjacent entries / padding (the streaming pipeline's invariant; see `EntryIsolationFuzzTests`).
+- `Reader_RejectsCorruptedImage` — bit-flips in magic/CRC fields surface as a clean exception, not a hang or silent misread.
+
+### Stage 2 — WORM (Write Once Read Many)
+
+**What:** create new images that round-trip through the reader. Once written, the image is not modified again.
+
+**Capabilities:** `CanList | CanExtract | CanTest | CanCreate`
+
+**Acceptance gates:**
+1. **Round-trip via own reader:** `writer.Build(files) → bytes; reader.Read(bytes) → files` recovers names + sizes + bytes. Necessary but NOT sufficient — see §3.
+2. **Spec compliance** (one of, in preference order):
+   - **External-tool gate** — `[Category("ExternalConformance")]` test that runs a third-party validator (`fsck.X`, `xfs_repair -n`, `unzip -t`, etc.) against the writer's output. Use `Assert.Ignore` when the tool isn't installed so the test skips cleanly. The test guards CI on hosts where the tool IS installed.
+   - **Spec field-offset audit** — manually cross-check every written field's offset against the published on-disk format spec. Note the spec section / URL in code comments at the writer entry point.
+   - **Cross-implementation parity** — compare the writer's output byte-by-byte against a reference implementation's output for the same inputs.
+
+3. **Two-pass streaming invariant** (where applicable for cluster/block/extent formats — see `FatWriter.BuildToStreaming`): cluster/extent tails past `entry.Size` stay sparse-zero. Source data never leaks past the declared size into adjacent allocations.
+
+### Stage 3 — Modifier (Add / Delete / Overwrite) → Full R/W
+
+**What:** in-place modification of existing images without rebuilding from scratch.
+
+**Capabilities:** `CanList | CanExtract | CanTest | CanCreate | CanModify`
+
+**Acceptance gates:**
+1. **Round-trip via own reader** for every modify operation:
+   - `Add(image, "new.txt", bytes)` — new entry readable; pre-existing entries unchanged.
+   - `Remove(image, "old.txt")` — entry gone; pre-existing entries unchanged.
+   - `Overwrite(image, "existing.txt", newBytes)` — content replaced; metadata (mtime/attrs unless explicitly changed) preserved.
+2. **Re-verification via external tool** for each operation when the external-tool gate from Stage 2 exists. Modifying an image with a buggy writer can silently corrupt regions the writer never wrote — only the third-party tool catches this.
+3. **Secure-delete invariant** (where security-relevant): a removed entry's content bytes are zeroed in the image (no recovery from raw bytes), not merely unlinked from the directory tree. See `FatRemover` for the canonical implementation.
+
+### The mutual-compensation trap
+
+Self round-trip passes when the reader and writer are **mutually wrong at the same offsets** (the "XFS-style" bug). Examples from this project's history (see `docs/FILESYSTEMS.md`):
+
+- **XFS** writer used wrong superblock field offsets; reader used the same wrong offsets; self round-trip passed; `xfs_repair` rejected the image.
+- **exFAT** multi-file defrag preserved bytes through our reader; external `fsck.exfat` flagged FAT chain corruption.
+- **Btrfs** `csum_type = 97` — our reader accepted; `btrfs check` rejected.
+
+The reader is NOT an independent oracle when it's the same codebase that wrote the bytes. Stage 2 acceptance gate #2 (external tool / spec audit / cross-impl parity) is the only protection.
+
+### Promotion rule
+
+Update `Capabilities` ONLY after the corresponding gate is implemented and green in CI. A writer with `CanCreate` set but no Stage 2 gate is more harmful than a missing writer — it misleads users into thinking they produced a mountable / tool-readable image. When the gate cannot be satisfied (proprietary format, no public spec, no tool), keep the previous tier and document the deferral in the descriptor's `Description`.
+
+---
+
 ## Testing Requirements
 
 - All new code needs tests. At minimum, test the round-trip: compress then decompress (or create then extract) and verify the data matches.
