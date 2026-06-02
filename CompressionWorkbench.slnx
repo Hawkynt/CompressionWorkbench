@@ -408,6 +408,7 @@
     <Project Path="FileSystems/FileSystem.OneFs/FileSystem.OneFs.csproj" />
     <Project Path="FileSystems/FileSystem.Gpfs/FileSystem.Gpfs.csproj" />
     <Project Path="FileSystems/FileSystem.Lustre/FileSystem.Lustre.csproj" />
+    <Project Path="FileSystems/FileSystem.CephFs/FileSystem.CephFs.csproj" />
     <Project Path="FileSystems/FileSystem.Tfs/FileSystem.Tfs.csproj" />
     <Project Path="FileFormats/FileFormat.Zip/FileFormat.Zip.csproj" />
     <Project Path="FileFormats/FileFormat.Zlib/FileFormat.Zlib.csproj" />
