@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 
 namespace Compression.Tests.OpenVms;
 
@@ -119,5 +120,48 @@ public class OpenVmsTests {
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanTest), Is.True);
+  }
+
+  [Test, Category("HappyPath")]
+  public void OpenEntry_HomeBlock_ReturnsBoundedStream_ReadPastSizeReturnsZero() {
+    var img = BuildMinimal(ods5: false);
+    using var ms = new MemoryStream(img);
+    var d = new FileSystem.OpenVms.OpenVmsFormatDescriptor();
+
+    using var s = d.OpenEntry(ms, "home_block.bin", null);
+    Assert.That(s, Is.InstanceOf<BoundedEntryStream>(), "OpenEntry must return BoundedEntryStream");
+    Assert.That(s.Length, Is.EqualTo(512));
+
+    var buf = new byte[1024];
+    var n = s.Read(buf, 0, buf.Length);
+    Assert.That(n, Is.EqualTo(512));
+    Assert.That(s.Read(buf, 0, buf.Length), Is.EqualTo(0), "read past LogicalSize returns 0 (EOF)");
+  }
+
+  [Test, Category("HappyPath")]
+  public void OpenEntry_FullDisk_ReturnsBoundedStreamOfWholeImage() {
+    var img = BuildMinimal(ods5: false);
+    using var ms = new MemoryStream(img);
+    var d = new FileSystem.OpenVms.OpenVmsFormatDescriptor();
+
+    using var s = d.OpenEntry(ms, "FULL.disk", null);
+    Assert.That(s, Is.InstanceOf<BoundedEntryStream>());
+    Assert.That(s.Length, Is.EqualTo(img.Length));
+
+    var buf = new byte[img.Length + 16];
+    var n = s.Read(buf, 0, buf.Length);
+    Assert.That(n, Is.EqualTo(img.Length));
+    Assert.That(s.Read(buf, 0, buf.Length), Is.EqualTo(0), "read past LogicalSize returns 0 (EOF)");
+  }
+
+  [Test, Category("Sad")]
+  public void OpenEntry_UnknownName_ReturnsEmptyBoundedStream() {
+    var img = BuildMinimal(ods5: false);
+    using var ms = new MemoryStream(img);
+    var d = new FileSystem.OpenVms.OpenVmsFormatDescriptor();
+    using var s = d.OpenEntry(ms, "INDEXF.SYS", null);
+    Assert.That(s, Is.InstanceOf<BoundedEntryStream>());
+    Assert.That(s.Length, Is.EqualTo(0),
+      "Real ODS-2 user-file extraction is deferred — INDEXF.SYS must surface as empty until the walker lands.");
   }
 }

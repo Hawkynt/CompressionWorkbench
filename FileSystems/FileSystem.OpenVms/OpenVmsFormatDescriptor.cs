@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.Text;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.OpenVms;
@@ -36,7 +37,7 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "DEC/VMS Files-11 (ODS-2 / ODS-5) — home block surface only.";
+  public string Description => "DEC/VMS Files-11 (ODS-2 / ODS-5) — read-only home-block parse + bounded OpenEntry (write deferred: INDEXF.SYS + BITMAP.SYS + checksum1 require a real OpenVMS validator).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -87,6 +88,48 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(hb), files);
     if (hb.Valid)
       WriteIfMatch(outputDir, "home_block.bin", hb.RawBytes, files);
+  }
+
+  /// <summary>
+  /// Opens a synthetic entry as a bounded stream over its actual bytes.
+  /// Supports <c>FULL.disk</c> (whole image) and <c>home_block.bin</c> (parsed
+  /// 512-byte home block). Reads past the entry's logical size return 0 (EOF).
+  /// User files inside INDEXF.SYS are not addressable here — that requires the
+  /// deferred ODS-2 file-header walker.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    byte[] image;
+    try {
+      image = ReadAll(archive);
+    } catch {
+      return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
+    }
+
+    if (string.Equals(entryName, "FULL.disk", StringComparison.OrdinalIgnoreCase))
+      return new BoundedEntryStream(new MemoryStream(image, writable: false), image.LongLength, leaveOpen: false);
+
+    if (string.Equals(entryName, "home_block.bin", StringComparison.OrdinalIgnoreCase)) {
+      try {
+        var hb = OpenVmsHomeBlock.TryParse(image);
+        if (hb.Valid)
+          return new BoundedEntryStream(new MemoryStream(hb.RawBytes, writable: false), hb.RawBytes.LongLength, leaveOpen: false);
+      } catch {
+        // fall through
+      }
+    }
+
+    return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
