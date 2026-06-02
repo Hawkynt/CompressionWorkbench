@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.MinixV1;
@@ -44,6 +45,32 @@ public sealed class MinixV1FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
+  }
+
+  /// <summary>
+  /// Opens a single file entry as a bounded stream over the inode's reassembled
+  /// data zones. Reads past the entry's logical size return 0 (EOF).
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    var r = new MinixV1Reader(archive);
+    foreach (var e in r.Entries) {
+      if (e.IsDirectory) continue;
+      if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      var bytes = r.Extract(e);
+      return new BoundedEntryStream(new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+    }
+    return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
   }
 
   public void Defragment(Stream archive)
