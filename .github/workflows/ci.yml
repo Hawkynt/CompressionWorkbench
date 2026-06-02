@@ -44,15 +44,39 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/../PNGCrushCS"
-          for proj in Compression.Core FileFormat.Core FileFormat.Bmp FileFormat.Apng \
-                      FileFormat.Tiff FileFormat.BigTiff FileFormat.Mng FileFormat.Fli \
-                      FileFormat.Dcx FileFormat.Icns FileFormat.Mpo FileFormat.Jpeg \
-                      FileFormat.Png; do
-            echo "::group::Building $proj"
-            dotnet build "$proj/$proj.csproj" --configuration Release --nologo
+          REQUIRED="Compression.Core FileFormat.Core FileFormat.Bmp FileFormat.Apng \
+                    FileFormat.Tiff FileFormat.BigTiff FileFormat.Mng FileFormat.Fli \
+                    FileFormat.Dcx FileFormat.Icns FileFormat.Mpo FileFormat.Jpeg \
+                    FileFormat.Png"
+          # Sibling reorganised most format projects into a FileFormats/ subdir
+          # but kept Compression.Core / FileFormat.Core at the root. Probe both
+          # locations per project so the script tolerates the layout move; also
+          # tolerate transient sibling-mid-refactor commits where a project is
+          # missing entirely — FileFormat.PngCrushAdapters.csproj has a matching
+          # SiblingPresent gate that falls back to an empty assembly.
+          locate() {
+            local proj="$1"
+            if [ -f "$proj/$proj.csproj" ]; then echo "$proj"; return 0; fi
+            if [ -f "FileFormats/$proj/$proj.csproj" ]; then echo "FileFormats/$proj"; return 0; fi
+            return 1
+          }
+          MISSING=""
+          for proj in $REQUIRED; do
+            if ! locate "$proj" >/dev/null; then
+              MISSING="$MISSING $proj"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::warning::PNGCrushCS sibling incomplete (missing:$MISSING). Skipping pre-build; consumer csproj SiblingPresent gate handles the fallback."
+            exit 0
+          fi
+          for proj in $REQUIRED; do
+            dir="$(locate "$proj")"
+            echo "::group::Building $proj ($dir)"
+            dotnet build "$dir/$proj.csproj" --configuration Release --nologo
             echo "::endgroup::"
-            test -f "$proj/bin/Release/net8.0/$proj.dll" || {
-              echo "::error::Pre-build did not produce $proj/bin/Release/net8.0/$proj.dll"
+            test -f "$dir/bin/Release/net8.0/$proj.dll" || {
+              echo "::error::Pre-build did not produce $dir/bin/Release/net8.0/$proj.dll"
               exit 1
             }
           done
@@ -169,15 +193,39 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/../PNGCrushCS"
-          for proj in Compression.Core FileFormat.Core FileFormat.Bmp FileFormat.Apng \
-                      FileFormat.Tiff FileFormat.BigTiff FileFormat.Mng FileFormat.Fli \
-                      FileFormat.Dcx FileFormat.Icns FileFormat.Mpo FileFormat.Jpeg \
-                      FileFormat.Png; do
-            echo "::group::Building $proj"
-            dotnet build "$proj/$proj.csproj" --configuration Release --nologo
+          REQUIRED="Compression.Core FileFormat.Core FileFormat.Bmp FileFormat.Apng \
+                    FileFormat.Tiff FileFormat.BigTiff FileFormat.Mng FileFormat.Fli \
+                    FileFormat.Dcx FileFormat.Icns FileFormat.Mpo FileFormat.Jpeg \
+                    FileFormat.Png"
+          # Sibling reorganised most format projects into a FileFormats/ subdir
+          # but kept Compression.Core / FileFormat.Core at the root. Probe both
+          # locations per project so the script tolerates the layout move; also
+          # tolerate transient sibling-mid-refactor commits where a project is
+          # missing entirely — FileFormat.PngCrushAdapters.csproj has a matching
+          # SiblingPresent gate that falls back to an empty assembly.
+          locate() {
+            local proj="$1"
+            if [ -f "$proj/$proj.csproj" ]; then echo "$proj"; return 0; fi
+            if [ -f "FileFormats/$proj/$proj.csproj" ]; then echo "FileFormats/$proj"; return 0; fi
+            return 1
+          }
+          MISSING=""
+          for proj in $REQUIRED; do
+            if ! locate "$proj" >/dev/null; then
+              MISSING="$MISSING $proj"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::warning::PNGCrushCS sibling incomplete (missing:$MISSING). Skipping pre-build; consumer csproj SiblingPresent gate handles the fallback."
+            exit 0
+          fi
+          for proj in $REQUIRED; do
+            dir="$(locate "$proj")"
+            echo "::group::Building $proj ($dir)"
+            dotnet build "$dir/$proj.csproj" --configuration Release --nologo
             echo "::endgroup::"
-            test -f "$proj/bin/Release/net8.0/$proj.dll" || {
-              echo "::error::Pre-build did not produce $proj/bin/Release/net8.0/$proj.dll"
+            test -f "$dir/bin/Release/net8.0/$proj.dll" || {
+              echo "::error::Pre-build did not produce $dir/bin/Release/net8.0/$proj.dll"
               exit 1
             }
           done
