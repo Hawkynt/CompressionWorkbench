@@ -42,17 +42,34 @@ namespace Compression.Lib;
 /// </remarks>
 public sealed class ArchiveWriter : IDisposable {
 
-  private sealed record QueuedEntry(string Name, long Size, bool IsDirectory, byte[]? Data);
+  // A queued entry can be either:
+  //   - byte[] backed (up-front path, BoundedWriteStream.CreateBuffered)
+  //   - Func<Stream> backed (deferred path, DeferredLengthWriteStream)
+  // Both flavours collapse into a StreamingArchiveInput at commit time.
+  private sealed record QueuedEntry(
+    string Name, long Size, bool IsDirectory,
+    byte[]? Data,
+    Func<Stream>? OpenStreamFactory);
 
   private readonly string _outputPath;
   private readonly string _tempPath;
   private readonly IArchiveCreatable _creator;
   private readonly FormatCreateOptions _options;
   private readonly List<QueuedEntry> _queued = [];
-  private BoundedWriteStream? _activeEntry;
+  // Tracks the currently-open per-entry stream — only one entry can be open
+  // at a time. The base type Stream covers both BoundedWriteStream (up-front)
+  // and DeferredLengthWriteStream (deferred). The wrapper interfaces below
+  // call Cancel via reflection-free direct casts on the concrete types.
+  private Stream? _activeEntry;
   private string? _activeEntryName;
   private bool _disposed;
   private bool _failed;
+
+  /// <summary>For tests / diagnostics: total count of
+  /// <see cref="DeferredLengthWriteStream"/> instances handed out by this
+  /// writer since construction. The auto-pick path increments this only
+  /// when a length-up-front read was impossible.</summary>
+  public int DeferredEntriesIssued { get; private set; }
 
   /// <summary>Format ID this writer targets (e.g. <c>Zip</c>, <c>Tar</c>).</summary>
   public string FormatId { get; }
@@ -119,7 +136,7 @@ public sealed class ArchiveWriter : IDisposable {
     this.CheckNoActiveEntry();
 
     var normalised = path.Replace('\\', '/').TrimEnd('/');
-    this._queued.Add(new QueuedEntry(normalised, 0, IsDirectory: true, Data: null));
+    this._queued.Add(new QueuedEntry(normalised, 0, IsDirectory: true, Data: null, OpenStreamFactory: null));
   }
 
   /// <summary>
@@ -153,25 +170,150 @@ public sealed class ArchiveWriter : IDisposable {
     // commit callback fires only when the stream is disposed at exactly
     // LogicalSize bytes — that's the only path that queues the entry.
     var stream = BoundedWriteStream.CreateBuffered(contentLength, bytes => {
-      this._queued.Add(new QueuedEntry(normalised, contentLength, IsDirectory: false, Data: bytes));
+      this._queued.Add(new QueuedEntry(normalised, contentLength, IsDirectory: false, Data: bytes, OpenStreamFactory: null));
     });
     this._activeEntry = stream;
     this._activeEntryName = normalised;
     return new ActiveEntryStream(this, stream);
   }
 
-  // Wraps the BoundedWriteStream so the writer's active-entry tracking is
-  // cleared on dispose REGARDLESS of whether the stream completed successfully
-  // or threw on underrun. The wrapper passes Write through verbatim — the
-  // bound is enforced on the inner stream — and clears the writer's pointer
-  // before re-throwing any underrun exception so a subsequent Dispose() of
-  // the writer doesn't trip over the stale pointer.
+  /// <summary>
+  /// Opens a deferred-length write stream for a new file entry. Use this
+  /// only when the caller genuinely cannot know the entry size up-front
+  /// (e.g. piping a non-seekable producer stream into the archive); prefer
+  /// <see cref="CreateFileEntry(string, long, DateTime?)"/> everywhere else
+  /// so two-pass writers can plan layout without buffering.
+  /// </summary>
+  /// <remarks>
+  /// <para>
+  /// The returned stream buffers writes in memory up to
+  /// <see cref="DeferredLengthWriteStream.DefaultSpillThresholdBytes"/>;
+  /// past that, it spills to a temp file. On dispose, the entry is queued
+  /// for commit with its actual byte count — so the target format's
+  /// <see cref="IArchiveCreatable.CreateFromStreams"/> sees a normal
+  /// streaming input with a known size, even though the size wasn't known
+  /// when the caller started writing.
+  /// </para>
+  /// </remarks>
+  /// <param name="name">Archive-relative name (forward-slash separated).</param>
+  /// <param name="lastModified">Optional last-modified timestamp (reserved;
+  /// see <see cref="CreateFileEntry(string, long, DateTime?)"/>).</param>
+  public Stream CreateFileEntry(string name, DateTime? lastModified = null) {
+    ObjectDisposedException.ThrowIf(this._disposed, this);
+    ArgumentNullException.ThrowIfNull(name);
+    this.CheckNoActiveEntry();
+
+    var normalised = name.Replace('\\', '/');
+    _ = lastModified; // reserved for per-format threading
+
+    // The DeferredLengthWriteStream fires its commit callback with the
+    // final byte count + a Func<Stream> that re-opens the buffered
+    // content. We queue that as a streaming entry (Size already known by
+    // commit time); no overrun/underrun checks are needed because the
+    // size is whatever the caller produced.
+    DeferredLengthWriteStream stream = null!;
+    stream = new DeferredLengthWriteStream((size, openContent) => {
+      this._queued.Add(new QueuedEntry(
+        Name: normalised,
+        Size: size,
+        IsDirectory: false,
+        Data: null,
+        OpenStreamFactory: openContent));
+    });
+    this._activeEntry = stream;
+    this._activeEntryName = normalised;
+    ++this.DeferredEntriesIssued;
+    return new ActiveEntryStream(this, stream);
+  }
+
+  /// <summary>
+  /// Auto-picks the zero-buffer (length-up-front) or deferred-length path
+  /// based on whether the source stream's remaining length can be queried.
+  /// </summary>
+  /// <remarks>
+  /// Decision: when <paramref name="source"/> reports <c>CanSeek == true</c>
+  /// and <c>Length</c> succeeds, the remaining bytes (<c>Length - Position</c>)
+  /// become the declared size and the entry takes the zero-buffer
+  /// <see cref="BoundedWriteStream"/> path. Otherwise (CanSeek false, or
+  /// Length threw <see cref="NotSupportedException"/> despite CanSeek being
+  /// true — this DOES happen for some custom Stream subclasses) the deferred
+  /// path is used. The latter is also why we wrap the <c>.Length</c> read
+  /// in a try/catch even on seekable streams.
+  /// </remarks>
+  public void AddEntry(string archivePath, Stream source, DateTime? lastModified = null) {
+    ArgumentNullException.ThrowIfNull(archivePath);
+    ArgumentNullException.ThrowIfNull(source);
+
+    long? length = null;
+    if (source.CanSeek) {
+      try {
+        length = source.Length - source.Position;
+      } catch (NotSupportedException) {
+        // Rare but real: some Stream subclasses claim CanSeek=true and
+        // still throw on .Length. Treat exactly as non-seekable.
+        length = null;
+      }
+    }
+
+    if (length.HasValue) {
+      using var dst = this.CreateFileEntry(archivePath, length.Value, lastModified);
+      source.CopyTo(dst);
+    } else {
+      using var dst = this.CreateFileEntry(archivePath, lastModified);
+      source.CopyTo(dst);
+    }
+  }
+
+  /// <summary>
+  /// Convenience overload that adds a file from disk. Length is always
+  /// known so the zero-buffer path is taken unconditionally.
+  /// </summary>
+  public void AddEntry(string archivePath, FileInfo source, DateTime? lastModified = null) {
+    ArgumentNullException.ThrowIfNull(archivePath);
+    ArgumentNullException.ThrowIfNull(source);
+    if (!source.Exists)
+      throw new FileNotFoundException("Source file not found.", source.FullName);
+
+    using var fs = source.OpenRead();
+    using var dst = this.CreateFileEntry(archivePath, source.Length, lastModified ?? source.LastWriteTimeUtc);
+    fs.CopyTo(dst);
+  }
+
+  /// <summary>
+  /// Convenience overload for a byte[] payload. Length is known so the
+  /// zero-buffer path is taken unconditionally.
+  /// </summary>
+  public void AddEntry(string archivePath, byte[] source, DateTime? lastModified = null) {
+    ArgumentNullException.ThrowIfNull(archivePath);
+    ArgumentNullException.ThrowIfNull(source);
+    using var dst = this.CreateFileEntry(archivePath, source.LongLength, lastModified);
+    dst.Write(source, 0, source.Length);
+  }
+
+  /// <summary>
+  /// Convenience overload for a <see cref="ReadOnlySpan{T}"/> payload.
+  /// Length is known so the zero-buffer path is taken unconditionally.
+  /// </summary>
+  public void AddEntry(string archivePath, ReadOnlySpan<byte> source, DateTime? lastModified = null) {
+    ArgumentNullException.ThrowIfNull(archivePath);
+    using var dst = this.CreateFileEntry(archivePath, source.Length, lastModified);
+    dst.Write(source);
+  }
+
+  // Wraps the underlying per-entry write stream (BoundedWriteStream for the
+  // up-front path, DeferredLengthWriteStream for the deferred path) so the
+  // writer's active-entry tracking is cleared on dispose REGARDLESS of
+  // whether the stream completed successfully or threw on underrun. Write
+  // calls pass through verbatim — the bound (for up-front) or buffer-spill
+  // (for deferred) is enforced on the inner stream — and the writer's
+  // pointer is cleared before re-throwing any inner exception so a
+  // subsequent Dispose() of the writer doesn't trip over a stale pointer.
   private sealed class ActiveEntryStream : Stream {
     private readonly ArchiveWriter _writer;
-    private readonly BoundedWriteStream _inner;
+    private readonly Stream _inner;
     private bool _disposed;
 
-    public ActiveEntryStream(ArchiveWriter writer, BoundedWriteStream inner) {
+    public ActiveEntryStream(ArchiveWriter writer, Stream inner) {
       this._writer = writer;
       this._inner = inner;
     }
@@ -227,7 +369,7 @@ public sealed class ArchiveWriter : IDisposable {
     if (this._activeEntry != null) {
       var name = this._activeEntryName ?? "<unknown>";
       this._failed = true;
-      try { this._activeEntry.Cancel(); this._activeEntry.Dispose(); } catch { /* swallow inner */ }
+      try { CancelActiveEntry(this._activeEntry); this._activeEntry.Dispose(); } catch { /* swallow inner */ }
       AtomicFileWriter.TryDelete(this._tempPath);
       throw new InvalidOperationException(
         $"ArchiveWriter disposed while entry '{name}' was still open. " +
@@ -240,17 +382,19 @@ public sealed class ArchiveWriter : IDisposable {
     }
 
     try {
-      // Build the StreamingArchiveInput list from the queued entries. Each
-      // file's OpenStream returns a fresh MemoryStream over the buffered
-      // bytes — that's still a bounded source (the byte[] exists in memory),
-      // and the target's CreateFromStreams default just CopyTo's it.
+      // Build the StreamingArchiveInput list from the queued entries. For
+      // up-front entries (Data != null) the OpenStream factory returns a
+      // fresh MemoryStream over the buffered bytes; for deferred entries
+      // (OpenStreamFactory != null) it returns whatever the deferred
+      // stream's commit callback handed us — typically a fresh seekable
+      // view that owns the temp file's lifetime.
       var inputs = this._queued.Select(q => new StreamingArchiveInput(
         Name: q.Name,
         Size: q.Size,
         IsDirectory: q.IsDirectory,
         OpenStream: q.IsDirectory
           ? () => Stream.Null
-          : () => new MemoryStream(q.Data!, writable: false))).ToList();
+          : q.OpenStreamFactory ?? (() => new MemoryStream(q.Data!, writable: false)))).ToList();
 
       // Atomic rename: stage to temp, flush, rename.
       AtomicFileWriter.WriteAtomic(this._outputPath,
@@ -268,8 +412,17 @@ public sealed class ArchiveWriter : IDisposable {
   /// </summary>
   public void Cancel() {
     this._failed = true;
-    if (this._activeEntry != null) {
-      this._activeEntry.Cancel();
+    if (this._activeEntry != null)
+      CancelActiveEntry(this._activeEntry);
+  }
+
+  // Dispatches Cancel() to the appropriate concrete type — both the up-front
+  // and deferred per-entry streams expose a Cancel method but they don't
+  // share an interface, so we pattern-match.
+  private static void CancelActiveEntry(Stream entry) {
+    switch (entry) {
+      case BoundedWriteStream b: b.Cancel(); break;
+      case DeferredLengthWriteStream d: d.Cancel(); break;
     }
   }
 

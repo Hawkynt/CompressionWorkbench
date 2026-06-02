@@ -1079,22 +1079,26 @@ public static class ArchiveOperations {
     // Per-entry streams use Position/Read against the same underlying
     // FileStream, which is safe because the writer reads each entry
     // stream to completion before requesting the next one.
-    using var sharedSrc = File.OpenRead(inputPath);
-    var streamingInputs = srcEntries
-      .Where(e => !e.IsDirectory || supportsDirs)
-      .Select(e => new Compression.Registry.Streaming.StreamingArchiveInput(
-        Name: e.Name,
-        Size: e.OriginalSize,
-        IsDirectory: e.IsDirectory,
-        OpenStream: e.IsDirectory
-          ? () => new MemoryStream(System.Array.Empty<byte>(), writable: false)
-          : () => srcOps.OpenEntry(sharedSrc, e.Name, null)));
-
+    //
+    // Route through the ArchiveWriter facade so the AddEntry auto-pick
+    // path is exercised: the source's OpenEntry returns a BoundedEntryStream
+    // with CanSeek=true and Length=entry.OriginalSize, which lets AddEntry
+    // pick the zero-buffer (length-up-front) path automatically. A spilled
+    // DeferredLengthWriteStream is never instantiated for a normal convert.
     var streamOpts = new Compression.Registry.FormatCreateOptions {
       FormatSpecific = createOptions?.FormatSpecific,
     };
-    AtomicFileWriter.WriteAtomic(outputPath,
-      fs => dstCreatable.CreateFromStreams(fs, streamingInputs, streamOpts));
+    using (var sharedSrc = File.OpenRead(inputPath))
+    using (var writer = ArchiveWriter.Create(outputPath, dstFormat.ToString(), streamOpts)) {
+      foreach (var e in srcEntries) {
+        if (e.IsDirectory) {
+          if (supportsDirs) writer.MkDir(e.Name);
+          continue;
+        }
+        using var entryStream = srcOps.OpenEntry(sharedSrc, e.Name, null);
+        writer.AddEntry(e.Name, entryStream, e.LastModified);
+      }
+    }
 
     return warnings;
   }
