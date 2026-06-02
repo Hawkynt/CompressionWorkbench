@@ -63,6 +63,38 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     }
   }
 
+  /// <summary>
+  /// Opens a single EROFS file as a bounded read-only stream. The reader
+  /// produces the decoded file bytes; the matched bytes are wrapped in a
+  /// <see cref="Compression.Registry.Streaming.BoundedEntryStream"/> sized
+  /// to the entry's logical length.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    var reader = OpenReader(archive);
+    foreach (var e in reader.Entries) {
+      if (e.IsDirectory) continue;
+      if (!string.Equals(e.Path, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      byte[] bytes;
+      try { bytes = reader.ExtractFile(e); }
+      catch (NotSupportedException) { bytes = System.Array.Empty<byte>(); }
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+    }
+    return new Compression.Registry.Streaming.BoundedEntryStream(
+      new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
+  }
+
   private static ErofsReader OpenReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
