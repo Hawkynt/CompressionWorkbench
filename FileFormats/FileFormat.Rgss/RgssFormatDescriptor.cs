@@ -74,6 +74,48 @@ public sealed class RgssFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return list;
   }
 
+  /// <summary>
+  /// Opens a single entry as a bounded read-only stream. The underlying
+  /// reader produces the entry's bytes (decoded if the format compresses
+  /// per-entry); the returned stream is a
+  /// <see cref="Compression.Registry.Streaming.BoundedEntryStream"/> sized
+  /// to the entry's logical length so adjacent entries and any trailing
+  /// padding are physically unreachable through this view.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    var r = new RgssReader(archive);
+    if (string.Equals(entryName, "metadata.ini", StringComparison.OrdinalIgnoreCase)) {
+      var sb = new StringBuilder();
+      sb.AppendLine("[rgss]");
+      sb.AppendLine($"version={r.Version}");
+      sb.AppendLine($"file_count={r.Entries.Count}");
+      if (r.Version == 3)
+        sb.AppendLine($"master_key=0x{r.MasterKeyV3:X8}");
+      var meta = Encoding.UTF8.GetBytes(sb.ToString());
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(meta, writable: false), meta.Length, leaveOpen: false);
+    }
+    foreach (var e in r.Entries) {
+      if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      var bytes = r.Extract(e);
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+    }
+    return new Compression.Registry.Streaming.BoundedEntryStream(
+      new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
+  }
+
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var entries = FormatHelpers.FilesOnly(inputs).ToList();
     var w = new RgssWriter(output);

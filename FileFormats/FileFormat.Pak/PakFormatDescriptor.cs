@@ -81,6 +81,38 @@ public sealed class PakFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Opens a single PAK entry as a bounded read-only stream. PAK shares the
+  /// ARC binary layout: a forward-iterating reader produces per-entry bytes
+  /// (decompressed if the entry was stored compressed). The bytes are
+  /// wrapped in a
+  /// <see cref="Compression.Registry.Streaming.BoundedEntryStream"/> sized
+  /// to the entry's original length — adjacent entries and trailing padding
+  /// are physically unreachable.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    var r = new PakReader(archive);
+    while (r.GetNextEntry() is { } e) {
+      if (!string.Equals(e.FileName, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      var bytes = r.ReadEntryData();
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+    }
+    return new Compression.Registry.Streaming.BoundedEntryStream(
+      new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
+  }
+
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new PakWriter(output);
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))

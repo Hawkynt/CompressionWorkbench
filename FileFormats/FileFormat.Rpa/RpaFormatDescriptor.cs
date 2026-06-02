@@ -63,6 +63,57 @@ public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return list;
   }
 
+  /// <summary>
+  /// Opens a single entry as a bounded read-only stream. Handles three
+  /// synthetic shapes: <c>FULL.rpa</c> (a passthrough view of the entire
+  /// archive), <c>metadata.ini</c> (built on the fly), and the regular
+  /// pickle-indexed entries whose bytes are decoded by the reader. All
+  /// returns are wrapped in
+  /// <see cref="Compression.Registry.Streaming.BoundedEntryStream"/> sized
+  /// to their logical length so adjacent regions can't leak.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    if (string.Equals(entryName, "FULL.rpa", StringComparison.OrdinalIgnoreCase)) {
+      // Passthrough view of the whole archive.
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new Compression.Registry.Streaming.ReadOnlyStreamSlice(archive, 0, archive.Length),
+        archive.Length, leaveOpen: false);
+    }
+    var r = new RpaReader(archive);
+    if (string.Equals(entryName, "metadata.ini", StringComparison.OrdinalIgnoreCase)) {
+      var sb = new StringBuilder();
+      sb.AppendLine("[rpa]");
+      sb.AppendLine($"version={r.Version}");
+      sb.AppendLine($"index_offset=0x{r.IndexOffset:X}");
+      if (r.XorKey != 0)
+        sb.AppendLine($"xor_key=0x{r.XorKey:X8}");
+      sb.AppendLine($"file_count={r.Entries.Count}");
+      sb.AppendLine($"pickle_parsed={r.PickleParsed}");
+      var meta = Encoding.UTF8.GetBytes(sb.ToString());
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(meta, writable: false), meta.Length, leaveOpen: false);
+    }
+    foreach (var e in r.Entries) {
+      if (!string.Equals(e.Path, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      var bytes = r.Extract(e);
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+    }
+    return new Compression.Registry.Streaming.BoundedEntryStream(
+      new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
+  }
+
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new RpaReader(stream);
 

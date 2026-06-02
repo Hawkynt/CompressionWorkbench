@@ -60,6 +60,40 @@ public sealed class UnrealPakFormatDescriptor : IFormatDescriptor, IArchiveForma
     }
   }
 
+  /// <summary>
+  /// Opens a single Unreal Pak entry as a bounded read-only stream. The
+  /// entry's bytes are decoded (zlib if needed) by the reader and wrapped
+  /// in a <see cref="Compression.Registry.Streaming.BoundedEntryStream"/>
+  /// sized to the uncompressed length. Encrypted or
+  /// unsupported-compression entries return an empty bounded stream.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    var reader = new UnrealPakReader(AsSeekable(archive));
+    foreach (var e in reader.Entries) {
+      var fullPath = CombinePath(reader.MountPoint, e.Path);
+      if (!string.Equals(fullPath, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      if (e.UnsupportedReason != null || e.IsEncrypted)
+        return new Compression.Registry.Streaming.BoundedEntryStream(
+          new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+      var bytes = reader.Extract(e);
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+    }
+    return new Compression.Registry.Streaming.BoundedEntryStream(
+      new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
+  }
+
   private static string CombinePath(string mount, string path) {
     // Mount points are typically "../../../Game/" — strip the leading "../" chain so the
     // extracted tree is rooted at the project name.

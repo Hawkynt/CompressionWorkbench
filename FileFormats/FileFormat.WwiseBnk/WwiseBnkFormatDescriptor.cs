@@ -36,6 +36,63 @@ public sealed class WwiseBnkFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return list;
   }
 
+  /// <summary>
+  /// Opens a single bank entry as a bounded read-only stream. Handles the
+  /// synthetic <c>FULL.bnk</c> passthrough, the <c>metadata.ini</c>
+  /// summary, <c>hirc_objects.txt</c>, and per-WEM positional slices. All
+  /// returns are wrapped in
+  /// <see cref="Compression.Registry.Streaming.BoundedEntryStream"/> sized
+  /// to their logical length so adjacent regions can't leak.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    if (string.Equals(entryName, "FULL.bnk", StringComparison.OrdinalIgnoreCase)) {
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new Compression.Registry.Streaming.ReadOnlyStreamSlice(archive, 0, archive.Length),
+        archive.Length, leaveOpen: false);
+    }
+    var r = new WwiseBnkReader(archive);
+    if (string.Equals(entryName, "metadata.ini", StringComparison.OrdinalIgnoreCase)) {
+      var sb = new StringBuilder();
+      sb.AppendLine("[wwise_bnk]");
+      sb.AppendLine($"version={r.BankVersion}");
+      sb.AppendLine($"bank_id=0x{r.BankId:X8}");
+      sb.AppendLine($"hirc_object_count={r.HircObjects.Count}");
+      sb.AppendLine($"wem_count={r.Wems.Count}");
+      sb.AppendLine($"chunks={string.Join(",", r.Chunks.Keys)}");
+      var meta = Encoding.UTF8.GetBytes(sb.ToString());
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(meta, writable: false), meta.Length, leaveOpen: false);
+    }
+    if (string.Equals(entryName, "hirc_objects.txt", StringComparison.OrdinalIgnoreCase)) {
+      var sb = new StringBuilder();
+      foreach (var h in r.HircObjects)
+        sb.AppendLine($"{h.Type} 0x{h.Id:X8} {h.Size}");
+      var hirc = Encoding.UTF8.GetBytes(sb.ToString());
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(hirc, writable: false), hirc.Length, leaveOpen: false);
+    }
+    foreach (var w in r.Wems) {
+      var name = $"wems/{w.WemId}.wem";
+      if (!string.Equals(name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      var bytes = r.ExtractWem(w);
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+    }
+    return new Compression.Registry.Streaming.BoundedEntryStream(
+      new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
+  }
+
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new WwiseBnkReader(stream);
 
