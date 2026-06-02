@@ -22,10 +22,29 @@ namespace FileSystem.ExFat;
 /// </para>
 /// </summary>
 public sealed class ExFatWriter {
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
   private const uint EocMarker = 0xFFFFFFFFu;
 
-  public void AddFile(string name, byte[] data) => _files.Add((name, data));
+  public void AddFile(string name, byte[] data) => _files.Add((name, data, null, null));
+
+  /// <summary>
+  /// Adds a streaming file: its <paramref name="size"/> is known up front
+  /// (so the writer can plan cluster geometry), but its bytes are fetched on
+  /// demand from <paramref name="openStream"/> during
+  /// <see cref="BuildToStreaming"/>. Never buffered in memory by the writer.
+  /// </summary>
+  /// <remarks>
+  /// Pair with <see cref="BuildToStreaming"/>. The factory is invoked at
+  /// most once per file; the returned stream is read for exactly
+  /// <paramref name="size"/> bytes (never more), so cluster-tail slack past
+  /// the entry's logical size stays sparse-zero.
+  /// </remarks>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
+    _files.Add((name, System.Array.Empty<byte>(), size, openStream));
+  }
 
   /// <summary>
   /// Builds the exFAT image using the smallest size that fits all files, with
@@ -35,8 +54,11 @@ public sealed class ExFatWriter {
   /// <param name="requestedClusterBytes">Cluster size in bytes (0 = auto-select with the optimiser).</param>
   /// <param name="volumeLabel">Volume label written into the root directory as a Volume Label
   /// Directory Entry (type 0x83). Null/empty still emits the entry with character count 0.</param>
-  public byte[] BuildAutoSized(int requestedClusterBytes = 0, string? volumeLabel = null) {
-    var fileSizes = _files.Select(f => (long)f.Data.Length).ToList();
+  public byte[] BuildAutoSized(int requestedClusterBytes = 0, string? volumeLabel = null)
+    => BuildAutoSizedCore(requestedClusterBytes, volumeLabel, out _);
+
+  private byte[] BuildAutoSizedCore(int requestedClusterBytes, string? volumeLabel, out DirNode builtTree) {
+    var fileSizes = _files.Select(f => f.StreamingSize ?? (long)f.Data.Length).ToList();
     const int bytesPerSector = 512;
 
     // exFAT's conventional minimum cluster for volumes in this range is 4 KiB —
@@ -65,7 +87,7 @@ public sealed class ExFatWriter {
     // Generous headroom: data + overhead + upcase table (~128 KB) + 5 % slack.
     var neededBytes = (long)(totalDataBytes * 1.05) + clusterBytes * 8 + 128 * 1024 + 24 * bytesPerSector;
     var totalSizeMB = (int)Math.Max(8, (neededBytes + 1024 * 1024 - 1) / (1024 * 1024));
-    return Build(totalSizeMB, clusterBytes, volumeLabel);
+    return BuildCore(totalSizeMB, clusterBytes, volumeLabel, out builtTree);
   }
 
   /// <summary>Builds the exFAT image.</summary>
@@ -74,7 +96,88 @@ public sealed class ExFatWriter {
   /// <param name="volumeLabel">Volume label written into the root directory as a Volume Label
   /// Directory Entry (type 0x83). Null/empty still emits the entry with character count 0
   /// to match Windows format.com behaviour.</param>
-  public byte[] Build(int totalSizeMB = 8, int requestedClusterBytes = 0, string? volumeLabel = null) {
+  public byte[] Build(int totalSizeMB = 8, int requestedClusterBytes = 0, string? volumeLabel = null)
+    => BuildCore(totalSizeMB, requestedClusterBytes, volumeLabel, out _);
+
+  /// <summary>
+  /// Two-pass streaming Build: pass 1 derives cluster geometry from the
+  /// declared sizes of <see cref="AddStreamingFile"/> entries; pass 2 emits
+  /// the boot region + FAT + allocation bitmap + up-case table + directory
+  /// tree (file-data clusters left zero), then streams each entry's bytes
+  /// from its factory straight into its allocated cluster run via 64 KB
+  /// chunks. Cluster tail past each entry's exact <c>Size</c> stays sparse
+  /// zero (the in-memory disk byte[] was zero-initialised and the
+  /// per-entry stream copy never reads past the entry's logical size).
+  /// </summary>
+  /// <remarks>
+  /// <para>
+  /// Bounded source streams (typically <c>BoundedEntryStream</c>) make
+  /// slack-byte leakage from the read side physically impossible; the
+  /// writer's exact-byte-count copy guarantees no excess from the write
+  /// side. Per-entry isolation: every byte in an allocated cluster either
+  /// came from the entry's own stream (clamped to its logical size) or
+  /// stayed zero from the initial disk allocation.
+  /// </para>
+  /// <para>
+  /// Partial coverage: pass 2 still materialises the full disk image
+  /// once to reuse the proven metadata path (boot/FAT/bitmap/upcase/
+  /// directory tree builder). A fully sparse metadata writer mirroring
+  /// the FAT pattern at the boot+FAT sector level is a documented
+  /// follow-up. The bar this pass meets — and that the entry-isolation
+  /// fuzz checks — is that entry CONTENTS never travel through a byte[]
+  /// inside the writer.
+  /// </para>
+  /// </remarks>
+  public void BuildToStreaming(Stream output, int requestedClusterBytes = 0, string? volumeLabel = null) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
+
+    var disk = BuildAutoSizedCore(requestedClusterBytes, volumeLabel, out var builtTree);
+    output.SetLength(disk.Length);
+    output.Position = 0;
+    output.Write(disk);
+
+    // Discover cluster heap geometry from the VBR we just wrote so we can
+    // seek to each streaming entry's cluster offset.
+    var clusterHeapOffsetSectors = BinaryPrimitives.ReadUInt32LittleEndian(disk.AsSpan(88));
+    var sectorsPerClusterShift = disk[109];
+    const int bytesPerSector = 512;
+    var clusterSize = bytesPerSector << sectorsPerClusterShift;
+    var clusterHeapOffset = (long)clusterHeapOffsetSectors * bytesPerSector;
+
+    var streamingEntries = new List<(uint StartCluster, long Size, Func<Stream> Opener)>();
+    CollectStreamingAllocations(builtTree, streamingEntries);
+    var buf = new byte[64 * 1024];
+    foreach (var (startCluster, size, opener) in streamingEntries) {
+      if (size <= 0) continue;
+      var clusterOffset = clusterHeapOffset + (long)(startCluster - 2) * clusterSize;
+      if (clusterOffset < 0 || clusterOffset >= output.Length) continue;
+      output.Position = clusterOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+      // Cluster tail past `size` retains zero from the disk init.
+    }
+    output.Flush();
+  }
+
+  private static void CollectStreamingAllocations(DirNode dir,
+      List<(uint StartCluster, long Size, Func<Stream> Opener)> sink) {
+    foreach (var file in dir.Files)
+      if (file.StreamOpener != null && file.StreamingSize is { } sz && sz > 0)
+        sink.Add((file.AllocatedStartCluster, sz, file.StreamOpener));
+    foreach (var sub in dir.SubDirs)
+      CollectStreamingAllocations(sub, sink);
+  }
+
+  private byte[] BuildCore(int totalSizeMB, int requestedClusterBytes, string? volumeLabel, out DirNode builtTree) {
     const int bytesPerSector = 512;
     var clusterBytes = requestedClusterBytes > 0 ? requestedClusterBytes : 4096;
     // exFAT requires cluster size to be a power-of-two multiple of the sector size.
@@ -137,6 +240,7 @@ public sealed class ExFatWriter {
     // (root included) and every file, and write each directory's entry sets so
     // a subdirectory's File entry set points at its own cluster chain.
     var root = BuildTree();
+    builtTree = root;
 
     // The root directory occupies cluster 2; the free pool for file data and
     // subdirectory chains starts after bitmap (3) and upcase (4). The volume
@@ -264,6 +368,17 @@ public sealed class ExFatWriter {
   private sealed class FileNode {
     public required string Name;
     public required byte[] Data;
+    /// <summary>When non-null, the file's bytes come from <see cref="StreamOpener"/>
+    /// at <see cref="BuildToStreaming"/> time and the writer skips its
+    /// in-memory <see cref="Data"/> copy entirely.</summary>
+    public long? StreamingSize;
+    public Func<Stream>? StreamOpener;
+    public long EffectiveLength => this.StreamingSize ?? this.Data.Length;
+    /// <summary>Allocation result captured during <see cref="WriteDirectory"/>
+    /// so <see cref="BuildToStreaming"/> can stream bytes into the right
+    /// cluster offset after metadata is committed.</summary>
+    public uint AllocatedStartCluster;
+    public int AllocatedClusterCount;
   }
 
   private sealed class DirNode {
@@ -287,7 +402,7 @@ public sealed class ExFatWriter {
   /// </summary>
   private DirNode BuildTree() {
     var root = new DirNode { Name = "" };
-    foreach (var (name, data) in _files) {
+    foreach (var (name, data, streamingSize, opener) in _files) {
       var parts = name.Split('/', '\\');
       var dir = root;
       for (var i = 0; i < parts.Length - 1; ++i) {
@@ -295,7 +410,12 @@ public sealed class ExFatWriter {
         dir = dir.GetOrAddSubDir(parts[i]);
       }
       var leaf = parts[^1];
-      dir.Files.Add(new FileNode { Name = leaf, Data = data });
+      dir.Files.Add(new FileNode {
+        Name = leaf,
+        Data = data,
+        StreamingSize = streamingSize,
+        StreamOpener = opener,
+      });
     }
     return root;
   }
@@ -355,9 +475,11 @@ public sealed class ExFatWriter {
       subFirst[s] = nextCluster++; // each subdir starts a fresh chain
     var fileFirst = new uint[dir.Files.Count];
     for (var f = 0; f < dir.Files.Count; ++f) {
-      var data = dir.Files[f].Data;
-      var clustersNeeded = Math.Max(1, (data.Length + clusterSize - 1) / clusterSize);
+      var len = dir.Files[f].EffectiveLength;
+      var clustersNeeded = Math.Max(1, (int)((len + clusterSize - 1) / clusterSize));
       fileFirst[f] = nextCluster;
+      dir.Files[f].AllocatedStartCluster = nextCluster;
+      dir.Files[f].AllocatedClusterCount = clustersNeeded;
       nextCluster += (uint)clustersNeeded;
     }
 
@@ -418,17 +540,24 @@ public sealed class ExFatWriter {
     // File entry sets — archive attribute, stream points at file data.
     for (var f = 0; f < dir.Files.Count; ++f) {
       var file = dir.Files[f];
-      WriteEntrySet(buffer, ref pos, file.Name, fileFirst[f], file.Data.Length,
+      WriteEntrySet(buffer, ref pos, file.Name, fileFirst[f], file.EffectiveLength,
         nowStamp, isDirectory: false);
     }
 
     // 5. Write file data into the cluster heap and chain file clusters.
     for (var f = 0; f < dir.Files.Count; ++f) {
-      var data = dir.Files[f].Data;
-      var clustersNeeded = Math.Max(1, (data.Length + clusterSize - 1) / clusterSize);
-      var dataOffset = clusterHeapOffset + (int)(fileFirst[f] - 2) * clusterSize;
-      if (data.Length > 0 && dataOffset + data.Length <= disk.Length)
-        data.CopyTo(disk, dataOffset);
+      var file = dir.Files[f];
+      var len = file.EffectiveLength;
+      var clustersNeeded = Math.Max(1, (int)((len + clusterSize - 1) / clusterSize));
+      // Streaming entries leave the cluster heap zero — BuildToStreaming
+      // post-fills them from the source in 64 KB chunks once metadata is
+      // committed. The cluster-tail past Size stays sparse-zero.
+      if (file.StreamOpener == null) {
+        var data = file.Data;
+        var dataOffset = clusterHeapOffset + (int)(fileFirst[f] - 2) * clusterSize;
+        if (data.Length > 0 && dataOffset + data.Length <= disk.Length)
+          data.CopyTo(disk, dataOffset);
+      }
       for (var c = 0; c < clustersNeeded; ++c) {
         var cluster = fileFirst[f] + (uint)c;
         var nextVal = (c + 1 < clustersNeeded) ? cluster + 1 : EocMarker;

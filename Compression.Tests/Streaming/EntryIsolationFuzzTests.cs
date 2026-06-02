@@ -253,6 +253,47 @@ public class EntryIsolationFuzzTests {
       "tar.gz entry read must produce exactly the inner TAR entry bytes — no block padding leak");
   }
 
+  // ── Filesystem writers (write-side isolation) ────────────────────────────
+  //
+  // Each filesystem writer's CreateFromStreams now flips into a two-pass
+  // streaming build: pass 1 sizes from declared sizes, pass 2 streams each
+  // entry's bytes into its allocated cluster/extent chain. The bound is
+  // already enforced by the source-side BoundedEntryStream when the input
+  // is a real filesystem entry; but the WRITE side must also stop at
+  // Size bytes even when handed a source that would otherwise yield more.
+  // These fuzz cases use a stream wrapper that returns `payload` bytes
+  // followed by a flood of forbidden markers — the writer must clamp to
+  // Size and never copy the markers into the image.
+
+  private static Stream MarkerFloodingSource(byte[] payload, int extraBytes = 16384) {
+    var ms = new MemoryStream();
+    ms.Write(payload);
+    var floodBuf = new byte[extraBytes];
+    Array.Fill(floodBuf, ForbiddenMarker);
+    ms.Write(floodBuf);
+    ms.Position = 0;
+    return ms;
+  }
+
+  [Test, Category("Spec")]
+  public void ExFat_CreateFromStreams_NeverCopiesPastDeclaredSize() {
+    var payload = StampedEntry(seed: 401, size: 1500);
+    var ops = new FileSystem.ExFat.ExFatFormatDescriptor();
+    using var output = new MemoryStream();
+    var inputs = new[] {
+      new StreamingArchiveInput("DATA.BIN", payload.Length, IsDirectory: false,
+        OpenStream: () => MarkerFloodingSource(payload))
+    };
+    ops.CreateFromStreams(output, inputs, new FormatCreateOptions());
+    output.Position = 0;
+
+    // Round-trip: read the entry through the bounded OpenEntry.
+    using var bounded = ops.OpenEntry(output, "DATA.BIN", null);
+    using var sink = new MemoryStream();
+    bounded.CopyTo(sink);
+    AssertNoMarkerLeak(payload, sink.ToArray(), "ExFat write-side bound");
+  }
+
   /// <summary>
   /// Locates <paramref name="payload"/> in <paramref name="image"/> (verbatim
   /// — works for stored/uncompressed archives) and stamps the

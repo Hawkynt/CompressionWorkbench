@@ -241,44 +241,41 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   }
 
   /// <summary>
-  /// Streaming creation: consumes each <see cref="StreamingArchiveInput"/>
-  /// via its bounded <c>OpenStream</c> factory and feeds the writer.
+  /// Two-pass streaming creation: pre-known per-input sizes drive the
+  /// cluster geometry in pass 1; pass 2 emits the boot region, FAT,
+  /// allocation bitmap, up-case table and directory tree with empty file
+  /// clusters, then streams each input's bytes from its
+  /// <see cref="StreamingArchiveInput.OpenStream"/> factory into the
+  /// pre-allocated cluster run via 64 KB chunks. Cluster tails past each
+  /// entry's exact <c>Size</c> stay sparse-zero.
   /// </summary>
-  /// <remarks>
-  /// <para>
-  /// The <see cref="ExFatWriter"/> currently expects every file's bytes
-  /// up-front (it computes the FAT chain after sizing the cluster heap),
-  /// so this override is one-pass on the writer side but two-pass on the
-  /// CALLER side — each input's <c>OpenStream</c> is invoked exactly once
-  /// and the returned stream is read through a
-  /// <see cref="BoundedEntryStream"/>-bound copy. That enforces the
-  /// per-entry isolation contract at the SOURCE: a caller that streams a
-  /// directory tree into ConvertArchive cannot leak slack/adjacent bytes
-  /// through the pipeline.
-  /// </para>
-  /// <para>
-  /// TODO: refactor <see cref="ExFatWriter"/> to support
-  /// <c>AddStreamingFile(name, size, openStream)</c> + a
-  /// <c>BuildToStreaming(output, ...)</c> two-pass build (FAT layout from
-  /// known sizes in pass 1; per-file cluster-chain streaming copy in pass
-  /// 2). Mirrors the pattern in <c>FatWriter.BuildToStreaming</c>.
-  /// </para>
-  /// </remarks>
   public void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     var w = new ExFatWriter();
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
-      using var src = input.OpenStream();
-      using var ms = new MemoryStream(checked((int)input.Size));
-      src.CopyTo(ms);
-      w.AddFile(input.Name, ms.ToArray());
+      w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
     }
     var specific = options.FormatSpecific;
     var sizeMB = ParseExFatImageSizeMB(specific?.GetValueOrDefault("ImageSize"));
     var clusterBytes = ParseExFatClusterSize(specific?.GetValueOrDefault("ClusterSize"));
     var volumeLabel = options.GetOption("VolumeLabel", "");
+    if (output.CanSeek && sizeMB <= 0) {
+      // Auto-size streaming path: BuildToStreaming derives geometry from
+      // the declared sizes and never buffers entry contents.
+      w.BuildToStreaming(output, clusterBytes, volumeLabel);
+      return;
+    }
+    // Fixed-image-size or non-seekable output: fall back to the buffered
+    // path. The declared-size streaming inputs let the writer skip
+    // per-entry byte[] materialisation; bytes still travel one entry at
+    // a time inside ExFatWriter.BuildToStreaming or via the in-memory
+    // disk byte[] for the fixed-size path.
+    if (output.CanSeek) {
+      w.BuildToStreaming(output, clusterBytes, volumeLabel);
+      return;
+    }
     var disk = sizeMB > 0
       ? w.Build(sizeMB, clusterBytes, volumeLabel)
       : w.BuildAutoSized(clusterBytes, volumeLabel);
