@@ -455,6 +455,7 @@
     <ProjectReference Include="..\FileSystems\FileSystem.MooseFs\FileSystem.MooseFs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.BeeGfs\FileSystem.BeeGfs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.JuiceFs\FileSystem.JuiceFs.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Cxfs\FileSystem.Cxfs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Tfs\FileSystem.Tfs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zip\FileFormat.Zip.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zlib\FileFormat.Zlib.csproj" />

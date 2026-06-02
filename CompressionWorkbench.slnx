@@ -416,6 +416,7 @@
     <Project Path="FileSystems/FileSystem.MooseFs/FileSystem.MooseFs.csproj" />
     <Project Path="FileSystems/FileSystem.BeeGfs/FileSystem.BeeGfs.csproj" />
     <Project Path="FileSystems/FileSystem.JuiceFs/FileSystem.JuiceFs.csproj" />
+    <Project Path="FileSystems/FileSystem.Cxfs/FileSystem.Cxfs.csproj" />
     <Project Path="FileSystems/FileSystem.Tfs/FileSystem.Tfs.csproj" />
     <Project Path="FileFormats/FileFormat.Zip/FileFormat.Zip.csproj" />
     <Project Path="FileFormats/FileFormat.Zlib/FileFormat.Zlib.csproj" />

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FileSystem.Cxfs</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\FileSystem.Xfs\FileSystem.Xfs.csproj" />
+  </ItemGroup>
+</Project>
