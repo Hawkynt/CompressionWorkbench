@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Iso;
@@ -172,6 +173,36 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
+  }
+
+  /// <summary>
+  /// Opens a single ISO 9660 file entry as a bounded read-only <see cref="Stream"/>.
+  /// ISO 9660 stores file data in contiguous extents — the reader's extract
+  /// returns those bytes verbatim; they are wrapped in a
+  /// <see cref="BoundedEntryStream"/> sized to the entry's logical size.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    var r = new IsoReader(archive, leaveOpen: true);
+    foreach (var e in r.Entries) {
+      if (e.IsDirectory) continue;
+      if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      var bytes = r.Extract(e);
+      return new BoundedEntryStream(new MemoryStream(bytes, writable: false),
+        bytes.Length, leaveOpen: false);
+    }
+    return new BoundedEntryStream(new MemoryStream(System.Array.Empty<byte>(), writable: false),
+      0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var ms = new MemoryStream();
+    s.CopyTo(ms);
+    return ms.ToArray();
   }
 
   /// <summary>

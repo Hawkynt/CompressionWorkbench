@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Rar;
@@ -51,6 +52,40 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (e.IsDirectory) { Directory.CreateDirectory(Path.Combine(outputDir, e.Name)); continue; }
       WriteFile(outputDir, e.Name, r.Extract(i));
     }
+  }
+
+  /// <summary>
+  /// Opens a single RAR entry as a bounded read-only <see cref="Stream"/>.
+  /// The reader's per-entry extractor returns the fully-decompressed bytes;
+  /// they are wrapped in a <see cref="BoundedEntryStream"/> sized to the
+  /// entry's uncompressed size so the universal per-entry isolation contract
+  /// holds even though RAR's decoder produces a byte[].
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    var r = new RarReader(archive, leaveOpen: true, password: password);
+    for (var i = 0; i < r.Entries.Count; ++i) {
+      var e = r.Entries[i];
+      if (e.IsDirectory) continue;
+      if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      var bytes = r.Extract(i);
+      return new BoundedEntryStream(new MemoryStream(bytes, writable: false),
+        bytes.Length, leaveOpen: false);
+    }
+    return new BoundedEntryStream(new MemoryStream(System.Array.Empty<byte>(), writable: false),
+      0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction — routed through the
+  /// bounded <see cref="OpenEntry"/> so the per-entry isolation contract holds
+  /// uniformly.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var ms = new MemoryStream();
+    s.CopyTo(ms);
+    return ms.ToArray();
   }
 
   /// <summary>

@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Wim;
@@ -94,5 +95,51 @@ public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var resources = FormatHelpers.FilesOnly(inputs).Select(f => f.Data).ToList();
     var w = new WimWriter(output);
     w.Write(resources);
+  }
+
+  /// <summary>
+  /// Opens a single WIM resource as a bounded read-only <see cref="Stream"/>.
+  /// Resolves <paramref name="entryName"/> to a resource index through the
+  /// named-files metadata, then wraps the decompressed bytes in a
+  /// <see cref="BoundedEntryStream"/> sized to the file size.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    var r = new WimReader(archive);
+    var namedFiles = r.GetNamedFiles();
+    if (namedFiles.Count > 0) {
+      foreach (var f in namedFiles) {
+        if (!string.Equals(f.FileName, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+        if (f.ResourceIndex < 0) break;
+        var bytes = r.ReadResource(f.ResourceIndex);
+        return new BoundedEntryStream(new MemoryStream(bytes, writable: false),
+          bytes.Length, leaveOpen: false);
+      }
+    } else {
+      // Fallback: synthetic resource_N names for archives without metadata
+      var dataIndex = 0;
+      for (var i = 0; i < r.Resources.Count; ++i) {
+        if (r.Resources[i].IsMetadata) continue;
+        var name = $"resource_{dataIndex}";
+        if (string.Equals(name, entryName, StringComparison.OrdinalIgnoreCase)) {
+          var bytes = r.ReadResource(i);
+          return new BoundedEntryStream(new MemoryStream(bytes, writable: false),
+            bytes.Length, leaveOpen: false);
+        }
+        ++dataIndex;
+      }
+    }
+    return new BoundedEntryStream(new MemoryStream(System.Array.Empty<byte>(), writable: false),
+      0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var ms = new MemoryStream();
+    s.CopyTo(ms);
+    return ms.ToArray();
   }
 }

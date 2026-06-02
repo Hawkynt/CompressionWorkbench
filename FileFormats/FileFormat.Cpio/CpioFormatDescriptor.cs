@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cpio;
@@ -98,6 +99,35 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       if (entry.IsDirectory) { Directory.CreateDirectory(Path.Combine(outputDir, entry.Name)); continue; }
       WriteFile(outputDir, entry.Name, data);
     }
+  }
+
+  /// <summary>
+  /// Opens a single CPIO entry as a bounded read-only <see cref="Stream"/>.
+  /// CPIO stores each entry uncompressed; the reader's <c>ReadAll</c> walk
+  /// surfaces (entry, byte[]) tuples which the bounded wrapper sizes to the
+  /// entry's file size.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    using var r = new CpioReader(archive, leaveOpen: true);
+    foreach (var (entry, data) in r.ReadAll()) {
+      if (entry.IsDirectory) continue;
+      if (!string.Equals(entry.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      return new BoundedEntryStream(new MemoryStream(data, writable: false),
+        data.Length, leaveOpen: false);
+    }
+    return new BoundedEntryStream(new MemoryStream(System.Array.Empty<byte>(), writable: false),
+      0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var ms = new MemoryStream();
+    s.CopyTo(ms);
+    return ms.ToArray();
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
