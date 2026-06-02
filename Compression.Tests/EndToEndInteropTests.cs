@@ -252,8 +252,9 @@ public class EndToEndInteropTests {
     // Retro FSes with sector-size padding that inflates small files beyond byte-exact
     // round-trip (CP/M: 128 B records, LIF: 256 B sectors, RT-11: 512 B blocks no
     // length-in-bytes field, OS-9 RBF: 256 B sectors with FD.SIZ but generic-name
-    // generator drops files we'd reject for RAD-50/length).
-    ".cpm", ".lif", ".rt11", ".rx01", ".os9", ".rbf",
+    // generator drops files we'd reject for RAD-50/length, ODS-1: 512 B LBNs with
+    // no sub-block end-of-file field in the Stage-1 reader).
+    ".cpm", ".lif", ".rt11", ".rx01", ".os9", ".rbf", ".ods1",
     // Disk images with specific sector/partition structure
     ".vhd", ".vmdk", ".vhdx", ".qcow2", ".vdi", ".cvf",
     // WORM-minimal writers that don't round-trip user files (SB-only / empty-FS):

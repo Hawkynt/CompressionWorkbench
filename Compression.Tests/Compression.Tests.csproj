@@ -302,6 +302,7 @@
     <ProjectReference Include="..\FileSystems\FileSystem.JuiceFs\FileSystem.JuiceFs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Qnx4\FileSystem.Qnx4.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Qnx6\FileSystem.Qnx6.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Ods1\FileSystem.Ods1.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.MinixV2\FileSystem.MinixV2.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Nilfs2\FileSystem.Nilfs2.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Tux2\FileSystem.Tux2.csproj" />
