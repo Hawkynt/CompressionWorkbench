@@ -251,6 +251,7 @@
     <Project Path="FileSystems/FileSystem.SysV/FileSystem.SysV.csproj" />
     <Project Path="FileSystems/FileSystem.Coherent/FileSystem.Coherent.csproj" />
     <Project Path="FileSystems/FileSystem.Xenix/FileSystem.Xenix.csproj" />
+    <Project Path="FileSystems/FileSystem.Adfs/FileSystem.Adfs.csproj" />
     <Project Path="FileSystems/FileSystem.MinixV2/FileSystem.MinixV2.csproj" />
     <Project Path="FileSystems/FileSystem.Nilfs2/FileSystem.Nilfs2.csproj" />
     <Project Path="FileSystems/FileSystem.Tux2/FileSystem.Tux2.csproj" />

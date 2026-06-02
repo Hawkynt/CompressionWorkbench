@@ -297,6 +297,7 @@
     <ProjectReference Include="..\FileSystems\FileSystem.SysV\FileSystem.SysV.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Coherent\FileSystem.Coherent.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Xenix\FileSystem.Xenix.csproj" />
+    <ProjectReference Include="..\FileSystems\FileSystem.Adfs\FileSystem.Adfs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.MinixV2\FileSystem.MinixV2.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Nilfs2\FileSystem.Nilfs2.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Tux2\FileSystem.Tux2.csproj" />

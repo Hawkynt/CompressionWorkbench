@@ -246,6 +246,9 @@ public class EndToEndInteropTests {
     // Retro FSes with strict native filename constraints (length/charset) that
     // can't round-trip generic repeat.txt/small.txt/random.dat names verbatim.
     ".ssd", ".po", ".scl", ".atr",
+    // Acorn ADFS-L: filenames are 9 ASCII characters (no dot), so
+    // "repeat.txt" → "EPEAT_TXT" by sanitize+truncate.
+    ".adl",
     // Retro FSes with sector-size padding that inflates small files beyond byte-exact
     // round-trip (CP/M: 128 B records, LIF: 256 B sectors, RT-11: 512 B blocks no
     // length-in-bytes field, OS-9 RBF: 256 B sectors with FD.SIZ but generic-name

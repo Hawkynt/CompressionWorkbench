@@ -5,6 +5,7 @@ using FileFormat.Qcow2;
 using FileFormat.Vhd;
 using FileFormat.Vhdx;
 using FileFormat.Vmdk;
+using FileSystem.Adfs;
 using FileSystem.DoubleSpace;
 using FileSystem.ExFat;
 using FileSystem.Ext;
@@ -1666,6 +1667,64 @@ public class ExternalFsInteropTests {
       "cat hello.txt should print our payload");
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // ADFS — no apt-installable validator (mkfs.adfs doesn't exist).
+  // Validation path: build our ADFS-L image, then ask the Linux kernel to
+  // mount it read-only via the in-tree `adfs` module.
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// <summary>
+  /// Builds an ADFS-L image, then asks the Linux kernel to mount it
+  /// read-only via the in-tree <c>adfs</c> module. Skips with an
+  /// actionable hint when WSL/sudo/the adfs kernel module are absent.
+  /// <para>
+  /// The default WSL2 kernel ships without <c>fs/adfs/</c> compiled in,
+  /// so this path skips on stock WSL — but it works on a custom WSL
+  /// kernel (<c>CONFIG_ADFS_FS=m</c>) or any mainline distro kernel
+  /// that ships the module. There is no <c>mkfs.adfs</c> on any
+  /// mainstream distribution; the kernel-driver mount is the only
+  /// external gate available for ADFS.
+  /// </para>
+  /// </summary>
+  [Test]
+  public void Adfs_OurImage_LinuxMountReads() {
+    RequireWsl();
+    if (!FsInteropToolbox.WslHasPasswordlessSudo)
+      Assert.Ignore("WSL passwordless sudo is required (mount/modprobe need root). " +
+                    "Set it up with: `sudo visudo` → add `<your-user> ALL=(ALL) NOPASSWD: ALL` " +
+                    "(or scope to /usr/sbin/modprobe, /usr/bin/mount, /usr/bin/umount).");
+    if (!FsInteropToolbox.WslHasAdfsKernelModule)
+      Assert.Ignore("Linux `adfs` kernel module not available in this WSL kernel. " +
+                    "WSL2's stock kernel ships without adfs.ko; build a custom kernel with " +
+                    "CONFIG_ADFS_FS=m or run on native Linux/Raspberry Pi OS where the " +
+                    "module is typically pre-built. To validate manually after a rebuild: " +
+                    "`sudo modprobe adfs && sudo mount -t adfs -o loop,ro <img.adl> /mnt/adfs`.");
+
+    var w = new AdfsWriter { DiscTitle = "CWB-ADFS" };
+    w.AddFile("HELLO", SmallText);
+    w.AddFile("REPEAT", RepetitiveText);
+    var imgPath = Path.Combine(this._tmpDir, "adfs_mount.adl");
+    File.WriteAllBytes(imgPath, w.Build());
+
+    var wslImg = FsInteropToolbox.WinToWsl(imgPath);
+    var script =
+      "set -e; " +
+      "MNT=$(mktemp -d); " +
+      "trap 'sudo -n umount \"$MNT\" 2>/dev/null; rmdir \"$MNT\" 2>/dev/null' EXIT; " +
+      "sudo -n modprobe adfs; " +
+      $"sudo -n mount -t adfs -o loop,ro {wslImg} \"$MNT\"; " +
+      "ls -la \"$MNT\"; " +
+      "echo '--- HELLO ---'; cat \"$MNT/HELLO\" || true; " +
+      "echo '--- REPEAT head ---'; head -c 64 \"$MNT/REPEAT\" || true";
+    var result = FsInteropToolbox.RunWsl(script);
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"Linux kernel ADFS mount failed:\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+    Assert.That(result.StdOut, Does.Contain("HELLO"),
+      "Mounted ADFS root listing should include HELLO");
+    Assert.That(result.StdOut, Does.Contain("Hello from CompressionWorkbench"),
+      "cat HELLO should print our payload");
+  }
+
   /// <summary>
   /// Option A: Boot a FreeBSD live ISO under QEMU with our UFS image as a
   /// second disk and run <c>fsck_ffs -n /dev/ada1</c>. Skips cleanly when
@@ -2342,6 +2401,7 @@ internal static class FsInteropToolbox {
   public static bool WslAvailable { get; } = DetectWsl();
   public static bool WslHasPasswordlessSudo { get; } = DetectWslPasswordlessSudo();
   public static bool WslHasUfsKernelModule { get; } = DetectWslUfsModule();
+  public static bool WslHasAdfsKernelModule { get; } = DetectWslAdfsModule();
 
   private static readonly Dictionary<string, bool> _wslToolCache = new(StringComparer.Ordinal);
 
@@ -2364,6 +2424,16 @@ internal static class FsInteropToolbox {
       "lsmod 2>/dev/null | grep -qw ufs || " +
       "modinfo ufs >/dev/null 2>&1 || " +
       "grep -qw ufs /proc/filesystems 2>/dev/null");
+    return result.ExitCode == 0;
+  }
+
+  private static bool DetectWslAdfsModule() {
+    if (!WslAvailable) return false;
+    // Same three-way probe as UFS: loaded, modinfo-known, or built-in.
+    var result = RunWsl(
+      "lsmod 2>/dev/null | grep -qw adfs || " +
+      "modinfo adfs >/dev/null 2>&1 || " +
+      "grep -qw adfs /proc/filesystems 2>/dev/null");
     return result.ExitCode == 0;
   }
 
