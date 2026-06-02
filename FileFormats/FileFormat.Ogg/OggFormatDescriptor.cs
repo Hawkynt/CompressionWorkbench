@@ -1,14 +1,18 @@
 #pragma warning disable CS1591
 using System.Text;
+using Codec.Opus;
+using Codec.Pcm;
+using Codec.Vorbis;
 using Compression.Registry;
 
 namespace FileFormat.Ogg;
 
 /// <summary>
 /// Surfaces an OGG container as an archive of the full file + per-logical-stream
-/// raw packet blobs + the Vorbis/Opus comment block. Audio decode (Vorbis residue
-/// reconstruction, Opus CELT/SILK) is out of scope; consumers that need PCM pipe
-/// the extracted packets through a decoder downstream.
+/// raw packet blobs + the Vorbis/Opus comment block. When the primary audio stream
+/// decodes (Vorbis via <c>Codec.Vorbis</c>, Opus via <c>Codec.Opus</c>) the archive
+/// also surfaces one mono <c>&lt;CHANNEL&gt;.wav</c> per channel; streams the decoder
+/// can't handle fall back to the raw packet blobs only.
 /// </summary>
 public sealed class OggFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IFileInternalLayoutMap {
   public string Id => "Ogg";
@@ -32,7 +36,8 @@ public sealed class OggFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
       OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
-      Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null,
+      Method: e.Kind == "Channel" ? "pcm" : "stored",
+      IsDirectory: false, IsEncrypted: false, LastModified: null,
       Kind: e.Kind)).ToList();
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -65,6 +70,8 @@ public sealed class OggFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       ("FULL.ogg", "Track", blob),
     };
 
+    AddDecodedChannels(blob, entries);
+
     var parser = new OggPageParser();
     var pages = parser.Pages(blob);
     var serials = pages.Select(p => p.Serial).Distinct().ToArray();
@@ -92,6 +99,56 @@ public sealed class OggFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       }
     }
     return entries;
+  }
+
+  /// <summary>
+  /// Detects the primary codec (Opus via the <c>OpusHead</c> identification packet,
+  /// otherwise Vorbis), decodes the whole bitstream to interleaved 16-bit PCM, and
+  /// adds one mono <c>&lt;CHANNEL&gt;.wav</c> per channel. Anything the decoders
+  /// reject (Vorbis floor 0, Opus hybrid, multiplexed video, truncation) is skipped
+  /// so only the raw packet blobs remain.
+  /// </summary>
+  private static void AddDecodedChannels(byte[] blob, List<(string Name, string Kind, byte[] Data)> entries) {
+    try {
+      var isOpus = IndexOf(blob, "OpusHead"u8) >= 0;
+      int channels, sampleRate;
+      byte[] pcm;
+
+      using (var info = new MemoryStream(blob, writable: false))
+      using (var src = new MemoryStream(blob, writable: false))
+      using (var dst = new MemoryStream()) {
+        if (isOpus) {
+          var i = OpusCodec.ReadStreamInfo(info);
+          channels = i.Channels;
+          sampleRate = i.SampleRate > 0 ? i.SampleRate : 48000;
+          OpusCodec.Decompress(src, dst);
+        } else {
+          var i = VorbisCodec.ReadStreamInfo(info);
+          channels = i.Channels;
+          sampleRate = i.SampleRate;
+          VorbisCodec.Decompress(src, dst);
+        }
+        pcm = dst.ToArray();
+      }
+
+      if (channels < 1 || sampleRate <= 0 || pcm.Length == 0)
+        return;
+
+      if (channels == 1)
+        entries.Add(("MONO.wav", "Channel", PcmCodec.ToWavBlob(pcm, 1, sampleRate, 16)));
+      else
+        foreach (var (name, wav) in PcmCodec.SplitInterleavedPcm(pcm, channels, sampleRate, 16))
+          entries.Add(($"{name}.wav", "Channel", wav));
+    } catch {
+      // Undecodable / unsupported / not a single-audio-stream Ogg — packet blobs only.
+    }
+  }
+
+  private static int IndexOf(byte[] haystack, ReadOnlySpan<byte> needle) {
+    for (var i = 0; i + needle.Length <= haystack.Length; ++i)
+      if (haystack.AsSpan(i, needle.Length).SequenceEqual(needle))
+        return i;
+    return -1;
   }
 
   // Raw packets are stored length-prefixed so downstream tools can reconstruct
