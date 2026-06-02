@@ -1,5 +1,7 @@
 #pragma warning disable CS1591
 using System.Text;
+using Codec.Mp3;
+using Codec.Pcm;
 using Compression.Registry;
 
 namespace FileFormat.Mp3;
@@ -12,9 +14,10 @@ namespace FileFormat.Mp3;
 /// surfaces <c>id3v1/metadata.ini</c> + <c>id3v2/metadata.ini</c> so callers can
 /// see which fields come from which tag version.
 /// <para>
-/// Audio decode (Layer III IMDCT + polyphase synthesis) is intentionally out of
-/// scope — that's a separate multi-week project. The <c>FULL.mp3</c> entry carries
-/// the original audio frames unchanged.
+/// When the MPEG audio decodes (Layer III via <c>Codec.Mp3</c>), the archive also
+/// surfaces one mono <c>&lt;CHANNEL&gt;.wav</c> per channel; the <c>FULL.mp3</c>
+/// entry always carries the original frames unchanged. Inputs the decoder can't
+/// handle (e.g. Layer I/II) fall back to <c>FULL.mp3</c> + metadata only.
 /// </para>
 /// </summary>
 public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable, IArchiveDefragmentable, IFileInternalLayoutMap, IFileInternalChunkMover {
@@ -54,7 +57,9 @@ public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
       OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
-      Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null,
+      Method: e.Name.Equals("FULL.mp3", StringComparison.OrdinalIgnoreCase) ? "mp3"
+            : e.Kind == "Channel" ? "pcm" : "stored",
+      IsDirectory: false, IsEncrypted: false, LastModified: null,
       Kind: e.Kind)).ToList();
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -83,6 +88,8 @@ public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var entries = new List<(string Name, string Kind, byte[] Data)> {
       ("FULL.mp3", "Track", blob),
     };
+
+    AddDecodedChannels(blob, entries);
 
     var (_, v2Frames) = new Id3v2Reader().Read(blob);
     var v1Tag = new Id3v1Reader().Read(blob);
@@ -119,6 +126,39 @@ public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       entries.Add(("lyrics.txt", "Tag", lyrics.Payload));
 
     return entries;
+  }
+
+  /// <summary>
+  /// Decodes the MPEG audio to interleaved PCM (via <see cref="Mp3Codec"/>) and adds
+  /// one mono <c>&lt;CHANNEL&gt;.wav</c> per channel. Inputs the decoder rejects
+  /// (Layer I/II, malformed, or header-only) are silently skipped so the archive
+  /// still surfaces <c>FULL.mp3</c> + metadata.
+  /// </summary>
+  private static void AddDecodedChannels(byte[] blob, List<(string Name, string Kind, byte[] Data)> entries) {
+    try {
+      Mp3StreamInfo info;
+      using (var infoStream = new MemoryStream(blob, writable: false))
+        info = Mp3Codec.ReadStreamInfo(infoStream);
+      if (info.Channels < 1 || info.SampleRate <= 0)
+        return;
+
+      byte[] pcm;
+      using (var src = new MemoryStream(blob, writable: false))
+      using (var dst = new MemoryStream()) {
+        Mp3Codec.Decompress(src, dst);
+        pcm = dst.ToArray();
+      }
+      if (pcm.Length == 0)
+        return;
+
+      if (info.Channels == 1)
+        entries.Add(("MONO.wav", "Channel", PcmCodec.ToWavBlob(pcm, 1, info.SampleRate, 16)));
+      else
+        foreach (var (name, wav) in PcmCodec.SplitInterleavedPcm(pcm, info.Channels, info.SampleRate, 16))
+          entries.Add(($"{name}.wav", "Channel", wav));
+    } catch {
+      // Undecodable (Layer I/II, unsupported, truncated) — FULL.mp3 + metadata only.
+    }
   }
 
   private static byte[] BuildV2MetadataIni(IReadOnlyList<Id3v2Reader.Frame> frames) {
