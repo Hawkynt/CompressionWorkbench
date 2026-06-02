@@ -287,20 +287,16 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <summary>
-  /// Streaming creation: drains each <see cref="Compression.Registry.Streaming.StreamingArchiveInput"/>
-  /// via its bounded <c>OpenStream</c> factory and feeds the NTFS writer
-  /// one file at a time.
+  /// Two-pass streaming creation: pre-known per-input sizes drive MFT-record
+  /// + cluster geometry in pass 1; pass 2 emits all reserved system MFT
+  /// records + per-user MFT records (with single-run non-resident $DATA for
+  /// large files), then streams each non-resident entry's bytes from its
+  /// <see cref="Compression.Registry.Streaming.StreamingArchiveInput.OpenStream"/>
+  /// factory into its allocated cluster run via 64 KB chunks. Cluster tail
+  /// past each entry's exact <c>Size</c> stays sparse-zero. Resident files
+  /// (≤ 700 bytes) buffer their bounded source bytes inline in the MFT
+  /// record — the bound itself caps anything past <c>Size</c>.
   /// </summary>
-  /// <remarks>
-  /// The current <see cref="NtfsWriter"/> requires every file's bytes
-  /// up-front (it allocates MFT records + cluster runs after the full
-  /// content set is known); each input is buffered to a byte array.
-  /// The per-entry isolation contract is enforced at the SOURCE — the
-  /// caller's <c>OpenStream</c> result is a bounded stream so cluster
-  /// slack / adjacent-entry bytes can never enter the writer.
-  /// TODO: refactor NtfsWriter to true two-pass streaming (cluster
-  /// allocation from sizes in pass 1, data streaming in pass 2).
-  /// </remarks>
   public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -312,14 +308,18 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       : new NtfsWriter(label, generateShortNames);
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
-      using var src = input.OpenStream();
-      using var ms = new MemoryStream(checked((int)input.Size));
-      src.CopyTo(ms);
-      w.AddFile(input.Name, ms.ToArray());
+      w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
     }
     var totalSize     = ParseImageSizeBytes(specific?.GetValueOrDefault("ImageSize"));
     var clusterSize   = FilesystemSchemaPresets.ParseSize(specific?.GetValueOrDefault("ClusterSize"));
     var mftRecordSize = FilesystemSchemaPresets.ParseSize(specific?.GetValueOrDefault("MftRecordSize"));
+    if (output.CanSeek) {
+      if (totalSize > 0)
+        w.BuildToStreaming(output, totalSize);
+      else
+        w.BuildToStreamingAutoSized(output);
+      return;
+    }
     var disk = totalSize > 0
       ? w.Build(totalSize,
                 clusterSize   > 0 ? clusterSize   : 4096,

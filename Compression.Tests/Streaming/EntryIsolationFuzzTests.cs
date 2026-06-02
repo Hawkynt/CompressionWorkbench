@@ -312,6 +312,24 @@ public class EntryIsolationFuzzTests {
     AssertNoMarkerLeak(payload, sink.ToArray(), "Ext write-side bound");
   }
 
+  [Test, Category("Spec")]
+  public void Ntfs_CreateFromStreams_NeverCopiesPastDeclaredSize() {
+    var payload = StampedEntry(seed: 403, size: 1500);
+    var ops = new FileSystem.Ntfs.NtfsFormatDescriptor();
+    using var output = new MemoryStream();
+    var inputs = new[] {
+      new StreamingArchiveInput("DATA.BIN", payload.Length, IsDirectory: false,
+        OpenStream: () => MarkerFloodingSource(payload))
+    };
+    ops.CreateFromStreams(output, inputs, new FormatCreateOptions());
+    output.Position = 0;
+
+    using var bounded = ops.OpenEntry(output, "DATA.BIN", null);
+    using var sink = new MemoryStream();
+    bounded.CopyTo(sink);
+    AssertNoMarkerLeak(payload, sink.ToArray(), "NTFS write-side bound");
+  }
+
   /// <summary>
   /// Locates <paramref name="payload"/> in <paramref name="image"/> (verbatim
   /// — works for stored/uncompressed archives) and stamps the

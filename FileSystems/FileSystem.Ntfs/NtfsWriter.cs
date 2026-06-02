@@ -74,7 +74,17 @@ public sealed class NtfsWriter {
   // Size of the $UpCase data stream: 65 536 UTF-16 code units = 128 KiB.
   private const int UpCaseBytes = 65536 * 2;
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
+
+  /// <summary>
+  /// Streaming-allocations side-effect: when non-null, every non-resident
+  /// streaming entry's (startCluster, clusterCount, size, opener) is
+  /// appended so <see cref="BuildToStreaming"/> can post-fill clusters
+  /// from each source after metadata is committed. Resident streaming
+  /// entries (size ≤ ResidentThreshold) are buffered inside the MFT
+  /// record by the streaming wrapper before <see cref="Build(int)"/> runs.
+  /// </summary>
+  private List<(int StartCluster, int ClusterCount, long Size, Func<Stream> Opener)>? _streamingSink;
   private readonly string _volumeLabel;
 
   // $FILE_NAME namespace byte for the names this writer records. NTFS namespaces:
@@ -102,6 +112,14 @@ public sealed class NtfsWriter {
     public bool Resident;
     public int StartCluster;
     public int ClusterCount;
+
+    // Streaming bytes — Size + opener; non-resident streaming entries
+    // skip the in-memory data copy and are post-streamed by
+    // BuildToStreaming. Resident streaming entries (Size ≤ threshold) are
+    // buffered by the streaming wrapper before Build runs.
+    public long? StreamingSize;
+    public Func<Stream>? StreamOpener;
+    public long EffectiveLength => this.StreamingSize ?? (long)(this.Data?.Length ?? 0);
 
     // Directory children, in insertion order (re-sorted by name when the $I30
     // index is built).
@@ -150,7 +168,24 @@ public sealed class NtfsWriter {
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    this._files.Add((name, data));
+    this._files.Add((name, data, null, null));
+  }
+
+  /// <summary>
+  /// Adds a streaming file: <paramref name="size"/> drives MFT-record +
+  /// cluster sizing in pass 1; bytes are pulled from
+  /// <paramref name="openStream"/> in pass 2 of
+  /// <see cref="BuildToStreaming"/>. Files larger than the resident
+  /// threshold (~700 bytes) get a single-run non-resident $DATA whose
+  /// clusters are filled from the source via 64 KB chunks; smaller files
+  /// remain resident and are buffered up-front (the size-clamped bounded
+  /// read still satisfies the isolation contract).
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
+    this._files.Add((name, System.Array.Empty<byte>(), size, openStream));
   }
 
   /// <summary>
@@ -173,7 +208,7 @@ public sealed class NtfsWriter {
   /// <param name="requestedMftRecordSize">MFT record size in bytes (0 = auto-select).</param>
   /// <returns>Complete NTFS image as byte array.</returns>
   public byte[] BuildAutoSized(int requestedClusterSize = 0, int requestedMftRecordSize = 0) {
-    var fileSizes = this._files.Select(f => (long)f.Data.Length).ToList();
+    var fileSizes = this._files.Select(f => f.StreamingSize ?? (long)f.Data.Length).ToList();
     var fileCount = this._files.Count;
 
     // Candidate spaces. Cluster sizes start at 4 KiB (the practical NTFS floor
@@ -321,12 +356,12 @@ public sealed class NtfsWriter {
     // inside their MFT record. Cluster runs are recorded back onto the node.
     var fileNodes = treeNodes.Where(n => !n.IsDirectory).ToList();
     foreach (var node in fileNodes) {
-      var data = node.Data!;
-      if (data.Length <= ResidentThreshold) {
+      var effLen = node.EffectiveLength;
+      if (effLen <= ResidentThreshold) {
         node.Resident = true;
         continue;
       }
-      var clusters = (data.Length + this._clusterSize - 1) / this._clusterSize;
+      var clusters = (int)((effLen + this._clusterSize - 1) / this._clusterSize);
       // Skip over the mirror region if necessary.
       if (nextCluster < mftMirrCluster && nextCluster + clusters > mftMirrCluster) {
         nextCluster = mftMirrCluster + mftMirrClusters;
@@ -566,16 +601,34 @@ public sealed class NtfsWriter {
       }
 
       var data = node.Data!;
+      var effLen = node.EffectiveLength;
       if (node.Resident) {
+        // Resident streaming entries: drain the bounded source into the
+        // in-memory data buffer once here. Resident files live INSIDE
+        // the MFT record (no clusters), so the streaming-copy pass below
+        // can't reach them — buffering is required for the byte path.
+        // The bound on the source (BoundedEntryStream) still caps
+        // anything past `Size`.
+        byte[] residentBytes = data;
+        if (node.StreamOpener != null) {
+          residentBytes = new byte[effLen];
+          using var src = node.StreamOpener();
+          var read = 0;
+          while (read < residentBytes.Length) {
+            var n = src.Read(residentBytes, read, residentBytes.Length - read);
+            if (n <= 0) break;
+            read += n;
+          }
+        }
         WriteMftRecord(
           disk, mftOffset, node.RecordNumber, sequence: 1,
           fileName: node.Name,
           parentRecord: node.ParentRecord,
           isDirectory: false,
-          residentData: data,
+          residentData: residentBytes,
           nonResidentRuns: null,
-          dataSize: data.Length,
-          sizeHintInFileName: data.Length);
+          dataSize: residentBytes.Length,
+          sizeHintInFileName: residentBytes.Length);
       } else {
         WriteMftRecord(
           disk, mftOffset, node.RecordNumber, sequence: 1,
@@ -584,12 +637,20 @@ public sealed class NtfsWriter {
           isDirectory: false,
           residentData: null,
           nonResidentRuns: [(node.StartCluster, node.ClusterCount)],
-          dataSize: data.Length,
-          sizeHintInFileName: data.Length);
+          dataSize: effLen,
+          sizeHintInFileName: effLen);
 
-        var clusterOffset = (long)node.StartCluster * this._clusterSize;
-        if (clusterOffset + data.Length <= disk.Length)
-          data.CopyTo(disk, (int)clusterOffset);
+        if (node.StreamOpener != null) {
+          // Non-resident streaming entry — record its allocation; the
+          // BuildToStreaming post-pass fills the clusters from the
+          // source via 64 KB chunks. Cluster tail past `effLen` stays
+          // sparse-zero from the disk init.
+          this._streamingSink?.Add((node.StartCluster, node.ClusterCount, effLen, node.StreamOpener));
+        } else {
+          var clusterOffset = (long)node.StartCluster * this._clusterSize;
+          if (clusterOffset + data.Length <= disk.Length)
+            data.CopyTo(disk, (int)clusterOffset);
+        }
       }
     }
 
@@ -608,6 +669,111 @@ public sealed class NtfsWriter {
     return disk;
   }
 
+  /// <summary>
+  /// Two-pass streaming Build: pass 1 derives MFT-record + cluster
+  /// geometry from the declared sizes of <see cref="AddStreamingFile"/>
+  /// entries; pass 2 emits all reserved system MFT records (0..15) + the
+  /// per-user MFT records (with $DATA attributes pointing at single-run
+  /// non-resident allocations for files &gt; ResidentThreshold), then
+  /// streams each non-resident entry's bytes from its factory into its
+  /// allocated cluster run via 64 KB chunks. Cluster tail past each
+  /// entry's exact <c>Size</c> stays sparse-zero (the in-memory disk
+  /// byte[] was zero-initialised and the per-entry stream copy never
+  /// reads past the entry's logical size).
+  /// </summary>
+  /// <remarks>
+  /// <para>Coverage: small files (&lt;= 700 bytes) live INSIDE their MFT
+  /// record as resident $DATA; for streaming entries the writer drains
+  /// the bounded source into a single byte[] of exactly Size bytes
+  /// before emitting the record. Large files use single-run non-resident
+  /// $DATA — the streaming copy fills their cluster run from the source
+  /// in 64 KB chunks.</para>
+  /// <para>What's NOT covered: sparse files, compressed files
+  /// (LZNT1), multi-run fragmented files. These existed only via the
+  /// reader path before; the streaming writer keeps the single-run
+  /// invariant the existing Build path produces. Refactoring to a fully
+  /// sparse metadata writer (emitting MFT records directly to the
+  /// output stream without the disk byte[]) is a documented follow-up.
+  /// Entry CONTENTS of non-resident files never travel through a byte[]
+  /// inside the writer — that's the bar the fuzz harness checks.</para>
+  /// </remarks>
+  public void BuildToStreaming(Stream output, int totalSize) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
+
+    var sink = new List<(int StartCluster, int ClusterCount, long Size, Func<Stream> Opener)>();
+    this._streamingSink = sink;
+    byte[] disk;
+    int clusterSize;
+    try {
+      disk = this.Build(totalSize);
+      clusterSize = this._clusterSize;
+    } finally {
+      this._streamingSink = null;
+    }
+    output.SetLength(disk.Length);
+    output.Position = 0;
+    output.Write(disk);
+
+    var buf = new byte[64 * 1024];
+    foreach (var (startCluster, _, size, opener) in sink) {
+      if (size <= 0) continue;
+      var clusterOffset = (long)startCluster * clusterSize;
+      if (clusterOffset < 0 || clusterOffset >= output.Length) continue;
+      output.Position = clusterOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+    }
+    output.Flush();
+  }
+
+  /// <summary>Two-pass streaming Build with auto-sized geometry.</summary>
+  public void BuildToStreamingAutoSized(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreamingAutoSized requires a writable, seekable stream.", nameof(output));
+
+    var sink = new List<(int StartCluster, int ClusterCount, long Size, Func<Stream> Opener)>();
+    this._streamingSink = sink;
+    byte[] disk;
+    int clusterSize;
+    try {
+      disk = this.BuildAutoSized();
+      clusterSize = this._clusterSize;
+    } finally {
+      this._streamingSink = null;
+    }
+    output.SetLength(disk.Length);
+    output.Position = 0;
+    output.Write(disk);
+
+    var buf = new byte[64 * 1024];
+    foreach (var (startCluster, _, size, opener) in sink) {
+      if (size <= 0) continue;
+      var clusterOffset = (long)startCluster * clusterSize;
+      if (clusterOffset < 0 || clusterOffset >= output.Length) continue;
+      output.Position = clusterOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+    }
+    output.Flush();
+  }
+
   // Materialises the directory tree from the flat (slashed-name, data) list.
   // The root directory is MFT record 5 and is not part of the returned node
   // list. Intermediate directories are created on demand and assigned MFT
@@ -619,7 +785,7 @@ public sealed class NtfsWriter {
     var nodes = new List<TreeNode>();
     var nextRecord = (uint)MftReservedRecords;
 
-    foreach (var (rawName, data) in this._files) {
+    foreach (var (rawName, data, streamingSize, opener) in this._files) {
       var segments = rawName.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
       if (segments.Length == 0) continue;
 
@@ -646,6 +812,8 @@ public sealed class NtfsWriter {
       // matching how a real filesystem would treat the same target path twice.
       if (dir.ChildByName.TryGetValue(leaf, out var existing) && !existing.IsDirectory) {
         existing.Data = data;
+        existing.StreamingSize = streamingSize;
+        existing.StreamOpener = opener;
         continue;
       }
 
@@ -655,6 +823,8 @@ public sealed class NtfsWriter {
         ParentRecord = dir.RecordNumber,
         IsDirectory = false,
         Data = data,
+        StreamingSize = streamingSize,
+        StreamOpener = opener,
       };
       dir.Children.Add(fileNode);
       dir.ChildByName[leaf] = fileNode;
