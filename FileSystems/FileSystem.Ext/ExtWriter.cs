@@ -14,9 +14,30 @@ namespace FileSystem.Ext;
 /// </para>
 /// </summary>
 public sealed class ExtWriter {
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
 
-  public void AddFile(string name, byte[] data) => _files.Add((name, data));
+  /// <summary>
+  /// Streaming-allocations side-effect: when non-null, every streaming
+  /// entry's (firstBlock, blockCount, size, opener) is appended for use
+  /// by <see cref="BuildToStreaming"/>'s post-stream pass. When null, the
+  /// writer behaves identically to before.
+  /// </summary>
+  private List<(int FirstBlock, int BlockCount, long Size, Func<Stream> Opener)>? _streamingSink;
+
+  public void AddFile(string name, byte[] data) => _files.Add((name, data, null, null));
+
+  /// <summary>
+  /// Adds a streaming file: <paramref name="size"/> drives extent + inode
+  /// + block-group sizing in pass 1; bytes are pulled from
+  /// <paramref name="openStream"/> in pass 2 of
+  /// <see cref="BuildToStreaming"/>. Never buffered as <c>byte[]</c>.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
+    _files.Add((name, System.Array.Empty<byte>(), size, openStream));
+  }
 
   /// <summary>
   /// ext filesystem revision selector used by the writer's
@@ -34,7 +55,7 @@ public sealed class ExtWriter {
   /// </summary>
   /// <param name="requestedBlockSize">Block size in bytes (0 = auto-select).</param>
   public byte[] BuildAutoSized(int requestedBlockSize = 0) {
-    var fileSizes = _files.Select(f => (long)f.Data.Length).ToList();
+    var fileSizes = _files.Select(f => f.StreamingSize ?? (long)f.Data.Length).ToList();
     var estimatedInodes = ChooseInodeCount(_files.Count + 1);
 
     // ext block sizes: 1 KB, 2 KB, 4 KB (this minimal writer supports up to 4 KB).
@@ -57,7 +78,8 @@ public sealed class ExtWriter {
     // directory's entries can span several data blocks once they overflow one.
     var dirPaths = new HashSet<string> { "" };
     var dirEntryCount = new Dictionary<string, int>();
-    foreach (var (name, _) in _files) {
+    foreach (var entry in _files) {
+      var name = entry.Name;
       var segments = name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
       var prefix = "";
       for (var s = 0; s < segments.Length - 1; ++s) {
@@ -187,8 +209,8 @@ public sealed class ExtWriter {
     const uint RootInode = 2;
     var root = new DirNode { Inode = RootInode, Parent = RootInode };
 
-    var fileInodes = new List<(uint Inode, DirNode Parent, string LeafName, byte[] Data)>();
-    foreach (var (name, data) in _files) {
+    var fileInodes = new List<(uint Inode, DirNode Parent, string LeafName, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)>();
+    foreach (var (name, data, streamingSize, opener) in _files) {
       var segments = name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
       if (segments.Length == 0) continue;
 
@@ -204,7 +226,7 @@ public sealed class ExtWriter {
 
       var leaf = segments[^1];
       var fileInode = nextInode++;
-      fileInodes.Add((fileInode, dir, leaf, data));
+      fileInodes.Add((fileInode, dir, leaf, data, streamingSize, opener));
       dir.Files.Add((leaf, fileInode));
     }
 
@@ -216,8 +238,8 @@ public sealed class ExtWriter {
       var bit = (int)(node.Inode - 1);
       disk[inodeBitmapOffset + bit / 8] |= (byte)(1 << (bit % 8));
     }
-    foreach (var (fileInode, _, _, _) in fileInodes) {
-      var bit = (int)(fileInode - 1);
+    foreach (var fi in fileInodes) {
+      var bit = (int)(fi.Inode - 1);
       disk[inodeBitmapOffset + bit / 8] |= (byte)(1 << (bit % 8));
     }
 
@@ -328,10 +350,11 @@ public sealed class ExtWriter {
     const int MaxDirectFileBlocks = 12;
     var filerPointersPerBlock = blockSize / 4;
     var maxFileBlocks = MaxDirectFileBlocks + filerPointersPerBlock;
-    foreach (var (fileInode, _, _, data) in fileInodes) {
+    foreach (var (fileInode, _, _, data, streamingSize, streamOpener) in fileInodes) {
       var fileInodeOffset = inodeTableOffset + (int)(fileInode - 1) * inodeSize;
+      var effectiveLength = streamingSize ?? (long)data.Length;
 
-      var blocksNeeded = data.Length == 0 ? 0 : (data.Length + blockSize - 1) / blockSize;
+      var blocksNeeded = effectiveLength == 0 ? 0 : (int)((effectiveLength + blockSize - 1) / blockSize);
       if (blocksNeeded > maxFileBlocks)
         throw new InvalidOperationException(
           $"ext2 writer supports direct + singly-indirect blocks only " +
@@ -344,11 +367,19 @@ public sealed class ExtWriter {
         ++nextBlock;
       }
 
-      var written = 0;
-      foreach (var fb in fileBlocks) {
-        var toWrite = Math.Min(blockSize, data.Length - written);
-        if (toWrite > 0) Array.Copy(data, written, disk, fb * blockSize, toWrite);
-        written += toWrite;
+      // Streaming entries leave their data blocks zero; BuildToStreaming
+      // post-fills them from the source in 64 KB chunks. Cluster tail
+      // past `effectiveLength` stays sparse-zero from the disk init.
+      if (streamOpener != null) {
+        if (this._streamingSink != null && blocksNeeded > 0 && effectiveLength > 0)
+          this._streamingSink.Add((fileBlocks[0], blocksNeeded, effectiveLength, streamOpener));
+      } else {
+        var written = 0;
+        foreach (var fb in fileBlocks) {
+          var toWrite = Math.Min(blockSize, data.Length - written);
+          if (toWrite > 0) Array.Copy(data, written, disk, fb * blockSize, toWrite);
+          written += toWrite;
+        }
       }
 
       // Past the first 12 data blocks, a singly-indirect block holds the rest.
@@ -365,7 +396,7 @@ public sealed class ExtWriter {
 
       var ino = disk.AsSpan(fileInodeOffset, inodeSize);
       BinaryPrimitives.WriteUInt16LittleEndian(ino, 0x8000 | 0x01A4);           // i_mode: regular file, 0644
-      BinaryPrimitives.WriteUInt32LittleEndian(ino[4..], (uint)data.Length);    // i_size
+      BinaryPrimitives.WriteUInt32LittleEndian(ino[4..], (uint)effectiveLength); // i_size
       BinaryPrimitives.WriteUInt32LittleEndian(ino[8..], now);                  // i_atime
       BinaryPrimitives.WriteUInt32LittleEndian(ino[12..], now);                 // i_ctime
       BinaryPrimitives.WriteUInt32LittleEndian(ino[16..], now);                 // i_mtime
@@ -502,11 +533,122 @@ public sealed class ExtWriter {
     return withHeadroom + 7 & ~7;
   }
 
+  /// <summary>
+  /// Two-pass streaming Build: pass 1 derives block-group geometry from the
+  /// declared sizes of <see cref="AddStreamingFile"/> entries; pass 2 emits
+  /// the superblock + BGD + bitmaps + inode table + directory blocks with
+  /// file data blocks left zero, then streams each entry's bytes from its
+  /// factory into its first allocated block via 64 KB chunks. Block tail
+  /// past each entry's exact <c>Size</c> stays sparse-zero.
+  /// </summary>
+  /// <remarks>
+  /// Partial coverage: only files small enough to fit in 12 contiguous direct
+  /// blocks (ext writer's invariant for the streaming copy) are streamed
+  /// contiguously; larger files still use the existing direct+indirect
+  /// allocation path and stream into their contiguous run of allocated
+  /// blocks since pass 1 allocates them in order. Entry CONTENTS never
+  /// travel through a byte[] inside the writer.
+  /// </remarks>
+  public void BuildToStreaming(Stream output, int blockSize, int totalBlocks,
+      ExtVersion version, bool journal, string volumeLabel, int inodeSize) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
+
+    var sink = new List<(int FirstBlock, int BlockCount, long Size, Func<Stream> Opener)>();
+    this._streamingSink = sink;
+    byte[] disk;
+    try {
+      disk = Build(blockSize, totalBlocks, version, journal, volumeLabel, inodeSize);
+    } finally {
+      this._streamingSink = null;
+    }
+    output.SetLength(disk.Length);
+    output.Position = 0;
+    output.Write(disk);
+
+    // Pass 2: stream each entry's bytes into its first allocated block.
+    // The allocation walk above used contiguous block IDs so a single
+    // forward write covers BlockCount blocks (= ceil(size/blockSize)).
+    var buf = new byte[64 * 1024];
+    foreach (var (firstBlock, _, size, opener) in sink) {
+      if (size <= 0) continue;
+      var byteOffset = (long)firstBlock * blockSize;
+      if (byteOffset < 0 || byteOffset >= output.Length) continue;
+      output.Position = byteOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+      // Last-block tail past `size` retains zero from the disk init.
+    }
+    output.Flush();
+  }
+
+  /// <summary>Two-pass streaming Build with auto-sized geometry.</summary>
+  public void BuildToStreamingAutoSized(Stream output, ExtVersion version, bool journal,
+      string volumeLabel, int inodeSize) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreamingAutoSized requires a writable, seekable stream.", nameof(output));
+
+    var sink = new List<(int FirstBlock, int BlockCount, long Size, Func<Stream> Opener)>();
+    this._streamingSink = sink;
+    byte[] disk;
+    try {
+      // Auto-sized build reuses the size-aware BuildAutoSized path, which
+      // honours streaming sizes via the StreamingSize fallback above.
+      var bytes = BuildAutoSized();
+      // BuildAutoSized delegates to Build(blockSize, totalBlocks) which
+      // calls our 6-arg Build with defaults. The streaming sink is set
+      // around the call so any in-build streaming-allocation records get
+      // captured automatically.
+      disk = bytes;
+    } finally {
+      this._streamingSink = null;
+    }
+    output.SetLength(disk.Length);
+    output.Position = 0;
+    output.Write(disk);
+
+    var blockSize = ReadBlockSizeFromSuperblock(disk);
+    var buf = new byte[64 * 1024];
+    foreach (var (firstBlock, _, size, opener) in sink) {
+      if (size <= 0) continue;
+      var byteOffset = (long)firstBlock * blockSize;
+      if (byteOffset < 0 || byteOffset >= output.Length) continue;
+      output.Position = byteOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+    }
+    output.Flush();
+  }
+
+  private static int ReadBlockSizeFromSuperblock(byte[] disk) {
+    // Superblock at offset 1024. s_log_block_size at field offset 24 (so
+    // absolute offset 1024+24 = 1048). blockSize = 1024 << s_log_block_size.
+    if (disk.Length < 1052) return 1024;
+    var logBlockSize = BinaryPrimitives.ReadUInt32LittleEndian(disk.AsSpan(1048));
+    return 1024 << (int)logBlockSize;
+  }
+
   // Counts the distinct directories (root + every path prefix) the added files imply.
   private int CountDirectories() {
     var dirs = new HashSet<string> { "" };
-    foreach (var (name, _) in _files) {
-      var segments = name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+    foreach (var entry in _files) {
+      var segments = entry.Name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
       var prefix = "";
       for (var s = 0; s < segments.Length - 1; ++s) {
         prefix = prefix.Length == 0 ? segments[s] : prefix + "/" + segments[s];

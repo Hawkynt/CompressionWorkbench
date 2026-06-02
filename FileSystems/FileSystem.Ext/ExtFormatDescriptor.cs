@@ -233,16 +233,13 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Streaming creation: drains each <see cref="Compression.Registry.Streaming.StreamingArchiveInput"/>
-  /// via its bounded <c>OpenStream</c> factory and feeds the writer one
-  /// file at a time. The writer is one-pass internally (it sizes the
-  /// block group + inode table after all files are added) so each input
-  /// is materialised into a byte array before <c>AddFile</c>; the bound
-  /// is enforced by the caller's <c>OpenStream</c> result.
-  ///
-  /// TODO: refactor <see cref="ExtWriter"/> to a true two-pass streaming
-  /// build (extent allocation from known sizes in pass 1; per-file block
-  /// copy in pass 2) to remove the per-file buffering.
+  /// Two-pass streaming creation: pre-known per-input sizes drive ext block
+  /// group sizing in pass 1; pass 2 emits superblock + BGD + bitmaps +
+  /// inode table + directory blocks with file data blocks left zero, then
+  /// streams each input's bytes from its
+  /// <see cref="Compression.Registry.Streaming.StreamingArchiveInput.OpenStream"/>
+  /// factory into its first allocated block via 64 KB chunks. Block tail
+  /// past each entry's exact <c>Size</c> stays sparse-zero.
   /// </summary>
   public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
@@ -250,10 +247,7 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new ExtWriter();
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
-      using var src = input.OpenStream();
-      using var ms = new MemoryStream(checked((int)input.Size));
-      src.CopyTo(ms);
-      w.AddFile(input.Name, ms.ToArray());
+      w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
     }
     var versionStr = options.GetOption("Version", "ext4");
     var version = versionStr switch {
@@ -265,6 +259,10 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var journal = options.GetOptionBool("Journal", true);
     var volumeLabel = options.GetOption("VolumeLabel", "");
     var inodeSize = options.GetOptionInt("InodeSize", 256);
+    if (output.CanSeek) {
+      w.BuildToStreaming(output, blockSize, totalBlocks: 4096, version, journal, volumeLabel, inodeSize);
+      return;
+    }
     output.Write(w.Build(blockSize, totalBlocks: 4096, version, journal, volumeLabel, inodeSize));
   }
 

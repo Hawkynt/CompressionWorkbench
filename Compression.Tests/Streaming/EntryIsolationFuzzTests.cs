@@ -294,6 +294,24 @@ public class EntryIsolationFuzzTests {
     AssertNoMarkerLeak(payload, sink.ToArray(), "ExFat write-side bound");
   }
 
+  [Test, Category("Spec")]
+  public void Ext_CreateFromStreams_NeverCopiesPastDeclaredSize() {
+    var payload = StampedEntry(seed: 402, size: 1500);
+    var ops = new FileSystem.Ext.ExtFormatDescriptor();
+    using var output = new MemoryStream();
+    var inputs = new[] {
+      new StreamingArchiveInput("data.bin", payload.Length, IsDirectory: false,
+        OpenStream: () => MarkerFloodingSource(payload))
+    };
+    ops.CreateFromStreams(output, inputs, new FormatCreateOptions());
+    output.Position = 0;
+
+    using var bounded = ops.OpenEntry(output, "data.bin", null);
+    using var sink = new MemoryStream();
+    bounded.CopyTo(sink);
+    AssertNoMarkerLeak(payload, sink.ToArray(), "Ext write-side bound");
+  }
+
   /// <summary>
   /// Locates <paramref name="payload"/> in <paramref name="image"/> (verbatim
   /// — works for stored/uncompressed archives) and stamps the
