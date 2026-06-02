@@ -1031,19 +1031,20 @@ public static class ArchiveOperations {
 
     // Extract from source.
     var srcEntries = List(inputPath, null);
+    var dstCreatable = (Compression.Registry.IArchiveCreatable)dstOps;
 
-    // ── In-memory pipeline ────────────────────────────────────────────
-    // When the source fits in the configured RAM budget we extract every
-    // entry straight into byte[]s, build the target into a MemoryStream,
-    // and commit it atomically — no tempdir, no torn writes.
+    // ── Tiny-source optimization (≤ 32 MiB): in-memory pipeline ───────
+    // Buffering the whole source as byte[]s is faster than seek-heavy
+    // streaming when the source easily fits in RAM. Bounded streaming
+    // (the universal architecture) takes over for everything larger.
     var srcSize = new FileInfo(inputPath).Length;
-    if (Compression.Lib.InMemoryProcessing.FitsInMemory(srcSize) &&
-        dstOps is Compression.Registry.IArchiveCreatable dstCreatable) {
+    const long InMemoryOptimizationCeiling = 32L * 1024 * 1024;
+    if (srcSize <= InMemoryOptimizationCeiling &&
+        Compression.Lib.InMemoryProcessing.FitsInMemory(srcSize)) {
       AddConversionWarnings(srcFormat, dstFormat, srcEntries, warnings);
 
       var inputs = ExtractAllToMemory(inputPath, null);
 
-      // Skip directory entries for formats that don't support them.
       var dstDescriptorMem = Compression.Registry.FormatRegistry.GetById(dstFormat.ToString());
       if (dstDescriptorMem != null &&
           (dstDescriptorMem.Capabilities & Compression.Registry.FormatCapabilities.SupportsDirectories) == 0) {
@@ -1057,30 +1058,43 @@ public static class ArchiveOperations {
       return warnings;
     }
 
-    // ── Disk-tempdir fallback ─────────────────────────────────────────
-    // Source exceeds the in-memory budget — fall back to the original
-    // extract-to-tempdir then Create-from-disk path.
-    var tempDir = Path.Combine(Path.GetTempPath(), "cwb_fsconv_" + Guid.NewGuid().ToString("N")[..8]);
-    try {
-      Extract(inputPath, tempDir, null, null);
+    // ── Bounded streaming pipeline ────────────────────────────────────
+    // Source → target without any per-entry buffering. The source's
+    // OpenEntry produces a BoundedEntryStream sized to the entry's
+    // logical bytes (so slack / adjacent entries / padding are
+    // physically unreachable); the target's CreateFromStreams either
+    // streams those bytes through (FAT two-pass) or, for descriptors
+    // that haven't overridden it, falls back to buffer-per-entry +
+    // classic Create. Either way no whole-source tempdir is involved.
+    AddConversionWarnings(srcFormat, dstFormat, srcEntries, warnings);
 
-      AddConversionWarnings(srcFormat, dstFormat, srcEntries, warnings);
+    var dstDescriptor = Compression.Registry.FormatRegistry.GetById(dstFormat.ToString());
+    var supportsDirs = dstDescriptor != null &&
+      (dstDescriptor.Capabilities & Compression.Registry.FormatCapabilities.SupportsDirectories) != 0;
 
-      // Build inputs from extracted files.
-      var inputs = EnumerateTempInputs(tempDir);
+    var srcOps = Compression.Registry.FormatRegistry.GetArchiveOps(srcFormat.ToString())
+      ?? throw new NotSupportedException($"Cannot list format: {srcFormat}");
 
-      // Skip directory entries for formats that don't support them
-      // (most stream formats and some flat archive formats).
-      var dstDescriptor = Compression.Registry.FormatRegistry.GetById(dstFormat.ToString());
-      if (dstDescriptor != null &&
-          (dstDescriptor.Capabilities & Compression.Registry.FormatCapabilities.SupportsDirectories) == 0) {
-        inputs = inputs.Where(i => !i.IsDirectory).ToList();
-      }
+    // Open the source stream ONCE; the OpenEntry factories share it.
+    // Per-entry streams use Position/Read against the same underlying
+    // FileStream, which is safe because the writer reads each entry
+    // stream to completion before requesting the next one.
+    using var sharedSrc = File.OpenRead(inputPath);
+    var streamingInputs = srcEntries
+      .Where(e => !e.IsDirectory || supportsDirs)
+      .Select(e => new Compression.Registry.Streaming.StreamingArchiveInput(
+        Name: e.Name,
+        Size: e.OriginalSize,
+        IsDirectory: e.IsDirectory,
+        OpenStream: e.IsDirectory
+          ? () => new MemoryStream(System.Array.Empty<byte>(), writable: false)
+          : () => srcOps.OpenEntry(sharedSrc, e.Name, null)));
 
-      Create(outputPath, inputs, new CompressionOptions(), dstFormat, createOptions?.FormatSpecific);
-    } finally {
-      if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
-    }
+    var streamOpts = new Compression.Registry.FormatCreateOptions {
+      FormatSpecific = createOptions?.FormatSpecific,
+    };
+    AtomicFileWriter.WriteAtomic(outputPath,
+      fs => dstCreatable.CreateFromStreams(fs, streamingInputs, streamOpts));
 
     return warnings;
   }

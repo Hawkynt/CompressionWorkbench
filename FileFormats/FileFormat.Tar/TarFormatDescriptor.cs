@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Tar;
@@ -112,26 +113,41 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Native in-memory single-entry extraction — feeds the small-image
-  /// ConvertArchive pipeline that wires extracted bytes straight into the
-  /// target writer without ever touching disk.
+  /// Opens a single TAR entry as a read-only <see cref="Stream"/> bounded
+  /// to its data size. TAR is positional — each entry's data starts at a
+  /// known offset followed by 512-byte block padding. The
+  /// <see cref="BoundedEntryStream"/> wrapper guarantees the padding and
+  /// next entry's header bytes are physically unreachable through the
+  /// returned view.
   /// </summary>
-  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
     var r = new TarReader(archive, leaveOpen: true);
     while (r.GetNextEntry() is { } e) {
       if (e.IsDirectory) { r.Skip(); continue; }
-      if (string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) {
-        using var es = r.GetEntryStream();
-        var data = new byte[e.Size];
-        es.ReadExactly(data);
-        return data;
+      if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) {
+        r.Skip();
+        continue;
       }
-      r.Skip();
+      var es = r.GetEntryStream();
+      return new BoundedEntryStream(es, e.Size, leaveOpen: false);
     }
-    return [];
+    return new BoundedEntryStream(new MemoryStream(System.Array.Empty<byte>(), writable: false),
+      0, leaveOpen: false);
+  }
+
+  /// <summary>
+  /// Native in-memory single-entry extraction. Routed through the bounded
+  /// <see cref="OpenEntry"/> so the per-entry isolation contract holds
+  /// uniformly across descriptors.
+  /// </summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var ms = new MemoryStream();
+    s.CopyTo(ms);
+    return ms.ToArray();
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {

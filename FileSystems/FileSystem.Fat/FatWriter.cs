@@ -22,6 +22,11 @@ namespace FileSystem.Fat;
 /// </remarks>
 public sealed class FatWriter {
   private readonly List<(string Name, byte[] Data, DateTime? ModTime)> _files = [];
+  // Parallel list of streaming inputs (name, size, factory, modTime). When
+  // populated, BuildToStreaming() uses these to size the image and stream
+  // file bytes from the factory straight into each pre-allocated cluster
+  // run — no byte[] materialisation for entry data.
+  private readonly List<(string Name, long Size, Func<Stream> Open, DateTime? ModTime)> _streamingFiles = [];
 
   /// <summary>
   /// Adds a file to the image. Long names (mixed case, > 8.3, non-ASCII,
@@ -29,6 +34,27 @@ public sealed class FatWriter {
   /// 8.3 short-name alias. Plain 8.3 names are written as a single dirent.
   /// </summary>
   public void AddFile(string name, byte[] data, DateTime? modTime = null) => _files.Add((name, data, modTime));
+
+  /// <summary>
+  /// Adds a streaming file: its <paramref name="size"/> is known up front
+  /// (so the writer can plan the cluster geometry), but its bytes are
+  /// fetched on demand from <paramref name="openStream"/> during the
+  /// second-pass write — never buffered in memory by the writer.
+  /// </summary>
+  /// <remarks>
+  /// <para>
+  /// Pair with <see cref="BuildToStreaming"/> to produce a FAT image whose
+  /// peak memory cost is bounded by 64 KB regardless of file count or
+  /// size. The factory is invoked at most once per file; the returned
+  /// stream is disposed after the write.
+  /// </para>
+  /// </remarks>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream, DateTime? modTime = null) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
+    _streamingFiles.Add((name, size, openStream, modTime));
+  }
 
   /// <summary>
   /// Builds the FAT filesystem image.
@@ -858,10 +884,19 @@ public sealed class FatWriter {
     public DateTime? ModTime { get; } = modTime;
     public int StartCluster { get; set; }
     public int ClusterCount { get; set; }
+    /// <summary>When non-null, this node represents a streaming input: its
+    /// bytes come from <see cref="StreamOpener"/> on demand and the
+    /// in-memory <see cref="Data"/> array stays empty.</summary>
+    public long? StreamingSize { get; init; }
+    public Func<Stream>? StreamOpener { get; init; }
+    public long EffectiveLength => this.StreamingSize ?? this.Data.Length;
   }
 
   /// <summary>Splits each added file's name on path separators and inserts it
-  /// into a directory tree rooted at the (anonymous) volume root.</summary>
+  /// into a directory tree rooted at the (anonymous) volume root. Streaming
+  /// files (added via <see cref="AddStreamingFile"/>) are inserted alongside
+  /// in-memory files, carrying their byte size for layout planning but
+  /// deferring data materialisation to the write phase.</summary>
   private DirNode BuildTree() {
     var root = new DirNode("");
     foreach (var (name, data, modTime) in _files) {
@@ -870,6 +905,16 @@ public sealed class FatWriter {
       var dir = root;
       for (var i = 0; i < parts.Length - 1; i++) dir = dir.GetOrAddDir(parts[i]);
       dir.Files.Add(new FileNode(parts[^1], data, modTime));
+    }
+    foreach (var (name, size, opener, modTime) in _streamingFiles) {
+      var parts = name.Split('/', '\\', StringSplitOptions.RemoveEmptyEntries);
+      if (parts.Length == 0) continue;
+      var dir = root;
+      for (var i = 0; i < parts.Length - 1; i++) dir = dir.GetOrAddDir(parts[i]);
+      dir.Files.Add(new FileNode(parts[^1], System.Array.Empty<byte>(), modTime) {
+        StreamingSize = size,
+        StreamOpener = opener,
+      });
     }
     return root;
   }
@@ -955,7 +1000,8 @@ public sealed class FatWriter {
 
     void Allocate(DirNode dir) {
       foreach (var f in dir.Files) {
-        f.ClusterCount = Math.Max(1, (f.Data.Length + clusterSize - 1) / clusterSize);
+        var len = f.EffectiveLength;
+        f.ClusterCount = Math.Max(1, (int)((len + clusterSize - 1) / clusterSize));
         f.StartCluster = nextCluster;
         p.Runs.Add((nextCluster, f.ClusterCount));
         nextCluster += f.ClusterCount;
@@ -981,7 +1027,7 @@ public sealed class FatWriter {
       foreach (var (slots, file, sub) in dir.ChildSlots) {
         var sn = slots.AsSpan(slots.Length - 32, 32);
         var start = file is not null ? file.StartCluster : sub!.StartCluster;
-        var size = file?.Data.Length ?? 0;
+        var size = file?.EffectiveLength ?? 0;
         if (fatType == 32)
           BinaryPrimitives.WriteUInt16LittleEndian(sn[20..], (ushort)((start >> 16) & 0xFFFF));
         BinaryPrimitives.WriteUInt16LittleEndian(sn[26..], (ushort)(start & 0xFFFF));
@@ -991,13 +1037,172 @@ public sealed class FatWriter {
       if (isRoot && fatType != 32) p.RootFixed = content;
       else p.DataWrites.Add((dir.StartCluster, content));
 
+      // Only emit in-memory file data into the placement. Streaming files
+      // are written by BuildToStreaming() directly into their pre-allocated
+      // cluster runs — the placement carries their start cluster + size,
+      // not their bytes.
       foreach (var f in dir.Files)
-        if (f.Data.Length > 0) p.DataWrites.Add((f.StartCluster, f.Data));
+        if (f.StreamingSize == null && f.Data.Length > 0)
+          p.DataWrites.Add((f.StartCluster, f.Data));
       foreach (var d in dir.Dirs) Fill(d, isRoot ? 0 : dir.StartCluster, false);
     }
     Fill(root, 0, true);
 
     return p;
+  }
+
+  /// <summary>
+  /// Two-pass streaming Build: pass 1 computes layout from
+  /// <see cref="AddStreamingFile"/> sizes, pass 2 writes boot/FAT/root
+  /// metadata then streams each entry's bytes from its
+  /// <c>Func&lt;Stream&gt;</c> factory straight into its allocated cluster
+  /// run via 64 KB chunks. Peak memory cost is bounded by
+  /// (cluster_size + dirent_blob + 64 KB) — independent of total image
+  /// size or per-file size.
+  /// </summary>
+  /// <remarks>
+  /// <para>
+  /// Cluster tail past each file's exact <c>Size</c> stays zero (the
+  /// sparse <see cref="Stream.SetLength"/>-backed output never sees those
+  /// bytes). Bounded source streams guarantee no slack-byte leakage from
+  /// the read side; the writer's exact-byte-count copy guarantees no
+  /// excess from the write side.
+  /// </para>
+  /// </remarks>
+  public void BuildToStreaming(Stream output, int bytesPerSector = 512, int requestedClusterSize = 0,
+    string? volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false,
+    int requestedRootEntries = 0, bool forceLfn = false) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
+
+    if (forceLfn) enableLfn = true;
+    // Pass 1: lay out the tree using the size-only streaming inputs so we
+    // know cluster size, FAT type, total sector count etc. up front.
+    var tree = BuildTree();
+    BuildSlots(tree, enableLfn, forceLfn);
+    var rootDirentBytes = ContentLength(tree, isRoot: true);
+    var fileSizes = new List<long>();
+    var dirContentBytes = new List<long>();
+    void CollectSizes(DirNode dir, bool isRoot) {
+      if (!isRoot) dirContentBytes.Add(ContentLength(dir, isRoot: false));
+      foreach (var f in dir.Files) fileSizes.Add(f.EffectiveLength);
+      foreach (var sub in dir.Dirs) CollectSizes(sub, false);
+    }
+    CollectSizes(tree, true);
+
+    var clusterBytes = requestedClusterSize > 0
+      ? requestedClusterSize
+      : SelectOptimalClusterSize(fileSizes, bytesPerSector, forcedFatType, requestedRootEntries);
+
+    long RoundUpToCluster(long bytes) => bytes <= 0 ? 0 : ((bytes + clusterBytes - 1) / clusterBytes) * clusterBytes;
+    var clusterAlignedFiles = fileSizes.Sum(s => RoundUpToCluster(s));
+    var clusterAlignedDirs = dirContentBytes.Sum(b => Math.Max((long)clusterBytes, RoundUpToCluster(b)));
+    var neededBytes = clusterAlignedFiles + clusterAlignedDirs + 8L * clusterBytes + 65536;
+    var totalSectors = Math.Max(32, (int)((neededBytes + bytesPerSector - 1) / bytesPerSector));
+
+    var maxRootEntries = requestedRootEntries > 0 ? requestedRootEntries : 224;
+    var needFat32 = forcedFatType == 32
+      || (forcedFatType == 0 && rootDirentBytes > maxRootEntries * 32);
+    if (needFat32) {
+      const long fat32MinClusters = 65525;
+      const long margin = 2048;
+      const int reservedSectors = 32;
+      var spc = Math.Max(1, clusterBytes / bytesPerSector);
+      var dataClusters = fileSizes.Sum(s => s <= 0 ? 0L : (s + clusterBytes - 1) / clusterBytes)
+        + dirContentBytes.Sum(b => Math.Max(1L, (b + clusterBytes - 1) / clusterBytes));
+      var rootClusters = Math.Max(1L, (rootDirentBytes + clusterBytes - 1) / clusterBytes);
+      var targetClusters = Math.Max(fat32MinClusters + margin, dataClusters + rootClusters + margin);
+      var fatSectors = (targetClusters * 4 + bytesPerSector - 1) / bytesPerSector;
+      var fat32Sectors = reservedSectors + 2 * fatSectors + targetClusters * spc;
+      totalSectors = Math.Max(totalSectors, (int)fat32Sectors);
+    }
+
+    // Pass 2: delegate the metadata write to BuildTo. Because PlaceTree
+    // skips streaming files in p.DataWrites, the underlying clusters are
+    // left as sparse zeros — no per-file data went through the placement.
+    BuildTo(output, totalSectors, bytesPerSector, clusterBytes, volumeLabel,
+            forcedFatType, enableLfn, transactionFat, requestedRootEntries, forceLfn);
+
+    // Read back the BPB to discover the actual on-disk geometry that
+    // BuildTo committed, then re-derive the placement against it so each
+    // streaming file's StartCluster lines up with the FAT chain that was
+    // already written. Same inputs + same geometry ⇒ identical placement.
+    var actualBpb = ReadBpbForStreaming(output);
+    var dataAreaOffset = (long)actualBpb.FirstDataSector * actualBpb.BytesPerSector;
+    var actualClusterBytes = (long)actualBpb.SectorsPerCluster * actualBpb.BytesPerSector;
+    var streamingTree = BuildTree();
+    _ = PlaceTree(streamingTree, actualBpb.FatType, (int)actualClusterBytes, enableLfn, forceLfn);
+
+    // Walk the freshly-placed tree and copy each streaming file's bytes
+    // straight into the data area at its allocated cluster offset.
+    void EmitStreamingFiles(DirNode dir) {
+      foreach (var f in dir.Files) {
+        if (f.StreamingSize == null || f.StreamOpener == null) continue;
+        if (f.StreamingSize.Value <= 0) continue;
+        var clusterOffset = dataAreaOffset + (long)(f.StartCluster - 2) * actualClusterBytes;
+        output.Position = clusterOffset;
+        using var src = f.StreamOpener();
+        long copied = 0;
+        var buf = new byte[64 * 1024];
+        var remaining = f.StreamingSize.Value;
+        while (copied < remaining) {
+          var want = (int)Math.Min(buf.Length, remaining - copied);
+          var n = src.Read(buf, 0, want);
+          if (n <= 0) break;
+          output.Write(buf, 0, n);
+          copied += n;
+        }
+        // Source ended at or before remaining; remaining cluster tail
+        // stays zero (sparse). The bound on src guarantees `n` per call
+        // never produced past the entry's logical size — slack-byte
+        // leakage is physically impossible.
+      }
+      foreach (var d in dir.Dirs) EmitStreamingFiles(d);
+    }
+    EmitStreamingFiles(streamingTree);
+    output.Flush();
+  }
+
+  /// <summary>BPB geometry tuple snapshotted from a freshly-written FAT image
+  /// to drive the streaming write phase.</summary>
+  private readonly record struct StreamingBpb(int BytesPerSector, int SectorsPerCluster,
+    int ReservedSectors, int FatCount, int FatSize, int RootEntryCount,
+    int FirstDataSector, int FatType);
+
+  /// <summary>Reads the BPB written by <see cref="BuildTo"/> back from
+  /// <paramref name="output"/> so streaming-file writes can seek to the
+  /// correct cluster offsets without depending on writer internals.</summary>
+  private static StreamingBpb ReadBpbForStreaming(Stream output) {
+    var bpb = new byte[512];
+    output.Position = 0;
+    output.ReadExactly(bpb);
+    var bytesPerSector = BinaryPrimitives.ReadUInt16LittleEndian(bpb.AsSpan(11));
+    if (bytesPerSector is 0 or > 4096) bytesPerSector = 512;
+    var spc = bpb[13];
+    if (spc == 0) spc = 1;
+    var reserved = BinaryPrimitives.ReadUInt16LittleEndian(bpb.AsSpan(14));
+    var fatCount = bpb[16];
+    if (fatCount == 0) fatCount = 2;
+    var rootEntryCount = BinaryPrimitives.ReadUInt16LittleEndian(bpb.AsSpan(17));
+    var fatSz16 = BinaryPrimitives.ReadUInt16LittleEndian(bpb.AsSpan(22));
+    var fatSize = fatSz16 == 0
+      ? BinaryPrimitives.ReadInt32LittleEndian(bpb.AsSpan(36))
+      : fatSz16;
+    var rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
+    var firstDataSector = reserved + fatCount * fatSize + rootDirSectors;
+    // Calculate FAT type from total clusters (mirror FatReader logic).
+    var totalSectors16 = BinaryPrimitives.ReadUInt16LittleEndian(bpb.AsSpan(19));
+    var totalSectors = totalSectors16 == 0
+      ? BinaryPrimitives.ReadInt32LittleEndian(bpb.AsSpan(32))
+      : totalSectors16;
+    var dataClusters = (totalSectors - firstDataSector) / spc;
+    var fatType = fatSz16 == 0 ? 32
+      : dataClusters < 4085 ? 12
+      : dataClusters < 65525 ? 16
+      : 32;
+    return new StreamingBpb(bytesPerSector, spc, reserved, fatCount, fatSize,
+      rootEntryCount, firstDataSector, fatType);
   }
 
   /// <summary>

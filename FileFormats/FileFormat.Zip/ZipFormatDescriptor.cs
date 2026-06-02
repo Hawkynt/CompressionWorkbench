@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Zip;
@@ -106,21 +107,43 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Native in-memory single-entry extraction — feeds the small-image
-  /// ConvertArchive pipeline that wires extracted bytes straight into the
-  /// target writer without ever touching disk.
+  /// Opens a single ZIP entry as a read-only <see cref="Stream"/> bounded
+  /// to its uncompressed size. The DEFLATE / store / etc. decoder runs
+  /// against the entry's local-header bytes, the result is wrapped in a
+  /// <see cref="BoundedEntryStream"/> sized to <c>UncompressedSize</c> so
+  /// the next entry's bytes — which immediately follow in the source —
+  /// can never bleed into the returned view even if the underlying decoder
+  /// over-reads by a chunk boundary.
   /// </summary>
-  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
     var r = new ZipReader(archive, leaveOpen: true, password: password);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
-      if (string.Equals(e.FileName, entryName, StringComparison.OrdinalIgnoreCase))
-        return r.ExtractEntry(e);
+      if (!string.Equals(e.FileName, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      // ZipReader.ExtractEntry already produces exactly UncompressedSize
+      // bytes (CRC-checked) — wrapping in a bounded view is belt-and-braces
+      // so callers can rely on the universal contract.
+      var bytes = r.ExtractEntry(e);
+      return new BoundedEntryStream(new MemoryStream(bytes, writable: false),
+        bytes.Length, leaveOpen: false);
     }
-    return [];
+    return new BoundedEntryStream(new MemoryStream(System.Array.Empty<byte>(), writable: false),
+      0, leaveOpen: false);
+  }
+
+  /// <summary>
+  /// Native in-memory single-entry extraction. Routed through the bounded
+  /// <see cref="OpenEntry"/> so the per-entry isolation contract holds
+  /// uniformly across descriptors.
+  /// </summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var ms = new MemoryStream();
+    s.CopyTo(ms);
+    return ms.ToArray();
   }
 
   /// <summary>

@@ -251,5 +251,26 @@ public sealed class FatReader : IDisposable {
     return data;
   }
 
+  /// <summary>
+  /// Opens a forward-only <see cref="Stream"/> that walks the cluster chain
+  /// for <paramref name="entry"/>, pulling one cluster at a time. Peak
+  /// memory cost is bounded by the cluster size, not the file size — the
+  /// underlying image snapshot is shared with this reader.
+  /// </summary>
+  /// <remarks>
+  /// Wrap the returned stream in a
+  /// <see cref="Compression.Registry.Streaming.BoundedEntryStream"/> sized
+  /// to <c>entry.Size</c> to obtain the per-entry isolation contract:
+  /// reads past the entry's logical size return 0, slack-byte leakage is
+  /// physically impossible.
+  /// </remarks>
+  internal FatChainStream OpenChainStream(FatEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    return new FatChainStream(
+      _data, entry.StartCluster, entry.Size,
+      FatType, _bytesPerSector, _sectorsPerCluster,
+      _reservedSectors, _fatCount, _fatSize, _firstDataSector);
+  }
+
   public void Dispose() { }
 }

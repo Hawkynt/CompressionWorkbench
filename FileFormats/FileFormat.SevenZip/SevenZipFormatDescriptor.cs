@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.SevenZip;
@@ -89,11 +90,15 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <summary>
-  /// Native in-memory single-entry extraction — feeds the small-image
-  /// ConvertArchive pipeline that wires extracted bytes straight into the
-  /// target writer without ever touching disk.
+  /// Opens a single 7z entry as a read-only <see cref="Stream"/> bounded
+  /// to its uncompressed size. 7z is solid-block: the underlying reader
+  /// must decompress the whole containing folder to extract any one entry
+  /// — the existing in-memory path is preserved — but the returned view
+  /// is a <see cref="BoundedEntryStream"/> sized to the single entry's
+  /// logical bytes, so neighbouring entries within the same solid block
+  /// are physically unreachable through it.
   /// </summary>
-  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
@@ -101,10 +106,25 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
     for (var i = 0; i < r.Entries.Count; ++i) {
       var e = r.Entries[i];
       if (e.IsDirectory) continue;
-      if (string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase))
-        return r.Extract(i);
+      if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      var bytes = r.Extract(i);
+      return new BoundedEntryStream(new MemoryStream(bytes, writable: false),
+        bytes.Length, leaveOpen: false);
     }
-    return [];
+    return new BoundedEntryStream(new MemoryStream(System.Array.Empty<byte>(), writable: false),
+      0, leaveOpen: false);
+  }
+
+  /// <summary>
+  /// Native in-memory single-entry extraction. Routed through the bounded
+  /// <see cref="OpenEntry"/> so the per-entry isolation contract holds
+  /// uniformly across descriptors.
+  /// </summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var ms = new MemoryStream();
+    s.CopyTo(ms);
+    return ms.ToArray();
   }
 
   /// <summary>

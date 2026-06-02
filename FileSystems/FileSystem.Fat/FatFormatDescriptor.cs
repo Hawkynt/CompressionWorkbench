@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using Compression.Core.Layout;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Fat;
@@ -464,21 +465,38 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Native in-memory single-entry extraction — feeds the small-image
-  /// ConvertArchive pipeline that wires extracted bytes straight into the
-  /// target writer without ever touching disk.
+  /// Opens a single FAT entry as a forward-only stream that walks its
+  /// cluster chain one cluster at a time, wrapped in a
+  /// <see cref="BoundedEntryStream"/> sized to the entry's logical size.
+  /// Reads past <c>entry.Size</c> return 0 — the cluster-tail slack is
+  /// physically unreachable through this view.
   /// </summary>
-  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
     var r = new FatReader(archive);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
-      if (string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase))
-        return r.Extract(e);
+      if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      if (e.StartCluster < 2 || e.Size <= 0)
+        return new BoundedEntryStream(new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+      var chain = r.OpenChainStream(e);
+      return new BoundedEntryStream(chain, e.Size, leaveOpen: false);
     }
-    return [];
+    return new BoundedEntryStream(new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>
+  /// Native in-memory single-entry extraction. Buffers the bounded
+  /// <see cref="OpenEntry"/> stream into a fresh byte array — never reads
+  /// past the entry's logical size.
+  /// </summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var ms = new MemoryStream();
+    s.CopyTo(ms);
+    return ms.ToArray();
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
@@ -486,6 +504,28 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var input in inputs.Where(i => !i.IsDirectory))
       w.AddFile(input.ArchiveName, input.ReadContent(),
                 input.InMemoryContent != null ? null : File.GetLastWriteTime(input.FullPath));
+    BuildAndWrite(output, w, options);
+  }
+
+  /// <summary>
+  /// Two-pass streaming Create: pre-known per-input sizes drive the FAT
+  /// geometry choice in pass 1, then pass 2 streams each input's bytes from
+  /// its <see cref="StreamingArchiveInput.OpenStream"/> factory straight
+  /// into the pre-allocated cluster run. Peak memory is bounded by the
+  /// cluster size + a 64 KB copy buffer — independent of total file size.
+  /// </summary>
+  public void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = new FatWriter();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      w.AddStreamingFile(input.Name, input.Size, input.OpenStream, null);
+    }
+    BuildAndWrite(output, w, options, streaming: true);
+  }
+
+  private static void BuildAndWrite(Stream output, FatWriter w, FormatCreateOptions options, bool streaming = false) {
 
     var specific = options.FormatSpecific;
     var totalSectors  = ParseImageSizeSectors(specific?.GetValueOrDefault("ImageSize"));
@@ -508,6 +548,19 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (picked > 0) clusterBytes = picked;
     }
 
+    if (streaming) {
+      // Streaming path requires a writable+seekable stream; the
+      // CreateFromStreams contract already promises this through the
+      // pipeline. Fall back to the buffered path only on totalSectors
+      // when the explicit ImageSize knob was set — BuildToStreaming
+      // auto-sizes from the streaming inputs' known sizes.
+      if (output.CanSeek) {
+        w.BuildToStreaming(output, requestedClusterSize: clusterBytes, volumeLabel: label,
+                           forcedFatType: forcedFatType, enableLfn: enableLfn, transactionFat: tfat,
+                           requestedRootEntries: rootEntries, forceLfn: forceLfn);
+        return;
+      }
+    }
     var disk = totalSectors > 0
       ? w.Build(totalSectors, requestedClusterSize: clusterBytes, volumeLabel: label,
                 forcedFatType: forcedFatType, enableLfn: enableLfn, transactionFat: tfat,
