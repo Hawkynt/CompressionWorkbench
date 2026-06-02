@@ -12,38 +12,51 @@ namespace Compression.Lib;
 /// Compound tar descriptors are registered manually since they are composites, not standalone formats.
 /// </summary>
 public static partial class FormatRegistration {
-  private static int _initialized;
+  private static int _initStarted;
+  private static readonly ManualResetEventSlim _initDone = new(initialState: false);
 
   /// <summary>
   /// Ensures all format descriptors and building blocks are registered exactly once.
-  /// Thread-safe: uses <see cref="Interlocked.CompareExchange(ref int, int, int)"/>
-  /// so concurrent callers from parallel trial decompression are safe.
+  /// Thread-safe: the first caller runs the registration; concurrent callers
+  /// WAIT for it to finish (rather than seeing a half-populated
+  /// <see cref="FormatRegistry"/>). The earlier "flip flag and return" pattern
+  /// caused a race: a background warm-up Task that had set the flag but not
+  /// yet finished registering would let a synchronous caller through with an
+  /// empty registry, producing "No creatable formats are registered." popups.
   /// </summary>
   public static void EnsureInitialized() {
-    if (Interlocked.CompareExchange(ref _initialized, 1, 0) != 0)
+    if (Interlocked.CompareExchange(ref _initStarted, 1, 0) != 0) {
+      // Another thread is already registering — wait for it to finish so the
+      // registry is fully populated before we return.
+      _initDone.Wait();
       return;
+    }
 
-    RegisterFormats();
-    RegisterCompoundTar();
-    RegisterBuildingBlocks();
-    FormatRegistry.Initialize();
+    try {
+      RegisterFormats();
+      RegisterCompoundTar();
+      RegisterBuildingBlocks();
+      FormatRegistry.Initialize();
 
-    // Wire the in-place FS-variant converter delegate so PartitionEditor.
-    // ConvertFilesystem can dispatch FAT12↔16↔32 and ext2→3→4 conversions
-    // without taking a hard dependency on Compression.Lib from Compression.Core.
-    PartitionEditor.InPlaceFilesystemConverter = (stream, srcId, dstId)
-      => InPlaceConverter.TryConvert(stream, srcId, dstId)
-         is InPlaceConversionResult.Succeeded or InPlaceConversionResult.NoOp;
+      // Wire the in-place FS-variant converter delegate so PartitionEditor.
+      // ConvertFilesystem can dispatch FAT12↔16↔32 and ext2→3→4 conversions
+      // without taking a hard dependency on Compression.Lib from Compression.Core.
+      PartitionEditor.InPlaceFilesystemConverter = (stream, srcId, dstId)
+        => InPlaceConverter.TryConvert(stream, srcId, dstId)
+           is InPlaceConversionResult.Succeeded or InPlaceConversionResult.NoOp;
 
-    // Wire the in-place FS-resizer delegate so PartitionEditor.ResizePartition
-    // can dispatch FAT shrink/grow and ext shrink/grow without a Core →
-    // FileSystem.* dependency.
-    PartitionEditor.InPlaceFilesystemResizer = (stream, fsId, newSize, isShrink) => {
-      if (!FilesystemResizer.IsSupported(fsId)) return false;
-      if (isShrink) FilesystemResizer.Shrink(stream, fsId, newSize);
-      else FilesystemResizer.Grow(stream, fsId, newSize);
-      return true;
-    };
+      // Wire the in-place FS-resizer delegate so PartitionEditor.ResizePartition
+      // can dispatch FAT shrink/grow and ext shrink/grow without a Core →
+      // FileSystem.* dependency.
+      PartitionEditor.InPlaceFilesystemResizer = (stream, fsId, newSize, isShrink) => {
+        if (!FilesystemResizer.IsSupported(fsId)) return false;
+        if (isShrink) FilesystemResizer.Shrink(stream, fsId, newSize);
+        else FilesystemResizer.Grow(stream, fsId, newSize);
+        return true;
+      };
+    } finally {
+      _initDone.Set();
+    }
   }
 
   /// <summary>
