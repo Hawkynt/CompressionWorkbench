@@ -111,6 +111,20 @@
             <ComboBoxItem Content="Before file content (read-ahead)" />
           </ComboBox>
         </Grid>
+        <Grid Margin="0,6,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="120" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Grid.Column="0" Text="Layout profile:" VerticalAlignment="Center" />
+          <ComboBox Grid.Column="1" x:Name="LayoutProfileCombo" SelectedIndex="0"
+                    SelectionChanged="OnLayoutProfileChanged"
+                    ToolTip="Optional zone-based layout template. When set, files are placed into named byte ranges with per-zone sort orders. Overrides the layout strategy / metadata placement above." />
+          <Button Grid.Column="2" Content="Edit profiles…" Padding="6,2" Margin="6,0,0,0"
+                  Click="OnEditLayoutProfiles"
+                  ToolTip="Open the layout profile editor to create, modify, or delete profiles." />
+        </Grid>
       </StackPanel>
     </GroupBox>
 

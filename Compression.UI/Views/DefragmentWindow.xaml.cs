@@ -2,7 +2,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using Compression.Lib;
+using Compression.Lib.Layout;
 using Compression.Registry;
+using Compression.Registry.Layout;
 using Compression.UI.Controls;
 
 namespace Compression.UI.Views;
@@ -24,9 +26,70 @@ public partial class DefragmentWindow : Window {
   private IFileInternalChunkMover? _chunkMover;
   private int _fileRowCount;
   private string _filesSortDescription = "listing order";
+  private LayoutTemplate? _selectedLayoutProfile;
 
   public DefragmentWindow() {
     InitializeComponent();
+    RefreshLayoutProfilesCombo();
+  }
+
+  /// <summary>
+  /// Re-populates the <c>LayoutProfileCombo</c> from
+  /// <see cref="LayoutProfileStore.List"/>. Called at startup and after the
+  /// editor closes so newly created / renamed profiles surface immediately.
+  /// </summary>
+  private void RefreshLayoutProfilesCombo() {
+    if (LayoutProfileCombo == null) return;
+    var previousPath = (LayoutProfileCombo.SelectedItem as LayoutProfileComboItem)?.Entry?.FilePath;
+    LayoutProfileCombo.Items.Clear();
+    LayoutProfileCombo.Items.Add(new LayoutProfileComboItem(null) { Display = "(none)" });
+    foreach (var entry in LayoutProfileStore.List())
+      LayoutProfileCombo.Items.Add(new LayoutProfileComboItem(entry));
+
+    // Try to preserve the user's previous pick across refreshes.
+    if (!string.IsNullOrEmpty(previousPath)) {
+      for (var i = 0; i < LayoutProfileCombo.Items.Count; i++) {
+        if (LayoutProfileCombo.Items[i] is LayoutProfileComboItem li
+            && string.Equals(li.Entry?.FilePath, previousPath, StringComparison.OrdinalIgnoreCase)) {
+          LayoutProfileCombo.SelectedIndex = i;
+          return;
+        }
+      }
+    }
+    LayoutProfileCombo.SelectedIndex = 0;
+  }
+
+  private void OnLayoutProfileChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) {
+    if (LayoutProfileCombo?.SelectedItem is not LayoutProfileComboItem item || item.Entry == null) {
+      this._selectedLayoutProfile = null;
+      return;
+    }
+    try {
+      this._selectedLayoutProfile = LayoutProfileStore.Load(item.Entry);
+    } catch (Exception ex) {
+      MessageBox.Show(this, $"Failed to load layout profile '{item.Entry.Name}':\n{ex.Message}",
+        "Layout profile", MessageBoxButton.OK, MessageBoxImage.Error);
+      this._selectedLayoutProfile = null;
+      LayoutProfileCombo.SelectedIndex = 0;
+    }
+  }
+
+  private void OnEditLayoutProfiles(object sender, RoutedEventArgs e) {
+    var editor = new LayoutProfileEditor { Owner = this };
+    editor.ShowDialog();
+    RefreshLayoutProfilesCombo();
+  }
+
+  /// <summary>
+  /// Row binding for the layout profile picker combo. <see cref="Entry"/>
+  /// is <c>null</c> for the <c>(none)</c> sentinel item.
+  /// </summary>
+  private sealed class LayoutProfileComboItem(LayoutProfileEntry? entry) {
+    public LayoutProfileEntry? Entry { get; } = entry;
+    public string Display { get; set; } = entry == null
+      ? "(none)"
+      : $"{entry.Name} [{(entry.Origin == ProfileOrigin.Builtin ? "Built-in" : "User")}]";
+    public override string ToString() => this.Display;
   }
 
   public DefragmentWindow(string preselectedImage) : this() {
@@ -852,6 +915,7 @@ public partial class DefragmentWindow : Window {
     var holeAt = mode == DefragMode.CarveHole ? ParseHoleAt(HoleAtBox.Text) : -1L;
     var interleaveStride = ParseInterleaveStride(InterleaveStrideBox.Text);
     var metadataZone = SelectedMetadataZone();
+    var layoutProfile = this._selectedLayoutProfile;
 
     var path = this._imagePath;
     var defragmentable = this._defragmentable;
@@ -862,6 +926,8 @@ public partial class DefragmentWindow : Window {
       Append($"Block interleave: {interleaveStride}");
     if (metadataZone != MetadataZone.Unchanged)
       Append($"Metadata zone: {metadataZone}");
+    if (layoutProfile != null)
+      Append($"Layout profile: {layoutProfile.Name} ({layoutProfile.Zones.Count} zone(s))");
     if (mode == DefragMode.CarveHole) {
       Append($"Hole size: {holeSize:N0} bytes");
       Append($"Hole at: {(holeAt < 0 ? "auto (end)" : holeAt.ToString("N0"))}");
@@ -903,6 +969,7 @@ public partial class DefragmentWindow : Window {
           HoleAt = holeAt,
           InterleaveStride = interleaveStride,
           MetadataZonePlacement = metadataZone,
+          LayoutTemplate = layoutProfile,
           OnProgress = OnProgress,
         });
       } catch (Exception ex) {
