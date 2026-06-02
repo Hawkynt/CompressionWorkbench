@@ -252,6 +252,7 @@
     <Project Path="FileSystems/FileSystem.Coherent/FileSystem.Coherent.csproj" />
     <Project Path="FileSystems/FileSystem.Xenix/FileSystem.Xenix.csproj" />
     <Project Path="FileSystems/FileSystem.Adfs/FileSystem.Adfs.csproj" />
+    <Project Path="FileSystems/FileSystem.AmigaPfs/FileSystem.AmigaPfs.csproj" />
     <Project Path="FileSystems/FileSystem.MinixV2/FileSystem.MinixV2.csproj" />
     <Project Path="FileSystems/FileSystem.Nilfs2/FileSystem.Nilfs2.csproj" />
     <Project Path="FileSystems/FileSystem.Tux2/FileSystem.Tux2.csproj" />
@@ -414,6 +415,7 @@
     <Project Path="FileSystems/FileSystem.GlusterFs/FileSystem.GlusterFs.csproj" />
     <Project Path="FileSystems/FileSystem.MooseFs/FileSystem.MooseFs.csproj" />
     <Project Path="FileSystems/FileSystem.BeeGfs/FileSystem.BeeGfs.csproj" />
+    <Project Path="FileSystems/FileSystem.JuiceFs/FileSystem.JuiceFs.csproj" />
     <Project Path="FileSystems/FileSystem.Tfs/FileSystem.Tfs.csproj" />
     <Project Path="FileFormats/FileFormat.Zip/FileFormat.Zip.csproj" />
     <Project Path="FileFormats/FileFormat.Zlib/FileFormat.Zlib.csproj" />
