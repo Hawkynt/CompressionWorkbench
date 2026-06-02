@@ -20,6 +20,71 @@ public partial class MainWindow : Window {
     };
   }
 
+  // ── First-popup latency mitigation ─────────────────────────────────────
+  // WPF defers materialization of a ContextMenu's visual tree until the menu
+  // is first opened — so the FIRST right-click on the EntryList paid for
+  // JIT-ing 10 MenuItems × DrawingImage icons + first-time CanExecute calls
+  // that route through FormatRegistration.EnsureInitialized() (~180
+  // descriptors). Subsequent popups were instant because the tree + caches
+  // were warm. We pre-warm both:
+  //   1. App.OnStartup kicks FormatRegistration.EnsureInitialized() on a
+  //      background thread (see App.xaml.cs).
+  //   2. Window Loaded forces the ContextMenu to materialize off the
+  //      user-visible critical path by opening + immediately closing it at
+  //      ApplicationIdle priority.
+  // The first real right-click then hits an already-built visual tree and
+  // a warm registry.
+  private bool _contextMenuPrewarmed;
+
+  private void OnWindowLoaded(object sender, RoutedEventArgs e) {
+    if (_contextMenuPrewarmed) return;
+    _contextMenuPrewarmed = true;
+
+    Dispatcher.BeginInvoke(new Action(() => {
+      // Touch each icon resource so its DrawingImage is materialized on the UI
+      // thread before the popup needs it. TryFindResource walks the merged-
+      // dictionary tree; first hit is the expensive one.
+      foreach (var key in new[] {
+        "ViewTextIcon", "ViewHexIcon", "ViewImageIcon",
+        "ExtractSelectedIcon", "ExtractIcon", "AddIcon", "RemoveIcon",
+        "DefragmentIcon", "AnalyzeIcon", "PropertiesIcon",
+      })
+        _ = TryFindResource(key);
+
+      // Materialize the ContextMenu visual tree. Opening + closing within the
+      // same dispatcher frame makes the popup invisible to the user but forces
+      // WPF to build the popup HWND, JIT the 10 MenuItem templates, and run
+      // each command's first CanExecute. Wrapped in try so any binding hiccup
+      // doesn't crash the window.
+      try {
+        if (EntryList?.ContextMenu is { } cm) {
+          cm.PlacementTarget = EntryList;
+          cm.IsOpen = true;
+          cm.IsOpen = false;
+        }
+      } catch { /* best effort — pre-warm is opportunistic */ }
+    }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+  }
+
+  // Diagnostic: time the first right-click to validate the pre-warm worked.
+  // Only logs in Debug builds — release users never see this overhead.
+  [System.Diagnostics.Conditional("DEBUG")]
+  private void LogFirstContextMenuOpen() {
+    if (_firstContextMenuLogged) return;
+    _firstContextMenuLogged = true;
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    Dispatcher.BeginInvoke(new Action(() => {
+      System.Diagnostics.Debug.WriteLine(
+        $"[ContextMenu] first user-triggered popup ready in {sw.ElapsedMilliseconds} ms");
+    }), System.Windows.Threading.DispatcherPriority.ContextIdle);
+  }
+
+  private bool _firstContextMenuLogged;
+
+  private void OnEntryContextMenuOpening(object sender, ContextMenuEventArgs e) {
+    LogFirstContextMenuOpen();
+  }
+
   public void OpenArchive(string path) => ViewModel.Open(path);
 
   public void StartInOsBrowserAtLastFolder() => ViewModel.StartInOsBrowserAtLastFolder();

@@ -13,6 +13,16 @@ public partial class App : System.Windows.Application {
     if (System.Environment.GetEnvironmentVariable("COMPRESSIONWORKBENCH_WINE") == "1")
       System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
 
+    // Warm the format registry on a background thread so the first user-driven
+    // CanExecute / right-click that calls FormatDetector.DetectByExtension or
+    // FormatRegistry.GetArchiveOps doesn't pay the ~180-descriptor registration
+    // tax inline. Fire-and-forget — any subsequent caller hits the warm cache
+    // (Interlocked guard inside EnsureInitialized makes the second call free).
+    System.Threading.Tasks.Task.Run(() => {
+      try { Compression.Lib.FormatRegistration.EnsureInitialized(); }
+      catch { /* swallow — surfaced again on the next real call which throws normally */ }
+    });
+
     // Surface unhandled exceptions to a crash log so future "just crashed" reports
     // come with a stack trace. WPF dispatcher + thread-pool + AppDomain all need
     // their own hook; we route all three to the same writer.

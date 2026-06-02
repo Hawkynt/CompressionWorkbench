@@ -4,6 +4,7 @@
         xmlns:vm="clr-namespace:Compression.UI.ViewModels"
         Title="{Binding Title}" Width="900" Height="600" MinWidth="600" MinHeight="400"
         AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver" DragLeave="OnDragLeave"
+        Loaded="OnWindowLoaded"
         WindowStartupLocation="CenterScreen">
 
   <Window.DataContext>
@@ -190,6 +191,7 @@
               PreviewKeyDown="OnEntryKeyDown"
               PreviewMouseLeftButtonDown="OnEntryMouseDown"
               PreviewMouseMove="OnEntryMouseMove"
+              ContextMenuOpening="OnEntryContextMenuOpening"
               GridViewColumnHeader.Click="OnColumnHeaderClick">
       <ListView.ContextMenu>
         <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
