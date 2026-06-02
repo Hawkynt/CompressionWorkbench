@@ -405,6 +405,7 @@
     <Project Path="FileSystems/FileSystem.TahoeLafs/FileSystem.TahoeLafs.csproj" />
     <Project Path="FileSystems/FileSystem.Wafl/FileSystem.Wafl.csproj" />
     <Project Path="FileSystems/FileSystem.OneFs/FileSystem.OneFs.csproj" />
+    <Project Path="FileSystems/FileSystem.Gpfs/FileSystem.Gpfs.csproj" />
     <Project Path="FileSystems/FileSystem.Tfs/FileSystem.Tfs.csproj" />
     <Project Path="FileFormats/FileFormat.Zip/FileFormat.Zip.csproj" />
     <Project Path="FileFormats/FileFormat.Zlib/FileFormat.Zlib.csproj" />
