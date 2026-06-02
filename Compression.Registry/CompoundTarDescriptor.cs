@@ -1,4 +1,6 @@
 #pragma warning disable CS1591
+using Compression.Registry.Streaming;
+
 namespace Compression.Registry;
 
 /// <summary>
@@ -79,6 +81,46 @@ public sealed class CompoundTarDescriptor : IFormatDescriptor, IArchiveFormatOpe
     streamOps.Decompress(stream, ms);
     ms.Position = 0;
     tarOps.Extract(ms, outputDir, password, files);
+  }
+
+  /// <summary>
+  /// Opens a single entry by first decompressing the outer stream (gzip /
+  /// bzip2 / xz / zstd / etc.) and delegating to the inner TAR descriptor's
+  /// own bounded <c>OpenEntry</c>. The decompressed TAR isn't seekable in
+  /// general, so we materialise it into a <see cref="MemoryStream"/> once
+  /// and let TAR's positional decoder produce the per-entry bounded view
+  /// over that buffer. The returned stream is bounded to the inner entry's
+  /// logical size — any block padding past the entry is unreachable.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    var streamOps = FormatRegistry.GetStreamOps(_streamFormatId)!;
+    var tarOps = FormatRegistry.GetArchiveOps("Tar")!;
+    var ms = new MemoryStream();
+    var wrapped = streamOps.WrapDecompress(archive);
+    if (wrapped != null) {
+      using (wrapped) wrapped.CopyTo(ms);
+    } else {
+      streamOps.Decompress(archive, ms);
+    }
+    ms.Position = 0;
+    // TarFormatDescriptor.OpenEntry wraps in BoundedEntryStream sized to
+    // the inner entry. The MemoryStream is owned by the returned stream
+    // (leaveOpen=false in TAR's override) so disposal cascades correctly.
+    return tarOps.OpenEntry(ms, entryName, password);
+  }
+
+  /// <summary>
+  /// Native in-memory single-entry extraction routed through the bounded
+  /// <see cref="OpenEntry"/> so the per-entry isolation contract is enforced
+  /// uniformly across every compound tar variant.
+  /// </summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
