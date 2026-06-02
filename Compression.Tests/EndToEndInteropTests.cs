@@ -259,6 +259,11 @@ public class EndToEndInteropTests {
     ".hfs", ".hfsp", ".mfs", ".ntfs", ".ext", ".exfat", ".fat", ".img",
     ".ufs", ".xfs", ".jfs", ".reiserfs", ".f2fs", ".romfs", ".minixfs", ".minix",
     ".apfs", ".zfs", ".btrfs", ".vdfs",
+    // Xenix V (s5fs): 10 direct zones × 1024 B blocks = 10 240 byte ceiling
+    // per file (indirect blocks out of scope); generic 10 400-byte repeat.txt
+    // exceeds the budget. Cleanly throws InvalidOperationException — tests in
+    // Compression.Tests/Xenix verify the budgeted round-trip path.
+    ".xnx",
     // CD/DVD images
     ".iso", ".bin", ".mdf", ".nrg", ".cdi",
     // Special format constraints
