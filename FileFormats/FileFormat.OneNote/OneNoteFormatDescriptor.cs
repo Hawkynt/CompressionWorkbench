@@ -59,6 +59,38 @@ public sealed class OneNoteFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       WriteFile(outputDir, "metadata.ini", BuildMetadataIni(stream));
   }
 
+  /// <summary>
+  /// Opens a single entry as a bounded read-only stream. The synthetic
+  /// <c>FULL.one</c> entry is exposed as a passthrough slice over the whole
+  /// archive; <c>metadata.ini</c> is built on the fly. Both are wrapped in
+  /// <see cref="Compression.Registry.Streaming.BoundedEntryStream"/> sized
+  /// to their logical length.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (string.Equals(entryName, "FULL.one", StringComparison.OrdinalIgnoreCase)) {
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new Compression.Registry.Streaming.ReadOnlyStreamSlice(archive, 0, archive.Length),
+        archive.Length, leaveOpen: false);
+    }
+    if (string.Equals(entryName, "metadata.ini", StringComparison.OrdinalIgnoreCase)) {
+      var meta = BuildMetadataIni(archive);
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(meta, writable: false), meta.Length, leaveOpen: false);
+    }
+    return new Compression.Registry.Streaming.BoundedEntryStream(
+      new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
+  }
+
   private static byte[] BuildMetadataIni(Stream stream) {
     var origin = stream.Position;
     var fileSize = stream.Length;

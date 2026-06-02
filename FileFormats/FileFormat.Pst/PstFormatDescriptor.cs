@@ -66,6 +66,39 @@ public sealed class PstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Opens a single entry as a bounded read-only stream. The synthetic
+  /// <c>FULL.pst</c> is exposed as a passthrough slice over the whole
+  /// archive; <c>metadata.ini</c> and <c>header.bin</c> are produced by
+  /// <see cref="BuildSynthetic"/> and wrapped in a
+  /// <see cref="Compression.Registry.Streaming.BoundedEntryStream"/> sized
+  /// to their logical length.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (string.Equals(entryName, "FULL.pst", StringComparison.OrdinalIgnoreCase)) {
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new Compression.Registry.Streaming.ReadOnlyStreamSlice(archive, 0, archive.Length),
+        archive.Length, leaveOpen: false);
+    }
+    foreach (var e in BuildSynthetic(archive)) {
+      if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(e.Data, writable: false), e.Data.Length, leaveOpen: false);
+    }
+    return new Compression.Registry.Streaming.BoundedEntryStream(
+      new MemoryStream(System.Array.Empty<byte>(), writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
+  }
+
   // Reads ONLY the first 512 bytes of the stream. Never materializes FULL.pst.
   private static IReadOnlyList<(string Name, byte[] Data, string Kind)> BuildSynthetic(Stream stream) {
     stream.Seek(0, SeekOrigin.Begin);
