@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.Text;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Ubifs;
@@ -28,7 +29,7 @@ public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Unsorted Block Image File System (Linux raw-flash) — triage only.";
+  public string Description => "Unsorted Block Image File System (Linux raw-flash) — read-only linear log scan w/ zlib data nodes (write deferred — wandering-tree commit).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -49,6 +50,17 @@ public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       entries.Add(new ArchiveEntryInfo(entries.Count, "inodes.txt", 0, 0, "stored", false, false, null));
     if (scan.Dentries.Count > 0)
       entries.Add(new ArchiveEntryInfo(entries.Count, "dentries.txt", 0, 0, "stored", false, false, null));
+
+    // Real per-file entries from the on-disk reader, when parseable.
+    try {
+      var reader = new UbifsFileReader(image);
+      foreach (var e in reader.Entries) {
+        if (e.IsDirectory) continue;
+        entries.Add(new ArchiveEntryInfo(entries.Count, e.Name, e.Size, e.Size, "stored", false, false, null));
+      }
+    } catch {
+      // best-effort: triage-only surface
+    }
     return entries;
   }
 
@@ -77,6 +89,50 @@ public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       WriteIfMatch(outputDir, "inodes.txt", BuildInodesTable(scan), files);
     if (scan.Dentries.Count > 0)
       WriteIfMatch(outputDir, "dentries.txt", BuildDentriesTable(scan), files);
+
+    // Real per-file extraction via the on-disk reader, when parseable.
+    try {
+      var reader = new UbifsFileReader(image);
+      foreach (var e in reader.Entries) {
+        if (e.IsDirectory) continue;
+        if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
+        var data = reader.Extract(e);
+        WriteFile(outputDir, e.Name, data);
+      }
+    } catch {
+      // best-effort: triage-only extraction
+    }
+  }
+
+  /// <summary>
+  /// Opens a single file entry as a bounded stream over its reassembled
+  /// (and optionally zlib-decompressed) DATA blocks. Reads past the entry's
+  /// logical size return 0 (EOF). Unknown names return an empty bounded stream.
+  /// </summary>
+  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryName);
+    if (archive.CanSeek) archive.Position = 0;
+    try {
+      var reader = new UbifsFileReader(archive);
+      foreach (var e in reader.Entries) {
+        if (e.IsDirectory) continue;
+        if (!string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+        var data = reader.Extract(e);
+        return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
+      }
+    } catch {
+      // fall through to empty
+    }
+    return new BoundedEntryStream(new MemoryStream([], writable: false), 0, leaveOpen: false);
+  }
+
+  /// <summary>Native in-memory single-entry extraction routed through the bounded <see cref="OpenEntry"/>.</summary>
+  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    using var s = this.OpenEntry(archive, entryName, password);
+    using var memoryStream = new MemoryStream();
+    s.CopyTo(memoryStream);
+    return memoryStream.ToArray();
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
