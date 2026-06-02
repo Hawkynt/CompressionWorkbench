@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 
 namespace Compression.Tests.MinixV2;
 
@@ -111,5 +112,43 @@ public class MinixV2Tests {
   public void NoCreatable_Interface() {
     var d = new FileSystem.MinixV2.MinixV2FormatDescriptor();
     Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>());
+  }
+
+  [Test, Category("HappyPath")]
+  public void OpenEntry_ReturnsBoundedStream_ReadPastSizeReturnsZero() {
+    var img = BuildMinimalV2();
+    using var ms = new MemoryStream(img);
+    var d = new FileSystem.MinixV2.MinixV2FormatDescriptor();
+
+    using var s = d.OpenEntry(ms, "hello.txt", null);
+    Assert.That(s, Is.InstanceOf<BoundedEntryStream>(), "OpenEntry must return BoundedEntryStream");
+    Assert.That(s.Length, Is.EqualTo(15));
+
+    var buf = new byte[64];
+    var n = s.Read(buf, 0, buf.Length);
+    Assert.That(n, Is.EqualTo(15));
+    Assert.That(Encoding.ASCII.GetString(buf, 0, n), Is.EqualTo("Hello Minix V2!"));
+
+    Assert.That(s.Read(buf, 0, buf.Length), Is.EqualTo(0), "read past LogicalSize returns 0 (EOF)");
+  }
+
+  [Test, Category("HappyPath")]
+  public void ExtractEntryToMemory_MatchesExtract() {
+    var img = BuildMinimalV2();
+    using var ms = new MemoryStream(img);
+    var d = new FileSystem.MinixV2.MinixV2FormatDescriptor();
+    var bytes = d.ExtractEntryToMemory(ms, "hello.txt", null);
+    Assert.That(Encoding.ASCII.GetString(bytes), Is.EqualTo("Hello Minix V2!"));
+  }
+
+  [Test, Category("Sad")]
+  public void OpenEntry_UnknownName_ReturnsEmptyBoundedStream() {
+    var img = BuildMinimalV2();
+    using var ms = new MemoryStream(img);
+    var d = new FileSystem.MinixV2.MinixV2FormatDescriptor();
+    using var s = d.OpenEntry(ms, "does-not-exist", null);
+    Assert.That(s, Is.InstanceOf<BoundedEntryStream>());
+    Assert.That(s.Length, Is.EqualTo(0));
+    Assert.That(s.Read(new byte[16], 0, 16), Is.EqualTo(0));
   }
 }
