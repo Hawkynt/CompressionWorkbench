@@ -168,6 +168,91 @@ public class EntryIsolationFuzzTests {
       "7z entry read must not bleed into sibling entry within the same solid block");
   }
 
+  // ── ZIP-derived containers (APK + JAR) ────────────────────────────────
+
+  [Test, Category("Spec")]
+  public void Apk_OpenEntry_ReturnsBoundedStream() {
+    var first  = StampedEntry(seed: 77, size: 700);
+    var second = StampedEntry(seed: 88, size: 500);
+    byte[] image;
+    using (var ms = new MemoryStream()) {
+      var zw = new FileFormat.Zip.ZipWriter(ms, leaveOpen: true);
+      zw.AddEntry("classes.dex", first, FileFormat.Zip.ZipCompressionMethod.Store);
+      zw.AddEntry("AndroidManifest.xml", second, FileFormat.Zip.ZipCompressionMethod.Store);
+      zw.Finish();
+      image = ms.ToArray();
+    }
+
+    var ops = new FileFormat.Apk.ApkFormatDescriptor();
+    using var src = new MemoryStream(image);
+    using var bounded = ops.OpenEntry(src, "classes.dex", null);
+    Assert.That(bounded, Is.InstanceOf<BoundedEntryStream>(),
+      "APK OpenEntry returns a BoundedEntryStream");
+    Assert.That(bounded.Length, Is.EqualTo(first.Length));
+
+    using var sink = new MemoryStream();
+    bounded.CopyTo(sink);
+    Assert.That(sink.ToArray(), Is.EqualTo(first).AsCollection,
+      "APK entry read must produce exactly the source bytes");
+  }
+
+  [Test, Category("Spec")]
+  public void Jar_OpenEntry_ReturnsBoundedStream() {
+    var payload = StampedEntry(seed: 99, size: 1200);
+    byte[] image;
+    using (var ms = new MemoryStream()) {
+      var zw = new FileFormat.Zip.ZipWriter(ms, leaveOpen: true);
+      zw.AddEntry("META-INF/MANIFEST.MF", payload, FileFormat.Zip.ZipCompressionMethod.Store);
+      zw.Finish();
+      image = ms.ToArray();
+    }
+
+    var ops = new FileFormat.Jar.JarFormatDescriptor();
+    using var src = new MemoryStream(image);
+    using var bounded = ops.OpenEntry(src, "META-INF/MANIFEST.MF", null);
+    Assert.That(bounded, Is.InstanceOf<BoundedEntryStream>());
+
+    using var sink = new MemoryStream();
+    bounded.CopyTo(sink);
+    Assert.That(sink.ToArray(), Is.EqualTo(payload).AsCollection);
+  }
+
+  // ── Compound TAR delegation (gzip-wrapped TAR) ────────────────────────
+
+  [Test, Category("Spec")]
+  public void TarGz_OpenEntry_DelegatesToInnerTarBounded() {
+    var payload = StampedEntry(seed: 111, size: 900);
+    byte[] image;
+    // Build a TAR archive, then gzip-wrap it. CompoundTarDescriptor's
+    // native OpenEntry must decompress, delegate to TAR, and return a
+    // BoundedEntryStream that produces exactly the payload — never the
+    // 124 bytes of TAR block padding past the 900-byte payload.
+    using (var tarMs = new MemoryStream()) {
+      var tw = new FileFormat.Tar.TarWriter(tarMs, leaveOpen: true);
+      tw.AddEntry(new FileFormat.Tar.TarEntry { Name = "data.bin", Size = payload.Length }, payload);
+      tw.Finish();
+      var tarBytes = tarMs.ToArray();
+      using var outMs = new MemoryStream();
+      using (var gz = new FileFormat.Gzip.GzipStream(outMs,
+          Compression.Core.Streams.CompressionStreamMode.Compress, leaveOpen: true)) {
+        gz.Write(tarBytes, 0, tarBytes.Length);
+      }
+      image = outMs.ToArray();
+    }
+
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var tarGzOps = Compression.Registry.FormatRegistry.GetArchiveOps("TarGz");
+    Assert.That(tarGzOps, Is.Not.Null, "tar.gz descriptor must be registered");
+    using var src = new MemoryStream(image);
+    using var bounded = tarGzOps!.OpenEntry(src, "data.bin", null);
+    Assert.That(bounded, Is.InstanceOf<BoundedEntryStream>());
+
+    using var sink = new MemoryStream();
+    bounded.CopyTo(sink);
+    Assert.That(sink.ToArray(), Is.EqualTo(payload).AsCollection,
+      "tar.gz entry read must produce exactly the inner TAR entry bytes — no block padding leak");
+  }
+
   /// <summary>
   /// Locates <paramref name="payload"/> in <paramref name="image"/> (verbatim
   /// — works for stored/uncompressed archives) and stamps the
