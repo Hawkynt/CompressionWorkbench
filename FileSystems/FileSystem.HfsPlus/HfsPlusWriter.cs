@@ -64,14 +64,35 @@ public sealed class HfsPlusWriter {
   // HFS+ epoch: 1904-01-01T00:00:00Z.
   private static readonly DateTime HfsEpoch = new(1904, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
+
+  /// <summary>
+  /// Streaming-allocations side-effect: when non-null, every streaming
+  /// entry's (startBlock, blockCount, size, opener) is appended so
+  /// <see cref="BuildToStreaming"/> can post-fill blocks from each source
+  /// after metadata is committed.
+  /// </summary>
+  private List<(uint StartBlock, uint BlockCount, long Size, Func<Stream> Opener)>? _streamingSink;
 
   /// <summary>
   /// Adds a file to be included in the volume image.
   /// </summary>
   /// <param name="name">The filename (stored in the root directory).</param>
   /// <param name="data">The file content.</param>
-  public void AddFile(string name, byte[] data) => this._files.Add((name, data));
+  public void AddFile(string name, byte[] data) => this._files.Add((name, data, null, null));
+
+  /// <summary>
+  /// Adds a streaming file: <paramref name="size"/> drives catalog +
+  /// extent allocation in pass 1; bytes are pulled from
+  /// <paramref name="openStream"/> in pass 2 of
+  /// <see cref="BuildToStreaming"/>. Never buffered as <c>byte[]</c>.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
+    this._files.Add((name, System.Array.Empty<byte>(), size, openStream));
+  }
 
   /// <summary>
   /// Picks the allocation block size that minimises slack + structural overhead
@@ -86,7 +107,7 @@ public sealed class HfsPlusWriter {
   /// </param>
   /// <returns>A byte array containing the HFS+ filesystem image.</returns>
   public byte[] BuildAutoSized(int requestedBlockSize = 0) {
-    var fileSizes = this._files.Select(f => (long)f.Data.Length).ToList();
+    var fileSizes = this._files.Select(f => f.StreamingSize ?? (long)f.Data.Length).ToList();
 
     // HFS+ allocation block size is a power of two >= 512. The newfs_hfs default
     // for typical volumes is 4 KB; we offer 4 KB … 64 KB. The B-tree node size
@@ -130,8 +151,10 @@ public sealed class HfsPlusWriter {
         blockSize, "HFS+ allocation block size must be a power of two >= 512.");
 
     var dataBlocksNeeded = 0;
-    foreach (var (_, data) in this._files)
-      dataBlocksNeeded += (int)((data.Length + blockSize - 1) / blockSize);
+    foreach (var entry in this._files) {
+      var eff = entry.StreamingSize ?? (long)entry.Data.Length;
+      dataBlocksNeeded += (int)((eff + blockSize - 1) / blockSize);
+    }
 
     // Layout per TN1150:
     //   block 0:        boot blocks (sectors 0,1) + primary VHB (sector 2)
@@ -319,6 +342,106 @@ public sealed class HfsPlusWriter {
     return disk;
   }
 
+  /// <summary>
+  /// Two-pass streaming Build: pass 1 derives allocation-block geometry +
+  /// catalog B-tree size from the declared sizes of
+  /// <see cref="AddStreamingFile"/> entries; pass 2 emits the volume
+  /// header + allocation bitmap + extents B-tree + catalog B-tree
+  /// (with file records carrying fork descriptors pointing at the
+  /// single-extent runs) + the alternate volume header, then streams
+  /// each entry's bytes from its factory into its allocated block run
+  /// via 64 KB chunks. Block tail past each entry's exact <c>Size</c>
+  /// stays sparse-zero.
+  /// </summary>
+  /// <remarks>
+  /// What's NOT covered (partial): multi-extent fragmented files
+  /// (streamed entries use a single contiguous extent — matching the
+  /// existing single-pass writer's invariant), B-tree mutation against
+  /// the output stream (pass 2 still materialises the full disk
+  /// byte[] once to reuse the proven catalog builder). A fully sparse
+  /// metadata writer is a documented follow-up. Entry CONTENTS never
+  /// travel through a byte[] inside the writer.
+  /// </remarks>
+  public void BuildToStreaming(Stream output, uint blockSize = DefaultBlockSize) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
+
+    var sink = new List<(uint StartBlock, uint BlockCount, long Size, Func<Stream> Opener)>();
+    this._streamingSink = sink;
+    byte[] disk;
+    uint actualBlockSize;
+    try {
+      disk = this.Build(blockSize);
+      actualBlockSize = blockSize;
+    } finally {
+      this._streamingSink = null;
+    }
+    output.SetLength(disk.Length);
+    output.Position = 0;
+    output.Write(disk);
+
+    var buf = new byte[64 * 1024];
+    foreach (var (startBlock, _, size, opener) in sink) {
+      if (size <= 0) continue;
+      var byteOffset = (long)startBlock * actualBlockSize;
+      if (byteOffset < 0 || byteOffset >= output.Length) continue;
+      output.Position = byteOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+    }
+    output.Flush();
+  }
+
+  /// <summary>Two-pass streaming Build with auto-sized allocation block.</summary>
+  public void BuildToStreamingAutoSized(Stream output, int requestedBlockSize = 0) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreamingAutoSized requires a writable, seekable stream.", nameof(output));
+
+    var sink = new List<(uint StartBlock, uint BlockCount, long Size, Func<Stream> Opener)>();
+    this._streamingSink = sink;
+    byte[] disk;
+    uint actualBlockSize;
+    try {
+      disk = this.BuildAutoSized(requestedBlockSize);
+      // Read back the block size committed by BuildAutoSized from the
+      // volume header at offset 1024 + 40 (4 bytes BE, blockSize field).
+      actualBlockSize = BinaryPrimitives.ReadUInt32BigEndian(disk.AsSpan(VolumeHeaderOffset + 40));
+      if (actualBlockSize == 0) actualBlockSize = DefaultBlockSize;
+    } finally {
+      this._streamingSink = null;
+    }
+    output.SetLength(disk.Length);
+    output.Position = 0;
+    output.Write(disk);
+
+    var buf = new byte[64 * 1024];
+    foreach (var (startBlock, _, size, opener) in sink) {
+      if (size <= 0) continue;
+      var byteOffset = (long)startBlock * actualBlockSize;
+      if (byteOffset < 0 || byteOffset >= output.Length) continue;
+      output.Position = byteOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+    }
+    output.Flush();
+  }
+
   // ── Catalog B-tree planning ──────────────────────────────────────────────
 
   /// <summary>
@@ -381,8 +504,8 @@ public sealed class HfsPlusWriter {
       return cnid;
     }
 
-    foreach (var (name, _) in this._files) {
-      var normalized = name.Replace('\\', '/').Trim('/');
+    foreach (var entry in this._files) {
+      var normalized = entry.Name.Replace('\\', '/').Trim('/');
       var slash = normalized.LastIndexOf('/');
       if (slash >= 0)
         EnsureFolder(normalized[..slash]);
@@ -400,17 +523,18 @@ public sealed class HfsPlusWriter {
     // fork descriptors once the real layout is known. To avoid a second record
     // build we instead compute the catalog node count from the record sizes and
     // only assign start blocks afterward — so we build records lazily below.
-    var fileMeta = new List<(uint Cnid, uint Parent, string LeafName, byte[] Data, uint BlockCount)>();
-    foreach (var (rawName, data) in this._files) {
+    var fileMeta = new List<(uint Cnid, uint Parent, string LeafName, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener, uint BlockCount, long EffectiveLength)>();
+    foreach (var (rawName, data, streamingSize, opener) in this._files) {
       var normalized = rawName.Replace('\\', '/').Trim('/');
       var slash = normalized.LastIndexOf('/');
       var parentPath = slash < 0 ? "" : normalized[..slash];
       var leafName = slash < 0 ? normalized : normalized[(slash + 1)..];
       var parentCnid = folderCnids[parentPath];
-      var blockCount = (uint)((data.Length + blockSize - 1) / blockSize);
+      var effLen = streamingSize ?? (long)data.Length;
+      var blockCount = (uint)((effLen + blockSize - 1) / blockSize);
       var fileCnid = localNextCnid++;
       folderValence[parentCnid]++;
-      fileMeta.Add((fileCnid, parentCnid, leafName, data, blockCount));
+      fileMeta.Add((fileCnid, parentCnid, leafName, data, streamingSize, opener, blockCount, effLen));
     }
 
     nextCnid = localNextCnid;
@@ -428,30 +552,30 @@ public sealed class HfsPlusWriter {
     // real start block can be written in once the catalog fork size is known;
     // non-file records leave ForkPatchOffset = -1 and Data = null.
     var VolumeName = string.IsNullOrEmpty(this._volumeName) ? "untitled" : this._volumeName;
-    var keyed = new List<(uint Parent, string Name, byte[] Bytes, int ForkPatchOffset, byte[]? Data, uint BlockCount)>();
+    var keyed = new List<(uint Parent, string Name, byte[] Bytes, int ForkPatchOffset, byte[]? Data, long? StreamingSize, Func<Stream>? StreamOpener, uint BlockCount)>();
 
     // Root folder + thread.
     keyed.Add((1u, VolumeName,
-        BuildFolderRecord(RootFolderCnid, 1u, folderValence[RootFolderCnid], VolumeName), -1, null, 0u));
-    keyed.Add((RootFolderCnid, "", BuildFolderThreadRecord(RootFolderCnid, 1, VolumeName), -1, null, 0u));
+        BuildFolderRecord(RootFolderCnid, 1u, folderValence[RootFolderCnid], VolumeName), -1, null, null, null, 0u));
+    keyed.Add((RootFolderCnid, "", BuildFolderThreadRecord(RootFolderCnid, 1, VolumeName), -1, null, null, null, 0u));
 
     folderCount = 0u;
     foreach (var (cnid, info) in folderInfo) {
       ++folderCount;
       keyed.Add((info.Parent, info.Name,
-          BuildFolderRecord(cnid, info.Parent, folderValence[cnid], info.Name), -1, null, 0u));
-      keyed.Add((cnid, "", BuildFolderThreadRecord(cnid, info.Parent, info.Name), -1, null, 0u));
+          BuildFolderRecord(cnid, info.Parent, folderValence[cnid], info.Name), -1, null, null, null, 0u));
+      keyed.Add((cnid, "", BuildFolderThreadRecord(cnid, info.Parent, info.Name), -1, null, null, null, 0u));
     }
 
     foreach (var fm in fileMeta) {
-      var rec = BuildFileRecord(fm.Cnid, fm.Parent, fm.LeafName, fm.Data.Length, 0u, fm.BlockCount);
+      var rec = BuildFileRecord(fm.Cnid, fm.Parent, fm.LeafName, fm.EffectiveLength, 0u, fm.BlockCount);
       // Offset of extents[0].startBlock inside the record = keyLength prefix +
       // key body + DataForkOffset + 16 (logicalSize+clumpSize+totalBlocks).
       var keyLen = BinaryPrimitives.ReadUInt16BigEndian(rec) + 2;
       var patchOffset = keyLen + DataForkOffset + 16;
-      keyed.Add((fm.Parent, fm.LeafName, rec, patchOffset, fm.Data, fm.BlockCount));
+      keyed.Add((fm.Parent, fm.LeafName, rec, patchOffset, fm.Data, fm.StreamingSize, fm.StreamOpener, fm.BlockCount));
       // File thread record.
-      keyed.Add((fm.Cnid, "", BuildFileThreadRecord(fm.Cnid, fm.Parent, fm.LeafName), -1, null, 0u));
+      keyed.Add((fm.Cnid, "", BuildFileThreadRecord(fm.Cnid, fm.Parent, fm.LeafName), -1, null, null, null, 0u));
     }
 
     // Sort by HFS+ catalog key: parentCNID first, then the name under the
@@ -563,8 +687,14 @@ public sealed class HfsPlusWriter {
       var rec = records[i];
       BinaryPrimitives.WriteUInt32BigEndian(rec.AsSpan(entry.ForkPatchOffset), startBlock);
       BinaryPrimitives.WriteUInt32BigEndian(rec.AsSpan(entry.ForkPatchOffset + 4), entry.BlockCount);
-      if (entry.Data is { Length: > 0 })
+      if (entry.StreamOpener != null && entry.StreamingSize is { } sz && sz > 0) {
+        // Streaming entry: record the (startBlock, blockCount, size, opener)
+        // tuple for BuildToStreaming's post-fill pass; leave the data area
+        // zero so cluster tail past Size stays sparse-zero.
+        this._streamingSink?.Add((startBlock, entry.BlockCount, sz, entry.StreamOpener));
+      } else if (entry.Data is { Length: > 0 }) {
         fileData.Add((startBlock, entry.Data));
+      }
       nextBlockAfterData += entry.BlockCount;
     }
 

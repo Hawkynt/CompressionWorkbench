@@ -202,19 +202,16 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   /// <summary>
-  /// Streaming creation: drains each
-  /// <see cref="Compression.Registry.Streaming.StreamingArchiveInput"/> via
-  /// its bounded <c>OpenStream</c> factory and feeds the HFS+ writer one
-  /// file at a time.
+  /// Two-pass streaming creation: pre-known per-input sizes drive
+  /// allocation-block geometry + catalog B-tree planning in pass 1;
+  /// pass 2 emits the volume header + allocation bitmap + extents B-tree
+  /// + catalog B-tree (with file records pointing at single-extent
+  /// allocations) + the alternate volume header, then streams each
+  /// input's bytes from its
+  /// <see cref="Compression.Registry.Streaming.StreamingArchiveInput.OpenStream"/>
+  /// factory into its allocated extent run via 64 KB chunks. Block tail
+  /// past each entry's exact <c>Size</c> stays sparse-zero.
   /// </summary>
-  /// <remarks>
-  /// The current <see cref="HfsPlusWriter"/> requires every file's bytes
-  /// up-front (it sizes the catalog + extents B-tree after all files are
-  /// known), so this override one-pass-on-writer / two-pass-on-caller.
-  /// The bound is enforced at the SOURCE: each input's <c>OpenStream</c>
-  /// returns a bounded stream so cluster/extent slack can never enter the
-  /// pipeline. TODO: refactor HfsPlusWriter to true two-pass streaming.
-  /// </remarks>
   public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -225,13 +222,14 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     var w = new HfsPlusWriter(caseSensitive, journal, journalSize, volumeName);
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
-      using var src = input.OpenStream();
-      using var ms = new MemoryStream(checked((int)input.Size));
-      src.CopyTo(ms);
-      w.AddFile(input.Name, ms.ToArray());
+      w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
     }
     var blockSize = FilesystemSchemaPresets.ParseSize(
       options.FormatSpecific?.GetValueOrDefault("BlockSize"));
+    if (output.CanSeek) {
+      w.BuildToStreamingAutoSized(output, blockSize);
+      return;
+    }
     output.Write(w.BuildAutoSized(blockSize));
   }
 
