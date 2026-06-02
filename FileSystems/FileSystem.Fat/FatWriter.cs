@@ -1033,9 +1033,18 @@ public sealed class FatWriter {
       ? requestedClusterSize
       : SelectOptimalClusterSize(fileSizes, bytesPerSector, forcedFatType, requestedRootEntries);
 
-    var totalDataBytes = fileSizes.Sum() + dirContentBytes.Sum();
-    var neededBytes = Math.Max(totalDataBytes * 3 / 2 + 32768, 1440 * 1024);
-    var totalSectors = Math.Max(2880, (int)((neededBytes + bytesPerSector - 1) / bytesPerSector));
+    // Auto-fit means actually fit. Compute the cluster-aware data area
+    // requirement (each file/dir rounded up to whole clusters, since FAT
+    // can't sub-allocate clusters) plus a small headroom — 8 free clusters
+    // for fragmentation/append room + 64 KB for boot+reserved+root+FATs.
+    // The previous 1.44 MB floor meant "convert to FAT" always produced a
+    // 1.44 MB image no matter how little data — that defeats auto-size.
+    long RoundUpToCluster(long bytes) => bytes <= 0 ? 0 : ((bytes + clusterBytes - 1) / clusterBytes) * clusterBytes;
+    var clusterAlignedFiles = fileSizes.Sum(s => RoundUpToCluster(s));
+    // Each subdirectory occupies at least one cluster even if its dir entries fit in less.
+    var clusterAlignedDirs = dirContentBytes.Sum(b => Math.Max((long)clusterBytes, RoundUpToCluster(b)));
+    var neededBytes = clusterAlignedFiles + clusterAlignedDirs + 8L * clusterBytes + 65536;
+    var totalSectors = Math.Max(32, (int)((neededBytes + bytesPerSector - 1) / bytesPerSector));
 
     // FAT12/16 root directories are fixed at most 224 (FAT12) or 512 (FAT16) entries.
     // If our directory won't fit there — or the caller forces FAT32 — we must use
