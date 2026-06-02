@@ -254,6 +254,7 @@
     <Project Path="FileSystems/FileSystem.Adfs/FileSystem.Adfs.csproj" />
     <Project Path="FileSystems/FileSystem.AmigaPfs/FileSystem.AmigaPfs.csproj" />
     <Project Path="FileSystems/FileSystem.Qnx4/FileSystem.Qnx4.csproj" />
+    <Project Path="FileSystems/FileSystem.Qnx6/FileSystem.Qnx6.csproj" />
     <Project Path="FileSystems/FileSystem.MinixV2/FileSystem.MinixV2.csproj" />
     <Project Path="FileSystems/FileSystem.Nilfs2/FileSystem.Nilfs2.csproj" />
     <Project Path="FileSystems/FileSystem.Tux2/FileSystem.Tux2.csproj" />
