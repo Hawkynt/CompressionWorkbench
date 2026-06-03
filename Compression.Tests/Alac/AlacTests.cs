@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using Codec.Alac;
 using FileFormat.Alac;
 
 namespace Compression.Tests.Alac;
@@ -261,5 +262,60 @@ public class AlacTests {
     var entries = new AlacFormatDescriptor().List(ms, null);
     Assert.That(entries, Has.Count.GreaterThanOrEqualTo(1));
     Assert.That(entries[0].Name, Is.EqualTo("FULL.m4a"));
+  }
+
+  [Test, Category("EdgeCase")]
+  public void List_GarbageFrames_GracefullySkipsChannels() {
+    // The hardcoded cookie says stereo 16-bit, but the frame bytes are noise that
+    // cannot decode — the descriptor must keep the FULL/Track/metadata-only view.
+    var frames = new byte[] { 0xAA, 0xBB, 0xCC, 0xDD };
+    var file = BuildMinimalM4a(frames);
+
+    using var ms = new MemoryStream(file);
+    var names = new AlacFormatDescriptor().List(ms, null).Select(e => e.Name).ToList();
+
+    Assert.That(names, Does.Contain("FULL.m4a"));
+    Assert.That(names, Does.Contain("track_00_alac.bin"));
+    Assert.That(names.Any(n => n.EndsWith(".wav", StringComparison.Ordinal)), Is.False,
+      "Undecodable frames must not surface channel WAVs.");
+  }
+
+  [Test, Category("HappyPath")]
+  public void List_RealEncodedFrames_SurfacesChannelWavs() {
+    // Encode genuine stereo 16-bit ALAC frames whose cookie matches the builder's
+    // hardcoded one (frameLength 4096, 16-bit, 2ch, 44100), wrap them in the minimal
+    // M4A, and assert the descriptor decodes and surfaces LEFT.wav / RIGHT.wav.
+    const int samples = 4096 + 500;
+    var pcm = new byte[samples * 2 * 2];
+    for (var i = 0; i < samples; ++i) {
+      var l = (short)(7000 * Math.Sin(i * 0.04) + (i % 400) - 200);
+      var r = (short)(5000 * Math.Cos(i * 0.06) - (i % 250));
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 4), l);
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 4 + 2), r);
+    }
+
+    var (frames, _) = AlacCodec.Encode(pcm, channels: 2, sampleRate: 44100, bitsPerSample: 16, frameLength: 4096);
+    var file = BuildMinimalM4a(frames);
+
+    using var ms = new MemoryStream(file);
+    var entries = new AlacFormatDescriptor().List(ms, null);
+    var names = entries.Select(e => e.Name).ToList();
+
+    Assert.That(names, Does.Contain("LEFT.wav"));
+    Assert.That(names, Does.Contain("RIGHT.wav"));
+    Assert.That(entries.First(e => e.Name == "LEFT.wav").Kind, Is.EqualTo("Channel"));
+    Assert.That(entries.First(e => e.Name == "LEFT.wav").Method, Is.EqualTo("pcm"));
+
+    // The extracted channel must be a valid mono 16-bit / 44100 Hz WAV with the
+    // exact deinterleaved samples.
+    using var outStream = new MemoryStream();
+    new AlacFormatDescriptor().ExtractEntry(new MemoryStream(file), "LEFT.wav", outStream, null);
+    var wav = outStream.ToArray();
+    Assert.That(wav.AsSpan(0, 4).ToArray(), Is.EqualTo("RIFF"u8.ToArray()));
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(22)), Is.EqualTo(1));
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24)), Is.EqualTo(44100u));
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(34)), Is.EqualTo(16));
+    var firstLeft = BinaryPrimitives.ReadInt16LittleEndian(wav.AsSpan(44));
+    Assert.That(firstLeft, Is.EqualTo(BinaryPrimitives.ReadInt16LittleEndian(pcm.AsSpan(0))));
   }
 }

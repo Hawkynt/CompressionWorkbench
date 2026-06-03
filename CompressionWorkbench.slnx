@@ -116,6 +116,7 @@
     <Project Path="Codecs/Codec.G72x/Codec.G72x.csproj" />
     <Project Path="Codecs/Codec.SpuAdpcm/Codec.SpuAdpcm.csproj" />
     <Project Path="Codecs/Codec.DspAdpcm/Codec.DspAdpcm.csproj" />
+    <Project Path="Codecs/Codec.Alac/Codec.Alac.csproj" />
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />

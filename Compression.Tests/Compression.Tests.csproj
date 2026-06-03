@@ -90,6 +90,7 @@
     <ProjectReference Include="..\Codecs\Codec.G72x\Codec.G72x.csproj" />
     <ProjectReference Include="..\Codecs\Codec.SpuAdpcm\Codec.SpuAdpcm.csproj" />
     <ProjectReference Include="..\Codecs\Codec.DspAdpcm\Codec.DspAdpcm.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Alac\Codec.Alac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
