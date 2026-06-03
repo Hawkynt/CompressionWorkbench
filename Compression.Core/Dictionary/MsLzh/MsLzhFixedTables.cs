@@ -22,16 +22,21 @@ internal static class MsLzhFixedTables {
   internal static readonly CanonicalHuffman LitLen;
   internal static readonly CanonicalHuffman Distance;
 
-  static MsLzhFixedTables() {
-    var litLenLengths = new int[MsLzhConstants.LitLenAlphabetSize];
-    for (var i = 0; i <= 143; i++) litLenLengths[i] = 8;
-    for (var i = 144; i <= 255; i++) litLenLengths[i] = 9;
-    for (var i = 256; i <= 279; i++) litLenLengths[i] = 7;
-    for (var i = 280; i <= 285; i++) litLenLengths[i] = 8;
-    LitLen = new CanonicalHuffman(litLenLengths);
+  /// <summary>Per-symbol fixed-table code lengths for the literal/length alphabet.</summary>
+  internal static readonly int[] LitLenLengths;
+  /// <summary>Per-symbol fixed-table code lengths for the distance alphabet.</summary>
+  internal static readonly int[] DistanceLengths;
 
-    var distLengths = new int[MsLzhConstants.DistanceAlphabetSize];
-    for (var i = 0; i < MsLzhConstants.DistanceAlphabetSize; i++) distLengths[i] = 5;
-    Distance = new CanonicalHuffman(distLengths);
+  static MsLzhFixedTables() {
+    LitLenLengths = new int[MsLzhConstants.LitLenAlphabetSize];
+    for (var i = 0; i <= 143; i++) LitLenLengths[i] = 8;
+    for (var i = 144; i <= 255; i++) LitLenLengths[i] = 9;
+    for (var i = 256; i <= 279; i++) LitLenLengths[i] = 7;
+    for (var i = 280; i <= 285; i++) LitLenLengths[i] = 8;
+    LitLen = new CanonicalHuffman(LitLenLengths);
+
+    DistanceLengths = new int[MsLzhConstants.DistanceAlphabetSize];
+    for (var i = 0; i < MsLzhConstants.DistanceAlphabetSize; i++) DistanceLengths[i] = 5;
+    Distance = new CanonicalHuffman(DistanceLengths);
   }
 }

@@ -171,4 +171,85 @@ public class MsLzhRoundTripTests {
     Assert.That(negative, Is.EqualTo(zero),
       "Negative effort must be clamped to effort 0.");
   }
+
+  // =========================================================================
+  //                         Dynamic Huffman tests
+  // =========================================================================
+
+  /// <summary>
+  /// 32 KB of English text encoded with effort 2 (which considers dynamic
+  /// per-block Huffman tables) must round-trip byte-identically.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void Dynamic_Huffman_RoundTrip() {
+    var compressor = new MsLzhCompressor();
+    var decompressor = new MsLzhDecompressor();
+    var text = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat(
+      "The quick brown fox jumps over the lazy dog. " +
+      "Sphinx of black quartz, judge my vow. ", 400)));
+    Assert.That(text.Length, Is.GreaterThanOrEqualTo(32 * 1024),
+      "Test input must be at least 32 KB to exercise dynamic block selection.");
+
+    var compressed = compressor.Compress(text, effort: 2);
+    var decompressed = decompressor.Decompress(compressed);
+    Assert.That(decompressed, Is.EqualTo(text),
+      "Dynamic Huffman round-trip must reproduce the original bytes byte-for-byte.");
+  }
+
+  /// <summary>
+  /// On a large compressible English-text payload, effort 2 (which evaluates
+  /// dynamic Huffman) must produce strictly smaller output than effort 1
+  /// (static fixed Huffman only). Anything else means the dynamic-tables
+  /// codepath either was never taken or never beats static — both indicate
+  /// the feature is not actually paying off.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void Dynamic_Smaller_Than_Static_For_LargeText() {
+    var compressor = new MsLzhCompressor();
+    var text = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat(
+      "The quick brown fox jumps over the lazy dog. " +
+      "Sphinx of black quartz, judge my vow. ", 400)));
+
+    var staticOutput = compressor.Compress(text, effort: 1);
+    var dynamicOutput = compressor.Compress(text, effort: 2);
+
+    Assert.That(dynamicOutput.Length, Is.LessThan(staticOutput.Length),
+      $"effort 2 dynamic Huffman ({dynamicOutput.Length} B) must be smaller than effort 1 static-only ({staticOutput.Length} B) for large English text.");
+  }
+
+  /// <summary>
+  /// Bit-flipping inside a dynamic block header (the code-length-code table
+  /// region — i.e. just past the 4-byte original-size header + block-type
+  /// bit + HLIT/HDIST/HCLEN field) must produce a clean
+  /// <see cref="InvalidDataException"/> from the decoder rather than
+  /// corrupted output or an unhandled exception.
+  /// </summary>
+  [Test, Category("ErrorHandling")]
+  public void Dynamic_Block_Decoder_Catches_Corruption() {
+    var compressor = new MsLzhCompressor();
+    var text = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat(
+      "The quick brown fox jumps over the lazy dog. " +
+      "Sphinx of black quartz, judge my vow. ", 400)));
+
+    var compressed = compressor.Compress(text, effort: 2);
+
+    // Sanity-check this IS a dynamic block: byte 4 starts with the bit
+    // stream, MSB-first. Block-type bit is the MSB of byte 4. 1 = dynamic.
+    Assert.That((compressed[4] & 0x80) != 0, Is.True,
+      "Expected dynamic block-type bit set on large English-text input.");
+
+    // Smash the dynamic-block header region so the canonical Huffman tables
+    // cannot be reconstructed coherently. Bytes 5..9 contain
+    // HLIT/HDIST/HCLEN + a few code-length-code lengths — flipping every bit
+    // there guarantees an invalid prefix code or an out-of-range count.
+    var corrupted = (byte[])compressed.Clone();
+    for (var i = 5; i < Math.Min(10, corrupted.Length); ++i)
+      corrupted[i] ^= 0xFF;
+
+    var decompressor = new MsLzhDecompressor();
+    Assert.That(
+      () => decompressor.Decompress(corrupted),
+      Throws.InstanceOf<InvalidDataException>().Or.InstanceOf<EndOfStreamException>(),
+      "Corrupted dynamic block header must surface as a data exception, never as silent miscompare or wild exception.");
+  }
 }

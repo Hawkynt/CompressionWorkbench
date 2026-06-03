@@ -1,14 +1,21 @@
 using System.Buffers.Binary;
 using Compression.Core.BitIO;
+using Compression.Core.Entropy.Huffman;
 
 namespace Compression.Core.Dictionary.MsLzh;
 
 /// <summary>
 /// MS LZH decompressor — reads back the bit stream produced by
 /// <see cref="MsLzhCompressor"/>. Reads a 4-byte little-endian original-size
-/// header followed by the MSB-first canonical-Huffman literal/length and
-/// distance code stream, with the end-of-block marker (symbol 256) closing
-/// the stream.
+/// header followed by a sequence of blocks. Each block is prefixed by a
+/// single block-type bit: <c>0</c> selects the RFC 1951 §3.2.6-shape
+/// fixed Huffman tables (see <see cref="MsLzhFixedTables"/>); <c>1</c>
+/// selects per-block dynamic Huffman tables whose header layout follows
+/// RFC 1951 §3.2.7 (HLIT / HDIST / HCLEN + code-length-code table +
+/// lit/len + distance code-length lists — see
+/// <see cref="MsLzhDynamicHuffman"/>). End-of-block (symbol 256) closes a
+/// block; the decoder stops once the original-size byte count has been
+/// emitted.
 /// </summary>
 public sealed class MsLzhDecompressor {
 
@@ -30,39 +37,58 @@ public sealed class MsLzhDecompressor {
     var pos = 0;
     var safety = originalSize * 8 + 1024;
 
-    while (pos < originalSize && safety-- > 0) {
-      var symbol = MsLzhFixedTables.LitLen.DecodeSymbol(reader);
-      if (symbol < 256) {
-        output[pos++] = (byte)symbol;
-        continue;
+    while (pos < originalSize) {
+      // Block-type bit: 0 = fixed Huffman tables, 1 = dynamic per-block tables.
+      var blockType = reader.ReadBit();
+      CanonicalHuffman litLenHuf, distHuf;
+      switch (blockType) {
+        case MsLzhDynamicHuffman.BlockTypeFixed:
+          litLenHuf = MsLzhFixedTables.LitLen;
+          distHuf = MsLzhFixedTables.Distance;
+          break;
+        case MsLzhDynamicHuffman.BlockTypeDynamic:
+          (litLenHuf, distHuf) = MsLzhDynamicHuffman.ReadHeader(reader);
+          break;
+        default:
+          throw new InvalidDataException($"MS LZH: invalid block-type bit {blockType}.");
       }
-      if (symbol == MsLzhConstants.EndOfBlockSymbol) {
-        break;
+
+      while (pos < originalSize && safety-- > 0) {
+        var symbol = litLenHuf.DecodeSymbol(reader);
+        if (symbol < 256) {
+          output[pos++] = (byte)symbol;
+          continue;
+        }
+        if (symbol == MsLzhConstants.EndOfBlockSymbol)
+          break;
+        if (symbol > 285)
+          throw new InvalidDataException($"MS LZH: invalid literal/length symbol {symbol}.");
+
+        // Match: decode length then distance.
+        var (_, lenExtraBits) = MsLzhConstants.LengthCodes[symbol - MsLzhConstants.FirstLengthSymbol];
+        var lenExtraVal = lenExtraBits > 0 ? (int)reader.ReadBits(lenExtraBits) : 0;
+        var length = MsLzhConstants.DecodeLength(symbol, lenExtraVal);
+
+        var distSym = distHuf.DecodeSymbol(reader);
+        if (distSym is < 0 or >= MsLzhConstants.DistanceAlphabetSize)
+          throw new InvalidDataException($"MS LZH: invalid distance symbol {distSym}.");
+        var (_, distExtraBits) = MsLzhConstants.DistanceCodes[distSym];
+        var distExtraVal = distExtraBits > 0 ? (int)reader.ReadBits(distExtraBits) : 0;
+        var distance = MsLzhConstants.DecodeDistance(distSym, distExtraVal);
+
+        if (distance < 1 || distance > pos)
+          throw new InvalidDataException($"MS LZH: invalid distance {distance} at pos {pos}.");
+        if (pos + length > originalSize)
+          throw new InvalidDataException("MS LZH: match would overrun output.");
+
+        var srcPos = pos - distance;
+        for (var j = 0; j < length; j++)
+          output[pos + j] = output[srcPos + j];
+        pos += length;
       }
-      if (symbol > 285)
-        throw new InvalidDataException($"MS LZH: invalid literal/length symbol {symbol}.");
 
-      // Match: decode length then distance.
-      var (_, lenExtraBits) = MsLzhConstants.LengthCodes[symbol - MsLzhConstants.FirstLengthSymbol];
-      var lenExtraVal = lenExtraBits > 0 ? (int)reader.ReadBits(lenExtraBits) : 0;
-      var length = MsLzhConstants.DecodeLength(symbol, lenExtraVal);
-
-      var distSym = MsLzhFixedTables.Distance.DecodeSymbol(reader);
-      if (distSym is < 0 or >= MsLzhConstants.DistanceAlphabetSize)
-        throw new InvalidDataException($"MS LZH: invalid distance symbol {distSym}.");
-      var (_, distExtraBits) = MsLzhConstants.DistanceCodes[distSym];
-      var distExtraVal = distExtraBits > 0 ? (int)reader.ReadBits(distExtraBits) : 0;
-      var distance = MsLzhConstants.DecodeDistance(distSym, distExtraVal);
-
-      if (distance < 1 || distance > pos)
-        throw new InvalidDataException($"MS LZH: invalid distance {distance} at pos {pos}.");
-      if (pos + length > originalSize)
-        throw new InvalidDataException("MS LZH: match would overrun output.");
-
-      var srcPos = pos - distance;
-      for (var j = 0; j < length; j++)
-        output[pos + j] = output[srcPos + j];
-      pos += length;
+      if (safety <= 0)
+        throw new InvalidDataException("MS LZH: decoder safety counter exhausted.");
     }
 
     if (pos != originalSize)
