@@ -115,6 +115,7 @@
     <Project Path="Codecs/Codec.Tta/Codec.Tta.csproj" />
     <Project Path="Codecs/Codec.G72x/Codec.G72x.csproj" />
     <Project Path="Codecs/Codec.SpuAdpcm/Codec.SpuAdpcm.csproj" />
+    <Project Path="Codecs/Codec.DspAdpcm/Codec.DspAdpcm.csproj" />
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />
@@ -451,6 +452,7 @@
     <Project Path="FileFormats/FileFormat.Vag/FileFormat.Vag.csproj" />
     <Project Path="FileFormats/FileFormat.Sf2/FileFormat.Sf2.csproj" />
     <Project Path="FileFormats/FileFormat.Dls/FileFormat.Dls.csproj" />
+    <Project Path="FileFormats/FileFormat.Brstm/FileFormat.Brstm.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />
