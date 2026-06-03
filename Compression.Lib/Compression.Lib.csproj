@@ -37,6 +37,8 @@
     <ProjectReference Include="..\Codecs\Codec.DspAdpcm\Codec.DspAdpcm.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Alac\Codec.Alac.csproj" />
     <ProjectReference Include="..\Codecs\Codec.CriAdx\Codec.CriAdx.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Brr\Codec.Brr.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.XaAdpcm\Codec.XaAdpcm.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
@@ -447,6 +449,9 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Brstm\FileFormat.Brstm.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.G711\FileFormat.G711.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Adx\FileFormat.Adx.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Brr\FileFormat.Brr.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Spc\FileFormat.Spc.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Xa\FileFormat.Xa.csproj" />
   </ItemGroup>
 
 </Project>
