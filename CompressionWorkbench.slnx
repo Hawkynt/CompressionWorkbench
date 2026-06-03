@@ -124,6 +124,9 @@
     <Project Path="Codecs/Codec.G722/Codec.G722.csproj" />
     <Project Path="Codecs/Codec.Cvsd/Codec.Cvsd.csproj" />
     <Project Path="Codecs/Codec.AicaAdpcm/Codec.AicaAdpcm.csproj" />
+    <Project Path="Codecs/Codec.EaXa/Codec.EaXa.csproj" />
+    <Project Path="Codecs/Codec.WwiseIma/Codec.WwiseIma.csproj" />
+    <Project Path="Codecs/Codec.Mace/Codec.Mace.csproj" />
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />
@@ -492,6 +495,14 @@
     <Project Path="FileFormats/FileFormat.Sds/FileFormat.Sds.csproj" />
     <Project Path="FileFormats/FileFormat.Txw/FileFormat.Txw.csproj" />
     <Project Path="FileFormats/FileFormat.Hcom/FileFormat.Hcom.csproj" />
+    <Project Path="FileFormats/FileFormat.EaSchl/FileFormat.EaSchl.csproj" />
+    <Project Path="FileFormats/FileFormat.Wem/FileFormat.Wem.csproj" />
+    <Project Path="FileFormats/FileFormat.MacSnd/FileFormat.MacSnd.csproj" />
+    <Project Path="FileFormats/FileFormat.Sndr/FileFormat.Sndr.csproj" />
+    <Project Path="FileFormats/FileFormat.Sndt/FileFormat.Sndt.csproj" />
+    <Project Path="FileFormats/FileFormat.EspsSd/FileFormat.EspsSd.csproj" />
+    <Project Path="FileFormats/FileFormat.Asf/FileFormat.Asf.csproj" />
+    <Project Path="FileFormats/FileFormat.RealMedia/FileFormat.RealMedia.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />

@@ -43,6 +43,9 @@
     <ProjectReference Include="..\Codecs\Codec.G722\Codec.G722.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Cvsd\Codec.Cvsd.csproj" />
     <ProjectReference Include="..\Codecs\Codec.AicaAdpcm\Codec.AicaAdpcm.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.EaXa\Codec.EaXa.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.WwiseIma\Codec.WwiseIma.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Mace\Codec.Mace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
@@ -482,6 +485,14 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Sds\FileFormat.Sds.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Txw\FileFormat.Txw.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Hcom\FileFormat.Hcom.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.EaSchl\FileFormat.EaSchl.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Wem\FileFormat.Wem.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.MacSnd\FileFormat.MacSnd.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sndr\FileFormat.Sndr.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sndt\FileFormat.Sndt.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.EspsSd\FileFormat.EspsSd.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Asf\FileFormat.Asf.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.RealMedia\FileFormat.RealMedia.csproj" />
   </ItemGroup>
 
 </Project>
