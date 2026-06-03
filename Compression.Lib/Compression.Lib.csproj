@@ -176,6 +176,8 @@
     <ProjectReference Include="..\FileFormats\FileFormat.OneNote\FileFormat.OneNote.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Onnx\FileFormat.Onnx.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Orc\FileFormat.Orc.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ircam\FileFormat.Ircam.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sphere\FileFormat.Sphere.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Stl\FileFormat.Stl.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ply\FileFormat.Ply.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Dxf\FileFormat.Dxf.csproj" />

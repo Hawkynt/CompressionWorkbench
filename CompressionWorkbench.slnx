@@ -170,6 +170,8 @@
     <Project Path="FileFormats/FileFormat.OneNote/FileFormat.OneNote.csproj" />
     <Project Path="FileFormats/FileFormat.Onnx/FileFormat.Onnx.csproj" />
     <Project Path="FileFormats/FileFormat.Orc/FileFormat.Orc.csproj" />
+    <Project Path="FileFormats/FileFormat.Ircam/FileFormat.Ircam.csproj" />
+    <Project Path="FileFormats/FileFormat.Sphere/FileFormat.Sphere.csproj" />
     <Project Path="FileFormats/FileFormat.Stl/FileFormat.Stl.csproj" />
     <Project Path="FileFormats/FileFormat.Ply/FileFormat.Ply.csproj" />
     <Project Path="FileFormats/FileFormat.Dxf/FileFormat.Dxf.csproj" />
