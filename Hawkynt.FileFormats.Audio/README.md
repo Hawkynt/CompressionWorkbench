@@ -87,14 +87,21 @@ State legend:
 | `Codec.ALaw`     | PCM (companded) | R/W   | ITU-T G.711 A-law — true encode + decode                                        |
 | `Codec.MuLaw`    | PCM (companded) | R/W   | ITU-T G.711 mu-law — true encode + decode                                       |
 | `Codec.Midi`     | Symbolic        | R/W   | SMF parsing + per-track re-emit (BuildSingleTrackFile)                          |
-| `Codec.ImaAdpcm` | ADPCM           | R     | IMA / Intel ADPCM — decode only (no encoder)                                    |
+| `Codec.ImaAdpcm` | ADPCM           | R     | IMA / Intel ADPCM + QuickTime `ima4` packet variant — decode only               |
 | `Codec.MsAdpcm`  | ADPCM           | R     | Microsoft ADPCM — decode only (no encoder)                                      |
-| `Codec.Gsm610`   | Speech          | R     | GSM 6.10 RPE-LTP — decode only (no encoder)                                     |
-| `Codec.Mp3`      | Lossy           | R     | MPEG-1/2 Audio Layer III — decompress only (no encoder)                         |
+| `Codec.Gsm610`   | Speech          | R     | GSM 6.10 RPE-LTP — decode only (raw 33-byte frames + WAV payloads)              |
+| `Codec.Mp3`      | Lossy           | R     | MPEG-1/2 Audio Layer I / II / III — decompress only (no encoder)                |
 | `Codec.Aac`      | Lossy           | R     | Advanced Audio Coding (ADTS) — decompress only                                  |
 | `Codec.Vorbis`   | Lossy           | R     | Vorbis I — decompress only (no encoder)                                         |
 | `Codec.Opus`     | Lossy           | R     | Opus (RFC 6716) — decompress only (no encoder)                                  |
 | `Codec.Flac`     | Lossless        | R     | FLAC frame-level — decompress only (no encoder)                                 |
+| `Codec.OkiAdpcm` | ADPCM           | R/W   | OKI / Dialogic VOX 4-bit ADPCM — encode + decode                                |
+| `Codec.SpuAdpcm` | ADPCM           | R/W   | Sony PS1/PS2 SPU ADPCM — encode + decode                                        |
+| `Codec.DspAdpcm` | ADPCM           | R/W   | Nintendo GC/Wii DSP-ADPCM — decode + predictor-fit encoder                      |
+| `Codec.G72x`     | ADPCM           | R/W   | ITU-T G.726 @ 32 kbit (G.721) — CCITT reference port, encode + decode           |
+| `Codec.Tta`      | Lossless        | R/W   | True Audio TTA1 — reference-faithful decode + inverted encoder, byte-exact      |
+| `Codec.Shorten`  | Lossless        | R/W   | Shorten v2 (SHN) — decode (incl. best-effort QLPC) + DIFF0-3 encoder            |
+| `Codec.Alac`     | Lossless        | R/W   | Apple Lossless — decode + spec-shaped encoder (16/24-bit byte-exact)            |
 
 > **Honest scope note.** Most lossy / lossless codecs in this package decode but don't encode.
 > Writing a high-quality MP3 / AAC / Vorbis / Opus / FLAC encoder is a significant undertaking
@@ -118,8 +125,23 @@ State legend:
 | `FileFormat.Caf`      | WORM  | Apple Core Audio Format — LPCM `desc`/`data` chunks, per-channel split + assemble |
 | `FileFormat.Wave64`   | WORM  | Sony Wave64 (`.w64`) — GUID-keyed chunks, 64-bit sizes, per-channel split + assemble |
 | `FileFormat.Rf64`     | WORM  | RF64 / BWF (Broadcast Wave) — `ds64` 64-bit sizes + `bext`, per-channel split + assemble |
-| `FileFormat.Voc`      | WORM  | Creative Voice (`.voc`) — block-walking reader, per-channel split + assemble |
-| `FileFormat.Alac`     | R     | Apple Lossless inside MP4 atoms                                     |
+| `FileFormat.Voc`      | WORM  | Creative Voice (`.voc`) — block-walking reader incl. Creative 4-bit ADPCM, per-channel split + assemble |
+| `FileFormat.Svx`      | WORM  | IFF/8SVX (Amiga) — Fibonacci-delta decode, planar stereo, IFF tags; assembles |
+| `FileFormat.Avr`      | WORM  | AVR (Audio Visual Research, Atari ST) — BE PCM; assembles                   |
+| `FileFormat.Sphere`   | WORM  | NIST SPHERE (`.sph`) — ulaw/alaw/PCM; shorten-embedded falls back; assembles |
+| `FileFormat.Ircam`    | WORM  | IRCAM/BICSF (`.sf`) — byte order by magic, int + float channels; assembles  |
+| `FileFormat.Vox`      | WORM  | Dialogic VOX — headerless OKI ADPCM @ 8 kHz; assembles from a mono WAV      |
+| `FileFormat.Gsm`      | R     | Raw GSM 06.10 (`.gsm`) — 33-byte frames decoded to MONO.wav                 |
+| `FileFormat.Dsf`      | WORM  | Sony DSD (`.dsf`) — per-channel raw DSD streams + decimated PCM WAVs; assembles bit-exact |
+| `FileFormat.Dff`      | WORM  | Philips DSDIFF (`.dff`) — CHNL speaker IDs, DST falls back; assembles bit-exact |
+| `FileFormat.Tta`      | WORM  | True Audio (`.tta`) — lossless per-channel split + assemble via `Codec.Tta` |
+| `FileFormat.Shn`      | WORM  | Shorten (`.shn`) — lossless split + assemble via `Codec.Shorten`            |
+| `FileFormat.Vag`      | WORM  | Sony VAG (`.vag`) — SPU-ADPCM decode; assembles from a mono WAV             |
+| `FileFormat.Brstm`    | WORM  | Nintendo BRSTM — DSP-ADPCM/PCM channels with coef tables; assembles         |
+| `FileFormat.Sf2`      | R     | SoundFont 2 — every sample as a mono WAV at its own rate + INFO tags        |
+| `FileFormat.Dls`      | R     | Downloadable Sounds — `wvpl` waves rewrapped as standalone WAVs             |
+| `FileFormat.G711`     | WORM  | Raw G.711 (`.al` / `.ul`) — headerless A-law/µ-law @ 8 kHz; assembles       |
+| `FileFormat.Alac`     | R     | Apple Lossless inside MP4 atoms — decoded per-channel WAVs via `Codec.Alac` |
 | `FileFormat.Ape`      | R     | Monkey's Audio (`.ape`) lossless                                    |
 | `FileFormat.WavPack`  | R     | WavPack lossless / hybrid                                           |
 | `FileFormat.Ogg`      | R     | OGG container — packet blobs + comments + per-channel WAVs (Vorbis/Opus decoded via `Codec.Vorbis`/`Codec.Opus`) |
