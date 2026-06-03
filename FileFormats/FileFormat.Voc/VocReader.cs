@@ -13,12 +13,13 @@ namespace FileFormat.Voc;
 /// the terminator block (type 0) which is a single byte with no length field.
 /// <para>
 /// Consecutive sound blocks (types 1/2/9) are concatenated into one PCM stream.
-/// Codec 0 (8-bit unsigned PCM), codec 1 (Creative 4-bit ADPCM, decoded to 16-bit
-/// signed LE PCM) and codec 4 (16-bit signed LE PCM) of the legacy type-1 block, and
-/// the modern type-9 block (PCM at the stated bit depth and channel count), are decoded
-/// into <see cref="ParsedVoc.InterleavedPcm"/> as little-endian integer samples. The
-/// 2.6-bit (codec 2) and 2-bit (codec 3) Creative ADPCM variants remain undecoded, so
-/// the descriptor surfaces the FULL file only.
+/// Codec 0 (8-bit unsigned PCM), the three Creative ADPCM variants — codec 1
+/// (4-bit), codec 2 (2.6-bit) and codec 3 (2-bit), all decoded to 16-bit signed LE
+/// PCM — and codec 4 (16-bit signed LE PCM) of the legacy type-1 block, and the modern
+/// type-9 block (PCM at the stated bit depth and channel count), are decoded into
+/// <see cref="ParsedVoc.InterleavedPcm"/> as little-endian integer samples. The A-law
+/// (codec 6) and u-law (codec 7) variants remain undecoded, so the descriptor surfaces
+/// the FULL file only for those.
 /// </para>
 /// </summary>
 public sealed class VocReader {
@@ -160,12 +161,20 @@ public sealed class VocReader {
         anyDecodable = true;
         break;
       case 1: { // Creative 4-bit ADPCM → 16-bit signed LE PCM
-        var decoded = DecodeCreativeAdpcm4(samples);
+        WriteShorts(pcm, DecodeCreativeAdpcm(samples, codeWidth: 4));
         bitsPerSample = 16;
-        var buf = new byte[decoded.Length * 2];
-        for (var i = 0; i < decoded.Length; ++i)
-          BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(i * 2), decoded[i]);
-        pcm.Write(buf);
+        anyDecodable = true;
+        break;
+      }
+      case 2: { // Creative 2.6-bit ADPCM (3 codes/byte: 3,3,2 bits) → 16-bit signed LE PCM
+        WriteShorts(pcm, DecodeCreativeAdpcm(samples, codeWidth: 26));
+        bitsPerSample = 16;
+        anyDecodable = true;
+        break;
+      }
+      case 3: { // Creative 2-bit ADPCM (4 codes/byte) → 16-bit signed LE PCM
+        WriteShorts(pcm, DecodeCreativeAdpcm(samples, codeWidth: 2));
+        bitsPerSample = 16;
         anyDecodable = true;
         break;
       }
@@ -174,10 +183,17 @@ public sealed class VocReader {
         pcm.Write(samples);
         anyDecodable = true;
         break;
-      default: // 2.6-bit / 2-bit ADPCM, A-law, u-law — not decoded.
+      default: // A-law, u-law — not decoded.
         anyUndecodable = true;
         break;
     }
+  }
+
+  private static void WriteShorts(MemoryStream pcm, short[] decoded) {
+    var buf = new byte[decoded.Length * 2];
+    for (var i = 0; i < decoded.Length; ++i)
+      BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(i * 2), decoded[i]);
+    pcm.Write(buf);
   }
 
   // Creative ADPCM step-adaptation table (ffmpeg ff_adpcm_AdaptationTable, low 8 entries
@@ -185,43 +201,78 @@ public sealed class VocReader {
   private static readonly short[] CreativeAdaptation = [230, 230, 230, 230, 307, 409, 512, 614];
 
   /// <summary>
-  /// Decodes Creative Labs 4-bit ADPCM (VOC type-1 codec 1) to 16-bit signed PCM.
+  /// Decodes a Creative Labs ADPCM body (VOC codecs 1, 2 and 3) to 16-bit signed PCM.
   /// <para>
-  /// The first body byte is a full 8-bit unsigned reference sample (the initial
-  /// predictor, mapped to signed 16-bit). Each subsequent byte holds two 4-bit
-  /// codewords, high nibble first. Each codeword's low three bits are the delta
-  /// magnitude and bit 3 is the sign; the predictor is leaked by 254/256 and the step
-  /// adapts through <see cref="CreativeAdaptation"/> — exactly ffmpeg's
-  /// <c>adpcm_ct_expand_nibble</c> (ADPCM_CT). The step is clamped to [511, 32767].
+  /// The first body byte is always a full 8-bit unsigned reference sample (the initial
+  /// predictor, mapped to signed 16-bit). Every subsequent byte is unpacked into
+  /// fixed-width codes, <b>most-significant code first</b>. Each code's top bit is the
+  /// sign and its lower bits are the delta magnitude; the predictor is leaked by
+  /// 254/256 and the step adapts through <see cref="CreativeAdaptation"/> — the
+  /// generalisation of ffmpeg's <c>adpcm_ct_expand_nibble</c> (ADPCM_CT) to the code
+  /// width. The reconstruction is <c>diff = ((2*magnitude + 1) * step) &gt;&gt; (w-1)</c>
+  /// for a width-<c>w</c> code and the step is clamped to [511, 32767].
+  /// </para>
+  /// <para>
+  /// <paramref name="codeWidth"/> selects the bit-packing:
+  /// <list type="bullet">
+  ///   <item><c>4</c> — codec 1: two 4-bit codes per byte (high nibble first).</item>
+  ///   <item><c>26</c> — codec 2 (2.6-bit): three codes per byte of widths 3, 3 and 2
+  ///     bits, top-first (bits 7-5, 4-2, 1-0). The 2.6-bit name reflects 8 bits / 3
+  ///     codes ≈ 2.67 bits/sample.</item>
+  ///   <item><c>2</c> — codec 3: four 2-bit codes per byte, top-first.</item>
+  /// </list>
   /// </para>
   /// </summary>
-  private static short[] DecodeCreativeAdpcm4(ReadOnlySpan<byte> body) {
+  private static short[] DecodeCreativeAdpcm(ReadOnlySpan<byte> body, int codeWidth) {
     if (body.Length == 0) return [];
 
     var predictor = (body[0] - 128) << 8;   // 8-bit unsigned reference → signed 16-bit
     predictor = Clip16(predictor);
     var step = 0;
 
-    var nibbleBytes = body.Length - 1;
-    var output = new short[1 + nibbleBytes * 2];
+    var dataBytes = body.Length - 1;
+    var perByte = codeWidth switch { 4 => 2, 26 => 3, 2 => 4, _ => throw new ArgumentOutOfRangeException(nameof(codeWidth)) };
+    var output = new short[1 + dataBytes * perByte];
     var n = 0;
     output[n++] = (short)predictor;
 
     for (var i = 1; i < body.Length; ++i) {
       var v = body[i];
-      output[n++] = ExpandNibble((v >> 4) & 0x0F, ref predictor, ref step);
-      output[n++] = ExpandNibble(v & 0x0F, ref predictor, ref step);
+      switch (codeWidth) {
+        case 4:
+          output[n++] = ExpandCode((v >> 4) & 0x0F, 4, ref predictor, ref step);
+          output[n++] = ExpandCode(v & 0x0F, 4, ref predictor, ref step);
+          break;
+        case 26: // three codes: 3 bits (7-5), 3 bits (4-2), 2 bits (1-0), top-first.
+          output[n++] = ExpandCode((v >> 5) & 0x07, 3, ref predictor, ref step);
+          output[n++] = ExpandCode((v >> 2) & 0x07, 3, ref predictor, ref step);
+          output[n++] = ExpandCode(v & 0x03, 2, ref predictor, ref step);
+          break;
+        case 2: // four 2-bit codes, top-first.
+          output[n++] = ExpandCode((v >> 6) & 0x03, 2, ref predictor, ref step);
+          output[n++] = ExpandCode((v >> 4) & 0x03, 2, ref predictor, ref step);
+          output[n++] = ExpandCode((v >> 2) & 0x03, 2, ref predictor, ref step);
+          output[n++] = ExpandCode(v & 0x03, 2, ref predictor, ref step);
+          break;
+      }
     }
     return output;
   }
 
-  private static short ExpandNibble(int nibble, ref int predictor, ref int step) {
-    var sign = nibble & 8;
-    var delta = nibble & 7;
-    var diff = ((2 * delta + 1) * step) >> 3;
+  /// <summary>
+  /// Expands one Creative ADPCM code of <paramref name="width"/> bits. The top bit is
+  /// the sign, the lower <c>width-1</c> bits the magnitude. With <paramref name="width"/>
+  /// of 4 this is byte-for-byte the legacy codec-1 nibble expander; narrower widths
+  /// reuse the same predictor leak and step adaptation, scaled to the code width.
+  /// </summary>
+  private static short ExpandCode(int code, int width, ref int predictor, ref int step) {
+    var signBit = 1 << (width - 1);
+    var sign = code & signBit;
+    var magnitude = code & (signBit - 1);
+    var diff = ((2 * magnitude + 1) * step) >> (width - 1);
     predictor = ((predictor * 254) >> 8) + (sign != 0 ? -diff : diff);
     predictor = Clip16(predictor);
-    var newStep = (CreativeAdaptation[nibble & 7] * step) >> 8;
+    var newStep = (CreativeAdaptation[magnitude] * step) >> 8;
     step = newStep < 511 ? 511 : newStep > 32767 ? 32767 : newStep;
     return (short)predictor;
   }

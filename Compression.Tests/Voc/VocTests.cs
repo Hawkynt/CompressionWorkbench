@@ -86,6 +86,83 @@ public class VocTests {
     return ms.ToArray();
   }
 
+  // Hand-crafts a legacy mono Creative ADPCM (block type 1) VOC with an arbitrary codec id.
+  // ADPCM body = 8-bit reference + code bytes.
+  private static byte[] MakeMonoAdpcmVoc(byte codec, byte reference, byte[] codeBytes) {
+    using var ms = new MemoryStream();
+    ms.Write("Creative Voice File"u8);
+    ms.WriteByte(0x1A);
+    var hdr = new byte[6];
+    BinaryPrimitives.WriteUInt16LittleEndian(hdr, 0x001A);
+    BinaryPrimitives.WriteUInt16LittleEndian(hdr.AsSpan(2), 0x010A);
+    BinaryPrimitives.WriteUInt16LittleEndian(hdr.AsSpan(4),
+      (ushort)((0x1234 + (~0x010A & 0xFFFF) + 1) & 0xFFFF));
+    ms.Write(hdr);
+
+    var divisor = (byte)(256 - 1000000 / 11025);
+    var bodyLen = 2 + 1 + codeBytes.Length;
+    ms.WriteByte(1);
+    ms.WriteByte((byte)(bodyLen & 0xFF));
+    ms.WriteByte((byte)((bodyLen >> 8) & 0xFF));
+    ms.WriteByte((byte)((bodyLen >> 16) & 0xFF));
+    ms.WriteByte(divisor);
+    ms.WriteByte(codec);
+    ms.WriteByte(reference);
+    ms.Write(codeBytes);
+    ms.WriteByte(0); // terminator
+    return ms.ToArray();
+  }
+
+  [Test]
+  public void VocReader_ParsesCreativeAdpcm2_6Bit_KnownSamples() {
+    // Codec 2 (2.6-bit): three codes per byte of widths 3,3,2 (top-first: bits 7-5, 4-2, 1-0).
+    // Reference 128 → predictor 0; bytes 0xB5 (101,101,01), 0x27 (001,001,11).
+    var blob = MakeMonoAdpcmVoc(codec: 2, reference: 128, [0xB5, 0x27]);
+    var parsed = new VocReader().Read(blob);
+
+    Assert.That(parsed.Codec, Is.EqualTo(2));
+    Assert.That(parsed.BitsPerSample, Is.EqualTo(16));
+    Assert.That(parsed.InterleavedPcm, Is.Not.Null);
+
+    // Hand-walked through the width-scaled CT expander (3 codes per data byte + 1 reference).
+    short[] expected = [0, 0, -383, 385, 764, 1141, 366];
+    var pcm = parsed.InterleavedPcm!;
+    Assert.That(pcm.Length, Is.EqualTo(expected.Length * 2));
+    for (var i = 0; i < expected.Length; ++i)
+      Assert.That(BinaryPrimitives.ReadInt16LittleEndian(pcm.AsSpan(i * 2)),
+        Is.EqualTo(expected[i]), $"sample {i}");
+  }
+
+  [Test]
+  public void VocReader_ParsesCreativeAdpcm2Bit_KnownSamples() {
+    // Codec 3 (2-bit): four 2-bit codes per byte (top-first).
+    // Reference 128 → predictor 0; bytes 0x6C (01,10,11,00), 0x39 (00,11,10,01).
+    var blob = MakeMonoAdpcmVoc(codec: 3, reference: 128, [0x6C, 0x39]);
+    var parsed = new VocReader().Read(blob);
+
+    Assert.That(parsed.Codec, Is.EqualTo(3));
+    Assert.That(parsed.BitsPerSample, Is.EqualTo(16));
+    Assert.That(parsed.InterleavedPcm, Is.Not.Null);
+
+    // Hand-walked through the width-scaled CT expander (4 codes per data byte + 1 reference).
+    short[] expected = [0, 0, -255, -1020, -758, -498, -1261, -1507, -730];
+    var pcm = parsed.InterleavedPcm!;
+    Assert.That(pcm.Length, Is.EqualTo(expected.Length * 2));
+    for (var i = 0; i < expected.Length; ++i)
+      Assert.That(BinaryPrimitives.ReadInt16LittleEndian(pcm.AsSpan(i * 2)),
+        Is.EqualTo(expected[i]), $"sample {i}");
+  }
+
+  [Test]
+  public void VocDescriptor_CreativeAdpcm2Bit_SurfacesMonoWav() {
+    var blob = MakeMonoAdpcmVoc(codec: 3, reference: 128, [0x6C, 0x39]);
+    using var ms = new MemoryStream(blob);
+    var entries = new VocFormatDescriptor().List(ms, null);
+
+    Assert.That(entries.Any(e => e.Name == "FULL.voc"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "MONO.wav" && e.Kind == "Channel"), Is.True);
+  }
+
   [Test]
   public void VocReader_ParsesCreativeAdpcm4_KnownSamples() {
     // Reference 200 → predictor 18432; data bytes 0x57, 0x31 (high nibble first).
