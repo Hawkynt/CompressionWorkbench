@@ -462,6 +462,10 @@
     <Project Path="FileFormats/FileFormat.Brr/FileFormat.Brr.csproj" />
     <Project Path="FileFormats/FileFormat.Spc/FileFormat.Spc.csproj" />
     <Project Path="FileFormats/FileFormat.Xa/FileFormat.Xa.csproj" />
+    <Project Path="FileFormats/FileFormat.Maud/FileFormat.Maud.csproj" />
+    <Project Path="FileFormats/FileFormat.Smp/FileFormat.Smp.csproj" />
+    <Project Path="FileFormats/FileFormat.Paf/FileFormat.Paf.csproj" />
+    <Project Path="FileFormats/FileFormat.Pvf/FileFormat.Pvf.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />

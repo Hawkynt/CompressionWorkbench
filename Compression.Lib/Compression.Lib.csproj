@@ -452,6 +452,10 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Brr\FileFormat.Brr.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Spc\FileFormat.Spc.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Xa\FileFormat.Xa.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Maud\FileFormat.Maud.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Smp\FileFormat.Smp.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Paf\FileFormat.Paf.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Pvf\FileFormat.Pvf.csproj" />
   </ItemGroup>
 
 </Project>
