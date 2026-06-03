@@ -439,6 +439,8 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Shn\FileFormat.Shn.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Tta\FileFormat.Tta.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Vag\FileFormat.Vag.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sf2\FileFormat.Sf2.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Dls\FileFormat.Dls.csproj" />
   </ItemGroup>
 
 </Project>
