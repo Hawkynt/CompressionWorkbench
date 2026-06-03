@@ -440,6 +440,8 @@
     <Project Path="FileFormats/FileFormat.Avr/FileFormat.Avr.csproj" />
     <Project Path="FileFormats/FileFormat.Vox/FileFormat.Vox.csproj" />
     <Project Path="FileFormats/FileFormat.Gsm/FileFormat.Gsm.csproj" />
+    <Project Path="FileFormats/FileFormat.Dsf/FileFormat.Dsf.csproj" />
+    <Project Path="FileFormats/FileFormat.Dff/FileFormat.Dff.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />

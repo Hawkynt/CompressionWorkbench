@@ -479,6 +479,8 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Avr\FileFormat.Avr.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Vox\FileFormat.Vox.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Gsm\FileFormat.Gsm.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Dsf\FileFormat.Dsf.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Dff\FileFormat.Dff.csproj" />
   </ItemGroup>
 
 </Project>
