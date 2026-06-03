@@ -8,25 +8,23 @@ namespace Codec.Pcm;
 /// </summary>
 public static class PcmCodec {
 
-  /// <summary>Conventional channel names per layout; falls back to CH_0..CH_N.</summary>
-  public static IReadOnlyList<string> LayoutNames(int channels) => channels switch {
-    1 => ["MONO"],
-    2 => ["LEFT", "RIGHT"],
-    3 => ["LEFT", "RIGHT", "CENTER"],
-    4 => ["FRONT_LEFT", "FRONT_RIGHT", "BACK_LEFT", "BACK_RIGHT"],
-    5 => ["FRONT_LEFT", "FRONT_RIGHT", "CENTER", "BACK_LEFT", "BACK_RIGHT"],
-    6 => ["FRONT_LEFT", "FRONT_RIGHT", "CENTER", "LFE", "BACK_LEFT", "BACK_RIGHT"],
-    8 => ["FRONT_LEFT", "FRONT_RIGHT", "CENTER", "LFE",
-          "BACK_LEFT", "BACK_RIGHT", "SIDE_LEFT", "SIDE_RIGHT"],
-    _ => Enumerable.Range(0, channels).Select(i => $"CH_{i}").ToArray(),
-  };
+  /// <summary>
+  /// Conventional channel names per layout (FFmpeg default layouts, mono → 22.2);
+  /// unmapped counts fall back to CH_0..CH_N. See <see cref="ChannelLayout"/>.
+  /// </summary>
+  public static IReadOnlyList<string> LayoutNames(int channels)
+    => ChannelLayout.DefaultNames(channels);
 
   /// <summary>
   /// Splits interleaved little-endian signed-integer PCM into per-channel mono WAV blobs.
   /// Channels are returned in the order they occur in <paramref name="interleaved"/>.
+  /// When the container carries an explicit speaker bitmap (WAVE_FORMAT_EXTENSIBLE
+  /// <c>dwChannelMask</c>, CAF channel bitmap), pass it via <paramref name="channelMask"/>
+  /// so each mono WAV is named for its real speaker; otherwise the FFmpeg default
+  /// layout for the channel count applies.
   /// </summary>
   public static IReadOnlyList<(string Name, byte[] WavBlob)> SplitInterleavedPcm(
-      byte[] interleaved, int channels, int sampleRate, int bitsPerSample) {
+      byte[] interleaved, int channels, int sampleRate, int bitsPerSample, ulong? channelMask = null) {
     if (channels <= 1)
       return [("MONO", ToWavBlob(interleaved, channels: 1, sampleRate, bitsPerSample, formatCode: 1))];
 
@@ -36,7 +34,9 @@ public static class PcmCodec {
       throw new ArgumentException("Interleaved PCM length is not a multiple of frame size.");
 
     var frameCount = interleaved.Length / frameBytes;
-    var names = LayoutNames(channels);
+    var names = channelMask is { } mask
+      ? ChannelLayout.NamesFromMask(mask, channels)
+      : ChannelLayout.DefaultNames(channels);
     var result = new List<(string, byte[])>(channels);
 
     for (var c = 0; c < channels; ++c) {
