@@ -84,6 +84,7 @@
     <ProjectReference Include="..\Codecs\Codec.Vorbis\Codec.Vorbis.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Opus\Codec.Opus.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Aac\Codec.Aac.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.OkiAdpcm\Codec.OkiAdpcm.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
@@ -476,6 +477,8 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Zstd\FileFormat.Zstd.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Svx\FileFormat.Svx.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Avr\FileFormat.Avr.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Vox\FileFormat.Vox.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Gsm\FileFormat.Gsm.csproj" />
   </ItemGroup>
 
 </Project>

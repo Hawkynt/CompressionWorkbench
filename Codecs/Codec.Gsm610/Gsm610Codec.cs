@@ -57,6 +57,29 @@ public static class Gsm610Codec {
     return pcm;
   }
 
+  /// <summary>
+  /// Decodes a buffer of raw 33-byte GSM 06.10 frames (single mono stream) to 16-bit
+  /// PCM. This is the "toast"/<c>.gsm</c> on-disk layout — a bare concatenation of
+  /// frames with no container. Each frame's first byte carries the signature nibble
+  /// <c>0xD</c> in its high four bits (the magic byte ranges <c>0xD0..0xDF</c>).
+  /// </summary>
+  /// <param name="gsm">Concatenated 33-byte frames.</param>
+  public static short[] DecodeRaw(ReadOnlySpan<byte> gsm) => Decode(gsm, channels: 1);
+
+  /// <summary>
+  /// Reports whether <paramref name="gsm"/> is a whole number of 33-byte frames whose
+  /// per-frame signature nibbles are all <c>0xD</c> — the cheap structural check a
+  /// headerless <c>.gsm</c> reader uses before committing to a decode.
+  /// </summary>
+  public static bool LooksLikeRawFrames(ReadOnlySpan<byte> gsm) {
+    if (gsm.Length == 0 || gsm.Length % FrameBytes != 0)
+      return false;
+    for (var off = 0; off < gsm.Length; off += FrameBytes)
+      if ((gsm[off] & 0xF0) != 0xD0)
+        return false;
+    return true;
+  }
+
   private ref struct BitReader {
     private readonly ReadOnlySpan<byte> _buf;
     private int _bitPos;
