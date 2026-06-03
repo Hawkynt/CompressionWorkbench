@@ -86,6 +86,7 @@
     <ProjectReference Include="..\Codecs\Codec.Aac\Codec.Aac.csproj" />
     <ProjectReference Include="..\Codecs\Codec.OkiAdpcm\Codec.OkiAdpcm.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Shorten\Codec.Shorten.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Tta\Codec.Tta.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
@@ -483,6 +484,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Dsf\FileFormat.Dsf.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Dff\FileFormat.Dff.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Shn\FileFormat.Shn.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Tta\FileFormat.Tta.csproj" />
   </ItemGroup>
 
 </Project>
