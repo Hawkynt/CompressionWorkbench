@@ -32,6 +32,7 @@
     <ProjectReference Include="..\Codecs\Codec.OkiAdpcm\Codec.OkiAdpcm.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Shorten\Codec.Shorten.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Tta\Codec.Tta.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.G72x\Codec.G72x.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />

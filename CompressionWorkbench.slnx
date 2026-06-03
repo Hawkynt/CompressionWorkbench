@@ -113,6 +113,7 @@
     <Project Path="Codecs/Codec.OkiAdpcm/Codec.OkiAdpcm.csproj" />
     <Project Path="Codecs/Codec.Shorten/Codec.Shorten.csproj" />
     <Project Path="Codecs/Codec.Tta/Codec.Tta.csproj" />
+    <Project Path="Codecs/Codec.G72x/Codec.G72x.csproj" />
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />

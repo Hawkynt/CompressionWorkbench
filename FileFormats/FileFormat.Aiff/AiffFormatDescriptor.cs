@@ -11,9 +11,10 @@ namespace FileFormat.Aiff;
 /// Exposes an AIFF / AIFC file as an archive of <c>FULL.aif</c>, one <c>LEFT.wav</c>/
 /// <c>RIGHT.wav</c>/… per channel, plus <c>metadata/annotations.txt</c> and
 /// <c>metadata/markers.bin</c>. Compressed AIFC payloads are decoded to linear PCM
-/// before being split per channel (μ-law, A-law, and <c>fl32</c>/<c>fl64</c> IEEE
-/// float are supported; <c>ima4</c> and <c>GSM</c> are recognised but passed
-/// through as raw bytes in the <c>FULL.aif</c> entry only).
+/// before being split per channel (μ-law, A-law, <c>fl32</c>/<c>fl64</c> IEEE
+/// float, and <c>ima4</c> Apple/QuickTime IMA ADPCM are decoded to per-channel PCM;
+/// <c>GSM</c> is recognised but passed through as raw bytes in the <c>FULL.aif</c>
+/// entry only).
 /// </summary>
 public sealed class AiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
@@ -214,7 +215,15 @@ public sealed class AiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       bitsOut = 64;
       return BigEndianFloat64ToLeFloat64(p.SoundData);
     }
-    // ima4/GSM: not decoded (would need QuickTime-specific adpcm frame shape).
+    if (id == "ima4") {
+      // Apple/QuickTime IMA ADPCM: 34-byte packets, round-robin per channel.
+      var channels = Math.Max(1, p.NumChannels);
+      var perChannel = Codec.ImaAdpcm.ImaAdpcmCodec.DecodeQuickTime(p.SoundData, channels);
+      var monoLe = perChannel.Select(ch => ShortsToLePcm(ch)).ToList();
+      bitsOut = 16;
+      return PcmCodec.Interleave(monoLe, 16);
+    }
+    // GSM: not decoded (would need a GSM 06.10 frame decoder).
     return null;
   }
 

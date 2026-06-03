@@ -58,6 +58,62 @@ public class VocTests {
     return ms.ToArray();
   }
 
+  // Hand-crafts a legacy mono Creative 4-bit ADPCM (block type 1, codec 1) VOC.
+  // ADPCM body = 8-bit reference + nibble bytes.
+  private static byte[] MakeMonoAdpcm4Voc(byte reference, byte[] nibbleBytes) {
+    using var ms = new MemoryStream();
+    ms.Write("Creative Voice File"u8);
+    ms.WriteByte(0x1A);
+    var hdr = new byte[6];
+    BinaryPrimitives.WriteUInt16LittleEndian(hdr, 0x001A);
+    BinaryPrimitives.WriteUInt16LittleEndian(hdr.AsSpan(2), 0x010A);
+    BinaryPrimitives.WriteUInt16LittleEndian(hdr.AsSpan(4),
+      (ushort)((0x1234 + (~0x010A & 0xFFFF) + 1) & 0xFFFF));
+    ms.Write(hdr);
+
+    // Block type 1: divisor + codec(1) + [reference + nibble bytes].
+    var divisor = (byte)(256 - 1000000 / 11025);
+    var bodyLen = 2 + 1 + nibbleBytes.Length;
+    ms.WriteByte(1);
+    ms.WriteByte((byte)(bodyLen & 0xFF));
+    ms.WriteByte((byte)((bodyLen >> 8) & 0xFF));
+    ms.WriteByte((byte)((bodyLen >> 16) & 0xFF));
+    ms.WriteByte(divisor);
+    ms.WriteByte(1); // codec 1 = Creative 4-bit ADPCM
+    ms.WriteByte(reference);
+    ms.Write(nibbleBytes);
+    ms.WriteByte(0); // terminator
+    return ms.ToArray();
+  }
+
+  [Test]
+  public void VocReader_ParsesCreativeAdpcm4_KnownSamples() {
+    // Reference 200 → predictor 18432; data bytes 0x57, 0x31 (high nibble first).
+    var blob = MakeMonoAdpcm4Voc(reference: 200, [0x57, 0x31, 0x00]);
+    var parsed = new VocReader().Read(blob);
+
+    Assert.That(parsed.NumChannels, Is.EqualTo(1));
+    Assert.That(parsed.BitsPerSample, Is.EqualTo(16));
+    Assert.That(parsed.Codec, Is.EqualTo(1));
+    Assert.That(parsed.InterleavedPcm, Is.Not.Null);
+
+    var pcm = parsed.InterleavedPcm!;
+    short[] expected = [18432, 18288, 19103, 20024, 20279, 20243, 20194];
+    for (var i = 0; i < expected.Length; ++i)
+      Assert.That(BinaryPrimitives.ReadInt16LittleEndian(pcm.AsSpan(i * 2)),
+        Is.EqualTo(expected[i]), $"sample {i}");
+  }
+
+  [Test]
+  public void VocDescriptor_CreativeAdpcm4_SurfacesMonoWav() {
+    var blob = MakeMonoAdpcm4Voc(reference: 128, [0x12, 0x34, 0x56]);
+    using var ms = new MemoryStream(blob);
+    var entries = new VocFormatDescriptor().List(ms, null);
+
+    Assert.That(entries.Any(e => e.Name == "FULL.voc"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "MONO.wav" && e.Kind == "Channel"), Is.True);
+  }
+
   [Test]
   public void VocReader_ParsesBlock9Stereo() {
     var blob = MakeStereoVoc();

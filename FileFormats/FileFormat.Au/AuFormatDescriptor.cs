@@ -9,7 +9,8 @@ namespace FileFormat.Au;
 
 /// <summary>
 /// Exposes a Sun/NeXT <c>.au</c> / <c>.snd</c> file as an archive of
-/// <c>FULL.au</c>, one WAV per channel (after decoding μ-law/A-law/PCM), and
+/// <c>FULL.au</c>, one WAV per channel (after decoding μ-law/A-law/PCM and
+/// G.721 (G.726 @ 32 kbit/s) ADPCM), and
 /// a <c>metadata.ini</c> carrying the encoding type, sample rate and any
 /// annotation string.
 /// </summary>
@@ -168,7 +169,11 @@ public sealed class AuFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
       case 3: return (ConvertBeToLe(p.SoundData, 2), 16);       // 16-bit BE PCM
       case 4: return (ConvertBeToLe(p.SoundData, 3), 24);       // 24-bit BE PCM
       case 5: return (ConvertBeToLe(p.SoundData, 4), 32);       // 32-bit BE PCM
-      default: return (null, 0);                                 // float/G.721: not decoded
+      case 23: { // G.721 (G.726 @ 32 kbit/s) 4-bit ADPCM
+        var decoded = Codec.G72x.G72xCodec.DecodeG721(p.SoundData);
+        return (ShortsToLePcm(decoded), 16);
+      }
+      default: return (null, 0);                                 // float: not decoded
     }
   }
 

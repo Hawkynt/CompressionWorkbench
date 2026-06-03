@@ -11,6 +11,7 @@
     <ProjectReference Include="..\FileFormat.Wav\FileFormat.Wav.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.MuLaw\Codec.MuLaw.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.ALaw\Codec.ALaw.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.G72x\Codec.G72x.csproj" />
   </ItemGroup>
 
 </Project>

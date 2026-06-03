@@ -105,6 +105,57 @@ public class CodecTests {
     Assert.That(perChannel[1].Length, Is.EqualTo(505));
   }
 
+  // ── QuickTime IMA ADPCM ('ima4') ─────────────────────────────────────────
+
+  // Builds one 34-byte QuickTime IMA packet: 2-byte BE preamble + 32 data bytes.
+  private static byte[] QtPacket(short predictor, int stepIndex, byte dataByte) {
+    var pkt = new byte[34];
+    var preamble = (ushort)((predictor & 0xFF80) | (stepIndex & 0x7F));
+    pkt[0] = (byte)(preamble >> 8);
+    pkt[1] = (byte)(preamble & 0xFF);
+    for (var i = 0; i < 32; ++i) pkt[2 + i] = dataByte;
+    return pkt;
+  }
+
+  [Test]
+  public void ImaAdpcmQuickTime_DecodesOneMonoPacket_KnownValues() {
+    // Preamble 0x0000 → predictor 0, step index 0. Each data byte 0x21 → low nibble 1,
+    // high nibble 2. Hand-walked first eight samples (low nibble first per byte).
+    var packet = QtPacket(predictor: 0, stepIndex: 0, dataByte: 0x21);
+    var perChannel = ImaAdpcmCodec.DecodeQuickTime(packet, channels: 1);
+
+    Assert.That(perChannel.Length, Is.EqualTo(1));
+    Assert.That(perChannel[0].Length, Is.EqualTo(64));
+    Assert.That(perChannel[0][..8], Is.EqualTo(new short[] { 1, 4, 5, 8, 9, 12, 13, 16 }));
+  }
+
+  [Test]
+  public void ImaAdpcmQuickTime_HonoursInitialPredictorAndIndex() {
+    // Preamble 0x0102 → predictor 256, step index 2. Data byte 0x08 → low nibble 8
+    // (sign-negative, magnitude 0), high nibble 0. First samples decay toward 256.
+    var packet = QtPacket(predictor: 256, stepIndex: 2, dataByte: 0x08);
+    var perChannel = ImaAdpcmCodec.DecodeQuickTime(packet, channels: 1);
+
+    Assert.That(perChannel[0][..4], Is.EqualTo(new short[] { 255, 256, 256, 256 }));
+  }
+
+  [Test]
+  public void ImaAdpcmQuickTime_RoundRobinsPacketsAcrossChannels() {
+    // Two packets, two channels: packet 0 → ch0, packet 1 → ch1.
+    var ch0 = QtPacket(predictor: 0, stepIndex: 0, dataByte: 0x21);
+    var ch1 = QtPacket(predictor: 0, stepIndex: 0, dataByte: 0x08);
+    var stream = new byte[68];
+    ch0.CopyTo(stream, 0);
+    ch1.CopyTo(stream, 34);
+
+    var perChannel = ImaAdpcmCodec.DecodeQuickTime(stream, channels: 2);
+    Assert.That(perChannel.Length, Is.EqualTo(2));
+    Assert.That(perChannel[0].Length, Is.EqualTo(64));
+    Assert.That(perChannel[1].Length, Is.EqualTo(64));
+    Assert.That(perChannel[0][..4], Is.EqualTo(new short[] { 1, 4, 5, 8 }));     // ch0
+    Assert.That(perChannel[1][..4], Is.EqualTo(new short[] { 0, 0, 0, 0 }));      // ch1 (nibble 8, mag 0)
+  }
+
   // ── GSM 06.10 ──────────────────────────────────────────────────────────
 
   [Test]
