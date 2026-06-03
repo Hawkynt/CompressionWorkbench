@@ -1,14 +1,13 @@
 name: Release
 
-# Tag pushes don't trigger ci.yml (branch-scoped), so this workflow invokes
-# ci.yml explicitly and gates the build on its success.
+# Stable release — MANUAL dispatch only. Invokes ci.yml explicitly, computes the
+# single coordinated version (version.pl, from Directory.Build.props + commit
+# count), publishes, and tags v<version>.
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       reason:
-        description: 'Manual release trigger'
+        description: 'Why are you cutting this release? (optional, for the audit log)'
         required: false
 
 permissions:
@@ -39,57 +38,51 @@ jobs:
     with:
       version: ${{ needs.version.outputs.version }}
       release-kind: release
-      changelog-flag: --release ${{ github.ref_name }}
+      changelog-flag: --release v${{ needs.version.outputs.version }}
 
   publish:
     needs: [version, build]
-    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - uses: actions/download-artifact@v4
         with:
           name: ${{ needs.build.outputs.artifact-name }}
           path: dist
+
+      # Notes = a short curated header + the commit-prefix changelog (+ - * # !),
+      # NOT GitHub's PR-based "What's Changed".
+      - name: Compose release notes
+        env:
+          V: ${{ needs.version.outputs.version }}
+        run: |
+          node .github/workflows/scripts/update-changelog.mjs --release "v$V" --notes CHANGES.md
+          echo "## CompressionWorkbench v$V" > RELEASE_NOTES.md
+          cat >> RELEASE_NOTES.md <<'EOF'
+
+          Self-contained **Windows UI**, **Windows CLI** (`cwb.exe`) and **Linux CLI**
+          (`cwb`) builds, plus the version-locked `Hawkynt.*` NuGet packages
+          (Compression.Core / FileFormats.Audio / Archives / FileSystems).
+          EOF
+          echo >> RELEASE_NOTES.md
+          cat CHANGES.md >> RELEASE_NOTES.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version.outputs.version }}
           name: v${{ needs.version.outputs.version }}
-          body: |
-            ## CompressionWorkbench v${{ needs.version.outputs.version }}
-
-            ### Downloads
-            - **Windows UI** — archive browser, binary-analysis wizard, Explorer shell extension
-            - **Windows CLI** — `cwb.exe` — command-line archive tool with SFX support
-            - **Linux CLI** — `cwb` — command-line archive tool with SFX support
-
-            All executables are fully self-contained single files — no runtime installation needed.
-
-            ### NuGet packages
-            All published as single-responsibility packages alongside the
-            sibling `Hawkynt.FileFormats.Images`. All version-locked 1:1.
-            - `Hawkynt.Compression.Core` — pure-managed compression primitives
-              (BitIO + dictionary / entropy coders + transforms + hashing).
-              Bundles `Compression.Registry` for `IBuildingBlock` discovery.
-            - `Hawkynt.FileFormats.Audio` — PCM / FLAC / WAV / AIFF / AU /
-              MP3 / AAC / Vorbis / Opus / MIDI / OGG / tracker / chiptune /
-              game-audio bundles.
-            - `Hawkynt.FileFormats.Archives` — gzip / bzip2 / xz / zstd /
-              brotli / lz4 / snappy / lzma + zip / tar / 7z / rar / cab /
-              wim / cpio / xar + apk / ipa / deb / rpm / nupkg + Office
-              Open XML / ODF / web archives + game / engine / installer
-              packages.
-            - `Hawkynt.FileFormats.FileSystems` — FAT / exFAT / NTFS /
-              ext / Btrfs / XFS / HFS+ / APFS / SquashFS / ISO9660 / UDF
-              + VHD / VHDX / VMDK / VDI / QCOW2 / DMG + retro-disk formats.
           files: dist/*.zip
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
 
   publish-nuget:
     name: Publish NuGet
     needs: [version, build]
-    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       # The .nupkg files were packed inside `_build.yml` and uploaded as the

@@ -115,7 +115,7 @@ jobs:
         run: >
           dotnet test Compression.Tests
           --configuration Release --no-build
-          --filter "Category!=EndToEnd&Category!=OsIntegration&Category!=ExternalInterop&Category!=PolyglotInterop"
+          --filter "Category!=EndToEnd&Category!=OsIntegration&Category!=ExternalInterop&Category!=PolyglotInterop&Category!=Performance"
           --logger "trx;LogFileName=core-tests.trx"
 
       # Interop tools for E2E tests.
@@ -163,6 +163,16 @@ jobs:
           --configuration Release --no-build
           --filter "Category=PolyglotInterop"
           --logger "trx;LogFileName=polyglot-tests.trx"
+
+      # Wall-clock performance tests are advisory — a slow shared runner must not
+      # fail the build on a timing assertion.
+      - name: Performance tests
+        continue-on-error: true
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release --no-build
+          --filter "Category=Performance"
+          --logger "trx;LogFileName=perf-tests.trx"
 
       - name: Upload test results
         if: always()
@@ -235,7 +245,7 @@ jobs:
         run: >
           dotnet test Compression.Tests
           --configuration Release
-          --filter "Category!=EndToEnd&Category!=OsIntegration&Category!=ExternalInterop&Category!=PolyglotInterop"
+          --filter "Category!=EndToEnd&Category!=OsIntegration&Category!=ExternalInterop&Category!=PolyglotInterop&Category!=Performance"
           --collect:"XPlat Code Coverage"
           --results-directory ./coverage
 

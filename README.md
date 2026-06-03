@@ -1,17 +1,25 @@
 # CompressionWorkbench
 
+[![License](https://img.shields.io/github/license/Hawkynt/CompressionWorkbench)](https://github.com/Hawkynt/CompressionWorkbench/blob/main/LICENSE)
+[![Language](https://img.shields.io/github/languages/top/Hawkynt/CompressionWorkbench?color=8957D5)](https://github.com/Hawkynt/CompressionWorkbench)
+
 [![CI](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/ci.yml)
-[![Release](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/release.yml/badge.svg)](https://github.com/Hawkynt/CompressionWorkbench/actions/workflows/release.yml)
-[![Latest release](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench?label=release&sort=semver)](https://github.com/Hawkynt/CompressionWorkbench/releases/latest)
-[![Latest nightly](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench?include_prereleases&label=nightly&sort=date)](https://github.com/Hawkynt/CompressionWorkbench/releases?q=prerelease%3Atrue)
+![Last Commit](https://img.shields.io/github/last-commit/Hawkynt/CompressionWorkbench?branch=main)
+![Activity](https://img.shields.io/github/commit-activity/m/Hawkynt/CompressionWorkbench)
+
+[![Stars](https://img.shields.io/github/stars/Hawkynt/CompressionWorkbench?color=FFD700)](https://github.com/Hawkynt/CompressionWorkbench/stargazers)
+[![Forks](https://img.shields.io/github/forks/Hawkynt/CompressionWorkbench?color=008080)](https://github.com/Hawkynt/CompressionWorkbench/network/members)
+[![Issues](https://img.shields.io/github/issues/Hawkynt/CompressionWorkbench)](https://github.com/Hawkynt/CompressionWorkbench/issues)
+![Code Size](https://img.shields.io/github/languages/code-size/Hawkynt/CompressionWorkbench?color=4CAF50)
+![Repo Size](https://img.shields.io/github/repo-size/Hawkynt/CompressionWorkbench?color=FF9800)
+
+[![Release](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench?sort=semver)](https://github.com/Hawkynt/CompressionWorkbench/releases/latest)
+[![Nightly](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench?include_prereleases=true&sort=date&label=nightly&color=FF9800)](https://github.com/Hawkynt/CompressionWorkbench/releases)
+[![Downloads](https://img.shields.io/github/downloads/Hawkynt/CompressionWorkbench/total)](https://github.com/Hawkynt/CompressionWorkbench/releases)
 [![NuGet Core](https://img.shields.io/nuget/v/Hawkynt.Compression.Core?label=Core)](https://www.nuget.org/packages/Hawkynt.Compression.Core/)
 [![NuGet Audio](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Audio?label=Audio)](https://www.nuget.org/packages/Hawkynt.FileFormats.Audio/)
 [![NuGet Archives](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Archives?label=Archives)](https://www.nuget.org/packages/Hawkynt.FileFormats.Archives/)
 [![NuGet FileSystems](https://img.shields.io/nuget/v/Hawkynt.FileFormats.FileSystems?label=FileSystems)](https://www.nuget.org/packages/Hawkynt.FileFormats.FileSystems/)
-![License](https://img.shields.io/github/license/Hawkynt/CompressionWorkbench)
-![Language](https://img.shields.io/github/languages/top/Hawkynt/CompressionWorkbench?color=purple)
-[![Last Commit](https://img.shields.io/github/last-commit/Hawkynt/CompressionWorkbench?branch=main)![Activity](https://img.shields.io/github/commit-activity/y/Hawkynt/CompressionWorkbench?branch=main)](https://github.com/Hawkynt/CompressionWorkbench/commits/main)
-[![Downloads](https://img.shields.io/github/downloads/Hawkynt/CompressionWorkbench/total)](https://github.com/Hawkynt/CompressionWorkbench/releases)
 
 > A fully clean-room C# implementation of compression primitives, archive file formats, and analysis tools. Every algorithm is implemented from scratch using no external compression source code — only our own primitives.
 
@@ -151,7 +159,7 @@ Formats that cannot produce multiple addressable entries stay in `FormatCategory
 ## Solution Structure
 
 The solution uses the `.slnx` XML format. Core / library / tooling projects sit at the
-repository root; the ~360 individual format projects are grouped into three subdirectories
+repository root; the individual format projects are grouped into three subdirectories
 by domain. Three meta-package projects bundle them into NuGet drops.
 
 ```
@@ -254,7 +262,7 @@ cohesive surface without any one dragging in the others' transitive baggage.
   / Entropy / Transform / Context-Mixing families) with reference papers and known-edge-case
   notes. The canonical "how / when / why" for picking a compression primitive.
 - **[Hawkynt.FileFormats.Archives/README.md](Hawkynt.FileFormats.Archives/README.md)** — the
-  ~190 archive / stream / pseudo-archive descriptors with R / WORM / R/W state per format.
+  the archive / stream / pseudo-archive descriptors with R / WORM / R/W state per format.
 - **[Hawkynt.FileFormats.Audio/README.md](Hawkynt.FileFormats.Audio/README.md)** — every codec
   + container with its production / partial / framing-only state honestly documented.
 - **[Hawkynt.FileFormats.FileSystems/README.md](Hawkynt.FileFormats.FileSystems/README.md)** —
@@ -405,7 +413,7 @@ Everything the UI exposes is available as a .NET library under `Compression.Anal
 
 Two complementary flows for reverse-engineering unknown compression tools and file formats.
 
-**Black-box tool probing** runs the target tool with ~40 controlled probe inputs (empty, single byte, incrementing patterns, text, random data, various sizes 0–64 KB), cross-correlates all outputs, and reports: magic bytes, size-field offsets (LE/BE, 2/4/8 byte), the compression algorithm (trial decompression against all 49 building blocks), filename storage (UTF-8 / UTF-16), determinism, payload entropy.
+**Black-box tool probing** runs the target tool with a battery of controlled probe inputs (empty, single byte, incrementing patterns, text, random data, various sizes 0–64 KB), cross-correlates all outputs, and reports: magic bytes, size-field offsets (LE/BE, 2/4/8 byte), the compression algorithm (trial decompression against all building blocks), filename storage (UTF-8 / UTF-16), determinism, payload entropy.
 
 ```bash
 cwb reverse-engineer MyTool.exe "{input} {output}"
