@@ -5,14 +5,14 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Apfs;
 
 public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
+    IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "Apfs";
   public string DisplayName => "APFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
   public string DefaultExtension => ".apfs";
   public IReadOnlyList<string> Extensions => [".apfs"];
@@ -23,15 +23,22 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
-  /// APFS container image — WORM. The writer emits real NXSB/APSB
-  /// superblocks, container/volume object maps, and a populated FS-tree
-  /// B-tree with inode + drec + file_extent records under Fletcher-64
-  /// checksums. True in-flight Add/Remove would require B-tree split/merge,
-  /// xid-keyed object map updates, checkpoint advance, spaceman bitmap
-  /// allocation, and per-block Fletcher-64 recomputation — multi-week work.
-  /// Per project policy, WORM = create only; no in-flight modification.
+  /// APFS container image. The writer emits real NXSB/APSB superblocks,
+  /// container/volume object maps, and a populated FS-tree B-tree with inode +
+  /// drec + file_extent records under Fletcher-64 checksums. In-place mutation
+  /// supports full-scope Add / Remove: multi-component nested paths, FS-tree
+  /// and OMAP B-tree splits, arbitrary-depth tree height growth, and on-the-fly
+  /// directory inode synthesis for missing path components. The mutation path
+  /// advances the transaction id, rebuilds every touched B-tree top-down with
+  /// valid Fletcher-64 on every node, tail-allocates new physical blocks for
+  /// node splits and file data (mirroring the writer's spaceman-less layout),
+  /// and zeroes data blocks of removed files. <see cref="ApfsStructuralValidator"/>
+  /// runs a paranoid post-mutation cross-check (key ordering, checksum, xid
+  /// monotonicity, DIR_REC↔INODE↔FILE_EXTENT linkage). Genuinely-out-of-scope:
+  /// snapshots, encryption / FileVault, fusion / tiered storage, sparse clones.
   /// </summary>
-  public string Description => "Apple File System container image (WORM)";
+  public string Description =>
+    "Apple File System container image (full-scope in-place mutation: omap + FS-tree splits, nested paths, tree height growth; structural validator).";
 
   // WORM write constraints.
   public long? MaxTotalArchiveSize => null;
@@ -109,17 +116,34 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Defragment(Stream archive, DefragOptions options)
     => DefragRebuilder.Rebuild(archive, options, ReadEntries, files => BuildImage(files, archive.Length));
 
-  // ── IArchiveModifiable (rebuild-based add / replace / remove) ──────────
-  // APFS in-place B-tree mutation needs node split/merge + omap/checkpoint/
-  // spaceman advance; instead we read every file and rebuild a fresh image with
-  // the (Fletcher-64-valid, B-tree-growing) writer, the same path the
-  // defragmentor uses.
+  /// <summary>
+  /// Adds files to the volume in place via <see cref="ApfsModifier"/>. Supports
+  /// nested paths (synthesises missing intermediate directory inodes), arbitrary
+  /// FS-tree / OMAP B-tree splits with tree height growth, contiguous tail
+  /// allocation for split nodes and file data, per-block Fletcher-64 recompute,
+  /// and xid advance. Genuinely-out-of-scope features (snapshots, encryption,
+  /// fusion, sparse clones) still throw <see cref="NotSupportedException"/>.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
+      ApfsModifier.Add(archive, name, data);
+  }
 
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs, ReadEntries, files => BuildImage(files, archive.Length));
-
-  public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames, ReadEntries, files => BuildImage(files, archive.Length));
+  /// <summary>
+  /// Removes named entries from the volume in place. Records for each removed entry
+  /// (DIR_REC, INODE, FILE_EXTENT) are deleted from the FS-tree, the tree is
+  /// rebuilt, the file's data blocks are zeroed (no forensic recovery), per-block
+  /// Fletcher-64 is recomputed, and the transaction id advanced. Same full-scope
+  /// support as <see cref="Add"/>: arbitrary depth, splits, multi-component paths.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames)
+      ApfsModifier.Remove(archive, name);
+  }
 
   private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
     var r = new ApfsReader(stream, leaveOpen: true);

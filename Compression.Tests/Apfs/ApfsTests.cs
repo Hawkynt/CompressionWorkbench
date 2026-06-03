@@ -191,23 +191,20 @@ public class ApfsTests {
   }
 
   /// <summary>
-  /// Lock the APFS capability surface at WORM. The writer emits real
-  /// NXSB/APSB superblocks, container/volume object maps, and a populated
-  /// FS-tree B-tree under Fletcher-64 checksums. True in-flight Add/Remove
-  /// requires B-tree split/merge, xid-keyed object map updates, checkpoint
-  /// advance, spaceman bitmap allocation, and per-block Fletcher-64
-  /// recomputation — multi-week work. Per the project rule "never advertise
-  /// a capability the writer can't actually deliver", this test fails any
-  /// drive-by upgrade that re-adds <c>IArchiveModifiable</c> without the
-  /// underlying B-tree mutation work.
+  /// Lock the APFS capability surface at full-scope in-place mutation. The descriptor
+  /// advertises <see cref="Compression.Registry.IArchiveModifiable"/> and
+  /// <c>CanModify</c> because the modifier carries out real on-disk record insertion
+  /// / deletion against the FS-tree, including arbitrary-depth nested paths, FS-tree
+  /// and OMAP B-tree splits with tree-height growth, xid advance, per-block
+  /// Fletcher-64 recompute, and zeroing of removed files' data blocks. See
+  /// <see cref="ApfsFullScopeMutationTests"/> for the split + nested-path coverage.
   /// </summary>
   [Test, Category("HappyPath")]
-  public void Descriptor_IsHonestlyRebuildBased() {
+  public void Descriptor_AdvertisesFullScopeInPlaceModification() {
     var d = new ApfsFormatDescriptor();
-    Assert.That(d, Is.Not.InstanceOf<Compression.Registry.IArchiveModifiable>(),
-      "APFS must not advertise IArchiveModifiable until B-tree split/merge, xid-keyed omap updates, and Fletcher-64 recomputation are implemented.");
-    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.False,
-      "APFS must not flag CanModify while WORM-only.");
+    Assert.That(d, Is.InstanceOf<Compression.Registry.IArchiveModifiable>(),
+      "APFS supports full-scope in-place mutation with B-tree splits and nested paths.");
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.True);
     Assert.That(d, Is.InstanceOf<Compression.Registry.IArchiveCreatable>());
     Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
     Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanList), Is.True);
