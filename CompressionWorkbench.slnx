@@ -111,6 +111,7 @@
     <Project Path="Codecs/Codec.Midi/Codec.Midi.csproj" />
     <Project Path="Codecs/Codec.Pcm/Codec.Pcm.csproj" />
     <Project Path="Codecs/Codec.OkiAdpcm/Codec.OkiAdpcm.csproj" />
+    <Project Path="Codecs/Codec.Shorten/Codec.Shorten.csproj" />
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />
@@ -442,6 +443,7 @@
     <Project Path="FileFormats/FileFormat.Gsm/FileFormat.Gsm.csproj" />
     <Project Path="FileFormats/FileFormat.Dsf/FileFormat.Dsf.csproj" />
     <Project Path="FileFormats/FileFormat.Dff/FileFormat.Dff.csproj" />
+    <Project Path="FileFormats/FileFormat.Shn/FileFormat.Shn.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />
