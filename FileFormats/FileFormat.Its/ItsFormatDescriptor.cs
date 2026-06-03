@@ -1,0 +1,90 @@
+#pragma warning disable CS1591
+using System.Text;
+using Compression.Registry;
+
+namespace FileFormat.Its;
+
+/// <summary>
+/// Exposes a standalone Impulse Tracker sample (<c>.its</c>, 80-byte <c>IMPS</c> header) as
+/// a pseudo-archive of <c>FULL.its</c> (Kind <c>Container</c>), a <c>metadata.ini</c>
+/// (Kind <c>Tag</c>) and the single decoded sample as a playable WAV (Kind <c>Sample</c>)
+/// at the header's C5 speed. IT215-compressed samples (flags bit&#160;3) are not decoded;
+/// the view falls back to FULL-only with a metadata note.
+/// </summary>
+public sealed class ItsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+
+  public string Id => "Its";
+  public string DisplayName => "Impulse Tracker Sample";
+  public FormatCategory Category => FormatCategory.Audio;
+  public FormatCapabilities Capabilities =>
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries;
+  public string DefaultExtension => ".its";
+  public IReadOnlyList<string> Extensions => [".its"];
+  public IReadOnlyList<string> CompoundExtensions => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    new("IMPS"u8.ToArray(), Offset: 0, Confidence: 0.95),
+  ];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Classic;
+  public string Description => "Impulse Tracker sample; full file + single playable WAV at C5 speed.";
+
+  public List<ArchiveEntryInfo> List(Stream stream, string? password)
+    => AudioPseudoArchive.List(BuildEntries(stream));
+
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+    => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
+
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
+    => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
+
+  private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {
+    using var ms = new MemoryStream();
+    stream.CopyTo(ms);
+    var blob = ms.ToArray();
+    return Parse(blob);
+  }
+
+  private static IReadOnlyList<AudioPseudoArchive.Entry> Parse(byte[] blob) {
+    var entries = new List<AudioPseudoArchive.Entry> {
+      new("FULL.its", "Container", blob),
+    };
+
+    var note = "ok";
+    var rate = ItsSampleDecoder.FallbackSampleRate;
+    var bits = 8;
+    try {
+      if (ItsSampleDecoder.TryParse(blob, 0, out var s)) {
+        rate = s.SampleRate;
+        bits = s.Bits;
+        if (s.Compressed) {
+          note = "compressed (IT215 packing not decoded) — FULL only";
+        } else {
+          var wav = ItsSampleDecoder.BuildWav(blob, s);
+          if (wav != null) {
+            var label = string.IsNullOrWhiteSpace(s.Name)
+              ? (string.IsNullOrWhiteSpace(s.DosName) ? "sample" : ItsSampleDecoder.SanitizeFileName(s.DosName))
+              : ItsSampleDecoder.SanitizeFileName(s.Name);
+            entries.Add(new($"samples/01_{label}.wav", "Sample", wav));
+          } else {
+            note = "no usable sample data — FULL only";
+          }
+        }
+      } else {
+        note = "no valid IMPS header — FULL only";
+      }
+    } catch {
+      note = "parse error — FULL only";
+    }
+
+    var info = new StringBuilder();
+    info.AppendLine("format=IMPS");
+    info.AppendLine($"sample_rate={rate}");
+    info.AppendLine($"bits={bits}");
+    info.AppendLine($"status={note}");
+    entries.Insert(1, new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));
+
+    return entries;
+  }
+}
