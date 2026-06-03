@@ -27,10 +27,11 @@ namespace FileSystem.ReiserFs;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Writes a minimal but SPEC-COMPLIANT ReiserFS v3.6 filesystem image. Single
-/// leaf block containing root SD + root DIRENTRY + per-file (SD + DIRECT)
-/// items. Layout matches what reiserfsprogs' make_sure_root_dir_exists +
-/// reiserfs_add_entry would produce.
+/// Writes a SPEC-COMPLIANT ReiserFS v3.6 filesystem image. Multi-leaf S+tree
+/// with internal pages, R5-hashed dirents, DIRECT items for small file bodies
+/// and INDIRECT items (block-pointer arrays referencing dedicated data blocks
+/// laid out past the tree) for large bodies. Layout matches what reiserfsprogs'
+/// make_sure_root_dir_exists + reiserfs_add_entry would produce.
 /// </summary>
 /// <remarks>
 /// Kernel-reference offsets inside the 65536-byte-aligned superblock:
@@ -84,6 +85,7 @@ public sealed class ReiserFsWriter {
   private const uint V1SdUniqueness = 0u;
   private const uint V1DirentryUniqueness = 500u;
   private const uint V1DirectUniqueness = 0xFFFFFFFFu;
+  private const uint V1IndirectUniqueness = 0xFFFFFFFEu;
 
   // Type codes embedded in offset_v2 (top 4 bits) for KEY_FORMAT_2.
   private const ulong TypeStatDataV2 = 0UL << 60;     // type=0
@@ -127,7 +129,13 @@ public sealed class ReiserFsWriter {
     // Materialise every leaf item, sorted by reiserfs key (comp_keys). Large
     // directory items are already split across DIRENTRY-item boundaries by
     // BuildLeafItems so that no single item exceeds the leaf payload budget.
-    var items = BuildLeafItems(tree);
+    // Large file bodies are emitted as INDIRECT items: one __le32 block pointer
+    // per 4 KB data block (last block zero-padded if partial). Pointers are
+    // placeholders here and patched after PackLeaves once the data-block region
+    // is sized.
+    var indirectPlaceholders = new List<IndirectPlaceholder>();
+    var dataBlocksTotal = 0;
+    var items = BuildLeafItems(tree, indirectPlaceholders, ref dataBlocksTotal);
     items.Sort(static (a, b) => CompareKeys(a, b));
 
     // Pack the sorted items into one or more formatted LEAF blocks. When more
@@ -142,7 +150,7 @@ public sealed class ReiserFsWriter {
     // BODY items (DIRENTRY for directories, DIRECT/INDIRECT for files); the SD
     // item itself does not count. Objects whose body fits in a single leaf keep
     // blocks = 1, matching mkreiserfs' freshly-created root directory.
-    PatchStatDataBlockCounts(leaves);
+    PatchStatDataBlockCounts(leaves, indirectPlaceholders);
 
     // Layout (reiserfsprogs journal.c — journal MUST start at
     // (REISERFS_DISK_OFFSET_IN_BYTES / blocksize) + 2 = 16 + 2 = 18):
@@ -152,6 +160,7 @@ public sealed class ReiserFsWriter {
     //   blocks 18..8209  = journal body (8192 blocks = JOURNAL_DEFAULT_SIZE)
     //   block 8210       = journal header
     //   block 8211..     = S+tree blocks (leaves, then internal block if any)
+    //   block 8211+T..   = data blocks for INDIRECT file bodies
     // With a single leaf the tree is just that leaf (tree_height = 2). With
     // several leaves they occupy 8211..8211+L-1 and the internal block sits at
     // 8211+L (tree_height = 3, root_block = internal block).
@@ -167,12 +176,26 @@ public sealed class ReiserFsWriter {
     var rootBlockNum = hasInternal ? internalBlockNum : firstTreeBlock;
     var treeHeight = (ushort)(hasInternal ? 3 : 2);
     var lastTreeBlock = hasInternal ? internalBlockNum : firstTreeBlock + leafCount - 1;
-    var totalBlocks = lastTreeBlock + 1;
+    // Data blocks for INDIRECT-item file bodies live immediately AFTER the tree.
+    // Each INDIRECT placeholder reserved its block-pointer count; the global
+    // running counter dataBlocksTotal sums them.
+    var firstDataBlock = lastTreeBlock + 1;
+    var lastDataBlock = firstDataBlock + dataBlocksTotal - 1;
+    var lastUsedBlock = dataBlocksTotal > 0 ? lastDataBlock : lastTreeBlock;
+    var totalBlocks = lastUsedBlock + 1;
     var imageSize = totalBlocks * BlockSize;
     var image = new byte[imageSize];
 
-    // For free-block accounting: blocks 0..lastTreeBlock are all in use.
-    var usedBlocks = lastTreeBlock + 1;
+    // Resolve every INDIRECT placeholder's block-pointer array now that the
+    // data-block region's absolute start is known. Bodies are patched in-place
+    // inside the existing LeafItem.Body byte arrays (which the leaf serialiser
+    // copies into the leaf block as-is), and the actual file bytes are written
+    // into the dedicated data blocks.
+    if (dataBlocksTotal > 0)
+      ResolveIndirectPlaceholders(indirectPlaceholders, image, firstDataBlock);
+
+    // For free-block accounting: blocks 0..lastUsedBlock are all in use.
+    var usedBlocks = lastUsedBlock + 1;
     var freeBlocks = totalBlocks - usedBlocks;
 
     // ── Superblock ──────────────────────────────────────────────────────────
@@ -257,8 +280,8 @@ public sealed class ReiserFsWriter {
     // Even within the last byte that contains valid bits, the bits beyond
     // s_block_count must be set to 1.
     var bmap = image.AsSpan(17 * BlockSize, BlockSize);
-    // Mark blocks 0..lastTreeBlock used (boot + sb + bitmap + journal + tree).
-    for (var b = 0; b <= lastTreeBlock; b++)
+    // Mark blocks 0..lastUsedBlock used (boot + sb + bitmap + journal + tree + data).
+    for (var b = 0; b <= lastUsedBlock; b++)
       bmap[b >> 3] |= (byte)(1 << (b & 7));
     // Tail-fill: from totalBlocks bit through end of bitmap block, every bit
     // must be 1. Set the remainder of the partial last byte.
@@ -291,9 +314,9 @@ public sealed class ReiserFsWriter {
     //
     // Per fsck/check_tree.c:bad_pair the per-object items must appear in
     // (dir_id, objectid, offset, type) ascending order — for a directory that
-    // is SD (offset 0) then DIRENTRY (offset 1); for a file SD then DIRECT.
-    // PackLeaves already split the global sorted item list onto leaves keeping
-    // that order; here we just serialise each leaf into its block.
+    // is SD (offset 0) then DIRENTRY (offset 1); for a file SD then DIRECT or
+    // INDIRECT. PackLeaves already split the global sorted item list onto
+    // leaves keeping that order; here we just serialise each leaf into its block.
     for (var li = 0; li < leafCount; li++) {
       var leafItems = leaves[li];
       var blockNum = firstTreeBlock + li;
@@ -419,7 +442,8 @@ public sealed class ReiserFsWriter {
   /// greedy first-fit: items are appended to the current leaf until the next
   /// one would overflow the leaf payload (block minus block_head, accounting
   /// for each item's item_head). A single item never spans leaves — large
-  /// directory items were already split on entry boundaries by BuildLeafItems.
+  /// directory items were already split on entry boundaries by BuildLeafItems,
+  /// and large file bodies were split into INDIRECT block-pointer arrays.
   /// </summary>
   private static List<List<LeafItem>> PackLeaves(List<LeafItem> items) {
     // Usable payload per leaf = block - block_head; each item costs its body
@@ -433,7 +457,7 @@ public sealed class ReiserFsWriter {
       if (cost > leafPayload)
         throw new InvalidOperationException(
           $"ReiserFsWriter: single item of {it.Body.Length} bytes exceeds the leaf payload; " +
-          "indirect items for large file bodies are not implemented.");
+          "INDIRECT-item splitting must have failed.");
       if (current.Count > 0 && used + cost > leafPayload) {
         leaves.Add(current);
         current = [];
@@ -458,18 +482,18 @@ public sealed class ReiserFsWriter {
   /// fixed. ReiserFS records sd_blocks in 512-byte sectors and computes it
   /// differently per object type (matching reiserfsck vpf-10680 / vpf-10690):
   /// <list type="bullet">
-  ///   <item>Regular files store tails (DIRECT items) inside shared formatted
+  ///   <item>Regular DIRECT-only files store tails inside shared formatted
   ///   leaves; each leaf that holds a piece of the body is charged one whole
   ///   filesystem block, i.e. <c>distinctLeaves × (blocksize / 512)</c>.</item>
+  ///   <item>Regular INDIRECT files have dedicated data blocks (one per block
+  ///   pointer) and are charged <c>blockCount × (blocksize / 512)</c>.</item>
   ///   <item>Directories charge their on-disk directory-item byte count rounded
   ///   up to 512-byte sectors, <c>ceil(totalDirEntryBytes / 512)</c>.</item>
   /// </list>
   /// Objects with no body item (empty files) get 0.
   /// </summary>
-  private static void PatchStatDataBlockCounts(List<List<LeafItem>> leaves) {
-    // Per object key: the SD body handle, the set of distinct leaves its DIRECT/
-    // INDIRECT items occupy, the total DIRENTRY byte count, and whether the
-    // object is a directory.
+  private static void PatchStatDataBlockCounts(
+    List<List<LeafItem>> leaves, List<IndirectPlaceholder> indirectPlaceholders) {
     var sdBodies = new Dictionary<(uint, uint), byte[]>();
     var fileLeaves = new Dictionary<(uint, uint), HashSet<int>>();
     var dirBytes = new Dictionary<(uint, uint), int>();
@@ -492,15 +516,29 @@ public sealed class ReiserFsWriter {
       }
     }
 
+    // INDIRECT-item file bodies live in dedicated data blocks outside the tree.
+    // Each placeholder contributes BlockCount * (BlockSize/512) sectors to its
+    // owning file's sd_blocks (one whole filesystem block per pointer).
+    var indirectSectors = new Dictionary<(uint, uint), int>();
+    foreach (var p in indirectPlaceholders)
+      indirectSectors[p.OwnerKey] = indirectSectors.GetValueOrDefault(p.OwnerKey)
+        + p.BlockCount * SectorsPerBlock;
+
     foreach (var (key, sd) in sdBodies) {
       if (sd.Length < SdBlocksOffset + 4) continue;
       uint blocks;
-      if (dirBytes.TryGetValue(key, out var bytes))
+      if (dirBytes.TryGetValue(key, out var bytes)) {
         blocks = (uint)((bytes + 511) / 512);
-      else if (fileLeaves.TryGetValue(key, out var set))
+      } else if (indirectSectors.TryGetValue(key, out var indirSectors)) {
+        // INDIRECT files: count the dedicated data blocks. The INDIRECT item
+        // itself shares its leaf with other objects' SD/dirent items so we
+        // credit only the off-tree data blocks here.
+        blocks = (uint)indirSectors;
+      } else if (fileLeaves.TryGetValue(key, out var set)) {
         blocks = (uint)(set.Count * SectorsPerBlock);
-      else
+      } else {
         blocks = 0u;
+      }
       BinaryPrimitives.WriteUInt32LittleEndian(sd.AsSpan(SdBlocksOffset), blocks);
     }
   }
@@ -580,11 +618,38 @@ public sealed class ReiserFsWriter {
   }
 
   /// <summary>
-  /// Produces every leaf item (SD + DIRENTRY for directories, SD + DIRECT for
-  /// files) for the whole tree. The caller sorts the result by the reiserfs
-  /// key comparison before laying it out.
+  /// Per-INDIRECT-item placeholder. The item body is owned by the LeafItem (a
+  /// zero-initialised byte[] of <c>BlockCount * 4</c> bytes); once the data-block
+  /// region's first absolute block number is known, <see cref="ResolveIndirectPlaceholders"/>
+  /// fills in pointers <c>FirstDataBlockIndex..FirstDataBlockIndex+BlockCount-1</c>
+  /// and writes the contents of <see cref="Payload"/> into those data blocks.
+  /// <see cref="OwnerKey"/> is the (dir_id, objectid) of the file so the
+  /// stat-data block-count patcher can credit data blocks back to it.
   /// </summary>
-  private List<LeafItem> BuildLeafItems(TreeModel tree) {
+  private sealed record IndirectPlaceholder(
+    LeafItem Item, byte[] Payload, int FirstDataBlockIndex, int BlockCount,
+    (uint DirId, uint ObjectId) OwnerKey);
+
+  /// <summary>
+  /// File-body cutoff: bodies up to this size go in a single DIRECT item;
+  /// anything bigger gets INDIRECT (one __le32 block pointer per 4 KB block,
+  /// last block zero-padded if short). The cutoff is conservative — small
+  /// enough that the DIRECT item still fits next to a sibling SD + dirent in
+  /// a 4 KB leaf without forcing PackLeaves to spill.
+  /// </summary>
+  private const int MaxDirectBody = 1024;
+
+  /// <summary>
+  /// Produces every leaf item (SD + DIRENTRY for directories, SD + DIRECT or
+  /// INDIRECT for files) for the whole tree. The caller sorts the result by
+  /// the reiserfs key comparison before laying it out. Files larger than
+  /// <see cref="MaxDirectBody"/> produce an INDIRECT item (block-pointer
+  /// array) instead of DIRECT; the pointer array is left zero-initialised here
+  /// and patched once layout fixes the data-block region's absolute start
+  /// block.
+  /// </summary>
+  private List<LeafItem> BuildLeafItems(
+    TreeModel tree, List<IndirectPlaceholder> indirectPlaceholders, ref int dataBlocksTotal) {
     var items = new List<LeafItem>(tree.Objects.Count * 2);
     foreach (var obj in tree.Objects) {
       if (obj.IsDirectory) {
@@ -610,25 +675,78 @@ public sealed class ReiserFsWriter {
         // several DIRENTRY items (each keyed by its first entry's deh_offset).
         items.AddRange(BuildDirEntryItems(tree, obj));
       } else {
-        // STAT_DATA — mode S_IFREG | 0644, single DIRECT item.
+        // STAT_DATA — mode S_IFREG | 0644. sd_blocks is patched by
+        // PatchStatDataBlockCounts once the leaf placement (DIRECT) or
+        // data-block region (INDIRECT) is known.
         var sd = new byte[SdV2Size];
         WriteStatDataV2(sd, mode: 0x81A4, nlink: 1, size: (ulong)obj.Data.Length,
-          uid: 0, gid: 0, blocks: obj.Data.Length > 0 ? (uint)(BlockSize >> 9) : 0u);
+          uid: 0, gid: 0, blocks: 0u);
         items.Add(new LeafItem {
           DirId = obj.ParentObjectId, ObjectId = obj.ObjectId,
           OffsetV2 = TypeStatDataV2 | 0u, OffsetV1 = 0, UniquenessV1 = V1SdUniqueness,
           KeyFormat = KeyFormat2, UField = 0, Body = sd, ItemType = 0,
         });
 
-        // DIRECT — inline body at offset 1.
-        items.Add(new LeafItem {
-          DirId = obj.ParentObjectId, ObjectId = obj.ObjectId,
-          OffsetV2 = TypeDirectV2 | 1u, OffsetV1 = 1, UniquenessV1 = V1DirectUniqueness,
-          KeyFormat = KeyFormat2, UField = 0, Body = obj.Data, ItemType = 2,
-        });
+        if (obj.Data.Length == 0) continue;
+        if (obj.Data.Length <= MaxDirectBody) {
+          // DIRECT — inline body at offset 1.
+          items.Add(new LeafItem {
+            DirId = obj.ParentObjectId, ObjectId = obj.ObjectId,
+            OffsetV2 = TypeDirectV2 | 1u, OffsetV1 = 1, UniquenessV1 = V1DirectUniqueness,
+            KeyFormat = KeyFormat2, UField = 0, Body = obj.Data, ItemType = 2,
+          });
+        } else {
+          // INDIRECT — one __le32 block pointer per 4 KB block. The last
+          // block may be partial (zero-padded). No DIRECT tail: keeping the
+          // layout homogeneous-INDIRECT keeps the reader / sd_blocks accounting
+          // simple and still passes reiserfsck (tail-packing is an
+          // optimisation, not a correctness requirement).
+          var blockCount = (obj.Data.Length + BlockSize - 1) / BlockSize;
+          var indirectBody = new byte[blockCount * 4]; // pointers patched later
+          var item = new LeafItem {
+            DirId = obj.ParentObjectId, ObjectId = obj.ObjectId,
+            // INDIRECT type code 1, offset_v2 = type<<60 | 1 (byte offset 0 == key 1).
+            OffsetV2 = TypeIndirectV2 | 1u, OffsetV1 = 1, UniquenessV1 = V1IndirectUniqueness,
+            KeyFormat = KeyFormat2, UField = 0, Body = indirectBody, ItemType = 1,
+          };
+          items.Add(item);
+          indirectPlaceholders.Add(new IndirectPlaceholder(
+            Item: item, Payload: obj.Data,
+            FirstDataBlockIndex: dataBlocksTotal,
+            BlockCount: blockCount,
+            OwnerKey: (obj.ParentObjectId, obj.ObjectId)));
+          dataBlocksTotal += blockCount;
+        }
       }
     }
     return items;
+  }
+
+  /// <summary>
+  /// Patches each INDIRECT item's body to point at its assigned data-block
+  /// range and writes the actual file bytes into those data blocks. The pointer
+  /// at index <c>i</c> is the absolute block number
+  /// <c>firstDataBlock + placeholder.FirstDataBlockIndex + i</c>, stored as a
+  /// little-endian uint32.
+  /// </summary>
+  private static void ResolveIndirectPlaceholders(
+    List<IndirectPlaceholder> placeholders, byte[] image, int firstDataBlock) {
+    foreach (var p in placeholders) {
+      var body = p.Item.Body;
+      for (var i = 0; i < p.BlockCount; i++) {
+        var blockNum = (uint)(firstDataBlock + p.FirstDataBlockIndex + i);
+        BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(i * 4), blockNum);
+
+        var srcOff = i * BlockSize;
+        var copyLen = Math.Min(BlockSize, p.Payload.Length - srcOff);
+        if (copyLen <= 0) continue;
+        var dstOff = (long)blockNum * BlockSize;
+        Array.Copy(p.Payload, srcOff, image, dstOff, copyLen);
+        // Remainder of the last block (when partial) stays zero — matches how
+        // mkfs.reiserfs / the kernel zero-pad short tails when tail-packing is
+        // disabled.
+      }
+    }
   }
 
   /// <summary>
@@ -842,9 +960,8 @@ public sealed class ReiserFsWriter {
     public required ushort UField;
     public required byte[] Body;
 
-    // Item type (0=SD, 2=DIRECT, 3=DIRENTRY) and the owning object's id, used to
-    // compute each object's sd_blocks (count of distinct leaves its BODY items —
-    // DIRENTRY / DIRECT / INDIRECT — occupy) once the final packing is known.
+    // Item type (0=SD, 1=INDIRECT, 2=DIRECT, 3=DIRENTRY) used by
+    // PatchStatDataBlockCounts to credit body bytes back to the right object.
     public int ItemType;
   }
 }

@@ -5,10 +5,10 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.ReiserFs;
 
 public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
-  // WORM write constraints — ReiserFS has no inherent ceiling; real mkfs.reiserfs minimum ≈ 128 MB.
+  // R/W write constraints — ReiserFS has no inherent ceiling; real mkfs.reiserfs minimum ≈ 128 MB.
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 128L * 1024 * 1024;
-  public string AcceptedInputsDescription => "ReiserFS v3.6 filesystem image; flat root directory, single leaf node.";
+  public string AcceptedInputsDescription => "ReiserFS v3.6 filesystem image; full multi-leaf S+tree with nested directories and INDIRECT-item file bodies.";
   public bool CanAccept(ArchiveInputInfo input, out string? reason) { reason = null; return true; }
 
   public string Id => "ReiserFs";
@@ -16,8 +16,8 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
-    FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
   public string DefaultExtension => ".reiserfs";
   public IReadOnlyList<string> Extensions => [".reiserfs"];
@@ -31,15 +31,19 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
-  /// ReiserFS v3.6 filesystem image — WORM. The writer emits a real
-  /// spec-compliant single-leaf image (superblock at +65536, root SD +
-  /// DIRENTRY + per-file SD/DIRECT items, R5-hashed key ordering). True
-  /// in-flight Add/Remove would require S+tree split/merge with
-  /// comp_keys-ordered insertion, bitmap chain updates, and objectid map
-  /// maintenance — multi-week work. Per project policy, WORM = create only;
-  /// no in-flight modification.
+  /// ReiserFS v3.6 filesystem image — R/W. The writer emits a real
+  /// spec-compliant multi-leaf S+tree image (superblock at +65536, R5-hashed
+  /// directory entries, INDIRECT items with dedicated data blocks for file
+  /// bodies &gt; 1 KB, internal pages above leaves). In-place
+  /// <see cref="IArchiveModifiable"/> is implemented via read-modify-rebuild:
+  /// every existing entry is materialised, the requested edit is applied in
+  /// memory, and a fresh image is written back to the stream. This covers
+  /// nested paths, leaf splits and merges, multi-leaf descent, INDIRECT-sized
+  /// bodies, and root tree-height growth — all paths that previously fell back
+  /// to NotSupportedException. The cost is O(image size) per Add / Remove
+  /// rather than O(edit-locality), but the result passes reiserfsck.
   /// </summary>
-  public string Description => "ReiserFS v3 filesystem image (WORM)";
+  public string Description => "ReiserFS v3 filesystem image (R/W, full S+tree mutation via rebuild)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ReiserFsReader(stream);
@@ -110,17 +114,33 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public void Defragment(Stream archive, DefragOptions options)
     => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
 
-  // ── IArchiveModifiable (rebuild-based add / replace / remove) ──────────
-  // ReiserFS in-place S+tree mutation needs node split/merge + bitmap/objectid
-  // bookkeeping; instead we read every file, rebuild a fresh image with the
-  // (large-directory-capable, reiserfsck-clean) writer, and write it back —
-  // the same read-extract-rebuild path the defragmentor uses.
+  // ── IArchiveModifiable ────────────────────────────────────────────────
+  // Read-modify-rebuild via the multi-leaf writer. Every Add and Remove
+  // materialises the live entries from the current image, applies the edit
+  // in memory, and rewrites the image. Covers nested paths, leaf splits and
+  // merges, multi-leaf descent, INDIRECT-sized bodies and root tree-height
+  // growth — every path that previously fell back to NotSupportedException.
 
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs, ReadEntries, BuildImage);
+  /// <summary>
+  /// Adds (or replaces, on name collision) the given files inside an existing
+  /// ReiserFS image. Routed through <see cref="ReiserFsModifier"/> which does
+  /// the full read-modify-rebuild via <see cref="ReiserFsWriter"/>.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      ReiserFsModifier.AddFile(archive, name, data);
+    }
+  }
 
-  public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames, ReadEntries, BuildImage);
+  /// <summary>
+  /// Removes the named entries from an existing ReiserFS image. The rebuild
+  /// always starts from zeroed bytes so the removed file data leaves no
+  /// forensic trace.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      ReiserFsModifier.RemoveFile(archive, name, wipeData: true);
+  }
 
   private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
     var r = new ReiserFsReader(stream);

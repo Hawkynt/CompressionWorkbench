@@ -216,12 +216,49 @@ public sealed class ReiserFsReader : IDisposable {
   public byte[] Extract(ReiserFsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
-    return FindFileData(_rootBlock, entry.ObjectId);
+    // Pass 1: scan every leaf, collect this file's SD (for sd_size) + every
+    // DIRECT and INDIRECT body item keyed at the same (dirId, objectId).
+    //   - DIRECT body bytes are stored inline at the item's body location.
+    //   - INDIRECT bodies are arrays of __le32 block pointers; each points at
+    //     a 4 KB data block outside the tree.
+    // The item key offset_v2 carries the byte offset within the file (1 for
+    // the first body item); sort by it and concatenate in order. Truncate to
+    // sd_size (a partial last INDIRECT block must shrink to the actual file
+    // tail).
+    var bodyParts = new List<(ulong KeyOffset, byte[] Bytes)>();
+    var sdSize = -1L;
+    CollectFileItems(_rootBlock, entry.ObjectId, entry.DirId, bodyParts, ref sdSize);
+    if (bodyParts.Count == 0 && sdSize <= 0) return [];
+
+    bodyParts.Sort(static (a, b) => a.KeyOffset.CompareTo(b.KeyOffset));
+    var totalLen = 0;
+    foreach (var part in bodyParts) totalLen += part.Bytes.Length;
+    var assembled = new byte[totalLen];
+    var pos = 0;
+    foreach (var part in bodyParts) {
+      Buffer.BlockCopy(part.Bytes, 0, assembled, pos, part.Bytes.Length);
+      pos += part.Bytes.Length;
+    }
+    // Truncate to the StatData-declared size (drops last-block zero padding).
+    if (sdSize >= 0 && sdSize < assembled.Length)
+      Array.Resize(ref assembled, (int)sdSize);
+    return assembled;
   }
 
-  private byte[] FindFileData(int blockNum, uint objectId) {
+  /// <summary>
+  /// Walks every leaf below <paramref name="blockNum"/> and collects every
+  /// item belonging to the (<paramref name="dirId"/>, <paramref name="objectId"/>)
+  /// file: DIRECT bodies are added verbatim, INDIRECT pointer arrays are
+  /// resolved to concatenated 4 KB data blocks, and the trailing StatData
+  /// <c>sd_size</c> is recorded in <paramref name="sdSize"/> so the caller can
+  /// truncate the assembled body. Pure read; no allocation outside the parts
+  /// list.
+  /// </summary>
+  private void CollectFileItems(
+    int blockNum, uint objectId, uint dirId,
+    List<(ulong KeyOffset, byte[] Bytes)> bodyParts, ref long sdSize) {
     var blockOff = (long)blockNum * _blockSize;
-    if (blockOff < 0 || blockOff + 24 > _data.Length) return [];
+    if (blockOff < 0 || blockOff + 24 > _data.Length) return;
     var boff = (int)blockOff;
 
     var level = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(boff));
@@ -234,33 +271,62 @@ public sealed class ReiserFsReader : IDisposable {
         var ptrOff = ptrsOff + i * 8;
         if (ptrOff + 4 > _data.Length) break;
         var childBlock = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ptrOff));
-        if (childBlock > 0 && childBlock < _data.Length / _blockSize) {
-          var result = FindFileData(childBlock, objectId);
-          if (result.Length > 0) return result;
-        }
+        if (childBlock > 0 && childBlock < _data.Length / _blockSize)
+          CollectFileItems(childBlock, objectId, dirId, bodyParts, ref sdSize);
       }
-      return [];
+      return;
     }
 
     for (int i = 0; i < nrItems && i < 1000; i++) {
       var ihOff = boff + 24 + i * 24;
       if (ihOff + 24 > _data.Length) break;
 
-      var objId = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ihOff + 4));
-      if (objId != objectId) continue;
+      var keyDirId = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ihOff + 0));
+      var keyObjId = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(ihOff + 4));
+      // dirId may be 0 (older callers use objectId only); when non-zero,
+      // restrict the match to the exact (dir_id, objectid) pair.
+      if (keyObjId != objectId) continue;
+      if (dirId != 0 && keyDirId != dirId) continue;
 
+      var keyOffsetV2 = BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan(ihOff + 8));
       var ihLength = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(ihOff + 18));
       var ihLocation = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(ihOff + 20));
-
-      // Accept only TYPE_DIRECT (=2). TYPE_STAT_DATA / TYPE_DIRENTRY /
-      // TYPE_INDIRECT must be skipped — otherwise we'd hand back the SD's bytes.
-      if (ResolveItemType(ihOff) != 2) continue;
-
       var dataOff = boff + ihLocation;
-      if (dataOff >= 0 && dataOff + ihLength <= _data.Length && ihLength > 0)
-        return _data.AsSpan(dataOff, ihLength).ToArray();
+      if (dataOff < 0 || dataOff + ihLength > _data.Length || ihLength <= 0) continue;
+
+      var itemType = ResolveItemType(ihOff);
+      if (itemType == 0) {
+        // STAT_DATA — pick up sd_size (le64 @ body +8). If multiple SD items
+        // exist (shouldn't, per spec) the last one wins; benign.
+        if (ihLength >= 16)
+          sdSize = (long)BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan(dataOff + 8));
+        continue;
+      }
+
+      if (itemType == 2) {
+        // DIRECT — body is the inline bytes.
+        var directBytes = _data.AsSpan(dataOff, ihLength).ToArray();
+        bodyParts.Add((keyOffsetV2 & 0x0FFFFFFFFFFFFFFFUL, directBytes));
+        continue;
+      }
+
+      if (itemType == 1) {
+        // INDIRECT — body is an array of __le32 block pointers. Each pointer
+        // references one full filesystem block of file payload.
+        var ptrCount = ihLength / 4;
+        var assembled = new byte[ptrCount * _blockSize];
+        for (var p = 0; p < ptrCount; p++) {
+          var ptr = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(dataOff + p * 4));
+          if (ptr == 0) continue; // hole — leave as zeros
+          var src = (long)ptr * _blockSize;
+          if (src < 0 || src + _blockSize > _data.Length) continue;
+          Buffer.BlockCopy(_data, (int)src, assembled, p * _blockSize, _blockSize);
+        }
+        bodyParts.Add((keyOffsetV2 & 0x0FFFFFFFFFFFFFFFUL, assembled));
+        continue;
+      }
+      // itemType == 3 (DIRENTRY) or -1 (unknown) — skip; not file body.
     }
-    return [];
   }
 
   public void Dispose() { }

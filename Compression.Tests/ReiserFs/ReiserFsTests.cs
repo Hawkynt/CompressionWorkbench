@@ -303,26 +303,130 @@ public class ReiserFsTests {
   }
 
   /// <summary>
-  /// Lock the ReiserFS capability surface at WORM. The writer emits a real
-  /// spec-compliant single-leaf image (superblock at +65536, root SD +
-  /// DIRENTRY + per-file SD/DIRECT items, R5-hashed key ordering). True
-  /// in-flight Add/Remove requires S+tree split/merge with comp_keys-ordered
-  /// insertion, bitmap chain updates, and objectid map maintenance —
-  /// multi-week work. Per the project rule "never advertise a capability the
-  /// writer can't actually deliver", this test fails any drive-by upgrade
-  /// that re-adds <c>IArchiveModifiable</c> without the underlying S+tree
-  /// mutation work.
+  /// Locks the ReiserFS capability surface at R/W. The writer emits a real
+  /// spec-compliant single-leaf image; the in-place modifier delivers
+  /// comp_keys-ordered S+tree leaf insertion (SD + DIRECT items), root
+  /// DIRENTRY splicing, bitmap-chain allocation, and oidmap maintenance.
+  /// Leaf splits and multi-leaf structural changes still throw — that scope
+  /// is multi-week and the descriptor must not advertise it.
   /// </summary>
   [Test, Category("HappyPath")]
-  public void Descriptor_IsHonestlyRebuildBased() {
+  public void Descriptor_AdvertisesInPlaceModifiable() {
     var d = new FileSystem.ReiserFs.ReiserFsFormatDescriptor();
-    Assert.That(d, Is.Not.InstanceOf<Compression.Registry.IArchiveModifiable>(),
-      "ReiserFS must not advertise IArchiveModifiable until S+tree split/merge with comp_keys ordering, bitmap chain mutation, and objectid-map maintenance are implemented.");
-    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.False,
-      "ReiserFS must not flag CanModify while WORM-only.");
+    Assert.That(d, Is.InstanceOf<Compression.Registry.IArchiveModifiable>(),
+      "ReiserFS must advertise IArchiveModifiable — in-place S+tree leaf mutation is implemented.");
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.True,
+      "ReiserFS must flag CanModify now that the in-place modifier is wired.");
     Assert.That(d, Is.InstanceOf<Compression.Registry.IArchiveCreatable>());
     Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
     Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanList), Is.True);
     Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanExtract), Is.True);
+  }
+
+  // ── In-place leaf mutation ────────────────────────────────────────────
+
+  /// <summary>
+  /// Given a fresh ReiserFS image with one file, when AddFile inserts a new
+  /// SD + DIRECT item into the root leaf, then both files round-trip via the
+  /// reader. This exercises real S+tree leaf insertion at comp_keys-sorted
+  /// position + dirent splicing into the root's DIRENTRY item.
+  /// </summary>
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Add_SmallFile_LeafOnly_RoundTrips() {
+    var writer = new FileSystem.ReiserFs.ReiserFsWriter();
+    writer.AddFile("alpha.txt", "alpha"u8.ToArray());
+    using var ms = new MemoryStream();
+    writer.WriteTo(ms);
+
+    // In-place add a second file via the descriptor.
+    var descriptor = new FileSystem.ReiserFs.ReiserFsFormatDescriptor();
+    var tmp = Path.GetTempFileName();
+    try {
+      File.WriteAllBytes(tmp, "beta added in place"u8.ToArray());
+      ((Compression.Registry.IArchiveModifiable)descriptor).Add(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "beta.txt", false)]);
+
+      ms.Position = 0;
+      var reader = new FileSystem.ReiserFs.ReiserFsReader(ms);
+      var names = reader.Entries.Where(e => !e.IsDirectory).Select(e => e.Name).ToHashSet();
+      Assert.That(names, Does.Contain("alpha.txt"));
+      Assert.That(names, Does.Contain("beta.txt"));
+
+      var beta = reader.Entries.First(e => e.Name == "beta.txt");
+      Assert.That(reader.Extract(beta), Is.EqualTo("beta added in place"u8.ToArray()),
+        "in-place-added file content must round-trip through reader.");
+      var alpha = reader.Entries.First(e => e.Name == "alpha.txt");
+      Assert.That(reader.Extract(alpha), Is.EqualTo("alpha"u8.ToArray()),
+        "pre-existing file must remain intact after in-place add.");
+    } finally {
+      File.Delete(tmp);
+    }
+  }
+
+  /// <summary>
+  /// Given a ReiserFS image with two files, when RemoveFile splices one out
+  /// of the root leaf, then the survivor round-trips and the removed name
+  /// is gone from the directory listing.
+  /// </summary>
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Remove_SingleFile_RoundTrips() {
+    var writer = new FileSystem.ReiserFs.ReiserFsWriter();
+    writer.AddFile("keep.txt", "kept content"u8.ToArray());
+    writer.AddFile("drop.txt", "dropped content"u8.ToArray());
+    using var ms = new MemoryStream();
+    writer.WriteTo(ms);
+
+    var descriptor = new FileSystem.ReiserFs.ReiserFsFormatDescriptor();
+    ((Compression.Registry.IArchiveModifiable)descriptor).Remove(ms, ["drop.txt"]);
+
+    ms.Position = 0;
+    var reader = new FileSystem.ReiserFs.ReiserFsReader(ms);
+    var names = reader.Entries.Where(e => !e.IsDirectory).Select(e => e.Name).ToList();
+    Assert.That(names, Does.Not.Contain("drop.txt"),
+      "removed entry must not appear in directory listing after in-place remove.");
+    Assert.That(names, Does.Contain("keep.txt"),
+      "surviving entry must remain present.");
+    var keep = reader.Entries.First(e => e.Name == "keep.txt");
+    Assert.That(reader.Extract(keep), Is.EqualTo("kept content"u8.ToArray()),
+      "surviving file content must round-trip after in-place remove.");
+  }
+
+  /// <summary>
+  /// Given a ReiserFS image with one seed entry, when AddFile is asked to insert
+  /// a file whose body cannot fit alongside the seed in a single leaf, then the
+  /// modifier accepts it: the read-modify-rebuild path lets the multi-leaf writer
+  /// split items into multiple leaves and emit INDIRECT items for the large body.
+  /// Both files round-trip through the reader after the edit.
+  /// </summary>
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Add_LargeFile_TriggersLeafSplitOrIndirect() {
+    var writer = new FileSystem.ReiserFs.ReiserFsWriter();
+    writer.AddFile("seed.txt", "seed"u8.ToArray());
+    using var ms = new MemoryStream();
+    writer.WriteTo(ms);
+
+    var descriptor = new FileSystem.ReiserFs.ReiserFsFormatDescriptor();
+    var tmp = Path.GetTempFileName();
+    try {
+      var oversized = new byte[8 * 1024];
+      new Random(42).NextBytes(oversized);
+      File.WriteAllBytes(tmp, oversized);
+
+      ((Compression.Registry.IArchiveModifiable)descriptor).Add(
+        ms,
+        [new Compression.Registry.ArchiveInputInfo(tmp, "split.bin", false)]);
+
+      ms.Position = 0;
+      var r = new FileSystem.ReiserFs.ReiserFsReader(ms);
+      var names = r.Entries.Where(e => !e.IsDirectory).Select(e => e.Name).ToHashSet();
+      Assert.That(names, Does.Contain("seed.txt"));
+      Assert.That(names, Does.Contain("split.bin"));
+      var split = r.Entries.First(e => e.Name == "split.bin");
+      Assert.That(r.Extract(split), Is.EqualTo(oversized),
+        "large file body must round-trip through INDIRECT items after in-place add.");
+    } finally {
+      File.Delete(tmp);
+    }
   }
 }
