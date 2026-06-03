@@ -88,4 +88,90 @@ public class G72xCodecTests {
     foreach (var s in dec)
       Assert.That(Math.Abs((int)s), Is.LessThan(4000));
   }
+
+  // ── Full G.726 rate set (2/3/4/5-bit = 16/24/32/40 kbit/s). ──────────────────
+
+  private static double RoundTripSnr(short[] pcm, int bits, int warmup = 50) {
+    var dec = G72xCodec.DecodeG726(G72xCodec.EncodeG726(pcm, bits), bits);
+    double signal = 0, noise = 0;
+    for (var i = warmup; i < pcm.Length; ++i) {
+      double d = pcm[i] - dec[i];
+      noise += d * d;
+      signal += (double)pcm[i] * pcm[i];
+    }
+    return 10 * Math.Log10(signal / noise);
+  }
+
+  [TestCase(2)]
+  [TestCase(3)]
+  [TestCase(4)]
+  [TestCase(5)]
+  public void G726_EncodeThenDecode_PreservesSampleCount(int bits) {
+    var pcm = SpeechLike(2000);
+    var dec = G72xCodec.DecodeG726(G72xCodec.EncodeG726(pcm, bits), bits);
+    Assert.That(dec.Length, Is.GreaterThanOrEqualTo(pcm.Length - 8));
+    Assert.That(dec.Length, Is.LessThanOrEqualTo(pcm.Length));
+  }
+
+  [Test]
+  public void G726_4Bit_MatchesG721() {
+    var pcm = SpeechLike(1000);
+    Assert.That(G72xCodec.EncodeG726(pcm, 4), Is.EqualTo(G72xCodec.EncodeG721(pcm)));
+    var enc = G72xCodec.EncodeG721(pcm);
+    Assert.That(G72xCodec.DecodeG726(enc, 4), Is.EqualTo(G72xCodec.DecodeG721(enc)));
+  }
+
+  // Per-rate SNR thresholds: more bits per sample → tighter reconstruction.
+  [TestCase(2, 4.0)]
+  [TestCase(3, 10.0)]
+  [TestCase(4, 20.0)]
+  [TestCase(5, 24.0)]
+  public void G726_RoundTrip_MeetsSnrThreshold(int bits, double minSnr) {
+    var snr = RoundTripSnr(SpeechLike(2000), bits);
+    Assert.That(snr, Is.GreaterThan(minSnr), $"G.726@{bits}-bit SNR {snr:F1} dB below {minSnr} dB");
+  }
+
+  [TestCase(2)]
+  [TestCase(3)]
+  [TestCase(4)]
+  public void G726_RoundTrip_HigherRateIsNotWorse(int bits) {
+    // Sanity: increasing the rate should not degrade fidelity versus the rate below.
+    var pcm = SpeechLike(2000);
+    var lower = RoundTripSnr(pcm, bits);
+    var higher = RoundTripSnr(pcm, bits + 1);
+    Assert.That(higher, Is.GreaterThan(lower - 1.0), $"{bits + 1}-bit ({higher:F1}) worse than {bits}-bit ({lower:F1})");
+  }
+
+  [TestCase(2)]
+  [TestCase(3)]
+  [TestCase(5)]
+  public void G726_IsDeterministic(int bits) {
+    var enc = G72xCodec.EncodeG726(SpeechLike(500), bits);
+    Assert.That(G72xCodec.DecodeG726(enc, bits), Is.EqualTo(G72xCodec.DecodeG726(enc, bits)));
+  }
+
+  [TestCase(2, 25)]   // 100 samples × 2 bits = 200 bits = 25 bytes
+  [TestCase(3, 38)]   // 100 × 3 = 300 bits → 38 bytes (rounded up)
+  [TestCase(5, 63)]   // 100 × 5 = 500 bits → 63 bytes
+  public void G726_Encode_PacksExpectedByteCount(int bits, int expectedBytes) {
+    var enc = G72xCodec.EncodeG726(SpeechLike(100), bits);
+    Assert.That(enc.Length, Is.EqualTo(expectedBytes));
+  }
+
+  [TestCase(2)]
+  [TestCase(3)]
+  [TestCase(5)]
+  public void G726_Decode_Silence_StaysNearZero(int bits) {
+    var dec = G72xCodec.DecodeG726(new byte[100], bits);
+    foreach (var s in dec)
+      Assert.That(Math.Abs((int)s), Is.LessThan(4000));
+  }
+
+  [TestCase(0)]
+  [TestCase(1)]
+  [TestCase(6)]
+  public void G726_RejectsUnsupportedRate(int bits) {
+    Assert.Throws<ArgumentOutOfRangeException>(() => G72xCodec.EncodeG726(SpeechLike(10), bits));
+    Assert.Throws<ArgumentOutOfRangeException>(() => G72xCodec.DecodeG726(new byte[4], bits));
+  }
 }

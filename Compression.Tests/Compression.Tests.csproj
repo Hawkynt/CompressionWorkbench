@@ -97,6 +97,7 @@
     <ProjectReference Include="..\Codecs\Codec.WavPack\Codec.WavPack.csproj" />
     <ProjectReference Include="..\Codecs\Codec.G722\Codec.G722.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Cvsd\Codec.Cvsd.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.AicaAdpcm\Codec.AicaAdpcm.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
@@ -519,6 +520,17 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Ptm\FileFormat.Ptm.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Amf\FileFormat.Amf.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Psm\FileFormat.Psm.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Med\FileFormat.Med.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Okt\FileFormat.Okt.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ult\FileFormat.Ult.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.F669\FileFormat.F669.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Its\FileFormat.Its.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Iti\FileFormat.Iti.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Aica\FileFormat.Aica.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Xi\FileFormat.Xi.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sds\FileFormat.Sds.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Txw\FileFormat.Txw.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Hcom\FileFormat.Hcom.csproj" />
   </ItemGroup>
 
 </Project>

@@ -17,7 +17,7 @@ namespace Codec.G72x;
 /// within ADPCM's inherent quantisation error.
 /// </para>
 /// </summary>
-public static class G72xCodec {
+public static partial class G72xCodec {
 
   /// <summary>Per-channel adaptation state for the G.72x state machine.</summary>
   private sealed class State {

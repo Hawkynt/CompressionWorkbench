@@ -9,8 +9,9 @@ namespace FileFormat.Au;
 
 /// <summary>
 /// Exposes a Sun/NeXT <c>.au</c> / <c>.snd</c> file as an archive of
-/// <c>FULL.au</c>, one WAV per channel (after decoding μ-law/A-law/PCM and
-/// G.721 (G.726 @ 32 kbit/s) ADPCM), and
+/// <c>FULL.au</c>, one WAV per channel (after decoding μ-law/A-law/PCM,
+/// G.721 (G.726 @ 32 kbit/s), G.723 3-bit (G.726 @ 24 kbit/s) and 5-bit
+/// (G.726 @ 40 kbit/s) ADPCM, and G.722 sub-band ADPCM), and
 /// a <c>metadata.ini</c> carrying the encoding type, sample rate and any
 /// annotation string.
 /// </summary>
@@ -173,6 +174,18 @@ public sealed class AuFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
         var decoded = Codec.G72x.G72xCodec.DecodeG721(p.SoundData);
         return (ShortsToLePcm(decoded), 16);
       }
+      case 24: { // G.722 sub-band ADPCM (decodes to 16 kHz linear)
+        var decoded = Codec.G722.G722Codec.Decode(p.SoundData);
+        return (ShortsToLePcm(decoded), 16);
+      }
+      case 25: { // G.723 3-bit (G.726 @ 24 kbit/s) ADPCM
+        var decoded = Codec.G72x.G72xCodec.DecodeG726(p.SoundData, 3);
+        return (ShortsToLePcm(decoded), 16);
+      }
+      case 26: { // G.723 5-bit (G.726 @ 40 kbit/s) ADPCM
+        var decoded = Codec.G72x.G72xCodec.DecodeG726(p.SoundData, 5);
+        return (ShortsToLePcm(decoded), 16);
+      }
       default: return (null, 0);                                 // float: not decoded
     }
   }
@@ -202,6 +215,9 @@ public sealed class AuFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     6 => "32-bit IEEE float",
     7 => "64-bit IEEE float",
     23 => "G.721 4-bit ADPCM",
+    24 => "G.722 ADPCM",
+    25 => "G.723 3-bit ADPCM",
+    26 => "G.723 5-bit ADPCM",
     27 => "8-bit G.711 A-law",
     _ => $"unknown ({e})",
   };

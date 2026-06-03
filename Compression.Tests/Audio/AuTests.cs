@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using Codec.G72x;
+using Codec.G722;
 using FileFormat.Au;
 
 namespace Compression.Tests.Audio;
@@ -84,6 +85,82 @@ public class AuTests {
       if (e > maxError) maxError = e;
     }
     Assert.That(maxError, Is.LessThan(2000), $"G.721 round-trip max error {maxError} too high");
+  }
+
+  // Builds a mono .au with the given encoding from already-encoded sound bytes.
+  private static byte[] MakeMonoAu(uint encoding, byte[] sound, int sampleRate) {
+    const int dataOffset = 24;
+    var file = new byte[dataOffset + sound.Length];
+    var s = file.AsSpan();
+    s[0] = (byte)'.'; s[1] = (byte)'s'; s[2] = (byte)'n'; s[3] = (byte)'d';
+    BinaryPrimitives.WriteUInt32BigEndian(s[4..], dataOffset);
+    BinaryPrimitives.WriteUInt32BigEndian(s[8..], (uint)sound.Length);
+    BinaryPrimitives.WriteUInt32BigEndian(s[12..], encoding);
+    BinaryPrimitives.WriteUInt32BigEndian(s[16..], (uint)sampleRate);
+    BinaryPrimitives.WriteUInt32BigEndian(s[20..], 1); // mono
+    sound.CopyTo(s[dataOffset..]);
+    return file;
+  }
+
+  private static short[] SpeechLike(int n, int rate) {
+    var pcm = new short[n];
+    for (var i = 0; i < n; ++i) {
+      var t = i / (double)rate;
+      pcm[i] = (short)(7000 * Math.Sin(2 * Math.PI * 350 * t) + 2500 * Math.Sin(2 * Math.PI * 900 * t));
+    }
+    return pcm;
+  }
+
+  private static short ReadWavSample(byte[] wav, int i) =>
+    BinaryPrimitives.ReadInt16LittleEndian(wav.AsSpan(44 + i * 2));
+
+  [TestCase(25u, 3)] // G.723 3-bit  (G.726 @ 24 kbit/s)
+  [TestCase(26u, 5)] // G.723 5-bit  (G.726 @ 40 kbit/s)
+  public void AuDescriptor_G726_SurfacesMonoWav_AndDecodesCloseToOriginal(uint encoding, int bits) {
+    var original = SpeechLike(600, 8000);
+    var blob = MakeMonoAu(encoding, G72xCodec.EncodeG726(original, bits), 8000);
+
+    using var ms = new MemoryStream(blob);
+    var entries = new AuFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "MONO.wav" && e.Kind == "Channel"), Is.True);
+
+    using var msx = new MemoryStream(blob);
+    using var output = new MemoryStream();
+    new AuFormatDescriptor().ExtractEntry(msx, "MONO.wav", output, null);
+    var wav = output.ToArray();
+    Assert.That(wav.AsSpan(0, 4).ToArray(), Is.EqualTo("RIFF"u8.ToArray()));
+
+    long maxError = 0;
+    var n = G72xCodec.DecodeG726(G72xCodec.EncodeG726(original, bits), bits).Length;
+    for (var i = 50; i < n; ++i)
+      maxError = Math.Max(maxError, Math.Abs(original[i] - ReadWavSample(wav, i)));
+    Assert.That(maxError, Is.LessThan(6000), $"G.726@{bits}-bit .au round-trip max error {maxError} too high");
+  }
+
+  [Test]
+  public void AuDescriptor_G722_SurfacesMonoWav_AndDecodesCloseToOriginal() {
+    // G.722 input is 16 kHz; band-limit to the QMF passband.
+    var n = 4000;
+    var original = new short[n];
+    for (var i = 0; i < n; ++i)
+      original[i] = (short)(9000 * Math.Sin(2 * Math.PI * 500 * i / 16000.0));
+
+    var blob = MakeMonoAu(24u, G722Codec.Encode(original), 16000);
+
+    using var ms = new MemoryStream(blob);
+    var entries = new AuFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "MONO.wav" && e.Kind == "Channel"), Is.True);
+
+    using var msx = new MemoryStream(blob);
+    using var output = new MemoryStream();
+    new AuFormatDescriptor().ExtractEntry(msx, "MONO.wav", output, null);
+    var wav = output.ToArray();
+    Assert.That(wav.AsSpan(0, 4).ToArray(), Is.EqualTo("RIFF"u8.ToArray()));
+
+    var dec = G722Codec.Decode(G722Codec.Encode(original));
+    // Verify the surfaced WAV carries the codec's own decode (byte-for-byte).
+    for (var i = 0; i < dec.Length; ++i)
+      Assert.That(ReadWavSample(wav, i), Is.EqualTo(dec[i]));
   }
 
   [Test]
