@@ -34,7 +34,7 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "LittleFS embedded-flash FS — superblock surface only.";
+  public string Description => "LittleFS embedded-flash FS — metadata-pair walk + CTZ/inline file extraction.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -45,6 +45,16 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       entries.Add(new ArchiveEntryInfo(0, "FULL.littlefs", 0, 0, "stored", false, false, null));
       entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
       return entries;
+    }
+
+    // Preferred path: walk the metadata-pair commit log and list the real files.
+    try {
+      var reader = new LittleFsReader(image);
+      if (reader.Files.Count > 0)
+        return reader.Files.Select((f, i) => new ArchiveEntryInfo(
+          i, f.Path, f.Size, f.Size, "stored", false, false, null)).ToList();
+    } catch {
+      // fall through to the superblock surface below
     }
 
     LittleFsSuperblock sb;
@@ -70,6 +80,21 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     } catch {
       WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"));
       return;
+    }
+
+    // Preferred path: extract the real files via the commit-walking reader.
+    try {
+      var reader = new LittleFsReader(image);
+      if (reader.Files.Count > 0) {
+        foreach (var f in reader.Files) {
+          if (files != null && files.Length > 0 && !MatchesFilter(f.Path, files))
+            continue;
+          WriteFile(outputDir, f.Path, reader.ReadFile(f));
+        }
+        return;
+      }
+    } catch {
+      // fall through to the superblock surface below
     }
 
     LittleFsSuperblock sb;
@@ -126,14 +151,12 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  private const int HeaderReadCap = 64 * 1024;
-
   private static byte[] ReadAll(Stream stream) {
+    // The commit-log walk and CTZ extraction address blocks anywhere in the
+    // image, so the whole stream is needed (the old 64 KiB header cap only
+    // sufficed for the superblock-surface fallback).
     using var ms = new MemoryStream();
-    var buf = new byte[8192];
-    int read;
-    while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
-      ms.Write(buf, 0, read);
+    stream.CopyTo(ms);
     return ms.ToArray();
   }
 }

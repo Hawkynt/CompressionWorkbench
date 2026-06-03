@@ -75,12 +75,12 @@ public class LittleFsWriterTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Build_ProducesParseableSuperblock() {
+  public void Build_ProducesWalkableImage_DescriptorListsRealFiles() {
     var image = BuildImage(("x.txt", Encoding.ASCII.GetBytes("y")));
     using var ms = new MemoryStream(image);
     var d = new LittleFsFormatDescriptor();
     var entries = d.List(ms, null);
-    Assert.That(entries.Select(e => e.Name), Does.Contain("superblock.bin"));
+    Assert.That(entries.Select(e => e.Name), Does.Contain("x.txt"));
   }
 
   [Test, Category("HappyPath")]

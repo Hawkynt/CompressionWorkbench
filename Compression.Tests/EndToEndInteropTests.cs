@@ -242,7 +242,8 @@ public class EndToEndInteropTests {
   // special constraints, or formats that store metadata differently.
   private static readonly HashSet<string> _selfRoundTripExclusions = new(StringComparer.OrdinalIgnoreCase) {
     // Filesystem images that need specific disk geometry or block layout
-    ".d64", ".d71", ".d81", ".t64", ".adf", ".tap",
+    // (.g64 wraps a GCR-encoded D64 and shares its PETSCII name constraints)
+    ".d64", ".d71", ".d81", ".g64", ".t64", ".adf", ".tap",
     // Retro FSes with strict native filename constraints (length/charset) that
     // can't round-trip generic repeat.txt/small.txt/random.dat names verbatim.
     ".ssd", ".po", ".scl", ".atr",
