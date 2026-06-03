@@ -98,10 +98,20 @@ State legend:
 | `Codec.OkiAdpcm` | ADPCM           | R/W   | OKI / Dialogic VOX 4-bit ADPCM — encode + decode                                |
 | `Codec.SpuAdpcm` | ADPCM           | R/W   | Sony PS1/PS2 SPU ADPCM — encode + decode                                        |
 | `Codec.DspAdpcm` | ADPCM           | R/W   | Nintendo GC/Wii DSP-ADPCM — decode + predictor-fit encoder                      |
-| `Codec.G72x`     | ADPCM           | R/W   | ITU-T G.726 @ 32 kbit (G.721) — CCITT reference port, encode + decode           |
+| `Codec.G72x`     | ADPCM           | R/W   | ITU-T G.726 full rate set (16/24/32/40 kbit) — CCITT reference port, enc + dec  |
 | `Codec.Tta`      | Lossless        | R/W   | True Audio TTA1 — reference-faithful decode + inverted encoder, byte-exact      |
 | `Codec.Shorten`  | Lossless        | R/W   | Shorten v2 (SHN) — decode (incl. best-effort QLPC) + DIFF0-3 encoder            |
 | `Codec.Alac`     | Lossless        | R/W   | Apple Lossless — decode + spec-shaped encoder (16/24-bit byte-exact)            |
+| `Codec.WavPack`  | Lossless        | R/W   | WavPack v4/v5 lossless blocks — spec-faithful framing; own-stream round-trips    |
+| `Codec.CriAdx`   | ADPCM           | R/W   | CRI ADX (Sega) — highpass-derived coefficients, encode + decode                 |
+| `Codec.Brr`      | ADPCM           | R/W   | SNES S-DSP BRR — filters 0-3, 15-bit hardware wrap, encode + decode             |
+| `Codec.XaAdpcm`  | ADPCM           | R/W   | CD-ROM XA / PlayStation streaming ADPCM — sound groups, 4-bit enc+dec           |
+| `Codec.EaXa`     | ADPCM           | R/W   | Electronic Arts EA-XA — coef/shift frames incl. raw-frame escape                |
+| `Codec.WwiseIma` | ADPCM           | R/W   | Audiokinetic Wwise IMA (MS-IMA block layout)                                    |
+| `Codec.AicaAdpcm`| ADPCM           | R/W   | Yamaha AICA / ADPCM-B (Dreamcast) — encode + decode                             |
+| `Codec.G722`     | Speech          | R/W   | ITU-T G.722 sub-band ADPCM @64 kbit (QMF analysis/synthesis)                    |
+| `Codec.Cvsd`     | Speech          | R/W   | CVSD delta modulation (Bluetooth SCO / MIL-STD style)                           |
+| `Codec.Mace`     | Lossy           | R     | Apple MACE 3:1 / 6:1 — ffmpeg-faithful decode                                   |
 
 > **Honest scope note.** Most lossy / lossless codecs in this package decode but don't encode.
 > Writing a high-quality MP3 / AAC / Vorbis / Opus / FLAC encoder is a significant undertaking
@@ -141,6 +151,49 @@ State legend:
 | `FileFormat.Sf2`      | R     | SoundFont 2 — every sample as a mono WAV at its own rate + INFO tags        |
 | `FileFormat.Dls`      | R     | Downloadable Sounds — `wvpl` waves rewrapped as standalone WAVs             |
 | `FileFormat.G711`     | WORM  | Raw G.711 (`.al` / `.ul`) — headerless A-law/µ-law @ 8 kHz; assembles       |
+| `FileFormat.Adx`      | WORM  | CRI ADX (Sega) — encrypted/AHX falls back; assembles                         |
+| `FileFormat.Brr`      | WORM  | SNES BRR sample (loop-header tolerant); assembles                            |
+| `FileFormat.Spc`      | R     | SNES SPC700 dump — every ARAM BRR instrument as a WAV + ID666 tags           |
+| `FileFormat.Xa`       | WORM  | CD-XA / PlayStation streaming audio — RIFF/CDXA + raw sectors; assembles     |
+| `FileFormat.Bcstm`    | WORM  | Nintendo 3DS stream (LE CSTM) over DSP-ADPCM; assembles                      |
+| `FileFormat.Bfstm`    | WORM  | WiiU/Switch stream (BE/LE by BOM) over DSP-ADPCM; assembles                  |
+| `FileFormat.Ast`      | WORM  | GameCube/Wii AST — PCM16BE exact; AFC falls back; assembles                  |
+| `FileFormat.Hps`      | WORM  | GameCube HALPST — linked DSP-ADPCM blocks; assembles                         |
+| `FileFormat.Bwav`     | WORM  | Switch BWAV — DSP-ADPCM/PCM16 per-channel; assembles                         |
+| `FileFormat.Swav`     | WORM  | Nintendo DS SWAV — PCM8/16 + IMA; assembles (PCM16)                          |
+| `FileFormat.Sdat`     | R     | Nintendo DS sound archive — SWAV/SWAR decoded, SSEQ/SBNK/STRM surfaced       |
+| `FileFormat.Xwb`      | R     | Microsoft XACT wave bank (v43+) — PCM + MS-ADPCM samples; XMA/WMA noted      |
+| `FileFormat.EaSchl`   | WORM  | EA SCHl streams — PT-table parse, EA-XA blocks; assembles                    |
+| `FileFormat.Wem`      | R     | Audiokinetic Wwise media — Wwise-IMA/PCM decode; Wwise-Vorbis falls back     |
+| `FileFormat.Aica`     | WORM  | Yamaha AICA raw (Dreamcast); assembles                                       |
+| `FileFormat.Cvsd`     | WORM  | Raw CVSD bitstream @64 kHz; assembles                                        |
+| `FileFormat.Maud`     | WORM  | Amiga IFF MAUD (PCM + A-law/µ-law); assembles                                |
+| `FileFormat.Smp`      | WORM  | Turtle Beach SampleVision; assembles                                         |
+| `FileFormat.Paf`      | WORM  | Ensoniq PARIS (BE/LE, 16/24-bit); assembles                                  |
+| `FileFormat.Pvf`      | WORM  | mgetty Portable Voice Format (binary + ASCII); assembles                     |
+| `FileFormat.MacSnd`   | R     | classic Mac 'snd ' resource — standard/extended/MACE headers                 |
+| `FileFormat.Sndr`     | WORM  | PC Sounder; assembles                                                        |
+| `FileFormat.Sndt`     | WORM  | SoundTool (`SOUND\x1A`); assembles                                          |
+| `FileFormat.EspsSd`   | R     | Entropic ESPS `.sd` (record_freq generic, both endiannesses)                 |
+| `FileFormat.Txw`      | WORM  | Yamaha TX16W (12-bit packed); assembles                                      |
+| `FileFormat.Hcom`     | WORM  | Macintosh HCOM (Huffman-delta per sox); assembles                            |
+| `FileFormat.Xi`       | R     | FastTracker II instrument — delta samples at per-note rates                  |
+| `FileFormat.Sds`      | R     | MIDI Sample Dump Standard — septet-packed dumps                              |
+| `FileFormat.Med`      | R     | OctaMED (MMD0/MMD1) sample archive                                           |
+| `FileFormat.Okt`      | R     | Oktalyzer sample + pattern archive                                           |
+| `FileFormat.Ult`      | R     | UltraTracker (V004) sample archive                                           |
+| `FileFormat.F669`     | R     | Composer 669 sample archive                                                  |
+| `FileFormat.Its`      | R     | Impulse Tracker sample (IT215-compressed falls back)                         |
+| `FileFormat.Iti`      | R     | Impulse Tracker instrument (embedded IMPS samples)                           |
+| `FileFormat.Mtm`      | R     | MultiTracker sample archive                                                  |
+| `FileFormat.Far`      | R     | Farandole Composer sample archive                                            |
+| `FileFormat.Stm`      | R     | Scream Tracker 2 sample archive                                              |
+| `FileFormat.Ptm`      | R     | PolyTracker (8-bit delta) sample archive                                     |
+| `FileFormat.Amf`      | R     | DSMI AMF (v10-14) sample archive                                             |
+| `FileFormat.Psm`      | R     | Epic MASI PSM (DSMP delta) sample archive                                    |
+| `FileFormat.Dsf`+`Dff`| WORM  | (see above) DSD pair                                                         |
+| `FileFormat.Asf`      | R     | Microsoft ASF (`.wma`/`.wmv`) — stream/codec info, tags, Data Object blob    |
+| `FileFormat.RealMedia`| R     | RealMedia (`.rm`/`.ra`) — per-stream payloads with codec FOURCC, CONT tags   |
 | `FileFormat.Alac`     | R     | Apple Lossless inside MP4 atoms — decoded per-channel WAVs via `Codec.Alac` |
 | `FileFormat.Ape`      | R     | Monkey's Audio (`.ape`) lossless                                    |
 | `FileFormat.WavPack`  | R     | WavPack lossless / hybrid                                           |
