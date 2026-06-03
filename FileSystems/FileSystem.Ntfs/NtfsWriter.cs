@@ -392,6 +392,15 @@ public sealed class NtfsWriter {
     // --- Boot sector (VBR) ---------------------------------------------------
     WriteBootSector(disk, totalSectors, mftStartCluster, mftMirrCluster, volumeSerial);
 
+    // --- Backup boot sector at the LAST sector of the volume -----------------
+    // The NTFS spec requires the boot sector to be mirrored at the last sector
+    // (totalSectors-1). Without it ntfsfix reports
+    // "Checking the alternate boot sector... BAD / Failed to fix the alternate
+    // boot sector". Cheaply done: copy the first 512 bytes to the last sector.
+    var backupOffset = (long)(totalSectors - 1) * BytesPerSector;
+    if (backupOffset >= 0 && backupOffset + BytesPerSector <= disk.Length)
+      Array.Copy(disk, 0, disk, (int)backupOffset, BytesPerSector);
+
     // --- Build the $MFT bitmap data and write it to its cluster -------------
     // Bit i set ⇔ MFT record i is currently allocated. We allocate records 0..15
     // (system) plus one per user file. Bits beyond `totalMftRecords-1` stay 0.
