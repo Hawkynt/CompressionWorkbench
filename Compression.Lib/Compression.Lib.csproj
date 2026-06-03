@@ -425,6 +425,8 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Zoo\FileFormat.Zoo.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zpaq\FileFormat.Zpaq.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zstd\FileFormat.Zstd.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Svx\FileFormat.Svx.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Avr\FileFormat.Avr.csproj" />
   </ItemGroup>
 
 </Project>
