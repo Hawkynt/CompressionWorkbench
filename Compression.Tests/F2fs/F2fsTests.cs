@@ -289,22 +289,20 @@ public class F2fsTests {
   }
 
   /// <summary>
-  /// Lock the F2FS capability surface at WORM. The writer emits a real
-  /// kernel-spec multi-segment image (SIT/NAT journals, checkpoint pack,
-  /// inline-dentry root). True in-flight Add/Remove requires NAT/SIT journal
-  /// mutation, segment-typed valid_map allocation, inline-dentry walk, and
-  /// checkpoint CRC recomputation — multi-week work. Per the project rule
-  /// "never advertise a capability the writer can't actually deliver", this
-  /// test fails any drive-by upgrade that re-adds <c>IArchiveModifiable</c>
-  /// without the underlying B-tree mutation work.
+  /// Lock the F2FS capability surface at R/W via log-structured append.
+  /// The writer emits a real kernel-spec multi-segment image (SIT/NAT journals,
+  /// checkpoint pack, inline-dentry root); the modifier appends new blocks to the
+  /// WARM_DATA/WARM_NODE current segments and stamps a fresh checkpoint into the
+  /// alternate pack. This test pins the capability surface so we don't silently
+  /// regress back to WORM.
   /// </summary>
   [Test, Category("HappyPath")]
-  public void Descriptor_IsHonestlyRebuildBased() {
+  public void Descriptor_AdvertisesLogStructuredMutation() {
     var d = new F2fsFormatDescriptor();
-    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>(),
-      "F2FS must not advertise IArchiveModifiable until in-flight NAT/SIT mutation, segment-typed valid_map allocation, and checkpoint CRC recomputation are implemented.");
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
-      "F2FS must not flag CanModify while WORM-only.");
+    Assert.That(d, Is.InstanceOf<IArchiveModifiable>(),
+      "F2FS implements IArchiveModifiable via log-structured append (no rebuild).");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
+      "F2FS advertises CanModify because Add/Remove mutate the existing image.");
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);

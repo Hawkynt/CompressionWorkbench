@@ -1148,6 +1148,29 @@ public class ExternalFsInteropTests {
   }
 
   [Test]
+  public void F2fs_AddInPlace_FsckF2fsAccepts() {
+    RequireWslTool("fsck.f2fs");
+
+    // Build a fresh image, mutate it via the log-structured Add path, then verify
+    // fsck.f2fs still considers it clean. This catches any inconsistency between
+    // the on-disk NAT/SIT, the NAT/SIT journals, and the checkpoint CRC.
+    var f2fs = new FileSystem.F2fs.F2fsWriter();
+    f2fs.AddFile("seed.txt", SmallText);
+    using var img = new MemoryStream();
+    img.Write(f2fs.Build());
+
+    var modifiable = (Compression.Registry.IArchiveModifiable)new FileSystem.F2fs.F2fsFormatDescriptor();
+    modifiable.Add(img, [Compression.Registry.ArchiveInputInfo.InMemory("added.txt", RepetitiveText)]);
+
+    var imgPath = Path.Combine(this._tmpDir, "f2fs_addinplace.img");
+    File.WriteAllBytes(imgPath, img.ToArray());
+
+    var result = FsInteropToolbox.RunWsl($"fsck.f2fs -f --dry-run {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"fsck.f2fs rejected our mutated image (exit {result.ExitCode}):\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+  }
+
+  [Test]
   public void F2fs_LinuxMkfsOutput_ReadByOurReader() {
     RequireWslTool("mkfs.f2fs");
     // F2FS minimum is ~38 MB; we use 64 MB to match our writer's default.

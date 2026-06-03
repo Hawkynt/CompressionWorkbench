@@ -22,7 +22,7 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
   public string DefaultExtension => ".f2fs";
@@ -34,15 +34,23 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
-  /// F2FS flash-friendly filesystem image — WORM. The writer emits a real
-  /// kernel-spec multi-segment image (superblock + checkpoint pack +
-  /// SIT/NAT/SSA + Main area with HOT/WARM/COLD nodes and inline-dentry
-  /// root). True in-flight Add/Remove would require mutating the NAT and SIT
-  /// journals, allocating from the segment-typed valid_map, walking inline
-  /// dentries, and recomputing the checkpoint CRC — multi-week work.
-  /// Per project policy, WORM = create only; no in-flight modification.
+  /// F2FS flash-friendly filesystem image — R/W via log-structured append.
+  /// Add/Remove mutate in place: writes land in the open WARM_DATA/WARM_NODE
+  /// current segments (no full image rebuild) and advance to fresh main-area
+  /// segments of the right CURSEG_* type when the open one fills. On-disk NAT
+  /// and SIT entries are always updated; the NAT/SIT journals in the compact
+  /// summary block are mirrored when there is room and silently fall through
+  /// to disk when full (the on-disk entry is authoritative — f2fs-tools
+  /// treats the journal as overrides over disk). When the root inline-dentry
+  /// region is full the directory is converted in place to a regular
+  /// block-based dentry directory whose entries live in HOT_DATA blocks. The
+  /// checkpoint version + CRC are advanced into the alternate pack so the
+  /// prior pack stays as a roll-back. Genuinely out of scope: subdirectory
+  /// creation, nested removal, growing the main-area segment count, and
+  /// multi-level indirect inode trees.
   /// </summary>
-  public string Description => "F2FS flash-friendly filesystem image (WORM)";
+  public string Description => "F2FS flash-friendly filesystem image (R/W via log-structured append; "
+    + "full NAT/SIT block rewrite + regular dentry blocks on overflow)";
 
   // --- WORM write constraints ---
   // F2FS minimum image = ~30 MB in the real-world mkfs.f2fs tool; our writer emits 64 MB by
@@ -153,16 +161,63 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Defragment(Stream archive, DefragOptions options)
     => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
 
-  // ── IArchiveModifiable (rebuild-based add / replace / remove) ──────────
-  // F2FS in-place mutation needs NAT/SIT journal updates + checkpoint CRC
-  // recompute; instead we read every file and rebuild a fresh fsck.f2fs-clean
-  // image with the writer, the same path the defragmentor uses.
+  // ── IArchiveModifiable (in-place log-structured mutation) ──────────────
+  // F2FS is a log-structured FS: Add appends new data + node blocks to the
+  // open WARM_DATA/WARM_NODE current segments, promotes a fresh free segment
+  // of the right CURSEG_* type when the open one fills, updates on-disk
+  // NAT/SIT (the source of truth), best-effort mirrors NAT/SIT updates in
+  // the compact summary block's journals (skipping silently when full —
+  // f2fs-tools treats the journal as overrides over on-disk), and stamps a
+  // fresh checkpoint (version + CRC) into the older of the two CP packs so
+  // the previous pack stays as a roll-back snapshot. When the root
+  // inline-dentry region fills the directory is converted in place to a
+  // regular block-based dentry directory and Adds continue against
+  // HOT_DATA blocks. Remove clears the dentry (inline or regular block),
+  // invalidates the NAT entry, clears SIT valid_map bits, and wipes the
+  // inode + data block bytes.
+  //
+  // Scope: root-level files only. Subdirectory creation, nested removal,
+  // multi-level indirect inode trees, and main-area-segment growth are
+  // genuinely out of scope.
 
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs, ReadEntries, BuildImage);
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
 
-  public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames, ReadEntries, BuildImage);
+    if (!archive.CanSeek)
+      throw new NotSupportedException("F2fs: Add requires a seekable stream.");
+
+    var image = ReadAll(archive);
+    var files = inputs.Select(i => (i.ArchiveName, i.ReadContent())).ToList();
+    var updated = F2fsModifier.AddFiles(image, files);
+    WriteAll(archive, updated);
+  }
+
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+
+    if (!archive.CanSeek)
+      throw new NotSupportedException("F2fs: Remove requires a seekable stream.");
+
+    var image = ReadAll(archive);
+    var updated = F2fsModifier.RemoveFiles(image, entryNames);
+    WriteAll(archive, updated);
+  }
+
+  private static byte[] ReadAll(Stream s) {
+    s.Position = 0;
+    using var ms = new MemoryStream();
+    s.CopyTo(ms);
+    return ms.ToArray();
+  }
+
+  private static void WriteAll(Stream s, byte[] data) {
+    s.Position = 0;
+    s.Write(data, 0, data.Length);
+    s.SetLength(data.Length);
+    s.Position = 0;
+  }
 
   private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
     var r = new F2fsReader(stream);

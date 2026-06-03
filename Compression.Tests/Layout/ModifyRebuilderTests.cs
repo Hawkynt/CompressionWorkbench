@@ -34,11 +34,13 @@ public class ModifyRebuilderTests {
   [TestCase("RomFs")]
   [TestCase("T64")]
   [TestCase("Tap")]
-  // F2fs / ReiserFs / Apfs intentionally excluded — locked WORM (real-FS B-tree
+  // ReiserFs / Apfs intentionally excluded — locked WORM (real-FS B-tree
   // shape; in-flight Add/Remove is multi-week work). Guard tests live in the
-  // per-FS fixtures: F2fsTests.Descriptor_IsHonestlyRebuildBased,
-  // ReiserFsTests.Descriptor_IsHonestlyRebuildBased,
+  // per-FS fixtures: ReiserFsTests.Descriptor_IsHonestlyRebuildBased,
   // ApfsTests.Descriptor_IsHonestlyRebuildBased.
+  // F2fs has its own log-structured Add/Remove (F2fsModifier) — see
+  // F2fsModifyTests for the round-trip + overflow tests, and
+  // F2fsTests.Descriptor_AdvertisesLogStructuredMutation for the capability lock.
   public void DescriptorImplementsIArchiveModifiable(string formatId) {
     var desc = FormatRegistry.GetById(formatId);
     Assert.That(desc, Is.Not.Null, $"{formatId} descriptor not registered");
