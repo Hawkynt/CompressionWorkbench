@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using Compression.Tests.Codecs.Mp3;
 using FileFormat.Mp3;
 
 namespace Compression.Tests.Mp3;
@@ -30,6 +31,37 @@ public class Mp3ChannelSplitTests {
     for (var i = 0; i < blob.Length; ++i) blob[i] = (byte)(i * 37 + 11);
     using var ms = new MemoryStream(blob);
     Assert.That(() => new Mp3FormatDescriptor().List(ms, null), Throws.Nothing);
+  }
+
+  [Test]
+  public void Mp3Descriptor_LayerIIMonoSilence_SurfacesMonoChannel() {
+    var frame = Mp3SyntheticFrames.BuildLayerIIMonoSilenceFrame();
+    var blob = new byte[frame.Length * 2];
+    frame.CopyTo(blob, 0);
+    frame.CopyTo(blob, frame.Length);
+
+    using var ms = new MemoryStream(blob);
+    var entries = new Mp3FormatDescriptor().List(ms, null);
+
+    Assert.That(entries.Any(e => e.Name == "FULL.mp3"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "MONO.wav" && e.Kind == "Channel"), Is.True);
+    Assert.That(entries.Any(e => e.Name is "LEFT.wav" or "RIGHT.wav"), Is.False);
+  }
+
+  [Test]
+  public void Mp3Descriptor_LayerIIStereoSilence_SurfacesLeftRightChannels() {
+    var frame = Mp3SyntheticFrames.BuildLayerIIStereoSilenceFrame();
+    var blob = new byte[frame.Length * 2];
+    frame.CopyTo(blob, 0);
+    frame.CopyTo(blob, frame.Length);
+
+    using var ms = new MemoryStream(blob);
+    var entries = new Mp3FormatDescriptor().List(ms, null);
+
+    Assert.That(entries.Any(e => e.Name == "FULL.mp3"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav" && e.Kind == "Channel"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "RIGHT.wav" && e.Kind == "Channel"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "MONO.wav"), Is.False);
   }
 
   private static byte[] BuildId3v2OnlyMp3() {
