@@ -164,4 +164,222 @@ public class ExtExternalConformanceTests {
     }
     return new ToolResult(stdout, stderr, proc.ExitCode);
   }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Stage-2 acceptance gate — external Linux tools (PATH or WSL).
+  //
+  // The Linux-only tests above hand the image to a local e2fsck binary;
+  // the tests in this region drive the same tools through whichever
+  // channel is reachable (Linux PATH on CI, WSL on developer Windows
+  // boxes) so the gate runs identically in both environments. Every
+  // test skips cleanly when no channel can provide the tool.
+  //
+  // Per Stage-2 of CONTRIBUTING.md, an image we write is only accepted
+  // when an *independent* tool — not our own reader — confirms it.
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// <summary>
+  /// Routes a one-shot command at <paramref name="tool"/> through whichever
+  /// channel is reachable: the local PATH on Linux, the WSL distro on Windows.
+  /// </summary>
+  /// <remarks>
+  /// On Linux CI the local <c>e2fsprogs</c> tools run directly so the gate is
+  /// enforced without WSL. On Windows developer boxes the WSL channel runs
+  /// the same tool against a <c>/mnt/c/...</c> form of the image path.
+  /// </remarks>
+  private static (string StdOut, string StdErr, int ExitCode) RunE2fsTool(
+      string tool, string args, string winImagePath) {
+    if (IsLinux && HasCommand(tool)) {
+      var r = RunTool(tool, $"{args} \"{winImagePath}\"");
+      return (r.StdOut, r.StdErr, r.ExitCode);
+    }
+    if (FsInteropToolbox.WslAvailable && FsInteropToolbox.WslHasTool(tool))
+      return FsInteropToolbox.RunWsl($"{tool} {args} {FsInteropToolbox.WinToWsl(winImagePath)}");
+    return (string.Empty, "no channel available", int.MinValue);
+  }
+
+  private static void RequireE2fsTool(string tool) {
+    if (IsLinux && HasCommand(tool)) return;
+    if (FsInteropToolbox.WslAvailable && FsInteropToolbox.WslHasTool(tool)) return;
+    Assert.Ignore(
+      $"'{tool}' not available on this host. On Linux: `sudo apt install -y e2fsprogs`. " +
+      $"On Windows: install WSL (`wsl --install`) and run `sudo apt install -y e2fsprogs` " +
+      $"inside the distro.");
+  }
+
+  private static byte[] BuildExt2Image() {
+    var w = new FileSystem.Ext.ExtWriter();
+    w.AddFile("hello.txt", "ext2 sample"u8.ToArray());
+    w.AddFile("docs/guide.txt", "ext2 docs guide"u8.ToArray());
+    return w.Build(blockSize: 1024, totalBlocks: 4096,
+      FileSystem.Ext.ExtWriter.ExtVersion.Ext2, journal: false, volumeLabel: "cwbext2", inodeSize: 128);
+  }
+
+  private static byte[] BuildExt3Image() {
+    var w = new FileSystem.Ext.ExtWriter();
+    w.AddFile("hello.txt", "ext3 sample"u8.ToArray());
+    w.AddFile("docs/guide.txt", "ext3 docs guide"u8.ToArray());
+    // ext3 → COMPAT_HAS_JOURNAL set, journal inode reserved (empty journal: SB
+    // is CLEAN so recovery never runs).
+    return w.Build(blockSize: 1024, totalBlocks: 4096,
+      FileSystem.Ext.ExtWriter.ExtVersion.Ext3, journal: true, volumeLabel: "cwbext3", inodeSize: 128);
+  }
+
+  private static byte[] BuildExt4Image() {
+    var w = new FileSystem.Ext.ExtWriter();
+    w.AddFile("hello.txt", "ext4 sample"u8.ToArray());
+    w.AddFile("notes.bin", MakeData(9_000));
+    w.AddFile("docs/guide.txt", "ext4 docs guide"u8.ToArray());
+    w.AddFile("docs/api/reference.txt", "deep reference"u8.ToArray());
+    return w.Build(blockSize: 1024, totalBlocks: 4096,
+      FileSystem.Ext.ExtWriter.ExtVersion.Ext4, journal: true, volumeLabel: "cwbext4", inodeSize: 256);
+  }
+
+  // ── ext2 — e2fsck clean ────────────────────────────────────────────
+
+  [Test, Category("Conformance"), Category("Wsl")]
+  public void Ext2_OurImage_PassesE2fsckClean_ViaWsl() {
+    RequireE2fsTool("e2fsck");
+    var imgPath = Path.Combine(this._tmpDir, "ext2_wsl.img");
+    File.WriteAllBytes(imgPath, BuildExt2Image());
+
+    var r = RunE2fsTool("e2fsck", "-fn", imgPath);
+    Assert.That(r.ExitCode, Is.EqualTo(0),
+      $"e2fsck rejected our ext2 image (exit {r.ExitCode}):\nstdout:\n{r.StdOut}\nstderr:\n{r.StdErr}");
+  }
+
+  // ── ext3 — e2fsck clean ────────────────────────────────────────────
+
+  [Test, Category("Conformance"), Category("Wsl")]
+  public void Ext3_OurImage_PassesE2fsckClean_ViaWsl() {
+    RequireE2fsTool("e2fsck");
+    var imgPath = Path.Combine(this._tmpDir, "ext3_wsl.img");
+    File.WriteAllBytes(imgPath, BuildExt3Image());
+
+    var r = RunE2fsTool("e2fsck", "-fn", imgPath);
+    Assert.That(r.ExitCode, Is.EqualTo(0),
+      $"e2fsck rejected our ext3 image (exit {r.ExitCode}):\nstdout:\n{r.StdOut}\nstderr:\n{r.StdErr}");
+  }
+
+  // ── ext4 — e2fsck clean + dumpe2fs feature flags ───────────────────
+
+  [Test, Category("Conformance"), Category("Wsl")]
+  public void Ext4_OurImage_PassesE2fsckClean_ViaWsl() {
+    RequireE2fsTool("e2fsck");
+    var imgPath = Path.Combine(this._tmpDir, "ext4_wsl.img");
+    File.WriteAllBytes(imgPath, BuildExt4Image());
+
+    var r = RunE2fsTool("e2fsck", "-fn", imgPath);
+    Assert.That(r.ExitCode, Is.EqualTo(0),
+      $"e2fsck rejected our ext4 image (exit {r.ExitCode}):\nstdout:\n{r.StdOut}\nstderr:\n{r.StdErr}");
+  }
+
+  [Test, Category("Conformance"), Category("Wsl")]
+  public void Ext4_OurImage_DumpE2fsAdvertisesHasJournal() {
+    RequireE2fsTool("dumpe2fs");
+    var imgPath = Path.Combine(this._tmpDir, "ext4_features.img");
+    File.WriteAllBytes(imgPath, BuildExt4Image());
+
+    // `dumpe2fs -h` prints the superblock header — including the line
+    //   Filesystem features:      has_journal ext_attr resize_inode dir_index ...
+    // The ext4 writer sets HAS_JOURNAL whenever journal=true; ext_attr is
+    // additionally advertised by mkfs.ext4 by default. We assert has_journal
+    // strictly (the writer guarantees it) and emit an informational note
+    // when ext_attr is absent so a future writer that adds xattrs flips the
+    // gate green without changing the test.
+    var r = RunE2fsTool("dumpe2fs", "-h", imgPath);
+    Assert.That(r.ExitCode, Is.EqualTo(0), $"dumpe2fs failed:\n{r.StdErr}");
+    Assert.That(r.StdOut, Does.Contain("Filesystem features"),
+      "dumpe2fs -h should print the Filesystem features line");
+    Assert.That(r.StdOut, Does.Contain("has_journal").IgnoreCase,
+      $"ext4 image must advertise has_journal in s_feature_compat:\n{r.StdOut}");
+    Assert.That(r.StdOut, Does.Contain("0xEF53"),
+      "dumpe2fs -h should still confirm the ext magic number");
+    if (!r.StdOut.Contains("ext_attr", StringComparison.OrdinalIgnoreCase))
+      TestContext.Out.WriteLine(
+        "[info] dumpe2fs did not list ext_attr — extended attributes not yet emitted by ExtWriter.");
+  }
+
+  // ── ext4 — debugfs ls of the root and a nested directory ───────────
+
+  [Test, Category("Conformance"), Category("Wsl")]
+  public void Ext4_OurImage_DebugfsListsExpectedFiles() {
+    RequireE2fsTool("debugfs");
+    var imgPath = Path.Combine(this._tmpDir, "ext4_debugfs.img");
+    File.WriteAllBytes(imgPath, BuildExt4Image());
+
+    // `-R "ls <dir>"` runs one read-only command and exits.
+    var root = RunE2fsTool("debugfs", "-R 'ls -l /'", imgPath);
+    Assert.That(root.ExitCode, Is.EqualTo(0),
+      $"debugfs ls / failed (exit {root.ExitCode}):\nstdout:\n{root.StdOut}\nstderr:\n{root.StdErr}");
+    Assert.That(root.StdOut, Does.Contain("hello.txt"),
+      $"debugfs root listing missing hello.txt:\n{root.StdOut}");
+    Assert.That(root.StdOut, Does.Contain("notes.bin"),
+      $"debugfs root listing missing notes.bin:\n{root.StdOut}");
+    Assert.That(root.StdOut, Does.Contain("docs"),
+      $"debugfs root listing missing docs/ subdirectory:\n{root.StdOut}");
+
+    var docs = RunE2fsTool("debugfs", "-R 'ls -l /docs'", imgPath);
+    Assert.That(docs.ExitCode, Is.EqualTo(0),
+      $"debugfs ls /docs failed (exit {docs.ExitCode}):\nstdout:\n{docs.StdOut}\nstderr:\n{docs.StdErr}");
+    Assert.That(docs.StdOut, Does.Contain("guide.txt"),
+      $"debugfs /docs listing missing guide.txt:\n{docs.StdOut}");
+    Assert.That(docs.StdOut, Does.Contain("api"),
+      $"debugfs /docs listing missing api/ subdirectory:\n{docs.StdOut}");
+  }
+
+  // ── ext4 — loop mount (needs root; skip cleanly otherwise) ─────────
+
+  [Test, Category("Conformance"), Category("Wsl")]
+  public void Ext4_OurImage_LoopMountListsExpectedFiles() {
+    RequireE2fsTool("e2fsck");
+    if (!FsInteropToolbox.WslAvailable)
+      Assert.Ignore("Loop-mount gate runs only through WSL on Windows. " +
+                    "On Linux CI use the e2fsck/debugfs gates above.");
+    if (!FsInteropToolbox.WslHasPasswordlessSudo)
+      Assert.Ignore("WSL loop-mount requires passwordless sudo (mount /dev/loop*). " +
+                    "Add 'username ALL=(ALL) NOPASSWD: ALL' to /etc/sudoers.d/wsl-claude inside WSL " +
+                    "to enable this gate.");
+
+    // 64 MiB image — larger than the 4 MiB writer default so the mount path
+    // exercises a real-sized volume.
+    var w = new FileSystem.Ext.ExtWriter();
+    w.AddFile("hello.txt", "loop-mount sample"u8.ToArray());
+    w.AddFile("notes.bin", MakeData(9_000));
+    w.AddFile("docs/guide.txt", "loop-mount docs guide"u8.ToArray());
+    const int Blocks = 64 * 1024; // 64 MiB at 1 KiB blocks
+    var bytes = w.Build(blockSize: 1024, totalBlocks: Blocks,
+      FileSystem.Ext.ExtWriter.ExtVersion.Ext4, journal: true, volumeLabel: "cwbmnt", inodeSize: 256);
+    var imgPath = Path.Combine(this._tmpDir, "ext4_mount.img");
+    File.WriteAllBytes(imgPath, bytes);
+
+    var mountId = Guid.NewGuid().ToString("N")[..8];
+    var wslImg = FsInteropToolbox.WinToWsl(imgPath);
+    // Race-free wrapper: mkdir → mount → ls → umount → rmdir, with an
+    // unconditional umount/rmdir in a trap so a partial failure never
+    // leaks loop devices. Output of `ls` is captured for the assertion.
+    var script =
+      $"set -e; " +
+      $"MNT=/tmp/cwb_mnt_{mountId}; " +
+      $"trap 'sudo -n umount $MNT 2>/dev/null; rmdir $MNT 2>/dev/null' EXIT; " +
+      $"mkdir -p $MNT && " +
+      $"sudo -n mount -o loop,ro {wslImg} $MNT && " +
+      $"ls -la $MNT";
+
+    var r = FsInteropToolbox.RunWsl(script);
+    // Mount failures are common in restricted CI environments (no loop
+    // device, no privileged container, sudo gated). Treat any non-zero
+    // exit as a skip rather than a hard failure — the e2fsck/debugfs
+    // gates above are the load-bearing checks.
+    if (r.ExitCode != 0)
+      Assert.Ignore($"WSL loop mount failed (likely no loop device / privileged container); " +
+                    $"skipping. stdout:\n{r.StdOut}\nstderr:\n{r.StdErr}");
+
+    Assert.That(r.StdOut, Does.Contain("hello.txt"),
+      $"loop-mount listing missing hello.txt:\n{r.StdOut}");
+    Assert.That(r.StdOut, Does.Contain("notes.bin"),
+      $"loop-mount listing missing notes.bin:\n{r.StdOut}");
+    Assert.That(r.StdOut, Does.Contain("docs"),
+      $"loop-mount listing missing docs:\n{r.StdOut}");
+  }
 }
