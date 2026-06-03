@@ -18,7 +18,8 @@ public sealed class Rf64Reader {
     int BitsPerSample,
     int FormatCode,
     byte[] InterleavedPcm,
-    IReadOnlyList<(string Id, byte[] Data)> MetadataChunks);
+    IReadOnlyList<(string Id, byte[] Data)> MetadataChunks,
+    uint? ChannelMask = null);
 
   private const uint SizeSentinel = 0xFFFFFFFF;
 
@@ -37,6 +38,7 @@ public sealed class Rf64Reader {
     var pos = 12;
     int formatCode = 0, numChannels = 0, sampleRate = 0, bitsPerSample = 0;
     var fmtParsed = false;
+    uint? channelMask = null;
     byte[]? rawData = null;
     var metadata = new List<(string, byte[])>();
 
@@ -78,9 +80,11 @@ public sealed class Rf64Reader {
           numChannels = BinaryPrimitives.ReadUInt16LittleEndian(data[(bodyStart + 2)..]);
           sampleRate = (int)BinaryPrimitives.ReadUInt32LittleEndian(data[(bodyStart + 4)..]);
           bitsPerSample = BinaryPrimitives.ReadUInt16LittleEndian(data[(bodyStart + 14)..]);
-          // WAVE_FORMAT_EXTENSIBLE: real code lives 24 bytes in.
-          if (formatCode == 0xFFFE && iSize >= 40)
+          // WAVE_FORMAT_EXTENSIBLE: dwChannelMask at +20, real code 24 bytes in.
+          if (formatCode == 0xFFFE && iSize >= 40) {
+            channelMask = BinaryPrimitives.ReadUInt32LittleEndian(data[(bodyStart + 20)..]);
             formatCode = BinaryPrimitives.ReadUInt16LittleEndian(data[(bodyStart + 24)..]);
+          }
           fmtParsed = true;
           break;
         }
@@ -99,6 +103,6 @@ public sealed class Rf64Reader {
     if (!fmtParsed) throw new InvalidDataException("RF64 missing 'fmt ' chunk.");
     if (rawData == null) throw new InvalidDataException("RF64 missing 'data' chunk.");
 
-    return new ParsedRf64(numChannels, sampleRate, bitsPerSample, formatCode, rawData, metadata);
+    return new ParsedRf64(numChannels, sampleRate, bitsPerSample, formatCode, rawData, metadata, channelMask);
   }
 }

@@ -31,7 +31,8 @@ public sealed class CafReader {
     bool IsFloat,
     string FormatId,
     byte[] InterleavedPcm,
-    IReadOnlyList<(string Type, byte[] Data)> OtherChunks);
+    IReadOnlyList<(string Type, byte[] Data)> OtherChunks,
+    uint? ChannelMask = null);
 
   private const uint FlagIsFloat = 0x1;
   private const uint FlagIsLittleEndian = 0x2;
@@ -43,6 +44,7 @@ public sealed class CafReader {
       throw new InvalidDataException("Missing 'caff' magic.");
 
     var pos = 8;
+    uint? channelMask = null;
     var descParsed = false;
     int channels = 0, sampleRate = 0, bitsPerChannel = 0;
     uint formatFlags = 0;
@@ -82,6 +84,14 @@ public sealed class CafReader {
           // First 4 bytes are mEditCount; the rest is the audio payload.
           rawData = body.Length >= 4 ? body[4..].ToArray() : [];
           break;
+        case "chan":
+          // AudioChannelLayout: mChannelLayoutTag | mChannelBitmap | descriptions.
+          // Only the UseChannelBitmap tag (0x10000) carries a WAVE-order speaker
+          // mask we can name channels from; other tags stay raw metadata.
+          if (body.Length >= 8 && BinaryPrimitives.ReadUInt32BigEndian(body) == 0x10000)
+            channelMask = BinaryPrimitives.ReadUInt32BigEndian(body[4..]);
+          other.Add((type, body.ToArray()));
+          break;
         default:
           other.Add((type, body.ToArray()));
           break;
@@ -101,7 +111,7 @@ public sealed class CafReader {
     if (!isFloat && !littleEndian && bitsPerChannel > 8)
       canonical = ConvertBeToLe(payload, bitsPerChannel / 8);
 
-    return new ParsedCaf(channels, sampleRate, bitsPerChannel, formatFlags, isFloat, formatId, canonical, other);
+    return new ParsedCaf(channels, sampleRate, bitsPerChannel, formatFlags, isFloat, formatId, canonical, other, channelMask);
   }
 
   private static byte[] ConvertBeToLe(byte[] be, int bytesPerSample) {

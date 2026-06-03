@@ -135,19 +135,8 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     output.Write(blob);
   }
 
-  private static int ChannelOrder(string name) => name.ToUpperInvariant() switch {
-    "LEFT" or "FRONT_LEFT" => 0,
-    "RIGHT" or "FRONT_RIGHT" => 1,
-    "CENTER" => 2,
-    "LFE" => 3,
-    "BACK_LEFT" => 4,
-    "BACK_RIGHT" => 5,
-    "SIDE_LEFT" => 6,
-    "SIDE_RIGHT" => 7,
-    "MONO" => 0,
-    _ => int.Parse(name.StartsWith("CH_", StringComparison.Ordinal) ? name[3..] : "0",
-                    System.Globalization.CultureInfo.InvariantCulture),
-  };
+  // Canonical speaker ordering (FFmpeg/WAVE bit order, mono through 22.2).
+  private static int ChannelOrder(string name) => ChannelLayout.OrderIndex(name);
 
   // ── IArchiveWriteConstraints ──────────────────────────────────────────────
 
@@ -189,7 +178,8 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // Split PCM integer formats (code 1) per-channel; float/other are skipped.
     if (parsed.FormatCode == 1 && parsed.BitsPerSample is 8 or 16 or 24 or 32 && parsed.NumChannels > 1) {
       foreach (var (name, wavBlob) in PcmCodec.SplitInterleavedPcm(
-          parsed.InterleavedPcm, parsed.NumChannels, parsed.SampleRate, parsed.BitsPerSample))
+          parsed.InterleavedPcm, parsed.NumChannels, parsed.SampleRate, parsed.BitsPerSample,
+          parsed.ChannelMask))
         entries.Add(($"{name}.wav", "Channel", wavBlob));
     }
     foreach (var (id, data) in parsed.MetadataChunks)

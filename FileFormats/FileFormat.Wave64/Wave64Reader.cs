@@ -34,7 +34,8 @@ public sealed class Wave64Reader {
     int BitsPerSample,
     int FormatCode,
     byte[] InterleavedPcm,
-    IReadOnlyList<(byte[] Guid, byte[] Data)> OtherChunks);
+    IReadOnlyList<(byte[] Guid, byte[] Data)> OtherChunks,
+    uint? ChannelMask = null);
 
   public ParsedWave64 Read(ReadOnlySpan<byte> data) {
     // riff guid (16) + fileSize (8) + wave guid (16) = 40-byte preamble.
@@ -47,6 +48,7 @@ public sealed class Wave64Reader {
 
     var pos = 40;
     int formatCode = 0, numChannels = 0, sampleRate = 0, bitsPerSample = 0;
+    uint? channelMask = null;
     var fmtParsed = false;
     byte[]? rawData = null;
     var others = new List<(byte[], byte[])>();
@@ -69,9 +71,11 @@ public sealed class Wave64Reader {
         numChannels = BinaryPrimitives.ReadUInt16LittleEndian(body[2..]);
         sampleRate = (int)BinaryPrimitives.ReadUInt32LittleEndian(body[4..]);
         bitsPerSample = BinaryPrimitives.ReadUInt16LittleEndian(body[14..]);
-        // WAVE_FORMAT_EXTENSIBLE: real code lives 24 bytes into the body.
-        if (formatCode == 0xFFFE && bodyLen >= 40)
+        // WAVE_FORMAT_EXTENSIBLE: dwChannelMask at +20, real code 24 bytes in.
+        if (formatCode == 0xFFFE && bodyLen >= 40) {
+          channelMask = BinaryPrimitives.ReadUInt32LittleEndian(body[20..]);
           formatCode = BinaryPrimitives.ReadUInt16LittleEndian(body[24..]);
+        }
         fmtParsed = true;
       } else if (guid.AsSpan().SequenceEqual(DataGuid)) {
         rawData = body.ToArray();
@@ -87,6 +91,6 @@ public sealed class Wave64Reader {
     if (!fmtParsed) throw new InvalidDataException("Wave64 missing 'fmt ' chunk.");
     if (rawData == null) throw new InvalidDataException("Wave64 missing 'data' chunk.");
 
-    return new ParsedWave64(numChannels, sampleRate, bitsPerSample, formatCode, rawData, others);
+    return new ParsedWave64(numChannels, sampleRate, bitsPerSample, formatCode, rawData, others, channelMask);
   }
 }
