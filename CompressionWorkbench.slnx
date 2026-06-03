@@ -453,6 +453,7 @@
     <Project Path="FileFormats/FileFormat.Sf2/FileFormat.Sf2.csproj" />
     <Project Path="FileFormats/FileFormat.Dls/FileFormat.Dls.csproj" />
     <Project Path="FileFormats/FileFormat.Brstm/FileFormat.Brstm.csproj" />
+    <Project Path="FileFormats/FileFormat.G711/FileFormat.G711.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />

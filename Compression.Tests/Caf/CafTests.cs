@@ -111,6 +111,69 @@ public class CafTests {
     Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(22)), Is.EqualTo(1));
   }
 
+  // 8 kHz stereo μ-law, 6 frames; one source byte per channel sample, channels
+  // interleaved bytewise exactly like LPCM (mBytesPerPacket = channels, 1 frame/packet).
+  private static byte[] MakeStereoUlawCaf() {
+    const int frames = 6;
+    var data = new byte[frames * 2];
+    for (var i = 0; i < frames; ++i) {
+      data[i * 2] = (byte)(0x10 + i * 7);     // left
+      data[i * 2 + 1] = (byte)(0x90 + i * 5); // right
+    }
+    return BuildCompandedCaf(formatId: "ulaw", sampleRate: 8000, channels: 2, interleaved: data);
+  }
+
+  private static byte[] BuildCompandedCaf(string formatId, double sampleRate, int channels, byte[] interleaved) {
+    using var ms = new MemoryStream();
+    Span<byte> hdr = stackalloc byte[8];
+    "caff"u8.CopyTo(hdr);
+    BinaryPrimitives.WriteUInt16BigEndian(hdr[4..], 1);
+    BinaryPrimitives.WriteUInt16BigEndian(hdr[6..], 0);
+    ms.Write(hdr);
+
+    var desc = new byte[32];
+    BinaryPrimitives.WriteDoubleBigEndian(desc.AsSpan(0), sampleRate);
+    System.Text.Encoding.ASCII.GetBytes(formatId).CopyTo(desc.AsSpan(8));
+    BinaryPrimitives.WriteUInt32BigEndian(desc.AsSpan(12), 0);              // mFormatFlags
+    BinaryPrimitives.WriteUInt32BigEndian(desc.AsSpan(16), (uint)channels); // mBytesPerPacket (1 byte/channel)
+    BinaryPrimitives.WriteUInt32BigEndian(desc.AsSpan(20), 1);              // mFramesPerPacket
+    BinaryPrimitives.WriteUInt32BigEndian(desc.AsSpan(24), (uint)channels);
+    BinaryPrimitives.WriteUInt32BigEndian(desc.AsSpan(28), 8);              // mBitsPerChannel (companded)
+    WriteChunk(ms, "desc", desc);
+
+    var data = new byte[4 + interleaved.Length];
+    interleaved.CopyTo(data.AsSpan(4));
+    WriteChunk(ms, "data", data);
+    return ms.ToArray();
+  }
+
+  [Test]
+  public void Descriptor_Ulaw_SurfacesDecodedChannels() {
+    var blob = MakeStereoUlawCaf();
+    using var ms = new MemoryStream(blob);
+    var entries = new CafFormatDescriptor().List(ms, null);
+
+    Assert.That(entries.Any(e => e.Name == "FULL.caf" && e.Kind == "Container"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav" && e.Kind == "Channel"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "RIGHT.wav" && e.Kind == "Channel"), Is.True);
+  }
+
+  [Test]
+  public void CafReader_Ulaw_FirstSamplesMatchMuLawDecode() {
+    var blob = MakeStereoUlawCaf();
+    var parsed = new CafReader().Read(blob);
+    Assert.That(parsed.NumChannels, Is.EqualTo(2));
+    Assert.That(parsed.BitsPerSample, Is.EqualTo(16)); // decoded to 16-bit
+    Assert.That(parsed.IsFloat, Is.False);
+    Assert.That(parsed.FormatId, Is.EqualTo("lpcm"));  // surfaced as canonical lpcm
+
+    // First left/right samples decode via Codec.MuLaw from the first two source bytes.
+    var leftExp = Codec.MuLaw.MuLawCodec.DecodeSample((byte)0x10);
+    var rightExp = Codec.MuLaw.MuLawCodec.DecodeSample((byte)0x90);
+    Assert.That(BinaryPrimitives.ReadInt16LittleEndian(parsed.InterleavedPcm.AsSpan(0)), Is.EqualTo(leftExp));
+    Assert.That(BinaryPrimitives.ReadInt16LittleEndian(parsed.InterleavedPcm.AsSpan(2)), Is.EqualTo(rightExp));
+  }
+
   [Test]
   public void Descriptor_CreateFromChannelWavs_RoundTrips() {
     const int frames = 8;

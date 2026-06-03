@@ -52,6 +52,44 @@ public static class PcmCodec {
   }
 
   /// <summary>
+  /// Splits interleaved little-endian IEEE-float PCM into per-channel mono WAV blobs
+  /// (RIFF format code 3). Mirrors <see cref="SplitInterleavedPcm"/>'s frame walk but
+  /// emits float WAVs; <paramref name="bitsPerSample"/> must be 32 or 64. As with the
+  /// integer split, an explicit <paramref name="channelMask"/> (WAVE_FORMAT_EXTENSIBLE
+  /// <c>dwChannelMask</c>, CAF channel bitmap) names each mono WAV for its real speaker;
+  /// otherwise the FFmpeg default layout for the channel count applies.
+  /// </summary>
+  public static IReadOnlyList<(string Name, byte[] WavBlob)> SplitInterleavedFloat(
+      byte[] interleaved, int channels, int sampleRate, int bitsPerSample, ulong? channelMask = null) {
+    if (bitsPerSample is not (32 or 64))
+      throw new ArgumentException("Float PCM split requires 32-bit or 64-bit samples.", nameof(bitsPerSample));
+    if (channels <= 1)
+      return [("MONO", ToWavBlob(interleaved, channels: 1, sampleRate, bitsPerSample, formatCode: 3))];
+
+    var bytesPerSample = bitsPerSample / 8;
+    var frameBytes = bytesPerSample * channels;
+    if (interleaved.Length % frameBytes != 0)
+      throw new ArgumentException("Interleaved float PCM length is not a multiple of frame size.");
+
+    var frameCount = interleaved.Length / frameBytes;
+    var names = channelMask is { } mask
+      ? ChannelLayout.NamesFromMask(mask, channels)
+      : ChannelLayout.DefaultNames(channels);
+    var result = new List<(string, byte[])>(channels);
+
+    for (var c = 0; c < channels; ++c) {
+      var mono = new byte[frameCount * bytesPerSample];
+      for (var f = 0; f < frameCount; ++f) {
+        var src = f * frameBytes + c * bytesPerSample;
+        var dst = f * bytesPerSample;
+        Buffer.BlockCopy(interleaved, src, mono, dst, bytesPerSample);
+      }
+      result.Add((names[c], ToWavBlob(mono, channels: 1, sampleRate, bitsPerSample, formatCode: 3)));
+    }
+    return result;
+  }
+
+  /// <summary>
   /// Splits per-channel integer samples into per-channel mono WAV blobs. Widths wider
   /// than <paramref name="bitsPerSample"/> are truncated via two's-complement masking.
   /// </summary>

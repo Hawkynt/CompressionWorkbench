@@ -492,6 +492,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Sf2\FileFormat.Sf2.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Dls\FileFormat.Dls.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Brstm\FileFormat.Brstm.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.G711\FileFormat.G711.csproj" />
   </ItemGroup>
 
 </Project>

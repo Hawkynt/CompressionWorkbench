@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <RootNamespace>FileFormat.Caf</RootNamespace>
+    <RootNamespace>FileFormat.G711</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

@@ -9,9 +9,11 @@ namespace FileFormat.Caf;
 
 /// <summary>
 /// Exposes an Apple Core Audio Format (<c>.caf</c>) file as an archive of
-/// <c>FULL.caf</c> plus one mono WAV per channel (for LPCM integer audio) plus any
+/// <c>FULL.caf</c> plus one mono WAV per channel (for LPCM integer audio, or the
+/// G.711 <c>ulaw</c>/<c>alaw</c> companded formats decoded to 16-bit PCM) plus any
 /// ancillary chunks (<c>info</c>, <c>chan</c>, <c>free</c>, …) as
-/// <c>metadata/&lt;type&gt;.bin</c>. Float LPCM is surfaced as <c>FULL.caf</c> only.
+/// <c>metadata/&lt;type&gt;.bin</c>. Float LPCM and other compressed formats
+/// (<c>ima4</c>, <c>aac </c>, …) are surfaced as <c>FULL.caf</c> only.
 /// </summary>
 public sealed class CafFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {

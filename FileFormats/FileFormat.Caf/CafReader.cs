@@ -19,8 +19,15 @@ namespace FileFormat.Caf;
 /// Format flags: bit 0 (0x1) = IEEE float; bit 1 (0x2) = little-endian samples.
 /// For integer PCM, default (flags = 0) means big-endian samples; this reader converts
 /// such samples to little-endian so downstream callers (and <c>PcmCodec</c>) see a
-/// canonical little-endian buffer. Any chunk other than <c>desc</c>/<c>data</c> is kept
-/// addressable through <see cref="ParsedCaf.OtherChunks"/>.
+/// canonical little-endian buffer.
+/// <para>The G.711 companded formats <c>ulaw</c> and <c>alaw</c> are decoded to 16-bit
+/// little-endian PCM (one source byte per channel sample, channels interleaved bytewise
+/// exactly like LPCM) via <c>Codec.MuLaw</c>/<c>Codec.ALaw</c>; the result reports
+/// <see cref="ParsedCaf.FormatId"/> = <c>lpcm</c> and <see cref="ParsedCaf.BitsPerSample"/>
+/// = 16 so the per-channel split path applies. Other compressed formats (<c>ima4</c>,
+/// <c>aac </c>, …) pass through undecoded and are surfaced as <c>FULL.caf</c> only.</para>
+/// Any chunk other than <c>desc</c>/<c>data</c> is kept addressable through
+/// <see cref="ParsedCaf.OtherChunks"/>.
 /// </summary>
 public sealed class CafReader {
   public sealed record ParsedCaf(
@@ -106,12 +113,31 @@ public sealed class CafReader {
     var littleEndian = (formatFlags & FlagIsLittleEndian) != 0;
     var payload = rawData ?? [];
 
+    // G.711 companded formats: decode each byte to a 16-bit linear sample. Bytes are
+    // interleaved by channel exactly like LPCM, so the existing channel-split path
+    // applies once we expose the decoded 16-bit LE PCM as canonical lpcm.
+    switch (formatId) {
+      case "ulaw":
+        return new ParsedCaf(channels, sampleRate, BitsPerSample: 16, formatFlags, IsFloat: false,
+          FormatId: "lpcm", ShortsToLePcm(Codec.MuLaw.MuLawCodec.Decode(payload)), other, channelMask);
+      case "alaw":
+        return new ParsedCaf(channels, sampleRate, BitsPerSample: 16, formatFlags, IsFloat: false,
+          FormatId: "lpcm", ShortsToLePcm(Codec.ALaw.ALawCodec.Decode(payload)), other, channelMask);
+    }
+
     // Convert big-endian integer samples to little-endian so PcmCodec sees canonical PCM.
     var canonical = payload;
     if (!isFloat && !littleEndian && bitsPerChannel > 8)
       canonical = ConvertBeToLe(payload, bitsPerChannel / 8);
 
     return new ParsedCaf(channels, sampleRate, bitsPerChannel, formatFlags, isFloat, formatId, canonical, other, channelMask);
+  }
+
+  private static byte[] ShortsToLePcm(ReadOnlySpan<short> samples) {
+    var pcm = new byte[samples.Length * 2];
+    for (var i = 0; i < samples.Length; ++i)
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), samples[i]);
+    return pcm;
   }
 
   private static byte[] ConvertBeToLe(byte[] be, int bytesPerSample) {

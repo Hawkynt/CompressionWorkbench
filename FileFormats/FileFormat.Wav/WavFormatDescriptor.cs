@@ -175,9 +175,15 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       ("FULL.wav", "Container", blob),
     };
 
-    // Split PCM integer formats (code 1) per-channel; float/other are skipped.
+    // Split PCM integer formats (code 1) per-channel; IEEE-float (code 3, 32/64-bit)
+    // is split into per-channel float WAVs. Other codecs are surfaced as FULL only.
     if (parsed.FormatCode == 1 && parsed.BitsPerSample is 8 or 16 or 24 or 32 && parsed.NumChannels > 1) {
       foreach (var (name, wavBlob) in PcmCodec.SplitInterleavedPcm(
+          parsed.InterleavedPcm, parsed.NumChannels, parsed.SampleRate, parsed.BitsPerSample,
+          parsed.ChannelMask))
+        entries.Add(($"{name}.wav", "Channel", wavBlob));
+    } else if (parsed.FormatCode == 3 && parsed.BitsPerSample is 32 or 64 && parsed.NumChannels > 1) {
+      foreach (var (name, wavBlob) in PcmCodec.SplitInterleavedFloat(
           parsed.InterleavedPcm, parsed.NumChannels, parsed.SampleRate, parsed.BitsPerSample,
           parsed.ChannelMask))
         entries.Add(($"{name}.wav", "Channel", wavBlob));
