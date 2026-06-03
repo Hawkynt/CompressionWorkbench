@@ -542,6 +542,10 @@
     <ProjectReference Include="..\FileFormats\FileFormat.EspsSd\FileFormat.EspsSd.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Asf\FileFormat.Asf.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.RealMedia\FileFormat.RealMedia.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Xwb\FileFormat.Xwb.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Bwav\FileFormat.Bwav.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Swav\FileFormat.Swav.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sdat\FileFormat.Sdat.csproj" />
   </ItemGroup>
 
 </Project>

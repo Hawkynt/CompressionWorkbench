@@ -503,6 +503,10 @@
     <Project Path="FileFormats/FileFormat.EspsSd/FileFormat.EspsSd.csproj" />
     <Project Path="FileFormats/FileFormat.Asf/FileFormat.Asf.csproj" />
     <Project Path="FileFormats/FileFormat.RealMedia/FileFormat.RealMedia.csproj" />
+    <Project Path="FileFormats/FileFormat.Xwb/FileFormat.Xwb.csproj" />
+    <Project Path="FileFormats/FileFormat.Bwav/FileFormat.Bwav.csproj" />
+    <Project Path="FileFormats/FileFormat.Swav/FileFormat.Swav.csproj" />
+    <Project Path="FileFormats/FileFormat.Sdat/FileFormat.Sdat.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />
