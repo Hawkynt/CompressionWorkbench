@@ -1,13 +1,22 @@
 namespace Compression.Registry;
 
 /// <summary>
-/// Shared plumbing for audio containers surfaced as pseudo-archives. Every audio
-/// descriptor exposes the same entry shape — a <c>FULL.&lt;ext&gt;</c> blob (Kind
-/// <c>Track</c>), one mono <c>&lt;CHANNEL&gt;.wav</c> per decoded channel (Kind
-/// <c>Channel</c>), and ancillary tag/metadata blobs (Kind <c>Tag</c>) — so the
-/// listing, on-disk extraction and single-entry streaming are identical. A descriptor
-/// builds the <see cref="Entry"/> list (the format-specific part) and delegates the
-/// rest here.
+/// Shared plumbing for audio containers surfaced as pseudo-archives. The model
+/// separates the CONTAINER from the DATA it carries: the pseudo-archive is the
+/// container format itself, and every listed entry is a pseudo-file of carried
+/// data. Kinds encode that distinction —
+/// <list type="bullet">
+///   <item><c>Container</c> — the byte-exact original container (<c>FULL.&lt;ext&gt;</c>);
+///     round-trips the file unchanged.</item>
+///   <item><c>Stream</c> — a carried elementary bitstream (e.g. an Ogg logical
+///     stream's packets) still in its coded form.</item>
+///   <item><c>Track</c> — a carried audio/video track in multi-track containers.</item>
+///   <item><c>Channel</c> — one decoded speaker as a playable mono PCM WAV
+///     (named per <c>Codec.Pcm.ChannelLayout</c>, mono through 22.2 and beyond).</item>
+///   <item><c>Tag</c> — carried metadata (comments, ID3, bext, …).</item>
+/// </list>
+/// A descriptor builds the <see cref="Entry"/> list (the format-specific part) and
+/// delegates listing, on-disk extraction and single-entry streaming here.
 /// </summary>
 public static class AudioPseudoArchive {
 

@@ -65,7 +65,7 @@ public sealed class XmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
 
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> Parse(byte[] blob) {
     var entries = new List<(string, string, byte[])> {
-      ("FULL.xm", "Track", blob),
+      ("FULL.xm", "Container", blob),
     };
     if (blob.Length < 80) return entries;
 

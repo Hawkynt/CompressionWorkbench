@@ -66,7 +66,7 @@ public sealed class S3mFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> Parse(byte[] blob) {
     var entries = new List<(string, string, byte[])> {
-      ("FULL.s3m", "Track", blob),
+      ("FULL.s3m", "Container", blob),
     };
     if (blob.Length < 96) return entries;
 

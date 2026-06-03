@@ -86,7 +86,7 @@ public sealed class LitFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.lit", "Track", blob),
+      ("FULL.lit", "Container", blob),
     };
 
     // LIT header: magic[8] + version u32 LE + header_len u32 LE + unknown u32 LE

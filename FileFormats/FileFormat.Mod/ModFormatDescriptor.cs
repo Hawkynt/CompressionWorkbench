@@ -74,7 +74,7 @@ public sealed class ModFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> Parse(byte[] blob) {
     var entries = new List<(string, string, byte[])> {
-      ("FULL.mod", "Track", blob),
+      ("FULL.mod", "Container", blob),
     };
     if (blob.Length < 1084)
       return entries;

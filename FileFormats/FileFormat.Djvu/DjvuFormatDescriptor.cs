@@ -68,7 +68,7 @@ public sealed class DjvuFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.djvu", "Track", blob),
+      ("FULL.djvu", "Container", blob),
     };
 
     var meta = new StringBuilder();

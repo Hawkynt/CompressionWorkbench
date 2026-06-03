@@ -110,7 +110,7 @@ public sealed class StlFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.stl", "Track", blob),
+      ("FULL.stl", "Container", blob),
     };
 
     var (variant, triCount, name, triangles) = ParseStl(blob);

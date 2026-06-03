@@ -67,7 +67,7 @@ public sealed class OggFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.ogg", "Track", blob),
+      ("FULL.ogg", "Container", blob),
     };
 
     AddDecodedChannels(blob, entries);
@@ -79,7 +79,7 @@ public sealed class OggFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var serial in serials) {
       var packets = parser.StreamPackets(blob, serial).ToArray();
       entries.Add(($"stream_{serial:X8}/packets.bin",
-        "Track", ConcatenateWithLengthPrefix(packets)));
+        "Stream", ConcatenateWithLengthPrefix(packets)));
 
       // Vorbis: packet 1 is comment packet starting with 0x03 "vorbis".
       // Opus: packet 1 is "OpusTags".

@@ -82,7 +82,7 @@ public sealed class PlyFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.ply", "Track", blob),
+      ("FULL.ply", "Container", blob),
     };
 
     // Find "end_header\n" — header is ASCII regardless of body format.

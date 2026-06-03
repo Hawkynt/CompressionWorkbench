@@ -112,7 +112,7 @@ public sealed class Rf64FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var parsed = new Rf64Reader().Read(blob);
 
     var entries = new List<AudioPseudoArchive.Entry> {
-      new("FULL.rf64", "Track", blob),
+      new("FULL.rf64", "Container", blob),
     };
 
     // Split integer PCM (format code 1) per-channel; other formats are surfaced as FULL only.

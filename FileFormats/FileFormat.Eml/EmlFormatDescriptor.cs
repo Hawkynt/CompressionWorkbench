@@ -94,7 +94,7 @@ public sealed class EmlFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var root = EmlParser.Parse(blob);
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.eml", "Track", blob),
+      ("FULL.eml", "Container", blob),
       ("metadata.ini", "Tag", BuildMetadata(root)),
     };
 

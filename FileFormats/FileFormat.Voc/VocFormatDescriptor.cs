@@ -148,7 +148,7 @@ public sealed class VocFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var parsed = new VocReader().Read(blob);
 
     var entries = new List<AudioPseudoArchive.Entry> {
-      new("FULL.voc", "Track", blob),
+      new("FULL.voc", "Container", blob),
     };
 
     if (parsed.InterleavedPcm != null && parsed.BitsPerSample is 8 or 16 or 24 or 32 && parsed.NumChannels >= 1) {

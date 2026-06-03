@@ -86,7 +86,7 @@ public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.mp3", "Track", blob),
+      ("FULL.mp3", "Container", blob),
     };
 
     AddDecodedChannels(blob, entries);

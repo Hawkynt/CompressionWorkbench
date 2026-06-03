@@ -148,7 +148,7 @@ public sealed class CafFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var parsed = new CafReader().Read(blob);
 
     var entries = new List<AudioPseudoArchive.Entry> {
-      new("FULL.caf", "Track", blob),
+      new("FULL.caf", "Container", blob),
     };
 
     // Split integer LPCM per-channel; float and non-LPCM are surfaced as FULL only.

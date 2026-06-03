@@ -81,7 +81,7 @@ public sealed class FmodFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.fsb", "Track", blob),
+      ("FULL.fsb", "Container", blob),
     };
 
     // Header = 60 bytes (magic+version+5 sizes+mode+32 flags/hash).

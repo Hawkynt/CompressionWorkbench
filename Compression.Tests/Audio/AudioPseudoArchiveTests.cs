@@ -10,7 +10,7 @@ namespace Compression.Tests.Audio;
 public class AudioPseudoArchiveTests {
 
   private static IReadOnlyList<AudioPseudoArchive.Entry> Sample() => [
-    new("FULL.caf", "Track", [1, 2, 3, 4], "pcm"),
+    new("FULL.caf", "Container", [1, 2, 3, 4], "pcm"),
     new("LEFT.wav", "Channel", [9, 9], "pcm"),
     new("RIGHT.wav", "Channel", [8, 8], "pcm"),
     new("metadata/info.bin", "Tag", [7], "stored"),

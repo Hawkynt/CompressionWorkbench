@@ -62,7 +62,7 @@ public sealed class PsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.psd", "Track", blob),
+      ("FULL.psd", "Container", blob),
     };
 
     if (blob.Length < 26) return entries;

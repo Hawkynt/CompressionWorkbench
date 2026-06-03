@@ -139,7 +139,7 @@ public sealed class AiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var parsed = new AiffReader().Read(blob);
 
     var entries = new List<(string, string, byte[])> {
-      ("FULL.aif", "Track", blob),
+      ("FULL.aif", "Container", blob),
     };
 
     // Decode to linear PCM (LE) if possible.

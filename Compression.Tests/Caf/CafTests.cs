@@ -80,7 +80,7 @@ public class CafTests {
     Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True);
     Assert.That(entries.Any(e => e.Name == "RIGHT.wav"), Is.True);
     Assert.That(entries.First(e => e.Name == "LEFT.wav").Kind, Is.EqualTo("Channel"));
-    Assert.That(entries.First(e => e.Name == "FULL.caf").Kind, Is.EqualTo("Track"));
+    Assert.That(entries.First(e => e.Name == "FULL.caf").Kind, Is.EqualTo("Container"));
   }
 
   [Test]

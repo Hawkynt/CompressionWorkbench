@@ -57,7 +57,7 @@ public sealed class WebpFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(byte[] blob) {
     var entries = new List<(string, string, byte[])> {
-      ("FULL.webp", "Track", blob),
+      ("FULL.webp", "Container", blob),
     };
 
     var reader = new WebpReader(blob);

@@ -34,7 +34,7 @@ public class AacTests {
     var full = entries.FirstOrDefault(e => e.Name == "FULL.aac");
     Assert.That(full, Is.Not.Null, "Should always contain FULL.aac");
     Assert.That(full!.Method, Is.EqualTo("aac"));
-    Assert.That(full.Kind, Is.EqualTo("Track"));
+    Assert.That(full.Kind, Is.EqualTo("Container"));
   }
 
   [Test]

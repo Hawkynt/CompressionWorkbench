@@ -68,7 +68,7 @@ public sealed class AacFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var blob = ms.ToArray();
 
     var entries = new List<AudioPseudoArchive.Entry> {
-      new("FULL.aac", "Track", blob, "aac"),
+      new("FULL.aac", "Container", blob, "aac"),
     };
 
     // Best-effort decode-and-split. The decoder targets AAC-LC and throws

@@ -55,7 +55,7 @@ public sealed class GameMakerFormatDescriptor : IFormatDescriptor, IArchiveForma
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.win", "Track", blob),
+      ("FULL.win", "Container", blob),
     };
 
     if (blob.Length < 8) return entries;

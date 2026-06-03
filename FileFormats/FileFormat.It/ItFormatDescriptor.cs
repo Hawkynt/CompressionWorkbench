@@ -66,7 +66,7 @@ public sealed class ItFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
 
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> Parse(byte[] blob) {
     var entries = new List<(string, string, byte[])> {
-      ("FULL.it", "Track", blob),
+      ("FULL.it", "Container", blob),
     };
     if (blob.Length < 192) return entries;
 

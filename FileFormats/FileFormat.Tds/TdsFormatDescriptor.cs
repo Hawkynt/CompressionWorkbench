@@ -98,7 +98,7 @@ public sealed class TdsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.3ds", "Track", blob),
+      ("FULL.3ds", "Container", blob),
     };
 
     var chunkHistogram = new Dictionary<ushort, int>();

@@ -82,7 +82,7 @@ public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var parsed = new AviReader().Read(blob);
 
     var entries = new List<(string, string, byte[])> {
-      ("FULL.avi", "Track", blob),
+      ("FULL.avi", "Container", blob),
     };
 
     for (var i = 0; i < parsed.Tracks.Count; ++i) {

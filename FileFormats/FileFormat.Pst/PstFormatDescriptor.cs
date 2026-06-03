@@ -41,7 +41,7 @@ public sealed class PstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo> {
-      new(0, "FULL.pst", stream.Length, stream.Length, "stored", false, false, null, "Track"),
+      new(0, "FULL.pst", stream.Length, stream.Length, "stored", false, false, null, "Container"),
     };
     foreach (var e in BuildSynthetic(stream))
       entries.Add(new ArchiveEntryInfo(

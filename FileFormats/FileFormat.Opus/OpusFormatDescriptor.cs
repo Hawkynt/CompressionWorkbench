@@ -74,7 +74,7 @@ public sealed class OpusFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var blob = ms.ToArray();
 
     var entries = new List<AudioPseudoArchive.Entry> {
-      new("FULL.opus", "Track", blob, "opus"),
+      new("FULL.opus", "Container", blob, "opus"),
     };
 
     // Decode to 16-bit LE interleaved PCM and split per channel. The decoder

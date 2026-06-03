@@ -151,7 +151,7 @@ public sealed class Wave64FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     var parsed = new Wave64Reader().Read(blob);
 
     var entries = new List<AudioPseudoArchive.Entry> {
-      new("FULL.w64", "Track", blob, WavCodecName(parsed.FormatCode)),
+      new("FULL.w64", "Container", blob, WavCodecName(parsed.FormatCode)),
     };
 
     // Split PCM integer formats (code 1) per-channel; float/other are skipped.

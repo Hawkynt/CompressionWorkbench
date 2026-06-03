@@ -172,7 +172,7 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     parsed = new WavReader().Read(blob);
 
     var entries = new List<(string, string, byte[])> {
-      ("FULL.wav", "Track", blob),
+      ("FULL.wav", "Container", blob),
     };
 
     // Split PCM integer formats (code 1) per-channel; float/other are skipped.

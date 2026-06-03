@@ -55,7 +55,7 @@ public sealed class PsbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.psb", "Track", blob),
+      ("FULL.psb", "Container", blob),
     };
 
     if (blob.Length < 26) return entries;

@@ -46,6 +46,30 @@ foreach (var (name, monoWav) in PcmCodec.SplitInterleavedPcm(
   File.WriteAllBytes($"{name}.wav", monoWav);
 ```
 
+## The container / carried-data model
+
+Every audio file is surfaced as a **pseudo-archive**: the *container* is the archive,
+and everything it carries is listed as *pseudo-files*. The entry `Kind` makes the
+distinction explicit:
+
+| Kind        | Meaning                                                                              |
+| ----------- | ------------------------------------------------------------------------------------ |
+| `Container` | The byte-exact original container (`FULL.<ext>`) — extracting it round-trips the file |
+| `Stream`    | A carried elementary bitstream (e.g. one Ogg logical stream's packets), still coded   |
+| `Track`     | A carried audio/video track inside a multi-track container                            |
+| `Channel`   | One decoded speaker as a playable **mono PCM WAV**                                    |
+| `Tag`       | Carried metadata (Vorbis comments, ID3, bext, markers, …)                             |
+| `Sample` / `Pattern` / `Instrument` | Tracker-module payloads (MOD / S3M / XM / IT)                  |
+
+Channel naming follows FFmpeg's `libavutil/channel_layout`: when the container carries
+an explicit speaker bitmap (`WAVE_FORMAT_EXTENSIBLE.dwChannelMask`, CAF channel bitmap)
+each mono WAV is named for its real speaker; otherwise the FFmpeg default layout for the
+channel count applies — mono, stereo, 2.1, 4.0, 5.0, 5.1, 6.1, 7.1, 5.1.4, 7.1.4, 9.1.4,
+9.1.6 and NHK **22.2** (24 channels: `FRONT_LEFT` … `TOP_SIDE_LEFT` … `BOTTOM_FRONT_RIGHT`).
+Channel counts beyond the table degrade to `CH_n`, so *any* multi-channel stream stays
+decodable to per-speaker mono WAVs and reassembles losslessly from them
+(`Codec.Pcm.ChannelLayout` + `PcmCodec.SplitInterleavedPcm` / `Interleave`).
+
 ## Contents
 
 State legend:

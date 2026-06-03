@@ -129,7 +129,7 @@ public sealed class AuFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     var parsed = new AuReader().Read(blob);
 
     var entries = new List<(string, string, byte[])> {
-      ("FULL.au", "Track", blob),
+      ("FULL.au", "Container", blob),
     };
 
     var (pcm, bitsOut) = DecodeToPcm(parsed);
