@@ -116,4 +116,25 @@ public class Ac3Tests {
     Assert.That(entries.Any(e => e.Name == "FULL.ac3"), Is.True);
     Assert.That(MetadataOf(junk), Does.Contain("frames=0"));
   }
+
+  [Test]
+  public void Garbage_FallsBackToInfoOnly_NoChannelWavs() {
+    var junk = Encoding.ASCII.GetBytes("definitely not an AC-3 elementary stream");
+    using var ms = new MemoryStream(junk);
+    var entries = new Ac3FormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Kind == "Channel"), Is.False);
+    Assert.That(entries.Select(e => e.Name), Is.EquivalentTo(new[] { "FULL.ac3", "metadata.ini" }));
+  }
+
+  [Test]
+  public void SilenceStream_SurfacesLeftAndRightChannelWavs() {
+    var frame = Compression.Tests.Codecs.Ac3.Ac3CodecTests.BuildSilenceFrame();
+    using var ms = new MemoryStream(frame);
+    var entries = new Ac3FormatDescriptor().List(ms, null);
+
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav" && e.Kind == "Channel"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "RIGHT.wav" && e.Kind == "Channel"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "FULL.ac3"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "metadata.ini"), Is.True);
+  }
 }

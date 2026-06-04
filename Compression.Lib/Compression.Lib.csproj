@@ -56,6 +56,7 @@
     <ProjectReference Include="..\Codecs\Codec.SolDpcm\Codec.SolDpcm.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Lpc10\Codec.Lpc10.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Wma\Codec.Wma.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Ac3\Codec.Ac3.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
