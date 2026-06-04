@@ -11,10 +11,11 @@ public class SolDpcmCodecTests {
   // sample surfaced as (acc-128)<<8. Low nibble first.
   [Test]
   public void DecodeOld8_TableWalk_AddsAndSubtractsMagnitudes() {
-    // byte 0x4C → low nibble 0x4 (mag idx4=6, +) → 134; high nibble 0xC (mag idx4=6, -) → 128.
+    // byte 0x4C → low nibble 0xC (sign bit set, mag idx4=6, -) → 122;
+    // then high nibble 0x4 (mag idx4=6, +) → back to 128.
     var output = SolDpcmCodec.Decode([0x4C], SolDpcmCodec.Mode.Old8);
     Assert.That(output.Length, Is.EqualTo(2));
-    Assert.That(output[0], Is.EqualTo((short)((134 - 128) << 8)));
+    Assert.That(output[0], Is.EqualTo((short)((122 - 128) << 8)));
     Assert.That(output[1], Is.EqualTo((short)((128 - 128) << 8)));
   }
 
