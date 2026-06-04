@@ -252,6 +252,156 @@ public class RealMediaTests {
     return ms.ToArray();
   }
 
+  [Test]
+  public void Rmf_CookAudio_DeinterleavesAndDecodesPerChannelWavs() {
+    // A mono cook stream with the Int0 (no-reorder) interleaver: each data packet is one
+    // coded frame. Two frames decode to two channel WAVs (after the discard prelude the
+    // samples are zero, but the entries must be present with the right length).
+    var rm = BuildCookRmf(channels: 1, samplesPerFrame: 1024, subbands: 20, blockAlign: 96,
+      jsSubbandStart: 0, jsVlcBits: 0, frames: 4, cookVersion: 0x1000001);
+
+    var entries = new RealMediaFormatDescriptor().List(new MemoryStream(rm), null);
+
+    // Stream blob still present with the cook method.
+    Assert.That(entries.Any(e => e.Name == "streams/stream_00.bin" && e.Method == "cook"), Is.True);
+
+    // Exactly one decoded mono channel WAV.
+    var channelEntries = entries.Where(e => e.Kind == "Channel" && e.Name.StartsWith("streams/stream_00.")).ToList();
+    Assert.That(channelEntries.Count, Is.EqualTo(1));
+
+    using var wavStream = new MemoryStream();
+    new RealMediaFormatDescriptor().ExtractEntry(new MemoryStream(rm), channelEntries[0].Name, wavStream, null);
+    var wav = wavStream.ToArray();
+    Assert.That(Encoding.ASCII.GetString(wav, 0, 4), Is.EqualTo("RIFF"));
+    // 4 frames * 1024 samples * 2 bytes + 44-byte header.
+    Assert.That(wav.Length, Is.EqualTo(44 + 4 * 1024 * 2));
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24)), Is.EqualTo(44100));
+  }
+
+  [Test]
+  public void Rmf_CookStereo_DegradesGracefully_AndKeepsBlob() {
+    // A crafted (non-encoder) joint-stereo stream may hit the decoder's invalid-decouple
+    // guard; the descriptor must then fall back to the blob-only view without throwing.
+    // When the crafted bits happen to decode, exactly two channel WAVs of the right length
+    // appear. Either outcome is acceptable; a throw is not.
+    var rm = BuildCookRmf(channels: 2, samplesPerFrame: 2048, subbands: 20, blockAlign: 120,
+      jsSubbandStart: 5, jsVlcBits: 5, frames: 3, cookVersion: 0x1000003);
+
+    List<Compression.Registry.ArchiveEntryInfo> entries = null!;
+    Assert.That(() => entries = new RealMediaFormatDescriptor().List(new MemoryStream(rm), null), Throws.Nothing);
+    Assert.That(entries.Any(e => e.Name == "streams/stream_00.bin" && e.Method == "cook"), Is.True);
+
+    var channelEntries = entries.Where(e => e.Kind == "Channel").ToList();
+    Assert.That(channelEntries.Count, Is.AnyOf(0, 2));
+    if (channelEntries.Count == 2)
+      Assert.That(channelEntries.All(e => e.OriginalSize == 44 + 3 * 1024 * 2), Is.True);
+  }
+
+  [Test]
+  public void Rmf_CookUnsupported_FallsBackToBlobOnly() {
+    // samples_per_frame = 700 is not a supported cook frame size → no Channel entries.
+    var rm = BuildCookRmf(channels: 1, samplesPerFrame: 700, subbands: 20, blockAlign: 96,
+      jsSubbandStart: 0, jsVlcBits: 0, frames: 2, cookVersion: 0x1000001);
+
+    var entries = new RealMediaFormatDescriptor().List(new MemoryStream(rm), null);
+    Assert.That(entries.Any(e => e.Name == "streams/stream_00.bin" && e.Method == "cook"), Is.True);
+    Assert.That(entries.Any(e => e.Kind == "Channel"), Is.False);
+  }
+
+  /// <summary>
+  /// Builds a synthetic .RMF with a single cook audio stream: an MDPR whose type-specific
+  /// blob is a proper RA v5 header (carrying the deinterleaver id, framing and cook
+  /// extradata) plus a DATA chunk with <paramref name="frames"/> coded-frame packets.
+  /// </summary>
+  private static byte[] BuildCookRmf(int channels, int samplesPerFrame, int subbands,
+      int blockAlign, int jsSubbandStart, int jsVlcBits, int frames, long cookVersion) {
+    using var ms = new MemoryStream();
+
+    WriteChunk(ms, ".RMF", inner => {
+      WriteU16BE(inner, 0);
+      WriteU32BE(inner, 0);
+      WriteU32BE(inner, 3);
+    });
+
+    WriteChunk(ms, "MDPR", inner => {
+      WriteU16BE(inner, 0);       // object version
+      WriteU16BE(inner, 0);       // stream number
+      WriteU32BE(inner, 64000);
+      WriteU32BE(inner, 64000);
+      WriteU32BE(inner, 600);
+      WriteU32BE(inner, 600);
+      WriteU32BE(inner, 0);
+      WriteU32BE(inner, 0);
+      WriteU32BE(inner, 10000);
+      WriteByteLen(inner, "Audio Stream");
+      WriteByteLen(inner, "audio/x-pn-realaudio");
+      var typeSpecific = BuildCookRaV5Header(channels, samplesPerFrame, subbands, blockAlign,
+        jsSubbandStart, jsVlcBits, cookVersion);
+      WriteU32BE(inner, (uint)typeSpecific.Length);
+      inner.Write(typeSpecific);
+    });
+
+    WriteChunk(ms, "DATA", inner => {
+      WriteU16BE(inner, 0);
+      WriteU32BE(inner, (uint)frames);
+      WriteU32BE(inner, 0);
+      var rng = 1u;
+      for (var i = 0; i < frames; ++i) {
+        var payload = new byte[blockAlign];
+        for (var j = 0; j < payload.Length; ++j) {
+          rng = rng * 1103515245 + 12345;
+          payload[j] = (byte)(rng >> 16);
+        }
+        WritePacket(inner, streamNumber: 0, payload: payload);
+      }
+    });
+
+    return ms.ToArray();
+  }
+
+  private static byte[] BuildCookRaV5Header(int channels, int samplesPerFrame, int subbands,
+      int blockAlign, int jsSubbandStart, int jsVlcBits, long cookVersion) {
+    using var ms = new MemoryStream();
+    ms.Write([0x2E, 0x72, 0x61, 0xFD]);  // ".ra\xFD"
+    WriteU16BE(ms, 5);                   // +4 version
+    WriteU16BE(ms, 0);                   // +6 unused
+    ms.Write(Encoding.ASCII.GetBytes(".ra5")); // +8
+    WriteU32BE(ms, 0);                   // +12 data size
+    WriteU16BE(ms, 5);                   // +16 version2
+    WriteU32BE(ms, 0);                   // +18 header size
+    WriteU16BE(ms, 0);                   // +22 flavor
+    WriteU32BE(ms, (uint)blockAlign);    // +24 coded_framesize
+    WriteU32BE(ms, 0);                   // +28 ???
+    WriteU32BE(ms, 64000);               // +32 bytes_per_minute
+    WriteU32BE(ms, 0);                   // +36 ???
+    WriteU16BE(ms, 1);                   // +40 sub_packet_h (1 = no interleave grouping)
+    WriteU16BE(ms, (ushort)blockAlign);  // +42 frame size (audio_framesize)
+    WriteU16BE(ms, (ushort)blockAlign);  // +44 sub_packet_size
+    WriteU16BE(ms, 0);                   // +46 ???
+    WriteU16BE(ms, 0); WriteU16BE(ms, 0); WriteU16BE(ms, 0); // +48 v5 triple u16
+    WriteU16BE(ms, 44100);               // +54 sample rate
+    WriteU32BE(ms, 0);                   // +56 ???
+    WriteU16BE(ms, (ushort)channels);    // +60 channels
+    // +62 deint id (LE) "Int0"
+    ms.Write([(byte)'I', (byte)'n', (byte)'t', (byte)'0']);
+    ms.Write(Encoding.ASCII.GetBytes("cook")); // +66 interleaver/codec tag
+    WriteU16BE(ms, 0);                   // +70 ???
+    ms.WriteByte(0);                     // +72 ??? u8
+    ms.WriteByte(0);                     // +73 ??? u8 (v5)
+    // +74 cook extradata length + extradata
+    var ed = new MemoryStream();
+    WriteU32BE(ed, (uint)cookVersion);
+    WriteU16BE(ed, (ushort)samplesPerFrame);
+    WriteU16BE(ed, (ushort)subbands);
+    WriteU32BE(ed, 0);                   // unused
+    WriteU16BE(ed, (ushort)jsSubbandStart);
+    WriteU16BE(ed, (ushort)jsVlcBits);
+    var edBytes = ed.ToArray();
+    WriteU32BE(ms, (uint)edBytes.Length);
+    ms.Write(edBytes);
+    return ms.ToArray();
+  }
+
   private static byte[] BuildRaTypeSpecific(string fourcc) {
     // A small RA header stub whose only job is to carry the codec FOURCC for the scan.
     using var ms = new MemoryStream();

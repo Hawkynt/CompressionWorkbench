@@ -138,6 +138,7 @@
     <Project Path="Codecs/Codec.Lpc10/Codec.Lpc10.csproj" />
     <Project Path="Codecs/Codec.Wma/Codec.Wma.csproj" />
     <Project Path="Codecs/Codec.Ac3/Codec.Ac3.csproj" />
+    <Project Path="Codecs/Codec.Cook/Codec.Cook.csproj" />
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />

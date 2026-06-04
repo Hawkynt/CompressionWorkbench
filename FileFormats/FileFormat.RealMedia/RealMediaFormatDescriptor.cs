@@ -14,8 +14,10 @@ namespace FileFormat.RealMedia;
 /// <c>streams/stream_NN.info.txt</c> (Kind <c>Tag</c>). Raw <c>.ra</c> surfaces its
 /// single audio payload as one stream blob plus metadata. RealAudio 14.4 (<c>lpcJ</c>/
 /// <c>14_4</c>) streams are additionally decoded to a mono 8 kHz <c>*.MONO.wav</c>
-/// (Kind <c>Channel</c>) via <c>Codec.Ra144</c>, with a try/catch fallback to blob-only.
-/// Read-only; other audio codecs (cook/sipr/atrc) remain blob-only; parsing degrades gracefully.
+/// (Kind <c>Channel</c>) via <c>Codec.Ra144</c>; cook / RealAudio G2 streams are
+/// deinterleaved and decoded to per-channel WAVs (Kind <c>Channel</c>) via <c>Codec.Cook</c>;
+/// both fall back to blob-only on any decode failure via try/catch.
+/// Read-only; other audio codecs (sipr/atrc) remain blob-only; parsing degrades gracefully.
 /// </summary>
 public sealed class RealMediaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 

@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Codec.Cook;
 using Codec.Pcm;
 using Codec.Ra144;
 using Compression.Registry;
@@ -33,6 +34,17 @@ internal static class RealMediaReader {
     public string? MimeType;
     public string? Codec;
     public readonly List<byte[]> Payloads = [];
+
+    // RealAudio v4/v5 header fields parsed from the MDPR type-specific blob. Populated for
+    // streams whose type-specific data carries an ".ra\xFD" header (cook/atrc/sipr/…).
+    public int RaChannels;
+    public int RaSampleRate;
+    public int RaCodedFrameSize;   // coded frame size
+    public int RaSubPacketH;       // interleaver height
+    public int RaFrameSize;        // block_align as written (audio_framesize for cook)
+    public int RaSubPacketSize;    // sub_packet_size (== cook block_align)
+    public uint RaDeintId;         // 'Int0'/'Int4'/'genr'/'sipr' deinterleaver id
+    public byte[]? RaExtradata;    // cook codec extradata (cookversion, subbands, …)
 
     public string Render() {
       var sb = new StringBuilder();
@@ -110,6 +122,9 @@ internal static class RealMediaReader {
         // RealAudio 14.4 ("lpcJ"/"14_4"): the concatenated payloads are raw 20-byte
         // lpcJ blocks — decode them to a mono 8 kHz WAV. Falls back to blob-only.
         AddDecodedLpcJChannel(streamBytes, s.Codec, $"streams/stream_{s.StreamNumber:D2}", entries);
+        // Cook / RealAudio G2: deinterleave the packets, decode every frame and surface
+        // per-channel WAVs. Falls back to blob-only on any failure.
+        AddDecodedCookChannels(s, $"streams/stream_{s.StreamNumber:D2}", entries);
       }
     }
   }
@@ -140,9 +155,91 @@ internal static class RealMediaReader {
       var typeSpecLen = (int)BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(p)); p += 4;
       var typeSpecEnd = p + typeSpecLen <= chunkEnd ? p + typeSpecLen : chunkEnd;
       s.Codec = DetectFourCc(b, p, typeSpecEnd);
+      ParseRaHeader(b, p, typeSpecEnd, s);
     }
 
     streams[s.StreamNumber] = s;
+  }
+
+  /// <summary>
+  /// Parses the RealAudio v4/v5 header embedded in an MDPR type-specific blob, recording the
+  /// interleaver framing (coded_framesize, sub_packet_h, audio_framesize, sub_packet_size,
+  /// deint id), the sample rate / channels and — for cook/atrac/sipr — the trailing codec
+  /// extradata. Mirrors <c>rm_read_audio_stream_info</c> field-for-field. Degrades silently:
+  /// the FOURCC scan already populated <see cref="StreamProps.Codec"/>, so a parse miss only
+  /// loses the decode path, not the blob view.
+  /// </summary>
+  private static void ParseRaHeader(byte[] b, int start, int end, StreamProps s) {
+    try {
+      if (start + 6 > end) return;
+      // RA magic ".ra\xFD" then a big-endian u16 version.
+      if (!(b[start] == 0x2E && b[start + 1] == 0x72 && b[start + 2] == 0x61 && b[start + 3] == 0xFD))
+        return;
+      var version = BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(start + 4));
+      if (version is not (4 or 5))
+        return;
+
+      // p walks the header exactly as rmdec.c's avio reads do (after the u16 version).
+      var p = start + 6;
+      p += 2;          // unused u16
+      p += 4;          // ".ra4"/".ra5" u32
+      p += 4;          // data size u32
+      p += 2;          // version2 u16
+      p += 4;          // header size u32
+      if (p + 2 > end) return;
+      p += 2;          // flavor u16
+      if (p + 4 > end) return;
+      s.RaCodedFrameSize = (int)BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(p)); p += 4;
+      p += 4;          // ??? u32
+      p += 4;          // bytes_per_minute u32
+      p += 4;          // ??? u32
+      if (p + 6 > end) return;
+      s.RaSubPacketH = BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(p)); p += 2;
+      s.RaFrameSize = BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(p)); p += 2;     // block_align as written
+      s.RaSubPacketSize = BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(p)); p += 2;
+      p += 2;          // ??? u16
+      if (version == 5)
+        p += 6;        // three u16
+      if (p + 8 > end) return;
+      s.RaSampleRate = BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(p)); p += 2;
+      p += 4;          // ??? u32
+      s.RaChannels = BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(p)); p += 2;
+
+      // Deinterleaver id + codec FOURCC. v5: u32 deint_id then 4-byte interleaver tag.
+      // v4: length-prefixed "desc" string holds the deint id, then a second desc holds the tag.
+      string? interleaverTag;
+      if (version == 5) {
+        if (p + 8 > end) return;
+        s.RaDeintId = BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(p)); p += 4;
+        interleaverTag = Encoding.ASCII.GetString(b, p, 4); p += 4;
+      } else {
+        var first = ReadByteLenString(b, ref p, end);
+        s.RaDeintId = first is { Length: >= 4 } ? ReadLe32Fourcc(first) : 0;
+        interleaverTag = ReadByteLenString(b, ref p, end);
+      }
+      _ = interleaverTag;
+
+      // For cook/atrac/sipr the codec extradata follows: u16, u8 (+u8 on v5), u32 length, data.
+      if (s.Codec is "cook" or "atrc" or "sipr") {
+        p += 2;        // ??? u16
+        p += 1;        // ??? u8
+        if (version == 5) p += 1;
+        if (p + 4 > end) return;
+        var len = (int)BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(p)); p += 4;
+        if (len > 0 && p + len <= end)
+          s.RaExtradata = b[p..(p + len)];
+      }
+    } catch {
+      // Best-effort: keep whatever was parsed.
+    }
+  }
+
+  private static uint ReadLe32Fourcc(string s) {
+    var bytes = Encoding.Latin1.GetBytes(s);
+    uint v = 0;
+    for (var i = 0; i < 4 && i < bytes.Length; ++i)
+      v |= (uint)bytes[i] << (8 * i);
+    return v;
   }
 
   private static void ParseCont(byte[] b, int chunkStart, int chunkEnd,
@@ -287,6 +384,48 @@ internal static class RealMediaReader {
       entries.Add(new($"{baseName}.MONO.wav", "Channel", wav, Method: "pcm"));
     } catch {
       // Undecodable lpcJ payload — keep the stream blob only.
+    }
+  }
+
+  /// <summary>
+  /// If <paramref name="s"/> is a cook ("cook") stream with a parsed RA header + extradata,
+  /// deinterleave the carried packets into the codec's coded-frame order, decode them with
+  /// <see cref="CookCodec"/> and surface one mono <c>*.&lt;CHANNEL&gt;.wav</c> entry per
+  /// channel. Any failure (unsupported flavor, malformed framing, decode error) is swallowed
+  /// so the stream blob view survives.
+  /// </summary>
+  private static void AddDecodedCookChannels(StreamProps s, string baseName,
+      List<AudioPseudoArchive.Entry> entries) {
+    if (s.Codec != "cook" || s.RaExtradata is not { Length: >= 8 } || s.Payloads.Count == 0)
+      return;
+    try {
+      var info = new CookCodec.StreamInfo {
+        Channels = s.RaChannels,
+        SampleRate = s.RaSampleRate,
+        BlockAlign = s.RaSubPacketSize > 0 ? s.RaSubPacketSize : s.RaFrameSize,
+        Extradata = s.RaExtradata,
+      };
+      var codec = new CookCodec(info);
+
+      var frames = CookDeinterleaver.Reorder(s.Payloads, s.RaDeintId,
+        s.RaSubPacketH, s.RaFrameSize, s.RaSubPacketSize, s.RaCodedFrameSize);
+      if (frames.Length == 0)
+        return;
+
+      var pcm = codec.DecodeStream(frames);
+      if (pcm.Length == 0)
+        return;
+
+      // Interleaved 16-bit PCM -> little-endian bytes, then split per channel.
+      var le = new byte[pcm.Length * 2];
+      for (var i = 0; i < pcm.Length; ++i)
+        BinaryPrimitives.WriteInt16LittleEndian(le.AsSpan(i * 2), pcm[i]);
+
+      var split = PcmCodec.SplitInterleavedPcm(le, codec.Channels, s.RaSampleRate, bitsPerSample: 16);
+      foreach (var (name, wav) in split)
+        entries.Add(new($"{baseName}.{name}.wav", "Channel", wav, Method: "pcm"));
+    } catch {
+      // Undecodable cook stream — keep the stream blob only.
     }
   }
 
