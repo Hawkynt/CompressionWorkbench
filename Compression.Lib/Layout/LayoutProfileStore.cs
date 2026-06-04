@@ -103,7 +103,7 @@ public static class LayoutProfileStore {
     ArgumentNullException.ThrowIfNull(template);
     ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
 
-    if (fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+    if (fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || fileName.IndexOf('/') >= 0 || fileName.IndexOf('\\') >= 0)
       throw new ArgumentException($"Invalid filename '{fileName}'.", nameof(fileName));
 
     var normalised = fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
