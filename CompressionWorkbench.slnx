@@ -128,6 +128,8 @@
     <Project Path="Codecs/Codec.WwiseIma/Codec.WwiseIma.csproj" />
     <Project Path="Codecs/Codec.Mace/Codec.Mace.csproj" />
     <Project Path="Codecs/Codec.MonkeysAudio/Codec.MonkeysAudio.csproj" />
+    <Project Path="Codecs/Codec.Ra144/Codec.Ra144.csproj" />
+    <Project Path="Codecs/Codec.TrueSpeech/Codec.TrueSpeech.csproj" />
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />

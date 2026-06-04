@@ -60,6 +60,7 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     0x0006 => "alaw",
     0x0007 => "mulaw",
     0x0011 => "ima_adpcm",
+    0x0022 => "truespeech",
     0x0031 => "gsm610",
     0x0050 => "mpeg",
     0x0055 => "mp3",

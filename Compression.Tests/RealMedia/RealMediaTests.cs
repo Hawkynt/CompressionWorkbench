@@ -65,6 +65,50 @@ public class RealMediaTests {
   }
 
   [Test]
+  public void Rmf_LpcJAudio_SurfacesDecodedMonoWav() {
+    // Two 20-byte lpcJ blocks → 2 × 160 = 320 samples → mono 8 kHz WAV (44-byte header).
+    var blocks = new byte[40];
+    for (var i = 0; i < blocks.Length; ++i) blocks[i] = (byte)(i * 13);
+    var rm = BuildRmfWithLpcJ(blocks);
+
+    var entries = new RealMediaFormatDescriptor().List(new MemoryStream(rm), null);
+    Assert.That(entries.Any(e => e.Name == "streams/stream_00.bin" && e.Method == "lpcJ"), Is.True);
+
+    var wavEntry = entries.FirstOrDefault(e => e.Name == "streams/stream_00.MONO.wav");
+    Assert.That(wavEntry, Is.Not.Null);
+    Assert.That(wavEntry!.Kind, Is.EqualTo("Channel"));
+
+    using var wavStream = new MemoryStream();
+    new RealMediaFormatDescriptor().ExtractEntry(new MemoryStream(rm), "streams/stream_00.MONO.wav", wavStream, null);
+    var wav = wavStream.ToArray();
+    Assert.That(Encoding.ASCII.GetString(wav, 0, 4), Is.EqualTo("RIFF"));
+    // 320 samples × 2 bytes + 44-byte header.
+    Assert.That(wav.Length, Is.EqualTo(44 + 320 * 2));
+    // Sample rate field at offset 24 must be 8000.
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24)), Is.EqualTo(8000));
+  }
+
+  [Test]
+  public void RawRa_V3_LpcJ_SurfacesDecodedMonoWav() {
+    var blocks = new byte[20];
+    for (var i = 0; i < blocks.Length; ++i) blocks[i] = (byte)(i * 11 + 3);
+    var ra = BuildRawRaV3Lpcj(blocks);
+
+    var entries = new RealMediaFormatDescriptor().List(new MemoryStream(ra), null);
+    Assert.That(entries.Any(e => e.Name == "FULL.ra" && e.Kind == "Container"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "streams/stream_00.bin"), Is.True);
+
+    var wavEntry = entries.FirstOrDefault(e => e.Name == "streams/stream_00.MONO.wav" && e.Kind == "Channel");
+    Assert.That(wavEntry, Is.Not.Null);
+
+    using var wavStream = new MemoryStream();
+    new RealMediaFormatDescriptor().ExtractEntry(new MemoryStream(ra), "streams/stream_00.MONO.wav", wavStream, null);
+    var wav = wavStream.ToArray();
+    // 1 block → 160 samples × 2 bytes + 44-byte header.
+    Assert.That(wav.Length, Is.EqualTo(44 + 160 * 2));
+  }
+
+  [Test]
   public void Rmf_Truncated_DegradesGracefully() {
     // ".RMF" magic with a chunk size that overruns the buffer.
     using var ms = new MemoryStream();
@@ -150,6 +194,61 @@ public class RealMediaTests {
       WritePacket(inner, streamNumber: 0, payload: [0xAA, 0xBB, 0xCC, 0xDD]);
     });
 
+    return ms.ToArray();
+  }
+
+  private static byte[] BuildRmfWithLpcJ(byte[] blocks) {
+    using var ms = new MemoryStream();
+
+    WriteChunk(ms, ".RMF", inner => {
+      WriteU16BE(inner, 0);
+      WriteU32BE(inner, 0);
+      WriteU32BE(inner, 3);
+    });
+
+    WriteChunk(ms, "MDPR", inner => {
+      WriteU16BE(inner, 0);       // object version
+      WriteU16BE(inner, 0);       // stream number
+      WriteU32BE(inner, 14400);   // max bitrate
+      WriteU32BE(inner, 14400);   // avg bitrate
+      WriteU32BE(inner, 20);      // max packet size
+      WriteU32BE(inner, 20);      // avg packet size
+      WriteU32BE(inner, 0);       // start time
+      WriteU32BE(inner, 0);       // preroll
+      WriteU32BE(inner, 1000);    // duration
+      WriteByteLen(inner, "Audio Stream");
+      WriteByteLen(inner, "audio/x-pn-realaudio");
+      var typeSpecific = BuildRaTypeSpecific("lpcJ");
+      WriteU32BE(inner, (uint)typeSpecific.Length);
+      inner.Write(typeSpecific);
+    });
+
+    // DATA chunk: one packet per 20-byte lpcJ block.
+    var numPackets = blocks.Length / 20;
+    WriteChunk(ms, "DATA", inner => {
+      WriteU16BE(inner, 0);
+      WriteU32BE(inner, (uint)numPackets);
+      WriteU32BE(inner, 0);
+      for (var i = 0; i < numPackets; ++i)
+        WritePacket(inner, streamNumber: 0, payload: blocks[(i * 20)..((i + 1) * 20)]);
+    });
+
+    return ms.ToArray();
+  }
+
+  private static byte[] BuildRawRaV3Lpcj(byte[] blocks) {
+    using var ms = new MemoryStream();
+    ms.Write([0x2E, 0x72, 0x61, 0xFD]); // ".ra\xFD"
+    WriteU16BE(ms, 3);                  // version (offset 4)
+    // header size at offset 6: the v3 header bytes that follow before the audio data.
+    // We use a small fixed header that carries the lpcJ FOURCC for the scan.
+    var header = new MemoryStream();
+    header.Write(Encoding.ASCII.GetBytes("lpcJ"));
+    header.Write(new byte[12]);
+    var headerBytes = header.ToArray();
+    WriteU16BE(ms, (ushort)headerBytes.Length);
+    ms.Write(headerBytes);
+    ms.Write(blocks);
     return ms.ToArray();
   }
 

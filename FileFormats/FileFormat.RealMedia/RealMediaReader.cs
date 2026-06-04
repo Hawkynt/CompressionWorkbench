@@ -1,6 +1,8 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Codec.Pcm;
+using Codec.Ra144;
 using Compression.Registry;
 
 namespace FileFormat.RealMedia;
@@ -102,8 +104,12 @@ internal static class RealMediaReader {
       if (s.Payloads.Count > 0) {
         using var msx = new MemoryStream();
         foreach (var p in s.Payloads) msx.Write(p);
+        var streamBytes = msx.ToArray();
         entries.Add(new($"streams/stream_{s.StreamNumber:D2}.bin", "Stream",
-          msx.ToArray(), Method: s.Codec ?? "stored"));
+          streamBytes, Method: s.Codec ?? "stored"));
+        // RealAudio 14.4 ("lpcJ"/"14_4"): the concatenated payloads are raw 20-byte
+        // lpcJ blocks — decode them to a mono 8 kHz WAV. Falls back to blob-only.
+        AddDecodedLpcJChannel(streamBytes, s.Codec, $"streams/stream_{s.StreamNumber:D2}", entries);
       }
     }
   }
@@ -202,11 +208,15 @@ internal static class RealMediaReader {
       sb.AppendLine($"version = {version}");
 
       if (version == 3) {
-        // v3: fixed 8000 Hz mono lpcJ; header length is u16 at offset 4? Pragmatic:
-        // codec is lpcJ, audio data follows the header. Scan for the FOURCC anyway.
+        // v3: fixed 8000 Hz mono lpcJ. The header is a u16 size at offset 6; the lpcJ
+        // audio (raw 20-byte blocks) begins at offset 8 + headerSize.
         codec = DetectFourCc(b, 0, b.Length) ?? "lpcJ";
         channels = 1; sampleRate = 8000; bits = 16;
-        // header size = u16 at offset 4 (after .ra\xFD), +? — surface remainder as data.
+        if (b.Length >= 8) {
+          var headerSize = BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(6));
+          var off = 8 + headerSize;
+          if (off > 0 && off <= b.Length) dataStart = off;
+        }
       } else if (version is 4 or 5) {
         // v4/v5 header. Common fields differ in layout; scan for the codec FOURCC
         // (it sits near the end of the fixed header) and pull rate/channels from the
@@ -248,8 +258,36 @@ internal static class RealMediaReader {
   private static void FinishRaw(byte[] b, List<AudioPseudoArchive.Entry> entries,
     StringBuilder sb, string? codec, int dataStart) {
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
-    if (dataStart >= 0 && dataStart < b.Length)
-      entries.Add(new("streams/stream_00.bin", "Stream", b[dataStart..], Method: codec ?? "stored"));
+    if (dataStart >= 0 && dataStart < b.Length) {
+      var data = b[dataStart..];
+      entries.Add(new("streams/stream_00.bin", "Stream", data, Method: codec ?? "stored"));
+      // Raw .ra v3 is always lpcJ (14.4); v4/v5 carry the codec FOURCC. Decode lpcJ to WAV.
+      AddDecodedLpcJChannel(data, codec, "streams/stream_00", entries);
+    }
+  }
+
+  /// <summary>
+  /// If <paramref name="codec"/> identifies RealAudio 14.4 ("lpcJ"/"14_4"), decode the
+  /// raw 20-byte lpcJ block stream to a mono 8 kHz WAV entry next to the stream blob.
+  /// Any decode failure (malformed/partial data) is swallowed so the blob-only view
+  /// survives.
+  /// </summary>
+  private static void AddDecodedLpcJChannel(byte[] blocks, string? codec, string baseName,
+    List<AudioPseudoArchive.Entry> entries) {
+    if (codec is not ("lpcJ" or "14_4"))
+      return;
+    try {
+      var pcm = Ra144Codec.Decode(blocks);
+      if (pcm.Length == 0)
+        return;
+      var le = new byte[pcm.Length * 2];
+      for (var i = 0; i < pcm.Length; ++i)
+        BinaryPrimitives.WriteInt16LittleEndian(le.AsSpan(i * 2), pcm[i]);
+      var wav = PcmCodec.ToWavBlob(le, channels: 1, sampleRate: 8000, bitsPerSample: 16);
+      entries.Add(new($"{baseName}.MONO.wav", "Channel", wav, Method: "pcm"));
+    } catch {
+      // Undecodable lpcJ payload — keep the stream blob only.
+    }
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────

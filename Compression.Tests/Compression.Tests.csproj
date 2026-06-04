@@ -102,6 +102,8 @@
     <ProjectReference Include="..\Codecs\Codec.WwiseIma\Codec.WwiseIma.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Mace\Codec.Mace.csproj" />
     <ProjectReference Include="..\Codecs\Codec.MonkeysAudio\Codec.MonkeysAudio.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Ra144\Codec.Ra144.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.TrueSpeech\Codec.TrueSpeech.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />

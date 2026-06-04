@@ -12,6 +12,7 @@ namespace FileFormat.Wav;
 ///   <item>7 — G.711 μ-law (decoded to 16-bit LE PCM via <c>Codec.MuLaw</c>).</item>
 ///   <item>0x0002 — Microsoft ADPCM (decoded via <c>Codec.MsAdpcm</c>).</item>
 ///   <item>0x0011 — IMA ADPCM (decoded via <c>Codec.ImaAdpcm</c>).</item>
+///   <item>0x0022 — DSP Group TrueSpeech (decoded to mono 16-bit PCM via <c>Codec.TrueSpeech</c>).</item>
 ///   <item>0x0031 — GSM 06.10 full-rate (decoded via <c>Codec.Gsm610</c>).</item>
 ///   <item>0xFFFE — WAVEFORMAT_EXTENSIBLE, real sub-format at +24 in <c>fmt</c> body.</item>
 /// </list>
@@ -107,6 +108,11 @@ public sealed class WavReader {
         var perChannel = Codec.MsAdpcm.MsAdpcmCodec.Decode(rawData, blockAlign, numChannels);
         return new ParsedWav(numChannels, sampleRate, 16, FormatCode: 1,
           InterleavedPcm: InterleaveChannels(perChannel), MetadataChunks: metadata, ChannelMask: channelMask);
+      }
+      case 0x0022: { // DSP Group TrueSpeech (mono 8 kHz; 32-byte frames → 240 samples)
+        var shorts = Codec.TrueSpeech.TrueSpeechCodec.Decode(rawData);
+        return new ParsedWav(NumChannels: 1, sampleRate, 16, FormatCode: 1,
+          InterleavedPcm: ShortsToLePcm(shorts), MetadataChunks: metadata, ChannelMask: channelMask);
       }
       case 0x0031: { // GSM 06.10
         var shorts = Codec.Gsm610.Gsm610Codec.Decode(rawData, numChannels);

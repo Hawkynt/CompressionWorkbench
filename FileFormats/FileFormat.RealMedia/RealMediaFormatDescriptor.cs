@@ -12,8 +12,10 @@ namespace FileFormat.RealMedia;
 /// Method = the detected codec FOURCC); the CONT chunk's title/author/copyright/comment
 /// become <c>metadata.ini</c> (Kind <c>Tag</c>) and per-stream MDPR properties become
 /// <c>streams/stream_NN.info.txt</c> (Kind <c>Tag</c>). Raw <c>.ra</c> surfaces its
-/// single audio payload as one stream blob plus metadata. Read-only; no audio decode
-/// (cook/sipr/atrc/… are out of scope); parsing degrades gracefully.
+/// single audio payload as one stream blob plus metadata. RealAudio 14.4 (<c>lpcJ</c>/
+/// <c>14_4</c>) streams are additionally decoded to a mono 8 kHz <c>*.MONO.wav</c>
+/// (Kind <c>Channel</c>) via <c>Codec.Ra144</c>, with a try/catch fallback to blob-only.
+/// Read-only; other audio codecs (cook/sipr/atrc) remain blob-only; parsing degrades gracefully.
 /// </summary>
 public sealed class RealMediaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 
