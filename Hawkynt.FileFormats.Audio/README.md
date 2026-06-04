@@ -123,13 +123,14 @@ State legend:
 | `Codec.Lpc10`    | Speech          | R/W   | FS-1015 LPC-10e 2400 bit/s vocoder (simplified pitch tracker, documented)       |
 | `Codec.Cook`     | Lossy           | R     | RealAudio G2 "cook" (gain envelopes, MLT, Int0/Int4/genr deinterleave)          |
 | `Codec.Atrac3`   | Lossy           | R     | Sony ATRAC3 (QMF tree, tonal components, joint stereo, RM descrambling)        |
-| `Codec.Ac3`      | Lossy           | R     | ATSC A/52 AC-3 — full parametric bit allocation, coupling, rematrixing          |
+| `Codec.Ac3`      | Lossy           | R     | ATSC A/52 AC-3 + E-AC-3 (AHT/GAQ, variable blocks, half rates; SPX parsed)      |
 | `Codec.Wma`      | Lossy           | R     | WMA v1/v2 (LSP + VLC exponents, bit reservoir, noise coding)                    |
 | `Codec.Musepack` | Lossy           | R     | Musepack SV8 (mpc8 huffman set, 32-band polyphase)                              |
 | `Codec.WmaPro`   | Lossy           | R     | WMA 9 Professional (tile trees, 8-channel transforms, 24-bit, VBR)              |
 | `Codec.Sipr`     | Speech          | R     | RealAudio ACELP.NET (8k5/6k5/5k0 + postfilter; 16k unsupported)                 |
 | `Codec.Speex`    | Speech          | R     | Speex narrowband (all submodes) + wideband SB-CELP + intensity stereo           |
 | `Codec.G7231`    | Speech          | R     | ITU G.723.1 dual-rate (MP-MLQ + ACELP, postfilter, CNG, concealment)            |
+| `Codec.Dts`      | Lossy           | R     | DTS Coherent Acoustics core (ADPCM subbands, high-freq VQ, LFE FIR, 32-band QMF)|
 
 > **Honest scope note.** Most lossy / lossless codecs in this package decode but don't encode.
 > Writing a high-quality MP3 / AAC / Vorbis / Opus / FLAC encoder is a significant undertaking
@@ -221,8 +222,8 @@ State legend:
 | `FileFormat.Apc`      | R     | CRYO APC — seeded IMA                                                        |
 | `FileFormat.Lpc10`    | WORM  | raw LPC-10e bitstream @8 kHz; assembles                                      |
 | `FileFormat.G7231`    | R     | raw G.723.1 (.g723) — decoded MONO incl. SID/CNG frames                      |
-| `FileFormat.Dts`      | R     | raw DTS core/DTS-HD — full header tables (AMODE layouts, rates, duration)    |
-| `FileFormat.Ac3`      | R     | raw AC-3 decodes to per-channel WAVs (full A/52); E-AC-3 info-only           |
+| `FileFormat.Dts`      | R     | raw DTS — core decodes to per-channel WAVs; DTS-HD extensions info-only      |
+| `FileFormat.Ac3`      | R     | raw AC-3 AND E-AC-3 independent substreams decode to per-channel WAVs        |
 | `FileFormat.Oma`      | R     | Sony OpenMG (.oma/.aa3) — ATRAC3 decodes to channels; 3plus/MP3/LPCM surfaced |
 | `FileFormat.Vgm`      | R     | VGM/VGZ — named chip clocks, GD3 tags (UTF-16), gzip transparent             |
 | `FileFormat.Mus`      | R     | DMX/Doom MUS — converted.mid (classic mapping)                               |
