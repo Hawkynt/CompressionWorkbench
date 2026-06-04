@@ -8,6 +8,33 @@ namespace Compression.Tests.Codecs.Aac;
 /// </summary>
 internal static class AacTestFrames {
 
+  /// <summary>Public MSB-first bit writer for SBR payload tests.</summary>
+  public sealed class SbrBitWriter {
+    private readonly List<byte> _bytes = [];
+    private int _cur;
+    private int _bitsFilled;
+
+    public void Write(uint value, int count) {
+      for (var i = count - 1; i >= 0; --i) {
+        var bit = (int)((value >> i) & 1);
+        this._cur = (this._cur << 1) | bit;
+        if (++this._bitsFilled == 8) {
+          this._bytes.Add((byte)this._cur);
+          this._cur = 0;
+          this._bitsFilled = 0;
+        }
+      }
+    }
+
+    public byte[] ToArray() {
+      if (this._bitsFilled > 0)
+        this._bytes.Add((byte)(this._cur << (8 - this._bitsFilled)));
+      return [.. this._bytes];
+    }
+
+    public int BitsWritten => this._bytes.Count * 8 + this._bitsFilled;
+  }
+
   /// <summary>MSB-first bit writer mirroring <see cref="AacBitReader"/>'s order.</summary>
   private sealed class BitWriter {
     private readonly List<byte> _bytes = [];
@@ -134,5 +161,92 @@ internal static class AacTestFrames {
 
     w.Write((uint)AacElementType.End, 3);
     return WrapAdts(w.ToArray(), sampleRateIndex, channelConfig: 1);
+  }
+
+  // ── SBR (HE-AAC) payloads ────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Writes an SBR extension payload (positioned after the 4-bit extension type):
+  /// a header (bs_amp_res, the given start/stop/xover, no header extras), then a
+  /// FIXFIX single-channel-element grid with one envelope and all-zero envelope /
+  /// noise data. Built for the 22050-core configuration (n[0]=3, nQ=1).
+  /// </summary>
+  public static void WriteSbrHeaderAndFixFixSce(SbrBitWriter w, int startFreq, int stopFreq, int xover) {
+    // bs_header_flag = 1, then the header.
+    w.Write(1, 1);
+    w.Write(0, 1);                 // bs_amp_res
+    w.Write((uint)startFreq, 4);   // bs_start_freq
+    w.Write((uint)stopFreq, 4);    // bs_stop_freq
+    w.Write((uint)xover, 3);       // bs_xover_band
+    w.Write(0, 2);                 // bs_reserved
+    w.Write(0, 1);                 // bs_header_extra_1 = 0 (freq_scale=2, alter=1, noise=2)
+    w.Write(0, 1);                 // bs_header_extra_2 = 0
+
+    // sbr_single_channel_element.
+    w.Write(0, 1);                 // bs_data_extra = 0
+    // sbr_grid: FIXFIX, bs_num_env = 1<<0 = 1.
+    w.Write(0, 2);                 // bs_frame_class = FIXFIX
+    w.Write(0, 2);                 // bs_num_env_bits -> 1 envelope
+    w.Write(0, 1);                 // bs_freq_res[1] = 0 (low res, n[0]=3)
+    // dtdf: bs_num_env(1) + bs_num_noise(1).
+    w.Write(0, 1);                 // bs_df_env[0]   = 0 -> envelope codes from scratch
+    w.Write(0, 1);                 // bs_df_noise[0] = 0
+    // invf: nQ (=1 for this config) * 2 bits.
+    w.Write(0, 2);                 // bs_invf_mode[0][0]
+    // envelope (df_env=0, non-coupling, amp_res=0 -> 7-bit start, n[0]-1 freq deltas):
+    w.Write(0, 7);                 // bs_env_start_value
+    WriteZeroFEnv15Delta(w);       // band 1 (freq huffman, zero delta)
+    WriteZeroFEnv15Delta(w);       // band 2
+    // noise (df_noise=0 -> 5-bit start, nQ-1=0 deltas):
+    w.Write(0, 5);                 // bs_noise_start_value
+    // add_harmonic flag.
+    w.Write(0, 1);                 // bs_add_harmonic_flag = 0
+  }
+
+  // The shortest F_HUFFMAN_ENV_1_5DB codeword (index 60 == zero delta).
+  private static void WriteZeroFEnv15Delta(SbrBitWriter w) {
+    var code = AacSbrTables.FEnv15Codes[60];
+    var bits = AacSbrTables.FEnv15Bits[60];
+    w.Write(code, bits);
+  }
+
+  /// <summary>
+  /// A mono (or stereo) LC silence frame followed by a FIL element carrying an
+  /// EXT_SBR_DATA payload. The LC core decodes to silence; the SBR header flips the
+  /// decoder's SBR-detected flag (and so the reported effective rate doubles).
+  /// </summary>
+  public static byte[] SilenceFrameWithSbr(int channelConfig, int sampleRateIndex) {
+    var w = new BitWriter();
+    if (channelConfig == 1) {
+      w.Write((uint)AacElementType.Sce, 3);
+      w.Write(0, 4);
+      WriteSilentIcs(w);
+    } else {
+      w.Write((uint)AacElementType.Cpe, 3);
+      w.Write(0, 4);
+      w.Write(0, 1);
+      WriteSilentIcs(w);
+      WriteSilentIcs(w);
+    }
+
+    // FIL element carrying EXT_SBR_DATA. Build the SBR bits, byte-pad, and wrap in
+    // a fill element whose 4-bit count gives the payload byte length.
+    var sbrW = new SbrBitWriter();
+    sbrW.Write(13, 4); // extension_type = EXT_SBR_DATA
+    WriteSbrHeaderAndFixFixSce(sbrW, startFreq: 5, stopFreq: 0, xover: 3);
+    var sbrBytes = sbrW.ToArray();
+
+    w.Write((uint)AacElementType.Fil, 3);
+    if (sbrBytes.Length < 15) {
+      w.Write((uint)sbrBytes.Length, 4); // count
+    } else {
+      w.Write(15, 4);
+      w.Write((uint)(sbrBytes.Length - 15 + 1), 8); // esc_count
+    }
+    foreach (var b in sbrBytes)
+      w.Write(b, 8);
+
+    w.Write((uint)AacElementType.End, 3);
+    return WrapAdts(w.ToArray(), sampleRateIndex, channelConfig);
   }
 }

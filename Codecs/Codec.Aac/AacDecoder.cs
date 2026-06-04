@@ -43,6 +43,20 @@ public sealed class AacDecoder {
   // LFSR seeds for PNS, per channel.
   private uint[] _pnsSeed;
 
+  // SBR (HE-AAC) state. The LC core is always decoded; the SBR extension payload
+  // is parsed for detection/metadata. The QMF audio reconstruction is gated off
+  // (see AacSbr), so the PCM output remains LC-core-only — but a confirmed SBR
+  // header doubles the EFFECTIVE output sample rate, which callers surface.
+  private AacSbr? _sbr;
+  private AacElementType _lastAudioElement = AacElementType.End;
+
+  /// <summary>
+  /// True once an SBR (Spectral Band Replication) extension with a valid header has
+  /// been observed. HE-AAC streams report their core sample rate doubled; the PCM
+  /// itself remains the AAC-LC core band (SBR reconstruction is gated, see <see cref="AacSbr"/>).
+  /// </summary>
+  public bool SbrDetected { get; private set; }
+
   /// <summary>Constructs a decoder configured for the given header parameters.</summary>
   public AacDecoder(AacObjectType objectType, int sampleRateIndex, int channelConfiguration) {
     AacCodec.AssertProfileSupported(objectType);
@@ -91,6 +105,7 @@ public sealed class AacDecoder {
           var pcm = this.DecodeSingleChannelElement(reader, nextChannel);
           if (nextChannel < this._channelConfiguration)
             channelPcm[nextChannel++] = pcm;
+          this._lastAudioElement = AacElementType.Sce;
           break;
         }
 
@@ -98,6 +113,7 @@ public sealed class AacDecoder {
           var (l, r) = this.DecodeChannelPairElement(reader);
           if (nextChannel < this._channelConfiguration) channelPcm[nextChannel++] = l;
           if (nextChannel < this._channelConfiguration) channelPcm[nextChannel++] = r;
+          this._lastAudioElement = AacElementType.Cpe;
           break;
         }
 
@@ -110,7 +126,7 @@ public sealed class AacDecoder {
           break;
 
         case AacElementType.Fil:
-          SkipFillElement(reader);
+          this.ParseFillElement(reader);
           break;
 
         case AacElementType.Cce:
@@ -416,12 +432,48 @@ public sealed class AacDecoder {
     reader.SkipBits(comment * 8);
   }
 
-  private static void SkipFillElement(AacBitReader reader) {
+  // Fill element extension_type identifiers (ISO/IEC 14496-3 Table 4.121).
+  private const int ExtSbrData = 13;     // EXT_SBR_DATA
+  private const int ExtSbrDataCrc = 14;  // EXT_SBR_DATA_CRC
+
+  private void ParseFillElement(AacBitReader reader) {
     var count = (int)reader.ReadBits(4); // count
     if (count == 15)
       count += (int)reader.ReadBits(8) - 1;
-    // The payload (which may carry an SBR extension we deliberately ignore) is
-    // exactly `count` bytes. We skip it wholesale: the LC core is self-contained.
-    reader.SkipBits(count * 8);
+    if (count <= 0) return;
+
+    // The fill payload is exactly `count` bytes. The first 4 bits are an
+    // extension_type. For SBR (13/14) we parse the payload for detection and
+    // metadata; the LC PCM output is unaffected (SBR audio reconstruction gated).
+    var endTarget = reader.BitsRemaining - count * 8;
+    var extType = (int)reader.ReadBits(4);
+
+    if (extType is ExtSbrData or ExtSbrDataCrc && this._lastAudioElement is AacElementType.Sce or AacElementType.Cpe) {
+      this._sbr ??= new AacSbr(AacAdtsReader.SampleRateTable[this._sampleRateIndex]);
+      var crc = extType == ExtSbrDataCrc;
+      if (crc) reader.ReadBits(10); // bs_sbr_crc_bits (not validated)
+      var isCpe = this._lastAudioElement == AacElementType.Cpe;
+      var remaining = (int)(reader.BitsRemaining - endTarget);
+      try {
+        if (this._sbr.ParseExtension(reader, isCpe, remaining))
+          this.SbrDetected = true;
+      } catch (InvalidDataException) {
+        // Malformed SBR payload: keep LC-only behaviour, never fail the frame.
+      }
+    }
+
+    // Skip to the end of the declared payload regardless of what we parsed.
+    while (reader.BitsRemaining > endTarget)
+      reader.ReadBits(1);
   }
+
+  /// <summary>The base (core) sample rate of the stream in Hz.</summary>
+  public int CoreSampleRate => AacAdtsReader.SampleRateTable[this._sampleRateIndex];
+
+  /// <summary>
+  /// The effective output sample rate: doubled when SBR has been detected, otherwise
+  /// the core rate. SBR reconstruction is gated, so the emitted PCM is still the core
+  /// band — this value reflects the bitstream's signalled bandwidth.
+  /// </summary>
+  public int EffectiveSampleRate => this.SbrDetected ? this.CoreSampleRate * 2 : this.CoreSampleRate;
 }

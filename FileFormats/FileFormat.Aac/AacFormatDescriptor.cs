@@ -83,13 +83,20 @@ public sealed class AacFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       AacCodec.Decompress(src, pcm);
       var pcmBytes = pcm.ToArray();
 
+      // The decoded PCM is the AAC-LC core band, so the WAV must carry the CORE
+      // sample rate to play at the right speed. For HE-AAC streams info.SampleRate
+      // is the SBR-doubled effective rate (surfaced as metadata); SBR audio
+      // reconstruction is gated, so we deliberately do not retime the core PCM.
+      using var rateProbe = new MemoryStream(blob, writable: false);
+      var coreRate = AacCodec.ReadCoreSampleRate(rateProbe);
+
       const int bitsPerSample = 16;
       if (info.Channels <= 1) {
         entries.Add(new("MONO.wav", "Channel",
-          PcmCodec.ToWavBlob(pcmBytes, 1, info.SampleRate, bitsPerSample, formatCode: 1), "pcm"));
+          PcmCodec.ToWavBlob(pcmBytes, 1, coreRate, bitsPerSample, formatCode: 1), "pcm"));
       } else {
         foreach (var (name, wav) in PcmCodec.SplitInterleavedPcm(
-            pcmBytes, info.Channels, info.SampleRate, bitsPerSample))
+            pcmBytes, info.Channels, coreRate, bitsPerSample))
           entries.Add(new($"{name}.wav", "Channel", wav, "pcm"));
       }
     } catch (Exception) {
