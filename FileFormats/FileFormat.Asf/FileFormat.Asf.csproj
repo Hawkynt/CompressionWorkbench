@@ -7,6 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Wma\Codec.Wma.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.WmaPro\Codec.WmaPro.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Pcm\Codec.Pcm.csproj" />
   </ItemGroup>
 

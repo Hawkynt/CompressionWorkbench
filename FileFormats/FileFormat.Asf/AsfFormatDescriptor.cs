@@ -2,6 +2,7 @@
 using System.Text;
 using Codec.Pcm;
 using Codec.Wma;
+using Codec.WmaPro;
 using Compression.Registry;
 
 namespace FileFormat.Asf;
@@ -14,9 +15,11 @@ namespace FileFormat.Asf;
 /// (<c>streams/stream_NN.bin</c>, Kind <c>Stream</c>) and each stream is described in
 /// <c>streams/stream_NN.info.txt</c> (Kind <c>Tag</c>) carrying its codec / bitrate.
 /// WMA v1/v2 audio streams (WAVEFORMATEX tags <c>0x160</c>/<c>0x161</c>) are decoded
-/// via <c>Codec.Wma</c> into one mono <c>&lt;CHANNEL&gt;.wav</c> per channel (Kind
-/// <c>Channel</c>); streams the decoder can't handle (WMA Pro / Lossless, corrupt
-/// data) fall back to just the <c>stream_NN.bin</c> blob. File properties and the
+/// via <c>Codec.Wma</c> and WMA 9 Professional streams (tag <c>0x162</c>) via
+/// <c>Codec.WmaPro</c> into one mono <c>&lt;CHANNEL&gt;.wav</c> per channel (Kind
+/// <c>Channel</c>); streams the decoders can't handle (WMA Lossless <c>0x163</c>, an
+/// unsupported WMA Pro profile, corrupt data) fall back to just the <c>stream_NN.bin</c>
+/// blob. File properties and the
 /// content description land in <c>metadata.ini</c>; the Extended Content Description
 /// tags land in <c>metadata/tags.ini</c>. Read-only; parsing stops gracefully on a
 /// malformed object, keeping whatever was read.
@@ -78,6 +81,11 @@ public sealed class AsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (s.Kind == "audio" && s.FormatTag is 0x0160 or 0x0161 && TryDecodeWmaChannels(s, payload, entries))
         continue;
 
+      // WMA 9 Professional (tag 0x0162) → try to decode to per-channel WAVs; fall back to
+      // the raw blob. WMA Lossless (0x0163) is a different bitstream and stays blob-only.
+      if (s.Kind == "audio" && s.FormatTag == 0x0162 && TryDecodeWmaProChannels(s, payload, entries))
+        continue;
+
       entries.Add(new($"streams/stream_{s.StreamNumber:D2}.bin", "Stream", payload, Method: "asf_stream"));
     }
 
@@ -122,6 +130,54 @@ public sealed class AsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         entries.Add(new($"{prefix}/MONO.wav", "Channel", PcmCodec.ToWavBlob(raw, 1, s.SampleRate.Value, 16), Method: "pcm"));
       } else {
         foreach (var (name, wav) in PcmCodec.SplitInterleavedPcm(raw, s.Channels.Value, s.SampleRate.Value, 16))
+          entries.Add(new($"{prefix}/{name}.wav", "Channel", wav, Method: "pcm"));
+      }
+      return true;
+    } catch {
+      return false; // graceful fallback to the raw stream blob
+    }
+  }
+
+  /// <summary>
+  /// Decodes a WMA 9 Professional (tag <c>0x0162</c>) audio stream's reassembled packets
+  /// (via <see cref="WmaProCodec"/>) and adds one mono <c>&lt;CHANNEL&gt;.wav</c> per
+  /// channel under <c>streams/stream_NN/</c>; the decoder's channel count comes from the
+  /// extradata channel mask, which may differ from the WAVEFORMATEX nChannels. Each
+  /// reassembled ASF media object is one WMA Pro packet of <c>block_align</c> bytes.
+  /// Returns false (so the caller surfaces the raw blob instead) when the stream lacks the
+  /// parameters needed to construct the decoder or decoding fails — including unsupported
+  /// profiles, which the reference handles as a graceful no-op.
+  /// </summary>
+  private static bool TryDecodeWmaProChannels(AsfReader.StreamInfo s, byte[] payload, List<AudioPseudoArchive.Entry> entries) {
+    try {
+      if (s.Channels is not (> 0) || s.SampleRate is not (> 0) || s.BlockAlign is not (> 0) ||
+          s.BitsPerSample is not (> 0) || s.ExtraData is not { Length: >= 18 })
+        return false;
+
+      var codec = new WmaProCodec(s.Channels.Value, s.SampleRate.Value, s.BitsPerSample.Value,
+        s.BlockAlign.Value, (s.ByteRate ?? 0), s.ExtraData);
+      var channels = codec.Channels;
+
+      var blockAlign = s.BlockAlign.Value;
+      using var pcm = new MemoryStream();
+      var decodedAny = false;
+      for (var off = 0; off + blockAlign <= payload.Length; off += blockAlign) {
+        var samples = codec.DecodePacket(payload.AsSpan(off, blockAlign));
+        if (samples.Length == 0) continue;
+        decodedAny = true;
+        var bytes = new byte[samples.Length * 2];
+        Buffer.BlockCopy(samples, 0, bytes, 0, bytes.Length);
+        pcm.Write(bytes);
+      }
+      if (!decodedAny || pcm.Length == 0)
+        return false;
+
+      var prefix = $"streams/stream_{s.StreamNumber:D2}";
+      var raw = pcm.ToArray();
+      if (channels == 1) {
+        entries.Add(new($"{prefix}/MONO.wav", "Channel", PcmCodec.ToWavBlob(raw, 1, s.SampleRate.Value, 16), Method: "pcm"));
+      } else {
+        foreach (var (name, wav) in PcmCodec.SplitInterleavedPcm(raw, channels, s.SampleRate.Value, 16))
           entries.Add(new($"{prefix}/{name}.wav", "Channel", wav, Method: "pcm"));
       }
       return true;

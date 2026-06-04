@@ -7,8 +7,9 @@ namespace Compression.Tests.Asf;
 /// <summary>
 /// Pins the ASF descriptor's WMA wiring: a synthetic ASF whose audio stream is tagged
 /// WMA v2 (0x161) and carries an all-zero coded superframe must surface decoded
-/// per-channel WAVs (Kind <c>Channel</c>); a stream tagged WMA Pro (0x162) — which the
-/// decoder does not handle — must fall back to the raw <c>stream_NN.bin</c> blob.
+/// per-channel WAVs (Kind <c>Channel</c>); a stream tagged WMA Pro (0x162) that lacks the
+/// (>= 18-byte) codec-private extradata the WMA Pro decoder needs must fall back to the
+/// raw <c>stream_NN.bin</c> blob, the documented graceful path.
 /// </summary>
 [TestFixture]
 public class AsfWmaChannelTests {
@@ -39,12 +40,30 @@ public class AsfWmaChannelTests {
   }
 
   [Test]
-  public void WmaPro_Tag_FallsBackToRawStreamBlob() {
+  public void WmaPro_Tag_NoExtradata_FallsBackToRawStreamBlob() {
+    // 0x162 with cbSize == 0 carries no decode flags / channel mask, so the WMA Pro
+    // decoder cannot be constructed and the raw blob is surfaced (graceful fallback).
     var asf = BuildWmaAsf(formatTag: 0x0162, streamNumber: 1, channels: 2);
     var entries = new AsfFormatDescriptor().List(new MemoryStream(asf), null);
 
-    Assert.That(entries.Any(e => e.Kind == "Channel"), Is.False, "WMA Pro must not be decoded");
+    Assert.That(entries.Any(e => e.Kind == "Channel"), Is.False,
+      "WMA Pro without extradata must not be decoded");
     Assert.That(entries.Any(e => e.Name == "streams/stream_01.bin" && e.Kind == "Stream"), Is.True);
+  }
+
+  [Test]
+  public void WmaPro_Tag_WithExtradata_AttemptsDecode_OrGracefullyFallsBack() {
+    // A 0x162 stream carrying a valid 18-byte WMA Pro extradata tail and an all-zero
+    // packet drives the decoder. The reference skips the first frame, so an all-zero
+    // packet yields either no decoded output (then the raw blob is surfaced) or silent
+    // channel WAVs — but never both, and never a non-graceful failure.
+    var asf = BuildWmaProAsf(streamNumber: 1, channels: 2);
+    var entries = new AsfFormatDescriptor().List(new MemoryStream(asf), null);
+
+    var hasChannels = entries.Any(e => e.Kind == "Channel" && e.Name.StartsWith("streams/stream_01/"));
+    var hasBlob = entries.Any(e => e.Name == "streams/stream_01.bin" && e.Kind == "Stream");
+    Assert.That(hasChannels ^ hasBlob, Is.True,
+      "exactly one of decoded channel WAVs or the raw fallback blob must be present");
   }
 
   // ── synthetic ASF assembly ───────────────────────────────────────────────────
@@ -63,6 +82,51 @@ public class AsfWmaChannelTests {
     using var ms = new MemoryStream();
     ms.Write(header);
     ms.Write(data);
+    return ms.ToArray();
+  }
+
+  private static byte[] BuildWmaProAsf(int streamNumber, int channels) {
+    var fileProps = BuildFileProperties(PacketSize);
+    // 18-byte WMA Pro extradata: bits-per-sample @0 = 16, channel mask @2 = 0,
+    // decode flags @14 = 0 (no len-prefix, single subframe, no DRC).
+    var extradata = new byte[18];
+    extradata[0] = 16;
+    var streamProps = BuildAudioStreamPropertiesEx(streamNumber, 0x0162, channels,
+      sampleRate: 8000, byteRate: 16000, bits: 16, blockAlign: BlockAlign, extradata: extradata);
+    var header = BuildHeaderObject([WrapObject(FilePropertiesObject, fileProps),
+                                    WrapObject(StreamPropertiesObject, streamProps)]);
+
+    var packet = BuildSinglePayloadPacket(streamNumber, new byte[BlockAlign], PacketSize);
+    var data = BuildDataObject(packet);
+
+    using var ms = new MemoryStream();
+    ms.Write(header);
+    ms.Write(data);
+    return ms.ToArray();
+  }
+
+  private static byte[] BuildAudioStreamPropertiesEx(int streamNumber, int formatTag, int channels,
+      int sampleRate, int byteRate, int bits, int blockAlign, byte[] extradata) {
+    using var ts = new MemoryStream();
+    WriteU16(ts, (ushort)formatTag);
+    WriteU16(ts, (ushort)channels);
+    WriteU32(ts, (uint)sampleRate);
+    WriteU32(ts, (uint)byteRate);
+    WriteU16(ts, (ushort)blockAlign);
+    WriteU16(ts, (ushort)bits);
+    WriteU16(ts, (ushort)extradata.Length); // cbSize
+    ts.Write(extradata);
+    var tsb = ts.ToArray();
+
+    using var ms = new MemoryStream();
+    ms.Write(AudioStreamType);
+    ms.Write(new byte[16]);
+    WriteU64(ms, 0);
+    WriteU32(ms, (uint)tsb.Length);
+    WriteU32(ms, 0);
+    WriteU16(ms, (ushort)(streamNumber & 0x7F));
+    WriteU32(ms, 0);
+    ms.Write(tsb);
     return ms.ToArray();
   }
 
