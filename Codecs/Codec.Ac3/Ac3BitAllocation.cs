@@ -35,10 +35,15 @@ public static class Ac3BitAllocation {
       byte[] exp, byte[] bap, int start, int end,
       AllocParams p, int fgain, int snrOffset, int fscod, bool isCoupling,
       int cplFastLeak, int cplSlowLeak,
-      (int Length, int Delta)[]? deltas) {
+      (int Length, int Delta)[]? deltas,
+      byte[]? bapTable = null) {
 
     if (end <= start)
       return;
+
+    // E-AC-3 AHT channels map the masking address through ff_eac3_hebap_tab instead of the standard
+    // ff_ac3_bap_tab; the masking-curve maths is otherwise identical.
+    var table = bapTable ?? BapTab;
 
     // 1) PSD per bin: psd = 3072 - (exp << 7).
     var psd = new int[256];
@@ -88,7 +93,7 @@ public static class Ac3BitAllocation {
       for (var bin = bandLow; bin < bandHigh; ++bin) {
         var address = (psd[bin] - m) >> 5;
         address = Math.Clamp(address, 0, 63);
-        bap[bin] = BapTab[address];
+        bap[bin] = table[address];
       }
     }
   }

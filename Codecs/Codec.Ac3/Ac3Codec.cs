@@ -18,8 +18,14 @@ public sealed record Ac3StreamInfo(
 /// linear mantissa dequantization with deterministic dither, and the 512/256-point IMDCT with the
 /// A/52 window and overlap-add.
 /// <para>
-/// E-AC-3 (Dolby Digital Plus, bsid 16) is out of scope for decoding: <see cref="ReadStreamInfo"/>
-/// still reports its header info, but <see cref="Decompress"/> throws <see cref="NotSupportedException"/>.
+/// E-AC-3 (Dolby Digital Plus, ATSC A/52 Annex E, bsid 11..16) is also decoded: independent
+/// substreams (frame type 0/2) decode to PCM — including the variable block count (1/2/3/6 blocks),
+/// the half-rate sample rates (fscod 3 + fscod2), the LUT-based per-frame exponent strategy, the
+/// adaptive hybrid transform (AHT with GAQ vector-quantized pre-mantissas + 6-point inverse DCT) and
+/// standard coupling. Dependent substreams (frame type 1) are skipped; enhanced coupling (ecplinu)
+/// raises <see cref="NotSupportedException"/>; spectral extension (spx) is parsed but its
+/// high-frequency reconstruction is not synthesised. <see cref="ReadStreamInfo"/> reports the
+/// enhanced flag.
 /// </para>
 /// </summary>
 public static class Ac3Codec {
@@ -37,21 +43,26 @@ public static class Ac3Codec {
 
     var channels = Ac3FrameHeader.AcmodChannelCount(h.Acmod) + (h.LowFrequencyEffects ? 1 : 0);
 
-    long frames = 0;
+    // Accumulate decoded sample frames. Each AC-3 frame is 6 blocks; an E-AC-3 frame carries a
+    // variable block count, and only its primary independent substream (id 0) contributes samples.
+    long sampleFrames = 0;
     var pos = offset;
     while (pos + 6 <= data.Length && Ac3FrameHeader.TryParse(data, pos) is { } fh && fh.FrameSize > 0) {
-      ++frames;
+      if (!fh.IsDependentSubstream && !(fh.IsEnhanced && fh.SubstreamId != 0))
+        sampleFrames += fh.IsEnhanced ? fh.NumBlocks : BlocksPerFrame;
       pos += fh.FrameSize;
     }
-    var duration = frames * BlocksPerFrame * SamplesPerBlock;
+    var duration = sampleFrames * SamplesPerBlock;
 
     return new Ac3StreamInfo(h.SampleRate, channels, h.Bitrate, h.Acmod, h.LowFrequencyEffects, h.IsEnhanced, duration);
   }
 
   /// <summary>
-  /// Decodes an AC-3 stream into raw interleaved little-endian signed 16-bit PCM on
-  /// <paramref name="output"/>. Channels are emitted in acmod order with LFE last. Throws
-  /// <see cref="NotSupportedException"/> for E-AC-3 input.
+  /// Decodes an AC-3 / E-AC-3 stream into raw interleaved little-endian signed 16-bit PCM on
+  /// <paramref name="output"/>. Channels are emitted in acmod order with LFE last. AC-3 (bsid ≤ 10)
+  /// and E-AC-3 independent substreams (bsid 11..16, frame type 0/2) decode; E-AC-3 dependent
+  /// substreams (frame type 1) are skipped. Throws <see cref="NotSupportedException"/> only for
+  /// E-AC-3 enhanced coupling.
   /// </summary>
   public static void Decompress(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
@@ -62,19 +73,22 @@ public static class Ac3Codec {
     if (pos < 0)
       throw new InvalidDataException("AC-3 stream contains no parseable sync frame.");
 
-    if (Ac3FrameHeader.TryParse(data, pos) is { IsEnhanced: true })
-      throw new NotSupportedException("E-AC-3 (Dolby Digital Plus) decoding is not supported.");
-
     var decoder = new FrameDecoder();
+    var eacDecoder = new Ac3EnhancedFrameDecoder();
     while (pos + 6 <= data.Length) {
       if (Ac3FrameHeader.TryParse(data, pos) is not { } header || header.FrameSize <= 0)
         break;
-      if (header.IsEnhanced)
-        break;                                  // mixed substreams: stop at first E-AC-3 frame
       if (pos + header.FrameSize > data.Length)
         break;                                  // truncated trailing frame
 
-      var pcm = decoder.DecodeFrame(data, pos, header);
+      if (header.IsDependentSubstream || (header.IsEnhanced && header.SubstreamId != 0)) {
+        pos += header.FrameSize;                // skip dependent / non-primary substreams
+        continue;
+      }
+
+      var pcm = header.IsEnhanced
+        ? eacDecoder.DecodeFrame(data, pos, header)
+        : decoder.DecodeFrame(data, pos, header);
       if (pcm == null)
         break;                                  // undecodable frame — stop gracefully
       output.Write(pcm, 0, pcm.Length);

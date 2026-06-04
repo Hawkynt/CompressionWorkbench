@@ -5,8 +5,8 @@ namespace Codec.Ac3;
 /// <summary>
 /// Parsed syncinfo + BSI (bit-stream information) of one AC-3 / E-AC-3 sync frame per ATSC A/52.
 /// The 0x0B77 sync word is followed by crc1, fscod, frmsizecod (AC-3) — or strmtyp/frmsiz/fscod
-/// (E-AC-3) — and then the BSI. <see cref="Bsid"/> ≤ 10 (and ≠ 16) selects the legacy AC-3 layout;
-/// <see cref="Bsid"/> = 16 selects the E-AC-3 (Annex E) header. This is the single shared parser
+/// (E-AC-3) — and then the BSI. <see cref="Bsid"/> ≤ 10 selects the legacy AC-3 layout;
+/// <see cref="Bsid"/> 11..16 selects the E-AC-3 (Annex E) header. This is the single shared parser
 /// used by both the decoder and the read-only stream-info path.
 /// </summary>
 public readonly record struct Ac3FrameHeader(
@@ -18,7 +18,17 @@ public readonly record struct Ac3FrameHeader(
   int Acmod,
   bool LowFrequencyEffects,
   int DialNorm,
-  int Bsid) {
+  int Bsid,
+  int StreamType = 0,
+  int SubstreamId = 0,
+  int NumBlocks = 6,
+  int FsCod2 = -1) {
+
+  /// <summary>E-AC-3 frame type 0 = independent substream (decodable on its own).</summary>
+  public bool IsIndependentSubstream => !this.IsEnhanced || this.StreamType is 0 or 2;
+
+  /// <summary>E-AC-3 frame type 1 = dependent substream (extends an earlier independent one).</summary>
+  public bool IsDependentSubstream => this.IsEnhanced && this.StreamType == 1;
 
   /// <summary>The 16-bit big-endian AC-3 sync word (0x0B77).</summary>
   public static readonly byte[] SyncWord = [0x0B, 0x77];
@@ -154,25 +164,25 @@ public readonly record struct Ac3FrameHeader(
   private static Ac3FrameHeader? ParseEnhanced(byte[] buffer) {
     var r = new Ac3BitReader(buffer, 2, buffer.Length - 2);
     try {
-      r.SkipBits(2);                           // strmtyp
-      r.SkipBits(3);                           // substreamid
+      var strmtyp = (int)r.ReadBits(2);        // strmtyp (0 indep, 1 dependent, 2 indep/AC-3-converted)
+      var substreamid = (int)r.ReadBits(3);    // substreamid
       var frmsiz = (int)r.ReadBits(11);        // (frame size in 16-bit words) - 1
       var fscod = (int)r.ReadBits(2);          // sample-rate code
-      int sampleRate, numblkscod;
+      int sampleRate, numblkscod, fscod2 = -1;
       if (fscod == 3) {
-        var fscod2 = (int)r.ReadBits(2);
+        fscod2 = (int)r.ReadBits(2);           // half-rate sample-rate code
         sampleRate = fscod2 < HalfSampleRates.Length ? HalfSampleRates[fscod2] : 0;
-        numblkscod = 3;
+        numblkscod = 3;                         // fscod==3 always carries 6 blocks
       } else {
         sampleRate = fscod < SampleRates.Length ? SampleRates[fscod] : 0;
         numblkscod = (int)r.ReadBits(2);
       }
       var acmod = (int)r.ReadBits(3);
       var lfeon = r.ReadFlag();
-      r.SkipBits(5);                           // bsid (= 16)
+      var bsid = (int)r.ReadBits(5);            // bit-stream identification (11..16)
       var dialnorm = (int)r.ReadBits(5);
 
-      if (sampleRate == 0)
+      if (sampleRate == 0 || bsid is < 11 or > 16)
         return null;
 
       var frameSize = (frmsiz + 1) * 2;
@@ -191,7 +201,11 @@ public readonly record struct Ac3FrameHeader(
         Acmod: acmod,
         LowFrequencyEffects: lfeon,
         DialNorm: dialnorm,
-        Bsid: 16);
+        Bsid: bsid,
+        StreamType: strmtyp,
+        SubstreamId: substreamid,
+        NumBlocks: blocks,
+        FsCod2: fscod2);
     } catch (InvalidDataException) {
       return null;
     }

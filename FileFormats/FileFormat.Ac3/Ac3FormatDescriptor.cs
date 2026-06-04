@@ -13,11 +13,12 @@ namespace FileFormat.Ac3;
 /// distinguishes AC-3 (bsid ≤ 10) from E-AC-3 (bsid = 16). The byte-exact <c>FULL.ac3</c>
 /// (Kind <c>Container</c>) always round-trips the stream unchanged.
 /// <para>
-/// For legacy AC-3 the descriptor additionally decodes the stream (via <c>Codec.Ac3</c>) and
-/// surfaces one mono <c>&lt;CHANNEL&gt;.wav</c> per decoded channel, named via the acmod speaker
-/// layout (L/C/R → FRONT_LEFT/CENTER/FRONT_RIGHT, surrounds → BACK_*/SIDE_*, plus LFE last). When
-/// the decoder can't handle the input (E-AC-3, malformed, truncated) it falls back to the
-/// info-only layout (<c>FULL.ac3</c> + <c>metadata.ini</c>).
+/// For both AC-3 and E-AC-3 the descriptor additionally decodes the stream (via <c>Codec.Ac3</c>)
+/// and surfaces one mono <c>&lt;CHANNEL&gt;.wav</c> per decoded channel, named via the acmod speaker
+/// layout (L/C/R → FRONT_LEFT/CENTER/FRONT_RIGHT, surrounds → BACK_*/SIDE_*, plus LFE last). For
+/// E-AC-3 only the primary independent substream (id 0) is decoded; dependent substreams are skipped
+/// (noted in <c>metadata.ini</c>). When the decoder can't handle the input (enhanced coupling,
+/// malformed, truncated) it falls back to the info-only layout (<c>FULL.ac3</c> + <c>metadata.ini</c>).
 /// </para>
 /// </summary>
 public sealed class Ac3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
@@ -73,7 +74,7 @@ public sealed class Ac3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Ac3StreamInfo info;
       using (var infoStream = new MemoryStream(blob, writable: false))
         info = Ac3Codec.ReadStreamInfo(infoStream);
-      if (info.IsEnhanced || info.Channels < 1 || info.SampleRate <= 0)
+      if (info.Channels < 1 || info.SampleRate <= 0)
         return;
 
       byte[] pcm;
@@ -158,22 +159,29 @@ public sealed class Ac3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     info.AppendLine($"bsid={first.Bsid}");
     info.AppendLine($"dialnorm=-{first.DialNorm} dBFS");
 
-    // Walk frames by size, counting and accumulating samples (1536 PCM samples per AC-3 frame;
-    // E-AC-3 frames carry a variable block count handled inside FrameSize-driven walking).
+    // Walk frames by size, counting and accumulating samples. Each AC-3 frame is 1536 PCM samples
+    // (6 blocks × 256); an E-AC-3 frame carries a variable block count, and only its primary
+    // independent substream (id 0) contributes audio — dependent substreams are skipped.
     var frames = 0;
+    var dependentFrames = 0;
     long totalSamples = 0;
     var pos = firstOffset;
     while (pos + 6 <= blob.Length) {
-      if (Ac3SyncFrame.TryParse(blob, pos) is not { } header)
+      if (Ac3FrameHeader.TryParse(blob, pos) is not { } header || header.FrameSize <= 0)
         break;
       ++frames;
-      totalSamples += 1536;     // 6 blocks × 256 samples per full AC-3 frame
+      if (header.IsDependentSubstream || (header.IsEnhanced && header.SubstreamId != 0))
+        ++dependentFrames;
+      else
+        totalSamples += header.IsEnhanced ? header.NumBlocks * 256L : 1536L;
       pos += header.FrameSize;
     }
 
     var duration = first.SampleRate > 0 ? (double)totalSamples / first.SampleRate : 0;
     info.AppendLine($"frames={frames}");
     info.AppendLine($"duration_seconds={duration:0.###}");
+    if (dependentFrames > 0)
+      info.AppendLine($"note=skipped {dependentFrames} dependent/non-primary E-AC-3 substream frame(s) (only independent substream 0 is decoded).");
     return info.ToString();
   }
 
