@@ -104,6 +104,8 @@
     <ProjectReference Include="..\Codecs\Codec.MonkeysAudio\Codec.MonkeysAudio.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Ra144\Codec.Ra144.csproj" />
     <ProjectReference Include="..\Codecs\Codec.TrueSpeech\Codec.TrueSpeech.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.InterplayAcm\Codec.InterplayAcm.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Nellymoser\Codec.Nellymoser.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
@@ -549,6 +551,12 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Bwav\FileFormat.Bwav.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Swav\FileFormat.Swav.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Sdat\FileFormat.Sdat.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Vgm\FileFormat.Vgm.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Mus\FileFormat.Mus.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Xmi\FileFormat.Xmi.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Cmf\FileFormat.Cmf.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Acm\FileFormat.Acm.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Nelly\FileFormat.Nelly.csproj" />
   </ItemGroup>
 
 </Project>

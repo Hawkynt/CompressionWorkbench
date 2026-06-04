@@ -130,6 +130,8 @@
     <Project Path="Codecs/Codec.MonkeysAudio/Codec.MonkeysAudio.csproj" />
     <Project Path="Codecs/Codec.Ra144/Codec.Ra144.csproj" />
     <Project Path="Codecs/Codec.TrueSpeech/Codec.TrueSpeech.csproj" />
+    <Project Path="Codecs/Codec.InterplayAcm/Codec.InterplayAcm.csproj" />
+    <Project Path="Codecs/Codec.Nellymoser/Codec.Nellymoser.csproj" />
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />
@@ -510,6 +512,12 @@
     <Project Path="FileFormats/FileFormat.Bwav/FileFormat.Bwav.csproj" />
     <Project Path="FileFormats/FileFormat.Swav/FileFormat.Swav.csproj" />
     <Project Path="FileFormats/FileFormat.Sdat/FileFormat.Sdat.csproj" />
+    <Project Path="FileFormats/FileFormat.Vgm/FileFormat.Vgm.csproj" />
+    <Project Path="FileFormats/FileFormat.Mus/FileFormat.Mus.csproj" />
+    <Project Path="FileFormats/FileFormat.Xmi/FileFormat.Xmi.csproj" />
+    <Project Path="FileFormats/FileFormat.Cmf/FileFormat.Cmf.csproj" />
+    <Project Path="FileFormats/FileFormat.Acm/FileFormat.Acm.csproj" />
+    <Project Path="FileFormats/FileFormat.Nelly/FileFormat.Nelly.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />
