@@ -4,4 +4,8 @@
     <RootNamespace>Codec.WavPack</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Compression.Tests" />
+  </ItemGroup>
+
 </Project>

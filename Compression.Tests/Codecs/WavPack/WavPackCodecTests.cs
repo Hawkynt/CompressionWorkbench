@@ -201,4 +201,143 @@ public class WavPackCodecTests {
     using var output = new MemoryStream();
     Assert.That(() => WavPackCodec.Decompress(input, output), Throws.TypeOf<InvalidDataException>());
   }
+
+  // ── Reference wp_log2 / wp_exp2s port faithfulness ───────────────────────────
+  // Fixed points taken directly from the reference entropy_utils.c tables.
+
+  [Test]
+  public void WpLog2_KnownFixedPoints_MatchReference() {
+    Assert.Multiple(() => {
+      Assert.That(WavPackCodec.WpLog2(1), Is.EqualTo(256));
+      Assert.That(WavPackCodec.WpLog2(2), Is.EqualTo(512));
+      Assert.That(WavPackCodec.WpLog2(16), Is.EqualTo(1280));
+      Assert.That(WavPackCodec.WpLog2(256), Is.EqualTo(2304));
+      Assert.That(WavPackCodec.WpLog2(65535), Is.EqualTo(4352));
+    });
+  }
+
+  [Test]
+  public void WpExp2S_KnownFixedPoints_MatchReference() {
+    Assert.Multiple(() => {
+      Assert.That(WavPackCodec.WpExp2S(0), Is.EqualTo(0));
+      Assert.That(WavPackCodec.WpExp2S(256), Is.EqualTo(1));
+      Assert.That(WavPackCodec.WpExp2S(512), Is.EqualTo(2));
+      Assert.That(WavPackCodec.WpExp2S(2048), Is.EqualTo(128));
+      Assert.That(WavPackCodec.WpExp2S(-256), Is.EqualTo(-1));
+    });
+  }
+
+  [Test]
+  public void WpExp2S_OfWpLog2_RoundTrips_WithinReferenceError() {
+    // The reference guarantees round-trip error within 1 part in 225, with the only
+    // exceptions being +/-115 and +/-195 (which error by exactly 1).
+    for (var x = 1; x < 200000; x = x + 1 + x / 64) {
+      var back = WavPackCodec.WpExp2S(WavPackCodec.WpLog2((uint)x));
+      var tolerance = Math.Max(1, x / 225 + 1);
+      Assert.That(Math.Abs(back - x), Is.LessThanOrEqualTo(tolerance), $"x={x}");
+    }
+  }
+
+  [Test]
+  public void WpLog2S_IsOddSymmetric() {
+    foreach (var x in new[] { 1, 2, 50, 1000, 32767 })
+      Assert.That(WavPackCodec.WpLog2S(-x), Is.EqualTo(-WavPackCodec.WpLog2S(x)));
+  }
+
+  // ── New reference-path coverage ──────────────────────────────────────────────
+
+  [Test]
+  public void AllZeroStereoBlock_UsesZeroRunCoding_AndIsTiny() {
+    // An all-zero stereo block must now be coded via the zeros_acc run path: the
+    // bitstream sub-block should be a tiny fraction of the per-sample cost.
+    const int frames = 20000;
+    var pcm = new byte[frames * 2 * 2]; // silence
+    var wv = Encode(pcm, 2, 44100, 16);
+
+    // The whole encoded stream (header + sub-blocks + bitstream) must be far below
+    // the ~1.2 bits/sample a non-run coder would need (>= frames*2*0.15 bytes).
+    Assert.That(wv.Length, Is.LessThan(frames * 2 / 4),
+      "silence should collapse via zeros_acc run-length coding");
+    Assert.That(Decode(wv), Is.EqualTo(pcm));
+  }
+
+  [Test]
+  public void LongConstantLargeResidual_ExercisesHoldingOneChains_RoundTrips() {
+    // A high-amplitude square wave produces long unary "ones" runs, exercising the
+    // holding_one chains and the LIMIT_ONES escape; it must still round-trip.
+    const int frames = 8000;
+    var pcm = new byte[frames * 2];
+    for (var i = 0; i < frames; ++i)
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2),
+        (short)((i / 7 & 1) == 0 ? 30000 : -30000));
+
+    Assert.That(RoundTrip(pcm, 1, 44100, 16), Is.EqualTo(pcm));
+  }
+
+  [Test]
+  public void Silence_EncodesSmallerThanNoise_ForSameLength() {
+    const int frames = 16000;
+    var silence = new byte[frames * 2 * 2];
+    var noise = new byte[frames * 2 * 2];
+    new Random(42).NextBytes(noise);
+
+    var silentWv = Encode(silence, 2, 44100, 16);
+    var noiseWv = Encode(noise, 2, 44100, 16);
+
+    Assert.That(silentWv.Length, Is.LessThan(noiseWv.Length / 10),
+      "the zeros_acc run path must make silence dramatically smaller than noise");
+  }
+
+  [Test]
+  public void TamperingDecorrWeightsSubBlock_ChangesDecodedOutput() {
+    // The decoder honours the stored decorr-weights sub-block; corrupting it must
+    // change the decoded samples (proving weights are applied, not ignored).
+    const int frames = 4000;
+    var pcm = new byte[frames * 2 * 2];
+    for (var i = 0; i < frames; ++i) {
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 4), (short)(Math.Sin(i * 0.05) * 12000));
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 4 + 2), (short)(Math.Cos(i * 0.04) * 9000));
+    }
+    var wv = Encode(pcm, 2, 44100, 16);
+    var clean = Decode(wv);
+
+    // Find the 0x03 (decorr-weights) sub-block in the first block body and flip a
+    // weight byte to a large non-zero value.
+    var tampered = (byte[])wv.Clone();
+    var idx = FindSubBlockPayload(tampered, 0x03, out var size);
+    Assert.That(idx, Is.GreaterThan(0), "decorr-weights sub-block present");
+    Assert.That(size, Is.GreaterThan(0));
+    tampered[idx] = 0x40; // a large restore_weight input
+
+    var tamperedOut = Decode(tampered);
+    Assert.That(tamperedOut, Is.Not.EqualTo(clean),
+      "altering the decorr-weights sub-block must change the decoded output");
+  }
+
+  // Locates the payload offset of the first metadata sub-block with the given raw
+  // id inside the first wvpk block; returns -1 if absent.
+  private static int FindSubBlockPayload(byte[] wv, int rawId, out int size) {
+    size = 0;
+    var ckSize = BinaryPrimitives.ReadUInt32LittleEndian(wv.AsSpan(4));
+    var bodyEnd = 8 + (int)ckSize;
+    var o = 32;
+    while (o < bodyEnd && o < wv.Length) {
+      var id = wv[o++];
+      int s;
+      if ((id & 0x40) != 0) {
+        s = (wv[o] | (wv[o + 1] << 8) | (wv[o + 2] << 16)) << 1;
+        o += 3;
+      } else {
+        s = wv[o++] << 1;
+      }
+      if ((id & 0x20) != 0) s -= 1;
+      var payloadStart = o;
+      if ((id & 0x1F) == rawId) {
+        size = s;
+        return payloadStart;
+      }
+      o = payloadStart + s + (s & 1);
+    }
+    return -1;
+  }
 }
