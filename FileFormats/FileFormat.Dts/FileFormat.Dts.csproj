@@ -7,6 +7,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Dts\Codec.Dts.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Pcm\Codec.Pcm.csproj" />
   </ItemGroup>
 
 </Project>

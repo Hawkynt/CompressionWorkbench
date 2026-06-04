@@ -117,6 +117,9 @@
     <ProjectReference Include="..\Codecs\Codec.Musepack\Codec.Musepack.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Speex\Codec.Speex.csproj" />
     <ProjectReference Include="..\Codecs\Codec.G7231\Codec.G7231.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.WmaPro\Codec.WmaPro.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Sipr\Codec.Sipr.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Dts\Codec.Dts.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />

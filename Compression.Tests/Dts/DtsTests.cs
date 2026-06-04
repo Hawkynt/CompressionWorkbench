@@ -15,7 +15,7 @@ public class DtsTests {
   /// <summary>
   /// Builds a minimal DTS core frame: the 0x7FFE8001 sync word followed by an MSB-first
   /// big-endian packing of the header fields, then zero padding out to <paramref name="frameSize"/>.
-  /// The bit layout mirrors <see cref="DtsCoreHeader"/>'s reader.
+  /// The bit layout mirrors <see cref="Codec.Dts.DtsFrameHeader"/>'s reader.
   /// </summary>
   private static byte[] BuildCoreFrame(
       int nblks, int frameSize, int amode, int sfreq, int rate, int lff) {
@@ -75,12 +75,12 @@ public class DtsTests {
 
   [Test]
   public void Metadata_DecodesSfreqRateAmodeAndLfeFromTables() {
-    // sfreq 13 → 48000 Hz, rate 24 → 1509750 bit/s, amode 7 → 3.1, lff 1 → LFE present.
+    // sfreq 13 → 48000 Hz, rate 24 → 1536000 bit/s (canonical DCA RATE table), amode 7 → 3.1, lff 1 → LFE.
     var frame = BuildCoreFrame(nblks: 7, frameSize: 96, amode: 7, sfreq: 13, rate: 24, lff: 1);
     var text = MetadataOf(frame);
 
     Assert.That(text, Does.Contain("sample_rate=48000"));
-    Assert.That(text, Does.Contain("bitrate=1509750"));
+    Assert.That(text, Does.Contain("bitrate=1536000"));
     Assert.That(text, Does.Contain("lfe=yes"));
     Assert.That(text, Does.Contain("C+L+R+S (3.1 surround)"));
     // amode 7 = 4 channels + LFE = 5.
