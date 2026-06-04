@@ -59,6 +59,7 @@
     <ProjectReference Include="..\Codecs\Codec.Ac3\Codec.Ac3.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Cook\Codec.Cook.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Atrac3\Codec.Atrac3.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Musepack\Codec.Musepack.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
@@ -531,6 +532,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Dts\FileFormat.Dts.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ac3\FileFormat.Ac3.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Oma\FileFormat.Oma.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Mpc\FileFormat.Mpc.csproj" />
   </ItemGroup>
 
 </Project>

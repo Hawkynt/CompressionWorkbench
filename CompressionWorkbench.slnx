@@ -140,6 +140,7 @@
     <Project Path="Codecs/Codec.Ac3/Codec.Ac3.csproj" />
     <Project Path="Codecs/Codec.Cook/Codec.Cook.csproj" />
     <Project Path="Codecs/Codec.Atrac3/Codec.Atrac3.csproj" />
+    <Project Path="Codecs/Codec.Musepack/Codec.Musepack.csproj" />
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />
@@ -541,6 +542,7 @@
     <Project Path="FileFormats/FileFormat.Dts/FileFormat.Dts.csproj" />
     <Project Path="FileFormats/FileFormat.Ac3/FileFormat.Ac3.csproj" />
     <Project Path="FileFormats/FileFormat.Oma/FileFormat.Oma.csproj" />
+    <Project Path="FileFormats/FileFormat.Mpc/FileFormat.Mpc.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />
