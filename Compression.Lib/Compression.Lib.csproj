@@ -54,6 +54,7 @@
     <ProjectReference Include="..\Codecs\Codec.WsAdpcm\Codec.WsAdpcm.csproj" />
     <ProjectReference Include="..\Codecs\Codec.RoqDpcm\Codec.RoqDpcm.csproj" />
     <ProjectReference Include="..\Codecs\Codec.SolDpcm\Codec.SolDpcm.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Lpc10\Codec.Lpc10.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
@@ -522,6 +523,10 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Hes\FileFormat.Hes.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Gym\FileFormat.Gym.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ay\FileFormat.Ay.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lpc10\FileFormat.Lpc10.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Dts\FileFormat.Dts.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ac3\FileFormat.Ac3.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Oma\FileFormat.Oma.csproj" />
   </ItemGroup>
 
 </Project>
