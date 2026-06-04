@@ -3,23 +3,33 @@
 namespace Codec.Aac;
 
 /// <summary>
-/// AAC Huffman codebook tables per ISO/IEC 14496-3 §4.6.3. The 11 spectral
-/// codebooks (1..11) plus the scale-factor codebook (HCB_SF) are declared here.
-/// <para>
-/// NOTE: This is a placeholder table set. Shipping the full 1700-entry set of
-/// numeric tables is required before <see cref="AacSpectral.DecodeSpectralData"/>
-/// can produce audio. Until those tables are ported verbatim from the spec (not
-/// from GPL sources), the decoder gates on AAC-LC profile detection and raises
-/// <see cref="NotSupportedException"/> at the spectral-decode step.
-/// </para>
+/// AAC Huffman codebook metadata and decode helpers per ISO/IEC 14496-3 §4.6.3.
+/// The bulk numeric codeword/length data lives in the generated partial half of
+/// this class (AacHuffmanCodebooks.cs); this file holds the per-codebook properties
+/// (dimension, sign convention, largest-absolute-value) and the bit-serial
+/// Huffman lookup used by the spectral decoder.
 /// </summary>
-internal static class AacHuffmanTables {
+internal static partial class AacHuffmanTables {
 
-  /// <summary>Number of spectral codebooks (1..11). Index 0 is "unused".</summary>
+  /// <summary>Number of spectral codebooks (1..11). Index 0 is "ZERO_HCB" (no data).</summary>
   public const int SpectralCodebookCount = 11;
 
+  /// <summary>The codebook index that signals all-zero spectrum (no bits read).</summary>
+  public const int ZeroHcb = 0;
+
+  /// <summary>NOISE_HCB (perceptual noise substitution).</summary>
+  public const int NoiseHcb = 13;
+
+  /// <summary>IS_INTENSITY (intensity stereo) and its sign-inverted partner.</summary>
+  public const int IntensityHcb2 = 14;
+  public const int IntensityHcb = 15;
+
+  /// <summary>The escape codebook (values |x| ≥ 16 carry an escape sequence).</summary>
+  public const int EscapeHcb = 11;
+
   /// <summary>
-  /// Dimension (2 for pair codebooks 3, 4, 9, 10, 11; 4 for quad codebooks 1, 2, 5, 6, 7, 8).
+  /// Dimension (number of quantised coefficients per codeword): 4 for the quad
+  /// codebooks 1, 2, 5, 6; 2 for the pair codebooks 3, 4, 7, 8, 9, 10, 11.
   /// Value at index <c>i</c> corresponds to codebook <c>i</c>.
   /// </summary>
   public static readonly int[] Dimensions = [
@@ -37,9 +47,24 @@ internal static class AacHuffmanTables {
     2, // cb 11 (escape codebook)
   ];
 
-  /// <summary>Codebooks 3, 5, 7, 9, 11 are unsigned (sign bits follow the codeword).</summary>
+  /// <summary>
+  /// Codebooks 3, 4, 7, 8, 11 are unsigned: codeword values are magnitudes and a
+  /// sign bit follows the codeword for each non-zero coefficient
+  /// (ISO/IEC 14496-3, <c>IS_CODEBOOK_UNSIGNED(x) = ((x-1) &amp; 10)</c>).
+  /// </summary>
   public static readonly bool[] Unsigned = [
-    false, false, false, true, false, true, false, true, false, true, false, true,
+    false, // 0
+    false, // 1
+    false, // 2
+    true,  // 3
+    true,  // 4
+    false, // 5
+    false, // 6
+    true,  // 7
+    true,  // 8
+    false, // 9
+    false, // 10
+    true,  // 11
   ];
 
   /// <summary>LAV (largest absolute value) per codebook per ISO/IEC 14496-3 Table 4.98.</summary>
@@ -47,12 +72,42 @@ internal static class AacHuffmanTables {
     0, 1, 1, 2, 2, 4, 4, 7, 7, 12, 12, 16,
   ];
 
-  // --------- Scale factor codebook (HCB_SF) ---------
-  // TODO: port the 241-entry scale factor codebook from ISO/IEC 14496-3 §4.A.1.
-  // Left as an empty placeholder pending real spec tables.
+  /// <summary>
+  /// Reads one Huffman codeword from <paramref name="reader"/> using spectral
+  /// codebook <paramref name="codebook"/> (1..11) and returns its index into the
+  /// codebook's value enumeration. Bit-serial longest-prefix match: AAC codes are
+  /// a prefix code so the first length at which (accumulated bits == stored code)
+  /// is unique.
+  /// </summary>
+  public static int DecodeSpectralIndex(AacBitReader reader, int codebook) {
+    var codes = SpectralCodes[codebook - 1];
+    var bits = SpectralBits[codebook - 1];
+    uint acc = 0;
+    var len = 0;
+    while (len < 20) {
+      acc = (acc << 1) | reader.ReadBits(1);
+      ++len;
+      for (var i = 0; i < codes.Length; ++i)
+        if (bits[i] == len && codes[i] == acc)
+          return i;
+    }
+    throw new InvalidDataException($"AAC: no Huffman match in codebook {codebook} after {len} bits.");
+  }
 
-  // --------- Spectral codebooks 1..11 ---------
-  // TODO: port the 11 spectral Huffman codebooks verbatim from ISO/IEC 14496-3
-  //       Tables 4.A.2.1 .. 4.A.2.11. The escape codebook (11) encodes values in
-  //       range [-16, 16] with escape sequences for |x| >= 16.
+  /// <summary>
+  /// Reads one differential scale-factor codeword (HCB_SF) and returns the signed
+  /// delta in [-60, 60] (the codebook index minus the 60 mid-point bias).
+  /// </summary>
+  public static int DecodeScaleFactorDelta(AacBitReader reader) {
+    uint acc = 0;
+    var len = 0;
+    while (len < 20) {
+      acc = (acc << 1) | reader.ReadBits(1);
+      ++len;
+      for (var i = 0; i < ScaleFactorCodes.Length; ++i)
+        if (ScaleFactorBits[i] == len && ScaleFactorCodes[i] == acc)
+          return i - 60;
+    }
+    throw new InvalidDataException($"AAC: no HCB_SF Huffman match after {len} bits.");
+  }
 }

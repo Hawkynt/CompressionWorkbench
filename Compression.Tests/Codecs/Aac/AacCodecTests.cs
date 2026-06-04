@@ -129,24 +129,89 @@ public class AacCodecTests {
     });
   }
 
-  // ---------- End-to-end decode ----------
+  // ---------- End-to-end decode (hand-crafted ADTS frames) ----------
   //
-  // Skipped by default: the spectral / IMDCT / Huffman pipeline is not yet
-  // implemented (the 11 spectral codebooks + HCB_SF + filter bank tables remain
-  // as TODO markers in AacHuffmanTables.cs and AacFilterBank.cs). When a short
-  // permissively-licensed .aac (ADTS) clip is added under test-corpus/aac/,
-  // change [Ignore] to [Test] and assert sample count + no exceptions.
-  [Test]
-  [Ignore("End-to-end decode requires spectral pipeline + reference clip; see AacHuffmanTables TODO.")]
-  public void Decompress_EndToEnd_ShortClip() {
-    var clip = Path.Combine(TestContext.CurrentContext.TestDirectory,
-      "..", "..", "..", "..", "test-corpus", "aac", "sample-lc-stereo-44k.aac");
-    if (!File.Exists(clip))
-      Assert.Inconclusive($"Reference AAC-LC clip not present: {clip}");
+  // These build minimal but spec-valid AAC-LC raw_data_blocks by hand and run the
+  // full Huffman/dequant/IMDCT/overlap-add pipeline. A "silence" frame codes every
+  // scale-factor band with codebook 0 (ZERO_HCB), so no spectral bits are present
+  // and the spectrum is all zeros — which the filter bank must turn into exactly
+  // 1024 zero samples per channel.
 
-    using var input = File.OpenRead(clip);
+  [Test]
+  [Category("HappyPath")]
+  public void Decompress_SilenceMonoFrame_Produces1024Zeros() {
+    var frame = AacTestFrames.SilenceFrame(channelConfig: 1, sampleRateIndex: 4);
+    using var input = new MemoryStream(frame);
     using var pcm = new MemoryStream();
     AacCodec.Decompress(input, pcm);
-    Assert.That(pcm.Length, Is.GreaterThan(0));
+
+    Assert.That(pcm.Length, Is.EqualTo(1024 * 2), "1024 mono samples × 2 bytes");
+    Assert.That(pcm.ToArray(), Is.All.EqualTo((byte)0), "silence decodes to zeros");
+  }
+
+  [Test]
+  [Category("HappyPath")]
+  public void Decompress_TwoSilenceFrames_Produces2048Zeros() {
+    var frame = AacTestFrames.SilenceFrame(channelConfig: 1, sampleRateIndex: 4);
+    var two = new byte[frame.Length * 2];
+    frame.CopyTo(two, 0);
+    frame.CopyTo(two, frame.Length);
+
+    using var input = new MemoryStream(two);
+    using var pcm = new MemoryStream();
+    AacCodec.Decompress(input, pcm);
+
+    Assert.That(pcm.Length, Is.EqualTo(2048 * 2));
+    Assert.That(pcm.ToArray(), Is.All.EqualTo((byte)0));
+  }
+
+  [Test]
+  [Category("HappyPath")]
+  public void Decompress_SilenceStereoFrame_ProducesInterleavedZeros() {
+    var frame = AacTestFrames.SilenceFrame(channelConfig: 2, sampleRateIndex: 4);
+    using var input = new MemoryStream(frame);
+    using var pcm = new MemoryStream();
+    AacCodec.Decompress(input, pcm);
+
+    Assert.That(pcm.Length, Is.EqualTo(1024 * 2 /*ch*/ * 2 /*bytes*/));
+    Assert.That(pcm.ToArray(), Is.All.EqualTo((byte)0));
+  }
+
+  [Test]
+  [Category("HappyPath")]
+  public void Decompress_FrameWithOneNonzeroCoefficient_HasEnergyAndIsDeterministic() {
+    // A mono frame coding a single non-zero quantised coefficient in sfb 0 via the
+    // escape codebook (cb 11). Hand-computing the exact IMDCT output is impractical,
+    // so we assert (a) the output is non-trivial (non-zero energy) and (b) repeated
+    // decodes are bit-identical (determinism).
+    var frame = AacTestFrames.SingleCoefficientFrame(sampleRateIndex: 4);
+
+    static byte[] Decode(byte[] f) {
+      using var input = new MemoryStream(f);
+      using var pcm = new MemoryStream();
+      AacCodec.Decompress(input, pcm);
+      return pcm.ToArray();
+    }
+
+    var first = Decode(frame);
+    var second = Decode(frame);
+
+    Assert.That(first, Has.Length.EqualTo(1024 * 2));
+    Assert.That(first.Any(b => b != 0), Is.True, "a non-zero coefficient must yield audible energy");
+    Assert.That(second, Is.EqualTo(first), "decode must be deterministic");
+  }
+
+  [Test]
+  public void Decompress_TruncatedSpectralData_Throws() {
+    // Take a valid single-coefficient frame and lop off its trailing payload byte
+    // so the bit reader runs off the end mid-codeword.
+    var frame = AacTestFrames.SingleCoefficientFrame(sampleRateIndex: 4);
+    var truncated = frame[..^1];
+    // Fix the ADTS frame_length so the header still claims the (now missing) byte,
+    // forcing the decoder to read past the available data.
+    using var input = new MemoryStream(truncated);
+    using var pcm = new MemoryStream();
+    Assert.That(() => AacCodec.Decompress(input, pcm),
+      Throws.InstanceOf<InvalidDataException>());
   }
 }

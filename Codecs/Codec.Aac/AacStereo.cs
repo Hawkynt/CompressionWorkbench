@@ -4,38 +4,75 @@ namespace Codec.Aac;
 
 /// <summary>
 /// Stereo joint-coding tools: M/S (mid/side) coupling and intensity stereo
-/// (ISO/IEC 14496-3 §4.6.8). Both operate on per-scalefactor-band granularity.
+/// (ISO/IEC 14496-3 §4.6.8). Both operate on per-scalefactor-band granularity and
+/// run over the grouped/windowed layout of a CPE.
 /// </summary>
 internal static class AacStereo {
 
-  /// <summary>Inverts mid/side stereo for a single CPE (channel-pair element).</summary>
+  /// <summary>
+  /// Inverts mid/side stereo for a CPE: where <c>ms_used</c> is set for a band and
+  /// neither channel uses intensity, replace (L,R) = (M+S, M−S).
+  /// </summary>
   public static void ApplyMidSide(
-    float[] left, float[] right, bool[] msUsedPerSfb, int[] sfbOffsets, int maxSfb) {
-    if (msUsedPerSfb is null || sfbOffsets is null) return;
-    for (var sfb = 0; sfb < maxSfb && sfb < msUsedPerSfb.Length; ++sfb) {
-      if (!msUsedPerSfb[sfb]) continue;
-      var start = sfbOffsets[sfb];
-      var end = sfbOffsets[sfb + 1];
-      for (var k = start; k < end; ++k) {
-        var l = left[k];
-        var r = right[k];
-        left[k] = l + r;
-        right[k] = l - r;
+    float[] left, float[] right, IcsInfo ics, bool msMaskAllOn, bool[][]? msUsed, int[][] rightCodebooks) {
+    var groupWindowStart = 0;
+    var groupBins = ics.IsEightShort ? AacFilterBank.ShortFrameSize : AacFilterBank.LongFrameSize;
+    for (var g = 0; g < ics.WindowGroupCount; ++g) {
+      var windowsInGroup = ics.WindowGroupLength[g];
+      for (var sfb = 0; sfb < ics.MaxSfb; ++sfb) {
+        var rcb = rightCodebooks[g][sfb];
+        if (rcb is AacHuffmanTables.IntensityHcb or AacHuffmanTables.IntensityHcb2)
+          continue; // intensity bands are not M/S coded
+        var on = msMaskAllOn || (msUsed is not null && msUsed[g][sfb]);
+        if (!on) continue;
+        var sfbStart = ics.SwbOffset[sfb];
+        var sfbEnd = ics.SwbOffset[sfb + 1];
+        for (var w = 0; w < windowsInGroup; ++w) {
+          var baseBin = (groupWindowStart + w) * groupBins;
+          for (var k = sfbStart; k < sfbEnd; ++k) {
+            var m = left[baseBin + k];
+            var s = right[baseBin + k];
+            left[baseBin + k] = m + s;
+            right[baseBin + k] = m - s;
+          }
+        }
       }
+      groupWindowStart += windowsInGroup;
     }
   }
 
   /// <summary>
-  /// Applies intensity stereo to the right channel using scalefactors signalled
-  /// for codebooks 14 (IS_INTENSITY) and 15 (IS_INTENSITY with sign inversion).
+  /// Applies intensity stereo to the right channel. For bands coded with cb 14/15
+  /// the right spectrum is a scaled copy of the left, the scale being
+  /// <c>0.5^(is_position/4)</c> from the right channel's "scale factors" stream;
+  /// cb 15 (and the ms mask, when present) flips the sign (ISO/IEC 14496-3 §4.6.8.2.3).
   /// </summary>
   public static void ApplyIntensity(
-    float[] left, float[] right, int[] codebooks, float[] scalefactors,
-    int[] sfbOffsets, int maxSfb, bool msMaskPresent, bool[] msUsedPerSfb) {
-    _ = left; _ = right; _ = codebooks; _ = scalefactors;
-    _ = sfbOffsets; _ = maxSfb; _ = msMaskPresent; _ = msUsedPerSfb;
-    throw new NotSupportedException(
-      "AAC intensity stereo not yet implemented. ISO/IEC 14496-3 §4.6.8.2.3 " +
-      "describes the cb=14/15 sign rule combined with the m/s mask for sign inversion.");
+    float[] left, float[] right, IcsInfo ics,
+    int[][] rightCodebooks, int[][] rightScaleFactors,
+    bool msMaskPresent, bool[][]? msUsed) {
+    var groupWindowStart = 0;
+    var groupBins = ics.IsEightShort ? AacFilterBank.ShortFrameSize : AacFilterBank.LongFrameSize;
+    for (var g = 0; g < ics.WindowGroupCount; ++g) {
+      var windowsInGroup = ics.WindowGroupLength[g];
+      for (var sfb = 0; sfb < ics.MaxSfb; ++sfb) {
+        var cb = rightCodebooks[g][sfb];
+        if (cb is not (AacHuffmanTables.IntensityHcb or AacHuffmanTables.IntensityHcb2))
+          continue;
+        // cb 15 = positive intensity, cb 14 = sign-inverted; the ms mask flips it again.
+        var sign = cb == AacHuffmanTables.IntensityHcb ? 1.0f : -1.0f;
+        if (msMaskPresent && msUsed is not null && msUsed[g][sfb])
+          sign = -sign;
+        var scale = sign * MathF.Pow(0.5f, rightScaleFactors[g][sfb] / 4f);
+        var sfbStart = ics.SwbOffset[sfb];
+        var sfbEnd = ics.SwbOffset[sfb + 1];
+        for (var w = 0; w < windowsInGroup; ++w) {
+          var baseBin = (groupWindowStart + w) * groupBins;
+          for (var k = sfbStart; k < sfbEnd; ++k)
+            right[baseBin + k] = scale * left[baseBin + k];
+        }
+      }
+      groupWindowStart += windowsInGroup;
+    }
   }
 }
