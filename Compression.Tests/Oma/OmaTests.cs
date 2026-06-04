@@ -114,6 +114,56 @@ public class OmaTests {
   }
 
   [Test]
+  public void Atrac3_StereoPayload_SurfacesDecodedChannelWavs() {
+    // ATRAC3 (codec id 0), 44100 Hz (rate idx 1), low-10 bits = 24 words → 192-byte stereo
+    // frame (96 bytes/channel, a valid LP2 size). Two frames of filler bytes decode to two
+    // bounded channel WAVs.
+    var codingParams = (1 << 13) | 24;
+    var blob = BuildOma(codecId: 0, codingParams: codingParams, payloadLength: 192 * 2);
+
+    var entries = new OmaFormatDescriptor().List(new MemoryStream(blob), null);
+    var channelEntries = entries.Where(e => e.Kind == "Channel").ToList();
+    Assert.That(channelEntries.Count, Is.EqualTo(2), "stereo ATRAC3 surfaces two channel WAVs");
+
+    var first = channelEntries[0];
+    using var wavStream = new MemoryStream();
+    new OmaFormatDescriptor().ExtractEntry(new MemoryStream(blob), first.Name, wavStream, null);
+    var wav = wavStream.ToArray();
+    Assert.That(System.Text.Encoding.ASCII.GetString(wav, 0, 4), Is.EqualTo("RIFF"));
+    // 2 frames × 1024 samples × 2 bytes + 44-byte header.
+    Assert.That(wav.Length, Is.EqualTo(44 + 2 * 1024 * 2));
+    Assert.That(System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24)),
+      Is.EqualTo(44100u));
+  }
+
+  [Test]
+  public void Atrac3_SilentPayload_DecodesToSilentChannels() {
+    // An all-zero coded payload selects the unencoded / no-gain / no-tonal path → silence.
+    var blob = BuildOma(codecId: 0, codingParams: (1 << 13) | 24, payloadLength: 192 * 2);
+    // Overwrite the filler payload (after the 96-byte EA3 header that follows the empty tag)
+    // with zeros.
+    var payloadOffset = 10 + 0 + 96; // ea3 tag header (10) + empty tag (0) + EA3 header (96)
+    for (var i = payloadOffset; i < blob.Length; ++i)
+      blob[i] = 0;
+
+    var entries = new OmaFormatDescriptor().List(new MemoryStream(blob), null);
+    var channel = entries.First(e => e.Kind == "Channel");
+    using var wavStream = new MemoryStream();
+    new OmaFormatDescriptor().ExtractEntry(new MemoryStream(blob), channel.Name, wavStream, null);
+    var wav = wavStream.ToArray();
+    Assert.That(wav.Skip(44).All(b => b == 0), Is.True);
+  }
+
+  [Test]
+  public void Atrac3Plus_PayloadStaysUndecoded() {
+    // Codec id 1 (ATRAC3plus) is not decoded — only the stream blob is surfaced.
+    var blob = BuildOma(codecId: 1, codingParams: (1 << 13) | 24, payloadLength: 192 * 2);
+    var entries = new OmaFormatDescriptor().List(new MemoryStream(blob), null);
+    Assert.That(entries.Any(e => e.Kind == "Channel"), Is.False);
+    Assert.That(entries.Any(e => e.Name == "stream.bin"), Is.True);
+  }
+
+  [Test]
   public void Garbage_IsHandledGracefully() {
     var junk = Encoding.ASCII.GetBytes("not an OpenMG file");
     using var ms = new MemoryStream(junk);

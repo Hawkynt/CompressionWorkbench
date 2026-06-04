@@ -109,6 +109,39 @@ public class RealMediaTests {
   }
 
   [Test]
+  public void RawRa_V4_Atrac3_SurfacesDecodedStereoChannels() {
+    // A raw .ra v4 header for ATRAC3 ("atrc"), stereo, sub_packet_size = 192, joint stereo.
+    // Two all-zero 192-byte sub-packets descramble to the XOR-key pattern and decode to two
+    // bounded 1024-sample-per-channel WAVs.
+    var ra = BuildRawRaV4Atrac3(subPacketSize: 192, channels: 2, sampleRate: 44100,
+      jointStereo: true, numSubPackets: 2);
+
+    var entries = new RealMediaFormatDescriptor().List(new MemoryStream(ra), null);
+    var channelEntries = entries.Where(e => e.Kind == "Channel").ToList();
+    Assert.That(channelEntries.Count, Is.EqualTo(2), "stereo ATRAC3 surfaces two channel WAVs");
+
+    using var wavStream = new MemoryStream();
+    new RealMediaFormatDescriptor().ExtractEntry(new MemoryStream(ra), channelEntries[0].Name, wavStream, null);
+    var wav = wavStream.ToArray();
+    Assert.That(Encoding.ASCII.GetString(wav, 0, 4), Is.EqualTo("RIFF"));
+    // 2 sub-packets × 1024 samples × 2 bytes + 44-byte header.
+    Assert.That(wav.Length, Is.EqualTo(44 + 2 * 1024 * 2));
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24)), Is.EqualTo(44100u));
+  }
+
+  [Test]
+  public void RawRa_V4_Atrac3_Truncated_DegradesGracefully() {
+    // A valid header but a payload shorter than one sub-packet → no channels, blob survives.
+    var ra = BuildRawRaV4Atrac3(subPacketSize: 192, channels: 2, sampleRate: 44100,
+      jointStereo: true, numSubPackets: 0);
+    List<Compression.Registry.ArchiveEntryInfo> entries = null!;
+    Assert.That(() => entries = new RealMediaFormatDescriptor().List(new MemoryStream(ra), null),
+      Throws.Nothing);
+    Assert.That(entries.Any(e => e.Name == "FULL.ra"), Is.True);
+    Assert.That(entries.Any(e => e.Kind == "Channel"), Is.False);
+  }
+
+  [Test]
   public void Rmf_Truncated_DegradesGracefully() {
     // ".RMF" magic with a chunk size that overruns the buffer.
     using var ms = new MemoryStream();
@@ -443,6 +476,50 @@ public class RealMediaTests {
     while (ms.Length < 64) ms.WriteByte(0);
     ms.Write(payload);
     return ms.ToArray();
+  }
+
+  private static byte[] BuildRawRaV4Atrac3(int subPacketSize, int channels, int sampleRate,
+      bool jointStereo, int numSubPackets) {
+    using var ms = new MemoryStream();
+    ms.Write([0x2E, 0x72, 0x61, 0xFD]); // ".ra\xFD"
+    WriteU16BE(ms, 4);                  // version (offset 4)
+
+    // RA v4 header body (matches the reader's ParseRaAtrac3Config layout).
+    WriteU16BE(ms, 0);                  // unused
+    ms.Write(Encoding.ASCII.GetBytes(".ra4")); // ".ra4"
+    WriteU32BE(ms, 0);                  // data size
+    WriteU16BE(ms, 4);                  // version2
+    WriteU32BE(ms, 0);                  // header size
+    WriteU16BE(ms, 0);                  // flavor
+    WriteU32BE(ms, 96);                 // coded frame size
+    WriteU32BE(ms, 0);                  // ???
+    WriteU32BE(ms, 0);                  // bytes per minute
+    WriteU32BE(ms, 0);                  // ???
+    WriteU16BE(ms, 1);                  // sub_packet_h
+    WriteU16BE(ms, (ushort)(subPacketSize)); // container frame size
+    WriteU16BE(ms, (ushort)subPacketSize);   // sub packet size (= block align)
+    WriteU16BE(ms, 0);                  // ???
+    WriteU16BE(ms, (ushort)sampleRate); // sample rate
+    WriteU32BE(ms, 0);                  // ???
+    WriteU16BE(ms, (ushort)channels);   // channels
+
+    // Codec FOURCC + atrac3 config block (be32 version=4, be16 samples, be16 delay=0x88E,
+    // be16 coding_mode).
+    ms.Write(Encoding.ASCII.GetBytes("atrc"));
+    WriteU32BE(ms, 4);                          // version
+    WriteU16BE(ms, (ushort)(1024 * channels));  // samples per frame
+    WriteU16BE(ms, 0x88E);                      // delay
+    WriteU16BE(ms, (ushort)(jointStereo ? 1 : 0)); // coding mode
+
+    var headerLen = (int)ms.Length;
+    // dataOffset (u32 @ 12) drives where the raw reader slices the payload.
+    var rebuilt = ms.ToArray();
+    BinaryPrimitives.WriteUInt32BigEndian(rebuilt.AsSpan(12), (uint)headerLen);
+
+    using var full = new MemoryStream();
+    full.Write(rebuilt);
+    full.Write(new byte[subPacketSize * numSubPackets]); // all-zero sub-packets
+    return full.ToArray();
   }
 
   private static void WriteChunk(MemoryStream ms, string fourcc, Action<MemoryStream> body) {

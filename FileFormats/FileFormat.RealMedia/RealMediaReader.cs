@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using Codec.Cook;
+using Codec.Atrac3;
 using Codec.Pcm;
 using Codec.Ra144;
 using Compression.Registry;
@@ -33,6 +34,7 @@ internal static class RealMediaReader {
     public string? Description;
     public string? MimeType;
     public string? Codec;
+    public byte[]? TypeSpecific;
     public readonly List<byte[]> Payloads = [];
 
     // RealAudio v4/v5 header fields parsed from the MDPR type-specific blob. Populated for
@@ -125,6 +127,10 @@ internal static class RealMediaReader {
         // Cook / RealAudio G2: deinterleave the packets, decode every frame and surface
         // per-channel WAVs. Falls back to blob-only on any failure.
         AddDecodedCookChannels(s, $"streams/stream_{s.StreamNumber:D2}", entries);
+        // RealAudio 8 ("atrc" = ATRAC3): decode the (descrambled) sub-packet stream to
+        // per-channel WAVs using the RA header's atrac3 config. Falls back to blob-only.
+        AddDecodedAtrac3Channels(streamBytes, s.Codec, s.TypeSpecific,
+          $"streams/stream_{s.StreamNumber:D2}", entries);
       }
     }
   }
@@ -156,6 +162,7 @@ internal static class RealMediaReader {
       var typeSpecEnd = p + typeSpecLen <= chunkEnd ? p + typeSpecLen : chunkEnd;
       s.Codec = DetectFourCc(b, p, typeSpecEnd);
       ParseRaHeader(b, p, typeSpecEnd, s);
+      s.TypeSpecific = b[p..typeSpecEnd];
     }
 
     streams[s.StreamNumber] = s;
@@ -360,6 +367,8 @@ internal static class RealMediaReader {
       entries.Add(new("streams/stream_00.bin", "Stream", data, Method: codec ?? "stored"));
       // Raw .ra v3 is always lpcJ (14.4); v4/v5 carry the codec FOURCC. Decode lpcJ to WAV.
       AddDecodedLpcJChannel(data, codec, "streams/stream_00", entries);
+      // Raw .ra v4/v5 ATRAC3 ("atrc"): the leading header is the RA header itself.
+      AddDecodedAtrac3Channels(data, codec, b, "streams/stream_00", entries);
     }
   }
 
@@ -427,6 +436,126 @@ internal static class RealMediaReader {
     } catch {
       // Undecodable cook stream — keep the stream blob only.
     }
+  }
+
+  /// <summary>
+  /// If <paramref name="codec"/> identifies ATRAC3 ("atrc", RealAudio 8), parse the RA v4/v5
+  /// header in <paramref name="raHeader"/> for the block align (sub-packet size), channel count
+  /// and ATRAC3 config (joint-stereo), then decode the RM-scrambled sub-packet stream
+  /// <paramref name="payload"/> frame-by-frame into per-channel WAVs. Any failure (no parseable
+  /// RA header, unsupported config, truncation) is swallowed so the blob-only view survives.
+  /// <para>PRAGMATIC: RealMedia interleaves ATRAC3 sub-packets across a super-block; we decode
+  /// the concatenated payload sequentially by block-align frames (each frame is one descrambled
+  /// sub-packet) rather than reconstructing the original interleave order.</para>
+  /// </summary>
+  private static void AddDecodedAtrac3Channels(byte[] payload, string? codec, byte[]? raHeader,
+      string baseName, List<AudioPseudoArchive.Entry> entries) {
+    if (codec != "atrc" || raHeader == null)
+      return;
+    try {
+      var cfg = ParseRaAtrac3Config(raHeader);
+      if (cfg is not var (blockAlign, channels, sampleRate, jointStereo))
+        return;
+      if (blockAlign <= 0 || channels <= 0 || payload.Length < blockAlign)
+        return;
+
+      var codingMode = jointStereo ? 0x12 : 0x2;
+      var decoder = new Atrac3Codec(sampleRate, channels, blockAlign, codingMode, scrambled: true);
+      var interleaved = decoder.DecodeStream(payload);
+      if (interleaved.Length == 0)
+        return;
+
+      var rate = sampleRate > 0 ? sampleRate : 44100;
+      var le = new byte[interleaved.Length * 2];
+      for (var i = 0; i < interleaved.Length; ++i)
+        BinaryPrimitives.WriteInt16LittleEndian(le.AsSpan(i * 2), interleaved[i]);
+
+      var splits = PcmCodec.SplitInterleavedPcm(le, channels, rate, bitsPerSample: 16);
+      foreach (var (name, wav) in splits)
+        entries.Add(new($"{baseName}.{name}.wav", "Channel", wav, Method: "pcm"));
+    } catch {
+      // Undecodable ATRAC3 payload / header — keep the stream blob only.
+    }
+  }
+
+  /// <summary>
+  /// Locates and parses the RealAudio v4/v5 header inside <paramref name="b"/> (it may be the
+  /// MDPR type-specific blob or a raw .ra file) and extracts the ATRAC3 stream config:
+  /// block align (= sub-packet size), channel count, sample rate and joint-stereo flag.
+  /// Returns <see langword="null"/> if no ".ra\xFD" header with version 4/5 is found.
+  /// </summary>
+  private static (int BlockAlign, int Channels, int SampleRate, bool JointStereo)? ParseRaAtrac3Config(byte[] b) {
+    // Find the ".ra\xFD" magic.
+    var raStart = -1;
+    for (var i = 0; i + 4 <= b.Length; ++i)
+      if (b[i] == 0x2E && b[i + 1] == 0x72 && b[i + 2] == 0x61 && b[i + 3] == 0xFD) {
+        raStart = i;
+        break;
+      }
+    if (raStart < 0 || raStart + 6 > b.Length)
+      return null;
+
+    var version = BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(raStart + 4));
+    if (version is not (4 or 5))
+      return null;
+
+    // RA v4/v5 header layout (big-endian), starting after the 6-byte magic+version:
+    //   skip 2 (unused) | u32 ".ra4" | u32 data size | u16 version2 | u32 header size |
+    //   u16 flavor | u32 coded_framesize | u32 ??? | u32 bytes_per_minute | u32 ??? |
+    //   u16 sub_packet_h | u16 frame_size(block_align) | u16 sub_packet_size | u16 ??? |
+    //   [v5: u16 u16 u16] | u16 sample_rate | u32 ??? | u16 channels | ...
+    var p = raStart + 6;
+    p += 2;                  // unused
+    p += 4;                  // ".ra4"/".ra5"
+    p += 4;                  // data size
+    p += 2;                  // version2
+    p += 4;                  // header size
+    p += 2;                  // flavor
+    p += 4;                  // coded frame size
+    p += 4;                  // ???
+    p += 4;                  // bytes per minute
+    p += 4;                  // ???
+    p += 2;                  // sub_packet_h
+    if (p + 2 > b.Length) return null;
+    p += 2;                  // frame size (container block_align, overwritten below)
+    if (p + 2 > b.Length) return null;
+    var subPacketSize = BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(p)); p += 2;
+    p += 2;                  // ???
+    if (version == 5)
+      p += 6;                // three u16 reserved
+    if (p + 2 > b.Length) return null;
+    var sampleRate = BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(p)); p += 2;
+    p += 4;                  // ???
+    if (p + 2 > b.Length) return null;
+    var channels = BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(p)); p += 2;
+
+    // Locate the atrac3 codec extradata (the be32 version=4 marker) after the "atrc" FOURCC.
+    var jointStereo = false;
+    var atrcPos = -1;
+    for (var i = raStart; i + 4 <= b.Length; ++i)
+      if (b[i] == (byte)'a' && b[i + 1] == (byte)'t' && b[i + 2] == (byte)'r' && b[i + 3] == (byte)'c') {
+        atrcPos = i;
+        break;
+      }
+    if (atrcPos >= 0) {
+      // Scan forward for the 10/12-byte atrac3 config block: be32 version(==4),
+      // be16 samples_per_frame, be16 delay(==0x88E), be16 coding_mode(0 or 1).
+      for (var i = atrcPos + 4; i + 10 <= b.Length; ++i) {
+        var ver = BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(i));
+        if (ver != 4)
+          continue;
+        var delay = BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(i + 6));
+        if (delay != 0x88E)
+          continue;
+        var codingMode = BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(i + 8));
+        jointStereo = codingMode != 0;
+        break;
+      }
+    }
+
+    if (channels <= 0)
+      channels = 2;
+    return (subPacketSize, channels, sampleRate, jointStereo);
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────

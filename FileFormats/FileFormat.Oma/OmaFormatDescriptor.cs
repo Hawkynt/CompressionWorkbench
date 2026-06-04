@@ -1,5 +1,8 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using System.Text;
+using Codec.Atrac3;
+using Codec.Pcm;
 using Compression.Registry;
 
 namespace FileFormat.Oma;
@@ -66,6 +69,11 @@ public sealed class OmaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var payload = new byte[payloadLength];
       Array.Copy(blob, header.PayloadOffset, payload, 0, payloadLength);
       entries.Add(new("stream.bin", "Stream", payload, header.CodecName));
+
+      // ATRAC3 (codec id 0): decode the coded payload to per-channel WAVs. Falls back to
+      // the blob-only view on any decode failure (unsupported params / truncation).
+      if (header.CodecId == 0)
+        AddDecodedAtrac3Channels(payload, header.CodingParams, header.SampleRate, entries);
     }
 
     info.AppendLine($"codec={header.CodecName}");
@@ -82,5 +90,35 @@ public sealed class OmaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));
     return entries;
+  }
+
+  /// <summary>
+  /// Decodes the ATRAC3 (codec id 0) coded payload into per-channel mono WAV entries
+  /// (Kind <c>Channel</c>). Coding parameters (block align, joint-stereo, sample rate) are
+  /// derived from the EA3 24-bit coding-params field. Any decode failure leaves only the
+  /// stream blob, matching the descriptor's pre-existing behaviour.
+  /// </summary>
+  private static void AddDecodedAtrac3Channels(byte[] payload, int codingParams, int sampleRate,
+      List<AudioPseudoArchive.Entry> entries) {
+    try {
+      var codec = Atrac3Codec.FromOmaCodingParams(codingParams);
+      if (codec.BlockAlign <= 0 || payload.Length < codec.BlockAlign)
+        return;
+
+      var interleaved = codec.DecodeStream(payload);
+      if (interleaved.Length == 0)
+        return;
+
+      var rate = sampleRate > 0 ? sampleRate : codec.SampleRate;
+      var le = new byte[interleaved.Length * 2];
+      for (var i = 0; i < interleaved.Length; ++i)
+        BinaryPrimitives.WriteInt16LittleEndian(le.AsSpan(i * 2), interleaved[i]);
+
+      var channels = PcmCodec.SplitInterleavedPcm(le, codec.Channels, rate, bitsPerSample: 16);
+      foreach (var (name, wav) in channels)
+        entries.Add(new($"{name}.wav", "Channel", wav, Method: "pcm"));
+    } catch {
+      // Unsupported ATRAC3 params / truncated payload — keep the stream blob only.
+    }
   }
 }
