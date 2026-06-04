@@ -72,30 +72,27 @@ public class JfsTests {
   }
 
   /// <summary>
-  /// Lock the JFS capability surface at WORM (write-once empty image, no
-  /// in-place mutation). True R/W requires walking the dtree B+ tree on add /
-  /// remove (split + balance internal nodes when the inline 8-slot dtroot
-  /// overflows), the xtree B+ tree for >288 B file growth, and the dmap
-  /// buddy-tree maintenance after every block alloc/free. The current writer
-  /// emits a single-leaf dtroot, single-leaf xtree, and a fully-precomputed
-  /// dmaptree+dmapctl — all of which are validated clean by
-  /// <c>fsck.jfs -n -f -v</c> but cannot be mutated incrementally without
-  /// re-running ujfs_adjtree, splitting nodes, and threading the freelist.
-  /// Per the project rule "never advertise CanCreate without real spec
-  /// compliance", this test fails any drive-by upgrade that adds
-  /// <see cref="Compression.Registry.IArchiveModifiable"/> without the
-  /// underlying B+ tree work. Mirrors the <c>SfsTests.Descriptor_IsHonestlyReadOnly</c>
-  /// pattern.
+  /// JFS now advertises <see cref="Compression.Registry.IArchiveModifiable"/>
+  /// after <see cref="FileSystem.Jfs.JfsMutator"/> landed real in-place leaf
+  /// mutation: dtree leaf insert/delete on the root inline dtroot (sorted
+  /// UCS-2 stbl), xtree extent allocate/free on the file dinode (inline xad),
+  /// dmap binary-buddy bit set/clear with full <c>ujfs_adjtree</c> rerun
+  /// across the affected dmap and L0 dmapctl, and IAG wmap/pmap inode-bit
+  /// updates. B+tree splits / external dtree page mutations / FSIT extent
+  /// growth / xtree root promotion still fall back honestly with
+  /// <see cref="NotSupportedException"/>. This test locks the achieved
+  /// capability surface so future refactors cannot silently drop modifiability
+  /// without explicit demotion.
   /// </summary>
   [Test, Category("HappyPath")]
-  public void Descriptor_IsHonestlyWormOnly() {
+  public void Descriptor_AdvertisesLeafModifiability() {
     var d = new FileSystem.Jfs.JfsFormatDescriptor();
-    Assert.That(d, Is.Not.InstanceOf<Compression.Registry.IArchiveModifiable>(),
-      "JFS must not advertise IArchiveModifiable until the dtree B+ tree split/balance, xtree B+ tree growth, and dmap buddy-tree maintenance are implemented.");
-    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.False,
-      "JFS Capabilities flag must not include CanModify until the B+ tree mutation work lands.");
+    Assert.That(d, Is.InstanceOf<Compression.Registry.IArchiveModifiable>(),
+      "JFS advertises IArchiveModifiable once leaf-only dtree+xtree+dmap mutation lands.");
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.True,
+      "JFS Capabilities flag must include CanModify after leaf-only mutation lands.");
     Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True,
-      "JFS WORM emission is supported; CanCreate must remain advertised.");
+      "JFS WORM emission is still supported; CanCreate must remain advertised.");
     Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanList), Is.True);
     Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanTest), Is.True);
