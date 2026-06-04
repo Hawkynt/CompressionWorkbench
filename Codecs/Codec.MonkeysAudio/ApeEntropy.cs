@@ -3,104 +3,135 @@
 namespace Codec.MonkeysAudio;
 
 /// <summary>
-/// Monkey's Audio "current" (3.98+) residual entropy stage. Each residual is
-/// folded to an unsigned magnitude (zig-zag, sign in bit 0) and split into an
-/// <em>overflow</em> high part (<c>magnitude &gt;&gt; k</c>) and a <c>k</c>-bit
-/// remainder. The overflow part is range-coded through the 64-entry cumulative
-/// table (<see cref="ApeRangeConstants.Counts"/>); its final entry is an escape
-/// after which the remaining overflow is sent as a raw 32-bit field. The
-/// remainder is sent as <c>k</c> raw bits. <c>k</c> tracks a running average of
-/// the recent magnitudes — the <c>ksum</c>/<c>k</c> adaptation of the reference
-/// SDK / ffmpeg <c>apedec.c</c> (<c>update_rice</c>).
-/// <para>
-/// EXACT-spec: the overflow-class cumulative table and the k-from-ksum adaptation
-/// follow <c>apedec.c</c>. SELF-CONSISTENT: the encoder (<see cref="Encode"/>) is
-/// the exact algebraic inverse of the decoder (<see cref="Decode"/>) — it folds,
-/// splits the same way and submits the matching range-coder cells, so the pair is
-/// bit-locked and lossless. DEVIATION: the reference's escape uses a nested
-/// secondary range model for very large residuals; this port codes the residual
-/// overflow as a single raw 32-bit field, which is self-consistent and lossless
-/// but not byte-identical to a reference encoder for pathological inputs.
-/// </para>
+/// Monkey's Audio "current" (3.99 / v3990) residual entropy stage — a byte-exact
+/// port of the reference SDK's <c>CUnBitArray::DecodeValueRange</c> (decode) and
+/// <c>CBitArray::EncodeValue</c> (encode). Each residual is folded to an unsigned
+/// magnitude (sign in bit 0), split into an overflow quotient and a base remainder
+/// around a <c>pivot = max(ksum/32, 1)</c>, and coded as: an overflow class through
+/// the 64-entry cumulative table (escaping to a raw 32-bit count for the last
+/// class), followed by the base (a single divisor read when <c>pivot &lt; 1&lt;&lt;16</c>,
+/// or a two-piece split-factor read otherwise). The Rice <c>k</c> / <c>ksum</c>
+/// state tracks the running magnitude average exactly as the reference does.
 /// </summary>
 internal sealed class ApeEntropy {
 
-  // k is clamped so 1<<(k+ ...) shifts and 1u<<k masks never reach the 32-bit
-  // shift-count wrap; 24-bit folded magnitudes fit comfortably below this.
-  private const uint MaxK = 30;
+  /// <summary>Per-channel adaptive Rice state (SDK <c>BIT_ARRAY_STATE</c>: k + nKSum).</summary>
+  public sealed class State {
+    public int K = 10;
+    public uint KSum = (1u << 10) * 16;
 
-  // Per-channel adaptive Rice state (apedec.c APERice: k + ksum).
-  private sealed class RiceState {
-    public uint K = 10;
-    public uint KSum = 16u << 10;
-  }
-
-  private readonly RiceState[] _states;
-
-  public ApeEntropy(int channels) {
-    this._states = new RiceState[channels];
-    for (var c = 0; c < channels; ++c)
-      this._states[c] = new RiceState();
-  }
-
-  // zig-zag fold/unfold so a signed residual becomes an unsigned magnitude code.
-  private static uint Fold(int v) => (uint)((v << 1) ^ (v >> 31));
-  private static int Unfold(uint u) => (int)(u >> 1) ^ -(int)(u & 1);
-
-  // apedec.c update_rice: adapt k toward log2 of the running magnitude average.
-  private static void UpdateRice(RiceState s, uint magnitude) {
-    s.KSum += ((magnitude + 1) / 2) - ((s.KSum + 16) >> 5);
-    if (s.K == 0) {
-      if (s.KSum >= 64) s.K = 1;
-    } else if (s.KSum < 1u << (int)(s.K + 4) && s.K > 0) {
-      --s.K;
-    } else if (s.K < MaxK && s.KSum >= 1u << (int)(s.K + 5)) {
-      ++s.K;
+    public void Flush() {
+      this.K = 10;
+      this.KSum = (1u << 10) * 16;
     }
   }
 
-  private static readonly uint LastClass = (uint)(ApeRangeConstants.Counts.Length - 1);
+  private readonly State[] _states;
 
-  /// <summary>Decodes one signed residual for channel <paramref name="ch"/>.</summary>
+  public ApeEntropy(int channels) {
+    this._states = new State[channels];
+    for (var c = 0; c < channels; ++c)
+      this._states[c] = new State();
+  }
+
+  public void FlushStates() {
+    foreach (var s in this._states)
+      s.Flush();
+  }
+
+  // Reference k update ladder (BitArray.cpp / UnBitArray.cpp): step k toward log2 of
+  // the running magnitude average using K_SUM_MIN_BOUNDARY.
+  private static void UpdateKSum(State s, uint magnitude) {
+    s.KSum += ((magnitude + 1) / 2) - ((s.KSum + 16) >> 5);
+    // Reference ladder (BitArray.cpp / UnBitArray.cpp). K_SUM_MIN_BOUNDARY has 32
+    // entries; k stays well within range for 24-bit magnitudes.
+    if (s.KSum < ApeRangeConstants.KSumBoundary[s.K])
+      --s.K;
+    else if (s.KSum >= ApeRangeConstants.KSumBoundary[s.K + 1])
+      ++s.K;
+  }
+
+  /// <summary>Decodes one signed residual for channel <paramref name="ch"/>
+  /// (reference <c>DecodeValueRange</c>, v3990 branch).</summary>
   public int Decode(ApeRangeDecoder rc, int ch) {
     var s = this._states[ch];
 
-    // Overflow high part via the cumulative class table; the last class escapes
-    // to a raw 32-bit overflow count.
-    var cf = rc.DecodeFrequency(ApeRangeConstants.Total);
-    var cls = (uint)ApeRangeConstants.ClassForCumulative(cf);
-    rc.DecodeUpdate(ApeRangeConstants.Counts[cls], ApeRangeConstants.Widths[cls]);
+    var pivot = Math.Max(s.KSum / 32u, 1u);
 
-    var overflow = cls == LastClass ? rc.DecodeBits(32) : cls;
+    // Overflow class via the cumulative table; the last class escapes to a raw
+    // 32-bit overflow count.
+    var rangeTotal = rc.DecodeFast(ApeRangeConstants.OverflowShift);
+    var overflow = 0u;
+    while (rangeTotal >= ApeRangeConstants.Counts[overflow + 1])
+      ++overflow;
+    rc.UpdateOverflow(ApeRangeConstants.Counts[overflow], ApeRangeConstants.Widths[overflow]);
 
-    var k = s.K;
-    var remainder = k > 0 ? rc.DecodeBits((int)k) : 0u;
-    var magnitude = (overflow << (int)k) | remainder;
+    if (overflow == ApeRangeConstants.ModelElements - 1) {
+      overflow = rc.DecodeFastWithUpdate(16) << 16;
+      overflow |= rc.DecodeFastWithUpdate(16);
+    }
 
-    UpdateRice(s, magnitude);
-    return Unfold(magnitude);
+    uint baseValue;
+    if (pivot >= 1u << 16) {
+      var pivotBits = 0;
+      while (pivot >> pivotBits > 0)
+        ++pivotBits;
+      var splitFactor = 1u << (pivotBits - 16);
+      var pivotA = pivot / splitFactor + 1;
+      var pivotB = splitFactor;
+
+      var baseA = rc.DecodeByDivisor(pivotA);
+      var baseB = rc.DecodeByDivisor(pivotB);
+      baseValue = baseA * splitFactor + baseB;
+    } else {
+      baseValue = rc.DecodeByDivisor(pivot);
+    }
+
+    var value = baseValue + overflow * pivot;
+    UpdateKSum(s, value);
+
+    // Convert to signed.
+    return (value & 1) != 0 ? (int)(value >> 1) + 1 : -(int)(value >> 1);
   }
 
   /// <summary>Encodes one signed residual for channel <paramref name="ch"/>, the
-  /// exact inverse of <see cref="Decode"/>.</summary>
+  /// exact inverse of <see cref="Decode"/> (reference <c>EncodeValue</c>).</summary>
   public void Encode(ApeRangeEncoder rc, int ch, int value) {
     var s = this._states[ch];
-    var magnitude = Fold(value);
-    var k = s.K;
 
-    var overflow = magnitude >> (int)k;
-    var remainder = k > 0 ? magnitude & ((1u << (int)k) - 1) : 0u;
+    var magnitude = (uint)(value > 0 ? value * 2 - 1 : -value * 2);
+    var originalKSum = s.KSum;
 
-    if (overflow >= LastClass) {
-      rc.EncodeCell(ApeRangeConstants.Counts[LastClass], ApeRangeConstants.Widths[LastClass], ApeRangeConstants.Total);
-      rc.EncodeBits(overflow, 32);
+    UpdateKSum(s, magnitude);
+
+    var pivot = Math.Max(originalKSum / 32u, 1u);
+    var overflow = magnitude / pivot;
+    var baseValue = magnitude - overflow * pivot;
+
+    if (overflow < ApeRangeConstants.ModelElements - 1) {
+      rc.EncodeFast(ApeRangeConstants.Widths[overflow], ApeRangeConstants.Counts[overflow], ApeRangeConstants.OverflowShift);
     } else {
-      rc.EncodeCell(ApeRangeConstants.Counts[overflow], ApeRangeConstants.Widths[overflow], ApeRangeConstants.Total);
+      rc.EncodeFast(
+        ApeRangeConstants.Widths[ApeRangeConstants.ModelElements - 1],
+        ApeRangeConstants.Counts[ApeRangeConstants.ModelElements - 1],
+        ApeRangeConstants.OverflowShift);
+      rc.EncodeDirect((overflow >> 16) & 0xFFFF, 16);
+      rc.EncodeDirect(overflow & 0xFFFF, 16);
     }
 
-    if (k > 0)
-      rc.EncodeBits(remainder, (int)k);
-
-    UpdateRice(s, magnitude);
+    if (pivot >= 1u << 16) {
+      var pivotBits = 0;
+      while (pivot >> pivotBits > 0)
+        ++pivotBits;
+      var splitFactor = 1u << (pivotBits - 16);
+      var pivotA = pivot / splitFactor + 1;
+      var pivotB = splitFactor;
+      var baseA = baseValue / splitFactor;
+      var baseB = baseValue % splitFactor;
+      rc.EncodeByDivisor(baseA, pivotA);
+      rc.EncodeByDivisor(baseB, pivotB);
+    } else {
+      rc.EncodeByDivisor(baseValue, pivot);
+    }
   }
 }

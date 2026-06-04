@@ -116,6 +116,49 @@ public class MonkeysAudioCodecTests {
     Assert.That(RoundTrip(pcm, 2, 44100, 16), Is.EqualTo(pcm));
   }
 
+  [Test]
+  public void RoundTrip_TwoSampleStereo_LargeResiduals_ExercisesOverflowEscape() {
+    // Large opposing L/R values force a folded magnitude far above the first frame's
+    // pivot, driving the entropy stage into the range-coder overflow-escape branch
+    // (the last cumulative class + raw 16+16-bit overflow). Regression for the
+    // class-search sentinel.
+    var pcm = new byte[2 * 2 * 2];
+    BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(0), 12345);
+    BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(2), -9999);
+    BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(4), 100);
+    BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(6), -50);
+    Assert.That(RoundTrip(pcm, 2, 44100, 16), Is.EqualTo(pcm));
+  }
+
+  [Test]
+  public void RoundTrip_24Bit_FullScale_ExercisesPivotSplit() {
+    // 24-bit full-scale magnitudes push the Rice ksum so the pivot exceeds 1<<16,
+    // exercising the two-piece (split-factor) base coding path on both encode/decode.
+    const int frames = 4000;
+    var rng = new Random(8675309);
+    var pcm = new byte[frames * 2 * 3];
+    for (var i = 0; i < frames; ++i)
+      for (var c = 0; c < 2; ++c) {
+        var v = (rng.Next() & 0xFFFFFF) - 0x800000; // full 24-bit range
+        var off = (i * 2 + c) * 3;
+        pcm[off] = (byte)(v & 0xFF);
+        pcm[off + 1] = (byte)((v >> 8) & 0xFF);
+        pcm[off + 2] = (byte)((v >> 16) & 0xFF);
+      }
+    Assert.That(RoundTrip(pcm, 2, 96000, 24), Is.EqualTo(pcm));
+  }
+
+  [Test]
+  public void RoundTrip_DeterministicRamp_IsLossless() {
+    // A deterministic ascending ramp exercises the predictor's steady-state adaption
+    // and a long run of small residuals through the range coder.
+    const int frames = 20000;
+    var pcm = new byte[frames * 2];
+    for (var i = 0; i < frames; ++i)
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), (short)((i * 7) % 4001 - 2000));
+    Assert.That(RoundTrip(pcm, 1, 44100, 16), Is.EqualTo(pcm));
+  }
+
   // ── Header parsing ────────────────────────────────────────────────────────────
 
   [Test]
@@ -157,18 +200,70 @@ public class MonkeysAudioCodecTests {
     Assert.That(info.TotalSamples, Is.EqualTo(frames));
   }
 
+  // ── Higher compression levels (NN-filter cascades) round-trip ───────────────────
+
+  [TestCase(MonkeysAudioCodec.CompressionNormal)]
+  [TestCase(MonkeysAudioCodec.CompressionHigh)]
+  [TestCase(MonkeysAudioCodec.CompressionExtraHigh)]
+  public void RoundTrip_HigherLevel_16BitStereo_IsLossless(int level) {
+    const int frames = 12000;
+    var rng = new Random(4242 + level);
+    var pcm = new byte[frames * 2 * 2];
+    for (var i = 0; i < frames; ++i) {
+      var l = (short)(Math.Sin(i * 0.05) * 20000 + (rng.Next(2001) - 1000));
+      var r = (short)(Math.Cos(i * 0.03) * 15000 + (rng.Next(401) - 200));
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 4), l);
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 4 + 2), r);
+    }
+
+    using var input = new MemoryStream(pcm);
+    using var encoded = new MemoryStream();
+    MonkeysAudioCodec.Compress(input, encoded, 2, 44100, 16, level);
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(encoded.ToArray().AsSpan(52)), Is.EqualTo(level),
+      "encoded compression level");
+    Assert.That(Decode(encoded.ToArray()), Is.EqualTo(pcm));
+  }
+
+  [TestCase(MonkeysAudioCodec.CompressionNormal)]
+  [TestCase(MonkeysAudioCodec.CompressionHigh)]
+  public void RoundTrip_HigherLevel_24BitMono_IsLossless(int level) {
+    const int frames = 8000;
+    var rng = new Random(77 + level);
+    var pcm = new byte[frames * 3];
+    for (var i = 0; i < frames; ++i) {
+      var v = (int)(Math.Sin(i * 0.02) * 3_000_000) + rng.Next(40001) - 20000;
+      pcm[i * 3] = (byte)(v & 0xFF);
+      pcm[i * 3 + 1] = (byte)((v >> 8) & 0xFF);
+      pcm[i * 3 + 2] = (byte)((v >> 16) & 0xFF);
+    }
+
+    using var input = new MemoryStream(pcm);
+    using var encoded = new MemoryStream();
+    MonkeysAudioCodec.Compress(input, encoded, 1, 48000, 24, level);
+    Assert.That(Decode(encoded.ToArray()), Is.EqualTo(pcm));
+  }
+
   // ── Rejection paths ───────────────────────────────────────────────────────────
 
   [Test]
-  public void HigherCompressionLevel_Rejected_OnDecode() {
+  public void UnsupportedCompressionLevel_Rejected_OnDecode() {
     var pcm = new byte[1000 * 4];
     var ape = Encode(pcm, 2, 44100, 16);
-    // Overwrite the compression level in APE_HEADER (offset = descriptor 52).
-    BinaryPrimitives.WriteUInt16LittleEndian(ape.AsSpan(52), 2000); // "normal"
+    // Overwrite the compression level in APE_HEADER (offset = descriptor 52) with a
+    // value that is not a valid Monkey's Audio level.
+    BinaryPrimitives.WriteUInt16LittleEndian(ape.AsSpan(52), 6000);
 
     using var input = new MemoryStream(ape);
     using var output = new MemoryStream();
     Assert.That(() => MonkeysAudioCodec.Decompress(input, output), Throws.TypeOf<NotSupportedException>());
+  }
+
+  [Test]
+  public void EncoderRejectsInsaneLevel() {
+    using var input = new MemoryStream(new byte[16]);
+    using var output = new MemoryStream();
+    Assert.That(() => MonkeysAudioCodec.Compress(input, output, 2, 44100, 16, MonkeysAudioCodec.CompressionInsane),
+      Throws.TypeOf<ArgumentOutOfRangeException>());
   }
 
   [Test]

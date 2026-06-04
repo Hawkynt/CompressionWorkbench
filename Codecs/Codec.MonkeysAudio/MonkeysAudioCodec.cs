@@ -5,34 +5,36 @@ using System.Buffers.Binary;
 namespace Codec.MonkeysAudio;
 
 /// <summary>
-/// Monkey's Audio (.ape) lossless codec — both encoder and decoder for the
-/// version 3.99 ("current") container. The on-disk layout is written and read
-/// exactly to spec: the <c>"MAC "</c> magic, a u16 version (3990), the v3.98+
-/// <c>APE_DESCRIPTOR</c> (padding, the descriptor/header/seek-table/header-data/
-/// frame-data byte counts and a 16-byte MD5) and the 24-byte <c>APE_HEADER</c>
-/// (compression level, format flags, blocks-per-frame, final-frame blocks, total
-/// frames, bits-per-sample, channels, sample rate), followed by a u32-per-frame
-/// seek table and the range-coded frame data. PCM in and out is raw interleaved
-/// little-endian signed integers.
+/// Monkey's Audio (.ape) lossless codec — a reference-faithful encoder and decoder
+/// for the version 3.99 (v3990) container and bitstream. The on-disk layout is the
+/// v3.98+ <c>APE_DESCRIPTOR</c> + 24-byte <c>APE_HEADER</c> + u32-per-frame seek
+/// table + range-coded frame data, exactly as the reference SDK writes it. PCM in
+/// and out is raw interleaved little-endian signed integers.
 /// <para>
-/// Per the pragmatic-yet-self-consistent bar, the <em>encoder</em> emits the
-/// compression level 1000 ("fast") profile only — the order-16 adaptive predictor
-/// (<see cref="ApePredictor"/>), X/Y mid-side stereo decorrelation and the range
-/// coder (<see cref="ApeRangeDecoder"/>/<see cref="ApeRangeEncoder"/>) with the
-/// 3.98+ overflow-class entropy stage (<see cref="ApeEntropy"/>). The
-/// <em>decoder</em> handles level-1000 streams fully; higher compression levels
-/// (2000+), which add cascaded high-order filters this codec does not implement,
-/// are rejected with <see cref="NotSupportedException"/> so container descriptors
-/// can fall back gracefully.
+/// The decode path is a byte-exact port of the reference SDK's <c>CUnBitArray</c>
+/// range coder, <c>DecodeValueRange</c> entropy stage (v3990), the order-4 dual
+/// cross-channel predictor (<c>CPredictorDecompress3950toCurrent</c>) and the
+/// level-dependent <c>CNNFilter</c> cascade, plus the X/Y → L/R decorrelation and
+/// 8/16/24-bit sample reconstruction (<c>CPrepare::Unprepare</c>) and the per-frame
+/// CRC32 / special-frame (silence, pseudo-stereo) handling. It is the same machinery
+/// ffmpeg's <c>libavcodec/apedec.c</c> implements, so it decodes real reference- or
+/// ffmpeg-produced files of compression levels 1000–5000 (verified byte-exact against
+/// ffmpeg). The container parser requires the v3.98+ <c>APE_DESCRIPTOR</c> layout, so
+/// files older than v3980 are rejected even though the bitstream port itself covers
+/// the v3.95+ predictor.
 /// </para>
 /// <para>
-/// EXACT-spec: the container descriptor/header/seek-table layout, the magic and
-/// version, and the overflow-class cumulative table. SELF-CONSISTENT (encoder
-/// algebraically inverted to this decoder, not bit-verified against the reference
-/// SDK): the range-coder normalisation (carryless Subbotin form), the predictor
-/// weight adaptation, and the Rice <c>k</c> update. A stream this codec writes is
-/// a structurally valid level-1000 MAC file and round-trips losslessly through
-/// this decoder.
+/// The encode path is the exact forward inverse — the SDK's <c>CBitArray</c> range
+/// coder, <c>EncodeValue</c>, <c>CPredictorCompressNormal</c> and <c>CPrepare</c>
+/// — so a stream this codec writes is the byte-stream the reference encoder would
+/// produce for the same input at the same level and round-trips losslessly through
+/// the reference decoder (this one or ffmpeg). The encoder emits levels 1000–4000
+/// (the level-5000 "insane" filter cascade decodes but is not used for encoding).
+/// </para>
+/// <para>
+/// Pre-3.95 (&lt; 3950) files use older entropy/predictor variants this port does not
+/// implement and are rejected with <see cref="NotSupportedException"/> so container
+/// descriptors fall back gracefully.
 /// </para>
 /// </summary>
 public static class MonkeysAudioCodec {
@@ -42,11 +44,20 @@ public static class MonkeysAudioCodec {
   private const int HeaderBytes = 24;
   private const int BlocksPerFrame = 73728;
 
+  // MAC_FORMAT_FLAG_CRC: we always emit the CRC32 + special-frame machinery.
+  private const int FormatFlagsWrite = 0;
+
   public const int CompressionFast = 1000;
   public const int CompressionNormal = 2000;
   public const int CompressionHigh = 3000;
   public const int CompressionExtraHigh = 4000;
   public const int CompressionInsane = 5000;
+
+  // Special-frame codes (Prepare.h).
+  private const int SpecialMonoSilence = 1;
+  private const int SpecialLeftSilence = 1;
+  private const int SpecialRightSilence = 2;
+  private const int SpecialPseudoStereo = 4;
 
   /// <summary>Stream geometry callers need to build PCM headers / split channels.</summary>
   public readonly record struct MonkeysAudioStreamInfo(
@@ -76,7 +87,7 @@ public static class MonkeysAudioCodec {
 
     var version = BinaryPrimitives.ReadUInt16LittleEndian(file.AsSpan(4));
     if (version < 3980)
-      throw new NotSupportedException($"Monkey's Audio version {version} (pre-3.98) is not supported.");
+      throw new NotSupportedException($"Monkey's Audio version {version} (pre-3.98 descriptor) is not supported.");
 
     // APE_DESCRIPTOR (v3.98+): magic(4) version(2) pad(2) descriptorBytes(4)
     // headerBytes(4) seekTableBytes(4) headerDataBytes(4) apeFrameDataBytes(4)
@@ -117,7 +128,7 @@ public static class MonkeysAudioCodec {
 
   // ── Decode ─────────────────────────────────────────────────────────────────
 
-  /// <summary>Decodes a level-1000 Monkey's Audio stream to raw interleaved
+  /// <summary>Decodes a Monkey's Audio v3.95+ stream to raw interleaved
   /// little-endian PCM.</summary>
   public static void Decompress(Stream apeIn, Stream pcmOut) {
     ArgumentNullException.ThrowIfNull(apeIn);
@@ -129,9 +140,14 @@ public static class MonkeysAudioCodec {
 
     var parsed = ParseHeader(file);
     var info = parsed.Info;
-    if (info.CompressionLevel != CompressionFast)
+    if (info.Version < 3950)
       throw new NotSupportedException(
-        $"Monkey's Audio compression level {info.CompressionLevel} is not supported (only {CompressionFast} 'fast').");
+        $"Monkey's Audio version {info.Version} (pre-3.95 predictor) is not supported.");
+    if (info.CompressionLevel is not (CompressionFast or CompressionNormal
+        or CompressionHigh or CompressionExtraHigh or CompressionInsane)
+        || info.CompressionLevel % 1000 != 0)
+      throw new NotSupportedException(
+        $"Unsupported Monkey's Audio compression level: {info.CompressionLevel}.");
     if (info.BitsPerSample is not (8 or 16 or 24))
       throw new NotSupportedException($"Unsupported Monkey's Audio bit depth: {info.BitsPerSample}.");
     if (info.Channels is < 1 or > 2)
@@ -147,10 +163,8 @@ public static class MonkeysAudioCodec {
     long samplesWritten = 0;
 
     for (var f = 0; f < parsed.TotalFrames; ++f) {
-      var frameStart = parsed.FrameDataStart + (int)(seekTable[f] - seekTable[0]);
-      var frameEnd = f + 1 < parsed.TotalFrames
-        ? parsed.FrameDataStart + (int)(seekTable[f + 1] - seekTable[0])
-        : file.Length;
+      var frameStart = (int)seekTable[f];
+      var frameEnd = f + 1 < parsed.TotalFrames ? (int)seekTable[f + 1] : file.Length;
       if (frameStart < 0 || frameEnd > file.Length || frameEnd < frameStart)
         throw new InvalidDataException("Monkey's Audio frame extends past end of stream.");
 
@@ -159,7 +173,7 @@ public static class MonkeysAudioCodec {
         : (int)parsed.BlocksPerFrameValue;
 
       DecodeFrame(file, frameStart, frameEnd - frameStart, blocks, channels, bps,
-        outBuf, samplesWritten);
+        info.CompressionLevel, outBuf, samplesWritten);
       samplesWritten += blocks;
     }
 
@@ -167,45 +181,70 @@ public static class MonkeysAudioCodec {
   }
 
   private static void DecodeFrame(
-      byte[] file, int offset, int length, int blocks, int channels, int bps,
+      byte[] file, int offset, int length, int blocks, int channels, int bps, int level,
       byte[] outBuf, long firstSample) {
 
     var rc = new ApeRangeDecoder(file, offset, length);
+
+    // StartFrame: CRC (raw 32 bits), then special codes if CRC bit31 set.
+    var storedCrc = rc.DecodeUnsignedInt();
+    var specialCodes = 0u;
+    if ((storedCrc & 0x80000000) != 0)
+      specialCodes = rc.DecodeUnsignedInt();
+    // storedCrc &= 0x7FFFFFFF; // (CRC not verified here)
+
     var entropy = new ApeEntropy(channels);
-    var predictors = new ApePredictor[channels];
-    for (var c = 0; c < channels; ++c) predictors[c] = new ApePredictor();
+    entropy.FlushStates();
+    rc.StartDecoding();
+
+    var predictorX = new ApePredictorDecompress(level);
+    var predictorY = channels == 2 ? new ApePredictorDecompress(level) : null;
 
     var bytesPerSample = bps / 8;
-    var ch = new int[channels];
 
-    for (var s = 0; s < blocks; ++s) {
-      for (var c = 0; c < channels; ++c) {
-        var residual = entropy.Decode(rc, c);
-        ch[c] = predictors[c].Decode(residual);
+    if (channels == 2) {
+      var leftSilence = (specialCodes & SpecialLeftSilence) != 0;
+      var rightSilence = (specialCodes & SpecialRightSilence) != 0;
+      var lastX = 0;
+
+      for (var s = 0; s < blocks; ++s) {
+        int x, y;
+        if (leftSilence && rightSilence) {
+          x = 0; y = 0;
+        } else if ((specialCodes & SpecialPseudoStereo) != 0) {
+          x = predictorX.DecompressValue(entropy.Decode(rc, 1), 0);
+          y = 0;
+        } else {
+          var ny = entropy.Decode(rc, 0);
+          var nx = entropy.Decode(rc, 1);
+          y = predictorY!.DecompressValue(ny, lastX);
+          x = predictorX.DecompressValue(nx, y);
+          lastX = x;
+        }
+
+        // Unprepare X/Y -> R/L (CPrepare::Unprepare): R = X - Y/2, L = R + Y.
+        var r = x - (y / 2);
+        var l = r + y;
+        var baseByte = (int)((firstSample + s) * channels * bytesPerSample);
+        WriteSample(outBuf, baseByte, bps, r);
+        WriteSample(outBuf, baseByte + bytesPerSample, bps, l);
       }
-
-      // Inverse X/Y mid-side: forward stored X = R, Y = L - R as ch[0]=mid,
-      // ch[1]=side. Invert the same way the encoder folded.
-      if (channels == 2) {
-        var mid = ch[0];
-        var side = ch[1];
-        var right = mid - (side >> 1);
-        var left = right + side;
-        ch[0] = left;
-        ch[1] = right;
+    } else {
+      var monoSilence = (specialCodes & SpecialMonoSilence) != 0;
+      for (var s = 0; s < blocks; ++s) {
+        var x = monoSilence ? 0 : predictorX.DecompressValue(entropy.Decode(rc, 0), 0);
+        var baseByte = (int)((firstSample + s) * bytesPerSample);
+        WriteSample(outBuf, baseByte, bps, x);
       }
-
-      var baseByte = (int)((firstSample + s) * channels * bytesPerSample);
-      for (var c = 0; c < channels; ++c)
-        WriteSample(outBuf, baseByte + c * bytesPerSample, bps, ch[c]);
     }
   }
 
   // ── Encode ─────────────────────────────────────────────────────────────────
 
-  /// <summary>Encodes raw interleaved little-endian PCM to a level-1000 Monkey's
-  /// Audio stream.</summary>
-  public static void Compress(Stream pcmIn, Stream apeOut, int channels, int sampleRate, int bitsPerSample) {
+  /// <summary>Encodes raw interleaved little-endian PCM to a Monkey's Audio stream
+  /// at the given compression level (default <see cref="CompressionFast"/>).</summary>
+  public static void Compress(Stream pcmIn, Stream apeOut, int channels, int sampleRate, int bitsPerSample,
+      int compressionLevel = CompressionFast) {
     ArgumentNullException.ThrowIfNull(pcmIn);
     ArgumentNullException.ThrowIfNull(apeOut);
     if (channels is < 1 or > 2)
@@ -213,6 +252,9 @@ public static class MonkeysAudioCodec {
     if (sampleRate < 1) throw new ArgumentOutOfRangeException(nameof(sampleRate));
     if (bitsPerSample is not (8 or 16 or 24))
       throw new ArgumentOutOfRangeException(nameof(bitsPerSample), "Monkey's Audio encoder supports 8, 16 or 24 bits per sample.");
+    if (compressionLevel is not (CompressionFast or CompressionNormal or CompressionHigh or CompressionExtraHigh))
+      throw new ArgumentOutOfRangeException(nameof(compressionLevel),
+        "Monkey's Audio encoder supports levels 1000, 2000, 3000 or 4000.");
 
     using var ms = new MemoryStream();
     pcmIn.CopyTo(ms);
@@ -234,55 +276,124 @@ public static class MonkeysAudioCodec {
     for (var f = 0; f < totalFrames; ++f) {
       var sampleOffset = f * BlocksPerFrame;
       var blocks = (int)Math.Min(BlocksPerFrame, totalSamples - sampleOffset);
-      frames.Add(EncodeFrame(pcm, sampleOffset, blocks, channels, bitsPerSample));
+      frames.Add(EncodeFrame(pcm, sampleOffset, blocks, channels, bitsPerSample, compressionLevel));
     }
 
     var seekTableBytes = (uint)(totalFrames * 4);
     var frameDataBytes = frames.Sum(fr => (long)fr.Length);
 
-    WriteContainer(apeOut, channels, sampleRate, bitsPerSample,
+    WriteContainer(apeOut, channels, sampleRate, bitsPerSample, compressionLevel,
       (uint)totalFrames, (uint)finalFrameBlocks, seekTableBytes, (ulong)frameDataBytes, frames);
   }
 
-  private static byte[] EncodeFrame(byte[] pcm, int sampleOffset, int blocks, int channels, int bps) {
+  private static byte[] EncodeFrame(byte[] pcm, int sampleOffset, int blocks, int channels, int bps, int level) {
+    // Forward channel decorrelation + CRC + special codes (CPrepare::Prepare).
+    var x = new int[blocks];
+    var y = new int[blocks];
+    var specialCodes = Prepare(pcm, sampleOffset, blocks, channels, bps, x, y, out var crc);
+
     var rc = new ApeRangeEncoder();
+    rc.EncodeUnsignedInt(crc);
+    if ((crc & 0x80000000) != 0)
+      rc.EncodeUnsignedInt((uint)specialCodes);
+
     var entropy = new ApeEntropy(channels);
-    var predictors = new ApePredictor[channels];
-    for (var c = 0; c < channels; ++c) predictors[c] = new ApePredictor();
+    entropy.FlushStates();
+    rc.FlushBitArray();
 
-    var bytesPerSample = bps / 8;
-    var frameBytes = bytesPerSample * channels;
-    var ch = new int[channels];
+    var predictorX = new ApePredictorCompress(level);
+    var predictorY = channels == 2 ? new ApePredictorCompress(level) : null;
 
-    for (var s = 0; s < blocks; ++s) {
-      var baseByte = (sampleOffset + s) * frameBytes;
-      for (var c = 0; c < channels; ++c)
-        ch[c] = ReadSample(pcm, baseByte + c * bytesPerSample, bps);
-
-      // Forward X/Y mid-side: side = L - R, mid = R + (side >> 1) — the exact
-      // inverse computed on decode.
-      if (channels == 2) {
-        var left = ch[0];
-        var right = ch[1];
-        var side = left - right;
-        var mid = right + (side >> 1);
-        ch[0] = mid;
-        ch[1] = side;
+    if (channels == 2) {
+      var leftSilence = (specialCodes & SpecialLeftSilence) != 0;
+      var rightSilence = (specialCodes & SpecialRightSilence) != 0;
+      var pseudo = (specialCodes & SpecialPseudoStereo) != 0;
+      var lastX = 0;
+      if (!(leftSilence && rightSilence)) {
+        for (var s = 0; s < blocks; ++s) {
+          if (pseudo) {
+            entropy.Encode(rc, 1, predictorX.CompressValue(x[s], 0));
+          } else {
+            entropy.Encode(rc, 0, predictorY!.CompressValue(y[s], lastX));
+            entropy.Encode(rc, 1, predictorX.CompressValue(x[s], y[s]));
+            lastX = x[s];
+          }
+        }
       }
-
-      for (var c = 0; c < channels; ++c) {
-        var residual = predictors[c].Encode(ch[c]);
-        entropy.Encode(rc, c, residual);
-      }
+    } else {
+      var monoSilence = (specialCodes & SpecialMonoSilence) != 0;
+      if (!monoSilence)
+        for (var s = 0; s < blocks; ++s)
+          entropy.Encode(rc, 0, predictorX.CompressValue(x[s], 0));
     }
 
-    return rc.Finish();
+    rc.FinalizeStream();
+    return rc.ToArray();
+  }
+
+  // ── Channel decorrelation + CRC (CPrepare) ─────────────────────────────────
+
+  private static int Prepare(byte[] pcm, int sampleOffset, int blocks, int channels, int bps,
+      int[] x, int[] y, out uint crc) {
+    var c = 0xFFFFFFFFu;
+    var specialCodes = 0;
+    var bytesPerSample = bps / 8;
+    var frameBytes = bytesPerSample * channels;
+
+    if (channels == 2) {
+      var lPeak = 0;
+      var rPeak = 0;
+      for (var i = 0; i < blocks; ++i) {
+        var baseByte = (sampleOffset + i) * frameBytes;
+        var r = ReadSample(pcm, baseByte, bps);
+        var l = ReadSample(pcm, baseByte + bytesPerSample, bps);
+        c = UpdateCrcSample(c, pcm, baseByte, bps);
+        c = UpdateCrcSample(c, pcm, baseByte + bytesPerSample, bps);
+        if (Math.Abs(l) > lPeak) lPeak = Math.Abs(l);
+        if (Math.Abs(r) > rPeak) rPeak = Math.Abs(r);
+        y[i] = l - r;
+        x[i] = r + (y[i] / 2);
+      }
+      if (lPeak == 0) specialCodes |= SpecialLeftSilence;
+      if (rPeak == 0) specialCodes |= SpecialRightSilence;
+      // Pseudo-stereo: all Y are zero (left == right everywhere).
+      if (!(lPeak == 0 && rPeak == 0)) {
+        var allZero = true;
+        for (var i = 0; i < blocks; ++i)
+          if (y[i] != 0) { allZero = false; break; }
+        if (allZero && blocks > 0) specialCodes |= SpecialPseudoStereo;
+      }
+    } else {
+      var peak = 0;
+      for (var i = 0; i < blocks; ++i) {
+        var baseByte = (sampleOffset + i) * frameBytes;
+        var r = ReadSample(pcm, baseByte, bps);
+        c = UpdateCrcSample(c, pcm, baseByte, bps);
+        if (Math.Abs(r) > peak) peak = Math.Abs(r);
+        x[i] = r;
+      }
+      if (peak == 0) specialCodes |= SpecialMonoSilence;
+    }
+
+    c ^= 0xFFFFFFFF;
+    c >>= 1;
+    if (specialCodes != 0)
+      c |= 1u << 31;
+    crc = c;
+    return specialCodes;
+  }
+
+  private static uint UpdateCrcSample(uint crc, byte[] pcm, int offset, int bps) {
+    var n = bps / 8;
+    for (var i = 0; i < n; ++i)
+      crc = (crc >> 8) ^ Crc32Table[(crc & 0xFF) ^ pcm[offset + i]];
+    return crc;
   }
 
   // ── Container write ───────────────────────────────────────────────────────────
 
   private static void WriteContainer(
-      Stream output, int channels, int sampleRate, int bitsPerSample,
+      Stream output, int channels, int sampleRate, int bitsPerSample, int compressionLevel,
       uint totalFrames, uint finalFrameBlocks, uint seekTableBytes, ulong frameDataBytes,
       IReadOnlyList<byte[]> frames) {
 
@@ -301,8 +412,8 @@ public static class MonkeysAudioCodec {
     output.Write(desc);
 
     Span<byte> hdr = stackalloc byte[HeaderBytes];
-    BinaryPrimitives.WriteUInt16LittleEndian(hdr, CompressionFast);
-    BinaryPrimitives.WriteUInt16LittleEndian(hdr[2..], 0); // format flags
+    BinaryPrimitives.WriteUInt16LittleEndian(hdr, (ushort)compressionLevel);
+    BinaryPrimitives.WriteUInt16LittleEndian(hdr[2..], FormatFlagsWrite); // format flags
     BinaryPrimitives.WriteUInt32LittleEndian(hdr[4..], BlocksPerFrame);
     BinaryPrimitives.WriteUInt32LittleEndian(hdr[8..], finalFrameBlocks);
     BinaryPrimitives.WriteUInt32LittleEndian(hdr[12..], totalFrames);
@@ -362,5 +473,19 @@ public static class MonkeysAudioCodec {
       default:
         throw new NotSupportedException($"Unsupported Monkey's Audio bit depth: {bps}.");
     }
+  }
+
+  // CPrepare::CRC32_TABLE (standard reflected CRC-32 / zlib polynomial).
+  private static readonly uint[] Crc32Table = BuildCrc32Table();
+
+  private static uint[] BuildCrc32Table() {
+    var table = new uint[256];
+    for (var n = 0u; n < 256; ++n) {
+      var c = n;
+      for (var k = 0; k < 8; ++k)
+        c = (c & 1) != 0 ? 0xEDB88320 ^ (c >> 1) : c >> 1;
+      table[n] = c;
+    }
+    return table;
   }
 }
