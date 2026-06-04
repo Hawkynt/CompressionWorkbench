@@ -3,6 +3,8 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
+using Codec.MonkeysAudio;
+using Codec.Pcm;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -13,6 +15,15 @@ namespace FileFormat.Ape;
 /// container passthrough, the raw APE descriptor header, the preserved WAV
 /// header bytes, the concatenated frame data, the seek table, and a
 /// metadata.ini describing the stream parameters.
+/// <para>
+/// When the stream is a compression-level-1000 ("fast") Monkey's Audio file the
+/// decoder can handle, the listing also gains one playable mono WAV per speaker
+/// (<c>LEFT.wav</c>/<c>RIGHT.wav</c>/<c>MONO.wav</c>/…, Kind <c>Channel</c>,
+/// method <c>pcm</c>), named per <see cref="ChannelLayout"/>. The decode is
+/// best-effort: higher compression levels, unsupported bit depths/channel counts
+/// or malformed input leave the container/metadata view intact rather than
+/// failing.
+/// </para>
 /// </summary>
 public sealed class ApeFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   public string Id => "Ape";
@@ -27,7 +38,7 @@ public sealed class ApeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x4D, 0x41, 0x43, 0x20], Confidence: 0.95), // "MAC "
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored"), new("ape", "APE")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored"), new("ape", "APE"), new("pcm", "PCM")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Classic;
   public string Description => "Monkey's Audio; exposes WAV header + frame blob + seek table.";
@@ -36,7 +47,7 @@ public sealed class ApeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
       OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
-      Method: e.Kind == "Frames" ? "ape" : "stored",
+      Method: e.Kind == "Channel" ? "pcm" : e.Kind == "Frames" ? "ape" : "stored",
       IsDirectory: false, IsEncrypted: false, LastModified: null,
       Kind: e.Kind)).ToList();
 
@@ -78,7 +89,38 @@ public sealed class ApeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     else
       ParseLegacy(file, version, entries);
 
+    AddChannelEntries(file, entries);
+
     return entries;
+  }
+
+  /// <summary>
+  /// Best-effort decode-and-split. The codec handles level-1000 ("fast") Monkey's
+  /// Audio and throws <see cref="NotSupportedException"/> for higher levels /
+  /// unsupported geometry and <see cref="InvalidDataException"/> for malformed
+  /// input; in every failure case the container/metadata listing is left untouched.
+  /// </summary>
+  private static void AddChannelEntries(byte[] file, List<(string Name, string Kind, byte[] Data)> entries) {
+    try {
+      using var probe = new MemoryStream(file, writable: false);
+      var info = MonkeysAudioCodec.ReadStreamInfo(probe);
+
+      using var src = new MemoryStream(file, writable: false);
+      using var pcm = new MemoryStream();
+      MonkeysAudioCodec.Decompress(src, pcm);
+      var pcmBytes = pcm.ToArray();
+
+      if (info.Channels <= 1) {
+        entries.Add(("MONO.wav", "Channel",
+          PcmCodec.ToWavBlob(pcmBytes, 1, info.SampleRate, info.BitsPerSample, formatCode: 1)));
+      } else {
+        foreach (var (name, wav) in PcmCodec.SplitInterleavedPcm(
+            pcmBytes, info.Channels, info.SampleRate, info.BitsPerSample))
+          entries.Add(($"{name}.wav", "Channel", wav));
+      }
+    } catch (Exception) {
+      // Graceful fallback: keep the container/metadata listing only.
+    }
   }
 
   // Modern (3.98+) APE layout:
