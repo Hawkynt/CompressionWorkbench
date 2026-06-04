@@ -112,6 +112,15 @@ State legend:
 | `Codec.G722`     | Speech          | R/W   | ITU-T G.722 sub-band ADPCM @64 kbit (QMF analysis/synthesis)                    |
 | `Codec.Cvsd`     | Speech          | R/W   | CVSD delta modulation (Bluetooth SCO / MIL-STD style)                           |
 | `Codec.Mace`     | Lossy           | R     | Apple MACE 3:1 / 6:1 — ffmpeg-faithful decode                                   |
+| `Codec.MonkeysAudio` | Lossless    | R/W   | Monkey's Audio APE (level-1000 enc+dec; higher levels fall back)                |
+| `Codec.Ra144`    | Speech          | R     | RealAudio 14.4 (lpcJ) — verbatim ffmpeg table port                              |
+| `Codec.TrueSpeech` | Speech        | R     | DSP Group TrueSpeech (WAV tag 0x0022) — verbatim table port                     |
+| `Codec.InterplayAcm` | Lossy       | R     | Interplay ACM (Fallout/BG) — verbatim filler/juggle port                        |
+| `Codec.Nellymoser` | Lossy         | R     | Nellymoser (Flash) — verbatim tables, direct IMDCT                              |
+| `Codec.WsAdpcm`  | ADPCM           | R     | Westwood WS ADPCM + shared continuous-IMA enc/dec                               |
+| `Codec.RoqDpcm`  | DPCM            | R/W   | id RoQ square-table DPCM — encode + decode                                      |
+| `Codec.SolDpcm`  | DPCM            | R     | Sierra SOL (old/new 8-bit tables + 16-bit integrate)                            |
+| `Codec.Lpc10`    | Speech          | R/W   | FS-1015 LPC-10e 2400 bit/s vocoder (simplified pitch tracker, documented)       |
 
 > **Honest scope note.** Most lossy / lossless codecs in this package decode but don't encode.
 > Writing a high-quality MP3 / AAC / Vorbis / Opus / FLAC encoder is a significant undertaking
@@ -193,9 +202,30 @@ State legend:
 | `FileFormat.Psm`      | R     | Epic MASI PSM (DSMP delta) sample archive                                    |
 | `FileFormat.Dsf`+`Dff`| WORM  | (see above) DSD pair                                                         |
 | `FileFormat.Asf`      | R     | Microsoft ASF (`.wma`/`.wmv`) — stream/codec info, tags, Data Object blob    |
-| `FileFormat.RealMedia`| R     | RealMedia (`.rm`/`.ra`) — per-stream payloads with codec FOURCC, CONT tags   |
+| `FileFormat.RealMedia`| R     | RealMedia (`.rm`/`.ra`) — lpcJ streams decode to WAV channels; others surfaced with codec FOURCC |
+| `FileFormat.Acm`      | R     | Interplay ACM — decoded channels                                             |
+| `FileFormat.Nelly`    | R     | raw Nellymoser block stream — decoded MONO                                   |
+| `FileFormat.Aud`      | WORM  | Westwood AUD (C&C) — WS-ADPCM + IMA chunks; assembles                        |
+| `FileFormat.Roq`      | WORM  | id RoQ — DPCM sound chunks (video chunks counted); assembles                 |
+| `FileFormat.Sol`      | WORM  | Sierra SOL (3 magics, DPCM/PCM); assembles 16-bit                            |
+| `FileFormat.Apc`      | R     | CRYO APC — seeded IMA                                                        |
+| `FileFormat.Lpc10`    | WORM  | raw LPC-10e bitstream @8 kHz; assembles                                      |
+| `FileFormat.Dts`      | R     | raw DTS core/DTS-HD — full header tables (AMODE layouts, rates, duration)    |
+| `FileFormat.Ac3`      | R     | raw AC-3/E-AC-3 — syncinfo/BSI parse (acmod layouts, bitrates, duration)     |
+| `FileFormat.Oma`      | R     | Sony OpenMG (.oma/.aa3) — ea3 tags, ATRAC3/3plus/MP3/LPCM id, payload Stream |
+| `FileFormat.Vgm`      | R     | VGM/VGZ — named chip clocks, GD3 tags (UTF-16), gzip transparent             |
+| `FileFormat.Mus`      | R     | DMX/Doom MUS — converted.mid (classic mapping)                               |
+| `FileFormat.Xmi`      | R     | Miles XMIDI — songs/NN.mid (duration-scheduled note-offs)                    |
+| `FileFormat.Cmf`      | R     | Creative CMF — OPL patches + music.mid SMF wrap                              |
+| `FileFormat.Nsf`      | R     | NES NSF/NSFE — expansion-chip flags, program/banks                           |
+| `FileFormat.Gbs`      | R     | Game Boy GBS                                                                 |
+| `FileFormat.Sid`      | R     | C64 PSID/RSID — clock + SID model detection                                  |
+| `FileFormat.Kss`      | R     | MSX KSS (KSCC/KSSX) — device flags                                           |
+| `FileFormat.Hes`      | R     | PC Engine HES — MPR table + DATA blocks                                      |
+| `FileFormat.Gym`      | R     | Genesis GYM (GYMX) — packed-log aware, duration estimate                     |
+| `FileFormat.Ay`       | R     | ZX Spectrum AY — bounds-checked pointer-chased songs/blocks                  |
 | `FileFormat.Alac`     | R     | Apple Lossless inside MP4 atoms — decoded per-channel WAVs via `Codec.Alac` |
-| `FileFormat.Ape`      | R     | Monkey's Audio (`.ape`) lossless                                    |
+| `FileFormat.Ape`      | R     | Monkey's Audio (`.ape`) — decoded channels via `Codec.MonkeysAudio` (level 1000; others fall back) |
 | `FileFormat.WavPack`  | R     | WavPack lossless / hybrid                                           |
 | `FileFormat.Ogg`      | R     | OGG container — packet blobs + comments + per-channel WAVs (Vorbis/Opus decoded via `Codec.Vorbis`/`Codec.Opus`) |
 | `FileFormat.Opus`     | R     | Opus (Ogg) — per-channel WAVs decoded via `Codec.Opus` (graceful fallback when unsupported) |
