@@ -25,16 +25,15 @@ public sealed record VorbisStreamInfo(
 /// Sean Barrett, 2007–2021) as a structural reference.
 /// <para>
 /// Supported: Ogg page reassembly, identification + comment + setup packets,
-/// codebook lookup types 0/1/2, floor 1, residue types 0/1/2, single-step
-/// channel coupling (stereo and beyond), short/long-block IMDCT with the
-/// Vorbis sine window and overlap-add, output clipping to int16.
+/// codebook lookup types 0/1/2, floor 0 (LSP) and floor 1, residue types
+/// 0/1/2, single-step channel coupling (stereo and beyond), short/long-block
+/// IMDCT with the Vorbis sine window and overlap-add, output clipping to int16.
 /// </para>
 /// <para>
-/// Deferred / not implemented: floor 0 (very rare; throws
-/// <see cref="NotSupportedException"/>), chained logical bitstreams beyond
-/// the first one, low-latency seeking, 24-bit output. The IMDCT uses an
-/// O(N²) direct form rather than a butterfly factorisation — correct but slow
-/// for long blocks.
+/// Deferred / not implemented: chained logical bitstreams beyond the first
+/// one, low-latency seeking, 24-bit output. The IMDCT uses an O(N²) direct
+/// form rather than a butterfly factorisation — correct but slow for long
+/// blocks.
 /// </para>
 /// </summary>
 public static class VorbisCodec {

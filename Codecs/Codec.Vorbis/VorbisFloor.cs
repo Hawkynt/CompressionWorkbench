@@ -10,11 +10,152 @@ namespace Codec.Vorbis;
 internal static class VorbisFloor {
 
   /// <summary>
-  /// Decode a floor-1 packet and rasterise the curve into
+  /// Decode one floor packet (type 0 or type 1) and rasterise the curve into
   /// <paramref name="output"/>.  Returns <c>false</c> if the floor is "unused"
   /// (the silence flag) — residue for this channel then outputs zeroes.
   /// </summary>
   public static bool DecodePacket(
+    VorbisBitReader br,
+    VorbisSetup.Floor f,
+    VorbisCodebook[] codebooks,
+    Span<float> output
+  ) => f.Type == 0
+    ? DecodeFloor0(br, f, codebooks, output)
+    : DecodeFloor1(br, f, codebooks, output);
+
+  // ── floor 0 ──────────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Decode a floor-0 packet (LSP representation) and render the bark-mapped
+  /// log-spectral envelope into linear amplitude. Follows Vorbis I §6.2.2/§6.2.3.
+  /// </summary>
+  private static bool DecodeFloor0(
+    VorbisBitReader br,
+    VorbisSetup.Floor f,
+    VorbisCodebook[] codebooks,
+    Span<float> output
+  ) {
+    var n = output.Length;
+
+    // §6.2.2 packet decode: amplitude, then LSP coefficients (VQ-decoded).
+    var amplitude = (int)br.ReadBits(f.AmplitudeBits);
+    if (amplitude <= 0) {
+      output.Clear();
+      return false; // 'unused' — channel is silence.
+    }
+
+    var bookNumber = (int)br.ReadBits(IntegerBitsFor(f.BookList.Length - 1));
+    if (bookNumber < 0 || bookNumber >= f.BookList.Length) {
+      output.Clear();
+      return false;
+    }
+    var book = codebooks[f.BookList[bookNumber]];
+    var dims = book.Dimensions;
+    if (dims < 1) {
+      output.Clear();
+      return false;
+    }
+
+    var coefficients = new float[f.Order];
+    var filled = 0;
+    double last = 0;
+    Span<float> vec = stackalloc float[dims];
+    while (filled < f.Order) {
+      if (!book.DecodeVector(br, vec)) {
+        // End-of-packet during the coefficient read ⇒ 'unused' (§6.2.2).
+        output.Clear();
+        return false;
+      }
+      for (var d = 0; d < dims && filled < f.Order; ++d)
+        coefficients[filled++] = (float)(vec[d] + last);
+      last = coefficients[filled - 1];
+    }
+
+    SynthesizeFloor0(f, amplitude, coefficients, output, n);
+    return true;
+  }
+
+  /// <summary>
+  /// §6.2.3 curve computation: bark-map the LSP coefficients to a smooth
+  /// spectral envelope, then convert dB to linear amplitude.
+  /// </summary>
+  private static void SynthesizeFloor0(
+    VorbisSetup.Floor f,
+    int amplitude,
+    float[] coefficients,
+    Span<float> output,
+    int n
+  ) {
+    var order = f.Order;
+    var barkMapSize = f.BarkMapSize;
+    var rate = f.Rate;
+
+    // map[i] = min(bark_map_size-1, foobar[i]); map is constant over runs so we
+    // only recompute p/q when the mapped index changes (spec step 6/7).
+    var omegaScale = Math.PI / barkMapSize;
+    var barkNyquist = Bark(0.5 * rate);
+    var ampDenom = ((1 << f.AmplitudeBits) - 1) * 1.0;
+    var ampOffset = f.AmplitudeOffset;
+
+    // Precompute cos(coefficients) once.
+    var cosCoef = new double[order];
+    for (var k = 0; k < order; ++k) cosCoef[k] = Math.Cos(coefficients[k]);
+
+    var lastMap = int.MinValue;
+    var value = 0f;
+    for (var i = 0; i < n; ++i) {
+      int map;
+      if (barkNyquist <= 0) {
+        map = 0;
+      } else {
+        var foobar = (int)Math.Floor(
+          Bark(rate * (double)i / (2 * n)) * barkMapSize / barkNyquist);
+        map = Math.Min(barkMapSize - 1, foobar);
+        if (map < 0) map = 0;
+      }
+
+      if (map != lastMap) {
+        lastMap = map;
+        var w = Math.Cos(omegaScale * map);
+        double p, q;
+        if ((order & 1) != 0) {
+          // odd order
+          p = 1.0 - w * w;
+          q = 0.25;
+          for (var j = 0; j + 1 < order; j += 2) {
+            var dp = cosCoef[j + 1] - w;
+            var dq = cosCoef[j] - w;
+            p *= 4.0 * dp * dp;
+            q *= 4.0 * dq * dq;
+          }
+        } else {
+          // even order
+          p = (1.0 - w) * 0.5;
+          q = (1.0 + w) * 0.5;
+          for (var j = 0; j + 1 < order; j += 2) {
+            var dp = cosCoef[j + 1] - w;
+            var dq = cosCoef[j] - w;
+            p *= 4.0 * dp * dp;
+            q *= 4.0 * dq * dq;
+          }
+        }
+        var linear = Math.Exp(
+          0.11512925 * (amplitude * ampOffset / (ampDenom * Math.Sqrt(p + q)) - ampOffset));
+        value = (float)linear;
+      }
+      output[i] = value;
+    }
+  }
+
+  /// <summary>The Vorbis bark approximation (§6.2.3).</summary>
+  private static double Bark(double x)
+    => 13.1 * Math.Atan(0.00074 * x)
+       + 2.24 * Math.Atan(0.0000000185 * x * x)
+       + 0.0001 * x;
+
+  // ── floor 1 ──────────────────────────────────────────────────────────────
+
+  private static bool DecodeFloor1(
     VorbisBitReader br,
     VorbisSetup.Floor f,
     VorbisCodebook[] codebooks,

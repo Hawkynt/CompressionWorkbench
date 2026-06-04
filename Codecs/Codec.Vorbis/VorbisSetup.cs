@@ -98,13 +98,11 @@ internal sealed class VorbisSetup {
     this.Floors = new Floor[floorCount];
     for (var i = 0; i < floorCount; ++i) {
       var type = (int)br.ReadBits(16);
-      if (type == 0)
-        throw new NotSupportedException(
-          "Vorbis: floor 0 decoding is not supported (floor 0 has not been produced " +
-          "by mainstream Vorbis encoders since ~2004). Contributions welcome.");
-      if (type != 1)
-        throw new InvalidDataException($"Vorbis: unknown floor type {type}.");
-      this.Floors[i] = ReadFloor1(br, cbCount);
+      this.Floors[i] = type switch {
+        0 => ReadFloor0(br, this.Codebooks),
+        1 => ReadFloor1(br, cbCount),
+        _ => throw new InvalidDataException($"Vorbis: unknown floor type {type}."),
+      };
     }
 
     // --- Residues ---
@@ -146,8 +144,11 @@ internal sealed class VorbisSetup {
       throw new InvalidDataException("Vorbis: setup packet framing bit missing.");
   }
 
-  // ── floor 1 ────────────────────────────────────────────────────────────
+  // ── floor (type 0 + type 1 share one record) ────────────────────────────
   internal sealed class Floor {
+    public int Type;
+
+    // floor 1
     public int[] PartitionClassList = [];
     public int[] ClassDimensions = [];
     public int[] ClassSubclasses = [];
@@ -156,11 +157,45 @@ internal sealed class VorbisSetup {
     public int Multiplier;
     public int RangeBits;
     public int[] XList = [];
+
+    // floor 0
+    public int Order;
+    public int Rate;
+    public int BarkMapSize;
+    public int AmplitudeBits;
+    public int AmplitudeOffset;
+    public int[] BookList = [];
+  }
+
+  // ── floor 0 ────────────────────────────────────────────────────────────
+  private static Floor ReadFloor0(VorbisBitReader br, VorbisCodebook[] codebooks) {
+    var f = new Floor {
+      Type = 0,
+      Order = (int)br.ReadBits(8),
+      Rate = (int)br.ReadBits(16),
+      BarkMapSize = (int)br.ReadBits(16),
+      AmplitudeBits = (int)br.ReadBits(6),
+      AmplitudeOffset = (int)br.ReadBits(8),
+    };
+    var books = (int)br.ReadBits(4) + 1;
+    f.BookList = new int[books];
+    for (var i = 0; i < books; ++i) {
+      var b = (int)br.ReadBits(8);
+      if (b < 0 || b >= codebooks.Length)
+        throw new InvalidDataException(
+          $"Vorbis: floor 0 book {b} out of range (have {codebooks.Length} codebooks).");
+      f.BookList[i] = b;
+    }
+    if (f.Order < 1)
+      throw new InvalidDataException("Vorbis: floor 0 order must be >= 1.");
+    if (f.BarkMapSize < 1)
+      throw new InvalidDataException("Vorbis: floor 0 bark_map_size must be >= 1.");
+    return f;
   }
 
   private static Floor ReadFloor1(VorbisBitReader br, int codebookCount) {
     var partitions = (int)br.ReadBits(5);
-    var f = new Floor { PartitionClassList = new int[partitions] };
+    var f = new Floor { Type = 1, PartitionClassList = new int[partitions] };
     var maxClass = -1;
     for (var i = 0; i < partitions; ++i) {
       f.PartitionClassList[i] = (int)br.ReadBits(4);
