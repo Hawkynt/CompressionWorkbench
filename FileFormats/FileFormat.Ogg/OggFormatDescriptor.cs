@@ -2,6 +2,7 @@
 using System.Text;
 using Codec.Opus;
 using Codec.Pcm;
+using Codec.Speex;
 using Codec.Vorbis;
 using Compression.Registry;
 
@@ -22,7 +23,7 @@ public sealed class OggFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".ogg";
-  public IReadOnlyList<string> Extensions => [".ogg", ".oga", ".opus"];
+  public IReadOnlyList<string> Extensions => [".ogg", ".oga", ".opus", ".spx"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("OggS"u8.ToArray(), Confidence: 0.95),
@@ -103,14 +104,16 @@ public sealed class OggFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <summary>
   /// Detects the primary codec (Opus via the <c>OpusHead</c> identification packet,
-  /// otherwise Vorbis), decodes the whole bitstream to interleaved 16-bit PCM, and
-  /// adds one mono <c>&lt;CHANNEL&gt;.wav</c> per channel. Anything the decoders
-  /// reject (Vorbis floor 0, Opus hybrid, multiplexed video, truncation) is skipped
-  /// so only the raw packet blobs remain.
+  /// Speex via the <c>Speex&#160;&#160;&#160;</c> identification packet, otherwise
+  /// Vorbis), decodes the whole bitstream to interleaved 16-bit PCM, and adds one mono
+  /// <c>&lt;CHANNEL&gt;.wav</c> per channel. Anything the decoders reject (Vorbis floor
+  /// 0, Opus hybrid, unsupported Speex profiles, multiplexed video, truncation) is
+  /// skipped so only the raw packet blobs remain.
   /// </summary>
   private static void AddDecodedChannels(byte[] blob, List<(string Name, string Kind, byte[] Data)> entries) {
     try {
       var isOpus = IndexOf(blob, "OpusHead"u8) >= 0;
+      var isSpeex = !isOpus && IndexOf(blob, "Speex   "u8) >= 0;
       int channels, sampleRate;
       byte[] pcm;
 
@@ -122,6 +125,11 @@ public sealed class OggFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
           channels = i.Channels;
           sampleRate = i.SampleRate > 0 ? i.SampleRate : 48000;
           OpusCodec.Decompress(src, dst);
+        } else if (isSpeex) {
+          var i = SpeexCodec.ReadStreamInfo(info);
+          channels = i.Channels;
+          sampleRate = i.SampleRate;
+          SpeexCodec.Decompress(src, dst);
         } else {
           var i = VorbisCodec.ReadStreamInfo(info);
           channels = i.Channels;
