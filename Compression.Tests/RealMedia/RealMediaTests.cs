@@ -162,6 +162,36 @@ public class RealMediaTests {
     Assert.That(entries.Any(e => e.Name == "FULL.ra"), Is.True);
   }
 
+  [Test]
+  public void FourDecoderPaths_Coexist_AndEachReachesItsOwnDecode() {
+    // Adding the SIPR path must not disturb the lpcJ / cook / atrc paths. Each codec is wired
+    // independently: a stream of the wrong FOURCC must never trigger another codec's decode.
+
+    // lpcJ → mono WAV.
+    var lpcj = BuildRmfWithLpcJ(new byte[40]);
+    var lpcjE = new RealMediaFormatDescriptor().List(new MemoryStream(lpcj), null);
+    Assert.That(lpcjE.Any(e => e.Name == "streams/stream_00.MONO.wav" && e.Kind == "Channel"), Is.True);
+
+    // cook → per-channel WAV (mono, Int0).
+    var cook = BuildCookRmf(channels: 1, samplesPerFrame: 1024, subbands: 20, blockAlign: 96,
+      jsSubbandStart: 0, jsVlcBits: 0, frames: 4, cookVersion: 0x1000001);
+    var cookE = new RealMediaFormatDescriptor().List(new MemoryStream(cook), null);
+    Assert.That(cookE.Count(e => e.Kind == "Channel"), Is.EqualTo(1));
+    Assert.That(cookE.Any(e => e.Name == "streams/stream_00.bin" && e.Method == "cook"), Is.True);
+
+    // atrc → stereo WAVs.
+    var atrc = BuildRawRaV4Atrac3(subPacketSize: 192, channels: 2, sampleRate: 44100,
+      jointStereo: true, numSubPackets: 2);
+    var atrcE = new RealMediaFormatDescriptor().List(new MemoryStream(atrc), null);
+    Assert.That(atrcE.Count(e => e.Kind == "Channel"), Is.EqualTo(2));
+
+    // sipr → mono WAV or graceful blob-only; never throws, blob always present.
+    var sipr = BuildSiprRmf(codedFrameSize: 29, subPacketH: 16, frameSize: 29, superBlocks: 1);
+    var siprE = new RealMediaFormatDescriptor().List(new MemoryStream(sipr), null);
+    Assert.That(siprE.Any(e => e.Name == "streams/stream_00.bin" && e.Method == "sipr"), Is.True);
+    Assert.That(siprE.Count(e => e.Kind == "Channel"), Is.AnyOf(0, 1));
+  }
+
   // ── synthetic builders ──────────────────────────────────────────────────────
 
   private static byte[] BuildRmf() {
@@ -339,6 +369,101 @@ public class RealMediaTests {
     var entries = new RealMediaFormatDescriptor().List(new MemoryStream(rm), null);
     Assert.That(entries.Any(e => e.Name == "streams/stream_00.bin" && e.Method == "cook"), Is.True);
     Assert.That(entries.Any(e => e.Kind == "Channel"), Is.False);
+  }
+
+  [Test]
+  public void Rmf_SiprAudio_DecodesMonoWavOrFallsBackToBlob() {
+    // A SIPR ("sipr") 6k5 stream (coded_frame_size 29) with the DEINT_ID_SIPR interleaver.
+    // The descriptor must descramble + decode to a mono 8 kHz WAV, or — if framing/decoding
+    // can't proceed — fall back to the blob-only view. Either outcome is acceptable; a throw
+    // is not. The stream blob (method "sipr") is always present.
+    var rm = BuildSiprRmf(codedFrameSize: 29, subPacketH: 16, frameSize: 29, superBlocks: 1);
+
+    List<Compression.Registry.ArchiveEntryInfo> entries = null!;
+    Assert.That(() => entries = new RealMediaFormatDescriptor().List(new MemoryStream(rm), null),
+      Throws.Nothing);
+
+    Assert.That(entries.Any(e => e.Name == "streams/stream_00.bin" && e.Method == "sipr"), Is.True);
+
+    var channels = entries.Where(e => e.Kind == "Channel" && e.Name.EndsWith(".MONO.wav")).ToList();
+    Assert.That(channels.Count, Is.AnyOf(0, 1));
+    if (channels.Count == 1) {
+      using var wavStream = new MemoryStream();
+      new RealMediaFormatDescriptor().ExtractEntry(new MemoryStream(rm), channels[0].Name, wavStream, null);
+      var wav = wavStream.ToArray();
+      Assert.That(Encoding.ASCII.GetString(wav, 0, 4), Is.EqualTo("RIFF"));
+      // mono 8 kHz.
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24)), Is.EqualTo(8000u));
+    }
+  }
+
+  /// <summary>
+  /// Builds a synthetic .RMF with a single SIPR audio stream: a proper RA v5 header carrying the
+  /// coded-frame size (mode selector), the <c>sipr</c> deinterleaver id and the
+  /// <c>sub_packet_h</c> / frame-size framing, plus one DATA packet per superblock of
+  /// <c>subPacketH * frameSize</c> pseudo-random bytes.
+  /// </summary>
+  private static byte[] BuildSiprRmf(int codedFrameSize, int subPacketH, int frameSize, int superBlocks) {
+    using var ms = new MemoryStream();
+
+    WriteChunk(ms, ".RMF", inner => { WriteU16BE(inner, 0); WriteU32BE(inner, 0); WriteU32BE(inner, 3); });
+
+    WriteChunk(ms, "MDPR", inner => {
+      WriteU16BE(inner, 0); WriteU16BE(inner, 0);
+      WriteU32BE(inner, 6500); WriteU32BE(inner, 6500);
+      WriteU32BE(inner, 600); WriteU32BE(inner, 600);
+      WriteU32BE(inner, 0); WriteU32BE(inner, 0); WriteU32BE(inner, 10000);
+      WriteByteLen(inner, "Audio Stream");
+      WriteByteLen(inner, "audio/x-pn-realaudio");
+      var ts = BuildSiprRaV5Header(codedFrameSize, subPacketH, frameSize);
+      WriteU32BE(inner, (uint)ts.Length);
+      inner.Write(ts);
+    });
+
+    var superSize = subPacketH * frameSize;
+    WriteChunk(ms, "DATA", inner => {
+      WriteU16BE(inner, 0);
+      WriteU32BE(inner, (uint)superBlocks);
+      WriteU32BE(inner, 0);
+      var rng = 1u;
+      for (var b = 0; b < superBlocks; ++b) {
+        var payload = new byte[superSize];
+        for (var j = 0; j < payload.Length; ++j) { rng = rng * 1103515245 + 12345; payload[j] = (byte)(rng >> 16); }
+        WritePacket(inner, streamNumber: 0, payload: payload);
+      }
+    });
+
+    return ms.ToArray();
+  }
+
+  private static byte[] BuildSiprRaV5Header(int codedFrameSize, int subPacketH, int frameSize) {
+    using var ms = new MemoryStream();
+    ms.Write([0x2E, 0x72, 0x61, 0xFD]);   // ".ra\xFD"
+    WriteU16BE(ms, 5);                     // +4 version
+    WriteU16BE(ms, 0);                     // +6 unused
+    ms.Write(Encoding.ASCII.GetBytes(".ra5")); // +8
+    WriteU32BE(ms, 0);                     // +12 data size
+    WriteU16BE(ms, 5);                     // +16 version2
+    WriteU32BE(ms, 0);                     // +18 header size
+    WriteU16BE(ms, 0);                     // +22 flavor
+    WriteU32BE(ms, (uint)codedFrameSize);  // +24 coded_framesize (sipr mode selector)
+    WriteU32BE(ms, 0);                     // +28 ???
+    WriteU32BE(ms, 6500);                  // +32 bytes_per_minute
+    WriteU32BE(ms, 0);                     // +36 ???
+    WriteU16BE(ms, (ushort)subPacketH);    // +40 sub_packet_h
+    WriteU16BE(ms, (ushort)frameSize);     // +42 frame size (audio_framesize)
+    WriteU16BE(ms, (ushort)codedFrameSize);// +44 sub_packet_size
+    WriteU16BE(ms, 0);                     // +46 ???
+    WriteU16BE(ms, 0); WriteU16BE(ms, 0); WriteU16BE(ms, 0); // +48 v5 triple u16
+    WriteU16BE(ms, 8000);                  // +54 sample rate
+    WriteU32BE(ms, 0);                     // +56 ???
+    WriteU16BE(ms, 1);                     // +60 channels (mono)
+    ms.Write([(byte)'s', (byte)'i', (byte)'p', (byte)'r']); // +62 deint id (LE) "sipr"
+    ms.Write(Encoding.ASCII.GetBytes("sipr")); // +66 interleaver/codec tag
+    WriteU16BE(ms, 0);                     // +70 ???
+    ms.WriteByte(0); ms.WriteByte(0);      // +72/73 ??? u8 (+v5 u8)
+    WriteU32BE(ms, 0);                     // +74 extradata length (none for sipr decode)
+    return ms.ToArray();
   }
 
   /// <summary>

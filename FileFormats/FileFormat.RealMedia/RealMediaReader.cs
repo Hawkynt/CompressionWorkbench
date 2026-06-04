@@ -5,6 +5,7 @@ using Codec.Cook;
 using Codec.Atrac3;
 using Codec.Pcm;
 using Codec.Ra144;
+using Codec.Sipr;
 using Compression.Registry;
 
 namespace FileFormat.RealMedia;
@@ -131,6 +132,9 @@ internal static class RealMediaReader {
         // per-channel WAVs using the RA header's atrac3 config. Falls back to blob-only.
         AddDecodedAtrac3Channels(streamBytes, s.Codec, s.TypeSpecific,
           $"streams/stream_{s.StreamNumber:D2}", entries);
+        // RealAudio SIPR / ACELP.NET ("sipr"): descramble the interleaved superblock(s),
+        // decode every coded frame and surface one mono WAV. Falls back to blob-only.
+        AddDecodedSiprChannel(s, $"streams/stream_{s.StreamNumber:D2}", entries);
       }
     }
   }
@@ -435,6 +439,60 @@ internal static class RealMediaReader {
         entries.Add(new($"{baseName}.{name}.wav", "Channel", wav, Method: "pcm"));
     } catch {
       // Undecodable cook stream — keep the stream blob only.
+    }
+  }
+
+  /// <summary>
+  /// If <paramref name="s"/> is a SIPR ("sipr") stream, map the coded-frame size to a SIPR
+  /// mode, descramble the carried superblock(s) with <see cref="SiprReorder"/> (the
+  /// <c>DEINT_ID_SIPR</c> nibble-swap), decode every coded frame with <see cref="SiprCodec"/>
+  /// and surface one mono 8 kHz WAV. Any failure (16k mode, unsupported coded-frame size,
+  /// malformed framing, decode error) is swallowed so the stream blob view survives.
+  /// </summary>
+  private static void AddDecodedSiprChannel(StreamProps s, string baseName,
+      List<AudioPseudoArchive.Entry> entries) {
+    if (s.Codec != "sipr" || s.Payloads.Count == 0)
+      return;
+    try {
+      // SIPR mode comes from the coded-frame size (block_align); 20 → 16k is unsupported.
+      var modeNullable = SiprCodec.ModeFromBlockAlign(s.RaCodedFrameSize);
+      if (modeNullable is not { } mode || mode == SiprCodec.SiprMode.Mode16k)
+        return;
+      var codec = new SiprCodec(mode);
+
+      // RealMedia carries SIPR with DEINT_ID_SIPR: each superblock is sub_packet_h * frame_size
+      // bytes of nibble-swapped data. Descramble every full superblock, then decode the
+      // resulting back-to-back coded frames. If the framing isn't a clean superblock multiple,
+      // fall back to decoding the concatenated payloads directly.
+      using var ms = new MemoryStream();
+      foreach (var p in s.Payloads) ms.Write(p);
+      var raw = ms.ToArray();
+
+      byte[] frames;
+      var superBlock = s.RaSubPacketH * s.RaFrameSize;
+      if (s.RaDeintId == SiprReorder.Sipr && superBlock > 0 && raw.Length >= superBlock) {
+        using var reordered = new MemoryStream();
+        for (var off = 0; off + superBlock <= raw.Length; off += superBlock) {
+          var block = SiprReorder.Reorder(raw.AsSpan(off, superBlock), s.RaSubPacketH, s.RaFrameSize);
+          reordered.Write(block);
+        }
+        frames = reordered.ToArray();
+      } else {
+        frames = raw;
+      }
+
+      var pcm = codec.DecodeStream(frames);
+      if (pcm.Length == 0)
+        return;
+
+      var le = new byte[pcm.Length * 2];
+      for (var i = 0; i < pcm.Length; ++i)
+        BinaryPrimitives.WriteInt16LittleEndian(le.AsSpan(i * 2), pcm[i]);
+
+      var wav = PcmCodec.ToWavBlob(le, channels: 1, sampleRate: 8000, bitsPerSample: 16);
+      entries.Add(new($"{baseName}.MONO.wav", "Channel", wav, Method: "pcm"));
+    } catch {
+      // Undecodable SIPR stream — keep the stream blob only.
     }
   }
 
