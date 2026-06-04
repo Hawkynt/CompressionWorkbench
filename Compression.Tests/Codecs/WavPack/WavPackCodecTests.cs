@@ -24,6 +24,32 @@ public class WavPackCodecTests {
   private static byte[] RoundTrip(byte[] pcm, int channels, int sampleRate, int bits)
     => Decode(Encode(pcm, channels, sampleRate, bits));
 
+  private static byte[] EncodeFloat(byte[] pcm, int channels, int sampleRate) {
+    using var input = new MemoryStream(pcm);
+    using var output = new MemoryStream();
+    WavPackCodec.Compress(input, output, channels, sampleRate, bitsPerSample: 32, isFloat: true);
+    return output.ToArray();
+  }
+
+  private static byte[] RoundTripFloat(byte[] pcm, int channels, int sampleRate)
+    => Decode(EncodeFloat(pcm, channels, sampleRate));
+
+  // Packs an interleaved sequence of float samples into a raw little-endian PCM blob.
+  private static byte[] FloatPcm(params float[] samples) {
+    var pcm = new byte[samples.Length * 4];
+    for (var i = 0; i < samples.Length; ++i)
+      BinaryPrimitives.WriteSingleLittleEndian(pcm.AsSpan(i * 4), samples[i]);
+    return pcm;
+  }
+
+  // Reinterprets a raw float-PCM blob as a float array for exact bit comparison.
+  private static float[] AsFloats(byte[] pcm) {
+    var f = new float[pcm.Length / 4];
+    for (var i = 0; i < f.Length; ++i)
+      f[i] = BinaryPrimitives.ReadSingleLittleEndian(pcm.AsSpan(i * 4));
+    return f;
+  }
+
   // ── Lossless round-trips ─────────────────────────────────────────────────────
 
   [Test]
@@ -110,6 +136,153 @@ public class WavPackCodecTests {
 
     // Six channels => three stereo sub-blocks chained, final flagged.
     Assert.That(RoundTrip(pcm, ch, 48000, 16), Is.EqualTo(pcm));
+  }
+
+  // ── IEEE float round-trips ────────────────────────────────────────────────────
+
+  [Test]
+  public void RoundTripFloat_MonoNormalValues_IsLossless() {
+    const int frames = 4096;
+    var pcm = new byte[frames * 4];
+    for (var i = 0; i < frames; ++i)
+      BinaryPrimitives.WriteSingleLittleEndian(pcm.AsSpan(i * 4),
+        (float)(Math.Sin(i * 0.05) * 0.8 + Math.Cos(i * 0.013) * 0.1));
+
+    Assert.That(RoundTripFloat(pcm, 1, 48000), Is.EqualTo(pcm));
+  }
+
+  [Test]
+  public void RoundTripFloat_StereoNormalValues_IsLossless() {
+    const int frames = 4096;
+    var pcm = new byte[frames * 2 * 4];
+    var rng = new Random(7);
+    for (var i = 0; i < frames; ++i) {
+      BinaryPrimitives.WriteSingleLittleEndian(pcm.AsSpan(i * 8),
+        (float)(Math.Sin(i * 0.05) * 0.5 + (rng.NextDouble() - 0.5) * 1e-3));
+      BinaryPrimitives.WriteSingleLittleEndian(pcm.AsSpan(i * 8 + 4),
+        (float)(Math.Cos(i * 0.031) * 0.25));
+    }
+
+    Assert.That(RoundTripFloat(pcm, 2, 44100), Is.EqualTo(pcm));
+  }
+
+  [Test]
+  public void RoundTripFloat_FullRangeExponents_IsLossless() {
+    // Span tiny to huge magnitudes so float_max_exp and the per-sample shift cover
+    // the whole exponent range.
+    var values = new List<float>();
+    for (var e = -60; e <= 60; ++e) {
+      values.Add((float)Math.ScaleB(1.0, e));
+      values.Add((float)-Math.ScaleB(1.3, e));
+    }
+    // pad to an even count for a clean stereo frame test
+    if ((values.Count & 1) != 0) values.Add(0f);
+    var pcm = FloatPcm([.. values]);
+
+    Assert.That(RoundTripFloat(pcm, 1, 48000), Is.EqualTo(pcm));
+  }
+
+  [Test]
+  public void RoundTripFloat_PositiveAndNegativeZeros_PreservesSignOfZero() {
+    var pcm = FloatPcm(0f, -0f, 0f, -0f, 1.5f, -0f, 0f, -2.25f);
+    var decoded = RoundTripFloat(pcm, 1, 44100);
+
+    Assert.That(decoded, Is.EqualTo(pcm), "raw bit patterns (incl. sign of zero) must match");
+    // Explicitly assert the negative-zero bit survived (it differs from +0 only in sign).
+    var f = AsFloats(decoded);
+    Assert.That(BitConverter.SingleToInt32Bits(f[1]), Is.EqualTo(unchecked((int)0x80000000)));
+  }
+
+  [Test]
+  public void RoundTripFloat_Denormals_IsLossless() {
+    // Subnormal floats have a zero exponent and a non-zero mantissa.
+    var pcm = FloatPcm(
+      float.Epsilon, -float.Epsilon, 3 * float.Epsilon,
+      BitConverter.Int32BitsToSingle(0x00000001),
+      BitConverter.Int32BitsToSingle(0x007FFFFF),
+      BitConverter.Int32BitsToSingle(0x00400000),
+      1.0f, 0.5f);
+
+    Assert.That(RoundTripFloat(pcm, 1, 96000), Is.EqualTo(pcm));
+  }
+
+  [Test]
+  public void RoundTripFloat_NaNAndInfinities_IsLossless() {
+    var pcm = FloatPcm(
+      float.PositiveInfinity, float.NegativeInfinity, float.NaN,
+      BitConverter.Int32BitsToSingle(0x7FC00001), // a specific quiet NaN payload
+      1.0f, -1.0f, 123.5f, -0.0f);
+    var decoded = RoundTripFloat(pcm, 1, 44100);
+
+    Assert.That(decoded, Is.EqualTo(pcm), "inf/NaN bit patterns must be preserved exactly");
+  }
+
+  [Test]
+  public void RoundTripFloat_AllZeros_IsLossless() {
+    var pcm = new byte[2048 * 4]; // all +0.0
+    Assert.That(RoundTripFloat(pcm, 1, 44100), Is.EqualTo(pcm));
+  }
+
+  [Test]
+  public void RoundTripFloat_IntegerDerivedFloats_IsLossless() {
+    // Floats whose mantissas have trailing-zero structure exercise the
+    // float_shift magnitude-reduction path (no extension stream required).
+    var values = new float[512];
+    for (var i = 0; i < values.Length; ++i)
+      values[i] = (i % 257) - 128; // exact small integers as floats
+    var pcm = FloatPcm(values);
+
+    Assert.That(RoundTripFloat(pcm, 1, 48000), Is.EqualTo(pcm));
+  }
+
+  [Test]
+  public void ReadStreamInfo_FloatStream_ReportsIsFloat() {
+    var pcm = FloatPcm(0.1f, 0.2f, 0.3f, 0.4f);
+    var wv = EncodeFloat(pcm, 2, 44100);
+    using var ms = new MemoryStream(wv);
+    var info = WavPackCodec.ReadStreamInfo(ms);
+
+    Assert.Multiple(() => {
+      Assert.That(info.IsFloat, Is.True);
+      Assert.That(info.BitsPerSample, Is.EqualTo(32));
+      Assert.That(info.Channels, Is.EqualTo(2));
+    });
+  }
+
+  [Test]
+  public void FloatStream_CarriesFloatInfoSubBlock() {
+    var pcm = FloatPcm(0.1f, -0.2f, 3e-30f, 1234.5f);
+    var wv = EncodeFloat(pcm, 1, 44100);
+    // FLOAT_INFO is raw id 0x08; locate it via the body sub-block walk helper.
+    var idx = FindSubBlockPayload(wv, 0x08, out var size);
+    Assert.That(idx, Is.GreaterThan(0), "FLOAT_INFO sub-block present");
+    Assert.That(size, Is.EqualTo(4), "FLOAT_INFO is exactly four bytes");
+    // byte[3] is float_norm_exp, which the encoder sets to 127 (the +/-1.0 norm).
+    Assert.That(wv[idx + 3], Is.EqualTo(127));
+  }
+
+  [Test]
+  public void FloatStream_TruncatedBitstream_ToleratesAllOnesEof() {
+    // Shrink the wvx extension stream in place (keeping the block frame valid) so the
+    // float reconstruction reads past its end; the bit reader's all-ones EOF
+    // convention must let it terminate without throwing rather than crashing.
+    var pcm = FloatPcm(0.1f, -0.2f, 0.3f, -0.4f, 0.5f, -0.6f, 0.7f, -0.8f);
+    var wv = EncodeFloat(pcm, 1, 44100);
+    // Zero the last few payload bytes (within the framed block) to simulate a
+    // corrupt/short tail; decode must still complete.
+    for (var i = wv.Length - 4; i < wv.Length; ++i)
+      wv[i] = 0xFF;
+    using var input = new MemoryStream(wv);
+    using var output = new MemoryStream();
+    Assert.That(() => WavPackCodec.Decompress(input, output), Throws.Nothing);
+  }
+
+  [Test]
+  public void Float32Compress_RejectsNonFloatBitDepthMismatch() {
+    using var input = new MemoryStream(new byte[16]);
+    using var output = new MemoryStream();
+    Assert.That(() => WavPackCodec.Compress(input, output, 1, 44100, bitsPerSample: 16, isFloat: true),
+      Throws.TypeOf<ArgumentException>());
   }
 
   // ── Header / flag parsing ─────────────────────────────────────────────────────

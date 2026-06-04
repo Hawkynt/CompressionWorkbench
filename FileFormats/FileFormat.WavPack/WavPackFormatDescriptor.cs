@@ -124,7 +124,18 @@ public sealed class WavPackFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       WavPackCodec.Decompress(src, pcm);
       var pcmBytes = pcm.ToArray();
 
-      if (info.Channels <= 1) {
+      // Float streams decode to raw 32-bit IEEE floats and surface as RIFF float
+      // WAVs (format code 3); integer streams stay format code 1.
+      if (info.IsFloat) {
+        if (info.Channels <= 1) {
+          entries.Add(("MONO.wav", "Channel",
+            PcmCodec.ToWavBlob(pcmBytes, 1, info.SampleRate, info.BitsPerSample, formatCode: 3)));
+        } else {
+          foreach (var (name, wav) in PcmCodec.SplitInterleavedFloat(
+              pcmBytes, info.Channels, info.SampleRate, info.BitsPerSample))
+            entries.Add(($"{name}.wav", "Channel", wav));
+        }
+      } else if (info.Channels <= 1) {
         entries.Add(("MONO.wav", "Channel",
           PcmCodec.ToWavBlob(pcmBytes, 1, info.SampleRate, info.BitsPerSample, formatCode: 1)));
       } else {

@@ -64,8 +64,10 @@ public static class WavPackCodec {
   private const int IdDecorrWeights = 0x03;
   private const int IdDecorrSamples = 0x04;
   private const int IdEntropyVars = 0x05;
+  private const int IdFloatInfo = 0x08;
   private const int IdInt32Info = 0x09;
   private const int IdBitstream = 0x0A;
+  private const int IdWvxBitstream = 0x0C;
 
   private const int MaxTerm = 8;
 
@@ -74,8 +76,12 @@ public static class WavPackCodec {
     32000, 44100, 48000, 64000, 88200, 96000, 192000, 0,
   ];
 
-  /// <summary>Stream geometry callers need to build PCM headers / split channels.</summary>
-  public readonly record struct WavPackStreamInfo(int Channels, int SampleRate, int BitsPerSample, long SampleCount);
+  /// <summary>Stream geometry callers need to build PCM headers / split channels.
+  /// <paramref name="IsFloat"/> is true for IEEE-754 32-bit float streams (the
+  /// <c>FLOAT_DATA</c> flag), in which case the decoded PCM is raw little-endian
+  /// 32-bit floats rather than signed integers.</summary>
+  public readonly record struct WavPackStreamInfo(
+    int Channels, int SampleRate, int BitsPerSample, long SampleCount, bool IsFloat = false);
 
   // The decorrelation preset this encoder emits (reference "fast": term 18 then term 1).
   private static readonly int[] PresetTerms = [18, 1];
@@ -103,6 +109,7 @@ public static class WavPackCodec {
     RejectUnsupported(header.Flags);
 
     var bps = (int)((header.Flags & FlagBytesPerSampleMask) + 1) * 8;
+    var isFloat = (header.Flags & FlagFloatData) != 0;
     var sampleRate = SampleRates[(int)((header.Flags >> FlagSampleRateShift) & FlagSampleRateMask)];
 
     // Channel count: walk the initial sample group's sub-blocks (each is mono or
@@ -119,7 +126,7 @@ public static class WavPackCodec {
     }
     if (channels == 0) channels = (header.Flags & FlagMono) != 0 ? 1 : 2;
 
-    return new WavPackStreamInfo(channels, sampleRate, bps, header.TotalSamples);
+    return new WavPackStreamInfo(channels, sampleRate, bps, header.TotalSamples, isFloat);
   }
 
   // ── Decode ─────────────────────────────────────────────────────────────────
@@ -192,6 +199,11 @@ public static class WavPackCodec {
     var bitstreamLen = 0;
     var haveBitstream = false;
     Int32Info int32Info = default;
+    WavPackFloat.FloatInfo floatInfo = default;
+    var haveFloatInfo = false;
+    var wvxOffsetInData = 0;
+    var wvxLen = 0;
+    var haveWvx = false;
 
     var o = 0;
     while (o < body.Length) {
@@ -228,10 +240,19 @@ public static class WavPackCodec {
         case IdInt32Info:
           int32Info = ReadInt32Info(payload);
           break;
+        case IdFloatInfo:
+          floatInfo = WavPackFloat.ReadFloatInfo(payload);
+          haveFloatInfo = true;
+          break;
         case IdBitstream:
           bitstreamOffsetInData = blockPos + HeaderSize + payloadStart;
           bitstreamLen = size;
           haveBitstream = true;
+          break;
+        case IdWvxBitstream:
+          wvxOffsetInData = blockPos + HeaderSize + payloadStart;
+          wvxLen = size;
+          haveWvx = true;
           break;
       }
 
@@ -279,6 +300,34 @@ public static class WavPackCodec {
     // Extended 32-bit / shifted-sample fix-up (reference fixup_samples, lossless path).
     ApplyIntFixup(chData, subChannels, samples, h.Flags, int32Info);
 
+    // IEEE float restoration: the decoded integers are the "lossy" 24-bit values;
+    // float_values rebuilds the original IEEE-754 bit patterns (using the wvx
+    // extension stream when present). A float block with no FLOAT_INFO sub-block is
+    // malformed and unsupported (so container probes fall back gracefully).
+    if ((h.Flags & FlagFloatData) != 0) {
+      if (!haveFloatInfo)
+        throw new NotSupportedException("Floating-point WavPack block has no FLOAT_INFO sub-block.");
+
+      // The wvx payload is a 4-byte little-endian CRC followed by the extension
+      // bitstream (same LSB-first bit order as the main bitstream).
+      WavPackBitReader? wvx = null;
+      if (haveWvx && wvxLen > 4)
+        wvx = new WavPackBitReader(data, wvxOffsetInData + 4, wvxLen - 4);
+
+      // The reference consumes the extension bits in interleaved (L,R,L,R…) order,
+      // so the channels are restored together over one interleaved value array.
+      var interleaved = new int[samples * subChannels];
+      for (var s = 0; s < samples; ++s)
+        for (var c = 0; c < subChannels; ++c)
+          interleaved[s * subChannels + c] = chData[c][s];
+
+      WavPackFloat.FloatValues(interleaved, floatInfo, wvx, minShiftedZeros: 0, maxShiftedOnes: 0);
+
+      for (var s = 0; s < samples; ++s)
+        for (var c = 0; c < subChannels; ++c)
+          chData[c][s] = interleaved[s * subChannels + c];
+    }
+
     // Scatter into the interleaved output.
     for (var s = 0; s < samples; ++s) {
       var frame = (firstSample + s) * totalChannels;
@@ -295,13 +344,15 @@ public static class WavPackCodec {
   /// stream. Mono and stereo are written as a single block per stream; more than
   /// two channels are written as a chain of stereo (and a trailing mono) blocks,
   /// the final one carrying <c>FINAL_BLOCK</c>.</summary>
-  public static void Compress(Stream pcmInput, Stream wvOutput, int channels, int sampleRate, int bitsPerSample) {
+  public static void Compress(Stream pcmInput, Stream wvOutput, int channels, int sampleRate, int bitsPerSample, bool isFloat = false) {
     ArgumentNullException.ThrowIfNull(pcmInput);
     ArgumentNullException.ThrowIfNull(wvOutput);
     if (channels < 1) throw new ArgumentOutOfRangeException(nameof(channels));
     if (sampleRate < 1) throw new ArgumentOutOfRangeException(nameof(sampleRate));
     if (bitsPerSample is not (8 or 16 or 24 or 32))
       throw new ArgumentOutOfRangeException(nameof(bitsPerSample), "WavPack supports 8, 16, 24 or 32 bits per sample.");
+    if (isFloat && bitsPerSample != 32)
+      throw new ArgumentException("WavPack float data requires 32-bit samples.", nameof(bitsPerSample));
 
     using var ms = new MemoryStream();
     pcmInput.CopyTo(ms);
@@ -327,14 +378,14 @@ public static class WavPackCodec {
       var isFirst = p == 0;
       var isFinal = p == plan.Count - 1;
       var block = EncodeBlock(pcm, totalSamples, channels, baseCh, count, bitsPerSample,
-        bytesPerSample, (uint)rateIndex, isFirst, isFinal);
+        bytesPerSample, (uint)rateIndex, isFirst, isFinal, isFloat);
       wvOutput.Write(block);
     }
   }
 
   private static byte[] EncodeBlock(
       byte[] pcm, int totalSamples, int totalChannels, int channelBase, int subChannels,
-      int bitsPerSample, int bytesPerSample, uint rateIndex, bool isFirst, bool isFinal) {
+      int bitsPerSample, int bytesPerSample, uint rateIndex, bool isFirst, bool isFinal, bool isFloat) {
 
     // Gather this sub-block's channel samples from the interleaved input.
     var chData = new int[subChannels][];
@@ -347,9 +398,32 @@ public static class WavPackCodec {
       }
     }
 
+    // Float pre-scan (reference scan_float_data): reduce the raw IEEE-754 bit
+    // patterns to the lossy signed integers the integer coder handles, capturing
+    // the parameters and the originals needed to losslessly restore them. The scan
+    // runs over the interleaved sub-block buffer, exactly as the reference does.
+    WavPackFloat.FloatInfo floatInfo = default;
+    int[]? floatOriginals = null;
+    if (isFloat) {
+      var interleaved = new int[totalSamples * subChannels];
+      for (var s = 0; s < totalSamples; ++s)
+        for (var c = 0; c < subChannels; ++c)
+          interleaved[s * subChannels + c] = chData[c][s];
+
+      floatOriginals = WavPackFloat.ScanFloatData(interleaved, out floatInfo);
+
+      for (var s = 0; s < totalSamples; ++s)
+        for (var c = 0; c < subChannels; ++c)
+          chData[c][s] = interleaved[s * subChannels + c];
+
+      if (!WavPackFloat.NeedsExtensionStream(floatInfo))
+        floatOriginals = null; // integer-derived floats restore without an extension stream
+    }
+
     var flags = 0u;
     flags |= (uint)(bytesPerSample - 1) & FlagBytesPerSampleMask;
     if (subChannels == 1) flags |= FlagMono;
+    if (isFloat) flags |= FlagFloatData;
     flags |= (rateIndex & FlagSampleRateMask) << FlagSampleRateShift;
     if (isFirst) flags |= FlagInitialBlock;
     if (isFinal) flags |= FlagFinalBlock;
@@ -394,7 +468,22 @@ public static class WavPackCodec {
     WriteSubBlock(bodyMs, IdDecorrTerms, EncodeDecorrTerms(terms, deltas));
     WriteSubBlock(bodyMs, IdDecorrWeights, EncodeDecorrWeights(subChannels, new int[terms.Length], new int[terms.Length]));
     WriteSubBlock(bodyMs, IdDecorrSamples, EncodeDecorrSamples(subChannels, terms, FreshSamples(terms.Length), FreshSamples(terms.Length)));
+    if (isFloat)
+      WriteSubBlock(bodyMs, IdFloatInfo, WavPackFloat.WriteFloatInfo(floatInfo));
     WriteSubBlock(bodyMs, IdBitstream, bitstream);
+
+    // The wvx extension sub-block carries the lossless float refinement bits,
+    // prefixed by a 32-bit CRC of the original f32 values (reference send_float_data).
+    if (floatOriginals != null) {
+      var wvxWriter = new WavPackBitWriter();
+      WavPackFloat.SendFloatData(wvxWriter, floatOriginals, floatInfo);
+      var wvxBits = wvxWriter.FlushEven();
+      var wvxPayload = new byte[4 + wvxBits.Length];
+      BinaryPrimitives.WriteUInt32LittleEndian(wvxPayload, WavPackFloat.ComputeCrc(floatOriginals));
+      wvxBits.CopyTo(wvxPayload.AsSpan(4));
+      WriteSubBlock(bodyMs, IdWvxBitstream, wvxPayload);
+    }
+
     var body = bodyMs.ToArray();
 
     var blockSize = HeaderSize + body.Length;
@@ -1095,8 +1184,6 @@ public static class WavPackCodec {
   private static void RejectUnsupported(uint flags) {
     if ((flags & FlagHybrid) != 0)
       throw new NotSupportedException("Hybrid/lossy WavPack blocks are not supported.");
-    if ((flags & FlagFloatData) != 0)
-      throw new NotSupportedException("Floating-point WavPack blocks are not supported.");
     if ((flags & FlagDsd) != 0)
       throw new NotSupportedException("DSD WavPack blocks are not supported.");
     _ = FlagCrossDecorr;

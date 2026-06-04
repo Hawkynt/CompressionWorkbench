@@ -115,4 +115,16 @@ internal sealed class WavPackBitWriter {
 
     return this._bytes.ToArray();
   }
+
+  /// <summary>Flushes like <see cref="Flush"/> but additionally pads the byte count
+  /// to an even length with a trailing one-bit byte, matching the reference
+  /// <c>bs_close_write</c> used for the wvx extension bitstream (whose sub-block
+  /// payload must be 16-bit aligned).</summary>
+  public byte[] FlushEven() {
+    while (this._bitCount != 0)
+      this.PutBit(1);
+    if ((this._bytes.Count & 1) != 0)
+      this._bytes.Add(0xFF); // pad to even, as the reference fills with one-bits
+    return this._bytes.ToArray();
+  }
 }
