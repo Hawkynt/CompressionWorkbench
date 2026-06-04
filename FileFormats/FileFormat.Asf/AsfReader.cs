@@ -47,6 +47,8 @@ internal static class AsfReader {
     public int? SampleRate;
     public int? BitsPerSample;
     public long? ByteRate;
+    public int? BlockAlign;
+    public byte[]? ExtraData;
 
     public string Render() {
       var sb = new StringBuilder();
@@ -83,6 +85,8 @@ internal static class AsfReader {
     public readonly List<string> CodecListEntries = [];
     public readonly List<StreamInfo> Streams = [];
     public byte[]? DataPayload;
+    /// <summary>Reassembled elementary bitstream per stream number (from the Data Object packets).</summary>
+    public readonly Dictionary<int, byte[]> StreamPayloads = [];
 
     public string RenderMetadataIni() {
       var sb = new StringBuilder();
@@ -212,7 +216,13 @@ internal static class AsfReader {
       info.Channels = BinaryPrimitives.ReadUInt16LittleEndian(b.AsSpan(typeSpecStart + 2));
       info.SampleRate = (int)BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(typeSpecStart + 4));
       info.ByteRate = BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(typeSpecStart + 8));
+      info.BlockAlign = BinaryPrimitives.ReadUInt16LittleEndian(b.AsSpan(typeSpecStart + 12));
       info.BitsPerSample = BinaryPrimitives.ReadUInt16LittleEndian(b.AsSpan(typeSpecStart + 14));
+      // cbSize extradata tail (codec-private bytes after the 18-byte WAVEFORMATEX core).
+      var cbSize = BinaryPrimitives.ReadUInt16LittleEndian(b.AsSpan(typeSpecStart + 16));
+      var extraStart = typeSpecStart + 18;
+      if (cbSize > 0 && extraStart + cbSize <= start + len)
+        info.ExtraData = b[extraStart..(extraStart + cbSize)];
     }
     r.Streams.Add(info);
   }
@@ -287,6 +297,17 @@ internal static class AsfReader {
     var payloadStart = dataStart + packetsOffset;
     if (payloadStart > objEnd) payloadStart = objEnd;
     r.DataPayload = b[payloadStart..objEnd];
+
+    // Depayload the packets into per-stream elementary bitstreams. ASF stores a fixed
+    // packet size (File Properties min == max for the common case); pass it so packets
+    // are walked at the right stride.
+    var packetSize = r.MinPacketSize.HasValue && r.MinPacketSize == r.MaxPacketSize
+      ? (int)r.MinPacketSize.Value
+      : (int)(r.MaxPacketSize ?? 0);
+    foreach (var (num, sd) in AsfDepayloader.Depayload(r.DataPayload, packetSize)) {
+      var blob = sd.ToBlob();
+      if (blob.Length > 0) r.StreamPayloads[num] = blob;
+    }
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────

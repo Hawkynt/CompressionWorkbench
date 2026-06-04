@@ -8,9 +8,9 @@ namespace Compression.Tests.Asf;
 /// <summary>
 /// Pins the ASF descriptor: a hand-crafted minimal ASF (Header Object with File
 /// Properties + Content Description + a WMA v2 audio Stream Properties, followed by
-/// a small Data Object) must surface FULL.asf, metadata.ini fields, a per-stream
-/// info entry and the Data Object payload as data/packets.bin. Truncated objects
-/// must degrade gracefully.
+/// a Data Object holding one single-payload packet) must surface FULL.asf,
+/// metadata.ini fields, a per-stream info entry and the depayloaded elementary stream
+/// as streams/stream_NN.bin. Truncated objects must degrade gracefully.
 /// </summary>
 [TestFixture]
 public class AsfTests {
@@ -58,9 +58,10 @@ public class AsfTests {
     Assert.That(siText, Does.Contain("channels = 2"));
     Assert.That(siText, Does.Contain("sample_rate = 44100"));
 
-    Assert.That(entries.Any(e => e.Name == "data/packets.bin" && e.Kind == "Stream"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "streams/stream_03.bin" && e.Kind == "Stream"), Is.True,
+      "expected depayloaded elementary stream for stream 3");
     using var pkStream = new MemoryStream();
-    new AsfFormatDescriptor().ExtractEntry(new MemoryStream(asf), "data/packets.bin", pkStream, null);
+    new AsfFormatDescriptor().ExtractEntry(new MemoryStream(asf), "streams/stream_03.bin", pkStream, null);
     Assert.That(pkStream.ToArray(), Is.EqualTo(dataPayload));
   }
 
@@ -110,14 +111,64 @@ public class AsfTests {
       WrapObject(StreamPropertiesObject, streamProps),
     };
 
-    var header = BuildHeaderObject(children);
-
     dataPayload = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE];
-    var data = BuildDataObject(dataPayload, totalPackets: 1);
+    var packet = BuildSinglePayloadPacket(streamNumber: 3, mediaObjectSize: dataPayload.Length, payload: dataPayload, packetSize: PacketSize);
+
+    // File Properties uses min == max == PacketSize so the depayloader walks at that stride.
+    var fileProps2 = BuildFilePropertiesBody(minPacket: PacketSize, maxPacket: PacketSize);
+    children[0] = WrapObject(FilePropertiesObject, fileProps2);
+
+    var header = BuildHeaderObject(children);
+    var data = BuildDataObject(packet, totalPackets: 1);
 
     using var ms = new MemoryStream();
     ms.Write(header);
     ms.Write(data);
+    return ms.ToArray();
+  }
+
+  private const int PacketSize = 64;
+
+  // Builds one fixed-size ASF data packet carrying a single, complete payload (no error
+  // correction, single-payload form, byte-sized media-object-number / offset / replicated
+  // fields, u32 packet length). The remainder of the packet is padding declared via the
+  // padding-length field so the depayloader trims it.
+  private static byte[] BuildSinglePayloadPacket(int streamNumber, int mediaObjectSize, byte[] payload, int packetSize) {
+    using var ms = new MemoryStream();
+    // length-type flags: bit0=0 (single payload), padding length type = u8 (bits 3..4 = 01),
+    // packet length type = u32 (bits 5..6 = 11), sequence type = 0.
+    var lengthTypeFlags = (0b11 << 5) | (0b01 << 3);
+    ms.WriteByte((byte)lengthTypeFlags);
+    // property flags: media object number u8 (bits 4..5 = 01), offset u8 (bits 2..3 = 01),
+    // replicated u8 (bits 0..1 = 01).
+    var propertyFlags = (0b01 << 4) | (0b01 << 2) | 0b01;
+    ms.WriteByte((byte)propertyFlags);
+
+    WriteU32(ms, (uint)packetSize);     // packet length (u32)
+    // header so far: 1+1+4 = 6 bytes; payload below; rest is padding.
+    var replicated = new byte[8];
+    BinaryPrimitives.WriteUInt32LittleEndian(replicated, (uint)mediaObjectSize); // media object size
+    // replicated[4..8] = presentation time (0)
+
+    // Payload fields: stream number, media obj number, offset, replicated length, replicated data, payload data.
+    var payloadFieldBytes = 1 + 1 + 1 + 1 + replicated.Length + payload.Length;
+    // Layout: [lt][prop][pktlen u32][padding u8][sendtime u32][dur u16][payload...]
+    var fixedHeader = 1 + 1 + 4 + 1 + 4 + 2; // = 13
+    var used = fixedHeader + payloadFieldBytes;
+    var padding = packetSize - used;
+    if (padding < 0) throw new InvalidOperationException("packet too small for payload");
+
+    ms.WriteByte((byte)padding);        // padding length (u8)
+    WriteU32(ms, 0);                    // send time
+    WriteU16(ms, 0);                    // duration
+
+    ms.WriteByte((byte)(streamNumber & 0x7F)); // stream number (key-frame bit clear)
+    ms.WriteByte(0);                    // media object number (u8)
+    ms.WriteByte(0);                    // offset into media object (u8)
+    ms.WriteByte((byte)replicated.Length); // replicated data length (u8) = 8
+    ms.Write(replicated);               // replicated data {obj size, time}
+    ms.Write(payload);                  // payload data
+    for (var i = 0; i < padding; ++i) ms.WriteByte(0); // padding bytes
     return ms.ToArray();
   }
 
@@ -160,7 +211,9 @@ public class AsfTests {
     return ms.ToArray();
   }
 
-  private static byte[] BuildFilePropertiesBody() {
+  private static byte[] BuildFilePropertiesBody() => BuildFilePropertiesBody(minPacket: 100, maxPacket: 200);
+
+  private static byte[] BuildFilePropertiesBody(int minPacket, int maxPacket) {
     using var ms = new MemoryStream();
     ms.Write(new byte[16]);            // file id GUID
     WriteU64(ms, 5000);                // file size
@@ -170,8 +223,8 @@ public class AsfTests {
     WriteU64(ms, 100000000);           // send duration
     WriteU64(ms, 0);                   // preroll
     WriteU32(ms, 2);                   // flags
-    WriteU32(ms, 100);                 // min packet size
-    WriteU32(ms, 200);                 // max packet size
+    WriteU32(ms, (uint)minPacket);     // min packet size
+    WriteU32(ms, (uint)maxPacket);     // max packet size
     WriteU32(ms, 128000);              // max bitrate
     return ms.ToArray();
   }
