@@ -51,6 +51,9 @@
     <ProjectReference Include="..\Codecs\Codec.TrueSpeech\Codec.TrueSpeech.csproj" />
     <ProjectReference Include="..\Codecs\Codec.InterplayAcm\Codec.InterplayAcm.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Nellymoser\Codec.Nellymoser.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.WsAdpcm\Codec.WsAdpcm.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.RoqDpcm\Codec.RoqDpcm.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.SolDpcm\Codec.SolDpcm.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
@@ -508,6 +511,17 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Cmf\FileFormat.Cmf.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Acm\FileFormat.Acm.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Nelly\FileFormat.Nelly.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Aud\FileFormat.Aud.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Roq\FileFormat.Roq.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sol\FileFormat.Sol.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Apc\FileFormat.Apc.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Nsf\FileFormat.Nsf.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Gbs\FileFormat.Gbs.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sid\FileFormat.Sid.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Kss\FileFormat.Kss.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Hes\FileFormat.Hes.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Gym\FileFormat.Gym.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ay\FileFormat.Ay.csproj" />
   </ItemGroup>
 
 </Project>

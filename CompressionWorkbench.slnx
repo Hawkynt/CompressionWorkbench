@@ -132,6 +132,9 @@
     <Project Path="Codecs/Codec.TrueSpeech/Codec.TrueSpeech.csproj" />
     <Project Path="Codecs/Codec.InterplayAcm/Codec.InterplayAcm.csproj" />
     <Project Path="Codecs/Codec.Nellymoser/Codec.Nellymoser.csproj" />
+    <Project Path="Codecs/Codec.WsAdpcm/Codec.WsAdpcm.csproj" />
+    <Project Path="Codecs/Codec.RoqDpcm/Codec.RoqDpcm.csproj" />
+    <Project Path="Codecs/Codec.SolDpcm/Codec.SolDpcm.csproj" />
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />
@@ -518,6 +521,17 @@
     <Project Path="FileFormats/FileFormat.Cmf/FileFormat.Cmf.csproj" />
     <Project Path="FileFormats/FileFormat.Acm/FileFormat.Acm.csproj" />
     <Project Path="FileFormats/FileFormat.Nelly/FileFormat.Nelly.csproj" />
+    <Project Path="FileFormats/FileFormat.Aud/FileFormat.Aud.csproj" />
+    <Project Path="FileFormats/FileFormat.Roq/FileFormat.Roq.csproj" />
+    <Project Path="FileFormats/FileFormat.Sol/FileFormat.Sol.csproj" />
+    <Project Path="FileFormats/FileFormat.Apc/FileFormat.Apc.csproj" />
+    <Project Path="FileFormats/FileFormat.Nsf/FileFormat.Nsf.csproj" />
+    <Project Path="FileFormats/FileFormat.Gbs/FileFormat.Gbs.csproj" />
+    <Project Path="FileFormats/FileFormat.Sid/FileFormat.Sid.csproj" />
+    <Project Path="FileFormats/FileFormat.Kss/FileFormat.Kss.csproj" />
+    <Project Path="FileFormats/FileFormat.Hes/FileFormat.Hes.csproj" />
+    <Project Path="FileFormats/FileFormat.Gym/FileFormat.Gym.csproj" />
+    <Project Path="FileFormats/FileFormat.Ay/FileFormat.Ay.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />
