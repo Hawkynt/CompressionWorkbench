@@ -1,15 +1,20 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Codec.Nes2a03;
+using Codec.Pcm;
 using Compression.Registry;
 
 namespace FileFormat.Nsf;
 
 /// <summary>
 /// Surfaces an NES Sound Format file as a metadata-rich pseudo-archive. NSF carries a 6502
-/// program that drives the NES APU (plus optional expansion sound chips); there is no audio
-/// to decode, so the program image is surfaced verbatim as a Kind <c>Stream</c> blob alongside
-/// the parsed header.
+/// program that drives the NES APU (plus optional expansion sound chips); the program image is
+/// surfaced verbatim as a Kind <c>Stream</c> blob alongside the parsed header, and — for base
+/// 2A03 NESM tunes — the start song is emulated (6502 core + register-level APU synthesis) and
+/// rendered to a playable <c>MONO.wav</c> (44100 Hz, 16-bit, 30 s cap). Tunes that declare an
+/// expansion chip (VRC6/VRC7/FDS/MMC5/N163/S5B), and NSFE containers, degrade to
+/// header/program-only.
 /// <para>Two on-disk variants are handled:</para>
 /// <list type="bullet">
 ///   <item><b>NESM</b> (magic <c>NESM\x1A</c>): a fixed 0x80-byte header followed by the 6502
@@ -124,10 +129,48 @@ public sealed class NsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       sb.AppendLine($"bankswitch={FormatBankswitch(blob, 0x70)}");
     sb.AppendLine($"expansion_chips={DescribeChips(extraChips)}");
     sb.AppendLine($"expansion_flags=0x{extraChips:X2}");
+
+    // Render the start song to a playable mono WAV via the 6502 + 2A03 APU. Any failure
+    // (expansion chip, runaway program, malformed data) degrades silently to header/program.
+    var rendered = TryRenderNesm(blob);
+    if (rendered is { } wav) {
+      sb.AppendLine($"rendered_duration={RenderSeconds:0.#}s");
+      sb.AppendLine($"rendered_sample_rate={OutputSampleRate}");
+      sb.AppendLine($"rendered_song={startSong}");
+      sb.AppendLine($"rendered_region={DescribeRegion(palNtscFlags)}");
+    }
+
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
+
+    if (rendered is { } w)
+      entries.Add(new("MONO.wav", "Channel",
+        PcmCodec.ToWavBlob(w, channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1), "nsf"));
 
     if (blob.Length > NesmHeaderSize)
       entries.Add(new("program.bin", "Stream", blob[NesmHeaderSize..]));
+  }
+
+  /// <summary>Output sample rate for the rendered MONO.wav.</summary>
+  private const int OutputSampleRate = 44100;
+
+  /// <summary>
+  /// Maximum rendered duration. Bounded at 30 seconds so a long or non-terminating tune
+  /// still yields a reasonable, quickly-produced preview.
+  /// </summary>
+  private const double RenderSeconds = 30.0;
+
+  /// <summary>Renders the start song to 16-bit mono LE PCM, or null on any failure.</summary>
+  private static byte[]? TryRenderNesm(byte[] blob) {
+    try {
+      var player = NsfPlayer.FromNesm(blob);
+      var samples = player.Render(RenderSeconds, OutputSampleRate);
+      var pcm = new byte[samples.Length * 2];
+      for (var i = 0; i < samples.Length; ++i)
+        BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), samples[i]);
+      return pcm;
+    } catch {
+      return null;
+    }
   }
 
   private static string DescribeRegion(byte flags) => (flags & 0x03) switch {

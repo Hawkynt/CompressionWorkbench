@@ -151,6 +151,7 @@
     <Project Path="Codecs/Codec.Mos6502/Codec.Mos6502.csproj" />
     <Project Path="Codecs/Codec.Sid/Codec.Sid.csproj" />
     <Project Path="Codecs/Codec.Spc700/Codec.Spc700.csproj" />
+    <Project Path="Codecs/Codec.Nes2a03/Codec.Nes2a03.csproj" />
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />

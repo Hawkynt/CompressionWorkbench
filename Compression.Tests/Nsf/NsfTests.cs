@@ -127,6 +127,66 @@ public class NsfTests {
     Assert.That(ini, Does.Contain("expansion_chips=FDS"));
   }
 
+  // A NESM with a real, terminating init/play program (base 2A03): init enables pulse 1 and
+  // sets a tone then RTS; play is a bare RTS. Loaded at $8000, init $8000, play $8100.
+  private static byte[] BuildPlayableNesm() {
+    var p = new List<byte>();
+    void Sta(byte lo, byte hi, byte value) {
+      p.Add(0xA9); p.Add(value);          // LDA #value
+      p.Add(0x8D); p.Add(lo); p.Add(hi);  // STA $hilo
+    }
+    Sta(0x15, 0x40, 0x01);                // $4015 enable pulse 1
+    Sta(0x00, 0x40, 0xBF);                // $4000 duty 50% + const vol + halt
+    Sta(0x02, 0x40, 0xFD);                // $4002 timer low
+    Sta(0x03, 0x40, 0x18);                // $4003 timer high + length load
+    p.Add(0x60);                          // RTS
+    while (p.Count < 0x100) p.Add(0xEA);  // pad to $8100
+    p.Add(0x60);                          // play RTS
+    var program = p.ToArray();
+
+    var blob = new byte[0x80 + program.Length];
+    "NESM\x1A"u8.CopyTo(blob);
+    blob[0x05] = 1;
+    blob[0x06] = 1;
+    blob[0x07] = 1;
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x08), 0x8000);
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x0A), 0x8000);
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x0C), 0x8100);
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x6E), 16639); // NTSC speed
+    blob[0x7A] = 0x00; // NTSC
+    blob[0x7B] = 0x00; // no expansion chips
+    program.CopyTo(blob, 0x80);
+    return blob;
+  }
+
+  [Test]
+  public void Nesm_BaseChip_RendersMonoWav() {
+    var blob = BuildPlayableNesm();
+    using var ms = new MemoryStream(blob);
+    var entries = new NsfFormatDescriptor().List(ms, null);
+
+    var mono = entries.FirstOrDefault(e => e.Name == "MONO.wav");
+    Assert.That(mono, Is.Not.Null, "base 2A03 tune should render a MONO.wav");
+    Assert.That(mono!.Kind, Is.EqualTo("Channel"));
+
+    var wav = Bytes(blob, "MONO.wav");
+    Assert.That(wav.Length, Is.GreaterThan(44), "WAV should carry audio data");
+    Assert.That(Encoding.ASCII.GetString(wav, 0, 4), Is.EqualTo("RIFF"));
+
+    var ini = Meta(blob);
+    Assert.That(ini, Does.Contain("rendered_sample_rate=44100"));
+    Assert.That(ini, Does.Contain("rendered_region=NTSC"));
+  }
+
+  [Test]
+  public void Nesm_ExpansionChip_NoMonoWav() {
+    // A tune declaring an expansion chip cannot be rendered; it degrades to header/program.
+    using var ms = new MemoryStream(BuildNesm(chipFlags: 0x01)); // VRC6
+    var entries = new NsfFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "MONO.wav"), Is.False);
+    Assert.That(Meta(BuildNesm(chipFlags: 0x01)), Does.Not.Contain("rendered_sample_rate"));
+  }
+
   [Test]
   public void ShortBlob_DegradesToFullOnly() {
     using var ms = new MemoryStream("NESM\x1A"u8.ToArray());
