@@ -56,7 +56,7 @@ format permits. One tool, for all of it.
 
 ---
 
-## Quick start
+## 📦 Quick start
 
 **Install via NuGet** — pick the surface you need:
 
@@ -529,3 +529,14 @@ dotnet test
 - **[ArchiveTeam Just Solve The File Format Problem](http://fileformats.archiveteam.org/wiki/Compression)** — compression format documentation
 - **[7-Zip](https://github.com/ip7z/7zip)** — multi-archiver reference
 - **[Matt Mahoney's data-compression page](https://mattmahoney.net/dc/)** — context-mixing compressors + corpus
+
+## ❤️ Support
+
+If this project saves you time or money, consider supporting its development:
+
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=githubsponsors)](https://github.com/sponsors/Hawkynt)
+[![PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?logo=paypal)](https://www.paypal.me/hawkynt)
+
+## 📜 License
+
+Licensed under LGPL-3.0-or-later — see [LICENSE](LICENSE).
