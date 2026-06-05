@@ -131,6 +131,15 @@ State legend:
 | `Codec.Speex`    | Speech          | R     | Speex narrowband (all submodes) + wideband SB-CELP + intensity stereo           |
 | `Codec.G7231`    | Speech          | R     | ITU G.723.1 dual-rate (MP-MLQ + ACELP, postfilter, CNG, concealment)            |
 | `Codec.Dts`      | Lossy           | R     | DTS Coherent Acoustics core (ADPCM subbands, high-freq VQ, LFE FIR, 32-band QMF)|
+| `Codec.Mos6502`  | CPU core        | —     | reusable NMOS 6502 (official + stable illegal opcodes, BCD, cycle counting)     |
+| `Codec.Z80`      | CPU core        | —     | reusable full Z80 (CB/ED/DD/FD, block ops, IM 0/1/2)                            |
+| `Codec.Sid`      | Synthesis       | R     | MOS 6581/8580 (model-specific filters, reSID-style ADSR) + PSID player          |
+| `Codec.Spc700`   | Synthesis       | R     | SNES SPC700 CPU + S-DSP (gaussian, ADSR/GAIN, pitch-mod, FIR echo)              |
+| `Codec.Nes2a03`  | Synthesis       | R     | NES APU (duty/triangle/noise/DMC, nonlinear mixer) + NSF player                 |
+| `Codec.GameBoyApu`| Synthesis      | R     | SM83 CPU + GB APU (sweep, wave RAM, 7/15-bit noise) + GBS player                |
+| `Codec.Ay8910`   | Synthesis       | R     | AY-3-8910/YM2149 (10 envelope shapes, log DAC, ABC panning)                     |
+| `Codec.Sn76489`  | Synthesis       | R     | SEGA PSG (tone/noise LFSR, 2 dB attenuation, GG stereo)                         |
+| `Codec.Ym2612`   | Synthesis       | R     | OPN2 FM (genuine die log-sin/exp ROMs, 8 algorithms, DAC mode)                  |
 
 > **Honest scope note.** Most lossy / lossless codecs in this package decode but don't encode.
 > Writing a high-quality MP3 / AAC / Vorbis / Opus / FLAC encoder is a significant undertaking
@@ -173,7 +182,7 @@ State legend:
 | `FileFormat.Mpc`      | R     | Musepack SV8 — decoded channels (SV7 surfaced)                               |
 | `FileFormat.Adx`      | WORM  | CRI ADX (Sega) — encrypted/AHX falls back; assembles                         |
 | `FileFormat.Brr`      | WORM  | SNES BRR sample (loop-header tolerant); assembles                            |
-| `FileFormat.Spc`      | R     | SNES SPC700 dump — every ARAM BRR instrument as a WAV + ID666 tags           |
+| `FileFormat.Spc`      | R     | SNES SPC — full tune rendered to stereo 32 kHz WAV (SPC700+S-DSP) + every BRR instrument + ID666 |
 | `FileFormat.Xa`       | WORM  | CD-XA / PlayStation streaming audio — RIFF/CDXA + raw sectors; assembles     |
 | `FileFormat.Bcstm`    | WORM  | Nintendo 3DS stream (LE CSTM) over DSP-ADPCM; assembles                      |
 | `FileFormat.Bfstm`    | WORM  | WiiU/Switch stream (BE/LE by BOM) over DSP-ADPCM; assembles                  |
@@ -225,17 +234,17 @@ State legend:
 | `FileFormat.Dts`      | R     | raw DTS — core decodes to per-channel WAVs; DTS-HD extensions info-only      |
 | `FileFormat.Ac3`      | R     | raw AC-3 AND E-AC-3 independent substreams decode to per-channel WAVs        |
 | `FileFormat.Oma`      | R     | Sony OpenMG (.oma/.aa3) — ATRAC3 decodes to channels; 3plus/MP3/LPCM surfaced |
-| `FileFormat.Vgm`      | R     | VGM/VGZ — named chip clocks, GD3 tags (UTF-16), gzip transparent             |
+| `FileFormat.Vgm`      | R     | VGM/VGZ — renders via SN76489+YM2612 when covered; GD3 tags, gzip transparent |
 | `FileFormat.Mus`      | R     | DMX/Doom MUS — converted.mid (classic mapping)                               |
 | `FileFormat.Xmi`      | R     | Miles XMIDI — songs/NN.mid (duration-scheduled note-offs)                    |
 | `FileFormat.Cmf`      | R     | Creative CMF — OPL patches + music.mid SMF wrap                              |
-| `FileFormat.Nsf`      | R     | NES NSF/NSFE — expansion-chip flags, program/banks                           |
-| `FileFormat.Gbs`      | R     | Game Boy GBS                                                                 |
-| `FileFormat.Sid`      | R     | C64 PSID/RSID — clock + SID model detection                                  |
-| `FileFormat.Kss`      | R     | MSX KSS (KSCC/KSSX) — device flags                                           |
+| `FileFormat.Nsf`      | R     | NES NSF — renders to WAV via 6502+2A03 APU (incl. DMC); expansion chips noted |
+| `FileFormat.Gbs`      | R     | Game Boy GBS — renders to stereo WAV via SM83+APU (timer rates, banking)     |
+| `FileFormat.Sid`      | R     | C64 PSID — renders to WAV via 6502+SID (model-specific 6581/8580 filter); RSID surfaced |
+| `FileFormat.Kss`      | R     | MSX KSS — renders PSG to WAV via Z80+AY (SCC/FMPAC noted)                    |
 | `FileFormat.Hes`      | R     | PC Engine HES — MPR table + DATA blocks                                      |
-| `FileFormat.Gym`      | R     | Genesis GYM (GYMX) — packed-log aware, duration estimate                     |
-| `FileFormat.Ay`       | R     | ZX Spectrum AY — bounds-checked pointer-chased songs/blocks                  |
+| `FileFormat.Gym`      | R     | Genesis GYM — renders via YM2612+PSG (zlib-packed logs supported)            |
+| `FileFormat.Ay`       | R     | ZX Spectrum AY — renders to WAV via Z80+AY-3-8910                            |
 | `FileFormat.Alac`     | R     | Apple Lossless inside MP4 atoms — decoded per-channel WAVs via `Codec.Alac` |
 | `FileFormat.Ape`      | R     | Monkey's Audio (`.ape`) — decoded channels, all levels 1000-5000             |
 | `FileFormat.WavPack`  | R     | WavPack lossless / hybrid                                           |
