@@ -125,7 +125,7 @@ State legend:
 | `Codec.Atrac3`   | Lossy           | R     | Sony ATRAC3 (QMF tree, tonal components, joint stereo, RM descrambling)        |
 | `Codec.Ac3`      | Lossy           | R     | ATSC A/52 AC-3 + E-AC-3 (AHT/GAQ, variable blocks, half rates; SPX parsed)      |
 | `Codec.Wma`      | Lossy           | R     | WMA v1/v2 (LSP + VLC exponents, bit reservoir, noise coding)                    |
-| `Codec.Musepack` | Lossy           | R     | Musepack SV8 (mpc8 huffman set, 32-band polyphase)                              |
+| `Codec.Musepack` | Lossy           | R     | Musepack SV7 + SV8 (mpc7/mpc8 huffman sets, shared 32-band polyphase)           |
 | `Codec.WmaPro`   | Lossy           | R     | WMA 9 Professional (tile trees, 8-channel transforms, 24-bit, VBR)              |
 | `Codec.Sipr`     | Speech          | R     | RealAudio ACELP.NET (8k5/6k5/5k0 + postfilter; 16k unsupported)                 |
 | `Codec.Speex`    | Speech          | R     | Speex narrowband (all submodes) + wideband SB-CELP + intensity stereo           |
@@ -133,13 +133,29 @@ State legend:
 | `Codec.Dts`      | Lossy           | R     | DTS Coherent Acoustics core (ADPCM subbands, high-freq VQ, LFE FIR, 32-band QMF)|
 | `Codec.Mos6502`  | CPU core        | —     | reusable NMOS 6502 (official + stable illegal opcodes, BCD, cycle counting)     |
 | `Codec.Z80`      | CPU core        | —     | reusable full Z80 (CB/ED/DD/FD, block ops, IM 0/1/2)                            |
-| `Codec.Sid`      | Synthesis       | R     | MOS 6581/8580 (model-specific filters, reSID-style ADSR) + PSID player          |
+| `Codec.Sid`      | Synthesis       | R     | MOS 6581/8580/6582 (model-specific filters, reSID-style ADSR) + PSID player with 2SID/3SID bus routing |
 | `Codec.Spc700`   | Synthesis       | R     | SNES SPC700 CPU + S-DSP (gaussian, ADSR/GAIN, pitch-mod, FIR echo)              |
 | `Codec.Nes2a03`  | Synthesis       | R     | NES APU (duty/triangle/noise/DMC, nonlinear mixer) + NSF player                 |
 | `Codec.GameBoyApu`| Synthesis      | R     | SM83 CPU + GB APU (sweep, wave RAM, 7/15-bit noise) + GBS player                |
 | `Codec.Ay8910`   | Synthesis       | R     | AY-3-8910/YM2149 (10 envelope shapes, log DAC, ABC panning)                     |
 | `Codec.Sn76489`  | Synthesis       | R     | SEGA PSG (tone/noise LFSR, 2 dB attenuation, GG stereo)                         |
 | `Codec.Ym2612`   | Synthesis       | R     | OPN2 FM (genuine die log-sin/exp ROMs, 8 algorithms, DAC mode)                  |
+| `Codec.AdpcmX`   | ADPCM           | R     | ffmpeg ADPCM/DPCM pile: IMA DK3/DK4/EACS/SEAD, EA R1-R3, THP/AFC, SWF, 4XM, Xan, Interplay, SDX2, DERF, Gremlin |
+| `Codec.Atrac1`   | Lossy           | R     | Sony ATRAC1 / MiniDisc (BFU spectral decode, IMDCT, two-stage inverse QMF)      |
+| `Codec.Ra288`    | Speech          | R     | RealAudio 28.8 (G.728 hybrid-window backward LPC)                               |
+| `Codec.Ralf`     | Lossless        | R     | RealAudio Lossless (adaptive LPC + Golomb, 5 decorrelation modes)               |
+| `Codec.CriHca`   | Lossy           | R     | CRI HCA (ATH, ciphers 0/1, HFR, 128-band IMDCT; keyed cipher unsupported)       |
+| `Codec.Sbc`      | Lossy           | R     | Bluetooth SBC + mSBC (CRC-8 EBU, fixed-point 4/8-subband polyphase)             |
+| `Codec.Siren`    | Lossy           | R     | Polycom Siren7 / ITU G.722.1 (region categorization, SQVH, IMLT); Annex C absent|
+| `Codec.S302M`    | PCM (mapped)    | R/W   | SMPTE 302M AES3 subframes (bit-reversed 16/20/24-bit)                           |
+| `Codec.BinkAudio`| Lossy           | R     | Bink audio, RDFT + DCT flavours (band RLE, overlap-add)                         |
+| `Codec.SmackerAudio`| Lossy        | R     | Smacker SMKA (bitstream-built huffman trees, 8/16-bit delta)                    |
+| `Codec.WmaLossless`| Lossless      | R     | WMA Lossless 0x0163 (CDLMS/MCLMS adaptive prediction, AC filter, rawpcm)        |
+| `Codec.Xma`      | Lossy           | R     | XMA1/XMA2 packet/extradata layer over per-stream WMAPro (full decode gated)     |
+| `Codec.Qoa`      | Lossy (DPCM)    | R/W   | Quite OK Audio (sign-LMS slices) — decoder + faithful encoder                   |
+| `Codec.Dfpwm`    | Lossy (1-bit)   | R     | DFPWM1a (charge/strength integrator, anti-jerk, low-pass)                       |
+| `Codec.Bonk`     | Lossless/lossy  | R     | Bonk (Rice intlist, lattice predictor, mid-side)                                |
+| `Codec.WavArc`   | Lossless        | R     | WavArc .wa (0CPY/1DIF; adaptive-LPC block types gated)                          |
 
 > **Honest scope note.** Most lossy / lossless codecs in this package decode but don't encode.
 > Writing a high-quality MP3 / AAC / Vorbis / Opus / FLAC encoder is a significant undertaking
@@ -179,19 +195,19 @@ State legend:
 | `FileFormat.Sf2`      | R     | SoundFont 2 — every sample as a mono WAV at its own rate + INFO tags        |
 | `FileFormat.Dls`      | R     | Downloadable Sounds — `wvpl` waves rewrapped as standalone WAVs             |
 | `FileFormat.G711`     | WORM  | Raw G.711 (`.al` / `.ul`) — headerless A-law/µ-law @ 8 kHz; assembles       |
-| `FileFormat.Mpc`      | R     | Musepack SV8 — decoded channels (SV7 surfaced)                               |
-| `FileFormat.Adx`      | WORM  | CRI ADX (Sega) — encrypted/AHX falls back; assembles                         |
+| `FileFormat.Mpc`      | R     | Musepack SV7 ('MP+') AND SV8 ('MPCK') — decoded per-channel WAVs             |
+| `FileFormat.Adx`      | WORM  | CRI ADX (Sega) — AHX (MPEG-2 LSF L2) decodes to MONO.wav; encrypted falls back; assembles |
 | `FileFormat.Brr`      | WORM  | SNES BRR sample (loop-header tolerant); assembles                            |
 | `FileFormat.Spc`      | R     | SNES SPC — full tune rendered to stereo 32 kHz WAV (SPC700+S-DSP) + every BRR instrument + ID666 |
 | `FileFormat.Xa`       | WORM  | CD-XA / PlayStation streaming audio — RIFF/CDXA + raw sectors; assembles     |
 | `FileFormat.Bcstm`    | WORM  | Nintendo 3DS stream (LE CSTM) over DSP-ADPCM; assembles                      |
 | `FileFormat.Bfstm`    | WORM  | WiiU/Switch stream (BE/LE by BOM) over DSP-ADPCM; assembles                  |
-| `FileFormat.Ast`      | WORM  | GameCube/Wii AST — PCM16BE exact; AFC falls back; assembles                  |
+| `FileFormat.Ast`      | WORM  | GameCube/Wii AST — PCM16BE exact; AFC decodes per-channel; assembles         |
 | `FileFormat.Hps`      | WORM  | GameCube HALPST — linked DSP-ADPCM blocks; assembles                         |
 | `FileFormat.Bwav`     | WORM  | Switch BWAV — DSP-ADPCM/PCM16 per-channel; assembles                         |
 | `FileFormat.Swav`     | WORM  | Nintendo DS SWAV — PCM8/16 + IMA; assembles (PCM16)                          |
 | `FileFormat.Sdat`     | R     | Nintendo DS sound archive — SWAV/SWAR decoded, SSEQ/SBNK/STRM surfaced       |
-| `FileFormat.Xwb`      | R     | Microsoft XACT wave bank (v43+) — PCM + MS-ADPCM samples; XMA/WMA noted      |
+| `FileFormat.Xwb`      | R     | Microsoft XACT wave bank (v43+) — PCM + MS-ADPCM samples; XMA routed through `Codec.Xma` (graceful raw fallback) |
 | `FileFormat.EaSchl`   | WORM  | EA SCHl streams — PT-table parse, EA-XA blocks; assembles                    |
 | `FileFormat.Wem`      | R     | Audiokinetic Wwise media — Wwise-IMA/PCM decode; Wwise-Vorbis falls back     |
 | `FileFormat.Aica`     | WORM  | Yamaha AICA raw (Dreamcast); assembles                                       |
@@ -221,8 +237,8 @@ State legend:
 | `FileFormat.Amf`      | R     | DSMI AMF (v10-14) sample archive                                             |
 | `FileFormat.Psm`      | R     | Epic MASI PSM (DSMP delta) sample archive                                    |
 | `FileFormat.Dsf`+`Dff`| WORM  | (see above) DSD pair                                                         |
-| `FileFormat.Asf`      | R     | Microsoft ASF — depayloader; WMA v1/v2 + WMA Pro decode to channels; tags    |
-| `FileFormat.RealMedia`| R     | RealMedia — lpcJ, cook, atrc AND sipr decode to WAV channels; ralf surfaced  |
+| `FileFormat.Asf`      | R     | Microsoft ASF — depayloader; WMA v1/v2 + WMA Pro + WMA Lossless decode to channels; tags |
+| `FileFormat.RealMedia`| R     | RealMedia — lpcJ, cook, atrc, sipr, 28_8 AND ralf decode to WAV channels     |
 | `FileFormat.Acm`      | R     | Interplay ACM — decoded channels                                             |
 | `FileFormat.Nelly`    | R     | raw Nellymoser block stream — decoded MONO                                   |
 | `FileFormat.Aud`      | WORM  | Westwood AUD (C&C) — WS-ADPCM + IMA chunks; assembles                        |
@@ -240,7 +256,7 @@ State legend:
 | `FileFormat.Cmf`      | R     | Creative CMF — OPL patches + music.mid SMF wrap                              |
 | `FileFormat.Nsf`      | R     | NES NSF — renders to WAV via 6502+2A03 APU (incl. DMC); expansion chips noted |
 | `FileFormat.Gbs`      | R     | Game Boy GBS — renders to stereo WAV via SM83+APU (timer rates, banking)     |
-| `FileFormat.Sid`      | R     | C64 PSID — renders to WAV via 6502+SID (model-specific 6581/8580 filter); RSID surfaced |
+| `FileFormat.Sid`      | R     | C64 PSID — renders via 6502+SID: per-chip 6581/8580/6582 model flags, 2SID/3SID → LEFT/RIGHT/CENTER, unknown model renders both `_6581`/`_8580` legs; RSID surfaced |
 | `FileFormat.Kss`      | R     | MSX KSS — renders PSG to WAV via Z80+AY (SCC/FMPAC noted)                    |
 | `FileFormat.Hes`      | R     | PC Engine HES — MPR table + DATA blocks                                      |
 | `FileFormat.Gym`      | R     | Genesis GYM — renders via YM2612+PSG (zlib-packed logs supported)            |
@@ -258,6 +274,16 @@ State legend:
 | `FileFormat.It`       | R     | Impulse Tracker IT                                                  |
 | `FileFormat.WwiseBnk` | R     | Audiokinetic Wwise SoundBank (game audio)                           |
 | `FileFormat.Fmod`     | R     | FMOD bank container                                                 |
+| `FileFormat.Aea`      | R     | Sony MiniDisc AEA — ATRAC1 decoded to per-channel WAVs              |
+| `FileFormat.Hca`      | R     | CRI HCA — decoded channels (keyed cipher / MS-stereo degrade to FULL + note) |
+| `FileFormat.Sbc`      | R     | Raw Bluetooth SBC / mSBC stream — per-channel WAVs                  |
+| `FileFormat.Siren`    | R     | Raw Siren7 / G.722.1 (`.sir`/`.g7221`) — MONO.wav (Annex C noted)   |
+| `FileFormat.Bik`      | R     | Bink video — FULL.bik + raw VIDEO track + per-track decoded channel WAVs (Bink2 audio blob-only) |
+| `FileFormat.Smk`      | R     | Smacker video — FULL.smk + raw VIDEO track + per-track channel WAVs (SMKA + uncompressed PCM) |
+| `FileFormat.Qoa`      | R     | Quite OK Audio (`.qoa`) — decoded channels                          |
+| `FileFormat.Dfpwm`    | R     | DFPWM1a (`.dfpwm`, headerless, 48 kHz mono convention) — MONO.wav   |
+| `FileFormat.Bonk`     | R     | Bonk (`.bonk`, tag-scanned header) — decoded channels               |
+| `FileFormat.WavArc`   | R     | WavArc (`.wa`) — 0CPY/1DIF decode to channels; adaptive-LPC types FULL-only |
 
 ## Codec implementation reference
 
