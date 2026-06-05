@@ -86,6 +86,10 @@
     <ProjectReference Include="..\Codecs\Codec.Siren\Codec.Siren.csproj" />
     <ProjectReference Include="..\Codecs\Codec.S302M\Codec.S302M.csproj" />
     <ProjectReference Include="..\Codecs\Codec.CriHca\Codec.CriHca.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Qoa\Codec.Qoa.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Dfpwm\Codec.Dfpwm.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Bonk\Codec.Bonk.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.WavArc\Codec.WavArc.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
@@ -566,6 +570,10 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Sbc\FileFormat.Sbc.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Siren\FileFormat.Siren.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Hca\FileFormat.Hca.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Qoa\FileFormat.Qoa.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Dfpwm\FileFormat.Dfpwm.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Bonk\FileFormat.Bonk.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.WavArc\FileFormat.WavArc.csproj" />
   </ItemGroup>
 
 </Project>
