@@ -166,6 +166,7 @@
     <Project Path="Codecs/Codec.Sbc/Codec.Sbc.csproj" />
     <Project Path="Codecs/Codec.Siren/Codec.Siren.csproj" />
     <Project Path="Codecs/Codec.S302M/Codec.S302M.csproj" />
+    <Project Path="Codecs/Codec.CriHca/Codec.CriHca.csproj" />
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />
@@ -574,6 +575,7 @@
     <Project Path="FileFormats/FileFormat.Aea/FileFormat.Aea.csproj" />
     <Project Path="FileFormats/FileFormat.Sbc/FileFormat.Sbc.csproj" />
     <Project Path="FileFormats/FileFormat.Siren/FileFormat.Siren.csproj" />
+    <Project Path="FileFormats/FileFormat.Hca/FileFormat.Hca.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />

@@ -32,6 +32,12 @@ public static class AdxCodec {
   /// <summary>Standard ADX ADPCM encoding type (the only type this codec encodes/decodes).</summary>
   public const byte EncodingTypeStandard = 3;
 
+  /// <summary>AHX encoding type (MPEG-2 Layer II payload), version 10 — decoded by the MP3 path, not this codec.</summary>
+  public const byte EncodingTypeAhx = 0x10;
+
+  /// <summary>AHX encoding type (MPEG-2 Layer II payload), version 11 — decoded by the MP3 path, not this codec.</summary>
+  public const byte EncodingTypeAhx11 = 0x11;
+
   /// <summary>Bytes per ADX frame (1 channel): a 2-byte scale plus 32 4-bit nibbles.</summary>
   public const int FrameSize = 18;
 
@@ -57,6 +63,13 @@ public static class AdxCodec {
 
     /// <summary>True for standard ADX ADPCM (encoding type 3) — the only decodable form.</summary>
     public bool IsStandard => this.EncodingType == EncodingTypeStandard;
+
+    /// <summary>
+    /// True for AHX streams (encoding type 0x10 / 0x11): the payload after the header is an
+    /// MPEG-2 Layer II (22.05 kHz mono) elementary stream rather than ADX ADPCM. AHX is
+    /// decoded via the MP3 codec at the container layer, not by <see cref="AdxCodec"/>.
+    /// </summary>
+    public bool IsAhx => this.EncodingType is EncodingTypeAhx or EncodingTypeAhx11;
   }
 
   /// <summary>

@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using Codec.CriAdx;
+using Codec.Mp3;
 using Codec.Pcm;
 using Compression.Registry;
 using FileFormat.Wav;
@@ -126,6 +127,14 @@ public sealed class AdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // for encrypted / non-standard / malformed streams; either way keep FULL-only.
     try {
       var info = AdxCodec.ReadInfo(blob);
+
+      // AHX (encoding type 0x10/0x11): the payload after the ADX header is an MPEG-2
+      // Layer II (22.05 kHz mono) elementary stream — decode it via the MP3 codec.
+      if (info.IsAhx) {
+        AddAhxEntries(blob, info, entries);
+        return entries;
+      }
+
       var (samples, channels, sampleRate) = AdxCodec.Decode(blob);
       var pcm = ShortsToLePcm(samples);
       const int bitsPerSample = 16;
@@ -151,6 +160,50 @@ public sealed class AdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
 
     return entries;
+  }
+
+  /// <summary>
+  /// Surfaces a decoded AHX stream. The bytes after the ADX header form an MPEG-2 Layer II
+  /// (22.05 kHz mono) elementary stream; we feed them to the in-repo MP3 decoder, which
+  /// covers MPEG-2 LSF Layer II, and emit a MONO.wav plus metadata. Any decode failure
+  /// keeps the already-added FULL.adx and appends a metadata note.
+  /// </summary>
+  private static void AddAhxEntries(byte[] blob, AdxCodec.AdxInfo info, List<AudioPseudoArchive.Entry> entries) {
+    var meta = new StringBuilder();
+    meta.AppendLine($"encoding_type={info.EncodingType}");
+    meta.AppendLine("codec=ahx");
+    meta.AppendLine("payload=mpeg2-layer2");
+
+    var payload = info.DataOffset < blob.Length ? blob[info.DataOffset..] : [];
+    try {
+      var streamInfo = Mp3Codec.ReadStreamInfo(new MemoryStream(payload));
+      using var pcmStream = new MemoryStream();
+      Mp3Codec.Decompress(new MemoryStream(payload), pcmStream);
+      var pcm = pcmStream.ToArray();
+
+      if (pcm.Length == 0)
+        throw new InvalidDataException("AHX MPEG-2 Layer II payload decoded to no samples.");
+
+      var rate = streamInfo.SampleRate > 0 ? streamInfo.SampleRate : 22050;
+      var channels = streamInfo.Channels > 0 ? streamInfo.Channels : 1;
+      const int bitsPerSample = 16;
+
+      if (channels == 1) {
+        entries.Add(new("MONO.wav", "Channel",
+          PcmCodec.ToWavBlob(pcm, channels: 1, rate, bitsPerSample, formatCode: 1), "mp2"));
+      } else {
+        foreach (var (name, wav) in PcmCodec.SplitInterleavedPcm(pcm, channels, rate, bitsPerSample))
+          entries.Add(new($"{name}.wav", "Channel", wav, "mp2"));
+      }
+
+      meta.AppendLine($"sample_rate={rate}");
+      meta.AppendLine($"channels={channels}");
+    } catch (Exception) {
+      // MP3 decoder could not handle this AHX payload — keep FULL.adx and note it.
+      meta.AppendLine("note=AHX MPEG-2 Layer II payload could not be decoded; FULL.adx only.");
+    }
+
+    entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(meta.ToString())));
   }
 
   private static byte[] ShortsToLePcm(ReadOnlySpan<short> samples) {
