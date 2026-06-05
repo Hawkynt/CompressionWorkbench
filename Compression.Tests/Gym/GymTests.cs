@@ -91,4 +91,55 @@ public class GymTests {
     Assert.That(entries.Any(e => e.Name == "FULL.gym"), Is.True);
     Assert.That(entries.Any(e => e.Name == "log.bin" || e.Name == "log.z"), Is.False);
   }
+
+  // ──────────── rendering ────────────
+
+  private static short[] ReadWavLeftSamples(byte[] wav) {
+    var count = (wav.Length - 44) / 2;
+    var samples = new short[count];
+    for (var i = 0; i < count; ++i)
+      samples[i] = BinaryPrimitives.ReadInt16LittleEndian(wav.AsSpan(44 + i * 2, 2));
+    return samples;
+  }
+
+  [Test]
+  public void Render_PsgTone_ProducesLeftRightWavs() {
+    // PSG (0x03) writes program channel-0 tone, then frame waits (0x00) advance time.
+    var log = new List<byte>();
+    void Psg(byte b) { log.Add(0x03); log.Add(b); }
+    Psg((byte)(0x80 | 0x00));               // latch ch0 tone low nibble 0
+    Psg((byte)((0x100 >> 4) & 0x3F));       // data high → period 0x100
+    Psg((byte)(0x80 | 0x10 | 0x00));        // ch0 volume full
+    Psg((byte)(0x80 | (1 << 5) | 0x10 | 0x0F));
+    Psg((byte)(0x80 | (2 << 5) | 0x10 | 0x0F));
+    Psg((byte)(0x80 | (3 << 5) | 0x10 | 0x0F));
+    for (var f = 0; f < 30; ++f) log.Add(0x00); // 30 frames ≈ 0.5 s
+
+    var blob = BuildGym(log.ToArray(), packedSize: 0);
+    using var ms = new MemoryStream(blob);
+    var entries = new GymFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav" && e.Kind == "Channel"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "RIGHT.wav" && e.Kind == "Channel"), Is.True);
+
+    var samples = ReadWavLeftSamples(Bytes(blob, "LEFT.wav"));
+    var crossings = 0;
+    for (var i = 1; i < samples.Length; ++i)
+      if ((samples[i - 1] < 0 && samples[i] >= 0) || (samples[i - 1] >= 0 && samples[i] < 0))
+        ++crossings;
+    Assert.That(crossings, Is.GreaterThan(0), "a programmed PSG tone must oscillate");
+  }
+
+  [Test]
+  public void Render_PackedLog_IsInflatedAndRendered() {
+    var raw = new List<byte> { 0x03, (byte)(0x80 | 0x00), 0x03, (byte)((0x100 >> 4) & 0x3F),
+                               0x03, (byte)(0x80 | 0x10 | 0x00) };
+    for (var f = 0; f < 20; ++f) raw.Add(0x00);
+    var packed = Zlib(raw.ToArray());
+    var blob = BuildGym(packed, packedSize: (uint)raw.Count);
+
+    using var ms = new MemoryStream(blob);
+    var entries = new GymFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "log.z"), Is.True, "still surfaces the packed stream");
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True, "packed log is inflated then rendered");
+  }
 }

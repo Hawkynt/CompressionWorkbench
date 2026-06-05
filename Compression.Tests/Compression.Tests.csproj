@@ -120,6 +120,8 @@
     <ProjectReference Include="..\Codecs\Codec.WmaPro\Codec.WmaPro.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Sipr\Codec.Sipr.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Dts\Codec.Dts.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Sn76489\Codec.Sn76489.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Ym2612\Codec.Ym2612.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />

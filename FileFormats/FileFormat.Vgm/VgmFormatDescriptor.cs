@@ -3,6 +3,9 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.IO.Compression;
 using System.Text;
+using Codec.Pcm;
+using Codec.Sn76489;
+using Codec.Ym2612;
 using Compression.Registry;
 
 namespace FileFormat.Vgm;
@@ -16,6 +19,11 @@ namespace FileFormat.Vgm;
 /// <para>The VGM header is little-endian. Versions below 1.50 use a fixed 0x40-byte
 /// header; from 1.50 the data offset at <c>0x34</c> (relative to <c>0x34</c>) gives the
 /// start of the command log. GD3 lives at the relative offset stored at <c>0x14</c>.</para>
+/// <para>When every nonzero chip clock in the header is one this workbench can synthesise
+/// (currently SN76489 and/or YM2612), the command stream is executed and the rendered tune
+/// is surfaced as <c>LEFT.wav</c> / <c>RIGHT.wav</c> (stereo 44100 Hz, single pass — the loop
+/// point is not expanded — capped at 600 s). VGMs that also use unsupported chips keep the
+/// metadata-only view and note which chip blocked rendering.</para>
 /// Read-only — there is no synthesis back to a playable log.
 /// </summary>
 public sealed class VgmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
@@ -112,6 +120,10 @@ public sealed class VgmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var gd3 = TryBuildGd3Ini(blob, gd3Offset);
     if (gd3 != null)
       entries.Add(new("metadata/gd3.ini", "Tag", Encoding.UTF8.GetBytes(gd3)));
+
+    // Synthesise the tune when its chip set is fully covered.
+    if (dataOffset >= 0 && dataOffset < commandsEnd)
+      VgmRenderer.AddRenderedChannels(blob, version, totalSamples, dataOffset, commandsEnd, entries);
 
     return entries;
   }

@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using System.IO.Compression;
 using System.Text;
 using Compression.Registry;
 
@@ -16,6 +17,11 @@ namespace FileFormat.Gym;
 /// <c>log.bin</c>. The log is a stream of command bytes where <c>0x00</c> is a 1/60-second frame
 /// wait; counting those markers yields an approximate duration that is reported in the
 /// metadata.</para>
+/// <para>The log is also synthesised over the YM2612 + SN76489 cores (the chips a Genesis GYM
+/// records) and surfaced as <c>LEFT.wav</c>/<c>RIGHT.wav</c> (stereo 44100 Hz, capped at 600 s).
+/// The command grammar is <c>0x00</c> wait one 1/60 s frame, <c>0x01 aa dd</c> YM2612 port-0
+/// write, <c>0x02 aa dd</c> YM2612 port-1 write, <c>0x03 dd</c> PSG write. Packed logs are first
+/// inflated through <see cref="ZLibStream"/>.</para>
 /// Read-only; parsing degrades to FULL-only on malformed input.
 /// </summary>
 public sealed class GymFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
@@ -86,12 +92,14 @@ public sealed class GymFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     sb.AppendLine($"packed_size={packedSize}");
 
     var log = blob[HeaderSize..];
+    byte[] rawLog;
     if (packedSize != 0) {
       sb.AppendLine("compression=zlib");
       sb.AppendLine($"note=log is zlib-compressed; surfaced as log.z (packed_size={packedSize} bytes)");
       entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
       if (log.Length > 0)
         entries.Add(new("log.z", "Stream", log));
+      rawLog = TryInflate(log);
     } else {
       // Raw log: 0x00 bytes are 1/60s frame waits → duration estimate.
       var frames = 0L;
@@ -105,9 +113,27 @@ public sealed class GymFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
       if (log.Length > 0)
         entries.Add(new("log.bin", "Stream", log));
+      rawLog = log;
     }
 
+    // Synthesise the YM2612 + PSG log into per-channel WAVs.
+    if (rawLog.Length > 0)
+      GymRenderer.AddRenderedChannels(rawLog, entries);
+
     return entries;
+  }
+
+  /// <summary>Inflates a zlib-wrapped GYM log; returns an empty array if it can't be decoded.</summary>
+  private static byte[] TryInflate(byte[] packed) {
+    try {
+      using var input = new MemoryStream(packed);
+      using var z = new ZLibStream(input, CompressionMode.Decompress);
+      using var output = new MemoryStream();
+      z.CopyTo(output);
+      return output.ToArray();
+    } catch {
+      return [];
+    }
   }
 
   private static string ReadFixed(byte[] blob, int offset, int length) {
