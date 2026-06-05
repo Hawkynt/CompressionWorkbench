@@ -89,4 +89,58 @@ public class SidTests {
     Assert.That(entries.Any(e => e.Name == "FULL.sid"), Is.True);
     Assert.That(entries.Any(e => e.Name == "program.bin"), Is.False);
   }
+
+  // Builds a renderable PSID v2: init at load address sets up voice 1 (saw + gate), play = RTS.
+  private static byte[] BuildRenderablePsid(string magic, ushort flags) {
+    var program = new List<byte> { 0x00, 0x10 }; // loadAddr==0 → embedded LE load addr $1000
+    void Set(byte reg, byte value) { program.AddRange([0xA9, value, 0x8D, reg, 0xD4]); }
+    Set(0x00, 0x80); Set(0x01, 0x08); // some audible frequency
+    Set(0x06, 0xF0); Set(0x18, 0x0F); Set(0x04, 0x21);
+    program.Add(0x60);                // init RTS
+    while (program.Count < 2 + 0x40) program.Add(0xEA);
+    program.Add(0x60);                // play RTS at $1040
+
+    const int header = 0x7C;
+    var blob = new byte[header + program.Count];
+    Encoding.ASCII.GetBytes(magic).CopyTo(blob, 0);
+    BinaryPrimitives.WriteUInt16BigEndian(blob.AsSpan(0x04), 2);
+    BinaryPrimitives.WriteUInt16BigEndian(blob.AsSpan(0x06), header);
+    BinaryPrimitives.WriteUInt16BigEndian(blob.AsSpan(0x08), 0);       // loadAddr 0 → embedded
+    BinaryPrimitives.WriteUInt16BigEndian(blob.AsSpan(0x0A), 0x1000);  // init
+    BinaryPrimitives.WriteUInt16BigEndian(blob.AsSpan(0x0C), 0x1040);  // play
+    BinaryPrimitives.WriteUInt16BigEndian(blob.AsSpan(0x0E), 1);
+    BinaryPrimitives.WriteUInt16BigEndian(blob.AsSpan(0x10), 1);
+    BinaryPrimitives.WriteUInt16BigEndian(blob.AsSpan(0x76), flags);
+    program.CopyTo(blob, header);
+    return blob;
+  }
+
+  [Test]
+  public void Psid_RendersMonoWav() {
+    var blob = BuildRenderablePsid("PSID", 0x0014); // clock PAL, model 6581
+    using var ms = new MemoryStream(blob);
+    var entries = new SidFormatDescriptor().List(ms, null);
+
+    var mono = entries.FirstOrDefault(e => e.Name == "MONO.wav");
+    Assert.That(mono, Is.Not.Null, "PSID should surface a rendered MONO.wav");
+    Assert.That(mono!.Kind, Is.EqualTo("Channel"));
+
+    var wav = Bytes(blob, "MONO.wav");
+    Assert.That(wav.Length, Is.GreaterThan(44 + 1000));         // header + audio
+    Assert.That(Encoding.ASCII.GetString(wav, 0, 4), Is.EqualTo("RIFF"));
+
+    var ini = Meta(blob);
+    Assert.That(ini, Does.Contain("rendered_model=MOS6581"));
+    Assert.That(ini, Does.Contain("rendered_clock=PAL"));
+  }
+
+  [Test]
+  public void Rsid_DegradesWithoutMonoWav() {
+    var blob = BuildRenderablePsid("RSID", 0x0014);
+    using var ms = new MemoryStream(blob);
+    var entries = new SidFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "MONO.wav"), Is.False, "RSID must not render");
+    Assert.That(entries.Any(e => e.Name == "FULL.sid"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "program.bin"), Is.True);
+  }
 }
