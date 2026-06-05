@@ -1,6 +1,8 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Codec.Ay8910;
+using Codec.Pcm;
 using Compression.Registry;
 
 namespace FileFormat.Ay;
@@ -58,8 +60,11 @@ public sealed class AyFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
       new("FULL.ay", "Container", blob),
     };
 
+    var renderNote = new StringBuilder();
+    AddRenderedChannels(blob, entries, renderNote);
+
     try {
-      Parse(blob, entries);
+      Parse(blob, entries, renderNote.ToString());
     } catch {
       // Any parse failure degrades to FULL-only.
     }
@@ -67,7 +72,41 @@ public sealed class AyFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     return entries;
   }
 
-  private static void Parse(byte[] blob, List<AudioPseudoArchive.Entry> entries) {
+  /// <summary>
+  /// Plays the first song through the Z80 + AY-3-8910 player and surfaces rendered
+  /// <c>LEFT.wav</c> / <c>RIGHT.wav</c> (Kind <c>Channel</c>, 44.1 kHz, 30 s cap). Any failure
+  /// (unparsable song, no init) degrades silently to FULL + metadata only.
+  /// </summary>
+  private static void AddRenderedChannels(byte[] blob, List<AudioPseudoArchive.Entry> entries, StringBuilder note) {
+    try {
+      var player = new AyPlayer(blob, songIndex: 0);
+      const double seconds = 30.0;
+      var stereo = player.Render(seconds);
+      var (left, right) = DeinterleaveStereo(stereo);
+      entries.Add(new("LEFT.wav", "Channel", PcmCodec.ToWavBlob(left, 1, Ay8910Chip.OutputSampleRate, 16), "pcm"));
+      entries.Add(new("RIGHT.wav", "Channel", PcmCodec.ToWavBlob(right, 1, Ay8910Chip.OutputSampleRate, 16), "pcm"));
+      note.AppendLine("rendered=LEFT.wav,RIGHT.wav");
+      note.AppendLine("rendered_seconds=30");
+      note.AppendLine("rendered_rate=44100");
+      note.AppendLine("rendered_chip=AY-3-8910");
+      note.AppendLine("rendered_stereo=ABC");
+    } catch {
+      // Undecodable — FULL + metadata only.
+    }
+  }
+
+  private static (byte[] Left, byte[] Right) DeinterleaveStereo(short[] stereo) {
+    var frames = stereo.Length / 2;
+    var left = new byte[frames * 2];
+    var right = new byte[frames * 2];
+    for (var f = 0; f < frames; ++f) {
+      BinaryPrimitives.WriteInt16LittleEndian(left.AsSpan(f * 2), stereo[f * 2]);
+      BinaryPrimitives.WriteInt16LittleEndian(right.AsSpan(f * 2), stereo[f * 2 + 1]);
+    }
+    return (left, right);
+  }
+
+  private static void Parse(byte[] blob, List<AudioPseudoArchive.Entry> entries, string renderNote) {
     if (blob.Length < 0x14)
       return;
 
@@ -98,6 +137,9 @@ public sealed class AyFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
         ExtractSongBlocks(blob, pData, i, name, entries);
       }
     }
+
+    if (renderNote.Length > 0)
+      sb.Append(renderNote);
 
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
   }

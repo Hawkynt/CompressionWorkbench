@@ -112,4 +112,96 @@ public class AyTests {
     Assert.That(entries.Any(e => e.Name == "FULL.ay"), Is.True);
     Assert.That(entries.Any(e => e.Kind == "Stream"), Is.False);
   }
+
+  // ── player end-to-end ────────────────────────────────────────────────────────
+
+  // Builds a runnable AY whose init routine programs AY tone A (period + volume + mixer) via
+  // OUT to $FFFD/$BFFD, and whose interrupt routine is a bare RET.
+  private static byte[] BuildRenderableAy() {
+    // We place the Z80 code, the points block and the block list inside one file, then load
+    // the code into RAM at $C000 via a single memory block.
+    var b = new byte[0x100];
+    "ZXAYEMUL"u8.CopyTo(b);
+    b[0x08] = 0; b[0x09] = 0;
+    WritePtr(b, 0x0A, 0x0A);
+    WritePtr(b, 0x0C, 0x0C); // author empty
+    WritePtr(b, 0x0E, 0x0E); // misc empty
+    b[0x10] = 0; // 1 song
+    b[0x11] = 0;
+    WritePtr(b, 0x12, 0x14); // song table
+
+    // song table entry 0
+    WritePtr(b, 0x14, 0x18); // name → (we point into a small string)
+    WritePtr(b, 0x16, 0x20); // pData → song-data struct at 0x20
+
+    // a tiny name at 0x18
+    Encoding.ASCII.GetBytes("T").CopyTo(b, 0x18);
+
+    // song-data struct at 0x20 (14 bytes): +10 points, +12 addresses
+    WritePtr(b, 0x20 + 10, 0x40); // pPoints → 0x40
+    WritePtr(b, 0x20 + 12, 0x50); // pAddresses → 0x50
+
+    // points block at 0x40: stack(2), init(2), interrupt(2) — all big-endian values
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x40), 0xFF00); // SP
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x42), 0xC000); // init addr
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x44), 0xC020); // interrupt addr (a RET)
+
+    // Z80 code we will load at $C000.
+    // init: select reg 0, write fine period; reg 1 coarse; reg 8 volume; reg 7 mixer; RET.
+    var code = new List<byte>();
+    void OutPsg(byte reg, byte value) {
+      // LD A,reg ; LD BC,$FFFD ; OUT (C),A  (select) ; LD A,value ; LD BC,$BFFD ; OUT (C),A
+      code.AddRange([0x3E, reg, 0x01, 0xFD, 0xFF, 0xED, 0x79]);
+      code.AddRange([0x3E, value, 0x01, 0xFD, 0xBF, 0xED, 0x79]);
+    }
+    OutPsg(0x00, 0x00); // tone A fine
+    OutPsg(0x01, 0x01); // tone A coarse → period $100
+    OutPsg(0x08, 0x0F); // channel A full volume
+    OutPsg(0x07, 0xFE); // mixer: tone A enabled
+    code.Add(0xC9);     // RET (init done)
+    // The interrupt routine sits at $C020: just RET. Pad to offset 0x20 within the block.
+    while (code.Count < 0x20) code.Add(0x00);
+    code.Add(0xC9);     // RET at $C020
+
+    var codeArr = code.ToArray();
+
+    // block list at 0x50: addr=$C000, len=code, pData→0x60
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x50), 0xC000);
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x52), (ushort)codeArr.Length);
+    WritePtr(b, 0x54, 0x60); // pData → code at 0x60
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x56), 0); // terminator addr
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x58), 0);
+
+    var full = new byte[0x60 + codeArr.Length];
+    Array.Copy(b, full, 0x60);
+    codeArr.CopyTo(full, 0x60);
+    return full;
+  }
+
+  [Test]
+  public void Player_RendersStereoTone() {
+    var blob = BuildRenderableAy();
+    using var ms = new MemoryStream(blob);
+    var entries = new AyFormatDescriptor().List(ms, null);
+
+    var left = entries.FirstOrDefault(e => e.Name == "LEFT.wav");
+    var right = entries.FirstOrDefault(e => e.Name == "RIGHT.wav");
+    Assert.That(left, Is.Not.Null, "AY should surface a rendered LEFT.wav");
+    Assert.That(right, Is.Not.Null, "AY should surface a rendered RIGHT.wav");
+    Assert.That(left!.Kind, Is.EqualTo("Channel"));
+
+    var wav = Bytes(blob, "LEFT.wav");
+    Assert.That(wav.Length, Is.GreaterThan(44 + 10000));
+    Assert.That(Encoding.ASCII.GetString(wav, 0, 4), Is.EqualTo("RIFF"));
+
+    // Tone A pans to the left in ABC mode; the left channel must carry audio.
+    var peak = 0;
+    for (var i = 44; i + 1 < wav.Length; i += 2)
+      peak = Math.Max(peak, Math.Abs(BinaryPrimitives.ReadInt16LittleEndian(wav.AsSpan(i))));
+    Assert.That(peak, Is.GreaterThan(0), "the rendered tone must be audible on the left channel");
+
+    var ini = Meta(blob);
+    Assert.That(ini, Does.Contain("rendered_chip=AY-3-8910"));
+    Assert.That(ini, Does.Contain("rendered_stereo=ABC"));
+  }
 }

@@ -87,4 +87,72 @@ public class KssTests {
     Assert.That(entries.Any(e => e.Name == "FULL.kss"), Is.True);
     Assert.That(entries.Any(e => e.Name == "program.bin"), Is.False);
   }
+
+  // ── player end-to-end ────────────────────────────────────────────────────────
+
+  // Builds a runnable KSS whose init writes MSX PSG regs (tone A) via OUT to $A0/$A1, play=RET.
+  private static byte[] BuildRenderableKss(byte deviceFlags = 0x00) {
+    const ushort loadAddr = 0x9000;
+
+    var code = new List<byte>();
+    void OutPsg(byte reg, byte value) {
+      // LD A,reg ; OUT ($A0),A ; LD A,value ; OUT ($A1),A
+      code.AddRange([0x3E, reg, 0xD3, 0xA0]);
+      code.AddRange([0x3E, value, 0xD3, 0xA1]);
+    }
+    OutPsg(0x00, 0x00); // tone A fine
+    OutPsg(0x01, 0x01); // tone A coarse → period $100
+    OutPsg(0x08, 0x0F); // channel A volume
+    OutPsg(0x07, 0xFE); // mixer: tone A enabled
+    code.Add(0xC9);     // RET (init)
+    var initLen = code.Count;
+    code.Add(0xC9);     // play: RET, right after init
+
+    var codeArr = code.ToArray();
+    var initAddr = loadAddr;
+    var playAddr = (ushort)(loadAddr + initLen);
+
+    var blob = new byte[0x10 + codeArr.Length];
+    blob[0] = 0x4B; blob[1] = 0x53; blob[2] = 0x43; blob[3] = 0x43; // KSCC
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x04), loadAddr);
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x06), (ushort)codeArr.Length);
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x08), initAddr);
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x0A), playAddr);
+    blob[0x0F] = deviceFlags;
+    codeArr.CopyTo(blob, 0x10);
+    return blob;
+  }
+
+  [Test]
+  public void Player_RendersStereoTone() {
+    var blob = BuildRenderableKss();
+    using var ms = new MemoryStream(blob);
+    var entries = new KssFormatDescriptor().List(ms, null);
+
+    var left = entries.FirstOrDefault(e => e.Name == "LEFT.wav");
+    Assert.That(left, Is.Not.Null, "KSS should surface a rendered LEFT.wav");
+    Assert.That(left!.Kind, Is.EqualTo("Channel"));
+
+    var wav = Bytes(blob, "LEFT.wav");
+    Assert.That(Encoding.ASCII.GetString(wav, 0, 4), Is.EqualTo("RIFF"));
+    var peak = 0;
+    for (var i = 44; i + 1 < wav.Length; i += 2)
+      peak = Math.Max(peak, Math.Abs(BinaryPrimitives.ReadInt16LittleEndian(wav.AsSpan(i))));
+    Assert.That(peak, Is.GreaterThan(0), "the rendered PSG tone must be audible");
+
+    var ini = Meta(blob);
+    Assert.That(ini, Does.Contain("rendered_chip=PSG"));
+  }
+
+  [Test]
+  public void Player_DeviceFlagged_RendersPsgWithNote() {
+    var blob = BuildRenderableKss(deviceFlags: 0x02); // SCC enabled
+    using var ms = new MemoryStream(blob);
+    var entries = new KssFormatDescriptor().List(ms, null);
+
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True, "PSG is still rendered even with extra devices");
+    var ini = Meta(blob);
+    Assert.That(ini, Does.Contain("rendered_note="));
+    Assert.That(ini, Does.Contain("not synthesised"));
+  }
 }

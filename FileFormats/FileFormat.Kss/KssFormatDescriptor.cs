@@ -1,6 +1,8 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Codec.Ay8910;
+using Codec.Pcm;
 using Compression.Registry;
 
 namespace FileFormat.Kss;
@@ -104,12 +106,50 @@ public sealed class KssFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       payloadOffset = CoreHeaderSize + extraHeaderLen;
     }
 
+    AddRenderedChannels(blob, entries, sb, deviceFlags);
+
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
 
     if (blob.Length > payloadOffset)
       entries.Add(new("program.bin", "Stream", blob[payloadOffset..]));
 
     return entries;
+  }
+
+  /// <summary>
+  /// Plays the first song through the Z80 + MSX PSG player and surfaces rendered
+  /// <c>LEFT.wav</c> / <c>RIGHT.wav</c> (Kind <c>Channel</c>, 44.1 kHz, 30 s cap). When the
+  /// header enables a chip beyond the PSG (FMPAC/SCC/MSX-AUDIO), only the PSG voices are
+  /// rendered and a note records that. Failure degrades silently to FULL + metadata only.
+  /// </summary>
+  private static void AddRenderedChannels(byte[] blob, List<AudioPseudoArchive.Entry> entries, StringBuilder sb, byte deviceFlags) {
+    try {
+      var player = new KssPlayer(blob, songIndex: 0);
+      const double seconds = 30.0;
+      var stereo = player.Render(seconds);
+      var (left, right) = DeinterleaveStereo(stereo);
+      entries.Add(new("LEFT.wav", "Channel", PcmCodec.ToWavBlob(left, 1, Ay8910Chip.OutputSampleRate, 16), "pcm"));
+      entries.Add(new("RIGHT.wav", "Channel", PcmCodec.ToWavBlob(right, 1, Ay8910Chip.OutputSampleRate, 16), "pcm"));
+      sb.AppendLine("rendered=LEFT.wav,RIGHT.wav");
+      sb.AppendLine("rendered_seconds=30");
+      sb.AppendLine("rendered_rate=44100");
+      sb.AppendLine("rendered_chip=PSG (AY-3-8910 compatible)");
+      if (deviceFlags != 0)
+        sb.AppendLine("rendered_note=PSG voices only; extra devices (FMPAC/SCC/MSX-AUDIO) not synthesised");
+    } catch {
+      // Undecodable — FULL + metadata only.
+    }
+  }
+
+  private static (byte[] Left, byte[] Right) DeinterleaveStereo(short[] stereo) {
+    var frames = stereo.Length / 2;
+    var left = new byte[frames * 2];
+    var right = new byte[frames * 2];
+    for (var f = 0; f < frames; ++f) {
+      BinaryPrimitives.WriteInt16LittleEndian(left.AsSpan(f * 2), stereo[f * 2]);
+      BinaryPrimitives.WriteInt16LittleEndian(right.AsSpan(f * 2), stereo[f * 2 + 1]);
+    }
+    return (left, right);
   }
 
   /// <summary>Decodes the KSS device-flags byte into the enabled sound chips.</summary>
