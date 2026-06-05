@@ -1,19 +1,23 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Codec.GameBoyApu;
+using Codec.Pcm;
 using Compression.Registry;
 
 namespace FileFormat.Gbs;
 
 /// <summary>
 /// Surfaces a Game Boy Sound file (<c>.gbs</c>) as a metadata-rich pseudo-archive. GBS carries
-/// a Game Boy CPU (LR35902) program that drives the DMG sound hardware; there is no audio to
-/// decode, so the program image is surfaced verbatim as a Kind <c>Stream</c> blob.
+/// a Game Boy CPU (LR35902/SM83) program that drives the DMG sound hardware. The program image
+/// is surfaced verbatim as a Kind <c>Stream</c> blob, and the first song is emulated (SM83 core
+/// + register-level Game Boy APU synthesis) and rendered to playable per-side <c>LEFT.wav</c> /
+/// <c>RIGHT.wav</c> (44100 Hz, 16-bit), honouring the header's timer-driven or VBlank play rate.
 /// <para>Layout: a 0x70-byte header (magic <c>GBS</c> + version 1, song counts, the
 /// load/init/play vectors, stack pointer, timer modulo/control bytes, and three 32-byte
 /// title/author/copyright strings) followed by the program loaded at <c>loadAddr</c>. The
 /// program is surfaced as <c>program.bin</c>.</para>
-/// Read-only; parsing degrades to FULL-only on malformed input.
+/// Read-only; parsing degrades to header/program-only on malformed input or unsupported tunes.
 /// </summary>
 public sealed class GbsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 
@@ -84,12 +88,61 @@ public sealed class GbsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     AppendField(sb, "title", title);
     AppendField(sb, "author", author);
     AppendField(sb, "copyright", copyright);
+
+    // Render the first song to a playable stereo pair. The init A register is 0-based, so the
+    // 1-based header firstSong maps to (firstSong - 1). Any failure (unsupported player path,
+    // malformed program) degrades silently to the existing header/program-only behaviour.
+    var song = firstSong < 1 ? 0 : firstSong - 1;
+    var rendered = TryRender(blob, song);
+    if (rendered is { } r) {
+      sb.AppendLine($"rendered_duration={RenderSeconds:0.#}s");
+      sb.AppendLine($"rendered_rate={r.FrameRateHz:0.##}Hz");
+      sb.AppendLine($"rendered_channels=stereo");
+      sb.AppendLine($"rendered_sample_rate={OutputSampleRate}");
+    }
+
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
+
+    if (rendered is { } w) {
+      entries.Add(new("LEFT.wav", "Channel",
+        PcmCodec.ToWavBlob(w.Left, channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1), "gbs"));
+      entries.Add(new("RIGHT.wav", "Channel",
+        PcmCodec.ToWavBlob(w.Right, channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1), "gbs"));
+    }
 
     if (blob.Length > HeaderSize)
       entries.Add(new("program.bin", "Stream", blob[HeaderSize..]));
 
     return entries;
+  }
+
+  /// <summary>Output sample rate for the rendered LEFT/RIGHT WAVs.</summary>
+  private const int OutputSampleRate = 44100;
+
+  /// <summary>
+  /// Maximum rendered duration. Bounded at 30 seconds so a long or non-terminating tune still
+  /// yields a reasonable, quickly-produced preview.
+  /// </summary>
+  private const double RenderSeconds = 30.0;
+
+  /// <summary>
+  /// Renders the chosen song to per-side 16-bit mono LE PCM, or null on any failure.
+  /// </summary>
+  private static (byte[] Left, byte[] Right, double FrameRateHz)? TryRender(byte[] blob, int song) {
+    try {
+      var player = new GbsPlayer(blob, song, OutputSampleRate);
+      var stereo = player.Render(RenderSeconds);
+      var frames = stereo.Length / 2;
+      var left = new byte[frames * 2];
+      var right = new byte[frames * 2];
+      for (var f = 0; f < frames; ++f) {
+        BinaryPrimitives.WriteInt16LittleEndian(left.AsSpan(f * 2), stereo[f * 2]);
+        BinaryPrimitives.WriteInt16LittleEndian(right.AsSpan(f * 2), stereo[f * 2 + 1]);
+      }
+      return (left, right, player.FrameRateHz);
+    } catch {
+      return null;
+    }
   }
 
   private static string ReadFixed(byte[] blob, int offset, int length) {

@@ -154,6 +154,7 @@
     <Project Path="Codecs/Codec.Nes2a03/Codec.Nes2a03.csproj" />
     <Project Path="Codecs/Codec.Z80/Codec.Z80.csproj" />
     <Project Path="Codecs/Codec.Ay8910/Codec.Ay8910.csproj" />
+    <Project Path="Codecs/Codec.GameBoyApu/Codec.GameBoyApu.csproj" />
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />

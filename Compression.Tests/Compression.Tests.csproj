@@ -128,6 +128,7 @@
     <ProjectReference Include="..\Codecs\Codec.Nes2a03\Codec.Nes2a03.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Z80\Codec.Z80.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Ay8910\Codec.Ay8910.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.GameBoyApu\Codec.GameBoyApu.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
