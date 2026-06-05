@@ -9,6 +9,7 @@
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Brr\Codec.Brr.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Pcm\Codec.Pcm.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Spc700\Codec.Spc700.csproj" />
   </ItemGroup>
 
 </Project>

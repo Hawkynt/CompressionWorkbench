@@ -69,6 +69,7 @@
     <ProjectReference Include="..\Codecs\Codec.Ym2612\Codec.Ym2612.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Mos6502\Codec.Mos6502.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Sid\Codec.Sid.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Spc700\Codec.Spc700.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />

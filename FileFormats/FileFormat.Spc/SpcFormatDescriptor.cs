@@ -3,14 +3,17 @@ using System.Buffers.Binary;
 using System.Text;
 using Codec.Brr;
 using Codec.Pcm;
+using Codec.Spc700;
 using Compression.Registry;
 
 namespace FileFormat.Spc;
 
 /// <summary>
 /// Exposes an SPC700 sound-file save-state (<c>.spc</c>) as a pseudo-archive: <c>FULL.spc</c>
-/// (the byte-exact save state), the ID666 tag block as <c>metadata.ini</c>, and one decoded
-/// mono WAV per extractable BRR sample (<c>samples/NN.wav</c>, 32000 Hz).
+/// (the byte-exact save state), the ID666 tag block as <c>metadata.ini</c>, one decoded mono
+/// WAV per extractable BRR sample (<c>samples/NN.wav</c>, 32000 Hz), and — when the tune can be
+/// emulated — the rendered stereo song as <c>LEFT.wav</c> / <c>RIGHT.wav</c> (32000 Hz). The
+/// render boots the SPC700 CPU and S-DSP from the snapshot (see <c>Codec.Spc700</c>).
 /// <para>An SPC file is a 0x10180-byte snapshot of the SNES audio subsystem: a 33-byte
 /// signature, an ID666 tag block at <c>0x2E</c>, the 64&#160;KB APU RAM (ARAM) at
 /// <c>0x100</c>, and the 128 S-DSP registers at <c>0x10100</c>. Samples are located via the
@@ -72,8 +75,13 @@ public sealed class SpcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       new("FULL.spc", "Container", blob),
     };
 
+    // Render the tune to stereo (best-effort; failure leaves the rest of the archive intact).
+    var renderInfo = RenderChannels(blob, entries);
+
     // ID666 tags (best-effort; absent or unparsable → skip).
     var ini = BuildMetadataIni(blob);
+    if (renderInfo is { } info)
+      ini += $"rendered_seconds={info.Seconds}\nrendered_source={(info.FromTag ? "id666" : "default")}\n";
     if (ini.Length > 0)
       entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(ini)));
 
@@ -85,6 +93,27 @@ public sealed class SpcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
 
     return entries;
+  }
+
+  /// <summary>
+  /// Boots the SPC700 + S-DSP from the snapshot and surfaces the rendered song as
+  /// <c>LEFT.wav</c> / <c>RIGHT.wav</c>. Any failure (short blob, emulation error) leaves the
+  /// pseudo-archive at its sample-only behaviour and returns <see langword="null"/>.
+  /// </summary>
+  private static (int Seconds, bool FromTag)? RenderChannels(byte[] blob, List<AudioPseudoArchive.Entry> entries) {
+    if (blob.Length < DspOffset + DspSize)
+      return null;
+    try {
+      var player = new SpcPlayer(blob);
+      var (left, right) = player.RenderStereoChannels();
+      entries.Add(new("LEFT.wav", "Channel",
+        PcmCodec.ToWavBlob(left, channels: 1, SampleRate, bitsPerSample: 16, formatCode: 1), "spc700"));
+      entries.Add(new("RIGHT.wav", "Channel",
+        PcmCodec.ToWavBlob(right, channels: 1, SampleRate, bitsPerSample: 16, formatCode: 1), "spc700"));
+      return (player.DurationSeconds, player.DurationFromTag);
+    } catch {
+      return null;
+    }
   }
 
   /// <summary>
