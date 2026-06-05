@@ -192,6 +192,56 @@ public class RealMediaTests {
     Assert.That(siprE.Count(e => e.Kind == "Channel"), Is.AnyOf(0, 1));
   }
 
+  [Test]
+  public void Rmf_Ra288Audio_SurfacesDecodedMonoWav() {
+    // Three 38-byte RA 28.8 frames (Int0 framing) → 3 × 160 = 480 samples → mono 8 kHz WAV.
+    var rm = BuildRa288Rmf(frames: 3);
+    var entries = new RealMediaFormatDescriptor().List(new MemoryStream(rm), null);
+
+    Assert.That(entries.Any(e => e.Name == "streams/stream_00.bin" && e.Method == "28_8"), Is.True);
+
+    var wavEntry = entries.FirstOrDefault(e => e.Name == "streams/stream_00.MONO.wav" && e.Kind == "Channel");
+    Assert.That(wavEntry, Is.Not.Null);
+
+    using var wavStream = new MemoryStream();
+    new RealMediaFormatDescriptor().ExtractEntry(new MemoryStream(rm), "streams/stream_00.MONO.wav", wavStream, null);
+    var wav = wavStream.ToArray();
+    Assert.That(Encoding.ASCII.GetString(wav, 0, 4), Is.EqualTo("RIFF"));
+    Assert.That(wav.Length, Is.EqualTo(44 + 480 * 2));
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24)), Is.EqualTo(8000u));
+  }
+
+  [Test]
+  public void Rmf_RalfAudio_DecodesOrDegradesGracefully() {
+    // A "ralf" stream with valid LSD: extradata but a tiny synthetic payload. Decoding must never
+    // throw; either it yields channel WAVs or it degrades to the blob-only view.
+    var rm = BuildRalfRmf(channels: 1, sampleRate: 44100);
+    List<Compression.Registry.ArchiveEntryInfo> entries = null!;
+    Assert.That(() => entries = new RealMediaFormatDescriptor().List(new MemoryStream(rm), null), Throws.Nothing);
+
+    Assert.That(entries.Any(e => e.Name == "streams/stream_00.bin" && e.Method == "ralf"), Is.True);
+    Assert.That(entries.Count(e => e.Kind == "Channel"), Is.AnyOf(0, 1));
+  }
+
+  [Test]
+  public void SixDecoderPaths_Ra288AndRalf_AreWiredIndependently() {
+    // The new 28_8 and ralf paths must not disturb the existing four (lpcJ/cook/atrc/sipr): each
+    // codec only fires for its own FOURCC, and the blob is always surfaced.
+    var ra288 = BuildRa288Rmf(frames: 2);
+    var ra288E = new RealMediaFormatDescriptor().List(new MemoryStream(ra288), null);
+    Assert.That(ra288E.Any(e => e.Name == "streams/stream_00.MONO.wav" && e.Kind == "Channel"), Is.True);
+    Assert.That(ra288E.Any(e => e.Name == "streams/stream_00.bin" && e.Method == "28_8"), Is.True);
+
+    var ralf = BuildRalfRmf(channels: 1, sampleRate: 44100);
+    var ralfE = new RealMediaFormatDescriptor().List(new MemoryStream(ralf), null);
+    Assert.That(ralfE.Any(e => e.Name == "streams/stream_00.bin" && e.Method == "ralf"), Is.True);
+
+    // The lpcJ path must still work and must NOT be triggered by the 28_8 / ralf streams.
+    var lpcj = BuildRmfWithLpcJ(new byte[40]);
+    var lpcjE = new RealMediaFormatDescriptor().List(new MemoryStream(lpcj), null);
+    Assert.That(lpcjE.Any(e => e.Name == "streams/stream_00.MONO.wav"), Is.True);
+  }
+
   // ── synthetic builders ──────────────────────────────────────────────────────
 
   private static byte[] BuildRmf() {
@@ -645,6 +695,103 @@ public class RealMediaTests {
     full.Write(rebuilt);
     full.Write(new byte[subPacketSize * numSubPackets]); // all-zero sub-packets
     return full.ToArray();
+  }
+
+  private static byte[] BuildRa288Rmf(int frames) {
+    using var ms = new MemoryStream();
+    WriteChunk(ms, ".RMF", inner => { WriteU16BE(inner, 0); WriteU32BE(inner, 0); WriteU32BE(inner, 3); });
+
+    WriteChunk(ms, "MDPR", inner => {
+      WriteU16BE(inner, 0); WriteU16BE(inner, 0);
+      WriteU32BE(inner, 28800); WriteU32BE(inner, 28800);
+      WriteU32BE(inner, 600); WriteU32BE(inner, 600);
+      WriteU32BE(inner, 0); WriteU32BE(inner, 0); WriteU32BE(inner, 10000);
+      WriteByteLen(inner, "Audio Stream");
+      WriteByteLen(inner, "audio/x-pn-realaudio");
+      var ts = BuildRa288RaV5Header();
+      WriteU32BE(inner, (uint)ts.Length);
+      inner.Write(ts);
+    });
+
+    WriteChunk(ms, "DATA", inner => {
+      WriteU16BE(inner, 0);
+      WriteU32BE(inner, (uint)frames);
+      WriteU32BE(inner, 0);
+      for (var i = 0; i < frames; ++i)
+        WritePacket(inner, streamNumber: 0, payload: new byte[38]); // all-zero 38-byte frames
+    });
+
+    return ms.ToArray();
+  }
+
+  private static byte[] BuildRa288RaV5Header() {
+    using var ms = new MemoryStream();
+    ms.Write([0x2E, 0x72, 0x61, 0xFD]);   // ".ra\xFD"
+    WriteU16BE(ms, 5);                     // +4 version
+    WriteU16BE(ms, 0);                     // +6 unused
+    ms.Write(Encoding.ASCII.GetBytes(".ra5"));
+    WriteU32BE(ms, 0);                     // data size
+    WriteU16BE(ms, 5);                     // version2
+    WriteU32BE(ms, 0);                     // header size
+    WriteU16BE(ms, 0);                     // flavor
+    WriteU32BE(ms, 38);                    // coded_framesize (RA 28.8 frame = 38 bytes)
+    WriteU32BE(ms, 0);                     // ???
+    WriteU32BE(ms, 28800);                 // bytes_per_minute
+    WriteU32BE(ms, 0);                     // ???
+    WriteU16BE(ms, 1);                     // sub_packet_h = 1 → flat (Int0-style) framing
+    WriteU16BE(ms, 38);                    // frame size
+    WriteU16BE(ms, 38);                    // sub_packet_size
+    WriteU16BE(ms, 0);                     // ???
+    WriteU16BE(ms, 0); WriteU16BE(ms, 0); WriteU16BE(ms, 0); // v5 triple u16
+    WriteU16BE(ms, 8000);                  // sample rate
+    WriteU32BE(ms, 0);                     // ???
+    WriteU16BE(ms, 1);                     // channels (mono)
+    ms.Write([(byte)'I', (byte)'n', (byte)'t', (byte)'0']); // deint id (LE) "Int0"
+    ms.Write(Encoding.ASCII.GetBytes("28_8")); // codec tag
+    WriteU16BE(ms, 0); ms.WriteByte(0); ms.WriteByte(0);
+    WriteU32BE(ms, 0);                     // no extradata
+    return ms.ToArray();
+  }
+
+  private static byte[] BuildRalfRmf(int channels, int sampleRate) {
+    using var ms = new MemoryStream();
+    WriteChunk(ms, ".RMF", inner => { WriteU16BE(inner, 0); WriteU32BE(inner, 0); WriteU32BE(inner, 3); });
+
+    WriteChunk(ms, "MDPR", inner => {
+      WriteU16BE(inner, 0); WriteU16BE(inner, 0);
+      WriteU32BE(inner, 128000); WriteU32BE(inner, 128000);
+      WriteU32BE(inner, 600); WriteU32BE(inner, 600);
+      WriteU32BE(inner, 0); WriteU32BE(inner, 0); WriteU32BE(inner, 10000);
+      WriteByteLen(inner, "Audio Stream");
+      WriteByteLen(inner, "audio/x-pn-realaudio");
+      var ts = BuildRalfTypeSpecific(channels, sampleRate);
+      WriteU32BE(inner, (uint)ts.Length);
+      inner.Write(ts);
+    });
+
+    WriteChunk(ms, "DATA", inner => {
+      WriteU16BE(inner, 0);
+      WriteU32BE(inner, 1);
+      WriteU32BE(inner, 0);
+      // A minimal packet: 2-byte table_size = 0 → no blocks → graceful empty decode.
+      WritePacket(inner, streamNumber: 0, payload: [0x00, 0x00, 0x00, 0x00, 0x00]);
+    });
+
+    return ms.ToArray();
+  }
+
+  private static byte[] BuildRalfTypeSpecific(int channels, int sampleRate) {
+    // The "ralf" FOURCC for the scan, plus the "LSD:" extradata the codec parses.
+    using var ms = new MemoryStream();
+    ms.Write(Encoding.ASCII.GetBytes("ralf"));
+    ms.Write(Encoding.ASCII.GetBytes("LSD:"));
+    WriteU16BE(ms, 0x103);                 // version
+    WriteU16BE(ms, 0);                     // reserved
+    WriteU16BE(ms, (ushort)channels);      // channels
+    WriteU16BE(ms, 0);                     // reserved
+    WriteU32BE(ms, (uint)sampleRate);      // sample rate
+    WriteU32BE(ms, 4096);                  // max frame size
+    return ms.ToArray();
   }
 
   private static void WriteChunk(MemoryStream ms, string fourcc, Action<MemoryStream> body) {

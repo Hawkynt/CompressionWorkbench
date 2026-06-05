@@ -16,8 +16,11 @@ namespace FileFormat.RealMedia;
 /// <c>14_4</c>) streams are additionally decoded to a mono 8 kHz <c>*.MONO.wav</c>
 /// (Kind <c>Channel</c>) via <c>Codec.Ra144</c>; cook / RealAudio G2 streams are
 /// deinterleaved and decoded to per-channel WAVs (Kind <c>Channel</c>) via <c>Codec.Cook</c>;
-/// both fall back to blob-only on any decode failure via try/catch.
-/// Read-only; other audio codecs (sipr/atrc) remain blob-only; parsing degrades gracefully.
+/// both fall back to blob-only on any decode failure via try/catch. RealAudio 2.0 28.8 (<c>28_8</c>)
+/// is Int4-deinterleaved and decoded to a mono 8 kHz WAV via <c>Codec.Ra288</c>; RealAudio Lossless
+/// (<c>ralf</c>) is decoded to per-channel 16-bit WAVs via <c>Codec.Ralf</c>; sipr and atrc are
+/// likewise decoded to per-channel WAVs. Read-only; every decode path falls back to blob-only on
+/// failure and parsing degrades gracefully.
 /// </summary>
 public sealed class RealMediaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 

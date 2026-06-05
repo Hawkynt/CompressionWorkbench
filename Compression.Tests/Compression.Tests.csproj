@@ -132,6 +132,9 @@
     <ProjectReference Include="..\Codecs\Codec.AdpcmX\Codec.AdpcmX.csproj" />
     <ProjectReference Include="..\Codecs\Codec.BinkAudio\Codec.BinkAudio.csproj" />
     <ProjectReference Include="..\Codecs\Codec.SmackerAudio\Codec.SmackerAudio.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Atrac1\Codec.Atrac1.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Ra288\Codec.Ra288.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Ralf\Codec.Ralf.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
@@ -602,6 +605,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.G7231\FileFormat.G7231.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Bik\FileFormat.Bik.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Smk\FileFormat.Smk.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Aea\FileFormat.Aea.csproj" />
   </ItemGroup>
 
 </Project>

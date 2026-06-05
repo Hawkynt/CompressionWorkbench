@@ -11,6 +11,8 @@
     <ProjectReference Include="..\..\Codecs\Codec.Cook\Codec.Cook.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Atrac3\Codec.Atrac3.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Sipr\Codec.Sipr.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Ra288\Codec.Ra288.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Ralf\Codec.Ralf.csproj" />
   </ItemGroup>
 
 </Project>

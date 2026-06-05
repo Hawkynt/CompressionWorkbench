@@ -5,6 +5,8 @@ using Codec.Cook;
 using Codec.Atrac3;
 using Codec.Pcm;
 using Codec.Ra144;
+using Codec.Ra288;
+using Codec.Ralf;
 using Codec.Sipr;
 using Compression.Registry;
 
@@ -135,6 +137,12 @@ internal static class RealMediaReader {
         // RealAudio SIPR / ACELP.NET ("sipr"): descramble the interleaved superblock(s),
         // decode every coded frame and surface one mono WAV. Falls back to blob-only.
         AddDecodedSiprChannel(s, $"streams/stream_{s.StreamNumber:D2}", entries);
+        // RealAudio 2.0 28.8 ("28_8"): Int4-deinterleave the 38-byte frames and decode to a
+        // mono 8 kHz WAV. Falls back to blob-only on any failure.
+        AddDecodedRa288Channel(s, $"streams/stream_{s.StreamNumber:D2}", entries);
+        // RealAudio Lossless ("ralf"): decode each carried packet with the "LSD:" extradata and
+        // surface per-channel 16-bit WAVs. Falls back to blob-only on any failure.
+        AddDecodedRalfChannels(s, $"streams/stream_{s.StreamNumber:D2}", entries);
       }
     }
   }
@@ -494,6 +502,94 @@ internal static class RealMediaReader {
     } catch {
       // Undecodable SIPR stream — keep the stream blob only.
     }
+  }
+
+  /// <summary>
+  /// If <paramref name="s"/> is a RealAudio 2.0 28.8 ("28_8") stream, Int4-deinterleave the
+  /// carried packets into the codec's 38-byte coded-frame order (the same DEINT_ID_INT4 reorder
+  /// cook uses, reused via <see cref="CookDeinterleaver"/>), decode every frame with
+  /// <see cref="Ra288Codec"/> and surface one mono 8 kHz WAV. Any failure (unexpected coded-frame
+  /// size, malformed framing, decode error) is swallowed so the stream blob view survives.
+  /// </summary>
+  private static void AddDecodedRa288Channel(StreamProps s, string baseName,
+      List<AudioPseudoArchive.Entry> entries) {
+    if (s.Codec != "28_8" || s.Payloads.Count == 0)
+      return;
+    try {
+      // RA 28.8 frames are 38 bytes; the RM container interleaves them with DEINT_ID_INT4.
+      var frames = CookDeinterleaver.Reorder(s.Payloads, s.RaDeintId,
+        s.RaSubPacketH, s.RaFrameSize, s.RaSubPacketSize, s.RaCodedFrameSize);
+      if (frames.Length == 0) {
+        using var flat = new MemoryStream();
+        foreach (var p in s.Payloads) flat.Write(p);
+        frames = flat.ToArray();
+      }
+
+      var pcm = new Ra288Codec().Decode(frames);
+      if (pcm.Length == 0)
+        return;
+
+      var le = new byte[pcm.Length * 2];
+      for (var i = 0; i < pcm.Length; ++i)
+        BinaryPrimitives.WriteInt16LittleEndian(le.AsSpan(i * 2), pcm[i]);
+      var wav = PcmCodec.ToWavBlob(le, channels: 1, sampleRate: 8000, bitsPerSample: 16);
+      entries.Add(new($"{baseName}.MONO.wav", "Channel", wav, Method: "pcm"));
+    } catch {
+      // Undecodable RA 28.8 stream — keep the stream blob only.
+    }
+  }
+
+  /// <summary>
+  /// If <paramref name="s"/> is a RealAudio Lossless ("ralf") stream with parseable "LSD:"
+  /// extradata, decode each carried packet with <see cref="RalfCodec"/> and surface per-channel
+  /// 16-bit WAVs. Any failure (no extradata, unsupported version, decode error) is swallowed so
+  /// the stream blob view survives.
+  /// </summary>
+  private static void AddDecodedRalfChannels(StreamProps s, string baseName,
+      List<AudioPseudoArchive.Entry> entries) {
+    if (s.Codec != "ralf" || s.Payloads.Count == 0)
+      return;
+    try {
+      var extradata = FindRalfExtradata(s);
+      if (extradata == null)
+        return;
+      var codec = new RalfCodec(extradata);
+      var interleaved = codec.DecodeStream(s.Payloads);
+      if (interleaved.Length == 0)
+        return;
+
+      var rate = codec.SampleRate > 0 ? codec.SampleRate : 44100;
+      var le = new byte[interleaved.Length * 2];
+      for (var i = 0; i < interleaved.Length; ++i)
+        BinaryPrimitives.WriteInt16LittleEndian(le.AsSpan(i * 2), interleaved[i]);
+
+      if (codec.Channels == 1) {
+        var wav = PcmCodec.ToWavBlob(le, channels: 1, sampleRate: rate, bitsPerSample: 16);
+        entries.Add(new($"{baseName}.MONO.wav", "Channel", wav, Method: "pcm"));
+      } else {
+        foreach (var (name, wav) in PcmCodec.SplitInterleavedPcm(le, codec.Channels, rate, bitsPerSample: 16))
+          entries.Add(new($"{baseName}.{name}.wav", "Channel", wav, Method: "pcm"));
+      }
+    } catch {
+      // Undecodable RALF stream — keep the stream blob only.
+    }
+  }
+
+  /// <summary>
+  /// Locates the RALF "LSD:" extradata in a stream's parsed extradata or, failing that, its raw
+  /// type-specific blob. Returns <see langword="null"/> if the marker is not present.
+  /// </summary>
+  private static byte[]? FindRalfExtradata(StreamProps s) {
+    if (s.RaExtradata is { } ex && ex.Length >= 4 && ex[0] == (byte)'L' && ex[1] == (byte)'S'
+        && ex[2] == (byte)'D' && ex[3] == (byte)':')
+      return ex;
+    var blob = s.TypeSpecific;
+    if (blob == null)
+      return null;
+    for (var i = 0; i + 24 <= blob.Length; ++i)
+      if (blob[i] == (byte)'L' && blob[i + 1] == (byte)'S' && blob[i + 2] == (byte)'D' && blob[i + 3] == (byte)':')
+        return blob[i..];
+    return null;
   }
 
   /// <summary>
