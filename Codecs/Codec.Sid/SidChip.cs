@@ -34,13 +34,15 @@ public sealed class SidChip {
   private double _sampleError;
 
   public SidChip(SidModel model, double clockHz, int outputRate = OutputSampleRate) {
-    this._model = model;
+    // Collapse aliases (e.g. the 6582 is electrically an 8580) onto the behaviour the filter implements.
+    this._model = model.Resolve();
     this._clockHz = clockHz;
     this._outputRate = outputRate;
-    this._filter = new SidFilter(model, clockHz);
+    this._filter = new SidFilter(this._model, clockHz);
     this._clocksPerSample = clockHz / outputRate;
   }
 
+  /// <summary>The electrically distinct model this chip behaves as (aliases collapsed; 6582 → 8580).</summary>
   public SidModel Model => this._model;
 
   /// <summary>Writes a SID control register (<paramref name="reg"/> 0..0x1C relative to $D400).</summary>

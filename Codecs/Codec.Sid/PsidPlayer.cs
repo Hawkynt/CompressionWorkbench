@@ -8,12 +8,17 @@ namespace Codec.Sid;
 /// A PSID tune player. It loads the C64 program into a 64 KB RAM image, runs the tune's
 /// init routine for a chosen song, then repeatedly calls the play routine at the tune's
 /// frame rate, rendering SID samples between frames.
-/// <para>The memory bus is RAM everywhere except the SID register window $D400-$D7FF (writes
-/// are captured into the <see cref="SidChip"/>) and the CIA #1 timer-A registers $DC04/$DC05
-/// (captured to derive the CIA frame rate). SID register writes are applied immediately when
-/// the CPU performs them; cycle-accurate ordering of writes against sample rendering is NOT
-/// modelled — all writes for a frame take effect before that frame's samples are produced.
-/// This is adequate for the steady playback of non-sampled tunes.</para>
+/// <para>The memory bus is RAM everywhere except the SID register windows (writes are
+/// captured into the matching <see cref="SidChip"/>) and the CIA #1 timer-A registers
+/// $DC04/$DC05 (captured to derive the CIA frame rate). SID register writes are applied
+/// immediately when the CPU performs them; cycle-accurate ordering of writes against sample
+/// rendering is NOT modelled — all writes for a frame take effect before that frame's samples
+/// are produced. This is adequate for the steady playback of non-sampled tunes.</para>
+/// <para>Multi-SID: a 2SID/3SID tune declares its extra chips through the PSID v3/v4
+/// secondSIDAddress/thirdSIDAddress header bytes. SID #1 always lives at $D400; each extra
+/// chip occupies its own 32-byte register window inside $D400-$DFFF, and the bus routes a
+/// write to whichever chip owns the address. Writes to $D400-$DFFF that fall outside any
+/// configured chip's window are ignored by the SID side (still stored to RAM).</para>
 /// <para>RSID files, and PSID v2+ tunes flagged as needing the C64 BASIC/KERNAL environment,
 /// are rejected with <see cref="NotSupportedException"/>.</para>
 /// </summary>
@@ -21,12 +26,14 @@ public sealed class PsidPlayer {
 
   private sealed class Bus : IBus6502 {
     private readonly byte[] _ram = new byte[0x10000];
-    private readonly SidChip _sid;
+
+    // Each chip with the base address of its 32-byte register window ($D400, $Dxx0, …).
+    private readonly (ushort Base, SidChip Chip)[] _chips;
 
     public ushort CiaTimer;
     public bool CiaTimerWritten;
 
-    public Bus(SidChip sid) => this._sid = sid;
+    public Bus((ushort Base, SidChip Chip)[] chips) => this._chips = chips;
 
     public byte[] Ram => this._ram;
 
@@ -34,10 +41,26 @@ public sealed class PsidPlayer {
 
     public void Write(ushort addr, byte value) {
       this._ram[addr] = value;
+
+      // Route to the chip whose 32-byte register window contains the address. Extra chips
+      // (SID #2/#3) are matched first by their declared $Dxx0 window. SID #1 owns the classic
+      // $D400-$D7FF block, mirrored every 32 bytes, EXCEPT any address an extra chip claims —
+      // this keeps single-SID mirroring behaviour and routes a $D4xx-window write to whichever
+      // chip really sits there. Addresses outside every window are NOT SID writes; in particular
+      // the CIA timer registers ($DC04/$DC05) fall through even though they share the page.
+      for (var i = 1; i < this._chips.Length; ++i) {
+        var (baseAddr, chip) = this._chips[i];
+        if (addr >= baseAddr && addr < baseAddr + 0x20) {
+          chip.Write(addr - baseAddr, value);
+          return;
+        }
+      }
       if (addr is >= 0xD400 and <= 0xD7FF) {
-        // SID register window mirrors every 32 bytes.
-        this._sid.Write(addr & 0x1F, value);
-      } else if (addr == 0xDC04) {
+        this._chips[0].Chip.Write(addr & 0x1F, value);
+        return;
+      }
+
+      if (addr == 0xDC04) {
         this.CiaTimer = (ushort)((this.CiaTimer & 0xFF00) | value);
         this.CiaTimerWritten = true;
       } else if (addr == 0xDC05) {
@@ -47,7 +70,7 @@ public sealed class PsidPlayer {
     }
   }
 
-  private readonly SidChip _sid;
+  private readonly (ushort Base, SidChip Chip)[] _chips;
   private readonly Bus _bus;
   private readonly Cpu6502 _cpu;
   private readonly ushort _initAddr;
@@ -58,24 +81,40 @@ public sealed class PsidPlayer {
   /// <summary>The resolved frame rate (calls per second) for this tune.</summary>
   public double FrameRateHz => this._frameRateHz;
 
-  /// <summary>The SID model in use.</summary>
-  public SidModel Model => this._sid.Model;
+  /// <summary>The number of SID chips this player drives (1 = mono, 2 = stereo, 3 = 3SID).</summary>
+  public int SidCount => this._chips.Length;
+
+  /// <summary>The model in use by SID #1.</summary>
+  public SidModel Model => this._chips[0].Chip.Model;
+
+  /// <summary>The model in use by the chip at the given index (0 = SID #1).</summary>
+  public SidModel ModelOf(int chip) => this._chips[chip].Chip.Model;
 
   /// <summary>
-  /// Builds a player from the full PSID/RSID file bytes. The header is parsed here; the
-  /// caller supplies the <paramref name="model"/> and <paramref name="clockHz"/> already
-  /// decoded from the descriptor (header flags), falling back to 6581/PAL when unknown.
+  /// Builds a single-SID player. The caller supplies the <paramref name="model"/> and
+  /// <paramref name="clockHz"/> already decoded from the descriptor, falling back to 6581/PAL
+  /// when unknown.
   /// </summary>
-  public PsidPlayer(byte[] file, SidModel model, double clockHz) {
+  public PsidPlayer(byte[] file, SidModel model, double clockHz)
+    : this(file, [new SidChipConfig(0xD400, model)], clockHz) { }
+
+  /// <summary>
+  /// Builds a multi-SID player from explicit per-chip configurations. The first config is SID #1
+  /// (its base is forced to $D400 regardless of what is supplied). Each config carries the chip's
+  /// register-window base address and its resolved model.
+  /// </summary>
+  public PsidPlayer(byte[] file, IReadOnlyList<SidChipConfig> chips, double clockHz) {
+    if (chips.Count < 1)
+      throw new ArgumentException("At least one SID chip is required.", nameof(chips));
     if (file.Length < 0x76)
       throw new NotSupportedException("SID file too short to contain a PSID header.");
 
     var magic = System.Text.Encoding.ASCII.GetString(file, 0, 4);
-    var version = BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(0x04));
     var dataOffset = BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(0x06));
     var loadAddr = BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(0x08));
     this._initAddr = BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(0x0A));
     this._playAddr = BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(0x0C));
+    var version = BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(0x04));
     var startSong = BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(0x10));
     var speed = BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(0x12));
 
@@ -90,8 +129,13 @@ public sealed class PsidPlayer {
       throw new NotSupportedException("PSID BASIC tunes are not supported.");
 
     this._clockHz = clockHz;
-    this._sid = new SidChip(model, clockHz);
-    this._bus = new Bus(this._sid);
+    this._chips = new (ushort, SidChip)[chips.Count];
+    for (var i = 0; i < chips.Count; ++i) {
+      var baseAddr = i == 0 ? (ushort)0xD400 : chips[i].BaseAddress;
+      this._chips[i] = (baseAddr, new SidChip(chips[i].Model, clockHz));
+    }
+
+    this._bus = new Bus(this._chips);
     this._cpu = new Cpu6502(this._bus);
 
     this.LoadProgram(file, dataOffset, loadAddr);
@@ -138,10 +182,23 @@ public sealed class PsidPlayer {
     return 60.0;
   }
 
-  /// <summary>Renders <paramref name="seconds"/> of audio as interleaved mono 16-bit PCM at <paramref name="outputRate"/>.</summary>
-  public short[] Render(double seconds, int outputRate = SidChip.OutputSampleRate) {
+  /// <summary>
+  /// Renders <paramref name="seconds"/> of audio as interleaved mono 16-bit PCM at
+  /// <paramref name="outputRate"/> from SID #1 (back-compatible single-chip output).
+  /// </summary>
+  public short[] Render(double seconds, int outputRate = SidChip.OutputSampleRate)
+    => this.RenderPerChip(seconds, outputRate)[0];
+
+  /// <summary>
+  /// Renders <paramref name="seconds"/> of audio, returning one mono 16-bit PCM buffer per SID
+  /// chip (index 0 = SID #1). All chips are driven by the same program run; only their captured
+  /// register writes differ.
+  /// </summary>
+  public short[][] RenderPerChip(double seconds, int outputRate = SidChip.OutputSampleRate) {
     var totalSamples = (int)(seconds * outputRate);
-    var result = new short[totalSamples];
+    var result = new short[this._chips.Length][];
+    for (var c = 0; c < this._chips.Length; ++c)
+      result[c] = new short[totalSamples];
 
     var samplesPerFrame = outputRate / this._frameRateHz;
     var produced = 0;
@@ -150,10 +207,9 @@ public sealed class PsidPlayer {
     var maxCyclesPerFrame = (long)(this._clockHz / this._frameRateHz * 4);
 
     while (produced < totalSamples) {
-      // Run one play call (writes hit the SID immediately).
-      if (this._playAddr != 0) {
+      // Run one play call (writes hit each SID immediately, routed by the bus).
+      if (this._playAddr != 0)
         this._cpu.RunUntilRts(this._playAddr, maxCyclesPerFrame);
-      }
 
       frameAccumulator += samplesPerFrame;
       var thisFrame = (int)frameAccumulator;
@@ -161,10 +217,16 @@ public sealed class PsidPlayer {
       if (produced + thisFrame > totalSamples)
         thisFrame = totalSamples - produced;
       if (thisFrame > 0) {
-        this._sid.RenderSamples(result.AsSpan(produced, thisFrame), thisFrame);
+        for (var c = 0; c < this._chips.Length; ++c)
+          this._chips[c].Chip.RenderSamples(result[c].AsSpan(produced, thisFrame), thisFrame);
         produced += thisFrame;
       }
     }
     return result;
   }
 }
+
+/// <summary>One SID chip's placement and model for a multi-SID <see cref="PsidPlayer"/>.</summary>
+/// <param name="BaseAddress">The 32-byte register window base ($D400 for SID #1, $Dxx0 for extras).</param>
+/// <param name="Model">The resolved model this chip emulates.</param>
+public readonly record struct SidChipConfig(ushort BaseAddress, SidModel Model);

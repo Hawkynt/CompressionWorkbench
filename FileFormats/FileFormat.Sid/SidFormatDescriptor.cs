@@ -9,10 +9,19 @@ namespace FileFormat.Sid;
 
 /// <summary>
 /// Surfaces a Commodore 64 SID tune (<c>.sid</c>) as a metadata-rich pseudo-archive. A SID file
-/// carries a 6510 program that drives the C64's MOS 6581/8580 SID chip. The C64 program image is
-/// surfaced verbatim as a Kind <c>Stream</c> blob, and — for PSID tunes — the start song is
-/// emulated (6510 core + register-level SID synthesis) and rendered to a playable <c>MONO.wav</c>
-/// (44100 Hz, 16-bit), respecting the header's SID model (6581 vs 8580) and clock (PAL/NTSC).
+/// carries a 6510 program that drives the C64's MOS 6581/8580 SID chip(s). The C64 program image
+/// is surfaced verbatim as a Kind <c>Stream</c> blob, and — for PSID tunes — the start song is
+/// emulated (6510 core + register-level SID synthesis) and rendered to playable WAVs (44100 Hz,
+/// 16-bit), respecting the header's per-chip SID models (6581 / 8580 / 6582-as-8580) and clock
+/// (PAL/NTSC).
+/// <para><b>Stereo matrix.</b> A 2SID/3SID tune declares extra chips via the v3/v4
+/// secondSIDAddress/thirdSIDAddress bytes ($Dxx0; validated even and in $42-$7E or $E0-$FE).
+/// 1 SID → <c>MONO.wav</c>; 2 SID → <c>LEFT.wav</c> (SID #1) + <c>RIGHT.wav</c> (SID #2); 3 SID →
+/// adds <c>CENTER.wav</c> (SID #3). Each WAV is one decoded chip (a player mixes CENTER 0.5/0.5).
+/// Per-chip models come from flag bits 4-5 (SID #1), 6-7 (SID #2), 8-9 (SID #3); a secondary
+/// chip's 00 means "like SID #1". When SID #1's model flag is 00 (unknown) or 11 (either) the set
+/// is rendered twice with <c>_6581</c>/<c>_8580</c> suffixes (e.g. <c>MONO_6581.wav</c> +
+/// <c>MONO_8580.wav</c>), each capped at 20 s; a single specified-model render runs 30 s.</para>
 /// RSID and BASIC tunes degrade to header/program-only.
 /// <para>The header is <b>big-endian</b> and exists in two magic variants — <c>PSID</c>
 /// (BASIC/KERNAL-assisted) and <c>RSID</c> (real C64 environment). Fields: u16 version (1-4),
@@ -94,6 +103,7 @@ public sealed class SidFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     AppendField(sb, "released", released);
 
     // Version 2+ header extension (the v2 header is 0x7C bytes vs. 0x76 for v1).
+    var sidSetup = ResolveSidSetup(version, blob);
     if (version >= 2 && blob.Length >= 0x7C) {
       var flags = BinaryPrimitives.ReadUInt16BigEndian(blob.AsSpan(0x76));
       var startPage = blob[0x78];
@@ -102,25 +112,31 @@ public sealed class SidFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var thirdSid = blob[0x7B];
       sb.AppendLine($"flags=0x{flags:X4}");
       sb.AppendLine($"clock={DescribeClock(flags)}");
-      sb.AppendLine($"sid_model={DescribeSidModel(flags)}");
+      sb.AppendLine($"sid_model={DescribeSidModel(flags, 4)}");      // bits 4-5 → SID #1
       sb.AppendLine($"start_page=0x{startPage:X2}");
       sb.AppendLine($"page_length=0x{pageLength:X2}");
-      if (secondSid != 0)
+      // SID #2/#3 placement: $Dxx0 = $D000 | (byte << 4). A byte of 0 means "no chip"; an
+      // out-of-range byte (see ValidateSidAddress) is reported but the chip is dropped.
+      if (version >= 3 && secondSid != 0) {
         sb.AppendLine($"second_sid_addr=0x{0xD000 | (secondSid << 4):X4}");
-      if (thirdSid != 0)
+        sb.AppendLine($"sid2_model={DescribeSidModel(flags, 6)}");   // bits 6-7 → SID #2
+        if (ValidateSidAddress(secondSid) is null)
+          sb.AppendLine("second_sid_addr_invalid=true");
+      }
+      if (version >= 4 && thirdSid != 0) {
         sb.AppendLine($"third_sid_addr=0x{0xD000 | (thirdSid << 4):X4}");
+        sb.AppendLine($"sid3_model={DescribeSidModel(flags, 8)}");   // bits 8-9 → SID #3
+        if (ValidateSidAddress(thirdSid) is null)
+          sb.AppendLine("third_sid_addr_invalid=true");
+      }
     }
 
-    // Render the start song to a playable mono WAV. SID model and clock come from the v2+
-    // flags (unknown → 6581 / PAL). Any failure (RSID, BASIC tune, unsupported player path,
-    // malformed program) degrades silently to the existing header/program-only behaviour.
-    var (model, clock) = ResolveModelAndClock(version, blob);
-    var rendered = TryRender(blob, model, clock);
-    if (rendered is { } wav) {
-      sb.AppendLine($"rendered_duration={RenderSeconds:0.#}s");
-      sb.AppendLine($"rendered_model={(model == SidModel.Mos8580 ? "MOS8580" : "MOS6581")}");
-      sb.AppendLine($"rendered_clock={(clock < 1_000_000 ? "PAL" : "NTSC")}");
-    }
+    // Render the start song. SID model(s) and clock come from the v2+ flags. When SID #1's
+    // model flag is "unknown" (00) or "either/both" (11), the tune is rendered twice — once as
+    // 6581 and once as 8580 — with the chip count deciding mono vs LEFT/RIGHT(/centre) layout.
+    // Any failure (RSID, BASIC, unsupported player path, malformed program) degrades silently
+    // to the existing header/program-only behaviour. See the naming/mixing notes on the helpers.
+    var renderEntries = TryRenderAll(blob, sidSetup, sb);
 
     // C64 program: at dataOffset; when loadAddr==0 the first two LE bytes are the load address.
     if (dataOffset <= blob.Length) {
@@ -132,9 +148,7 @@ public sealed class SidFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         sb.AppendLine($"real_load_addr=0x{loadAddr:X4}");
       }
       entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
-      if (rendered is { } w)
-        entries.Add(new("MONO.wav", "Channel",
-          PcmCodec.ToWavBlob(w, channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1), "sid"));
+      entries.AddRange(renderEntries);
       if (program.Length > 0)
         entries.Add(new("program.bin", "Stream", program));
     } else {
@@ -144,46 +158,181 @@ public sealed class SidFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
-  /// <summary>Output sample rate for the rendered MONO.wav.</summary>
+  /// <summary>Output sample rate for the rendered WAVs.</summary>
   private const int OutputSampleRate = 44100;
 
   /// <summary>
-  /// Maximum rendered duration. Bounded at 30 seconds so a long or non-terminating tune
-  /// still yields a reasonable, quickly-produced preview.
+  /// Maximum rendered duration for a single (specified-model) render. Bounded at 30 seconds so a
+  /// long or non-terminating tune still yields a reasonable, quickly-produced preview.
   /// </summary>
   private const double RenderSeconds = 30.0;
+
+  /// <summary>
+  /// Maximum rendered duration when a tune is rendered twice (model unknown/either): each render
+  /// is capped at 20 seconds because up to six WAVs (3SID × two models) are produced.
+  /// </summary>
+  private const double DualModelRenderSeconds = 20.0;
 
   // PAL/NTSC SID master clock frequencies.
   private const double PalClockHz = 985248.0;
   private const double NtscClockHz = 1022727.0;
 
-  /// <summary>Resolves the SID model and clock from the v2+ flags word (unknown → 6581 / PAL).</summary>
-  private static (SidModel Model, double ClockHz) ResolveModelAndClock(ushort version, byte[] blob) {
-    var model = SidModel.Mos6581;
+  /// <summary>The two electrically distinct models a dual (unknown/either) render covers.</summary>
+  private static readonly (SidModel Model, string Suffix)[] DualModels =
+    [(SidModel.Mos6581, "6581"), (SidModel.Mos8580, "8580")];
+
+  /// <summary>A resolved multi-SID render plan: per-chip configs, the clock, and whether to dual-render.</summary>
+  private readonly record struct SidSetup(IReadOnlyList<SidChipConfig> Chips, double ClockHz, bool DualModel);
+
+  /// <summary>
+  /// Resolves the per-chip model/placement plan and clock from the v2+ flags + address bytes
+  /// (unknown → 6581 / PAL; v1 → single 6581 chip). SID #1's model flag drives the dual-render
+  /// decision (00 unknown or 11 either → render both 6581 and 8580). SID #2/#3 model flag 00 means
+  /// "like SID #1" per the v4 spec, so it inherits SID #1's resolved model. The 8580 alias 6582 is
+  /// never produced from a flag (the header only distinguishes 6581 vs 8580).
+  /// </summary>
+  private static SidSetup ResolveSidSetup(ushort version, byte[] blob) {
     var clock = PalClockHz;
-    if (version >= 2 && blob.Length >= 0x7C) {
-      var flags = BinaryPrimitives.ReadUInt16BigEndian(blob.AsSpan(0x76));
-      if ((flags >> 4 & 0x03) == 2)
-        model = SidModel.Mos8580;
-      if ((flags >> 2 & 0x03) == 2)
-        clock = NtscClockHz;
+    if (version < 2 || blob.Length < 0x7C)
+      return new SidSetup([new SidChipConfig(0xD400, SidModel.Mos6581)], clock, DualModel: false);
+
+    var flags = BinaryPrimitives.ReadUInt16BigEndian(blob.AsSpan(0x76));
+    if ((flags >> 2 & 0x03) == 2)
+      clock = NtscClockHz;
+
+    var sid1Flag = flags >> 4 & 0x03;
+    var dualModel = sid1Flag is 0 or 3;          // unknown / either → render twice
+    // When dual-rendering, SID #1's "resolved" model used as the inheritance base for "like SID #1"
+    // chips is the 6581 leg; each render leg overrides SID #1's own model anyway.
+    var sid1Resolved = sid1Flag == 2 ? SidModel.Mos8580 : SidModel.Mos6581;
+
+    var chips = new List<SidChipConfig> { new(0xD400, sid1Resolved) };
+
+    if (version >= 3) {
+      var secondSid = blob[0x7A];
+      if (secondSid != 0 && ValidateSidAddress(secondSid) is { } addr2)
+        chips.Add(new SidChipConfig(addr2, ResolveSecondaryModel(flags >> 6 & 0x03, sid1Resolved)));
     }
-    return (model, clock);
+    if (version >= 4) {
+      var thirdSid = blob[0x7B];
+      if (thirdSid != 0 && ValidateSidAddress(thirdSid) is { } addr3)
+        chips.Add(new SidChipConfig(addr3, ResolveSecondaryModel(flags >> 8 & 0x03, sid1Resolved)));
+    }
+
+    return new SidSetup(chips, clock, dualModel);
   }
 
-  /// <summary>Renders the start song to 16-bit mono LE PCM, or null on any failure.</summary>
-  private static byte[]? TryRender(byte[] blob, SidModel model, double clockHz) {
-    try {
-      var player = new PsidPlayer(blob, model, clockHz);
-      var samples = player.Render(RenderSeconds, OutputSampleRate);
-      var pcm = new byte[samples.Length * 2];
-      for (var i = 0; i < samples.Length; ++i)
-        BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), samples[i]);
-      return pcm;
-    } catch {
+  /// <summary>
+  /// Maps a SID #2/#3 model flag (2 bits) to a resolved model: 00 = "like SID #1" (inherit
+  /// <paramref name="sid1"/>), 01 = 6581, 10 = 8580, 11 = either (treated as 8580 for the
+  /// secondary chip since these are not separately dual-rendered).
+  /// </summary>
+  private static SidModel ResolveSecondaryModel(int flag, SidModel sid1) => flag switch {
+    1 => SidModel.Mos6581,
+    2 => SidModel.Mos8580,
+    3 => SidModel.Mos8580,
+    _ => sid1,
+  };
+
+  /// <summary>
+  /// Validates a second/third SID address byte and returns its $Dxx0 absolute address, or null if
+  /// invalid. Per the PSID v3/v4 spec the byte must be even and fall in $42-$7E or $E0-$FE.
+  /// </summary>
+  private static ushort? ValidateSidAddress(byte addrByte) {
+    if ((addrByte & 0x01) != 0)
+      return null;                                  // must be even
+    var inLow = addrByte is >= 0x42 and <= 0x7E;
+    var inHigh = addrByte is >= 0xE0 and <= 0xFE;
+    if (!inLow && !inHigh)
       return null;
+    return (ushort)(0xD000 | (addrByte << 4));
+  }
+
+  /// <summary>
+  /// Renders the start song and produces the playable WAV entries, appending render metadata to
+  /// <paramref name="sb"/>. Naming/mixing conventions:
+  /// <list type="bullet">
+  ///   <item><b>1 SID</b> → a single <c>MONO.wav</c>.</item>
+  ///   <item><b>2 SID</b> → <c>LEFT.wav</c> (SID #1) + <c>RIGHT.wav</c> (SID #2), the common
+  ///     stereo-SID convention.</item>
+  ///   <item><b>3 SID</b> → <c>LEFT.wav</c> (SID #1), <c>RIGHT.wav</c> (SID #2), <c>CENTER.wav</c>
+  ///     (SID #3); the centre chip is its own mono channel (a player mixes it 0.5/0.5 into both
+  ///     sides). Each WAV stays a single decoded chip so the per-channel pseudo-archive model holds.</item>
+  /// </list>
+  /// When the model is unknown/either the whole set is emitted twice with <c>_6581</c>/<c>_8580</c>
+  /// suffixes (e.g. <c>MONO_6581.wav</c> + <c>MONO_8580.wav</c>); otherwise the plain names above.
+  /// Returns an empty list on any render failure.
+  /// </summary>
+  private static List<AudioPseudoArchive.Entry> TryRenderAll(byte[] blob, SidSetup setup, StringBuilder sb) {
+    var result = new List<AudioPseudoArchive.Entry>();
+    try {
+      if (setup.DualModel) {
+        var seconds = DualModelRenderSeconds;
+        foreach (var (model, suffix) in DualModels)
+          RenderLeg(blob, OverrideSid1(setup.Chips, model), setup.ClockHz, seconds, suffix, result);
+        sb.AppendLine($"rendered_duration={seconds:0.#}s");
+        sb.AppendLine("rendered_model=both (MOS6581 + MOS8580)");
+        sb.AppendLine($"rendered_clock={(setup.ClockHz < 1_000_000 ? "PAL" : "NTSC")}");
+        sb.AppendLine($"rendered_sids={setup.Chips.Count}");
+      } else {
+        RenderLeg(blob, setup.Chips, setup.ClockHz, RenderSeconds, suffix: null, result);
+        if (result.Count > 0) {
+          sb.AppendLine($"rendered_duration={RenderSeconds:0.#}s");
+          sb.AppendLine($"rendered_model={DescribeModelSet(setup.Chips)}");
+          sb.AppendLine($"rendered_clock={(setup.ClockHz < 1_000_000 ? "PAL" : "NTSC")}");
+          sb.AppendLine($"rendered_sids={setup.Chips.Count}");
+        }
+      }
+    } catch {
+      return [];
+    }
+    return result;
+  }
+
+  /// <summary>Returns a copy of <paramref name="chips"/> with SID #1's model replaced (for a dual-render leg).</summary>
+  private static IReadOnlyList<SidChipConfig> OverrideSid1(IReadOnlyList<SidChipConfig> chips, SidModel sid1) {
+    var copy = chips.ToArray();
+    copy[0] = copy[0] with { Model = sid1 };
+    // "Like SID #1" chips followed SID #1's resolved model at parse time; re-inherit for this leg
+    // any secondary chip whose model equals the original SID #1 resolution.
+    var original = chips[0].Model;
+    for (var i = 1; i < copy.Length; ++i)
+      if (copy[i].Model == original)
+        copy[i] = copy[i] with { Model = sid1 };
+    return copy;
+  }
+
+  /// <summary>Renders one model leg and appends its per-chip WAV entries (mono/stereo/3SID naming).</summary>
+  private static void RenderLeg(byte[] blob, IReadOnlyList<SidChipConfig> chips, double clockHz,
+      double seconds, string? suffix, List<AudioPseudoArchive.Entry> sink) {
+    var player = new PsidPlayer(blob, chips, clockHz);
+    var perChip = player.RenderPerChip(seconds, OutputSampleRate);
+    var names = ChannelNames(perChip.Length);
+    for (var c = 0; c < perChip.Length; ++c) {
+      var name = suffix is null ? $"{names[c]}.wav" : $"{names[c]}_{suffix}.wav";
+      sink.Add(new(name, "Channel",
+        PcmCodec.ToWavBlob(ToPcmBytes(perChip[c]), channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1),
+        "sid"));
     }
   }
+
+  /// <summary>The per-chip WAV base names for a given chip count (1→MONO, 2→LEFT/RIGHT, 3→+CENTER).</summary>
+  private static string[] ChannelNames(int count) => count switch {
+    1 => ["MONO"],
+    2 => ["LEFT", "RIGHT"],
+    _ => ["LEFT", "RIGHT", "CENTER"],
+  };
+
+  private static byte[] ToPcmBytes(short[] samples) {
+    var pcm = new byte[samples.Length * 2];
+    for (var i = 0; i < samples.Length; ++i)
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), samples[i]);
+    return pcm;
+  }
+
+  /// <summary>Describes the resolved model set for metadata (single name, or a comma list for multi-SID).</summary>
+  private static string DescribeModelSet(IReadOnlyList<SidChipConfig> chips)
+    => string.Join(", ", chips.Select(c => c.Model == SidModel.Mos8580 ? "MOS8580" : "MOS6581"));
 
   /// <summary>Decodes bits 2-3 of the v2+ flags word into the SID clock standard.</summary>
   private static string DescribeClock(ushort flags) => (flags >> 2 & 0x03) switch {
@@ -193,12 +342,16 @@ public sealed class SidFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     _ => "unknown",
   };
 
-  /// <summary>Decodes bits 4-5 of the v2+ flags word into the SID chip model.</summary>
-  private static string DescribeSidModel(ushort flags) => (flags >> 4 & 0x03) switch {
+  /// <summary>
+  /// Decodes a 2-bit SID model field at <paramref name="shift"/> of the v2+ flags word (bits 4-5
+  /// for SID #1, 6-7 for SID #2, 8-9 for SID #3). For a secondary chip the 00 case means
+  /// "same as SID #1" rather than "unknown".
+  /// </summary>
+  private static string DescribeSidModel(ushort flags, int shift) => (flags >> shift & 0x03) switch {
     1 => "MOS6581",
     2 => "MOS8580",
     3 => "MOS6581/8580 (both)",
-    _ => "unknown",
+    _ => shift == 4 ? "unknown" : "same as SID1",
   };
 
   private static string ReadFixed(byte[] blob, int offset, int length) {
