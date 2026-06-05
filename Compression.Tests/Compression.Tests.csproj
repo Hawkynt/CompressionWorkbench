@@ -137,6 +137,9 @@
     <ProjectReference Include="..\Codecs\Codec.Ralf\Codec.Ralf.csproj" />
     <ProjectReference Include="..\Codecs\Codec.WmaLossless\Codec.WmaLossless.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Xma\Codec.Xma.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Sbc\Codec.Sbc.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Siren\Codec.Siren.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.S302M\Codec.S302M.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
@@ -608,6 +611,8 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Bik\FileFormat.Bik.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Smk\FileFormat.Smk.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aea\FileFormat.Aea.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sbc\FileFormat.Sbc.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Siren\FileFormat.Siren.csproj" />
   </ItemGroup>
 
 </Project>
