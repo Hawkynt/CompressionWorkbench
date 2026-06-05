@@ -156,6 +156,8 @@
     <Project Path="Codecs/Codec.Ay8910/Codec.Ay8910.csproj" />
     <Project Path="Codecs/Codec.GameBoyApu/Codec.GameBoyApu.csproj" />
     <Project Path="Codecs/Codec.AdpcmX/Codec.AdpcmX.csproj" />
+    <Project Path="Codecs/Codec.BinkAudio/Codec.BinkAudio.csproj" />
+    <Project Path="Codecs/Codec.SmackerAudio/Codec.SmackerAudio.csproj" />
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />
@@ -559,6 +561,8 @@
     <Project Path="FileFormats/FileFormat.Oma/FileFormat.Oma.csproj" />
     <Project Path="FileFormats/FileFormat.Mpc/FileFormat.Mpc.csproj" />
     <Project Path="FileFormats/FileFormat.G7231/FileFormat.G7231.csproj" />
+    <Project Path="FileFormats/FileFormat.Bik/FileFormat.Bik.csproj" />
+    <Project Path="FileFormats/FileFormat.Smk/FileFormat.Smk.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />

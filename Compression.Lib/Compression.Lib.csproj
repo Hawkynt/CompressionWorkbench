@@ -75,6 +75,8 @@
     <ProjectReference Include="..\Codecs\Codec.Ay8910\Codec.Ay8910.csproj" />
     <ProjectReference Include="..\Codecs\Codec.GameBoyApu\Codec.GameBoyApu.csproj" />
     <ProjectReference Include="..\Codecs\Codec.AdpcmX\Codec.AdpcmX.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.BinkAudio\Codec.BinkAudio.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.SmackerAudio\Codec.SmackerAudio.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
@@ -549,6 +551,8 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Oma\FileFormat.Oma.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Mpc\FileFormat.Mpc.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.G7231\FileFormat.G7231.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Bik\FileFormat.Bik.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Smk\FileFormat.Smk.csproj" />
   </ItemGroup>
 
 </Project>
