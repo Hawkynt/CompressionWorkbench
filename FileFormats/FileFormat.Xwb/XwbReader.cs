@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using Codec.MsAdpcm;
+using Codec.Xma;
 
 namespace FileFormat.Xwb;
 
@@ -10,8 +11,9 @@ namespace FileFormat.Xwb;
 /// metadata and per-entry decoded PCM. The v43+ layout is targeted: a "WBND" + version header is
 /// followed by a five-entry segment table (BANKDATA, ENTRYMETADATA, SEEKTABLES, ENTRYNAMES,
 /// ENTRYWAVEDATA), each a (u32 offset, u32 length) pair. Two compact-format wave codecs decode —
-/// PCM (8/16-bit) and MS-ADPCM (via <see cref="MsAdpcmCodec"/>); XMA and WMA entries are reported
-/// but skipped (no PCM is produced for them).
+/// PCM (8/16-bit) and MS-ADPCM (via <see cref="MsAdpcmCodec"/>) always decode; XMA entries decode
+/// best-effort via the WMA-Pro-derived <see cref="Codec.Xma.XmaCodec"/> with a graceful fallback to
+/// the raw blob; WMA entries are reported but skipped (no PCM is produced for them).
 /// </summary>
 public sealed class XwbReader {
 
@@ -120,7 +122,11 @@ public sealed class XwbReader {
               pcm = DecodeAdpcm(coded, blockAlign, channels);
               decodable = true;
               break;
-            // 1 XMA, 3 WMA → not decodable (reported, skipped).
+            case 1: // XMA1/XMA2 — best-effort decode via the WMA-Pro-derived XMA codec.
+              pcm = DecodeXma(coded, channels, sampleRate);
+              decodable = pcm != null;
+              break;
+            // 3 WMA → not decodable (reported, skipped).
           }
         } catch (Exception ex) when (ex is InvalidDataException or ArgumentException
                                        or IndexOutOfRangeException or ArgumentOutOfRangeException) {
@@ -185,6 +191,18 @@ public sealed class XwbReader {
     for (var i = 0; i < coded.Length; ++i)
       pcm8[i] = (short)((coded[i] - 128) << 8);
     return pcm8;
+  }
+
+  // Best-effort XMA1/XMA2 decode. XWB compact entries carry no XMA extradata, so the
+  // stream layout is inferred from the channel count (2ch+2ch+…+1/2ch, the
+  // XMA2WAVEFORMATEX convention). Returns null — a graceful fallback to the raw blob —
+  // when the orchestrator can't drive the per-stream WMA Pro decode for this bitstream.
+  private static short[]? DecodeXma(ReadOnlySpan<byte> coded, int channels, int sampleRate) {
+    // Synthesize a 34-byte XMA2WAVEFORMATEX extradata so the codec derives the per-stream
+    // channel split from the declared channel count.
+    var extradata = new byte[34];
+    var codec = new XmaCodec(extradata, isXma2: true, sampleRate, channels);
+    return codec.TryDecode(coded, out var pcm) ? pcm : null;
   }
 
   private static short[] DecodeAdpcm(ReadOnlySpan<byte> coded, int blockAlign, int channels) {

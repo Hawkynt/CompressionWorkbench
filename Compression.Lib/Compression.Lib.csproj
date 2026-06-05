@@ -80,6 +80,8 @@
     <ProjectReference Include="..\Codecs\Codec.Atrac1\Codec.Atrac1.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Ra288\Codec.Ra288.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Ralf\Codec.Ralf.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.WmaLossless\Codec.WmaLossless.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Xma\Codec.Xma.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />

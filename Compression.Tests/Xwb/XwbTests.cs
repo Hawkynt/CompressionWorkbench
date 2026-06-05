@@ -165,6 +165,23 @@ public class XwbTests {
   }
 
   [Test]
+  public void Reader_XmaEntry_FallsBackGracefully_OnSyntheticStream() {
+    // A 2KB-aligned but synthetic (zeroed) XMA payload is not a decodable XMA bitstream;
+    // the XMA path must degrade gracefully — the entry is reported as XMA but not decoded,
+    // and no exception escapes the reader.
+    var blob = BuildBank("XmaBank",
+      new Wave("xma_stereo", Tag: 1, Channels: 2, SampleRate: 44100, Bits: 16, AlignIndex: 4,
+        Coded: new byte[2048 * 2]));
+
+    XwbReader.ParsedXwb parsed = null!;
+    Assert.DoesNotThrow(() => parsed = new XwbReader().Read(blob));
+    var e = parsed.Entries.Single();
+    Assert.That(e.FormatTag, Is.EqualTo(1));      // reported as XMA
+    Assert.That(e.Decodable, Is.False);           // synthetic stream → graceful fallback
+    Assert.That(e.Pcm, Is.Null);
+  }
+
+  [Test]
   public void Descriptor_FullOnlyFallback_OnGarbage() {
     var blob = "WBND"u8.ToArray().Concat(new byte[8]).ToArray();
     using var ms = new MemoryStream(blob);

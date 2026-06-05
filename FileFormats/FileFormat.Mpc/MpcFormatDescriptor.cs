@@ -8,11 +8,11 @@ namespace FileFormat.Mpc;
 
 /// <summary>
 /// Exposes a Musepack (<c>.mpc</c>/<c>.mpp</c>/<c>.mp+</c>) file as a pseudo-archive
-/// of <c>FULL.mpc</c> (Kind <c>Container</c>) plus, when the SV8 bitstream decodes,
+/// of <c>FULL.mpc</c> (Kind <c>Container</c>) plus, when the bitstream decodes,
 /// one mono WAV per channel (Kind <c>Channel</c>, named via <see cref="ChannelLayout"/>)
 /// and a <c>metadata.ini</c> (Kind <c>Tag</c>). The decoder targets SV8 (<c>MPCK</c>)
-/// mono/stereo; SV7 (<c>MP+</c>) and any undecodable input degrade gracefully to a
-/// FULL + metadata-only listing. READ-ONLY (no Musepack encoder).
+/// mono/stereo and SV7 (<c>MP+</c>) stereo; any undecodable input degrades gracefully
+/// to a FULL + metadata-only listing. READ-ONLY (no Musepack encoder).
 /// </summary>
 public sealed class MpcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract, IArchiveWriteConstraints {
@@ -71,9 +71,9 @@ public sealed class MpcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       new("FULL.mpc", "Container", blob, "mpc"),
     };
 
-    // Best-effort decode-and-split. SV7 (MP+) and anything the SV8 decoder can't
-    // handle raise NotSupportedException / InvalidDataException; in every failure
-    // case the FULL container is still surfaced, with a metadata note when the
+    // Best-effort decode-and-split. Anything the decoder can't handle (multichannel
+    // SV8, corrupt input) raises NotSupportedException / InvalidDataException; in every
+    // failure case the FULL container is still surfaced, with a metadata note when the
     // stream header could at least be read.
     MusepackStreamInfo? info = null;
     try {

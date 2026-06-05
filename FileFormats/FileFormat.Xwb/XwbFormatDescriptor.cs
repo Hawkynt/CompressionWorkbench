@@ -11,7 +11,8 @@ namespace FileFormat.Xwb;
 /// Exposes a Microsoft XACT Wave Bank (<c>.xwb</c>) as a pseudo-archive: <c>FULL.xwb</c> (the
 /// byte-exact bank), a <c>metadata.ini</c> summary, and one playable WAV per decodable entry
 /// (<c>samples/NNN_&lt;name&gt;.wav</c>, names taken from ENTRYNAMES when present, Kind <c>Sample</c>).
-/// PCM (8/16-bit) and MS-ADPCM entries decode; XMA/WMA entries are skipped with a metadata note.
+/// PCM (8/16-bit) and MS-ADPCM entries decode; XMA entries decode best-effort (graceful fallback);
+/// WMA entries are skipped with a metadata note.
 /// Read-only — rebuilding a bank requires the full XACT toolchain.
 /// </summary>
 public sealed class XwbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
@@ -95,7 +96,10 @@ public sealed class XwbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         3 => "WMA",
         _ => $"tag{e.FormatTag}",
       };
-      var note = e.FormatTag is 1 or 3 ? " (skipped: codec not supported)" : e.Decodable ? "" : " (skipped: unreadable)";
+      var note = e.Decodable ? ""
+        : e.FormatTag == 1 ? " (skipped: XMA stream not decodable)"
+        : e.FormatTag == 3 ? " (skipped: codec not supported)"
+        : " (skipped: unreadable)";
       sb.Append(CultureInfo.InvariantCulture,
         $"entry{e.Index}={e.Name};codec={tagName};channels={e.Channels};rate={e.SampleRate};bits={e.BitsPerSample}{note}\n");
     }

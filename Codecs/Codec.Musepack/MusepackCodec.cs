@@ -15,15 +15,15 @@ public sealed record MusepackStreamInfo(
   int Channels, int SampleRate, long SampleCount, int Version, int MaxBand, bool MidSideUsed);
 
 /// <summary>
-/// Clean-room Musepack SV8 (<c>MPCK</c>) decoder — an MPEG-1 Layer II-derived
-/// subband codec with 1152-sample frames over 32 subbands and the same 32-band
-/// polyphase synthesis filterbank as MP2. Ported faithfully from FFmpeg's
-/// <c>libavcodec/mpc8.c</c> + <c>mpc.c</c> and <c>libavformat/mpc8.c</c>
+/// Clean-room Musepack decoder — an MPEG-1 Layer II-derived subband codec with
+/// 1152-sample frames over 32 subbands and the same 32-band polyphase synthesis
+/// filterbank as MP2. Ported faithfully from FFmpeg's <c>libavcodec/mpc7.c</c> +
+/// <c>mpc8.c</c> + <c>mpc.c</c> and <c>libavformat/mpc.c</c> + <c>mpc8.c</c>
 /// (LGPL 2.1, © Konstantin Shishkov). Output is interleaved little-endian signed
 /// 16-bit PCM.
 /// <para>
-/// <b>Supported:</b> SV8 mono and stereo. <b>Not supported:</b> SV7 (<c>MP+</c>)
-/// and multichannel (&gt;2) raise <see cref="NotSupportedException"/> with a clear
+/// <b>Supported:</b> SV8 (<c>MPCK</c>) mono and stereo, and SV7 (<c>MP+</c>) stereo.
+/// Multichannel SV8 (&gt;2) raises <see cref="NotSupportedException"/> with a clear
 /// message so callers can fall back to a metadata-only view.
 /// </para>
 /// </summary>
@@ -38,7 +38,10 @@ public static class MusepackCodec {
     ArgumentNullException.ThrowIfNull(output);
 
     var data = ReadAll(input);
-    RejectSv7(data);
+    if (IsSv7(data)) {
+      DecompressSv7(data, output);
+      return;
+    }
 
     var (header, firstAudioPos) = ReadHeaderAndLocateAudio(data);
     if (header.Channels > 2)
@@ -82,11 +85,60 @@ public static class MusepackCodec {
   public static MusepackStreamInfo ReadStreamInfo(Stream input) {
     ArgumentNullException.ThrowIfNull(input);
     var data = ReadAll(input);
-    RejectSv7(data);
+    if (IsSv7(data)) {
+      var sv7 = Mpc7Container.ReadHeader(data, out _);
+      // SV7 sample count is per-channel: full frames minus the final-frame trim.
+      var samples = sv7.FrameCount == 0 ? -1L
+        : (long)(sv7.FrameCount - 1) * MpcTables.FrameSize + sv7.LastFrameLen;
+      return new MusepackStreamInfo(
+        2, sv7.SampleRate, samples, sv7.Version, sv7.MaxBands + 1, sv7.MidSideUsed);
+    }
     var (header, _) = ReadHeaderAndLocateAudio(data);
     return new MusepackStreamInfo(
       header.Channels, header.SampleRate, header.SampleCount,
       header.Version, header.MaxBand, header.MidSideUsed);
+  }
+
+  // -- SV7 decode -------------------------------------------------------------
+
+  private static void DecompressSv7(byte[] data, Stream output) {
+    var header = Mpc7Container.ReadHeader(data, out var audioStart);
+    var decoder = new Mpc7FrameDecoder(header.MaxBands, header.MidSideUsed);
+
+    long samplesWritten = 0;
+    foreach (var frame in Mpc7Container.EnumerateFrames(data, audioStart, header.FrameCount)) {
+      // Byte-swap the frame's bytes per 32-bit word, then skip the leading bits.
+      var swapped = Mpc7Container.ByteSwapWords(data.AsSpan(frame.Offset, frame.Size), frame.Size);
+      var gb = new MpcBitReader(swapped, 0, frame.Size);
+      gb.SkipBits(frame.Skip);
+
+      short[][] pcm;
+      try {
+        pcm = decoder.DecodeFrame(gb);
+      } catch (InvalidDataException) {
+        break; // tolerate truncation / corruption: keep what decoded cleanly
+      }
+
+      // The final frame carries only LastFrameLen samples per channel.
+      var emit = frame.LastFrame && header.LastFrameLen > 0
+        ? Math.Min(header.LastFrameLen, MpcTables.FrameSize)
+        : MpcTables.FrameSize;
+      samplesWritten += WriteFrame(output, pcm, emit);
+    }
+    _ = samplesWritten;
+  }
+
+  private static int WriteFrame(Stream output, short[][] perChannelPcm, int emit) {
+    var bytes = new byte[emit * 2 * 2]; // 2 channels, int16
+    var bi = 0;
+    for (var s = 0; s < emit; ++s)
+      for (var ch = 0; ch < 2; ++ch) {
+        var v = perChannelPcm[ch][s];
+        bytes[bi++] = (byte)(v & 0xFF);
+        bytes[bi++] = (byte)((v >> 8) & 0xFF);
+      }
+    output.Write(bytes, 0, bytes.Length);
+    return emit;
   }
 
   // -- header / container plumbing -------------------------------------------
@@ -111,10 +163,9 @@ public static class MusepackCodec {
     throw new InvalidDataException("Musepack: stream header (SH) not found.");
   }
 
-  private static void RejectSv7(byte[] data) {
-    if (data.Length >= 3 && data.AsSpan(0, 3).SequenceEqual(MpcContainer.MagicSv7))
-      throw new NotSupportedException("Musepack SV7 (MP+) is not supported; only SV8 (MPCK) can be decoded.");
-  }
+  private static bool IsSv7(byte[] data)
+    => data.Length >= 4 && data.AsSpan(0, 3).SequenceEqual(MpcContainer.MagicSv7)
+       && data[3] == Mpc7Container.Sv7Version;
 
   private static byte[] ReadAll(Stream input) {
     if (input is MemoryStream ms && ms.TryGetBuffer(out var seg)) {

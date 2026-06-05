@@ -196,21 +196,127 @@ public class MusepackTests {
     Assert.DoesNotThrow(() => MusepackCodec.Decompress(src, pcm));
   }
 
-  // ── SV7 fallback ──────────────────────────────────────────────────────────
+  // ── SV7 decode ────────────────────────────────────────────────────────────
 
   [Test]
-  public void Sv7_Decompress_ThrowsNotSupported() {
-    var sv7 = "MP+"u8.ToArray().Concat(new byte[] { 0x07, 0, 0, 0 }).ToArray();
-    using var src = new MemoryStream(sv7);
-    using var pcm = new MemoryStream();
-    Assert.Throws<NotSupportedException>(() => MusepackCodec.Decompress(src, pcm));
+  public void Sv7_Vlc_InputOrderCanonicalCodes() {
+    // ff_vlc_init_from_lengths assigns codes in INPUT order via a left-aligned counter:
+    // for {sym=9, len=1}, {sym=5, len=2}, {sym=6, len=2} the codes are 0, 10, 11.
+    byte[] table = { 9, 1, 5, 2, 6, 2 };
+    var vlc = new Mpc7Vlc(table, 0);
+    Assert.That(ReadOneSv7(vlc, "0"), Is.EqualTo(9));
+    Assert.That(ReadOneSv7(vlc, "10"), Is.EqualTo(5));
+    Assert.That(ReadOneSv7(vlc, "11"), Is.EqualTo(6));
   }
 
   [Test]
-  public void Sv7_ReadStreamInfo_ThrowsNotSupported() {
+  public void Sv7_Vlc_AppliesSymbolOffset() {
+    // The DSCF book uses offset -7; symbol byte 0x05 (the first, shortest code "010"
+    // per its length-3 head) maps to 5 - 7 = -2. We only assert the offset arithmetic
+    // here via a tiny single-symbol book.
+    byte[] table = { 0x08, 1 };
+    var vlc = new Mpc7Vlc(table, -7);
+    Assert.That(ReadOneSv7(vlc, "0"), Is.EqualTo(1)); // 8 + (-7)
+  }
+
+  [Test]
+  public void Sv7_DscfBook_EscapeSymbolIsEight() {
+    // get_scale_idx treats decoded value 8 as the 6-bit absolute escape. With offset -7
+    // the symbol byte carrying value 8 is 0x0F (15 - 7 = 8). Spot-check the book builds
+    // and that 0x0F is present in the table.
+    var books = Mpc7VlcBooks.Shared;
+    Assert.That(books.Dscf, Is.Not.Null);
+    Assert.That(Mpc7Tables.Dscf, Does.Contain((byte)0x0F));
+  }
+
+  [Test]
+  public void Sv7_QuantBooks_PartitionTheTable() {
+    // The seven quant books in two contexts must consume exactly the whole table.
+    var pairs = 0;
+    foreach (var sz in Mpc7Tables.QuantVlcSizes) pairs += sz * 2;
+    Assert.That(pairs * 2, Is.EqualTo(Mpc7Tables.QuantVlcs.Length),
+      "QuantVlcs holds {symbol,length} pairs for both contexts of every book");
+  }
+
+  [Test]
+  public void Sv7_Idx30Tables_AreBase3Odometer() {
+    // idx30 cycles fastest (period 3), idx31 every 3, idx32 every 9 — over {-1,0,1}.
+    for (var i = 0; i < 27; ++i) {
+      Assert.That(Mpc7Tables.Idx30[i], Is.EqualTo((sbyte)(i % 3 - 1)), $"idx30[{i}]");
+      Assert.That(Mpc7Tables.Idx31[i], Is.EqualTo((sbyte)(i / 3 % 3 - 1)), $"idx31[{i}]");
+      Assert.That(Mpc7Tables.Idx32[i], Is.EqualTo((sbyte)(i / 9 % 3 - 1)), $"idx32[{i}]");
+    }
+  }
+
+  [Test]
+  public void Sv7_Header_ParsesExtradataBits() {
+    // IS=1, MSS=1, maxbands=5, gapless=1, lastFrameLen=1000, sample-rate index 2 (37800).
+    var sv7 = BuildSilentSv7(maxbands: 5, mss: true, intensity: true, gapless: true,
+      lastFrameLen: 1000, sampleRateIdx: 2, frameCount: 1);
+    using var ms = new MemoryStream(sv7);
+    var info = MusepackCodec.ReadStreamInfo(ms);
+    Assert.That(info.Version, Is.EqualTo(7));
+    Assert.That(info.Channels, Is.EqualTo(2));
+    Assert.That(info.SampleRate, Is.EqualTo(37800));
+    Assert.That(info.MaxBand, Is.EqualTo(6));   // maxbands + 1
+    Assert.That(info.MidSideUsed, Is.True);
+    Assert.That(info.SampleCount, Is.EqualTo(1000)); // single frame → lastFrameLen
+  }
+
+  [Test]
+  public void Sv7_Decode_SilentFrame_ProducesStereoSilence() {
+    // A single SV7 frame with maxbands=0 and all-zero subband resolutions decodes to
+    // digital silence; the final frame emits exactly lastFrameLen samples per channel.
+    var sv7 = BuildSilentSv7(maxbands: 0, mss: false, intensity: false, gapless: false,
+      lastFrameLen: 1152, sampleRateIdx: 0, frameCount: 1);
+    using var src = new MemoryStream(sv7);
+    using var pcm = new MemoryStream();
+    MusepackCodec.Decompress(src, pcm);
+
+    var bytes = pcm.ToArray();
+    Assert.That(bytes.Length, Is.EqualTo(1152 * 2 * 2), "1152 stereo int16 samples");
+    Assert.That(bytes, Is.All.EqualTo(0));
+  }
+
+  [Test]
+  public void Sv7_Decode_RespectsLastFrameLenTrim() {
+    var sv7 = BuildSilentSv7(maxbands: 0, mss: false, intensity: false, gapless: false,
+      lastFrameLen: 400, sampleRateIdx: 0, frameCount: 1);
+    using var src = new MemoryStream(sv7);
+    using var pcm = new MemoryStream();
+    MusepackCodec.Decompress(src, pcm);
+    Assert.That(pcm.ToArray().Length, Is.EqualTo(400 * 2 * 2));
+  }
+
+  [Test]
+  public void Sv7_FrameWalker_ComputesSingleFrameRange() {
+    var sv7 = BuildSilentSv7(maxbands: 0, mss: false, intensity: false, gapless: false,
+      lastFrameLen: 1152, sampleRateIdx: 0, frameCount: 1);
+    var frames = Mpc7Container.EnumerateFrames(sv7, 24, 1).ToList();
+    Assert.That(frames.Count, Is.EqualTo(1));
+    Assert.That(frames[0].Offset, Is.EqualTo(24));
+    Assert.That(frames[0].Skip, Is.EqualTo(28));   // curbits(8) + 20
+    Assert.That(frames[0].Size, Is.EqualTo(4));     // ((0+28+31)&~31)>>3
+    Assert.That(frames[0].LastFrame, Is.True);
+  }
+
+  [Test]
+  public void Sv7_Descriptor_SurfacesStereoChannels() {
+    var sv7 = BuildSilentSv7(maxbands: 0, mss: false, intensity: false, gapless: false,
+      lastFrameLen: 1152, sampleRateIdx: 0, frameCount: 1);
+    using var ms = new MemoryStream(sv7);
+    var entries = new MpcFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "FULL.mpc"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "RIGHT.wav"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "metadata.ini"), Is.True);
+  }
+
+  [Test]
+  public void Sv7_TooShort_ReadStreamInfoThrows() {
     var sv7 = "MP+"u8.ToArray().Concat(new byte[] { 0x07, 0, 0, 0 }).ToArray();
     using var src = new MemoryStream(sv7);
-    Assert.Throws<NotSupportedException>(() => MusepackCodec.ReadStreamInfo(src));
+    Assert.Throws<InvalidDataException>(() => MusepackCodec.ReadStreamInfo(src));
   }
 
   // ── Descriptor list / extract / fallback ──────────────────────────────────
@@ -279,6 +385,55 @@ public class MusepackTests {
     var s = 0;
     foreach (var v in a) s += v;
     return s;
+  }
+
+  private static int ReadOneSv7(Mpc7Vlc vlc, string bitsMsbFirst) {
+    var bytes = new byte[(bitsMsbFirst.Length + 7) / 8];
+    for (var i = 0; i < bitsMsbFirst.Length; ++i)
+      if (bitsMsbFirst[i] == '1')
+        bytes[i / 8] |= (byte)(1 << (7 - (i % 8)));
+    return vlc.Read(new MpcBitReader(bytes, 0, bytes.Length));
+  }
+
+  // Builds a complete decodable silent SV7 stream: the MP+ header (magic, version,
+  // frame count, 16 bytes extradata) followed by a single all-zero 4-byte frame. With
+  // curbits=8 and a zero 20-bit size field the frame buffer is 4 bytes; the decoder
+  // skips 28 bits then reads all-zero band resolutions → digital silence.
+  private static byte[] BuildSilentSv7(int maxbands, bool mss, bool intensity, bool gapless,
+      int lastFrameLen, int sampleRateIdx, uint frameCount) {
+    // Build the 16-byte extradata bit content (MSB-first), then byte-swap per word to
+    // obtain the on-disk raw bytes the decoder will swap back.
+    var swapped = new byte[16];
+    var bit = 0;
+    void Put(int value, int n) {
+      for (var i = n - 1; i >= 0; --i) {
+        if (((value >> i) & 1) != 0)
+          swapped[bit >> 3] |= (byte)(1 << (7 - (bit & 7)));
+        ++bit;
+      }
+    }
+    Put(intensity ? 1 : 0, 1);
+    Put(mss ? 1 : 0, 1);
+    Put(maxbands, 6);
+    Put(0, 88);
+    Put(gapless ? 1 : 0, 1);
+    Put(lastFrameLen, 11);
+
+    var rawExtra = Mpc7Container.ByteSwapWords(swapped, 16);
+    // Sample rate comes from the RAW extra byte 2 (& 3); raw[2] == swapped[1] which sits
+    // in the skipped region, so it does not disturb the decoded fields above.
+    rawExtra[2] = (byte)((rawExtra[2] & ~3) | (sampleRateIdx & 3));
+
+    var file = new List<byte>();
+    file.AddRange("MP+"u8.ToArray());
+    file.Add(0x07);
+    file.Add((byte)(frameCount & 0xFF));
+    file.Add((byte)((frameCount >> 8) & 0xFF));
+    file.Add((byte)((frameCount >> 16) & 0xFF));
+    file.Add((byte)((frameCount >> 24) & 0xFF));
+    file.AddRange(rawExtra);
+    file.AddRange(new byte[4]); // one all-zero frame (size2 == 0 → 4-byte frame)
+    return file.ToArray();
   }
 
   private static int ReadOne(MpcVlc vlc, string bitsMsbFirst) {
