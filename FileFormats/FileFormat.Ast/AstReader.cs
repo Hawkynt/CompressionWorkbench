@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Codec.AdpcmX;
 
 namespace FileFormat.Ast;
 
@@ -14,8 +15,10 @@ namespace FileFormat.Ast;
 /// then each channel's <c>blockSize</c> bytes back-to-back (channel-interleaved at block granularity).
 /// </para>
 /// <para>
-/// Codec 1 (PCM16BE) is decoded fully to little-endian PCM. Codec 0 (AFC ADPCM) is not decoded — the
-/// reader reports the codec so the descriptor can fall back to FULL-only with a metadata note.
+/// Codec 1 (PCM16BE) is decoded fully to little-endian PCM. Codec 0 (AFC ADPCM) is decoded via
+/// <see cref="Codec.AdpcmX.Thp.DecodeAfc"/>: each channel's BLCK bytes are concatenated and run
+/// through the fixed-table AFC decoder (9-byte frames → 16 samples each), capped at the header's
+/// sample count.
 /// </para>
 /// </summary>
 public sealed class AstReader {
@@ -55,12 +58,42 @@ public sealed class AstReader {
     var info = new Header(codec, bitDepth, channels, loopFlag != 0, sampleRate, sampleCount,
       loopStart, loopEnd);
 
-    if (codec != 1)
-      // AFC ADPCM (or unknown): not decoded; descriptor falls back to FULL-only.
-      return new ParsedAst(info, []);
-
-    var pcm = DecodePcm16(data, info);
+    var pcm = codec switch {
+      1 => DecodePcm16(data, info),
+      0 => DecodeAfc(data, info),
+      _ => [],   // unknown coding: descriptor falls back to FULL-only.
+    };
     return new ParsedAst(info, pcm);
+  }
+
+  // AFC ADPCM: gather each channel's BLCK bytes, then decode the per-channel stream with the
+  // fixed AFC coefficient table. AFC frames are 9 bytes (16 samples); decoding is stateful within
+  // a channel, so the channel's blocks are concatenated before a single decode.
+  private static short[][] DecodeAfc(ReadOnlySpan<byte> data, Header info) {
+    var channels = info.NumChannels;
+    var channelBytes = new List<byte>[channels];
+    for (var c = 0; c < channels; ++c)
+      channelBytes[c] = [];
+
+    var pos = 0x40;
+    while (pos + 32 <= data.Length) {
+      if (data[pos] != 'B' || data[pos + 1] != 'L' || data[pos + 2] != 'C' || data[pos + 3] != 'K')
+        break;
+      var blockSize = (int)BinaryPrimitives.ReadUInt32BigEndian(data[(pos + 4)..]);
+      var payload = pos + 32;
+      for (var c = 0; c < channels; ++c) {
+        var chStart = payload + c * blockSize;
+        if (chStart + blockSize > data.Length)
+          break;
+        channelBytes[c].AddRange(data.Slice(chStart, blockSize).ToArray());
+      }
+      pos = payload + channels * blockSize;
+    }
+
+    var pcm = new short[channels][];
+    for (var c = 0; c < channels; ++c)
+      pcm[c] = Thp.DecodeAfc(channelBytes[c].ToArray(), info.SampleCount);
+    return pcm;
   }
 
   // PCM16BE: walk BLCK blocks, accumulate each channel's big-endian samples → little-endian shorts.

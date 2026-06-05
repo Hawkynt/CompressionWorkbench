@@ -8,11 +8,10 @@ using FileFormat.Wav;
 namespace FileFormat.Ast;
 
 /// <summary>
-/// Exposes a GameCube/Wii <c>.ast</c> (STRM stream) as an archive of <c>FULL.ast</c> plus, for the
-/// PCM16BE coding, one decoded mono WAV per channel (named per <see cref="ChannelLayout"/>) plus a
-/// <c>metadata.ini</c>. The AFC-ADPCM coding (codec 0) is not decoded: the archive then surfaces
-/// <c>FULL.ast</c> plus a <c>metadata.ini</c> noting the undecoded codec. Unparseable input falls
-/// back gracefully to <c>FULL.ast</c> only.
+/// Exposes a GameCube/Wii <c>.ast</c> (STRM stream) as an archive of <c>FULL.ast</c> plus, for both
+/// the PCM16BE (codec 1) and AFC-ADPCM (codec 0) codings, one decoded mono WAV per channel (named
+/// per <see cref="ChannelLayout"/>) plus a <c>metadata.ini</c>. Unparseable input falls back
+/// gracefully to <c>FULL.ast</c> only.
 /// </summary>
 public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
@@ -130,7 +129,7 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   private static byte[] BuildMetadata(AstReader.Header info) {
     var codecName = info.Codec switch {
-      0 => "AFC-ADPCM (not decoded)",
+      0 => "AFC-ADPCM",
       1 => "PCM16BE",
       _ => $"unknown({info.Codec})",
     };

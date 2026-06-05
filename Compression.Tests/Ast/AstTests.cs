@@ -75,25 +75,57 @@ public class AstTests {
     Assert.That(ini, Does.Contain("codec=PCM16BE"));
   }
 
+  // Builds an AFC-coded AST: codec 0, one BLCK with each channel's AFC frames laid out
+  // back-to-back. The frames use the index-0 / exponent-0 path (header 0x00, bare sign-extended
+  // nibbles) so the decoded samples are predictable by hand — the same coef-0 trick the
+  // DspAdpcm/THP tests rely on.
+  private static byte[] BuildAfcAst(byte[] chFrames0, byte[] chFrames1, int sampleCount, int sampleRate) {
+    if (chFrames0.Length != chFrames1.Length)
+      throw new ArgumentException("equal per-channel block sizes");
+    var blockSize = chFrames0.Length;
+
+    var header = new byte[0x40];
+    "STRM"u8.CopyTo(header);
+    BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(8), 0);    // codec = AFC
+    BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(10), 16);
+    BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(12), 2);   // channels
+    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(16), (uint)sampleRate);
+    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(20), (uint)sampleCount);
+
+    var block = new byte[32];
+    "BLCK"u8.CopyTo(block);
+    BinaryPrimitives.WriteUInt32BigEndian(block.AsSpan(4), (uint)blockSize);
+
+    return [.. header, .. block, .. chFrames0, .. chFrames1];
+  }
+
   [Test]
-  public void Descriptor_AfcCodec_FallsBackToFullOnly_WithNote() {
-    // Hand-craft an AST header with codec 0 (AFC) and no usable blocks.
-    var blob = new byte[0x40];
-    "STRM"u8.CopyTo(blob);
-    BinaryPrimitives.WriteUInt16BigEndian(blob.AsSpan(8), 0);    // codec = AFC
-    BinaryPrimitives.WriteUInt16BigEndian(blob.AsSpan(10), 16);
-    BinaryPrimitives.WriteUInt16BigEndian(blob.AsSpan(12), 2);   // channels
-    BinaryPrimitives.WriteUInt32BigEndian(blob.AsSpan(16), 32000);
-    BinaryPrimitives.WriteUInt32BigEndian(blob.AsSpan(20), 1000);
+  public void Descriptor_AfcCodec_DecodesPerChannel() {
+    // One AFC frame (9 bytes) per channel; header 0x00 + 8 data bytes = 16 bare-nibble samples.
+    var left = new byte[] { 0x00, 0x12, 0x34, 0x56, 0x70, 0x00, 0x00, 0x00, 0x00 };
+    var right = new byte[] { 0x00, 0x21, 0x43, 0x65, 0x07, 0x00, 0x00, 0x00, 0x00 };
+    var blob = BuildAfcAst(left, right, sampleCount: 16, sampleRate: 32000);
 
     using var ms = new MemoryStream(blob);
     var entries = new AstFormatDescriptor().List(ms, null);
     Assert.That(entries.Any(e => e.Name == "FULL.ast"), Is.True);
-    Assert.That(entries.Any(e => e.Kind == "Channel"), Is.False); // AFC not decoded
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav" && e.Kind == "Channel"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "RIGHT.wav" && e.Kind == "Channel"), Is.True);
 
+    // Verify the decoded LEFT channel matches the hand-walked AFC nibbles (HIGH first):
+    // 1,2,3,4,5,6,7,0,0,0,...
     using var ms2 = new MemoryStream(blob);
+    using var wav = new MemoryStream();
+    new AstFormatDescriptor().ExtractEntry(ms2, "LEFT.wav", wav, null);
+    var parsed = new FileFormat.Wav.WavReader().Read(wav.ToArray());
+    var samples = new short[parsed.InterleavedPcm.Length / 2];
+    for (var i = 0; i < samples.Length; ++i)
+      samples[i] = BinaryPrimitives.ReadInt16LittleEndian(parsed.InterleavedPcm.AsSpan(i * 2));
+    Assert.That(samples[..8], Is.EqualTo(new short[] { 1, 2, 3, 4, 5, 6, 7, 0 }));
+
+    using var ms3 = new MemoryStream(blob);
     using var meta = new MemoryStream();
-    new AstFormatDescriptor().ExtractEntry(ms2, "metadata.ini", meta, null);
+    new AstFormatDescriptor().ExtractEntry(ms3, "metadata.ini", meta, null);
     Assert.That(Encoding.UTF8.GetString(meta.ToArray()), Does.Contain("AFC"));
   }
 
