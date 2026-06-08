@@ -7,82 +7,99 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.Aomei;
 
 /// <summary>
-/// Read-only header-surface descriptor for AOMEI Backupper image files
-/// (<c>.adi</c> disk/partition/system backup, <c>.afi</c> file/folder
-/// backup). Both share the 5-byte ASCII signature <c>BIFH\</c> ("Backup
-/// Image File Header") at offset 0; the trailing backslash is part of the
-/// signature, not a path delimiter.
+/// Read/write descriptor for AOMEI Backupper image files (<c>.adi</c> disk /
+/// partition / system backup, <c>.afi</c> file/folder backup). Both share
+/// the <see cref="AomeiReader.Magic"/> 5-byte ASCII signature at offset 0
+/// (the trailing backslash is the low byte of the
+/// <see cref="BrFileHead.Size"/> field, not a path separator).
 ///
 /// <para>
-/// AOMEI Backupper is a closed-source consumer backup product from Chengdu
-/// Aomei Technology Co. (傲梅科技). The on-disk format is fully proprietary
-/// and is implemented by the kernel-mode drivers <c>ambakdrv.sys</c>,
-/// <c>amwrtdrv.sys</c>, and <c>ammntdrv.sys</c>. AOMEI publishes no SDK and
-/// no public on-disk format specification.
+/// Implementation ported from the reverse-engineered format spec at
+/// <c>docs/AOMEI_FORMAT_SPEC.md</c>: full <c>BIFH</c>/<c>BIFT</c> structs
+/// with <c>BRCrc32</c> verification, the recovered
+/// <c>BR_STANDARD_HEADER</c> tagged-record framing, and typed views of the
+/// four confirmed INFO records (COMPRESS / ENCRYPT / PASSWORD /
+/// BACKUP_TYPE).
 /// </para>
 ///
 /// <para>
-/// Research scope (June 2026): a deep search across English- and Chinese-
-/// language reverse-engineering communities (Google, GitHub, 010 Editor
-/// template repos, libyal, Joachim Metz forensic specs, 52pojie.cn,
-/// kanxue.com, freebuf.com, bilibili) produced <b>no</b> public chunk-
-/// layout documentation past the 5-byte ASCII header. The closest public
-/// information stops at the magic bytes themselves (cross-checked via
-/// filext.com, fileinfo.com, file-extensions.org) plus high-level product
-/// behaviour (optional compression, password encryption, splitting, and
-/// incremental/differential chains — all algorithmically undocumented).
+/// <b>What is surfaced for parsable input:</b>
 /// </para>
-///
-/// <para>
-/// What this descriptor surfaces:
 /// <list type="bullet">
-///   <item><description><c>FULL.bifh</c> — the raw image bytes.</description></item>
-///   <item><description><c>metadata.ini</c> — parse status plus the
-///         speculative post-magic 32-bit word as a diagnostic hex
-///         value.</description></item>
-///   <item><description><c>header.bin</c> — 64-byte capture of the file
-///         start for forensic inspection (only when the magic
-///         matches).</description></item>
+///   <item><description><c>FULL.bifh</c> — the raw image bytes (also acts as
+///         a fallback for callers that just want the original payload).</description></item>
+///   <item><description><c>metadata.ini</c> — parse status, decoded INFO
+///         record fields (backup_type, compress method/level, encrypt
+///         method/keylen, password MD5), record-walk summary.</description></item>
+///   <item><description><c>header.bin</c> — the original 64-byte capture of
+///         the file start (preserved from the R/O baseline for backward
+///         compatibility with downstream forensic tooling).</description></item>
+///   <item><description><c>head.bin</c> / <c>tail.bin</c> — the full 0x65C
+///         BIFH and 0x674 BIFT structs, available when the file is long
+///         enough to contain them, for future RE work on the as-yet-TODO
+///         body fields.</description></item>
+///   <item><description><c>record-NN-NAME.bin</c> — every walked
+///         <c>BR_STANDARD_HEADER</c>-prefixed record's raw bytes,
+///         filename-tagged with its type code. Lets callers inspect the
+///         INDEX_TYPE_* records whose body layouts remain TODO.</description></item>
+///   <item><description><c>userdata/NAME</c> — when the file was produced by
+///         this project's writer, the user-data envelopes
+///         (<see cref="AomeiWriter.UserDataTypeTag"/>) are unwrapped and
+///         their original filename + payload are emitted under a
+///         <c>userdata/</c> prefix.</description></item>
 /// </list>
-/// No chunk index, no payload extraction, no defragmentation — those
-/// require a real format spec or a clean-room RE effort that does not
-/// currently exist in the public domain.
-/// </para>
 ///
 /// <para>
-/// Detection: 5-byte magic <c>42 49 46 48 5C</c> ("BIFH\") at offset 0.
-/// Extensions <c>.adi</c> and <c>.afi</c> are both registered.
+/// <b>Create() — round-trip honest:</b> the writer emits a wire-format
+/// correct BIFH+INFO+BIFT container with sealed CRCs. The container
+/// round-trips through our own reader. <i>It is not byte-compatible with
+/// the AOMEI Backupper application</i>: the head/tail body fields (0x650 /
+/// 0x668 bytes after the standard header) are zero-filled because their
+/// layout is TODO in the recovered spec. Containers produced here advertise
+/// compression / encryption / backup-type via standard INFO records, and
+/// wrap user inputs in a vendor-namespace
+/// <see cref="AomeiWriter.UserDataTypeTag"/> envelope so the project's own
+/// reader can extract them again.
 /// </para>
-///
-/// References (all dry-holes for chunk layout, listed for audit trail):
-/// <list type="bullet">
-///   <item><description>filext.com BIFH file-signature entries for ADI/AFI</description></item>
-///   <item><description>52pojie.cn AOMEI Backupper threads (cracked builds, no RE)</description></item>
-///   <item><description>kanxue.com (no AOMEI threads located)</description></item>
-///   <item><description>aomeitech.com user manual (no format spec)</description></item>
-///   <item><description>AOMEI forum *.adi → VMDK PDF (restore-only workflow)</description></item>
-/// </list>
 /// </summary>
-public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   public string Id => "Aomei";
   public string DisplayName => "AOMEI Backupper Image (ADI/AFI)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanTest | FormatCapabilities.CanCreate;
   public string DefaultExtension => ".adi";
   public IReadOnlyList<string> Extensions => [".adi", ".afi"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(AomeiReader.Magic, Offset: 0, Confidence: 0.95f),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [
+    new("stored", "Stored"),
+    new("lz4", "LZ4 raw block"),
+    new("zlib", "zlib"),
+  ];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "AOMEI Backupper disk (.adi) / file (.afi) image — header-surface read-only; "
-    + "chunk framing past the BIFH magic is undocumented in all public sources "
-    + "(English and Chinese RE communities searched).";
+    "AOMEI Backupper disk (.adi) / file (.afi) image — BIFH/BIFT outer container R/W via the " +
+    "BR_STANDARD_HEADER tagged-record framing recovered by reverse engineering " +
+    "(docs/AOMEI_FORMAT_SPEC.md). Reader: verifies BIFH magic+size+CRC32 at offset 0 (0x65C bytes), " +
+    "verifies BIFT magic+size+CRC32 at file_size-0x674, walks every BR_STANDARD_HEADER-prefixed " +
+    "INFO/INDEX record and surfaces typed views of the four confirmed records " +
+    "(INFO_TYPE_IMAGE_COMPRESS=0x105, INFO_TYPE_IMAGE_ENCRYPT=0x106, INFO_TYPE_IMAGE_PASSWORD=0x107 " +
+    "with MD5(UTF-16LE(password)), INFO_TYPE_BACKUP_TYPE=0x10C). " +
+    "Writer: emits wire-format-correct BIFH+INFO+BIFT round-trip containers with sealed CRCs. " +
+    "Known limitations: (1) head/tail body fields past the first 12 bytes are zero-filled " +
+    "(layout TODO per spec §10.1) so containers are NOT byte-compatible with AOMEI Backupper; " +
+    "(2) INDEX_TYPE_* record body layouts are TODO per spec §10.5 so payload data is wrapped in " +
+    "a vendor-namespace user-data envelope rather than the real INDEX_TYPE_DATABLOCK / DATAAREA " +
+    "framing; (3) AES variant and IV derivation are TODO per spec §10.3-4 so encryption is " +
+    "advertised but not applied; (4) the scheduled-task magic password " +
+    "'AomeiTech.SchduleTask' is recognised but its MD5 substitution requires the runtime " +
+    "scheduler context which is unavailable offline.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -110,6 +127,23 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
     if (reader.Valid)
       entries.Add(new ArchiveEntryInfo(idx++, "header.bin", reader.HeaderRaw.LongLength, reader.HeaderRaw.LongLength, "stored", false, false, null));
+    if (reader.Head is not null)
+      entries.Add(new ArchiveEntryInfo(idx++, "head.bin", AomeiConstants.BifhSize, AomeiConstants.BifhSize, "stored", false, false, null));
+    if (reader.Tail is not null)
+      entries.Add(new ArchiveEntryInfo(idx++, "tail.bin", AomeiConstants.BiftSize, AomeiConstants.BiftSize, "stored", false, false, null));
+
+    for (var i = 0; i < reader.Records.Count; ++i) {
+      var record = reader.Records[i];
+      if (record.Header.Type == AomeiWriter.UserDataTypeTag) {
+        var name = AomeiWriter.ReadUserDataName(record.Body);
+        var payload = AomeiWriter.ReadUserDataPayload(record.Body);
+        var safeName = string.IsNullOrEmpty(name) ? $"entry-{i:D3}" : name;
+        entries.Add(new ArchiveEntryInfo(idx++, "userdata/" + safeName, payload.LongLength, payload.LongLength, "stored", false, false, null));
+      } else {
+        var fname = $"record-{i:D3}-{record.TypeName}.bin";
+        entries.Add(new ArchiveEntryInfo(idx++, fname, record.Header.Size, record.Header.Size, "stored", false, false, null));
+      }
+    }
     return entries;
   }
 
@@ -136,6 +170,100 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(reader), files);
     if (reader.Valid)
       WriteIfMatch(outputDir, "header.bin", reader.HeaderRaw, files);
+    if (reader.Head is not null)
+      WriteIfMatch(outputDir, "head.bin", image[..AomeiConstants.BifhSize], files);
+    if (reader.Tail is not null)
+      WriteIfMatch(outputDir, "tail.bin", image[^AomeiConstants.BiftSize..], files);
+
+    for (var i = 0; i < reader.Records.Count; ++i) {
+      var record = reader.Records[i];
+      if (record.Header.Type == AomeiWriter.UserDataTypeTag) {
+        var name = AomeiWriter.ReadUserDataName(record.Body);
+        var payload = AomeiWriter.ReadUserDataPayload(record.Body);
+        var safeName = string.IsNullOrEmpty(name) ? $"entry-{i:D3}" : name;
+        WriteIfMatch(outputDir, "userdata/" + safeName, payload, files);
+      } else {
+        var fname = $"record-{i:D3}-{record.TypeName}.bin";
+        // Rebuild the on-disk bytes of the record from header + body so the
+        // raw file matches the original wire bytes exactly.
+        var on = new byte[record.Header.Size];
+        record.Header.Write(on);
+        record.Body.CopyTo(on, AomeiConstants.StandardHeaderSize);
+        WriteIfMatch(outputDir, fname, on, files);
+      }
+    }
+  }
+
+  /// <summary>
+  /// Creates a fresh AOMEI <c>.adi</c> container at <paramref name="output"/>
+  /// wrapping the supplied inputs. The container is built via
+  /// <see cref="AomeiWriter"/> with sealed CRCs and round-trips through
+  /// <see cref="AomeiReader"/>.
+  /// </summary>
+  /// <remarks>
+  /// <para>
+  /// Options honoured:
+  /// <list type="bullet">
+  ///   <item><description><see cref="FormatCreateOptions.Password"/> — when
+  ///         non-empty an <see cref="AomeiConstants.InfoTypeImagePassword"/>
+  ///         record carrying MD5(UTF-16LE(password)) is emitted.</description></item>
+  ///   <item><description><c>FormatSpecific["backup_type"]</c> — 32-bit
+  ///         backup-kind code (default 0). Emits an
+  ///         <see cref="AomeiConstants.InfoTypeBackupType"/> record.</description></item>
+  ///   <item><description><c>FormatSpecific["compress_method"]</c> /
+  ///         <c>FormatSpecific["compress_level"]</c> — compress info codes.
+  ///         Default: <see cref="AomeiConstants.CompressMethodNone"/>.</description></item>
+  ///   <item><description><c>FormatSpecific["encrypt_method"]</c> /
+  ///         <c>FormatSpecific["encrypt_key_len"]</c> — only honoured when
+  ///         a password is set.</description></item>
+  /// </list>
+  /// </para>
+  /// <para>
+  /// Encryption is <i>advertised</i> via the INFO record but the user-data
+  /// payload bytes are stored verbatim because the AES variant and IV
+  /// derivation are TODO in the recovered spec (§10.3-4). Callers that
+  /// supply a password get an MD5 record and the AOMEI scheduled-task
+  /// substitution semantics noted in the spec — they do <i>not</i> get
+  /// AES-CBC-encrypted payload bytes.
+  /// </para>
+  /// </remarks>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+
+    var backupType = (uint?)options.GetOptionInt("backup_type", -1);
+    if (backupType == unchecked((uint)-1)) backupType = null;
+
+    var compressMethodRaw = options.GetOptionInt("compress_method", -1);
+    (uint Method, uint Level)? compressInfo = null;
+    if (compressMethodRaw >= 0) {
+      var level = (uint)options.GetOptionInt("compress_level", 0);
+      compressInfo = ((uint)compressMethodRaw, level);
+    }
+
+    (uint Method, uint KeyLen)? encryptInfo = null;
+    if (!string.IsNullOrEmpty(options.Password)) {
+      var em = (uint)options.GetOptionInt("encrypt_method", 0);
+      var ekl = (uint)options.GetOptionInt("encrypt_key_len", 16);
+      encryptInfo = (em, ekl);
+    }
+
+    var userData = new List<(string Name, byte[] Data)>();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      userData.Add((input.ArchiveName, input.ReadContent()));
+    }
+
+    var writer = new AomeiWriter {
+      BackupTypeKind = backupType,
+      CompressInfo = compressInfo,
+      EncryptInfo = encryptInfo,
+      Password = options.Password,
+      UserData = userData,
+    };
+    var bytes = writer.Build();
+    output.Write(bytes, 0, bytes.Length);
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
@@ -150,23 +278,48 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     if (r.Valid) {
       b.Append("magic=BIFH\\\n");
       b.Append(ic, $"post_magic_u32_le=0x{r.PostMagicWord:X8}\n");
-      b.Append("chunk_layout=undocumented\n");
-      b.Append("compression_algorithm=undocumented\n");
-      b.Append("encryption_algorithm=undocumented\n");
     }
+    if (r.Head is { } head) {
+      b.Append(ic, $"head_flag=0x{head.Flag:X8}\n");
+      b.Append(ic, $"head_size=0x{head.Size:X}\n");
+      b.Append(ic, $"head_crc32=0x{head.Crc32:X8}\n");
+      b.Append(ic, $"head_crc_valid={(r.HeadCrcValid ? "true" : "false")}\n");
+    }
+    if (r.Tail is { } tail) {
+      b.Append(ic, $"tail_flag=0x{tail.Flag:X8}\n");
+      b.Append(ic, $"tail_size=0x{tail.Size:X}\n");
+      b.Append(ic, $"tail_crc32=0x{tail.Crc32:X8}\n");
+      b.Append(ic, $"tail_crc_valid={(r.TailCrcValid ? "true" : "false")}\n");
+    }
+    b.Append(ic, $"record_count={r.Records.Count}\n");
+    if (r.BackupTypeKind is { } bt)
+      b.Append(ic, $"backup_type_kind=0x{bt:X8}\n");
+    if (r.CompressMethod is { } cm) {
+      b.Append(ic, $"compress_method=0x{cm:X8}\n");
+      b.Append(ic, $"compress_level={r.CompressLevel ?? 0}\n");
+    }
+    if (r.EncryptMethod is { } em) {
+      b.Append(ic, $"encrypt_method=0x{em:X8}\n");
+      b.Append(ic, $"encrypt_key_len={r.EncryptKeyLen ?? 0}\n");
+    }
+    if (r.PasswordMd5 is { } md5) {
+      var hex = new StringBuilder(md5.Length * 2);
+      foreach (var by in md5) hex.AppendFormat(ic, "{0:x2}", by);
+      b.Append(ic, $"password_md5={hex}\n");
+    }
+    b.Append("head_body_layout=undocumented_per_spec_section_10_1\n");
+    b.Append("tail_body_layout=undocumented_per_spec_section_10_1\n");
+    b.Append("index_body_layout=undocumented_per_spec_section_10_5\n");
+    b.Append("aes_variant_and_iv=undocumented_per_spec_section_10_3_4\n");
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
-  // 64 KB cap — header is at offset 0 and the descriptor only surfaces
-  // metadata; speculative carver scans therefore can't pull a multi-GB
-  // image into memory.
-  private const int HeaderReadCap = 64 * 1024;
-
+  // Reader uses the same per-instance cap as AomeiReader.
   private static byte[] ReadAllBounded(Stream stream) {
     using var ms = new MemoryStream();
     var buf = new byte[8192];
     int read;
-    while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
+    while (ms.Length < AomeiReader.MaxImageBytes && (read = stream.Read(buf, 0, buf.Length)) > 0)
       ms.Write(buf, 0, read);
     return ms.ToArray();
   }

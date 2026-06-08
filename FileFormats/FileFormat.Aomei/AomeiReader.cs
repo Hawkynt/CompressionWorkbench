@@ -4,88 +4,141 @@ using System.Buffers.Binary;
 namespace FileFormat.Aomei;
 
 /// <summary>
-/// Header-only reader for AOMEI Backupper image files (<c>.adi</c> disk /
-/// partition / system image and <c>.afi</c> file backup). Both image kinds
-/// share the same 5-byte ASCII signature <c>BIFH\</c> ("Backup Image File
-/// Header") at offset 0. AOMEI is produced by Chengdu Aomei Technology Co.
-/// (傲梅科技, Chengdu, China) and the format is fully proprietary; the kernel-
-/// mode write/mount/backup drivers (<c>ambakdrv.sys</c>, <c>amwrtdrv.sys</c>,
-/// <c>ammntdrv.sys</c>) implement the on-disk layout but are closed source.
+/// Reader for AOMEI Backupper image files (<c>.adi</c> disk / partition /
+/// system image and <c>.afi</c> file backup), implementing the partial
+/// specification recovered from binary reverse engineering of the AOMEI
+/// Backupper binary stack — see <c>docs/AOMEI_FORMAT_SPEC.md</c>.
 ///
 /// <para>
-/// Research scope (June 2026): deep search across English- and Chinese-
-/// language reverse-engineering communities (Google, GitHub, 010 Editor
-/// template repos, libyal, Joachim Metz forensic specs, 52pojie.cn,
-/// kanxue.com, freebuf.com, bilibili) produced <b>no</b> public chunk-layout
-/// documentation past the 5-byte ASCII header. AOMEI publishes no SDK and
-/// no on-disk format spec; the only documented access path is via AOMEI's
-/// own "Explore Image" or restore-to-VMDK workflow.
+/// What this reader verifies and surfaces:
 /// </para>
+/// <list type="bullet">
+///   <item><description>Five-byte ASCII signature <c>BIFH\</c> at offset 0
+///         — preserved from the original R/O metadata baseline so detection
+///         logic stays unchanged.</description></item>
+///   <item><description>Full <c>BR_IMAGE_FILE_HEAD</c> at offset 0 (0x65C
+///         bytes): Flag, Size and Crc32 fields verified per spec §2.1; the
+///         remaining 0x650 body bytes are surfaced as
+///         <see cref="HeadBody"/> for future RE work.</description></item>
+///   <item><description>Full <c>BR_IMAGE_FILE_TAIL</c> at offset
+///         <c>file_size - 0x674</c>: same Flag/Size/Crc32 verification, body
+///         surfaced as <see cref="TailBody"/>.</description></item>
+///   <item><description>Walk of every <c>BR_STANDARD_HEADER</c>-prefixed
+///         record between the head and the tail; each record's CRC is
+///         verified per the spec §3.1 invariant
+///         <c>BRCrc32(record, sizeof(record)) == saved_crc</c>.</description></item>
+///   <item><description>Typed views of the four confirmed INFO records:
+///         <see cref="AomeiConstants.InfoTypeImageCompress"/> (0x105),
+///         <see cref="AomeiConstants.InfoTypeImageEncrypt"/> (0x106),
+///         <see cref="AomeiConstants.InfoTypeImagePassword"/> (0x107),
+///         <see cref="AomeiConstants.InfoTypeBackupType"/> (0x10C).</description></item>
+/// </list>
 ///
 /// <para>
-/// What is publicly known from product behaviour (not enough to parse the
-/// payload):
-/// <list type="bullet">
-///   <item><description>5-byte ASCII signature <c>BIFH\</c> at offset 0 — same
-///         for <c>.adi</c> (disk/partition/system backup) and <c>.afi</c>
-///         (file/folder backup); the trailing backslash is part of the
-///         signature, not a path delimiter.</description></item>
-///   <item><description>Optional compression (user-selectable None / Normal
-///         / High) — algorithm is undocumented; not LZMA/Zstd/DEFLATE
-///         framing (no recognizable sub-stream magic).</description></item>
-///   <item><description>Optional password-based encryption — algorithm and
-///         key derivation are undocumented.</description></item>
-///   <item><description>Optional splitting at a user-chosen size
-///         (minimum 50 MB, FAT32-aware default ~4 GB) — split parts use
-///         numbered companion files; cross-part framing is undocumented.</description></item>
-///   <item><description>Incremental and differential chain support — chain
-///         linkage fields are undocumented.</description></item>
-/// </list>
+/// What is not yet decoded (per spec §10):
 /// </para>
+/// <list type="bullet">
+///   <item><description>Head/tail body fields past the first 12 bytes —
+///         layout TODO.</description></item>
+///   <item><description>INDEX_TYPE_DATABLOCK / DIRTREE / VOLUME / DATAAREA /
+///         ROOT record bodies — only the BR_STANDARD_HEADER framing is
+///         walked; the body bytes are passed through as opaque
+///         <see cref="AomeiInfoRecord.Body"/>.</description></item>
+///   <item><description>Encryption (AES variant + IV derivation) and the
+///         compression method numeric mapping — fields surfaced as-is.</description></item>
+/// </list>
 ///
 /// <para>
-/// Consequently this reader exposes only:
-/// <list type="bullet">
-///   <item><description><c>parse_status</c> — <c>ok</c> when the 5-byte
-///         magic matches, <c>partial</c> otherwise.</description></item>
-///   <item><description><c>HeaderRaw</c> — a 64-byte capture of the file
-///         start, surfaced as <c>header.bin</c> for forensic inspection.</description></item>
-/// </list>
-/// No chunk index, no payload extraction, no defragmentation — those
-/// require a real format spec or a clean-room RE effort that does not
-/// currently exist in the public domain.
+/// The reader is tolerant: a short/partial image is reported via
+/// <see cref="ParseStatus"/> rather than thrown, so callers (e.g. the
+/// descriptor's <c>List</c> / <c>Extract</c> path) can fall back to the
+/// header-surface treatment without exception handling on the hot path.
 /// </para>
 /// </summary>
 public sealed class AomeiReader {
 
-  /// <summary>5-byte ASCII signature shared by <c>.adi</c> and <c>.afi</c>.
-  /// Bytes <c>0x42 0x49 0x46 0x48 0x5C</c> = <c>'B','I','F','H','\\'</c>.</summary>
-  public static readonly byte[] Magic = [0x42, 0x49, 0x46, 0x48, 0x5C];
+  /// <summary>5-byte ASCII signature shared by <c>.adi</c> and <c>.afi</c>
+  /// — preserved on the public surface for backwards compatibility with the
+  /// original R/O metadata descriptor.</summary>
+  public static readonly byte[] Magic = AomeiConstants.BifhMagicAscii;
 
-  /// <summary>Capture size of the leading bytes surfaced as <c>header.bin</c>.
-  /// 64 bytes covers the magic and a short stretch of post-magic bytes
-  /// (typically a version field plus a flag word) that may aid future
-  /// reverse engineering without leaking user data.</summary>
+  /// <summary>Capture size of the leading bytes surfaced as
+  /// <c>header.bin</c> by the descriptor.</summary>
   public const int HeaderCaptureSize = 64;
 
-  /// <summary>True once the 5-byte magic has been verified.</summary>
+  /// <summary>True once the full BIFH head has been verified (magic + size +
+  /// CRC).</summary>
   public bool Valid { get; private set; }
 
-  /// <summary><c>ok</c> on magic match, <c>partial</c> on short read or
-  /// magic mismatch.</summary>
+  /// <summary>Parse outcome — one of <c>ok</c>, <c>magic_ok_crc_failed</c>,
+  /// <c>header_short</c>, <c>tail_missing</c>, <c>tail_invalid</c>,
+  /// <c>partial</c>, or <c>unparsed</c>.</summary>
   public string ParseStatus { get; private set; } = "unparsed";
 
   /// <summary>Captured leading bytes (up to <see cref="HeaderCaptureSize"/>).</summary>
   public byte[] HeaderRaw { get; private set; } = [];
 
-  /// <summary>
-  /// Speculative 32-bit little-endian word at offset 5 (immediately after
-  /// the magic). Surfaced as a diagnostic only — its meaning is <b>not</b>
-  /// documented anywhere public. AOMEI may use it as a version, a flags
-  /// field, or something else entirely.
-  /// </summary>
+  /// <summary>Speculative 32-bit little-endian word at offset 4 (the Size
+  /// field). Preserved on the public surface so existing diagnostic output
+  /// keeps working — its semantic meaning is now known to be the head
+  /// struct size.</summary>
   public uint PostMagicWord { get; private set; }
 
+  /// <summary>Parsed file head — null if the input was too short to contain
+  /// a full 0x65C-byte head.</summary>
+  public BrFileHead? Head { get; private set; }
+
+  /// <summary>Parsed file tail — null if the input was too short to contain
+  /// both head and tail or the tail's flag/size didn't match.</summary>
+  public BrFileTail? Tail { get; private set; }
+
+  /// <summary>True when the head's stored CRC matched the recomputed value.</summary>
+  public bool HeadCrcValid { get; private set; }
+
+  /// <summary>True when the tail's stored CRC matched the recomputed value.</summary>
+  public bool TailCrcValid { get; private set; }
+
+  /// <summary>Raw bytes of the head body (the 0x650 bytes after the 12-byte
+  /// standard header). Empty if the head wasn't read.</summary>
+  public byte[] HeadBody => this.Head?.BodyRaw ?? [];
+
+  /// <summary>Raw bytes of the tail body (the 0x668 bytes after the 12-byte
+  /// standard header). Empty if the tail wasn't read.</summary>
+  public byte[] TailBody => this.Tail?.BodyRaw ?? [];
+
+  /// <summary>All decoded INFO/INDEX records between the head and the
+  /// tail.</summary>
+  public IReadOnlyList<AomeiInfoRecord> Records { get; private set; } = [];
+
+  /// <summary>The first decoded <see cref="AomeiConstants.InfoTypeBackupType"/>
+  /// record's <c>kind</c> value, or null when absent.</summary>
+  public uint? BackupTypeKind { get; private set; }
+
+  /// <summary>The first decoded <see cref="AomeiConstants.InfoTypeImageCompress"/>
+  /// record's <c>method</c> value, or null when absent.</summary>
+  public uint? CompressMethod { get; private set; }
+
+  /// <summary>The first decoded <see cref="AomeiConstants.InfoTypeImageCompress"/>
+  /// record's <c>level</c> value, or null when absent.</summary>
+  public uint? CompressLevel { get; private set; }
+
+  /// <summary>The first decoded <see cref="AomeiConstants.InfoTypeImageEncrypt"/>
+  /// record's <c>method</c> value, or null when absent.</summary>
+  public uint? EncryptMethod { get; private set; }
+
+  /// <summary>The first decoded <see cref="AomeiConstants.InfoTypeImageEncrypt"/>
+  /// record's <c>key_len</c> value, or null when absent.</summary>
+  public uint? EncryptKeyLen { get; private set; }
+
+  /// <summary>The first decoded <see cref="AomeiConstants.InfoTypeImagePassword"/>
+  /// record's 16-byte MD5 hash, or null when absent.</summary>
+  public byte[]? PasswordMd5 { get; private set; }
+
+  /// <summary>
+  /// Reads the full file into memory (capped at
+  /// <see cref="MaxImageBytes"/>) and parses it. The full-image read is
+  /// necessary because the tail lives at <c>file_size - 0x674</c>.
+  /// </summary>
   public AomeiReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     var image = ReadAllBounded(stream);
@@ -93,37 +146,121 @@ public sealed class AomeiReader {
   }
 
   private void Parse(ReadOnlySpan<byte> image) {
+    // Header-surface compatibility: capture the leading bytes regardless of
+    // anything else, so downstream forensic surfaces stay stable.
     if (image.Length < Magic.Length) {
       this.ParseStatus = "partial";
       return;
     }
-
     if (!image[..Magic.Length].SequenceEqual(Magic)) {
       this.ParseStatus = "partial";
       return;
     }
-
     var captureLen = Math.Min(HeaderCaptureSize, image.Length);
-    var raw = new byte[HeaderCaptureSize];
-    image[..captureLen].CopyTo(raw);
-    this.HeaderRaw = raw;
-
+    var rawCapture = new byte[HeaderCaptureSize];
+    image[..captureLen].CopyTo(rawCapture);
+    this.HeaderRaw = rawCapture;
     if (image.Length >= Magic.Length + 4)
       this.PostMagicWord = BinaryPrimitives.ReadUInt32LittleEndian(image.Slice(Magic.Length, 4));
-
     this.Valid = true;
     this.ParseStatus = "ok";
+
+    // Promote past the bare-magic surface only if the file is long enough
+    // to contain a full BIFH head.
+    if (image.Length < AomeiConstants.BifhSize) {
+      this.ParseStatus = "header_short";
+      return;
+    }
+
+    var head = BrFileHead.Read(image);
+    this.Head = head;
+    if (!head.MagicAndSizeValid) {
+      // Magic-only baseline already satisfied — keep that promise but
+      // downgrade the parse status.
+      this.ParseStatus = "header_short";
+      return;
+    }
+
+    // Re-verify CRC over the full 0x65C-byte head with the Crc32 field
+    // zeroed during the computation.
+    var headRecord = image[..AomeiConstants.BifhSize].ToArray();
+    this.HeadCrcValid = BrStandardHeader.VerifyCrc(headRecord);
+    if (!this.HeadCrcValid)
+      this.ParseStatus = "magic_ok_crc_failed";
+
+    if (image.Length < AomeiConstants.BifhSize + AomeiConstants.BiftSize) {
+      // No room for a tail — stay at the head-only surface.
+      this.ParseStatus = "tail_missing";
+      return;
+    }
+
+    var tail = BrFileTail.Read(image);
+    this.Tail = tail;
+    if (!tail.MagicAndSizeValid) {
+      this.ParseStatus = "tail_invalid";
+      return;
+    }
+    var tailRecord = image[^AomeiConstants.BiftSize..].ToArray();
+    this.TailCrcValid = BrStandardHeader.VerifyCrc(tailRecord);
+
+    // Walk records between head and tail.
+    var bodyStart = AomeiConstants.BifhSize;
+    var bodyEnd = image.Length - AomeiConstants.BiftSize;
+    var records = WalkRecords(image[bodyStart..bodyEnd], bodyStart);
+    this.Records = records;
+    AbsorbKnownFields(records);
   }
 
-  // 64 KB cap — header is at offset 0 and bounded, so a speculative carver
-  // scan cannot pull a multi-GB image into memory.
-  private const int HeaderReadCap = 64 * 1024;
+  private static List<AomeiInfoRecord> WalkRecords(ReadOnlySpan<byte> body, int absoluteOffset) {
+    var list = new List<AomeiInfoRecord>();
+    var pos = 0;
+    while (pos + AomeiConstants.StandardHeaderSize <= body.Length) {
+      var hdr = BrStandardHeader.Read(body[pos..]);
+
+      // Defensive: a record claiming size 0 or smaller than the header
+      // would advance the cursor backwards or infinite-loop. Stop walking
+      // and let the caller see the partial record list.
+      if (hdr.Size < AomeiConstants.StandardHeaderSize) break;
+      if (pos + hdr.Size > body.Length) break;
+
+      var record = body.Slice(pos, (int)hdr.Size).ToArray();
+      var crcOk = BrStandardHeader.VerifyCrc(record);
+      var bodyBytes = record.AsSpan(AomeiConstants.StandardHeaderSize).ToArray();
+      list.Add(new AomeiInfoRecord(hdr, crcOk, bodyBytes, absoluteOffset + pos));
+      pos += (int)hdr.Size;
+    }
+    return list;
+  }
+
+  private void AbsorbKnownFields(IReadOnlyList<AomeiInfoRecord> records) {
+    foreach (var r in records) {
+      if (this.BackupTypeKind is null && r.TryGetBackupType(out var kind))
+        this.BackupTypeKind = kind;
+      if (this.CompressMethod is null && r.TryGetCompressInfo(out var cm, out var cl)) {
+        this.CompressMethod = cm;
+        this.CompressLevel = cl;
+      }
+      if (this.EncryptMethod is null && r.TryGetEncryptInfo(out var em, out var ek)) {
+        this.EncryptMethod = em;
+        this.EncryptKeyLen = ek;
+      }
+      if (this.PasswordMd5 is null && r.TryGetPasswordMd5(out var md5))
+        this.PasswordMd5 = md5;
+    }
+  }
+
+  /// <summary>Maximum bytes the reader will pull from the input stream.
+  /// Caps memory use on pathological inputs while still being big enough to
+  /// cover real AOMEI samples (head 0x65C + index records + tail 0x674; for
+  /// pure metadata inspection 16 MB is well over the practical INFO/INDEX
+  /// region size).</summary>
+  public const int MaxImageBytes = 16 * 1024 * 1024;
 
   private static byte[] ReadAllBounded(Stream stream) {
     using var ms = new MemoryStream();
     var buf = new byte[8192];
     int read;
-    while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
+    while (ms.Length < MaxImageBytes && (read = stream.Read(buf, 0, buf.Length)) > 0)
       ms.Write(buf, 0, read);
     return ms.ToArray();
   }

@@ -68,12 +68,14 @@ public class AomeiTests {
       Assert.That(File.Exists(Path.Combine(outDir, "header.bin")), Is.True);
 
       var meta = File.ReadAllText(Path.Combine(outDir, "metadata.ini"));
-      Assert.That(meta, Does.Contain("parse_status=ok"));
+      // 512-byte sample is shorter than the spec's 0x65C BIFH head, so the
+      // reader stays at the bare-magic surface and reports header_short.
+      Assert.That(meta, Does.Contain("parse_status=header_short"));
       Assert.That(meta, Does.Contain("magic=BIFH\\"));
       Assert.That(meta, Does.Contain("post_magic_u32_le=0x01020304"));
-      Assert.That(meta, Does.Contain("chunk_layout=undocumented"));
-      Assert.That(meta, Does.Contain("compression_algorithm=undocumented"));
-      Assert.That(meta, Does.Contain("encryption_algorithm=undocumented"));
+      Assert.That(meta, Does.Contain("head_body_layout=undocumented"));
+      Assert.That(meta, Does.Contain("tail_body_layout=undocumented"));
+      Assert.That(meta, Does.Contain("index_body_layout=undocumented"));
 
       var headerRaw = File.ReadAllBytes(Path.Combine(outDir, "header.bin"));
       Assert.That(headerRaw.Length, Is.EqualTo(FileFormat.Aomei.AomeiReader.HeaderCaptureSize));
@@ -139,8 +141,11 @@ public class AomeiTests {
     var buf = new byte[] { 0x42, 0x49, 0x46, 0x48, 0x5C };
     using var ms = new MemoryStream(buf);
     var r = new FileFormat.Aomei.AomeiReader(ms);
+    // Bare magic surface still detects the family — the parse status reports
+    // header_short because the input is much shorter than the spec's 0x65C
+    // BIFH head, which is the honest description.
     Assert.That(r.Valid, Is.True);
-    Assert.That(r.ParseStatus, Is.EqualTo("ok"));
+    Assert.That(r.ParseStatus, Is.EqualTo("header_short"));
     Assert.That(r.PostMagicWord, Is.EqualTo(0u));
   }
 
