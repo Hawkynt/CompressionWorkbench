@@ -16,7 +16,8 @@ public sealed class MkvDemuxer {
 
   public sealed record Track(int Number, string TrackType, string CodecId, string? Language,
                              byte[]? CodecPrivate, byte[] FrameBytes,
-                             IReadOnlyList<FrameEntry> Frames);
+                             IReadOnlyList<FrameEntry> Frames,
+                             int AudioChannels = 0, int AudioSampleRate = 0, int AudioBitDepth = 0);
   public sealed record Attachment(string FileName, string MimeType, byte[] Data);
 
   public sealed record DemuxResult(
@@ -43,6 +44,10 @@ public sealed class MkvDemuxer {
   private const ulong Id_FileMimeType = 0x4660;
   private const ulong Id_FileData = 0x465C;
   private const ulong Id_Chapters = 0x1043A770;
+  private const ulong Id_Audio = 0xE1;
+  private const ulong Id_SamplingFrequency = 0xB5;
+  private const ulong Id_Channels = 0x9F;
+  private const ulong Id_BitDepth = 0x6264;
 
   public DemuxResult Demux(byte[] file) {
     var ebml = new EbmlReader(file);
@@ -95,6 +100,7 @@ public sealed class MkvDemuxer {
       if (entry.Id != Id_TrackEntry) continue;
       int number = 0; string codec = "", lang = "eng"; byte[]? codecPrivate = null;
       string type = "other";
+      int channels = 0, sampleRate = 0, bitDepth = 0;
       foreach (var field in ebml.Children(entry)) {
         switch (field.Id) {
           case Id_TrackNumber: number = (int)ebml.ReadUnsigned(field); break;
@@ -106,13 +112,33 @@ public sealed class MkvDemuxer {
           case Id_CodecId: codec = ebml.ReadString(field); break;
           case Id_CodecPrivate: codecPrivate = ebml.ReadBinary(field); break;
           case Id_Language: lang = ebml.ReadString(field); break;
+          case Id_Audio: ParseAudio(ebml, field, ref channels, ref sampleRate, ref bitDepth); break;
         }
       }
-      entries.Add(new Track(number, type, codec, lang, codecPrivate, [], []));
+      entries.Add(new Track(number, type, codec, lang, codecPrivate, [], [], channels, sampleRate, bitDepth));
       buffers[number] = new MemoryStream();
       frameLists[number] = new List<FrameEntry>();
     }
   }
+
+  /// <summary>Reads the TrackEntry Audio element: SamplingFrequency (float), Channels, BitDepth.</summary>
+  private static void ParseAudio(EbmlReader ebml, EbmlReader.Element audio,
+                                  ref int channels, ref int sampleRate, ref int bitDepth) {
+    foreach (var field in ebml.Children(audio)) {
+      switch (field.Id) {
+        case Id_SamplingFrequency: sampleRate = (int)Math.Round(ReadFloat(ebml.Body(field))); break;
+        case Id_Channels: channels = (int)ebml.ReadUnsigned(field); break;
+        case Id_BitDepth: bitDepth = (int)ebml.ReadUnsigned(field); break;
+      }
+    }
+  }
+
+  /// <summary>EBML float (4- or 8-byte big-endian IEEE-754); 0 length defaults to 0.</summary>
+  private static double ReadFloat(ReadOnlySpan<byte> body) => body.Length switch {
+    4 => System.Buffers.Binary.BinaryPrimitives.ReadSingleBigEndian(body),
+    8 => System.Buffers.Binary.BinaryPrimitives.ReadDoubleBigEndian(body),
+    _ => 0,
+  };
 
   private static void ParseCluster(EbmlReader ebml, EbmlReader.Element cluster,
                                     Dictionary<int, MemoryStream> buffers,
@@ -137,12 +163,93 @@ public sealed class MkvDemuxer {
     if (tnLen == 0 || body.Length < tnLen + 3) return;
     ulong trackNum = body[0] & (0xFFu >> tnLen);
     for (var i = 1; i < tnLen; ++i) trackNum = (trackNum << 8) | body[i];
-    var frameData = body[(tnLen + 3)..].ToArray();
-    if (buffers.TryGetValue((int)trackNum, out var buf)) {
-      buf.Write(frameData);
+
+    var flags = body[tnLen + 2];
+    var lacing = (flags >> 1) & 0x03; // 0=none, 1=Xiph, 3=EBML, 2=fixed
+    var payload = body[(tnLen + 3)..];
+
+    var frames = lacing == 0 ? [payload.ToArray()] : SplitLaced(payload, lacing);
+    if (!buffers.TryGetValue((int)trackNum, out var buf)) return;
+    foreach (var frame in frames) {
+      buf.Write(frame);
       if (frameLists.TryGetValue((int)trackNum, out var fl))
-        fl.Add(new FrameEntry(frameData));
+        fl.Add(new FrameEntry(frame));
     }
+  }
+
+  /// <summary>
+  /// Splits a laced block payload into individual frames. The first payload byte is the
+  /// frame count minus one; the per-frame sizes follow per the lacing type (Xiph 255-run,
+  /// EBML vint deltas, fixed = equal split), then the concatenated frame data.
+  /// </summary>
+  private static List<byte[]> SplitLaced(ReadOnlySpan<byte> payload, int lacing) {
+    var frames = new List<byte[]>();
+    if (payload.Length < 1) return frames;
+    var laceCount = payload[0] + 1;
+    var p = 1;
+    var sizes = new int[laceCount];
+
+    switch (lacing) {
+      case 1: { // Xiph: sum 255-runs for the first n-1 frames; last is the remainder.
+        for (var i = 0; i < laceCount - 1; ++i) {
+          var size = 0;
+          while (p < payload.Length && payload[p] == 255) { size += 255; ++p; }
+          if (p < payload.Length) { size += payload[p]; ++p; }
+          sizes[i] = size;
+        }
+        break;
+      }
+      case 3: { // EBML: first size is an unsigned vint; subsequent are signed-vint deltas.
+        var first = ReadVint(payload, ref p, out var firstLen);
+        sizes[0] = (int)first;
+        var prev = (long)first;
+        for (var i = 1; i < laceCount - 1; ++i) {
+          var delta = ReadSignedVint(payload, ref p, firstLen: out var dlen);
+          prev += delta;
+          sizes[i] = (int)prev;
+        }
+        break;
+      }
+      case 2: { // fixed: all frames equal — divide the remaining payload evenly.
+        var each = (payload.Length - p) / laceCount;
+        for (var i = 0; i < laceCount; ++i) sizes[i] = each;
+        break;
+      }
+    }
+
+    // The final frame (non-fixed lacing) takes whatever remains after the headers + sized frames.
+    if (lacing != 2) {
+      var used = 0;
+      for (var i = 0; i < laceCount - 1; ++i) used += sizes[i];
+      sizes[laceCount - 1] = payload.Length - p - used;
+    }
+
+    for (var i = 0; i < laceCount; ++i) {
+      var size = sizes[i];
+      if (size < 0 || p + size > payload.Length) break;
+      frames.Add(payload.Slice(p, size).ToArray());
+      p += size;
+    }
+    return frames;
+  }
+
+  private static ulong ReadVint(ReadOnlySpan<byte> data, ref int pos, out int length) {
+    length = 0;
+    if (pos >= data.Length) return 0;
+    var first = data[pos];
+    for (var i = 0; i < 8; ++i) if ((first & (0x80 >> i)) != 0) { length = i + 1; break; }
+    if (length == 0 || pos + length > data.Length) { length = 1; return 0; }
+    ulong value = (ulong)(first & (0xFF >> length));
+    for (var i = 1; i < length; ++i) value = (value << 8) | data[pos + i];
+    pos += length;
+    return value;
+  }
+
+  /// <summary>EBML signed lace-size delta: unsigned vint biased by 2^(7*len-1)-1.</summary>
+  private static long ReadSignedVint(ReadOnlySpan<byte> data, ref int pos, out int firstLen) {
+    var raw = ReadVint(data, ref pos, out firstLen);
+    var bias = (1L << (7 * firstLen - 1)) - 1;
+    return (long)raw - bias;
   }
 
   private static void ParseAttachments(EbmlReader ebml, EbmlReader.Element attachments,
