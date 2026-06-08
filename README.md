@@ -14,7 +14,7 @@
 ![Repo Size](https://img.shields.io/github/repo-size/Hawkynt/CompressionWorkbench?color=FF9800)
 
 [![Release](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench)](https://github.com/Hawkynt/CompressionWorkbench/releases/latest)
-[![Nightly](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench?include_prereleases&sort=date&label=nightly&color=FF9800)](https://github.com/Hawkynt/CompressionWorkbench/releases)
+[![Nightly](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench?include_prereleases&sort=date&filter=nightly-*&label=nightly&color=FF9800)](https://github.com/Hawkynt/CompressionWorkbench/releases)
 [![Downloads](https://img.shields.io/github/downloads/Hawkynt/CompressionWorkbench/total)](https://github.com/Hawkynt/CompressionWorkbench/releases)
 [![NuGet Core](https://img.shields.io/nuget/v/Hawkynt.Compression.Core?label=Core)](https://www.nuget.org/packages/Hawkynt.Compression.Core/)
 [![NuGet Audio](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Audio?label=Audio)](https://www.nuget.org/packages/Hawkynt.FileFormats.Audio/)
