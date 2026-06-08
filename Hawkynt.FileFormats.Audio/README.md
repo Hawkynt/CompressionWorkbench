@@ -140,6 +140,9 @@ State legend:
 | `Codec.Ay8910`   | Synthesis       | R     | AY-3-8910/YM2149 (10 envelope shapes, log DAC, ABC panning)                     |
 | `Codec.Sn76489`  | Synthesis       | R     | SEGA PSG (tone/noise LFSR, 2 dB attenuation, GG stereo)                         |
 | `Codec.Ym2612`   | Synthesis       | R     | OPN2 FM (genuine die log-sin/exp ROMs, 8 algorithms, DAC mode)                  |
+| `Codec.Ym2413`   | Synthesis       | R     | OPLL FM (built-in 15-patch ROM + user patch, 9ch / 6+5 rhythm, KSL/KSR, AM/PM)  |
+| `Codec.Tracker`  | Tracker         | R     | ProTracker MOD + Scream Tracker 3 S3M song playback (full effect sets, song-length traversal) |
+| `Codec.TrackerXmIt`| Tracker       | R     | FastTracker II XM + Impulse Tracker IT playback (envelopes, NNA, resonant filter) + IT214/215 sample decompression |
 | `Codec.AdpcmX`   | ADPCM           | R     | ffmpeg ADPCM/DPCM pile: IMA DK3/DK4/EACS/SEAD, EA R1-R3, THP/AFC, SWF, 4XM, Xan, Interplay, SDX2, DERF, Gremlin |
 | `Codec.Atrac1`   | Lossy           | R     | Sony ATRAC1 / MiniDisc (BFU spectral decode, IMDCT, two-stage inverse QMF)      |
 | `Codec.Ra288`    | Speech          | R     | RealAudio 28.8 (G.728 hybrid-window backward LPC)                               |
@@ -250,17 +253,17 @@ State legend:
 | `FileFormat.Dts`      | R     | raw DTS — core decodes to per-channel WAVs; DTS-HD extensions info-only      |
 | `FileFormat.Ac3`      | R     | raw AC-3 AND E-AC-3 independent substreams decode to per-channel WAVs        |
 | `FileFormat.Oma`      | R     | Sony OpenMG (.oma/.aa3) — ATRAC3 decodes to channels; 3plus/MP3/LPCM surfaced |
-| `FileFormat.Vgm`      | R     | VGM/VGZ — renders via SN76489+YM2612 when covered; GD3 tags, gzip transparent |
+| `FileFormat.Vgm`      | R     | VGM/VGZ — renders via SN76489+YM2612+YM2413(OPLL/SMS FM) when covered; GG stereo (0x4F); GD3 tags, gzip transparent |
 | `FileFormat.Mus`      | R     | DMX/Doom MUS — converted.mid (classic mapping)                               |
 | `FileFormat.Xmi`      | R     | Miles XMIDI — songs/NN.mid (duration-scheduled note-offs)                    |
 | `FileFormat.Cmf`      | R     | Creative CMF — OPL patches + music.mid SMF wrap                              |
-| `FileFormat.Nsf`      | R     | NES NSF — renders to WAV via 6502+2A03 APU (incl. DMC); expansion chips noted |
-| `FileFormat.Gbs`      | R     | Game Boy GBS — renders to stereo WAV via SM83+APU (timer rates, banking)     |
-| `FileFormat.Sid`      | R     | C64 PSID — renders via 6502+SID: per-chip 6581/8580/6582 model flags, 2SID/3SID → LEFT/RIGHT/CENTER, unknown model renders both `_6581`/`_8580` legs; RSID surfaced |
-| `FileFormat.Kss`      | R     | MSX KSS — renders PSG to WAV via Z80+AY (SCC/FMPAC noted)                    |
+| `FileFormat.Nsf`      | R     | NES NSF/NSFE — renders to WAV via 6502+2A03 APU (incl. DMC); per-subtune lazy `TRACK_nn.wav` (NSFE plst/time/tlbl honored); expansion chips noted |
+| `FileFormat.Gbs`      | R     | Game Boy GBS — renders to stereo WAV via SM83+APU (timer rates, banking); per-subtune lazy `TRACK_nn_LEFT/RIGHT.wav` |
+| `FileFormat.Sid`      | R     | C64 PSID — renders via 6502+SID: per-chip 6581/8580/6582 model flags, 2SID/3SID → LEFT/RIGHT/CENTER, unknown model renders both `_6581`/`_8580` legs; per-subtune lazy `TRACK_nn.wav`; RSID surfaced |
+| `FileFormat.Kss`      | R     | MSX KSS — renders PSG to WAV via Z80+AY; per-subtune lazy tracks for KSSX (plain KSCC has no track list); SCC/FMPAC noted |
 | `FileFormat.Hes`      | R     | PC Engine HES — MPR table + DATA blocks                                      |
 | `FileFormat.Gym`      | R     | Genesis GYM — renders via YM2612+PSG (zlib-packed logs supported)            |
-| `FileFormat.Ay`       | R     | ZX Spectrum AY — renders to WAV via Z80+AY-3-8910                            |
+| `FileFormat.Ay`       | R     | ZX Spectrum AY — renders to WAV via Z80+AY-3-8910; per-subtune lazy `TRACK_nn_LEFT/RIGHT.wav` |
 | `FileFormat.Alac`     | R     | Apple Lossless inside MP4 atoms — decoded per-channel WAVs via `Codec.Alac` |
 | `FileFormat.Ape`      | R     | Monkey's Audio (`.ape`) — decoded channels, all levels 1000-5000             |
 | `FileFormat.WavPack`  | R     | WavPack lossless / hybrid                                           |
@@ -268,10 +271,10 @@ State legend:
 | `FileFormat.Opus`     | R     | Opus (Ogg) — per-channel WAVs decoded via `Codec.Opus` (graceful fallback when unsupported) |
 | `FileFormat.Aac`      | R     | AAC (ADTS) — per-channel WAVs decoded via `Codec.Aac` (AAC-LC; graceful fallback) |
 | `FileFormat.Midi`     | R     | Standard MIDI File (SMF 0 / 1 / 2) container                        |
-| `FileFormat.Mod`      | R     | ProTracker / SoundTracker MOD                                       |
-| `FileFormat.S3m`      | R     | Scream Tracker 3                                                    |
-| `FileFormat.Xm`       | R     | FastTracker II XM                                                   |
-| `FileFormat.It`       | R     | Impulse Tracker IT                                                  |
+| `FileFormat.Mod`      | R     | ProTracker / SoundTracker MOD — renders `SONG.wav` via `Codec.Tracker`; samples as mono WAVs |
+| `FileFormat.S3m`      | R     | Scream Tracker 3 — renders `SONG.wav` via `Codec.Tracker`; samples as mono WAVs |
+| `FileFormat.Xm`       | R     | FastTracker II XM — renders `SONG.wav` via `Codec.TrackerXmIt`; samples as mono WAVs |
+| `FileFormat.It`       | R     | Impulse Tracker IT — renders `SONG.wav` via `Codec.TrackerXmIt`; IT214/215 samples decompressed to WAVs |
 | `FileFormat.WwiseBnk` | R     | Audiokinetic Wwise SoundBank (game audio)                           |
 | `FileFormat.Fmod`     | R     | FMOD bank container                                                 |
 | `FileFormat.Aea`      | R     | Sony MiniDisc AEA — ATRAC1 decoded to per-channel WAVs              |
@@ -280,6 +283,9 @@ State legend:
 | `FileFormat.Siren`    | R     | Raw Siren7 / G.722.1 (`.sir`/`.g7221`) — MONO.wav (Annex C noted)   |
 | `FileFormat.Bik`      | R     | Bink video — FULL.bik + raw VIDEO track + per-track decoded channel WAVs (Bink2 audio blob-only) |
 | `FileFormat.Smk`      | R     | Smacker video — FULL.smk + raw VIDEO track + per-track channel WAVs (SMKA + uncompressed PCM) |
+| `FileFormat.Mp4`      | R     | MP4/MOV — each audio track decoded to `TRACKn_<CHANNEL>.wav` (AAC/ALAC/MP3/AC-3/FLAC/Opus/PCM); video stays raw |
+| `FileFormat.Matroska` | R     | Matroska/WebM — per-track decode (AAC/MP3/AC-3/Vorbis/Opus/FLAC/PCM/MS-ACM); Xiph/EBML/fixed block-lacing |
+| `FileFormat.Avi`      | R     | AVI — per `auds` stream decoded (PCM/MS-ADPCM/IMA/MP2-3/AC-3/A-law/µ-law/EXTENSIBLE) |
 | `FileFormat.Qoa`      | R     | Quite OK Audio (`.qoa`) — decoded channels                          |
 | `FileFormat.Dfpwm`    | R     | DFPWM1a (`.dfpwm`, headerless, 48 kHz mono convention) — MONO.wav   |
 | `FileFormat.Bonk`     | R     | Bonk (`.bonk`, tag-scanned header) — decoded channels               |
