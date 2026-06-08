@@ -257,6 +257,14 @@ public class EndToEndInteropTests {
     ".cpm", ".lif", ".rt11", ".rx01", ".os9", ".rbf", ".ods1",
     // Disk images with specific sector/partition structure
     ".vhd", ".vmdk", ".vhdx", ".qcow2", ".vdi", ".cvf",
+    // Backup-software disk images — semantics are "image of a whole partition",
+    // not "archive of loose files". Writers honor the format envelope but the
+    // entry layer is meant to wrap an inner FS image, not generic repeat.txt /
+    // small.txt / random.dat inputs the SelfRoundTrip harness produces.
+    // Ghost (.gho): record-stream framing expects whole-partition byte stream.
+    // sparseimage: HFS+/APFS payload required for band-allocation pass-through.
+    // Macrium Reflect X (.mrimgx): per-block AES-CBC + zstd over a partition image.
+    ".gho", ".sparseimage", ".mrimgx",
     // WORM-minimal writers that don't round-trip user files (SB-only / empty-FS):
     ".bcachefs", ".reiser4",
     // Filesystem images (HFS, NTFS, ext, etc. require full FS creation)
