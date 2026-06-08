@@ -127,6 +127,98 @@ public class DiskImageNestingTests {
     Assert.That(result.PartitionTable, Is.Null);
   }
 
+  // ── Descriptor-level partition-aware Add/Remove (PartitionedDiskLister) ──
+
+  [Test, Category("HappyPath")]
+  public void VmdkDescriptor_Add_PrefixedPath_DelegatesToInnerFs() {
+    var vmdkData = BuildVmdkWithMbrAndFatPartition();
+    using var ms = new MemoryStream();
+    ms.Write(vmdkData);
+
+    var desc = new FileFormat.Vmdk.VmdkFormatDescriptor();
+    // Add a file inside Partition 1 using the partition-prefixed path.
+    var inputs = new[] {
+      Compression.Registry.ArchiveInputInfo.InMemory("Partition1_FAT12/ADDED.TXT", "from add"u8.ToArray())
+    };
+    desc.Add(ms, inputs);
+
+    ms.Position = 0;
+    var entries = desc.List(ms, password: null);
+    Assert.That(entries.Any(e => e.Name.Equals("Partition1_FAT12/ADDED.TXT", StringComparison.OrdinalIgnoreCase)),
+      Is.True, $"Expected the added file to surface in the partition listing — saw: {string.Join(", ", entries.Select(e => e.Name))}");
+    // Sanity: existing TEST.TXT still there.
+    Assert.That(entries.Any(e => e.Name.Equals("Partition1_FAT12/TEST.TXT", StringComparison.OrdinalIgnoreCase)),
+      Is.True, "Pre-existing file must still be present after Add");
+  }
+
+  [Test, Category("HappyPath")]
+  public void VmdkDescriptor_Remove_PrefixedPath_DelegatesToInnerFs() {
+    var vmdkData = BuildVmdkWithMbrAndFatPartition();
+    using var ms = new MemoryStream();
+    ms.Write(vmdkData);
+
+    var desc = new FileFormat.Vmdk.VmdkFormatDescriptor();
+    desc.Remove(ms, new[] { "Partition1_FAT12/TEST.TXT" });
+
+    ms.Position = 0;
+    var entries = desc.List(ms, password: null);
+    Assert.That(entries.Any(e => e.Name.Equals("Partition1_FAT12/TEST.TXT", StringComparison.OrdinalIgnoreCase)),
+      Is.False, "TEST.TXT should be gone after Remove");
+  }
+
+  [Test, Category("HappyPath")]
+  public void PartitionedDiskLister_TryAdd_FsImageAtRoot_AllocatesNewPartition() {
+    // Build a raw disk with an MBR + FAT12 partition at sector 63 and ~1.5 MB
+    // of free space past it. Exercising the lister directly avoids the sparse
+    // virtual-disk allocation question (the descriptor-level pipeline relies on
+    // the wrapping container pre-allocating grains, which sparse VMDK / dynamic
+    // VHD don't do for zero-filled regions).
+    var fatWriter = new FileSystem.Fat.FatWriter();
+    fatWriter.AddFile("EXIST.TXT", "first part"u8.ToArray());
+    var firstFat = fatWriter.Build();
+    const int partitionStartSector = 63;
+    var firstPartSectors = (firstFat.Length + 511) / 512;
+    var totalSectors = partitionStartSector + firstPartSectors + 3000;
+    var rawDisk = new byte[totalSectors * 512];
+    Array.Copy(firstFat, 0, rawDisk, partitionStartSector * 512, firstFat.Length);
+    rawDisk[510] = 0x55; rawDisk[511] = 0xAA;
+    const int entryOffset = 0x1BE;
+    rawDisk[entryOffset + 0] = 0x80;
+    rawDisk[entryOffset + 4] = 0x01; // FAT12
+    rawDisk[entryOffset + 8] = partitionStartSector;
+    rawDisk[entryOffset + 12] = (byte)(firstPartSectors & 0xFF);
+    rawDisk[entryOffset + 13] = (byte)((firstPartSectors >> 8) & 0xFF);
+    rawDisk[entryOffset + 14] = (byte)((firstPartSectors >> 16) & 0xFF);
+    rawDisk[entryOffset + 15] = (byte)((firstPartSectors >> 24) & 0xFF);
+
+    using var disk = new MemoryStream(rawDisk, writable: true);
+
+    var second = new FileSystem.Fat.FatWriter();
+    second.AddFile("NEW.TXT", "second part"u8.ToArray());
+    var secondFat = second.Build();
+
+    var handled = PartitionedDiskLister.TryAdd(disk, new[] {
+      Compression.Registry.ArchiveInputInfo.InMemory("second.img", secondFat)
+    });
+    Assert.That(handled, Is.True, "Expected TryAdd to dispatch the root-level FS image as a new partition.");
+
+    disk.Position = 0;
+    var detection = PartitionTableDetector.Detect(disk);
+    Assert.That(detection.Partitions.Count, Is.GreaterThanOrEqualTo(2),
+      "Expected at least 2 partitions after the FS-image drop.");
+
+    // The second partition's content must round-trip through the inner-FS path.
+    disk.Position = 0;
+    var entries = PartitionedDiskLister.List(disk, password: null);
+    Assert.That(entries, Is.Not.Null);
+    var entryList = entries!;
+    var entryNames = string.Join(", ", entryList.Select(e => e.Name));
+    Assert.That(entryList.Any(e => e.Name.EndsWith("/EXIST.TXT", StringComparison.OrdinalIgnoreCase)),
+      Is.True, $"First partition's EXIST.TXT must still appear — entries: {entryNames}");
+    Assert.That(entryList.Any(e => e.Name.EndsWith("/NEW.TXT", StringComparison.OrdinalIgnoreCase)),
+      Is.True, $"New partition's NEW.TXT must appear — entries: {entryNames}");
+  }
+
   // ── Descriptor-level partition-aware listing (PartitionedDiskLister) ──
 
   [Test, Category("HappyPath")]

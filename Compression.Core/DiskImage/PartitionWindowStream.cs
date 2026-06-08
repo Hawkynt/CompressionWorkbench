@@ -27,7 +27,7 @@ public sealed class PartitionWindowStream : Stream {
 
   public override bool CanRead => _inner.CanRead;
   public override bool CanSeek => true;
-  public override bool CanWrite => false;
+  public override bool CanWrite => _inner.CanWrite;
   public override long Length => _length;
   public override long Position {
     get => _position;
@@ -57,9 +57,22 @@ public sealed class PartitionWindowStream : Stream {
     return _position;
   }
 
-  public override void Flush() { }
-  public override void SetLength(long value) => throw new NotSupportedException();
-  public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+  public override void Flush() => _inner.Flush();
+  public override void SetLength(long value) {
+    if (value > _length)
+      throw new IOException($"Cannot extend partition window beyond {_length} bytes.");
+    // Shrinking the logical view is a no-op; the underlying partition bytes
+    // outside [0, value) remain in place as unused space inside the partition.
+  }
+
+  public override void Write(byte[] buffer, int offset, int count) {
+    if (!_inner.CanWrite) throw new NotSupportedException("Underlying stream is read-only.");
+    if (_position + count > _length)
+      throw new IOException($"Write at position {_position} for {count} bytes exceeds partition window {_length}.");
+    _inner.Position = _offset + _position;
+    _inner.Write(buffer, offset, count);
+    _position += count;
+  }
 
   protected override void Dispose(bool disposing) {
     if (disposing && !_leaveOpen) _inner.Dispose();

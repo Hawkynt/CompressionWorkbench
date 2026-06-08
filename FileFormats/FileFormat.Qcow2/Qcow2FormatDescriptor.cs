@@ -106,6 +106,19 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   /// <inheritdoc />
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    if (Qcow2Stream.TryOpen(archive) is { } guestForPart) {
+      using (guestForPart) {
+        try {
+          guestForPart.Position = 0;
+          if (Compression.Core.DiskImage.PartitionedDiskLister.TryAdd(guestForPart, inputs)) {
+            guestForPart.Flush();
+            return;
+          }
+        } catch (InvalidOperationException) { throw; }
+        catch { /* fall through */ }
+      }
+    }
+
     if (TryDelegateModifiable(archive, out var qStream, out var modifiable) && qStream is not null && modifiable is not null) {
       using (qStream) {
         try {
@@ -124,6 +137,19 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   /// <inheritdoc />
   public void Remove(Stream archive, string[] entryNames) {
+    if (Qcow2Stream.TryOpen(archive) is { } guestForPart) {
+      using (guestForPart) {
+        try {
+          guestForPart.Position = 0;
+          if (Compression.Core.DiskImage.PartitionedDiskLister.TryRemove(guestForPart, entryNames)) {
+            guestForPart.Flush();
+            return;
+          }
+        } catch (InvalidOperationException) { throw; }
+        catch { /* fall through */ }
+      }
+    }
+
     if (TryDelegateModifiable(archive, out var qStream, out var modifiable) && qStream is not null && modifiable is not null) {
       using (qStream) {
         try {

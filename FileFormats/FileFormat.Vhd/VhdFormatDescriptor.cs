@@ -118,6 +118,22 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <inheritdoc />
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    if (TryOpenVhdStream(archive) is { } guestForPart) {
+      using (guestForPart) {
+        try {
+          guestForPart.Position = 0;
+          if (PartitionedDiskLister.TryAdd(guestForPart, inputs)) {
+            guestForPart.Flush();
+            return;
+          }
+        } catch (InvalidOperationException) {
+          throw; // honest signal — partition cap, no free space, no inner FS modifier
+        } catch {
+          // fall through if the partition path itself errored unexpectedly
+        }
+      }
+    }
+
     if (TryDelegateModifiable(archive, out var vhdStream, out var modifiable) && vhdStream is not null && modifiable is not null) {
       using (vhdStream) {
         try {
@@ -136,6 +152,22 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <inheritdoc />
   public void Remove(Stream archive, string[] entryNames) {
+    if (TryOpenVhdStream(archive) is { } guestForPart) {
+      using (guestForPart) {
+        try {
+          guestForPart.Position = 0;
+          if (PartitionedDiskLister.TryRemove(guestForPart, entryNames)) {
+            guestForPart.Flush();
+            return;
+          }
+        } catch (InvalidOperationException) {
+          throw;
+        } catch {
+          // fall through
+        }
+      }
+    }
+
     if (TryDelegateModifiable(archive, out var vhdStream, out var modifiable) && vhdStream is not null && modifiable is not null) {
       using (vhdStream) {
         try {

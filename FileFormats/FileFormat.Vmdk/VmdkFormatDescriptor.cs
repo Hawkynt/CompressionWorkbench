@@ -112,6 +112,19 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <inheritdoc />
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    if (VmdkStream.TryOpen(archive) is { } guestForPart) {
+      using (guestForPart) {
+        try {
+          guestForPart.Position = 0;
+          if (Compression.Core.DiskImage.PartitionedDiskLister.TryAdd(guestForPart, inputs)) {
+            guestForPart.Flush();
+            return;
+          }
+        } catch (InvalidOperationException) { throw; }
+        catch { /* fall through */ }
+      }
+    }
+
     if (TryDelegateModifiable(archive, out var vmdkStream, out var modifiable) && vmdkStream is not null && modifiable is not null) {
       using (vmdkStream) {
         try {
@@ -130,6 +143,19 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <inheritdoc />
   public void Remove(Stream archive, string[] entryNames) {
+    if (VmdkStream.TryOpen(archive) is { } guestForPart) {
+      using (guestForPart) {
+        try {
+          guestForPart.Position = 0;
+          if (Compression.Core.DiskImage.PartitionedDiskLister.TryRemove(guestForPart, entryNames)) {
+            guestForPart.Flush();
+            return;
+          }
+        } catch (InvalidOperationException) { throw; }
+        catch { /* fall through */ }
+      }
+    }
+
     if (TryDelegateModifiable(archive, out var vmdkStream, out var modifiable) && vmdkStream is not null && modifiable is not null) {
       using (vmdkStream) {
         try {

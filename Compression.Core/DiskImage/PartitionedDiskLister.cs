@@ -94,4 +94,173 @@ public static class PartitionedDiskLister {
     if (string.IsNullOrEmpty(safeName)) safeName = "raw";
     return $"Partition{part.Index + 1}_{safeName}";
   }
+
+  // ── Add / Remove (partition-aware) ────────────────────────────────────
+
+  /// <summary>
+  /// Partition-aware <see cref="IArchiveModifiable.Add"/>. Returns <c>true</c>
+  /// when a partition table was present and at least one input was dispatched
+  /// through the partition-aware path; <c>false</c> when no partition table
+  /// exists so the caller can fall through to the existing single-FS path.
+  /// </summary>
+  /// <remarks>
+  /// <para>Two input shapes are recognised:</para>
+  /// <list type="bullet">
+  ///   <item><description><c>Partition&lt;N&gt;_&lt;Type&gt;/&lt;inner&gt;</c> —
+  ///     add the file to partition N's inner filesystem (delegated to its
+  ///     <see cref="IArchiveModifiable"/>).</description></item>
+  ///   <item><description>No prefix — treat the input bytes as a raw filesystem
+  ///     image, find free space past the last existing partition, write a new
+  ///     partition entry (FS type detected via <see cref="InnerFsDetector"/>),
+  ///     and copy the bytes into the new partition window.</description></item>
+  /// </list>
+  /// </remarks>
+  public static bool TryAdd(Stream disk, IReadOnlyList<ArchiveInputInfo> inputs) {
+    if (!disk.CanWrite) return false;
+    var detection = PartitionTableDetector.Detect(disk);
+    if (detection.Partitions.Count == 0) return false;
+
+    PartitionEditor? editor = null;
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      var data = input.InMemoryContent ?? File.ReadAllBytes(input.FullPath);
+      var name = input.ArchiveName.Replace('\\', '/');
+
+      if (TryParsePartitionPrefix(name, out var partIdx, out var innerPath)
+          && partIdx < detection.Partitions.Count) {
+        var part = detection.Partitions[partIdx];
+        using var window = new PartitionWindowStream(disk, part.StartOffset, part.Size);
+        var innerDesc = InnerFsDetector.Detect(window);
+        if (innerDesc is not IArchiveModifiable mod)
+          throw new InvalidOperationException(
+            $"Partition {partIdx + 1} ({part.TypeName}) has no writable filesystem reader; cannot Add '{innerPath}'.");
+        window.Position = 0;
+        mod.Add(window, new[] { ArchiveInputInfo.InMemory(innerPath, data) });
+        continue;
+      }
+
+      // Root-level FS image drop → new partition past the last existing one.
+      editor ??= new PartitionEditor(disk);
+      var ptype = DetectInputPartitionType(data);
+      var lengthAligned = AlignUp(data.LongLength, SectorSize);
+      var startOffset = FindAppendOffset(editor.ListPartitions(), disk.Length, lengthAligned);
+      if (startOffset < 0)
+        throw new InvalidOperationException(
+          $"Not enough free space at the end of the disk to land a {data.LongLength}-byte filesystem image.");
+      editor.AddPartition(startOffset, lengthAligned, ptype, label: null);
+      disk.Position = startOffset;
+      disk.Write(data, 0, data.Length);
+      // Pad the partition window with zeros to its sector-aligned length.
+      var pad = lengthAligned - data.Length;
+      if (pad > 0) {
+        var zeros = new byte[512];
+        var remaining = pad;
+        while (remaining > 0) {
+          var chunk = (int)Math.Min(remaining, zeros.Length);
+          disk.Write(zeros, 0, chunk);
+          remaining -= chunk;
+        }
+      }
+    }
+    return true;
+  }
+
+  /// <summary>
+  /// Partition-aware <see cref="IArchiveModifiable.Remove"/>. Returns <c>true</c>
+  /// when a partition table was present and at least one entry was removed;
+  /// <c>false</c> if no partition table was detected. Entry name shapes:
+  /// <c>Partition&lt;N&gt;_&lt;Type&gt;/&lt;inner&gt;</c> deletes an inner-FS
+  /// file; <c>Partition&lt;N&gt;_&lt;Type&gt;</c> or
+  /// <c>Partition&lt;N&gt;_&lt;Type&gt;.raw</c> deletes the whole partition.
+  /// </summary>
+  public static bool TryRemove(Stream disk, string[] entryNames) {
+    if (!disk.CanWrite) return false;
+    var detection = PartitionTableDetector.Detect(disk);
+    if (detection.Partitions.Count == 0) return false;
+
+    PartitionEditor? editor = null;
+    foreach (var rawName in entryNames) {
+      var name = rawName.Replace('\\', '/');
+
+      if (TryParsePartitionPrefix(name, out var partIdx, out var innerPath)
+          && partIdx < detection.Partitions.Count) {
+        var part = detection.Partitions[partIdx];
+        using var window = new PartitionWindowStream(disk, part.StartOffset, part.Size);
+        var innerDesc = InnerFsDetector.Detect(window);
+        if (innerDesc is IArchiveModifiable mod) {
+          window.Position = 0;
+          mod.Remove(window, new[] { innerPath });
+        }
+        continue;
+      }
+
+      // Whole-partition delete: "Partition3_FAT12" or "Partition3_FAT12.raw"
+      var stripped = name.EndsWith(".raw", StringComparison.OrdinalIgnoreCase) ? name[..^4] : name;
+      if (TryParsePartitionIndex(stripped, out var idx) && idx < detection.Partitions.Count) {
+        editor ??= new PartitionEditor(disk);
+        editor.DeletePartition(idx);
+      }
+    }
+    return true;
+  }
+
+  private static bool TryParsePartitionPrefix(string entryName, out int partitionIndex, out string innerPath) {
+    partitionIndex = -1;
+    innerPath = string.Empty;
+    var slash = entryName.IndexOf('/');
+    if (slash <= 0) return false;
+    var head = entryName[..slash];
+    if (!TryParsePartitionIndex(head, out partitionIndex)) return false;
+    innerPath = entryName[(slash + 1)..];
+    return innerPath.Length > 0;
+  }
+
+  private static bool TryParsePartitionIndex(string head, out int zeroBasedIndex) {
+    zeroBasedIndex = -1;
+    if (!head.StartsWith("Partition", StringComparison.Ordinal)) return false;
+    var us = head.IndexOf('_');
+    if (us <= 9) return false;
+    if (!int.TryParse(head[9..us], out var oneBased) || oneBased <= 0) return false;
+    zeroBasedIndex = oneBased - 1;
+    return true;
+  }
+
+  private const int SectorSize = 512;
+
+  private static long AlignUp(long value, int alignment)
+    => (value + alignment - 1) / alignment * alignment;
+
+  private static long FindAppendOffset(IReadOnlyList<PartitionEntry> existing, long diskLength, long lengthBytes) {
+    long highest = SectorSize; // skip MBR
+    foreach (var e in existing) {
+      var end = e.StartOffset + e.Size;
+      if (end > highest) highest = end;
+    }
+    highest = AlignUp(highest, SectorSize);
+    return highest + lengthBytes <= diskLength ? highest : -1;
+  }
+
+  /// <summary>
+  /// Maps the input bytes to a logical <see cref="PartitionType"/> by running
+  /// <see cref="InnerFsDetector"/> over a wrapping memory stream and translating
+  /// the resulting descriptor ID.
+  /// </summary>
+  private static PartitionType DetectInputPartitionType(byte[] data) {
+    if (data.Length < 512) return PartitionType.Unknown;
+    using var ms = new MemoryStream(data, writable: false);
+    var desc = InnerFsDetector.Detect(ms);
+    if (desc is null) return PartitionType.Unknown;
+    return desc.Id switch {
+      "Fat" => PartitionType.Fat32Lba,
+      "ExFat" => PartitionType.NtfsExfat,
+      "Ntfs" => PartitionType.NtfsExfat,
+      "Hpfs" => PartitionType.NtfsExfat,
+      "Ext" or "Ext2" or "Ext3" or "Ext4" => PartitionType.Linux,
+      "Xfs" or "Btrfs" or "Jfs" or "ReiserFs" or "F2fs" => PartitionType.Linux,
+      "HfsPlus" or "Hfs" or "Mfs" => PartitionType.AppleHfsPlus,
+      "Apfs" => PartitionType.AppleApfs,
+      "Ufs" => PartitionType.AppleUfs,
+      _ => PartitionType.Linux, // safe MBR-mappable default for unknown POSIX-shaped images
+    };
+  }
 }

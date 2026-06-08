@@ -129,6 +129,19 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <inheritdoc />
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    if (VhdxStream.TryOpen(archive) is { } guestForPart) {
+      using (guestForPart) {
+        try {
+          guestForPart.Position = 0;
+          if (Compression.Core.DiskImage.PartitionedDiskLister.TryAdd(guestForPart, inputs)) {
+            guestForPart.Flush();
+            return;
+          }
+        } catch (InvalidOperationException) { throw; }
+        catch { /* fall through */ }
+      }
+    }
+
     if (TryDelegateModifiable(archive, out var vhdxStream, out var modifiable) && vhdxStream is not null && modifiable is not null) {
       using (vhdxStream) {
         try {
@@ -147,6 +160,19 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <inheritdoc />
   public void Remove(Stream archive, string[] entryNames) {
+    if (VhdxStream.TryOpen(archive) is { } guestForPart) {
+      using (guestForPart) {
+        try {
+          guestForPart.Position = 0;
+          if (Compression.Core.DiskImage.PartitionedDiskLister.TryRemove(guestForPart, entryNames)) {
+            guestForPart.Flush();
+            return;
+          }
+        } catch (InvalidOperationException) { throw; }
+        catch { /* fall through */ }
+      }
+    }
+
     if (TryDelegateModifiable(archive, out var vhdxStream, out var modifiable) && vhdxStream is not null && modifiable is not null) {
       using (vhdxStream) {
         try {
