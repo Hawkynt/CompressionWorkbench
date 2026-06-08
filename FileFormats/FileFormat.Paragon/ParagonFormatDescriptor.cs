@@ -124,26 +124,38 @@ public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "Paragon Backup & Recovery (.pbf) - R/O metadata-only. Proprietary " +
+    "Paragon Backup & Recovery (.pbf) - R/O metadata + structured header. Proprietary " +
     "Paragon Software backup container produced by Backup & Recovery / Hard Disk Manager / " +
     "Drive Backup. Detection magic 'PImg' (50 49 6D 67) at offset 0 per the TrID file-identifier " +
-    "database; multi-file convention (.pbf main, .pfi index since HDM 11, .pfm Image Explorer " +
-    "sidecar, .000/.001/... split chunks at ~4 GB) per Paragon KB article 767. Deep-RE audit " +
-    "summary: twelve research vectors pursued past the bare TrID signature (asmodean expimg, " +
+    "database AND confirmed by Wave-13 binary reverse-engineering of the vendor's " +
+    "hdmengine_hdmsdk.dll from HDM 18.12.0.0744. The reader parses the real structured " +
+    "+4 Major / +6 FormatVersion fields (writer emits 0x0002 / 0x0003; reader rejects > 3); " +
+    "the +0xC / +0x30 / +0xD8 chained-archive identity fields, the +0x26 / +0x27 / +0xE8 flag " +
+    "bytes, and the +0x34 string field are documented in metadata.ini for forensic triage. " +
+    "Multi-file convention (.pbf main, .pfi index since HDM 11, .pfm Image Explorer sidecar, " +
+    ".000/.001/... split chunks at ~4 GB) per Paragon KB article 767. Deep-RE audit summary: " +
+    "twelve public-source vectors pursued past the bare TrID signature (asmodean expimg, " +
     "Paragon HDM SDK, Paragon-Software-Group + Paragon-Backup-Recovery GitHub orgs, USPTO patent " +
     "search, EnCase/X-Ways/FTK forensic suites, Russian Habr/Toster forums, paragon284 Drive " +
     "Backup forum mirror, Gary Kessler / SEARCH file-signatures table, Kaitai Struct + 010 " +
     "Editor template libraries, Paragon Scripting Language manual, Paragon ExtFS / NTFS3 / UFSD " +
-    "open-source releases); all dead-ended without surfacing chunk-framing detail. Material " +
-    "correction the audit produced: legacy PBF is unencrypted - password protection, compression " +
-    "and splitting are pVHD-only per the Backup & Recovery 17 / HDM 16 manuals (the earlier " +
-    "baseline incorrectly listed an AES blocker on legacy PBF). The on-disk block index, " +
-    "per-cluster allocation bitmap, snapshot / incremental chain framing, on-disk compressor " +
-    "identifier, per-block frame header, and per-segment split-archive trailer remain proprietary " +
-    "and have no open-source reader; the full image is surfaced as an opaque blob alongside a " +
-    "synthetic metadata.ini that persists the audit trail as re_audit_* keys so the next " +
-    "maintainer doesn't repeat the searches. Format is obsolete for creation since HDM 16; " +
-    "restore content with vendor tools.";
+    "open-source releases); all twelve dead-ended without surfacing chunk-framing detail. " +
+    "Wave-13 binary RE then succeeded: the structured header layout, the PBF C++ class " +
+    "hierarchy (PbfRWBlock / PbfLink / PbfArc / PbfPart / PbfRW / PbfDataFile / CPbfBitmapIO), " +
+    "the segments-of-chunks data layer (PbfDataFile + 'ChunkNumber: %d, ChunkOffSet: 0x%016I64x, " +
+    "ChunkSize: %d, ChunkIsCompress: %c' debug strings), the per-chunk zlib / DEFLATE + Adler-32 " +
+    "frame model, and the +0xD8 ParentId chain back-pointer (gated by FormatVersion >= 2) all " +
+    "recovered from .text + .rdata of the vendor's reader DLL. Material correction the audit " +
+    "produced: legacy PBF is unencrypted - password protection, compression and splitting are " +
+    "pVHD-only per the Backup & Recovery 17 / HDM 16 manuals (the earlier baseline incorrectly " +
+    "listed an AES blocker on legacy PBF). What stays unresolved after Wave 13: the exact " +
+    "on-disk offset of the chunk-table inside each segment, the bitmap-chain encoding, the .pfi " +
+    "magic bytes (loaded indirectly in the binary), and clean-room byte validation against real " +
+    "PBF samples (HDM 16+ is restore-only; the Free Edition only writes pVHD). The full image " +
+    "is surfaced as an opaque blob alongside a synthetic metadata.ini that persists the " +
+    "re_audit_1..13 trail and the recovered struct_header_* / data_layer_* keys so the next " +
+    "promotion pass can extend the parser against a real sample without re-running the binary " +
+    "RE. Format is obsolete for creation since HDM 16; restore content with vendor tools.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ParagonReader(stream);

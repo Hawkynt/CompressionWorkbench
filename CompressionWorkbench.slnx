@@ -288,6 +288,7 @@
     <Project Path="FileFormats/FileFormat.PackIt/FileFormat.PackIt.csproj" />
     <Project Path="FileFormats/FileFormat.Pak/FileFormat.Pak.csproj" />
     <Project Path="FileFormats/FileFormat.Paq8/FileFormat.Paq8.csproj" />
+    <Project Path="FileFormats/FileFormat.Paragon/FileFormat.Paragon.csproj" />
     <Project Path="FileFormats/FileFormat.Parquet/FileFormat.Parquet.csproj" />
     <Project Path="FileFormats/FileFormat.Pbp/FileFormat.Pbp.csproj" />
     <Project Path="FileFormats/FileFormat.Pdf/FileFormat.Pdf.csproj" />

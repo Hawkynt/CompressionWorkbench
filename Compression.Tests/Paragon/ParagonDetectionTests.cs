@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Text;
 using Compression.Registry;
 using FileFormat.Paragon;
@@ -275,13 +276,13 @@ public class ParagonDetectionTests {
     Assert.That(text, Does.Contain("Scripting Language"));
     Assert.That(text, Does.Contain("ExtFS"));
 
-    // Conclusion line must pin the "twelve vectors, all dead-ended" finding.
+    // Conclusion line must pin the "twelve vectors, Wave 13 succeeded" finding.
     Assert.That(text, Does.Contain("re_conclusion="),
       "Audit conclusion must be persisted.");
-    Assert.That(text, Does.Contain("Twelve research vectors"),
-      "Conclusion must cite the twelve vectors.");
-    Assert.That(text.ToLowerInvariant(), Does.Contain("undocumented"),
-      "Conclusion must restate that chunk framing remains undocumented.");
+    Assert.That(text, Does.Contain("Twelve public-source vectors"),
+      "Conclusion must cite the twelve public-source vectors as exhausted.");
+    Assert.That(text, Does.Contain("Wave 13"),
+      "Conclusion must cite Wave 13 (binary RE) as the successful vector.");
   }
 
   /// <summary>
@@ -322,15 +323,197 @@ public class ParagonDetectionTests {
 
     Assert.That(desc, Does.Contain("Deep-RE audit"),
       "Description must flag the deep-RE audit was conducted.");
-    Assert.That(desc, Does.Contain("twelve research vectors"),
-      "Description must cite the twelve vectors as the scope of the investigation.");
+    Assert.That(desc, Does.Contain("twelve public-source vectors"),
+      "Description must cite the twelve public-source vectors as the dead-ended scope.");
+    Assert.That(desc, Does.Contain("Wave-13"),
+      "Description must cite Wave 13 (binary RE) as the successful vector that followed.");
     Assert.That(desc.ToLowerInvariant(), Does.Contain("dead-ended"),
-      "Description must honestly state all vectors dead-ended.");
+      "Description must honestly state the public-source vectors dead-ended.");
 
     // The retired AES-on-PBF claim must NOT reappear in the public surface.
     Assert.That(desc, Does.Not.Contain("optional AES payload encryption"),
       "The retired pre-audit AES-on-legacy-PBF claim must not reappear in the Description.");
     Assert.That(desc, Does.Contain("legacy PBF is unencrypted"),
       "Description must surface the audit's material correction.");
+  }
+
+  /// <summary>
+  /// Wave 13 (binary reverse-engineering of the vendor's
+  /// <c>hdmengine_hdmsdk.dll</c> from HDM 18.12.0.0744) parses two real
+  /// structured fields past the magic: <c>Major</c> at <c>+4</c> and
+  /// <c>FormatVersion</c> at <c>+6</c>, both 16-bit little-endian. Lock in
+  /// that the reader exposes them as parsed values (not just bytes) so the
+  /// next promotion pass can build on the structured surface.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void Reader_ParsesWave13StructuredHeader_MajorAndFormatVersion() {
+    // Build a PImg header with Major = 0x0002 / FormatVersion = 0x0003, the
+    // exact values the vendor writer emits at RVA 0x4a8dc4
+    // (MOV DWORD [rax+4], 0x00030002).
+    var image = new byte[256];
+    Encoding.ASCII.GetBytes("PImg").CopyTo(image.AsSpan(0, 4));
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(4, 2), 0x0002);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(6, 2), 0x0003);
+    using var ms = new MemoryStream(image);
+    using var r = new ParagonReader(ms);
+
+    Assert.That(r.Major, Is.EqualTo(0x0002),
+      "Wave-13 RE: Major at +4 must be parsed as the vendor-writer literal 0x0002.");
+    Assert.That(r.FormatVersion, Is.EqualTo(0x0003),
+      "Wave-13 RE: FormatVersion at +6 must be parsed as the vendor-writer literal 0x0003.");
+    Assert.That(r.TrailingWord, Is.EqualTo(0x00030002u),
+      "TrailingWord must equal the composite vendor-writer literal 0x00030002.");
+  }
+
+  /// <summary>
+  /// Wave 13 confirms the format-version range: the vendor's reader at RVA
+  /// <c>0x4ae6e4</c> rejects format-version &gt; 3 with error code
+  /// <c>0x210a8</c> ("Incompatible version of the archive"). Our R/O reader
+  /// does NOT enforce this gate (we want to surface any sample for forensic
+  /// triage even if the vendor would reject it), but we MUST persist the
+  /// parsed value so downstream tooling can detect out-of-range samples.
+  /// </summary>
+  [Test, Category("HappyPath")]
+  public void Reader_PersistsFormatVersionField_EvenAboveVendorMax() {
+    // Build a PImg with FormatVersion = 0x0007 - above the vendor's max of 3.
+    var image = new byte[256];
+    Encoding.ASCII.GetBytes("PImg").CopyTo(image.AsSpan(0, 4));
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(4, 2), 0x0002);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(6, 2), 0x0007);
+    using var ms = new MemoryStream(image);
+    using var r = new ParagonReader(ms);
+
+    Assert.That(r.FormatVersion, Is.EqualTo(0x0007),
+      "Reader must surface the raw FormatVersion even above the vendor's reject threshold.");
+    Assert.That(r.ValidHeader, Is.True,
+      "R/O metadata reader must still flag the header valid - we are forensic-triage, not the vendor.");
+  }
+
+  /// <summary>
+  /// Wave 13 bumped MinHeaderSize from 4 to 8 because we now parse the real
+  /// 4-byte version word. Pin the new minimum so a future regression that
+  /// reverts to "magic only" surfaces here.
+  /// </summary>
+  [Test, Category("Sad")]
+  public void Reader_RejectsHeaderSmallerThanWave13Minimum() {
+    // 6 bytes - has the magic but not the full version word.
+    var image = new byte[6];
+    Encoding.ASCII.GetBytes("PImg").CopyTo(image.AsSpan(0, 4));
+    image[4] = 0x02; image[5] = 0x00;
+    using var ms = new MemoryStream(image);
+    Assert.Throws<InvalidDataException>(() => _ = new ParagonReader(ms),
+      "Wave-13 reader needs the full 8-byte magic + version-word prefix.");
+  }
+
+  /// <summary>
+  /// Wave-13 metadata surface: the reverse-engineered structured-header
+  /// offsets must be persisted as <c>struct_header_offset_*</c> keys so the
+  /// next maintainer can extend the parser without re-doing the binary RE.
+  /// </summary>
+  [Test, Category("Stub")]
+  public void Metadata_PersistsWave13StructuredHeaderOffsets() {
+    using var ms = new MemoryStream(BuildPImg(payloadLen: 256));
+    var r = new ParagonReader(ms);
+    var meta = r.Entries.Single(e => e.Name == "metadata.ini");
+    var text = Encoding.UTF8.GetString(meta.Data);
+
+    // All ten reverse-engineered offsets must be documented.
+    Assert.That(text, Does.Contain("struct_header_offset_0="),
+      "Wave-13: magic-at-offset-0 must be persisted.");
+    Assert.That(text, Does.Contain("struct_header_offset_4="),
+      "Wave-13: Major at +4 must be persisted.");
+    Assert.That(text, Does.Contain("struct_header_offset_6="),
+      "Wave-13: FormatVersion at +6 must be persisted.");
+    Assert.That(text, Does.Contain("struct_header_offset_c="),
+      "Wave-13: F12 discriminator at +0xC must be persisted.");
+    Assert.That(text, Does.Contain("struct_header_offset_26="),
+      "Wave-13: FlagsA at +0x26 must be persisted.");
+    Assert.That(text, Does.Contain("struct_header_offset_27="),
+      "Wave-13: FlagsB at +0x27 must be persisted.");
+    Assert.That(text, Does.Contain("struct_header_offset_30="),
+      "Wave-13: image-type / fork ID at +0x30 must be persisted.");
+    Assert.That(text, Does.Contain("struct_header_offset_34="),
+      "Wave-13: volume-name / GUID string at +0x34 must be persisted.");
+    Assert.That(text, Does.Contain("struct_header_offset_d8="),
+      "Wave-13: ParentId u64 at +0xD8 must be persisted - the incremental-chain back-pointer.");
+    Assert.That(text, Does.Contain("struct_header_offset_e8="),
+      "Wave-13: FlagsC at +0xE8 must be persisted.");
+    Assert.That(text, Does.Contain("struct_header_offset_f1="),
+      "Wave-13: derived byte at +0xF1 must be persisted - last initialised byte of the header.");
+    Assert.That(text, Does.Contain("struct_header_min_size="),
+      "Wave-13: 0xF2 minimum header size must be persisted.");
+  }
+
+  /// <summary>
+  /// Wave-13 metadata surface: the reverse-engineered chunk / segment /
+  /// bitmap data-layer architecture (zlib + Adler-32 per chunk, chained
+  /// allocation bitmap, segment-per-split-file) must be persisted as
+  /// <c>data_layer_*</c> keys.
+  /// </summary>
+  [Test, Category("Stub")]
+  public void Metadata_PersistsWave13DataLayerArchitecture() {
+    using var ms = new MemoryStream(BuildPImg(payloadLen: 256));
+    var r = new ParagonReader(ms);
+    var meta = r.Entries.Single(e => e.Name == "metadata.ini");
+    var text = Encoding.UTF8.GetString(meta.Data);
+
+    // Architecture-level findings.
+    Assert.That(text, Does.Contain("data_layer_arch="),
+      "Wave-13: segments-of-chunks architecture must be persisted.");
+    Assert.That(text, Does.Contain("data_layer_chunk="),
+      "Wave-13: per-chunk fields (number / offset / size / compress-flag) must be persisted.");
+    Assert.That(text, Does.Contain("data_layer_compressor="),
+      "Wave-13: per-chunk compressor (zlib / DEFLATE + Adler-32) must be persisted.");
+    Assert.That(text, Does.Contain("data_layer_bitmap="),
+      "Wave-13: chained allocation-bitmap layer must be persisted.");
+    Assert.That(text, Does.Contain("data_layer_index_pfi="),
+      "Wave-13: PFI index file having its own magic must be persisted.");
+    Assert.That(text, Does.Contain("data_layer_class_hierarchy="),
+      "Wave-13: PBF C++ class hierarchy must be persisted.");
+    Assert.That(text, Does.Contain("data_layer_source_files="),
+      "Wave-13: PBF source-file map (pbfhdr.cpp / pbfarc.cpp / pbflnk.cpp / ...) must be persisted.");
+
+    // Specific RE evidence.
+    Assert.That(text, Does.Contain("zlib"),
+      "Wave-13: compressor must be identified as zlib (not a proprietary codec).");
+    Assert.That(text, Does.Contain("Adler-32"),
+      "Wave-13: per-chunk checksum must be identified as Adler-32 (zlib checksum).");
+    Assert.That(text, Does.Contain("CPbfBitmapIO"),
+      "Wave-13: bitmap I/O class must be named.");
+    Assert.That(text, Does.Contain("PbfDataFile"),
+      "Wave-13: per-segment data-file class must be named.");
+  }
+
+  /// <summary>
+  /// Wave-13 audit entry: the 13th vector (binary RE of HDM 18) succeeded
+  /// where Wave-1..12 (public-source research) dead-ended. The trail must
+  /// be persisted as <c>re_audit_13=</c>, the conclusion must be updated
+  /// to flag the partial success, and the descriptor Description must
+  /// cite Wave 13.
+  /// </summary>
+  [Test, Category("Stub")]
+  public void Metadata_PinsWave13AuditEntryAndPartialSuccess() {
+    using var ms = new MemoryStream(BuildPImg(payloadLen: 64));
+    var r = new ParagonReader(ms);
+    var meta = r.Entries.Single(e => e.Name == "metadata.ini");
+    var text = Encoding.UTF8.GetString(meta.Data);
+
+    Assert.That(text, Does.Contain("re_audit_13="),
+      "Wave-13 audit entry must be persisted alongside re_audit_1..12.");
+    Assert.That(text, Does.Contain("SUCCESS"),
+      "Wave-13 trail must explicitly flag the binary RE as successful.");
+    Assert.That(text, Does.Contain("hdmengine_hdmsdk.dll"),
+      "Wave-13 trail must name the vendor binary that was reverse-engineered.");
+    Assert.That(text, Does.Contain("HDM 18.12.0.0744"),
+      "Wave-13 trail must pin the exact vendor version analysed.");
+    Assert.That(text, Does.Contain("history_hdm18="),
+      "Wave-13 must add HDM 18 to the format-evolution timeline.");
+
+    // The Description must cite Wave 13.
+    var d = new ParagonFormatDescriptor();
+    Assert.That(d.Description, Does.Contain("Wave-13"),
+      "Descriptor Description must cite Wave 13 so registry consumers see the upgraded RE state.");
+    Assert.That(d.Description, Does.Contain("hdmengine_hdmsdk.dll"),
+      "Description must name the vendor binary the structural findings came from.");
   }
 }
