@@ -105,6 +105,19 @@ public class S3mTests {
   }
 
   [Test]
+  public void SongWav_AlsoSurfacesPerChannelMonoWavs() {
+    var blob = MakeSyntheticS3m();
+    using var ms = new MemoryStream(blob);
+    var entries = new S3mFormatDescriptor().List(ms, null);
+
+    var channels = entries.Where(e => e.Kind == "Channel").Select(e => e.Name).ToList();
+    Assert.That(channels, Does.Contain("SONG_LEFT.wav"));
+    Assert.That(channels, Does.Contain("SONG_RIGHT.wav"));
+    AssertWav(ExtractEntry(blob, "SONG_LEFT.wav"), expectedChannels: 1, expectedRate: 44100);
+    AssertWav(ExtractEntry(blob, "SONG_RIGHT.wav"), expectedChannels: 1, expectedRate: 44100);
+  }
+
+  [Test]
   public void Samples_AreMonoWavFiles() {
     var blob = MakeSyntheticS3m();
     using var ms = new MemoryStream(blob);

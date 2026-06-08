@@ -171,6 +171,7 @@ public sealed class XmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
 
     // Render the whole song to a stereo WAV (graceful: any failure leaves SONG.wav out).
     byte[]? songWav = null;
+    byte[]? songPcm = null;
     double renderedSeconds = 0;
     var renderNote = "ok";
     try {
@@ -178,6 +179,7 @@ public sealed class XmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
       var pcm = player.Render();
       renderedSeconds = pcm.Length / (double)(TrackerRender.OutputSampleRate * TrackerRender.OutputChannels * 2);
       songWav = PcmCodec.ToWavBlob(pcm, TrackerRender.OutputChannels, TrackerRender.OutputSampleRate, TrackerRender.OutputBits);
+      songPcm = pcm;
     } catch {
       renderNote = "render failed";
     }
@@ -198,8 +200,13 @@ public sealed class XmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     info.AppendLine($"rendered_status={renderNote}");
     entries.Insert(1, ("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));
 
-    if (songWav != null)
+    if (songWav != null) {
       entries.Insert(2, ("SONG.wav", "Track", songWav));
+      // Also surface the rendered stereo mix as individual mono speaker channels.
+      var at = 3;
+      foreach (var (name, channelWav) in PcmCodec.SplitInterleavedPcm(songPcm!, TrackerRender.OutputChannels, TrackerRender.OutputSampleRate, TrackerRender.OutputBits))
+        entries.Insert(at++, ($"SONG_{name}.wav", "Channel", channelWav));
+    }
 
     return entries;
   }

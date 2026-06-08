@@ -112,6 +112,24 @@ public class XmTests {
   }
 
   [Test]
+  public void SongWav_AlsoSurfacesPerChannelMonoWavs() {
+    var blob = MakeSyntheticXm();
+    using var ms = new MemoryStream(blob);
+    var entries = new XmFormatDescriptor().List(ms, null);
+
+    var channels = entries.Where(e => e.Kind == "Channel").Select(e => e.Name).ToList();
+    Assert.That(channels, Does.Contain("SONG_LEFT.wav"));
+    Assert.That(channels, Does.Contain("SONG_RIGHT.wav"));
+
+    using var output = new MemoryStream();
+    new XmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "SONG_LEFT.wav", output, null);
+    var wav = output.ToArray();
+    Assert.That(wav.AsSpan(0, 4).ToArray(), Is.EqualTo("RIFF"u8.ToArray()));
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(22)), Is.EqualTo(1));       // mono
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24)), Is.EqualTo(44100u));
+  }
+
+  [Test]
   public void InstrumentSample_IsSurfacedAsWav() {
     var blob = MakeSyntheticXm();
     using var ms = new MemoryStream(blob);

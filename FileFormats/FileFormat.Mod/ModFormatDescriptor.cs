@@ -174,6 +174,10 @@ public sealed class ModFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (rendered is { } song) {
       var wav = PcmCodec.ToWavBlob(song.Pcm, channels: 2, OutputSampleRate, bitsPerSample: 16, formatCode: 1);
       entries.Insert(2, ("SONG.wav", "Track", wav, "render"));
+      // Also surface the rendered stereo mix as individual mono speaker channels.
+      var at = 3;
+      foreach (var (name, channelWav) in PcmCodec.SplitInterleavedPcm(song.Pcm, channels: 2, OutputSampleRate, bitsPerSample: 16))
+        entries.Insert(at++, ($"SONG_{name}.wav", "Channel", channelWav, "render"));
     }
 
     return entries;
