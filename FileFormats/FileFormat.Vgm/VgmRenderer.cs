@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using Codec.Pcm;
 using Codec.Sn76489;
+using Codec.Ym2413;
 using Codec.Ym2612;
 using Compression.Registry;
 
@@ -11,7 +12,8 @@ namespace FileFormat.Vgm;
 /// Executes a VGM command stream over the SN76489 PSG and YM2612 OPN2 synthesis cores and
 /// surfaces the rendered stereo tune as per-channel <c>LEFT.wav</c>/<c>RIGHT.wav</c> entries.
 /// <para>The command subset handled covers everything a PSG/YM2612 tune needs:
-/// <c>0x4F</c> GG-stereo, <c>0x50</c> PSG write, <c>0x52</c>/<c>0x53</c> YM2612 port-0/1,
+/// <c>0x4F</c> GG-stereo, <c>0x50</c> PSG write, <c>0x51 aa dd</c> YM2413 (OPLL) write,
+/// <c>0x52</c>/<c>0x53</c> YM2612 port-0/1,
 /// <c>0x61 nn nn</c> wait-n, <c>0x62</c> wait 735 (1/60 s), <c>0x63</c> wait 882 (1/50 s),
 /// <c>0x66</c> end, <c>0x67</c> data block (stored for DAC streaming), <c>0x70-0x7F</c> short
 /// waits (n+1 samples), <c>0x80-0x8F</c> YM2612 DAC write + wait via the data-block pointer,
@@ -26,11 +28,12 @@ internal static class VgmRenderer {
 
   // Chip-clock header fields we can synthesise.
   private const int Sn76489Offset = 0x0C;
+  private const int Ym2413Offset = 0x10;
   private const int Ym2612Offset = 0x2C;
 
-  // Every chip-clock field other than the two we render; any nonzero entry blocks rendering.
+  // Every chip-clock field other than the ones we render; any nonzero entry blocks rendering.
   private static readonly (int Offset, string Label)[] UnsupportedClocks = [
-    (0x10, "YM2413"), (0x30, "YM2151"), (0x38, "SegaPCM"), (0x40, "RF5C68"),
+    (0x30, "YM2151"), (0x38, "SegaPCM"), (0x40, "RF5C68"),
     (0x44, "YM2203"), (0x48, "YM2608"), (0x4C, "YM2610"), (0x50, "YM3812"),
     (0x54, "YM3526"), (0x58, "Y8950"), (0x5C, "YMF262"), (0x60, "YMF278B"),
     (0x64, "YMF271"), (0x68, "YMZ280B"), (0x6C, "RF5C164"), (0x70, "PWM"),
@@ -43,6 +46,7 @@ internal static class VgmRenderer {
     try {
       var snClock = ReadClock(blob, Sn76489Offset);
       var ymClock = ReadClock(blob, Ym2612Offset);
+      var opllClock = ReadClock(blob, Ym2413Offset);
 
       // A blocking chip → keep the metadata-only view but record why.
       var blocker = FindUnsupportedChip(blob, version);
@@ -53,12 +57,20 @@ internal static class VgmRenderer {
         return;
       }
 
-      if (snClock == 0 && ymClock == 0)
+      if (snClock == 0 && ymClock == 0 && opllClock == 0)
         return; // nothing this core can voice
 
-      var pcm = Render(blob, dataOffset, commandsEnd, totalSamples, snClock, ymClock);
+      var pcm = Render(blob, dataOffset, commandsEnd, totalSamples, snClock, ymClock, opllClock);
       if (pcm.Length == 0)
         return;
+
+      // Record which chips actually drove the rendered mix.
+      var chips = new List<string>(3);
+      if (snClock != 0) chips.Add("SN76489");
+      if (ymClock != 0) chips.Add("YM2612");
+      if (opllClock != 0) chips.Add("YM2413");
+      entries.Add(new("rendered.ini", "Tag",
+        System.Text.Encoding.UTF8.GetBytes($"rendered_chips={string.Join(",", chips)}\n")));
 
       foreach (var (name, wav) in PcmCodec.SplitInterleavedPcm(pcm, channels: 2, SampleRate, bitsPerSample: 16))
         entries.Add(new($"{name}.wav", "Channel", wav, Method: "pcm"));
@@ -75,16 +87,20 @@ internal static class VgmRenderer {
   }
 
   private static byte[] Render(
-      byte[] blob, int dataOffset, int commandsEnd, uint totalSamples, uint snClock, uint ymClock) {
+      byte[] blob, int dataOffset, int commandsEnd, uint totalSamples,
+      uint snClock, uint ymClock, uint opllClock) {
     var targetSamples = totalSamples == 0
       ? MaxSamples
       : Math.Min(totalSamples, MaxSamples);
 
     var psg = snClock != 0 ? new Sn76489Codec(snClock) : null;
     var ym = ymClock != 0 ? new Ym2612Codec(ymClock) : null;
+    var opll = opllClock != 0 ? new Ym2413Codec(opllClock) : null;
 
     // YM2612 native rate → 44100 resample accumulator (simple ratio stepping).
     var ymStep = ym != null ? ym.NativeSampleRate / SampleRate : 0.0;
+    // YM2413 (OPLL) native rate (clock / 72) → 44100 resample accumulator.
+    var opllStep = opll != null ? opll.NativeSampleRate / SampleRate : 0.0;
 
     var output = new List<short>(capacity: (int)Math.Min(targetSamples, 1 << 20) * 2);
 
@@ -94,6 +110,10 @@ internal static class VgmRenderer {
     // YM resampler state.
     double ymAccumulator = 0;
     short ymLeft = 0, ymRight = 0;
+
+    // OPLL resampler state (mono).
+    double opllAccumulator = 0;
+    short opllMono = 0;
 
     // DAC data blocks (type 0 PCM) concatenated, addressed by a running pointer (0xE0 seeks).
     var dataBlock = new List<byte>();
@@ -121,6 +141,16 @@ internal static class VgmRenderer {
           l += psgBuffer[0];
           r += psgBuffer[1];
         }
+        if (opll != null) {
+          opllAccumulator += opllStep;
+          while (opllAccumulator >= 1.0) {
+            opllAccumulator -= 1.0;
+            opllMono = opll.RenderSample();
+          }
+          // OPLL is mono; feed both stereo sides at half level.
+          l += opllMono / 2;
+          r += opllMono / 2;
+        }
         output.Add(Clamp16(l));
         output.Add(Clamp16(r));
       }
@@ -134,6 +164,13 @@ internal static class VgmRenderer {
           break;
         case 0x50: // PSG write
           if (pos < commandsEnd) psg?.Write(blob[pos++]);
+          break;
+        case 0x51: // YM2413 (OPLL) write: aa dd
+          if (pos + 1 < commandsEnd) {
+            var addr = blob[pos++];
+            var val = blob[pos++];
+            opll?.WriteRegister(addr, val);
+          }
           break;
         case 0x52: // YM2612 port 0
         case 0x53: // YM2612 port 1

@@ -90,6 +90,7 @@
     <ProjectReference Include="..\Codecs\Codec.Dfpwm\Codec.Dfpwm.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Bonk\Codec.Bonk.csproj" />
     <ProjectReference Include="..\Codecs\Codec.WavArc\Codec.WavArc.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Ym2413\Codec.Ym2413.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />

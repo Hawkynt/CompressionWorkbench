@@ -229,6 +229,95 @@ public class VgmTests {
     Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True, "DAC stream renders audio");
   }
 
+  // ──────────── YM2413 (OPLL) rendering ────────────
+
+  [Test]
+  public void Render_Ym2413_ProducesPcmAndReportsRenderedChip() {
+    // v1.51 VGM with only a YM2413 clock; play a sustained voice via 0x51 writes.
+    var commands = new List<byte> {
+      0x51, 0x30, 0x40,        // ch0: instrument 4 (Flute), volume 0
+      0x51, 0x10, 0x80,        // ch0: F-num low
+      0x51, 0x20, 0x19,        // ch0: F-num bit8=1, block=4, key-on (bit4)
+      0x61, 0x44, 0xAC,        // wait 44100 samples (1 s)
+      0x66,
+    };
+    var headerLen = 0x80;
+    var blob = new byte[headerLen + commands.Count];
+    "Vgm "u8.CopyTo(blob);
+    WriteU32(blob, 0x08, 0x00000151);
+    WriteU32(blob, 0x10, 3579545);     // YM2413 only
+    WriteU32(blob, 0x18, 44100);
+    WriteU32(blob, 0x34, (uint)(headerLen - 0x34));
+    commands.ToArray().CopyTo(blob.AsSpan(headerLen));
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True, "OPLL renders audio");
+    Assert.That(entries.Any(e => e.Name == "RIGHT.wav"), Is.True);
+
+    // rendered_chips metadata mentions YM2413.
+    var rendered = Extract(blob, "rendered.ini");
+    Assert.That(rendered, Does.Contain("rendered_chips="));
+    Assert.That(rendered, Does.Contain("YM2413"));
+
+    // Output is non-silent.
+    using var output = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "LEFT.wav", output, null);
+    var samples = ReadWavLeftSamples(output.ToArray());
+    Assert.That(samples.Sum(s => (long)Math.Abs(s)), Is.GreaterThan(0L), "non-silent PCM");
+  }
+
+  [Test]
+  public void Render_Ym2413_NoLongerBlockedAsUnsupported() {
+    // A YM2413-only VGM must render rather than emit a render.txt skip note.
+    var commands = new byte[] { 0x51, 0x30, 0x40, 0x66 };
+    var headerLen = 0x80;
+    var blob = new byte[headerLen + commands.Length];
+    "Vgm "u8.CopyTo(blob);
+    WriteU32(blob, 0x08, 0x00000151);
+    WriteU32(blob, 0x10, 3579545);
+    WriteU32(blob, 0x18, 100);
+    WriteU32(blob, 0x34, (uint)(headerLen - 0x34));
+    commands.CopyTo(blob.AsSpan(headerLen));
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "render.txt"), Is.False, "YM2413 is supported now");
+  }
+
+  // ──────────── Game Gear PSG stereo (0x4F) ────────────
+
+  [Test]
+  public void Render_GameGearStereo_LeftOnlyMaskSilencesRight() {
+    // Tone on channel 0, then a 0x4F GG-stereo write enabling only the LEFT speaker for ch0.
+    const int period = 0x100;
+    var commands = new byte[] {
+      0x50, (byte)(0x80 | (period & 0x0F)),         // latch ch0 tone low
+      0x50, (byte)((period >> 4) & 0x3F),           // data high
+      0x50, (byte)(0x80 | 0x10 | 0x00),             // ch0 volume full
+      0x50, (byte)(0x80 | (1 << 5) | 0x10 | 0x0F),  // ch1 mute
+      0x50, (byte)(0x80 | (2 << 5) | 0x10 | 0x0F),  // ch2 mute
+      0x50, (byte)(0x80 | (3 << 5) | 0x10 | 0x0F),  // noise mute
+      0x4F, 0x10,                                   // GG stereo: bit4 = ch0 LEFT only
+      0x61, 0x44, 0xAC,                             // wait 1 s
+      0x66,
+    };
+    var blob = BuildPsgToneVgm(period, totalSamples: 44100, commands);
+
+    using var left = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "LEFT.wav", left, null);
+    using var right = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "RIGHT.wav", right, null);
+
+    var leftSamples = ReadWavLeftSamples(left.ToArray());
+    var rightSamples = ReadWavLeftSamples(right.ToArray());
+
+    var leftEnergy = leftSamples.Sum(s => (long)Math.Abs(s));
+    var rightEnergy = rightSamples.Sum(s => (long)Math.Abs(s));
+    Assert.That(leftEnergy, Is.GreaterThan(0L), "left speaker carries the tone");
+    Assert.That(rightEnergy, Is.EqualTo(0L), "right speaker is masked off");
+  }
+
   [Test]
   public void Render_UnsupportedChip_KeepsMetadataOnly() {
     // YM2151 clock present (unsupported) → no WAVs, a render.txt note instead.

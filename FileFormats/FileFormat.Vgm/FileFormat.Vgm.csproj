@@ -10,6 +10,7 @@
     <ProjectReference Include="..\..\Codecs\Codec.Pcm\Codec.Pcm.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Sn76489\Codec.Sn76489.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Ym2612\Codec.Ym2612.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Ym2413\Codec.Ym2413.csproj" />
   </ItemGroup>
 
 </Project>
