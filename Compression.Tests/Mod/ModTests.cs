@@ -64,6 +64,67 @@ public class ModTests {
   }
 
   [Test]
+  public void List_IncludesRenderedSongWav() {
+    var blob = MakeSyntheticMod();
+    using var ms = new MemoryStream(blob);
+    var entries = new ModFormatDescriptor().List(ms, null);
+
+    var song = entries.FirstOrDefault(e => e.Name == "SONG.wav");
+    Assert.That(song, Is.Not.Null);
+    Assert.That(song!.Kind, Is.EqualTo("Track"));
+    Assert.That(song.Method, Is.EqualTo("render"));
+  }
+
+  [Test]
+  public void SongWav_IsValidRiffStereo44100() {
+    var blob = MakeSyntheticMod();
+    var wav = ExtractEntry(blob, "SONG.wav");
+    AssertWav(wav, expectedChannels: 2, expectedRate: 44100);
+  }
+
+  [Test]
+  public void Samples_AreMonoWavFiles() {
+    var blob = MakeSyntheticMod();
+    using var ms = new MemoryStream(blob);
+    var entries = new ModFormatDescriptor().List(ms, null);
+    var sample = entries.First(e => e.Name.StartsWith("samples/01_"));
+    Assert.That(sample.Name, Does.EndWith(".wav"));
+    var wav = ExtractEntry(blob, sample.Name);
+    AssertWav(wav, expectedChannels: 1, expectedRate: -1);
+  }
+
+  [Test]
+  public void MalformedModule_DegradesToFullOnly() {
+    // 1084 bytes of zeros with no valid signature still parses to a 4-channel MOD,
+    // so use a too-short blob: the descriptor must surface FULL.mod and nothing else.
+    var blob = new byte[64];
+    using var ms = new MemoryStream(blob);
+    var entries = new ModFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "FULL.mod"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "SONG.wav"), Is.False);
+  }
+
+  private static byte[] ExtractEntry(byte[] blob, string name) {
+    using var input = new MemoryStream(blob);
+    using var output = new MemoryStream();
+    new ModFormatDescriptor().ExtractEntry(input, name, output, null);
+    return output.ToArray();
+  }
+
+  private static void AssertWav(byte[] wav, int expectedChannels, int expectedRate) {
+    Assert.That(wav.Length, Is.GreaterThan(44));
+    Assert.That(System.Text.Encoding.ASCII.GetString(wav, 0, 4), Is.EqualTo("RIFF"));
+    Assert.That(System.Text.Encoding.ASCII.GetString(wav, 8, 4), Is.EqualTo("WAVE"));
+    var channels = BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(22, 2));
+    var rate = BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24, 4));
+    var bits = BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(34, 2));
+    Assert.That(channels, Is.EqualTo(expectedChannels));
+    Assert.That(bits, Is.EqualTo(16));
+    if (expectedRate > 0)
+      Assert.That(rate, Is.EqualTo((uint)expectedRate));
+  }
+
+  [Test]
   public void Extract_WritesExpectedFiles() {
     var blob = MakeSyntheticMod();
     var tmp = Path.Combine(Path.GetTempPath(), "mod_test_" + Guid.NewGuid().ToString("N"));
