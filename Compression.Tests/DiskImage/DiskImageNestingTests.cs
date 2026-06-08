@@ -167,6 +167,54 @@ public class DiskImageNestingTests {
   }
 
   [Test, Category("HappyPath")]
+  public void VmdkDescriptor_Add_FsImageAtRoot_OnSparseVmdk_AllocatesGrainsAndPartition() {
+    // Sparse VMDK with an MBR + FAT12 partition at sector 63 and ~1.5 MB of
+    // free zero-filled space past it. The trailing zero region is unallocated
+    // in the sparse layout — VmdkStream must lazily allocate grains on write
+    // for the descriptor-level Add to land the new partition.
+    var fatWriter = new FileSystem.Fat.FatWriter();
+    fatWriter.AddFile("EXIST.TXT", "first part"u8.ToArray());
+    var firstFat = fatWriter.Build();
+    const int partitionStartSector = 63;
+    var firstPartSectors = (firstFat.Length + 511) / 512;
+    var totalSectors = partitionStartSector + firstPartSectors + 3000;
+    var rawDisk = new byte[totalSectors * 512];
+    Array.Copy(firstFat, 0, rawDisk, partitionStartSector * 512, firstFat.Length);
+    rawDisk[510] = 0x55; rawDisk[511] = 0xAA;
+    const int entryOffset = 0x1BE;
+    rawDisk[entryOffset + 0] = 0x80;
+    rawDisk[entryOffset + 4] = 0x01;
+    rawDisk[entryOffset + 8] = partitionStartSector;
+    rawDisk[entryOffset + 12] = (byte)(firstPartSectors & 0xFF);
+    rawDisk[entryOffset + 13] = (byte)((firstPartSectors >> 8) & 0xFF);
+    rawDisk[entryOffset + 14] = (byte)((firstPartSectors >> 16) & 0xFF);
+    rawDisk[entryOffset + 15] = (byte)((firstPartSectors >> 24) & 0xFF);
+
+    var vmdkWriter = new FileFormat.Vmdk.VmdkWriter();
+    vmdkWriter.SetDiskData(rawDisk);
+    using var ms = new MemoryStream();
+    ms.Write(vmdkWriter.Build());
+
+    var second = new FileSystem.Fat.FatWriter();
+    second.AddFile("NEW.TXT", "second part"u8.ToArray());
+    var secondFat = second.Build();
+
+    var desc = new FileFormat.Vmdk.VmdkFormatDescriptor();
+    desc.Add(ms, new[] {
+      Compression.Registry.ArchiveInputInfo.InMemory("second.img", secondFat)
+    });
+
+    ms.Position = 0;
+    var entries = desc.List(ms, password: null);
+    var entryNames = string.Join(", ", entries.Select(e => e.Name));
+    var byPartition = entries.GroupBy(e => e.Name.Split('/')[0]).Select(g => g.Key).ToList();
+    Assert.That(byPartition.Count(p => p.StartsWith("Partition")), Is.GreaterThanOrEqualTo(2),
+      $"Expected ≥2 partitions after Add — saw groups: {string.Join(", ", byPartition)} (entries: {entryNames})");
+    Assert.That(entries.Any(e => e.Name.EndsWith("/NEW.TXT", StringComparison.OrdinalIgnoreCase)),
+      Is.True, $"Expected NEW.TXT from the new partition — entries: {entryNames}");
+  }
+
+  [Test, Category("HappyPath")]
   public void PartitionedDiskLister_TryAdd_FsImageAtRoot_AllocatesNewPartition() {
     // Build a raw disk with an MBR + FAT12 partition at sector 63 and ~1.5 MB
     // of free space past it. Exercising the lister directly avoids the sparse

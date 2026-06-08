@@ -7,14 +7,10 @@ namespace FileFormat.Vmdk;
 /// Provides seekable read/write access to the virtual disk content of a monolithic
 /// sparse VMDK. Translates virtual disk offsets through the grain directory and
 /// grain tables. Reads from unallocated grains return zeros. Writes to unallocated
-/// grains are not supported (the stream only writes to already-allocated grains).
+/// grains lazily allocate a fresh grain (and grain table, when needed) at the end
+/// of the backing file and update the grain directory + grain table on disk so the
+/// new contents are visible on the next read.
 /// </summary>
-/// <remarks>
-/// This stream works with the sparse VMDK format produced by <see cref="VmdkWriter"/>,
-/// where all non-zero grains are pre-allocated. Writing to zero (unallocated) grains
-/// would require extending the file and updating the grain table — this is deferred
-/// to a future phase.
-/// </remarks>
 public sealed class VmdkStream : Stream {
   private static readonly byte[] SparseMagic = [0x4B, 0x44, 0x4D, 0x56]; // "KDMV" LE
 
@@ -24,15 +20,20 @@ public sealed class VmdkStream : Stream {
   private readonly int _grainSizeBytes;
   private readonly int _grainTableEntries;
   private readonly long[] _grainOffsets; // virtual grain index -> byte offset in file (0 = unallocated)
+  // Per-GD-index byte offset of the grain table on disk (0 = GT not yet allocated).
+  private readonly long[] _gtByteOffsets;
+  private readonly long _gdByteOffset;
   private long _position;
 
   private VmdkStream(Stream backing, long diskSize, int grainSizeBytes, int grainTableEntries,
-                     long[] grainOffsets, bool leaveOpen) {
+                     long[] grainOffsets, long[] gtByteOffsets, long gdByteOffset, bool leaveOpen) {
     _backing = backing;
     _diskSize = diskSize;
     _grainSizeBytes = grainSizeBytes;
     _grainTableEntries = grainTableEntries;
     _grainOffsets = grainOffsets;
+    _gtByteOffsets = gtByteOffsets;
+    _gdByteOffset = gdByteOffset;
     _leaveOpen = leaveOpen;
   }
 
@@ -93,9 +94,10 @@ public sealed class VmdkStream : Stream {
       var grainOff = (int)(_position % _grainSizeBytes);
       var toWrite = Math.Min(remaining, _grainSizeBytes - grainOff);
 
-      if (grainIdx >= _grainOffsets.Length || _grainOffsets[grainIdx] == 0)
-        throw new NotSupportedException(
-          $"Cannot write to unallocated grain {grainIdx}. Only pre-allocated grains are writable.");
+      if (grainIdx >= _grainOffsets.Length)
+        throw new InvalidOperationException($"Grain index {grainIdx} out of range.");
+      if (_grainOffsets[grainIdx] == 0)
+        AllocateGrain(grainIdx);
 
       _backing.Position = _grainOffsets[grainIdx] + grainOff;
       _backing.Write(buffer, offset, toWrite);
@@ -202,12 +204,79 @@ public sealed class VmdkStream : Stream {
         }
       }
 
+      // Cache the per-GD-index byte offsets of grain tables so on-write
+      // allocation can update the right GT entry without re-reading the GD.
+      var gtByteOffsets = new long[numGdEntries];
+      for (var gd = 0; gd < numGdEntries; gd++) {
+        var gtSectorOffset = BinaryPrimitives.ReadUInt32LittleEndian(gdBuf.AsSpan(gd * 4));
+        gtByteOffsets[gd] = gtSectorOffset == 0 ? 0 : (long)gtSectorOffset * 512;
+      }
+
       stream.Position = 0;
       return new VmdkStream(stream, diskSize, grainSizeBytes, numGTEsPerGT,
-                            grainOffsets, leaveOpen: true);
+                            grainOffsets, gtByteOffsets, gdByteOffset, leaveOpen: true);
     } catch {
       stream.Position = 0;
       return null;
     }
   }
+
+  // ── Sparse grain allocation ──────────────────────────────────────────
+
+  /// <summary>
+  /// Allocates a fresh grain (and the owning grain table, when none exists yet)
+  /// at the sector-aligned end of the backing stream, writes zero-filled
+  /// placeholders, and updates the grain directory + grain table entries on
+  /// disk so a subsequent read sees the new region as allocated zeros.
+  /// </summary>
+  private void AllocateGrain(int grainIdx) {
+    var gdIdx = grainIdx / _grainTableEntries;
+    var gteIdx = grainIdx % _grainTableEntries;
+    if (gdIdx >= _gtByteOffsets.Length)
+      throw new InvalidOperationException($"Grain {grainIdx} maps to GD index {gdIdx} outside the grain directory.");
+
+    // Step 1: ensure a GT exists for this GD slot.
+    if (_gtByteOffsets[gdIdx] == 0) {
+      var gtOffset = AlignUp(_backing.Length, 512);
+      if (gtOffset > _backing.Length) PadZeros(_backing.Length, gtOffset - _backing.Length);
+      _backing.Position = gtOffset;
+      _backing.Write(new byte[_grainTableEntries * 4], 0, _grainTableEntries * 4);
+
+      // Update GD on disk.
+      Span<byte> gdEntry = stackalloc byte[4];
+      BinaryPrimitives.WriteUInt32LittleEndian(gdEntry, checked((uint)(gtOffset / 512)));
+      _backing.Position = _gdByteOffset + gdIdx * 4L;
+      _backing.Write(gdEntry);
+
+      _gtByteOffsets[gdIdx] = gtOffset;
+    }
+
+    // Step 2: allocate the grain itself at the next sector-aligned EOF.
+    var grainOffset = AlignUp(_backing.Length, 512);
+    if (grainOffset > _backing.Length) PadZeros(_backing.Length, grainOffset - _backing.Length);
+    _backing.Position = grainOffset;
+    _backing.Write(new byte[_grainSizeBytes], 0, _grainSizeBytes);
+
+    // Update GT entry on disk.
+    Span<byte> gtEntry = stackalloc byte[4];
+    BinaryPrimitives.WriteUInt32LittleEndian(gtEntry, checked((uint)(grainOffset / 512)));
+    _backing.Position = _gtByteOffsets[gdIdx] + gteIdx * 4L;
+    _backing.Write(gtEntry);
+
+    _grainOffsets[grainIdx] = grainOffset;
+  }
+
+  private void PadZeros(long startOffset, long byteCount) {
+    _backing.Position = startOffset;
+    var zeros = new byte[Math.Min(byteCount, 4096)];
+    var remaining = byteCount;
+    while (remaining > 0) {
+      var chunk = (int)Math.Min(remaining, zeros.Length);
+      _backing.Write(zeros, 0, chunk);
+      remaining -= chunk;
+    }
+  }
+
+  private static long AlignUp(long value, int alignment)
+    => (value + alignment - 1) / alignment * alignment;
 }
