@@ -135,7 +135,10 @@ public static class ImplodeDecoder {
       var len = codeLengths[sym];
       if (len == 0) continue;
 
-      var c = nextCode[len]++;
+      // Codes are transmitted LSB-first, so reverse the canonical (MSB-first)
+      // code to obtain the value that appears in the low `len` bits of the
+      // stream. The encoder applies the identical reversal when emitting codes.
+      var c = ReverseBits(nextCode[len]++, len);
       // Fill all table entries: code in low bits, don't-care bits in high bits
       // (matches LSB-first bit reading order)
       var fill = 1 << (maxLen - len);
@@ -144,6 +147,15 @@ public static class ImplodeDecoder {
     }
 
     return table;
+  }
+
+  private static int ReverseBits(int value, int count) {
+    var result = 0;
+    for (var i = 0; i < count; ++i) {
+      result = (result << 1) | (value & 1);
+      value >>= 1;
+    }
+    return result;
   }
 
   private static int DecodeSymbol(byte[] data, ref int bitPos, int[] table) {
