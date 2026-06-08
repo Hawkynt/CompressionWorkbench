@@ -430,6 +430,7 @@
     <ProjectReference Include="..ileformatsileformat.bkfileformat.bkf.csproj" />
     <ProjectReference Include="..ileformatsileformat.applesparseileformat.applesparse.csproj" />
     <ProjectReference Include="..ileformatsileformat.partcloneileformat.partclone.csproj" />
+    <ProjectReference Include="..ileformatsileformat.ghostileformat.ghost.csproj" />
   </ItemGroup>
 
 </Project>

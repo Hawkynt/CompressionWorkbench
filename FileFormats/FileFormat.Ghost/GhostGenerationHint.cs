@@ -1,0 +1,35 @@
+#pragma warning disable CS1591
+namespace FileFormat.Ghost;
+
+/// <summary>
+/// Best-effort hint at which Ghost generation produced an image, based on
+/// the file-header bytes. <see cref="Unknown"/> is the expected result for
+/// arbitrary or truncated payloads — Symantec has never published the
+/// format spec.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The <see cref="Modern11Plus"/> classification is the only one the R/W
+/// path acts on: the file header's <c>FE EF</c> magic at offset 0 plus a
+/// recognised compression byte at offset 3 + a valid Track-0 / partition
+/// record discoverable within the first ~64 KB.
+/// </para>
+/// <para>
+/// <see cref="PossiblyLegacy4To7"/> is recorded for diagnostic purposes
+/// only — the legacy DOS-era Ghost 4-7 framing is different enough from
+/// the Ghost 11.x-12.x record container that even the parse path
+/// version-gates and refuses to attempt extraction, surfacing a clear
+/// error instead of silent corruption.
+/// </para>
+/// </remarks>
+public enum GhostGenerationHint {
+  Unknown = 0,
+  PossiblyLegacy4To7 = 1,
+  PossiblyModern8Plus = 2,
+  /// <summary>
+  /// Ghost 11.x / 12.x record container — the format <see cref="GhostReader"/>
+  /// is reverse-engineered against (via nyarime/gho). Parses fully when this
+  /// hint is set.
+  /// </summary>
+  Modern11Plus = 3,
+}

@@ -430,6 +430,7 @@
     <Project Path="FileFormats/FileFormat.Bkf/FileFormat.Bkf.csproj" />
     <Project Path="FileFormats/FileFormat.AppleSparse/FileFormat.AppleSparse.csproj" />
     <Project Path="FileFormats/FileFormat.Partclone/FileFormat.Partclone.csproj" />
+    <Project Path="FileFormats/FileFormat.Ghost/FileFormat.Ghost.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />
