@@ -435,7 +435,6 @@
     <Project Path="FileFormats/FileFormat.Acronis/FileFormat.Acronis.csproj" />
     <Project Path="FileFormats/FileFormat.Veeam/FileFormat.Veeam.csproj" />
     <Project Path="FileFormats/FileFormat.Macrium/FileFormat.Macrium.csproj" />
-    <Project Path="FileFormats/FileFormat.Paragon/FileFormat.Paragon.csproj" />
     <Project Path="FileFormats/FileFormat.Aomei/FileFormat.Aomei.csproj" />
     <Project Path="FileFormats/FileFormat.EaseUs/FileFormat.EaseUs.csproj" />
   </Folder>

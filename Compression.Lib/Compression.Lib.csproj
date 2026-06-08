@@ -304,7 +304,6 @@
     <ProjectReference Include="..\FileFormats\FileFormat.PackIt\FileFormat.PackIt.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Pak\FileFormat.Pak.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Paq8\FileFormat.Paq8.csproj" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Paragon\FileFormat.Paragon.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Parquet\FileFormat.Parquet.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Pbp\FileFormat.Pbp.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Pdf\FileFormat.Pdf.csproj" />

@@ -340,22 +340,11 @@
     <ProjectReference Include="..\FileFormats\FileFormat.PackIt\FileFormat.PackIt.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Pak\FileFormat.Pak.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Paq8\FileFormat.Paq8.csproj" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Paragon\FileFormat.Paragon.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Parquet\FileFormat.Parquet.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Pbp\FileFormat.Pbp.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Pfs0\FileFormat.Pfs0.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.PeResources\FileFormat.PeResources.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.PngCrushAdapters\FileFormat.PngCrushAdapters.csproj" />
-    <ProjectReference Include="..ileformatsileformat.bkfileformat.bkf.csproj" />
-    <ProjectReference Include="..ileformatsileformat.applesparseileformat.applesparse.csproj" />
-    <ProjectReference Include="..ileformatsileformat.partcloneileformat.partclone.csproj" />
-    <ProjectReference Include="..ileformatsileformat.ghostileformat.ghost.csproj" />
-    <ProjectReference Include="..ileformatsileformat.acronisileformat.acronis.csproj" />
-    <ProjectReference Include="..ileformatsileformat.veeamileformat.veeam.csproj" />
-    <ProjectReference Include="..ileformatsileformat.macriumileformat.macrium.csproj" />
-    <ProjectReference Include="..ileformatsileformat.paragonileformat.paragon.csproj" />
-    <ProjectReference Include="..ileformatsileformat.aomeiileformat.aomei.csproj" />
-    <ProjectReference Include="..ileformatsileformat.easeusileformat.easeus.csproj" />
   </ItemGroup>
 
   <ItemGroup>
