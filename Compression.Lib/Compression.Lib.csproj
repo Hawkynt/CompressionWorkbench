@@ -431,6 +431,7 @@
     <ProjectReference Include="..ileformatsileformat.applesparseileformat.applesparse.csproj" />
     <ProjectReference Include="..ileformatsileformat.partcloneileformat.partclone.csproj" />
     <ProjectReference Include="..ileformatsileformat.ghostileformat.ghost.csproj" />
+    <ProjectReference Include="..ileformatsileformat.acronisileformat.acronis.csproj" />
   </ItemGroup>
 
 </Project>
