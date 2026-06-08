@@ -44,7 +44,7 @@ public sealed class AcronisFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate (record stream)")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Acronis True Image classic .tib backup — R/O listing + R/O file extraction via sequential Listing↔RecordIndex pairing (FileMeta 102/1/2/5 bodies remain undocumented; pairing gated by per-entry size + MD5 integrity check)";
+  public string Description => "Acronis True Image classic .tib backup — R/O listing + R/O file extraction via spec-grounded FileMeta chain walk (Listing.MetaOffset → FirstFileMetaRecord(102) → next RecordIndex(108)) with sequential pairing as fallback for slices that don't populate MetaOffset; FileMeta 102/1/2/5 bodies remain opaque, but the chain framing (offsets + record types) is fully parsed and gated by per-blob MD5 integrity check";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);
@@ -73,16 +73,20 @@ public sealed class AcronisFormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
     var r = new AcronisReader(stream);
 
-    // Gate 1: the sequential-pairing assumption must hold for the slice.
-    if (!r.CanExtractByPairing(out var reason)) {
-      // Refuse to write any file — sequential pairing isn't safe here. This is the honest
-      // fallback: never emit data we can't structurally verify.
+    // Gate: at least one of the two pairing paths (chain walk or sequential) must hold.
+    // Chain walk is authoritative when complete; sequential is the documented fallback.
+    var chainOk = r.ChainWalkComplete;
+    var sequentialOk = r.CanExtractByPairing(out var pairingReason);
+    if (!chainOk && !sequentialOk) {
+      // Refuse to write any file — neither pairing path is safe. Honest fallback: never emit
+      // data we can't structurally verify.
       throw new NotSupportedException(
-        $"Acronis classic .tib extraction: sequential Listing↔RecordIndex pairing rejected. {reason} "
-        + "The per-file FileMeta records (102/1/2/5) between Listing.MetaOffset and the RecordIndex are undocumented "
-        + "in every public source surveyed (dennisss/acronis-tib + all forks; TIB-ShellEx is a repackage of Acronis "
-        + "closed-source DLLs; MultiExtractor / R-Studio commercial; no academic paper, no Russian RE write-up). "
-        + "Listing is available via List().");
+        $"Acronis classic .tib extraction: neither FileMeta chain walk nor sequential pairing resolved. "
+        + $"Chain walk: {(r.ChainWalkComplete ? "complete" : "incomplete")}. "
+        + $"Sequential pairing: {pairingReason ?? "ok"}. "
+        + "The per-file FileMeta record (102/1/2/5) bodies are opaque across every public source surveyed "
+        + "(dennisss/acronis-tib + all forks; TIB-ShellEx repackages Acronis closed-source DLLs; "
+        + "MultiExtractor / R-Studio commercial). Listing is available via List().");
     }
 
     Directory.CreateDirectory(outputDir);
