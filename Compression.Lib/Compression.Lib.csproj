@@ -429,6 +429,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Zstd\FileFormat.Zstd.csproj" />
     <ProjectReference Include="..ileformatsileformat.bkfileformat.bkf.csproj" />
     <ProjectReference Include="..ileformatsileformat.applesparseileformat.applesparse.csproj" />
+    <ProjectReference Include="..ileformatsileformat.partcloneileformat.partclone.csproj" />
   </ItemGroup>
 
 </Project>

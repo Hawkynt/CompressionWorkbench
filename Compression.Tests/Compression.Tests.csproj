@@ -347,6 +347,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.PngCrushAdapters\FileFormat.PngCrushAdapters.csproj" />
     <ProjectReference Include="..ileformatsileformat.bkfileformat.bkf.csproj" />
     <ProjectReference Include="..ileformatsileformat.applesparseileformat.applesparse.csproj" />
+    <ProjectReference Include="..ileformatsileformat.partcloneileformat.partclone.csproj" />
   </ItemGroup>
 
   <ItemGroup>
