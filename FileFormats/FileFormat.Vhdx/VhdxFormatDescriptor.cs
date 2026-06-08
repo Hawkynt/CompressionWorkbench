@@ -38,6 +38,10 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (VhdxStream.TryOpen(stream) is { } vhdxStream) {
       using (vhdxStream) {
+        vhdxStream.Position = 0;
+        if (Compression.Core.DiskImage.PartitionedDiskLister.List(vhdxStream, password) is { } partitioned)
+          return partitioned;
+
         var inner = InnerFsDetector.Detect(vhdxStream);
         if (inner is IArchiveFormatOperations ops) {
           try {
@@ -59,6 +63,10 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (VhdxStream.TryOpen(stream) is { } vhdxStream) {
       using (vhdxStream) {
+        vhdxStream.Position = 0;
+        if (Compression.Core.DiskImage.PartitionedDiskLister.Extract(vhdxStream, outputDir, password, files))
+          return;
+
         var inner = InnerFsDetector.Detect(vhdxStream);
         if (inner is IArchiveFormatOperations ops) {
           try {

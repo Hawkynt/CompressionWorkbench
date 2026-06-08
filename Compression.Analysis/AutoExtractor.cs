@@ -246,6 +246,7 @@ public sealed class AutoExtractor {
 
         if (DiskImageFormatIds.Contains(desc.Id) && data.Length >= 1024)
           partitionTable ??= this.TryParsePartitions(data, depth);
+        // legacy single-disk-image path: data == raw guest disk bytes
 
         if (data.Length > 0 && data.Length <= this._maxFileSize) {
           using var nestedStream = new MemoryStream(data);
@@ -258,6 +259,13 @@ public sealed class AutoExtractor {
       try { Directory.Delete(tmpDir, true); } catch { /* best effort */ }
     }
 
+    // Partition-aware disk descriptors (VHD/VHDX/VMDK/Qcow2/VDI) now surface
+    // partitions directly as PartitionN_TypeName/ entry prefixes. Reconstruct
+    // the legacy PartitionTable summary from those names when the per-file
+    // post-processing path above didn't already populate it.
+    if (partitionTable == null && DiskImageFormatIds.Contains(desc.Id))
+      partitionTable = TryParsePartitionsFromEntryNames(entries);
+
     return new ExtractionResult {
       FormatId = desc.Id,
       FormatName = desc.DisplayName,
@@ -265,6 +273,41 @@ public sealed class AutoExtractor {
       NestedResults = nested,
       PartitionTable = partitionTable
     };
+  }
+
+  private static PartitionTableInfo? TryParsePartitionsFromEntryNames(List<ExtractedEntry> entries) {
+    // Match Partition<N>_<TypeName>/<rest>; the typename may contain underscores.
+    var groups = new Dictionary<int, (string TypeName, List<ExtractedEntry> Items)>();
+    long inferredSize = 0;
+    foreach (var e in entries) {
+      var slash = e.Name.IndexOf('/');
+      if (slash <= 0) continue;
+      var head = e.Name[..slash];
+      if (!head.StartsWith("Partition", StringComparison.Ordinal)) continue;
+      var us = head.IndexOf('_');
+      if (us <= 9 || !int.TryParse(head[9..us], out var idx)) continue;
+      var typeName = head[(us + 1)..].Replace('_', ' ');
+
+      if (!groups.TryGetValue(idx, out var g))
+        groups[idx] = g = (typeName, new List<ExtractedEntry>());
+      g.Items.Add(new ExtractedEntry { Name = e.Name[(slash + 1)..], Data = e.Data, IsDirectory = e.IsDirectory, Kind = e.Kind });
+      inferredSize += e.Data.LongLength;
+    }
+    if (groups.Count == 0) return null;
+
+    var partitions = groups.OrderBy(g => g.Key).Select(g => new PartitionInfo {
+      Index = g.Key - 1,
+      TypeName = g.Value.TypeName,
+      Size = g.Value.Items.Sum(i => i.Data.LongLength),
+      Offset = 0,
+      NestedResult = new ExtractionResult {
+        FormatId = "Partition",
+        FormatName = g.Value.TypeName,
+        Entries = g.Value.Items,
+        NestedResults = []
+      }
+    }).ToList();
+    return new PartitionTableInfo { Scheme = "MBR", Partitions = partitions };
   }
 
   private ExtractionResult ExtractStream(IStreamFormatOperations ops, IFormatDescriptor desc, Stream stream, int depth) {

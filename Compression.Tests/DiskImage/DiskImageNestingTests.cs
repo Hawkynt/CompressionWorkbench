@@ -127,6 +127,56 @@ public class DiskImageNestingTests {
     Assert.That(result.PartitionTable, Is.Null);
   }
 
+  // ── Descriptor-level partition-aware listing (PartitionedDiskLister) ──
+
+  [Test, Category("HappyPath")]
+  public void VmdkDescriptor_List_PartitionedDisk_SurfacesPartitionPrefix() {
+    var vmdkData = BuildVmdkWithMbrAndFatPartition();
+    using var ms = new MemoryStream(vmdkData);
+
+    var entries = new FileFormat.Vmdk.VmdkFormatDescriptor().List(ms, password: null);
+
+    Assert.That(entries, Is.Not.Empty);
+    Assert.That(entries.Any(e => e.Name.StartsWith("Partition1_") && e.Name.EndsWith("/TEST.TXT", StringComparison.OrdinalIgnoreCase)),
+      Is.True, $"Expected Partition1_*/TEST.TXT — saw: {string.Join(", ", entries.Select(e => e.Name))}");
+  }
+
+  [Test, Category("HappyPath")]
+  public void VmdkDescriptor_Extract_PartitionedDisk_WritesPerPartitionSubdir() {
+    var vmdkData = BuildVmdkWithMbrAndFatPartition();
+    using var ms = new MemoryStream(vmdkData);
+    var outDir = Path.Combine(Path.GetTempPath(), "cwb-part-extract-" + Guid.NewGuid().ToString("N"));
+    try {
+      new FileFormat.Vmdk.VmdkFormatDescriptor().Extract(ms, outDir, password: null, files: null);
+      var partDirs = Directory.GetDirectories(outDir, "Partition1_*");
+      Assert.That(partDirs, Has.Length.EqualTo(1), "Expected exactly one Partition1_* subdir");
+      var testFile = Directory.GetFiles(partDirs[0], "TEST.TXT", SearchOption.AllDirectories);
+      Assert.That(testFile, Has.Length.EqualTo(1), "Expected TEST.TXT inside the partition subdir");
+      Assert.That(File.ReadAllBytes(testFile[0]), Is.EqualTo("Hello from FAT!"u8.ToArray()));
+    } finally {
+      if (Directory.Exists(outDir)) Directory.Delete(outDir, recursive: true);
+    }
+  }
+
+  [Test, Category("HappyPath")]
+  public void VmdkDescriptor_List_UnpartitionedDisk_DelegatesDirectlyToInnerFs() {
+    // FAT image at offset 0 inside the VMDK — no MBR, no partition table.
+    var fatWriter = new FileSystem.Fat.FatWriter();
+    fatWriter.AddFile("HELLO.TXT", "bare fat"u8.ToArray());
+    var vmdkWriter = new FileFormat.Vmdk.VmdkWriter();
+    vmdkWriter.SetDiskData(fatWriter.Build());
+    var vmdkData = vmdkWriter.Build();
+
+    using var ms = new MemoryStream(vmdkData);
+    var entries = new FileFormat.Vmdk.VmdkFormatDescriptor().List(ms, password: null);
+
+    // No "Partition1_" prefix — the FAT entries are surfaced directly.
+    Assert.That(entries.Any(e => e.Name.Equals("HELLO.TXT", StringComparison.OrdinalIgnoreCase)),
+      Is.True, $"Expected direct HELLO.TXT entry — saw: {string.Join(", ", entries.Select(e => e.Name))}");
+    Assert.That(entries.All(e => !e.Name.StartsWith("Partition")), Is.True,
+      "Unpartitioned disk must not be wrapped in a Partition prefix");
+  }
+
   [Test, Category("HappyPath")]
   public void PartitionTableDetector_FatDiskImage_NoPartitionTable() {
     // A raw FAT filesystem image has a boot sector that looks like an MBR (0x55AA)

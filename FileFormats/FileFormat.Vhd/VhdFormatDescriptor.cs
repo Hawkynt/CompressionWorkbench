@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using Compression.Core.DiskImage;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -28,6 +29,13 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (TryOpenVhdStream(stream) is { } vhdStream) {
       using (vhdStream) {
+        // Partition-aware path: if the guest disk carries an MBR/GPT, surface
+        // each partition as a top-level directory prefix and delegate the inner
+        // listing per partition.
+        vhdStream.Position = 0;
+        if (PartitionedDiskLister.List(vhdStream, password) is { } partitioned)
+          return partitioned;
+
         var inner = InnerFsDetector.Detect(vhdStream);
         if (inner is IArchiveFormatOperations ops) {
           try {
@@ -57,6 +65,10 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (TryOpenVhdStream(stream) is { } vhdStream) {
       using (vhdStream) {
+        vhdStream.Position = 0;
+        if (PartitionedDiskLister.Extract(vhdStream, outputDir, password, files))
+          return;
+
         var inner = InnerFsDetector.Detect(vhdStream);
         if (inner is IArchiveFormatOperations ops) {
           try {

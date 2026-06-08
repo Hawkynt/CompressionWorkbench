@@ -28,6 +28,10 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (VmdkStream.TryOpen(stream) is { } vmdkStream) {
       using (vmdkStream) {
+        vmdkStream.Position = 0;
+        if (Compression.Core.DiskImage.PartitionedDiskLister.List(vmdkStream, password) is { } partitioned)
+          return partitioned;
+
         var inner = InnerFsDetector.Detect(vmdkStream);
         if (inner is IArchiveFormatOperations ops) {
           try {
@@ -57,6 +61,10 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (VmdkStream.TryOpen(stream) is { } vmdkStream) {
       using (vmdkStream) {
+        vmdkStream.Position = 0;
+        if (Compression.Core.DiskImage.PartitionedDiskLister.Extract(vmdkStream, outputDir, password, files))
+          return;
+
         var inner = InnerFsDetector.Detect(vmdkStream);
         if (inner is IArchiveFormatOperations ops) {
           try {

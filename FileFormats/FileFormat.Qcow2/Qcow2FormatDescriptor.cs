@@ -27,6 +27,10 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (Qcow2Stream.TryOpen(stream) is { } qStream) {
       using (qStream) {
+        qStream.Position = 0;
+        if (Compression.Core.DiskImage.PartitionedDiskLister.List(qStream, password) is { } partitioned)
+          return partitioned;
+
         var inner = InnerFsDetector.Detect(qStream);
         if (inner is IArchiveFormatOperations ops) {
           try {
@@ -47,6 +51,10 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (Qcow2Stream.TryOpen(stream) is { } qStream) {
       using (qStream) {
+        qStream.Position = 0;
+        if (Compression.Core.DiskImage.PartitionedDiskLister.Extract(qStream, outputDir, password, files))
+          return;
+
         var inner = InnerFsDetector.Detect(qStream);
         if (inner is IArchiveFormatOperations ops) {
           try {

@@ -28,6 +28,10 @@ public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (VdiStream.TryOpen(stream) is { } vdiStream) {
       using (vdiStream) {
+        vdiStream.Position = 0;
+        if (Compression.Core.DiskImage.PartitionedDiskLister.List(vdiStream, password) is { } partitioned)
+          return partitioned;
+
         var inner = InnerFsDetector.Detect(vdiStream);
         if (inner is IArchiveFormatOperations ops) {
           try {
@@ -48,6 +52,10 @@ public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (VdiStream.TryOpen(stream) is { } vdiStream) {
       using (vdiStream) {
+        vdiStream.Position = 0;
+        if (Compression.Core.DiskImage.PartitionedDiskLister.Extract(vdiStream, outputDir, password, files))
+          return;
+
         var inner = InnerFsDetector.Detect(vdiStream);
         if (inner is IArchiveFormatOperations ops) {
           try {
