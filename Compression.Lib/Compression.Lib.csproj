@@ -428,6 +428,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Zpaq\FileFormat.Zpaq.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zstd\FileFormat.Zstd.csproj" />
     <ProjectReference Include="..ileformatsileformat.bkfileformat.bkf.csproj" />
+    <ProjectReference Include="..ileformatsileformat.applesparseileformat.applesparse.csproj" />
   </ItemGroup>
 
 </Project>

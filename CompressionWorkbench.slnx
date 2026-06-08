@@ -428,6 +428,7 @@
     <Project Path="FileFormats/FileFormat.Zpaq/FileFormat.Zpaq.csproj" />
     <Project Path="FileFormats/FileFormat.Zstd/FileFormat.Zstd.csproj" />
     <Project Path="FileFormats/FileFormat.Bkf/FileFormat.Bkf.csproj" />
+    <Project Path="FileFormats/FileFormat.AppleSparse/FileFormat.AppleSparse.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />
