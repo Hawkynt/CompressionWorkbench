@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using Codec.Pcm;
+using Codec.TrackerXmIt;
 
 namespace FileFormat.Its;
 
@@ -17,9 +18,14 @@ public static class ItsSampleDecoder {
   public const int FallbackSampleRate = 8363;
 
   /// <summary>Parsed header fields plus the resolved on-disk PCM data range.</summary>
+  /// <remarks>
+  /// <paramref name="LengthSamples"/> is the decoded sample count (needed to drive IT214/IT215
+  /// decompression); <paramref name="It215"/> reflects the IMPS <c>cvt</c> "uses delta values"
+  /// bit (0x04), distinguishing IT215 (double-delta) from IT214 (single-delta) packing.
+  /// </remarks>
   public readonly record struct ParsedSample(
     string Name, string DosName, int SampleRate, int Bits, bool Signed, bool Compressed,
-    int DataOffset, int ByteLength);
+    int DataOffset, int ByteLength, int LengthSamples, bool It215);
 
   /// <summary>
   /// Reads the IMPS header at <paramref name="headerOff"/>. The sample pointer is treated as
@@ -43,31 +49,44 @@ public static class ItsSampleDecoder {
     var is16 = (flags & 0x02) != 0;
     var compressed = (flags & 0x08) != 0;
     var signed = (cvt & 0x01) != 0;
+    var it215 = (cvt & 0x04) != 0; // cvt bit 2 = "uses delta values" → IT215 double-delta packing.
     var rate = c5speed > 0 ? c5speed : FallbackSampleRate;
     var bits = is16 ? 16 : 8;
 
     var byteLen = 0;
     var dataOff = samplePointer;
     if (lengthSamples > 0 && samplePointer > 0 && samplePointer < blob.Length) {
-      var wanted = (long)lengthSamples * (is16 ? 2 : 1);
-      byteLen = (int)Math.Min(wanted, blob.Length - samplePointer);
+      if (compressed) {
+        // Compressed payload is a variable-length bitstream of blocks; expose the whole tail
+        // so the IT214/IT215 decompressor can read every block.
+        byteLen = blob.Length - samplePointer;
+      } else {
+        var wanted = (long)lengthSamples * (is16 ? 2 : 1);
+        byteLen = (int)Math.Min(wanted, blob.Length - samplePointer);
+      }
       if (byteLen < 0) byteLen = 0;
     } else {
       dataOff = 0;
     }
 
-    result = new ParsedSample(name, dosName, rate, bits, signed, compressed, dataOff, byteLen);
+    result = new ParsedSample(name, dosName, rate, bits, signed, compressed, dataOff, byteLen, lengthSamples, it215);
     return true;
   }
 
   /// <summary>
   /// Builds a playable mono WAV from a parsed IMPS sample. 8-bit samples are rebiased to
   /// WAV's unsigned 8-bit (signed-8 → +128, already-unsigned → pass through); 16-bit signed
-  /// is passed through, 16-bit unsigned is rebiased to signed. Returns null when the sample is
-  /// compressed (IT215 packing is not decoded) or has no usable data.
+  /// is passed through, 16-bit unsigned is rebiased to signed. IT214/IT215-compressed samples
+  /// are decompressed via <see cref="ItSampleDecompressor"/> (the decoded values are always
+  /// signed, so the <c>cvt</c> signed flag is ignored for compressed data). Returns null when
+  /// there is no usable data or decompression fails.
   /// </summary>
   public static byte[]? BuildWav(byte[] blob, in ParsedSample s) {
-    if (s.Compressed || s.ByteLength <= 0 || s.DataOffset <= 0) return null;
+    if (s.ByteLength <= 0 || s.DataOffset <= 0) return null;
+
+    if (s.Compressed)
+      return BuildCompressedWav(blob, s);
+
     var raw = blob.AsSpan(s.DataOffset, s.ByteLength);
     if (s.Bits == 16) {
       if (s.Signed) return PcmCodec.ToWavBlob(raw.ToArray(), 1, s.SampleRate, 16);
@@ -86,6 +105,33 @@ public static class ItsSampleDecoder {
       return PcmCodec.ToWavBlob(u, 1, s.SampleRate, 8);
     }
     return PcmCodec.ToWavBlob(raw.ToArray(), 1, s.SampleRate, 8);
+  }
+
+  /// <summary>
+  /// Decompresses an IT214/IT215 sample and wraps it as a playable mono WAV. 8-bit samples
+  /// become unsigned-8 WAV (signed → +128 rebias); 16-bit samples become signed-16 WAV.
+  /// Returns null when decompression throws (malformed stream) or yields nothing.
+  /// </summary>
+  private static byte[]? BuildCompressedWav(byte[] blob, in ParsedSample s) {
+    if (s.LengthSamples <= 0) return null;
+    var compressed = blob.AsSpan(s.DataOffset, s.ByteLength);
+    try {
+      if (s.Bits == 16) {
+        var decoded = ItSampleDecompressor.Decompress16(compressed, s.LengthSamples, s.It215);
+        var pcm = new byte[decoded.Length * 2];
+        for (var i = 0; i < decoded.Length; ++i)
+          BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), decoded[i]);
+        return PcmCodec.ToWavBlob(pcm, 1, s.SampleRate, 16);
+      } else {
+        var decoded = ItSampleDecompressor.Decompress8(compressed, s.LengthSamples, s.It215);
+        var pcm = new byte[decoded.Length];
+        for (var i = 0; i < decoded.Length; ++i)
+          pcm[i] = unchecked((byte)(decoded[i] + 128));
+        return PcmCodec.ToWavBlob(pcm, 1, s.SampleRate, 8);
+      }
+    } catch {
+      return null;
+    }
   }
 
   public static string ReadAsciiTrim(byte[] blob, int offset, int length) {

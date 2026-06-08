@@ -1,16 +1,21 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Codec.Pcm;
+using Codec.TrackerXmIt;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Xm;
 
 /// <summary>
-/// Exposes a FastTracker II XM module as an archive of <c>FULL.xm</c>,
-/// <c>metadata.ini</c>, <c>patterns/pattern_NN.bin</c> (raw packed pattern data),
-/// and per-instrument <c>instruments/NN_{name}/sample_MM.raw</c> payloads. Sample
-/// bytes are surfaced verbatim (delta-compressed 8/16-bit as stored in the file).
+/// Exposes a FastTracker II XM module as an archive of <c>FULL.xm</c>, <c>metadata.ini</c>,
+/// a rendered <c>SONG.wav</c> (Kind <c>Track</c>; 44100 Hz stereo 16-bit), the packed
+/// <c>patterns/pattern_NN.bin</c> data, and per-instrument samples decoded to playable mono
+/// WAVs (<c>instruments/NN_{name}/MM_{sample}.wav</c>) at each sample's relative-note/finetune
+/// rate. The song is rendered by <see cref="XmPlayer"/> (linear/Amiga frequency tables,
+/// envelopes, auto-vibrato, fadeout, volume column and effects 0..X); rendering failures degrade
+/// gracefully to the non-rendered entries.
 /// </summary>
 public sealed class XmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 
@@ -64,6 +69,15 @@ public sealed class XmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
   }
 
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> Parse(byte[] blob) {
+    try {
+      return ParseCore(blob);
+    } catch {
+      // Malformed input degrades to FULL-only.
+      return [("FULL.xm", "Container", blob)];
+    }
+  }
+
+  private static IReadOnlyList<(string Name, string Kind, byte[] Data)> ParseCore(byte[] blob) {
     var entries = new List<(string, string, byte[])> {
       ("FULL.xm", "Container", blob),
     };
@@ -127,6 +141,14 @@ public sealed class XmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
         names[si] = ReadAsciiTrim(blob, shOff + 18, 22);
       }
 
+      var relNotes = new sbyte[numSamples];
+      var finetunes = new sbyte[numSamples];
+      for (var si = 0; si < numSamples; ++si) {
+        var shOff = sampleHeadersStart + si * sampleHeaderSize;
+        finetunes[si] = unchecked((sbyte)blob[shOff + 13]);
+        relNotes[si] = unchecked((sbyte)blob[shOff + 16]);
+      }
+
       var sampleDataOff = sampleHeadersStart + numSamples * sampleHeaderSize;
       for (var si = 0; si < numSamples; ++si) {
         var len = lengths[si];
@@ -137,12 +159,27 @@ public sealed class XmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
         Buffer.BlockCopy(blob, sampleDataOff, data, 0, take);
         var sampleName = string.IsNullOrWhiteSpace(names[si]) ? $"sample_{si + 1:D2}" : SanitizeFileName(names[si]);
         var is16 = (flags[si] & 0x10) != 0;
-        var suffix = is16 ? "_s16le.raw" : ".raw";
-        entries.Add(($"{insDir}/{(si + 1):D2}_{sampleName}{suffix}", "Sample", data));
+        // Decode the delta-coded XM sample to signed 16-bit and surface a playable mono WAV at
+        // the relative-note/finetune rate: rate = 8363 * 2^((relnote*128 + finetune)/(128*12)).
+        var wav = BuildSampleWav(data, is16, relNotes[si], finetunes[si]);
+        entries.Add(($"{insDir}/{(si + 1):D2}_{sampleName}.wav", "Sample", wav));
         sampleDataOff += len;
         ++totalSamples;
       }
       cursor = sampleDataOff;
+    }
+
+    // Render the whole song to a stereo WAV (graceful: any failure leaves SONG.wav out).
+    byte[]? songWav = null;
+    double renderedSeconds = 0;
+    var renderNote = "ok";
+    try {
+      var player = XmPlayer.Load(blob);
+      var pcm = player.Render();
+      renderedSeconds = pcm.Length / (double)(TrackerRender.OutputSampleRate * TrackerRender.OutputChannels * 2);
+      songWav = PcmCodec.ToWavBlob(pcm, TrackerRender.OutputChannels, TrackerRender.OutputSampleRate, TrackerRender.OutputBits);
+    } catch {
+      renderNote = "render failed";
     }
 
     var info = new StringBuilder();
@@ -153,9 +190,33 @@ public sealed class XmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     info.AppendLine($"patterns_count={numPatterns}");
     info.AppendLine($"instruments_count={numInstruments}");
     info.AppendLine($"samples_count={totalSamples}");
+    if (songWav != null) {
+      info.AppendLine($"rendered_sample_rate={TrackerRender.OutputSampleRate}");
+      info.AppendLine($"rendered_channels={TrackerRender.OutputChannels}");
+      info.AppendLine($"rendered_duration={renderedSeconds:0.##}s");
+    }
+    info.AppendLine($"rendered_status={renderNote}");
     entries.Insert(1, ("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));
 
+    if (songWav != null)
+      entries.Insert(2, ("SONG.wav", "Track", songWav));
+
     return entries;
+  }
+
+  /// <summary>
+  /// Decodes a delta-coded XM sample into signed 16-bit PCM and wraps it in a mono WAV at the
+  /// sample's relative-note/finetune playback rate.
+  /// </summary>
+  private static byte[] BuildSampleWav(byte[] raw, bool is16, sbyte relNote, sbyte finetune) {
+    var sample = new XmSample();
+    sample.SetData(raw, is16);
+    var pcm = new byte[sample.Pcm.Length * 2];
+    for (var i = 0; i < sample.Pcm.Length; ++i)
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), sample.Pcm[i]);
+    var rate = (int)Math.Round(8363.0 * Math.Pow(2.0, (relNote * 128 + finetune) / (128.0 * 12.0)));
+    if (rate <= 0) rate = 8363;
+    return PcmCodec.ToWavBlob(pcm, 1, rate, 16);
   }
 
   private static string ReadAsciiTrim(byte[] blob, int offset, int length) {

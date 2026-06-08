@@ -72,17 +72,15 @@ public sealed class ItiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
           if (hit < 0) break;
           if (ItsSampleDecoder.TryParse(blob, hit, out var s)) {
             ++idx;
-            if (s.Compressed) {
+            var wav = ItsSampleDecoder.BuildWav(blob, s);
+            if (wav != null) {
+              var label = string.IsNullOrWhiteSpace(s.Name)
+                ? (string.IsNullOrWhiteSpace(s.DosName) ? "sample" : ItsSampleDecoder.SanitizeFileName(s.DosName))
+                : ItsSampleDecoder.SanitizeFileName(s.Name);
+              entries.Add(new($"samples/{idx:D2}_{label}.wav", "Sample", wav));
+              ++sampleCount;
+            } else if (s.Compressed) {
               ++compressedSkipped;
-            } else {
-              var wav = ItsSampleDecoder.BuildWav(blob, s);
-              if (wav != null) {
-                var label = string.IsNullOrWhiteSpace(s.Name)
-                  ? (string.IsNullOrWhiteSpace(s.DosName) ? "sample" : ItsSampleDecoder.SanitizeFileName(s.DosName))
-                  : ItsSampleDecoder.SanitizeFileName(s.Name);
-                entries.Add(new($"samples/{idx:D2}_{label}.wav", "Sample", wav));
-                ++sampleCount;
-              }
             }
             pos = hit + ItsSampleDecoder.HeaderSize;
           } else {

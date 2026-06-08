@@ -58,18 +58,18 @@ public sealed class ItsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (ItsSampleDecoder.TryParse(blob, 0, out var s)) {
         rate = s.SampleRate;
         bits = s.Bits;
-        if (s.Compressed) {
-          note = "compressed (IT215 packing not decoded) — FULL only";
+        var wav = ItsSampleDecoder.BuildWav(blob, s);
+        if (wav != null) {
+          var label = string.IsNullOrWhiteSpace(s.Name)
+            ? (string.IsNullOrWhiteSpace(s.DosName) ? "sample" : ItsSampleDecoder.SanitizeFileName(s.DosName))
+            : ItsSampleDecoder.SanitizeFileName(s.Name);
+          entries.Add(new($"samples/01_{label}.wav", "Sample", wav));
+          if (s.Compressed)
+            note = s.It215 ? "ok (IT215 decompressed)" : "ok (IT214 decompressed)";
+        } else if (s.Compressed) {
+          note = "compressed (IT2xx decode failed) — FULL only";
         } else {
-          var wav = ItsSampleDecoder.BuildWav(blob, s);
-          if (wav != null) {
-            var label = string.IsNullOrWhiteSpace(s.Name)
-              ? (string.IsNullOrWhiteSpace(s.DosName) ? "sample" : ItsSampleDecoder.SanitizeFileName(s.DosName))
-              : ItsSampleDecoder.SanitizeFileName(s.Name);
-            entries.Add(new($"samples/01_{label}.wav", "Sample", wav));
-          } else {
-            note = "no usable sample data — FULL only";
-          }
+          note = "no usable sample data — FULL only";
         }
       } else {
         note = "no valid IMPS header — FULL only";

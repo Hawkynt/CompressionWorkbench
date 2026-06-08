@@ -173,6 +173,7 @@
     <Project Path="Codecs/Codec.WavArc/Codec.WavArc.csproj" />
     <Project Path="Codecs/Codec.Ym2413/Codec.Ym2413.csproj" />
     <Project Path="Codecs/Codec.Tracker/Codec.Tracker.csproj" />
+    <Project Path="Codecs/Codec.TrackerXmIt/Codec.TrackerXmIt.csproj" />
     <Project Path="FileFormats/FileFormat.Epub/FileFormat.Epub.csproj" />
     <Project Path="FileSystems/FileSystem.Erofs/FileSystem.Erofs.csproj" />
     <Project Path="FileSystems/FileSystem.ExFat/FileSystem.ExFat.csproj" />

@@ -1,17 +1,21 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Codec.Pcm;
+using Codec.TrackerXmIt;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.It;
 
 /// <summary>
-/// Exposes an Impulse Tracker (IT) module as an archive of <c>FULL.it</c>,
-/// <c>metadata.ini</c>, <c>patterns/pattern_NN.bin</c>, <c>instruments/NN_{name}.bin</c>
-/// (raw instrument-envelope blocks) and <c>samples/NN_{name}.raw</c> / <c>_compressed.bin</c>
-/// payloads. IT compression (bit 3 of the sample flags) is not decoded; the
-/// compressed bytes are surfaced verbatim with a <c>_compressed.bin</c> suffix.
+/// Exposes an Impulse Tracker (IT) module as an archive of <c>FULL.it</c>, <c>metadata.ini</c>,
+/// a rendered <c>SONG.wav</c> (Kind <c>Track</c>; 44100 Hz stereo 16-bit), the packed
+/// <c>patterns/pattern_NN.bin</c> data, <c>instruments/NN_{name}.bin</c> instrument blocks, and
+/// each sample decoded to a playable mono WAV (<c>samples/NN_{name}.wav</c>) at its C5 speed.
+/// IT214/IT215-compressed samples are decompressed via <see cref="ItSampleDecompressor"/>. The
+/// song is rendered by <see cref="ItPlayer"/> (NNA/virtual channels, envelopes, resonant filter,
+/// effects A..Z); rendering failures degrade gracefully to the non-rendered entries.
 /// </summary>
 public sealed class ItFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 
@@ -65,6 +69,14 @@ public sealed class ItFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
   }
 
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> Parse(byte[] blob) {
+    try {
+      return ParseCore(blob);
+    } catch {
+      return [("FULL.it", "Container", blob)];
+    }
+  }
+
+  private static IReadOnlyList<(string Name, string Kind, byte[] Data)> ParseCore(byte[] blob) {
     var entries = new List<(string, string, byte[])> {
       ("FULL.it", "Container", blob),
     };
@@ -128,23 +140,31 @@ public sealed class ItFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
       if (blob[smpHdrOff] != (byte)'I' || blob[smpHdrOff + 1] != (byte)'M' ||
           blob[smpHdrOff + 2] != (byte)'P' || blob[smpHdrOff + 3] != (byte)'S') continue;
       var dosName = ReadAsciiTrim(blob, smpHdrOff + 4, 12);
-      var flags = blob[smpHdrOff + 18];
       var sampleName = ReadAsciiTrim(blob, smpHdrOff + 20, 26);
-      var length = (int)Math.Min(int.MaxValue, BinaryPrimitives.ReadUInt32LittleEndian(blob.AsSpan(smpHdrOff + 48, 4)));
-      var dataOff = (int)BinaryPrimitives.ReadUInt32LittleEndian(blob.AsSpan(smpHdrOff + 72, 4));
-      var hasData = (flags & 0x01) != 0;
-      var is16 = (flags & 0x02) != 0;
-      var isCompressed = (flags & 0x08) != 0;
-      if (!hasData || length == 0 || dataOff <= 0 || dataOff >= blob.Length) continue;
-      var byteLen = (long)length * (is16 ? 2 : 1);
-      var take = (int)Math.Min(byteLen, blob.Length - dataOff);
-      if (take <= 0) continue;
-      var data = new byte[take];
-      Buffer.BlockCopy(blob, dataOff, data, 0, take);
       var label = string.IsNullOrWhiteSpace(sampleName) ? (string.IsNullOrWhiteSpace(dosName) ? $"sample_{s + 1:D2}" : dosName) : sampleName;
       var safeLabel = SanitizeFileName(label);
-      var suffix = isCompressed ? "_compressed.bin" : (is16 ? "_s16le.raw" : ".raw");
-      entries.Add(($"samples/{(s + 1):D2}_{safeLabel}{suffix}", "Sample", data));
+
+      // Decode (incl. IT214/IT215 decompression) to signed 16-bit PCM and surface a playable
+      // mono WAV at the sample's C5 speed.
+      var sample = ItSample.Parse(blob, smpHdrOff);
+      if (sample.Pcm.Length == 0) continue;
+      var pcm = new byte[sample.Pcm.Length * 2];
+      for (var i = 0; i < sample.Pcm.Length; ++i)
+        BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), sample.Pcm[i]);
+      var wav = PcmCodec.ToWavBlob(pcm, 1, sample.C5Speed, 16);
+      entries.Add(($"samples/{(s + 1):D2}_{safeLabel}.wav", "Sample", wav));
+    }
+
+    byte[]? songWav = null;
+    double renderedSeconds = 0;
+    var renderNote = "ok";
+    try {
+      var player = ItPlayer.Load(blob);
+      var pcm = player.Render();
+      renderedSeconds = pcm.Length / (double)(TrackerRender.OutputSampleRate * TrackerRender.OutputChannels * 2);
+      songWav = PcmCodec.ToWavBlob(pcm, TrackerRender.OutputChannels, TrackerRender.OutputSampleRate, TrackerRender.OutputBits);
+    } catch {
+      renderNote = "render failed";
     }
 
     var info = new StringBuilder();
@@ -154,7 +174,16 @@ public sealed class ItFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     info.AppendLine($"patterns_count={patNum}");
     info.AppendLine($"instruments_count={insNum}");
     info.AppendLine($"samples_count={smpNum}");
+    if (songWav != null) {
+      info.AppendLine($"rendered_sample_rate={TrackerRender.OutputSampleRate}");
+      info.AppendLine($"rendered_channels={TrackerRender.OutputChannels}");
+      info.AppendLine($"rendered_duration={renderedSeconds:0.##}s");
+    }
+    info.AppendLine($"rendered_status={renderNote}");
     entries.Insert(1, ("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));
+
+    if (songWav != null)
+      entries.Insert(2, ("SONG.wav", "Track", songWav));
 
     return entries;
   }
