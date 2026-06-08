@@ -427,6 +427,7 @@
     <Project Path="FileFormats/FileFormat.Zoo/FileFormat.Zoo.csproj" />
     <Project Path="FileFormats/FileFormat.Zpaq/FileFormat.Zpaq.csproj" />
     <Project Path="FileFormats/FileFormat.Zstd/FileFormat.Zstd.csproj" />
+    <Project Path="FileFormats/FileFormat.Bkf/FileFormat.Bkf.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />

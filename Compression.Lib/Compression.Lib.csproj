@@ -79,7 +79,17 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Bsa\FileFormat.Bsa.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Btrfs\FileSystem.Btrfs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Bzip2\FileFormat.Bzip2.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Acronis\FileFormat.Acronis.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Aomei\FileFormat.Aomei.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.AppleSparse\FileFormat.AppleSparse.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Bkf\FileFormat.Bkf.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cab\FileFormat.Cab.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.EaseUs\FileFormat.EaseUs.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ghost\FileFormat.Ghost.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Macrium\FileFormat.Macrium.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Paragon\FileFormat.Paragon.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Partclone\FileFormat.Partclone.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Veeam\FileFormat.Veeam.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cbr\FileFormat.Cbr.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cbz\FileFormat.Cbz.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cdi\FileFormat.Cdi.csproj" />
@@ -417,6 +427,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Zoo\FileFormat.Zoo.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zpaq\FileFormat.Zpaq.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zstd\FileFormat.Zstd.csproj" />
+    <ProjectReference Include="..ileformatsileformat.bkfileformat.bkf.csproj" />
   </ItemGroup>
 
 </Project>
