@@ -271,10 +271,10 @@ State legend:
 | `FileFormat.Opus`     | R     | Opus (Ogg) — per-channel WAVs decoded via `Codec.Opus` (graceful fallback when unsupported) |
 | `FileFormat.Aac`      | R     | AAC (ADTS) — per-channel WAVs decoded via `Codec.Aac` (AAC-LC; graceful fallback) |
 | `FileFormat.Midi`     | R     | Standard MIDI File (SMF 0 / 1 / 2) container                        |
-| `FileFormat.Mod`      | R     | ProTracker / SoundTracker MOD — renders `SONG.wav` via `Codec.Tracker`; samples as mono WAVs |
-| `FileFormat.S3m`      | R     | Scream Tracker 3 — renders `SONG.wav` via `Codec.Tracker`; samples as mono WAVs |
-| `FileFormat.Xm`       | R     | FastTracker II XM — renders `SONG.wav` via `Codec.TrackerXmIt`; samples as mono WAVs |
-| `FileFormat.It`       | R     | Impulse Tracker IT — renders `SONG.wav` via `Codec.TrackerXmIt`; IT214/215 samples decompressed to WAVs |
+| `FileFormat.Mod`      | R     | ProTracker / SoundTracker MOD — renders `SONG.wav` (+ `SONG_LEFT/RIGHT.wav` channels) via `Codec.Tracker`; samples as mono WAVs |
+| `FileFormat.S3m`      | R     | Scream Tracker 3 — renders `SONG.wav` (+ per-channel WAVs) via `Codec.Tracker`; samples as mono WAVs |
+| `FileFormat.Xm`       | R     | FastTracker II XM — renders `SONG.wav` (+ per-channel WAVs) via `Codec.TrackerXmIt`; samples as mono WAVs |
+| `FileFormat.It`       | R     | Impulse Tracker IT — renders `SONG.wav` (+ per-channel WAVs) via `Codec.TrackerXmIt`; IT214/215 samples decompressed to WAVs |
 | `FileFormat.WwiseBnk` | R     | Audiokinetic Wwise SoundBank (game audio)                           |
 | `FileFormat.Fmod`     | R     | FMOD bank container                                                 |
 | `FileFormat.Aea`      | R     | Sony MiniDisc AEA — ATRAC1 decoded to per-channel WAVs              |
