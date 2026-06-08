@@ -43,6 +43,28 @@ public sealed record AcronisFileEntry(
   long MetaOffset
 );
 
+/// <summary>
+/// One handle inside a <see cref="AcronisRecordType.RecordIndex"/> payload — points at a
+/// <see cref="AcronisRecordType.Blob"/> record that holds (part of) a file's decompressed data.
+/// </summary>
+/// <param name="StartOffset">
+/// Offset (uncompressed bytes) within the destination file at which this blob's decompressed
+/// data is positioned. Used to order/concatenate fragments when a file spans multiple blobs.
+/// </param>
+/// <param name="RecordOffset">
+/// Offset of the referenced Blob record relative to the END of the volume header (absolute
+/// archive position = <c>HeaderLength + RecordOffset</c>). Layout per upstream RE.
+/// </param>
+/// <param name="Md5">16-byte MD5 of the decompressed Blob payload — used for integrity checks.</param>
+public sealed record AcronisRecordHandle(long StartOffset, long RecordOffset, byte[] Md5);
+
+/// <summary>Parsed <see cref="AcronisRecordType.RecordIndex"/> payload (record type 108).</summary>
+/// <param name="TotalSize">
+/// Total uncompressed size covered by all handles — equals the file's logical size per upstream RE.
+/// </param>
+/// <param name="Handles">Per-blob handles in the order they appear in the payload.</param>
+public sealed record AcronisRecordIndexInfo(long TotalSize, IReadOnlyList<AcronisRecordHandle> Handles);
+
 /// <summary>Record extents in the archive (absolute byte positions).</summary>
 public sealed record AcronisRecord(
   AcronisRecordType Type,
@@ -50,7 +72,8 @@ public sealed record AcronisRecord(
   long End,
   byte[]? Payload,
   IReadOnlyList<AcronisFileEntry>? Files = null,
-  IReadOnlyList<AcronisConfigAttribute>? ConfigAttrs = null
+  IReadOnlyList<AcronisConfigAttribute>? ConfigAttrs = null,
+  AcronisRecordIndexInfo? Index = null
 );
 
 public sealed record AcronisConfigAttribute(string Key, string Value);
@@ -139,7 +162,44 @@ public static class AcronisRecordReader {
   private static AcronisRecord ValidateRecordIndex(AcronisRecordType type, long start, long end, byte[] payload) {
     if (payload.Length < 8 || !payload.AsSpan(0, 8).SequenceEqual(RecordIndexMagic))
       throw new InvalidDataException("Acronis: RecordIndex payload missing expected magic.");
-    return new AcronisRecord(type, start, end, payload);
+    var info = ParseRecordIndex(payload);
+    return new AcronisRecord(type, start, end, payload, Index: info);
+  }
+
+  /// <summary>
+  /// Parses a <see cref="AcronisRecordType.RecordIndex"/> payload (type 108). Per upstream RE
+  /// (https://github.com/dennisss/acronis-tib, src/win/record.ts):
+  /// <code>
+  ///   8  bytes : magic "01 02 00 10 01 00 00 00"
+  ///   uint48   : totalSize  (8 bytes consumed — 6-byte LE + 2 padding)
+  ///   uint32   : numHandles
+  ///   numHandles × {
+  ///     uint48 : startOffset    (8 bytes consumed — 6-byte LE + 2 padding)
+  ///     uint48 : recordOffset   (8 bytes consumed — 6-byte LE + 2 padding)
+  ///     16 b   : MD5 of decompressed blob
+  ///   }
+  ///   ~204 trailing bytes (last 24 == first 24 per upstream comment; otherwise constant per archive)
+  /// </code>
+  /// Returns <c>null</c> when the payload is too short or malformed (partial archives shouldn't crash).
+  /// </summary>
+  public static AcronisRecordIndexInfo? ParseRecordIndex(byte[] payload) {
+    ArgumentNullException.ThrowIfNull(payload);
+    if (payload.Length < 8 + 8 + 4) return null;
+    var p = 8; // skip magic
+    var totalSize = (long)ReadUInt48LE(payload, p); p += 8;
+    var numHandles = (int)BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(p)); p += 4;
+    if (numHandles < 0) return null;
+
+    var handles = new List<AcronisRecordHandle>(Math.Min(numHandles, 1024));
+    for (var i = 0; i < numHandles; i++) {
+      if (p + 8 + 8 + 16 > payload.Length) break; // tolerate truncated index — return what we have
+      var startOffset = (long)ReadUInt48LE(payload, p); p += 8;
+      var recordOffset = (long)ReadUInt48LE(payload, p); p += 8;
+      var md5 = new byte[16];
+      Buffer.BlockCopy(payload, p, md5, 0, 16); p += 16;
+      handles.Add(new AcronisRecordHandle(startOffset, recordOffset, md5));
+    }
+    return new AcronisRecordIndexInfo(totalSize, handles);
   }
 
   /// <summary>

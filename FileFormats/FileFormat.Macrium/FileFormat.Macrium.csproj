@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FileFormat.Macrium</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
+    <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\FileFormat.Zstd\FileFormat.Zstd.csproj" />
+  </ItemGroup>
+</Project>

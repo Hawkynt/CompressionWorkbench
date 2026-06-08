@@ -21,7 +21,7 @@ namespace Compression.Tests.Ghost;
 /// <para>
 /// <b>What's not verified.</b> Interop with real Symantec-produced .gho
 /// files — no public corpus exists. The honest treatment guard
-/// (see <see cref="Descriptor_DocumentsScopeAndLegacyVersionGate"/>) ensures
+/// (see <see cref="Descriptor_DocumentsScopeAcrossLineage"/>) ensures
 /// the description keeps surfacing the scope statement so users with
 /// legacy backups are still directed to Ghost Explorer.
 /// </para>
@@ -71,12 +71,12 @@ public class GhostFormatTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Descriptor_DocumentsScopeAndLegacyVersionGate() {
+  public void Descriptor_DocumentsScopeAcrossLineage() {
     var d = new GhostFormatDescriptor();
     var desc = d.Description.ToLowerInvariant();
     Assert.That(desc, Does.Contain("11.x"));
-    Assert.That(desc, Does.Contain("legacy").Or.Contain("ghost 4-7"));
-    Assert.That(desc, Does.Contain("ghost explorer").Or.Contain("ghostexp"));
+    Assert.That(desc, Does.Contain("3.0").Or.Contain("lineage"));
+    Assert.That(desc, Does.Contain("pkware").Or.Contain("\"old\" compression"));
   }
 
   [Test, Category("HappyPath")]
@@ -436,5 +436,163 @@ public class GhostCrc16CipherTests {
     new GhostCrc16Cipher("right").Encrypt(buf);
     new GhostCrc16Cipher("wrong").Decrypt(buf);
     Assert.That(buf, Is.Not.EqualTo(src));
+  }
+}
+
+/// <summary>
+/// Cross-vendor on-disk-constant lock-in — pins the Ghost FE EF + 0x012F18D8 +
+/// FastLZ sentinel + hash-table size constants so any change to them fails a
+/// test that explicitly cites cross-vendor confirmation (Ghost Explorer 2003.789
+/// matches Ghost 11.5.1 byte-identically), forcing the editor to confirm the
+/// change is intentional.
+/// </summary>
+/// <remarks>
+/// These tests do <em>not</em> verify behaviour — the behaviour is already
+/// covered by <see cref="GhostFormatTests"/> and <see cref="GhostFastLzTests"/>.
+/// </remarks>
+[TestFixture]
+public class GhostBinarySpecLockInTests {
+
+  [Test, Category("HappyPath")]
+  public void FileMagic_MatchesGhostExplorer2003_789() {
+    // Ghost Explorer 2003.789: FE EF magic at offset 0 of every .gho.
+    // Observed in the file-header validate path (FUN_004126b0 + callers).
+    Assert.That(GhostConstants.FileMagic, Is.EqualTo(0xEFFE),
+      "FE EF file magic is cross-confirmed by Ghost Explorer 2003.789 — " +
+      "if you change this constant, update docs/GHOST_LEGACY_FORMAT_SPEC.md too.");
+  }
+
+  [Test, Category("HappyPath")]
+  public void RecordMagic_MatchesGhostExplorer2003_789() {
+    // Ghost Explorer 2003.789: 0x012F18D8 written at offset +4 of every
+    // record header. Confirmed by 8 distinct functions emitting the literal:
+    // FUN_00411e40, FUN_004131b0, FUN_00421fd0, FUN_00422260, FUN_00426460,
+    // FUN_00426640, FUN_004267c0, FUN_00426af0.
+    Assert.That(GhostConstants.RecordMagic, Is.EqualTo(0x012F18D8u),
+      "0x012F18D8 record magic is cross-confirmed by Ghost Explorer 2003.789 — " +
+      "update docs/GHOST_LEGACY_FORMAT_SPEC.md §1.5 if changed.");
+  }
+
+  [Test, Category("HappyPath")]
+  public void RecordHeaderSize_MatchesGhostExplorer2003_789() {
+    // FUN_00421fd0:161 writes exactly 10 bytes for the record header
+    // (4 type + 4 magic + 2 body length).
+    Assert.That(GhostConstants.RecordHeaderSize, Is.EqualTo(10),
+      "10-byte record header is cross-confirmed by Ghost Explorer 2003.789 — " +
+      "update docs/GHOST_LEGACY_FORMAT_SPEC.md §1.5 if changed.");
+  }
+
+  [Test, Category("HappyPath")]
+  public void HeaderSize_MatchesGhostExplorer2003_789() {
+    // 512-byte file / partition header matches the iVar19 = 0x200 reads
+    // observed in FUN_00411e40:72 + the 0x200 loop counter for header copy
+    // at FUN_00411e40:138.
+    Assert.That(GhostConstants.HeaderSize, Is.EqualTo(512),
+      "512-byte header is cross-confirmed by Ghost Explorer 2003.789 — " +
+      "update docs/GHOST_LEGACY_FORMAT_SPEC.md if changed.");
+  }
+
+  [Test, Category("HappyPath")]
+  public void FastLzHashSize_MatchesGhostExplorer2003_789() {
+    // Both FUN_0042a7a0 (encoder) and FUN_0042ab40 (decoder) initialise a
+    // 4096-entry hash table (256 outer iters × 16 inner stores).
+    Assert.That(GhostConstants.FastLzHashSize, Is.EqualTo(4096),
+      "4096-entry FastLZ hash table is cross-confirmed by Ghost Explorer 2003.789 — " +
+      "update docs/GHOST_LEGACY_FORMAT_SPEC.md §1.2 if changed.");
+  }
+
+  [Test, Category("HappyPath")]
+  public void EndRecordType_MatchesGhostExplorer2003_789() {
+    // FUN_00411e40:216 writes type 0x23 as the end-of-image record after the
+    // 0x012F18D8 magic.
+    Assert.That(GhostConstants.RecordTypeEnd, Is.EqualTo((ushort)0x0023),
+      "End-record type 0x23 is cross-confirmed by Ghost Explorer 2003.789 — " +
+      "update docs/GHOST_LEGACY_FORMAT_SPEC.md §1.5 if changed.");
+  }
+
+  [Test, Category("HappyPath")]
+  public void CompressionDispatchBytes_MatchGhostExplorer2003_789() {
+    // FUN_0042948e dispatches on first byte of compression header:
+    //   0 = None (passthrough)
+    //   1 = Old (REJECTED with "Old compression not supported")
+    //   2 = Fast (FastLZ)
+    //   3..9 = High (zlib)
+    Assert.That(GhostConstants.CompressionNone, Is.EqualTo(0),
+      "Compression byte 0 = None — cross-confirmed by Ghost Explorer 2003.789 FUN_0042948e.");
+    Assert.That(GhostConstants.CompressionOld, Is.EqualTo(1),
+      "Compression byte 1 = Old (PKWARE DCL, refused by Ghost 3.0+) — cross-confirmed.");
+    Assert.That(GhostConstants.CompressionFast, Is.EqualTo(2),
+      "Compression byte 2 = Fast (FastLZ) — cross-confirmed by Ghost Explorer 2003.789.");
+    Assert.That(GhostConstants.CompressionHigh3, Is.EqualTo(3),
+      "Compression byte 3 = High zlib Z3 — cross-confirmed by Ghost Explorer 2003.789.");
+    Assert.That(GhostConstants.CompressionHigh9, Is.EqualTo(9),
+      "Compression byte 9 = High zlib Z9 — cross-confirmed by Ghost Explorer 2003.789.");
+  }
+
+  [Test, Category("HappyPath")]
+  public void FastLzHash_MatchesGhostExplorer2003_789Constants() {
+    // The encoder (FUN_0042a7a0:119) uses ((b0 << 4 ^ b1) << 4 ^ b2) * 0x9E5F.
+    // The decoder (FUN_0042ab40:86/112/115) uses the equivalent signed -0x61A1.
+    // Both produce the same 12-bit hash because the multiplication is mod 2^32
+    // and only the upper bits are inspected ((>> 4) & 0xFFF).
+    //
+    // We don't pin the exact hash output (it's an implementation detail of the
+    // multiplication overflow), but we DO pin that two distinct triples produce
+    // hashes in the 12-bit range and that the function is deterministic.
+    var h_abc = GhostFastLz.Hash(0x61, 0x62, 0x63);
+    var h_xyz = GhostFastLz.Hash(0x78, 0x79, 0x7A);
+    Assert.That(h_abc, Is.InRange(0, 0xFFF),
+      "FastLZ hash output must fit in 12 bits — Ghost Explorer 2003.789 uses '& 0xfff' mask.");
+    Assert.That(h_xyz, Is.InRange(0, 0xFFF),
+      "FastLZ hash output must fit in 12 bits — Ghost Explorer 2003.789 uses '& 0xfff' mask.");
+
+    // Recompute the encoder-side constant by hand to confirm we haven't drifted.
+    // The encoder writes ((b0 << 4 ^ b1) << 4 ^ b2) * MULTIPLIER, multiplier = 0x9E5F.
+    const uint multiplier = 0x9E5Fu;
+    var v = (uint)(0x63 ^ (16 * (0x62 ^ (16 * 0x61))));
+    var expected = (int)((unchecked(multiplier * v) >> 4) & 0xFFF);
+    Assert.That(h_abc, Is.EqualTo(expected),
+      "GhostFastLz.Hash must use the 0x9E5F multiplier observed in Ghost Explorer 2003.789 " +
+      "FUN_0042a7a0:119 — update docs/GHOST_LEGACY_FORMAT_SPEC.md §1.3 if changed.");
+  }
+
+  [Test, Category("HappyPath")]
+  public void FastLzUncompressedEscape_MatchesGhostExplorer2003_789() {
+    // FUN_0042ab40:31 short-circuits on *pcVar4 == '\x01' → raw copy of payload.
+    // GhostFastLz.StoreUncompressed must therefore set output[0] = 1.
+    var stored = GhostFastLz.StoreUncompressed(new byte[] { 0xAA, 0xBB });
+    Assert.That(stored[0], Is.EqualTo((byte)1),
+      "First-byte 0x01 raw escape is cross-confirmed by Ghost Explorer 2003.789 " +
+      "FUN_0042ab40:31 — update docs/GHOST_LEGACY_FORMAT_SPEC.md §1.4 if changed.");
+  }
+
+  [Test, Category("HappyPath")]
+  public void FastLzSentinelString_MatchesGhostExplorer2003_789() {
+    // The literal "123456789012345678" lives at 0x0048a978 in Ghost Explorer
+    // 2003.789 and is referenced by FUN_0042a7a0 (encoder, line 36-58) and
+    // FUN_0042ab40 (decoder, line 46-68) to seed every hash-table slot.
+    //
+    // Our codec uses the same literal byte sequence via Encoding.ASCII —
+    // pull the field by exercising the codec with an input that *would*
+    // dereference a sentinel-pointed slot and observing that decompression
+    // produces the documented '1'..'8','1'..'8','1' prefix.
+    //
+    // Construct a minimal block: control word 0x0001 (one match token),
+    // match token (b0=0, b1=0) → hash index 0, extra_len 0 → copy 3 bytes
+    // from sentinel start "123".
+    var block = new byte[] { 0, 0, 0, 0,   // 4-byte block header (tag != 1)
+                              0x01, 0x00,   // control word: bit 0 = match, others = literal
+                              0x00, 0x00 }; // match token: index 0, extra_len 0
+    var dst = new byte[GhostConstants.BlockSize];
+    var n = GhostFastLz.Decompress(block, block.Length, dst);
+    Assert.That(n, Is.GreaterThanOrEqualTo(3),
+      "Decoder must produce at least 3 bytes from a single match token.");
+    Assert.That(dst[0], Is.EqualTo((byte)'1'),
+      "Sentinel byte 0 must be ASCII '1' — Ghost Explorer 2003.789 uses literal " +
+      "\"123456789012345678\" at 0x0048a978. Update docs/GHOST_LEGACY_FORMAT_SPEC.md §1.1 if changed.");
+    Assert.That(dst[1], Is.EqualTo((byte)'2'),
+      "Sentinel byte 1 must be ASCII '2' — cross-confirmed by Ghost Explorer 2003.789.");
+    Assert.That(dst[2], Is.EqualTo((byte)'3'),
+      "Sentinel byte 2 must be ASCII '3' — cross-confirmed by Ghost Explorer 2003.789.");
   }
 }

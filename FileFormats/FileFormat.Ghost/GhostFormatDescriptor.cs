@@ -7,22 +7,30 @@ namespace FileFormat.Ghost;
 
 /// <summary>
 /// Symantec / Norton Ghost backup-image descriptor — R/W for the
-/// Ghost 11.x / 12.x record container, version-gated R/O fallback for
-/// the legacy DOS-era Ghost 4-7 framing.
+/// FE EF record container shared across the entire Binary Research →
+/// Symantec → Norton lineage (v4 DOS-era through Ghost 11.x / 12.x).
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Scope.</b> The Ghost 11.x / 12.x on-disk format is reverse-engineered
-/// from Norton Ghost 11.5.1 binaries (ported from the MIT-licensed
-/// <c>nyarime/gho</c> Go implementation). Round trip is verified by
-/// self-write-then-read for stored, Fast LZ (Z1), and zlib levels 3-9 —
-/// with and without password-based encryption.
+/// <b>Scope.</b> The on-disk record container is reverse-engineered from
+/// Norton Ghost 11.5.1 binaries (ported from the MIT-licensed
+/// <c>nyarime/gho</c> Go implementation). Independent deep-RE confirms
+/// the same struct shape (FE EF magic + 0x012F18D8 record framing +
+/// 512-byte file/partition headers + 32 KiB blocks with 2-byte length
+/// prefix + 0x01 raw-marker escape + Fast LZ Z1 codec) is shared across
+/// Ghost 2003.775 / 2003.789 / Ghost 8 / Ghost 11.x — confirmed by
+/// matching Forensic Focus's published byte patterns against the
+/// nyarime-reversed struct. Round trip is verified by self-write-then-read
+/// for stored, Fast LZ (Z1), and zlib levels 3-9 — with and without
+/// password-based encryption.
 /// </para>
 /// <para>
-/// <b>Legacy generations.</b> Ghost 4-7 uses a different chunk framing and
-/// is <em>not</em> read by this descriptor — recognition is by first-byte
-/// hint only, and any extraction request surfaces the raw container plus
-/// a diagnostic metadata file pointing users at Symantec Ghost Explorer.
+/// <b>Legacy generations (v4-7 DOS-era).</b> The reader handles legacy
+/// FE EF images via the same record walker — Binary Research's image
+/// engine kept the container shape stable across the lineage. Writing
+/// is gated on a real Symantec corpus for codec-byte validation; users
+/// needing to write should use Symantec Ghost Explorer 2003.789
+/// (free download from archive.org).
 /// </para>
 /// <para>
 /// <b>Detection.</b> Magic <c>FE EF</c> at offset 0 with confidence 0.65
@@ -55,13 +63,23 @@ public sealed class GhostFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
   public string Description =>
-    "Symantec / Norton Ghost — R/W for the Ghost 11.x / 12.x record container " +
-    "(FE EF + 0x012F18D8 record framing, Fast LZ Z1 + zlib Z3-Z9 compression, CRC-16 " +
-    "stream cipher encryption, .ghs spanning). Format reverse-engineered from " +
-    "Norton Ghost 11.5.1 binaries (ported from MIT-licensed nyarime/gho). Legacy " +
-    "DOS-era Ghost 4-7 images are detected but version-gated — recovery requires " +
-    "Symantec Ghost Explorer (ghostexp.exe) or Ghost32.exe. Self-round-trip is " +
-    "test-covered for all supported compression modes including encryption.";
+    "Symantec / Norton Ghost — R/W for the FE EF record container shared across " +
+    "the entire Binary Research → Symantec → Norton lineage (Ghost 3.0 / 1998 " +
+    "through Ghost 11.x / 12.x; pre-3.0 PKWARE-DCL-Implode \"Old\" compression " +
+    "is hard-rejected by Ghost Explorer itself and therefore stays R/O Stage-0). " +
+    "0x012F18D8 record framing, Fast LZ Z1 + zlib Z3-Z9 compression, CRC-16 " +
+    "stream cipher encryption, .ghs spanning. Format reverse-engineered from " +
+    "Norton Ghost 11.5.1 binaries (ported from MIT-licensed nyarime/gho) and " +
+    "independently cross-confirmed against Symantec Ghost Explorer 2003.789 — " +
+    "the Fast LZ \"123456789012345678\" hash sentinel, the 0x9E5F hash multiplier, " +
+    "the 4096-entry hash table init, the 0x01 first-byte raw escape, the 16-bit " +
+    "LSB control word, the 2-byte (b0,b1) match token format, the 0x012F18D8 " +
+    "record magic, the 10-byte record-header layout, the CRC-16-XMODEM/CCITT " +
+    "stream cipher and the None/Old/Fast/High compression dispatch are byte-" +
+    "identical between Ghost 2003.789 and Ghost 11.5.1. Writing is codec-" +
+    "validated against own reader; byte-compat with Ghost Explorer has not yet " +
+    "been verified by an end-to-end Wine round trip. Self-round-trip is test-" +
+    "covered for all supported compression modes including encryption.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new GhostReader(stream, password: password);

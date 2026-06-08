@@ -432,6 +432,11 @@
     <ProjectReference Include="..ileformatsileformat.partcloneileformat.partclone.csproj" />
     <ProjectReference Include="..ileformatsileformat.ghostileformat.ghost.csproj" />
     <ProjectReference Include="..ileformatsileformat.acronisileformat.acronis.csproj" />
+    <ProjectReference Include="..ileformatsileformat.veeamileformat.veeam.csproj" />
+    <ProjectReference Include="..ileformatsileformat.macriumileformat.macrium.csproj" />
+    <ProjectReference Include="..ileformatsileformat.paragonileformat.paragon.csproj" />
+    <ProjectReference Include="..ileformatsileformat.aomeiileformat.aomei.csproj" />
+    <ProjectReference Include="..ileformatsileformat.easeusileformat.easeus.csproj" />
   </ItemGroup>
 
 </Project>

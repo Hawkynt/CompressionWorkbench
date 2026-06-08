@@ -244,17 +244,20 @@ public class AcronisListingTests {
     });
   }
 
-  // ----- Extraction is intentionally unsupported -----
+  // ----- Honest fallback: listing-only slices (no RecordIndex) refuse extraction -----
 
   [Test, Category("ErrorHandling")]
-  public void Extract_Throws_NotSupported() {
+  public void Extract_ListingOnlySlice_RefusesWithPairingDiagnostic() {
+    // BuildSyntheticTib emits a Listing record but no per-file RecordIndex(108), so the
+    // sequential Listing↔RecordIndex pairing gate must reject extraction (honest fallback —
+    // see AcronisExtractionTests for the positive end-to-end path).
     var tib = BuildSyntheticTib([("d/", "x.txt", 5)]);
     var desc = new AcronisFormatDescriptor();
     using var ms = new MemoryStream(tib);
     var tempDir = Path.Combine(Path.GetTempPath(), "acronis_test_" + Guid.NewGuid().ToString("N")[..8]);
     try {
       var ex = Assert.Throws<NotSupportedException>(() => desc.Extract(ms, tempDir, null, null));
-      Assert.That(ex!.Message, Does.Contain("FirstFileMetaRecord").Or.Contain("undocumented").Or.Contain("Listing"));
+      Assert.That(ex!.Message, Does.Contain("pairing").Or.Contain("RecordIndex").Or.Contain("Listing"));
     } finally {
       if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
     }
@@ -270,7 +273,7 @@ public class AcronisListingTests {
       Assert.That(desc.Extensions, Does.Contain(".tib"));
       Assert.That(desc.Category, Is.EqualTo(Compression.Registry.FormatCategory.Archive));
       Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanList), Is.True);
-      Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanExtract), Is.False);
+      Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanExtract), Is.True);
       Assert.That(desc.MagicSignatures, Has.Count.EqualTo(1));
       Assert.That(desc.MagicSignatures[0].Bytes, Is.EqualTo(new byte[] { 0xCE, 0x24, 0xB9, 0xA2 }));
     });

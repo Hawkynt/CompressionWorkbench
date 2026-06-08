@@ -5,8 +5,8 @@ namespace FileFormat.Ghost;
 
 /// <summary>
 /// Ghost Fast LZ (Z1) codec — a custom LZ77 variant with a 4096-entry
-/// hash table reverse-engineered from Norton Ghost 11.5.1 (decompressor
-/// from <c>sub_4DDD70</c> via IDA, per nyarime/gho).
+/// hash table reverse-engineered from Norton Ghost 11.5.1 (port of the
+/// MIT-licensed nyarime/gho Go reference implementation).
 /// </summary>
 /// <remarks>
 /// <para>
