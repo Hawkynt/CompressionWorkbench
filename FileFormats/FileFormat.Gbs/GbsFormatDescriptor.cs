@@ -101,6 +101,16 @@ public sealed class GbsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       sb.AppendLine($"rendered_sample_rate={OutputSampleRate}");
     }
 
+    // Surface every subtune as a lazily-rendered stereo TRACK_nn_LEFT/RIGHT.wav pair. Listing
+    // reports the exact per-side WAV byte size without rendering; each pair renders on extraction.
+    // The default-song LEFT/RIGHT above are preserved for back-compat.
+    var trackCount = (int)numSongs;
+    if (trackCount > 0 && rendered is not null) {
+      sb.AppendLine($"total_tracks={trackCount}");
+      if (trackCount > MaxSurfacedTracks)
+        sb.AppendLine($"tracks_note=all {trackCount} subtunes surfaced (exceeds {MaxSurfacedTracks})");
+    }
+
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
 
     if (rendered is { } w) {
@@ -110,10 +120,47 @@ public sealed class GbsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         PcmCodec.ToWavBlob(w.Right, channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1), "gbs"));
     }
 
+    if (trackCount > 0 && rendered is not null) {
+      var width = Math.Max(2, trackCount.ToString().Length);
+      var size = MonoWavSize(RenderSeconds);
+      for (var s = 0; s < trackCount; ++s) {
+        var trackSong = s;            // 0-based song index for the player
+        var no = (s + 1).ToString().PadLeft(width, '0');
+        // Render once per pair; cache the deinterleaved sides so LEFT triggers RIGHT cheaply.
+        var lazyPair = new Lazy<(byte[] Left, byte[] Right)>(() => RenderTrackPair(blob, trackSong));
+        entries.Add(AudioPseudoArchive.Entry.Lazy(
+          $"TRACK_{no}_LEFT.wav", "Track", () => lazyPair.Value.Left, size, "render"));
+        entries.Add(AudioPseudoArchive.Entry.Lazy(
+          $"TRACK_{no}_RIGHT.wav", "Track", () => lazyPair.Value.Right, size, "render"));
+      }
+    }
+
     if (blob.Length > HeaderSize)
       entries.Add(new("program.bin", "Stream", blob[HeaderSize..]));
 
     return entries;
+  }
+
+  /// <summary>Above this count tracks are still all surfaced but a note records the overflow.</summary>
+  private const int MaxSurfacedTracks = 64;
+
+  /// <summary>The exact byte size of one mono 16-bit side WAV rendered for <paramref name="seconds"/>.</summary>
+  private static long MonoWavSize(double seconds) => 44L + (long)(seconds * OutputSampleRate) * 2;
+
+  /// <summary>Renders one 0-based subtune to a per-side LEFT/RIGHT WAV pair.</summary>
+  private static (byte[] Left, byte[] Right) RenderTrackPair(byte[] blob, int song) {
+    var player = new GbsPlayer(blob, song, OutputSampleRate);
+    var stereo = player.Render(RenderSeconds);
+    var frames = stereo.Length / 2;
+    var left = new byte[frames * 2];
+    var right = new byte[frames * 2];
+    for (var f = 0; f < frames; ++f) {
+      BinaryPrimitives.WriteInt16LittleEndian(left.AsSpan(f * 2), stereo[f * 2]);
+      BinaryPrimitives.WriteInt16LittleEndian(right.AsSpan(f * 2), stereo[f * 2 + 1]);
+    }
+    return (
+      PcmCodec.ToWavBlob(left, channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1),
+      PcmCodec.ToWavBlob(right, channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1));
   }
 
   /// <summary>Output sample rate for the rendered LEFT/RIGHT WAVs.</summary>

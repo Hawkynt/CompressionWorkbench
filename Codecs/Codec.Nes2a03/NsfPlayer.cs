@@ -183,12 +183,19 @@ public sealed class NsfPlayer {
   }
 
   /// <summary>Builds a player directly from full NESM file bytes (0x80 header + program).</summary>
-  public static NsfPlayer FromNesm(byte[] file) {
+  public static NsfPlayer FromNesm(byte[] file) => FromNesm(file, file.Length >= 0x80 ? file[0x07] : 1);
+
+  /// <summary>
+  /// Builds a player from full NESM file bytes (0x80 header + program) for an explicit 1-based
+  /// <paramref name="song"/>, overriding the header's start-song field. Used to render each
+  /// subtune of a multi-song tune.
+  /// </summary>
+  public static NsfPlayer FromNesm(byte[] file, int song) {
     const int headerSize = 0x80;
     if (file.Length < headerSize)
       throw new NotSupportedException("NSF file too short to contain a NESM header.");
 
-    var startSong = file[0x07];
+    var startSong = song;
     var loadAddr = BinaryPrimitives.ReadUInt16LittleEndian(file.AsSpan(0x08));
     var initAddr = BinaryPrimitives.ReadUInt16LittleEndian(file.AsSpan(0x0A));
     var playAddr = BinaryPrimitives.ReadUInt16LittleEndian(file.AsSpan(0x0C));

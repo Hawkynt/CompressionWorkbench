@@ -147,8 +147,15 @@ public sealed class SidFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       } else if (loadAddr != 0) {
         sb.AppendLine($"real_load_addr=0x{loadAddr:X4}");
       }
+      // Surface every subtune as lazily-rendered TRACK_nn.wav entries (one per chip channel:
+      // TRACK_nn.wav for 1 SID, TRACK_nn_LEFT/RIGHT(/CENTER).wav for 2/3 SID). Each track uses
+      // the resolved model of the default render; when that model is unknown/dual the tracks are
+      // rendered with 6581 only (the track list is NOT doubled) and track_model=6581 is noted.
+      var trackEntries = BuildTrackEntries(blob, sidSetup, songs, sb);
+
       entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
       entries.AddRange(renderEntries);
+      entries.AddRange(trackEntries);
       if (program.Length > 0)
         entries.Add(new("program.bin", "Stream", program));
     } else {
@@ -287,6 +294,62 @@ public sealed class SidFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       return [];
     }
     return result;
+  }
+
+  /// <summary>Above this count tracks are still all surfaced but a note records the overflow.</summary>
+  private const int MaxSurfacedTracks = 64;
+
+  /// <summary>The exact byte size of one mono 16-bit chip WAV rendered for <see cref="RenderSeconds"/>.</summary>
+  private static long MonoTrackWavSize() => 44L + (long)(RenderSeconds * OutputSampleRate) * 2;
+
+  /// <summary>
+  /// Surfaces every subtune (1-based, zero-padded) as lazily-rendered Track entries. One WAV per
+  /// SID chip channel (MONO / LEFT+RIGHT / LEFT+RIGHT+CENTER), each capped at <see cref="RenderSeconds"/>.
+  /// Tracks always use a single specified model: when the default render is dual (unknown/either)
+  /// tracks fall back to 6581 and the choice is noted, so the track list is never doubled.
+  /// </summary>
+  private static List<AudioPseudoArchive.Entry> BuildTrackEntries(byte[] blob, SidSetup setup, int songs, StringBuilder sb) {
+    var result = new List<AudioPseudoArchive.Entry>();
+    var trackCount = songs;
+    if (trackCount <= 0)
+      return result;
+
+    // Resolve each chip to a single concrete model: SID #1 → 6581 when the default render is dual.
+    var trackChips = setup.DualModel ? OverrideSid1(setup.Chips, SidModel.Mos6581) : setup.Chips;
+
+    sb.AppendLine($"total_tracks={trackCount}");
+    if (setup.DualModel)
+      sb.AppendLine("track_model=6581");
+    if (trackCount > MaxSurfacedTracks)
+      sb.AppendLine($"tracks_note=all {trackCount} subtunes surfaced (exceeds {MaxSurfacedTracks})");
+
+    var names = ChannelNames(trackChips.Count);
+    var width = Math.Max(2, trackCount.ToString().Length);
+    var size = MonoTrackWavSize();
+
+    for (var s = 1; s <= trackCount; ++s) {
+      var song = s;
+      var no = s.ToString().PadLeft(width, '0');
+      // One render per song; cache the per-chip WAVs so additional channels are cheap.
+      var lazyChips = new Lazy<byte[][]>(() => RenderTrackChips(blob, trackChips, setup.ClockHz, song));
+      for (var c = 0; c < trackChips.Count; ++c) {
+        var chip = c;
+        var name = trackChips.Count == 1 ? $"TRACK_{no}.wav" : $"TRACK_{no}_{names[c]}.wav";
+        result.Add(AudioPseudoArchive.Entry.Lazy(name, "Track", () => lazyChips.Value[chip], size, "render"));
+      }
+    }
+
+    return result;
+  }
+
+  /// <summary>Renders one 1-based subtune, returning a ready WAV blob per SID chip channel.</summary>
+  private static byte[][] RenderTrackChips(byte[] blob, IReadOnlyList<SidChipConfig> chips, double clockHz, int song) {
+    var player = new PsidPlayer(blob, chips, clockHz, songOverride: song);
+    var perChip = player.RenderPerChip(RenderSeconds, OutputSampleRate);
+    var wavs = new byte[perChip.Length][];
+    for (var c = 0; c < perChip.Length; ++c)
+      wavs[c] = PcmCodec.ToWavBlob(ToPcmBytes(perChip[c]), channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1);
+    return wavs;
   }
 
   /// <summary>Returns a copy of <paramref name="chips"/> with SID #1's model replaced (for a dual-render leg).</summary>

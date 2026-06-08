@@ -112,7 +112,7 @@ public sealed class PsmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         case "DSMP": {
           ++dsmpCount;
           if (ParseDsmp(blob, bodyOff, bodyLen, dsmpCount, out var entry)) {
-            entries.Add(entry);
+            entries.Add(entry!);
             ++samplesWithData;
           }
           break;
@@ -134,8 +134,8 @@ public sealed class PsmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
-  private static bool ParseDsmp(byte[] blob, int bodyOff, int bodyLen, int index, out AudioPseudoArchive.Entry entry) {
-    entry = default;
+  private static bool ParseDsmp(byte[] blob, int bodyOff, int bodyLen, int index, out AudioPseudoArchive.Entry? entry) {
+    entry = null;
     if (bodyLen < 96) return false;
     var name = ReadAsciiTrim(blob, bodyOff + 13, 33);
     var length = BinaryPrimitives.ReadUInt32LittleEndian(blob.AsSpan(bodyOff + 51, 4));

@@ -129,4 +129,78 @@ public class GbsTests {
     Assert.That(ini, Does.Contain("rendered_channels=stereo"));
     Assert.That(ini, Does.Contain("rendered_sample_rate=44100"));
   }
+
+  // ── multi-song subtune surfacing ──────────────────────────────────────────
+
+  // A 3-song tone GBS whose init (called with A = song index, 0-based) routes CH2 to both sides
+  // and uses the song index (scaled) as the NR23 frequency-low byte, so each subtune differs.
+  private static byte[] BuildMultiSongGbs(byte songs = 3) {
+    const ushort load = 0x0400;
+    var program = new List<byte>();
+    void WriteReg(byte reg, byte value) {
+      program.Add(0x3E); program.Add(value); // LD A,value
+      program.Add(0xE0); program.Add(reg);   // LDH (reg),A
+    }
+    // Init entry: A = song index. Stash it, set up CH2, then derive a per-song frequency-low byte.
+    program.Add(0xEA); program.Add(0x00); program.Add(0xC0); // LD ($C000),A  stash song
+    WriteReg(0x25, 0x22);                     // NR51 CH2 both sides
+    WriteReg(0x16, 0x80);                     // NR21 duty 2
+    WriteReg(0x17, 0xF0);                     // NR22 vol 15
+    program.Add(0xFA); program.Add(0x00); program.Add(0xC0); // LD A,($C000)  reload song
+    program.Add(0x87);                        // ADD A,A  (song*2)
+    program.Add(0x87);                        // ADD A,A  (song*4)
+    program.Add(0xC6); program.Add(0x40);     // ADD A,#$40  base so song 0 is still toned
+    program.Add(0xE0); program.Add(0x18);     // LDH (NR23),A  freq lo (song-dependent)
+    WriteReg(0x19, 0x86);                     // NR24 trigger + freq hi bits
+    program.Add(0xC9);                        // init RET
+    var playOffset = program.Count;
+    program.Add(0xC9);                        // play RET
+
+    var blob = new byte[0x70 + program.Count];
+    blob[0] = 0x47; blob[1] = 0x42; blob[2] = 0x53; blob[3] = 1;
+    blob[0x04] = songs; blob[0x05] = 1;
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x06), load);
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x08), load);
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x0A), (ushort)(load + playOffset));
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x0C), 0xFFFE);
+    program.CopyTo(blob, 0x70);
+    return blob;
+  }
+
+  [Test]
+  public void MultiSong_SurfacesStereoTrackPairs_WithExactSizes() {
+    var blob = BuildMultiSongGbs(songs: 3);
+    using var ms = new MemoryStream(blob);
+    var entries = new GbsFormatDescriptor().List(ms, null);
+
+    var tracks = entries.Where(e => e.Kind == "Track").Select(e => e.Name).ToList();
+    Assert.That(tracks, Is.EqualTo(new[] {
+      "TRACK_01_LEFT.wav", "TRACK_01_RIGHT.wav",
+      "TRACK_02_LEFT.wav", "TRACK_02_RIGHT.wav",
+      "TRACK_03_LEFT.wav", "TRACK_03_RIGHT.wav",
+    }));
+
+    var expected = 44L + 30L * 44100L * 2L; // 30 s mono 16-bit per side
+    Assert.That(entries.First(e => e.Name == "TRACK_01_LEFT.wav").OriginalSize, Is.EqualTo(expected));
+
+    using var meta = new MemoryStream();
+    new GbsFormatDescriptor().ExtractEntry(new MemoryStream(blob), "metadata.ini", meta, null);
+    Assert.That(Encoding.UTF8.GetString(meta.ToArray()), Does.Contain("total_tracks=3"));
+  }
+
+  [Test]
+  public void MultiSong_TracksRenderExactBytes_AndSongsDiffer() {
+    var blob = BuildMultiSongGbs(songs: 3);
+    using var ms = new MemoryStream(blob);
+    var declared = new GbsFormatDescriptor().List(ms, null)
+      .First(e => e.Name == "TRACK_01_LEFT.wav").OriginalSize;
+
+    var t1 = Bytes(blob, "TRACK_01_LEFT.wav");
+    var t2 = Bytes(blob, "TRACK_02_LEFT.wav");
+
+    Assert.That(Encoding.ASCII.GetString(t1, 0, 4), Is.EqualTo("RIFF"));
+    Assert.That(t1.Length, Is.EqualTo(declared), "declared size must equal produced bytes exactly");
+    Assert.That(t2.Length, Is.EqualTo(declared));
+    Assert.That(t2, Is.Not.EqualTo(t1), "song 2 must render a distinct tone from song 1");
+  }
 }

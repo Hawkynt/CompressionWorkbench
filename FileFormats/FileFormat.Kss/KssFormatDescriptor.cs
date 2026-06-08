@@ -93,27 +93,84 @@ public sealed class KssFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     var payloadOffset = CoreHeaderSize;
 
+    // Only KSSX extended headers declare a song count; a plain KSCC tune has no subtune table and
+    // therefore gets NO per-track list (just the default LEFT/RIGHT render below).
+    var songCount = 0;
+    var firstSong = 0;
+
     // KSSX extension block: present when offset 0x0E declares a non-zero extra-header length and
     // the bytes are actually present in the file.
     if (isKssx && extraHeaderLen > 0 && blob.Length >= CoreHeaderSize + extraHeaderLen) {
       var ext = blob.AsSpan(CoreHeaderSize, extraHeaderLen);
       if (ext.Length >= 1)
         sb.AppendLine($"extra_device_flags=0x{ext[0]:X2}");
-      if (ext.Length >= 3)
-        sb.AppendLine($"first_song={BinaryPrimitives.ReadUInt16LittleEndian(ext[1..])}");
-      if (ext.Length >= 5)
-        sb.AppendLine($"song_count={BinaryPrimitives.ReadUInt16LittleEndian(ext[3..])}");
+      if (ext.Length >= 3) {
+        firstSong = BinaryPrimitives.ReadUInt16LittleEndian(ext[1..]);
+        sb.AppendLine($"first_song={firstSong}");
+      }
+      if (ext.Length >= 5) {
+        songCount = BinaryPrimitives.ReadUInt16LittleEndian(ext[3..]);
+        sb.AppendLine($"song_count={songCount}");
+      }
       payloadOffset = CoreHeaderSize + extraHeaderLen;
     }
 
-    AddRenderedChannels(blob, entries, sb, deviceFlags);
+    var renderable = AddRenderedChannels(blob, entries, sb, deviceFlags);
+    var trackEntries = BuildTrackEntries(blob, songCount, renderable, sb);
 
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
+    entries.AddRange(trackEntries);
 
     if (blob.Length > payloadOffset)
       entries.Add(new("program.bin", "Stream", blob[payloadOffset..]));
 
     return entries;
+  }
+
+  /// <summary>Above this count tracks are still all surfaced but a note records the overflow.</summary>
+  private const int MaxSurfacedTracks = 64;
+
+  private const double RenderSeconds = 30.0;
+
+  /// <summary>The exact byte size of one mono 16-bit side WAV rendered for the 30 s cap.</summary>
+  private static long MonoWavSize() => 44L + (long)(RenderSeconds * Ay8910Chip.OutputSampleRate) * 2;
+
+  /// <summary>
+  /// Builds lazily-rendered stereo TRACK_nn_LEFT/RIGHT.wav pairs for every subtune (1-based,
+  /// zero-padded), driven only for KSSX tunes that declare a song count. Plain KSCC tunes pass
+  /// <paramref name="songCount"/> 0 and get no track list.
+  /// </summary>
+  private static List<AudioPseudoArchive.Entry> BuildTrackEntries(byte[] blob, int songCount, bool renderable, StringBuilder sb) {
+    var result = new List<AudioPseudoArchive.Entry>();
+    if (!renderable || songCount <= 0)
+      return result;
+
+    sb.AppendLine($"total_tracks={songCount}");
+    if (songCount > MaxSurfacedTracks)
+      sb.AppendLine($"tracks_note=all {songCount} subtunes surfaced (exceeds {MaxSurfacedTracks})");
+
+    var width = Math.Max(2, songCount.ToString().Length);
+    var size = MonoWavSize();
+    for (var s = 0; s < songCount; ++s) {
+      var song = s;                 // 0-based song index
+      var no = (s + 1).ToString().PadLeft(width, '0');
+      var lazyPair = new Lazy<(byte[] Left, byte[] Right)>(() => RenderTrackPair(blob, song));
+      result.Add(AudioPseudoArchive.Entry.Lazy(
+        $"TRACK_{no}_LEFT.wav", "Track", () => lazyPair.Value.Left, size, "render"));
+      result.Add(AudioPseudoArchive.Entry.Lazy(
+        $"TRACK_{no}_RIGHT.wav", "Track", () => lazyPair.Value.Right, size, "render"));
+    }
+    return result;
+  }
+
+  /// <summary>Renders one 0-based subtune to a per-side LEFT/RIGHT WAV pair.</summary>
+  private static (byte[] Left, byte[] Right) RenderTrackPair(byte[] blob, int song) {
+    var player = new KssPlayer(blob, songIndex: song);
+    var stereo = player.Render(RenderSeconds);
+    var (left, right) = DeinterleaveStereo(stereo);
+    return (
+      PcmCodec.ToWavBlob(left, 1, Ay8910Chip.OutputSampleRate, 16),
+      PcmCodec.ToWavBlob(right, 1, Ay8910Chip.OutputSampleRate, 16));
   }
 
   /// <summary>
@@ -122,11 +179,10 @@ public sealed class KssFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// header enables a chip beyond the PSG (FMPAC/SCC/MSX-AUDIO), only the PSG voices are
   /// rendered and a note records that. Failure degrades silently to FULL + metadata only.
   /// </summary>
-  private static void AddRenderedChannels(byte[] blob, List<AudioPseudoArchive.Entry> entries, StringBuilder sb, byte deviceFlags) {
+  private static bool AddRenderedChannels(byte[] blob, List<AudioPseudoArchive.Entry> entries, StringBuilder sb, byte deviceFlags) {
     try {
       var player = new KssPlayer(blob, songIndex: 0);
-      const double seconds = 30.0;
-      var stereo = player.Render(seconds);
+      var stereo = player.Render(RenderSeconds);
       var (left, right) = DeinterleaveStereo(stereo);
       entries.Add(new("LEFT.wav", "Channel", PcmCodec.ToWavBlob(left, 1, Ay8910Chip.OutputSampleRate, 16), "pcm"));
       entries.Add(new("RIGHT.wav", "Channel", PcmCodec.ToWavBlob(right, 1, Ay8910Chip.OutputSampleRate, 16), "pcm"));
@@ -136,8 +192,10 @@ public sealed class KssFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       sb.AppendLine("rendered_chip=PSG (AY-3-8910 compatible)");
       if (deviceFlags != 0)
         sb.AppendLine("rendered_note=PSG voices only; extra devices (FMPAC/SCC/MSX-AUDIO) not synthesised");
+      return true;
     } catch {
       // Undecodable — FULL + metadata only.
+      return false;
     }
   }
 

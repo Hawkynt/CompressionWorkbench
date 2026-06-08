@@ -140,14 +140,53 @@ public sealed class NsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       sb.AppendLine($"rendered_region={DescribeRegion(palNtscFlags)}");
     }
 
+    // Surface every subtune as a lazily-rendered TRACK_nn.wav. Listing reports the exact WAV
+    // byte size (deterministic: 44 + rate*seconds*2) without rendering; each track renders only
+    // when extracted. The default-song MONO.wav above is preserved for back-compat.
+    var trackCount = (int)totalSongs;
+    if (trackCount > 0 && rendered is not null) {
+      sb.AppendLine($"total_tracks={trackCount}");
+      if (trackCount > MaxSurfacedTracks)
+        sb.AppendLine($"tracks_note=all {trackCount} subtunes surfaced (exceeds {MaxSurfacedTracks})");
+    }
+
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
 
     if (rendered is { } w)
       entries.Add(new("MONO.wav", "Channel",
         PcmCodec.ToWavBlob(w, channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1), "nsf"));
 
+    if (trackCount > 0 && rendered is not null) {
+      var width = TrackNumberWidth(trackCount);
+      for (var song = 1; song <= trackCount; ++song) {
+        var s = song;
+        entries.Add(AudioPseudoArchive.Entry.Lazy(
+          $"TRACK_{s.ToString().PadLeft(width, '0')}.wav", "Track",
+          () => RenderNesmTrackWav(blob, s), MonoWavSize(RenderSeconds), "render"));
+      }
+    }
+
     if (blob.Length > NesmHeaderSize)
       entries.Add(new("program.bin", "Stream", blob[NesmHeaderSize..]));
+  }
+
+  /// <summary>Above this count tracks are still all surfaced but a note records the overflow.</summary>
+  private const int MaxSurfacedTracks = 64;
+
+  /// <summary>Zero-pad width for 1-based track numbers given the total count.</summary>
+  internal static int TrackNumberWidth(int count) => Math.Max(2, count.ToString().Length);
+
+  /// <summary>The exact byte size of a mono 16-bit WAV rendered for <paramref name="seconds"/>.</summary>
+  internal static long MonoWavSize(double seconds) => 44L + (long)(seconds * OutputSampleRate) * 2;
+
+  /// <summary>Renders one 1-based subtune to a playable mono WAV blob.</summary>
+  private static byte[] RenderNesmTrackWav(byte[] blob, int song) {
+    var player = NsfPlayer.FromNesm(blob, song);
+    var samples = player.Render(RenderSeconds, OutputSampleRate);
+    var pcm = new byte[samples.Length * 2];
+    for (var i = 0; i < samples.Length; ++i)
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), samples[i]);
+    return PcmCodec.ToWavBlob(pcm, channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1);
   }
 
   /// <summary>Output sample rate for the rendered MONO.wav.</summary>
@@ -188,10 +227,28 @@ public sealed class NsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── extended NSFE ────────────────────────────────────────────────────────
 
+  /// <summary>Structured INFO-chunk fields needed to drive rendering.</summary>
+  private sealed class NsfeInfo {
+    public ushort LoadAddr;
+    public ushort InitAddr;
+    public ushort PlayAddr;
+    public byte Region;
+    public byte Chips;
+    public int TotalSongs = 1;
+    public byte StartSong;
+    public bool Present;
+  }
+
   private static void BuildNsfe(byte[] blob, List<AudioPseudoArchive.Entry> entries) {
     var sb = new StringBuilder();
     sb.AppendLine("[nsf]");
     sb.AppendLine("variant=NSFE");
+
+    var info = new NsfeInfo();
+    byte[]? data = null;
+    int[]? plst = null;             // playlist (0-based song order)
+    int[]? times = null;            // per-song durations in ms (by absolute song index)
+    string[]? labels = null;        // per-song track labels (by absolute song index)
 
     var pos = 4; // skip "NSFE"
     while (pos + 8 <= blob.Length) {
@@ -204,13 +261,26 @@ public sealed class NsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
       switch (id) {
         case "INFO":
-          ParseInfoChunk(chunk, sb);
+          ParseInfoChunk(chunk, sb, info);
           break;
         case "DATA":
-          entries.Add(new("program.bin", "Stream", chunk.ToArray()));
+          data = chunk.ToArray();
+          entries.Add(new("program.bin", "Stream", data));
           break;
         case "auth":
           ParseAuthChunk(chunk, sb);
+          break;
+        case "plst":
+          plst = chunk.ToArray().Select(b => (int)b).ToArray();
+          AppendBinaryChunk(id, chunk, entries);   // also surface verbatim
+          break;
+        case "time":
+          times = ParseTimeChunk(chunk);
+          AppendBinaryChunk(id, chunk, entries);   // also surface verbatim
+          break;
+        case "tlbl":
+          labels = SplitNul(chunk).ToArray();
+          AppendBinaryChunk(id, chunk, entries);   // also surface verbatim
           break;
         case "NEND":
           AppendBinaryChunk(id, chunk, entries);
@@ -225,25 +295,143 @@ public sealed class NsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
 
   done:
+    SurfaceNsfeTracks(info, data, plst, times, labels, sb, entries);
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
   }
 
-  private static void ParseInfoChunk(ReadOnlySpan<byte> chunk, StringBuilder sb) {
-    if (chunk.Length >= 6) {
-      sb.AppendLine($"load_addr=0x{BinaryPrimitives.ReadUInt16LittleEndian(chunk):X4}");
-      sb.AppendLine($"init_addr=0x{BinaryPrimitives.ReadUInt16LittleEndian(chunk[2..]):X4}");
-      sb.AppendLine($"play_addr=0x{BinaryPrimitives.ReadUInt16LittleEndian(chunk[4..]):X4}");
+  /// <summary>Maximum per-track render duration honoured from the NSFE <c>time</c> chunk.</summary>
+  private const double NsfeMaxTrackSeconds = 300.0;
+
+  /// <summary>
+  /// Builds an in-memory NESM-equivalent from the parsed NSFE chunks and surfaces each playlist
+  /// (or every song, when no <c>plst</c>) entry as a lazily-rendered TRACK_nn.wav. Per-song
+  /// durations come from the <c>time</c> chunk (capped at five minutes), defaulting to the
+  /// standard 30 s; labels from <c>tlbl</c> name the file when filename-safe, otherwise are
+  /// recorded in metadata. Missing INFO/DATA or an expansion chip degrades to chunk-only output.
+  /// </summary>
+  private static void SurfaceNsfeTracks(NsfeInfo info, byte[]? data, int[]? plst, int[]? times,
+      string[]? labels, StringBuilder sb, List<AudioPseudoArchive.Entry> entries) {
+    if (!info.Present || data is null || info.Chips != 0)
+      return;
+
+    // Playlist order drives track numbering when present; otherwise songs 0..total-1.
+    var order = plst is { Length: > 0 } ? plst : Enumerable.Range(0, Math.Max(1, info.TotalSongs)).ToArray();
+    if (order.Length == 0)
+      return;
+
+    var width = TrackNumberWidth(order.Length);
+    sb.AppendLine($"total_tracks={order.Length}");
+    if (order.Length > MaxSurfacedTracks)
+      sb.AppendLine($"tracks_note=all {order.Length} subtunes surfaced (exceeds {MaxSurfacedTracks})");
+
+    for (var i = 0; i < order.Length; ++i) {
+      var songIndex = order[i];                 // 0-based absolute song index
+      var seconds = SongSeconds(times, songIndex);
+      var label = SongLabel(labels, songIndex);
+      var trackNo = (i + 1).ToString().PadLeft(width, '0');
+
+      var name = $"TRACK_{trackNo}.wav";
+      if (label is { Length: > 0 }) {
+        var safe = SanitizeLabel(label);
+        if (safe.Length > 0)
+          name = $"TRACK_{trackNo} {safe}.wav";
+        else
+          sb.AppendLine($"track_{trackNo}_label={label}");
+      }
+
+      var nesm = info;            // capture for closure
+      var localData = data;
+      var song1Based = songIndex + 1;
+      var sec = seconds;
+      entries.Add(AudioPseudoArchive.Entry.Lazy(
+        name, "Track",
+        () => RenderNsfeTrackWav(nesm, localData, song1Based, sec),
+        MonoWavSize(sec), "render"));
     }
-    if (chunk.Length >= 7)
+  }
+
+  /// <summary>Per-song render duration: time-chunk ms (capped at five minutes) or the 30 s default.</summary>
+  private static double SongSeconds(int[]? times, int songIndex) {
+    if (times is null || songIndex < 0 || songIndex >= times.Length)
+      return RenderSeconds;
+    var ms = times[songIndex];
+    if (ms <= 0)
+      return RenderSeconds;
+    return Math.Min(ms / 1000.0, NsfeMaxTrackSeconds);
+  }
+
+  private static string? SongLabel(string[]? labels, int songIndex)
+    => labels is not null && songIndex >= 0 && songIndex < labels.Length ? labels[songIndex] : null;
+
+  /// <summary>Renders an NSFE subtune by assembling an equivalent NESM image and reusing the player.</summary>
+  private static byte[] RenderNsfeTrackWav(NsfeInfo info, byte[] data, int song1Based, double seconds) {
+    var nesm = BuildEquivalentNesm(info, data);
+    var player = NsfPlayer.FromNesm(nesm, song1Based);
+    var samples = player.Render(seconds, OutputSampleRate);
+    var pcm = new byte[samples.Length * 2];
+    for (var i = 0; i < samples.Length; ++i)
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), samples[i]);
+    return PcmCodec.ToWavBlob(pcm, channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1);
+  }
+
+  /// <summary>Assembles a 0x80-byte NESM header + DATA program that <see cref="NsfPlayer"/> can drive.</summary>
+  private static byte[] BuildEquivalentNesm(NsfeInfo info, byte[] data) {
+    var nesm = new byte[NesmHeaderSize + data.Length];
+    "NESM\x1A"u8.CopyTo(nesm);
+    nesm[0x05] = 1;
+    nesm[0x06] = (byte)Math.Clamp(info.TotalSongs, 1, 255);
+    nesm[0x07] = (byte)(info.StartSong + 1);  // header start-song is 1-based
+    BinaryPrimitives.WriteUInt16LittleEndian(nesm.AsSpan(0x08), info.LoadAddr);
+    BinaryPrimitives.WriteUInt16LittleEndian(nesm.AsSpan(0x0A), info.InitAddr);
+    BinaryPrimitives.WriteUInt16LittleEndian(nesm.AsSpan(0x0C), info.PlayAddr);
+    nesm[0x7A] = info.Region;
+    nesm[0x7B] = info.Chips;
+    data.CopyTo(nesm, NesmHeaderSize);
+    return nesm;
+  }
+
+  /// <summary>Parses the NSFE <c>time</c> chunk: a sequence of little-endian signed 32-bit ms values.</summary>
+  private static int[] ParseTimeChunk(ReadOnlySpan<byte> chunk) {
+    var n = chunk.Length / 4;
+    var times = new int[n];
+    for (var i = 0; i < n; ++i)
+      times[i] = BinaryPrimitives.ReadInt32LittleEndian(chunk[(i * 4)..]);
+    return times;
+  }
+
+  /// <summary>Strips characters that are unsafe in a filename; collapses runs of whitespace.</summary>
+  private static string SanitizeLabel(string label) {
+    var chars = label.Select(c => char.IsLetterOrDigit(c) || c is ' ' or '_' or '-' or '.' ? c : ' ').ToArray();
+    return string.Join(' ', new string(chars).Split(' ', StringSplitOptions.RemoveEmptyEntries));
+  }
+
+  private static void ParseInfoChunk(ReadOnlySpan<byte> chunk, StringBuilder sb, NsfeInfo info) {
+    info.Present = true;
+    if (chunk.Length >= 6) {
+      info.LoadAddr = BinaryPrimitives.ReadUInt16LittleEndian(chunk);
+      info.InitAddr = BinaryPrimitives.ReadUInt16LittleEndian(chunk[2..]);
+      info.PlayAddr = BinaryPrimitives.ReadUInt16LittleEndian(chunk[4..]);
+      sb.AppendLine($"load_addr=0x{info.LoadAddr:X4}");
+      sb.AppendLine($"init_addr=0x{info.InitAddr:X4}");
+      sb.AppendLine($"play_addr=0x{info.PlayAddr:X4}");
+    }
+    if (chunk.Length >= 7) {
+      info.Region = chunk[6];
       sb.AppendLine($"region={DescribeRegion(chunk[6])}");
+    }
     if (chunk.Length >= 8) {
+      info.Chips = chunk[7];
       sb.AppendLine($"expansion_chips={DescribeChips(chunk[7])}");
       sb.AppendLine($"expansion_flags=0x{chunk[7]:X2}");
     }
+    // NSFE INFO: song count is stored as the count itself (default 1 when absent).
+    info.TotalSongs = chunk.Length >= 9 ? Math.Max(1, (int)chunk[8]) : 1;
     if (chunk.Length >= 9)
       sb.AppendLine($"total_songs={chunk[8]}");
-    if (chunk.Length >= 10)
+    if (chunk.Length >= 10) {
+      info.StartSong = chunk[9];
       sb.AppendLine($"start_song={chunk[9]}");
+    }
   }
 
   private static void ParseAuthChunk(ReadOnlySpan<byte> chunk, StringBuilder sb) {

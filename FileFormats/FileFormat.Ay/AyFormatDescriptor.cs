@@ -141,7 +141,57 @@ public sealed class AyFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     if (renderNote.Length > 0)
       sb.Append(renderNote);
 
+    // Surface every subtune as a lazily-rendered stereo TRACK_nn_LEFT/RIGHT.wav pair. Only added
+    // when the default render succeeded (a tune we cannot drive yields no per-track audio either).
+    var trackEntries = BuildTrackEntries(blob, numSongs, renderNote.Length > 0, sb);
+
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
+    entries.AddRange(trackEntries);
+  }
+
+  /// <summary>Above this count tracks are still all surfaced but a note records the overflow.</summary>
+  private const int MaxSurfacedTracks = 64;
+
+  /// <summary>The exact byte size of one mono 16-bit side WAV rendered for the 30 s cap.</summary>
+  private static long MonoWavSize() => 44L + (long)(RenderSeconds * Ay8910Chip.OutputSampleRate) * 2;
+
+  private const double RenderSeconds = 30.0;
+
+  /// <summary>
+  /// Builds lazily-rendered stereo TRACK_nn_LEFT/RIGHT.wav pairs for every subtune (1-based,
+  /// zero-padded). Each pair renders that song through the Z80 + AY player on extraction.
+  /// </summary>
+  private static List<AudioPseudoArchive.Entry> BuildTrackEntries(byte[] blob, int numSongs, bool renderable, StringBuilder sb) {
+    var result = new List<AudioPseudoArchive.Entry>();
+    if (!renderable || numSongs <= 0)
+      return result;
+
+    sb.AppendLine($"total_tracks={numSongs}");
+    if (numSongs > MaxSurfacedTracks)
+      sb.AppendLine($"tracks_note=all {numSongs} subtunes surfaced (exceeds {MaxSurfacedTracks})");
+
+    var width = Math.Max(2, numSongs.ToString().Length);
+    var size = MonoWavSize();
+    for (var s = 0; s < numSongs; ++s) {
+      var song = s;                 // 0-based song index
+      var no = (s + 1).ToString().PadLeft(width, '0');
+      var lazyPair = new Lazy<(byte[] Left, byte[] Right)>(() => RenderTrackPair(blob, song));
+      result.Add(AudioPseudoArchive.Entry.Lazy(
+        $"TRACK_{no}_LEFT.wav", "Track", () => lazyPair.Value.Left, size, "render"));
+      result.Add(AudioPseudoArchive.Entry.Lazy(
+        $"TRACK_{no}_RIGHT.wav", "Track", () => lazyPair.Value.Right, size, "render"));
+    }
+    return result;
+  }
+
+  /// <summary>Renders one 0-based subtune to a per-side LEFT/RIGHT WAV pair.</summary>
+  private static (byte[] Left, byte[] Right) RenderTrackPair(byte[] blob, int song) {
+    var player = new AyPlayer(blob, songIndex: song);
+    var stereo = player.Render(RenderSeconds);
+    var (left, right) = DeinterleaveStereo(stereo);
+    return (
+      PcmCodec.ToWavBlob(left, 1, Ay8910Chip.OutputSampleRate, 16),
+      PcmCodec.ToWavBlob(right, 1, Ay8910Chip.OutputSampleRate, 16));
   }
 
   /// <summary>

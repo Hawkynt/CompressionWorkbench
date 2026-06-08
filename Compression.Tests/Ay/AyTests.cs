@@ -204,4 +204,110 @@ public class AyTests {
     Assert.That(ini, Does.Contain("rendered_chip=AY-3-8910"));
     Assert.That(ini, Does.Contain("rendered_stereo=ABC"));
   }
+
+  // ── multi-song subtune surfacing ──────────────────────────────────────────
+
+  // A runnable 2-song AY. Both songs share one code region loaded at $C000 but have distinct init
+  // points: song 0's init programs tone-A period $0100, song 1's programs $0200, so the two
+  // subtunes render audibly different tones. Each song's interrupt routine is a bare RET.
+  private static byte[] BuildMultiSongAy() {
+    var b = new byte[0x100];
+    "ZXAYEMUL"u8.CopyTo(b);
+    b[0x08] = 0; b[0x09] = 0;
+    WritePtr(b, 0x0A, 0x0A);
+    WritePtr(b, 0x0C, 0x0C);
+    WritePtr(b, 0x0E, 0x0E);
+    b[0x10] = 1; // numSongs-1 → 2 songs
+    b[0x11] = 0;
+    WritePtr(b, 0x12, 0x14); // song table (2 entries of 4 bytes: 0x14, 0x18)
+
+    // song 0 entry: name @0x1C, data struct @0x30
+    WritePtr(b, 0x14, 0x1C);
+    WritePtr(b, 0x16, 0x30);
+    // song 1 entry: name @0x1E, data struct @0x40
+    WritePtr(b, 0x18, 0x1E);
+    WritePtr(b, 0x1A, 0x40);
+
+    Encoding.ASCII.GetBytes("A").CopyTo(b, 0x1C);
+    Encoding.ASCII.GetBytes("B").CopyTo(b, 0x1E);
+
+    // song-data struct 0 at 0x30 (+10 points, +12 addresses)
+    WritePtr(b, 0x30 + 10, 0x50); // pPoints
+    WritePtr(b, 0x30 + 12, 0x70); // pAddresses (shared block list)
+    // song-data struct 1 at 0x40
+    WritePtr(b, 0x40 + 10, 0x58); // pPoints
+    WritePtr(b, 0x40 + 12, 0x70); // pAddresses (same loaded code)
+
+    // points block for song 0 at 0x50: SP, init $C000, interrupt $C100 (RET)
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x50), 0xFF00);
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x52), 0xC000);
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x54), 0xC100);
+    // points block for song 1 at 0x58: SP, init $C080, interrupt $C100 (RET)
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x58), 0xFF00);
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x5A), 0xC080);
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x5C), 0xC100);
+
+    // Z80 code loaded at $C000. Each init routine is ~57 bytes, so songs sit 0x80 apart.
+    var code = new List<byte>();
+    void OutPsg(byte reg, byte value) {
+      code.AddRange([0x3E, reg, 0x01, 0xFD, 0xFF, 0xED, 0x79]);
+      code.AddRange([0x3E, value, 0x01, 0xFD, 0xBF, 0xED, 0x79]);
+    }
+    // Song 0 init at $C000: tone-A period $0100, full volume, mixer tone A on, RET.
+    OutPsg(0x00, 0x00); OutPsg(0x01, 0x01);
+    OutPsg(0x08, 0x0F); OutPsg(0x07, 0xFE);
+    code.Add(0xC9);
+    while (code.Count < 0x80) code.Add(0x00);
+    // Song 1 init at $C080: tone-A period $0200 (different tone), full volume, mixer, RET.
+    OutPsg(0x00, 0x00); OutPsg(0x01, 0x02);
+    OutPsg(0x08, 0x0F); OutPsg(0x07, 0xFE);
+    code.Add(0xC9);
+    while (code.Count < 0x100) code.Add(0x00);
+    code.Add(0xC9); // interrupt RET at $C100
+    var codeArr = code.ToArray();
+
+    // block list at 0x70: addr=$C000, len=code, pData→0x80
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x70), 0xC000);
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x72), (ushort)codeArr.Length);
+    WritePtr(b, 0x74, 0x80);
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x76), 0);
+    BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(0x78), 0);
+
+    var full = new byte[0x80 + codeArr.Length];
+    Array.Copy(b, full, 0x80);
+    codeArr.CopyTo(full, 0x80);
+    return full;
+  }
+
+  [Test]
+  public void MultiSong_SurfacesStereoTrackPairs_WithExactSizes() {
+    var blob = BuildMultiSongAy();
+    using var ms = new MemoryStream(blob);
+    var entries = new AyFormatDescriptor().List(ms, null);
+
+    var tracks = entries.Where(e => e.Kind == "Track").Select(e => e.Name).ToList();
+    Assert.That(tracks, Is.EqualTo(new[] {
+      "TRACK_01_LEFT.wav", "TRACK_01_RIGHT.wav",
+      "TRACK_02_LEFT.wav", "TRACK_02_RIGHT.wav",
+    }));
+
+    var expected = 44L + 30L * 44100L * 2L;
+    Assert.That(entries.First(e => e.Name == "TRACK_01_LEFT.wav").OriginalSize, Is.EqualTo(expected));
+    Assert.That(Meta(blob), Does.Contain("total_tracks=2"));
+  }
+
+  [Test]
+  public void MultiSong_TracksRenderExactBytes_AndSongsDiffer() {
+    var blob = BuildMultiSongAy();
+    using var ms = new MemoryStream(blob);
+    var declared = new AyFormatDescriptor().List(ms, null)
+      .First(e => e.Name == "TRACK_01_LEFT.wav").OriginalSize;
+
+    var t1 = Bytes(blob, "TRACK_01_LEFT.wav");
+    var t2 = Bytes(blob, "TRACK_02_LEFT.wav");
+
+    Assert.That(Encoding.ASCII.GetString(t1, 0, 4), Is.EqualTo("RIFF"));
+    Assert.That(t1.Length, Is.EqualTo(declared), "declared size must equal produced bytes exactly");
+    Assert.That(t2, Is.Not.EqualTo(t1), "song 2 must render a distinct tone from song 1");
+  }
 }

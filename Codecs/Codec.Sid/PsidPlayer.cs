@@ -101,9 +101,11 @@ public sealed class PsidPlayer {
   /// <summary>
   /// Builds a multi-SID player from explicit per-chip configurations. The first config is SID #1
   /// (its base is forced to $D400 regardless of what is supplied). Each config carries the chip's
-  /// register-window base address and its resolved model.
+  /// register-window base address and its resolved model. When <paramref name="songOverride"/> is
+  /// supplied it is the 1-based subtune to initialise instead of the header's start-song field,
+  /// letting a caller render any of a multi-song tune's subtunes.
   /// </summary>
-  public PsidPlayer(byte[] file, IReadOnlyList<SidChipConfig> chips, double clockHz) {
+  public PsidPlayer(byte[] file, IReadOnlyList<SidChipConfig> chips, double clockHz, int? songOverride = null) {
     if (chips.Count < 1)
       throw new ArgumentException("At least one SID chip is required.", nameof(chips));
     if (file.Length < 0x76)
@@ -115,7 +117,7 @@ public sealed class PsidPlayer {
     this._initAddr = BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(0x0A));
     this._playAddr = BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(0x0C));
     var version = BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(0x04));
-    var startSong = BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(0x10));
+    var startSong = songOverride ?? BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(0x10));
     var speed = BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(0x12));
 
     if (magic == "RSID")

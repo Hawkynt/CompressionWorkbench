@@ -155,4 +155,92 @@ public class KssTests {
     Assert.That(ini, Does.Contain("rendered_note="));
     Assert.That(ini, Does.Contain("not synthesised"));
   }
+
+  // ── multi-song subtune surfacing ──────────────────────────────────────────
+
+  // A runnable KSSX declaring a song count of 2. Init is entered with A = song index; it stores A
+  // into the PSG tone-A coarse-period register so each subtune renders a distinct tone. Play=RET.
+  private static byte[] BuildMultiSongKssx(int songCount = 2) {
+    const ushort loadAddr = 0x9000;
+
+    var code = new List<byte>();
+    void OutPsg(byte reg, byte value) {
+      code.AddRange([0x3E, reg, 0xD3, 0xA0]);   // LD A,reg ; OUT ($A0),A
+      code.AddRange([0x3E, value, 0xD3, 0xA1]); // LD A,value ; OUT ($A1),A
+    }
+    // Init: A = song index on entry. Stash it, set fine period 0 + volume + mixer, then use the
+    // stashed song index (offset by 1) as the coarse-period register → distinct tone per song.
+    code.AddRange([0x32, 0x00, 0x80]);          // LD ($8000),A  stash song index
+    OutPsg(0x00, 0x00);                         // tone A fine = 0
+    OutPsg(0x08, 0x0F);                         // channel A volume
+    OutPsg(0x07, 0xFE);                         // mixer tone A on
+    code.AddRange([0x3E, 0x01, 0xD3, 0xA0]);    // LD A,#1 ; OUT ($A0),A  select reg 1 (coarse)
+    code.AddRange([0x3A, 0x00, 0x80]);          // LD A,($8000)  reload song index
+    code.AddRange([0x3C]);                       // INC A          (song 0 → 1, song 1 → 2)
+    code.AddRange([0xD3, 0xA1]);                // OUT ($A1),A    coarse period (song-dependent)
+    code.Add(0xC9);                             // init RET
+    var initLen = code.Count;
+    code.Add(0xC9);                             // play RET
+
+    var codeArr = code.ToArray();
+    var initAddr = loadAddr;
+    var playAddr = (ushort)(loadAddr + initLen);
+
+    var blob = new byte[0x20 + codeArr.Length];
+    blob[0] = 0x4B; blob[1] = 0x53; blob[2] = 0x53; blob[3] = 0x58; // KSSX
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x04), loadAddr);
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x06), (ushort)codeArr.Length);
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x08), initAddr);
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x0A), playAddr);
+    blob[0x0E] = 0x10; // extra header length → KSSX extension present
+    blob[0x0F] = 0x00; // PSG only
+    // extension block at 0x10
+    blob[0x10] = 0x00; // extra device flags
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x11), 0);             // first song
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x13), (ushort)songCount); // song count
+    codeArr.CopyTo(blob, 0x20);
+    return blob;
+  }
+
+  [Test]
+  public void Kscc_NoTrackList_PlainKsccGetsNoSubtunes() {
+    // A plain KSCC carries no subtune table → no TRACK entries (only the default LEFT/RIGHT).
+    var blob = BuildRenderableKss();
+    using var ms = new MemoryStream(blob);
+    var entries = new KssFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Kind == "Track"), Is.False, "plain KSCC must not surface a track list");
+    Assert.That(Meta(blob), Does.Not.Contain("total_tracks="));
+  }
+
+  [Test]
+  public void Kssx_MultiSong_SurfacesStereoTrackPairs_WithExactSizes() {
+    var blob = BuildMultiSongKssx(songCount: 2);
+    using var ms = new MemoryStream(blob);
+    var entries = new KssFormatDescriptor().List(ms, null);
+
+    var tracks = entries.Where(e => e.Kind == "Track").Select(e => e.Name).ToList();
+    Assert.That(tracks, Is.EqualTo(new[] {
+      "TRACK_01_LEFT.wav", "TRACK_01_RIGHT.wav",
+      "TRACK_02_LEFT.wav", "TRACK_02_RIGHT.wav",
+    }));
+
+    var expected = 44L + 30L * 44100L * 2L;
+    Assert.That(entries.First(e => e.Name == "TRACK_01_LEFT.wav").OriginalSize, Is.EqualTo(expected));
+    Assert.That(Meta(blob), Does.Contain("total_tracks=2"));
+  }
+
+  [Test]
+  public void Kssx_MultiSong_TracksRenderExactBytes_AndSongsDiffer() {
+    var blob = BuildMultiSongKssx(songCount: 2);
+    using var ms = new MemoryStream(blob);
+    var declared = new KssFormatDescriptor().List(ms, null)
+      .First(e => e.Name == "TRACK_01_LEFT.wav").OriginalSize;
+
+    var t1 = Bytes(blob, "TRACK_01_LEFT.wav");
+    var t2 = Bytes(blob, "TRACK_02_LEFT.wav");
+
+    Assert.That(Encoding.ASCII.GetString(t1, 0, 4), Is.EqualTo("RIFF"));
+    Assert.That(t1.Length, Is.EqualTo(declared), "declared size must equal produced bytes exactly");
+    Assert.That(t2, Is.Not.EqualTo(t1), "song 2 must render a distinct tone from song 1");
+  }
 }
