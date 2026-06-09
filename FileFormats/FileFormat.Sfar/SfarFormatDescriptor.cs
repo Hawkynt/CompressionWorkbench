@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Sfar;
 
-public sealed class SfarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations , IArchiveLayoutMap {
+public sealed class SfarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
@@ -51,10 +51,10 @@ public sealed class SfarFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string DisplayName => "BioWare SFAR";
   public FormatCategory Category => FormatCategory.Archive;
 
-  // Read-only by design: writing requires LZX block packing + SHA-1 and MD5 hash-table
-  // generation against canonical game paths, which is out of scope this wave.
+  // WORM: writes the stored-only variant. LZX-packed creation remains out of scope —
+  // every block is written verbatim with the 32-byte header tagged "\0\0\0\0".
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
   public string DefaultExtension => ".sfar";
@@ -81,5 +81,18 @@ public sealed class SfarFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
+  }
+
+  /// <summary>
+  /// Emits a stored-mode SFAR archive containing <paramref name="inputs"/>. A
+  /// synthetic <c>Filenames.txt</c> manifest is prepended so the round-trip
+  /// through <see cref="SfarReader"/> preserves the original names. LZX-packed
+  /// creation is intentionally not supported.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var pairs = FormatHelpers.FilesOnly(inputs).Select(f => (f.Name, f.Data)).ToList();
+    new SfarWriter(output).Write(pairs);
   }
 }

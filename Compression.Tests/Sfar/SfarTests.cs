@@ -271,10 +271,10 @@ public class SfarTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Capabilities_DoesNotIncludeCanCreate() {
+  public void Capabilities_IncludeCanCreate() {
     var d = new FileFormat.Sfar.SfarFormatDescriptor();
-    Assert.That((d.Capabilities & FormatCapabilities.CanCreate), Is.EqualTo((FormatCapabilities)0));
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>());
+    Assert.That((d.Capabilities & FormatCapabilities.CanCreate), Is.EqualTo(FormatCapabilities.CanCreate));
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
   }
 
   [Test, Category("HappyPath")]

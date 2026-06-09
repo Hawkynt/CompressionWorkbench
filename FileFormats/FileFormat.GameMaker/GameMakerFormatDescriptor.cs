@@ -12,13 +12,13 @@ namespace FileFormat.GameMaker;
 /// with typed chunks. Surfaces each chunk as a raw blob plus split PNG textures (TXTR),
 /// WAV/OGG audio (AUDO) and the string table (STRG).
 /// </summary>
-public sealed class GameMakerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class GameMakerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "GameMaker";
   public string DisplayName => "GameMaker data file";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".win";
   public IReadOnlyList<string> Extensions => [".win", ".unx", ".ios"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -239,5 +239,72 @@ public sealed class GameMakerFormatDescriptor : IFormatDescriptor, IArchiveForma
     foreach (var c in tag)
       sb.Append(char.IsLetterOrDigit(c) ? c : '_');
     return sb.ToString();
+  }
+
+  /// <summary>
+  /// Emits a GameMaker FORM container by recombining input chunks. Inputs named
+  /// <c>chunks/&lt;TAG&gt;.bin</c> are treated as raw chunk payloads and emitted
+  /// in input order as IFF-style <c>(tag, size, body)</c> records under a single
+  /// <c>FORM</c> root. Inputs not matching the chunk shape, and synthetic
+  /// surfaces produced by the reader (<c>FULL.win</c>, <c>metadata.ini</c>,
+  /// <c>strings.txt</c>, <c>textures/</c>, <c>audio/</c>), are silently
+  /// dropped — they are derived from the chunk stream and cannot be re-embedded
+  /// generically without a full GameMaker bytecode rebuild.
+  /// </summary>
+  /// <remarks>
+  /// <para>
+  /// If no chunk inputs are recognised the writer emits a minimal FORM
+  /// containing only an empty <c>GEN8</c> stub so the produced file is still a
+  /// valid IFF FORM that <see cref="GameMakerFormatDescriptor.List"/> can parse.
+  /// </para>
+  /// <para>
+  /// Round-trip guarantee: every <c>chunks/&lt;TAG&gt;.bin</c> input survives
+  /// the write/read cycle byte-for-byte. Per-section derived surfaces
+  /// (split PNG textures, audio blobs, the parsed string table) are
+  /// regenerated from the chunk payloads by the reader and need not be supplied
+  /// as inputs.
+  /// </para>
+  /// </remarks>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    var chunks = new List<(string Tag, byte[] Data)>();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var name = i.ArchiveName.Replace('\\', '/');
+      if (!name.StartsWith("chunks/", StringComparison.Ordinal)) continue;
+      var leaf = name.Substring("chunks/".Length);
+      if (!leaf.EndsWith(".bin", StringComparison.Ordinal)) continue;
+      var tagText = leaf[..^4];
+      if (tagText.Length != 4) continue;
+      chunks.Add((tagText, i.ReadContent()));
+    }
+
+    if (chunks.Count == 0)
+      chunks.Add(("GEN8", new byte[0x40]));
+
+    var bodySize = 0L;
+    foreach (var (_, data) in chunks)
+      bodySize += 8 + data.Length;
+
+    Span<byte> tagBuf = stackalloc byte[4];
+    Span<byte> sizeBuf = stackalloc byte[4];
+
+    // FORM root
+    Encoding.ASCII.GetBytes("FORM", tagBuf);
+    output.Write(tagBuf);
+    BinaryPrimitives.WriteUInt32LittleEndian(sizeBuf, (uint)bodySize);
+    output.Write(sizeBuf);
+
+    // Chunks
+    foreach (var (tag, data) in chunks) {
+      tagBuf.Clear();
+      Encoding.ASCII.GetBytes(tag, tagBuf);
+      output.Write(tagBuf);
+      BinaryPrimitives.WriteUInt32LittleEndian(sizeBuf, (uint)data.Length);
+      output.Write(sizeBuf);
+      if (data.Length > 0) output.Write(data);
+    }
   }
 }

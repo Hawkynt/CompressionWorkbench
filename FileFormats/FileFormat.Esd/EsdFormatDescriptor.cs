@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 using Compression.Registry;
@@ -33,7 +34,7 @@ namespace FileFormat.Esd;
 /// <see href="https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview"/>.
 /// </para>
 /// </remarks>
-public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
@@ -66,7 +67,7 @@ public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <inheritdoc/>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
   /// <inheritdoc/>
@@ -148,6 +149,57 @@ public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         continue;
       WriteFile(outputDir, e.Name, e.Data);
     }
+  }
+
+  /// <summary>
+  /// Community-known ESD marker bit set in the WIM header flags field.
+  /// Microsoft's <c>WIM_HDR_FLAG_ESD</c> bit, documented across community
+  /// references on the encrypted-WIM variant. We don't perform encryption —
+  /// resources are written as a plain WIM and the bit serves only to identify
+  /// the produced file as belonging to the ESD sub-family.
+  /// </summary>
+  internal const uint FlagEsdMarker = 0x00100000u;
+
+  /// <summary>
+  /// Emits an ESD-flagged WIM file containing <paramref name="inputs"/> as
+  /// uncompressed resources. The standard <see cref="WimWriter"/> is invoked
+  /// with <see cref="WimConstants.CompressionNone"/>, after which we patch the
+  /// header's flags field to set <see cref="FlagEsdMarker"/> so the produced
+  /// file is recognisable as an ESD variant.
+  /// </summary>
+  /// <remarks>
+  /// <para>
+  /// Real ESD files carry per-resource encryption keyed by the Microsoft Store
+  /// install pipeline; we cannot reproduce that, so the marker is presentational
+  /// only. The resulting file remains parseable by the standard
+  /// <see cref="WimReader"/> and round-trips through this descriptor's
+  /// <see cref="List"/> / <see cref="Extract"/> paths.
+  /// </para>
+  /// </remarks>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    if (!output.CanSeek)
+      throw new ArgumentException("ESD writing requires a seekable stream.", nameof(output));
+
+    var headerStart = output.Position;
+
+    // Phase 1 — emit a standard uncompressed WIM via the existing writer.
+    var resources = FormatHelpers.FilesOnly(inputs).Select(f => f.Data).ToList();
+    new WimWriter(output, WimConstants.CompressionNone).Write(resources);
+
+    // Phase 2 — patch the header flags field at offset 16 to set the ESD marker.
+    // WimWriter writes a 208-byte header at headerStart with flags at +16.
+    var endPos = output.Position;
+    output.Seek(headerStart + 16, SeekOrigin.Begin);
+    Span<byte> existing = stackalloc byte[4];
+    output.ReadExactly(existing);
+    var flags = BinaryPrimitives.ReadUInt32LittleEndian(existing) | FlagEsdMarker;
+    output.Seek(headerStart + 16, SeekOrigin.Begin);
+    Span<byte> patched = stackalloc byte[4];
+    BinaryPrimitives.WriteUInt32LittleEndian(patched, flags);
+    output.Write(patched);
+    output.Seek(endPos, SeekOrigin.Begin);
   }
 
   /// <summary>

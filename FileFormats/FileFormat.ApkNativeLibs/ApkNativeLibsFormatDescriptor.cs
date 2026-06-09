@@ -12,7 +12,7 @@ namespace FileFormat.ApkNativeLibs;
 /// detection (all magic signatures are zero-confidence); the caller must route
 /// here explicitly, e.g. <c>cwb list --format ApkNativeLibs foo.apk</c>.
 /// </summary>
-public sealed class ApkNativeLibsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+public sealed class ApkNativeLibsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
@@ -21,8 +21,8 @@ public sealed class ApkNativeLibsFormatDescriptor : IFormatDescriptor, IArchiveF
   public string DisplayName => "APK native libraries";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".apk";
   public IReadOnlyList<string> Extensions => [];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -101,4 +101,26 @@ public sealed class ApkNativeLibsFormatDescriptor : IFormatDescriptor, IArchiveF
 
   // "lib/arm64-v8a/libfoo.so" → "native_libs/arm64-v8a/libfoo.so"
   private static string Rewrite(string path) => "native_libs/" + path.Substring(4);
+
+  /// <summary>
+  /// Emits a fresh APK-shaped ZIP containing only the native libraries supplied
+  /// in <paramref name="inputs"/>. Incoming entry paths may use either the
+  /// underlying <c>lib/&lt;abi&gt;/*.so</c> form or the rewritten
+  /// <c>native_libs/&lt;abi&gt;/*.so</c> view — the latter is unrewrap-ed back
+  /// to <c>lib/</c> before being added to the inner ZIP so the produced archive
+  /// is a standard split-APK fragment loadable by any APK tool.
+  /// Entries that don't end in <c>.so</c> are written verbatim.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    using var w = new ZipWriter(output, leaveOpen: true);
+    foreach (var i in inputs) {
+      var name = i.ArchiveName.Replace('\\', '/');
+      if (name.StartsWith("native_libs/", StringComparison.Ordinal))
+        name = "lib/" + name.Substring("native_libs/".Length);
+      if (i.IsDirectory) { w.AddDirectory(name); continue; }
+      w.AddEntry(name, i.ReadContent());
+    }
+  }
 }

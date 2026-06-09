@@ -23,7 +23,7 @@ namespace FileFormat.AndroidBundle;
 /// inputs.
 /// </para>
 /// </summary>
-public sealed class AndroidBundleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+public sealed class AndroidBundleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
@@ -32,8 +32,9 @@ public sealed class AndroidBundleFormatDescriptor : IFormatDescriptor, IArchiveF
   public string DisplayName => "Android App Bundle / split-APK set";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".aab";
   public IReadOnlyList<string> Extensions => [".aab", ".apks"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -119,6 +120,47 @@ public sealed class AndroidBundleFormatDescriptor : IFormatDescriptor, IArchiveF
   /// passthrough otherwise so malformed bundles still extract.
   /// </summary>
   private static string RewriteName(string zipName) => zipName;
+
+  /// <summary>
+  /// Emits a fresh Android App Bundle (<c>.aab</c>) by delegating to
+  /// <see cref="ZipWriter"/>. Entry paths are written verbatim; callers are
+  /// responsible for naming entries with the AAB split-aware structure
+  /// (<c>base/</c>, <c>splits/</c>, <c>BundleConfig.pb</c>). If the caller does
+  /// not supply a <c>BundleConfig.pb</c>, a minimal placeholder protobuf is
+  /// appended so the produced archive carries the mandatory configuration entry.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    using var w = new ZipWriter(output, leaveOpen: true);
+    var hasBundleConfig = false;
+    foreach (var i in inputs) {
+      var name = i.ArchiveName.Replace('\\', '/');
+      if (string.Equals(name, "BundleConfig.pb", StringComparison.OrdinalIgnoreCase))
+        hasBundleConfig = true;
+      if (i.IsDirectory) { w.AddDirectory(name); continue; }
+      w.AddEntry(name, i.ReadContent());
+    }
+    if (!hasBundleConfig)
+      w.AddEntry("BundleConfig.pb", BuildMinimalBundleConfigPlaceholder());
+  }
+
+  /// <summary>
+  /// Builds a tiny placeholder protobuf payload for <c>BundleConfig.pb</c> when
+  /// the caller doesn't supply one. The bytes form a well-typed protobuf message
+  /// (one varint tag + length-delimited string field) that <c>protoc --decode_raw</c>
+  /// will accept but which carries no real bundletool semantics; we ship it so
+  /// produced archives always have the file the AAB spec mandates at the root.
+  /// </summary>
+  private static byte[] BuildMinimalBundleConfigPlaceholder() {
+    // protobuf wire bytes: field 1 (length-delimited), len 12, "placeholder."
+    var marker = "placeholder."u8.ToArray();
+    var buf = new byte[2 + marker.Length];
+    buf[0] = 0x0A; // tag = (1 << 3) | 2 (length-delimited)
+    buf[1] = (byte)marker.Length;
+    marker.AsSpan().CopyTo(buf.AsSpan(2));
+    return buf;
+  }
 
   /// <summary>
   /// Emits a best-effort plain-text summary of <c>BundleConfig.pb</c> (a protobuf).
