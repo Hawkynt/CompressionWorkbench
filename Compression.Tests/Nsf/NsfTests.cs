@@ -179,12 +179,45 @@ public class NsfTests {
   }
 
   [Test]
-  public void Nesm_ExpansionChip_NoMonoWav() {
-    // A tune declaring an expansion chip cannot be rendered; it degrades to header/program.
-    using var ms = new MemoryStream(BuildNesm(chipFlags: 0x01)); // VRC6
+  public void Nesm_ExpansionChip_RendersMonoWavWithChipNote() {
+    // A VRC6 tune: init programs the sawtooth ($B000-$B002) so the expansion produces audio, then
+    // RTS; play is a bare RTS. The tune now renders alongside the base 2A03.
+    var p = new List<byte>();
+    void Sta(byte lo, byte hi, byte value) {
+      p.Add(0xA9); p.Add(value);          // LDA #value
+      p.Add(0x8D); p.Add(lo); p.Add(hi);  // STA $hilo
+    }
+    Sta(0x00, 0xB0, 0x20);                // $B000 saw rate
+    Sta(0x01, 0xB0, 0x40);                // $B001 period low
+    Sta(0x02, 0xB0, 0x81);                // $B002 enable + period high
+    p.Add(0x60);                          // RTS
+    while (p.Count < 0x100) p.Add(0xEA);  // pad to $8100
+    p.Add(0x60);                          // play RTS
+    var program = p.ToArray();
+
+    var blob = new byte[0x80 + program.Length];
+    "NESM\x1A"u8.CopyTo(blob);
+    blob[0x05] = 1; blob[0x06] = 1; blob[0x07] = 1;
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x08), 0x8000);
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x0A), 0x8000);
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x0C), 0x8100);
+    BinaryPrimitives.WriteUInt16LittleEndian(blob.AsSpan(0x6E), 16639);
+    blob[0x7A] = 0x00; blob[0x7B] = 0x01; // NTSC + VRC6
+    program.CopyTo(blob, 0x80);
+
+    using var ms = new MemoryStream(blob);
     var entries = new NsfFormatDescriptor().List(ms, null);
-    Assert.That(entries.Any(e => e.Name == "MONO.wav"), Is.False);
-    Assert.That(Meta(BuildNesm(chipFlags: 0x01)), Does.Not.Contain("rendered_sample_rate"));
+    Assert.That(entries.Any(e => e.Name == "MONO.wav"), Is.True);
+
+    var ini = Meta(blob);
+    Assert.That(ini, Does.Contain("rendered_sample_rate=44100"));
+    Assert.That(ini, Does.Contain("rendered_chips=2A03, VRC6"));
+
+    var wav = Bytes(blob, "MONO.wav");
+    var peak = 0;
+    for (var i = 44; i + 1 < wav.Length; i += 2)
+      peak = Math.Max(peak, Math.Abs((short)(wav[i] | (wav[i + 1] << 8))));
+    Assert.That(peak, Is.GreaterThan(100), "VRC6 sawtooth should produce audible output");
   }
 
   [Test]

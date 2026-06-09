@@ -81,6 +81,10 @@ public sealed class Ym2413Codec {
   private readonly double _nativeRate;
   private bool _rhythmMode;
 
+  // The active instrument patch ROM. Defaults to the genuine YM2413 set, but a host (e.g. the
+  // Konami VRC7, which is an OPLL die with a substituted patch table) may supply its own.
+  private readonly byte[][] _instrumentRom;
+
   // Global LFOs: a single AM (tremolo) and PM (vibrato) phase shared by every operator.
   private uint _lfoAm;
   private uint _lfoPm;
@@ -89,7 +93,17 @@ public sealed class Ym2413Codec {
   private uint _noise = 1;
 
   /// <param name="clock">OPLL clock in Hz (3579545 for SMS / Mark III FM, MSX-MUSIC).</param>
-  public Ym2413Codec(double clock = 3579545.0) {
+  public Ym2413Codec(double clock = 3579545.0) : this(clock, null) { }
+
+  /// <summary>
+  /// Constructs the OPLL core with an optional substitute instrument patch ROM. The Konami
+  /// VRC7 is an OPLL die fused with a different 15-voice patch table; passing that table here
+  /// (19 rows of 8 bytes — same layout as <see cref="Ym2413Tables.DefaultInstruments"/>, with
+  /// rows 16..18 unused since the VRC7 has no rhythm mode) reuses the entire operator/envelope
+  /// core. When <paramref name="instrumentRom"/> is <c>null</c> the genuine YM2413 set is used.
+  /// </summary>
+  public Ym2413Codec(double clock, byte[][]? instrumentRom) {
+    this._instrumentRom = instrumentRom ?? Ym2413Tables.DefaultInstruments;
     this._nativeRate = clock / Prescale;
     for (var c = 0; c < this._channels.Length; ++c)
       this.LoadInstrument(this._channels[c]);
@@ -213,7 +227,7 @@ public sealed class Ym2413Codec {
 
     var patch = channel.Instrument == 0
       ? this._userPatch
-      : Ym2413Tables.DefaultInstruments[channel.Instrument];
+      : this._instrumentRom[channel.Instrument];
     ApplyPatch(channel, patch);
   }
 

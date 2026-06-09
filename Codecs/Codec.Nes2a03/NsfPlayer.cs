@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using Codec.Mos6502;
+using Codec.Nes2a03.Expansion;
 
 namespace Codec.Nes2a03;
 
@@ -15,9 +16,12 @@ namespace Codec.Nes2a03;
 /// straight at <c>loadAddr</c>; on a bankswitched tune the NSF data is sliced into 4 KB banks
 /// mapped at $8000-$FFFF, with the eight bank registers initialised from the header's
 /// bankswitch bytes.</para>
-/// <para>Only the base 2A03 is emulated; a tune declaring any expansion chip
-/// (VRC6/VRC7/FDS/MMC5/N163/S5B) is rejected with <see cref="NotSupportedException"/>. NSFE
-/// containers are not parsed here — construct from the parsed NESM fields instead.</para>
+/// <para>The base 2A03 plus the six Famicom expansion sound chips are emulated. The header's
+/// expansion flag byte (offset 0x7B) selects which to instantiate — bit 0 VRC6, bit 1 VRC7
+/// (an OPLL core reusing <c>Codec.Ym2413</c> with the VRC7 patch ROM), bit 2 FDS, bit 3 MMC5,
+/// bit 4 Namco 163, bit 5 Sunsoft 5B (a YM2149 reusing <c>Codec.Ay8910</c>). Each chip captures
+/// its own register window on the 6502 bus, is clocked alongside the APU and sums into the mix.
+/// NSFE containers are not parsed here — construct from the parsed NESM fields instead.</para>
 /// </summary>
 public sealed class NsfPlayer {
 
@@ -46,6 +50,10 @@ public sealed class NsfPlayer {
     }
 
     public byte Read(ushort addr) {
+      // Expansion-chip readback (e.g. Namco 163 $4800 data port, FDS wave RAM) takes priority
+      // over the bank/RAM read for the addresses those chips claim.
+      if (this.Apu is { } apu && apu.ReadExpansion(addr, out var expValue))
+        return expValue;
       if (this._bankswitched && addr >= 0x8000) {
         var slot = (addr - 0x8000) >> 12;
         var offsetInBank = addr & 0x0FFF;
@@ -63,6 +71,15 @@ public sealed class NsfPlayer {
         this.Apu?.Write(addr, value);
         // Mirror into RAM too so reads of write-only registers are harmless.
         this._ram[addr] = value;
+        return;
+      }
+      // FDS bankswitches its 8 KB windows at $5FF6-$5FFF; the standard NSF table is $5FF8-$5FFF.
+      // Try expansion register writes first (FDS $4040-$408A, MMC5 $5000-$5015, N163 $4800/$F800,
+      // VRC6/VRC7/S5B $9000-$FFFF) — a handled write does not fall through to RAM/bankswitch.
+      if (this.Apu is { } apu && apu.WriteExpansion(addr, value)) {
+        // VRC6/VRC7/S5B share their register window with the ROM program area; do not disturb RAM.
+        if (addr < 0x8000)
+          this._ram[addr] = value;
         return;
       }
       if (this._bankswitched && addr is >= 0x5FF8 and <= 0x5FFF) {
@@ -84,6 +101,13 @@ public sealed class NsfPlayer {
   private readonly ushort _playAddr;
   private readonly double _frameRateHz;
   private readonly double _clockHz;
+  private readonly byte _extraChips;
+
+  /// <summary>The NSF expansion-chip flag byte (header offset 0x7B) this player is driving.</summary>
+  public byte ExpansionChips => this._extraChips;
+
+  /// <summary>Human-readable list of the enabled expansion chips ("none" when base 2A03 only).</summary>
+  public string ExpansionChipNames => this._extraChips == 0 ? "none" : DescribeChips(this._extraChips);
 
   /// <summary>The resolved frame rate (play calls per second) for this tune.</summary>
   public double FrameRateHz => this._frameRateHz;
@@ -109,9 +133,7 @@ public sealed class NsfPlayer {
       int playSpeedMicros,
       ReadOnlySpan<byte> bankswitchBytes) {
 
-    if (extraChips != 0)
-      throw new NotSupportedException(
-        $"NSF expansion chip(s) 0x{extraChips:X2} ({DescribeChips(extraChips)}) are not supported.");
+    this._extraChips = extraChips;
 
     var bankswitched = false;
     for (var i = 0; i < bankswitchBytes.Length && i < 8; ++i)
@@ -129,6 +151,7 @@ public sealed class NsfPlayer {
     this._apu = new Apu2a03(this._bus, this._clockHz);
     this._bus.Apu = this._apu;
     this._cpu = new Cpu6502(this._bus);
+    AttachExpansions(this._apu, extraChips, this._clockHz);
 
     if (bankswitched) {
       for (var i = 0; i < 8; ++i)
@@ -211,6 +234,20 @@ public sealed class NsfPlayer {
     return new NsfPlayer(
       program, loadAddr, initAddr, playAddr, startSong, extraChips,
       useNtsc, playSpeed, file.AsSpan(0x70, 8));
+  }
+
+  /// <summary>
+  /// Instantiates and attaches the expansion sound chips selected by the header flag byte (offset
+  /// 0x7B): bit 0 VRC6, bit 1 VRC7, bit 2 FDS, bit 3 MMC5, bit 4 Namco 163, bit 5 Sunsoft 5B.
+  /// Each chip captures its own register window through the 6502 bus and mixes alongside the 2A03.
+  /// </summary>
+  private static void AttachExpansions(Apu2a03 apu, byte flags, double clockHz) {
+    if ((flags & 0x01) != 0) apu.AttachExpansion(new Vrc6Audio());
+    if ((flags & 0x02) != 0) apu.AttachExpansion(new Vrc7Audio(clockHz));
+    if ((flags & 0x04) != 0) apu.AttachExpansion(new FdsAudio());
+    if ((flags & 0x08) != 0) apu.AttachExpansion(new Mmc5Audio(clockHz));
+    if ((flags & 0x10) != 0) apu.AttachExpansion(new Namco163Audio());
+    if ((flags & 0x20) != 0) apu.AttachExpansion(new Sunsoft5BAudio(clockHz));
   }
 
   private static string DescribeChips(byte flags) {

@@ -11,10 +11,10 @@ namespace FileFormat.Nsf;
 /// Surfaces an NES Sound Format file as a metadata-rich pseudo-archive. NSF carries a 6502
 /// program that drives the NES APU (plus optional expansion sound chips); the program image is
 /// surfaced verbatim as a Kind <c>Stream</c> blob alongside the parsed header, and — for base
-/// 2A03 NESM tunes — the start song is emulated (6502 core + register-level APU synthesis) and
-/// rendered to a playable <c>MONO.wav</c> (44100 Hz, 16-bit, 30 s cap). Tunes that declare an
-/// expansion chip (VRC6/VRC7/FDS/MMC5/N163/S5B), and NSFE containers, degrade to
-/// header/program-only.
+/// 2A03 NESM tunes — including those using the Famicom expansion sound chips
+/// (VRC6/VRC7/FDS/MMC5/N163/S5B) — the start song is emulated (6502 core + register-level APU
+/// synthesis with the enabled expansion chips) and rendered to a playable <c>MONO.wav</c>
+/// (44100 Hz, 16-bit, 30 s cap). Malformed input degrades to header/program-only.
 /// <para>Two on-disk variants are handled:</para>
 /// <list type="bullet">
 ///   <item><b>NESM</b> (magic <c>NESM\x1A</c>): a fixed 0x80-byte header followed by the 6502
@@ -138,6 +138,7 @@ public sealed class NsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       sb.AppendLine($"rendered_sample_rate={OutputSampleRate}");
       sb.AppendLine($"rendered_song={startSong}");
       sb.AppendLine($"rendered_region={DescribeRegion(palNtscFlags)}");
+      sb.AppendLine($"rendered_chips={(extraChips == 0 ? "2A03" : $"2A03, {DescribeChips(extraChips)}")}");
     }
 
     // Surface every subtune as a lazily-rendered TRACK_nn.wav. Listing reports the exact WAV
@@ -311,7 +312,7 @@ public sealed class NsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   private static void SurfaceNsfeTracks(NsfeInfo info, byte[]? data, int[]? plst, int[]? times,
       string[]? labels, StringBuilder sb, List<AudioPseudoArchive.Entry> entries) {
-    if (!info.Present || data is null || info.Chips != 0)
+    if (!info.Present || data is null)
       return;
 
     // Playlist order drives track numbering when present; otherwise songs 0..total-1.

@@ -110,9 +110,14 @@ public class NsfPlayerTests {
   }
 
   [Test]
-  public void Player_ExpansionChipThrows() {
+  public void Player_ExpansionChipIsInstantiated() {
     var blob = BuildNesm(ToneProgram(TimerForFreq(440.0)), chipFlags: 0x01); // VRC6
-    Assert.Throws<NotSupportedException>(() => NsfPlayer.FromNesm(blob));
+    var player = NsfPlayer.FromNesm(blob);
+    Assert.That(player.ExpansionChips, Is.EqualTo(0x01));
+    Assert.That(player.ExpansionChipNames, Does.Contain("VRC6"));
+    // The base 2A03 still renders the tone alongside the (silent here) VRC6.
+    var samples = player.Render(0.2, Rate);
+    Assert.That(samples.Max(x => Math.Abs((int)x)), Is.GreaterThan(1000));
   }
 
   [Test]

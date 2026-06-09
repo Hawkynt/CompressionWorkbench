@@ -159,6 +159,34 @@ public sealed class Ay8910Chip {
     }
   }
 
+  /// <summary>
+  /// Advances the generators by one clock/16 prescaler tick. Exposed for hosts (e.g. the Sunsoft
+  /// 5B expansion in an NSF player) that drive the PSG from their own master clock rather than
+  /// the built-in <see cref="RenderSamples"/> resampler.
+  /// </summary>
+  public void StepPrescaler() => this.StepOneCycle();
+
+  /// <summary>
+  /// The current mono output as the linear sum of the three channels' DAC levels, each in the
+  /// normalised 0..1 range (so the full-scale sum is 0..3). Hosts that mix the PSG against other
+  /// chips at a documented relative level use this instead of the stereo <see cref="Mix"/>.
+  /// </summary>
+  public double MixMonoLinear() {
+    var mixer = this._registers[7];
+    var sum = 0.0;
+    for (var ch = 0; ch < 3; ++ch) {
+      var toneEnabled = (mixer & (1 << ch)) == 0;
+      var noiseEnabled = (mixer & (1 << (ch + 3))) == 0;
+      var tone = !toneEnabled || this._toneOutput[ch] != 0;
+      var noise = !noiseEnabled || this._noiseOutput != 0;
+      if (!(tone && noise))
+        continue;
+      var ampReg = this._registers[8 + ch];
+      sum += (ampReg & 0x10) != 0 ? EnvLevels[this._envVolume] : FixedLevels[ampReg & 0x0F];
+    }
+    return sum;
+  }
+
   private void StepOneCycle() {
     for (var ch = 0; ch < 3; ++ch) {
       if (--this._toneCounter[ch] > 0)

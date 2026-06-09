@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using Codec.Mos6502;
+using Codec.Nes2a03.Expansion;
 
 namespace Codec.Nes2a03;
 
@@ -38,6 +39,36 @@ public sealed class Apu2a03 {
 
   private readonly double _clockHz;
   private readonly int _outputRate;
+
+  // Cartridge expansion sound chips (VRC6/VRC7/FDS/MMC5/N163/S5B), clocked every CPU step and
+  // summed linearly on top of the 2A03's nonlinear mix.
+  private readonly List<IExpansionAudio> _expansions = [];
+
+  /// <summary>The master clock rate (Hz) the APU and any expansion chips step at.</summary>
+  public double ClockHz => this._clockHz;
+
+  /// <summary>Attaches an expansion sound chip to be clocked and mixed alongside the 2A03.</summary>
+  internal void AttachExpansion(IExpansionAudio chip) => this._expansions.Add(chip);
+
+  /// <summary>Routes a CPU write to any expansion chip whose register window covers it.</summary>
+  internal bool WriteExpansion(ushort addr, byte value) {
+    var handled = false;
+    foreach (var chip in this._expansions)
+      if (chip.HandlesWrite(addr)) {
+        chip.Write(addr, value);
+        handled = true;
+      }
+    return handled;
+  }
+
+  /// <summary>Routes a CPU read to any expansion chip exposing readable RAM at <paramref name="addr"/>.</summary>
+  internal bool ReadExpansion(ushort addr, out byte value) {
+    foreach (var chip in this._expansions)
+      if (chip.TryRead(addr, out value))
+        return true;
+    value = 0;
+    return false;
+  }
 
   // Frame counter: 4-step (default) or 5-step sequence, clocked once per CPU step. The
   // 2A03's frame sequencer fires four events per ~14915-CPU-cycle period; we approximate
@@ -178,6 +209,10 @@ public sealed class Apu2a03 {
     // are clocked every other CPU cycle (the APU divider). The triangle therefore runs at
     // f = clock/(32*(t+1)) and the pulses at f = clock/(16*(t+1)).
     this._triangle.ClockTimer();
+    // Expansion chips step at the full CPU clock rate (their own internal dividers handle any
+    // further prescaling, e.g. the AY's clock/16 or the OPLL's clock/72).
+    for (var i = 0; i < this._expansions.Count; ++i)
+      this._expansions[i].ClockOneCpuCycle();
     this._apuCycleToggle = !this._apuCycleToggle;
     if (!this._apuCycleToggle)
       return;
@@ -192,7 +227,11 @@ public sealed class Apu2a03 {
   private float MixOneClock() {
     var pulseSum = this._pulse1.Output() + this._pulse2.Output();
     var tndIndex = 3 * this._triangle.Output() + 2 * this._noise.Output() + this._dmc.Output();
-    return this._pulseTable[pulseSum] + this._tndTable[tndIndex];
+    var mix = this._pulseTable[pulseSum] + this._tndTable[tndIndex];
+    // Expansion chips sum linearly on top of the base 2A03 nonlinear mix.
+    for (var i = 0; i < this._expansions.Count; ++i)
+      mix += this._expansions[i].Output();
+    return mix;
   }
 
   // ── rendering ─────────────────────────────────────────────────────────────────
