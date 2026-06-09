@@ -102,6 +102,33 @@ public sealed class AcronisReader {
   /// </summary>
   public bool ChainWalkMatchesSequentialPairing { get; }
 
+  /// <summary>
+  /// Per-entry decoded FileMeta record (102 = FirstFileMetaRecord) body, resolved by walking the
+  /// chain anchored on the Listing entry's <see cref="AcronisFileEntry.MetaOffset"/>. <c>null</c>
+  /// at index <c>i</c> when chain walk did not resolve the entry, when the anchored 102 body
+  /// failed to decode as an attribute stream, or when the body has no attributes the decoder
+  /// recognizes.
+  /// </summary>
+  /// <remarks>
+  /// <para>
+  /// The body shape (attribute-stream layout) and the high-value id meanings (ItemCommon →
+  /// filename + alt name, SourceItem → source path, HardLinkId, BackupTime, TimeZone) are
+  /// reverse-engineered from <c>ti_tools.dll</c> 32-bit (Acronis True Image 2018). See
+  /// <see cref="AcronisFileMetaBodyDecoder"/> for the format details.
+  /// </para>
+  /// </remarks>
+  public IReadOnlyList<AcronisFileMetaBody?> FileMetaBodiesByEntry { get; }
+
+  /// <summary>
+  /// Per-entry filename decoded from the anchored FirstFileMetaRecord(102)'s ItemCommon
+  /// attribute (id 0x10). <c>null</c> at index <c>i</c> when the body couldn't be decoded or
+  /// didn't contain an ItemCommon attribute. When set, this is the authoritative filename per
+  /// the reverse-engineered InputItem model; the Listing record's
+  /// <see cref="AcronisFileEntry.Name"/> may agree or disagree depending on whether the
+  /// Listing was rewritten after the FileMeta was emitted.
+  /// </summary>
+  public IReadOnlyList<string?> DecodedNamesByEntry { get; }
+
   private readonly Stream _stream;
   // recordOffset (relative to end of header) → Blob record (for fast lookup during extraction).
   private readonly Dictionary<long, AcronisRecord> _blobsByRecordOffset;
@@ -123,6 +150,8 @@ public sealed class AcronisReader {
       this.RecordIndicesByChainWalk = [];
       this.ChainWalkComplete = false;
       this.ChainWalkMatchesSequentialPairing = true;
+      this.FileMetaBodiesByEntry = [];
+      this.DecodedNamesByEntry = [];
       return;
     }
 
@@ -175,10 +204,24 @@ public sealed class AcronisReader {
 
     // Build the FileMeta chain walk index. Anchor on Listing.MetaOffset → FirstFileMetaRecord(102),
     // then take the first RecordIndex(108) appearing after that 102 record in archive order.
-    var (chainWalk, complete, matchesSequential) = ResolveByFileMetaChain(entries, records, indices, this.Header.HeaderLength);
+    var (chainWalk, complete, matchesSequential, anchors) = ResolveByFileMetaChain(entries, records, indices, this.Header.HeaderLength);
     this.RecordIndicesByChainWalk = chainWalk;
     this.ChainWalkComplete = complete;
     this.ChainWalkMatchesSequentialPairing = matchesSequential;
+
+    // Per-entry decoded FileMeta102 bodies + decoded names. Surfaced as parallel lists keyed by
+    // entry index; null entries indicate "chain walk didn't resolve" or "decoder didn't find
+    // ItemCommon" so callers can fall back to the Listing-record Name without ambiguity.
+    var bodies = new AcronisFileMetaBody?[entries.Count];
+    var names = new string?[entries.Count];
+    for (var i = 0; i < entries.Count; i++) {
+      var anchor = anchors[i];
+      var body = anchor?.MetaBody;
+      bodies[i] = body;
+      names[i] = body?.ItemCommon?.Name;
+    }
+    this.FileMetaBodiesByEntry = bodies;
+    this.DecodedNamesByEntry = names;
   }
 
   /// <summary>
@@ -204,13 +247,13 @@ public sealed class AcronisReader {
   ///   <item><description><c>matchesSequential</c> = every resolved entry agrees with the Nth-Listing↔Nth-RecordIndex pairing.</description></item>
   /// </list>
   /// </remarks>
-  private static (IReadOnlyList<AcronisRecord?> ChainWalk, bool Complete, bool MatchesSequential) ResolveByFileMetaChain(
+  private static (IReadOnlyList<AcronisRecord?> ChainWalk, bool Complete, bool MatchesSequential, IReadOnlyList<AcronisRecord?> Anchors) ResolveByFileMetaChain(
       IReadOnlyList<AcronisFileEntry> entries,
       IReadOnlyList<AcronisRecord> records,
       IReadOnlyList<AcronisRecord> indices,
       ushort headerLength) {
 
-    if (entries.Count == 0) return ([], false, true);
+    if (entries.Count == 0) return ([], false, true, []);
 
     // Index FirstFileMetaRecord(102) records by their relative offset.
     var ffmByOffset = new Dictionary<long, AcronisRecord>();
@@ -226,6 +269,7 @@ public sealed class AcronisReader {
     var indicesByStart = indices.OrderBy(r => r.Start).ToList();
 
     var result = new AcronisRecord?[entries.Count];
+    var anchorPerEntry = new AcronisRecord?[entries.Count];
     var seenIndexStart = new HashSet<long>();
     var allResolved = true;
     for (var i = 0; i < entries.Count; i++) {
@@ -235,9 +279,11 @@ public sealed class AcronisReader {
       // relative offset 0) is treated as unresolved — the chain walk requires a real anchor.
       if (!ffmByOffset.TryGetValue(entry.MetaOffset, out var anchor)) {
         result[i] = null;
+        anchorPerEntry[i] = null;
         allResolved = false;
         continue;
       }
+      anchorPerEntry[i] = anchor;
       // First RecordIndex with Start > anchor.Start that we haven't already claimed.
       AcronisRecord? claim = null;
       foreach (var idx in indicesByStart) {
@@ -267,7 +313,7 @@ public sealed class AcronisReader {
       }
     }
 
-    return (result, allResolved, matchesSequential);
+    return (result, allResolved, matchesSequential, anchorPerEntry);
   }
 
   /// <summary>

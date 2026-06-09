@@ -33,6 +33,16 @@ public enum AcronisRecordType : byte {
 }
 
 /// <summary>Entry parsed out of a <see cref="AcronisRecordType.Listing"/> record.</summary>
+/// <param name="Path">Directory path (UTF-16LE decoded) from the Listing record.</param>
+/// <param name="Name">Primary file/directory name from the Listing record.</param>
+/// <param name="ShortName">8.3 short name from the Listing record (often empty).</param>
+/// <param name="Time">Listing-record timestamp (FILETIME-ish; nullable when zero).</param>
+/// <param name="FileSize">Listing-record file size (uint48).</param>
+/// <param name="FileSize2">Second file-size field from the Listing record (semantics not fully decoded).</param>
+/// <param name="MetaOffset">
+/// Offset (relative to <see cref="AcronisVolumeHeader.HeaderLength"/>) at which the entry's
+/// FirstFileMetaRecord(102) begins. Used by the chain walk in <see cref="AcronisReader"/>.
+/// </param>
 public sealed record AcronisFileEntry(
   string Path,
   string Name,
@@ -66,6 +76,18 @@ public sealed record AcronisRecordHandle(long StartOffset, long RecordOffset, by
 public sealed record AcronisRecordIndexInfo(long TotalSize, IReadOnlyList<AcronisRecordHandle> Handles);
 
 /// <summary>Record extents in the archive (absolute byte positions).</summary>
+/// <param name="Type">Record type tag (the 1-byte prefix).</param>
+/// <param name="Start">Absolute archive byte position of the record's leading type tag.</param>
+/// <param name="End">Absolute archive byte position immediately after the record's trailing data.</param>
+/// <param name="Payload">Inflated record body (deflate-decompressed). <c>null</c> for EndTrailer.</param>
+/// <param name="Files">Parsed listing entries (Listing records, type 103).</param>
+/// <param name="ConfigAttrs">Parsed config key/value pairs (Config records, type 101).</param>
+/// <param name="Index">Parsed RecordIndex payload (RecordIndex records, type 108).</param>
+/// <param name="MetaBody">
+/// Parsed FileMeta body — populated for FirstFileMetaRecord(102), FileMetaA(1), FileMetaB(2),
+/// FileMetaC(5). Carries the attribute stream (id+flags+size+body tuples) and the
+/// high-level decoded fields (ItemCommon → filename, SourceItem → path, BackupTime, etc.).
+/// </param>
 public sealed record AcronisRecord(
   AcronisRecordType Type,
   long Start,
@@ -73,7 +95,8 @@ public sealed record AcronisRecord(
   byte[]? Payload,
   IReadOnlyList<AcronisFileEntry>? Files = null,
   IReadOnlyList<AcronisConfigAttribute>? ConfigAttrs = null,
-  AcronisRecordIndexInfo? Index = null
+  AcronisRecordIndexInfo? Index = null,
+  AcronisFileMetaBody? MetaBody = null
 );
 
 public sealed record AcronisConfigAttribute(string Key, string Value);
@@ -155,8 +178,30 @@ public static class AcronisRecordReader {
       AcronisRecordType.Listing => new AcronisRecord(type, start, end, payload, Files: ParseListing(payload)),
       AcronisRecordType.Config => new AcronisRecord(type, start, end, payload, ConfigAttrs: ParseConfig(payload)),
       AcronisRecordType.RecordIndex => ValidateRecordIndex(type, start, end, payload),
+      AcronisRecordType.FirstFileMetaRecord
+        or AcronisRecordType.FileMetaA
+        or AcronisRecordType.FileMetaB
+        or AcronisRecordType.FileMetaC
+        => new AcronisRecord(type, start, end, payload, MetaBody: TryDecodeMetaBody(payload)),
       _ => new AcronisRecord(type, start, end, payload),
     };
+  }
+
+  /// <summary>
+  /// Best-effort decode of an inflated FileMeta body. Wraps
+  /// <see cref="AcronisFileMetaBodyDecoder.Decode(byte[])"/> with exception protection so a body
+  /// shaped like our test fixtures (free-form ASCII markers) doesn't blow up the record walk.
+  /// </summary>
+  /// <returns>
+  /// The decoded body when it parsed successfully (or partially), <c>null</c> when even the
+  /// leading 4-byte count couldn't be read OR when decoding threw.
+  /// </returns>
+  private static AcronisFileMetaBody? TryDecodeMetaBody(byte[] payload) {
+    try {
+      return AcronisFileMetaBodyDecoder.Decode(payload);
+    } catch {
+      return null;
+    }
   }
 
   private static AcronisRecord ValidateRecordIndex(AcronisRecordType type, long start, long end, byte[] payload) {
