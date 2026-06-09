@@ -264,7 +264,9 @@ public class EndToEndInteropTests {
     // Ghost (.gho): record-stream framing expects whole-partition byte stream.
     // sparseimage: HFS+/APFS payload required for band-allocation pass-through.
     // Macrium Reflect X (.mrimgx): per-block AES-CBC + zstd over a partition image.
-    ".gho", ".sparseimage", ".mrimgx",
+    // Paragon Backup (.pbf): WORM-CWBP layout surfaces entries as chunk_NNNNNN.bin,
+    // not the original repeat.txt / small.txt / random.dat names.
+    ".gho", ".sparseimage", ".mrimgx", ".pbf",
     // WORM-minimal writers that don't round-trip user files (SB-only / empty-FS):
     ".bcachefs", ".reiser4",
     // Filesystem images (HFS, NTFS, ext, etc. require full FS creation)

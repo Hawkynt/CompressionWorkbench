@@ -34,7 +34,10 @@ public class ParagonDetectionTests {
     Assert.That(d.DefaultExtension, Is.EqualTo(".pbf"));
     Assert.That(d.Extensions, Does.Contain(".pbf"));
     Assert.That(d.Family, Is.EqualTo(AlgorithmFamily.Archive));
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>());
+    // WORM-CWBP promotion: the descriptor now exposes IArchiveCreatable so
+    // callers can emit a fresh CWBP-discriminated PBF that round-trips via
+    // our own reader. Vendor-tool byte-compat stays out of scope.
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
   }
 
   [Test, Category("HappyPath")]
@@ -49,12 +52,15 @@ public class ParagonDetectionTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Capabilities_AreReadOnly() {
+  public void Capabilities_AreReadWriteWorm() {
+    // WORM-CWBP promotion: CanCreate is now true (vendor-tool byte-compat
+    // remains out of scope). CanModify stays false — we don't support
+    // in-place mutation of an existing PBF.
     var d = new ParagonFormatDescriptor();
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanTest), Is.True);
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
   }
 
@@ -133,11 +139,13 @@ public class ParagonDetectionTests {
   }
 
   [Test, Category("Stub")]
-  public void Description_FlagsRoMetadata_NoCreateOrModify() {
+  public void Description_FlagsWormCwbp_AndCannotModify() {
     var d = new ParagonFormatDescriptor();
-    Assert.That(d.Description.ToLowerInvariant(), Does.Contain("r/o metadata"),
-      $"Paragon Description must flag the R/O-metadata treatment honestly. Got: '{d.Description}'.");
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
+    Assert.That(d.Description.ToLowerInvariant(), Does.Contain("worm"),
+      $"After WORM-CWBP promotion Description must flag the WORM treatment honestly. Got: '{d.Description}'.");
+    Assert.That(d.Description.ToLowerInvariant(), Does.Contain("vendor-tool byte-compat is explicitly out of scope"),
+      "Description must explicitly state vendor-tool byte-compat is out of scope.");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
   }
 
@@ -147,11 +155,13 @@ public class ParagonDetectionTests {
   /// update the investigation trail.
   /// </summary>
   [Test, Category("Stub")]
-  public void Description_PinsRoMetadataTreatment_AndCitesPImg() {
+  public void Description_PinsWormCwbpTreatment_AndCitesPImg() {
     var d = new ParagonFormatDescriptor();
     var desc = d.Description.ToLowerInvariant();
+    Assert.That(desc, Does.Contain("worm"),
+      "WORM-CWBP outcome must be explicitly pinned in the Description.");
     Assert.That(desc, Does.Contain("r/o metadata"),
-      "R/O-metadata outcome must be explicitly pinned in the Description.");
+      "Vendor-file R/O-metadata fallback must still be cited in the Description.");
     Assert.That(desc, Does.Contain("pimg"),
       "Description must cite the TrID-documented 'PImg' magic.");
     Assert.That(desc, Does.Contain("50 49 6d 67"),

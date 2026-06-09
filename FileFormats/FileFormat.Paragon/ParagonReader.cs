@@ -1,5 +1,7 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using System.Globalization;
+using System.IO.Compression;
 using System.Text;
 
 namespace FileFormat.Paragon;
@@ -247,6 +249,44 @@ public sealed class ParagonReader : IDisposable {
 
   public bool ValidHeader { get; private set; }
 
+  /// <summary>
+  /// True when the file carries the CWBP discriminator at offset
+  /// <c>0xF8</c> — i.e. it was produced by <see cref="ParagonWriter"/> and
+  /// we can walk a real chunk-offset table. False for vendor-produced
+  /// files where we fall back to R/O metadata + opaque-blob entries.
+  /// </summary>
+  public bool IsCwbpProduced { get; private set; }
+
+  /// <summary>
+  /// Chunk count read from the CWBP table-of-contents. Zero for vendor-
+  /// produced files.
+  /// </summary>
+  public uint ChunkCount { get; private set; }
+
+  /// <summary>
+  /// Total logical (decompressed) size across all chunks per the CWBP
+  /// table-of-contents. Zero for vendor-produced files.
+  /// </summary>
+  public ulong TotalLogicalSize { get; private set; }
+
+  /// <summary>
+  /// Sectors-per-chunk value the writer chose. Zero for vendor-produced
+  /// files.
+  /// </summary>
+  public uint SectorsPerChunk { get; private set; }
+
+  /// <summary>
+  /// Per-chunk metadata as read from the CWBP chunk-offset table. Empty
+  /// for vendor-produced files. Each entry carries the on-disk offset,
+  /// the on-disk byte size, the compress flag, the decompressed size and
+  /// the Adler-32 of the decompressed bytes — i.e. the exact per-chunk
+  /// struct the vendor's
+  /// <c>"ChunkNumber: %d, ChunkOffSet: 0x%016I64x, ChunkSize: %d,
+  /// ChunkIsCompress: %c"</c> debug-string round-trip emits.
+  /// </summary>
+  public IReadOnlyList<ParagonChunkInfo> ChunkTable => this._chunkTable;
+  private readonly List<ParagonChunkInfo> _chunkTable = [];
+
   public ParagonReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
@@ -276,15 +316,142 @@ public sealed class ParagonReader : IDisposable {
     this.FormatVersion = (ushort)(_data[6] | (_data[7] << 8));
     this.TrailingWord = (uint)(_data[4] | (_data[5] << 8) | (_data[6] << 16) | (_data[7] << 24));
 
-    var meta = BuildMetadata();
-    _entries.Add(new ParagonEntry { Name = "metadata.ini", Size = meta.Length, IsDirectory = false, Offset = 0, Data = meta });
+    // Try the CWBP fast path — files produced by ParagonWriter carry an
+    // 8-byte discriminator at offset 0xF8 (past the vendor's last
+    // initialised offset 0xF1). A vendor-produced file will not have
+    // this marker, in which case we fall back to the R/O metadata pass.
+    if (this.TryParseCwbpChunks()) {
+      this.IsCwbpProduced = true;
+      // CWBP files surface real chunks alongside metadata, NOT an opaque blob.
+      var meta = BuildMetadata();
+      _entries.Add(new ParagonEntry { Name = "metadata.ini", Size = meta.Length, IsDirectory = false, Offset = 0, Data = meta });
+      for (var i = 0; i < this._chunkTable.Count; i++) {
+        var info = this._chunkTable[i];
+        var bytes = this.ExtractChunkBytes(info);
+        var name = string.Create(CultureInfo.InvariantCulture, $"chunk_{info.ChunkNumber:D6}.bin");
+        _entries.Add(new ParagonEntry {
+          Name = name,
+          Size = bytes.Length,
+          IsDirectory = false,
+          Offset = (long)info.ChunkOffset,
+          Data = bytes,
+        });
+      }
+      return;
+    }
+
+    var metaVendor = BuildMetadata();
+    _entries.Add(new ParagonEntry { Name = "metadata.ini", Size = metaVendor.Length, IsDirectory = false, Offset = 0, Data = metaVendor });
     _entries.Add(new ParagonEntry { Name = "paragon-backup.bin", Size = _data.Length, IsDirectory = false, Offset = 0, Data = _data });
+  }
+
+  /// <summary>
+  /// CWBP-discriminator detection + chunk-table walk. Returns true when
+  /// the file carries our writer's marker and the chunk table parses
+  /// cleanly. False otherwise — caller falls back to the vendor-style
+  /// metadata-only path.
+  /// </summary>
+  private bool TryParseCwbpChunks() {
+    if (this._data.Length < ParagonWriter.HeaderSize) return false;
+    if (!this._data.AsSpan(ParagonWriter.OffsetCwbpDiscriminator, 8)
+          .SequenceEqual(ParagonWriter.CwbpDiscriminator)) return false;
+
+    var span = this._data.AsSpan();
+    this.ChunkCount = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(ParagonWriter.OffsetChunkCount, 4));
+    var chunkTableOffset = BinaryPrimitives.ReadUInt64LittleEndian(span.Slice(ParagonWriter.OffsetChunkTableOffset, 8));
+    this.SectorsPerChunk = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(ParagonWriter.OffsetSectorsPerChunk, 4));
+    this.TotalLogicalSize = BinaryPrimitives.ReadUInt64LittleEndian(span.Slice(ParagonWriter.OffsetTotalLogicalSize, 8));
+
+    // Sanity-bound the table offset and entry count so a corrupted CWBP
+    // marker can't make us walk garbage.
+    if (chunkTableOffset < (ulong)ParagonWriter.HeaderSize) return false;
+    var tableEnd = chunkTableOffset + (ulong)this.ChunkCount * ParagonWriter.ChunkEntrySize;
+    if (tableEnd > (ulong)this._data.LongLength) return false;
+
+    for (var i = 0; i < this.ChunkCount; i++) {
+      var entryOffset = (int)(chunkTableOffset + (ulong)(i * ParagonWriter.ChunkEntrySize));
+      var entry = span.Slice(entryOffset, ParagonWriter.ChunkEntrySize);
+      var info = new ParagonChunkInfo {
+        ChunkNumber = BinaryPrimitives.ReadUInt32LittleEndian(entry[..4]),
+        ChunkOffset = BinaryPrimitives.ReadUInt64LittleEndian(entry.Slice(4, 8)),
+        ChunkSize = BinaryPrimitives.ReadUInt32LittleEndian(entry.Slice(12, 4)),
+        IsCompressed = entry[16] == (byte)'Y',
+        LogicalSize = BinaryPrimitives.ReadUInt32LittleEndian(entry.Slice(20, 4)),
+        Adler32 = BinaryPrimitives.ReadUInt32LittleEndian(entry.Slice(24, 4)),
+      };
+      // Per-entry bounds — refuse the whole walk if any entry overflows.
+      if (info.ChunkOffset + info.ChunkSize > (ulong)this._data.LongLength) return false;
+      this._chunkTable.Add(info);
+    }
+    return true;
+  }
+
+  /// <summary>
+  /// Decodes a single chunk's logical bytes — zlib-decompresses if the
+  /// chunk's compress flag is set, copies verbatim otherwise. Verifies
+  /// the per-chunk Adler-32 against the table entry; throws
+  /// <see cref="InvalidDataException"/> on mismatch.
+  /// </summary>
+  private byte[] ExtractChunkBytes(ParagonChunkInfo info) {
+    var src = this._data.AsSpan((int)info.ChunkOffset, (int)info.ChunkSize);
+    byte[] logical;
+    if (info.IsCompressed) {
+      using var input = new MemoryStream(src.ToArray(), writable: false);
+      using var z = new ZLibStream(input, CompressionMode.Decompress);
+      using var output = new MemoryStream(capacity: (int)info.LogicalSize);
+      z.CopyTo(output);
+      logical = output.ToArray();
+    } else {
+      logical = src.ToArray();
+    }
+    if (logical.Length != info.LogicalSize)
+      throw new InvalidDataException(
+        $"Paragon CWBP: chunk #{info.ChunkNumber} decompressed to {logical.Length} bytes; "
+        + $"table entry says {info.LogicalSize}.");
+    var adler = ParagonAdler32.Compute(logical);
+    if (adler != info.Adler32)
+      throw new InvalidDataException(
+        $"Paragon CWBP: chunk #{info.ChunkNumber} adler32 = 0x{adler:X8}; "
+        + $"table entry says 0x{info.Adler32:X8}. "
+        + $"Vendor reader debug string: 'Chunk is not valid, adler32 checksum is wrong.'");
+    return logical;
+  }
+
+  /// <summary>
+  /// Concatenates the decompressed bytes of every chunk into a single
+  /// payload — the inverse of <see cref="ParagonWriter.WritePayload"/>.
+  /// Throws when called on a vendor-produced file (i.e. not CWBP).
+  /// </summary>
+  public byte[] AssembleLogicalPayload() {
+    if (!this.IsCwbpProduced)
+      throw new InvalidOperationException(
+        "Paragon: AssembleLogicalPayload is only available on CWBP-produced files. "
+        + "Vendor-produced files require the chunk-table-inside-segment offset, "
+        + "the bitmap-chain encoding, and the .pfi sidecar — none of which are "
+        + "byte-validated against a real sample.");
+    using var ms = new MemoryStream(capacity: (int)Math.Min(int.MaxValue, this.TotalLogicalSize));
+    foreach (var info in this._chunkTable)
+      ms.Write(this.ExtractChunkBytes(info));
+    return ms.ToArray();
   }
 
   private byte[] BuildMetadata() {
     var bldr = new StringBuilder();
-    bldr.Append("parse_status=ro-metadata\n");
-    bldr.Append("stage=1\n");
+    if (this.IsCwbpProduced) {
+      bldr.Append("parse_status=cwbp-roundtrip\n");
+      bldr.Append("stage=2\n");
+      bldr.Append(CultureInfo.InvariantCulture, $"cwbp_chunk_count={this.ChunkCount}\n");
+      bldr.Append(CultureInfo.InvariantCulture, $"cwbp_total_logical_size={this.TotalLogicalSize}\n");
+      bldr.Append(CultureInfo.InvariantCulture, $"cwbp_sectors_per_chunk={this.SectorsPerChunk}\n");
+      bldr.Append("cwbp_discriminator_offset=0xF8\n");
+      bldr.Append("cwbp_discriminator_ascii=CWBPbpf1\n");
+      bldr.Append("cwbp_chunk_entry_size_bytes=40\n");
+      bldr.Append("cwbp_chunk_entry_layout=ChunkNumber u32 | ChunkOffset u64 | ChunkSize u32 | IsCompressed u8 | Pad[3] | LogicalSize u32 | Adler32 u32 | Reserved u64\n");
+      bldr.Append("cwbp_note=This file was produced by ParagonWriter. The CWBP marker + trailing chunk-table layout is OUR layout, not the vendor's. Vendor-tool round-trip is explicitly out of scope.\n");
+    } else {
+      bldr.Append("parse_status=ro-metadata\n");
+      bldr.Append("stage=1\n");
+    }
     bldr.Append("format=Paragon Backup & Recovery image (.pbf)\n");
     bldr.Append("vendor=Paragon Software Group (proprietary, closed-source)\n");
     bldr.Append(CultureInfo.InvariantCulture, $"magic_variant={this.Variant}\n");

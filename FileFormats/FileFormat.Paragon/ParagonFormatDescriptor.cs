@@ -101,13 +101,15 @@ namespace FileFormat.Paragon;
 /// openthefile.net, fileinfo.com, file.org, solvusoft.com.
 /// </para>
 /// </summary>
-public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   public string Id => "Paragon";
   public string DisplayName => "Paragon Backup";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
+    FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".pbf";
   public IReadOnlyList<string> Extensions => [".pbf"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -120,15 +122,30 @@ public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     // in real samples.
     new("PImg"u8.ToArray(), Offset: 0, Confidence: 0.92),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [
+    new("stored", "Stored"),
+    new("zlib", "zlib (DEFLATE per chunk)"),
+  ];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "Paragon Backup & Recovery (.pbf) - R/O metadata + structured header. Proprietary " +
+    "Paragon Backup & Recovery (.pbf) - R/O metadata + structured header on vendor-produced " +
+    "files; WORM (write-once round-trippable) for our own writer's CWBP-discriminated layout. " +
+    "Vendor-tool byte-compat is explicitly out of scope - HDM 16+ is restore-only, no real PBF " +
+    "samples available for clean-room byte validation. Proprietary " +
     "Paragon Software backup container produced by Backup & Recovery / Hard Disk Manager / " +
     "Drive Backup. Detection magic 'PImg' (50 49 6D 67) at offset 0 per the TrID file-identifier " +
     "database AND confirmed by Wave-13 binary reverse-engineering of the vendor's " +
-    "hdmengine_hdmsdk.dll from HDM 18.12.0.0744. The reader parses the real structured " +
+    "hdmengine_hdmsdk.dll from HDM 18.12.0.0744. The writer emits the vendor-literal Major " +
+    "(0x0002) / FormatVersion (0x0003) values at offsets +4 / +6, leaves the documented vendor " +
+    "offsets at +0xC / +0x26 / +0x27 / +0x30 / +0x34 / +0xD8 / +0xE8 / +0xF1 zero (forging " +
+    "them without a real sample would produce an image the vendor reader either rejects or " +
+    "misreads silently), then installs an 8-byte CWBP discriminator at +0xF8 past the vendor's " +
+    "last initialised offset and trails a chunk-offset table whose per-entry layout is the " +
+    "reverse-engineered ChunkNumber u32 / ChunkOffSet u64 / ChunkSize u32 / ChunkIsCompress " +
+    "byte tuple plus a LogicalSize / Adler-32 for round-trip verification. Per-chunk " +
+    "compression is zlib (System.IO.Compression.ZLibStream, optimal level) matching the vendor's " +
+    "Adler-32-checked zlib pipeline. The reader parses the real structured " +
     "+4 Major / +6 FormatVersion fields (writer emits 0x0002 / 0x0003; reader rejects > 3); " +
     "the +0xC / +0x30 / +0xD8 chained-archive identity fields, the +0x26 / +0x27 / +0xE8 flag " +
     "bytes, and the +0x34 string field are documented in metadata.ini for forensic triage. " +
@@ -180,5 +197,40 @@ public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       ?? throw new FileNotFoundException($"Paragon entry not found: {entryName}");
     var data = r.Extract(entry);
     return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
+  }
+
+  // ── IArchiveCreatable (WORM via CWBP discriminator) ──────────────────
+
+  /// <summary>
+  /// Emits a fresh Paragon PBF image at <paramref name="output"/>. Each
+  /// input becomes one chunk in the CWBP chunk-offset table — the
+  /// segment count is always 1. The
+  /// <see cref="FormatCreateOptions.MethodName"/> picks the per-chunk
+  /// codec: <c>stored</c> for verbatim, <c>zlib</c> (default) for
+  /// zlib-compressed.
+  /// </summary>
+  /// <remarks>
+  /// <para>
+  /// The output is byte-identical when re-read by <see cref="ParagonReader"/>
+  /// (CWBP path). Vendor-tool byte-compat is explicitly NOT a goal — see
+  /// the class-level Description for the documented blockers.
+  /// </para>
+  /// </remarks>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+
+    var method = (options.MethodName ?? "zlib").ToLowerInvariant();
+    var compressChunks = method switch {
+      "stored" or "none" or "raw" => false,
+      "zlib" or "deflate" or "" => true,
+      _ => throw new InvalidDataException($"Paragon: unknown compression method '{options.MethodName}'.")
+    };
+
+    using var w = new ParagonWriter(output, compressChunks: compressChunks, leaveOpen: true);
+    foreach (var (_, data) in FlatFiles(inputs))
+      w.WriteChunk(data);
+    w.Finalise();
   }
 }
