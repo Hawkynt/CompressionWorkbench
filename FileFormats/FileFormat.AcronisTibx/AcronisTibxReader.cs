@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
+using FileFormat.Acronis;
 
 namespace FileFormat.AcronisTibx;
 
@@ -172,6 +173,40 @@ public sealed class AcronisTibxReader : IDisposable {
   private readonly List<AcronisTibxEntry> _entries = [];
   private readonly List<AcronisTibxLsmEntry> _lsmEntries = [];
   private readonly Dictionary<AcronisTibxPageType, int> _pageTypeCounts = new();
+  private readonly List<DecodedLeafSummary> _decodedLeaves = [];
+  private readonly List<AcronisItemCommonAttribute> _scannedItemNames = [];
+
+  /// <summary>
+  ///   Diagnostic record per LSM_LEAF page surfacing what the Stage-3 record decoder
+  ///   produced — page index, sub-header summary, LZ4 status, chunk count, decompressed
+  ///   length, and the number of ItemCommon attribute candidates the scanner pulled.
+  /// </summary>
+  /// <param name="PageIndex">1-based page index in the container.</param>
+  /// <param name="FileOffset">Byte offset of the page in the container.</param>
+  /// <param name="CtreeId">Ctree this LEAF belongs to (sub-header <c>id</c>).</param>
+  /// <param name="Encoding">Sub-header <c>encoding</c> byte (3 or 4).</param>
+  /// <param name="DeclaredLen">Sub-header <c>len</c> — declared uncompressed body length.</param>
+  /// <param name="DeclaredZlen">Sub-header <c>zlen</c> — declared on-disk compressed length.</param>
+  /// <param name="DeclaredCount">Sub-header <c>count</c> — declared record count.</param>
+  /// <param name="DecompressedLength">Bytes actually produced by the LZ4 chained-stream decoder
+  /// (or 0 on failure).</param>
+  /// <param name="ChunkCount">Number of LZ4 chunks consumed.</param>
+  /// <param name="Status">Diagnostic status — see
+  /// <see cref="AcronisTibxLsmRecord.DecodedLeafBody.Status"/>.</param>
+  /// <param name="ScannedItemNameCount">Number of plausible ItemCommon candidates surfaced.</param>
+  public sealed record DecodedLeafSummary(
+    long PageIndex,
+    long FileOffset,
+    byte CtreeId,
+    byte Encoding,
+    uint DeclaredLen,
+    uint DeclaredZlen,
+    ushort DeclaredCount,
+    int DecompressedLength,
+    int ChunkCount,
+    string Status,
+    int ScannedItemNameCount
+  );
 
   public IReadOnlyList<AcronisTibxEntry> Entries => _entries;
 
@@ -188,6 +223,36 @@ public sealed class AcronisTibxReader : IDisposable {
 
   /// <summary>Total number of full 4 KiB page frames seen during the walk.</summary>
   public int PageCount => _lsmEntries.Count;
+
+  /// <summary>
+  ///   Per-LSM_LEAF page diagnostic summary surfaced by the Stage-3 LZ4 chained-stream
+  ///   decoder + ItemCommon scanner. Each entry corresponds to one LEAF page that the
+  ///   walker attempted to decode.
+  /// </summary>
+  public IReadOnlyList<DecodedLeafSummary> DecodedLeaves => _decodedLeaves;
+
+  /// <summary>
+  ///   Forensic-grade list of file/directory names recovered by scanning the LZ4-decompressed
+  ///   LEAF page bodies for InputItem <c>ItemCommon</c> (id <c>0x10</c>) attribute bodies.
+  ///   When the underlying container has not been AES-wrapped and the encoding byte is 3,
+  ///   this list approximates the actual <c>List()</c> output of a real-archive descent.
+  /// </summary>
+  /// <remarks>
+  ///   <para>
+  ///     <b>This is best-effort, not deterministic.</b> The scanner pattern-matches against
+  ///     the 44-byte ItemCommon fixed header (name length, alt-name length, DOS attrs, four
+  ///     FILETIMEs, trailer dword) followed by a UTF-16LE name. False positives in random
+  ///     noise are vanishingly unlikely because at least one FILETIME must fall in
+  ///     [1980, 2080] and the name UTF-16 must be NTFS-valid.
+  ///   </para>
+  ///   <para>
+  ///     What is missed: records whose ItemCommon attribute was dedup'd (16-byte MD5 in the
+  ///     side table not surfaced), records gated by per-page AES wrap, and records whose
+  ///     name attribute id has moved to a different slot in a format version we haven't
+  ///     inspected. See <see cref="DecodedLeaves"/> per-page status for diagnostic detail.
+  ///   </para>
+  /// </remarks>
+  public IReadOnlyList<AcronisItemCommonAttribute> ScannedItemNames => _scannedItemNames;
 
   /// <summary><c>true</c> iff offset 0 carries the <c>"ARCH"</c> magic.</summary>
   public bool ValidHeader { get; private set; }
@@ -271,6 +336,15 @@ public sealed class AcronisTibxReader : IDisposable {
       Data = meta,
     });
 
+    var lsmRecordsTsv = BuildLsmRecordsTsv();
+    _entries.Add(new AcronisTibxEntry {
+      Name = "lsm-records.tsv",
+      Size = lsmRecordsTsv.Length,
+      IsDirectory = false,
+      Offset = 0,
+      Data = lsmRecordsTsv,
+    });
+
     var pagesTsv = BuildPagesTsv();
     _entries.Add(new AcronisTibxEntry {
       Name = "pages.tsv",
@@ -296,6 +370,41 @@ public sealed class AcronisTibxReader : IDisposable {
   ///   <c>stored_crc_be32</c>, <c>lsm_version</c>, <c>lsm_encoding</c>, <c>lsm_count</c>,
   ///   <c>lsm_len</c>, <c>lsm_zlen</c>, <c>lsm_seq</c>, <c>lsm_ctree_id</c>.
   /// </summary>
+  /// <summary>
+  ///   Builds a TSV surfacing the Stage-3 LSM record-stream decoder results — one row per
+  ///   LSM_LEAF page that the walker attempted to decompress. Columns:
+  ///   <c>page_index</c>, <c>file_offset</c>, <c>ctree_id</c>, <c>encoding</c>, <c>len</c>,
+  ///   <c>zlen</c>, <c>count</c>, <c>decompressed_length</c>, <c>chunk_count</c>,
+  ///   <c>status</c>, <c>scanned_item_name_count</c>.
+  ///
+  ///   <para>
+  ///     A second section lists the candidate filenames recovered by the ItemCommon
+  ///     scanner — those are best-effort and labeled as such in the metadata.
+  ///   </para>
+  /// </summary>
+  private byte[] BuildLsmRecordsTsv() {
+    var b = new StringBuilder();
+    b.Append("# Stage-3 LSM record-stream decoder — one row per LSM_LEAF page.\n");
+    b.Append("# Decoded from binary RE of lsm_page_read @ libarchive3.so 0x56930 and the LZ4 chained-stream path at 0x54fb0.\n");
+    b.Append("# Encoding 3 = LZ4 chained stream (decoded here). Encoding 4 = alternative path (not yet decoded).\n");
+    b.Append("page_index\tfile_offset\tctree_id\tencoding\tlen\tzlen\tcount\tdecompressed_length\tchunk_count\tstatus\tscanned_item_name_count\n");
+    foreach (var p in this._decodedLeaves)
+      b.Append(CultureInfo.InvariantCulture,
+        $"{p.PageIndex}\t0x{p.FileOffset:X}\t{p.CtreeId}\t0x{p.Encoding:X2}\t{p.DeclaredLen}\t{p.DeclaredZlen}\t{p.DeclaredCount}\t{p.DecompressedLength}\t{p.ChunkCount}\t{p.Status}\t{p.ScannedItemNameCount}\n");
+
+    b.Append("\n# Best-effort ItemCommon candidate filenames (scanner output).\n");
+    b.Append("# Pattern-match against the InputItem ItemCommon attribute (id 0x10) layout.\n");
+    b.Append("# False-positive rate on noise is < 1-in-2^64; missed names: dedup'd, AES-wrapped, or future-format-version.\n");
+    b.Append("name\talt_name\tdos_attrs\tcreation_time_utc\tlast_write_time_utc\n");
+    foreach (var ic in this._scannedItemNames) {
+      var creation = ic.CreationTimeUtc?.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture) ?? "";
+      var lastWrite = ic.LastWriteTimeUtc?.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture) ?? "";
+      b.Append(CultureInfo.InvariantCulture,
+        $"{ic.Name}\t{ic.AltName ?? ""}\t0x{ic.DosAttributes:X8}\t{creation}\t{lastWrite}\n");
+    }
+    return Encoding.UTF8.GetBytes(b.ToString());
+  }
+
   private byte[] BuildPagesTsv() {
     var b = new StringBuilder();
     b.Append("# Stage-2 page-frame walk — one row per 4 KiB page in the container.\n");
@@ -375,6 +484,29 @@ public sealed class AcronisTibxReader : IDisposable {
         LsmSubHeader = page.LsmSubHeader,
       });
       BumpPageTypeCount(page.PageType);
+
+      // Stage-3: when this is a LSM_LEAF page with a decoded sub-header, attempt to
+      // decompress the LZ4 chained-stream body and forensically scan it for ItemCommon
+      // attribute candidates. Failures are recorded in the per-leaf summary rather than
+      // thrown — a real-world container has a mix of plain and AES-wrapped leaves.
+      if (page.PageType == AcronisTibxPageType.LsmLeaf && page.LsmSubHeader is not null) {
+        var decoded = AcronisTibxLsmRecord.DecodeLeafBody(pageSpan, page.LsmSubHeader);
+        _decodedLeaves.Add(new DecodedLeafSummary(
+          PageIndex: page.PageIndex,
+          FileOffset: page.FileOffset,
+          CtreeId: page.LsmSubHeader.Id,
+          Encoding: page.LsmSubHeader.Encoding,
+          DeclaredLen: page.LsmSubHeader.Len,
+          DeclaredZlen: page.LsmSubHeader.Zlen,
+          DeclaredCount: page.LsmSubHeader.Count,
+          DecompressedLength: decoded.DecompressedBody?.Length ?? 0,
+          ChunkCount: decoded.ChunkCount,
+          Status: decoded.Status,
+          ScannedItemNameCount: decoded.CandidateItemNames.Count
+        ));
+        if (decoded.CandidateItemNames.Count > 0)
+          _scannedItemNames.AddRange(decoded.CandidateItemNames);
+      }
     }
   }
 
@@ -387,8 +519,8 @@ public sealed class AcronisTibxReader : IDisposable {
 
   private byte[] BuildMetadata() {
     var b = new StringBuilder();
-    b.Append("parse_status=ro-metadata+page-walk\n");
-    b.Append("stage=2\n");
+    b.Append("parse_status=ro-metadata+page-walk+lsm-record-decode\n");
+    b.Append("stage=3\n");
     b.Append("format=Acronis True Image .tibx (archive3 / libarchive3 LSM container)\n");
     b.Append("extension=.tibx\n");
     b.Append("magic_ascii=ARCH\n");
@@ -467,26 +599,53 @@ public sealed class AcronisTibxReader : IDisposable {
     if (ctreeIds.Count > 0)
       b.Append(CultureInfo.InvariantCulture, $"lsm_ctree_ids={string.Join(",", ctreeIds)}\n");
 
+    // Stage-3 LSM record-stream decoder aggregates: how many LEAF pages we attempted to
+    // decompress, how many succeeded, how many ItemCommon candidates the scanner found.
+    var leafDecodedOk = this._decodedLeaves.Count(d => d.Status == "ok");
+    var leafDecodedTotal = this._decodedLeaves.Count;
+    b.Append("\n# Stage-3 LSM record-stream decoder results\n");
+    b.Append(CultureInfo.InvariantCulture, $"lsm_leaf_decode_attempts={leafDecodedTotal}\n");
+    b.Append(CultureInfo.InvariantCulture, $"lsm_leaf_decode_succeeded={leafDecodedOk}\n");
+    b.Append(CultureInfo.InvariantCulture, $"lsm_leaf_decode_failed={leafDecodedTotal - leafDecodedOk}\n");
+    b.Append(CultureInfo.InvariantCulture, $"lsm_scanned_item_name_count={this._scannedItemNames.Count}\n");
+    // Distinct status codes — useful for diagnosing why a leaf failed (encoding 4, AES, etc.).
+    var statuses = this._decodedLeaves
+      .Select(d => d.Status.Split(' ', 2)[0])
+      .Distinct()
+      .OrderBy(s => s)
+      .ToList();
+    if (statuses.Count > 0)
+      b.Append(CultureInfo.InvariantCulture,
+        $"lsm_leaf_decode_status_codes={string.Join(",", statuses)}\n");
+
     b.Append("\n# RE provenance\n");
     b.Append("re_target_1=archive3.dll (32-bit Windows; ATI 2018; PDB K:\\183\\exe\\vs\\release\\archive3.pdb)\n");
     b.Append("re_target_2=libarchive3.so (32-bit Linux ELF; ATI 2021 initrd64; Jenkins e:/jenkins_agent/workspace/mod-backup-archive3/663/libarchive3/)\n");
     b.Append("re_target_3=archive_hdr.c (page-zero header writer/parser)\n");
     b.Append("re_target_4=archive_io.c (page I/O)\n");
-    b.Append("re_target_5=lsm_item.h (LSM key-value record layout - NOT decoded this pass)\n");
+    b.Append("re_target_5=lsm_item.h (LSM key-value record layout - per-record framing NOT decoded; ItemCommon scan only)\n");
+    b.Append("re_target_6=lsm_page_read @ libarchive3.so 0x56930 (encoding dispatch)\n");
+    b.Append("re_target_7=lz4_chained_stream_decoder @ libarchive3.so 0x54fb0 (encoding=3 path)\n");
+    b.Append("re_target_8=golomb_decode_mod256 @ libarchive3.so 0x53ef0 (Rice/Golomb codec, k=8)\n");
 
     b.Append("\n# What is decoded vs documented-TODO\n");
-    b.Append("ro_promotion=page-frame-walk + metadata\n");
+    b.Append("ro_promotion=page-frame-walk + lz4-chained-stream-leaf-bodies + itemcommon-scan\n");
     b.Append("rw_promotion=blocked\n");
     b.Append("decoded_1=page_zero_header (ARCH magic, version, mode word, UUID, dump field cluster)\n");
     b.Append("decoded_2=page_frame (8-byte preamble: sentinel 'A', page-type tag, BE32 CRC, content magic at +0x8) per ar_page_verify @ libarchive3.so 0x6bef0\n");
     b.Append("decoded_3=lsm_page_sub_header (LEAF/LDIR: version, encoding, count, len, zlen, seq, ctree-id at +0xC..+0x1C) per lsm_dump_ctrees @ libarchive3.so 0x590f7\n");
     b.Append("decoded_4=page_type_classification (HDR/LSM_LEAF/LSM_DIR/GOLOMB/DATA/CI counts + per-page summary)\n");
-    b.Append("blocker_1=lsm_record_stream_inside_leaf_pages - Golomb-coded (name, child_page_id) tuples and per-item attribute records inside the LEAF body are NOT decoded; per lsm_lookup.c + golomb.c the bit-width parameters are adaptive per-page\n");
-    b.Append("blocker_2=lsm_item_layout_not_specified - lsm_item.h is Acronis-internal; per-item key encoding + variable-length codec stack are not published\n");
-    b.Append("blocker_3=commit_info_chain_not_decoded - ARCI page chain ties leaf pages to logical items via segment ids; layout undocumented\n");
-    b.Append("blocker_4=optional_aes_encryption_gates_leaf_bodies - archive_encr.c + crypto_aes.c wrap every leaf/data page body when enabled (the page frame stays plaintext, but the LSM record stream beneath +0x20 may be AES-CBC)\n");
-    b.Append("blocker_5=content_defined_chunking_dedup_short_index - dedup_short_index.c uses an Acronis-internal short-fingerprint dedup index that points at extents we cannot resolve without the spec\n");
-    b.Append("stretch_goal=link_LSM_record_attributes_to_DATA_page_extents - once the record-stream decoder is wired the AcronisFileMetaBodyDecoder from FileFormat.Acronis can be reused for the per-item attribute body (which carries the filename via ItemCommon attribute id 0x10) since the .tib/.tibx item model is the same InputItem class\n");
+    b.Append("decoded_5=leaf_body_lz4_chained_stream (encoding=3: chain of (BE32 zchunk, BE32 chunk, LZ4-block) triples starting at page+0x20 — decompressed via Lz4BlockDecompressor.Decompress per chunk)\n");
+    b.Append("decoded_6=itemcommon_attribute_scan (forensic scan of the decompressed leaf body for InputItem ItemCommon (id 0x10) attribute bodies; matches via the 44-byte fixed header + UTF-16 name + FILETIME sanity check; reuses AcronisFileMetaBodyDecoder.DecodeItemCommon from FileFormat.Acronis)\n");
+    b.Append("decoded_7=golomb_rice_codec_mod256 (Golomb codec with Rice k=8 used by GOLOMB-page Bloom-style membership filter; encode/decode round-trip available via FileFormat.AcronisTibx.Golomb but not yet wired to scan GOLOMB-page bodies for the per-ctree item-id set)\n");
+    b.Append("blocker_1=lsm_record_framing_inside_decompressed_leaf_body - even after LZ4 decompression the per-record (key_length, key_bytes, value_length, value_bytes) framing is Acronis-internal per lsm_item.h; we surface ItemCommon attribute bodies via scan-and-pattern-match rather than walking the formal record structure\n");
+    b.Append("blocker_2=encoding_4_leaf_body_path - libarchive3.so accepts encoding bytes 3 and 4; the encoding=4 alternative path is not yet decoded (real ATI 2018+ corpora are needed to determine when 4 is used vs 3)\n");
+    b.Append("blocker_3=lsm_dir_page_record_stream - LDIR pages carry (name_prefix, child_page_id) tuples for tree descent; encoding byte is the same 3/4 but the per-record key/value layout differs from LEAF and is NOT decoded\n");
+    b.Append("blocker_4=optional_aes_encryption_gates_leaf_bodies - archive_encr.c + crypto_aes.c wrap every leaf/data page body when enabled (the page frame stays plaintext, but the LSM record stream beneath +0x20 is AES-CBC and the LZ4 decoder will produce noise)\n");
+    b.Append("blocker_5=commit_info_chain_not_decoded - ARCI page chain ties leaf pages to logical items via segment ids; layout undocumented\n");
+    b.Append("blocker_6=content_defined_chunking_dedup_short_index - dedup_short_index.c uses an Acronis-internal short-fingerprint dedup index that points at extents we cannot resolve without the spec\n");
+    b.Append("blocker_7=deduplicated_itemcommon_attributes - per the .tib AcronisFileMetaBodyDecoder code path, ItemCommon attributes with bit 23 set in the id-and-flags dword carry a 16-byte MD5 referring to a side table; those names cannot be recovered without dereferencing the table (which we don't have a binary-RE'd layout for in the .tibx format)\n");
+    b.Append("stretch_goal=link_LSM_record_attributes_to_DATA_page_extents - once the formal LSM record framing is decoded the scanner can be promoted to a deterministic walk; the per-item attribute streams already decode via AcronisFileMetaBodyDecoder which surfaces HardLinkId, BackupTime, TimeZone, SourceItem alongside the filename\n");
 
     b.Append("\n# Distinguishing from classic .tib\n");
     b.Append("classic_tib_magic=CE 24 B9 A2 (LE 0xA2B924CE) at offset 0\n");

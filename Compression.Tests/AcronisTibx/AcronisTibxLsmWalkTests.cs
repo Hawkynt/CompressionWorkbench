@@ -474,7 +474,7 @@ public class AcronisTibxLsmWalkTests {
       "Trailing partial page is ignored — only the full HDR page is surfaced.");
   }
 
-  // ─── Descriptor sanity: still 3 entries via List() ───────────────
+  // ─── Descriptor sanity: 4 entries via List() (Stage-3 adds lsm-records.tsv) ─────
 
   [Test, Category("HappyPath")]
   public void Descriptor_List_SurfacesPagesTsvAlongsideMetadataAndBin() {
@@ -484,7 +484,7 @@ public class AcronisTibxLsmWalkTests {
     using var ms = new MemoryStream(buf);
     var entries = d.List(ms, password: null);
     Assert.That(entries.Select(e => e.Name),
-      Is.EquivalentTo(new[] { "metadata.ini", "pages.tsv", "acronis-tibx.bin" }));
+      Is.EquivalentTo(new[] { "metadata.ini", "lsm-records.tsv", "pages.tsv", "acronis-tibx.bin" }));
   }
 
   // ─── LSM sub-header parse sad paths ───────────────────────────────

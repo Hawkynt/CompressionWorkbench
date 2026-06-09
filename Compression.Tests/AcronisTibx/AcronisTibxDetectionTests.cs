@@ -189,8 +189,8 @@ public class AcronisTibxDetectionTests {
     using var ms = new MemoryStream(page);
     using var r = new AcronisTibxReader(ms);
     var names = r.Entries.Select(e => e.Name).ToList();
-    Assert.That(names, Is.EquivalentTo(new[] { "metadata.ini", "pages.tsv", "acronis-tibx.bin" }),
-      "Stage-2 walk surfaces metadata.ini (parsed header + page-type counts), pages.tsv (per-page summary table), and acronis-tibx.bin (verbatim container).");
+    Assert.That(names, Is.EquivalentTo(new[] { "metadata.ini", "lsm-records.tsv", "pages.tsv", "acronis-tibx.bin" }),
+      "Stage-3 walk surfaces metadata.ini (parsed header + page-type counts), lsm-records.tsv (per-LEAF decode + scanned ItemCommon candidates), pages.tsv (per-page summary table), and acronis-tibx.bin (verbatim container).");
   }
 
   [Test, Category("HappyPath")]
@@ -212,9 +212,9 @@ public class AcronisTibxDetectionTests {
     using var r = new AcronisTibxReader(ms);
     var meta = r.Entries.Single(e => e.Name == "metadata.ini");
     var text = Encoding.UTF8.GetString(meta.Data);
-    Assert.That(text, Does.Contain("parse_status=ro-metadata+page-walk"));
-    Assert.That(text, Does.Contain("stage=2"));
-    Assert.That(text, Does.Contain("ro_promotion=page-frame-walk + metadata"));
+    Assert.That(text, Does.Contain("parse_status=ro-metadata+page-walk+lsm-record-decode"));
+    Assert.That(text, Does.Contain("stage=3"));
+    Assert.That(text, Does.Contain("ro_promotion=page-frame-walk + lz4-chained-stream-leaf-bodies + itemcommon-scan"));
     Assert.That(text, Does.Contain("rw_promotion=blocked"));
   }
 
@@ -301,11 +301,21 @@ public class AcronisTibxDetectionTests {
     using var r = new AcronisTibxReader(ms);
     var meta = r.Entries.Single(e => e.Name == "metadata.ini");
     var text = Encoding.UTF8.GetString(meta.Data);
-    Assert.That(text, Does.Contain("blocker_1=lsm_record_stream_inside_leaf_pages"));
-    Assert.That(text, Does.Contain("blocker_2=lsm_item_layout_not_specified"));
-    Assert.That(text, Does.Contain("blocker_3=commit_info_chain_not_decoded"));
+    // Stage-3 promoted what was blocker_1/2 in Stage-2 to decoded_5/6/7; blockers renumber:
+    // 1 = formal per-record framing (not the LZ4 wrapping)
+    // 2 = encoding=4 alternative path
+    // 3 = LDIR record framing
+    // 4 = optional AES wrap
+    // 5 = commit-info chain
+    // 6 = dedup index
+    // 7 = deduplicated ItemCommon attributes (16-byte MD5 side table)
+    Assert.That(text, Does.Contain("blocker_1=lsm_record_framing_inside_decompressed_leaf_body"));
+    Assert.That(text, Does.Contain("blocker_2=encoding_4_leaf_body_path"));
+    Assert.That(text, Does.Contain("blocker_3=lsm_dir_page_record_stream"));
     Assert.That(text, Does.Contain("blocker_4=optional_aes_encryption_gates_leaf_bodies"));
-    Assert.That(text, Does.Contain("blocker_5=content_defined_chunking_dedup_short_index"));
+    Assert.That(text, Does.Contain("blocker_5=commit_info_chain_not_decoded"));
+    Assert.That(text, Does.Contain("blocker_6=content_defined_chunking_dedup_short_index"));
+    Assert.That(text, Does.Contain("blocker_7=deduplicated_itemcommon_attributes"));
   }
 
   [Test, Category("HappyPath")]
@@ -327,10 +337,10 @@ public class AcronisTibxDetectionTests {
     var d = new AcronisTibxFormatDescriptor();
     using var ms = new MemoryStream(BuildHeader());
     var entries = d.List(ms, password: null);
-    Assert.That(entries, Has.Count.EqualTo(3),
-      "Stage-2 exposes metadata.ini + pages.tsv + acronis-tibx.bin.");
+    Assert.That(entries, Has.Count.EqualTo(4),
+      "Stage-3 exposes metadata.ini + lsm-records.tsv + pages.tsv + acronis-tibx.bin.");
     Assert.That(entries.Select(e => e.Name),
-      Is.EquivalentTo(new[] { "metadata.ini", "pages.tsv", "acronis-tibx.bin" }));
+      Is.EquivalentTo(new[] { "metadata.ini", "lsm-records.tsv", "pages.tsv", "acronis-tibx.bin" }));
   }
 
   [Test, Category("HappyPath")]
