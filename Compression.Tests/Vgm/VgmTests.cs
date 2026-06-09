@@ -285,6 +285,109 @@ public class VgmTests {
     Assert.That(entries.Any(e => e.Name == "render.txt"), Is.False, "YM2413 is supported now");
   }
 
+  // ──────────── OPL FM family rendering ────────────
+
+  [Test]
+  public void Render_Opl2_ProducesPcmAndReportsRenderedChip() {
+    // v1.51 VGM with only a YM3812 (OPL2) clock; play a sustained 2-op voice via 0x5A writes.
+    var commands = new List<byte> {
+      0x5A, 0x20, 0x21,   // ch0 modulator: EG sustain, MUL=1
+      0x5A, 0x23, 0x21,   // ch0 carrier: EG sustain, MUL=1
+      0x5A, 0x40, 0x3F,   // mod TL=63 (silenced)
+      0x5A, 0x43, 0x00,   // car TL=0 (loud)
+      0x5A, 0x60, 0xF0,   // mod AR=15
+      0x5A, 0x63, 0xF0,   // car AR=15
+      0x5A, 0x80, 0x0F,   // mod SL/RR
+      0x5A, 0x83, 0x0F,   // car SL/RR
+      0x5A, 0xC0, 0x00,   // FB=0, FM
+      0x5A, 0xA0, 0x80,   // F-num low
+      0x5A, 0xB0, 0x32,   // F-num hi + block + key-on (0x20)
+      0x61, 0x44, 0xAC,   // wait 44100 samples (1 s)
+      0x66,
+    };
+    var headerLen = 0x80;
+    var blob = new byte[headerLen + commands.Count];
+    "Vgm "u8.CopyTo(blob);
+    WriteU32(blob, 0x08, 0x00000151);
+    WriteU32(blob, 0x50, 3579545);     // YM3812 only
+    WriteU32(blob, 0x18, 44100);
+    WriteU32(blob, 0x34, (uint)(headerLen - 0x34));
+    commands.ToArray().CopyTo(blob.AsSpan(headerLen));
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True, "OPL2 renders audio");
+    Assert.That(entries.Any(e => e.Name == "RIGHT.wav"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "render.txt"), Is.False, "OPL2 is supported now");
+
+    var rendered = Extract(blob, "rendered.ini");
+    Assert.That(rendered, Does.Contain("rendered_chips="));
+    Assert.That(rendered, Does.Contain("YM3812"));
+
+    using var output = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "LEFT.wav", output, null);
+    var samples = ReadWavLeftSamples(output.ToArray());
+    Assert.That(samples.Sum(s => (long)Math.Abs(s)), Is.GreaterThan(0L), "non-silent OPL2 PCM");
+  }
+
+  [Test]
+  public void Render_Opl3Stereo_RoutesLeftOnlyToLeftWav() {
+    // YMF262 (OPL3) VGM: enable OPL3, program a voice panned LEFT only via 0x5E writes.
+    var commands = new List<byte> {
+      0x5F, 0x05, 0x01,   // bank1 reg 0x105: enable OPL3
+      0x5E, 0x20, 0x21,   // ch0 modulator
+      0x5E, 0x23, 0x21,   // ch0 carrier
+      0x5E, 0x40, 0x3F,   // mod silenced
+      0x5E, 0x43, 0x00,   // car loud
+      0x5E, 0x60, 0xF0,
+      0x5E, 0x63, 0xF0,
+      0x5E, 0x80, 0x00,
+      0x5E, 0x83, 0x00,
+      0x5E, 0xC0, 0x10,   // FB=0, FM, LEFT only (bit4)
+      0x5E, 0xA0, 0x80,
+      0x5E, 0xB0, 0x32,   // block + key-on
+      0x61, 0x44, 0xAC,
+      0x66,
+    };
+    var headerLen = 0x80;
+    var blob = new byte[headerLen + commands.Count];
+    "Vgm "u8.CopyTo(blob);
+    WriteU32(blob, 0x08, 0x00000151);
+    WriteU32(blob, 0x5C, 14318180);    // YMF262 only
+    WriteU32(blob, 0x18, 44100);
+    WriteU32(blob, 0x34, (uint)(headerLen - 0x34));
+    commands.ToArray().CopyTo(blob.AsSpan(headerLen));
+
+    var rendered = Extract(blob, "rendered.ini");
+    Assert.That(rendered, Does.Contain("YMF262"));
+
+    using var left = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "LEFT.wav", left, null);
+    using var right = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "RIGHT.wav", right, null);
+    var leftEnergy = ReadWavLeftSamples(left.ToArray()).Sum(s => (long)Math.Abs(s));
+    var rightEnergy = ReadWavLeftSamples(right.ToArray()).Sum(s => (long)Math.Abs(s));
+    Assert.That(leftEnergy, Is.GreaterThan(0L), "left carries the OPL3 voice");
+    Assert.That(rightEnergy, Is.EqualTo(0L), "OPL3 LEFT-only panning silences the right side");
+  }
+
+  [Test]
+  public void Render_Y8950_NoLongerBlockedAsUnsupported() {
+    var commands = new byte[] { 0x5C, 0x20, 0x21, 0x66 };
+    var headerLen = 0x80;
+    var blob = new byte[headerLen + commands.Length];
+    "Vgm "u8.CopyTo(blob);
+    WriteU32(blob, 0x08, 0x00000151);
+    WriteU32(blob, 0x58, 3579545);   // Y8950
+    WriteU32(blob, 0x18, 100);
+    WriteU32(blob, 0x34, (uint)(headerLen - 0x34));
+    commands.CopyTo(blob.AsSpan(headerLen));
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "render.txt"), Is.False, "Y8950 is supported now");
+  }
+
   // ──────────── Game Gear PSG stereo (0x4F) ────────────
 
   [Test]

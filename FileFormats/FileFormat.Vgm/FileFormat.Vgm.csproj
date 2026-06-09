@@ -14,6 +14,7 @@
     <ProjectReference Include="..\..\Codecs\Codec.Ym2151\Codec.Ym2151.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Ym2203\Codec.Ym2203.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Ym2608\Codec.Ym2608.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Opl\Codec.Opl.csproj" />
   </ItemGroup>
 
 </Project>

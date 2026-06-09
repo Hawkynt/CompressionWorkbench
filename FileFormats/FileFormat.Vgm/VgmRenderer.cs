@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Codec.Opl;
 using Codec.Pcm;
 using Codec.Sn76489;
 using Codec.Ym2151;
@@ -16,7 +17,8 @@ namespace FileFormat.Vgm;
 /// surfaces the rendered stereo tune as per-channel <c>LEFT.wav</c>/<c>RIGHT.wav</c> entries.
 /// <para>The command subset handled covers everything a PSG/YM2612 tune needs:
 /// <c>0x4F</c> GG-stereo, <c>0x50</c> PSG write, <c>0x51 aa dd</c> YM2413 (OPLL) write,
-/// <c>0x52</c>/<c>0x53</c> YM2612 port-0/1,
+/// <c>0x52</c>/<c>0x53</c> YM2612 port-0/1, the OPL FM family
+/// (<c>0x5A</c> YM3812, <c>0x5B</c> YM3526, <c>0x5C</c> Y8950, <c>0x5E</c>/<c>0x5F</c> YMF262 OPL3),
 /// <c>0x61 nn nn</c> wait-n, <c>0x62</c> wait 735 (1/60 s), <c>0x63</c> wait 882 (1/50 s),
 /// <c>0x66</c> end, <c>0x67</c> data block (stored for DAC streaming), <c>0x70-0x7F</c> short
 /// waits (n+1 samples), <c>0x80-0x8F</c> YM2612 DAC write + wait via the data-block pointer,
@@ -36,12 +38,15 @@ internal static class VgmRenderer {
   private const int Ym2151Offset = 0x30;
   private const int Ym2203Offset = 0x44;
   private const int Ym2608Offset = 0x48;
+  // The Yamaha OPL FM family (VGM spec 1.51+ header offsets).
+  private const int Ym3812Offset = 0x50;   // OPL2
+  private const int Ym3526Offset = 0x54;   // OPL
+  private const int Y8950Offset = 0x58;    // OPL + ADPCM (MSX-Audio)
+  private const int Ymf262Offset = 0x5C;   // OPL3
 
   // Every chip-clock field other than the ones we render; any nonzero entry blocks rendering.
   private static readonly (int Offset, string Label)[] UnsupportedClocks = [
-    (0x38, "SegaPCM"), (0x40, "RF5C68"),
-    (0x4C, "YM2610"), (0x50, "YM3812"),
-    (0x54, "YM3526"), (0x58, "Y8950"), (0x5C, "YMF262"), (0x60, "YMF278B"),
+    (0x38, "SegaPCM"), (0x40, "RF5C68"), (0x4C, "YM2610"), (0x60, "YMF278B"),
     (0x64, "YMF271"), (0x68, "YMZ280B"), (0x6C, "RF5C164"), (0x70, "PWM"),
     (0x74, "AY8910"),
   ];
@@ -56,6 +61,10 @@ internal static class VgmRenderer {
       var opmClock = ReadClock(blob, Ym2151Offset);
       var opnClock = ReadClock(blob, Ym2203Offset);
       var opnaClock = ReadClock(blob, Ym2608Offset);
+      var opl2Clock = ReadClock(blob, Ym3812Offset);   // YM3812
+      var oplClock = ReadClock(blob, Ym3526Offset);    // YM3526
+      var y8950Clock = ReadClock(blob, Y8950Offset);   // Y8950
+      var opl3Clock = ReadClock(blob, Ymf262Offset);   // YMF262
 
       // A blocking chip → keep the metadata-only view but record why.
       var blocker = FindUnsupportedChip(blob, version);
@@ -66,11 +75,13 @@ internal static class VgmRenderer {
         return;
       }
 
-      if (snClock == 0 && ymClock == 0 && opllClock == 0 && opmClock == 0 && opnClock == 0 && opnaClock == 0)
+      var anyOpl = opl2Clock != 0 || oplClock != 0 || y8950Clock != 0 || opl3Clock != 0;
+      if (snClock == 0 && ymClock == 0 && opllClock == 0 && opmClock == 0 && opnClock == 0 && opnaClock == 0 && !anyOpl)
         return; // nothing this core can voice
 
       var pcm = Render(blob, dataOffset, commandsEnd, totalSamples,
-        snClock, ymClock, opllClock, opmClock, opnClock, opnaClock, out var gatedNote);
+        snClock, ymClock, opllClock, opmClock, opnClock, opnaClock,
+        opl2Clock, oplClock, y8950Clock, opl3Clock, out var gatedNote);
       if (pcm.Length == 0)
         return;
 
@@ -78,13 +89,17 @@ internal static class VgmRenderer {
         entries.Add(new("render.txt", "Tag", System.Text.Encoding.UTF8.GetBytes(gatedNote + "\n")));
 
       // Record which chips actually drove the rendered mix.
-      var chips = new List<string>(6);
+      var chips = new List<string>(10);
       if (snClock != 0) chips.Add("SN76489");
       if (ymClock != 0) chips.Add("YM2612");
       if (opllClock != 0) chips.Add("YM2413");
       if (opmClock != 0) chips.Add("YM2151");
       if (opnClock != 0) chips.Add("YM2203");
       if (opnaClock != 0) chips.Add("YM2608");
+      if (oplClock != 0) chips.Add("YM3526");
+      if (opl2Clock != 0) chips.Add("YM3812");
+      if (y8950Clock != 0) chips.Add("Y8950");
+      if (opl3Clock != 0) chips.Add("YMF262");
       entries.Add(new("rendered.ini", "Tag",
         System.Text.Encoding.UTF8.GetBytes($"rendered_chips={string.Join(",", chips)}\n")));
 
@@ -105,6 +120,7 @@ internal static class VgmRenderer {
   private static byte[] Render(
       byte[] blob, int dataOffset, int commandsEnd, uint totalSamples,
       uint snClock, uint ymClock, uint opllClock, uint opmClock, uint opnClock, uint opnaClock,
+      uint opl2Clock, uint oplClock, uint y8950Clock, uint opl3Clock,
       out string? gatedNote) {
     gatedNote = null;
     var targetSamples = totalSamples == 0
@@ -118,6 +134,13 @@ internal static class VgmRenderer {
     var opn = opnClock != 0 ? new Ym2203Codec(opnClock) : null;
     var opna = opnaClock != 0 ? new Ym2608Codec(opnaClock) : null;
 
+    // The OPL FM family: YM3526 (OPL), YM3812 (OPL2), Y8950 (OPL+ADPCM), YMF262 (OPL3). The VGM
+    // commands map one-to-one to a chip instance (0x5B/0x5A/0x5C/0x5E+0x5F respectively).
+    var opl = oplClock != 0 ? new OplCodec(OplCodec.Chip.Opl, oplClock) : null;
+    var opl2 = opl2Clock != 0 ? new OplCodec(OplCodec.Chip.Opl2, opl2Clock) : null;
+    var y8950 = y8950Clock != 0 ? new OplCodec(OplCodec.Chip.Y8950, y8950Clock) : null;
+    var opl3 = opl3Clock != 0 ? new OplCodec(OplCodec.Chip.Opl3, opl3Clock) : null;
+
     // YM2612 native rate → 44100 resample accumulator (simple ratio stepping).
     var ymStep = ym != null ? ym.NativeSampleRate / SampleRate : 0.0;
     // YM2413 (OPLL) native rate (clock / 72) → 44100 resample accumulator.
@@ -127,6 +150,11 @@ internal static class VgmRenderer {
     // YM2203 / YM2608 FM native rates → 44100 resample accumulators.
     var opnStep = opn != null ? opn.FmSampleRate / SampleRate : 0.0;
     var opnaStep = opna != null ? opna.FmSampleRate / SampleRate : 0.0;
+    // OPL family native rate (clock / 72) → 44100 resample accumulators (per chip instance).
+    var oplStep = opl != null ? opl.NativeSampleRate / SampleRate : 0.0;
+    var opl2Step = opl2 != null ? opl2.NativeSampleRate / SampleRate : 0.0;
+    var y8950Step = y8950 != null ? y8950.NativeSampleRate / SampleRate : 0.0;
+    var opl3Step = opl3 != null ? opl3.NativeSampleRate / SampleRate : 0.0;
 
     var output = new List<short>(capacity: (int)Math.Min(targetSamples, 1 << 20) * 2);
 
@@ -154,6 +182,11 @@ internal static class VgmRenderer {
     double opnaAccumulator = 0;
     short opnaFmLeft = 0, opnaFmRight = 0;
     var opnaSsg = new short[1];
+
+    // OPL family resampler state (each chip is stereo: OPL3 pans, others mono→both sides).
+    double oplAccumulator = 0, opl2Accumulator = 0, y8950Accumulator = 0, opl3Accumulator = 0;
+    short oplL = 0, oplR = 0, opl2L = 0, opl2R = 0;
+    short y8950L = 0, y8950R = 0, opl3L = 0, opl3R = 0;
 
     // DAC data blocks (type 0 PCM) concatenated, addressed by a running pointer (0xE0 seeks).
     var dataBlock = new List<byte>();
@@ -223,6 +256,26 @@ internal static class VgmRenderer {
           l += opnaFmLeft + opnaSsg[0];
           r += opnaFmRight + opnaSsg[0];
         }
+        if (opl != null) {
+          oplAccumulator += oplStep;
+          while (oplAccumulator >= 1.0) { oplAccumulator -= 1.0; opl.RenderSample(out oplL, out oplR); }
+          l += oplL; r += oplR;
+        }
+        if (opl2 != null) {
+          opl2Accumulator += opl2Step;
+          while (opl2Accumulator >= 1.0) { opl2Accumulator -= 1.0; opl2.RenderSample(out opl2L, out opl2R); }
+          l += opl2L; r += opl2R;
+        }
+        if (y8950 != null) {
+          y8950Accumulator += y8950Step;
+          while (y8950Accumulator >= 1.0) { y8950Accumulator -= 1.0; y8950.RenderSample(out y8950L, out y8950R); }
+          l += y8950L; r += y8950R;
+        }
+        if (opl3 != null) {
+          opl3Accumulator += opl3Step;
+          while (opl3Accumulator >= 1.0) { opl3Accumulator -= 1.0; opl3.RenderSample(out opl3L, out opl3R); }
+          l += opl3L; r += opl3R;
+        }
         output.Add(Clamp16(l));
         output.Add(Clamp16(r));
       }
@@ -272,6 +325,35 @@ internal static class VgmRenderer {
             var addr = blob[pos++];
             var val = blob[pos++];
             opna?.Write(cmd == 0x56 ? 0 : 1, addr, val);
+          }
+          break;
+        case 0x5A: // YM3812 (OPL2) write: aa dd
+          if (pos + 1 < commandsEnd) {
+            var addr = blob[pos++];
+            var val = blob[pos++];
+            opl2?.WriteRegister(0, addr, val);
+          }
+          break;
+        case 0x5B: // YM3526 (OPL) write: aa dd
+          if (pos + 1 < commandsEnd) {
+            var addr = blob[pos++];
+            var val = blob[pos++];
+            opl?.WriteRegister(0, addr, val);
+          }
+          break;
+        case 0x5C: // Y8950 (OPL + ADPCM) write: aa dd
+          if (pos + 1 < commandsEnd) {
+            var addr = blob[pos++];
+            var val = blob[pos++];
+            y8950?.WriteRegister(0, addr, val);
+          }
+          break;
+        case 0x5E: // YMF262 (OPL3) port 0 write: aa dd
+        case 0x5F: // YMF262 (OPL3) port 1 write: aa dd
+          if (pos + 1 < commandsEnd) {
+            var addr = blob[pos++];
+            var val = blob[pos++];
+            opl3?.WriteRegister(cmd == 0x5E ? 0 : 1, addr, val);
           }
           break;
         case 0x61: // wait n (16-bit little-endian)
