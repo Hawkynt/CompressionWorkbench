@@ -7,12 +7,13 @@ using FileSystem.GsOs;
 namespace Compression.Tests.GsOs;
 
 /// <summary>
-/// Pins the stub-tier surface for <see cref="GsOsFormatDescriptor"/>. The
-/// Apple IIgs GS/OS 2IMG wrapper is a header-only container that delegates to
-/// the inner ProDOS / HFS / DOS 3.3 volume — we parse the 64-byte header and
-/// surface the embedded volume opaque (no walk). These tests prevent silent
-/// capability creep (CanCreate/CanModify) and stop the opaque-blob entry
-/// shape from drifting.
+/// Pins the read-path surface for <see cref="GsOsFormatDescriptor"/>. The
+/// reader still surfaces the embedded ProDOS / HFS / DOS 3.3 volume as an
+/// opaque entry — downstream callers route the .po payload through
+/// FileSystem.ProDos for a full hierarchical walk. Promoted from stub to
+/// WORM via <see cref="GsOsWriter"/>; tests still pin that CanModify is
+/// not advertised (rewriting the inner volume requires recomputing 2IMG
+/// header offsets, which only Create handles correctly).
 /// </summary>
 [TestFixture]
 public class GsOsStubBehaviorTests {
@@ -35,13 +36,13 @@ public class GsOsStubBehaviorTests {
   }
 
   [Test, Category("Stub")]
-  public void Stub_DescriptorHonestlyAdvertisesCapabilities_AndOpaqueEntries() {
+  public void Descriptor_HonestlyAdvertisesWormCapabilities_AndOpaqueReadEntries() {
     var d = new GsOsFormatDescriptor();
 
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False,
-      "GS/OS 2IMG is stub-tier (delegating wrapper) — must not advertise CanCreate.");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True,
+      "GS/OS 2IMG promoted to WORM — must advertise CanCreate.");
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
-      "GS/OS 2IMG is stub-tier (delegating wrapper) — must not advertise CanModify.");
+      "GS/OS 2IMG is WORM-tier (emit-only) — must not advertise CanModify; rewrites recompute the 2IMG header.");
 
     var image = BuildMagicOnly();
     using var ms = new MemoryStream(image, writable: false);
@@ -49,7 +50,7 @@ public class GsOsStubBehaviorTests {
 
     var names = entries.Select(e => e.Name).ToList();
     Assert.That(names, Is.EquivalentTo(new[] { "gsos-prodos-volume.po" }),
-      "GS/OS minimal-image surface must be exactly the documented opaque inner-volume entry.");
+      "GS/OS read path surfaces the documented opaque inner-volume entry.");
 
     var outDir = Path.Combine(Path.GetTempPath(), "GsOsStub_" + Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(outDir);
@@ -68,13 +69,12 @@ public class GsOsStubBehaviorTests {
   }
 
   [Test, Category("Stub")]
-  public void Stub_DoesNotAdvertiseWriteCapability() {
+  public void Description_HonestlyFlagsWormTier() {
     var d = new GsOsFormatDescriptor();
     var description = d.Description.ToLowerInvariant();
     Assert.That(
-      description.Contains("stub") || description.Contains("opaque")
-      || description.Contains("skeleton") || description.Contains("detection"),
+      description.Contains("worm") || description.Contains("opaque") || description.Contains("emit"),
       Is.True,
-      $"GS/OS Description must honestly flag its stub/detection-only/opaque status. Got: '{d.Description}'.");
+      $"GS/OS Description must honestly flag its WORM / opaque-read-path status. Got: '{d.Description}'.");
   }
 }

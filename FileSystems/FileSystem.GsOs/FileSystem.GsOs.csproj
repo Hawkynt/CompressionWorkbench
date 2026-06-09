@@ -4,5 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\FileSystem.ProDos\FileSystem.ProDos.csproj" />
   </ItemGroup>
 </Project>
