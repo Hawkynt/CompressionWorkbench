@@ -11,6 +11,9 @@
     <ProjectReference Include="..\..\Codecs\Codec.Sn76489\Codec.Sn76489.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Ym2612\Codec.Ym2612.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Ym2413\Codec.Ym2413.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Ym2151\Codec.Ym2151.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Ym2203\Codec.Ym2203.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Ym2608\Codec.Ym2608.csproj" />
   </ItemGroup>
 
 </Project>

@@ -93,6 +93,9 @@
     <ProjectReference Include="..\Codecs\Codec.Ym2413\Codec.Ym2413.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Tracker\Codec.Tracker.csproj" />
     <ProjectReference Include="..\Codecs\Codec.TrackerXmIt\Codec.TrackerXmIt.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Ym2151\Codec.Ym2151.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Ym2203\Codec.Ym2203.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.Ym2608\Codec.Ym2608.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />

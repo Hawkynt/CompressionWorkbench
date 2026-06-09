@@ -2,7 +2,10 @@
 using System.Buffers.Binary;
 using Codec.Pcm;
 using Codec.Sn76489;
+using Codec.Ym2151;
+using Codec.Ym2203;
 using Codec.Ym2413;
+using Codec.Ym2608;
 using Codec.Ym2612;
 using Compression.Registry;
 
@@ -30,11 +33,14 @@ internal static class VgmRenderer {
   private const int Sn76489Offset = 0x0C;
   private const int Ym2413Offset = 0x10;
   private const int Ym2612Offset = 0x2C;
+  private const int Ym2151Offset = 0x30;
+  private const int Ym2203Offset = 0x44;
+  private const int Ym2608Offset = 0x48;
 
   // Every chip-clock field other than the ones we render; any nonzero entry blocks rendering.
   private static readonly (int Offset, string Label)[] UnsupportedClocks = [
-    (0x30, "YM2151"), (0x38, "SegaPCM"), (0x40, "RF5C68"),
-    (0x44, "YM2203"), (0x48, "YM2608"), (0x4C, "YM2610"), (0x50, "YM3812"),
+    (0x38, "SegaPCM"), (0x40, "RF5C68"),
+    (0x4C, "YM2610"), (0x50, "YM3812"),
     (0x54, "YM3526"), (0x58, "Y8950"), (0x5C, "YMF262"), (0x60, "YMF278B"),
     (0x64, "YMF271"), (0x68, "YMZ280B"), (0x6C, "RF5C164"), (0x70, "PWM"),
     (0x74, "AY8910"),
@@ -47,6 +53,9 @@ internal static class VgmRenderer {
       var snClock = ReadClock(blob, Sn76489Offset);
       var ymClock = ReadClock(blob, Ym2612Offset);
       var opllClock = ReadClock(blob, Ym2413Offset);
+      var opmClock = ReadClock(blob, Ym2151Offset);
+      var opnClock = ReadClock(blob, Ym2203Offset);
+      var opnaClock = ReadClock(blob, Ym2608Offset);
 
       // A blocking chip → keep the metadata-only view but record why.
       var blocker = FindUnsupportedChip(blob, version);
@@ -57,18 +66,25 @@ internal static class VgmRenderer {
         return;
       }
 
-      if (snClock == 0 && ymClock == 0 && opllClock == 0)
+      if (snClock == 0 && ymClock == 0 && opllClock == 0 && opmClock == 0 && opnClock == 0 && opnaClock == 0)
         return; // nothing this core can voice
 
-      var pcm = Render(blob, dataOffset, commandsEnd, totalSamples, snClock, ymClock, opllClock);
+      var pcm = Render(blob, dataOffset, commandsEnd, totalSamples,
+        snClock, ymClock, opllClock, opmClock, opnClock, opnaClock, out var gatedNote);
       if (pcm.Length == 0)
         return;
 
+      if (gatedNote != null)
+        entries.Add(new("render.txt", "Tag", System.Text.Encoding.UTF8.GetBytes(gatedNote + "\n")));
+
       // Record which chips actually drove the rendered mix.
-      var chips = new List<string>(3);
+      var chips = new List<string>(6);
       if (snClock != 0) chips.Add("SN76489");
       if (ymClock != 0) chips.Add("YM2612");
       if (opllClock != 0) chips.Add("YM2413");
+      if (opmClock != 0) chips.Add("YM2151");
+      if (opnClock != 0) chips.Add("YM2203");
+      if (opnaClock != 0) chips.Add("YM2608");
       entries.Add(new("rendered.ini", "Tag",
         System.Text.Encoding.UTF8.GetBytes($"rendered_chips={string.Join(",", chips)}\n")));
 
@@ -88,7 +104,9 @@ internal static class VgmRenderer {
 
   private static byte[] Render(
       byte[] blob, int dataOffset, int commandsEnd, uint totalSamples,
-      uint snClock, uint ymClock, uint opllClock) {
+      uint snClock, uint ymClock, uint opllClock, uint opmClock, uint opnClock, uint opnaClock,
+      out string? gatedNote) {
+    gatedNote = null;
     var targetSamples = totalSamples == 0
       ? MaxSamples
       : Math.Min(totalSamples, MaxSamples);
@@ -96,11 +114,19 @@ internal static class VgmRenderer {
     var psg = snClock != 0 ? new Sn76489Codec(snClock) : null;
     var ym = ymClock != 0 ? new Ym2612Codec(ymClock) : null;
     var opll = opllClock != 0 ? new Ym2413Codec(opllClock) : null;
+    var opm = opmClock != 0 ? new Ym2151Codec(opmClock) : null;
+    var opn = opnClock != 0 ? new Ym2203Codec(opnClock) : null;
+    var opna = opnaClock != 0 ? new Ym2608Codec(opnaClock) : null;
 
     // YM2612 native rate → 44100 resample accumulator (simple ratio stepping).
     var ymStep = ym != null ? ym.NativeSampleRate / SampleRate : 0.0;
     // YM2413 (OPLL) native rate (clock / 72) → 44100 resample accumulator.
     var opllStep = opll != null ? opll.NativeSampleRate / SampleRate : 0.0;
+    // YM2151 (OPM) native rate (clock / 64) → 44100 resample accumulator.
+    var opmStep = opm != null ? opm.NativeSampleRate / SampleRate : 0.0;
+    // YM2203 / YM2608 FM native rates → 44100 resample accumulators.
+    var opnStep = opn != null ? opn.FmSampleRate / SampleRate : 0.0;
+    var opnaStep = opna != null ? opna.FmSampleRate / SampleRate : 0.0;
 
     var output = new List<short>(capacity: (int)Math.Min(targetSamples, 1 << 20) * 2);
 
@@ -114,6 +140,20 @@ internal static class VgmRenderer {
     // OPLL resampler state (mono).
     double opllAccumulator = 0;
     short opllMono = 0;
+
+    // OPM resampler state (stereo).
+    double opmAccumulator = 0;
+    short opmLeft = 0, opmRight = 0;
+
+    // OPN (YM2203) resampler state: FM is mono, SSG is rendered at 44100 directly.
+    double opnAccumulator = 0;
+    short opnFm = 0;
+    var opnSsg = new short[1];
+
+    // OPNA (YM2608) resampler state: FM stereo, SSG rendered at 44100 directly.
+    double opnaAccumulator = 0;
+    short opnaFmLeft = 0, opnaFmRight = 0;
+    var opnaSsg = new short[1];
 
     // DAC data blocks (type 0 PCM) concatenated, addressed by a running pointer (0xE0 seeks).
     var dataBlock = new List<byte>();
@@ -151,6 +191,38 @@ internal static class VgmRenderer {
           l += opllMono / 2;
           r += opllMono / 2;
         }
+        if (opm != null) {
+          opmAccumulator += opmStep;
+          while (opmAccumulator >= 1.0) {
+            opmAccumulator -= 1.0;
+            opm.RenderSample(out opmLeft, out opmRight);
+          }
+          l += opmLeft;
+          r += opmRight;
+        }
+        if (opn != null) {
+          // YM2203 FM (mono, resampled) + SSG (mono at 44100) → both stereo sides.
+          opnAccumulator += opnStep;
+          while (opnAccumulator >= 1.0) {
+            opnAccumulator -= 1.0;
+            opnFm = opn.RenderFmSample();
+          }
+          opn.RenderSsgSamples(opnSsg, 1);
+          var mono = opnFm + opnSsg[0];
+          l += mono;
+          r += mono;
+        }
+        if (opna != null) {
+          // YM2608 FM (stereo, resampled) + SSG (mono at 44100, both sides).
+          opnaAccumulator += opnaStep;
+          while (opnaAccumulator >= 1.0) {
+            opnaAccumulator -= 1.0;
+            opna.RenderFmSample(out opnaFmLeft, out opnaFmRight);
+          }
+          opna.RenderSsgSamples(opnaSsg, 1);
+          l += opnaFmLeft + opnaSsg[0];
+          r += opnaFmRight + opnaSsg[0];
+        }
         output.Add(Clamp16(l));
         output.Add(Clamp16(r));
       }
@@ -178,6 +250,28 @@ internal static class VgmRenderer {
             var addr = blob[pos++];
             var val = blob[pos++];
             ym?.Write(cmd == 0x52 ? 0 : 1, addr, val);
+          }
+          break;
+        case 0x54: // YM2151 (OPM) write: aa dd
+          if (pos + 1 < commandsEnd) {
+            var addr = blob[pos++];
+            var val = blob[pos++];
+            opm?.WriteRegister(addr, val);
+          }
+          break;
+        case 0x55: // YM2203 (OPN) write: aa dd
+          if (pos + 1 < commandsEnd) {
+            var addr = blob[pos++];
+            var val = blob[pos++];
+            opn?.Write(addr, val);
+          }
+          break;
+        case 0x56: // YM2608 (OPNA) port 0 write: aa dd
+        case 0x57: // YM2608 (OPNA) port 1 write: aa dd
+          if (pos + 1 < commandsEnd) {
+            var addr = blob[pos++];
+            var val = blob[pos++];
+            opna?.Write(cmd == 0x56 ? 0 : 1, addr, val);
           }
           break;
         case 0x61: // wait n (16-bit little-endian)
@@ -222,6 +316,15 @@ internal static class VgmRenderer {
           }
           break;
       }
+    }
+
+    // The YM2608 rhythm (ADPCM-A) ROM and the ADPCM-B delta-T sample are not modelled; if the
+    // stream drove either, surface a note so the gap is explicit rather than silent.
+    if (opna != null && (opna.RhythmRequested || opna.AdpcmBRequested)) {
+      var parts = new List<string>(2);
+      if (opna.RhythmRequested) parts.Add("rhythm (ADPCM-A)");
+      if (opna.AdpcmBRequested) parts.Add("ADPCM-B delta-T");
+      gatedNote = $"YM2608 {string.Join(" and ", parts)} not rendered (no internal/streamed sample ROM); FM+SSG only.";
     }
 
     return ToBytes(output);

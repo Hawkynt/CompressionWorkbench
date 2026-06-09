@@ -320,14 +320,14 @@ public class VgmTests {
 
   [Test]
   public void Render_UnsupportedChip_KeepsMetadataOnly() {
-    // YM2151 clock present (unsupported) → no WAVs, a render.txt note instead.
+    // SegaPCM clock present (unsupported) → no WAVs, a render.txt note instead.
     var commands = new byte[] { 0x50, 0x9F, 0x66 };
     var headerLen = 0x80;
     var blob = new byte[headerLen + commands.Length];
     "Vgm "u8.CopyTo(blob);
     WriteU32(blob, 0x08, 0x00000151);
     WriteU32(blob, 0x0C, 3579545);   // SN76489 (supported)
-    WriteU32(blob, 0x30, 3579545);   // YM2151 (unsupported) → blocks rendering
+    WriteU32(blob, 0x38, 4000000);   // SegaPCM (unsupported) → blocks rendering
     WriteU32(blob, 0x18, 100);
     WriteU32(blob, 0x34, (uint)(headerLen - 0x34));
     commands.CopyTo(blob.AsSpan(headerLen));
@@ -336,5 +336,128 @@ public class VgmTests {
     var entries = new VgmFormatDescriptor().List(ms, null);
     Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.False, "unsupported chip blocks rendering");
     Assert.That(entries.Any(e => e.Name == "render.txt"), Is.True, "records why rendering was skipped");
+  }
+
+  // ──────────── YM2151 (OPM) / YM2203 (OPN) / YM2608 (OPNA) rendering ────────────
+
+  // Builds a v1.51 VGM whose only chip clock is at `clockOffset`, with the given command stream.
+  private static byte[] BuildSingleChipVgm(int clockOffset, uint clock, uint totalSamples, byte[] commands) {
+    var headerLen = 0x80;
+    var blob = new byte[headerLen + commands.Length];
+    "Vgm "u8.CopyTo(blob);
+    WriteU32(blob, 0x08, 0x00000151);
+    WriteU32(blob, clockOffset, clock);
+    WriteU32(blob, 0x18, totalSamples);
+    WriteU32(blob, 0x34, (uint)(headerLen - 0x34));
+    commands.CopyTo(blob.AsSpan(headerLen));
+    return blob;
+  }
+
+  [Test]
+  public void Render_Ym2151_ProducesPcmAndReportsRenderedChip() {
+    // Program channel 0 as an algorithm-7 voice (operator M1 audible), key on, then wait.
+    var commands = new List<byte> {
+      0x54, 0x20, 0xC7,  // ch0: RL on, CONNECT 7
+      0x54, 0x40, 0x01,  // M1 DT1=0 MUL=1
+      0x54, 0x60, 0x00,  // M1 TL=0
+      0x54, 0x80, 0x1F,  // M1 KS=0 AR=31
+      0x54, 0xE0, 0x0F,  // M1 D1L=0 RR=15
+      0x54, 0x60 + 0x08, 0x7F, // C1 muted
+      0x54, 0x60 + 0x10, 0x7F, // M2 muted
+      0x54, 0x60 + 0x18, 0x7F, // C2 muted
+      0x54, 0x28, 0x4C,  // KC = A4
+      0x54, 0x08, 0x78,  // key on ch0
+      0x61, 0x44, 0xAC,  // wait 1 s
+      0x66,
+    };
+    var blob = BuildSingleChipVgm(0x30, 3579545, 44100, commands.ToArray());
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "RIGHT.wav"), Is.True);
+
+    var rendered = Extract(blob, "rendered.ini");
+    Assert.That(rendered, Does.Contain("YM2151"));
+
+    using var output = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "LEFT.wav", output, null);
+    var samples = ReadWavLeftSamples(output.ToArray());
+    Assert.That(samples.Sum(s => (long)Math.Abs(s)), Is.GreaterThan(0L), "non-silent PCM");
+  }
+
+  [Test]
+  public void Render_Ym2203_ProducesPcmAndReportsRenderedChip() {
+    // FM channel 0 algorithm-7 voice (operator 0 audible) plus an SSG tone, then wait.
+    var commands = new List<byte> {
+      0x55, 0xB0, 0x07,  // alg 7
+      0x55, 0x30, 0x01,  // op0 DT=0 MUL=1
+      0x55, 0x40, 0x00,  // op0 TL=0
+      0x55, 0x50, 0x1F,  // op0 KS=0 AR=31
+      0x55, 0x80, 0x0F,  // op0 SL=0 RR=15
+      0x55, 0x44, 0x7F, 0x55, 0x48, 0x7F, 0x55, 0x4C, 0x7F, // other ops muted
+      0x55, 0xA4, (4 << 3) | 0x04, // block 4 F-num high
+      0x55, 0xA0, 0x00,  // F-num low
+      0x55, 0x28, 0xF0,  // key on
+      0x55, 0x01, 0x01,  // SSG tone A coarse
+      0x55, 0x07, 0xFE,  // SSG mixer: tone A on
+      0x55, 0x08, 0x0F,  // SSG channel A full volume
+      0x61, 0x44, 0xAC,  // wait 1 s
+      0x66,
+    };
+    var blob = BuildSingleChipVgm(0x44, 3993600, 44100, commands.ToArray());
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True);
+
+    var rendered = Extract(blob, "rendered.ini");
+    Assert.That(rendered, Does.Contain("YM2203"));
+
+    using var output = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "LEFT.wav", output, null);
+    var samples = ReadWavLeftSamples(output.ToArray());
+    Assert.That(samples.Sum(s => (long)Math.Abs(s)), Is.GreaterThan(0L), "non-silent PCM");
+  }
+
+  [Test]
+  public void Render_Ym2608_ProducesStereoPcmReportsChipAndGatesRhythm() {
+    // FM channel 1 (port 0) algorithm-7 voice + SSG tone + a rhythm key-on (gated).
+    var commands = new List<byte> {
+      0x56, 0xB0, 0x07,  // ch1 alg 7
+      0x56, 0xB4, 0xC0,  // ch1 L/R both
+      0x56, 0x30, 0x01,  // op0 DT=0 MUL=1
+      0x56, 0x40, 0x00,  // op0 TL=0
+      0x56, 0x50, 0x1F,  // op0 KS=0 AR=31
+      0x56, 0x80, 0x0F,  // op0 SL=0 RR=15
+      0x56, 0x44, 0x7F, 0x56, 0x48, 0x7F, 0x56, 0x4C, 0x7F,
+      0x56, 0xA4, (4 << 3) | 0x04,
+      0x56, 0xA0, 0x00,
+      0x56, 0x28, 0xF0,  // key on ch1
+      0x56, 0x01, 0x01,  // SSG tone A coarse
+      0x56, 0x07, 0xFE,  // SSG tone A on
+      0x56, 0x08, 0x0F,  // SSG channel A volume
+      0x56, 0x10, 0x01,  // rhythm key-on (bass drum) → gated
+      0x61, 0x44, 0xAC,  // wait 1 s
+      0x66,
+    };
+    var blob = BuildSingleChipVgm(0x48, 7987200, 44100, commands.ToArray());
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "RIGHT.wav"), Is.True);
+
+    var rendered = Extract(blob, "rendered.ini");
+    Assert.That(rendered, Does.Contain("YM2608"));
+
+    // The gated rhythm note is surfaced via render.txt.
+    var note = Extract(blob, "render.txt");
+    Assert.That(note, Does.Contain("rhythm"), "rhythm gating is noted");
+
+    using var output = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "LEFT.wav", output, null);
+    var samples = ReadWavLeftSamples(output.ToArray());
+    Assert.That(samples.Sum(s => (long)Math.Abs(s)), Is.GreaterThan(0L), "non-silent PCM");
   }
 }
