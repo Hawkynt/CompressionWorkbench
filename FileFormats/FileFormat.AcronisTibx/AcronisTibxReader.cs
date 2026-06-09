@@ -170,8 +170,24 @@ public sealed class AcronisTibxReader : IDisposable {
 
   private readonly byte[] _data;
   private readonly List<AcronisTibxEntry> _entries = [];
+  private readonly List<AcronisTibxLsmEntry> _lsmEntries = [];
+  private readonly Dictionary<AcronisTibxPageType, int> _pageTypeCounts = new();
 
   public IReadOnlyList<AcronisTibxEntry> Entries => _entries;
+
+  /// <summary>
+  ///   Per-page summaries surfaced by the Stage-2 page-frame walk: one
+  ///   <see cref="AcronisTibxLsmEntry"/> per 4 KiB page in the container, classified by
+  ///   <see cref="AcronisTibxPageType"/> and (for LSM_LEAF / LSM_DIR pages) carrying the
+  ///   decoded <see cref="AcronisTibxLsmPageSubHeader"/>.
+  /// </summary>
+  public IReadOnlyList<AcronisTibxLsmEntry> LsmEntries => _lsmEntries;
+
+  /// <summary>Counts of recognised page-type tags discovered during the page walk.</summary>
+  public IReadOnlyDictionary<AcronisTibxPageType, int> PageTypeCounts => _pageTypeCounts;
+
+  /// <summary>Total number of full 4 KiB page frames seen during the walk.</summary>
+  public int PageCount => _lsmEntries.Count;
 
   /// <summary><c>true</c> iff offset 0 carries the <c>"ARCH"</c> magic.</summary>
   public bool ValidHeader { get; private set; }
@@ -244,6 +260,8 @@ public sealed class AcronisTibxReader : IDisposable {
       }
     }
 
+    this.WalkPages();
+
     var meta = BuildMetadata();
     _entries.Add(new AcronisTibxEntry {
       Name = "metadata.ini",
@@ -251,6 +269,15 @@ public sealed class AcronisTibxReader : IDisposable {
       IsDirectory = false,
       Offset = 0,
       Data = meta,
+    });
+
+    var pagesTsv = BuildPagesTsv();
+    _entries.Add(new AcronisTibxEntry {
+      Name = "pages.tsv",
+      Size = pagesTsv.Length,
+      IsDirectory = false,
+      Offset = 0,
+      Data = pagesTsv,
     });
 
     _entries.Add(new AcronisTibxEntry {
@@ -262,10 +289,106 @@ public sealed class AcronisTibxReader : IDisposable {
     });
   }
 
+  /// <summary>
+  ///   Builds a tab-separated per-page summary surfacing the Stage-2 page-frame walk results
+  ///   as a forensic-grade table. Columns:
+  ///   <c>page_index</c>, <c>file_offset</c>, <c>page_type</c>, <c>content_magic</c>,
+  ///   <c>stored_crc_be32</c>, <c>lsm_version</c>, <c>lsm_encoding</c>, <c>lsm_count</c>,
+  ///   <c>lsm_len</c>, <c>lsm_zlen</c>, <c>lsm_seq</c>, <c>lsm_ctree_id</c>.
+  /// </summary>
+  private byte[] BuildPagesTsv() {
+    var b = new StringBuilder();
+    b.Append("# Stage-2 page-frame walk — one row per 4 KiB page in the container.\n");
+    b.Append("# Decoded from binary RE of ar_page_verify @ libarchive3.so 0x6bef0 and lsm_dump_ctrees @ 0x590f7.\n");
+    b.Append("# lsm_* columns are populated only for LSM_LEAF and LSM_DIR rows.\n");
+    b.Append("page_index\tfile_offset\tpage_type\tcontent_magic\tstored_crc_be32\tlsm_version\tlsm_encoding\tlsm_count\tlsm_len\tlsm_zlen\tlsm_seq\tlsm_ctree_id\n");
+    foreach (var p in this._lsmEntries) {
+      var magic = AsciiOrHex(p.ContentMagic);
+      var sub = p.LsmSubHeader;
+      b.Append(CultureInfo.InvariantCulture,
+        $"{p.PageIndex}\t0x{p.FileOffset:X}\t{p.PageType}\t{magic}\t0x{p.StoredCrc:X8}\t");
+      if (sub is null)
+        b.Append("\t\t\t\t\t\t\n");
+      else
+        b.Append(CultureInfo.InvariantCulture,
+          $"{sub.Version}\t0x{sub.Encoding:X2}\t{sub.Count}\t{sub.Len}\t{sub.Zlen}\t{sub.Seq}\t{sub.Id}\n");
+    }
+    return Encoding.UTF8.GetBytes(b.ToString());
+  }
+
+  private static string AsciiOrHex(byte[] m) {
+    if (m.Length != 4) return "?";
+    var allPrintable =
+      m[0] is >= 0x20 and <= 0x7E &&
+      m[1] is >= 0x20 and <= 0x7E &&
+      m[2] is >= 0x20 and <= 0x7E &&
+      m[3] is >= 0x20 and <= 0x7E;
+    return allPrintable
+      ? Encoding.ASCII.GetString(m)
+      : $"{m[0]:X2} {m[1]:X2} {m[2]:X2} {m[3]:X2}";
+  }
+
+  /// <summary>
+  ///   Walks the container as a stream of 4 KiB page frames. Each page is classified by its
+  ///   <see cref="AcronisTibxPageType"/> tag at <c>+0x1</c>, with the stored CRC (BE32 at
+  ///   <c>+0x4</c>) and the 4-byte content magic (at <c>+0x8</c> for typed pages, <c>+0x0</c>
+  ///   for the page-zero HDR) captured for each.
+  ///
+  ///   <para>
+  ///     For LSM_LEAF and LSM_DIR pages the decoded sub-header (<c>version, encoding, count,
+  ///     len, zlen, seq, id</c>) is attached so callers can see how many records live on each
+  ///     leaf page and which ctree the page belongs to.
+  ///   </para>
+  ///
+  ///   <para>
+  ///     The walk is best-effort and never throws — pages that fail the leading-byte sniff
+  ///     are skipped and counted as <see cref="AcronisTibxPageType.Unknown"/>. Truncated
+  ///     trailing fragments smaller than one page are ignored.
+  ///   </para>
+  /// </summary>
+  private void WalkPages() {
+    const int PageSize = AcronisTibxPage.PageSize;
+    var pageIndex = 1L;
+    for (long offset = 0; offset + PageSize <= _data.Length; offset += PageSize, pageIndex++) {
+      var pageSpan = _data.AsSpan((int)offset, PageSize);
+      var page = AcronisTibxPage.Parse(pageSpan, pageIndex, offset);
+      if (page is null) {
+        // Leading-byte sniff failed (page slot is unwritten / unallocated). Surface as Unknown.
+        _lsmEntries.Add(new AcronisTibxLsmEntry {
+          PageIndex = pageIndex,
+          FileOffset = offset,
+          PageType = AcronisTibxPageType.Unknown,
+          ContentMagic = pageSpan[..4].ToArray(),
+          StoredCrc = 0,
+          LsmSubHeader = null,
+        });
+        BumpPageTypeCount(AcronisTibxPageType.Unknown);
+        continue;
+      }
+
+      _lsmEntries.Add(new AcronisTibxLsmEntry {
+        PageIndex = page.PageIndex,
+        FileOffset = page.FileOffset,
+        PageType = page.PageType,
+        ContentMagic = page.ContentMagic,
+        StoredCrc = page.StoredCrc,
+        LsmSubHeader = page.LsmSubHeader,
+      });
+      BumpPageTypeCount(page.PageType);
+    }
+  }
+
+  private void BumpPageTypeCount(AcronisTibxPageType type) {
+    if (_pageTypeCounts.TryGetValue(type, out var n))
+      _pageTypeCounts[type] = n + 1;
+    else
+      _pageTypeCounts[type] = 1;
+  }
+
   private byte[] BuildMetadata() {
     var b = new StringBuilder();
-    b.Append("parse_status=ro-metadata\n");
-    b.Append("stage=1\n");
+    b.Append("parse_status=ro-metadata+page-walk\n");
+    b.Append("stage=2\n");
     b.Append("format=Acronis True Image .tibx (archive3 / libarchive3 LSM container)\n");
     b.Append("extension=.tibx\n");
     b.Append("magic_ascii=ARCH\n");
@@ -297,6 +420,53 @@ public sealed class AcronisTibxReader : IDisposable {
     b.Append("page_type_golomb=GOLOMB (Golomb-coded index page)\n");
     b.Append("page_type_ci=CI (commit info)\n");
 
+    b.Append("\n# Page-frame layout (binary RE of ar_page_verify @ libarchive3.so 0x6bef0)\n");
+    b.Append(CultureInfo.InvariantCulture, $"page_size={AcronisTibxPage.PageSize}\n");
+    b.Append("page_frame_offset_sentinel=0x000 (byte 'A' / 0x41)\n");
+    b.Append(CultureInfo.InvariantCulture, $"page_frame_offset_type_tag=0x{AcronisTibxPage.PageTypeOffset:X3}\n");
+    b.Append(CultureInfo.InvariantCulture, $"page_frame_offset_crc_be32=0x{AcronisTibxPage.CrcOffset:X3}\n");
+    b.Append(CultureInfo.InvariantCulture, $"page_frame_offset_content_magic=0x{AcronisTibxPage.ContentMagicOffset:X3}\n");
+    b.Append("page_type_tag_0=Unknown\n");
+    b.Append("page_type_tag_1=HDR (page-zero ARCH)\n");
+    b.Append("page_type_tag_2=LSM_LEAF (LEAF magic at +0x8)\n");
+    b.Append("page_type_tag_3=LSM_DIR (LDIR magic at +0x8)\n");
+    b.Append("page_type_tag_4=GOLOMB (Golomb-coded index)\n");
+    b.Append("page_type_tag_5=DATA (extent payload)\n");
+    b.Append("page_type_tag_6=CI (ARCI magic at +0x8)\n");
+
+    b.Append("\n# Stage-2 page-frame walk results\n");
+    b.Append(CultureInfo.InvariantCulture, $"page_count={this.PageCount}\n");
+    foreach (var (type, count) in this._pageTypeCounts.OrderBy(kv => (int)kv.Key))
+      b.Append(CultureInfo.InvariantCulture, $"page_count_{type.ToString().ToLowerInvariant()}={count}\n");
+
+    // Aggregate LSM leaf statistics — sum of the BE16 count fields gives the total LSM record
+    // count across all leaf pages, which is the upper bound on how many file entries an LSM
+    // tree walk would yield once the record-stream decoder is wired.
+    var leafPages = this._lsmEntries.Where(e => e.PageType == AcronisTibxPageType.LsmLeaf).ToList();
+    var dirPages = this._lsmEntries.Where(e => e.PageType == AcronisTibxPageType.LsmDir).ToList();
+    var leafRecordCount = leafPages.Sum(e => (long)(e.LsmSubHeader?.Count ?? 0));
+    var leafLenSum = leafPages.Sum(e => (long)(e.LsmSubHeader?.Len ?? 0));
+    var leafZlenSum = leafPages.Sum(e => (long)(e.LsmSubHeader?.Zlen ?? 0));
+    var dirRecordCount = dirPages.Sum(e => (long)(e.LsmSubHeader?.Count ?? 0));
+    b.Append(CultureInfo.InvariantCulture, $"lsm_leaf_pages={leafPages.Count}\n");
+    b.Append(CultureInfo.InvariantCulture, $"lsm_dir_pages={dirPages.Count}\n");
+    b.Append(CultureInfo.InvariantCulture, $"lsm_leaf_record_count_sum={leafRecordCount}\n");
+    b.Append(CultureInfo.InvariantCulture, $"lsm_dir_record_count_sum={dirRecordCount}\n");
+    b.Append(CultureInfo.InvariantCulture, $"lsm_leaf_uncompressed_size_sum={leafLenSum}\n");
+    b.Append(CultureInfo.InvariantCulture, $"lsm_leaf_compressed_size_sum={leafZlenSum}\n");
+
+    // The ctree-id distribution shows how many LSM ctrees (B+-trees) live in this archive —
+    // recovered from the per-leaf-page id byte (0..nr_ctree-1).
+    var ctreeIds = leafPages
+      .Where(e => e.LsmSubHeader is not null)
+      .Select(e => e.LsmSubHeader!.Id)
+      .Distinct()
+      .OrderBy(id => id)
+      .ToList();
+    b.Append(CultureInfo.InvariantCulture, $"lsm_ctree_id_count={ctreeIds.Count}\n");
+    if (ctreeIds.Count > 0)
+      b.Append(CultureInfo.InvariantCulture, $"lsm_ctree_ids={string.Join(",", ctreeIds)}\n");
+
     b.Append("\n# RE provenance\n");
     b.Append("re_target_1=archive3.dll (32-bit Windows; ATI 2018; PDB K:\\183\\exe\\vs\\release\\archive3.pdb)\n");
     b.Append("re_target_2=libarchive3.so (32-bit Linux ELF; ATI 2021 initrd64; Jenkins e:/jenkins_agent/workspace/mod-backup-archive3/663/libarchive3/)\n");
@@ -304,14 +474,19 @@ public sealed class AcronisTibxReader : IDisposable {
     b.Append("re_target_4=archive_io.c (page I/O)\n");
     b.Append("re_target_5=lsm_item.h (LSM key-value record layout - NOT decoded this pass)\n");
 
-    b.Append("\n# Why disk content stays Stage 1\n");
-    b.Append("ro_promotion=metadata-only\n");
+    b.Append("\n# What is decoded vs documented-TODO\n");
+    b.Append("ro_promotion=page-frame-walk + metadata\n");
     b.Append("rw_promotion=blocked\n");
-    b.Append("blocker_1=lsm_tree_walk_not_specified - Acronis proprietary LSM B+-tree with adaptive Golomb-coded index pages\n");
+    b.Append("decoded_1=page_zero_header (ARCH magic, version, mode word, UUID, dump field cluster)\n");
+    b.Append("decoded_2=page_frame (8-byte preamble: sentinel 'A', page-type tag, BE32 CRC, content magic at +0x8) per ar_page_verify @ libarchive3.so 0x6bef0\n");
+    b.Append("decoded_3=lsm_page_sub_header (LEAF/LDIR: version, encoding, count, len, zlen, seq, ctree-id at +0xC..+0x1C) per lsm_dump_ctrees @ libarchive3.so 0x590f7\n");
+    b.Append("decoded_4=page_type_classification (HDR/LSM_LEAF/LSM_DIR/GOLOMB/DATA/CI counts + per-page summary)\n");
+    b.Append("blocker_1=lsm_record_stream_inside_leaf_pages - Golomb-coded (name, child_page_id) tuples and per-item attribute records inside the LEAF body are NOT decoded; per lsm_lookup.c + golomb.c the bit-width parameters are adaptive per-page\n");
     b.Append("blocker_2=lsm_item_layout_not_specified - lsm_item.h is Acronis-internal; per-item key encoding + variable-length codec stack are not published\n");
     b.Append("blocker_3=commit_info_chain_not_decoded - ARCI page chain ties leaf pages to logical items via segment ids; layout undocumented\n");
-    b.Append("blocker_4=optional_aes_encryption_gates_pages - archive_encr.c + crypto_aes.c wrap every leaf/data page when enabled\n");
+    b.Append("blocker_4=optional_aes_encryption_gates_leaf_bodies - archive_encr.c + crypto_aes.c wrap every leaf/data page body when enabled (the page frame stays plaintext, but the LSM record stream beneath +0x20 may be AES-CBC)\n");
     b.Append("blocker_5=content_defined_chunking_dedup_short_index - dedup_short_index.c uses an Acronis-internal short-fingerprint dedup index that points at extents we cannot resolve without the spec\n");
+    b.Append("stretch_goal=link_LSM_record_attributes_to_DATA_page_extents - once the record-stream decoder is wired the AcronisFileMetaBodyDecoder from FileFormat.Acronis can be reused for the per-item attribute body (which carries the filename via ItemCommon attribute id 0x10) since the .tib/.tibx item model is the same InputItem class\n");
 
     b.Append("\n# Distinguishing from classic .tib\n");
     b.Append("classic_tib_magic=CE 24 B9 A2 (LE 0xA2B924CE) at offset 0\n");

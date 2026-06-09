@@ -80,7 +80,7 @@ public sealed class AcronisTibxFormatDescriptor : IFormatDescriptor, IArchiveFor
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
   public string Description =>
-    "Acronis True Image .tibx (2020+ modern container) — Stage 1 R/O metadata surface. "
+    "Acronis True Image .tibx (2020+ modern container) — Stage 2 R/O metadata + page-frame walk. "
     + "Detected by ASCII 'ARCH' (41 52 43 48) at offset 0 — the page-zero archive header magic "
     + "emitted by Acronis's libarchive3 / archive3.dll log-structured-merge page store. "
     + "Distinct from classic .tib (magic CE 24 B9 A2 / 0xA2B924CE) which is handled by "
@@ -91,13 +91,24 @@ public sealed class AcronisTibxFormatDescriptor : IFormatDescriptor, IArchiveFor
     + "8-word dump-field cluster at +0x1e0 (fsize / offset / aligned_size / size + commit ids), "
     + "and a 16-byte archive UUID at +0x233. The vendor's archive_dump_headers JSON key map "
     + "(libarchive3.so offset 0x888cc) pins the logical field set. "
-    + "metadata.ini surfaces those parsed fields plus the page-type magic table "
-    + "(ARCH / ARCI / LDIR / LEAF / DATA / HDR / GOLOMB / CI) and the documented blockers. "
-    + "Disk content stays Stage 1 because the LSM B+-tree walk (~30 Acronis-internal C source "
-    + "files including lsm_item.h's proprietary key encoding, adaptive Golomb-coded index "
-    + "pages, content-defined-chunking dedup_short_index, optional AES wrapping via "
-    + "archive_encr.c + crypto_aes.c) has no published spec. "
-    + "metadata-only - no LSM tree walk attempted.";
+    + "Stage 2 adds a page-frame walk: every 4 KiB page is classified by the page-type tag at "
+    + "+0x1 (1=HDR / 2=LSM_LEAF / 3=LSM_DIR / 4=GOLOMB / 5=DATA / 6=CI per the page-type table "
+    + "at libarchive3.so 0x963fa). The page-frame layout (sentinel 'A' at +0, type tag at +1, "
+    + "BE32 CRC at +4, content magic at +8) was recovered from ar_page_verify at 0x6bef0; the "
+    + "LSM-specific sub-header (version / encoding / count / len / zlen / seq / ctree-id at "
+    + "+0xC..+0x1C) was recovered from lsm_dump_ctrees at 0x590f7. "
+    + "metadata.ini surfaces parsed page-zero fields, per-page-type counts, aggregate LSM "
+    + "record counts and ctree-id distribution, and documented blockers. pages.tsv surfaces "
+    + "a per-page summary table for forensic inspection. "
+    + "Disk content stays at page-frame granularity because the Golomb-coded LSM record stream "
+    + "inside LEAF pages (~30 Acronis-internal C source files including lsm_item.h's proprietary "
+    + "key encoding, adaptive Golomb-coded index pages, content-defined-chunking "
+    + "dedup_short_index, optional AES wrapping via archive_encr.c + crypto_aes.c) has no "
+    + "published spec. "
+    + "metadata-only at the file-listing level — page-frame-walk surfaces per-page summaries but "
+    + "no LSM record-stream decoder is wired (next stage would reuse the InputItem "
+    + "attribute-stream layout from FileFormat.Acronis via AcronisFileMetaBodyDecoder to expose "
+    + "filenames once the per-page Golomb-coded key/value stream is decoded).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);

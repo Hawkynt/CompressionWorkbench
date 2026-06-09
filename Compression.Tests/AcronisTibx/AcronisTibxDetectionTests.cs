@@ -189,7 +189,8 @@ public class AcronisTibxDetectionTests {
     using var ms = new MemoryStream(page);
     using var r = new AcronisTibxReader(ms);
     var names = r.Entries.Select(e => e.Name).ToList();
-    Assert.That(names, Is.EquivalentTo(new[] { "metadata.ini", "acronis-tibx.bin" }));
+    Assert.That(names, Is.EquivalentTo(new[] { "metadata.ini", "pages.tsv", "acronis-tibx.bin" }),
+      "Stage-2 walk surfaces metadata.ini (parsed header + page-type counts), pages.tsv (per-page summary table), and acronis-tibx.bin (verbatim container).");
   }
 
   [Test, Category("HappyPath")]
@@ -211,9 +212,9 @@ public class AcronisTibxDetectionTests {
     using var r = new AcronisTibxReader(ms);
     var meta = r.Entries.Single(e => e.Name == "metadata.ini");
     var text = Encoding.UTF8.GetString(meta.Data);
-    Assert.That(text, Does.Contain("parse_status=ro-metadata"));
-    Assert.That(text, Does.Contain("stage=1"));
-    Assert.That(text, Does.Contain("ro_promotion=metadata-only"));
+    Assert.That(text, Does.Contain("parse_status=ro-metadata+page-walk"));
+    Assert.That(text, Does.Contain("stage=2"));
+    Assert.That(text, Does.Contain("ro_promotion=page-frame-walk + metadata"));
     Assert.That(text, Does.Contain("rw_promotion=blocked"));
   }
 
@@ -300,10 +301,10 @@ public class AcronisTibxDetectionTests {
     using var r = new AcronisTibxReader(ms);
     var meta = r.Entries.Single(e => e.Name == "metadata.ini");
     var text = Encoding.UTF8.GetString(meta.Data);
-    Assert.That(text, Does.Contain("blocker_1=lsm_tree_walk_not_specified"));
+    Assert.That(text, Does.Contain("blocker_1=lsm_record_stream_inside_leaf_pages"));
     Assert.That(text, Does.Contain("blocker_2=lsm_item_layout_not_specified"));
     Assert.That(text, Does.Contain("blocker_3=commit_info_chain_not_decoded"));
-    Assert.That(text, Does.Contain("blocker_4=optional_aes_encryption_gates_pages"));
+    Assert.That(text, Does.Contain("blocker_4=optional_aes_encryption_gates_leaf_bodies"));
     Assert.That(text, Does.Contain("blocker_5=content_defined_chunking_dedup_short_index"));
   }
 
@@ -322,13 +323,14 @@ public class AcronisTibxDetectionTests {
   // ─── Descriptor List() round-trip ────────────────────────────────
 
   [Test, Category("HappyPath")]
-  public void List_ReturnsTwoEntries() {
+  public void List_ReturnsThreeEntries() {
     var d = new AcronisTibxFormatDescriptor();
     using var ms = new MemoryStream(BuildHeader());
     var entries = d.List(ms, password: null);
-    Assert.That(entries, Has.Count.EqualTo(2));
+    Assert.That(entries, Has.Count.EqualTo(3),
+      "Stage-2 exposes metadata.ini + pages.tsv + acronis-tibx.bin.");
     Assert.That(entries.Select(e => e.Name),
-      Is.EquivalentTo(new[] { "metadata.ini", "acronis-tibx.bin" }));
+      Is.EquivalentTo(new[] { "metadata.ini", "pages.tsv", "acronis-tibx.bin" }));
   }
 
   [Test, Category("HappyPath")]
