@@ -350,6 +350,19 @@ public class EndToEndInteropTests {
     // Cargo.toml with [package] name+version. Generic .txt/.dat inputs
     // can't satisfy the canonical "<name-version>/Cargo.toml" layout.
     ".crate",
+    // NumPy NPY is a single-array container — Extract surfaces metadata.ini/header.bin/array.bin
+    // synthetic names, so arbitrary input filenames don't round-trip.
+    ".npy",
+    // NumPy NPZ wraps each input in an NPY frame and appends ".npy"; Extract surfaces
+    // arr.npy alongside metadata.ini, so arbitrary input filenames don't round-trip verbatim.
+    ".npz",
+    // Web Bundle stores each input as a CBOR-keyed HTTP response; Extract surfaces FULL.wbn
+    // + metadata.ini, so arbitrary input filenames never appear in the extracted set.
+    ".wbn",
+    // Android OTA payload's default extension is ".bin" — that extension is already claimed by
+    // BinCue at the dispatch layer, so a roundtrip.bin would route to BinCue rather than OTA.
+    // Detection is magic-only for AndroidOta; WORM creation is driven by the descriptor directly.
+    ".bin",
   };
 
   private static IEnumerable<string> RoundTripFormats() {

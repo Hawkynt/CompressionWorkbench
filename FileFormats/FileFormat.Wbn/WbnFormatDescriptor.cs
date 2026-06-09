@@ -14,14 +14,15 @@ namespace FileFormat.Wbn;
 /// of scope — it requires a full CBOR decoder plus HTTP request/response framing to
 /// rebuild the embedded URL tree.
 /// </summary>
-public sealed class WbnFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class WbnFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   public string Id => "Wbn";
   public string DisplayName => "Web Bundle";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".wbn";
   public IReadOnlyList<string> Extensions => [".wbn"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -92,6 +93,14 @@ public sealed class WbnFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     s.CopyTo(memoryStream);
     return memoryStream.ToArray();
   }
+
+  /// <summary>
+  /// WORM create — emits a Web Bundle whose <c>index</c> section contains one
+  /// entry per non-directory input. See <see cref="WbnWriter"/> for the
+  /// detailed wire layout.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
+    => WbnWriter.Write(output, inputs, options);
 
   private static byte[] BuildMetadataIni(Stream stream) {
     var origin = stream.Position;

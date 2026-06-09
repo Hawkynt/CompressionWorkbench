@@ -16,13 +16,13 @@ namespace FileFormat.AndroidOta;
 /// regions (manifest bytes, signature bytes, data blob) as raw entries so callers can drive their
 /// own parsers downstream.</para>
 /// </summary>
-public sealed class AndroidOtaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class AndroidOtaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "AndroidOta";
   public string DisplayName => "Android OTA payload";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   // Android OTA payload files are literally named "payload.bin"; the generic ".bin"
   // extension belongs to BIN/CUE disc images. Rely on the "CrAU" magic for detection.
   public string DefaultExtension => ".bin";
@@ -34,6 +34,10 @@ public sealed class AndroidOtaFormatDescriptor : IFormatDescriptor, IArchiveForm
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description => "Android A/B OTA payload (Chromium Autoupdate 'CrAU' container).";
+
+  /// <summary>WORM create — emits a CrAU payload with a minimal manifest, optional signature, and concatenated data blobs from the inputs.</summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
+    => AndroidOtaWriter.Write(output, inputs, options);
 
   private sealed record OtaLayout(
     long FullSize,

@@ -20,7 +20,7 @@ namespace FileFormat.Numpy;
 /// the only container semantics needed are DEFLATE + stored entries, both of
 /// which are handled by the BCL implementation.
 /// </remarks>
-public sealed class NpzFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+public sealed class NpzFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
@@ -30,8 +30,9 @@ public sealed class NpzFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "NumPy NPZ";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".npz";
   public IReadOnlyList<string> Extensions => [".npz"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -78,6 +79,42 @@ public sealed class NpzFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       WriteFile(outputDir, entry.FullName, buf.ToArray());
     }
   }
+
+  /// <summary>
+  /// WORM create — emits an NPZ (ZIP archive) where every non-directory input
+  /// becomes one entry. Inputs whose name ends in <c>.npy</c> and whose bytes
+  /// already carry the NPY magic are stored as-is; other inputs are wrapped
+  /// in a minimal uint8 NPY frame on the fly and their archive name gets a
+  /// <c>.npy</c> suffix appended when not already present.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    using var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var raw = i.ReadContent();
+      var name = i.ArchiveName.Replace('\\', '/');
+      var alreadyNpy = name.EndsWith(".npy", StringComparison.OrdinalIgnoreCase) && IsNpyPayload(raw);
+
+      var entry = archive.CreateEntry(alreadyNpy ? name : EnsureNpySuffix(name), CompressionLevel.NoCompression);
+      using var s = entry.Open();
+      if (alreadyNpy) {
+        s.Write(raw, 0, raw.Length);
+      } else {
+        NpyWriter.Write(s, raw);
+      }
+    }
+  }
+
+  private static bool IsNpyPayload(ReadOnlySpan<byte> data)
+    => data.Length >= 6 &&
+       data[0] == 0x93 && data[1] == (byte)'N' && data[2] == (byte)'U' &&
+       data[3] == (byte)'M' && data[4] == (byte)'P' && data[5] == (byte)'Y';
+
+  private static string EnsureNpySuffix(string name) =>
+    name.EndsWith(".npy", StringComparison.OrdinalIgnoreCase) ? name : name + ".npy";
 
   private sealed record ZipEntrySummary(string Name, long Length, long CompressedLength, DateTimeOffset LastWriteTime);
 

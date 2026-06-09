@@ -17,14 +17,14 @@ namespace FileFormat.Numpy;
 /// followed by an ASCII Python-dict header and raw array bytes. Supports v1
 /// (u16 header length), v2 (u32), and v3 (UTF-8 dict, otherwise identical to v2).
 /// </remarks>
-public sealed class NpyFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class NpyFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   public string Id => "Npy";
   public string DisplayName => "NumPy NPY";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".npy";
   public IReadOnlyList<string> Extensions => [".npy"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -49,6 +49,61 @@ public sealed class NpyFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       WriteFile(outputDir, e.Name, e.Data);
     }
   }
+
+  /// <summary>
+  /// WORM create — concatenates every input's bytes into a single uint8 NPY
+  /// array. When exactly one input is supplied and it is itself a valid NPY
+  /// file, it is written through verbatim so callers can round-trip an
+  /// existing array. The dtype/shape can be overridden via
+  /// <see cref="FormatCreateOptions"/> keys <c>npy_dtype</c>, <c>npy_shape</c>
+  /// and <c>npy_fortran_order</c>.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    // Concatenate every file input's bytes — non-file inputs (directories) are skipped.
+    using var ms = new MemoryStream();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var data = i.ReadContent();
+      ms.Write(data, 0, data.Length);
+    }
+    var payload = ms.ToArray();
+
+    // If the single input is itself a valid NPY, copy it through unchanged.
+    if (inputs.Count == 1 && !inputs[0].IsDirectory && IsNpyPayload(payload)) {
+      output.Write(payload);
+      return;
+    }
+
+    // If the inputs were extracted by our own descriptor (header.bin + array.bin),
+    // honour the embedded header by writing header.bin then array.bin in order.
+    var header = inputs.FirstOrDefault(i => !i.IsDirectory &&
+      string.Equals(i.ArchiveName, "header.bin", StringComparison.OrdinalIgnoreCase));
+    var array = inputs.FirstOrDefault(i => !i.IsDirectory &&
+      string.Equals(i.ArchiveName, "array.bin", StringComparison.OrdinalIgnoreCase));
+    if (header != null && array != null) {
+      var headerBytes = header.ReadContent();
+      var arrayBytes = array.ReadContent();
+      if (IsNpyPayload(headerBytes)) {
+        output.Write(headerBytes);
+        output.Write(arrayBytes);
+        return;
+      }
+    }
+
+    var dtype = options?.GetOption("npy_dtype", NpyWriter.DefaultDtype) ?? NpyWriter.DefaultDtype;
+    var shape = options?.GetOption("npy_shape", string.Empty);
+    var fortran = options?.GetOptionBool("npy_fortran_order", false) ?? false;
+
+    NpyWriter.Write(output, payload, dtype, string.IsNullOrEmpty(shape) ? null : shape, fortran);
+  }
+
+  private static bool IsNpyPayload(ReadOnlySpan<byte> data)
+    => data.Length >= 6 &&
+       data[0] == 0x93 && data[1] == (byte)'N' && data[2] == (byte)'U' &&
+       data[3] == (byte)'M' && data[4] == (byte)'P' && data[5] == (byte)'Y';
 
   private List<(string Name, byte[] Data, string Kind)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();

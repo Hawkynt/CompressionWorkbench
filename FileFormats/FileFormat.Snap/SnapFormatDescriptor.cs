@@ -13,7 +13,7 @@ namespace FileFormat.Snap;
 /// identity metadata in a synthetic <c>metadata.ini</c> entry and then
 /// exposes every SquashFS entry verbatim under its original path.
 /// </summary>
-public sealed class SnapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class SnapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   /// <summary>Unique format identifier.</summary>
   public string Id => "Snap";
@@ -26,8 +26,9 @@ public sealed class SnapFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <summary>Capabilities supported by this descriptor.</summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.SupportsDirectories;
 
   /// <summary>Preferred extension.</summary>
   public string DefaultExtension => ".snap";
@@ -98,6 +99,14 @@ public sealed class SnapFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       WriteFile(outputDir, e.FullPath, r.Extract(e));
     }
   }
+
+  /// <summary>
+  /// WORM create — produces a fresh Snap package (SquashFS image) at
+  /// <paramref name="output"/> containing <paramref name="inputs"/> plus a
+  /// synthesised <c>meta/snap.yaml</c> when none is supplied.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
+    => SnapWriter.Write(output, inputs, options);
 
   private static byte[] BuildMetadata(SquashFsReader r) {
     var yaml = TryReadSnapYaml(r);

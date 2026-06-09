@@ -275,10 +275,10 @@ public class WbnTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Capabilities_DoesNotIncludeCanCreate() {
+  public void Capabilities_IncludeWormCreate() {
     var d = new WbnFormatDescriptor();
-    Assert.That(d.Capabilities & FormatCapabilities.CanCreate, Is.EqualTo((FormatCapabilities)0));
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>());
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanTest), Is.True);
