@@ -1,15 +1,19 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Codec.HuC6280;
+using Codec.Pcm;
 using Compression.Registry;
 
 namespace FileFormat.Hes;
 
 /// <summary>
 /// Surfaces a PC Engine (TurboGrafx-16) HES music file (<c>.hes</c>) as a metadata-rich
-/// pseudo-archive. HES carries a HuC6280 program plus data that drive the PC Engine's PSG; there
-/// is no audio to decode, so the loaded data blocks are surfaced verbatim as Kind <c>Stream</c>
-/// blobs.
+/// pseudo-archive. HES carries a HuC6280 program plus data that drive the PC Engine's integrated
+/// 6-channel wavetable PSG. The loaded data blocks are surfaced verbatim as Kind <c>Stream</c>
+/// blobs, and the start song is emulated (HuC6280 core + register-level PSG synthesis) and
+/// rendered to playable per-side <c>LEFT.wav</c> / <c>RIGHT.wav</c> (44100 Hz, 16-bit). Any
+/// per-subtune render is surfaced lazily as a <c>TRACK_nn_LEFT/RIGHT.wav</c> pair.
 /// <para>Layout: a 0x10-byte header — magic <c>HESM</c>, u8 version, u8 firstSong, u16 initAddr
 /// (request address), and an 8-byte initial MPR (memory-paging) table — followed by one or more
 /// data blocks. Each data block begins with its own 0x10-byte block header: a <c>DATA</c> tag,
@@ -84,9 +88,91 @@ public sealed class HesFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       entries.Add(new("program.bin", "Stream", blob[HeaderSize..]));
 
     sb.AppendLine($"data_blocks={blockCount}");
+
+    // Render the start song to a playable stereo pair. HES init takes the song number in A; HES
+    // rips store it 0-based in the header firstSong byte, so it is passed through unchanged. Any
+    // failure (unsupported program, malformed data) degrades silently to the metadata/blocks-only
+    // surface above.
+    var rendered = TryRender(blob, firstSong);
+    if (rendered is { } r) {
+      sb.AppendLine($"rendered_duration={RenderSeconds:0.#}s");
+      sb.AppendLine($"rendered_rate={r.FrameRateHz:0.##}Hz");
+      sb.AppendLine("rendered_channels=stereo");
+      sb.AppendLine($"rendered_sample_rate={OutputSampleRate}");
+      sb.AppendLine($"rendered_song={firstSong}");
+      // HES carries no reliable song-count field; only the start song's channels are surfaced.
+      sb.AppendLine("song_count_note=HES header carries no song count; surfacing start song only");
+      sb.AppendLine("rendered_status=ok");
+    } else {
+      sb.AppendLine("rendered_status=skipped (render unavailable for this tune)");
+    }
+
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
 
+    if (rendered is { } w) {
+      entries.Add(new("LEFT.wav", "Channel",
+        PcmCodec.ToWavBlob(w.Left, channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1), "hes"));
+      entries.Add(new("RIGHT.wav", "Channel",
+        PcmCodec.ToWavBlob(w.Right, channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1), "hes"));
+
+      // The start song is also surfaced as a lazily-rendered TRACK pair (Kind Track): listing
+      // reports the exact per-side WAV byte size without rendering; each side renders on extract.
+      var no = "01";
+      var size = MonoWavSize(RenderSeconds);
+      var lazyPair = new Lazy<(byte[] Left, byte[] Right)>(() => RenderTrackPair(blob, firstSong));
+      entries.Add(AudioPseudoArchive.Entry.Lazy(
+        $"TRACK_{no}_LEFT.wav", "Track", () => lazyPair.Value.Left, size, "render"));
+      entries.Add(AudioPseudoArchive.Entry.Lazy(
+        $"TRACK_{no}_RIGHT.wav", "Track", () => lazyPair.Value.Right, size, "render"));
+    }
+
     return entries;
+  }
+
+  /// <summary>Output sample rate for the rendered LEFT/RIGHT WAVs.</summary>
+  private const int OutputSampleRate = 44100;
+
+  /// <summary>
+  /// Maximum rendered duration. Bounded at 30 seconds so a long or non-terminating tune still
+  /// yields a reasonable, quickly-produced preview.
+  /// </summary>
+  private const double RenderSeconds = 30.0;
+
+  /// <summary>The exact byte size of one mono 16-bit side WAV rendered for <paramref name="seconds"/>.</summary>
+  private static long MonoWavSize(double seconds) => 44L + (long)(seconds * OutputSampleRate) * 2;
+
+  /// <summary>Renders the chosen song to per-side 16-bit mono LE PCM + frame rate, or null on failure.</summary>
+  private static (byte[] Left, byte[] Right, double FrameRateHz)? TryRender(byte[] blob, int song) {
+    try {
+      var player = new HesPlayer(blob, song, OutputSampleRate);
+      var stereo = player.RenderStereo(RenderSeconds);
+      var (left, right) = Deinterleave(stereo);
+      return (left, right, player.FrameRateHz);
+    } catch {
+      return null;
+    }
+  }
+
+  /// <summary>Renders one song to a per-side LEFT/RIGHT WAV pair (used by the lazy Track entries).</summary>
+  private static (byte[] Left, byte[] Right) RenderTrackPair(byte[] blob, int song) {
+    var player = new HesPlayer(blob, song, OutputSampleRate);
+    var stereo = player.RenderStereo(RenderSeconds);
+    var (left, right) = Deinterleave(stereo);
+    return (
+      PcmCodec.ToWavBlob(left, channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1),
+      PcmCodec.ToWavBlob(right, channels: 1, OutputSampleRate, bitsPerSample: 16, formatCode: 1));
+  }
+
+  /// <summary>Splits interleaved 16-bit stereo PCM into two per-side little-endian byte buffers.</summary>
+  private static (byte[] Left, byte[] Right) Deinterleave(short[] stereo) {
+    var frames = stereo.Length / 2;
+    var left = new byte[frames * 2];
+    var right = new byte[frames * 2];
+    for (var f = 0; f < frames; ++f) {
+      BinaryPrimitives.WriteInt16LittleEndian(left.AsSpan(f * 2), stereo[f * 2]);
+      BinaryPrimitives.WriteInt16LittleEndian(right.AsSpan(f * 2), stereo[f * 2 + 1]);
+    }
+    return (left, right);
   }
 
   /// <summary>
