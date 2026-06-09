@@ -30,6 +30,7 @@
     <ProjectReference Include="..\Codecs\Codec.Opus\Codec.Opus.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Aac\Codec.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.AcronisTibx\FileFormat.AcronisTibx.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Afs\FileFormat.Afs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aiff\FileFormat.Aiff.csproj" />
