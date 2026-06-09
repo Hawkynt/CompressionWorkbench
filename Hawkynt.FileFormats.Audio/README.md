@@ -135,12 +135,19 @@ State legend:
 | `Codec.Z80`      | CPU core        | —     | reusable full Z80 (CB/ED/DD/FD, block ops, IM 0/1/2)                            |
 | `Codec.Sid`      | Synthesis       | R     | MOS 6581/8580/6582 (model-specific filters, reSID-style ADSR) + PSID player with 2SID/3SID bus routing |
 | `Codec.Spc700`   | Synthesis       | R     | SNES SPC700 CPU + S-DSP (gaussian, ADSR/GAIN, pitch-mod, FIR echo)              |
-| `Codec.Nes2a03`  | Synthesis       | R     | NES APU (duty/triangle/noise/DMC, nonlinear mixer) + NSF player                 |
+| `Codec.Nes2a03`  | Synthesis       | R     | NES APU (duty/triangle/noise/DMC, nonlinear mixer) + NSF player + expansion (VRC6, VRC7, FDS, MMC5, Namco163, Sunsoft 5B) |
 | `Codec.GameBoyApu`| Synthesis      | R     | SM83 CPU + GB APU (sweep, wave RAM, 7/15-bit noise) + GBS player                |
 | `Codec.Ay8910`   | Synthesis       | R     | AY-3-8910/YM2149 (10 envelope shapes, log DAC, ABC panning)                     |
 | `Codec.Sn76489`  | Synthesis       | R     | SEGA PSG (tone/noise LFSR, 2 dB attenuation, GG stereo)                         |
 | `Codec.Ym2612`   | Synthesis       | R     | OPN2 FM (genuine die log-sin/exp ROMs, 8 algorithms, DAC mode)                  |
 | `Codec.Ym2413`   | Synthesis       | R     | OPLL FM (built-in 15-patch ROM + user patch, 9ch / 6+5 rhythm, KSL/KSR, AM/PM)  |
+| `Codec.Ym2151`   | Synthesis       | R     | OPM FM (8ch 4-op, KC/KF phase gen, LFO saw/sq/tri/noise, noise ch8, per-ch L/R) |
+| `Codec.Ym2203`   | Synthesis       | R     | OPN FM (3ch via OPN2-core reuse) + SSG (AY-3-8910)                              |
+| `Codec.Ym2608`   | Synthesis       | R     | OPNA FM (6ch stereo via OPN2-core reuse) + SSG; rhythm/ADPCM-B gated            |
+| `Codec.Opl`      | Synthesis       | R     | OPL family — YM3526/OPL, YM3812/OPL2, YMF262/OPL3, Y8950 (Nuked-OPL3 port; Y8950 ADPCM gated) |
+| `Codec.HuC6280`  | CPU + Synthesis | R     | PC Engine HuC6280 (65C02 superset + block moves + MPR mapper) + 6-ch wavetable PSG |
+| `Codec.AmrNb`    | Speech          | R     | 3GPP AMR narrowband, all 8 modes (verified 108-113 dB PSNR vs ffmpeg)           |
+| `Codec.AmrWb`    | Speech          | R     | 3GPP AMR wideband / G.722.2, all 9 modes incl. high-band (79-104 dB PSNR vs ffmpeg) |
 | `Codec.Tracker`  | Tracker         | R     | ProTracker MOD + Scream Tracker 3 S3M song playback (full effect sets, song-length traversal) |
 | `Codec.TrackerXmIt`| Tracker       | R     | FastTracker II XM + Impulse Tracker IT playback (envelopes, NNA, resonant filter) + IT214/215 sample decompression |
 | `Codec.AdpcmX`   | ADPCM           | R     | ffmpeg ADPCM/DPCM pile: IMA DK3/DK4/EACS/SEAD, EA R1-R3, THP/AFC, SWF, 4XM, Xan, Interplay, SDX2, DERF, Gremlin |
@@ -253,15 +260,15 @@ State legend:
 | `FileFormat.Dts`      | R     | raw DTS — core decodes to per-channel WAVs; DTS-HD extensions info-only      |
 | `FileFormat.Ac3`      | R     | raw AC-3 AND E-AC-3 independent substreams decode to per-channel WAVs        |
 | `FileFormat.Oma`      | R     | Sony OpenMG (.oma/.aa3) — ATRAC3 decodes to channels; 3plus/MP3/LPCM surfaced |
-| `FileFormat.Vgm`      | R     | VGM/VGZ — renders via SN76489+YM2612+YM2413(OPLL/SMS FM) when covered; GG stereo (0x4F); GD3 tags, gzip transparent |
+| `FileFormat.Vgm`      | R     | VGM/VGZ — renders via SN76489 + YM2612 + YM2413 + YM2151(OPM) + YM2203/YM2608(OPN/OPNA) + OPL/OPL2/OPL3/Y8950 when covered; GG stereo (0x4F); GD3 tags, gzip transparent |
 | `FileFormat.Mus`      | R     | DMX/Doom MUS — converted.mid (classic mapping)                               |
 | `FileFormat.Xmi`      | R     | Miles XMIDI — songs/NN.mid (duration-scheduled note-offs)                    |
 | `FileFormat.Cmf`      | R     | Creative CMF — OPL patches + music.mid SMF wrap                              |
-| `FileFormat.Nsf`      | R     | NES NSF/NSFE — renders to WAV via 6502+2A03 APU (incl. DMC); per-subtune lazy `TRACK_nn.wav` (NSFE plst/time/tlbl honored); expansion chips noted |
+| `FileFormat.Nsf`      | R     | NES NSF/NSFE — renders to WAV via 6502+2A03 APU (incl. DMC) + expansion audio (VRC6/VRC7/FDS/MMC5/Namco163/Sunsoft 5B via header flag); per-subtune lazy `TRACK_nn.wav` (NSFE plst/time/tlbl honored) |
 | `FileFormat.Gbs`      | R     | Game Boy GBS — renders to stereo WAV via SM83+APU (timer rates, banking); per-subtune lazy `TRACK_nn_LEFT/RIGHT.wav` |
 | `FileFormat.Sid`      | R     | C64 PSID — renders via 6502+SID: per-chip 6581/8580/6582 model flags, 2SID/3SID → LEFT/RIGHT/CENTER, unknown model renders both `_6581`/`_8580` legs; per-subtune lazy `TRACK_nn.wav`; RSID surfaced |
 | `FileFormat.Kss`      | R     | MSX KSS — renders PSG to WAV via Z80+AY; per-subtune lazy tracks for KSSX (plain KSCC has no track list); SCC/FMPAC noted |
-| `FileFormat.Hes`      | R     | PC Engine HES — MPR table + DATA blocks                                      |
+| `FileFormat.Hes`      | R     | PC Engine HES — renders to stereo WAV via HuC6280+PSG (LEFT/RIGHT channels + lazy TRACK_01); MPR table + DATA blocks |
 | `FileFormat.Gym`      | R     | Genesis GYM — renders via YM2612+PSG (zlib-packed logs supported)            |
 | `FileFormat.Ay`       | R     | ZX Spectrum AY — renders to WAV via Z80+AY-3-8910; per-subtune lazy `TRACK_nn_LEFT/RIGHT.wav` |
 | `FileFormat.Alac`     | R     | Apple Lossless inside MP4 atoms — decoded per-channel WAVs via `Codec.Alac` |
@@ -286,6 +293,7 @@ State legend:
 | `FileFormat.Mp4`      | R     | MP4/MOV — each audio track decoded to `TRACKn_<CHANNEL>.wav` (AAC/ALAC/MP3/AC-3/FLAC/Opus/PCM); video stays raw |
 | `FileFormat.Matroska` | R     | Matroska/WebM — per-track decode (AAC/MP3/AC-3/Vorbis/Opus/FLAC/PCM/MS-ACM); Xiph/EBML/fixed block-lacing |
 | `FileFormat.Avi`      | R     | AVI — per `auds` stream decoded (PCM/MS-ADPCM/IMA/MP2-3/AC-3/A-law/µ-law/EXTENSIBLE) |
+| `FileFormat.Amr`      | R     | 3GPP AMR (`.amr`/`.awb` + MC1.0 multichannel) — AMR-NB/WB decoded to MONO/per-channel WAVs |
 | `FileFormat.Qoa`      | R     | Quite OK Audio (`.qoa`) — decoded channels                          |
 | `FileFormat.Dfpwm`    | R     | DFPWM1a (`.dfpwm`, headerless, 48 kHz mono convention) — MONO.wav   |
 | `FileFormat.Bonk`     | R     | Bonk (`.bonk`, tag-scanned header) — decoded channels               |
