@@ -73,6 +73,7 @@
     <Project Path="FileSystems/FileSystem.Btrfs/FileSystem.Btrfs.csproj" />
     <Project Path="FileFormats/FileFormat.Bzip2/FileFormat.Bzip2.csproj" />
     <Project Path="FileFormats/FileFormat.Cab/FileFormat.Cab.csproj" />
+    <Project Path="FileFormats/FileFormat.EaseUs/FileFormat.EaseUs.csproj" />
     <Project Path="FileFormats/FileFormat.Cbr/FileFormat.Cbr.csproj" />
     <Project Path="FileFormats/FileFormat.Cbz/FileFormat.Cbz.csproj" />
     <Project Path="FileFormats/FileFormat.Cdi/FileFormat.Cdi.csproj" />
@@ -437,7 +438,6 @@
     <Project Path="FileFormats/FileFormat.Acronis/FileFormat.Acronis.csproj" />
     <Project Path="FileFormats/FileFormat.Veeam/FileFormat.Veeam.csproj" />
     <Project Path="FileFormats/FileFormat.Aomei/FileFormat.Aomei.csproj" />
-    <Project Path="FileFormats/FileFormat.EaseUs/FileFormat.EaseUs.csproj" />
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />
