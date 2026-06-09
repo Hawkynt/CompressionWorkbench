@@ -32,4 +32,11 @@ public enum GhostGenerationHint {
   /// hint is set.
   /// </summary>
   Modern11Plus = 3,
+  /// <summary>
+  /// Pre-3.0 (Ghost 1.x / 2.x DOS-era) dump file — FE EF magic + dump-head
+  /// type byte at offset 2 + 512-byte zero-padded head, no record framing
+  /// magic and no compression. Parsed by <see cref="GhostLegacyReader"/>
+  /// to Stage-1 R/O metadata.
+  /// </summary>
+  PreModern1And2 = 4,
 }

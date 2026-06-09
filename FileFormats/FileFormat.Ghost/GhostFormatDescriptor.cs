@@ -65,21 +65,32 @@ public sealed class GhostFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public string Description =>
     "Symantec / Norton Ghost — R/W for the FE EF record container shared across " +
     "the entire Binary Research → Symantec → Norton lineage (Ghost 3.0 / 1998 " +
-    "through Ghost 11.x / 12.x; pre-3.0 PKWARE-DCL-Implode \"Old\" compression " +
-    "is hard-rejected by Ghost Explorer itself and therefore stays R/O Stage-0). " +
-    "0x012F18D8 record framing, Fast LZ Z1 + zlib Z3-Z9 compression, CRC-16 " +
-    "stream cipher encryption, .ghs spanning. Format reverse-engineered from " +
-    "Norton Ghost 11.5.1 binaries (ported from MIT-licensed nyarime/gho) and " +
-    "independently cross-confirmed against Symantec Ghost Explorer 2003.789 — " +
-    "the Fast LZ \"123456789012345678\" hash sentinel, the 0x9E5F hash multiplier, " +
-    "the 4096-entry hash table init, the 0x01 first-byte raw escape, the 16-bit " +
-    "LSB control word, the 2-byte (b0,b1) match token format, the 0x012F18D8 " +
-    "record magic, the 10-byte record-header layout, the CRC-16-XMODEM/CCITT " +
-    "stream cipher and the None/Old/Fast/High compression dispatch are byte-" +
-    "identical between Ghost 2003.789 and Ghost 11.5.1. Writing is codec-" +
-    "validated against own reader; byte-compat with Ghost Explorer has not yet " +
-    "been verified by an end-to-end Wine round trip. Self-round-trip is test-" +
-    "covered for all supported compression modes including encryption.";
+    "through Ghost 11.x / 12.x). 0x012F18D8 record framing, Fast LZ Z1 + zlib " +
+    "Z3-Z9 compression, CRC-16 stream cipher encryption, .ghs spanning. Format " +
+    "reverse-engineered from Norton Ghost 11.5.1 binaries (ported from " +
+    "MIT-licensed nyarime/gho) and independently cross-confirmed against " +
+    "Symantec Ghost Explorer 2003.789 — the Fast LZ \"123456789012345678\" hash " +
+    "sentinel, the 0x9E5F hash multiplier, the 4096-entry hash table init, the " +
+    "0x01 first-byte raw escape, the 16-bit LSB control word, the 2-byte " +
+    "(b0,b1) match token format, the 0x012F18D8 record magic, the 10-byte " +
+    "record-header layout, the CRC-16-XMODEM/CCITT stream cipher and the " +
+    "None/Old/Fast/High compression dispatch are byte-identical between Ghost " +
+    "2003.789 and Ghost 11.5.1. Writing is codec-validated against own reader; " +
+    "byte-compat with Ghost Explorer has not yet been verified by an end-to-end " +
+    "Wine round trip. Self-round-trip is test-covered for all supported " +
+    "compression modes including encryption. " +
+    "PRE-3.0 (Ghost 1.x / 2.x DOS-era, 1996-1998) images are R/O Stage-1 — the " +
+    "pre-3.0 layout (FE EF magic + 512-byte dump head with a head-type byte at " +
+    "offset 2: 0x01 disk descriptor, 0x02 partition, 0x03 boot record + " +
+    "uncompressed body) was reverse-engineered from the Ghost 1.6 GHOST.EXE " +
+    "binary (archive.org item ghost16, MD5 64cef43d0eb8d456de990cc95353fa05) by " +
+    "binary inspection of the WriteDumpHeader (file_off 0x897d) and " +
+    "ReadDumpHeader2 (file_off 0x8a6f) functions; the head magic + head-type " +
+    "byte are surfaced via metadata.ini and the 512-byte dump head + body are " +
+    "surfaced verbatim. Per-file extraction (FAT directory walk inside the " +
+    "stored partition body) is out of scope for Stage-1 — pre-3.0 PKWARE-DCL " +
+    "\"Old\" compression at byte 3 of the head was confirmed irrecoverable by " +
+    "the cross-vendor binary RE; Ghost Explorer itself rejects it.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new GhostReader(stream, password: password);

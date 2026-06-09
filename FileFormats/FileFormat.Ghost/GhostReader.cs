@@ -89,11 +89,25 @@ public sealed class GhostReader : IDisposable {
 
     this.LeadingBytes = this._data.AsSpan(0, Math.Min(16, this._data.Length)).ToArray();
 
-    // Try modern parse first; fall back to diagnostic-only entries on failure.
-    if (this.TryParseModernContainer())
+    // Try modern parse first; if it fails check for the pre-3.0 layout
+    // before falling back to a diagnostic-only Stage-0 surface.
+    if (this.TryParseModernContainer()) {
       this.GenerationHint = GhostGenerationHint.Modern11Plus;
-    else
+    } else if (GhostLegacyReader.LooksLikeLegacyHeader(this._data)) {
+      // Pre-3.0 (Ghost 1.x / 2.x DOS-era) — promote to Stage-1 via the
+      // dedicated legacy reader. The reader surfaces metadata.ini + raw
+      // dump head + dump body; we copy those onto our entry list so the
+      // descriptor's existing IArchiveFormatOperations contract works
+      // identically across both pre-3.0 and modern paths.
+      this.GenerationHint = GhostGenerationHint.PreModern1And2;
+      var legacy = new GhostLegacyReader(this._data);
+      foreach (var e in legacy.Entries)
+        this._entries.Add(e);
+      this._legacyHeadType = legacy.HeadType;
+      return;
+    } else {
       this.GenerationHint = ClassifyLeadingBytes(this.LeadingBytes);
+    }
 
     var meta = this.BuildMetadata();
     this._entries.Add(new GhostEntry { Name = "metadata.ini", Size = meta.Length, Data = meta });
@@ -107,6 +121,10 @@ public sealed class GhostReader : IDisposable {
       this._entries.Add(new GhostEntry { Name = rawName, Size = this._data.Length, Data = this._data });
     }
   }
+
+  /// <summary>The head-type byte at offset 2 when a pre-3.0 image was parsed; else 0.</summary>
+  public byte LegacyHeadType => this._legacyHeadType;
+  private byte _legacyHeadType;
 
   // ── Modern (Ghost 11.x / 12.x) record-container parse ──────────────
 

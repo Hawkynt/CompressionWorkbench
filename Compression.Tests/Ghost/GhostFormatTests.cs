@@ -228,16 +228,18 @@ public class GhostFormatTests {
       Throws.InstanceOf<InvalidDataException>());
   }
 
-  // ── Legacy version gate (Ghost 4-7) ───────────────────────────────
+  // ── Legacy version gate (Ghost 4-7 / unknown FE EF) ────────────────
 
   [Test, Category("BoundaryCase")]
-  public void Reader_VersionGatesLegacyShapedHeader() {
-    // Ghost 4-7 signature shape: FE EF, but no 0x012F18D8 record magic anywhere.
-    // Our parser must classify modern parse as failed and surface stage-0 metadata.
+  public void Reader_VersionGatesUnknownFeEfShapedHeader() {
+    // FE EF with an unknown head-type byte (0xFF) — neither modern record
+    // container nor pre-3.0 Ghost dump (which uses head types 0x01/0x02/0x03).
+    // Our parser must fall through to the Stage-0 diagnostic surface.
     var legacy = new byte[1024];
     legacy[0] = 0xFE;
     legacy[1] = 0xEF;
-    for (var i = 2; i < legacy.Length; i++) legacy[i] = (byte)(i & 0xFF);
+    legacy[2] = 0xFF; // unknown head type
+    for (var i = 3; i < legacy.Length; i++) legacy[i] = (byte)(i & 0xFF);
     using var ms = new MemoryStream(legacy);
     var d = new GhostFormatDescriptor();
     var entries = d.List(ms, password: null);
@@ -261,6 +263,164 @@ public class GhostFormatTests {
     Assert.That(text, Does.Contain("parse_status=detection-only"));
     Assert.That(text, Does.Contain("Ghost Explorer").IgnoreCase
       .Or.Contain("ghostexp").IgnoreCase);
+  }
+
+  // ── Pre-3.0 (Ghost 1.x / 2.x DOS) Stage-1 promotion ───────────────
+
+  /// <summary>
+  /// Build a synthetic pre-3.0 Ghost dump matching the layout established by
+  /// binary inspection of Ghost 1.6 GHOST.EXE: 512-byte head with FE EF magic
+  /// at offset 0, head-type byte at offset 2, zero-padded to 512 bytes, then
+  /// a body of arbitrary bytes.
+  /// </summary>
+  private static byte[] BuildLegacyDump(byte headType, int bodyLen = 2048) {
+    var image = new byte[GhostLegacyConstants.DumpHeadSize + bodyLen];
+    image[0] = GhostLegacyConstants.MagicByte0;
+    image[1] = GhostLegacyConstants.MagicByte1;
+    image[GhostLegacyConstants.HeadTypeOffset] = headType;
+    // Body bytes: just a deterministic pattern so we can verify byte-identity
+    // when the body is surfaced.
+    for (var i = 0; i < bodyLen; i++)
+      image[GhostLegacyConstants.DumpHeadSize + i] = (byte)((i * 5 + 17) & 0xFF);
+    return image;
+  }
+
+  [Test, Category("HappyPath")]
+  public void Reader_RecognisesPre30HeadType1() {
+    var image = BuildLegacyDump(GhostLegacyConstants.HeadTypeFirst);
+    using var ms = new MemoryStream(image);
+    var r = new GhostReader(ms);
+    Assert.That(r.GenerationHint, Is.EqualTo(GhostGenerationHint.PreModern1And2));
+    Assert.That(r.LegacyHeadType, Is.EqualTo(GhostLegacyConstants.HeadTypeFirst));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Reader_RecognisesPre30HeadType2() {
+    var image = BuildLegacyDump(GhostLegacyConstants.HeadTypePartition);
+    using var ms = new MemoryStream(image);
+    var r = new GhostReader(ms);
+    Assert.That(r.GenerationHint, Is.EqualTo(GhostGenerationHint.PreModern1And2));
+    Assert.That(r.LegacyHeadType, Is.EqualTo(GhostLegacyConstants.HeadTypePartition));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Reader_RecognisesPre30HeadType3() {
+    var image = BuildLegacyDump(GhostLegacyConstants.HeadTypeBoot);
+    using var ms = new MemoryStream(image);
+    var r = new GhostReader(ms);
+    Assert.That(r.GenerationHint, Is.EqualTo(GhostGenerationHint.PreModern1And2));
+    Assert.That(r.LegacyHeadType, Is.EqualTo(GhostLegacyConstants.HeadTypeBoot));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Reader_Pre30_SurfacesDumpHeadAndBodyVerbatim() {
+    var image = BuildLegacyDump(GhostLegacyConstants.HeadTypeFirst, bodyLen: 4096);
+    using var ms = new MemoryStream(image);
+    var r = new GhostReader(ms);
+    var head = r.Entries.FirstOrDefault(e => e.Name == "dump-head.bin");
+    var body = r.Entries.FirstOrDefault(e => e.Name == "dump-body.bin");
+    Assert.That(head, Is.Not.Null);
+    Assert.That(body, Is.Not.Null);
+    Assert.That(head!.Data.Length, Is.EqualTo(GhostLegacyConstants.DumpHeadSize));
+    Assert.That(body!.Data.Length, Is.EqualTo(4096));
+    Assert.That(head.Data.AsSpan(0, 3).ToArray(),
+      Is.EqualTo(new byte[] { 0xFE, 0xEF, GhostLegacyConstants.HeadTypeFirst }));
+    // Body must be byte-identical to the synthesised payload.
+    for (var i = 0; i < 4096; i++)
+      Assert.That(body.Data[i], Is.EqualTo((byte)((i * 5 + 17) & 0xFF)));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Reader_Pre30_MetadataDocumentsScopeAndReSource() {
+    var image = BuildLegacyDump(GhostLegacyConstants.HeadTypeFirst);
+    using var ms = new MemoryStream(image);
+    var r = new GhostReader(ms);
+    var meta = r.Entries.First(e => e.Name == "metadata.ini");
+    var text = System.Text.Encoding.UTF8.GetString(meta.Data);
+    Assert.That(text, Does.Contain("pre-3.0").IgnoreCase);
+    Assert.That(text, Does.Contain("stage=1"));
+    Assert.That(text, Does.Contain("parse_status=ok"));
+    Assert.That(text, Does.Contain("dump_head_type=0x01"));
+    Assert.That(text, Does.Contain("first_record"));
+    Assert.That(text, Does.Contain("Ghost 1.6").Or.Contain("ghost16").IgnoreCase);
+  }
+
+  [Test, Category("HappyPath")]
+  public void List_Pre30_SurfacesAllStageOneEntries() {
+    var image = BuildLegacyDump(GhostLegacyConstants.HeadTypePartition);
+    using var ms = new MemoryStream(image);
+    var d = new GhostFormatDescriptor();
+    var entries = d.List(ms, password: null);
+    Assert.That(entries.Select(e => e.Name), Does.Contain("metadata.ini"));
+    Assert.That(entries.Select(e => e.Name), Does.Contain("dump-head.bin"));
+    Assert.That(entries.Select(e => e.Name), Does.Contain("dump-body.bin"));
+    Assert.That(entries.Select(e => e.Name), Does.Not.Contain("ghost-image.gho.bin"),
+      "Stage-1 promotion must remove the Stage-0 raw-fallback entry.");
+  }
+
+  [Test, Category("BoundaryCase")]
+  public void LegacyDetector_RejectsFeEfWhenModernRecordMagicPresent() {
+    // FE EF + head-type-shaped byte at offset 2, but 0x012F18D8 appears
+    // somewhere in the file → must NOT classify as pre-3.0 (modern wins).
+    var image = new byte[2048];
+    image[0] = 0xFE; image[1] = 0xEF; image[2] = 0x01;
+    // Plant the modern record magic deep in the body.
+    var off = 1024;
+    image[off + 4] = 0xD8; image[off + 5] = 0x18;
+    image[off + 6] = 0x2F; image[off + 7] = 0x01;
+    Assert.That(GhostLegacyReader.LooksLikeLegacyHeader(image), Is.False);
+  }
+
+  [Test, Category("BoundaryCase")]
+  public void LegacyDetector_RejectsFeEfWithUnknownHeadType() {
+    var image = new byte[GhostLegacyConstants.DumpHeadSize + 16];
+    image[0] = 0xFE; image[1] = 0xEF; image[2] = 0x42; // unknown head type
+    Assert.That(GhostLegacyReader.LooksLikeLegacyHeader(image), Is.False);
+  }
+
+  [Test, Category("BoundaryCase")]
+  public void LegacyDetector_RejectsBytesTooShortForHead() {
+    var image = new byte[] { 0xFE, 0xEF, 0x01 }; // shorter than 512 bytes
+    Assert.That(GhostLegacyReader.LooksLikeLegacyHeader(image), Is.False);
+  }
+
+  [Test, Category("BoundaryCase")]
+  public void LegacyDetector_RejectsWrongMagic() {
+    var image = new byte[GhostLegacyConstants.DumpHeadSize + 16];
+    image[0] = 0x4D; image[1] = 0x5A; // MZ — wrong magic
+    image[2] = 0x01;
+    Assert.That(GhostLegacyReader.LooksLikeLegacyHeader(image), Is.False);
+  }
+
+  [Test, Category("HappyPath")]
+  public void LegacyConstants_PinReverseEngineeredValues() {
+    // These constants are pinned to the values reverse-engineered from
+    // Ghost 1.6 GHOST.EXE (archive.org item ghost16). Any change to them
+    // must update the GhostLegacyReader XML-doc references too.
+    Assert.That(GhostLegacyConstants.MagicByte0, Is.EqualTo((byte)0xFE),
+      "FE byte 0 confirmed by Ghost 1.6 WriteDumpHeader @ file_off 0x89b3.");
+    Assert.That(GhostLegacyConstants.MagicByte1, Is.EqualTo((byte)0xEF),
+      "EF byte 1 confirmed by Ghost 1.6 WriteDumpHeader @ file_off 0x89ba.");
+    Assert.That(GhostLegacyConstants.DumpHeadSize, Is.EqualTo(512),
+      "512-byte head confirmed by Ghost 1.6 WriteDumpHeader's rep stosw cx=0x100 @ 0x899d.");
+    Assert.That(GhostLegacyConstants.HeadTypeOffset, Is.EqualTo(2),
+      "Head type at offset 2 confirmed by Ghost 1.6 WriteDumpHeader @ 0x89c2 and ReadDumpHeader2 @ 0x8ac8.");
+    Assert.That(GhostLegacyConstants.HeadTypeFirst, Is.EqualTo((byte)0x01));
+    Assert.That(GhostLegacyConstants.HeadTypePartition, Is.EqualTo((byte)0x02));
+    Assert.That(GhostLegacyConstants.HeadTypeBoot, Is.EqualTo((byte)0x03));
+  }
+
+  [Test, Category("ExceptionalCase")]
+  public void LegacyReader_HandlesEmptyAndShortPayloads() {
+    // Just the 512-byte head and nothing else.
+    var image = new byte[GhostLegacyConstants.DumpHeadSize];
+    image[0] = 0xFE; image[1] = 0xEF; image[2] = 0x01;
+    using var ms = new MemoryStream(image);
+    var r = new GhostReader(ms);
+    Assert.That(r.GenerationHint, Is.EqualTo(GhostGenerationHint.PreModern1And2));
+    // No body entry because there are no bytes past the head.
+    Assert.That(r.Entries.Select(e => e.Name), Does.Not.Contain("dump-body.bin"));
+    Assert.That(r.Entries.Select(e => e.Name), Does.Contain("dump-head.bin"));
   }
 
   [Test, Category("HappyPath")]
