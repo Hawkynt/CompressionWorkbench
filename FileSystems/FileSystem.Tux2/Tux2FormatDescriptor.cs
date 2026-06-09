@@ -5,20 +5,21 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Tux2;
 
 /// <summary>
-/// Read-only descriptor for TUX2 — Daniel Phillips's 2000-era phase-tree
-/// filesystem proposal. TUX2 never reached a stable shipping on-disk
-/// format; this descriptor recognises a deterministic synthetic header
-/// pattern (magic "TUX2FS\0\0" at offset 0) so research images we
-/// generate can be detected and round-tripped. Real legacy prototype
-/// images would need a custom parser matching the specific snapshot of
-/// the in-progress code that produced them.
+/// Read+WORM descriptor for TUX2 — Daniel Phillips's 2002 phase-tree
+/// filesystem proposal (OLS 2002 paper, never-stabilised research format).
+/// Recognises a deterministic header pattern (magic "TUX2FS\0\0" at offset 0)
+/// so research images we generate round-trip through the reader. Writer emits
+/// a single-phase image only (no alpha/beta phases, no version chain) — real
+/// legacy prototype images would need a custom parser matching the specific
+/// snapshot of the in-progress code that produced them.
 /// </summary>
-public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
+public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
   public string Id => "Tux2";
   public string DisplayName => "TUX2";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".tux2";
   public IReadOnlyList<string> Extensions => [".tux2"];
@@ -29,7 +30,7 @@ public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "TUX2 phase-tree research filesystem (Daniel Phillips, ~2000) — read-only synthetic.";
+  public string Description => "TUX2 phase-tree research filesystem (Daniel Phillips, OLS 2002) — single-phase synthetic image.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new Tux2Reader(stream);
@@ -46,9 +47,21 @@ public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  /// <summary>
+  /// Emits a fresh single-phase TUX2 image: 16-byte header (magic + version +
+  /// file count) followed by per-file records (u16 name length, UTF-8 name,
+  /// u32 data length, raw bytes). Round-trips through <see cref="Tux2Reader"/>.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var w = new Tux2Writer();
+    foreach (var (name, data) in FilesOnly(inputs))
+      w.AddFile(name, data);
+    w.WriteTo(output);
+  }
+
   public void Defragment(Stream archive)
-    => throw new NotSupportedException("Tux2 read-only — defragmentation requires a writer.");
+    => throw new NotSupportedException("Tux2 single-phase WORM — defragmentation requires a rewriting writer.");
 
   public void Defragment(Stream archive, DefragOptions options)
-    => throw new NotSupportedException("Tux2 read-only — defragmentation requires a writer.");
+    => throw new NotSupportedException("Tux2 single-phase WORM — defragmentation requires a rewriting writer.");
 }

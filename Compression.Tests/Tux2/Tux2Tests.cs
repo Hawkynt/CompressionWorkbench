@@ -97,9 +97,11 @@ public class Tux2Tests {
     Assert.Throws<NotSupportedException>(() => d.Defragment(ms));
   }
 
-  [Test, Category("Sad")]
-  public void NoCreatable_Interface() {
+  [Test, Category("HappyPath")]
+  public void Implements_IArchiveCreatable() {
     var d = new FileSystem.Tux2.Tux2FormatDescriptor();
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>());
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.SupportsMultipleEntries), Is.True);
   }
 }
