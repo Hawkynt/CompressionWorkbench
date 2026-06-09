@@ -264,6 +264,27 @@ State legend:
 | `FileFormat.Ypf`        | WORM  | YukaScript YPF                     |
 | `FileFormat.Zap`        | WORM  | ZAP (Amiga Disk Archiver)          |
 
+#### Backup-software disk images
+
+Whole-system / partition backups from consumer + enterprise backup suites. Several were
+reverse-engineered directly from vendor binaries (no published spec) — the descriptor for
+each one names exactly which fields are decoded versus documented-TODO. R/W formats survive
+their own round-trip; WORM formats can produce a fresh image that the same reader walks back.
+
+| Format                  | State | Display name                                                  |
+| ----------------------- | ----- | ------------------------------------------------------------- |
+| `FileFormat.Acronis`    | R     | Acronis True Image — classic `.tib` (FileMeta chain walk + ItemCommon name) |
+| `FileFormat.AcronisTibx`| R     | Acronis True Image — modern `.tibx` (Stage-1 page-zero header + metadata) |
+| `FileFormat.Aomei`      | WORM  | AOMEI Backupper `.adi` / `.afi` (BIFH/BIFT + BR\_STANDARD\_HEADER envelope) |
+| `FileFormat.AppleSparse`| R     | Apple sparseimage + sparsebundle (Time Machine / hdiutil)     |
+| `FileFormat.Bkf`        | R     | Microsoft NTBackup `.bkf` (MTF Tape Format)                   |
+| `FileFormat.EaseUs`     | R     | EaseUS Todo Backup `.pbd` (R/O chunk stream)                  |
+| `FileFormat.Ghost`      | R/W   | Norton Ghost 3.0 → 11.x (Fast LZ Z1 + zlib Z3-Z9 + CRC-16 stream cipher) |
+| `FileFormat.Macrium`    | R/W   | Macrium Reflect X `.mrimgx` (open MIT-licensed spec)          |
+| `FileFormat.Paragon`    | WORM  | Paragon Backup & Recovery `.pbf` (CWBP write-once)            |
+| `FileFormat.Partclone`  | R     | Clonezilla partclone (`.img` partition clone)                 |
+| `FileFormat.Veeam`      | R     | Veeam B&R `.vbk` / `.vib` / `.vrb` (Stage-1 OibSummary trailer only) |
+
 ## Detailed format reference
 
 The tables below mirror the canonical "what does each format actually support" reference from
@@ -534,6 +555,30 @@ first-section + RWX flags + entry-in-last-section + payload-entropy fingerprint 
 binaries with the `UPX!` magic wiped) and an in-process decompressor for NRV2B / NRV2D /
 NRV2E (LE32 + LE16 + LE8 variants) and LZMA payloads via the `BB_Nrv2{b,d,e}` and `BB_Lzma`
 building blocks. PE header reconstruction (IAT / OEP) is delegated to the original `upx -d`.
+
+### Backup-software disk images
+
+Whole-system / partition backups from consumer + enterprise backup suites. Closed-source
+formats were elevated from Stage-0 detection-only via direct binary reverse engineering of
+publicly-distributed vendor binaries; each descriptor's `Description` field names exactly
+which fields are decoded against the binary versus documented-TODO. R/W = our writer +
+reader round-trip; WORM = our writer emits a fresh image our reader walks back, but vendor
+byte-compat stays explicitly out of scope (no real vendor samples available for clean-room
+validation, or vendor tooling is restore-only).
+
+| Container                | State | Reference                                                                                                    | Notes                                                                                                                                                                                       |
+| ------------------------ | ----- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FileFormat.Bkf`         | R     | [MS-MTF](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-mtf/)                              | NTBackup MTF Tape Format; DBLK-chain walker, FILE + DATA entry types, `TAPE` magic at offset 0                                                                                              |
+| `FileFormat.AppleSparse` | R     | [hdiutil(1)](https://www.unix.com/man-page/osx/1/hdiutil/) + Time Machine band layout                        | sparseimage band-allocation table + sparsebundle band fan-out; inner HFS+ / APFS delegated                                                                                                  |
+| `FileFormat.Partclone`   | R     | [Clonezilla partclone source](https://github.com/Tomas-M/partclone)                                          | `image_head` + `fs_info` + bitmap → sector reconstruction; per-FS family backed by the matching FS reader                                                                                   |
+| `FileFormat.Ghost`       | R/W   | Reverse-engineered from Symantec Ghost Explorer 2003                                                         | Modern 3.0 → 11.x with Fast LZ Z1 + zlib Z3-Z9 codecs + CRC-16 stream cipher; legacy DOS-era Ghost 1.x / 2.x stays Stage-0 with version-gated diagnostic fallback                            |
+| `FileFormat.Macrium`     | R/W   | [Macrium mrimgx file layout](https://github.com/macrium/mrimgx_file_layout) (MIT)                            | Reflect X `.mrimgx` per the open spec — AES-CBC + PBKDF2-HMAC-SHA256 600k-iter + ESSIV-style per-block IV + zstd                                                                            |
+| `FileFormat.Acronis`     | R     | Reverse-engineered from `ti_tools.dll` (ATI 2018 32-bit) and dennisss's prior framing                        | Classic `.tib` — Listing → RecordIndex chain walk via `MetaOffset` anchors; FileMeta 102/1/2/5 body decoded as InputItem attribute stream; ItemCommon 0x10 surfaces filenames + altnames     |
+| `FileFormat.AcronisTibx` | R     | Reverse-engineered from `libarchive3.so` (ATI 2021 Linux ELF) + `archive3.dll` (ATI 2018 Windows)            | Modern `.tibx` — 4096-byte page-zero header parser; `"ARCH"` magic; LSM tree walk + page-type table; LSM file-listing extraction is documented-TODO past Stage-1 metadata                  |
+| `FileFormat.Aomei`       | WORM  | Reverse-engineered from AOMEI Backupper Standard binaries (Binary Research `d:\work\br\src\imgfile`)         | `.adi` / `.afi` via BIFH (0x65C) head + BIFT (0x674) tail + BR\_STANDARD\_HEADER tagged-record framing; INFO\_TYPE\_COMPRESS / ENCRYPT / PASSWORD / BACKUP\_TYPE pinned; INDEX\_TYPE\_DATABLOCK body documented-TODO |
+| `FileFormat.Paragon`     | WORM  | Reverse-engineered from Paragon Hard Disk Manager 18                                                         | `.pbf` — vendor-literal `PImg` magic + Major 0x0002 / FormatVersion 0x0003 prefix; CWBP write-once chunk-offset table + per-chunk zlib + Adler-32; HDM 16+ is restore-only so no byte-compat |
+| `FileFormat.Veeam`       | R     | [Synacktiv Velociraptor artifact](https://github.com/synacktiv/veeam-velociraptor)                           | `.vbk` / `.vib` / `.vrb` — Stage-1 trailing `<OibSummary>` plaintext XML island only; chunked compressed block layer has no published spec (CBT chain + dedup pool + AES-256 gated)         |
+| `FileFormat.EaseUs`      | R     | Reverse-engineered from EaseUS Todo Backup + Rune-Server thread 694189                                       | `.pbd` — `IMGF` / `FIMG` magic; zlib chunk stream extracted via linear-scan + trial-inflate; full container chain replay is documented-TODO                                                 |
 
 ### Known limitations
 
