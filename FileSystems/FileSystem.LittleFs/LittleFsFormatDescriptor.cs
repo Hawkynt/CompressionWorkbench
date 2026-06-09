@@ -33,7 +33,12 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "LittleFS embedded-flash FS — superblock surface only.";
+  public string Description =>
+    "LittleFS embedded-flash FS — superblock surface only. " +
+    "WORM write deferred — the tag-based metadata-pair commit log with XOR-chained tags, " +
+    "CRC32-tag terminators per metadata block, mirrored superblock pairs, and inline-vs-CTZ " +
+    "data-region split is ~1500 LOC of reference-implementation port; no Windows/WSL " +
+    "validator exists to prove an emitted image correct end-to-end.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();

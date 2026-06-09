@@ -8,7 +8,7 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Mfs1;
 
 /// <summary>
-/// Read-only descriptor for Acorn MFS-1 (Master File System v1) disk images —
+/// Read+WORM descriptor for Acorn MFS-1 (Master File System v1) disk images —
 /// the catalog-compatible evolution of Acorn DFS used on early Acorn / BBC Master
 /// systems. The on-disk catalog matches DFS (256-byte sectors, two-sector catalog
 /// at track 0 sectors 0-1, up to 31 entries with 7-char names + 1-char directory),
@@ -18,21 +18,22 @@ namespace FileSystem.Mfs1;
 /// <para><b>Detection</b>: weak — magic is the optional <c>0x00 0x80</c> boot
 /// pattern at offsets 0-1, low confidence (0.20). Stronger magic'd formats win.
 /// Real detection is extension-led (<c>.mfs</c> / <c>.mfsd</c>).</para>
-/// <para><b>Write</b> is NOT supported. Producing a writeable MFS-1 image
-/// requires a real free-sector allocator + DFS sector-7-byte packed-high-bits
-/// encoder; the corpus of authentic MFS-1 images is also tiny and Windows-side
-/// has no validator. Per the project rule "never advertise CanCreate without
-/// real spec compliance + an external validator", this stays read-only.</para>
+/// <para><b>Write (WORM)</b>: <see cref="Mfs1Writer"/> emits a fresh image with
+/// a 12-character title, up to 31 catalog entries and contiguous file data from
+/// sector 2 onward — exactly the layout the existing reader walks, so every
+/// emitted image round-trips through <see cref="Mfs1Reader"/>. Modify/defragment
+/// are NOT advertised — both require a free-sector allocator that survives
+/// in-place edits, which is out of scope.</para>
 /// <para>Distinct from <c>FileSystem.Mfs</c>, which targets the Macintosh File
 /// System with a strong <c>0xD2D7</c> magic.</para>
 /// </remarks>
-public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Mfs1";
   public string DisplayName => "MFS-1 (Acorn Master File System v1)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".mfs";
   public IReadOnlyList<string> Extensions => [".mfs", ".mfsd"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -46,7 +47,7 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Acorn MFS-1 (BBC Master) — read-only DFS-tier catalog walker (write deferred — no Windows-side validator).";
+  public string Description => "Acorn MFS-1 (BBC Master) — DFS-tier catalog walker + WORM writer (R + Create only; modify/defrag deferred).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -110,6 +111,24 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     if (entriesParsed == 0)
       bldr.Append("note=Acorn MFS-1 catalog walk produced no entries; image surfaced as opaque blob.\n");
     WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes(bldr.ToString()), files);
+  }
+
+  /// <summary>
+  /// Emits a fresh MFS-1 disk image containing the supplied inputs. Directory
+  /// entries are dropped (MFS-1 is flat); a name shaped <c>"D.NAME"</c> places
+  /// the file under directory letter <c>D</c>, otherwise the file lands in the
+  /// default <c>$</c> directory. The reader's catalog walker round-trips every
+  /// image produced here.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = new Mfs1Writer();
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (!string.IsNullOrEmpty(label)) w.SetTitle(label);
+    foreach (var (name, data) in FilesOnly(inputs))
+      w.AddFile(name, data);
+    output.Write(w.Build());
   }
 
   /// <summary>

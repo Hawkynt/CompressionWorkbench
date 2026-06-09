@@ -32,7 +32,12 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "SmartFS wear-levelled raw-flash filesystem (Apache NuttX) — format sector surface only.";
+  public string Description =>
+    "SmartFS wear-levelled raw-flash filesystem (Apache NuttX) — format sector surface only. " +
+    "WORM write deferred — full SmartFS emission requires the per-sector logical-physical mapping " +
+    "table (CRC-protected 5-byte header per sector), wear-level sequence counters, directory " +
+    "sector chains with variable-length name entries, and free-sector allocator; no Windows/WSL " +
+    "validator exists outside the NuttX target, so an emitted image cannot be proved correct.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SmartFsReader(stream);

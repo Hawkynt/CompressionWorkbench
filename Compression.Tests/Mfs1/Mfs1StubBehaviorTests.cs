@@ -5,11 +5,10 @@ using FileSystem.Mfs1;
 namespace Compression.Tests.Mfs1;
 
 /// <summary>
-/// Pins the read-only capability surface for <see cref="Mfs1FormatDescriptor"/>.
-/// MFS-1 is now promoted to a real DFS-tier catalog walker, but write support
-/// is still absent — this test prevents silent capability creep
-/// (CanCreate/CanModify) and verifies the opaque-blob entries are still
-/// surfaced for magic-only inputs that have no parseable catalog.
+/// Pins the capability surface for <see cref="Mfs1FormatDescriptor"/>: WORM
+/// (R + Create) only — modify/defrag must NOT silently appear. Also verifies
+/// the opaque-blob entries are still surfaced for magic-only inputs that have
+/// no parseable catalog.
 /// </summary>
 [TestFixture]
 public class Mfs1StubBehaviorTests {
@@ -25,14 +24,14 @@ public class Mfs1StubBehaviorTests {
   public void Descriptor_HonestlyAdvertisesCapabilities_AndOpaqueEntriesOnMagicOnly() {
     var d = new Mfs1FormatDescriptor();
 
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False,
-      "MFS-1 read-only — must not advertise CanCreate (write requires a real DFS allocator + validator).");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True,
+      "MFS-1 WORM — must advertise CanCreate (writer emits a real DFS-shaped catalog).");
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
-      "MFS-1 read-only — must not advertise CanModify.");
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>(),
-      "MFS-1 read-only — must not implement IArchiveCreatable.");
+      "MFS-1 R+Create only — must not advertise CanModify (no free-sector allocator).");
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>(),
+      "MFS-1 WORM — must implement IArchiveCreatable.");
     Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>(),
-      "MFS-1 read-only — must not implement IArchiveModifiable.");
+      "MFS-1 R+Create only — must not implement IArchiveModifiable.");
 
     // Magic-only image has no parseable catalog → reader produces zero entries.
     // The descriptor still surfaces the opaque FULL.mfs + metadata.ini pair.
