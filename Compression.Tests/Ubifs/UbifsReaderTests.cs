@@ -215,11 +215,12 @@ public class UbifsReaderTests {
   }
 
   [Test, Category("Spec")]
-  public void Descriptor_IsHonestlyReadOnly() {
+  public void Descriptor_WormCreateOnly_NoModify() {
     var d = new UbifsFormatDescriptor();
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>(),
-      "UBIFS write requires wandering-tree commits — must not advertise CanCreate.");
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>(),
+      "UBIFS now ships WORM — descriptor must advertise CanCreate via IArchiveCreatable.");
     Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>(),
-      "UBIFS write requires wandering-tree commits — must not advertise CanModify.");
+      "UBIFS modify (Add/Remove without rebuild) requires wandering-tree commits — must not advertise CanModify.");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
   }
 }

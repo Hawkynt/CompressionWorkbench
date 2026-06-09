@@ -8,17 +8,22 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Ubifs;
 
 /// <summary>
-/// Read-only descriptor for UBIFS (Unsorted Block Image File System) images.
-/// Surfaces triage artifacts only: passthrough, node-counts metadata,
-/// plus flat inode and dentry tables. Full LPT/TNC walking is out of scope.
+/// UBIFS (Unsorted Block Image File System) descriptor.
+/// Read path: triage artifacts (passthrough, node-counts metadata, flat inode +
+/// dentry tables) plus real per-file extraction via linear log scan with zlib /
+/// stored DATA-node support.
+/// Write path (WORM): emits a flat sequence of superblock + master + inode +
+/// dentry + zlib-compressed data nodes — sufficient for self-round-trip via our
+/// linear reader, NOT for kernel mount (full LPT/TNC commit pipeline is
+/// multi-week work and out of scope here).
 /// </summary>
-public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Ubifs";
   public string DisplayName => "UBIFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".ubifs";
   public IReadOnlyList<string> Extensions => [".ubifs", ".ubi", ".img"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -29,7 +34,7 @@ public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Unsorted Block Image File System (Linux raw-flash) — read-only linear log scan w/ zlib data nodes (write deferred — wandering-tree commit).";
+  public string Description => "Unsorted Block Image File System (Linux raw-flash) — linear log scan w/ zlib data nodes; WORM writer emits superblock+master+inode+dentry+data nodes (self-round-trip only — wandering-tree commit out of scope).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -133,6 +138,23 @@ public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     using var memoryStream = new MemoryStream();
     s.CopyTo(memoryStream);
     return memoryStream.ToArray();
+  }
+
+  // ── IArchiveCreatable ─────────────────────────────────────────────────
+
+  /// <summary>
+  /// Emits a self-contained UBIFS image (superblock + master + linear log of
+  /// inode/dentry/data nodes) over <paramref name="output"/>. Round-trips through
+  /// this descriptor's reader; kernel-mount round-trip requires a full commit
+  /// pipeline which is out of scope here.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var writer = new UbifsWriter();
+    foreach (var (name, data) in FilesOnly(inputs))
+      writer.AddFile(name, data);
+    writer.WriteTo(output);
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {

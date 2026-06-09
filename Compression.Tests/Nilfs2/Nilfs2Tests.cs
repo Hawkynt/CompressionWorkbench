@@ -99,9 +99,11 @@ public class Nilfs2Tests {
     Assert.Throws<NotSupportedException>(() => d.Defragment(ms));
   }
 
-  [Test, Category("Sad")]
-  public void NoCreatable_Interface() {
+  [Test, Category("HappyPath")]
+  public void Descriptor_IsWormCreatable() {
     var d = new FileSystem.Nilfs2.Nilfs2FormatDescriptor();
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>());
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>(),
+      "NILFS2 now ships single-checkpoint WORM (spec-compliant superblock + writer-private directory).");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
   }
 }

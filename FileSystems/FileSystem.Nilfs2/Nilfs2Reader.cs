@@ -89,6 +89,52 @@ public sealed class Nilfs2Reader : IDisposable {
     _entries.Add(new Nilfs2Entry { Name = "FULL.nilfs2", Size = _data.Length, IsDirectory = false, Data = _data });
     _entries.Add(new Nilfs2Entry { Name = "metadata.ini", Size = meta.Length,   IsDirectory = false, Data = meta });
     _entries.Add(new Nilfs2Entry { Name = "superblock.bin", Size = sbBytes.Length, IsDirectory = false, Data = sbBytes });
+
+    // If the image carries our writer magic at SegmentStart, parse the compact
+    // directory + payload region and surface real files alongside the triage
+    // entries. Spec NILFS2 walks DAT/SUFile/CPFile/IFile — multi-week — so we
+    // accept self-round-trip via a writer-private layout instead.
+    TryParseWriterDirectory();
+  }
+
+  /// <summary>
+  /// Reads the writer-private compact directory at <see cref="Nilfs2Writer.SegmentStart"/>
+  /// when present. Format: 8-byte <see cref="Nilfs2Writer.WriterMagic"/>, 8-byte
+  /// directory size, then (u32 name_len, name, u64 payload_offset, u64 size)
+  /// records.
+  /// </summary>
+  private bool TryParseWriterDirectory() {
+    if (_data.Length < Nilfs2Writer.SegmentStart + Nilfs2Writer.WriterMagic.Length + 8) return false;
+    var seg = _data.AsSpan(Nilfs2Writer.SegmentStart);
+    if (!seg.Slice(0, Nilfs2Writer.WriterMagic.Length).SequenceEqual(Nilfs2Writer.WriterMagic)) return false;
+    var dirSize = BinaryPrimitives.ReadInt64LittleEndian(seg.Slice(Nilfs2Writer.WriterMagic.Length));
+    if (dirSize < 0 || dirSize > _data.Length) return false;
+    var dirStart = Nilfs2Writer.WriterMagic.Length + 8;
+    if (dirStart + dirSize > seg.Length) return false;
+    var payloadStart = Nilfs2Writer.SegmentStart + dirStart + (int)dirSize;
+
+    var cursor = dirStart;
+    var dirEnd = dirStart + (int)dirSize;
+    while (cursor + 4 <= dirEnd) {
+      var nameLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(seg.Slice(cursor));
+      cursor += 4;
+      if (nameLen <= 0 || cursor + nameLen + 16 > dirEnd) break;
+      var name = Encoding.UTF8.GetString(seg.Slice(cursor, nameLen));
+      cursor += nameLen;
+      var off = BinaryPrimitives.ReadInt64LittleEndian(seg.Slice(cursor));
+      cursor += 8;
+      var size = BinaryPrimitives.ReadInt64LittleEndian(seg.Slice(cursor));
+      cursor += 8;
+      if (size < 0 || off < 0 || payloadStart + off + size > _data.Length) break;
+      var data = _data.AsSpan(payloadStart + (int)off, (int)size).ToArray();
+      _entries.Add(new Nilfs2Entry {
+        Name = name,
+        Size = size,
+        IsDirectory = false,
+        Data = data,
+      });
+    }
+    return true;
   }
 
   private byte[] BuildMetadata() {
