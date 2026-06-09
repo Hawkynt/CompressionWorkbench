@@ -139,7 +139,8 @@ State legend:
 | `FileSystem.Zfs`      | R/W   | Sun ZFS — fat-ZAP directories (large directories), Fletcher-4 checksums, NV_BIG_ENDIAN XDR labels; add/replace/remove via read-extract-rebuild (label footprint preserved) — [more →](https://en.wikipedia.org/wiki/ZFS) |
 | `FileSystem.Ufs`      | R     | UNIX File System (BSD) — `fs_magic=0x011954` — [more →](https://en.wikipedia.org/wiki/Unix_File_System) |
 | `FileSystem.BcacheFs` | WORM  | bcachefs — superblock-only WORM (fsck parity multi-week, B-trees TODO) — [more →](https://en.wikipedia.org/wiki/Bcachefs) |
-| `FileSystem.Ubifs`    | R     | UBIFS — log-structured, no writer (LPT/TNC trees multi-week) — [more →](https://en.wikipedia.org/wiki/UBIFS) |
+| `FileSystem.Ubifs`    | WORM  | UBIFS — emits superblock + master + inode/dentry/data nodes with valid CRC-32; modify requires wandering-tree commit pipeline (deferred) — [more →](https://en.wikipedia.org/wiki/UBIFS) |
+| `FileSystem.Nilfs2`   | WORM  | NILFS v2 — superblock + initial-segment private directory mirrors Nilfs1 pattern; full DAT/IFile/CPFile segment-log replay deferred — [more →](https://en.wikipedia.org/wiki/NILFS) |
 | `FileSystem.Jffs2`    | R/W   | JFFS2 — log-structured, rebuild-based modify — [more →](https://en.wikipedia.org/wiki/JFFS2)         |
 | `FileSystem.Yaffs2`   | R/W   | YAFFS2 — rebuild-based modify, defragment — [more →](https://en.wikipedia.org/wiki/YAFFS)            |
 | `FileSystem.Bfs`      | R/W   | BeFS — single-AG B+ tree writer, rebuild-based modify — [more →](https://en.wikipedia.org/wiki/Be_File_System) |
@@ -169,7 +170,8 @@ State legend:
 | `FileSystem.RomFs`    | R/W   | Read-only ROM FS — `-rom1fs-` magic, BE fields, rebuild-based modify — [more →](https://en.wikipedia.org/wiki/Romfs)                 |
 | `FileSystem.MinixFs`  | R/W   | Minix v1/2/3 — superblock magics `0x137F/0x138F/0x2468/...`, rebuild-based modify — [more →](https://en.wikipedia.org/wiki/MINIX_file_system) |
 | `FileSystem.Erofs`    | R     | Enhanced Read-Only FS (Android) — variable-length encoded inodes — [more →](https://en.wikipedia.org/wiki/EROFS) |
-| `FileSystem.LittleFs` | R     | LittleFS for microcontrollers — superblock surfacing only — [more →](https://github.com/littlefs-project/littlefs) |
+| `FileSystem.LittleFs` | R     | LittleFS for microcontrollers — superblock surfacing only; WORM needs ~1500 LOC tag-stream emitter (XOR-chained tags + CRC32 terminators + mirrored superblock pairs + inline/CTZ data-region split, no Windows/WSL validator) — [more →](https://github.com/littlefs-project/littlefs) |
+| `FileSystem.SmartFs`  | R     | NuttX SmartFS — format-sector surfacing only; WORM needs per-sector logical-physical mapping table + wear-level sequence counters + directory sector chains + free-sector allocator (NuttX-target-only validator) — [more →](https://nuttx.apache.org/docs/latest/components/filesystem/smartfs.html) |
 
 #### Optical
 
@@ -184,7 +186,11 @@ State legend:
 | Filesystem                       | State | Notes                                                       |
 | -------------------------------- | ----- | ----------------------------------------------------------- |
 | `FileSystem.D64` / `D71` / `D81` | R/W   | Commodore 1541 / 1571 / 1581 — directory at T18S1+; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Commodore_DOS) |
-| `FileSystem.CbmNibble`           | R     | Commodore raw nibble (`.g64` / `.nib`) — [more →](https://en.wikipedia.org/wiki/Commodore_DOS)        |
+| `FileSystem.CbmNibble`           | WORM  | Commodore raw nibble (`.g64` / `.nib`) — 35-track G64 v2 with spec-correct speed-zone table, 4-to-5 GCR nibble encoding, SYNC + header + data gap framing, minimal CBM DOS BAM at T18/0 + 8-entry directory at T18/1 — [more →](https://en.wikipedia.org/wiki/Commodore_DOS) |
+| `FileSystem.Mfs1`                | WORM  | Acorn MFS-1 (BBC Master) — emits 256-byte-sector DFS catalog (2-sector packed-high-bits metadata, contiguous file extents from sector 2, 10-sector-track-aligned image) — [more →](https://en.wikipedia.org/wiki/Acorn_DFS) |
+| `FileSystem.ApplePascal`         | WORM  | Apple II UCSD p-System — 512-byte blocks, volume directory at blocks 2-5, 26-file cap with 15-char names — [more →](https://en.wikipedia.org/wiki/Apple_Pascal) |
+| `FileSystem.Gemdos`              | WORM  | Atari ST GEMDOS — FAT12 variant with `0x60` BRA.S boot + ST-specific BPB — [more →](https://en.wikipedia.org/wiki/GEMDOS) |
+| `FileSystem.GsOs`                | WORM  | Apple IIgs 2IMG wrapper + ProDOS payload — canonical 64-byte 2IMG header + optional ASCII comment block; delegates to `FileSystem.ProDos` writer — [more →](https://en.wikipedia.org/wiki/Apple_IIGS) |
 | `FileSystem.AppleDos`            | R/W   | Apple DOS 3.3 — 143 360 bytes, catalog at T17S15; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Apple_DOS) |
 | `FileSystem.ProDos`              | R/W   | ProDOS — 143 360 / 819 200, storage-type-3 trees; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/ProDOS) |
 | `FileSystem.Atari8`              | R/W   | Atari 8-bit DOS 2 — 16-byte hdr + VTOC at sector 360; add/remove via rebuild — [more →](https://en.wikipedia.org/wiki/Atari_DOS) |
@@ -218,11 +224,9 @@ these to WORM requires the bullet under "what would be needed".
 | Filesystem                | State    | Why stub-tier / what would be needed                                                                 |
 | ------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
 | `FileSystem.Tfs`          | detection only | BBN Trans-FS has no public on-disk spec; magic `0x54465301`. Upgrade requires BBN-internal docs (multi-week reverse-engineering, no public corpus). |
-| `FileSystem.Mfs1`         | detection only | Acorn MFS-1 magic is two-byte heuristic (0x00 0x80); extension-led. Upgrade requires period Acorn manuals (small but obscure spec). |
 | `FileSystem.Nwfs386`      | detection only | Novell NetWare 386 raw partitions, magic "NetW". Upgrade requires Novell proprietary spec (no public reference). |
 | `FileSystem.Stacker`      | detection only | Stac Electronics Stacker CVF (MS-DOS 5/6); SCB header parsed, inner LZS-compressed FAT surfaced opaque. Upgrade needs Stacker LZS decompressor + inner-FAT delegation. |
 | `FileSystem.DriveSpace3`  | detection only | Microsoft DriveSpace 3 CVF (`MS_DSP3`); MDBPB parsed, inner DS LZ77+Huffman region surfaced opaque. Upgrade needs the DS LZ77+Huffman codec + MDFAT walk (proprietary, ~weeks). |
-| `FileSystem.GsOs`         | header only    | Apple IIgs 2IMG wrapper; delegates to the inner ProDOS / HFS / DOS 3.3 volume. Already covered by `FileSystem.ProDos` — upgrade is just routing the surfaced payload back through the matching reader. |
 | `FileSystem.TahoeLafs`    | detection only | Tahoe-LAFS share buckets (v1 immutable / v2 mutable); payload is capability-encrypted Reed-Solomon ciphertext. Upgrade impossible without the read-cap (by design). |
 | `FileSystem.Ecryptfs`     | detection only | eCryptfs per-file containers (marker `0x3C81B7F5`); payload is AES-CBC ciphertext. Decryption requires mount passphrase + EFEK tag-3/tag-11 packets (out of scope). |
 | `FileSystem.OrangeFs`     | detection only | OrangeFS / PVFS2 DBPF (`PVFS` / `OGFP`); single distributed-FS server object. Upgrade requires the cluster's `fs.conf` + handle/fsid resolution + striping logic (distributed, multi-node). |

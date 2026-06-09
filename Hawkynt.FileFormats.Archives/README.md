@@ -179,9 +179,9 @@ State legend:
 | `FileFormat.AndroidOta`      | R     | Android OTA payload               |
 | `FileFormat.Apk`             | WORM  | APK                               |
 | `FileFormat.ApkNativeLibs`   | R     | APK native libraries              |
-| `FileFormat.AppImage`        | R     | AppImage                          |
+| `FileFormat.AppImage`        | WORM  | AppImage                          |
 | `FileFormat.Appx`            | WORM  | APPX                              |
-| `FileFormat.Crate`           | R     | Rust Crate                        |
+| `FileFormat.Crate`           | WORM  | Rust Crate                        |
 | `FileFormat.Crx`             | WORM  | CRX (Chrome extension)            |
 | `FileFormat.Deb`             | WORM  | DEB                               |
 | `FileFormat.Ear`             | WORM  | EAR                               |
@@ -244,7 +244,7 @@ State legend:
 | `FileFormat.Pbp`        | WORM  | PSP PBP archive                    |
 | `FileFormat.Psarc`      | WORM  | PSARC (Sony)                       |
 | `FileFormat.Rgss`       | WORM  | RPG Maker RGSSAD                   |
-| `FileFormat.Rpa`        | R     | Ren'Py Archive                     |
+| `FileFormat.Rpa`        | WORM  | Ren'Py Archive                     |
 | `FileFormat.Sarc`       | WORM  | Nintendo SARC                      |
 | `FileFormat.Sfar`       | R     | BioWare SFAR (Mass Effect)         |
 | `FileFormat.Slf`        | WORM  | Sir-Tech SLF (Jagged Alliance)     |
@@ -599,7 +599,7 @@ silently producing wrong output:
 
 | Format                                                          | Extensions              | Read | Write | Reference                                                                                                                          | Notes                                                                                |
 | --------------------------------------------------------------- | ----------------------- | ---- | ----- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [AppImage](https://en.wikipedia.org/wiki/AppImage)              | `.AppImage`             | Yes  | -     | [AppImage spec](https://github.com/AppImage/AppImageSpec)                                                                          | ELF stub + appended SquashFS; offset located by ELF section-end + magic scan         |
+| [AppImage](https://en.wikipedia.org/wiki/AppImage)              | `.AppImage`             | Yes  | Yes   | [AppImage spec](https://github.com/AppImage/AppImageSpec)                                                                          | ELF stub + appended SquashFS; offset located by ELF section-end + magic scan; WORM via ELF stub + SquashFsWriter delegate |
 | [Snap](https://en.wikipedia.org/wiki/Snap_(software))           | `.snap`                 | Yes  | -     | [snapd source](https://github.com/snapcore/snapd)                                                                                  | SquashFS with `meta/snap.yaml`                                                       |
 | [MSIX](https://en.wikipedia.org/wiki/MSIX)                      | `.msix`,`.msixbundle`   | Yes  | Yes   | [MSIX spec](https://learn.microsoft.com/en-us/windows/msix/)                                                                       | Modern Windows app package (mirrors APPX); WORM emits unsigned bundle               |
 | ESD                                                             | `.esd`                  | Yes  | -     | [WIM/ESD overview](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview) | Windows Update encrypted-LZMS WIM; shares `MSWIM\0\0\0` magic, extension-only        |
@@ -607,7 +607,7 @@ silently producing wrong output:
 | [WACZ](https://specs.webrecorder.net/wacz/1.0.0/)               | `.wacz`                 | Yes  | -     | [WACZ 1.0.0](https://specs.webrecorder.net/wacz/1.0.0/)                                                                            | Web Archive Collection Zipped — ZIP around WARC + `datapackage.json`                 |
 | [Python Wheel](https://en.wikipedia.org/wiki/Wheel_(software))  | `.whl`                  | Yes  | -     | [PEP 427](https://peps.python.org/pep-0427/)                                                                                       | ZIP with `dist-info/METADATA`, `WHEEL`, `RECORD`                                     |
 | [Ruby Gem](https://en.wikipedia.org/wiki/RubyGems)              | `.gem`                  | Yes  | -     | [gem spec](https://guides.rubygems.org/specification-reference/)                                                                   | TAR with `metadata.gz`, `data.tar.gz`, `checksums.yaml.gz`                           |
-| Rust Crate                                                      | `.crate`                | Yes  | -     | [cargo spec](https://doc.rust-lang.org/cargo/reference/registries.html)                                                            | TAR.GZ with single `name-version/` directory containing `Cargo.toml`                 |
+| Rust Crate                                                      | `.crate`                | Yes  | Yes   | [cargo spec](https://doc.rust-lang.org/cargo/reference/registries.html)                                                            | TAR.GZ with single `name-version/` directory containing `Cargo.toml`; WORM auto-derives `<name-version>/` from supplied manifest |
 
 ## Versioning
 
