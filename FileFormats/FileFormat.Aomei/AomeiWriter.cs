@@ -42,13 +42,13 @@ namespace FileFormat.Aomei;
 public sealed class AomeiWriter {
 
   /// <summary>Vendor-namespace type tag used for opaque user-data envelopes
-  /// produced by this writer. Sits in the <c>0xF000+</c> range to avoid
-  /// collisions with any recovered or yet-to-be-recovered AOMEI
-  /// <c>INFO_TYPE_*</c> / <c>INDEX_TYPE_*</c> code (all observed values are
-  /// below <c>0x0200</c>). A reader produced by this project recognises
-  /// the tag; the AOMEI application will reject it, which is the honest
-  /// behaviour — we are not claiming on-wire compatibility with the
-  /// vendor.</summary>
+  /// produced by this writer. Sits in the <c>0xF000+</c> range to stay above
+  /// every recovered AOMEI <c>INFO_TYPE_*</c> (0x102..0x116) and
+  /// <c>INDEX_TYPE_*</c> (0x200..0x301) code, so the wrapper never collides
+  /// with a real vendor record on either end. A reader produced by this
+  /// project recognises the tag; the AOMEI application will reject it,
+  /// which is the honest behaviour — we are not claiming on-wire
+  /// compatibility with the vendor.</summary>
   public const ushort UserDataTypeTag = 0xF001;
 
   /// <summary>32-byte filename prefix written before the user-data payload

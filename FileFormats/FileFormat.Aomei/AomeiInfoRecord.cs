@@ -37,14 +37,44 @@ public sealed class AomeiInfoRecord {
   }
 
   /// <summary>Symbolic name for the record's <c>Type</c> tag, or
-  /// <c>UNKNOWN_0xNNNN</c> for codes not in the recovered enumeration.</summary>
+  /// <c>UNKNOWN_0xNNNN</c> for codes not in the recovered enumeration.
+  /// Both INFO_TYPE_* (0x1xx) and INDEX_TYPE_* (0x2xx / 0x3xx) tags are
+  /// surfaced — INDEX_TYPE_* indicates a sub-index record whose body holds
+  /// a packed array of <c>BR_IMAGE_INDEX_ENTRY_*</c> entries rather than
+  /// a single typed value.</summary>
   public string TypeName => this.Header.Type switch {
-    AomeiConstants.InfoTypeImageCompress => "INFO_TYPE_IMAGE_COMPRESS",
-    AomeiConstants.InfoTypeImageEncrypt  => "INFO_TYPE_IMAGE_ENCRYPT",
-    AomeiConstants.InfoTypeImagePassword => "INFO_TYPE_IMAGE_PASSWORD",
-    AomeiConstants.InfoTypeBackupType    => "INFO_TYPE_BACKUP_TYPE",
+    AomeiConstants.InfoTypeImageCompress     => "INFO_TYPE_IMAGE_COMPRESS",
+    AomeiConstants.InfoTypeImageEncrypt      => "INFO_TYPE_IMAGE_ENCRYPT",
+    AomeiConstants.InfoTypeImagePassword     => "INFO_TYPE_IMAGE_PASSWORD",
+    AomeiConstants.InfoTypeBackupType        => "INFO_TYPE_BACKUP_TYPE",
+    AomeiConstants.InfoTypeImageSplitSize    => "INFO_TYPE_IMAGE_SPLIT_SIZE",
+    AomeiConstants.InfoTypeImageComment      => "INFO_TYPE_IMAGE_COMMENT",
+    AomeiConstants.InfoTypeBackupTime        => "INFO_TYPE_BACKUP_TIME",
+    AomeiConstants.InfoTypeBackupOption      => "INFO_TYPE_BACKUP_OPTION",
+    AomeiConstants.InfoTypeDiskInfo          => "INFO_TYPE_DISK_INFO",
+    AomeiConstants.InfoTypeVolumeInfo        => "INFO_TYPE_VOLUME_INFO",
+    AomeiConstants.InfoTypeFlbBackupOption   => "INFO_TYPE_FLB_BACKUP_OPTION",
+    AomeiConstants.InfoTypeFlbBackupOptionEx => "INFO_TYPE_FLB_BACKUP_OPTION_EX",
+    AomeiConstants.InfoTypeFlbPathList       => "INFO_TYPE_FLB_PATH_LIST",
+    AomeiConstants.IndexTypeRoot             => "INDEX_TYPE_ROOT",
+    AomeiConstants.IndexTypeVolume           => "INDEX_TYPE_VOLUME",
+    AomeiConstants.IndexTypeDataBlock        => "INDEX_TYPE_DATABLOCK",
+    AomeiConstants.IndexTypeDirTree          => "INDEX_TYPE_DIRTREE",
+    AomeiConstants.IndexTypeDataArea         => "INDEX_TYPE_DATAAREA",
     _ => $"UNKNOWN_0x{this.Header.Type:X4}",
   };
+
+  /// <summary>True when the record's type tag is one of the recovered
+  /// <c>INDEX_TYPE_*</c> values (root / volume / datablock / dirtree /
+  /// dataarea). The body of an index record holds a
+  /// <c>BR_IMAGE_INDEX</c> header (EntryCount / EntrySize) followed by a
+  /// packed entry array — see <see cref="BrImageIndex"/>.</summary>
+  public bool IsIndex => this.Header.Type
+    is AomeiConstants.IndexTypeRoot
+    or AomeiConstants.IndexTypeVolume
+    or AomeiConstants.IndexTypeDataBlock
+    or AomeiConstants.IndexTypeDirTree
+    or AomeiConstants.IndexTypeDataArea;
 
   /// <summary>Tries to decode this record as
   /// <see cref="AomeiConstants.InfoTypeImageCompress"/>. Returns

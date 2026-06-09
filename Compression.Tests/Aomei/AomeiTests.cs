@@ -73,9 +73,9 @@ public class AomeiTests {
       Assert.That(meta, Does.Contain("parse_status=header_short"));
       Assert.That(meta, Does.Contain("magic=BIFH\\"));
       Assert.That(meta, Does.Contain("post_magic_u32_le=0x01020304"));
-      Assert.That(meta, Does.Contain("head_body_layout=undocumented"));
-      Assert.That(meta, Does.Contain("tail_body_layout=undocumented"));
-      Assert.That(meta, Does.Contain("index_body_layout=undocumented"));
+      Assert.That(meta, Does.Contain("head_body_layout=undocumented_past_first_12_bytes"));
+      Assert.That(meta, Does.Contain("tail_body_layout=carries_DataOffInSet_u64"));
+      Assert.That(meta, Does.Contain("index_body_layout=BR_IMAGE_INDEX_header_pinned"));
 
       var headerRaw = File.ReadAllBytes(Path.Combine(outDir, "header.bin"));
       Assert.That(headerRaw.Length, Is.EqualTo(FileFormat.Aomei.AomeiReader.HeaderCaptureSize));

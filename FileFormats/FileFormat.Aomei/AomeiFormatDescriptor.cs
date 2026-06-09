@@ -85,21 +85,35 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "AOMEI Backupper disk (.adi) / file (.afi) image — BIFH/BIFT outer container R/W via the " +
-    "BR_STANDARD_HEADER tagged-record framing recovered by reverse engineering " +
-    "(docs/AOMEI_FORMAT_SPEC.md). Reader: verifies BIFH magic+size+CRC32 at offset 0 (0x65C bytes), " +
-    "verifies BIFT magic+size+CRC32 at file_size-0x674, walks every BR_STANDARD_HEADER-prefixed " +
-    "INFO/INDEX record and surfaces typed views of the four confirmed records " +
-    "(INFO_TYPE_IMAGE_COMPRESS=0x105, INFO_TYPE_IMAGE_ENCRYPT=0x106, INFO_TYPE_IMAGE_PASSWORD=0x107 " +
-    "with MD5(UTF-16LE(password)), INFO_TYPE_BACKUP_TYPE=0x10C). " +
+    "BR_STANDARD_HEADER tagged-record framing recovered by reverse engineering of the vendor's " +
+    "image-format library (source-tree codename BRCloudv2, embedded PDB path " +
+    "E:\\BRCloudv2\\src\\ImgFile\\ImageFile.cpp). Reader: verifies BIFH magic+size+CRC32 at offset 0 " +
+    "(0x65C bytes), verifies BIFT magic+size+CRC32 at file_size-0x674, walks every " +
+    "BR_STANDARD_HEADER-prefixed INFO/INDEX record and surfaces typed views of the four shipped " +
+    "INFO records (INFO_TYPE_IMAGE_COMPRESS=0x105, INFO_TYPE_IMAGE_ENCRYPT=0x106, " +
+    "INFO_TYPE_IMAGE_PASSWORD=0x107 with MD5(UTF-16LE(password)), INFO_TYPE_BACKUP_TYPE=0x10C). " +
     "Writer: emits wire-format-correct BIFH+INFO+BIFT round-trip containers with sealed CRCs. " +
-    "Known limitations: (1) head/tail body fields past the first 12 bytes are zero-filled " +
-    "(layout TODO per spec §10.1) so containers are NOT byte-compatible with AOMEI Backupper; " +
-    "(2) INDEX_TYPE_* record body layouts are TODO per spec §10.5 so payload data is wrapped in " +
-    "a vendor-namespace user-data envelope rather than the real INDEX_TYPE_DATABLOCK / DATAAREA " +
-    "framing; (3) AES variant and IV derivation are TODO per spec §10.3-4 so encryption is " +
-    "advertised but not applied; (4) the scheduled-task magic password " +
-    "'AomeiTech.SchduleTask' is recognised but its MD5 substitution requires the runtime " +
-    "scheduler context which is unavailable offline.";
+    "Reverse-engineered scope additions (constants pinned, not yet wired into the on-wire emit): " +
+    "(a) the full INFO_TYPE_* enum past the four shipped tags — IMAGE_SPLIT_SIZE=0x104, " +
+    "IMAGE_COMMENT=0x108, BACKUP_TIME=0x10B, BACKUP_OPTION=0x10D, DISK_INFO=0x102, " +
+    "VOLUME_INFO=0x103, FLB_BACKUP_OPTION=0x113, FLB_BACKUP_OPTION_EX=0x116, FLB_PATH_LIST=0x112; " +
+    "(b) the full INDEX_TYPE_* enum — ROOT=0x200, VOLUME=0x201, DATABLOCK=0x202, DIRTREE=0x300, " +
+    "DATAAREA=0x301; (c) the vendor BR_STANDARD_HEADER is 16 bytes (Type:u32, Size:u32, Crc32:u32, " +
+    "Reserved:u32) — this codebase ships a 12-byte alias of that layout that round-trips through " +
+    "its own reader but is not byte-compatible with the AOMEI application; (d) the BR_IMAGE_INDEX " +
+    "header carries EntryCount at +0x14, EntrySize at +0x18 and the packed entry array at +0x1C, " +
+    "with sizeof(BR_IMAGE_INDEX_ENTRY_VDB)=0x20 for INDEX_TYPE_DATABLOCK records (the per-entry " +
+    "field name list — RegNo, BlockNo, ImgOffset, NewSize, OldSize, Crc32 — is recovered but the " +
+    "byte offsets of each field within the 32-byte entry are not pinned by passive RE). " +
+    "Known limitations: (1) head/tail body fields past the first 12 bytes are zero-filled (the " +
+    "file tail is known to carry DataOffInSet:u64 + DataLenInSet:u64 for split-volume bookkeeping " +
+    "but their byte offsets are undetermined) so containers are NOT byte-compatible with AOMEI " +
+    "Backupper; (2) INDEX_TYPE_DATABLOCK / DATAAREA record bodies are not emitted — payload data " +
+    "is wrapped in a vendor-namespace 0xF001 user-data envelope rather than the real index " +
+    "framing; (3) AES variant and IV derivation are still undetermined so encryption is " +
+    "advertised but not applied; (4) the scheduled-task magic password 'AomeiTech.SchduleTask' " +
+    "is recognised but its MD5 substitution requires the runtime scheduler context which is " +
+    "unavailable offline.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -307,10 +321,21 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       foreach (var by in md5) hex.AppendFormat(ic, "{0:x2}", by);
       b.Append(ic, $"password_md5={hex}\n");
     }
-    b.Append("head_body_layout=undocumented_per_spec_section_10_1\n");
-    b.Append("tail_body_layout=undocumented_per_spec_section_10_1\n");
-    b.Append("index_body_layout=undocumented_per_spec_section_10_5\n");
-    b.Append("aes_variant_and_iv=undocumented_per_spec_section_10_3_4\n");
+    // Surface the recovered tag enums for forensic clarity.
+    b.Append("vendor_standard_header_size=0x10\n");
+    b.Append("shipped_standard_header_alias_size=0x0C\n");
+    b.Append("info_types_enum=0x102:DISK_INFO,0x103:VOLUME_INFO,0x104:IMAGE_SPLIT_SIZE,");
+    b.Append("0x105:IMAGE_COMPRESS,0x106:IMAGE_ENCRYPT,0x107:IMAGE_PASSWORD,0x108:IMAGE_COMMENT,");
+    b.Append("0x10B:BACKUP_TIME,0x10C:BACKUP_TYPE,0x10D:BACKUP_OPTION,0x112:FLB_PATH_LIST,");
+    b.Append("0x113:FLB_BACKUP_OPTION,0x116:FLB_BACKUP_OPTION_EX\n");
+    b.Append("index_types_enum=0x200:ROOT,0x201:VOLUME,0x202:DATABLOCK,0x300:DIRTREE,0x301:DATAAREA\n");
+    b.Append("index_entry_layout_offsets=entry_count:+0x14,entry_size:+0x18,entries:+0x1C\n");
+    b.Append("vdb_entry_size=0x20\n");
+    b.Append("vdb_entry_field_names=RegNo,BlockNo,ImgOffset,NewSize,OldSize,Crc32\n");
+    b.Append("head_body_layout=undocumented_past_first_12_bytes\n");
+    b.Append("tail_body_layout=carries_DataOffInSet_u64+DataLenInSet_u64_at_undetermined_offsets\n");
+    b.Append("index_body_layout=BR_IMAGE_INDEX_header_pinned_VDB_field_offsets_within_entry_undetermined\n");
+    b.Append("aes_variant_and_iv=undetermined\n");
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
