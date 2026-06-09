@@ -153,6 +153,8 @@
     <ProjectReference Include="..\Codecs\Codec.Ym2608\Codec.Ym2608.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Opl\Codec.Opl.csproj" />
     <ProjectReference Include="..\Codecs\Codec.HuC6280\Codec.HuC6280.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.AmrNb\Codec.AmrNb.csproj" />
+    <ProjectReference Include="..\Codecs\Codec.AmrWb\Codec.AmrWb.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aac\FileFormat.Aac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ace\FileFormat.Ace.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" />
@@ -631,6 +633,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Dfpwm\FileFormat.Dfpwm.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Bonk\FileFormat.Bonk.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.WavArc\FileFormat.WavArc.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Amr\FileFormat.Amr.csproj" />
   </ItemGroup>
 
 </Project>
