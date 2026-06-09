@@ -343,6 +343,13 @@ public class EndToEndInteropTests {
     ".tfrecord",
     // Texture file cache with synthetic naming bundle_NNNNN.bin; same class.
     ".tfc",
+    // Mbox emits one ".eml" entry per RFC 822 message — the listing surfaces
+    // synthetic "message_NN_<subject>.eml" names, not the input filenames.
+    ".mbox",
+    // Crate (.crate) is a Rust source package; round-trip requires a real
+    // Cargo.toml with [package] name+version. Generic .txt/.dat inputs
+    // can't satisfy the canonical "<name-version>/Cargo.toml" layout.
+    ".crate",
   };
 
   private static IEnumerable<string> RoundTripFormats() {

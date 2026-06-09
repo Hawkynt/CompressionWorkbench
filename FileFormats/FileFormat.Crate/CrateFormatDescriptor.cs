@@ -26,7 +26,7 @@ namespace FileFormat.Crate;
 /// <see href="https://doc.rust-lang.org/cargo/reference/registries.html#publish"/>.
 /// </para>
 /// </remarks>
-public sealed class CrateFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class CrateFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   /// <inheritdoc/>
   public string Id => "Crate";
 
@@ -38,7 +38,7 @@ public sealed class CrateFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   /// <inheritdoc/>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
 
@@ -82,6 +82,114 @@ public sealed class CrateFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       IsDirectory: false,
       IsEncrypted: false,
       LastModified: null)).ToList();
+  }
+
+  /// <summary>
+  /// Creates a Rust crate package (<c>.crate</c>) at <paramref name="output"/>
+  /// containing <paramref name="inputs"/>. A canonical
+  /// <c>&lt;name-version&gt;/</c> top-level directory is enforced:
+  /// </summary>
+  /// <remarks>
+  /// <list type="bullet">
+  ///   <item>If the inputs already share a single top-level directory it is
+  ///         preserved verbatim.</item>
+  ///   <item>If a <c>Cargo.toml</c> is supplied at the root without a top-level
+  ///         directory the writer extracts <c>name</c> + <c>version</c> from
+  ///         the <c>[package]</c> table and prepends <c>&lt;name&gt;-&lt;version&gt;/</c>.</item>
+  ///   <item>Otherwise the writer falls back to <c>"crate-0.0.0/"</c> and
+  ///         lifts the inputs into it.</item>
+  /// </list>
+  /// <para>
+  /// The result is a gzip-wrapped TAR per
+  /// <see href="https://doc.rust-lang.org/cargo/reference/registries.html#publish"/>;
+  /// the descriptor's own <see cref="List"/>/<see cref="Extract"/> path round-trips
+  /// the output without modification.
+  /// </para>
+  /// </remarks>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    _ = options;
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    var normalized = NormaliseForCreate(inputs);
+
+    // Build TAR into a memory buffer, then gzip-wrap it.
+    byte[] tarBytes;
+    using (var tarMs = new MemoryStream()) {
+      using (var tar = new TarWriter(tarMs, leaveOpen: true)) {
+        foreach (var (name, data, isDir) in normalized) {
+          var entry = new TarEntry {
+            Name = name,
+            ModifiedTime = DateTimeOffset.UnixEpoch,
+            TypeFlag = isDir ? (byte)'5' : (byte)'0',
+            Mode = isDir ? 0x1ED /* 0755 */ : 0x1A4 /* 0644 */,
+          };
+          tar.AddEntry(entry, isDir ? ReadOnlySpan<byte>.Empty : data.AsSpan());
+        }
+      }
+      tarBytes = tarMs.ToArray();
+    }
+
+    using var gz = new GZipStream(output, CompressionLevel.Optimal, leaveOpen: true);
+    gz.Write(tarBytes);
+  }
+
+  /// <summary>
+  /// Returns the entries to write into the TAR layer, ensuring exactly one
+  /// top-level <c>&lt;name-version&gt;/</c> directory and skipping the
+  /// synthetic <c>metadata.ini</c> the reader emits.
+  /// </summary>
+  private static List<(string Name, byte[] Data, bool IsDir)> NormaliseForCreate(
+      IReadOnlyList<ArchiveInputInfo> inputs) {
+    var raw = new List<(string Name, byte[] Data, bool IsDir)>();
+    foreach (var input in inputs) {
+      var name = input.ArchiveName.Replace('\\', '/').TrimStart('/');
+      if (string.IsNullOrEmpty(name)) continue;
+      if (string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      raw.Add((name, input.IsDirectory ? [] : input.ReadContent(), input.IsDirectory));
+    }
+    if (raw.Count == 0)
+      return raw;
+
+    // Detect existing single top-level directory.
+    string? sharedTop = null;
+    var consistent = true;
+    foreach (var (name, _, _) in raw) {
+      var slash = name.IndexOf('/');
+      if (slash <= 0) { consistent = false; break; }
+      var top = name[..slash];
+      if (sharedTop == null) sharedTop = top;
+      else if (!sharedTop.Equals(top, StringComparison.Ordinal)) { consistent = false; break; }
+    }
+    if (consistent && sharedTop != null)
+      return raw;
+
+    // Need to lift inputs into a <name-version>/ directory.
+    var topDir = DeriveTopDir(raw);
+    var lifted = new List<(string, byte[], bool)>(raw.Count + 1) {
+      ($"{topDir}/", [], true),
+    };
+    foreach (var (name, data, isDir) in raw)
+      lifted.Add(($"{topDir}/{name}", data, isDir));
+    return lifted;
+  }
+
+  /// <summary>
+  /// Scans inputs for a root-level <c>Cargo.toml</c> and returns
+  /// <c>"&lt;name&gt;-&lt;version&gt;"</c> if both fields are present, else falls
+  /// back to <c>"crate-0.0.0"</c>.
+  /// </summary>
+  private static string DeriveTopDir(IReadOnlyList<(string Name, byte[] Data, bool IsDir)> raw) {
+    foreach (var (name, data, isDir) in raw) {
+      if (isDir) continue;
+      if (!name.Equals("Cargo.toml", StringComparison.OrdinalIgnoreCase)) continue;
+      var pkg = ParsePackageTable(Encoding.UTF8.GetString(data));
+      if (pkg.TryGetValue("name", out var pkgName) &&
+          pkg.TryGetValue("version", out var pkgVer) &&
+          !string.IsNullOrEmpty(pkgName) && !string.IsNullOrEmpty(pkgVer))
+        return $"{pkgName}-{pkgVer}";
+    }
+    return "crate-0.0.0";
   }
 
   /// <inheritdoc/>

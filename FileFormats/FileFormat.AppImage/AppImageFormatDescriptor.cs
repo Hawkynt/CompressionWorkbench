@@ -18,7 +18,7 @@ namespace FileFormat.AppImage;
 ///   <item>Every SquashFS entry, prefixed with <c>filesystem/</c>.</item>
 /// </list>
 /// </summary>
-public sealed class AppImageFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class AppImageFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   /// <summary>Unique format identifier.</summary>
   public string Id => "AppImage";
@@ -31,7 +31,8 @@ public sealed class AppImageFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
   /// <summary>Capabilities supported by this descriptor.</summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
   /// <summary>Preferred extension (case-sensitive on Linux filesystems).</summary>
@@ -112,6 +113,35 @@ public sealed class AppImageFormatDescriptor : IFormatDescriptor, IArchiveFormat
       var outName = "filesystem/" + e.FullPath;
       if (files != null && !MatchesFilter(outName, files)) continue;
       WriteFile(outputDir, outName, r.Extract(e));
+    }
+  }
+
+  /// <summary>
+  /// Creates a fresh AppImage at <paramref name="output"/> by emitting a
+  /// minimal ELF type-2 stub followed by a SquashFS image holding
+  /// <paramref name="inputs"/>. The <c>filesystem/</c> prefix and the
+  /// synthetic <c>metadata.ini</c> entry produced by the reader's listing
+  /// view are stripped automatically so a List→Extract→Create round trip
+  /// keeps the original filesystem layout.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    _ = options;
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    using var w = new AppImageWriter(output, leaveOpen: true);
+    foreach (var input in inputs) {
+      var name = input.ArchiveName.Replace('\\', '/');
+      // Strip the synthetic 'filesystem/' prefix the reader injects.
+      if (name.StartsWith("filesystem/", StringComparison.Ordinal))
+        name = name["filesystem/".Length..];
+      // Drop the synthetic metadata.ini that List() surfaces but is not part of the SquashFS payload.
+      if (string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase))
+        continue;
+      if (string.IsNullOrEmpty(name)) continue;
+      if (input.IsDirectory)
+        w.AddDirectory(name);
+      else
+        w.AddFile(name, input.ReadContent());
     }
   }
 

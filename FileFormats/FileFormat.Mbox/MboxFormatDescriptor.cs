@@ -10,12 +10,12 @@ namespace FileFormat.Mbox;
 /// mailbox is surfaced as a separate <c>.eml</c> entry; the message body is
 /// preserved verbatim (including any "&gt;From " byte-stuffed lines).
 /// </summary>
-public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable {
   public string Id => "Mbox";
   public string DisplayName => "mbox (Unix mailbox)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".mbox";
   public IReadOnlyList<string> Extensions => [".mbox", ".mbx"];
@@ -95,6 +95,21 @@ public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       }
     }
     throw new FileNotFoundException($"Entry not found: {entryName}");
+  }
+
+  /// <summary>
+  /// Creates a fresh mbox mailbox at <paramref name="output"/> by appending each
+  /// input file as a complete RFC 822 message. Each input is expected to be an
+  /// <c>.eml</c> payload (headers + blank line + body); the writer wraps every
+  /// message with a "From " envelope separator and byte-stuffs body lines that
+  /// start with <c>From </c> per RFC 4155.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    using var w = new MboxWriter(output, leaveOpen: true);
+    foreach (var (_, data) in FilesOnly(inputs))
+      w.AddMessage(data);
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────

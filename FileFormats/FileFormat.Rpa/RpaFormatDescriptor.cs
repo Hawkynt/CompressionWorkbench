@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Rpa;
 
-public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap, IArchiveCreatable {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
@@ -34,7 +34,7 @@ public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DisplayName => "Ren'Py Archive";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".rpa";
   public IReadOnlyList<string> Extensions => [".rpa"];
@@ -143,6 +143,24 @@ public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.Path, files)) continue;
       WriteFile(outputDir, e.Path, r.Extract(e));
+    }
+  }
+
+  /// <summary>
+  /// Creates an RPA-3.0 archive at <paramref name="output"/> containing
+  /// <paramref name="inputs"/>. Synthetic entries from the listing layer
+  /// (<c>FULL.rpa</c>, <c>metadata.ini</c>) are skipped automatically so
+  /// round-trips through Extract→Create don't accidentally embed the
+  /// passthrough copy.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    using var w = new RpaWriter(output, leaveOpen: true);
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      if (string.Equals(name, "FULL.rpa", StringComparison.OrdinalIgnoreCase)) continue;
+      if (string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      w.AddEntry(name, data);
     }
   }
 }
