@@ -45,7 +45,13 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "HAMMER2 (DragonFly BSD newer) filesystem image — volume-data sector surface only.";
+    "HAMMER2 (DragonFly BSD newer) filesystem image — volume-data sector surface only. " +
+    "WORM emit deferred: HAMMER2 requires four redundant 64 KB volume-data sectors at " +
+    "offsets 0/65536/131072/196608 with consistent generation numbers, a copy-on-write " +
+    "blockref radix tree with per-block xxHash64 checksums across every blockref, " +
+    "per-superroot PFS clusters with their own sub-radix trees, and a real freemap " +
+    "leaf+meta blockmap that survives the COW promotion rules. Multi-week effort, " +
+    "deferred to a future phase.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();

@@ -41,7 +41,12 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "HAMMER (DragonFly BSD original) filesystem image — volume header surface only.";
+    "HAMMER (DragonFly BSD original) filesystem image — volume header surface only. " +
+    "WORM emit deferred: HAMMER1 requires a real cluster B-tree (zone blockmap → " +
+    "cluster → inode → records with hammer_crc_t CRCs across every node), a per-volume " +
+    "TID generator with monotonic ordering across the whole transaction log, and a " +
+    "valid undo-fifo head/tail — none of which we can validate without a running " +
+    "DragonFly BSD instance. Multi-week effort, deferred to a future phase.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();

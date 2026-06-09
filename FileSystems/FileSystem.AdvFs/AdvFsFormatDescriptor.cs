@@ -38,12 +38,13 @@ namespace FileSystem.AdvFs;
 ///   <item><description>Wikipedia "Advanced File System"</description></item>
 /// </list>
 /// </summary>
-public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
+public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable, IArchiveCreatable {
   public string Id => "AdvFs";
   public string DisplayName => "AdvFS (Tru64 UNIX)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".advfs";
   public IReadOnlyList<string> Extensions => [".advfs"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -54,7 +55,7 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "AdvFS (Tru64 UNIX Advanced File System) image — header-surface read-only.";
+    "AdvFS (Tru64 UNIX Advanced File System) image — header parse + WORM emit of a clean-room storage-domain layout (RBMT page 0 cookie + DMN/VD/MATTR fields + AdvFS-WB file-table extension).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -82,6 +83,8 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
     if (reader.Valid)
       entries.Add(new ArchiveEntryInfo(idx++, "rbmt_page0.bin", reader.HeaderRaw.LongLength, reader.HeaderRaw.LongLength, "stored", false, false, null));
+    foreach (var f in reader.FileTableEntries)
+      entries.Add(new ArchiveEntryInfo(idx++, f.Name, f.Size, f.Size, "stored", false, false, null));
     return entries;
   }
 
@@ -108,6 +111,24 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(reader), files);
     if (reader.Valid)
       WriteIfMatch(outputDir, "rbmt_page0.bin", reader.HeaderRaw, files);
+    foreach (var f in reader.FileTableEntries)
+      WriteIfMatch(outputDir, f.Name, reader.ExtractFile(f), files);
+  }
+
+  /// <summary>
+  /// WORM-emits a fresh AdvFS storage-domain image carrying the supplied
+  /// <paramref name="inputs"/>. Layout: zero-filled bootstrap pages 0..15,
+  /// RBMT page 0 at offset 131072 with the detection cookie + DMN/VD/MATTR
+  /// fields + AdvFS-WB file table, then a flat data area starting at offset
+  /// 139264 holding each file's payload back-to-back.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    using var w = new AdvFsWriter(output, leaveOpen: true);
+    foreach (var (name, data) in FilesOnly(inputs))
+      w.AddFile(name, data);
+    w.Finish();
   }
 
   public void Defragment(Stream archive)
@@ -139,15 +160,17 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
-  // Capture header area + comfortable headroom. The detection cookie lives at
-  // offset 131072; capping at 256 KB keeps speculative-carver scans bounded.
-  private const int HeaderReadCap = 256 * 1024;
+  // Capture header area + AdvFS-WB writer's bundled file payloads. The detection
+  // cookie lives at offset 131072, the file payload area starts at 139264; 64 MB
+  // is comfortable headroom for round-tripping a worktest payload set while
+  // still bounding speculative carver scans far below the host's available RAM.
+  private const int ReadCap = 64 * 1024 * 1024;
 
   private static byte[] ReadAllBounded(Stream stream) {
     using var ms = new MemoryStream();
     var buf = new byte[8192];
     int read;
-    while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
+    while (ms.Length < ReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
       ms.Write(buf, 0, read);
     return ms.ToArray();
   }

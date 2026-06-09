@@ -52,7 +52,14 @@ public sealed class NssFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "NSS (Novell Storage Services) — best-effort anchor detection from public RE; object tree contents cannot be reconstructed.";
+    "NSS (Novell Storage Services) — best-effort anchor detection from publicly " +
+    "available reverse-engineered material; object tree contents cannot be reconstructed. " +
+    "WORM emit deferred: NSS's on-disk format was never publicly documented by Novell " +
+    "(now OpenText). The 'Beast' object record layout, the per-volume B-tree node format, " +
+    "and the trustee ACL tree encoding are not described in any vendor or open-source " +
+    "material we have access to. Emitting a pool that NetWare 5+ / OES would recognise " +
+    "would require a real instance to validate, which we don't have. Pinned at " +
+    "read-only with anchor-detection metadata.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();

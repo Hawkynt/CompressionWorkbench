@@ -14,12 +14,13 @@ namespace FileSystem.OpenVms;
 /// bundle plus the raw image. Walking the index file and per-file headers to
 /// produce a real directory tree is multi-week work and out of scope here.
 /// </summary>
-public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "OpenVms";
   public string DisplayName => "OpenVMS Files-11";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".ods2";
   public IReadOnlyList<string> Extensions => [".ods2", ".ods5", ".vmsdisk"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -37,7 +38,12 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "DEC/VMS Files-11 (ODS-2 / ODS-5) — read-only home-block parse + bounded OpenEntry (write deferred: INDEXF.SYS + BITMAP.SYS + checksum1 require a real OpenVMS validator).";
+  public string Description =>
+    "DEC/VMS Files-11 (ODS-2) — home-block parse + WORM emit of a clean-room ODS-2 layout " +
+    "(boot block at LBN 0, real home block at LBN 1 with DECFILE11A magic at 0x1E8, " +
+    "CWB-OVMS-WB file table at LBN 2). Note: emitted images carry every documented home-block " +
+    "field but not a valid INDEXF.SYS / BITMAP.SYS / checksum1 — real OpenVMS would reject the " +
+    "volume at mount. ODS-5 (DECFILE11B) write support is not implemented.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -59,10 +65,14 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       return entries;
     }
 
-    entries.Add(new ArchiveEntryInfo(0, "FULL.disk", image.LongLength, image.LongLength, "stored", false, false, null));
-    entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
+    var idx = 0;
+    entries.Add(new ArchiveEntryInfo(idx++, "FULL.disk", image.LongLength, image.LongLength, "stored", false, false, null));
+    entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
     if (hb.Valid)
-      entries.Add(new ArchiveEntryInfo(2, "home_block.bin", hb.RawBytes.LongLength, hb.RawBytes.LongLength, "stored", false, false, null));
+      entries.Add(new ArchiveEntryInfo(idx++, "home_block.bin", hb.RawBytes.LongLength, hb.RawBytes.LongLength, "stored", false, false, null));
+    var fileTable = OpenVmsFileTable.TryParse(image);
+    foreach (var f in fileTable.Entries)
+      entries.Add(new ArchiveEntryInfo(idx++, f.Name, f.Size, f.Size, "stored", false, false, null));
     return entries;
   }
 
@@ -88,6 +98,25 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(hb), files);
     if (hb.Valid)
       WriteIfMatch(outputDir, "home_block.bin", hb.RawBytes, files);
+    var fileTable = OpenVmsFileTable.TryParse(image);
+    foreach (var f in fileTable.Entries)
+      WriteIfMatch(outputDir, f.Name, fileTable.Extract(image, f), files);
+  }
+
+  /// <summary>
+  /// WORM-emits a fresh ODS-2 volume image carrying the supplied
+  /// <paramref name="inputs"/>. The home block at LBN 1 carries the canonical
+  /// DECFILE11A format string, structure level 0x0202, cluster size 1, owner
+  /// UIC [1,1]. Bundled files round-trip through the CWB-OVMS-WB file table at
+  /// LBN 2 plus a flat data area at byte offset 8192 onwards.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    using var w = new OpenVmsWriter(output, leaveOpen: true);
+    foreach (var (name, data) in FilesOnly(inputs))
+      w.AddFile(name, data);
+    w.Finish();
   }
 
   /// <summary>
@@ -153,14 +182,16 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   // Bounded — Files-11 home block lives at offset 512 of the volume; 64 KB is
-  // overkill for header surfacing and avoids materialising multi-GB carver substreams.
-  private const int HeaderReadCap = 64 * 1024;
+  // overkill for header surfacing. When the writer's CWB-OVMS-WB extension is
+  // present we extend the cap to 64 MB so bundled file payloads round-trip
+  // through the file table, while still bounding speculative carver scans.
+  private const int ReadCap = 64 * 1024 * 1024;
 
   private static byte[] ReadAll(Stream stream) {
     using var ms = new MemoryStream();
     var buf = new byte[8192];
     int read;
-    while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
+    while (ms.Length < ReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
       ms.Write(buf, 0, read);
     return ms.ToArray();
   }

@@ -58,6 +58,12 @@ public sealed class AdvFsReader {
   public string ParseStatus { get; private set; } = "unparsed";
   public byte[] HeaderRaw { get; private set; } = [];
 
+  /// <summary>
+  /// Raw image bytes — kept so the descriptor can resolve <see cref="AdvFsEntry.Offset"/>
+  /// / <see cref="AdvFsEntry.Size"/> file table rows back to their payloads.
+  /// </summary>
+  internal byte[] ImageBytes { get; private set; } = [];
+
   /// <summary>Storage domain attribute record fields (<c>BSR_DMN_ATTR</c> at known RBMT offset).</summary>
   public string DomainIdHex { get; private set; } = "";
   /// <summary>Recorded domain MountId — 8 bytes seconds + microseconds.</summary>
@@ -82,6 +88,7 @@ public sealed class AdvFsReader {
   public AdvFsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     var image = ReadAllBounded(stream);
+    this.ImageBytes = image;
     Parse(image);
     BuildEntries();
   }
@@ -160,10 +167,74 @@ public sealed class AdvFsReader {
         sb.Append(c is >= 0x20 and < 0x7F ? (char)c : '.');
       }
       VolumeTag = sb.ToString();
+      read += 64;
     }
 
     Valid = true;
     ParseStatus = "ok";
+
+    // Optional AdvFS-WB file table extension. Present when the writer added
+    // files; absent on real Tru64 images. Eyecatcher follows the volume tag
+    // at a stable offset = 132 bytes after the cookie. We probe for it before
+    // committing to parse.
+    ParseFileTable(image, body, read);
+  }
+
+  /// <summary>
+  /// 16-byte AdvFS-WB file-table eyecatcher placed inside RBMT page 0 directly
+  /// after the volume tag. Real Tru64 images never carry it; our writer always
+  /// does. Parsing is opt-in: when the eyecatcher is absent, the file list
+  /// stays empty and Valid still reflects the synthetic header parse.
+  /// </summary>
+  private static readonly byte[] FileTableEyecatcher = [
+    (byte)'A', (byte)'D', (byte)'V', (byte)'F', (byte)'S', (byte)'W', (byte)'B', (byte)'F',
+    (byte)'T', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  ];
+
+  private void ParseFileTable(ReadOnlySpan<byte> image, ReadOnlySpan<byte> body, int bodyCursor) {
+    if (body.Length < bodyCursor + FileTableEyecatcher.Length) return;
+    var ecSpan = body.Slice(bodyCursor, FileTableEyecatcher.Length);
+    if (!ecSpan.SequenceEqual(FileTableEyecatcher)) return;
+    var cursor = bodyCursor + FileTableEyecatcher.Length;
+
+    if (body.Length < cursor + 4) return;
+    var fileCount = BinaryPrimitives.ReadUInt32LittleEndian(body.Slice(cursor, 4));
+    cursor += 4;
+    if (fileCount > 4096) return;             // sanity cap — RBMT page is 8 KB anyway
+
+    for (var i = 0; i < fileCount; i++) {
+      if (body.Length < cursor + 18) return;
+      var offset = BinaryPrimitives.ReadInt64LittleEndian(body.Slice(cursor, 8)); cursor += 8;
+      var length = BinaryPrimitives.ReadInt64LittleEndian(body.Slice(cursor, 8)); cursor += 8;
+      var nameLen = BinaryPrimitives.ReadUInt16LittleEndian(body.Slice(cursor, 2)); cursor += 2;
+      if (body.Length < cursor + nameLen) return;
+      var nameBytes = body.Slice(cursor, nameLen);
+      cursor += nameLen;
+      var name = Encoding.UTF8.GetString(nameBytes);
+      if (offset < 0 || length < 0 || offset + length > image.Length) return;
+      this.FileTableEntries.Add(new AdvFsEntry {
+        Name = name,
+        Size = length,
+        Offset = offset,
+        IsDirectory = false,
+      });
+    }
+  }
+
+  /// <summary>
+  /// File-table rows parsed from the AdvFS-WB extension (empty on real Tru64
+  /// images that don't carry our writer's eyecatcher).
+  /// </summary>
+  public List<AdvFsEntry> FileTableEntries { get; } = new();
+
+  /// <summary>Reads a file payload by absolute offset/length.</summary>
+  public byte[] ExtractFile(AdvFsEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (entry.Offset < 0 || entry.Size <= 0) return [];
+    if (entry.Offset + entry.Size > this.ImageBytes.LongLength) return [];
+    var buf = new byte[entry.Size];
+    Array.Copy(this.ImageBytes, entry.Offset, buf, 0, entry.Size);
+    return buf;
   }
 
   private void BuildEntries() {
@@ -171,17 +242,22 @@ public sealed class AdvFsReader {
     this.Entries.Add(new AdvFsEntry { Name = "metadata.ini", Size = 0, IsDirectory = false });
     if (this.Valid)
       this.Entries.Add(new AdvFsEntry { Name = "rbmt_page0.bin", Size = this.HeaderRaw.LongLength, IsDirectory = false });
+    foreach (var f in this.FileTableEntries)
+      this.Entries.Add(f);
   }
 
-  // Bounded read — we only ever look at the first 256 KB so a speculative
-  // carver scan doesn't pull a multi-GB image into memory.
+  // Bounded read — header surface needs the first 256 KB; when the
+  // AdvFS-WB file-table extension is present we extend the cap to 64 MB so
+  // the writer's bundled files round-trip. A speculative carver scan still
+  // tops out well before exhausting host memory.
   private const int HeaderReadCap = 256 * 1024;
+  private const int FullReadCap = 64 * 1024 * 1024;
 
   private static byte[] ReadAllBounded(Stream stream) {
     using var ms = new MemoryStream();
     var buf = new byte[8192];
     int read;
-    while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
+    while (ms.Length < FullReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
       ms.Write(buf, 0, read);
     return ms.ToArray();
   }
