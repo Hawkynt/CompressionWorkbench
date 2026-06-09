@@ -11,13 +11,13 @@ namespace FileFormat.AppleSingle;
 /// entry id (data fork, resource fork, Finder info, dates, real name, …) is
 /// surfaced as a separate archive entry plus a metadata.ini summary.
 /// </summary>
-public sealed class AppleSingleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class AppleSingleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   public string Id => "AppleSingle";
   public string DisplayName => "AppleSingle";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".as";
   public IReadOnlyList<string> Extensions => [".as", ".applesingle"];
@@ -69,6 +69,28 @@ public sealed class AppleSingleFormatDescriptor : IFormatDescriptor, IArchiveFor
     using var memoryStream = new MemoryStream();
     s.CopyTo(memoryStream);
     return memoryStream.ToArray();
+  }
+
+  /// <summary>
+  /// WORM creation: emits a fresh AppleSingle v2 container containing one entry
+  /// per input. The synthetic <c>metadata.ini</c> reader entry is never re-emitted
+  /// on round-trip; entries whose archive name matches a documented role name
+  /// (e.g. <c>data_fork.bin</c>) keep their canonical entry id, otherwise they
+  /// are stored under a synthetic high-range id (0x80000000+i).
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var list = new List<(string Name, byte[] Data)>();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      // Skip the synthetic metadata.ini surfaced by the reader — round-trips of
+      // listed+create would otherwise embed reader-internal state into the archive.
+      var leaf = Path.GetFileName(i.ArchiveName);
+      if (string.Equals(leaf, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      list.Add((leaf, i.ReadContent()));
+    }
+    AppleSingleWriter.Write(output, list);
   }
 
   private static IEnumerable<(string Name, byte[] Data)> BuildEntries(Stream stream) {

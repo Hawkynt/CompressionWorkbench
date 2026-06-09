@@ -20,13 +20,13 @@ namespace CompressionWorkbench.FileFormat.Ani;
 /// jiffies, optional INAM/IART metadata) plus the <c>rate</c> and <c>seq </c>
 /// chunks when present.
 /// </remarks>
-public sealed class AniFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class AniFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   public string Id => "Ani";
   public string DisplayName => "ANI (animated cursor)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".ani";
   public IReadOnlyList<string> Extensions => [".ani"];
@@ -56,6 +56,60 @@ public sealed class AniFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       WriteFile(outputDir, e.Name, e.Data);
     }
   }
+
+  /// <summary>
+  /// WORM creation: emits a RIFF "ACON" container whose <c>LIST "fram"</c>
+  /// holds one <c>icon</c> chunk per input. Each input must already be a valid
+  /// CUR (or ICO) file — the writer copies its bytes verbatim and does not
+  /// synthesise cursor images from arbitrary input data. The first 4 bytes of
+  /// every input are checked for the ICO/CUR magic (00 00 01 00 or 00 00 02 00);
+  /// inputs that don't match are rejected so the writer never produces
+  /// structurally invalid frames.
+  /// </summary>
+  /// <remarks>
+  /// Per-format options (<see cref="FormatCreateOptions.FormatSpecific"/>):
+  /// <list type="bullet">
+  ///   <item><c>title</c> / <c>artist</c> — populate optional LIST INFO chunks.</item>
+  ///   <item><c>default_jiffies</c> — frame duration in 1/60-second units (default 6 = 100 ms).</item>
+  /// </list>
+  /// </remarks>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var frames = new List<byte[]>();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var leaf = Path.GetFileName(i.ArchiveName);
+      if (string.Equals(leaf, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      var data = i.ReadContent();
+      if (!LooksLikeIconOrCursor(data))
+        throw new ArgumentException(
+          $"ANI: input '{i.ArchiveName}' is not an ICO or CUR file (expected magic 00 00 01 00 or 00 00 02 00).",
+          nameof(inputs));
+      frames.Add(data);
+    }
+    if (frames.Count == 0)
+      throw new ArgumentException("ANI: at least one CUR/ICO frame is required.", nameof(inputs));
+
+    var title = options?.GetOption("title", "");
+    var artist = options?.GetOption("artist", "");
+    var defaultJiffies = (uint)(options?.GetOptionInt("default_jiffies", 6) ?? 6);
+
+    AniWriter.Write(
+      output,
+      frames,
+      rates: null,
+      sequence: null,
+      title: string.IsNullOrEmpty(title) ? null : title,
+      artist: string.IsNullOrEmpty(artist) ? null : artist,
+      defaultJiffies: defaultJiffies);
+  }
+
+  private static bool LooksLikeIconOrCursor(byte[] data) =>
+    data.Length >= 6
+    && data[0] == 0x00 && data[1] == 0x00
+    && (data[2] == 0x01 || data[2] == 0x02)
+    && data[3] == 0x00;
 
   private static IEnumerable<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();

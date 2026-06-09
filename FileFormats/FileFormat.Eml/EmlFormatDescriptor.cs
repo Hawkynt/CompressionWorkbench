@@ -15,12 +15,12 @@ namespace FileFormat.Eml;
 ///   <item><description><c>attachments/&lt;name&gt;</c> — parts marked as attachments.</description></item>
 /// </list>
 /// </summary>
-public sealed class EmlFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class EmlFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable {
   public string Id => "Eml";
   public string DisplayName => "EML (RFC 822 message)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".eml";
   public IReadOnlyList<string> Extensions => [".eml"];
@@ -83,6 +83,57 @@ public sealed class EmlFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       }
     }
     throw new FileNotFoundException($"Entry not found: {entryName}");
+  }
+
+  /// <summary>
+  /// WORM creation: emits a MIME multipart/mixed message where each input is one
+  /// base64-encoded attachment. With a single input the writer emits a
+  /// single-part envelope instead. <c>From</c>/<c>To</c>/<c>Subject</c> can be
+  /// overridden via <see cref="FormatCreateOptions.FormatSpecific"/> keys of the
+  /// same name; the message envelope otherwise uses a deterministic minimal
+  /// template so round-trips of the same input list are byte-identical.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var parts = new List<(string Name, byte[] Data, string? MimeType)>();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var leaf = Path.GetFileName(i.ArchiveName);
+      // Skip reader-emitted synthetic entries so a list-then-create round-trip
+      // doesn't smuggle reader state into the message.
+      if (string.Equals(leaf, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      if (string.Equals(leaf, "FULL.eml", StringComparison.OrdinalIgnoreCase)) continue;
+      parts.Add((leaf, i.ReadContent(), GuessMimeType(leaf)));
+    }
+
+    Dictionary<string, string>? hdrs = null;
+    if (options?.FormatSpecific != null) {
+      foreach (var key in new[] { "From", "To", "Subject", "Date", "Message-ID" }) {
+        var v = options.GetOption(key, "");
+        if (!string.IsNullOrEmpty(v)) {
+          hdrs ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+          hdrs[key] = v;
+        }
+      }
+    }
+
+    EmlWriter.Write(output, parts, hdrs);
+  }
+
+  private static string? GuessMimeType(string name) {
+    var ext = Path.GetExtension(name).ToLowerInvariant();
+    return ext switch {
+      ".txt" => "text/plain; charset=utf-8",
+      ".html" or ".htm" => "text/html; charset=utf-8",
+      ".pdf" => "application/pdf",
+      ".jpg" or ".jpeg" => "image/jpeg",
+      ".png" => "image/png",
+      ".gif" => "image/gif",
+      ".zip" => "application/zip",
+      ".json" => "application/json",
+      _ => null,
+    };
   }
 
   // ── Entry builder ────────────────────────────────────────────────────────

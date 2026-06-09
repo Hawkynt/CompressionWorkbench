@@ -13,13 +13,13 @@ namespace FileFormat.FontCollection;
 ///   <item><description><c>glyphs/&lt;i&gt;_&lt;name&gt;/U+XXXX.svg</c> — per-glyph SVG outlines (TrueType only)</description></item>
 /// </list>
 /// </summary>
-public sealed class TtcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class TtcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Ttc";
   public string DisplayName => "TTC (TrueType collection)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".ttc";
   public IReadOnlyList<string> Extensions => [".ttc"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -45,6 +45,39 @@ public sealed class TtcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         continue;
       FormatHelpers.WriteFile(outputDir, entry.EntryName, entry.Bytes);
     }
+  }
+
+  /// <summary>
+  /// WORM creation: bundles one or more standalone TTF/OTF inputs into a TTC v1
+  /// collection. Inputs must already be valid SFNT fonts (first 4 bytes match a
+  /// known sfnt version); the writer rejects anything else so the produced TTC
+  /// always describes real fonts. The reader's synthetic FULL.ttc, metadata.ini,
+  /// and any per-glyph SVG outputs are filtered so a list-then-create round-trip
+  /// recreates the original collection from the per-member font slices.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var fonts = new List<byte[]>();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var leaf = Path.GetFileName(i.ArchiveName);
+      // Skip reader-emitted synthetic entries.
+      if (string.Equals(leaf, "FULL.ttc", StringComparison.OrdinalIgnoreCase)) continue;
+      if (string.Equals(leaf, "FULL.otc", StringComparison.OrdinalIgnoreCase)) continue;
+      if (string.Equals(leaf, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      // Skip per-glyph SVG entries (anything under glyphs/ subdir).
+      var normalised = i.ArchiveName.Replace('\\', '/');
+      if (normalised.StartsWith("glyphs/", StringComparison.OrdinalIgnoreCase)) continue;
+      if (normalised.Contains("/glyphs/", StringComparison.OrdinalIgnoreCase)) continue;
+      // Only accept .ttf / .otf payloads.
+      var ext = Path.GetExtension(leaf).ToLowerInvariant();
+      if (ext != ".ttf" && ext != ".otf") continue;
+      fonts.Add(i.ReadContent());
+    }
+    if (fonts.Count == 0)
+      throw new ArgumentException("TTC: at least one .ttf or .otf input is required.", nameof(inputs));
+    TtcWriter.Write(output, fonts);
   }
 
   /// <summary>

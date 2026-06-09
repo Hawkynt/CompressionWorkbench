@@ -8,13 +8,13 @@ namespace FileFormat.Gettext;
 /// Exposes a gettext .mo binary catalog as an archive of per-message text files.
 /// Entry zero with an empty msgid is the catalog metadata header.
 /// </summary>
-public sealed class MoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class MoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Mo";
   public string DisplayName => "MO (gettext binary catalog)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".mo";
   public IReadOnlyList<string> Extensions => [".mo"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -34,6 +34,61 @@ public sealed class MoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
     GettextEntryHelper.Extract(Read(stream), outputDir, files);
+
+  /// <summary>
+  /// WORM creation: emits an MO catalog where each input becomes one entry. The
+  /// archive name (sans path + trailing <c>.txt</c>) is used as the msgid; the
+  /// input bytes (decoded as UTF-8) become the msgstr. An empty msgid signals
+  /// the gettext metadata header and is placed first per the spec.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var entries = new List<CatalogEntry>(inputs.Count);
+    var idx = 0;
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      var (context, msgid) = ParseInputName(input.ArchiveName);
+      var msgstr = Encoding.UTF8.GetString(input.ReadContent());
+      entries.Add(new CatalogEntry(
+        Index: idx++,
+        Context: context,
+        MsgId: msgid,
+        MsgIdPlural: null,
+        MsgStr: msgstr,
+        MsgStrPlural: null));
+    }
+    MoWriter.Write(output, entries);
+  }
+
+  /// <summary>
+  /// Reverses the reader's <c>EntryName</c> sanitisation back into (context, msgid).
+  /// Format: <c>NNNN_(ctx__)?LABEL.txt</c> where <c>HEADER</c> represents the empty
+  /// msgid. Unparseable names fall back to the leaf as the literal msgid.
+  /// </summary>
+  public static (string? Context, string MsgId) ParseInputName(string archiveName) {
+    var leaf = Path.GetFileName(archiveName);
+    if (leaf.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+      leaf = leaf[..^4];
+
+    // Strip optional NNNN_ index prefix.
+    var underscore = leaf.IndexOf('_');
+    if (underscore > 0 && underscore <= 6) {
+      var prefix = leaf[..underscore];
+      if (prefix.All(c => c is >= '0' and <= '9'))
+        leaf = leaf[(underscore + 1)..];
+    }
+
+    // Context separator is double-underscore "__".
+    string? context = null;
+    var sep = leaf.IndexOf("__", StringComparison.Ordinal);
+    if (sep > 0) {
+      context = leaf[..sep];
+      leaf = leaf[(sep + 2)..];
+    }
+
+    return (context, leaf == "HEADER" ? "" : leaf);
+  }
 
   private static List<CatalogEntry> Read(Stream s) {
     using var ms = new MemoryStream();

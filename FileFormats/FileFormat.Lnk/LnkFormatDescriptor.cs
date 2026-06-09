@@ -13,13 +13,13 @@ namespace FileFormat.Lnk;
 /// LinkInfo block, StringData entries (Name/RelativePath/WorkingDir/Arguments/IconLocation),
 /// and any trailing ExtraData blocks. Writes each as a distinct entry.
 /// </summary>
-public sealed class LnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class LnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Lnk";
   public string DisplayName => "Windows Shell Link";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".lnk";
   public IReadOnlyList<string> Extensions => [".lnk"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -78,6 +78,62 @@ public sealed class LnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         continue;
       WriteFile(outputDir, e.Name, e.Data);
     }
+  }
+
+  /// <summary>
+  /// WORM creation: emits a minimal .lnk pointing at a single target path.
+  /// <para>
+  /// The first non-directory input's <c>FullPath</c> is used as the target
+  /// (LocalBasePath). The shortcut's WorkingDirectory defaults to the target's
+  /// parent directory. Additional inputs are ignored — a Shell Link describes
+  /// exactly one target by design; the writer honours that constraint instead
+  /// of silently producing nonsense.
+  /// </para>
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    ArchiveInputInfo? target = null;
+    foreach (var i in inputs) {
+      if (i.IsDirectory) { target ??= i; continue; }
+      var leaf = Path.GetFileName(i.ArchiveName);
+      // Skip the reader's synthetic surface entries so list-then-create round-trips work.
+      if (string.Equals(leaf, "FULL.lnk", StringComparison.OrdinalIgnoreCase)) continue;
+      if (string.Equals(leaf, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      if (string.Equals(leaf, "header.bin", StringComparison.OrdinalIgnoreCase)) continue;
+      if (string.Equals(leaf, "linkinfo.bin", StringComparison.OrdinalIgnoreCase)) continue;
+      if (string.Equals(leaf, "idlist.bin", StringComparison.OrdinalIgnoreCase)) continue;
+      target = i;
+      break;
+    }
+    if (target == null)
+      throw new ArgumentException("LNK: at least one non-directory input is required to derive the target path.", nameof(inputs));
+
+    var targetPath = target.FullPath;
+    var isDirectory = target.IsDirectory;
+    var targetSize = !isDirectory && target.InMemoryContent != null
+      ? (uint)Math.Min(target.InMemoryContent.Length, uint.MaxValue)
+      : 0u;
+
+    // Per-format option knobs let callers override the working dir / arguments
+    // / icon without supplying separate input entries.
+    var workingDir = options?.GetOption("working_dir", Path.GetDirectoryName(targetPath) ?? "");
+    if (workingDir == "") workingDir = null;
+    var arguments = options?.GetOption("arguments", "");
+    if (arguments == "") arguments = null;
+    var iconLocation = options?.GetOption("icon_location", "");
+    if (iconLocation == "") iconLocation = null;
+
+    LnkWriter.Write(
+      output,
+      targetPath,
+      isDirectory: isDirectory,
+      targetSize: targetSize,
+      relativePath: null,
+      workingDir: workingDir,
+      arguments: arguments,
+      iconLocation: iconLocation);
   }
 
   private static List<(string Name, byte[] Data)> BuildEntries(Stream stream) {

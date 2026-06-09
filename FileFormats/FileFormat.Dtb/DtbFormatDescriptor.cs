@@ -13,13 +13,13 @@ namespace FileFormat.Dtb;
 /// anything else is written as raw bytes. A <c>metadata.ini</c> summarises the
 /// FDT header + memory reservation map.
 /// </summary>
-public sealed class DtbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class DtbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   public string Id => "Dtb";
   public string DisplayName => "Flattened Device Tree Blob";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".dtb";
@@ -45,6 +45,33 @@ public sealed class DtbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, e.Data);
     }
+  }
+
+  /// <summary>
+  /// WORM creation: emits a minimal valid FDT v17 blob whose root node carries
+  /// each input as a leaf property. The synthetic <c>metadata.ini</c> + any
+  /// reader-emitted <c>.txt</c>/<c>.bin</c> suffixes are stripped from the
+  /// archive name before sanitisation so a list-then-create round-trip lands at
+  /// the same property name. Property names are sanitised to the
+  /// devicetree-spec character set; collisions in the input list are preserved
+  /// as repeated FDT_PROP records.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var list = new List<(string Name, byte[] Data)>();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var leaf = Path.GetFileName(i.ArchiveName);
+      if (string.Equals(leaf, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      // Strip reader-emitted ".txt" / ".bin" suffixes so the property name on
+      // round-trip matches the original property name in the input DTB.
+      if (leaf.EndsWith(".txt", StringComparison.OrdinalIgnoreCase) ||
+          leaf.EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
+        leaf = leaf[..^4];
+      list.Add((leaf, i.ReadContent()));
+    }
+    DtbWriter.Write(output, list);
   }
 
   private static List<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream) {
