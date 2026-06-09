@@ -91,44 +91,75 @@ public sealed class BrImageIndex {
 /// <c>BR_IMAGE_INDEX_ENTRY_VDB</c> — the 0x20-byte volume-data block
 /// descriptor that populates an <see cref="AomeiConstants.IndexTypeDataBlock"/>
 /// record's entry array. Pinned size <see cref="AomeiConstants.VendorVdbEntrySize"/>
-/// = 0x20.
+/// = 0x20 bytes; per-field byte offsets pinned by the constants in
+/// <see cref="AomeiConstants"/> (see XML doc on each <c>VendorVdbEntry*</c>
+/// for the per-field disassembly provenance).
 ///
 /// <para>
-/// Field name list recovered from <c>ImgFile.dll!ImageVolume.cpp</c> via
-/// the <c>m_pConvert-&gt;Decode(pNew, vdb.NewSize, pOld, OldLen)</c>,
+/// Pinned layout (recovered by triangulating three independent code paths
+/// in <c>ImgFile.dll</c>):
+/// <code>
+/// struct BR_IMAGE_INDEX_ENTRY_VDB {  // total 0x20 bytes
+///   uint32_t RegNo;      // 0x00..0x03  — region index
+///   uint64_t BlockNo;    // 0x04..0x0B  — block index within region
+///   uint64_t ImgOffset;  // 0x0C..0x13  — byte offset within image set
+///   uint32_t OldSize;    // 0x14..0x17  — decoded payload size
+///   uint32_t NewSize;    // 0x18..0x1B  — stored (compressed) payload size
+///   uint32_t Crc32;      // 0x1C..0x1F  — BRCrc32 over decoded payload
+/// };
+/// </code>
+/// </para>
+///
+/// <para>
+/// Field-name provenance from <c>ImgFile.dll!ImageVolume.cpp</c> via the
+/// assert-text xref strings
+/// <c>m_pConvert-&gt;Decode(pNew, vdb.NewSize, pOld, OldLen)</c>,
 /// <c>m_pImgSet-&gt;ReadData(vdb.ImgOffset, pNew, vdb.NewSize)</c>,
 /// <c>vdb.NewSize==vdb.OldSize</c>, <c>Crc32==vdb.Crc32</c> and
-/// <c>GetBlock(vdb.RegNo, vdb.BlockNo, Buff, BufLen, Bitmap, BmpLen, nCrc)</c>
-/// access patterns:
+/// <c>GetBlock(vdb.RegNo, vdb.BlockNo, Buff, BufLen, Bitmap, BmpLen, nCrc)</c>:
 /// </para>
 /// <list type="bullet">
 ///   <item><description><c>RegNo</c> — region index into the volume's
 ///     <c>m_vtrDataRegion</c> array.</description></item>
-///   <item><description><c>BlockNo</c> — block index within that region
-///     (qword in the FlbDataRegion code path; treated as u64 here for
-///     symmetry).</description></item>
-///   <item><description><c>ImgOffset</c> — byte offset inside the image
-///     set where the compressed + encrypted payload + bitmap is stored.</description></item>
-///   <item><description><c>NewSize</c> — size of the stored
-///     payload (post compress / encrypt).</description></item>
+///   <item><description><c>BlockNo</c> — u64 block index within that
+///     region.</description></item>
+///   <item><description><c>ImgOffset</c> — u64 byte offset inside the
+///     image set where the compressed + encrypted payload + bitmap is
+///     stored.</description></item>
 ///   <item><description><c>OldSize</c> — size of the decoded payload
 ///     (BufLen + BmpLen, where BufLen is the sector data and BmpLen is
 ///     the cluster-allocation bitmap).</description></item>
+///   <item><description><c>NewSize</c> — size of the stored payload
+///     (post compress / encrypt).</description></item>
 ///   <item><description><c>Crc32</c> — BRCrc32 over the decoded
 ///     <c>OldSize</c> bytes.</description></item>
 /// </list>
-///
-/// <para>
-/// The exact byte offset of each field within the 0x20-byte entry is not
-/// pinned by passive RE — the C++ code accesses each as a typed struct
-/// member. A plausible natural layout (u32 RegNo, u32 BlockNo, u64
-/// ImgOffset, u32 NewSize, u32 OldSize, u32 Crc32 = 32 bytes total) is
-/// captured by <see cref="PlausibleLayout"/> but is <b>not</b> yet
-/// validated against a real .adi sample, so this class only carries the
-/// fields as a passive data structure rather than encoding them.
-/// </para>
 /// </summary>
 public sealed class BrImageIndexEntryVdb {
+
+  /// <summary>Byte offset of <see cref="RegNo"/>: 0x00. Mirrors
+  /// <see cref="AomeiConstants.VendorVdbEntryRegNoOffset"/>.</summary>
+  public const int RegNoOffset = AomeiConstants.VendorVdbEntryRegNoOffset;
+
+  /// <summary>Byte offset of <see cref="BlockNo"/>: 0x04. Mirrors
+  /// <see cref="AomeiConstants.VendorVdbEntryBlockNoOffset"/>.</summary>
+  public const int BlockNoOffset = AomeiConstants.VendorVdbEntryBlockNoOffset;
+
+  /// <summary>Byte offset of <see cref="ImgOffset"/>: 0x0C. Mirrors
+  /// <see cref="AomeiConstants.VendorVdbEntryImgOffsetOffset"/>.</summary>
+  public const int ImgOffsetOffset = AomeiConstants.VendorVdbEntryImgOffsetOffset;
+
+  /// <summary>Byte offset of <see cref="OldSize"/>: 0x14. Mirrors
+  /// <see cref="AomeiConstants.VendorVdbEntryOldSizeOffset"/>.</summary>
+  public const int OldSizeOffset = AomeiConstants.VendorVdbEntryOldSizeOffset;
+
+  /// <summary>Byte offset of <see cref="NewSize"/>: 0x18. Mirrors
+  /// <see cref="AomeiConstants.VendorVdbEntryNewSizeOffset"/>.</summary>
+  public const int NewSizeOffset = AomeiConstants.VendorVdbEntryNewSizeOffset;
+
+  /// <summary>Byte offset of <see cref="Crc32"/>: 0x1C. Mirrors
+  /// <see cref="AomeiConstants.VendorVdbEntryCrc32Offset"/>.</summary>
+  public const int Crc32Offset = AomeiConstants.VendorVdbEntryCrc32Offset;
 
   /// <summary>Region index. Picks one of the volume's data regions.</summary>
   public uint RegNo { get; init; }
@@ -150,23 +181,50 @@ public sealed class BrImageIndexEntryVdb {
   public uint Crc32 { get; init; }
 
   /// <summary>
-  /// Plausible natural-alignment layout sketch — kept for reference only:
-  /// <code>
-  /// 0x00 .. 0x03  RegNo:u32
-  /// 0x04 .. 0x07  BlockNo:u32_low      (or zero-extension of the qword)
-  /// 0x08 .. 0x0F  ImgOffset:u64
-  /// 0x10 .. 0x13  NewSize:u32
-  /// 0x14 .. 0x17  OldSize:u32
-  /// 0x18 .. 0x1B  Crc32:u32
-  /// 0x1C .. 0x1F  pad / reserved
-  /// </code>
-  /// This adds up to 0x20 bytes and matches the access pattern observed in
-  /// the disassembly, but the field ordering and exact widths could differ
-  /// (e.g. BlockNo could be u64 occupying 0x04..0x0B with ImgOffset shifted
-  /// to 0x0C..0x13). Not used by any encode / decode path yet.
+  /// One-line description of the pinned VDB layout. Used by the metadata
+  /// surface to broadcast the recovered facts to downstream forensic
+  /// tooling without requiring callers to read the XML docs. Updated as
+  /// of this commit to the disassembly-pinned ordering (was previously a
+  /// plausibility sketch).
   /// </summary>
   public const string PlausibleLayout =
-    "RegNo:u32, BlockNo:u32, ImgOffset:u64, NewSize:u32, OldSize:u32, Crc32:u32, Pad:u32";
+    "RegNo:u32@0x00, BlockNo:u64@0x04, ImgOffset:u64@0x0C, OldSize:u32@0x14, NewSize:u32@0x18, Crc32:u32@0x1C";
+
+  /// <summary>Read a VDB entry from a 0x20-byte span at the disassembly-
+  /// pinned field offsets.</summary>
+  /// <exception cref="ArgumentException">When <paramref name="entry"/> is
+  /// shorter than <see cref="AomeiConstants.VendorVdbEntrySize"/>.</exception>
+  public static BrImageIndexEntryVdb Read(ReadOnlySpan<byte> entry) {
+    if (entry.Length < AomeiConstants.VendorVdbEntrySize)
+      throw new ArgumentException(
+        $"Buffer too small for BR_IMAGE_INDEX_ENTRY_VDB ({entry.Length} < {AomeiConstants.VendorVdbEntrySize}).",
+        nameof(entry));
+    return new BrImageIndexEntryVdb {
+      RegNo = BinaryPrimitives.ReadUInt32LittleEndian(entry[RegNoOffset..]),
+      BlockNo = BinaryPrimitives.ReadUInt64LittleEndian(entry[BlockNoOffset..]),
+      ImgOffset = BinaryPrimitives.ReadUInt64LittleEndian(entry[ImgOffsetOffset..]),
+      OldSize = BinaryPrimitives.ReadUInt32LittleEndian(entry[OldSizeOffset..]),
+      NewSize = BinaryPrimitives.ReadUInt32LittleEndian(entry[NewSizeOffset..]),
+      Crc32 = BinaryPrimitives.ReadUInt32LittleEndian(entry[Crc32Offset..]),
+    };
+  }
+
+  /// <summary>Write this VDB entry into a 0x20-byte span at the
+  /// disassembly-pinned field offsets.</summary>
+  /// <exception cref="ArgumentException">When <paramref name="entry"/> is
+  /// shorter than <see cref="AomeiConstants.VendorVdbEntrySize"/>.</exception>
+  public void Write(Span<byte> entry) {
+    if (entry.Length < AomeiConstants.VendorVdbEntrySize)
+      throw new ArgumentException(
+        $"Buffer too small for BR_IMAGE_INDEX_ENTRY_VDB ({entry.Length} < {AomeiConstants.VendorVdbEntrySize}).",
+        nameof(entry));
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[RegNoOffset..], this.RegNo);
+    BinaryPrimitives.WriteUInt64LittleEndian(entry[BlockNoOffset..], this.BlockNo);
+    BinaryPrimitives.WriteUInt64LittleEndian(entry[ImgOffsetOffset..], this.ImgOffset);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[OldSizeOffset..], this.OldSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[NewSizeOffset..], this.NewSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[Crc32Offset..], this.Crc32);
+  }
 }
 
 /// <summary>

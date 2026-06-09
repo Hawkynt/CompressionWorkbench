@@ -148,6 +148,43 @@ public static class AomeiConstants {
   /// source paths.</summary>
   public const ushort InfoTypeFlbPathList = 0x0112;
 
+  /// <summary><c>INFO_TYPE_FLB_SUB_ENTRY_LIST</c> = 0x110 — file-level sub-
+  /// entry list emitted by <c>FlbImageWriter</c>. Pinned by the cdecl
+  /// <c>push 0x110</c> at <c>ImgFile.dll!0x1000a2d0</c>, fifteen
+  /// instructions before the assert-text xref at <c>0x1000a2fd</c> to the
+  /// AddInfo callsite string
+  /// <c>AddInfo(INFO_TYPE_FLB_SUB_ENTRY_LIST, &amp;m_vSubEntList[0], ...)</c>.
+  /// Resolves the lower half of the prior <c>{0x110, 0x111, 0x128}</c>
+  /// candidate set.</summary>
+  public const ushort InfoTypeFlbSubEntryList = 0x0110;
+
+  /// <summary><c>INFO_TYPE_FLB_FILE_DATA_BLOCK_LIST</c> = 0x111 — file-level
+  /// data-block list emitted by <c>FlbImageWriter</c>. Pinned by the cdecl
+  /// <c>push 0x111</c> at <c>ImgFile.dll!0x1000a341</c>, fifteen
+  /// instructions before the assert-text xref at <c>0x1000a36e</c> to
+  /// <c>AddInfo(INFO_TYPE_FLB_FILE_DATA_BLOCK_LIST, &amp;m_vDataBlockList[0], ...)</c>.
+  /// Resolves the upper half of the prior <c>{0x110, 0x111, 0x128}</c>
+  /// candidate set.</summary>
+  public const ushort InfoTypeFlbFileDataBlockList = 0x0111;
+
+  /// <summary><c>INFO_TYPE_VOLUME_DATA_REGION</c> = 0x109 — per-region
+  /// volume-data record carrying a <c>BR_IMAGE_INFO_VOLUME_DATA_REGION</c>
+  /// (0x30 bytes per the matching <c>cmp eax, 0x30</c> preamble). Pinned by
+  /// the loop-body <c>cmp dword ptr [ebp-0x34], 0x109</c> at
+  /// <c>ImgFile.dll!ImageVolume.cpp+0x1002554c</c> immediately before the
+  /// <c>jne</c> branch that targets the assert-text xref at
+  /// <c>0x100257ae</c> for <c>Region.Header.Type==INFO_TYPE_VOLUME_DATA_REGION</c>.
+  /// The same switch arm continues into the
+  /// <c>uLen==sizeof(BR_IMAGE_INFO_VOLUME_DATA_REGION)</c> assert at
+  /// <c>0x1002587a</c> guarded by <c>cmp eax, 0x30; jne 0x10025846</c>.</summary>
+  public const ushort InfoTypeVolumeDataRegion = 0x0109;
+
+  /// <summary>Vendor-pinned <c>sizeof(BR_IMAGE_INFO_VOLUME_DATA_REGION)</c>
+  /// = 0x30 (48) bytes. Pinned by the <c>cmp eax, 0x30</c> preamble at
+  /// <c>0x10025558</c> immediately before the corresponding sizeof assert
+  /// at <c>0x1002587a</c>.</summary>
+  public const int VendorVolumeDataRegionSize = 0x30;
+
   // ─── INDEX_TYPE_* enumeration ───────────────────────────────────────────
   // All five values confirmed by the assert preamble pattern
   // `cmp dword ptr [reg+disp], imm32` immediately preceding each
@@ -223,20 +260,182 @@ public static class AomeiConstants {
   /// <c>EntrySize==sizeof(BR_IMAGE_INDEX_ENTRY_VDB)</c> assert.</summary>
   public const int VendorVdbEntrySize = 0x20;
 
-  // ─── BR_IMAGE_FILE_TAIL body fields (partial) ───────────────────────────
+  // ─── BR_IMAGE_INDEX_ENTRY_VDB field byte offsets ───────────────────────
   //
-  // The tail body holds split-volume bookkeeping. The reader accesses
-  // `m_Tail.DataOffInSet` (u64) and `m_Tail.DataLenInSet` (u64) when
-  // computing where this volume's payload lives in the full image set.
-  // Their byte offsets within the 0x674-byte tail are not pinned by
-  // passive RE because the field accesses happen via a typed C++ struct
-  // with full layout knowledge, not via numeric `disp` immediates.
+  // Pinned by triangulating three independent code paths in ImgFile.dll
+  // (32-bit i386 build, sections .text at vma 0x10001000):
+  //
+  // (1) ReadBlock(this, u32, VDB) at vma 0x10026060: the function takes
+  //     the VDB struct by value via 32 bytes pushed at [ebp+0xc..ebp+0x2b]
+  //     and stages them locally as two xmm0 moves
+  //     ([ebp-0x2c..ebp-0x1d] = vdb[0..0xf];
+  //      [ebp-0x1c..ebp-0x0d] = vdb[0x10..0x1f]).
+  //     The subsequent `psrldq xmm0, 0x4` at 0x1002608b then `movd eax,
+  //     xmm0` at 0x10026090 extracts the dword at vdb[0x14] and pushes it
+  //     as the malloc(OldSize) size for the pOld buffer. The first
+  //     ReadData call at 0x100261ce pushes
+  //     [ebp-0x20] / [ebp-0x1c] (= vdb[0x0c..0x13]) as the u64 ImgOffset.
+  //
+  // (2) Wrapper at vma 0x10027c91 iterates a VDB array via
+  //     `shl eax, 5; add eax, [ecx+0x38]; movups xmm0, [eax];
+  //      movups xmm0, [eax+0x10]; movaps [esp+0x50], xmm0` so [esp+0x50]
+  //     mirrors vdb[0x10..0x1f]. The BRCrc32 call at 0x10027d02 takes
+  //     [esp+0x54] (= vdb[0x14]) as the byte-count and the post-CRC
+  //     `cmp eax, [esp+0x5c]` at 0x10027d0b compares the computed CRC
+  //     against vdb[0x1c..0x1f]; the `jne 0x10027d99` branch lands on
+  //     the assert-text xref `Crc32==vdb.Crc32`.
+  //
+  // (3) Outer GetBlock(vdb.RegNo, vdb.BlockNo, ...) prep at vma 0x10026d8a
+  //     issues `movups xmm1, [edx+ecx]; movups xmm0, [edx+ecx+0x10];
+  //      movd esi, xmm1; psrldq xmm0, 0x4; movd edx, xmm0;
+  //      psrldq xmm1, 0x8; movd ecx, xmm1` then pushes esi/edx/ecx (in
+  //     C-order) as the first three args of GetBlock. esi = vdb[0..3] is
+  //     pushed first ⇒ first C arg ⇒ RegNo (u32 per the function
+  //     signature); edx = vdb[4..7] is the low half of BlockNo; ecx =
+  //     vdb[8..0xb] is the high half of BlockNo (u64).
+
+  /// <summary>Byte offset of <c>RegNo</c> (u32) within a
+  /// <c>BR_IMAGE_INDEX_ENTRY_VDB</c>: 0x00. Pinned by the GetBlock prep at
+  /// <c>0x10026d8a</c>: `movd esi, xmm1` (where xmm1 = vdb[0..0xf]) gives
+  /// vdb[0..3], pushed first in C-order ⇒ first arg of
+  /// <c>GetBlock(vdb.RegNo, vdb.BlockNo, ...)</c>.</summary>
+  public const int VendorVdbEntryRegNoOffset = 0x00;
+
+  /// <summary>Byte offset of <c>BlockNo</c> (u64) within a
+  /// <c>BR_IMAGE_INDEX_ENTRY_VDB</c>: 0x04. Pinned by the GetBlock prep at
+  /// <c>0x10026d8a</c>: `psrldq xmm0, 4; movd edx, xmm0` extracts
+  /// vdb[4..7] as BlockNo_low and `psrldq xmm1, 8; movd ecx, xmm1`
+  /// extracts vdb[8..0xb] as BlockNo_high. Both pushed in the second/third
+  /// C-order positions ⇒ a single u64 spanning 0x04..0x0B.</summary>
+  public const int VendorVdbEntryBlockNoOffset = 0x04;
+
+  /// <summary>Byte offset of <c>ImgOffset</c> (u64) within a
+  /// <c>BR_IMAGE_INDEX_ENTRY_VDB</c>: 0x0C. Pinned by the first ReadData
+  /// call at <c>0x100261ce</c> which pushes
+  /// <c>[ebp-0x20]</c> and <c>[ebp-0x1c]</c> as the u64 ImgOffset. Those
+  /// locals correspond to vdb[0x0C..0x0F] (low) and vdb[0x10..0x13]
+  /// (high) per the function-prologue xmm copy at
+  /// <c>0x10026070..10026085</c>.</summary>
+  public const int VendorVdbEntryImgOffsetOffset = 0x0C;
+
+  /// <summary>Byte offset of <c>OldSize</c> (u32, decoded payload size)
+  /// within a <c>BR_IMAGE_INDEX_ENTRY_VDB</c>: 0x14. Pinned by two
+  /// independent paths: (a) the malloc-of-pOld at <c>0x10026094</c> uses
+  /// the dword at vdb[0x14] (extracted via `psrldq xmm0, 4; movd eax,
+  /// xmm0` from the second xmm0 = vdb[0x10..0x1f]); (b) the post-Decode
+  /// equality check at <c>0x10026254..0x1002625a</c>
+  /// (`mov eax, [ebp-0x18]; cmp eax, [ebp-0x38]`) compares vdb[0x14]
+  /// against the returned OldLen and the jne path leads to the assert
+  /// <c>vdb.OldSize==OldLen</c>. [ebp-0x18] = vdb[0x14] per the prologue
+  /// xmm layout.</summary>
+  public const int VendorVdbEntryOldSizeOffset = 0x14;
+
+  /// <summary>Byte offset of <c>NewSize</c> (u32, compressed/stored payload
+  /// size) within a <c>BR_IMAGE_INDEX_ENTRY_VDB</c>: 0x18. Pinned by the
+  /// pNew malloc at <c>0x100261b0..0x100261b3</c> (`push [ebp-0x14];
+  /// call malloc`) followed by the ReadData call at <c>0x100261ce</c> that
+  /// passes <c>lea ebx, [ebp-0x14]</c> as the in-out length pointer. Per
+  /// the prologue layout [ebp-0x14] = vdb[0x18]. Verified by the
+  /// pre-decode no-compression shortcut at <c>0x100262a1</c>:
+  /// `mov eax, [ebp-0x14]; cmp eax, [ebp-0x18]` checks
+  /// <c>vdb.NewSize == vdb.OldSize</c> before bypassing Decode.</summary>
+  public const int VendorVdbEntryNewSizeOffset = 0x18;
+
+  /// <summary>Byte offset of <c>Crc32</c> (u32, BRCrc32 over the decoded
+  /// payload) within a <c>BR_IMAGE_INDEX_ENTRY_VDB</c>: 0x1C. Pinned by
+  /// the post-BRCrc32 comparison at <c>0x10027d0b</c>: `cmp eax,
+  /// [esp+0x5c]` — [esp+0x5c] = vdb[0x1c] per the wrapper-side
+  /// `movaps [esp+0x50], xmm0` at <c>0x10027ca8</c> that mirrors the
+  /// second VDB xmm half. The jne lands on the
+  /// <c>Crc32==vdb.Crc32</c> assert-text xref at
+  /// <c>0x10027d99</c>.</summary>
+  public const int VendorVdbEntryCrc32Offset = 0x1C;
+
+  // ─── BR_IMAGE_FILE_TAIL body fields ────────────────────────────────────
+  //
+  // Pinned by reader-side `mov reg, [reg+disp]` at the two access points
+  // identified by the bounds-check assert text:
+  //
+  //   * Read path at vma 0x10017150 (m_pFile->Read with -DataOffInSet
+  //     translation): mov ebx,[ecx+0xc8c] / mov edi,[ecx+0xc88] →
+  //     m_Tail.DataOffInSet high/low at object offsets 0xc88..0xc8f.
+  //   * Write path at vma 0x100172d4 (mirror) plus the upper-bound check
+  //     at 0x10017342..0x1001734e (`add esi,[edi+0xc80] /
+  //     mov ecx,[edi+0xc84] / adc ecx,eax`) → m_Tail.DataLenInSet high/low
+  //     at object offsets 0xc80..0xc87.
+  //   * m_Tail itself is at this+0x660 per the tail-load routine at
+  //     0x10017a90: `rep movsd` at 0x10017cf3 copies the 0x674-byte tail
+  //     buffer from [ebp-0x678] to [edi+0x660], so m_Tail occupies
+  //     object offsets [0x660..0xcd4). Subtracting the base from each
+  //     field's object offset yields the in-struct byte offset.
+
+  /// <summary>Byte offset of <c>DataLenInSet</c> (u64) within the
+  /// 0x674-byte <c>BR_IMAGE_FILE_TAIL</c>: 0x620. Computed as
+  /// <c>0xc80 - 0x660</c> from the read-side ALU pair
+  /// <c>add esi,[edi+0xc80] / mov ecx,[edi+0xc84]</c> at <c>0x10017342</c>
+  /// and the tail-base <c>[edi+0x660]</c> established by the
+  /// <c>rep movsd</c> at <c>0x10017cf3</c>.</summary>
+  public const int VendorTailBodyDataLenInSetOffset = 0x620;
+
+  /// <summary>Byte offset of <c>DataOffInSet</c> (u64) within the
+  /// 0x674-byte <c>BR_IMAGE_FILE_TAIL</c>: 0x628. Computed as
+  /// <c>0xc88 - 0x660</c> from the read-side load pair
+  /// <c>mov ebx,[ecx+0xc8c] / mov edi,[ecx+0xc88]</c> at <c>0x100171b0</c>
+  /// and the tail-base <c>[edi+0x660]</c>. The reader uses
+  /// <c>Offset - DataOffInSet + sizeof(BR_IMAGE_FILE_HEAD)</c> to
+  /// translate logical image-set offsets to per-volume file offsets.</summary>
+  public const int VendorTailBodyDataOffInSetOffset = 0x628;
+
+  // ─── BR_IMAGE_FILE_TAIL trailing BR_STANDARD_HEADER position ───────────
+  //
+  // The tail's BR_STANDARD_HEADER appears AT THE END of the 0x674-byte
+  // struct (vs the file head where it sits at offset 0). Pinned by the
+  // post-Read sanity checks at 0x10017b9a / 0x10017bfd / 0x10017c60:
+  //
+  //   `cmp dword [ebp-0x8],  'BIFT'`   ← Flag at buffer offset 0x670
+  //   `cmp dword [ebp-0xc],  0x674`    ← Size at buffer offset 0x66c
+  //   `mov esi, [ebp-0x10]; mov [ebp-0x10],0; call BRCrc32` ← CRC at 0x668
+  //
+  // The 4-byte slot at 0x664 is the Reserved word (unverified-zero by
+  // passive RE; mirrors the head's documented Reserved field). Total
+  // trailing header = 16 bytes at [0x664..0x673].
+
+  /// <summary>Byte offset of the trailing <c>BR_STANDARD_HEADER</c>'s
+  /// Reserved word within the 0x674-byte <c>BR_IMAGE_FILE_TAIL</c>: 0x664.
+  /// Mirrors the head's documented Reserved offset; observed zero in every
+  /// recovered sample but the cmp at this position is not explicit in the
+  /// reader (only the {CRC, Size, Flag} fields are directly checked).</summary>
+  public const int VendorTailTrailerReservedOffset = 0x664;
+
+  /// <summary>Byte offset of the trailing <c>BR_STANDARD_HEADER</c>'s
+  /// Crc32 field within the 0x674-byte <c>BR_IMAGE_FILE_TAIL</c>: 0x668.
+  /// Pinned by the post-Read CRC verification block at
+  /// <c>0x10017c60..0x10017c84</c>: the reader loads the stored value
+  /// from <c>[ebp-0x10]</c> (= buffer offset 0x668), zeroes it, calls
+  /// BRCrc32 over the whole 0x674 bytes, and compares against the
+  /// pre-zero value.</summary>
+  public const int VendorTailTrailerCrc32Offset = 0x668;
+
+  /// <summary>Byte offset of the trailing <c>BR_STANDARD_HEADER</c>'s
+  /// Size field within the 0x674-byte <c>BR_IMAGE_FILE_TAIL</c>: 0x66C.
+  /// Pinned by <c>cmp dword ptr [ebp-0xc], 0x674</c> at <c>0x10017bfd</c>
+  /// — [ebp-0xc] maps to buffer offset (0x678 - 0xc) = 0x66c.</summary>
+  public const int VendorTailTrailerSizeOffset = 0x66C;
+
+  /// <summary>Byte offset of the trailing <c>BR_STANDARD_HEADER</c>'s
+  /// Flag field within the 0x674-byte <c>BR_IMAGE_FILE_TAIL</c>: 0x670.
+  /// Pinned by <c>cmp dword ptr [ebp-0x8], 0x54464942</c> at
+  /// <c>0x10017b9a</c> — [ebp-0x8] maps to buffer offset
+  /// (0x678 - 0x8) = 0x670. Value 0x54464942 = 'BIFT' little-endian.</summary>
+  public const int VendorTailTrailerFlagOffset = 0x670;
 
   /// <summary>True when the <c>BR_IMAGE_FILE_TAIL</c> body is known to
   /// contain at minimum a <c>DataOffInSet</c> (u64) and a
   /// <c>DataLenInSet</c> (u64) field — used by the reader to map this
   /// volume's logical position within a multi-file split image set.
-  /// Pinned for awareness; byte offsets remain undetermined.</summary>
+  /// Pinned for awareness; byte offsets now also pinned via
+  /// <see cref="VendorTailBodyDataOffInSetOffset"/> and
+  /// <see cref="VendorTailBodyDataLenInSetOffset"/>.</summary>
   public const bool TailBodyHasDataOffInSet = true;
 
   // ─── Compress / encrypt method codes ────────────────────────────────────

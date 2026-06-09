@@ -326,15 +326,23 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     b.Append("shipped_standard_header_alias_size=0x0C\n");
     b.Append("info_types_enum=0x102:DISK_INFO,0x103:VOLUME_INFO,0x104:IMAGE_SPLIT_SIZE,");
     b.Append("0x105:IMAGE_COMPRESS,0x106:IMAGE_ENCRYPT,0x107:IMAGE_PASSWORD,0x108:IMAGE_COMMENT,");
-    b.Append("0x10B:BACKUP_TIME,0x10C:BACKUP_TYPE,0x10D:BACKUP_OPTION,0x112:FLB_PATH_LIST,");
+    b.Append("0x109:VOLUME_DATA_REGION,0x10B:BACKUP_TIME,0x10C:BACKUP_TYPE,0x10D:BACKUP_OPTION,");
+    b.Append("0x110:FLB_SUB_ENTRY_LIST,0x111:FLB_FILE_DATA_BLOCK_LIST,0x112:FLB_PATH_LIST,");
     b.Append("0x113:FLB_BACKUP_OPTION,0x116:FLB_BACKUP_OPTION_EX\n");
     b.Append("index_types_enum=0x200:ROOT,0x201:VOLUME,0x202:DATABLOCK,0x300:DIRTREE,0x301:DATAAREA\n");
     b.Append("index_entry_layout_offsets=entry_count:+0x14,entry_size:+0x18,entries:+0x1C\n");
     b.Append("vdb_entry_size=0x20\n");
     b.Append("vdb_entry_field_names=RegNo,BlockNo,ImgOffset,NewSize,OldSize,Crc32\n");
+    // Per-field byte offsets pinned in this commit; see AomeiConstants for provenance.
+    b.Append("vdb_entry_field_offsets=RegNo:+0x00:u32,BlockNo:+0x04:u64,ImgOffset:+0x0C:u64,OldSize:+0x14:u32,NewSize:+0x18:u32,Crc32:+0x1C:u32\n");
+    b.Append("volume_data_region_size=0x30\n");
     b.Append("head_body_layout=undocumented_past_first_12_bytes\n");
-    b.Append("tail_body_layout=carries_DataOffInSet_u64+DataLenInSet_u64_at_undetermined_offsets\n");
-    b.Append("index_body_layout=BR_IMAGE_INDEX_header_pinned_VDB_field_offsets_within_entry_undetermined\n");
+    // BIFT body: DataLenInSet at +0x620, DataOffInSet at +0x628 pinned by
+    // (read|write)-side `mov reg,[edi+0xc80..0xc8c]` triangulated against
+    // the m_Tail base at object offset 0x660.
+    b.Append("tail_body_layout=DataLenInSet:u64@+0x620,DataOffInSet:u64@+0x628,trailing_BR_STANDARD_HEADER@+0x664\n");
+    b.Append("tail_trailing_header_offsets=Reserved:+0x664,Crc32:+0x668,Size:+0x66C,Flag:+0x670\n");
+    b.Append("index_body_layout=BR_IMAGE_INDEX_header_pinned_VDB_field_offsets_pinned_FDB_size_undetermined\n");
     b.Append("aes_variant_and_iv=undetermined\n");
     return Encoding.UTF8.GetBytes(b.ToString());
   }
