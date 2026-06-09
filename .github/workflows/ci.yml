@@ -39,7 +39,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-          include-prerelease: true
+          dotnet-quality: 'preview'
 
       # MSBuild does not reliably propagate $(Configuration) across solution-tree
       # boundaries; without this pre-build the sibling builds to bin/Debug/net8.0/
@@ -201,7 +201,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-          include-prerelease: true
+          dotnet-quality: 'preview'
 
       - name: Pre-build PNGCrushCS sibling (Release)
         shell: bash
