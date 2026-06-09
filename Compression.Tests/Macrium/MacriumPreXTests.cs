@@ -92,7 +92,13 @@ public class MacriumPreXTests {
       Assert.That(ini, Does.Contain("first_block_compressed_size=64"));
       Assert.That(ini, Does.Contain("first_block_uncompressed_size=256"));
       Assert.That(ini, Does.Contain("scanned_block_count=1"));
-      Assert.That(ini, Does.Contain("payload_decompression=not_implemented"));
+      // The synthetic fixture's body is pseudo-random noise — not valid
+      // codec tokens — so the decoder bails out cleanly and metadata.ini
+      // records the failure. The codec itself is "implemented"; only the
+      // particular block had no decodable content.
+      Assert.That(ini, Does.Contain("payload_decompression=implemented_but_no_block_decoded"));
+      Assert.That(ini, Does.Contain("decoded_blocks=0"));
+      Assert.That(ini, Does.Contain("decode_failures=1"));
       Assert.That(ini, Does.Contain("encryption_supported_by_format=AES-128|AES-192|AES-256"));
     } finally {
       if (Directory.Exists(tmp)) Directory.Delete(tmp, recursive: true);

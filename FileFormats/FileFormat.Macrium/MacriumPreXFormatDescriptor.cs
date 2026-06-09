@@ -16,23 +16,28 @@ namespace FileFormat.Macrium;
 /// metadata, MACRIUM_FILE footer) and is handled separately; this descriptor
 /// covers ONLY the legacy proprietary format.
 /// <para>
-/// Stage-1 read-only surfacing: header inspection without payload extraction.
-/// Surfaces the synthetic entries:
+/// Stage-2 read-only surfacing: header inspection PLUS block-payload
+/// decompression via <see cref="MacriumPreXCodec"/> (clean-room port of
+/// the algorithm described by the MIT-licensed ccooper21/mrimg-tools
+/// reference project). Surfaces the synthetic entries:
 /// </para>
 /// <list type="bullet">
 ///   <item><c>FULL.mrimg</c> — passthrough slice over the entire archive</item>
 ///   <item><c>metadata.ini</c> — block preamble decode, compression flag,
-///     embedded XML comment + block-counts derived from the data stream</item>
+///     embedded XML comment, scanned-block totals, decoded-block
+///     success/failure counts</item>
 ///   <item><c>header.bin</c> — raw first preamble (9 bytes)</item>
+///   <item><c>block-NN.bin</c> — decoded payload of the first
+///     <see cref="MaxDecodedBlocks"/> blocks (zero-padded index). Blocks
+///     that fail to decode (truncated / encrypted / corrupt token stream)
+///     are skipped and their absence reflected in the metadata.ini
+///     <c>decode_failures</c> counter.</item>
 /// </list>
 /// <para>
-/// Scope cut: this descriptor does NOT decompress the LZ77-derived block
-/// payloads or enumerate the inner partition table — the compression
-/// algorithm is proprietary and the catalog index is encrypted-on-disk when
-/// the image is password-protected. Lifting the inner file system would
-/// require a full clean-room implementation of Reflect's LZ codec, the
-/// AES-128/192/256 catalog decryptor, and the BAT-style block index. That's a
-/// multi-week effort tracked as a future phase.
+/// Still out of scope: the BAT-style block-index walk that maps from
+/// (volume, sector) to (block, offset) — required for assembling the
+/// inner partition image. The AES-128/192/256 catalog decryptor used by
+/// password-protected backups. Both are tracked as future phases.
 /// </para>
 /// </summary>
 /// <remarks>
@@ -88,6 +93,12 @@ public sealed class MacriumPreXFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// compressed payload starting in the first block; we scan a generous
   /// window and stop at the first match.</summary>
   public const int CommentScanWindow = 1 << 20; // 1 MiB
+
+  /// <summary>Maximum number of leading blocks we attempt to decompress
+  /// when surfacing decoded synthetic entries. We cap aggressively so
+  /// that listing a large image stays cheap; callers can extract the
+  /// FULL.mrimg passthrough and rerun decode for deeper coverage.</summary>
+  public const int MaxDecodedBlocks = 16;
 
   public string Id => "MacriumPreX";
   public string DisplayName => "Macrium Reflect pre-X (.mrimg/.mrbak)";
@@ -187,9 +198,11 @@ public sealed class MacriumPreXFormatDescriptor : IFormatDescriptor, IArchiveFor
   }
 
   /// <summary>
-  /// Builds the synthetic <c>metadata.ini</c> and <c>header.bin</c> entries
-  /// by inspecting only the first preamble and (lazily) scanning the head
-  /// of the file for an embedded XML <c>&lt;comment&gt;</c> tag.
+  /// Builds the synthetic surface entries: <c>metadata.ini</c>,
+  /// <c>header.bin</c>, and zero-or-more <c>block-NN.bin</c> decoded block
+  /// payloads. The block decoder is best-effort — if a block fails to
+  /// decode (truncated, encrypted, malformed token stream) we record the
+  /// failure in metadata.ini and skip the synthetic entry but keep going.
   /// </summary>
   private static IReadOnlyList<(string Name, byte[] Data, string Kind)> BuildSynthetic(Stream stream) {
     stream.Seek(0, SeekOrigin.Begin);
@@ -214,10 +227,15 @@ public sealed class MacriumPreXFormatDescriptor : IFormatDescriptor, IArchiveFor
     var (comment, commentOffset, blockCount, totalUncompressed, totalCompressed)
       = ScanFirstBlocks(stream, blockLen);
 
+    // Decode the leading blocks (cap at MaxDecodedBlocks). Successes
+    // become block-NN.bin synthetic entries; failures get counted for
+    // metadata.ini.
+    var decoded = DecodeLeadingBlocks(stream, MaxDecodedBlocks);
+
     var fileSize = stream.Length;
     var ini = new StringBuilder();
     ini.AppendLine("; Macrium Reflect pre-X disk image / backup (.mrimg / .mrbak)");
-    ini.AppendLine("; Stage-1 header inspection only — no payload decompression.");
+    ini.AppendLine("; Block-payload decompression implemented via MacriumPreXCodec.");
     ini.AppendLine();
     ini.AppendLine("[container]");
     ini.Append("format=mrimg-prex").AppendLine();
@@ -234,6 +252,11 @@ public sealed class MacriumPreXFormatDescriptor : IFormatDescriptor, IArchiveFor
       var ratio = (double)totalCompressed / totalUncompressed;
       ini.Append("scanned_compression_ratio=").AppendLine(ratio.ToString("F4", CultureInfo.InvariantCulture));
     }
+    ini.Append("decoded_blocks=").AppendLine(decoded.Successes.ToString(CultureInfo.InvariantCulture));
+    ini.Append("decode_failures=").AppendLine(decoded.Failures.ToString(CultureInfo.InvariantCulture));
+    if (decoded.FirstFailureReason is not null) {
+      ini.Append("first_decode_failure=").AppendLine(EscapeIni(decoded.FirstFailureReason));
+    }
     ini.AppendLine();
     ini.AppendLine("[metadata]");
     ini.Append("comment_present=").AppendLine(comment is null ? "no" : "yes");
@@ -241,19 +264,85 @@ public sealed class MacriumPreXFormatDescriptor : IFormatDescriptor, IArchiveFor
       ini.Append("comment_offset=").AppendLine(commentOffset.ToString(CultureInfo.InvariantCulture));
       ini.Append("comment=").AppendLine(EscapeIni(comment));
     }
-    ini.Append("parse_status=").AppendLine(comment is null ? "partial-no-comment" : "partial");
+    string parseStatus;
+    if (decoded.Successes > 0)
+      parseStatus = comment is null ? "decoded" : "decoded+comment";
+    else
+      parseStatus = comment is null ? "partial-no-comment" : "partial";
+    ini.Append("parse_status=").AppendLine(parseStatus);
     ini.AppendLine();
     ini.AppendLine("[capabilities]");
     ini.AppendLine("read_only=true");
-    ini.AppendLine("listing=metadata_only");
-    ini.AppendLine("payload_decompression=not_implemented");
-    ini.AppendLine("payload_codec=mrimg-lz (proprietary Lempel-Ziv-derived)");
+    ini.AppendLine("listing=metadata+decoded_blocks");
+    ini.Append("payload_decompression=").AppendLine(decoded.Successes > 0 ? "implemented" : "implemented_but_no_block_decoded");
+    ini.AppendLine("payload_codec=mrimg-lz (proprietary Lempel-Ziv-derived, clean-room ported from ccooper21/mrimg-tools)");
     ini.AppendLine("encryption_supported_by_format=AES-128|AES-192|AES-256");
 
-    return [
+    var entries = new List<(string Name, byte[] Data, string Kind)> {
       ("metadata.ini", Encoding.UTF8.GetBytes(ini.ToString()), "Tag"),
       ("header.bin", header.ToArray(), "Track"),
-    ];
+    };
+    for (var i = 0; i < decoded.Blocks.Count; i++)
+      entries.Add(($"block-{i:D2}.bin", decoded.Blocks[i], "Track"));
+    return entries;
+  }
+
+  /// <summary>
+  /// Walks up to <paramref name="maxBlocks"/> blocks from the start of
+  /// <paramref name="stream"/>, feeding each block body through
+  /// <see cref="MacriumPreXCodec"/>. Returns the decoded byte arrays
+  /// (encrypted/corrupt blocks skipped silently — their absence is
+  /// reflected in the failure count).
+  /// </summary>
+  private static (IReadOnlyList<byte[]> Blocks, int Successes, int Failures, string? FirstFailureReason)
+    DecodeLeadingBlocks(Stream stream, int maxBlocks) {
+    var blocks = new List<byte[]>();
+    var failures = 0;
+    string? firstFailureReason = null;
+    stream.Seek(0, SeekOrigin.Begin);
+
+    Span<byte> preamble = stackalloc byte[PreambleSize];
+    var offset = 0L;
+    for (var i = 0; i < maxBlocks; i++) {
+      stream.Seek(offset, SeekOrigin.Begin);
+      preamble.Clear();
+      var read = 0;
+      while (read < PreambleSize) {
+        var n = stream.Read(preamble[read..]);
+        if (n <= 0) break;
+        read += n;
+      }
+      if (read < PreambleSize) break;
+      if (preamble[0] != DataBlockFlags) break;
+      var blockLen = BinaryPrimitives.ReadUInt32LittleEndian(preamble[1..]);
+      var outLen = BinaryPrimitives.ReadUInt32LittleEndian(preamble[5..]);
+      if (blockLen < PreambleSize || blockLen > (64u << 20)) break;
+      if (outLen == 0 || outLen > MacriumPreXCodec.MaxUncompressedSize) break;
+      var bodyLen = (int)(blockLen - PreambleSize);
+      if (offset + blockLen > stream.Length) break;
+      var body = new byte[bodyLen];
+      var bodyRead = 0;
+      while (bodyRead < bodyLen) {
+        var n = stream.Read(body, bodyRead, bodyLen - bodyRead);
+        if (n <= 0) break;
+        bodyRead += n;
+      }
+      if (bodyRead < bodyLen) break;
+
+      try {
+        var decoded = MacriumPreXCodec.DecodeBlock(body, (int)outLen);
+        blocks.Add(decoded);
+      } catch (InvalidDataException ex) {
+        failures++;
+        firstFailureReason ??= ex.Message;
+      } catch (ArgumentOutOfRangeException ex) {
+        failures++;
+        firstFailureReason ??= ex.Message;
+      }
+      offset += blockLen;
+    }
+
+    return (blocks, blocks.Count, failures, firstFailureReason);
   }
 
   /// <summary>
