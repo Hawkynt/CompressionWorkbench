@@ -225,6 +225,7 @@
     <Project Path="FileFormats/FileFormat.Lzx/FileFormat.Lzx.csproj" />
     <Project Path="FileFormats/FileFormat.MacBinary/FileFormat.MacBinary.csproj" />
     <Project Path="FileFormats/FileFormat.MachO/FileFormat.MachO.csproj" />
+    <Project Path="FileFormats/FileFormat.Macrium/FileFormat.Macrium.csproj" />
     <Project Path="FileFormats/FileFormat.Maff/FileFormat.Maff.csproj" />
     <Project Path="FileFormats/FileFormat.Mca/FileFormat.Mca.csproj" />
     <Project Path="FileFormats/FileFormat.Mcm/FileFormat.Mcm.csproj" />
@@ -435,7 +436,6 @@
     <Project Path="FileFormats/FileFormat.Ghost/FileFormat.Ghost.csproj" />
     <Project Path="FileFormats/FileFormat.Acronis/FileFormat.Acronis.csproj" />
     <Project Path="FileFormats/FileFormat.Veeam/FileFormat.Veeam.csproj" />
-    <Project Path="FileFormats/FileFormat.Macrium/FileFormat.Macrium.csproj" />
     <Project Path="FileFormats/FileFormat.Aomei/FileFormat.Aomei.csproj" />
     <Project Path="FileFormats/FileFormat.EaseUs/FileFormat.EaseUs.csproj" />
   </Folder>

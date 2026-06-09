@@ -282,6 +282,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Lzx\FileFormat.Lzx.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.MacBinary\FileFormat.MacBinary.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.MachO\FileFormat.MachO.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Macrium\FileFormat.Macrium.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Mca\FileFormat.Mca.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Mcm\FileFormat.Mcm.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Mdb\FileFormat.Mdb.csproj" />
