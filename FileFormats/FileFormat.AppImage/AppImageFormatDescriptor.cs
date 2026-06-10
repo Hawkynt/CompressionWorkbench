@@ -65,7 +65,14 @@ public sealed class AppImageFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
   /// <summary>Short description.</summary>
   public string Description =>
-    "Linux AppImage (ELF runtime + appended SquashFS filesystem)";
+    "Linux AppImage (ELF runtime + appended SquashFS filesystem). Read-only by " +
+    "container design: the embedded SquashFS image is a write-once filesystem " +
+    "whose inode/directory/fragment tables are indexed by absolute on-disk " +
+    "offset — any in-place mutation requires rewriting every table whose offset " +
+    "shifts. AppImages signed by `appimagetool --sign` also carry a detached " +
+    "GnuPG signature in an ELF section covering the entire payload, so the " +
+    "signature would have to be regenerated as well. This descriptor therefore " +
+    "does not implement IArchiveModifiable.";
 
   /// <summary>
   /// Lists a synthetic <c>metadata.ini</c> entry plus every SquashFS entry from

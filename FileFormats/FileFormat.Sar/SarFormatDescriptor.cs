@@ -50,7 +50,14 @@ public sealed class SarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "NScripter SAR archive";
+  public string Description =>
+    "NScripter SAR archive (uncompressed). Read-only by header design: the " +
+    "6-byte header carries `uint32 BE data_offset` pointing to where the data " +
+    "area starts; the variable-length index between the header and the data " +
+    "area must grow whenever an entry is added, which shifts data_offset and " +
+    "every byte after it — pre-existing entry bytes do not stay at their " +
+    "original on-disk offsets. SAR therefore advertises CanCreate but does " +
+    "not implement IArchiveModifiable; use Create() to rebuild instead.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SarReader(stream, leaveOpen: true);

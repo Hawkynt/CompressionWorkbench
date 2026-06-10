@@ -54,7 +54,13 @@ public sealed class CrxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Chrome extension package (CRX3 header + ZIP)";
+  public string Description =>
+    "Chrome extension package (CRX3 header + ZIP). The CRX3 header carries a " +
+    "SignedData protobuf whose signed_header_data + ZIP body bytes are covered by " +
+    "RSA/ECDSA signatures in a repeated KeyProof field; any in-place mutation of " +
+    "the trailing ZIP invalidates every signature. CRX therefore advertises " +
+    "CanCreate (we emit an empty SignedData — not browser-loadable, but a valid " +
+    "container) but does not implement IArchiveModifiable.";
 
   private static Stream StripCrxHeader(Stream stream) {
     var reader = new BinaryReader(stream, System.Text.Encoding.UTF8, leaveOpen: true);

@@ -30,7 +30,15 @@ public sealed class NsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     [new("none", "None"), new("lzss", "LZSS"), new("nbz", "NBZ")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "NScripter NSA archive";
+  public string Description =>
+    "NScripter NSA archive. Read-only by header design: the 6-byte header " +
+    "carries `uint32 BE data_offset` pointing to where the data area starts; " +
+    "the variable-length index between the header and the data area must grow " +
+    "whenever an entry is added, which shifts data_offset and every byte after " +
+    "it — pre-existing entry bytes do not stay at their original on-disk " +
+    "offsets. NSA therefore advertises CanCreate (stored mode only — the LZSS " +
+    "and NBZ decoders have no paired encoders) but does not implement " +
+    "IArchiveModifiable; use Create() to rebuild instead.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new NsaReader(stream, leaveOpen: true);

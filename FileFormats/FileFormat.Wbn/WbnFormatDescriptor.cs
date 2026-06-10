@@ -32,7 +32,17 @@ public sealed class WbnFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [new("webbundle", "Web Bundle")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Web Bundle / Bundled HTTP Exchanges (read-only pseudo-archive)";
+  public string Description =>
+    "Web Bundle / Bundled HTTP Exchanges (read-only pseudo-archive). The " +
+    "outer CBOR array stores a `sections-lengths` byte string at index 2 that " +
+    "encodes the byte-length of every following section as a flat CBOR map " +
+    "(name -> length). Any in-place mutation of a section body changes its " +
+    "byte-length, which would require re-encoding `sections-lengths` (and the " +
+    "subsequent section offsets in the `index` map are absolute, so they shift " +
+    "too). Signed Web Bundles additionally carry an Ed25519 signature over the " +
+    "manifest in the `authorities` section, so even a successful structural " +
+    "edit fails verification. This descriptor therefore does not implement " +
+    "IArchiveModifiable.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);

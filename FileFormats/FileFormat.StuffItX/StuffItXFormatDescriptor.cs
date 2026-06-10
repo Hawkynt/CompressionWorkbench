@@ -39,7 +39,15 @@ public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public IReadOnlyList<FormatMethodInfo> Methods => [new("sitx", "StuffIt X")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "StuffIt X archive (Aladdin/Smith Micro)";
+  public string Description =>
+    "StuffIt X archive (Aladdin/Smith Micro). Read-only modify by writer scope: " +
+    "our StuffItXWriter emits the documented `StuffIt!` magic + header pointer + " +
+    "a single embedded opaque payload at the catalog offset; the proprietary " +
+    "element-stream encoding (Brimstone PPMd, Darkhorse LZSS, Cyanide/Iron BWT) " +
+    "has no public spec, so we cannot append a real new element. Even a stored " +
+    "append would shift catalog absolute offsets stored in the P2 length headers " +
+    "of every later element. This descriptor advertises CanCreate (single-payload " +
+    "embed only) but does not implement IArchiveModifiable.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new StuffItXReader(stream, leaveOpen: true);

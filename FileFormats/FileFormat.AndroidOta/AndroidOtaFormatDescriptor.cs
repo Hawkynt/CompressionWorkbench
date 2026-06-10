@@ -33,7 +33,14 @@ public sealed class AndroidOtaFormatDescriptor : IFormatDescriptor, IArchiveForm
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Android A/B OTA payload (Chromium Autoupdate 'CrAU' container).";
+  public string Description =>
+    "Android A/B OTA payload (Chromium Autoupdate 'CrAU' container). " +
+    "Read-only by spec: the 24-byte header's metadata_signature region holds an RSA " +
+    "signature computed over (manifest || data); any in-place mutation of bytes after " +
+    "offset 24 invalidates that signature and the updater rejects the payload. The " +
+    "DeltaArchiveManifest protobuf also embeds per-operation SHA-256 hashes covering " +
+    "the data blob, so re-signing alone is not sufficient — the manifest must be " +
+    "rebuilt too. This descriptor therefore does not implement IArchiveModifiable.";
 
   /// <summary>WORM create — emits a CrAU payload with a minimal manifest, optional signature, and concatenated data blobs from the inputs.</summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)

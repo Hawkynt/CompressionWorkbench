@@ -56,7 +56,15 @@ public sealed class SnapFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
   /// <summary>Short description.</summary>
-  public string Description => "Canonical snap package (SquashFS + meta/snap.yaml)";
+  public string Description =>
+    "Canonical snap package (SquashFS + meta/snap.yaml). Read-only by container " +
+    "design: SquashFS is a write-once filesystem — its inode table, directory " +
+    "table, fragment table, and id/uid/gid lookup tables are all compressed and " +
+    "indexed by absolute on-disk offset, so any in-place mutation of a file " +
+    "would require rewriting every table whose offset moves. snapd additionally " +
+    "verifies the per-snap SHA-3-384 hash in the assertions chain, so even a " +
+    "successful container edit would fail revision validation. This descriptor " +
+    "therefore does not implement IArchiveModifiable.";
 
   /// <summary>
   /// Lists a synthetic <c>metadata.ini</c> entry derived from <c>meta/snap.yaml</c>,
