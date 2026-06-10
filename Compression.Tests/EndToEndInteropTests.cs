@@ -182,8 +182,17 @@ public class EndToEndInteropTests {
   }
 
   private static string? FindFile(string dir, string name) {
+    // Exact match first.
     foreach (var f in Directory.EnumerateFiles(dir, name, SearchOption.AllDirectories))
       return f;
+    // Fall back to a case-insensitive match: vintage 8.3 filesystems (GEMDOS,
+    // TRS-DOS, TI-99, Apple Pascal, Cromemco RDOS, PC-98, Human68k) are physically
+    // uppercase-only, so "repeat.txt" faithfully round-trips as "REPEAT.TXT". The
+    // content is still byte-compared by the caller; only the name case differs,
+    // which is format-inherent rather than a data-loss bug.
+    foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+      if (string.Equals(Path.GetFileName(f), name, StringComparison.OrdinalIgnoreCase))
+        return f;
     return null;
   }
 
