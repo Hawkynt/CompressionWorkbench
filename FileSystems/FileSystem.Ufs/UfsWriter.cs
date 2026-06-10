@@ -375,19 +375,21 @@ public sealed class UfsWriter {
     BinaryPrimitives.WriteInt32LittleEndian(sb[52..], FragSize);          // fs_fsize
     BinaryPrimitives.WriteInt32LittleEndian(sb[56..], Frag);              // fs_frag
     BinaryPrimitives.WriteInt32LittleEndian(sb[60..], 8);                 // fs_minfree
+    BinaryPrimitives.WriteInt32LittleEndian(sb[68..], 60);                // fs_old_rps (rotational speed — fsck wants 60)
     BinaryPrimitives.WriteInt32LittleEndian(sb[72..], ~(BlockSize - 1));  // fs_bmask
     BinaryPrimitives.WriteInt32LittleEndian(sb[76..], ~(FragSize - 1));   // fs_fmask
     BinaryPrimitives.WriteInt32LittleEndian(sb[80..], 13);                // fs_bshift
     BinaryPrimitives.WriteInt32LittleEndian(sb[84..], 10);                // fs_fshift
-    BinaryPrimitives.WriteInt32LittleEndian(sb[88..], 16);                // fs_maxcontig
+    BinaryPrimitives.WriteInt32LittleEndian(sb[88..], 1);                 // fs_maxcontig (1 → no cluster-summary table required)
     BinaryPrimitives.WriteInt32LittleEndian(sb[92..], 2048);              // fs_maxbpg
     BinaryPrimitives.WriteInt32LittleEndian(sb[96..], 3);                 // fs_fragshift
     BinaryPrimitives.WriteInt32LittleEndian(sb[100..], 1);                // fs_fsbtodb
-    BinaryPrimitives.WriteInt32LittleEndian(sb[104..], SuperblockSize);   // fs_sbsize
+    BinaryPrimitives.WriteInt32LittleEndian(sb[104..], 2048);             // fs_sbsize (must be a multiple of the disk sector size)
     BinaryPrimitives.WriteInt32LittleEndian(sb[116..], BlockSize / 4);    // fs_nindir
     BinaryPrimitives.WriteUInt32LittleEndian(sb[120..], (uint)(BlockSize / InodeSize)); // fs_inopb
     BinaryPrimitives.WriteInt32LittleEndian(sb[124..], 2);                // fs_old_nspf
     BinaryPrimitives.WriteInt32LittleEndian(sb[128..], 0);                // fs_optim
+    BinaryPrimitives.WriteInt32LittleEndian(sb[136..], 1);                // fs_old_interleave (fsck wants 1)
     BinaryPrimitives.WriteInt32LittleEndian(sb[152..], FsCsAddrBlock);    // fs_old_csaddr
     BinaryPrimitives.WriteInt32LittleEndian(sb[156..], FragSize);         // fs_cssize
     BinaryPrimitives.WriteInt32LittleEndian(sb[160..], FragSize);         // fs_cgsize
@@ -408,7 +410,7 @@ public sealed class UfsWriter {
     BinaryPrimitives.WriteInt64LittleEndian(sb[872..], (long)totalFrags * FragSize / 512); // fs_providersize
     _volumeUuid.CopyTo(sb[896..]);                                         // (fs_sparecon64[0..1] → UUID 16B)
     BinaryPrimitives.WriteInt64LittleEndian(sb[992..], SuperblockOffset);  // fs_sblockactualloc
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1000..], SuperblockOffset); // fs_sblockloc
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1000..], 0);                // fs_sblockloc (0 for UFS1: standard SBLOCK_UFS1 location)
     // fs_cstotal (csum_total, 8 int64s) at 1008
     BinaryPrimitives.WriteInt64LittleEndian(sb[1008..], dirCount);
     BinaryPrimitives.WriteInt64LittleEndian(sb[1016..], (totalFrags - usedFragsTotal) / Frag);
@@ -423,9 +425,15 @@ public sealed class UfsWriter {
     BinaryPrimitives.WriteInt64LittleEndian(sb[1208..], DateTimeOffset.UtcNow.ToUnixTimeSeconds()); // fs_mtime
     BinaryPrimitives.WriteInt32LittleEndian(sb[1320..], 60);                                        // fs_maxsymlinklen
     BinaryPrimitives.WriteInt32LittleEndian(sb[1324..], 2);                                         // fs_old_inodefmt
-    BinaryPrimitives.WriteUInt64LittleEndian(sb[1328..], 1UL << 42);                                // fs_maxfilesize (cap)
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1336..], ~(long)(BlockSize - 1));                    // fs_qbmask
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1344..], ~(long)(FragSize - 1));                     // fs_qfmask
+    // fs_maxfilesize: UFS1 limit = bsize*NDADDR + bsize*(NINDIR + NINDIR^2 + NINDIR^3) - 1,
+    // with NDADDR=12, NINDIR=bsize/4=2048. fsck_ffs recomputes and rejects a wrong value.
+    BinaryPrimitives.WriteUInt64LittleEndian(sb[1328..], 70403120791551UL);                         // fs_maxfilesize
+    // fs_qbmask / fs_qfmask are the COMPLEMENTS of fs_bmask / fs_fmask — the low-bit
+    // masks (size - 1), not the high-bit masks. fsck_ffs enforces fs_qbmask == ~fs_bmask.
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1336..], BlockSize - 1);                             // fs_qbmask = ~fs_bmask
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1344..], FragSize - 1);                              // fs_qfmask = ~fs_fmask
+    BinaryPrimitives.WriteInt32LittleEndian(sb[1356..], 1);                                         // fs_old_postblformat = FS_DYNAMICPOSTBLFMT
+    BinaryPrimitives.WriteInt32LittleEndian(sb[1360..], 1);                                         // fs_old_nrpos (fsck wants 1)
     // fs_magic — canary at sb[1372]
     BinaryPrimitives.WriteInt32LittleEndian(sb[FsMagicOffset..], Ufs1Magic);
   }
