@@ -5,198 +5,169 @@ using System.Text;
 namespace FileSystem.OpenVms;
 
 /// <summary>
-/// Builds minimal OpenVMS Files-11 ODS-2 volume images that round-trip through
-/// <see cref="OpenVmsHomeBlock"/>. The on-disk layout follows the documented
-/// Files-11 specification (VAX/VMS Internals &amp; Data Structures, Goldenberg
-/// et&#160;al.) for the bytes the reader actually parses: a zero-filled boot
-/// block at LBN 0, a real home block at LBN 1 with the
-/// <c>"DECFILE11A "</c> format string at offset 0x1E8 and the volume label at
-/// 0x1F4, then a CWB-OVMS-WB file-table extension at LBN 2 carrying the
-/// caller's files. INDEXF.SYS / BITMAP.SYS / 000000.DIR are out of scope —
-/// shipping a real OpenVMS-mountable image would require checksumming through
-/// the index-file headers, which is multi-week work.
+/// Emits a fresh OpenVMS Files-11 (ODS-2) volume to the
+/// <see cref="OpenVmsLayout"/> geometry. The resulting image carries:
+/// <list type="bullet">
+///   <item>A real Files-11 home block at LBN 1 with "DECFILE11A " at byte
+///         0x1E8, structure level 0x0202, cluster size 1, owner UIC
+///         [1,1], BITMAP.SYS LBN field set, max-files field set, plus the
+///         CWB-OVMS-WB layout marker at byte 132 so our reader / modifier
+///         recognise the geometry.</item>
+///   <item>BITMAP.SYS at LBN 2..17 with metadata LBNs pre-marked allocated.</item>
+///   <item>INDEXF.SYS at LBN 18..273 (256 reserved File-IDs); File-IDs 1
+///         (INDEXF.SYS), 2 (BITMAP.SYS) and 4 (000000.DIR) are populated
+///         with retrieval pointers covering their own LBNs.</item>
+///   <item>000000.DIR at LBN 274 containing one directory entry per caller-supplied file.</item>
+///   <item>Caller files laid out contiguously starting at LBN 275.</item>
+/// </list>
+/// <para>
+/// Honest scope: this volume is NOT OpenVMS-mountable — the FH ident-area
+/// metadata, the FILECHAR / RECATTR fields, and the home-block
+/// HM2$W_CHECKSUM1/CHECKSUM2 surfaces are emitted as zeros. What it IS:
+/// a layout our reader and in-place modifier can round-trip end-to-end.
+/// </para>
 /// </summary>
-/// <remarks>
-/// <para>
-/// What this writer is honest about: the home block matches the canonical
-/// ODS-2 layout for every field a third-party Files-11 tool would inspect
-/// during volume identification (structure level, cluster size, max files,
-/// owner UIC, IBMAPLBN), and a real OpenVMS system would not silently
-/// accept it for mounting — there's no valid INDEXF.SYS file header at
-/// the location the home block points at, the home-block checksum1/2
-/// fields are not populated, and the storage bitmap is empty. The volume
-/// would mount as "structure error" on real VMS. We document this by
-/// limiting the descriptor's Description to "ODS-2 home-block parse
-/// round-trip + bundled file table" rather than claiming OpenVMS-mountable.
-/// </para>
-/// <para>
-/// What this writer guarantees: writer → <see cref="OpenVmsHomeBlock"/>
-/// round-trips every documented home-block field; writer → reader →
-/// descriptor.Extract round-trips every input file's bytes; the writer
-/// is deterministic (same inputs → byte-identical output).
-/// </para>
-/// </remarks>
-public sealed class OpenVmsWriter : IDisposable {
+public sealed class OpenVmsWriter {
 
-  // ── On-disk constants ─────────────────────────────────────────────────
-
-  internal const int BlockSize = 512;
-  internal const long BootBlockOffset = 0;
-  internal const long HomeBlockOffset = BlockSize;                  // LBN 1 = 512
-  internal const long FileTableBlockOffset = 2L * BlockSize;        // LBN 2 = 1024
-  internal const long DataAreaOffset = 16L * BlockSize;             // first byte after first 16 blocks (8 KB)
-
-  /// <summary>"DECFILE11A " format-string anchor placed at home block + 0x1E8.</summary>
-  internal static readonly byte[] FormatStringOds2 = "DECFILE11A "u8.ToArray();
-
-  /// <summary>Eyecatcher for the CWB-OVMS-WB file table at LBN 2.</summary>
-  internal static readonly byte[] FileTableEyecatcher = [
-    (byte)'O', (byte)'V', (byte)'M', (byte)'S', (byte)'W', (byte)'B', (byte)'F', (byte)'T',
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  ];
-
-  // ── Mutable build state ───────────────────────────────────────────────
-
-  private readonly Stream _output;
-  private readonly bool _leaveOpen;
-  private readonly List<(string Name, byte[] Data)> _files = [];
-  private string _volumeLabel = "CWBVOL";
-
-  public OpenVmsWriter(Stream output, bool leaveOpen = false) {
-    ArgumentNullException.ThrowIfNull(output);
-    this._output = output;
-    this._leaveOpen = leaveOpen;
-  }
-
-  /// <summary>Sets the 12-byte ASCII volume label written into HM2$T_VOLNAME (truncated to 12).</summary>
-  public void SetVolumeLabel(string label) {
-    ArgumentNullException.ThrowIfNull(label);
-    if (label.Length > 12) label = label[..12];
-    this._volumeLabel = label;
-  }
-
-  /// <summary>Registers a file to be written into the volume. Path may contain '/' separators (translated to ODS-2 conventions in metadata, but our reader treats them as opaque names).</summary>
-  public void AddFile(string path, byte[] data) {
-    ArgumentNullException.ThrowIfNull(path);
-    ArgumentNullException.ThrowIfNull(data);
-    if (path.Length == 0) throw new ArgumentException("OpenVms: file name is empty.", nameof(path));
-    var nameBytes = Encoding.UTF8.GetBytes(path);
-    if (nameBytes.Length > 255)
-      throw new ArgumentException($"OpenVms: file name '{path}' exceeds 255 UTF-8 bytes.", nameof(path));
-    this._files.Add((path, data));
-  }
-
-  /// <summary>Convenience: builds the image to a byte array.</summary>
-  public static byte[] Build(IEnumerable<(string Name, byte[] Data)> files, string? volumeLabel = null) {
+  /// <summary>Builds the volume image. Throws <see cref="IOException"/> when inputs don't fit.</summary>
+  public byte[] Build(IReadOnlyList<(string Name, byte[] Data)> files, string volumeLabel = "CWBVOL") {
     ArgumentNullException.ThrowIfNull(files);
-    using var ms = new MemoryStream();
-    using (var w = new OpenVmsWriter(ms, leaveOpen: true)) {
-      if (volumeLabel != null) w.SetVolumeLabel(volumeLabel);
-      foreach (var (n, d) in files) w.AddFile(n, d);
-      w.Finish();
+    ArgumentNullException.ThrowIfNull(volumeLabel);
+
+    var image = new byte[OpenVmsLayout.VolumeBytes];
+
+    // ── Bitmap ──
+    var bitmap = new OpenVmsBitmap();
+    bitmap.MarkMetadataAllocated();
+
+    // ── INDEXF.SYS — pre-populate the reserved FIDs (1, 2, 4) so a real ODS-2 walker
+    //    would at least find the metadata files even though we don't expose them as user entries.
+    var indexFile = new OpenVmsFileHeader[OpenVmsLayout.MaxFiles + 1];
+
+    indexFile[OpenVmsLayout.IndexFileId] = new OpenVmsFileHeader {
+      FileId = OpenVmsLayout.IndexFileId,
+      Sequence = 1,
+      InUse = true,
+      Name = "INDEXF.SYS",
+      Size = OpenVmsLayout.IndexFileBlockCount * (long)OpenVmsLayout.BlockSize,
+    };
+    indexFile[OpenVmsLayout.IndexFileId].Extents.Add(
+      new OpenVmsFileHeader.RetrievalPointer(OpenVmsLayout.IndexFileStartLbn, OpenVmsLayout.IndexFileBlockCount));
+
+    indexFile[OpenVmsLayout.BitmapFileId] = new OpenVmsFileHeader {
+      FileId = OpenVmsLayout.BitmapFileId,
+      Sequence = 1,
+      InUse = true,
+      Name = "BITMAP.SYS",
+      Size = OpenVmsLayout.BitmapBlockCount * (long)OpenVmsLayout.BlockSize,
+    };
+    indexFile[OpenVmsLayout.BitmapFileId].Extents.Add(
+      new OpenVmsFileHeader.RetrievalPointer(OpenVmsLayout.BitmapStartLbn, OpenVmsLayout.BitmapBlockCount));
+
+    indexFile[OpenVmsLayout.RootDirectoryFileId] = new OpenVmsFileHeader {
+      FileId = OpenVmsLayout.RootDirectoryFileId,
+      Sequence = 1,
+      InUse = true,
+      Name = "000000.DIR",
+      Size = OpenVmsLayout.BlockSize,
+    };
+    indexFile[OpenVmsLayout.RootDirectoryFileId].Extents.Add(
+      new OpenVmsFileHeader.RetrievalPointer(OpenVmsLayout.RootDirectoryLbn, 1));
+
+    // ── Caller files ──
+    var directoryEntries = new List<OpenVmsDirectory.Entry>();
+    var nextFid = OpenVmsLayout.FirstUserFileId;
+    var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    foreach (var (rawName, data) in files) {
+      var name = NormalizeName(rawName);
+      if (!seenNames.Add(name))
+        throw new IOException($"Duplicate file name '{name}' (ODS-2 directories are flat — names must be unique).");
+      if (nextFid > OpenVmsLayout.MaxFiles)
+        throw new IOException($"INDEXF.SYS full (max {OpenVmsLayout.MaxFiles - OpenVmsLayout.FirstUserFileId + 1} user files).");
+
+      var blocks = (data.Length + OpenVmsLayout.BlockSize - 1) / OpenVmsLayout.BlockSize;
+      var startLbn = blocks > 0 ? bitmap.AllocateRun(blocks) : 0;
+      if (blocks > 0 && startLbn < 0)
+        throw new IOException($"Volume full: cannot allocate {blocks} contiguous LBN(s) for '{name}'.");
+
+      var fh = new OpenVmsFileHeader {
+        FileId = nextFid,
+        Sequence = 1,
+        InUse = true,
+        Name = name,
+        Size = data.Length,
+      };
+      if (blocks > 0) fh.Extents.Add(new OpenVmsFileHeader.RetrievalPointer(startLbn, blocks));
+      indexFile[nextFid] = fh;
+
+      directoryEntries.Add(new OpenVmsDirectory.Entry(nextFid, 1, name, data.Length));
+
+      if (blocks > 0)
+        data.AsSpan().CopyTo(image.AsSpan(OpenVmsLayout.LbnToByteOffset(startLbn), data.Length));
+
+      nextFid++;
     }
-    return ms.ToArray();
-  }
 
-  /// <summary>Writes the complete ODS-2 image to <see cref="_output"/>.</summary>
-  public void Finish() {
-    // 1. Compute payload layout. Data area starts at offset 8192 (LBN 16).
-    var fileEntries = new List<(byte[] NameBytes, byte[] Data, long Offset, long Length)>(this._files.Count);
-    var nextDataOffset = DataAreaOffset;
-    foreach (var (name, data) in this._files) {
-      var nameBytes = Encoding.UTF8.GetBytes(name);
-      fileEntries.Add((nameBytes, data, nextDataOffset, data.LongLength));
-      nextDataOffset += data.LongLength;
-    }
-    var totalSize = Math.Max(nextDataOffset, DataAreaOffset);
-
-    // 2. Allocate image buffer.
-    var image = new byte[totalSize];
-
-    // 3. Write the home block at LBN 1.
-    WriteHomeBlock(image);
-
-    // 4. Write the file table at LBN 2.
-    WriteFileTable(image, fileEntries);
-
-    // 5. Copy file payloads into the data area.
-    foreach (var (_, data, offset, _) in fileEntries) {
-      if (data.Length == 0) continue;
-      data.CopyTo(image, offset);
+    // ── Serialize INDEXF.SYS ──
+    for (var fid = 1; fid <= OpenVmsLayout.MaxFiles; fid++) {
+      var fh = indexFile[fid] ?? new OpenVmsFileHeader { FileId = fid, Sequence = 0, InUse = false };
+      var fhBytes = fh.Serialize();
+      fhBytes.CopyTo(image.AsSpan(OpenVmsLayout.FileHeaderByteOffset(fid)));
     }
 
-    // 6. Flush.
-    this._output.Write(image);
+    // ── Serialize 000000.DIR ──
+    var rootDir = new byte[OpenVmsLayout.BlockSize];
+    OpenVmsDirectory.WriteChainLink(rootDir, 0);
+    var slot = OpenVmsDirectory.FileEntryStartSlot;
+    foreach (var entry in directoryEntries) {
+      if (slot >= OpenVmsDirectory.EntriesPerBlock)
+        throw new IOException($"Root directory full ({OpenVmsDirectory.FileEntriesPerBlock} entries per block; directory growth requires the chain extension which the writer leaves unallocated).");
+      OpenVmsDirectory.WriteEntry(rootDir, slot++, entry);
+    }
+    rootDir.CopyTo(image.AsSpan(OpenVmsLayout.LbnToByteOffset(OpenVmsLayout.RootDirectoryLbn)));
+
+    // ── Serialize BITMAP.SYS ──
+    bitmap.Bytes.AsSpan(0, OpenVmsLayout.BitmapBlockCount * OpenVmsLayout.BlockSize)
+      .CopyTo(image.AsSpan(OpenVmsLayout.LbnToByteOffset(OpenVmsLayout.BitmapStartLbn)));
+
+    // ── Serialize the home block at LBN 1 ──
+    var hbOffset = OpenVmsLayout.LbnToByteOffset(OpenVmsLayout.HomeBlockLbn);
+    var hb = image.AsSpan(hbOffset, OpenVmsLayout.BlockSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(OpenVmsLayout.HbHomeLbn, 4), OpenVmsLayout.HomeBlockLbn);
+    BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(OpenVmsLayout.HbAltHomeLbn, 4), 0);
+    BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(OpenVmsLayout.HbAltIdxLbn, 4), 0);
+    BinaryPrimitives.WriteUInt16LittleEndian(hb.Slice(OpenVmsLayout.HbStrucLev, 2), 0x0202);    // ODS-2
+    BinaryPrimitives.WriteUInt16LittleEndian(hb.Slice(OpenVmsLayout.HbCluster, 2), 1);          // 1 LBN per cluster
+    BinaryPrimitives.WriteUInt16LittleEndian(hb.Slice(OpenVmsLayout.HbHomeVbn, 2), 1);
+    BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(OpenVmsLayout.HbIbMapLbn, 4), OpenVmsLayout.BitmapStartLbn);
+    BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(OpenVmsLayout.HbMaxFiles, 4), OpenVmsLayout.MaxFiles);
+    BinaryPrimitives.WriteUInt16LittleEndian(hb.Slice(OpenVmsLayout.HbIbMapSize, 2), OpenVmsLayout.BitmapBlockCount);
+    BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(OpenVmsLayout.HbOwnerUic, 4), 0x00010001);  // [1,1]
+
+    // Layout marker at byte 132 so our reader recognises this as a CWB-OVMS-WB volume.
+    OpenVmsLayout.LayoutMarker.CopyTo(hb.Slice(OpenVmsLayout.LayoutMarkerOffset));
+
+    // Format string + volume label.
+    var fmt = Encoding.ASCII.GetBytes("DECFILE11A ");
+    fmt.CopyTo(hb.Slice(OpenVmsLayout.HbFormatString));
+    var label = volumeLabel.Length > 12 ? volumeLabel[..12] : volumeLabel.PadRight(12, ' ');
+    Encoding.ASCII.GetBytes(label).CopyTo(hb.Slice(OpenVmsLayout.HbVolumeName));
+
+    return image;
   }
 
   /// <summary>
-  /// Lays out the home block at LBN 1 per the Files-11 ODS-2 spec. Only the
-  /// fields <see cref="OpenVmsHomeBlock"/> reads are populated — checksum1,
-  /// checksum2, volume timestamps, and the index-file ID stay zero, which is
-  /// safe because the reader doesn't validate them. A real OpenVMS would
-  /// reject this volume at mount; we document that in <see cref="OpenVmsFormatDescriptor.Description"/>.
+  /// Normalises a caller-supplied file name to the 24-char ASCII slot
+  /// in <see cref="OpenVmsDirectory"/>. Forward slashes and backslashes
+  /// are collapsed to dots so caller paths like "subdir/file.txt" still
+  /// fit (ODS-2 directories are flat — we deliberately don't fabricate
+  /// a subdirectory tree).
   /// </summary>
-  private void WriteHomeBlock(byte[] image) {
-    var hb = image.AsSpan((int)HomeBlockOffset, BlockSize);
-
-    // 0x000  HM2$L_HOMELBN     u32 LE — home block LBN = 1
-    BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(0x000, 4), 1u);
-    // 0x004  HM2$L_ALHOMELBN   u32 LE — alternate home LBN (0 = none)
-    BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(0x004, 4), 0u);
-    // 0x008  HM2$L_ALTIDXLBN   u32 LE — alternate index LBN
-    BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(0x008, 4), 0u);
-    // 0x00C  HM2$W_STRUCLEV    u16 LE — 0x0202 = ODS-2
-    BinaryPrimitives.WriteUInt16LittleEndian(hb.Slice(0x00C, 2), 0x0202);
-    // 0x00E  HM2$W_CLUSTER     u16 LE — cluster size in blocks (1)
-    BinaryPrimitives.WriteUInt16LittleEndian(hb.Slice(0x00E, 2), 1);
-    // 0x010  HM2$W_HOMEVBN     u16 LE — home VBN (1)
-    BinaryPrimitives.WriteUInt16LittleEndian(hb.Slice(0x010, 2), 1);
-    // 0x028  HM2$L_IBMAPLBN    u32 LE — index-file bitmap LBN
-    BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(0x028, 4), 2u);
-    // 0x02C  HM2$L_MAXFILES    u32 LE — max files in the volume
-    BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(0x02C, 4), (uint)Math.Max(16, this._files.Count + 16));
-    // 0x030  HM2$W_IBMAPSIZE   u16 LE — index bitmap size in blocks
-    BinaryPrimitives.WriteUInt16LittleEndian(hb.Slice(0x030, 2), 1);
-    // 0x036  HM2$L_OWNUIC      u32 LE — owner UIC (group:member, [1,1] = system)
-    BinaryPrimitives.WriteUInt32LittleEndian(hb.Slice(0x036, 4), 0x00010001u);
-
-    // 0x1E8  HM2$T_FORMAT      12 ASCII — "DECFILE11A "
-    FormatStringOds2.AsSpan().CopyTo(hb.Slice(0x1E8, FormatStringOds2.Length));
-    // remaining byte in the 12-byte field stays 0 (NUL pad).
-
-    // 0x1F4  HM2$T_VOLNAME     12 ASCII — volume label, padded with NUL
-    var label = Encoding.ASCII.GetBytes(this._volumeLabel);
-    var labelCopy = Math.Min(label.Length, 12);
-    label.AsSpan(0, labelCopy).CopyTo(hb.Slice(0x1F4, labelCopy));
-  }
-
-  /// <summary>
-  /// Writes the CWB-OVMS-WB file table at LBN 2. Layout: 16-byte eyecatcher,
-  /// 4-byte file count, then per-file (8-byte offset, 8-byte length, 2-byte
-  /// name length, name bytes). One LBN holds 512 bytes; we cap at a single
-  /// block today.
-  /// </summary>
-  private static void WriteFileTable(byte[] image,
-      List<(byte[] NameBytes, byte[] Data, long Offset, long Length)> files) {
-    var ft = image.AsSpan((int)FileTableBlockOffset, (int)(DataAreaOffset - FileTableBlockOffset));
-    FileTableEyecatcher.AsSpan().CopyTo(ft);
-    var cursor = FileTableEyecatcher.Length;
-    BinaryPrimitives.WriteUInt32LittleEndian(ft.Slice(cursor, 4), (uint)files.Count);
-    cursor += 4;
-    foreach (var (nameBytes, _, offset, length) in files) {
-      if (cursor + 8 + 8 + 2 + nameBytes.Length > ft.Length)
-        throw new InvalidOperationException(
-          $"OpenVms writer: file table overflows reserved 14-block region (cursor={cursor}, region={ft.Length}). " +
-          $"Reduce the number of files or shorten names.");
-      BinaryPrimitives.WriteInt64LittleEndian(ft.Slice(cursor, 8), offset); cursor += 8;
-      BinaryPrimitives.WriteInt64LittleEndian(ft.Slice(cursor, 8), length); cursor += 8;
-      BinaryPrimitives.WriteUInt16LittleEndian(ft.Slice(cursor, 2), (ushort)nameBytes.Length); cursor += 2;
-      nameBytes.CopyTo(ft.Slice(cursor, nameBytes.Length));
-      cursor += nameBytes.Length;
-    }
-  }
-
-  public void Dispose() {
-    if (!this._leaveOpen) this._output.Dispose();
+  public static string NormalizeName(string raw) {
+    ArgumentNullException.ThrowIfNull(raw);
+    var s = raw.Replace('\\', '.').Replace('/', '.');
+    if (s.Length > OpenVmsDirectory.FileNameLength) s = s[..OpenVmsDirectory.FileNameLength];
+    return s.ToUpperInvariant();
   }
 }

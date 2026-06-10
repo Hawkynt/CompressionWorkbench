@@ -5,10 +5,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Compression.Tests" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
   </ItemGroup>
 

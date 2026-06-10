@@ -96,28 +96,30 @@ public class OpenVmsTests {
   }
 
   /// <summary>
-  /// Lock the OpenVMS Files-11 capability surface at "clean-room WORM, not
-  /// OpenVMS-mountable" + R-only modify. The WORM writer emits a canonical
-  /// ODS-2 home block at LBN 1 (every field the reader parses round-trips
-  /// byte-for-byte) plus a CWB-OVMS-WB file-table extension at LBN 2 carrying
-  /// the caller's files. INDEXF.SYS file headers (with checksum1 + map area),
-  /// BITMAP.SYS, directory variable-length records, multi-extent allocation
-  /// across RVNs, and dual ODS-2 / ODS-5 code paths are explicitly out of
-  /// scope — a real OpenVMS system would reject the emitted volume at mount,
-  /// and the descriptor's Description says so. This test fails any further
-  /// drive-by upgrade that adds IArchiveModifiable on top of the WORM contract
-  /// before the underlying INDEXF + BITMAP + directory work lands.
+  /// Locks the OpenVMS Files-11 capability surface at the CWB-OVMS-WB R/W
+  /// scope: <see cref="IArchiveCreatable"/> + <see cref="IArchiveModifiable"/>
+  /// on the descriptor, <see cref="FormatCapabilities.CanCreate"/> +
+  /// <see cref="FormatCapabilities.CanModify"/> on the capability flag.
+  /// VMS-mountability stays deferred per the Description — the in-place
+  /// modifier round-trips through our own writer/reader pair, not real
+  /// OpenVMS, and the Description documents which surfaces (FILECHAR,
+  /// RECATTR, home-block checksums, variable-length dir records) remain
+  /// out of scope.
   /// </summary>
   [Test, Category("HappyPath")]
-  public void Descriptor_WormScope_NotModifiable_NotOpenVmsMountable() {
+  public void Descriptor_WormPlusInPlace_NotOpenVmsMountable() {
     var d = new FileSystem.OpenVms.OpenVmsFormatDescriptor();
-    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>(),
-      "OpenVMS Files-11 must not advertise IArchiveModifiable until INDEXF.SYS file headers (with checksum1 + map area), BITMAP.SYS, directory variable-length records, and ODS-2/ODS-5 dual code paths are implemented.");
-    Assert.That(d.Description, Does.Contain("real OpenVMS would reject"),
-      "Description must continue to warn that the clean-room WORM image is not OpenVMS-mountable.");
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>(),
+      "OpenVMS descriptor must advertise IArchiveCreatable — OpenVmsWriter emits a real ODS-2 home block + INDEXF.SYS + BITMAP.SYS + 000000.DIR layout.");
+    Assert.That(d, Is.InstanceOf<IArchiveModifiable>(),
+      "OpenVMS descriptor must advertise IArchiveModifiable — OpenVmsInPlaceModifier handles Add/Remove/Replace by mutating only the touched bitmap sector, INDEXF.SYS slot, directory block, and data LBNs.");
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanTest), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+    Assert.That(d.Description, Does.Contain("not OpenVMS-mountable"),
+      "Description must keep the honest scope notice — emitted volumes don't satisfy a real OpenVMS validator.");
   }
 
   [Test, Category("HappyPath")]
