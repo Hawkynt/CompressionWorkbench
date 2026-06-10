@@ -99,9 +99,10 @@ public sealed class ProDosBlockMover : IFilesystemBlockMover {
       var blockOff = imageStart + block * BlockSize;
       if (blockOff + BlockSize > data.Length) break;
       var nextBlock = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(blockOff + 2));
-      for (var i = 0; i < EntriesPerBlock; i++) {
+      var slotsHere = ProDosReader.SlotsInBlock(firstBlock);
+      for (var i = 0; i < slotsHere; i++) {
         if (firstBlock && i == 0) continue; // volume header
-        var eo = blockOff + 4 + i * EntrySize;
+        var eo = blockOff + ProDosReader.EntryOffsetInBlock(firstBlock, i);
         var storage = (data[eo] >> 4) & 0x0F;
         var nameLen = data[eo] & 0x0F;
         if (storage == 0 || nameLen == 0) continue;

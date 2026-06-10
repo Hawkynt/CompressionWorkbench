@@ -16,12 +16,14 @@ namespace FileFormat.Cso;
 /// <para>This descriptor surfaces each compressed block as a raw blob — it does NOT decompress
 /// the blocks (consumers can further process with zlib for CSO or LZ4 for ZSO).</para>
 /// </summary>
-public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
+    IArchiveCreatable, IArchiveModifiable {
   public string Id => "Cso";
   public string DisplayName => "PSP CSO/ZSO";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".cso";
   public IReadOnlyList<string> Extensions => [".cso", ".ziso", ".zso"];
@@ -217,5 +219,76 @@ public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (n <= 0) throw new EndOfStreamException("Unexpected end of CSO/ZSO stream.");
       read += n;
     }
+  }
+
+  // ── IArchiveCreatable (CSO v1 only) ───────────────────────────────────
+
+  /// <summary>
+  /// Emits a fresh CSO v1 stream. Inputs are concatenated in supplied order
+  /// to form the uncompressed payload (the caller is responsible for ensuring
+  /// the result is a valid PSP ISO if PSP semantics matter).
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    using var payload = new MemoryStream();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      payload.Write(input.ReadContent());
+    }
+    var bytes = CsoWriter.Build(payload.ToArray());
+    output.Write(bytes, 0, bytes.Length);
+  }
+
+  // ── IArchiveModifiable (R/W via block-NNNNN.bin synthetic entries) ────
+
+  /// <summary>
+  /// Replaces blocks named <c>blocks/block_NNNNN.bin</c> (5-digit zero-padded
+  /// index) with the supplied payloads. Each input must be exactly the
+  /// container's block_size bytes. Other input names are ignored.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      var name = input.ArchiveName.Replace('\\', '/');
+      var idx = ParseBlockIndex(name);
+      if (idx < 0) continue;
+      CsoInPlaceModifier.WriteBlock(archive, idx, input.ReadContent());
+    }
+  }
+
+  /// <summary>
+  /// "Removes" blocks by writing block_size zero bytes through
+  /// <see cref="CsoInPlaceModifier.WriteBlock"/>, which compresses the zero
+  /// slab to its minimum DEFLATE encoding and zero-pads the on-disk slack.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    var header = CsoInPlaceModifier.ReadHeader(archive);
+    var zero = new byte[header.BlockSize];
+    foreach (var name in entryNames) {
+      var clean = name.Replace('\\', '/');
+      var idx = ParseBlockIndex(clean);
+      if (idx < 0) continue;
+      CsoInPlaceModifier.WriteBlock(archive, idx, zero);
+    }
+  }
+
+  /// <summary>
+  /// Parses the trailing block index out of names that look like
+  /// <c>blocks/block_NNNNN.bin</c> or <c>block_NNNNN.bin</c>. Returns -1 if
+  /// the name doesn't match the synthetic-entry shape.
+  /// </summary>
+  private static int ParseBlockIndex(string name) {
+    var fileName = Path.GetFileNameWithoutExtension(name);
+    const string prefix = "block_";
+    if (!fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return -1;
+    var digits = fileName[prefix.Length..];
+    return int.TryParse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out var idx) && idx >= 0
+      ? idx
+      : -1;
   }
 }

@@ -228,8 +228,13 @@ public sealed class ProDosWriter {
   /// </summary>
   private static void AllocateSubDirBlocks(DirNode dir, bool[] used, ref int nextFreeBlock) {
     foreach (var sub in dir.SubDirOrder) {
-      // Header occupies slot 0 of the first block, so total slots needed = ChildCount + 1.
-      var blockCount = Math.Max(1, (sub.ChildCount + 1 + EntriesPerBlock - 1) / EntriesPerBlock);
+      // First block holds the 43-byte subdir header + (EntriesPerBlock - 2)
+      // file slots = 11 file slots; subsequent blocks hold EntriesPerBlock = 13
+      // file slots each.
+      var firstBlockFileSlots = ProDosReader.SlotsInBlock(isFirstBlockOfChain: true) - 1;
+      var remaining = Math.Max(0, sub.ChildCount - firstBlockFileSlots);
+      var extraBlocks = (remaining + EntriesPerBlock - 1) / EntriesPerBlock;
+      var blockCount = 1 + extraBlocks;
       var blocks = new int[blockCount];
       for (var i = 0; i < blockCount; i++)
         blocks[i] = AllocateBlock(used, ref nextFreeBlock);
@@ -301,15 +306,35 @@ public sealed class ProDosWriter {
     var slot = firstSlot;
 
     (int Offset, int Block, int SlotInBlock) PlaceEntry() {
-      var dirBlockIndex = slot / EntriesPerBlock;
-      var slotInBlock = slot % EntriesPerBlock;
-      if (dirBlockIndex >= blockCount)
+      // The first block of the chain has fewer file slots than subsequent blocks
+      // because the 43-byte Volume/Subdir Header occupies slot 0 and the next
+      // slot starts at byte 47 (4 + 43), not 43. So slot capacity by block is:
+      //   first block: ProDosReader.SlotsInBlock(true) = 12  (1 header + 11 file)
+      //   later block: ProDosReader.SlotsInBlock(false) = 13 (13 file)
+      // `slot` is a 0-based logical entry index where 0 is the header.
+      var firstBlockSlots = ProDosReader.SlotsInBlock(isFirstBlockOfChain: true);
+      int dirBlockIndex;
+      int slotInBlock;
+      bool isFirstBlockOfChain;
+      if (slot < firstBlockSlots) {
+        dirBlockIndex = 0;
+        slotInBlock = slot;
+        isFirstBlockOfChain = true;
+      } else {
+        var beyond = slot - firstBlockSlots;
+        dirBlockIndex = 1 + beyond / EntriesPerBlock;
+        slotInBlock = beyond % EntriesPerBlock;
+        isFirstBlockOfChain = false;
+      }
+      if (dirBlockIndex >= blockCount) {
+        var maxEntries = firstBlockSlots + (blockCount - 1) * EntriesPerBlock - 1; // -1 for header
         throw new InvalidOperationException(
           $"ProDOS: directory '{dir.Name}' has too many entries for its {blockCount}-block capacity " +
-          $"({EntriesPerBlock * blockCount - 1} max).");
+          $"({maxEntries} max).");
+      }
 
       var block = blocks[dirBlockIndex];
-      var entryOff = block * BlockSize + 4 + slotInBlock * EntrySize;
+      var entryOff = block * BlockSize + ProDosReader.EntryOffsetInBlock(isFirstBlockOfChain, slotInBlock);
       return (entryOff, block, slotInBlock);
     }
 

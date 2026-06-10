@@ -72,8 +72,9 @@ public static class ProDosExtentMap {
         var nextBlock = BinaryPrimitives.ReadUInt16LittleEndian(blockSpan.Slice(2, 2));
 
         if (firstBlock) {
-          // Volume Directory Header is the first entry — capture bitmap pointer at 0x27.
-          bitmapPointer = BinaryPrimitives.ReadUInt16LittleEndian(blockSpan.Slice(4 + 0x27, 2));
+          // Volume Directory Header is the first entry — capture bitmap pointer
+          // at 0x26 (matches the writer's offset; see ProDosWriter.WriteVolumeDirectory).
+          bitmapPointer = BinaryPrimitives.ReadUInt16LittleEndian(blockSpan.Slice(4 + 0x26, 2));
         }
         firstBlock = false;
         block = nextBlock;
@@ -236,8 +237,9 @@ public static class ProDosExtentMap {
       var blockSpan = data.AsSpan(off, BlockSize);
       var nextBlock = BinaryPrimitives.ReadUInt16LittleEndian(blockSpan.Slice(2, 2));
 
-      for (var i = 0; i < EntriesPerBlock; i++) {
-        var eo = 4 + i * EntrySize;
+      var slotsHere = ProDosReader.SlotsInBlock(firstBlock);
+      for (var i = 0; i < slotsHere; i++) {
+        var eo = ProDosReader.EntryOffsetInBlock(firstBlock, i);
         if (firstBlock && i == 0) continue; // skip volume / subdir header
         var storageNibble = (blockSpan[eo + 0] >> 4) & 0x0F;
         var nameLen = blockSpan[eo + 0] & 0x0F;

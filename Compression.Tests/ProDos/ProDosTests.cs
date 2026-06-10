@@ -43,8 +43,10 @@ public class ProDosTests {
       img[hdr + 1 + i] = (byte)volumeName[i];
     // We leave the rest of the header at zero — sufficient for our parser.
 
-    // File entry at slot 1 (offset 4 + 39 = 43 within the block).
-    var fe = vdBlock + 4 + 39;
+    // File entry at slot 1. The Volume Directory Header occupies bytes 4..46
+    // (43 bytes per spec — three bytes larger than a regular 39-byte file
+    // entry), so slot 1 starts at byte 4 + 43 = 47.
+    var fe = vdBlock + ProDosReader.EntryOffsetInBlock(isFirstBlockOfChain: true, slotIndex: 1);
     var fileKeyBlock = 5;
     // storage_type = 1 (seedling), name_length = fileName.Length
     img[fe + 0] = (byte)((1 << 4) | (fileName.Length & 0x0F));

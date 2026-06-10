@@ -75,7 +75,13 @@ public static class ProDosModifier {
       throw new InvalidOperationException("ProDOS: volume directory full (no free entry slot).");
 
     var dirBuf = ReadBlock(image, imageStart, slot.Block);
-    var entryOff = 4 + slot.IndexInBlock * EntrySize;
+    // Honour the 43-byte Volume/Subdir Header in the first block of a chain
+    // — slot 1 starts at byte 47 (4 + 43), not byte 43 (4 + 39). Writing the
+    // first file entry at byte 43 used to overwrite bytes 44-45 of the volume
+    // header, where bit_map_pointer (4 + 0x26) and total_blocks (4 + 0x28)
+    // live; the second AddFile then read garbage and threw "out of free
+    // blocks".
+    var entryOff = ProDosReader.EntryOffsetInBlock(slot.IsFirstBlockOfChain, slot.IndexInBlock);
     dirBuf[entryOff + 0] = (byte)((storageType << 4) | (sanitized.Length & 0x0F));
     for (var i = 0; i < sanitized.Length && i < 15; i++)
       dirBuf[entryOff + 1 + i] = (byte)sanitized[i];
@@ -130,7 +136,7 @@ public static class ProDosModifier {
     if (!locator.Found) return false;
 
     var dirBuf = ReadBlock(image, imageStart, locator.Block);
-    var entryOff = 4 + locator.IndexInBlock * EntrySize;
+    var entryOff = ProDosReader.EntryOffsetInBlock(locator.IsFirstBlockOfChain, locator.IndexInBlock);
     var storageType = (dirBuf[entryOff + 0] >> 4) & 0x0F;
     var keyPointer = BinaryPrimitives.ReadUInt16LittleEndian(dirBuf.AsSpan(entryOff + 0x11));
     var eof = dirBuf[entryOff + 0x15] | (dirBuf[entryOff + 0x16] << 8) | (dirBuf[entryOff + 0x17] << 16);
@@ -370,7 +376,7 @@ public static class ProDosModifier {
 
   // ── Directory navigation ──────────────────────────────────────────────
 
-  private readonly record struct DirSlot(bool Found, int Block, int IndexInBlock);
+  private readonly record struct DirSlot(bool Found, int Block, int IndexInBlock, bool IsFirstBlockOfChain);
 
   private static DirSlot FindFreeDirectorySlot(Stream image, int imageStart) {
     var block = VolumeDirStartBlock;
@@ -379,20 +385,21 @@ public static class ProDosModifier {
     while (block != 0 && visited.Add(block)) {
       var buf = ReadBlock(image, imageStart, block);
       var nextBlock = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(2));
-      for (var i = 0; i < EntriesPerBlock; i++) {
+      var slotsHere = ProDosReader.SlotsInBlock(firstBlock);
+      for (var i = 0; i < slotsHere; i++) {
         if (firstBlock && i == 0) continue; // volume header slot
-        var eo = 4 + i * EntrySize;
+        var eo = ProDosReader.EntryOffsetInBlock(firstBlock, i);
         var storage = (buf[eo + 0] >> 4) & 0x0F;
         var len = buf[eo + 0] & 0x0F;
-        if (storage == 0 || len == 0) return new DirSlot(true, block, i);
+        if (storage == 0 || len == 0) return new DirSlot(true, block, i, firstBlock);
       }
       firstBlock = false;
       block = nextBlock;
     }
-    return new DirSlot(false, 0, 0);
+    return new DirSlot(false, 0, 0, false);
   }
 
-  private readonly record struct DirLocator(bool Found, int Block, int IndexInBlock);
+  private readonly record struct DirLocator(bool Found, int Block, int IndexInBlock, bool IsFirstBlockOfChain);
 
   private static DirLocator LocateDirectoryEntry(Stream image, int imageStart, string name) {
     var block = VolumeDirStartBlock;
@@ -401,19 +408,20 @@ public static class ProDosModifier {
     while (block != 0 && visited.Add(block)) {
       var buf = ReadBlock(image, imageStart, block);
       var nextBlock = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(2));
-      for (var i = 0; i < EntriesPerBlock; i++) {
+      var slotsHere = ProDosReader.SlotsInBlock(firstBlock);
+      for (var i = 0; i < slotsHere; i++) {
         if (firstBlock && i == 0) continue;
-        var eo = 4 + i * EntrySize;
+        var eo = ProDosReader.EntryOffsetInBlock(firstBlock, i);
         var storage = (buf[eo + 0] >> 4) & 0x0F;
         var len = buf[eo + 0] & 0x0F;
         if (storage == 0 || len == 0) continue;
         var entryName = Encoding.ASCII.GetString(buf, eo + 1, len);
-        if (entryName == name) return new DirLocator(true, block, i);
+        if (entryName == name) return new DirLocator(true, block, i, firstBlock);
       }
       firstBlock = false;
       block = nextBlock;
     }
-    return new DirLocator(false, 0, 0);
+    return new DirLocator(false, 0, 0, false);
   }
 
   // ── Name sanitisation (mirrors ProDosWriter) ─────────────────────────

@@ -21,6 +21,43 @@ public sealed class ProDosReader : IDisposable {
   public const int EntriesPerBlock = 13;
   public const int EntrySize = 39;
 
+  /// <summary>
+  /// Size in bytes of the Volume Directory Header (storage type 0xF) and the
+  /// Subdirectory Header (storage type 0xE). The header occupies slot 0 of the
+  /// first block in a directory chain and is larger than a regular file entry
+  /// because it carries volume/subdirectory metadata (entry_length, file_count,
+  /// bit_map_pointer, total_blocks for the volume header; parent_pointer,
+  /// parent_entry_number, parent_entry_length for the subdirectory header).
+  /// Per the ProDOS spec, this is 43 bytes ($00..$2A inclusive) — three bytes
+  /// larger than the 39-byte (<see cref="EntrySize"/>) file-entry slot. The
+  /// next entry (slot 1 of the first block) therefore starts at byte
+  /// 4 + 43 = 47, not 4 + 39 = 43.
+  /// </summary>
+  public const int DirHeaderSize = 43;
+
+  /// <summary>
+  /// Returns the byte offset within a directory block at which the entry at
+  /// <paramref name="slotIndex"/> begins. The first block of a directory chain
+  /// has its slot 0 carry the (43-byte) Volume/Subdir Header; subsequent slots
+  /// are 39-byte file entries starting at byte 47. Non-first blocks have all
+  /// 13 slots as 39-byte file entries starting at byte 4.
+  /// </summary>
+  public static int EntryOffsetInBlock(bool isFirstBlockOfChain, int slotIndex) {
+    if (!isFirstBlockOfChain) return 4 + slotIndex * EntrySize;
+    return slotIndex == 0
+      ? 4
+      : 4 + DirHeaderSize + (slotIndex - 1) * EntrySize;
+  }
+
+  /// <summary>
+  /// Returns the number of usable entry slots (header + file slots) in a
+  /// directory block. The first block of a chain holds 12 entries (1 header
+  /// at slot 0 + 11 file slots at slots 1..11). Subsequent blocks hold 13
+  /// file slots at slots 0..12.
+  /// </summary>
+  public static int SlotsInBlock(bool isFirstBlockOfChain)
+    => isFirstBlockOfChain ? 12 : EntriesPerBlock;
+
   /// <summary>.2mg header magic ("2IMG") at offset 0.</summary>
   private static readonly byte[] TwoImgMagic = "2IMG"u8.ToArray();
 
@@ -94,13 +131,14 @@ public sealed class ProDosReader : IDisposable {
       var data = Block(block);
       var nextBlock = BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(2, 2));
 
-      for (var i = 0; i < EntriesPerBlock; i++) {
-        // Entries start at offset 4 within the block.
-        var eo = 4 + i * EntrySize;
-
+      var slotsHere = SlotsInBlock(firstBlock);
+      for (var i = 0; i < slotsHere; i++) {
         // First entry in block 2 is Volume Directory Header (skip). First entry in a
         // subdirectory's first block is the Subdirectory Header (skip).
         if (firstBlock && i == 0) continue;
+
+        // Slot offset accounts for the 43-byte header in the first block.
+        var eo = EntryOffsetInBlock(firstBlock, i);
 
         var storageNibble = (data[eo + 0] >> 4) & 0x0F;
         var nameLen = data[eo + 0] & 0x0F;
