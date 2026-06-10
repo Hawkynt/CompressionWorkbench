@@ -152,7 +152,6 @@ public sealed class ExtWriter {
     // EXT4 feature flags (fs/ext4/ext4.h).
     const uint FeatureIncompatFiletype = 0x0002;
     const uint FeatureIncompatExtents = 0x0040;
-    const uint FeatureIncompat64Bit = 0x0080;
     const uint FeatureCompatHasJournal = 0x0004;
     // Dynamic revision — required so s_inode_size / s_first_ino / feature
     // flags are honoured by the kernel and fsck.
@@ -409,6 +408,92 @@ public sealed class ExtWriter {
         BinaryPrimitives.WriteUInt32LittleEndian(ino[88..], (uint)fileIndirectBlockNum);    // singly-indirect pointer
     }
 
+    // --- Journal (inode 8) for ext3 / ext4 ───────────────────────────────
+    // A HAS_JOURNAL volume must carry a valid jbd2 journal, or e2fsck rejects
+    // it with "defektes Journal (Inode 8)". We emit a CLEAN, empty journal:
+    // a jbd2 V2 superblock with s_start=0 (nothing to replay) occupying the
+    // first journal block, the rest zeroed. The journal occupies a contiguous
+    // run of data blocks mapped into inode 8 via the classic direct +
+    // single-indirect + double-indirect block map (valid on ext4 too, since the
+    // EXTENTS feature only permits — never requires — per-inode extent maps).
+    if (journal && (version == ExtVersion.Ext3 || version == ExtVersion.Ext4)) {
+      var ptrsPerBlock = blockSize / 4;
+      // Canonical minimum journal length; clamp to the space actually left so a
+      // small image still produces a consistent (if short) journal.
+      var journalBlocks = Math.Min(1024, Math.Max(64, totalBlocks - nextBlock - 32));
+      var jStart = nextBlock;
+      for (var b = 0; b < journalBlocks; ++b)
+        MarkBlockUsed(disk, blockBitmapOffset, jStart + b, (int)firstDataBlock);
+      nextBlock += journalBlocks;
+
+      // jbd2 V2 superblock in the first journal block (all multi-byte fields BE).
+      var jsbOff = (long)jStart * blockSize;
+      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff), 0xc03b3998u);        // h_magic
+      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 4), 4u);             // h_blocktype = SUPERBLOCK_V2
+      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 8), 0u);             // h_sequence
+      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 12), (uint)blockSize); // s_blocksize
+      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 16), (uint)journalBlocks); // s_maxlen
+      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 20), 1u);            // s_first (log starts after SB)
+      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 24), 1u);            // s_sequence (first commit ID)
+      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 28), 0u);            // s_start = 0 → empty/clean
+      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 64), 1u);            // s_nr_users = 1
+
+      // Map the journal data blocks into inode 8.
+      var jinoOff = inodeTableOffset + (int)(JournalInode - 1) * inodeSize;
+      var metaBlocks = 0;
+
+      // Direct blocks 0..11 (i_block[0..11] at inode offset 40).
+      for (var i = 0; i < 12 && i < journalBlocks; ++i)
+        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(jinoOff + 40 + i * 4), (uint)(jStart + i));
+
+      // Single-indirect (i_block[12], offset 88) covers blocks 12..12+ptrs-1.
+      if (journalBlocks > 12) {
+        var ind = nextBlock++;
+        MarkBlockUsed(disk, blockBitmapOffset, ind, (int)firstDataBlock);
+        ++metaBlocks;
+        var io = (long)ind * blockSize;
+        for (var i = 0; i < ptrsPerBlock && 12 + i < journalBlocks; ++i)
+          BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)io + i * 4), (uint)(jStart + 12 + i));
+        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(jinoOff + 88), (uint)ind); // i_block[12]
+      }
+
+      // Double-indirect (i_block[13], offset 92) covers everything past 12+ptrs.
+      var dindFirst = 12 + ptrsPerBlock;
+      if (journalBlocks > dindFirst) {
+        var dind = nextBlock++;
+        MarkBlockUsed(disk, blockBitmapOffset, dind, (int)firstDataBlock);
+        ++metaBlocks;
+        var dio = (long)dind * blockSize;
+        var remaining = journalBlocks - dindFirst;
+        var numInd = (remaining + ptrsPerBlock - 1) / ptrsPerBlock;
+        for (var k = 0; k < numInd; ++k) {
+          var ind2 = nextBlock++;
+          MarkBlockUsed(disk, blockBitmapOffset, ind2, (int)firstDataBlock);
+          ++metaBlocks;
+          BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)dio + k * 4), (uint)ind2);
+          var i2o = (long)ind2 * blockSize;
+          for (var i = 0; i < ptrsPerBlock; ++i) {
+            var blkIdx = dindFirst + k * ptrsPerBlock + i;
+            if (blkIdx >= journalBlocks) break;
+            BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)i2o + i * 4), (uint)(jStart + blkIdx));
+          }
+        }
+        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(jinoOff + 92), (uint)dind); // i_block[13]
+      }
+
+      // Journal inode metadata: a regular file with mode 0600 (what mke2fs writes
+      // for inode 8 — e2fsck rejects the journal if inode 8 has mode 0), one link,
+      // size = log length.
+      var jino = disk.AsSpan(jinoOff, inodeSize);
+      BinaryPrimitives.WriteUInt16LittleEndian(jino, 0x8000 | 0x0180);                      // i_mode = S_IFREG | 0600
+      BinaryPrimitives.WriteUInt32LittleEndian(jino[4..], (uint)((long)journalBlocks * blockSize)); // i_size
+      BinaryPrimitives.WriteUInt32LittleEndian(jino[8..], now);                             // i_atime
+      BinaryPrimitives.WriteUInt32LittleEndian(jino[12..], now);                            // i_ctime
+      BinaryPrimitives.WriteUInt32LittleEndian(jino[16..], now);                            // i_mtime
+      BinaryPrimitives.WriteUInt16LittleEndian(jino[26..], 1);                              // i_links_count
+      BinaryPrimitives.WriteUInt32LittleEndian(jino[28..], (uint)((journalBlocks + metaBlocks) * sectorsPerBlock)); // i_blocks
+    }
+
     // --- Free-count accounting (what fsck scrutinises) ---
     // Total inodes = inodesPerGroup; used = (FirstUserInode-1) reserved
     // inodes + subdirectory inodes (root inode 2 is already among the reserved
@@ -460,18 +545,19 @@ public sealed class ExtWriter {
     // Feature-flag composition by version:
     //   ext2 — FILETYPE only (compat/incompat clear of everything else).
     //   ext3 — FILETYPE + HAS_JOURNAL (compat).
-    //   ext4 — FILETYPE + HAS_JOURNAL (compat) + EXTENTS + 64BIT (incompat).
-    //   The 64BIT flag in particular requires 64-byte BGDs but readers only
-    //   demand them when actually reading 64-bit block numbers; for our
-    //   under-4 GB tests the upper halves are all zero, so 32-byte BGDs
-    //   remain correct on the wire.
+    //   ext4 — FILETYPE + HAS_JOURNAL (compat) + EXTENTS (incompat).
+    //   64BIT is intentionally NOT set: it mandates 64-byte block group
+    //   descriptors and s_desc_size=64, but we emit 32-byte descriptors, so
+    //   advertising 64BIT makes dumpe2fs/e2fsck reject the volume with
+    //   "block group descriptor size invalid". 64BIT is only needed past 16 TiB;
+    //   an ext4 volume with extents + a journal (and no 64BIT) is fully standard.
     uint compatFlags = 0;
     var incompatFlags = FeatureIncompatFiletype;
     if (version == ExtVersion.Ext3 || version == ExtVersion.Ext4) {
       if (journal) compatFlags |= FeatureCompatHasJournal;
     }
     if (version == ExtVersion.Ext4) {
-      incompatFlags |= FeatureIncompatExtents | FeatureIncompat64Bit;
+      incompatFlags |= FeatureIncompatExtents;
     }
     BinaryPrimitives.WriteUInt32LittleEndian(sb[92..], compatFlags);               // s_feature_compat
     BinaryPrimitives.WriteUInt32LittleEndian(sb[96..], incompatFlags);             // s_feature_incompat
