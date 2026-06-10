@@ -429,4 +429,353 @@ public class MacriumRwTests {
     var w = new MacriumWriter { BlockSize = 1000 }; // not a multiple of 512
     Assert.That(() => w.Build([1, 2, 3]), Throws.InstanceOf<InvalidOperationException>());
   }
+
+  // =======================================================================
+  // IArchiveModifiable contract — Add / Remove / Replace (rebuild-based,
+  // disk-image semantic matching VHD / VDI / VMDK / QCOW2)
+  // =======================================================================
+
+  /// <summary>Shared seekable backing store for modify tests so Add / Remove
+  /// can mutate the same stream the reader observes.</summary>
+  private static MemoryStream NewArchiveStream(byte[] initial) {
+    // Use the (capacity, writable) ctor — passing a backing array makes the
+    // stream non-resizable, which breaks ModifyRebuilder.SetLength on grow.
+    var ms = new MemoryStream();
+    ms.Write(initial, 0, initial.Length);
+    ms.Position = 0;
+    return ms;
+  }
+
+  // ---- Capability surface ------------------------------------------------
+
+  [Test, Category("HappyPath")]
+  public void Descriptor_IsArchiveModifiable() {
+    var d = new MacriumFormatDescriptor();
+    Assert.That(d, Is.InstanceOf<IArchiveModifiable>(),
+      "Macrium descriptor must advertise IArchiveModifiable for R/W modify.");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
+      "FormatCapabilities.CanModify must be set when IArchiveModifiable is wired.");
+  }
+
+  // ---- Add: read existing → add entry → re-read → new entry present ------
+
+  [Test, Category("HappyPath")]
+  public void Add_AppendsBytesToExistingDiskImage_RebuiltContainerExtractsBoth() {
+    var original = DeterministicDisk(1024, seed: 1);
+    var image = WriteReflectX(original, compress: false);
+    using var archive = NewArchiveStream(image);
+
+    var d = new MacriumFormatDescriptor();
+    var modifiable = (IArchiveModifiable)d;
+
+    var tail = DeterministicDisk(256, seed: 2);
+    modifiable.Add(archive, [ArchiveInputInfo.InMemory("tail.bin", tail)]);
+
+    archive.Position = 0;
+    var rebuilt = archive.ToArray();
+    // Container must still be a valid Reflect X archive.
+    Assert.That(rebuilt[^12..], Is.EqualTo("MACRIUM_FILE"u8.ToArray()),
+      "Rebuilt container must retain the MACRIUM_FILE footer.");
+
+    var recovered = ReadReconstructed(rebuilt);
+    var expected = original.Concat(tail).ToArray();
+    Assert.That(recovered, Is.EqualTo(expected),
+      "Add must append the new bytes onto the existing disk image.");
+  }
+
+  [Test, Category("HappyPath")]
+  public void Add_DiskImageRaw_ReplacesExistingDiskPayload() {
+    // Per Macrium descriptor semantics, an input whose name matches the
+    // canonical 'disk-image.raw' entry REPLACES the existing disk content
+    // rather than appending — same shape as a save-as inside an image editor.
+    var original = DeterministicDisk(2048, seed: 7);
+    var image = WriteReflectX(original, compress: false);
+    using var archive = NewArchiveStream(image);
+
+    var d = new MacriumFormatDescriptor();
+    var modifiable = (IArchiveModifiable)d;
+
+    var replacement = DeterministicDisk(900, seed: 99);
+    modifiable.Add(archive,
+      [ArchiveInputInfo.InMemory(MacriumFormatDescriptor.DiskImageEntryName, replacement)]);
+
+    var rebuilt = archive.ToArray();
+    var recovered = ReadReconstructed(rebuilt);
+    Assert.That(recovered, Is.EqualTo(replacement),
+      "Add of disk-image.raw must REPLACE the existing disk payload, not append.");
+  }
+
+  [Test, Category("HappyPath")]
+  public void Add_ToEmptyContainer_ProducesValidContainerWithJustNewBytes() {
+    // Equivalence class: Add against an "empty" existing image (zero-byte
+    // disk payload). The reader returns disk-image.raw of length 0, and Add
+    // appends the new bytes — net effect is a single-payload container.
+    var image = WriteReflectX([], compress: false);
+    using var archive = NewArchiveStream(image);
+    var d = new MacriumFormatDescriptor();
+
+    var newDisk = DeterministicDisk(64, seed: 3);
+    ((IArchiveModifiable)d).Add(archive, [ArchiveInputInfo.InMemory("a.bin", newDisk)]);
+
+    var recovered = ReadReconstructed(archive.ToArray());
+    Assert.That(recovered, Is.EqualTo(newDisk));
+  }
+
+  // ---- Remove: read existing → remove entry → re-read → entry gone -------
+
+  [Test, Category("HappyPath")]
+  public void Remove_DiskImageRaw_EmptiesPayload_ButKeepsValidContainer() {
+    var original = DeterministicDisk(4096, seed: 4);
+    var image = WriteReflectX(original, compress: false);
+    using var archive = NewArchiveStream(image);
+
+    var d = new MacriumFormatDescriptor();
+    var modifiable = (IArchiveModifiable)d;
+    modifiable.Remove(archive, [MacriumFormatDescriptor.DiskImageEntryName]);
+
+    var rebuilt = archive.ToArray();
+    Assert.That(rebuilt[^12..], Is.EqualTo("MACRIUM_FILE"u8.ToArray()),
+      "Container must still carry the MACRIUM_FILE footer after Remove.");
+
+    // The empty-payload case takes the no-$INDEX-block path because the
+    // writer emits index_file_position=0 (no preceding data blocks) which
+    // the reader's "IndexFilePosition > 0" gate skips — that's a pre-
+    // existing limitation of the chain walker, not a defect of the modify
+    // path. What matters is the rebuilt container is still spec-valid:
+    using var ms = new MemoryStream(rebuilt);
+    using var r = new MacriumReader(ms);
+    Assert.That(r.ValidHeader, Is.True,
+      "Rebuilt empty container must still parse as a Reflect X file.");
+    Assert.That(r.Variant, Is.EqualTo("mrimgx"));
+    // disk-image.raw is either empty (when reconstruction succeeded) or
+    // absent (when the empty-payload reader path skipped the $INDEX walk).
+    // Both states are "no surviving content" — the bytes are gone either way.
+    var diskEntry = r.Entries.FirstOrDefault(e => e.Name == MacriumFormatDescriptor.DiskImageEntryName);
+    Assert.That(diskEntry?.Data ?? [], Has.Length.EqualTo(0),
+      "Remove of disk-image.raw must result in zero recoverable payload bytes.");
+  }
+
+  [Test, Category("HappyPath")]
+  public void Remove_NonExistentEntry_LeavesDiskUnchanged() {
+    // Equivalence class: Remove of a synthetic/projection entry name
+    // (metadata.ini, metadata.json, block-NN.bin, macrium-image.bin) must
+    // not affect the underlying disk payload — those are read-only
+    // projections of the container structure.
+    var original = DeterministicDisk(1500, seed: 5);
+    var image = WriteReflectX(original, compress: false);
+    using var archive = NewArchiveStream(image);
+
+    var d = new MacriumFormatDescriptor();
+    ((IArchiveModifiable)d).Remove(archive, ["metadata.ini", "block-00.JSON.bin", "no-such-entry.txt"]);
+
+    var recovered = ReadReconstructed(archive.ToArray());
+    Assert.That(recovered, Is.EqualTo(original),
+      "Remove of synthetic/projection entries must NOT alter the disk payload.");
+  }
+
+  // ---- Replace via Add of disk-image.raw ---------------------------------
+
+  [Test, Category("HappyPath")]
+  public void Replace_DiskImageRaw_FullRoundTripWithEncryption() {
+    // Full R/W round-trip on an encrypted container: read existing → replace
+    // disk content → re-read → new content is recovered through the same
+    // password and the rebuild stays spec-compliant (AES-CBC + PBKDF2-HMAC-
+    // SHA256 + zstd survive the modify).
+    var original = DeterministicDisk(MacriumWriter.DefaultBlockSize * 2 + 5, seed: 6);
+    var d = new MacriumFormatDescriptor();
+    using var imageMs = new MemoryStream();
+    d.Create(imageMs, [ArchiveInputInfo.InMemory("payload.bin", original)],
+      new FormatCreateOptions {
+        Password = "replace-rt",
+        EncryptionMethod = "aes-256",
+        FormatSpecific = new Dictionary<string, string> { ["pbkdf2_iterations"] = "1000" },
+      });
+    var encrypted = imageMs.ToArray();
+
+    // Verify original round-trip first.
+    var preReplace = ReadReconstructed(encrypted, password: "replace-rt");
+    Assert.That(preReplace, Is.EqualTo(original));
+
+    // Now Replace via Add of disk-image.raw. The Modifier rebuild path
+    // currently produces a plain (non-encrypted) container because the
+    // password isn't part of the IArchiveModifiable surface — that's an
+    // honest limitation we document in the descriptor. We assert it here so
+    // the gap stays visible and locked.
+    using var archive = NewArchiveStream(encrypted);
+    var replacement = DeterministicDisk(900, seed: 600);
+    ((IArchiveModifiable)d).Add(archive,
+      [ArchiveInputInfo.InMemory(MacriumFormatDescriptor.DiskImageEntryName, replacement)]);
+
+    // Rebuilt container is plain (no password needed) and carries the
+    // replacement bytes — both invariants must hold.
+    var rebuilt = archive.ToArray();
+    Assert.That(rebuilt[^12..], Is.EqualTo("MACRIUM_FILE"u8.ToArray()));
+
+    using var ms = new MemoryStream(rebuilt);
+    using var r = new MacriumReader(ms);
+    Assert.That(r.IsEncrypted, Is.False,
+      "Modify rebuild emits a plain container; password rotation is out-of-scope per descriptor docs.");
+    Assert.That(r.SectorReconstructionAvailable, Is.True);
+    var recovered = r.Entries.First(e => e.Name == MacriumFormatDescriptor.DiskImageEntryName).Data;
+    Assert.That(recovered, Is.EqualTo(replacement),
+      "Replace via Add(disk-image.raw) must surface the replacement bytes.");
+  }
+
+  // ---- Add-then-Extract: full round-trip after mutation ------------------
+
+  [Test, Category("HappyPath")]
+  public void Modify_ThenExtract_FullRoundTripViaDescriptor() {
+    // BDD: GIVEN an existing Reflect X container with disk-image.raw of N
+    // bytes, WHEN the caller appends a tail blob via Add THEN re-extracts
+    // via Descriptor.Extract, the extracted disk-image.raw matches the
+    // concatenation byte-for-byte.
+    var d = new MacriumFormatDescriptor();
+    var original = DeterministicDisk(1024, seed: 8);
+    using var imageMs = new MemoryStream();
+    d.Create(imageMs, [ArchiveInputInfo.InMemory("payload.bin", original)], new FormatCreateOptions());
+    var image = imageMs.ToArray();
+
+    using var archive = NewArchiveStream(image);
+    var tail = DeterministicDisk(256, seed: 9);
+    ((IArchiveModifiable)d).Add(archive, [ArchiveInputInfo.InMemory("tail.bin", tail)]);
+
+    archive.Position = 0;
+    var dir = Path.Combine(Path.GetTempPath(), "macrium-modify-" + Path.GetRandomFileName());
+    try {
+      Directory.CreateDirectory(dir);
+      d.Extract(archive, dir, password: null, files: null);
+      var extracted = File.ReadAllBytes(Path.Combine(dir, MacriumFormatDescriptor.DiskImageEntryName));
+      Assert.That(extracted, Is.EqualTo(original.Concat(tail).ToArray()),
+        "Extract after modify must surface the concatenated disk image bytes.");
+    } finally {
+      if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+    }
+  }
+
+  // ---- Block-level integrity after mutation ------------------------------
+
+  [Test, Category("HappyPath")]
+  public void Modify_PreservesContainerInvariants_FooterAndChainShape() {
+    var image = WriteReflectX(DeterministicDisk(4096), compress: true);
+    using var archive = NewArchiveStream(image);
+
+    var d = new MacriumFormatDescriptor();
+    ((IArchiveModifiable)d).Add(archive,
+      [ArchiveInputInfo.InMemory("appended.bin", DeterministicDisk(512, seed: 42))]);
+
+    var rebuilt = archive.ToArray();
+    using var ms = new MemoryStream(rebuilt);
+    using var r = new MacriumReader(ms);
+
+    Assert.That(r.Variant, Is.EqualTo("mrimgx"));
+    Assert.That(r.Tag, Is.EqualTo("MACRIUM_FILE"));
+    Assert.That(r.ValidHeader, Is.True);
+    var names = r.Blocks.Select(b => b.Name).ToList();
+    Assert.That(names, Does.Contain("$TRACK0"));
+    Assert.That(names, Does.Contain("$INDEX"));
+    Assert.That(names, Does.Contain("$JSON"));
+    Assert.That(names, Does.Contain("$AUXDATA"));
+    Assert.That(r.Blocks.Last().IsLast, Is.True,
+      "Last block in the rebuilt chain must still carry the terminator flag.");
+  }
+
+  [Test, Category("HappyPath")]
+  public void Modify_PreservesZstdBlockCompression_OnUntouchedDiskPayload() {
+    // The rebuild emits every block freshly through MacriumWriter — including
+    // re-applying zstd on the untouched disk-payload bytes. Verify the
+    // resulting container is still smaller than the raw disk image when the
+    // payload is highly compressible (proves zstd kicked in post-modify).
+    var compressible = new byte[MacriumWriter.DefaultBlockSize * 4];
+    Array.Fill<byte>(compressible, 0x42);
+    var image = WriteReflectX(compressible, compress: true);
+    using var archive = NewArchiveStream(image);
+    var preLen = archive.Length;
+
+    // Add a small entry — the disk payload remains the same compressible
+    // bytes plus a tiny tail, so the rebuilt container must still be tiny.
+    ((IArchiveModifiable)new MacriumFormatDescriptor()).Add(archive,
+      [ArchiveInputInfo.InMemory("tail.bin", new byte[16])]);
+
+    Assert.That(archive.Length, Is.LessThan(compressible.Length / 4),
+      $"Post-modify container must remain zstd-compressed (got {archive.Length} bytes for ~{compressible.Length}-byte payload).");
+  }
+
+  // ---- Boundary cases ----------------------------------------------------
+
+  [Test, Category("BoundaryCase")]
+  public void Add_EmptyInputList_LeavesDiskUnchanged() {
+    var original = DeterministicDisk(512, seed: 10);
+    var image = WriteReflectX(original, compress: false);
+    using var archive = NewArchiveStream(image);
+
+    ((IArchiveModifiable)new MacriumFormatDescriptor()).Add(archive, []);
+
+    var recovered = ReadReconstructed(archive.ToArray());
+    Assert.That(recovered, Is.EqualTo(original),
+      "Add with no inputs must rebuild the container with the same payload.");
+  }
+
+  [Test, Category("BoundaryCase")]
+  public void Remove_EmptyEntryNames_LeavesDiskUnchanged() {
+    var original = DeterministicDisk(512, seed: 11);
+    var image = WriteReflectX(original, compress: false);
+    using var archive = NewArchiveStream(image);
+
+    ((IArchiveModifiable)new MacriumFormatDescriptor()).Remove(archive, []);
+
+    var recovered = ReadReconstructed(archive.ToArray());
+    Assert.That(recovered, Is.EqualTo(original),
+      "Remove with no entry names must rebuild the container with the same payload.");
+  }
+
+  [Test, Category("BoundaryCase")]
+  public void RoundTrip_AfterMultipleAdds_AccumulatesAllAppends() {
+    // Equivalence: chained mutations. After three sequential Add calls, the
+    // recovered disk image must be the concatenation of all four sources.
+    var original = DeterministicDisk(256, seed: 20);
+    var image = WriteReflectX(original, compress: false);
+    using var archive = NewArchiveStream(image);
+
+    var d = new MacriumFormatDescriptor();
+    var t1 = DeterministicDisk(128, seed: 21);
+    var t2 = DeterministicDisk(64, seed: 22);
+    var t3 = DeterministicDisk(32, seed: 23);
+    var m = (IArchiveModifiable)d;
+    m.Add(archive, [ArchiveInputInfo.InMemory("t1.bin", t1)]);
+    m.Add(archive, [ArchiveInputInfo.InMemory("t2.bin", t2)]);
+    m.Add(archive, [ArchiveInputInfo.InMemory("t3.bin", t3)]);
+
+    var recovered = ReadReconstructed(archive.ToArray());
+    var expected = original.Concat(t1).Concat(t2).Concat(t3).ToArray();
+    Assert.That(recovered, Is.EqualTo(expected),
+      "Chained Add calls must accumulate appends in declaration order.");
+  }
+
+  // ---- Exceptional cases -------------------------------------------------
+
+  [Test, Category("ExceptionalCase")]
+  public void Add_NullStream_Throws() {
+    Assert.That(() => ((IArchiveModifiable)new MacriumFormatDescriptor()).Add(null!, []),
+      Throws.InstanceOf<ArgumentNullException>());
+  }
+
+  [Test, Category("ExceptionalCase")]
+  public void Add_NullInputs_Throws() {
+    using var ms = new MemoryStream();
+    Assert.That(() => ((IArchiveModifiable)new MacriumFormatDescriptor()).Add(ms, null!),
+      Throws.InstanceOf<ArgumentNullException>());
+  }
+
+  [Test, Category("ExceptionalCase")]
+  public void Remove_NullStream_Throws() {
+    Assert.That(() => ((IArchiveModifiable)new MacriumFormatDescriptor()).Remove(null!, []),
+      Throws.InstanceOf<ArgumentNullException>());
+  }
+
+  [Test, Category("ExceptionalCase")]
+  public void Remove_NullEntryNames_Throws() {
+    using var ms = new MemoryStream();
+    Assert.That(() => ((IArchiveModifiable)new MacriumFormatDescriptor()).Remove(ms, null!),
+      Throws.InstanceOf<ArgumentNullException>());
+  }
 }

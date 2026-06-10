@@ -151,14 +151,14 @@ public class MacriumDetectionTests {
 
   [Test, Category("HappyPath")]
   public void Capabilities_ReadWriteSurface() {
-    // R/W for Reflect X (via vendor spec) + Stage-0 for legacy: list / extract / test / create.
+    // R/W for Reflect X (via vendor spec) + Stage-0 for legacy: list / extract / test / create / modify.
     var d = new MacriumFormatDescriptor();
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanTest), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
-    // Modify (in-place edit) is not yet supported — only fresh-create from a flat payload.
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+    Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
   }
 
   [Test, Category("HappyPath")]

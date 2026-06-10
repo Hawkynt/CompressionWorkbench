@@ -266,7 +266,7 @@ public class EndToEndInteropTests {
     // Macrium Reflect X (.mrimgx): per-block AES-CBC + zstd over a partition image.
     // Paragon Backup (.pbf): WORM-CWBP layout surfaces entries as chunk_NNNNNN.bin,
     // not the original repeat.txt / small.txt / random.dat names.
-    ".gho", ".sparseimage", ".mrimgx", ".pbf",
+    ".gho", ".sparseimage", ".mrimgx", ".mrbakx", ".pbf",
     // WORM-minimal writers that don't round-trip user files (SB-only / empty-FS):
     ".bcachefs", ".reiser4",
     // Filesystem images (HFS, NTFS, ext, etc. require full FS creation)
