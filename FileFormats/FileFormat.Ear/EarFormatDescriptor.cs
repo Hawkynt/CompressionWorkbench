@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ear;
 
-public sealed class EarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class EarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
@@ -35,8 +35,28 @@ public sealed class EarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing EAR archive. Routes to
+  /// <see cref="FileFormat.Zip.ZipModifier"/> for true random-access I/O — only
+  /// the central directory, EOCD, and the appended file's local file header +
+  /// compressed data are read or written. Pre-existing entry LFH + payload
+  /// bytes at original offsets remain byte-identical.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      FileFormat.Zip.ZipModifier.RemoveFile(archive, name, wipeData: true);
+      FileFormat.Zip.ZipModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>Removes named entries; uses <see cref="FileFormat.Zip.ZipModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      FileFormat.Zip.ZipModifier.RemoveFile(archive, name, wipeData: true);
+  }
   public string DefaultExtension => ".ear";
   public IReadOnlyList<string> Extensions => [".ear"];
   public IReadOnlyList<string> CompoundExtensions => [];

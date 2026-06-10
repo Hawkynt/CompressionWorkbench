@@ -42,7 +42,7 @@ public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.CanTest |
     FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".ace";
   public IReadOnlyList<string> Extensions => [".ace"];
@@ -51,7 +51,12 @@ public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [new("ace1", "ACE 1"), new("ace2", "ACE 2"), new("store", "Store")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "ACE archive, proprietary high-ratio compressor";
+  public string Description =>
+    "ACE archive, proprietary high-ratio compressor. Read + create only — in-place " +
+    "Add/Remove is deferred: every file record carries a CRC32 of the compressed " +
+    "stream and the archive's HEAD block carries a CRC of all subsequent metadata, " +
+    "so any append needs to re-checksum the touched headers. No AceModifier ships " +
+    "yet, so the descriptor does not advertise CanModify.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new AceReader(stream, password: password);

@@ -21,7 +21,7 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.CanTest |
     FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".rar";
@@ -36,7 +36,12 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   ];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "RAR archive with solid compression and recovery records";
+  public string Description =>
+    "RAR archive with solid compression and recovery records. Read + create only — " +
+    "in-place Add/Remove is deferred: solid block chains, per-file CRC32, and the " +
+    "main-header CRC all cross-reference, so any append needs to re-checksum the " +
+    "affected blocks. No RarModifier ships yet, so the descriptor does not " +
+    "advertise CanModify.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new RarReader(stream, password: password);
