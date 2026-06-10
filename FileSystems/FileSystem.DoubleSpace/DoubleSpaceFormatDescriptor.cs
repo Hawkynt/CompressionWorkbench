@@ -69,29 +69,21 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
     output.Write(w.Build());
   }
 
+  /// <summary>
+  /// True in-place add: BitFAT bits flip, MDFAT cluster-allocation entries
+  /// are written in place, inner FAT chains extended, and VFAT dirents are
+  /// inserted into the root directory without rewriting any unrelated bytes.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs,
-      readEntries: stream => {
-        var r = new DoubleSpaceReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new DoubleSpaceWriter { Variant = CvfVariant.DoubleSpace60 };
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+    => DoubleSpaceInPlaceModifier.Add(archive, inputs);
 
+  /// <summary>
+  /// True in-place remove: walks the inner FAT chain, zeros each physical
+  /// run, clears BitFAT bits, zeros MDFAT entries, zeros inner FAT chain,
+  /// and scratches the dirent (+ LFN chain) with 0xE5.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames,
-      readEntries: stream => {
-        var r = new DoubleSpaceReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new DoubleSpaceWriter { Variant = CvfVariant.DoubleSpace60 };
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+    => DoubleSpaceInPlaceModifier.Remove(archive, entryNames);
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => DoubleSpaceExtentMap.Enumerate(image);

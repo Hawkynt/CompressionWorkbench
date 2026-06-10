@@ -126,30 +126,26 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   // =========================================================================
 
   /// <inheritdoc />
+  /// <summary>
+  /// True in-place add via the shared MDBPB-aware
+  /// <see cref="DoubleSpaceInPlaceModifier"/>. BitFAT bits flip, MDFAT
+  /// cluster-allocation entries are written in place, inner FAT chains
+  /// extended, and VFAT dirents are inserted into the root directory
+  /// without rewriting any unrelated bytes. MS LZH codec is auto-selected
+  /// from the OEM signature (<c>MS_DSP3</c>).
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs,
-      readEntries: stream => {
-        using var r = new DoubleSpaceReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e))).ToList();
-      },
-      buildImage: files => {
-        var w = new DoubleSpaceWriter { Variant = CvfVariant.DriveSpace3 };
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+    => DoubleSpaceInPlaceModifier.Add(archive, inputs);
 
   /// <inheritdoc />
+  /// <summary>
+  /// True in-place remove via the shared MDBPB-aware
+  /// <see cref="DoubleSpaceInPlaceModifier"/>. Walks the inner FAT chain,
+  /// zeros each physical run, clears BitFAT bits, zeros MDFAT entries,
+  /// zeros inner FAT chain, and scratches the dirent (+ LFN chain) with 0xE5.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames,
-      readEntries: stream => {
-        using var r = new DoubleSpaceReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e))).ToList();
-      },
-      buildImage: files => {
-        var w = new DoubleSpaceWriter { Variant = CvfVariant.DriveSpace3 };
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+    => DoubleSpaceInPlaceModifier.Remove(archive, entryNames);
 
   // =========================================================================
   //                         Filesystem extent map
