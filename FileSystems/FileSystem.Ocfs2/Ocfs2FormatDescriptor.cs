@@ -9,9 +9,13 @@ namespace FileSystem.Ocfs2;
 
 /// <summary>
 /// R/W descriptor for OCFS2 (Oracle Cluster Filesystem 2).
-/// Supports: list, extract, create (WORM), modify (rebuild-based), defragment, extent map.
+/// Supports: list, extract, create, true in-place modify (Add/Replace/Remove via
+/// <see cref="Ocfs2InPlaceModifier"/>), defragment, extent map.
 /// The writer produces a single-node (no DLM) image with 4 KB blocks/clusters,
-/// inline directory entries, and extent-based file data allocation.
+/// inline directory entries, and extent-based file data allocation. Modifier
+/// scope: root-directory mutations only (subdirectory and extent-backed root
+/// directory paths fall back to the rebuild path). DLM/heartbeat lockdown and
+/// multi-node cluster semantics are out of scope by design.
 /// </summary>
 public sealed class Ocfs2FormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
@@ -33,7 +37,11 @@ public sealed class Ocfs2FormatDescriptor
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "OCFS2 (Oracle Cluster Filesystem 2) — read/write with extent-based allocation.";
+    "OCFS2 (Oracle Cluster Filesystem 2) — read/write with extent-based allocation; "
+    + "true in-place Add/Replace/Remove on the root directory via Ocfs2InPlaceModifier "
+    + "(O(touched bytes) random-access I/O). Subdirectory and extent-backed-root "
+    + "mutations fall back to the rebuild path. Single-node only — DLM/heartbeat "
+    + "lockdown and multi-node cluster semantics are out of scope.";
 
   // ── IArchiveFormatOperations (List / Extract) ─────────────────────────
 
@@ -86,13 +94,53 @@ public sealed class Ocfs2FormatDescriptor
     w.WriteTo(output);
   }
 
-  // ── IArchiveModifiable (rebuild-based) ────────────────────────────────
+  // ── IArchiveModifiable (true in-place R/W) ────────────────────────────
 
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs, ReadFileEntries, BuildImage);
+  /// <summary>
+  /// Adds (or replaces by name) files in the root directory of an existing
+  /// OCFS2 image using <see cref="Ocfs2InPlaceModifier"/>. Touches only the
+  /// global bitmap data block, the root dir dinode, the new file dinode block,
+  /// and the new data blocks — no whole-image rewrite. Subdirectory paths and
+  /// extent-backed root directories fall back to the rebuild path so callers
+  /// keep working when the writer's MVP scope is exceeded.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      try {
+        // Replace-by-name semantics — drop any prior entry with the same name first.
+        Ocfs2InPlaceModifier.RemoveFile(archive, name, wipeData: true);
+        Ocfs2InPlaceModifier.AddFile(archive, name, data);
+      } catch (NotSupportedException) {
+        // Subdir path, extent-backed root dir, or full inline area — fall back
+        // to the rebuild path so callers still get the file added.
+        ModifyRebuilder.Add(archive, [ArchiveInputInfo.InMemory(name, data)], ReadFileEntries, BuildImage);
+      } catch (IOException) {
+        // No free clusters / no inline room — same fall-back rationale.
+        ModifyRebuilder.Add(archive, [ArchiveInputInfo.InMemory(name, data)], ReadFileEntries, BuildImage);
+      }
+    }
+  }
 
-  public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames, ReadFileEntries, BuildImage);
+  /// <summary>
+  /// Removes files from the root directory of an existing OCFS2 image using
+  /// <see cref="Ocfs2InPlaceModifier"/>. Frees the dinode block + data
+  /// clusters via global bitmap bit flips and zero-wipes them so no forensic
+  /// trace remains. Names that aren't in the root directory fall back to the
+  /// rebuild path (which can reach subdirectories).
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    var unhandled = new List<string>();
+    foreach (var name in entryNames) {
+      try {
+        if (!Ocfs2InPlaceModifier.RemoveFile(archive, name, wipeData: true))
+          unhandled.Add(name);
+      } catch (NotSupportedException) {
+        unhandled.Add(name);
+      }
+    }
+    if (unhandled.Count > 0)
+      ModifyRebuilder.Remove(archive, [.. unhandled], ReadFileEntries, BuildImage);
+  }
 
   // ── IArchiveDefragmentable ────────────────────────────────────────────
 
