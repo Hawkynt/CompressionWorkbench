@@ -15,12 +15,13 @@ namespace FileFormat.Eml;
 ///   <item><description><c>attachments/&lt;name&gt;</c> — parts marked as attachments.</description></item>
 /// </list>
 /// </summary>
-public sealed class EmlFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable {
+public sealed class EmlFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Eml";
   public string DisplayName => "EML (RFC 822 message)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".eml";
   public IReadOnlyList<string> Extensions => [".eml"];
@@ -31,7 +32,10 @@ public sealed class EmlFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "RFC 822 / MIME email message with per-part + attachment extraction.";
+  public string Description =>
+    "RFC 822 / MIME email message with per-part + attachment extraction. In-place R/W " +
+    "appends/removes attachments inside a multipart body by splicing between boundary " +
+    "delimiters — every surviving byte stays at its original offset.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
@@ -134,6 +138,43 @@ public sealed class EmlFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       ".json" => "application/json",
       _ => null,
     };
+  }
+
+  // ── IArchiveModifiable ───────────────────────────────────────────────────
+
+  /// <summary>
+  /// Appends each input as a fresh <c>Content-Disposition: attachment</c>
+  /// MIME part immediately before the closing <c>--&lt;boundary&gt;--</c>
+  /// delimiter. The message must already be a multipart body — single-part
+  /// messages can't be promoted in place without rewriting the top-level
+  /// Content-Type header. Routed through <see cref="EmlInPlaceModifier.AddAttachment"/>.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      var content = File.ReadAllBytes(input.FullPath);
+      var fileName = Path.GetFileName(input.ArchiveName);
+      EmlInPlaceModifier.AddAttachment(archive, fileName, content);
+    }
+  }
+
+  /// <summary>
+  /// Removes attachments by filename. Entry names are matched against the
+  /// reader's <c>attachments/&lt;filename&gt;</c> exposure — passing either
+  /// the prefixed form or the bare filename works. Routed through
+  /// <see cref="EmlInPlaceModifier.RemoveAttachment"/>.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames) {
+      var bare = name;
+      if (bare.StartsWith("attachments/", StringComparison.OrdinalIgnoreCase))
+        bare = bare["attachments/".Length..];
+      EmlInPlaceModifier.RemoveAttachment(archive, bare);
+    }
   }
 
   // ── Entry builder ────────────────────────────────────────────────────────

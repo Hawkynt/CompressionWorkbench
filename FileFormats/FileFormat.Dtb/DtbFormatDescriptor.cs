@@ -32,7 +32,13 @@ public sealed class DtbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "Flattened Device Tree Blob — BE structured description of hardware used by Linux/U-Boot.";
+    "Flattened Device Tree Blob — BE structured description of hardware used by Linux/U-Boot. " +
+    "R-only: in-place R/W is not honestly available because the 40-byte FDT header carries " +
+    "totalsize / off_dt_strings / off_dt_struct / size_dt_struct / size_dt_strings fields whose " +
+    "values cascade through every property add/remove. Any single-byte change to the struct or " +
+    "strings block would require rewriting all four header offsets plus shifting every " +
+    "downstream byte of the blob — that's a rebuild, not an in-place mutation, so promoting " +
+    "to CanModify would mis-advertise the surface.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(

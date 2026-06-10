@@ -10,7 +10,7 @@ namespace CompressionWorkbench.FileFormat.Ico;
 /// inputs is supported.
 /// </summary>
 public sealed class IcoFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveWriteConstraints {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveWriteConstraints {
 
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
@@ -23,7 +23,7 @@ public sealed class IcoFormatDescriptor :
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".ico";
   public IReadOnlyList<string> Extensions => [".ico"];
@@ -35,8 +35,10 @@ public sealed class IcoFormatDescriptor :
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "Windows ICO/CUR icon bundle — pseudo-archive of one or more PNG/DIB images " +
-    "(reader reconstructs BITMAPFILEHEADER for DIB entries; writer accepts PNG and BMP inputs).";
+    "Windows ICO/CUR icon bundle — pseudo-archive of one or more PNG/DIB images. " +
+    "Reader reconstructs BITMAPFILEHEADER for DIB entries; writer accepts PNG and BMP inputs; " +
+    "in-place R/W mutates the ICONDIR + ICONDIRENTRY table directly (existing payload bytes " +
+    "are preserved, only their offsets shift).";
 
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => null;
@@ -78,6 +80,34 @@ public sealed class IcoFormatDescriptor :
     if (images.Count == 0) throw new InvalidOperationException("ICO: no images to write.");
     var bytes = IcoWriter.BuildIco(images);
     output.Write(bytes);
+  }
+
+  // ── IArchiveModifiable ───────────────────────────────────────────────────
+
+  /// <summary>
+  /// Appends one or more new images (PNG or BMP file paths) into the existing
+  /// ICO bundle in place. Routed through <see cref="IcoInPlaceModifier.AddImage"/>.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      var image = File.ReadAllBytes(input.FullPath);
+      IcoInPlaceModifier.AddImage(archive, image);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries (matching the reader's computed display name,
+  /// e.g. <c>icon_00_32x32x32.png</c>) from the bundle in place. Routed through
+  /// <see cref="IcoInPlaceModifier.RemoveImage"/>.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames)
+      IcoInPlaceModifier.RemoveImage(archive, name);
   }
 
   private static IcoReader.Bundle ReadBundle(Stream stream) {

@@ -25,7 +25,14 @@ public sealed class MoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Compiled gettext message catalog; each message extractable as text.";
+  public string Description =>
+    "Compiled gettext message catalog; each message extractable as text. R-only: in-place R/W " +
+    "is not honestly available because the 28-byte MO header records numStrings + " +
+    "origTableOffset + transTableOffset, with both string descriptor tables packed BEFORE the " +
+    "key/value pools. Adding or removing a message means extending (or collapsing) the descriptor " +
+    "tables in place, which shifts every byte of the pools and invalidates the descriptor " +
+    "(length, offset) pairs already written. That's a full rebuild, not an in-place mutation, so " +
+    "promoting to CanModify would mis-advertise the surface.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = Read(stream);
