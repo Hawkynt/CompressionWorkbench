@@ -19,13 +19,14 @@ namespace FileSystem.ApplePascal;
 /// <para><b>Spec.</b> Apple Pascal Operating System Reference Manual (1980).</para>
 /// </summary>
 public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
+    IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
 
   public string Id => "ApplePascal";
   public string DisplayName => "Apple UCSD Pascal";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".pvol";
   public IReadOnlyList<string> Extensions => [".pvol", ".pdv", ".pas"];
@@ -98,6 +99,39 @@ public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFor
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build(volumeBlocks, volName));
+  }
+
+  // ── IArchiveModifiable ──────────────────────────────────────────────────
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing Apple Pascal image.
+  /// Routed through <see cref="ApplePascalInPlaceModifier.AddFile"/>: the
+  /// volume directory at blocks 2-5 is mutated in place, the new file's
+  /// contiguous extent is allocated from the gap between existing entries'
+  /// extents, and the new 26-byte entry lands at the tail of the live region.
+  /// </summary>
+  /// <exception cref="NotSupportedException">Directory full (77 entries).</exception>
+  /// <exception cref="IOException">Volume full (no contiguous free run of the
+  /// required size at or after block 6).</exception>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
+      ApplePascalInPlaceModifier.AddFile(archive, name, data);
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing Apple Pascal image. Routed
+  /// through <see cref="ApplePascalInPlaceModifier.RemoveFile"/>: the dirent
+  /// is located in the volume directory, the data extent is zero-wiped, the
+  /// trailing dirents are shifted up to keep the live region packed, and the
+  /// volume header's file count is decremented.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames)
+      ApplePascalInPlaceModifier.RemoveFile(archive, name, wipeData: true);
   }
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)

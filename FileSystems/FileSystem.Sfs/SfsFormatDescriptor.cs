@@ -44,6 +44,19 @@ namespace FileSystem.Sfs;
 /// (<c>MEMORY.md</c>: "never advertise <c>CanCreate</c> without real spec
 /// compliance"), R-only is the honest state for this format.
 /// </para>
+/// <para>
+/// <b>Promote-to-R/W deferral</b>: a promotion attempt would have to first
+/// implement a WORM writer (currently absent — SFS has no <c>SfsWriter</c>
+/// companion to the <see cref="SfsRootBlock"/> reader) and then layer
+/// in-place B+ tree mutation on top. Both steps require the four
+/// cross-checksummed structures above, and the lack of any platform-side
+/// validator means the only honesty check would be self-round-trip, which
+/// (per the project's WSL-tool-gating rule for filesystems) is insufficient
+/// to prove on-disk correctness. The companion R/W promotion of
+/// <c>FileSystem.ApplePascal</c> ships in the same session — that format's
+/// 26-byte fixed entries and lack of free-space bookkeeping make in-place
+/// mutation tractable; SFS does not share either property.
+/// </para>
 /// </remarks>
 public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
   public string Id => "Sfs";
@@ -63,7 +76,8 @@ public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Amiga Smart Filesystem — root block surface only.";
+  public string Description =>
+    "Amiga Smart Filesystem — root block surface only. R/W deferred: requires writer + object-container B+ tree + bitmap chain + directory hash table + free-extent tree.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
