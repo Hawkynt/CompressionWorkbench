@@ -27,44 +27,33 @@ public sealed class ZxSclFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
   /// <summary>
-  /// Adds (or replaces by name) files inside an existing ZxScl archive.
-  /// Read-extract-rebuild via <c>ModifyRebuilder</c>. SCL is a flat stream
-  /// archive (8-byte magic + 1-byte count + variable-size header table +
-  /// concatenated payloads + 4-byte CRC) without sector geometry or a free
-  /// map, so adding or removing a file shifts the entire payload region —
-  /// there is no random-access O(touched bytes) path here. The rebuild
-  /// path is the architecturally correct shape for this format and doubles
-  /// as a secure wipe for replaced bytes. SCL payloads are bounded at
-  /// 640 KB, so the rebuild is fast in absolute terms.
+  /// Adds (or replaces by name) files inside an existing ZxScl archive via
+  /// <see cref="ZxSclInPlaceModifier"/>. Each file is inserted with a single
+  /// 14-byte right-shift of the payload region followed by an entry-header
+  /// write and a sector-padded data append — no full image rebuild.
+  /// Replacement of an existing same-named entry is handled by a prior
+  /// in-place remove. SCL has no compression or random-access map so the
+  /// trailing 32-bit checksum is recomputed once per mutation.
   /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs,
-      readEntries: stream => {
-        var r = new ZxSclReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new ZxSclWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var (name, data) in FilesOnly(inputs))
+      ZxSclInPlaceModifier.AddFile(archive, name, data);
+  }
 
   /// <summary>
-  /// Removes the named entries from an existing ZxScl image. The image is
-  /// rebuilt without the target entries — old file bytes are wiped because
-  /// the new layout starts fresh, leaving no forensic trace.
+  /// Removes the named entries from an existing ZxScl image via
+  /// <see cref="ZxSclInPlaceModifier"/>. Later directory entries shift up by
+  /// 14 bytes, the trailing payload region shifts back to close the gap, the
+  /// stream is truncated and the trailing checksum is recomputed.
   /// </summary>
-  public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames,
-      readEntries: stream => {
-        var r = new ZxSclReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new ZxSclWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames)
+      ZxSclInPlaceModifier.RemoveFile(archive, name);
+  }
 
 
   public string DefaultExtension => ".scl";

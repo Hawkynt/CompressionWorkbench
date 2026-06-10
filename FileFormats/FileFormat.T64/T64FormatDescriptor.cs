@@ -46,30 +46,32 @@ public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IArchiveModifiable (in-place) ─────────────────────────────────────
 
   /// <summary>
-  /// Adds (or replaces by name) files inside an existing T64 tape image.
-  /// Uses <see cref="T64Modifier"/> for true O(touched bytes) random-access I/O —
-  /// finds a free directory slot, appends data at EOF, fills the slot.
-  /// Falls back to rebuild if no free directory slot is available.
+  /// Adds (or replaces by name) files inside an existing T64 tape image via
+  /// <see cref="T64InPlaceModifier"/>. If a directory slot is free the entry
+  /// drops in directly and the new payload is appended at EOF. If the
+  /// directory is full the directory grows by one 32-byte slot — the payload
+  /// region shifts forward by 32 bytes and every existing slot's absolute
+  /// dataOffset field is patched. No full image rebuild.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    try {
-      foreach (var (name, data) in FilesOnly(inputs)) {
-        T64Modifier.RemoveFile(archive, name);
-        T64Modifier.AddFile(archive, name.Length > 16 ? name[..16] : name, data);
-      }
-    } catch (IOException) {
-      archive.Position = 0;
-      ModifyRebuilder.Add(archive, inputs, ReadEntries, BuildImage);
-    }
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var (name, data) in FilesOnly(inputs))
+      T64InPlaceModifier.AddFile(archive, name.Length > 16 ? name[..16] : name, data);
   }
 
   /// <summary>
-  /// Removes named entries from an existing T64 tape image using
-  /// <see cref="T64Modifier"/> for O(touched bytes) random-access I/O.
+  /// Removes named entries from an existing T64 tape image via
+  /// <see cref="T64InPlaceModifier"/>. Later directory slots shift up by 32
+  /// bytes, the removed payload bytes are wiped, the remaining payload region
+  /// shifts to close the gap (each affected slot's absolute dataOffset is
+  /// patched), and the stream is truncated.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
     foreach (var name in entryNames)
-      T64Modifier.RemoveFile(archive, name);
+      T64InPlaceModifier.RemoveFile(archive, name);
   }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
