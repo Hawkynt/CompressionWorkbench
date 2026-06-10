@@ -53,7 +53,18 @@ public sealed class SparsebundleFormatDescriptor : IFormatDescriptor, IArchiveFo
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Apple sparsebundle (Time Machine / hdiutil bundle disk image)";
+  public string Description =>
+    "Apple sparsebundle (Time Machine / hdiutil bundle disk image). " +
+    "R-only by design: sparsebundle is a directory layout " +
+    "(Info.plist + Info.bckup + token + bands/<hex>) and the IArchiveModifiable " +
+    "surface operates over a single seekable Stream — there is no on-disk byte " +
+    "range to patch in place. Promotion to in-place R/W would require either " +
+    "(a) a directory-target sibling interface (IDirectoryArchiveModifiable) so " +
+    "the modifier can mutate individual band files alongside Info.plist, or " +
+    "(b) a virtual TAR-of-directory façade that the modifier rewrites back to " +
+    "disk on flush. The companion single-file Sparseimage descriptor is already " +
+    "R/W via band rewrite at fixed offsets — callers needing in-place R/W on " +
+    "Apple sparse imagery should use that.";
 
   // ── IArchiveFormatOperations ──────────────────────────────────────
 

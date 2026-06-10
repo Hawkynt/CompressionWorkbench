@@ -24,9 +24,22 @@ public class SparsebundleTests {
       Assert.That(desc.Category, Is.EqualTo(FormatCategory.Archive));
       Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
       Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
-      // No CanCreate: directory-output not modelled by the stream-based archive contract
+      // No CanCreate / CanModify: directory-output not modelled by the
+      // stream-based archive contract. Description must spell out the deferred
+      // promotion path so future work is grounded.
       Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
+      Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+      Assert.That(desc, Is.Not.InstanceOf<IArchiveModifiable>());
     });
+  }
+
+  [Test, Category("EquivalenceClass")]
+  public void Descriptor_Description_DocumentsHonestDirectoryConstraint() {
+    var desc = new SparsebundleFormatDescriptor();
+    Assert.That(desc.Description, Does.Contain("R-only"));
+    Assert.That(desc.Description, Does.Contain("directory"));
+    Assert.That(desc.Description, Does.Contain("Sparseimage"),
+      "Description must point callers at the companion R/W Sparseimage descriptor.");
   }
 
   // ── Plist parsing ──────────────────────────────────────────────────

@@ -113,4 +113,18 @@ public class LnkWriterTests {
       () => new LnkFormatDescriptor().Create(outStream, [], new FormatCreateOptions()),
       Throws.ArgumentException);
   }
+
+  // EquivalenceClass: pin the honest WORM scope. MS-SHLLINK describes one
+  // target whose StringData / ExtraData regions reshape with every mutation,
+  // so the descriptor refuses to advertise CanModify / IArchiveModifiable and
+  // documents the rebuild semantic in its Description.
+  [Test, Category("EquivalenceClass")]
+  public void Descriptor_WormState_NoCanModify() {
+    var d = new LnkFormatDescriptor();
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>());
+    Assert.That(d.Description, Does.Contain("WORM"));
+    Assert.That(d.Description, Does.Contain("IArchiveModifiable"));
+  }
 }

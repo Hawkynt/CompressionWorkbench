@@ -17,10 +17,8 @@ public class AppleSingleWriterTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Write_EmitsCanonicalHeader() {
-    using var ms = new MemoryStream();
-    AppleSingleWriter.Write(ms, [("data_fork.bin", "abc"u8.ToArray())]);
-    var blob = ms.ToArray();
+  public void Build_EmitsCanonicalHeader() {
+    var blob = AppleSingleWriter.Build([(1u, "abc"u8.ToArray())]);
     var magic = BinaryPrimitives.ReadUInt32BigEndian(blob.AsSpan(0, 4));
     var version = BinaryPrimitives.ReadUInt32BigEndian(blob.AsSpan(4, 4));
     var count = BinaryPrimitives.ReadUInt16BigEndian(blob.AsSpan(24, 2));
@@ -32,10 +30,9 @@ public class AppleSingleWriterTests {
   [Test, Category("HappyPath"), Category("RoundTrip")]
   public void RoundTrip_SingleDataFork_ReadsBack() {
     var payload = "Hello AppleSingle\n"u8.ToArray();
-    using var ms = new MemoryStream();
-    AppleSingleWriter.Write(ms, [("data_fork.bin", payload)]);
+    var blob = AppleSingleWriter.Build([(1u, payload)]);
 
-    var container = AppleSingleReader.Read(ms.ToArray());
+    var container = AppleSingleReader.Read(blob);
     Assert.That(container.IsDouble, Is.False);
     Assert.That(container.Entries, Has.Count.EqualTo(1));
     Assert.That(container.Entries[0].EntryId, Is.EqualTo(1u));
@@ -70,13 +67,14 @@ public class AppleSingleWriterTests {
     }
   }
 
-  // Boundary: synthetic high-range entry id for unknown archive names.
+  // Boundary: the documented role-id table covers exactly the 15 known names.
   [Test, Category("Boundary")]
-  public void NameToEntryId_FallbackUsesHighRangeId() {
-    var id = AppleSingleWriter.NameToEntryId("not_a_documented_role.txt", fallbackIndex: 3);
-    Assert.That(id, Is.EqualTo(0x80000003u));
-    Assert.That(AppleSingleWriter.NameToEntryId("data_fork.bin", 0), Is.EqualTo(1u));
-    Assert.That(AppleSingleWriter.NameToEntryId("resource_fork.bin", 0), Is.EqualTo(2u));
+  public void EntryIdForName_DocumentedRoles() {
+    Assert.That(AppleSingleWriter.EntryIdForName("data_fork.bin"), Is.EqualTo(1u));
+    Assert.That(AppleSingleWriter.EntryIdForName("resource_fork.bin"), Is.EqualTo(2u));
+    Assert.That(AppleSingleWriter.EntryIdForName("real_name.txt"), Is.EqualTo(3u));
+    Assert.That(AppleSingleWriter.EntryIdForName("finder_info.bin"), Is.EqualTo(8u));
+    Assert.That(AppleSingleWriter.EntryIdForName("entry_99999.bin"), Is.EqualTo(99999u));
   }
 
   // Equivalence: writer must filter the synthetic metadata.ini surfaced by the

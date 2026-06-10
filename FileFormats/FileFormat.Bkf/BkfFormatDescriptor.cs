@@ -6,19 +6,30 @@ namespace FileFormat.Bkf;
 
 /// <summary>
 /// Microsoft NTBackup (<c>.bkf</c>) — Microsoft Tape Format (MTF) v1.0
-/// container. Read-only: enumerates FILE/DIRB entries and extracts the
-/// <c>STAN</c> (Standard) data streams. Compressed streams are surfaced as
-/// "compressed" in the listing; the MTF spec does not name a compression
-/// algorithm and most ntbackup.exe writes are uncompressed.
+/// container. Surfaces FILE/DIRB entries via the <c>STAN</c> (Standard) data
+/// streams. Compressed streams are surfaced as "compressed" in the listing;
+/// the MTF spec does not name a compression algorithm and most ntbackup.exe
+/// writes are uncompressed.
+///
+/// <para>
+/// In-place R/W tier: <see cref="Add"/> appends one FILE DBLK per input at the
+/// position of the existing EOTM block (or at EOF when absent) and re-emits a
+/// fresh EOTM at the new end, leaving every pre-existing DBLK byte-identical
+/// at its original offset. <see cref="Remove"/> tombstones the matching FILE
+/// DBLK by overwriting its 4-byte type field with the <c>XXXX</c> sentinel and
+/// zero-wiping the rest of that FLB block; the reader's parse loop hits an
+/// unknown DBLK type and skips it.
+/// </para>
 /// </summary>
-public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveModifiable {
 
   public string Id => "Bkf";
   public string DisplayName => "Microsoft NTBackup (MTF)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanModify |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".bkf";
   public IReadOnlyList<string> Extensions => [".bkf"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -31,7 +42,9 @@ public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   ];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Microsoft NTBackup .bkf — MTF DBLK-chain reader (FILE+DATA, R/O)";
+  public string Description =>
+    "Microsoft NTBackup .bkf — MTF DBLK-chain reader (FILE+DATA) plus in-place " +
+    "R/W via append-before-EOTM (Add) and XXXX tombstone (Remove).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new BkfReader(stream);
@@ -56,6 +69,39 @@ public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (e.IsCompressed) continue;
       var data = r.Extract(e);
       WriteFile(outputDir, e.Name, data);
+    }
+  }
+
+  // ── IArchiveModifiable ─────────────────────────────────────────────
+
+  /// <summary>
+  /// Appends one FILE DBLK per non-directory input at the current EOTM
+  /// position (or EOF when EOTM is absent), then re-emits a fresh EOTM. All
+  /// existing DBLKs stay byte-identical at their original offsets.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      var leaf = Path.GetFileName(name);
+      if (string.IsNullOrEmpty(leaf)) continue;
+      BkfInPlaceModifier.AddFile(archive, leaf, data);
+    }
+  }
+
+  /// <summary>
+  /// Tombstones each named entry's FILE DBLK in place. The DBLK's 4-byte type
+  /// field becomes the <c>XXXX</c> sentinel and the rest of that FLB block is
+  /// zero-wiped so the file name and STAN payload leave no forensic trace.
+  /// Surrounding DBLKs are not touched.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames) {
+      var leaf = Path.GetFileName(name);
+      if (string.IsNullOrEmpty(leaf)) continue;
+      BkfInPlaceModifier.RemoveFile(archive, leaf);
     }
   }
 }

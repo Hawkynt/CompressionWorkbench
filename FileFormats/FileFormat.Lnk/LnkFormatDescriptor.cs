@@ -38,7 +38,13 @@ public sealed class LnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "Windows Shell Link (.lnk) shortcut. Surfaces header, ID list, LinkInfo, " +
-    "UTF-16/ANSI string blocks, and any extra data blocks.";
+    "UTF-16/ANSI string blocks, and any extra data blocks. " +
+    "WORM-only by design: a shell link describes exactly one target, and every " +
+    "mutation (target path, working dir, arguments, icon, string sizes) shifts " +
+    "the variable-length StringData / ExtraData regions that follow the fixed " +
+    "76-byte header. Any meaningful edit therefore requires a full rewrite via " +
+    "LnkWriter rather than a byte-preserving in-place patch, so IArchiveModifiable " +
+    "is intentionally not advertised — callers should re-Create the shortcut.";
 
   [Flags]
   private enum LinkFlags : uint {
