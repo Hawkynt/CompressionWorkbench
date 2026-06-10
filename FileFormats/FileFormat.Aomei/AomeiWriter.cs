@@ -80,7 +80,28 @@ public sealed class AomeiWriter {
   /// still a valid round-trip baseline.</summary>
   public IReadOnlyList<(string Name, byte[] Data)> UserData { get; init; } = [];
 
-  /// <summary>Builds the full image bytes ready to write to disk.</summary>
+  /// <summary>Builds the full image bytes ready to write to disk.
+  /// <para>
+  /// The resulting layout is
+  /// <code>
+  /// [ BIFH (0x65C) ]
+  /// [ INFO records (BackupType / Compress / Encrypt / Password) ]
+  /// [ User-data envelopes (one per UserData input, 0xF001 type) ]
+  /// [ INDEX_TYPE_DATABLOCK (0x202) BR_IMAGE_INDEX cataloguing those envelopes ]
+  /// [ BIFT (0x674) ]
+  /// </code>
+  /// The BR_IMAGE_INDEX is only emitted when at least one user-data
+  /// envelope is present — the empty-container case is still
+  /// <c>BIFH + BIFT</c> bytes so older round-trip baselines stay
+  /// stable. Each VDB entry's <c>RegNo</c> is the 1-based input index,
+  /// <c>ImgOffset</c> is the envelope's absolute file offset,
+  /// <c>OldSize</c>/<c>NewSize</c> are the envelope's total bytes
+  /// (header + name + payload), and <c>Crc32</c> is the BRCrc32
+  /// (zlib CRC-32) over those envelope bytes. The
+  /// <see cref="AomeiInPlaceModifier"/> later appends, replaces and
+  /// tombstones VDB entries inside this index without touching the
+  /// existing envelopes or the existing entries.
+  /// </para></summary>
   public byte[] Build() {
     using var ms = new MemoryStream();
     // 1. Head — sealed CRC.
@@ -96,11 +117,37 @@ public sealed class AomeiWriter {
     if (!string.IsNullOrEmpty(this.Password))
       ms.Write(AomeiInfoRecord.BuildPassword(this.Password));
 
-    // 3. User-data envelopes for each input file.
-    foreach (var (name, data) in this.UserData)
-      ms.Write(BuildUserDataRecord(name, data));
+    // 3. User-data envelopes for each input file. Capture each
+    //    envelope's absolute file offset so the index can reference
+    //    it by ImgOffset.
+    var envelopeRefs = new List<(ulong AbsoluteOffset, byte[] Bytes)>(this.UserData.Count);
+    foreach (var (name, data) in this.UserData) {
+      var envelope = BuildUserDataRecord(name, data);
+      envelopeRefs.Add(((ulong)ms.Position, envelope));
+      ms.Write(envelope);
+    }
 
-    // 4. Tail — sealed CRC.
+    // 4. BR_IMAGE_INDEX (INDEX_TYPE_DATABLOCK = 0x202) cataloguing the
+    //    envelopes. Skipped when there's nothing to catalogue so the
+    //    empty-container round-trip stays identical to the pre-R/W
+    //    baseline.
+    if (envelopeRefs.Count > 0) {
+      var vdbEntries = new List<BrImageIndexEntryVdb>(envelopeRefs.Count);
+      for (var i = 0; i < envelopeRefs.Count; ++i) {
+        var (offset, envelope) = envelopeRefs[i];
+        vdbEntries.Add(new BrImageIndexEntryVdb {
+          RegNo = (uint)(i + 1),
+          BlockNo = 0,
+          ImgOffset = offset,
+          OldSize = (uint)envelope.Length,
+          NewSize = (uint)envelope.Length,
+          Crc32 = BrCrc32.Compute(envelope),
+        });
+      }
+      ms.Write(BrImageIndex.BuildDataBlockRecord(vdbEntries));
+    }
+
+    // 5. Tail — sealed CRC.
     ms.Write(BrFileTail.BuildEmpty());
 
     return ms.ToArray();

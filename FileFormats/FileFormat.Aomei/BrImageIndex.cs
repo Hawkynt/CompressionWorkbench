@@ -85,6 +85,55 @@ public sealed class BrImageIndex {
     entrySize = BinaryPrimitives.ReadUInt32LittleEndian(record[VendorEntrySizeOffset..]);
     return true;
   }
+
+  /// <summary>Reads the <c>EntryCount</c> / <c>EntrySize</c> fields from a
+  /// <c>BR_IMAGE_INDEX</c> record laid out in this codebase's shipped
+  /// 12-byte BR_STANDARD_HEADER alias format
+  /// (<see cref="AomeiConstants.ShippedIndexEntryCountOffset"/> /
+  /// <see cref="AomeiConstants.ShippedIndexEntrySizeOffset"/>).
+  /// Returns <c>false</c> when the record is shorter than
+  /// <see cref="AomeiConstants.ShippedIndexHeaderSize"/> bytes.</summary>
+  public static bool TryReadShipped(ReadOnlySpan<byte> record, out uint entryCount, out uint entrySize) {
+    entryCount = 0;
+    entrySize = 0;
+    if (record.Length < AomeiConstants.ShippedIndexHeaderSize)
+      return false;
+    entryCount = BinaryPrimitives.ReadUInt32LittleEndian(record[AomeiConstants.ShippedIndexEntryCountOffset..]);
+    entrySize = BinaryPrimitives.ReadUInt32LittleEndian(record[AomeiConstants.ShippedIndexEntrySizeOffset..]);
+    return true;
+  }
+
+  /// <summary>Builds a complete shipped <c>INDEX_TYPE_DATABLOCK</c>
+  /// (0x202) record with the supplied VDB entries packed contiguously
+  /// from offset <see cref="AomeiConstants.ShippedIndexEntriesOffset"/>.
+  /// The BR_STANDARD_HEADER's <c>Size</c> field is set to the total
+  /// record length and the CRC32 is sealed in place per
+  /// <see cref="BrStandardHeader.SealCrc"/>.</summary>
+  public static byte[] BuildDataBlockRecord(IReadOnlyList<BrImageIndexEntryVdb> entries) {
+    ArgumentNullException.ThrowIfNull(entries);
+    var entryCount = (uint)entries.Count;
+    var entrySize = (uint)AomeiConstants.VendorVdbEntrySize;
+    var totalSize = AomeiConstants.ShippedIndexHeaderSize + (int)(entryCount * entrySize);
+    var buf = new byte[totalSize];
+    new BrStandardHeader(
+      (uint)totalSize,
+      AomeiConstants.IndexTypeDataBlock,
+      0
+    ).Write(buf);
+    // Reserved at +0x0C stays zero.
+    BinaryPrimitives.WriteUInt32LittleEndian(
+      buf.AsSpan(AomeiConstants.ShippedIndexEntryCountOffset, 4),
+      entryCount);
+    BinaryPrimitives.WriteUInt32LittleEndian(
+      buf.AsSpan(AomeiConstants.ShippedIndexEntrySizeOffset, 4),
+      entrySize);
+    for (var i = 0; i < entries.Count; ++i)
+      entries[i].Write(buf.AsSpan(
+        AomeiConstants.ShippedIndexEntriesOffset + i * (int)entrySize,
+        (int)entrySize));
+    BrStandardHeader.SealCrc(buf);
+    return buf;
+  }
 }
 
 /// <summary>

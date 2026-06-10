@@ -10,7 +10,7 @@ namespace FileFormat.Aomei;
 /// <para>
 /// Recovered via binary reverse engineering of <c>Encrypt.dll!BRCrc32</c> at offset
 /// <c>0x1800015c0</c> and the identical kernel-side reimplementation at
-/// <c>ammntdrv.sys!FUN_0002053c</c>. The verbatim decompilation reads:
+/// <c>ammntdrv.sys!FUN_0002053c</c>. The reverse-engineered pseudocode reads:
 /// <code>
 /// uint BRCrc32(byte *p, uint n) {
 ///   uint c = 0;

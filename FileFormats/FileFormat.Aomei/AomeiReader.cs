@@ -134,6 +134,36 @@ public sealed class AomeiReader {
   /// record's 16-byte MD5 hash, or null when absent.</summary>
   public byte[]? PasswordMd5 { get; private set; }
 
+  /// <summary>VDB entries decoded from the latest
+  /// <see cref="AomeiConstants.IndexTypeDataBlock"/> record in the
+  /// container, after applying latest-entry-wins per <c>RegNo</c> and
+  /// dropping tombstones. Empty when no index record is present
+  /// (round-trip baseline + foreign samples).</summary>
+  public IReadOnlyList<BrImageIndexEntryVdb> LiveVdbEntries { get; private set; } = [];
+
+  /// <summary>Every VDB entry surfaced by the latest
+  /// <see cref="AomeiConstants.IndexTypeDataBlock"/> record, in on-disk
+  /// order without latest-wins/tombstone filtering. Lets the in-place
+  /// modifier roundtrip the table verbatim and the tests pin both views
+  /// independently.</summary>
+  public IReadOnlyList<BrImageIndexEntryVdb> AllVdbEntries { get; private set; } = [];
+
+  /// <summary>Absolute file offset of the BR_STANDARD_HEADER prefixing
+  /// the latest <see cref="AomeiConstants.IndexTypeDataBlock"/> record,
+  /// or null when no index is present.</summary>
+  public long? DataBlockIndexFileOffset { get; private set; }
+
+  /// <summary>Total bytes (including the BR_STANDARD_HEADER) of the
+  /// latest <see cref="AomeiConstants.IndexTypeDataBlock"/> record, or
+  /// null when no index is present.</summary>
+  public int? DataBlockIndexSize { get; private set; }
+
+  /// <summary>Raw image bytes captured by the constructor — used by the
+  /// reader-side helpers that resolve VDB.ImgOffset references against
+  /// the source file. Empty when the underlying stream was shorter than
+  /// the magic.</summary>
+  public byte[] RawImage { get; private set; } = [];
+
   /// <summary>
   /// Reads the full file into memory (capped at
   /// <see cref="MaxImageBytes"/>) and parses it. The full-image read is
@@ -142,6 +172,7 @@ public sealed class AomeiReader {
   public AomeiReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     var image = ReadAllBounded(stream);
+    this.RawImage = image;
     Parse(image);
   }
 
@@ -209,6 +240,58 @@ public sealed class AomeiReader {
     var records = WalkRecords(image[bodyStart..bodyEnd], bodyStart);
     this.Records = records;
     AbsorbKnownFields(records);
+    AbsorbDataBlockIndex(records);
+  }
+
+  private void AbsorbDataBlockIndex(IReadOnlyList<AomeiInfoRecord> records) {
+    // Pick the LATEST INDEX_TYPE_DATABLOCK record (last in walk order).
+    // In-place mutation appends fresh entries inside this record only.
+    AomeiInfoRecord? latest = null;
+    foreach (var r in records)
+      if (r.Header.Type == AomeiConstants.IndexTypeDataBlock)
+        latest = r;
+    if (latest is null) return;
+
+    this.DataBlockIndexFileOffset = latest.FileOffset;
+    this.DataBlockIndexSize = (int)latest.Header.Size;
+
+    // Body is the bytes after the 12-byte BR_STANDARD_HEADER. The
+    // shipped layout puts Reserved at +0x00, EntryCount at +0x04,
+    // EntrySize at +0x08, entries at +0x0C of the body. Header-relative
+    // those land at the shipped pins.
+    var body = latest.Body;
+    if (body.Length < AomeiConstants.ShippedIndexHeaderSize - AomeiConstants.StandardHeaderSize)
+      return;
+    var entryCount = BinaryPrimitives.ReadUInt32LittleEndian(
+      body.AsSpan(AomeiConstants.ShippedIndexEntryCountOffset - AomeiConstants.StandardHeaderSize, 4));
+    var entrySize = BinaryPrimitives.ReadUInt32LittleEndian(
+      body.AsSpan(AomeiConstants.ShippedIndexEntrySizeOffset - AomeiConstants.StandardHeaderSize, 4));
+    if (entrySize != AomeiConstants.VendorVdbEntrySize) return;
+    var entriesOffsetInBody = AomeiConstants.ShippedIndexEntriesOffset - AomeiConstants.StandardHeaderSize;
+    var needed = entriesOffsetInBody + (long)entryCount * entrySize;
+    if (body.LongLength < needed) return;
+
+    var all = new List<BrImageIndexEntryVdb>((int)entryCount);
+    for (var i = 0; i < entryCount; ++i)
+      all.Add(BrImageIndexEntryVdb.Read(body.AsSpan(
+        entriesOffsetInBody + i * (int)entrySize, (int)entrySize)));
+    this.AllVdbEntries = all;
+
+    // Latest-entry-wins per RegNo + tombstone drop.
+    var latestByRegNo = new Dictionary<uint, BrImageIndexEntryVdb>();
+    var ordering = new List<uint>();
+    foreach (var e in all) {
+      if (!latestByRegNo.ContainsKey(e.RegNo))
+        ordering.Add(e.RegNo);
+      latestByRegNo[e.RegNo] = e;
+    }
+    var live = new List<BrImageIndexEntryVdb>(ordering.Count);
+    foreach (var regNo in ordering) {
+      var e = latestByRegNo[regNo];
+      if (e.NewSize == AomeiConstants.TombstoneNewSizeSentinel) continue;
+      live.Add(e);
+    }
+    this.LiveVdbEntries = live;
   }
 
   private static List<AomeiInfoRecord> WalkRecords(ReadOnlySpan<byte> body, int absoluteOffset) {
@@ -247,6 +330,36 @@ public sealed class AomeiReader {
       if (this.PasswordMd5 is null && r.TryGetPasswordMd5(out var md5))
         this.PasswordMd5 = md5;
     }
+  }
+
+  /// <summary>Decoded user-data view of a VDB entry: the envelope's
+  /// embedded filename plus the payload bytes.</summary>
+  public sealed record LiveUserData(uint RegNo, string Name, byte[] Payload, ulong EnvelopeOffset, uint EnvelopeSize);
+
+  /// <summary>Resolves <see cref="LiveVdbEntries"/> against
+  /// <see cref="RawImage"/> by reading each entry's referenced 0xF001
+  /// envelope and decoding the filename + payload. Entries whose
+  /// ImgOffset/NewSize point outside the captured image bytes are
+  /// silently skipped — defensive against partially-truncated inputs.
+  /// </summary>
+  public IReadOnlyList<LiveUserData> ResolveLiveUserData() {
+    if (this.LiveVdbEntries.Count == 0) return [];
+    var list = new List<LiveUserData>(this.LiveVdbEntries.Count);
+    foreach (var e in this.LiveVdbEntries) {
+      if (e.NewSize == 0) continue;
+      if (e.ImgOffset > (ulong)this.RawImage.LongLength) continue;
+      if (e.ImgOffset + e.NewSize > (ulong)this.RawImage.LongLength) continue;
+      var envelope = this.RawImage.AsSpan(
+        (int)e.ImgOffset, (int)e.NewSize);
+      if (envelope.Length < AomeiConstants.StandardHeaderSize) continue;
+      var hdr = BrStandardHeader.Read(envelope);
+      if (hdr.Type != AomeiWriter.UserDataTypeTag) continue;
+      var body = envelope[AomeiConstants.StandardHeaderSize..].ToArray();
+      var name = AomeiWriter.ReadUserDataName(body);
+      var payload = AomeiWriter.ReadUserDataPayload(body);
+      list.Add(new LiveUserData(e.RegNo, name, payload, e.ImgOffset, e.NewSize));
+    }
+    return list;
   }
 
   /// <summary>Maximum bytes the reader will pull from the input stream.

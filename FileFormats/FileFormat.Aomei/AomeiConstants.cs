@@ -260,6 +260,57 @@ public static class AomeiConstants {
   /// <c>EntrySize==sizeof(BR_IMAGE_INDEX_ENTRY_VDB)</c> assert.</summary>
   public const int VendorVdbEntrySize = 0x20;
 
+  // ─── Shipped BR_IMAGE_INDEX layout (12-byte standard-header alias) ──────
+  //
+  // The vendor's BR_IMAGE_INDEX header is 0x1C bytes (16-byte STD header +
+  // Reserved + EntryCount + EntrySize), but this codebase ships a wire-
+  // compatible 12-byte alias of BR_STANDARD_HEADER (see
+  // <see cref="StandardHeaderSize"/>), so the index layout in containers
+  // emitted by <see cref="AomeiWriter"/> is shifted by 4 bytes vs vendor:
+  //
+  //   offset 0x00..0x0B : BR_STANDARD_HEADER (12 bytes shipped alias)
+  //   offset 0x0C..0x0F : Reserved (u32, observed-zero, kept for symmetry
+  //                       with the vendor layout)
+  //   offset 0x10..0x13 : EntryCount (u32, little-endian)
+  //   offset 0x14..0x17 : EntrySize  (u32, little-endian)
+  //   offset 0x18+      : EntryCount * EntrySize bytes of VDB payload
+  //
+  // Total BR_IMAGE_INDEX header before entries = 24 bytes (0x18). These
+  // offsets pin the byte positions the
+  // <see cref="AomeiInPlaceModifier"/> patches on every append.
+
+  /// <summary>Byte offset of the <c>EntryCount</c> field within a
+  /// shipped <c>BR_IMAGE_INDEX</c> record (relative to the start of the
+  /// record, using this codebase's 12-byte BR_STANDARD_HEADER alias).
+  /// Shifted -4 bytes vs the 16-byte vendor layout: vendor pin at +0x14
+  /// becomes shipped pin at +0x10.</summary>
+  public const int ShippedIndexEntryCountOffset = 0x10;
+
+  /// <summary>Byte offset of the <c>EntrySize</c> field within a shipped
+  /// <c>BR_IMAGE_INDEX</c> record. Shifted -4 bytes vs vendor: vendor pin
+  /// at +0x18 becomes shipped pin at +0x14.</summary>
+  public const int ShippedIndexEntrySizeOffset = 0x14;
+
+  /// <summary>Byte offset within a shipped <c>BR_IMAGE_INDEX</c> record
+  /// where the packed VDB entry array begins. Shifted -4 bytes vs vendor:
+  /// vendor pin at +0x1C becomes shipped pin at +0x18.</summary>
+  public const int ShippedIndexEntriesOffset = 0x18;
+
+  /// <summary>Total bytes the shipped <c>BR_IMAGE_INDEX</c> header
+  /// occupies before its entry array. Equal to
+  /// <see cref="ShippedIndexEntriesOffset"/>.</summary>
+  public const int ShippedIndexHeaderSize = ShippedIndexEntriesOffset;
+
+  /// <summary>Sentinel <c>NewSize</c> value marking a tombstone VDB
+  /// entry. The <see cref="AomeiInPlaceModifier"/> appends a tombstone
+  /// (sharing the target's <c>RegNo</c>) on Remove; the reader's
+  /// latest-entry-wins gate drops the chunk from the live entry view.
+  /// Picked at <c>0xFFFFFFFFu</c> because real VDB entries can never
+  /// legitimately carry it (the payload would be 4 GiB) and the value
+  /// round-trips losslessly through any tooling that treats the field
+  /// as opaque u32.</summary>
+  public const uint TombstoneNewSizeSentinel = 0xFFFFFFFFu;
+
   // ─── BR_IMAGE_INDEX_ENTRY_VDB field byte offsets ───────────────────────
   //
   // Pinned by triangulating three independent code paths in ImgFile.dll

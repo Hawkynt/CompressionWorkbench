@@ -62,14 +62,15 @@ namespace FileFormat.Aomei;
 /// reader can extract them again.
 /// </para>
 /// </summary>
-public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 
   public string Id => "Aomei";
   public string DisplayName => "AOMEI Backupper Image (ADI/AFI)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanTest | FormatCapabilities.CanCreate;
+    FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify;
   public string DefaultExtension => ".adi";
   public IReadOnlyList<string> Extensions => [".adi", ".afi"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -92,7 +93,16 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     "BR_STANDARD_HEADER-prefixed INFO/INDEX record and surfaces typed views of the four shipped " +
     "INFO records (INFO_TYPE_IMAGE_COMPRESS=0x105, INFO_TYPE_IMAGE_ENCRYPT=0x106, " +
     "INFO_TYPE_IMAGE_PASSWORD=0x107 with MD5(UTF-16LE(password)), INFO_TYPE_BACKUP_TYPE=0x10C). " +
-    "Writer: emits wire-format-correct BIFH+INFO+BIFT round-trip containers with sealed CRCs. " +
+    "Writer: emits wire-format-correct BIFH+INFO+BR_IMAGE_INDEX+BIFT round-trip containers with sealed CRCs. " +
+    "R/W: AomeiInPlaceModifier performs true in-place Add / Replace / Remove by appending fresh " +
+    "BR_IMAGE_INDEX_ENTRY_VDB entries (0x20 bytes each) at the end of the trailing INDEX_TYPE_DATABLOCK " +
+    "(0x202) BR_IMAGE_INDEX. Existing user-data envelope bytes [BIFH end, old index start) and existing " +
+    "VDB entries [shipped+0x18, +0x18+oldCount*0x20) stay byte-identical at their original offsets; the " +
+    "only patched fields are EntryCount at shipped offset +0x10, the index's BR_STANDARD_HEADER Size " +
+    "field, the index's BR_STANDARD_HEADER Crc32 field, and the BIFT (re-emitted at the new tail). " +
+    "Replace appends a fresh entry carrying the target's original RegNo; reader picks LATEST entry per " +
+    "RegNo. Remove appends a tombstone (NewSize=0xFFFFFFFF sentinel); reader's latest-wins gate drops " +
+    "the chunk from the live entry view, original bytes survive at original offset. " +
     "Reverse-engineered scope additions (constants pinned, not yet wired into the on-wire emit): " +
     "(a) the full INFO_TYPE_* enum past the four shipped tags — IMAGE_SPLIT_SIZE=0x104, " +
     "IMAGE_COMMENT=0x108, BACKUP_TIME=0x10B, BACKUP_OPTION=0x10D, DISK_INFO=0x102, " +
@@ -146,13 +156,31 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     if (reader.Tail is not null)
       entries.Add(new ArchiveEntryInfo(idx++, "tail.bin", AomeiConstants.BiftSize, AomeiConstants.BiftSize, "stored", false, false, null));
 
+    // When the container carries a trailing INDEX_TYPE_DATABLOCK record,
+    // surface user-data via the latest-wins/tombstone-filtered live VDB
+    // entries — that view tracks AomeiInPlaceModifier's mutations.
+    // Foreign / pre-index containers fall back to the legacy 0xF001 walk.
+    var liveByOffset = new HashSet<ulong>();
+    if (reader.DataBlockIndexFileOffset is not null) {
+      foreach (var live in reader.ResolveLiveUserData()) {
+        liveByOffset.Add(live.EnvelopeOffset);
+        var safeName = string.IsNullOrEmpty(live.Name) ? $"reg-{live.RegNo:D3}" : live.Name;
+        entries.Add(new ArchiveEntryInfo(idx++, "userdata/" + safeName, live.Payload.LongLength, live.Payload.LongLength, "stored", false, false, null));
+      }
+    }
+
     for (var i = 0; i < reader.Records.Count; ++i) {
       var record = reader.Records[i];
       if (record.Header.Type == AomeiWriter.UserDataTypeTag) {
-        var name = AomeiWriter.ReadUserDataName(record.Body);
-        var payload = AomeiWriter.ReadUserDataPayload(record.Body);
-        var safeName = string.IsNullOrEmpty(name) ? $"entry-{i:D3}" : name;
-        entries.Add(new ArchiveEntryInfo(idx++, "userdata/" + safeName, payload.LongLength, payload.LongLength, "stored", false, false, null));
+        // Skip envelopes already surfaced via the live VDB view.
+        if (liveByOffset.Contains((ulong)record.FileOffset)) continue;
+        // Legacy fallback: no index present, surface as-walked.
+        if (reader.DataBlockIndexFileOffset is null) {
+          var name = AomeiWriter.ReadUserDataName(record.Body);
+          var payload = AomeiWriter.ReadUserDataPayload(record.Body);
+          var safeName = string.IsNullOrEmpty(name) ? $"entry-{i:D3}" : name;
+          entries.Add(new ArchiveEntryInfo(idx++, "userdata/" + safeName, payload.LongLength, payload.LongLength, "stored", false, false, null));
+        }
       } else {
         var fname = $"record-{i:D3}-{record.TypeName}.bin";
         entries.Add(new ArchiveEntryInfo(idx++, fname, record.Header.Size, record.Header.Size, "stored", false, false, null));
@@ -189,13 +217,28 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     if (reader.Tail is not null)
       WriteIfMatch(outputDir, "tail.bin", image[^AomeiConstants.BiftSize..], files);
 
+    // When the container carries a trailing INDEX_TYPE_DATABLOCK record,
+    // extract user-data via the latest-wins/tombstone-filtered live VDB
+    // entries — that view tracks AomeiInPlaceModifier's mutations.
+    var liveByOffset = new HashSet<ulong>();
+    if (reader.DataBlockIndexFileOffset is not null) {
+      foreach (var live in reader.ResolveLiveUserData()) {
+        liveByOffset.Add(live.EnvelopeOffset);
+        var safeName = string.IsNullOrEmpty(live.Name) ? $"reg-{live.RegNo:D3}" : live.Name;
+        WriteIfMatch(outputDir, "userdata/" + safeName, live.Payload, files);
+      }
+    }
+
     for (var i = 0; i < reader.Records.Count; ++i) {
       var record = reader.Records[i];
       if (record.Header.Type == AomeiWriter.UserDataTypeTag) {
-        var name = AomeiWriter.ReadUserDataName(record.Body);
-        var payload = AomeiWriter.ReadUserDataPayload(record.Body);
-        var safeName = string.IsNullOrEmpty(name) ? $"entry-{i:D3}" : name;
-        WriteIfMatch(outputDir, "userdata/" + safeName, payload, files);
+        if (liveByOffset.Contains((ulong)record.FileOffset)) continue;
+        if (reader.DataBlockIndexFileOffset is null) {
+          var name = AomeiWriter.ReadUserDataName(record.Body);
+          var payload = AomeiWriter.ReadUserDataPayload(record.Body);
+          var safeName = string.IsNullOrEmpty(name) ? $"entry-{i:D3}" : name;
+          WriteIfMatch(outputDir, "userdata/" + safeName, payload, files);
+        }
       } else {
         var fname = $"record-{i:D3}-{record.TypeName}.bin";
         // Rebuild the on-disk bytes of the record from header + body so the
@@ -280,6 +323,44 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     output.Write(bytes, 0, bytes.Length);
   }
 
+  /// <summary>Appends one or more user-data envelopes + matching VDB
+  /// entries to <paramref name="archive"/>. Delegates to
+  /// <see cref="AomeiInPlaceModifier.Add"/>.</summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => AomeiInPlaceModifier.Add(archive, inputs);
+
+  /// <summary>Appends a tombstone VDB entry per name in
+  /// <paramref name="entryNames"/>. The name resolves to a RegNo via
+  /// <see cref="ResolveRegNoFromName"/>; entries that don't match a
+  /// live user-data envelope's name (e.g. <c>userdata/foo.bin</c> or
+  /// just <c>foo.bin</c>) raise <see cref="FileNotFoundException"/>.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames) {
+      var regNo = ResolveRegNoFromName(archive, name);
+      AomeiInPlaceModifier.Remove(archive, regNo);
+    }
+  }
+
+  private static uint ResolveRegNoFromName(Stream archive, string name) {
+    ArgumentNullException.ThrowIfNull(name);
+    var trimmed = name;
+    const string Prefix = "userdata/";
+    if (trimmed.StartsWith(Prefix, StringComparison.Ordinal))
+      trimmed = trimmed[Prefix.Length..];
+    archive.Position = 0;
+    var reader = new AomeiReader(archive);
+    foreach (var live in reader.ResolveLiveUserData())
+      if (string.Equals(live.Name, trimmed, StringComparison.Ordinal))
+        return live.RegNo;
+    throw new FileNotFoundException(
+      $"Aomei descriptor Remove: no live user-data entry named '{name}' " +
+      $"(stripped to '{trimmed}'). Names must match the envelope's stored " +
+      "filename, optionally prefixed with 'userdata/'.");
+  }
+
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
     if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;
     WriteFile(outputDir, name, data);
@@ -344,6 +425,16 @@ public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     b.Append("tail_trailing_header_offsets=Reserved:+0x664,Crc32:+0x668,Size:+0x66C,Flag:+0x670\n");
     b.Append("index_body_layout=BR_IMAGE_INDEX_header_pinned_VDB_field_offsets_pinned_FDB_size_undetermined\n");
     b.Append("aes_variant_and_iv=undetermined\n");
+    // R/W: the in-place modifier patches the trailing INDEX_TYPE_DATABLOCK.
+    b.Append("rw_scope=Add / Replace / Remove via true in-place VDB-entry append in the trailing INDEX_TYPE_DATABLOCK BR_IMAGE_INDEX (AomeiInPlaceModifier). User-data envelopes in [BIFH end, old index start) and VDB entries [shipped+0x18, +0x18+oldCount*0x20) stay byte-identical. Replace appends fresh entry with same RegNo (latest-wins). Remove appends tombstone (NewSize=0xFFFFFFFF sentinel); reader's latest-wins gate hides the entry, original envelope bytes survive.\n");
+    b.Append("shipped_index_layout_offsets=entry_count:+0x10,entry_size:+0x14,entries:+0x18\n");
+    b.Append("tombstone_new_size_sentinel=0xFFFFFFFF\n");
+    if (r.DataBlockIndexFileOffset is { } idxOff)
+      b.Append(ic, $"datablock_index_file_offset=0x{idxOff:X}\n");
+    if (r.DataBlockIndexSize is { } idxSize)
+      b.Append(ic, $"datablock_index_size=0x{idxSize:X}\n");
+    b.Append(ic, $"datablock_index_all_entry_count={r.AllVdbEntries.Count}\n");
+    b.Append(ic, $"datablock_index_live_entry_count={r.LiveVdbEntries.Count}\n");
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 

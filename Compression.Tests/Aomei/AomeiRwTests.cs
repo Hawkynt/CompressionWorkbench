@@ -220,7 +220,9 @@ public class AomeiRwTests {
     var bytes = writer.Build();
     using var ms = new MemoryStream(bytes);
     var r = new AomeiReader(ms);
-    Assert.That(r.Records, Has.Count.EqualTo(2));
+    // Two 0xF001 user-data envelopes + one trailing INDEX_TYPE_DATABLOCK
+    // (0x202) BR_IMAGE_INDEX cataloguing them = 3 records on the wire.
+    Assert.That(r.Records, Has.Count.EqualTo(3));
     Assert.That(r.Records[0].Header.Type, Is.EqualTo(AomeiWriter.UserDataTypeTag));
     Assert.That(AomeiWriter.ReadUserDataName(r.Records[0].Body), Is.EqualTo("hello.txt"));
     Assert.That(AomeiWriter.ReadUserDataPayload(r.Records[0].Body),
@@ -228,6 +230,9 @@ public class AomeiRwTests {
     Assert.That(AomeiWriter.ReadUserDataName(r.Records[1].Body), Is.EqualTo("payload.bin"));
     Assert.That(AomeiWriter.ReadUserDataPayload(r.Records[1].Body),
                 Is.EqualTo(new byte[] { 1, 2, 3, 4, 5 }));
+    Assert.That(r.Records[2].Header.Type, Is.EqualTo(AomeiConstants.IndexTypeDataBlock));
+    Assert.That(r.LiveVdbEntries, Has.Count.EqualTo(2));
+    Assert.That(r.AllVdbEntries, Has.Count.EqualTo(2));
   }
 
   // ─── Descriptor Create / List / Extract round trip ─────────────────────────
@@ -280,7 +285,10 @@ public class AomeiRwTests {
       var meta = File.ReadAllText(Path.Combine(outDir, "metadata.ini"));
       Assert.That(meta, Does.Contain("head_crc_valid=true"));
       Assert.That(meta, Does.Contain("tail_crc_valid=true"));
-      Assert.That(meta, Does.Contain("record_count=1"));
+      // One user-data envelope + the trailing INDEX_TYPE_DATABLOCK record
+      // cataloguing it = 2 records on the wire.
+      Assert.That(meta, Does.Contain("record_count=2"));
+      Assert.That(meta, Does.Contain("datablock_index_live_entry_count=1"));
     } finally {
       try { Directory.Delete(outDir, recursive: true); } catch { /* ignore */ }
     }
