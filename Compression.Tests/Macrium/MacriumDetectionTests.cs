@@ -151,14 +151,17 @@ public class MacriumDetectionTests {
 
   [Test, Category("HappyPath")]
   public void Capabilities_ReadWriteSurface() {
-    // R/W for Reflect X (via vendor spec) + Stage-0 for legacy: list / extract / test / create / modify.
+    // WORM for Reflect X (via vendor spec) + Stage-0 for legacy: list / extract / test / create.
+    // Modify (in-place mutation that preserves untouched bytes at original offsets) is NOT
+    // wired — rebuild-based "modify" (extract → mutate → re-create) is functionally available
+    // via ModifyRebuilder helper but stays at the CLI/UI wrapper layer, not the descriptor.
     var d = new MacriumFormatDescriptor();
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanTest), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
-    Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>());
   }
 
   [Test, Category("HappyPath")]

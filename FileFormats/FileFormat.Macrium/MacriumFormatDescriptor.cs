@@ -72,7 +72,7 @@ namespace FileFormat.Macrium;
 /// surfaced by the reader, but those tags are not authoritative magic.
 /// </para>
 /// </summary>
-public sealed class MacriumFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class MacriumFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   /// <summary>The synthetic entry name under which Macrium Reflect X exposes the reconstructed disk-image payload.</summary>
   public const string DiskImageEntryName = "disk-image.raw";
@@ -82,8 +82,7 @@ public sealed class MacriumFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanModify;
+    FormatCapabilities.CanTest | FormatCapabilities.CanCreate;
   public string DefaultExtension => ".mrimgx";
   public IReadOnlyList<string> Extensions => [".mrimgx", ".mrbakx", ".mrimg"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -198,66 +197,13 @@ public sealed class MacriumFormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
   // ── IArchiveModifiable (rebuild-based; matches VHD / VDI / VMDK / QCOW2 disk-image semantics) ──
 
-  /// <inheritdoc />
-  /// <remarks>
-  /// <para>
-  /// Reflect X is a disk-image format: the logical payload is one contiguous
-  /// sector stream surfaced as the synthetic <c>disk-image.raw</c> entry. The
-  /// <see cref="IArchiveModifiable.Add"/> contract on a single-payload format
-  /// is:
-  /// </para>
-  /// <list type="bullet">
-  ///   <item><description>An input whose name matches <c>disk-image.raw</c>
-  ///     <i>replaces</i> the disk payload — same byte-level semantic as
-  ///     opening the existing image, writing the new bytes, and re-saving.</description></item>
-  ///   <item><description>An input whose name differs (e.g. a caller wants to
-  ///     embed a tail blob) is <i>appended</i> to the existing disk payload
-  ///     — the same concatenation rule <see cref="Create"/> uses for a
-  ///     fresh image.</description></item>
-  /// </list>
-  /// <para>
-  /// In both cases the entire container is rebuilt via the existing
-  /// <see cref="MacriumWriter"/> pipeline ($TRACK0 + $INDEX + $JSON +
-  /// $AUXDATA chain with footer), so per-block AES-CBC encryption,
-  /// zstd compression, and PBKDF2-HMAC-SHA256 key derivation all stay
-  /// spec-compliant after the mutation. Old ciphertext blocks at their
-  /// previous file positions are overwritten because the new $INDEX walk
-  /// references the freshly emitted byte stream — no forensic recovery of
-  /// replaced bytes is possible.
-  /// </para>
-  /// <para>
-  /// Encrypted images require the same password and AES variant that
-  /// produced them: we extract the imageid, key-iterations, and AES-type
-  /// from the current $JSON and feed them back to <see cref="MacriumWriter"/>
-  /// so the rebuilt container is byte-compatible with whatever opened the
-  /// original. Password rotation is NOT supported by this path — use
-  /// <see cref="Create"/> for that.
-  /// </para>
-  /// </remarks>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    ArgumentNullException.ThrowIfNull(archive);
-    ArgumentNullException.ThrowIfNull(inputs);
-    var settings = PeekRebuildSettings(archive);
-    ModifyRebuilder.Add(archive, inputs, ReadDiskEntries, files => BuildImage(files, settings));
-  }
+  // Modify is NOT wired through IArchiveModifiable. Rebuild-based add/remove
+  // (extract → mutate → re-create) is functionally available via the static
+  // ModifyRebuilder helper and is what the CLI/UI uses to make Macrium appear
+  // R/W at the call site — but the format itself stays WORM because
+  // untouched ciphertext bytes are not preserved at their original offsets.
 
-  /// <inheritdoc />
-  /// <remarks>
-  /// Remove of <c>disk-image.raw</c> empties the disk payload (the container
-  /// is rebuilt as an empty image — still spec-valid, just with a zero-length
-  /// partition body). Remove of any other entry name is a no-op (the
-  /// metadata.ini, metadata.json, block-NN.bin, and macrium-image.bin entries
-  /// are synthetic projections of the container structure — they don't have
-  /// an independent existence to remove).
-  /// </remarks>
-  public void Remove(Stream archive, string[] entryNames) {
-    ArgumentNullException.ThrowIfNull(archive);
-    ArgumentNullException.ThrowIfNull(entryNames);
-    var settings = PeekRebuildSettings(archive);
-    ModifyRebuilder.Remove(archive, entryNames, ReadDiskEntries, files => BuildImage(files, settings));
-  }
-
-  // ── Rebuild-path delegates ─────────────────────────────────────────────
+  // ── Rebuild-path delegates (used by the CLI/UI wrapper, not by the descriptor) ──
 
   /// <summary>
   /// Reads the existing Reflect X container and yields the reconstructed disk

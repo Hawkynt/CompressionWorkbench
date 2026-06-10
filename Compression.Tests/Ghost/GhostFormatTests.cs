@@ -57,7 +57,7 @@ public class GhostFormatTests {
     Assert.That(d.Category, Is.EqualTo(FormatCategory.Archive));
     Assert.That(d.Family, Is.EqualTo(AlgorithmFamily.Archive));
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
-    Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
+    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>());
   }
 
   [Test, Category("HappyPath")]
@@ -67,7 +67,7 @@ public class GhostFormatTests {
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.SupportsPassword), Is.True);
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
   }
 
   [Test, Category("HappyPath")]
