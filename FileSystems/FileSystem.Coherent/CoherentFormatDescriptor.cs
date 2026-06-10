@@ -30,7 +30,7 @@ public sealed class CoherentFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Mark Williams Coherent OS filesystem image — R/W (Add/Remove with V7 inode-table free-slot scan + free-zone reachability scan across direct + single-indirect + double-indirect tiers; image grows past s_fsize when free zones exhausted).";
+  public string Description => "Mark Williams Coherent OS filesystem image — true in-place R/W via V7-style inode + zone mutation. Add scans the inode table for free slots and the data area for unreferenced zones (direct + single-indirect + double-indirect tiers, grows past s_fsize when exhausted). Replace rewrites payload bytes at the same on-disk block offsets when the new size fits the inode's existing zones. Remove zeroes data + indirect pointer blocks + dirent + inode slot. Subdirectory mutation deferred (root-level only).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new CoherentReader(stream);
@@ -84,35 +84,16 @@ public sealed class CoherentFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <summary>
-  /// Adds (or replaces by leaf name) files inside an existing Coherent image.
-  /// Routes through <see cref="CoherentModifier"/> for in-place
-  /// random-access I/O across the direct, single-indirect and double-indirect
-  /// tiers. If the in-place modifier cannot allocate (e.g. inode table full
-  /// because the WORM writer sized it tight to the original files), falls
-  /// back to a full rebuild.
+  /// Adds (or replaces by leaf name) files inside an existing Coherent image
+  /// via true in-place V7-style inode + zone mutation. Routes through
+  /// <see cref="CoherentInPlaceModifier"/> — no rebuild fall-back: if the
+  /// inode table is exhausted (the WORM writer sizes it tight to the
+  /// originally-committed files) the operation surfaces <see cref="IOException"/>.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
-    try {
-      foreach (var (name, data) in FilesOnly(inputs))
-        CoherentModifier.AddFile(archive, name, data);
-    } catch (IOException) {
-      archive.Position = 0;
-      ModifyRebuilder.Add(archive, inputs,
-        readEntries: stream => {
-          var r = new CoherentReader(stream);
-          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-        },
-        buildImage: files => {
-          using var ms = new MemoryStream();
-          using (var w = new CoherentWriter(ms, leaveOpen: true)) {
-            foreach (var (n, d) in files) w.AddFile(n, d);
-            w.Finish();
-          }
-          return ms.ToArray();
-        });
-    }
+    CoherentInPlaceModifier.Add(archive, inputs);
   }
 
   /// <summary>
@@ -124,6 +105,6 @@ public sealed class CoherentFormatDescriptor : IFormatDescriptor, IArchiveFormat
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
     foreach (var name in entryNames)
-      CoherentModifier.RemoveFile(archive, name, wipeData: true);
+      CoherentInPlaceModifier.Remove(archive, name);
   }
 }

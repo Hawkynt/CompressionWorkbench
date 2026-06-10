@@ -275,24 +275,22 @@ public class CoherentRwTests {
     Assert.Throws<IOException>(() => CoherentModifier.AddFile(image, "boom", "x"u8.ToArray()));
   }
 
-  // Descriptor-level fallback: when the modifier can't allocate inodes the
-  // descriptor must rebuild the image so the Add still succeeds end-to-end.
-  [Test, Category("HappyPath")]
-  public void Descriptor_Add_FallsBackToRebuildOnInodeExhaustion() {
+  // Descriptor-level: the in-place modifier surfaces IOException when the
+  // inode table is exhausted (no silent rebuild fallback — true in-place
+  // R/W means the caller is told the truth about capacity limits).
+  [Test, Category("ExceptionalCase")]
+  public void Descriptor_Add_SurfacesIoExceptionOnInodeExhaustion() {
     var image = Expandable(BuildImage(("seed", "s"u8.ToArray())));
     var d = new CoherentFormatDescriptor();
 
-    // Three files: fits via in-place. Fourth: triggers rebuild fallback
-    // because inode 7+ overlap SB fields and are reserved.
+    // Three files: fits via in-place. Fourth: SB-aliased inode slots 7+
+    // are reserved, so the inode table only has 3 free slots after the
+    // seed and root. Adding a fourth must throw cleanly.
     var inputs = new List<ArchiveInputInfo>();
     for (var i = 0; i < 4; i++)
       inputs.Add(ArchiveInputInfo.InMemory($"f{i}", new byte[] { (byte)i }));
 
-    d.Add(image, inputs);
-
-    image.Position = 0;
-    var entries = d.List(image, null);
-    Assert.That(entries.Select(e => e.Name), Is.EquivalentTo(new[] { "seed", "f0", "f1", "f2", "f3" }));
+    Assert.Throws<IOException>(() => d.Add(image, inputs));
   }
 
   // ── Mixed sequences across all three tiers ──────────────────────────────
