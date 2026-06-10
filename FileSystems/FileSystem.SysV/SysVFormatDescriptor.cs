@@ -18,15 +18,16 @@ namespace FileSystem.SysV;
 /// distinct magics and inode shapes and are out of scope for the writer.
 /// </para>
 /// <para>
-/// Mutation surface (<see cref="IArchiveModifiable"/>): flat-root files via
-/// <see cref="SysVModifier"/> with real in-place I/O, including the classic
-/// V7/SYSV chained free-block group cache (refill from chain when
-/// <c>s_nfree</c> drops to 1; spill to a new chain block when it would
-/// exceed 50) and inode re-scan when the in-line <c>s_inode[100]</c> cache
-/// empties. Nested-path adds/removes fall back to the rebuild-from-scratch
-/// path so the modifier never has to re-walk the directory tree. Per-file
-/// size is bounded at 10 direct zones (10 KB); indirect blocks are out of
-/// scope (same as the WORM writer).
+/// Mutation surface (<see cref="IArchiveModifiable"/>): true in-place R/W
+/// via <see cref="SysVInPlaceModifier"/> — every Add/Remove/Replace mutates
+/// the existing image at fixed byte offsets without rebuilding, including
+/// the classic V7/SYSV chained free-block group cache (refill from chain
+/// when <c>s_nfree</c> drops to 1; spill to a new chain block when it
+/// would exceed 50) and the in-line <c>s_inode[100]</c> cache with re-scan
+/// refill. Nested-path adds/removes fall back to the rebuild-from-scratch
+/// path so the in-place engine never has to re-walk the directory tree.
+/// Per-file size is bounded at 10 direct zones (10 KB); indirect blocks
+/// are out of scope (same as the WORM writer).
 /// </para>
 /// <para>
 /// Acceptance gates: round-trip via our own reader (necessary), spec
@@ -56,9 +57,11 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "AT&T UNIX System V s5fs filesystem image — R/W (spec-audited writer + " +
-    "in-place SysVModifier with chained free-block-group cache refill + " +
-    "inode re-scan; Linux sysv kernel driver mountable when host ships sysv.ko).";
+    "AT&T UNIX System V s5fs filesystem image — true in-place R/W " +
+    "(spec-audited writer + SysVInPlaceModifier mutating inode table and " +
+    "data blocks at fixed byte offsets via the chained free-block group " +
+    "cache + s_inode[100] cache with re-scan refill; Linux sysv kernel " +
+    "driver mountable when host ships sysv.ko).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SysVReader(stream);
@@ -112,10 +115,11 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <summary>
   /// Adds (or replaces) files inside an existing s5fs image. Flat-root files
-  /// are mutated in place by <see cref="SysVModifier"/> (real free-block
-  /// chain refill + inode re-scan); anything with a path separator or a
-  /// capacity overflow falls back to <see cref="ModifyRebuilder"/> (rebuild
-  /// from scratch).
+  /// are mutated truly in place by <see cref="SysVInPlaceModifier"/> (real
+  /// free-block chain refill + inode re-scan, no rebuild); anything with a
+  /// path separator or a capacity overflow falls back to
+  /// <see cref="ModifyRebuilder"/> so the descriptor stays consistent for
+  /// out-of-scope inputs.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
@@ -127,7 +131,7 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         // resulting image stays self-consistent.
         if (name.Contains('/') || name.Contains('\\'))
           throw new NotSupportedException("nested path");
-        SysVModifier.AddFile(archive, name, data);
+        SysVInPlaceModifier.Add(archive, name, data);
       }
     } catch (NotSupportedException) {
       RebuildAdd(archive, inputs);
@@ -141,7 +145,7 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// modifier (zeroes file data blocks before returning them to the free
   /// list, matching the <see cref="IArchiveModifiable.Remove"/> wipe
   /// contract). Falls back to the rebuild path for any nested-path entry
-  /// the modifier won't touch.
+  /// the in-place engine won't touch.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
@@ -152,7 +156,7 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         rebuildList.Add(name);
         continue;
       }
-      if (!SysVModifier.RemoveFile(archive, name))
+      if (!SysVInPlaceModifier.Remove(archive, name))
         rebuildList.Add(name);   // not found at root — let the rebuild path filter from nested layers
     }
     if (rebuildList.Count > 0)
