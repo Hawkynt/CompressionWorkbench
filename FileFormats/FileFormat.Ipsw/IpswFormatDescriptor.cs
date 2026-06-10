@@ -18,7 +18,7 @@ namespace FileFormat.Ipsw;
 /// it does not steal generic ZIPs. Read-only; the plist and DMG payloads are emitted as raw bytes
 /// — no plist parsing or DMG mounting.</para>
 /// </summary>
-public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
+public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap, IArchiveCreatable, IArchiveModifiable {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
@@ -27,7 +27,8 @@ public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string DisplayName => "Apple IPSW";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".ipsw";
   public IReadOnlyList<string> Extensions => [];
@@ -36,7 +37,10 @@ public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate"), new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Apple firmware package (ZIP containing BuildManifest.plist, Firmware/, DMG root FS).";
+  public string Description =>
+    "Apple firmware package (ZIP containing BuildManifest.plist, Firmware/, DMG root FS). " +
+    "R/W: in-place Add / Remove against the ZIP central directory (delegates to ZipModifier). " +
+    "Inner DMG / firmware blob mutation is delegated to FileFormat.Dmg and the per-firmware descriptors.";
 
   private sealed record CanonicalEntry(string CanonicalName, string ZipEntryName, long Size, string Method, DateTime? LastModified, string? Kind);
 
@@ -115,6 +119,59 @@ public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       }
       WriteFile(outputDir, "metadata.ini",
         Encoding.UTF8.GetBytes(BuildMetadataIni(identifier, productVersion, buildVersion, total)));
+    }
+  }
+
+  // ── IArchiveCreatable ─────────────────────────────────────────────
+
+  /// <summary>
+  /// Emits a fresh IPSW (ZIP) container from the supplied inputs. Synthetic
+  /// canonical entries the descriptor surfaces on read (<c>FULL.ipsw</c>,
+  /// <c>metadata.ini</c>) are silently dropped — they aren't real ZIP entries.
+  /// All other inputs are stored under their <see cref="ArchiveInputInfo.ArchiveName"/>.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    using var zip = new FileFormat.Zip.ZipWriter(output, leaveOpen: true);
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      if (string.Equals(name, "FULL.ipsw", StringComparison.OrdinalIgnoreCase)) continue;
+      if (string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      zip.AddEntry(name, data);
+    }
+    zip.Finish();
+  }
+
+  // ── IArchiveModifiable ─────────────────────────────────────────────
+
+  /// <summary>
+  /// Adds (or replaces by ZIP path) entries inside an existing IPSW.
+  /// Routes through <see cref="IpswInPlaceModifier"/> — only the central
+  /// directory, EOCD, and the appended LFH + payload are touched.
+  /// Synthetic canonical entries are silently dropped.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      if (string.Equals(name, "FULL.ipsw", StringComparison.OrdinalIgnoreCase)) continue;
+      if (string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      IpswInPlaceModifier.AddEntry(archive, name, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes named ZIP entries from an existing IPSW. Routes through
+  /// <see cref="IpswInPlaceModifier"/> — the LFH + compressed payload of
+  /// the dropped entry are zero-wiped and the central directory is rewritten.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames) {
+      if (string.Equals(name, "FULL.ipsw", StringComparison.OrdinalIgnoreCase)) continue;
+      if (string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      IpswInPlaceModifier.RemoveEntry(archive, name);
     }
   }
 

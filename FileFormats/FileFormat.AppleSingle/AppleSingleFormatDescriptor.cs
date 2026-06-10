@@ -11,13 +11,14 @@ namespace FileFormat.AppleSingle;
 /// entry id (data fork, resource fork, Finder info, dates, real name, …) is
 /// surfaced as a separate archive entry plus a metadata.ini summary.
 /// </summary>
-public sealed class AppleSingleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class AppleSingleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 
   public string Id => "AppleSingle";
   public string DisplayName => "AppleSingle";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".as";
   public IReadOnlyList<string> Extensions => [".as", ".applesingle"];
@@ -30,7 +31,8 @@ public sealed class AppleSingleFormatDescriptor : IFormatDescriptor, IArchiveFor
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "AppleSingle (RFC 1740) container — bundles data fork, resource fork, " +
-    "Finder info, and Mac metadata for transport across non-HFS filesystems.";
+    "Finder info, and Mac metadata for transport across non-HFS filesystems. " +
+    "R/W: in-place Add / Replace / Remove against the 12-byte entry directory.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
@@ -71,26 +73,59 @@ public sealed class AppleSingleFormatDescriptor : IFormatDescriptor, IArchiveFor
     return memoryStream.ToArray();
   }
 
+  // ── IArchiveCreatable ─────────────────────────────────────────────
+
   /// <summary>
-  /// WORM creation: emits a fresh AppleSingle v2 container containing one entry
-  /// per input. The synthetic <c>metadata.ini</c> reader entry is never re-emitted
-  /// on round-trip; entries whose archive name matches a documented role name
-  /// (e.g. <c>data_fork.bin</c>) keep their canonical entry id, otherwise they
-  /// are stored under a synthetic high-range id (0x80000000+i).
+  /// Emits a fresh AppleSingle container from the supplied inputs. Input
+  /// archive names are mapped to entry ids via
+  /// <see cref="AppleSingleWriter.EntryIdForName"/>; the synthetic
+  /// <c>metadata.ini</c> entry the descriptor surfaces on read is silently
+  /// dropped during create — it isn't a real AppleSingle entry.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
-    var list = new List<(string Name, byte[] Data)>();
-    foreach (var i in inputs) {
-      if (i.IsDirectory) continue;
-      // Skip the synthetic metadata.ini surfaced by the reader — round-trips of
-      // listed+create would otherwise embed reader-internal state into the archive.
-      var leaf = Path.GetFileName(i.ArchiveName);
-      if (string.Equals(leaf, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
-      list.Add((leaf, i.ReadContent()));
+    var entries = new List<(uint EntryId, byte[] Data)>(inputs.Count);
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      if (string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      entries.Add((AppleSingleWriter.EntryIdForName(Path.GetFileName(name)), data));
     }
-    AppleSingleWriter.Write(output, list);
+    var bytes = AppleSingleWriter.Build(entries);
+    output.Position = 0;
+    output.Write(bytes, 0, bytes.Length);
+    output.SetLength(bytes.Length);
+  }
+
+  // ── IArchiveModifiable ─────────────────────────────────────────────
+
+  /// <summary>
+  /// Adds (or replaces by id) entries inside an existing AppleSingle
+  /// container. Routes through <see cref="AppleSingleInPlaceModifier"/> so
+  /// untouched payload byte-content survives the operation.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      if (string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      var id = AppleSingleWriter.EntryIdForName(Path.GetFileName(name));
+      AppleSingleInPlaceModifier.ReplaceEntry(archive, id, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes named entries from an existing AppleSingle container. Routes
+  /// through <see cref="AppleSingleInPlaceModifier"/> — payload bytes are
+  /// zero-wiped and the 12-byte directory slot is compacted out.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames) {
+      if (string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      var id = AppleSingleWriter.EntryIdForName(Path.GetFileName(name));
+      AppleSingleInPlaceModifier.RemoveEntry(archive, id);
+    }
   }
 
   private static IEnumerable<(string Name, byte[] Data)> BuildEntries(Stream stream) {
