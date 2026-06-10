@@ -35,15 +35,20 @@ public sealed class Jffs2FileReader {
   private readonly byte[] _image;
   private readonly List<FileEntry> _entries = [];
 
-  // inode -> list of data fragments (offset in file, data bytes)
+  // inode -> list of data fragments (offset in file, data bytes, dsize, version).
+  // After parsing, only fragments belonging to the highest-version inode node
+  // for that ino are kept — JFFS2's "newest write wins" semantic.
   private readonly Dictionary<uint, List<(uint Offset, byte[] Data, uint DSize, uint Version)>> _inodeData = new();
 
-  // inode -> latest inode node info (size)
+  // inode -> latest (highest-version) isize.
   private readonly Dictionary<uint, uint> _inodeSize = new();
 
-  // inode -> mode (S_IFDIR / S_IFREG) from the latest inode node, used to
-  // distinguish directory inodes from regular files.
+  // inode -> mode (S_IFDIR / S_IFREG) from the highest-version inode node,
+  // used to distinguish directory inodes from regular files.
   private readonly Dictionary<uint, uint> _inodeMode = new();
+
+  // Highest version seen per inode while scanning, so later passes can compare.
+  private readonly Dictionary<uint, uint> _inodeMaxVersion = new();
 
   public Jffs2FileReader(Stream stream) {
     using var ms = new MemoryStream();
@@ -84,7 +89,9 @@ public sealed class Jffs2FileReader {
 
   private void Parse() {
     var span = this._image.AsSpan();
-    var dirents = new List<(uint ParentInode, uint Inode, string Name, byte Type, int NodeOffset)>();
+    // (pino, name) -> (version, ino, type, offset). Highest-version wins;
+    // a winning entry with ino==0 marks an unlink.
+    var direntByKey = new Dictionary<(uint Pino, string Name), (uint Version, uint Inode, byte Type, int NodeOffset)>();
     var off = 0;
 
     while (off + 12 <= span.Length) {
@@ -108,25 +115,35 @@ public sealed class Jffs2FileReader {
           break;
         case NodeTypeDirent:
           var dirent = ParseDirentNode(span, off, totLen);
-          if (dirent.HasValue)
-            dirents.Add((dirent.Value.ParentInode, dirent.Value.Inode, dirent.Value.Name, dirent.Value.Type, off));
+          if (dirent.HasValue) {
+            var dv = dirent.Value;
+            var key = (dv.ParentInode, dv.Name);
+            if (!direntByKey.TryGetValue(key, out var existing) || dv.Version > existing.Version)
+              direntByKey[key] = (dv.Version, dv.Inode, dv.Type, off);
+          }
           break;
       }
 
       off += ((int)totLen + 3) & ~3;
     }
 
-    // Index dirents by their target inode so the parent chain can be walked to
-    // reassemble each entry's full path. The latest dirent for an inode wins.
+    // Index live dirents by their target inode so the parent chain can be
+    // walked to reassemble each entry's full path. A "live" dirent is one
+    // whose highest-version record has a non-zero inode.
     var direntByInode = new Dictionary<uint, (uint ParentInode, string Name)>();
-    foreach (var (parentInode, inode, name, _, _) in dirents) {
-      if (inode == 0) continue; // unlink marker
-      direntByInode[inode] = (parentInode, name);
+    foreach (var kv in direntByKey) {
+      var (pino, name) = kv.Key;
+      var (_, ino, _, _) = kv.Value;
+      if (ino == 0) continue; // unlink marker wins for this (pino, name)
+      direntByInode[ino] = (pino, name);
     }
 
-    // Build entries from dirents, skipping unlinks. A dirent denotes a directory
-    // when its type is DT_DIR or its target inode carries an S_IFDIR mode.
-    foreach (var (parentInode, inode, name, type, nodeOffset) in dirents) {
+    // Build entries from live dirents only — skip unlinks. A dirent denotes a
+    // directory when its type is DT_DIR or its target inode carries an S_IFDIR
+    // mode.
+    foreach (var kv in direntByKey) {
+      var (parentInode, name) = kv.Key;
+      var (_, inode, type, nodeOffset) = kv.Value;
       if (inode == 0) continue; // unlink marker
 
       var isDirectory = type == DtDir
@@ -173,34 +190,46 @@ public sealed class Jffs2FileReader {
     var dsize = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(off + 52, 4));
     var compr = span[off + 56];
 
-    // Track file size and mode (latest version wins)
-    if (!this._inodeSize.ContainsKey(ino) || version > 0) {
+    var prevMaxVersion = this._inodeMaxVersion.GetValueOrDefault(ino, 0u);
+    var startingFresh = version > prevMaxVersion;
+
+    if (startingFresh) {
+      // New high-water version: discard any data fragments belonging to lower
+      // versions (the JFFS2 "newest write wins" semantic).
       this._inodeSize[ino] = isize;
       this._inodeMode[ino] = mode;
+      this._inodeMaxVersion[ino] = version;
+      this._inodeData[ino] = [];
+    } else if (version < prevMaxVersion) {
+      // Stale version — ignore. (It still lives in the byte stream so older
+      // tooling can replay the log, but it's not contributing to the current
+      // view of the file.)
+      return;
     }
+    // version == prevMaxVersion: same write, contribute additional fragments.
+
+    if (!this._inodeData.ContainsKey(ino))
+      this._inodeData[ino] = [];
 
     // Extract data if present and uncompressed
     if (csize > 0 && compr == 0x00 && off + InodeNodeHeaderSize + (int)csize <= span.Length) {
       var data = span.Slice(off + InodeNodeHeaderSize, (int)csize).ToArray();
-      if (!this._inodeData.ContainsKey(ino))
-        this._inodeData[ino] = [];
       this._inodeData[ino].Add((dataOffset, data, dsize, version));
-    } else if (csize == 0 && dsize == 0) {
-      // Zero-length data node (e.g., directory or empty file)
-      if (!this._inodeData.ContainsKey(ino))
-        this._inodeData[ino] = [];
     }
+    // csize == 0 && dsize == 0: zero-length data node (e.g. directory or empty
+    // file) — no fragment to add but the bucket is already initialised above.
   }
 
-  private static (uint ParentInode, uint Inode, string Name, byte Type)? ParseDirentNode(ReadOnlySpan<byte> span, int off, uint totLen) {
+  private static (uint ParentInode, uint Inode, string Name, byte Type, uint Version)? ParseDirentNode(ReadOnlySpan<byte> span, int off, uint totLen) {
     if (off + DirentNodeHeaderSize > span.Length) return null;
     var parent = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(off + 12, 4));
+    var version = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(off + 16, 4));
     var inode = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(off + 20, 4));
     var nsize = span[off + 28];
     var type = span[off + 29];
     if (nsize == 0 || nsize > 128) return null;
     if (off + DirentNodeHeaderSize + nsize > span.Length) return null;
     var name = Encoding.UTF8.GetString(span.Slice(off + DirentNodeHeaderSize, nsize));
-    return (parent, inode, name, type);
+    return (parent, inode, name, type, version);
   }
 }

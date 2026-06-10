@@ -10,7 +10,9 @@ namespace FileSystem.Jffs2;
 
 /// <summary>
 /// JFFS2 (Journaling Flash File System v2) format descriptor.
-/// Supports: list, extract, create (WORM), modify (rebuild-based), defragment, extent map.
+/// Supports: list, extract, create, true in-place R/W modify (log-append per
+/// the JFFS2 spec — fresh node at the tail with bumped version, existing
+/// nodes left byte-identical), defragment, extent map.
 /// </summary>
 public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "Jffs2";
@@ -149,17 +151,46 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     w.WriteTo(output);
   }
 
-  // ── IArchiveModifiable (rebuild-based) ────────────────────────────────
+  // ── IArchiveModifiable (true in-place log append) ─────────────────────
 
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs,
-      readEntries: ReadFileEntries,
-      buildImage: BuildImage);
+  /// <summary>
+  /// In-place add (or replace) per JFFS2's log-structured semantic. Each input
+  /// is appended as a fresh node (inode + dirent for new files; inode only
+  /// with bumped version for replaces) at the end of the live log. Existing
+  /// node bytes stay byte-identical at their original offsets — the reader's
+  /// highest-version-wins resolution surfaces the new content. No rebuild.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var payloads = new List<(string Name, byte[] Data)>(inputs.Count);
+    foreach (var (name, data) in FilesOnly(inputs))
+      payloads.Add((name, data));
+    Jffs2InPlaceModifier.Add(archive, payloads);
+  }
 
-  public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames,
-      readEntries: ReadFileEntries,
-      buildImage: BuildImage);
+  /// <summary>
+  /// In-place remove per JFFS2's log-structured semantic. For each named
+  /// entry, an unlink dirent (<c>ino=0</c>) with <c>version = oldVersion + 1</c>
+  /// is appended at the end of the log. Existing node bytes stay
+  /// byte-identical; the reader's highest-version-wins resolution sees the
+  /// unlink and treats the file as gone. Names that do not resolve to a live
+  /// dirent are silently skipped.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames) {
+      if (string.IsNullOrEmpty(name)) continue;
+      try {
+        Jffs2InPlaceModifier.Remove(archive, name);
+      } catch (FileNotFoundException) {
+        // No live dirent for this name — nothing to unlink. Match the
+        // ModifyRebuilder.Remove behaviour, which silently drops unknown
+        // names too.
+      }
+    }
+  }
 
   // ── IArchiveDefragmentable ────────────────────────────────────────────
 
