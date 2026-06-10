@@ -108,13 +108,22 @@ public sealed class BfsFormatDescriptor
     output.Write(w.Build());
   }
 
-  // ── IArchiveModifiable (rebuild-based) ─────────────────────────────
+  // ── IArchiveModifiable (true in-place R/W) ────────────────────────
+  //
+  // BfsInPlaceModifier flips inode + B+ tree leaf + AG bitmap bits at fixed
+  // sector offsets and leaves every untouched block byte-identical to the
+  // original image. When the requested change exceeds the MVP scope (root
+  // leaf would split, subdirectory write, no contiguous run available), the
+  // modifier falls back to ModifyRebuilder so the user always gets a
+  // working image.
 
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs, ReadEntries, BuildImage);
+    => BfsInPlaceModifier.Add(archive, inputs,
+        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage));
 
   public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames, ReadEntries, BuildImage);
+    => BfsInPlaceModifier.Remove(archive, entryNames,
+        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage));
 
   // ── IArchiveDefragmentable (rebuild-based) ─────────────────────────
 
