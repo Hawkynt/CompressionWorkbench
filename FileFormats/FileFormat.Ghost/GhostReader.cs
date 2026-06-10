@@ -54,6 +54,8 @@ public sealed class GhostReader : IDisposable {
   private GhostFileHeader? _header;
   private readonly List<GhostPartitionInfo> _partitions = [];
   private GhostRecord? _endRecord;
+  private long _endRecordOffset = -1;
+  private readonly List<GhostAnnotation> _annotations = [];
 
   /// <summary>The entries exposed to the registry (metadata + partitions, or fallback raw image bytes).</summary>
   public IReadOnlyList<GhostEntry> Entries => this._entries;
@@ -78,8 +80,37 @@ public sealed class GhostReader : IDisposable {
   /// </summary>
   public byte HeaderCompression => this._header?.Compression ?? GhostConstants.CompressionNone;
 
+  /// <summary>
+  /// Image id from the file header (offset 4, u32 LE). Used by
+  /// <see cref="GhostInPlaceModifier"/> so appended FEEF per-partition
+  /// headers keep the same id as the original image.
+  /// </summary>
+  public uint HeaderId => this._header?.Id ?? 0u;
+
   /// <summary>True when the modern record container parsed cleanly.</summary>
   public bool IsModernContainerParsed => this._header != null && this._partitions.Count >= 0 && this.GenerationHint == GhostGenerationHint.Modern11Plus;
+
+  /// <summary>
+  /// File offset of the End-of-image record (type 0x0023) — or -1 when the
+  /// modern container did not parse cleanly. The in-place modifier appends
+  /// new records at this offset, overwriting the existing End record, then
+  /// emits a fresh End record at the new EOF.
+  /// </summary>
+  public long EndRecordOffset => this._endRecordOffset;
+
+  /// <summary>
+  /// Raw bytes of the parsed image. Returned as the original bytes the
+  /// caller's stream held — used by <see cref="GhostInPlaceModifier"/> to
+  /// compare untouched-prefix integrity after Add.
+  /// </summary>
+  public byte[] RawBytes => this._data;
+
+  /// <summary>
+  /// Annotations recovered from the file (in the order they appear). Used by
+  /// <see cref="GhostInPlaceModifier"/> Remove + Replace flows so the reader
+  /// honours latest-write-wins semantics for tombstones.
+  /// </summary>
+  public IReadOnlyList<GhostAnnotation> Annotations => this._annotations;
 
   public GhostReader(Stream stream, bool isSpannedSegment = false, string? password = null) {
     ArgumentNullException.ThrowIfNull(stream);
@@ -217,8 +248,17 @@ public sealed class GhostReader : IDisposable {
             offset = nextRec;
             break;
           }
+          case GhostConstants.RecordTypeAnnotation: {
+            var bodyOff = offset + GhostConstants.RecordHeaderSize;
+            if (bodyOff + rec.BodyLen > this._data.Length) return false;
+            var note = TryParseAnnotation(this._data, bodyOff, rec.BodyLen);
+            if (note != null) this._annotations.Add(note);
+            offset = bodyOff + rec.BodyLen;
+            break;
+          }
           case GhostConstants.RecordTypeEnd:
             this._endRecord = rec;
+            this._endRecordOffset = offset;
             return true;
           default:
             offset += GhostConstants.RecordHeaderSize + rec.BodyLen;
@@ -270,33 +310,98 @@ public sealed class GhostReader : IDisposable {
 
   private static bool IsKnownRecordType(ushort t) => t switch {
     GhostConstants.RecordTypeTrack0 or GhostConstants.RecordTypePartition
-      or GhostConstants.RecordTypeContinuation or GhostConstants.RecordTypeEnd => true,
+      or GhostConstants.RecordTypeContinuation or GhostConstants.RecordTypeEnd
+      or GhostConstants.RecordTypeAnnotation => true,
     _ => false
   };
 
   // ── Entry materialisation ─────────────────────────────────────────
 
   private void MaterialiseEntries() {
+    // Resolve annotations: for each entry name, collect the latest-write-wins
+    // op (REMOVE wipes the entry; REPLACE swaps its payload). Annotations are
+    // applied in file order, so a later REPLACE overrides an earlier REMOVE
+    // and vice-versa — matching the latest-occurrence semantic.
+    var ops = new Dictionary<string, GhostAnnotation>(StringComparer.OrdinalIgnoreCase);
+    foreach (var n in this._annotations) ops[n.TargetName] = n;
+
     // Track 0 (MBR).
     var track0 = this.ExtractTrack0Body();
-    if (track0.Length > 0)
-      this._entries.Add(new GhostEntry { Name = "track0.bin", Size = track0.Length, Data = track0 });
+    if (track0.Length > 0) {
+      var applied = ApplyAnnotation("track0.bin", track0, ops);
+      if (applied != null)
+        this._entries.Add(new GhostEntry { Name = "track0.bin", Size = applied.Length, Data = applied });
+    }
 
     // Partitions.
     for (var i = 0; i < this._partitions.Count; i++) {
+      var name = $"partition{i + 1}.bin";
       try {
         var raw = this.DecompressPartition(i);
-        this._entries.Add(new GhostEntry {
-          Name = $"partition{i + 1}.bin",
-          Size = raw.Length,
-          Data = raw
-        });
+        var applied = ApplyAnnotation(name, raw, ops);
+        if (applied != null)
+          this._entries.Add(new GhostEntry { Name = name, Size = applied.Length, Data = applied });
       } catch (Exception ex) {
         // Don't let one bad partition kill the listing — surface a diagnostic.
         var note = Encoding.UTF8.GetBytes($"# partition{i + 1} decompression failed: {ex.Message}\n");
         this._entries.Add(new GhostEntry { Name = $"partition{i + 1}.error.txt", Size = note.Length, Data = note });
       }
     }
+
+    // Add records appended by GhostInPlaceModifier sit AFTER partitions in
+    // the file. Their replacement names — anything not in {track0.bin,
+    // partition*.bin} — are surfaced as separate entries via annotations
+    // that carry the entry payload directly.
+    foreach (var (name, ann) in ops) {
+      if (name.Equals("track0.bin", StringComparison.OrdinalIgnoreCase)) continue;
+      if (name.StartsWith("partition", StringComparison.OrdinalIgnoreCase)) continue;
+      if (ann.Op != GhostConstants.AnnotationOpReplace) continue;
+      this._entries.Add(new GhostEntry { Name = name, Size = ann.Payload.Length, Data = ann.Payload });
+    }
+  }
+
+  /// <summary>
+  /// Applies the latest annotation for <paramref name="name"/> to the given
+  /// raw bytes. Returns null when the entry has been removed; otherwise
+  /// returns the bytes (replaced payload or the original).
+  /// </summary>
+  private static byte[]? ApplyAnnotation(string name, byte[] original,
+      IReadOnlyDictionary<string, GhostAnnotation> ops) {
+    if (!ops.TryGetValue(name, out var ann)) return original;
+    return ann.Op switch {
+      GhostConstants.AnnotationOpRemove => null,
+      GhostConstants.AnnotationOpReplace => ann.Payload,
+      _ => original
+    };
+  }
+
+  /// <summary>
+  /// Parse an annotation body. Returns null when the body is too short or
+  /// does not carry the <see cref="GhostConstants.AnnotationMagic"/> sentinel
+  /// — keeps us safe against pre-existing third-party records that happen to
+  /// land on the same type code.
+  /// </summary>
+  internal static GhostAnnotation? TryParseAnnotation(byte[] data, long bodyOff, int bodyLen) {
+    if (bodyLen < 11) return null; // magic(4) + op(1) + name_len(2) + payload_len(4) minimum
+    var s = data.AsSpan((int)bodyOff, bodyLen);
+    var magic = BinaryPrimitives.ReadUInt32LittleEndian(s[..4]);
+    if (magic != GhostConstants.AnnotationMagic) return null;
+
+    var op = s[4];
+    if (op != GhostConstants.AnnotationOpRemove && op != GhostConstants.AnnotationOpReplace) return null;
+
+    var nameLen = BinaryPrimitives.ReadUInt16LittleEndian(s.Slice(5, 2));
+    if (7 + nameLen + 4 > bodyLen) return null;
+    var name = Encoding.UTF8.GetString(s.Slice(7, nameLen));
+
+    var payloadLen = BinaryPrimitives.ReadUInt32LittleEndian(s.Slice(7 + nameLen, 4));
+    if (payloadLen > int.MaxValue) return null;
+    if (7 + nameLen + 4 + (int)payloadLen > bodyLen) return null;
+
+    var payload = new byte[(int)payloadLen];
+    s.Slice(7 + nameLen + 4, (int)payloadLen).CopyTo(payload);
+
+    return new GhostAnnotation { Op = op, TargetName = name, Payload = payload };
   }
 
   private byte[] ExtractTrack0Body() {

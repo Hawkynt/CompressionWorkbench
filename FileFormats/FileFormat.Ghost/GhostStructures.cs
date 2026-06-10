@@ -40,6 +40,33 @@ public static class GhostConstants {
   public const ushort RecordTypeContinuation = 0x0703;
   public const ushort RecordTypeEnd = 0x0023;
 
+  /// <summary>
+  /// CompressionWorkbench annotation record (NOT a stock Ghost record type
+  /// — chosen from the unused low-16 space). Carried inside a normal
+  /// 0x012F18D8-magic record so the framing scanner skips it cleanly when
+  /// the reader does not implement annotation handling. Annotation bodies
+  /// start with <see cref="AnnotationMagic"/> so accidental data bytes that
+  /// happen to use this type code are not mis-parsed as annotations.
+  /// </summary>
+  public const ushort RecordTypeAnnotation = 0x00FE;
+
+  /// <summary>
+  /// Sentinel at the head of every <see cref="RecordTypeAnnotation"/> body —
+  /// ASCII "GHO1" little-endian. Lets the reader skip third-party / Ghost-
+  /// proper records that happen to land on the same type code.
+  /// </summary>
+  public const uint AnnotationMagic = 0x31_4F_48_47u; // "GHO1" LE
+
+  /// <summary>Annotation op: remove the entry named in the annotation body.</summary>
+  public const byte AnnotationOpRemove = 0x01;
+
+  /// <summary>
+  /// Annotation op: replace the entry named in the annotation body with the
+  /// payload bytes that follow. Payload is stored uncompressed inside the
+  /// annotation record itself (so a Replace tombstone is self-contained).
+  /// </summary>
+  public const byte AnnotationOpReplace = 0x02;
+
   // Compression byte (offset 3 of the file/partition header).
   public const byte CompressionNone = 0;
   public const byte CompressionOld = 1;
@@ -94,6 +121,22 @@ internal sealed class GhostRecord {
 
 /// <summary>One contiguous compressed-data span between record headers.</summary>
 internal readonly record struct GhostSpan(long DataStart, long DataEnd);
+
+/// <summary>
+/// A CompressionWorkbench annotation parsed off the wire — the in-place
+/// modifier appends one of these per Remove / Replace call so the existing
+/// partition bytes can stay byte-identical at their original offsets.
+/// </summary>
+public sealed class GhostAnnotation {
+  /// <summary>Operation code: <see cref="GhostConstants.AnnotationOpRemove"/> or <see cref="GhostConstants.AnnotationOpReplace"/>.</summary>
+  public byte Op { get; init; }
+
+  /// <summary>The entry name the annotation targets (e.g. <c>partition1.bin</c>).</summary>
+  public string TargetName { get; init; } = "";
+
+  /// <summary>Replacement bytes (empty for Remove ops).</summary>
+  public byte[] Payload { get; init; } = [];
+}
 
 /// <summary>
 /// Per-partition metadata + compressed-data spans (a partition's blocks

@@ -39,14 +39,14 @@ namespace FileFormat.Ghost;
 /// extension hint (<c>.gho</c> / <c>.ghs</c>) to disambiguate.
 /// </para>
 /// </remarks>
-public sealed class GhostFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class GhostFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 
   public string Id => "Ghost";
   public string DisplayName => "Symantec / Norton Ghost";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".gho";
   public IReadOnlyList<string> Extensions => [".gho", ".ghs"];
@@ -68,8 +68,15 @@ public sealed class GhostFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     "Norton lineage (Ghost 3.0 / 1998 through Ghost 11.x / 12.x). " +
     "0x012F18D8 record framing, Fast LZ Z1 + zlib " +
     "Z3-Z9 compression, CRC-16 stream cipher encryption, .ghs spanning. " +
-    "Modify is rebuild-based — the source image's compression mode + " +
-    "encryption state are preserved across Add/Remove/Replace. Format " +
+    "Modify is TRUE in-place append via the record stream: Add overwrites the " +
+    "trailing end-of-image record (type 0x0023) with new partition / track-0 " +
+    "records and re-emits the end record at the new EOF, leaving every byte " +
+    "BEFORE the original end-record offset byte-identical. Replace + Remove " +
+    "append annotation tombstones (CWB GHO1-magic record type 0x00FE) that the " +
+    "reader honours via latest-write-wins. Each partition opens a fresh CRC-16 " +
+    "cipher seeded from the password (per spec) so appending new partitions " +
+    "needs no end-of-stream cipher snapshot. Forensic-delete callers go through " +
+    "the legacy rebuild-based GhostModifier instead. Format " +
     "reverse-engineered from Norton Ghost 11.5.1 binaries (ported from " +
     "MIT-licensed nyarime/gho) and independently cross-confirmed against " +
     "Symantec Ghost Explorer 2003.789 — the Fast LZ \"123456789012345678\" hash " +
@@ -169,11 +176,46 @@ public sealed class GhostFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     w.WriteEnd();
   }
 
-  // Modify is NOT wired through IArchiveModifiable. Rebuild-based add/remove
-  // (extract → mutate → re-create) is functionally available via the static
-  // GhostModifier helpers and is what the CLI/UI uses to make Ghost appear
-  // R/W at the call site — but the format itself stays WORM because
-  // untouched bytes are not preserved at their original offsets.
+  // ── IArchiveModifiable ──────────────────────────────────────────────
+
+  /// <summary>
+  /// True in-place append. Existing partition / track-0 / FEEF / compressed-
+  /// block bytes stay byte-identical at their original offsets — only the
+  /// trailing end-of-image record (type 0x0023) is overwritten and re-emitted
+  /// at the new EOF. Synthetic reader-only entries (<c>metadata.ini</c>,
+  /// <c>*.error.txt</c>) are filtered out so they never round-trip back as
+  /// records. The encryption flag and compression method of the existing
+  /// image are preserved; for encrypted images callers must use the
+  /// <see cref="GhostInPlaceModifier.Add"/> overload that accepts a password.
+  /// </summary>
+  void IArchiveModifiable.Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var filtered = inputs.Where(i => !IsSyntheticInputName(i.ArchiveName)).ToList();
+    GhostInPlaceModifier.Add(archive, filtered, password: null);
+  }
+
+  /// <summary>
+  /// Appends a REMOVE annotation tombstone per entry name. Existing record
+  /// bytes stay byte-identical at their original offsets; the modified
+  /// reader interprets the tombstones and skips the named entries. Callers
+  /// needing forensic deletion (no recoverable trace of the original bytes)
+  /// must go through the rebuild-based <see cref="GhostModifier.Remove"/>.
+  /// </summary>
+  void IArchiveModifiable.Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames)
+      GhostInPlaceModifier.Remove(archive, name, password: null);
+  }
+
+  private static bool IsSyntheticInputName(string name)
+    => name.Equals("metadata.ini", StringComparison.OrdinalIgnoreCase)
+       || name.Equals("ghost-image.gho.bin", StringComparison.OrdinalIgnoreCase)
+       || name.Equals("ghost-image.ghs.bin", StringComparison.OrdinalIgnoreCase)
+       || name.Equals("dump-head.bin", StringComparison.OrdinalIgnoreCase)
+       || name.Equals("dump-body.bin", StringComparison.OrdinalIgnoreCase)
+       || name.EndsWith(".error.txt", StringComparison.OrdinalIgnoreCase);
 
   private static byte MapMethodName(string? name) => name?.ToLowerInvariant() switch {
     null or "" or "fastlz" or "fast" or "z1" => GhostConstants.CompressionFast,

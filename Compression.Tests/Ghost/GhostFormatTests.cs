@@ -57,7 +57,8 @@ public class GhostFormatTests {
     Assert.That(d.Category, Is.EqualTo(FormatCategory.Archive));
     Assert.That(d.Family, Is.EqualTo(AlgorithmFamily.Archive));
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
-    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>());
+    Assert.That(d, Is.InstanceOf<IArchiveModifiable>(),
+      "Ghost 3.0+ is in-place R/W via the record-stream append flow exposed by GhostInPlaceModifier.");
   }
 
   [Test, Category("HappyPath")]
@@ -67,7 +68,8 @@ public class GhostFormatTests {
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.SupportsPassword), Is.True);
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
+      "Ghost 3.0+ is in-place R/W via the record-stream append flow.");
   }
 
   [Test, Category("HappyPath")]
