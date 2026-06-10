@@ -263,7 +263,11 @@ public class Yaffs2Tests {
     var image = w.Build();
 
     var d = new FileSystem.Yaffs2.Yaffs2FormatDescriptor();
-    using var ms = new MemoryStream(image);
+    // Use an expandable MemoryStream — YAFFS2 in-place delete is log-structured
+    // and appends a tombstone header at the tail (image grows by one stride).
+    using var ms = new MemoryStream();
+    ms.Write(image);
+    ms.Position = 0;
     d.Remove(ms, ["delete.txt"]);
 
     ms.Position = 0;

@@ -11,7 +11,18 @@ namespace FileSystem.Yaffs2;
 /// <summary>
 /// R/W descriptor for YAFFS2 raw-NAND images. Auto-detects chunk/spare
 /// layout, surfaces an object table and reconstructed file tree.
-/// Supports: list, extract, create (WORM), modify (rebuild-based), defragment, extent map.
+/// <para>
+/// <b>Modify semantics — true in-place, log-structured.</b> YAFFS2 is a
+/// log-structured flash filesystem by spec: modifying a file means appending
+/// fresh chunks at the next free position with a higher seqNumber, never
+/// rewriting an existing chunk on the medium. <see cref="Add"/> and
+/// <see cref="Remove"/> route through <see cref="Yaffs2InPlaceModifier"/>,
+/// which appends at <see cref="Stream.Length"/> and never touches bytes in
+/// <c>[0, oldLength)</c>. The scanner resolves the live view by keeping the
+/// chunk with the highest seqNumber per (objectId, chunkId), and treats a
+/// header with <c>parent_obj_id == 0xFFFFFFFE</c> as a tombstone.
+/// </para>
+/// Supports: list, extract, create, in-place modify, defragment, extent map.
 /// </summary>
 public sealed class Yaffs2FormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
@@ -157,13 +168,34 @@ public sealed class Yaffs2FormatDescriptor
     w.WriteTo(output);
   }
 
-  // ── IArchiveModifiable (rebuild-based) ────────────────────────────────
+  // ── IArchiveModifiable (TRUE in-place, log-structured) ────────────────
+  //
+  // Per the YAFFS2 spec, these append fresh chunks at the image tail with a
+  // higher seqNumber. Existing chunks in [0, oldLength) stay byte-identical;
+  // the scanner's seqNumber-max filter resolves the live view. Add detects
+  // name collisions and routes them through Replace.
 
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs, ReadFileEntries, BuildImage);
+    => Yaffs2InPlaceModifier.Add(archive, inputs);
 
-  public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames, ReadFileEntries, BuildImage);
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames) {
+      if (string.IsNullOrEmpty(name)) continue;
+      // Tolerate the "files/" prefix the descriptor uses on extract.
+      var bare = name.StartsWith("files/", StringComparison.Ordinal) ? name[6..] : name;
+      // Tolerate full nested paths by mapping to the leaf — the in-place modifier
+      // matches root-level objects by leaf name.
+      var leaf = Path.GetFileName(bare);
+      if (string.IsNullOrEmpty(leaf)) continue;
+      try {
+        Yaffs2InPlaceModifier.Remove(archive, leaf);
+      } catch (InvalidOperationException) {
+        // No live object by that name — silently skip, matching the rebuild path's behavior.
+      }
+    }
+  }
 
   // ── IArchiveDefragmentable ────────────────────────────────────────────
 

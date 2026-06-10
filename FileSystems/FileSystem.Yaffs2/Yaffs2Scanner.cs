@@ -136,40 +136,107 @@ internal static class Yaffs2Scanner {
     }
   }
 
+  /// <summary>Sentinel parent id signalling "this object has been deleted".
+  /// Matches <see cref="Yaffs2InPlaceModifier.TombstoneParentId"/> so a tombstone
+  /// header written by the in-place modifier is recognised here.</summary>
+  internal const int TombstoneParentId = unchecked((int)0xFFFFFFFE);
+
   private static void DecodeAll(ReadOnlySpan<byte> image, int chunkSize, int spareSize, ScanResult result) {
     var stride = chunkSize + spareSize;
-    // First pass: collect headers.
-    // Spare layout (packed oob) that yaffs_mkyaffs2image emits (simplified):
-    //   u16 seq_number, ? — we mainly look for chunk_id + obj_id.
-    // Common yaffs2 packed tags layout (32 bytes):
+    // YAFFS2 is log-structured. The same (objectId, chunkId) may appear multiple
+    // times — each with a distinct seqNumber. The chunk with the HIGHEST
+    // seqNumber wins; older copies are obsolete but stay byte-identical at their
+    // original offsets until garbage collection.
+    //
+    // For object headers (chunkId == 0) this lets the in-place modifier emit
+    // tombstones (header with parentId == TombstoneParentId) without touching
+    // old bytes — the latest-wins rule collapses the object's view to "gone".
+    //
+    // For data chunks (chunkId > 0) this lets the modifier rewrite parts of a
+    // file by appending a fresh chunk at the next free slot. Older versions
+    // remain on the medium but are filtered out here.
+    //
+    // Spare layout (packed_tags2, 32 bytes):
     //   seq_number  u32  offset 0
     //   obj_id      u32  offset 4
     //   chunk_id    u32  offset 8
     //   n_bytes     u32  offset 12
     //   ecc[3]      u32x3 offset 16..28
-    // Chunk with chunk_id == 0 is an object header.
+    var headers = new Dictionary<int, (uint Seq, HeaderRaw Hdr)>();
+    var dataChunks = new Dictionary<(int ObjId, int ChunkId), (uint Seq, byte[] Bytes)>();
+    var fallbackHeaderCounter = 2;
+
     for (var off = 0; off + stride <= image.Length; off += stride) {
       var chunk = image.Slice(off, chunkSize);
       var spare = image.Slice(off + chunkSize, spareSize);
-      var (objId, chunkId, nBytes) = ParseSpare(spare);
+      var (seqNumber, objId, chunkId, nBytes) = ParseSpareWithSeq(spare);
 
       if (chunkId == 0) {
         var hdr = ParseHeader(chunk);
         if (hdr == null) continue;
-        var effectiveObjId = objId != 0 ? objId : (result.Objects.Count + 2); // rough fallback
-        result.Objects.Add(new ObjectEntry(
-          ObjectId: effectiveObjId,
-          ParentId: hdr.ParentId,
-          Type: hdr.Type,
-          Name: hdr.Name,
-          Size: hdr.Size));
+        var effectiveObjId = objId != 0 ? objId : fallbackHeaderCounter++;
+        // Latest-wins per objectId by seqNumber. Ties: last writer in image order
+        // wins, matching log-append order on real flash.
+        if (!headers.TryGetValue(effectiveObjId, out var existing) || seqNumber >= existing.Seq)
+          headers[effectiveObjId] = (seqNumber, hdr);
       } else if (objId != 0 && nBytes > 0 && nBytes <= chunkSize) {
-        if (!result.DataChunks.TryGetValue(objId, out var list)) {
-          list = [];
-          result.DataChunks[objId] = list;
-        }
-        list.Add(chunk.Slice(0, (int)Math.Min(nBytes, chunk.Length)).ToArray());
+        var key = (objId, chunkId);
+        var payload = chunk.Slice(0, (int)Math.Min(nBytes, chunk.Length)).ToArray();
+        if (!dataChunks.TryGetValue(key, out var existing) || seqNumber >= existing.Seq)
+          dataChunks[key] = (seqNumber, payload);
       }
+    }
+
+    // Emit objects in objectId order so callers see a stable layout.
+    var sortedHeaders = headers.OrderBy(kv => kv.Key).ToList();
+    foreach (var (objectId, (_, hdr)) in sortedHeaders) {
+      // Tombstone: header with parent id == TombstoneParentId means the object
+      // has been deleted. Skip it (and its data chunks) entirely.
+      if (hdr.ParentId == TombstoneParentId) continue;
+      result.Objects.Add(new ObjectEntry(
+        ObjectId: objectId,
+        ParentId: hdr.ParentId,
+        Type: hdr.Type,
+        Name: hdr.Name,
+        Size: hdr.Size));
+    }
+
+    // Build per-object data chunk lists, bounded by the file's declared size so
+    // shrinking replacements correctly drop now-stale tail chunks of the prior
+    // version. Chunks are emitted in chunkId order for deterministic reads.
+    var liveObjectIds = new Dictionary<int, HeaderRaw>();
+    foreach (var (objectId, (_, hdr)) in sortedHeaders)
+      if (hdr.ParentId != TombstoneParentId)
+        liveObjectIds[objectId] = hdr;
+
+    foreach (var group in dataChunks
+               .Where(kv => liveObjectIds.ContainsKey(kv.Key.ObjId))
+               .GroupBy(kv => kv.Key.ObjId)) {
+      var hdr = liveObjectIds[group.Key];
+      // Cap at ceil(size / chunkSize). Files of size 0 carry no data chunks.
+      var maxChunkId = hdr.Size <= 0 ? 0 : (int)((hdr.Size + chunkSize - 1) / chunkSize);
+      var ordered = group
+        .Where(kv => kv.Key.ChunkId <= maxChunkId)
+        .OrderBy(kv => kv.Key.ChunkId)
+        .Select(kv => kv.Value.Bytes)
+        .ToList();
+      if (ordered.Count > 0)
+        result.DataChunks[group.Key] = ordered;
+    }
+  }
+
+  private static (uint Seq, int ObjId, int ChunkId, uint NBytes) ParseSpareWithSeq(ReadOnlySpan<byte> spare) {
+    if (spare.Length < 16) return (0, 0, 0, 0);
+    try {
+      var seq = BinaryPrimitives.ReadUInt32LittleEndian(spare.Slice(0, 4));
+      var objId = BinaryPrimitives.ReadInt32LittleEndian(spare.Slice(4, 4));
+      var chunkId = BinaryPrimitives.ReadInt32LittleEndian(spare.Slice(8, 4));
+      var nBytes = BinaryPrimitives.ReadUInt32LittleEndian(spare.Slice(12, 4));
+      if (objId is < 0 or > 1_000_000) objId = 0;
+      if (chunkId is < 0 or > 1_000_000) chunkId = 0;
+      return (seq, objId, chunkId, nBytes);
+    } catch {
+      return (0, 0, 0, 0);
     }
   }
 
