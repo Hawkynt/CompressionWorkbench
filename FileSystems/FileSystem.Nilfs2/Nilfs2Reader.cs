@@ -90,20 +90,34 @@ public sealed class Nilfs2Reader : IDisposable {
     _entries.Add(new Nilfs2Entry { Name = "metadata.ini", Size = meta.Length,   IsDirectory = false, Data = meta });
     _entries.Add(new Nilfs2Entry { Name = "superblock.bin", Size = sbBytes.Length, IsDirectory = false, Data = sbBytes });
 
-    // If the image carries our writer magic at SegmentStart, parse the compact
-    // directory + payload region and surface real files alongside the triage
-    // entries. Spec NILFS2 walks DAT/SUFile/CPFile/IFile — multi-week — so we
-    // accept self-round-trip via a writer-private layout instead.
-    TryParseWriterDirectory();
+    // Collect every (cno, name, payload-or-tombstone) record across the
+    // writer-private directory (cno = 1 by construction) and every appended
+    // log segment ("NILFS2SG" blocks). Highest cno per name wins; tombstones
+    // drop the entry from the listing — matches the NILFS2 spec semantic of
+    // walking the segment chain and surfacing the latest checkpoint state.
+    var versions = new Dictionary<string, (ulong Cno, bool Tombstone, byte[] Data)>(StringComparer.Ordinal);
+    TryParseWriterDirectory(versions);
+    ParseAppendedSegments(versions);
+
+    foreach (var (name, record) in versions) {
+      if (record.Tombstone) continue;
+      _entries.Add(new Nilfs2Entry {
+        Name = name,
+        Size = record.Data.LongLength,
+        IsDirectory = false,
+        Data = record.Data,
+      });
+    }
   }
 
   /// <summary>
   /// Reads the writer-private compact directory at <see cref="Nilfs2Writer.SegmentStart"/>
-  /// when present. Format: 8-byte <see cref="Nilfs2Writer.WriterMagic"/>, 8-byte
-  /// directory size, then (u32 name_len, name, u64 payload_offset, u64 size)
-  /// records.
+  /// when present and folds its entries into <paramref name="versions"/> at
+  /// cno=1 (the base checkpoint baked in by the writer). Format: 8-byte
+  /// <see cref="Nilfs2Writer.WriterMagic"/>, 8-byte directory size, then
+  /// (u32 name_len, name, u64 payload_offset, u64 size) records.
   /// </summary>
-  private bool TryParseWriterDirectory() {
+  private bool TryParseWriterDirectory(Dictionary<string, (ulong Cno, bool Tombstone, byte[] Data)> versions) {
     if (_data.Length < Nilfs2Writer.SegmentStart + Nilfs2Writer.WriterMagic.Length + 8) return false;
     var seg = _data.AsSpan(Nilfs2Writer.SegmentStart);
     if (!seg.Slice(0, Nilfs2Writer.WriterMagic.Length).SequenceEqual(Nilfs2Writer.WriterMagic)) return false;
@@ -127,14 +141,81 @@ public sealed class Nilfs2Reader : IDisposable {
       cursor += 8;
       if (size < 0 || off < 0 || payloadStart + off + size > _data.Length) break;
       var data = _data.AsSpan(payloadStart + (int)off, (int)size).ToArray();
-      _entries.Add(new Nilfs2Entry {
-        Name = name,
-        Size = size,
-        IsDirectory = false,
-        Data = data,
-      });
+      // Base writer directory is the cno=1 checkpoint; later appended segments
+      // can supersede with higher cno.
+      versions[name] = (Cno: 1ul, Tombstone: false, Data: data);
     }
     return true;
+  }
+
+  /// <summary>
+  /// Walks every appended "NILFS2SG" log segment in the image and folds its
+  /// entries into <paramref name="versions"/>. Higher-cno records supersede
+  /// lower-cno ones; tombstone records mark the entry as deleted (the caller
+  /// drops tombstones from the final listing). This is the spec-canonical
+  /// continuous-snapshot replay semantic NILFS2 uses on mount.
+  /// </summary>
+  private void ParseAppendedSegments(Dictionary<string, (ulong Cno, bool Tombstone, byte[] Data)> versions) {
+    if (_data.Length < Nilfs2Writer.SegmentStart) return;
+    // The writer's private region starts at SegmentStart; appended segments
+    // live past it. Find the start of the first appended segment by scanning
+    // forward for the NILFS2SG magic.
+    var searchStart = Nilfs2Writer.SegmentStart;
+    var magic = Nilfs2Writer.SegmentMagic;
+    var p = searchStart;
+    while (p + magic.Length + 24 <= _data.Length) {
+      if (!_data.AsSpan(p, magic.Length).SequenceEqual(magic)) {
+        ++p;
+        continue;
+      }
+      // Found a segment header. Parse it.
+      var hdr = _data.AsSpan(p);
+      var cno = BinaryPrimitives.ReadUInt64LittleEndian(hdr[magic.Length..]);
+      var entryCount = BinaryPrimitives.ReadInt64LittleEndian(hdr[(magic.Length + 8)..]);
+      var dirSize = BinaryPrimitives.ReadInt64LittleEndian(hdr[(magic.Length + 16)..]);
+      var dirStart = p + magic.Length + 24;
+      if (dirSize < 0 || dirStart + dirSize > _data.Length || entryCount < 0 || entryCount > _data.Length) {
+        ++p;
+        continue;
+      }
+      var payloadStart = dirStart + (int)dirSize;
+      var cursor = dirStart;
+      var dirEnd = dirStart + (int)dirSize;
+      var consumedPayload = 0L;
+      var parsedOk = true;
+      for (var i = 0L; i < entryCount; ++i) {
+        if (cursor + 4 > dirEnd) { parsedOk = false; break; }
+        var nameLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(cursor));
+        cursor += 4;
+        if (nameLen <= 0 || cursor + nameLen + 1 + 16 > dirEnd) { parsedOk = false; break; }
+        var name = Encoding.UTF8.GetString(_data.AsSpan(cursor, nameLen));
+        cursor += nameLen;
+        var tombstone = _data[cursor] != 0;
+        cursor += 1;
+        var off = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(cursor));
+        cursor += 8;
+        var size = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(cursor));
+        cursor += 8;
+        if (size < 0 || off < 0) { parsedOk = false; break; }
+        byte[] data;
+        if (tombstone || size == 0) {
+          data = [];
+        } else {
+          if (payloadStart + off + size > _data.Length) { parsedOk = false; break; }
+          data = _data.AsSpan(payloadStart + (int)off, (int)size).ToArray();
+          consumedPayload = Math.Max(consumedPayload, off + size);
+        }
+        // Higher-cno records win; tombstone is just a flag that survives the merge.
+        if (!versions.TryGetValue(name, out var prev) || cno >= prev.Cno)
+          versions[name] = (Cno: cno, Tombstone: tombstone, Data: data);
+      }
+      if (!parsedOk) {
+        ++p;
+        continue;
+      }
+      // Advance past this segment.
+      p = payloadStart + (int)consumedPayload;
+    }
   }
 
   private byte[] BuildMetadata() {

@@ -100,10 +100,12 @@ public class Nilfs2Tests {
   }
 
   [Test, Category("HappyPath")]
-  public void Descriptor_IsWormCreatable() {
+  public void Descriptor_IsRwCapable() {
     var d = new FileSystem.Nilfs2.Nilfs2FormatDescriptor();
-    Assert.That(d, Is.InstanceOf<IArchiveCreatable>(),
-      "NILFS2 now ships single-checkpoint WORM (spec-compliant superblock + writer-private directory).");
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
+    Assert.That(d, Is.InstanceOf<IArchiveModifiable>(),
+      "NILFS2 ships R/W via continuous-snapshot segment-log append + last-cno bump.");
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
   }
 }

@@ -42,8 +42,24 @@ public sealed class Nilfs2Writer {
   /// </summary>
   internal static readonly byte[] WriterMagic = "NILFS2WB"u8.ToArray();
 
+  /// <summary>
+  /// Magic that prefixes each appended log-segment block written by
+  /// <c>Nilfs2InPlaceModifier</c>. Each segment carries a u64 checkpoint number
+  /// + a directory + a payload region. The reader merges all segments by
+  /// highest-cno-per-name; tombstones drop entries from the listing. This is
+  /// the load-bearing primitive that lets NILFS2 advertise R/W with the
+  /// continuous-snapshot byte-identical-old-segment invariant intact.
+  /// </summary>
+  internal static readonly byte[] SegmentMagic = "NILFS2SG"u8.ToArray();
+
   /// <summary>Where the writer's directory + payload region begins.</summary>
   internal const int SegmentStart = 2048;
+
+  /// <summary>Superblock offset on disk (NILFS2 spec).</summary>
+  internal const int SuperblockOffsetOnDisk = 1024;
+
+  /// <summary>Offset of <c>s_last_cno</c> field within the superblock.</summary>
+  internal const int LastCnoFieldOffset = 0x38;
 
   private const ushort SuperMagic = 0x3434;
   private const int SuperblockOffset = 1024;
