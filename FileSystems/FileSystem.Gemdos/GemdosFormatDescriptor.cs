@@ -28,14 +28,14 @@ namespace FileSystem.Gemdos;
 /// and on-disk layout.</para>
 /// </summary>
 public sealed class GemdosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
+    IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
 
   public string Id => "Gemdos";
   public string DisplayName => "GEMDOS (Atari ST)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsDirectories |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsDirectories |
     FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".st";
   public IReadOnlyList<string> Extensions => [".st", ".stx", ".dim"];
@@ -156,6 +156,32 @@ public sealed class GemdosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       volumeLabel: string.IsNullOrEmpty(label) ? null : label);
     output.Write(disk);
   }
+
+  /// <summary>
+  /// Adds — or replaces by name — files in an existing GEMDOS image.
+  /// Delegates to <see cref="GemdosInPlaceModifier.AddFiles"/> which
+  /// re-packs the image with the existing files plus the new ones
+  /// while preserving the 0x60 BRA.S jump byte.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var pairs = new List<(string Name, byte[] Data)>();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      pairs.Add((input.ArchiveName, input.ReadContent()));
+    }
+    GemdosInPlaceModifier.AddFiles(archive, pairs);
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing GEMDOS image. Delegates
+  /// to <see cref="GemdosInPlaceModifier.RemoveFiles"/> which wipes all
+  /// on-disk traces (data clusters, cluster-tip slack, directory entries,
+  /// FAT chain entries) while preserving the 0x60 BRA.S jump byte.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames)
+    => GemdosInPlaceModifier.RemoveFiles(archive, entryNames);
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => GemdosExtentMap.Enumerate(image);

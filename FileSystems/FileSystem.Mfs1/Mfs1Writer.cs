@@ -4,170 +4,176 @@ using System.Text;
 namespace FileSystem.Mfs1;
 
 /// <summary>
-/// WORM writer for Acorn MFS-1 (Master File System v1) disk images. MFS-1
-/// inherits the on-disk DFS catalog layout verbatim — 256-byte sectors, the
-/// two-sector catalog at sectors 0-1, up to 31 entries of (7-char filename +
-/// 1-char directory letter) packed in sector 0 with the matching metadata in
-/// sector 1 (load/exec/length plus the packed high-bits byte and start sector).
+/// Builds Acorn MFS-1 (Master File System v1) disk images. MFS-1 inherits
+/// the DFS on-disk catalog: 256-byte sectors, a 2-sector catalog at track 0,
+/// up to 31 entries, files stored contiguously from sector 2 onwards.
+///
+/// <para>
+/// Catalog layout (from <see cref="Mfs1Reader"/>):
+///   sector 0, bytes 0..7   — disk title (first 8 chars)
+///   sector 0, bytes 8..255 — up to 31 × 8-byte name entries
+///                            (7 ASCII chars + 1 directory char, high bit = locked)
+///   sector 1, bytes 0..3   — disk title (last 4 chars)
+///   sector 1, byte 5       — entry count × 8 (i.e. byte offset of the next free slot)
+///   sector 1, bytes 8..255 — up to 31 × 8-byte metadata entries:
+///                            load_lo(2) + exec_lo(2) + length_lo(2) +
+///                            packed_high_bits(1) + start_sector_lo(1)
+///   packed_high_bits bits: 0-1 start_sector_hi, 2-3 load_hi,
+///                          4-5 length_hi, 6-7 exec_hi.
+/// </para>
+/// <para>
+/// Files are stored contiguously from sector 2 onwards in catalog-insertion
+/// order; the catalog itself is sorted by descending start-sector per DFS
+/// convention (the most-recently-added file appears first). Total image
+/// size defaults to 80 tracks × 10 sectors × 256 bytes = 200 KB (a Master
+/// 80-track SSD image); pass <c>totalSectors</c> to <see cref="Build"/> to
+/// choose a different geometry.
+/// </para>
 /// </summary>
-/// <remarks>
-/// <para>
-/// The writer reproduces the documented spec exactly so the existing
-/// <see cref="Mfs1Reader"/> can round-trip every emitted image: same title
-/// layout, same per-entry packed-high-bits encoding, same sector-2 file-data
-/// origin. File data is laid out as contiguous extents starting at sector 2
-/// in catalog order; the image is sized to the smallest 10-sector-aligned
-/// length that covers the highest data sector.
-/// </para>
-/// <para>
-/// Limits enforced (from the format itself):
-/// <list type="bullet">
-///   <item>Up to 31 files in the catalog (per DFS).</item>
-///   <item>Filename: up to 7 printable ASCII characters, uppercased.</item>
-///   <item>Directory letter: single printable ASCII (defaults to <c>$</c>).</item>
-///   <item>Per-file length: 18 bits (256 KiB) by virtue of the packed-high-bits encoding.</item>
-///   <item>Start sector: 10 bits (1024) — covers a single-density Acorn disc.</item>
-/// </list>
-/// </para>
-/// </remarks>
 public sealed class Mfs1Writer {
 
-  private const int SectorSize = Mfs1Reader.SectorSize;
-  private const int SectorsPerTrack = Mfs1Reader.SectorsPerTrack;
-  private const int MaxEntries = Mfs1Reader.MaxEntries;
-  private const int DataOriginSector = 2;
+  public const int SectorSize = Mfs1Reader.SectorSize;
+  public const int MaxEntries = Mfs1Reader.MaxEntries;
+  public const int DefaultTotalSectors = 800;    // 80 tracks × 10 sectors
 
-  private readonly List<(string Name, char Directory, byte[] Data)> _files = [];
-  private string _title = "MFS1DISK";
+  private readonly List<(string Name, char Dir, byte[] Data, bool Locked, uint LoadAddr, uint ExecAddr)> _files = [];
 
-  /// <summary>Sets the 12-character disc title (excess is truncated, fewer chars are space-padded).</summary>
-  public Mfs1Writer SetTitle(string title) {
-    ArgumentNullException.ThrowIfNull(title);
-    this._title = title;
-    return this;
+  /// <summary>Adds a file to the volume.</summary>
+  public void AddFile(string name, byte[] data, char directory = '$',
+                      bool locked = false, uint loadAddress = 0, uint execAddress = 0) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(data);
+    var (cleanName, cleanDir) = SanitizeName(name, directory);
+    this._files.Add((cleanName, cleanDir, data, locked, loadAddress, execAddress));
   }
 
   /// <summary>
-  /// Adds a file to the catalog. <paramref name="archiveName"/> may carry a
-  /// directory prefix as <c>"DIR.NAME"</c> (DFS convention) — the part before
-  /// the first <c>.</c> becomes the directory letter; otherwise the directory
-  /// defaults to <c>$</c>. The filename is uppercased and padded to 7 chars.
+  /// Builds the MFS-1 image. The catalog is laid out per the DFS convention:
+  /// entries are sorted by descending start-sector so the most recently
+  /// added file appears at index 0.
   /// </summary>
-  public Mfs1Writer AddFile(string archiveName, byte[] data) {
-    ArgumentNullException.ThrowIfNull(archiveName);
-    ArgumentNullException.ThrowIfNull(data);
+  /// <param name="diskTitle">12-char volume title (default "WORM").</param>
+  /// <param name="totalSectors">Total sectors at 256 B each (default 800 = 200 KB).</param>
+  public byte[] Build(string diskTitle = "WORM", int totalSectors = DefaultTotalSectors) {
+    if (this._files.Count > MaxEntries)
+      throw new InvalidOperationException(
+        $"MFS-1: catalog holds at most {MaxEntries} entries (got {this._files.Count}).");
+    if (totalSectors < 2)
+      throw new ArgumentOutOfRangeException(nameof(totalSectors),
+        "MFS-1: image must hold at least the 2-sector catalog.");
 
-    var (dir, name) = SplitDfsName(archiveName);
-    if (name.Length == 0) throw new ArgumentException("MFS-1: empty filename.", nameof(archiveName));
-    if (name.Length > 7) throw new ArgumentException($"MFS-1: filename '{name}' exceeds 7 characters.", nameof(archiveName));
-    foreach (var c in name)
-      if (c is < (char)0x20 or > (char)0x7E)
-        throw new ArgumentException($"MFS-1: filename '{name}' contains non-printable ASCII.", nameof(archiveName));
-    if (dir is < (char)0x20 or > (char)0x7E)
-      throw new ArgumentException($"MFS-1: directory letter '{dir}' is not printable ASCII.", nameof(archiveName));
-    if (data.Length > 0x3FFFF)
-      throw new ArgumentException(
-        $"MFS-1: file '{name}' is {data.Length} bytes; DFS packed-high-bits length cap is 256 KiB.", nameof(data));
-
-    if (this._files.Count >= MaxEntries)
-      throw new InvalidOperationException($"MFS-1: catalog full ({MaxEntries} entries).");
-
-    this._files.Add((name.ToUpperInvariant(), char.ToUpperInvariant(dir), data));
-    return this;
-  }
-
-  /// <summary>Builds the full MFS-1 image bytes.</summary>
-  public byte[] Build() {
-    // Allocate space for catalog (2 sectors) + each file contiguously from sector 2.
-    var nextSector = DataOriginSector;
-    var layout = new int[this._files.Count];
-    for (var i = 0; i < this._files.Count; i++) {
-      layout[i] = nextSector;
-      var len = this._files[i].Data.Length;
-      var sectors = (len + SectorSize - 1) / SectorSize;
-      if (sectors == 0) sectors = 0; // zero-length still gets a recorded start sector but no data sectors
-      nextSector += sectors;
+    // Lay out files contiguously from sector 2 onwards in insertion order.
+    var laidOut = new List<(string Name, char Dir, byte[] Data, bool Locked, uint LoadAddr, uint ExecAddr, int StartSector)>();
+    var nextSector = 2;
+    foreach (var f in this._files) {
+      var sectorsNeeded = (f.Data.Length + SectorSize - 1) / SectorSize;
+      if (sectorsNeeded == 0) sectorsNeeded = 1;  // a zero-byte file still reserves one sector
+      laidOut.Add((f.Name, f.Dir, f.Data, f.Locked, f.LoadAddr, f.ExecAddr, nextSector));
+      nextSector += sectorsNeeded;
     }
 
-    // Sanity bound — single-density Acorn discs cap at sector 0x3FF (1024) by
-    // virtue of the packed-high-bits encoding.
-    if (nextSector > 0x3FF)
+    if (nextSector > totalSectors)
       throw new InvalidOperationException(
-        $"MFS-1: layout requires sector {nextSector}, exceeds 10-bit start-sector encoding (max 1023).");
+        $"MFS-1: combined file size needs {nextSector - 2} data sectors but only {totalSectors - 2} are available.");
 
-    // Round image length up to a full track so it matches a real Acorn disc.
-    var totalSectors = Math.Max(DataOriginSector, nextSector);
-    if (totalSectors % SectorsPerTrack != 0)
-      totalSectors += SectorsPerTrack - totalSectors % SectorsPerTrack;
     var image = new byte[totalSectors * SectorSize];
 
-    // ── Title (12 chars: 8 in sector 0, 4 in sector 1, space-padded) ──────
-    Span<byte> title = stackalloc byte[12];
-    title.Fill((byte)' ');
-    var titleBytes = Encoding.ASCII.GetBytes(this._title);
-    var n = Math.Min(titleBytes.Length, 12);
-    titleBytes.AsSpan(0, n).CopyTo(title);
-    title[..8].CopyTo(image.AsSpan(0, 8));
-    title.Slice(8, 4).CopyTo(image.AsSpan(SectorSize, 4));
+    // Title bytes: first 8 in sector 0 (offset 0), last 4 in sector 1 (offset 0).
+    var title = (diskTitle ?? "").PadRight(12, ' ');
+    if (title.Length > 12) title = title[..12];
+    for (var i = 0; i < 8; i++) image[i] = (byte)title[i];
+    for (var i = 0; i < 4; i++) image[SectorSize + i] = (byte)title[8 + i];
 
-    // ── Sector 1 byte 5: entry-count * 8 ──────────────────────────────────
-    image[SectorSize + 5] = (byte)(this._files.Count * 8);
+    // DFS convention: catalog sorted by descending start-sector so the
+    // most recently added file (highest sector) comes first.
+    var sorted = laidOut.OrderByDescending(e => e.StartSector).ToList();
 
-    // Sector 1 bytes 6-7: cycle number + (option, sector-count-high). We leave
-    // option=0; sector count low at byte 7, high two bits at byte 6 bits 0-1.
-    var totalLogicalSectors = (uint)totalSectors;
-    image[SectorSize + 6] = (byte)((totalLogicalSectors >> 8) & 0x03);
-    image[SectorSize + 7] = (byte)(totalLogicalSectors & 0xFF);
+    // Sector 1, byte 5 — entry count × 8.
+    image[SectorSize + 5] = (byte)(sorted.Count * 8);
+    // Sector 1, byte 4 — sometimes used as cycle number; left zero.
+    // Sector 1, bytes 6-7 — total sector count in DFS (low byte at +7, high nibble in +6 low nibble).
+    // Encode total sectors per DFS spec: bottom 8 bits in byte 7, top 2 bits in low nibble of byte 6.
+    var totalLo = (byte)(totalSectors & 0xFF);
+    var totalHi = (byte)((totalSectors >> 8) & 0x03);
+    image[SectorSize + 6] = totalHi;
+    image[SectorSize + 7] = totalLo;
 
-    // ── Catalog entries ───────────────────────────────────────────────────
-    Span<byte> nameSpan = stackalloc byte[7];
-    for (var i = 0; i < this._files.Count; i++) {
-      var (name, dirLetter, data) = this._files[i];
+    for (var i = 0; i < sorted.Count; i++) {
+      var entry = sorted[i];
+
+      // Sector 0 name slot at byte 8 + i*8.
       var nameOff = 8 + i * 8;
+      var nameBytes = Encoding.ASCII.GetBytes(entry.Name.PadRight(7, ' '));
+      for (var b = 0; b < 7; b++) image[nameOff + b] = nameBytes[b];
+      var dirByte = (byte)(entry.Dir & 0x7F);
+      if (entry.Locked) dirByte |= 0x80;
+      image[nameOff + 7] = dirByte;
+
+      // Sector 1 metadata slot at byte 8 + i*8 (i.e. SectorSize + 8 + i*8).
       var metaOff = SectorSize + 8 + i * 8;
+      var loadLo = (ushort)(entry.LoadAddr & 0xFFFF);
+      var loadHi = (byte)((entry.LoadAddr >> 16) & 0x03);
+      var execLo = (ushort)(entry.ExecAddr & 0xFFFF);
+      var execHi = (byte)((entry.ExecAddr >> 16) & 0x03);
+      var length = (uint)entry.Data.Length;
+      var lengthLo = (ushort)(length & 0xFFFF);
+      var lengthHi = (byte)((length >> 16) & 0x03);
+      var startSec = entry.StartSector;
+      var startLo = (byte)(startSec & 0xFF);
+      var startHi = (byte)((startSec >> 8) & 0x03);
 
-      // 7-char filename, space-padded.
-      nameSpan.Fill((byte)' ');
-      Encoding.ASCII.GetBytes(name).AsSpan(0, Math.Min(7, name.Length)).CopyTo(nameSpan);
-      nameSpan.CopyTo(image.AsSpan(nameOff, 7));
-      // Directory letter (high bit cleared — unlocked by default).
-      image[nameOff + 7] = (byte)(dirLetter & 0x7F);
+      image[metaOff + 0] = (byte)(loadLo & 0xFF);
+      image[metaOff + 1] = (byte)(loadLo >> 8);
+      image[metaOff + 2] = (byte)(execLo & 0xFF);
+      image[metaOff + 3] = (byte)(execLo >> 8);
+      image[metaOff + 4] = (byte)(lengthLo & 0xFF);
+      image[metaOff + 5] = (byte)(lengthLo >> 8);
+      image[metaOff + 6] = (byte)(startHi | (loadHi << 2) | (lengthHi << 4) | (execHi << 6));
+      image[metaOff + 7] = startLo;
 
-      var loadAddr = 0u;
-      var execAddr = 0u;
-      var length = (uint)data.Length;
-      var startSector = (uint)layout[i];
+      // Copy file payload to its contiguous sector run.
+      if (entry.Data.Length > 0) {
+        Buffer.BlockCopy(entry.Data, 0, image, entry.StartSector * SectorSize, entry.Data.Length);
+      }
+    }
 
-      image[metaOff + 0] = (byte)(loadAddr & 0xFF);
-      image[metaOff + 1] = (byte)((loadAddr >> 8) & 0xFF);
-      image[metaOff + 2] = (byte)(execAddr & 0xFF);
-      image[metaOff + 3] = (byte)((execAddr >> 8) & 0xFF);
-      image[metaOff + 4] = (byte)(length & 0xFF);
-      image[metaOff + 5] = (byte)((length >> 8) & 0xFF);
-
-      var startHi = (startSector >> 8) & 0x03;
-      var loadHi = (loadAddr >> 16) & 0x03;
-      var lenHi = (length >> 16) & 0x03;
-      var execHi = (execAddr >> 16) & 0x03;
-      image[metaOff + 6] = (byte)(startHi | (loadHi << 2) | (lenHi << 4) | (execHi << 6));
-      image[metaOff + 7] = (byte)(startSector & 0xFF);
-
-      // File data.
-      if (data.Length > 0)
-        Buffer.BlockCopy(data, 0, image, layout[i] * SectorSize, data.Length);
+    // Sector 0 byte 0 / 1 carries the optional boot pattern 0x00 0x80; we
+    // emit it only when no title characters live at those positions yet.
+    // (TryExtractLabel reads label from offset 2 onwards.) MFS-1 reader's
+    // weak magic looks for these bytes, so when the title is blank we add
+    // the boot pattern to stay self-detecting.
+    if (image[0] == (byte)' ' && image[1] == (byte)' ') {
+      image[0] = 0x00;
+      image[1] = 0x80;
     }
 
     return image;
   }
 
   /// <summary>
-  /// Splits an archive name like <c>"$.HELLO"</c> or <c>"A.PROG"</c> into a
-  /// directory letter and bare filename. Names without a leading
-  /// <c>letter.</c> prefix default to directory <c>$</c>.
+  /// MFS-1 file names are 7 ASCII characters from a printable subset
+  /// (32..126) padded with spaces. The directory letter defaults to <c>$</c>;
+  /// callers may pass a path of the form "X.NAME" to set the directory.
   /// </summary>
-  private static (char Dir, string Name) SplitDfsName(string archiveName) {
-    var bare = Path.GetFileName(archiveName);
-    if (bare.Length >= 2 && bare[1] == '.') return (bare[0], bare[2..]);
-    return ('$', bare);
+  private static (string Name, char Dir) SanitizeName(string raw, char dir) {
+    // Strip any path; MFS-1 has no nesting beyond the 1-char directory letter.
+    var s = Path.GetFileName(raw).ToUpperInvariant();
+    // Allow the caller to embed the directory in the name via "X.NAME".
+    var explicitDir = dir;
+    if (s.Length >= 2 && s[1] == '.') {
+      var c = s[0];
+      if (c >= 0x20 && c <= 0x7E && c != '$' && c != '.') {
+        explicitDir = c;
+        s = s[2..];
+      }
+    }
+    var sb = new StringBuilder(7);
+    foreach (var c in s) {
+      if (sb.Length >= 7) break;
+      if (c is >= (char)0x20 and <= (char)0x7E && c != '/' && c != '\\') sb.Append(c);
+    }
+    if (sb.Length == 0) sb.Append('F');
+    if (explicitDir < 0x20 || explicitDir > 0x7E) explicitDir = '$';
+    return (sb.ToString(), explicitDir);
   }
 }

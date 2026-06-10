@@ -5,10 +5,11 @@ using FileSystem.Mfs1;
 namespace Compression.Tests.Mfs1;
 
 /// <summary>
-/// Pins the capability surface for <see cref="Mfs1FormatDescriptor"/>: WORM
-/// (R + Create) only — modify/defrag must NOT silently appear. Also verifies
-/// the opaque-blob entries are still surfaced for magic-only inputs that have
-/// no parseable catalog.
+/// Pins the R/W capability surface for <see cref="Mfs1FormatDescriptor"/>.
+/// MFS-1 was promoted from read-only to a real DFS-tier writer +
+/// in-place modifier — this test locks the capability advertisement and
+/// verifies the opaque-blob entries are still surfaced for magic-only
+/// inputs that have no parseable catalog.
 /// </summary>
 [TestFixture]
 public class Mfs1StubBehaviorTests {
@@ -21,17 +22,17 @@ public class Mfs1StubBehaviorTests {
   }
 
   [Test, Category("Spec")]
-  public void Descriptor_HonestlyAdvertisesCapabilities_AndOpaqueEntriesOnMagicOnly() {
+  public void Descriptor_HonestlyAdvertisesRwCapabilities_AndOpaqueEntriesOnMagicOnly() {
     var d = new Mfs1FormatDescriptor();
 
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True,
-      "MFS-1 WORM — must advertise CanCreate (writer emits a real DFS-shaped catalog).");
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
-      "MFS-1 R+Create only — must not advertise CanModify (no free-sector allocator).");
+      "MFS-1 advertises CanCreate via Mfs1Writer (DFS-tier catalog emitter).");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
+      "MFS-1 advertises CanModify via Mfs1InPlaceModifier.");
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>(),
-      "MFS-1 WORM — must implement IArchiveCreatable.");
-    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>(),
-      "MFS-1 R+Create only — must not implement IArchiveModifiable.");
+      "MFS-1 implements IArchiveCreatable.");
+    Assert.That(d, Is.InstanceOf<IArchiveModifiable>(),
+      "MFS-1 implements IArchiveModifiable.");
 
     // Magic-only image has no parseable catalog → reader produces zero entries.
     // The descriptor still surfaces the opaque FULL.mfs + metadata.ini pair.

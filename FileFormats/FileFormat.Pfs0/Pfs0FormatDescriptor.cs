@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Pfs0;
 
-public sealed class Pfs0FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class Pfs0FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the PFS0 archive in listing order.</summary>
   public void Defragment(Stream archive)
@@ -42,7 +42,7 @@ public sealed class Pfs0FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".nsp";
   public IReadOnlyList<string> Extensions => [".nsp", ".pfs0"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -102,4 +102,25 @@ public sealed class Pfs0FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
       w.AddEntry(name, data);
   }
+
+  /// <summary>
+  /// Appends or replaces files inside an existing PFS0 archive. PFS0 has
+  /// a flat header + entry table + string table + data region layout that
+  /// is rewritten in place via <see cref="Pfs0InPlaceModifier"/> — the
+  /// existing entries are preserved verbatim, the new file is inserted
+  /// (or replaces one with the same name), the entry table is re-sorted
+  /// alphabetically per the Switch SDK convention, and the data region
+  /// is re-laid out so payloads stay contiguous.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => Pfs0InPlaceModifier.AddFiles(archive, [.. FormatHelpers.FlatFiles(inputs)]);
+
+  /// <summary>
+  /// Removes the named entries from an existing PFS0 archive. The data
+  /// region is re-laid out so the removed payloads are physically dropped
+  /// — no forensic trace of the removed bytes remains in the resulting
+  /// archive.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames)
+    => Pfs0InPlaceModifier.RemoveFiles(archive, entryNames);
 }

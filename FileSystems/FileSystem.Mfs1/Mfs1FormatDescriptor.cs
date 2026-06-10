@@ -8,7 +8,7 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Mfs1;
 
 /// <summary>
-/// Read+WORM descriptor for Acorn MFS-1 (Master File System v1) disk images —
+/// Read-only descriptor for Acorn MFS-1 (Master File System v1) disk images —
 /// the catalog-compatible evolution of Acorn DFS used on early Acorn / BBC Master
 /// systems. The on-disk catalog matches DFS (256-byte sectors, two-sector catalog
 /// at track 0 sectors 0-1, up to 31 entries with 7-char names + 1-char directory),
@@ -18,22 +18,22 @@ namespace FileSystem.Mfs1;
 /// <para><b>Detection</b>: weak — magic is the optional <c>0x00 0x80</c> boot
 /// pattern at offsets 0-1, low confidence (0.20). Stronger magic'd formats win.
 /// Real detection is extension-led (<c>.mfs</c> / <c>.mfsd</c>).</para>
-/// <para><b>Write (WORM)</b>: <see cref="Mfs1Writer"/> emits a fresh image with
-/// a 12-character title, up to 31 catalog entries and contiguous file data from
-/// sector 2 onward — exactly the layout the existing reader walks, so every
-/// emitted image round-trips through <see cref="Mfs1Reader"/>. Modify/defragment
-/// are NOT advertised — both require a free-sector allocator that survives
-/// in-place edits, which is out of scope.</para>
+/// <para><b>Write</b> is supported via the DFS-tier catalog layout (sector 0
+/// names + sector 1 metadata + contiguous data area from sector 2 onwards).
+/// Writer emits a self-consistent catalog with packed-high-bits encoding;
+/// the in-place modifier re-packs through the same writer so the outer
+/// sector count is preserved.</para>
 /// <para>Distinct from <c>FileSystem.Mfs</c>, which targets the Macintosh File
 /// System with a strong <c>0xD2D7</c> magic.</para>
 /// </remarks>
-public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Mfs1";
   public string DisplayName => "MFS-1 (Acorn Master File System v1)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".mfs";
   public IReadOnlyList<string> Extensions => [".mfs", ".mfsd"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -47,7 +47,7 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Acorn MFS-1 (BBC Master) — DFS-tier catalog walker + WORM writer (R + Create only; modify/defrag deferred).";
+  public string Description => "Acorn MFS-1 (BBC Master) — DFS-tier catalog walker with in-place R/W (Mfs1Writer + Mfs1InPlaceModifier).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -114,24 +114,6 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <summary>
-  /// Emits a fresh MFS-1 disk image containing the supplied inputs. Directory
-  /// entries are dropped (MFS-1 is flat); a name shaped <c>"D.NAME"</c> places
-  /// the file under directory letter <c>D</c>, otherwise the file lands in the
-  /// default <c>$</c> directory. The reader's catalog walker round-trips every
-  /// image produced here.
-  /// </summary>
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    ArgumentNullException.ThrowIfNull(output);
-    ArgumentNullException.ThrowIfNull(inputs);
-    var w = new Mfs1Writer();
-    var label = options?.GetOption("VolumeLabel", "") ?? "";
-    if (!string.IsNullOrEmpty(label)) w.SetTitle(label);
-    foreach (var (name, data) in FilesOnly(inputs))
-      w.AddFile(name, data);
-    output.Write(w.Build());
-  }
-
-  /// <summary>
   /// Opens a single catalog entry as a bounded stream over its sector extent.
   /// Reads past <see cref="Mfs1Entry.Size"/> return 0 (EOF). The FULL/metadata
   /// placeholders are intentionally NOT openable via this path; use Extract.
@@ -178,6 +160,46 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
     if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;
     WriteFile(outputDir, name, data);
+  }
+
+  /// <summary>
+  /// Creates a fresh MFS-1 image from the given inputs. The catalog and
+  /// data area are emitted by <see cref="Mfs1Writer"/>; the resulting
+  /// image is round-trip-readable by <see cref="Mfs1Reader"/>.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = new Mfs1Writer();
+    foreach (var (name, data) in FlatFiles(inputs))
+      w.AddFile(name, data);
+    output.Write(w.Build());
+  }
+
+  /// <summary>
+  /// Adds — or replaces by name — files in an existing MFS-1 image. The
+  /// image is re-packed via <see cref="Mfs1InPlaceModifier.AddFiles"/>
+  /// from its existing files plus the new ones; the outer sector count
+  /// is preserved.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var pairs = new List<(string Name, byte[] Data)>();
+    foreach (var (name, data) in FlatFiles(inputs))
+      pairs.Add((name, data));
+    Mfs1InPlaceModifier.AddFiles(archive, pairs);
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing MFS-1 image. The data
+  /// area of the removed file is zeroed on rebuild — no forensic trace
+  /// of the removed bytes remains.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    Mfs1InPlaceModifier.RemoveFiles(archive, entryNames);
   }
 
   private const int HeaderReadCap = 1 << 20; // 1 MiB cap — a 40-track SSD is 100k, 80-track is 200k.

@@ -1,44 +1,31 @@
 #pragma warning disable CS1591
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
-using FileSystem.ProDos;
 
 namespace FileSystem.GsOs;
 
 /// <summary>
-/// Descriptor for Apple IIgs GS/OS 2IMG disk images. GS/OS volumes are
-/// ProDOS-derived on disk; the 2IMG container wraps the ProDOS payload
-/// with a 64-byte metadata header recognised by every IIgs emulator
-/// (Catakig, ASIMOV2, Bernie ][ The Rescue, KEGS, GSplus).
-///
-/// <para><b>WORM tier.</b> Emit-only: <see cref="Create"/> builds a fresh
-/// 2IMG-wrapped ProDOS volume via <see cref="GsOsWriter"/>; List/Extract
-/// surface the embedded ProDOS volume as an opaque <c>.po</c> entry —
-/// downstream callers can route the <c>.po</c> payload through
-/// <see cref="ProDosFormatDescriptor"/> for full hierarchical walk.
-/// Modify is intentionally not implemented because rewriting the
-/// embedded volume requires recomputing the data-length field in the
-/// 2IMG header and any comment-block offsets, which a true WORM rewrite
-/// (via Create) handles correctly without surprising the caller.</para>
-///
-/// <para><b>Detection.</b> The .gsdos extension routes here (FileSystem.ProDos
-/// owns .2mg/.po so the detector doesn't first-match between them); the
-/// reader still parses the 2IMG header to validate the volume.</para>
-///
-/// <para><b>Spec.</b> Universal 2IMG specification (Catakig/IIgs emulator
-/// community, 1997), ProDOS 8 Technical Reference Manual, Apple IIgs Hardware
-/// Reference (1987). Both ProDOS 8 and GS/OS (ProDOS 16 / FST) read the
-/// same on-disk volume layout.</para>
+/// Descriptor for Apple IIgs GS/OS 2IMG disk images. The 2IMG container
+/// wraps a ProDOS / HFS / DOS 3.3 volume with a 64-byte header — this
+/// descriptor parses the header, surfaces the inner volume, and (for
+/// ProDOS-ordered payloads) lets callers add/replace/remove files inside
+/// the embedded volume by delegating to
+/// <see cref="FileSystem.ProDos.ProDosModifier"/>, which already shifts
+/// every block access past the 2IMG header.
+/// <para>
+/// Detection is by the .gsdos extension; the "2IMG" magic at offset 0 is
+/// owned by <c>FileSystem.ProDos</c> (.2mg routing) to avoid a detector
+/// first-match conflict.
+/// </para>
 /// </summary>
-public sealed class GsOsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IFormatOptionsSchema {
+public sealed class GsOsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "GsOs";
   public string DisplayName => "Apple IIgs GS/OS (2IMG)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   // .2mg is owned by FileSystem.ProDos; we register the GS/OS-specific
   // .gsdos extension only to avoid extension routing conflicts.
   public string DefaultExtension => ".gsdos";
@@ -52,43 +39,22 @@ public sealed class GsOsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "Apple IIgs GS/OS 2IMG — WORM-tier: emits a fresh 2IMG-wrapped ProDOS volume; read path surfaces the inner ProDOS volume as an opaque entry for downstream walk.";
-
-  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
-    new FormatOptionDescriptor(
-      Key: "ImageSize",
-      DisplayName: "Image size",
-      Kind: FormatOptionKind.Enum,
-      Default: "140 KB (5.25\")",
-      AllowedValues: ["140 KB (5.25\")", "800 KB (3.5\")"],
-      Description: "Underlying ProDOS volume size — 140 KB 5.25\" floppy (280 blocks) or 800 KB 3.5\" floppy (1600 blocks)."),
-    new FormatOptionDescriptor(
-      Key: "VolumeName",
-      DisplayName: "Volume name",
-      Kind: FormatOptionKind.String,
-      Default: "GSOS",
-      Description: "ProDOS volume name (1..15 chars; letters, digits, periods; must start with a letter)."),
-    new FormatOptionDescriptor(
-      Key: "Creator",
-      DisplayName: "2IMG creator code",
-      Kind: FormatOptionKind.String,
-      Default: GsOsWriter.DefaultCreator,
-      Description: "Four-character ASCII creator code stamped at offset 4 of the 2IMG header."),
-    new FormatOptionDescriptor(
-      Key: "Comment",
-      DisplayName: "Volume comment",
-      Kind: FormatOptionKind.String,
-      Default: "",
-      Description: "Optional ASCII comment block appended after the ProDOS payload (surfaced by the 2IMG comment offset/length fields)."),
-  ];
+    "Apple IIgs GS/OS 2IMG — 64-byte 2IMG header + ProDOS-ordered payload (HFS/DOS-3.3 payloads listed read-only).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new GsOsReader(stream);
+    // Walk the inner ProDOS volume so callers see the real per-file
+    // entries instead of one opaque blob.
+    var entries = new List<ArchiveEntryInfo>();
+    if (TryListInnerProDos(stream, entries))
+      return entries;
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    if (TryExtractInnerProDos(stream, outputDir, files))
+      return;
     using var r = new GsOsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -97,23 +63,98 @@ public sealed class GsOsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  /// <summary>
+  /// Creates a fresh 2IMG-wrapped ProDOS image from the given inputs.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
-    options ??= new FormatCreateOptions();
-
-    var sizeLabel = options.GetOption("ImageSize", "140 KB (5.25\")");
-    var totalBlocks = sizeLabel.Contains("800", StringComparison.Ordinal)
-      ? ProDosWriter.Disk800KTotalBlocks
-      : ProDosWriter.FloppyTotalBlocks;
-    var volumeName = options.GetOption("VolumeName", "GSOS");
-    var creator = options.GetOption("Creator", GsOsWriter.DefaultCreator);
-    var comment = options.GetOption("Comment", "");
-
     var w = new GsOsWriter();
-    foreach (var input in inputs.Where(i => !i.IsDirectory))
-      w.AddFile(input.ArchiveName, input.ReadContent());
-    if (!string.IsNullOrEmpty(comment)) w.SetComment(comment);
-    output.Write(w.Build(volumeName, totalBlocks, creator));
+    foreach (var (name, data) in FlatFiles(inputs))
+      w.AddFile(name, data);
+    var image = w.Build();
+    output.Write(image);
+  }
+
+  /// <summary>
+  /// Adds — or replaces by name — files inside the inner ProDOS volume.
+  /// The 2IMG header bytes 0..63 stay byte-identical; only the inner
+  /// ProDOS catalog + bitmap + data blocks are touched.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var (name, data) in FlatFiles(inputs))
+      GsOsInPlaceModifier.AddFile(archive, name, data);
+  }
+
+  /// <summary>
+  /// Removes the named entries from the inner ProDOS volume.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames)
+      GsOsInPlaceModifier.RemoveFile(archive, name);
+  }
+
+  // ── Inner-ProDOS walk helpers ─────────────────────────────────────────────
+  //
+  // The legacy GsOsReader surfaces the inner payload as one opaque blob; for
+  // ProDOS-ordered images we can do better by handing the payload to the
+  // real ProDOS reader. When the inner format is HFS or DOS-3.3 we fall back
+  // to the legacy opaque surface (no inner reader available here).
+
+  private static bool TryListInnerProDos(Stream stream, List<ArchiveEntryInfo> entries) {
+    if (!IsProDosOrdered2Img(stream)) return false;
+    try {
+      stream.Position = 0;
+      var pr = new FileSystem.ProDos.ProDosReader(stream);
+      var i = 0;
+      foreach (var e in pr.Entries) {
+        entries.Add(new ArchiveEntryInfo(
+          i++, e.FullPath, e.Size, e.Size, "Stored", e.IsDirectory, false, null));
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private static bool TryExtractInnerProDos(Stream stream, string outputDir, string[]? files) {
+    if (!IsProDosOrdered2Img(stream)) return false;
+    try {
+      stream.Position = 0;
+      using var pr = new FileSystem.ProDos.ProDosReader(stream);
+      foreach (var e in pr.Entries) {
+        if (e.IsDirectory) continue;
+        if (files != null && files.Length > 0 && !MatchesFilter(e.FullPath, files)) continue;
+        WriteFile(outputDir, e.FullPath, pr.Extract(e));
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private static bool IsProDosOrdered2Img(Stream stream) {
+    if (stream.Length < 64) return false;
+    var origPos = stream.Position;
+    try {
+      stream.Position = 0;
+      Span<byte> header = stackalloc byte[16];
+      var read = 0;
+      while (read < header.Length) {
+        var n = stream.Read(header[read..]);
+        if (n == 0) return false;
+        read += n;
+      }
+      if (header[0] != (byte)'2' || header[1] != (byte)'I' || header[2] != (byte)'M' || header[3] != (byte)'G')
+        return false;
+      var imageFormat = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(header[12..16]);
+      return imageFormat == 1;
+    } finally {
+      stream.Position = origPos;
+    }
   }
 }
