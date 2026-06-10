@@ -82,6 +82,13 @@ public static class ShrinkDecoder {
         }
         else if (subCmd == SubCmdPartialClear) {
           PartialClear(prefix, isUsed, nextCode);
+          // Restart the free-slot search from the bottom so the scattered freed
+          // slots get reused in the same increasing order the encoder uses.
+          nextCode = 257;
+          // The encoder emits no dictionary entry on the step that triggered the
+          // clear, so the next code must not create one either — drop the lagged
+          // link by forgetting the previous code.
+          prevCode = -1;
         }
         continue;
       }
@@ -90,8 +97,11 @@ public static class ShrinkDecoder {
       var stackPos = 0;
       var c = code;
 
-      if (c >= nextCode || (c >= 257 && !isUsed[c])) {
-        // KwKwK case: code not yet in dictionary
+      if (c >= 257 && !isUsed[c]) {
+        // KwKwK case: code not yet in the dictionary. Detection must key off the
+        // occupancy map, not "c >= nextCode" — after a partial clear nextCode is
+        // reset to 257 while many surviving codes have values far above it, so a
+        // nextCode comparison would misclassify valid survivors as KwKwK.
         if (prevCode < 0)
           throw new InvalidDataException("Invalid Shrink stream: KwKwK with no previous code.");
         decodeStack[stackPos++] = GetFirstByte(prevCode, prefix, suffix);
@@ -117,7 +127,11 @@ public static class ShrinkDecoder {
 
         if (nextCode < MaxCode) {
           prefix[nextCode] = prevCode;
-          suffix[nextCode] = GetFirstByte(code, prefix, suffix);
+          // The new entry's suffix is the first byte of the string just emitted.
+          // That byte is the bottom of the reversed decode stack, which is valid
+          // in both the normal case and the KwKwK case (where `code` is not yet
+          // in the table, so GetFirstByte(code) would read a stale prefix chain).
+          suffix[nextCode] = decodeStack[stackPos - 1];
           isUsed[nextCode] = true;
           ++nextCode;
         }

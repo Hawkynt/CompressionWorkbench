@@ -28,6 +28,11 @@ public static class ShrinkEncoder {
 
     // Trie for dictionary lookup: (parent code, byte) → child code
     var trie = new Dictionary<(int, byte), int>();
+    // Which code slots are currently occupied. After a partial clear the freed
+    // slots are scattered through 257..MaxCode-1, so the next-code search must
+    // skip occupied slots in increasing order — the decoder reuses them in that
+    // exact same order, which keeps both dictionaries in lock-step.
+    var slotUsed = new bool[MaxCode];
 
     var currentBits = MinBits;
     var nextCode = 257;
@@ -65,14 +70,19 @@ public static class ShrinkEncoder {
           }
 
           trie[key] = nextCode;
-          ++nextCode;
+          slotUsed[nextCode] = true;
+          AdvanceNextCode(slotUsed, ref nextCode);
         }
         else {
           // Dictionary full — emit partial clear
           writer.WriteBits(ControlCode, currentBits);
           writer.WriteBits(SubCmdPartialClear, currentBits);
 
-          PartialClear(trie, ref nextCode);
+          PartialClear(trie, slotUsed);
+          // Restart the free-slot search from the bottom; the decoder does the
+          // same, so the first reusable slot — and every one after it — matches.
+          nextCode = 257;
+          AdvanceNextCode(slotUsed, ref nextCode);
         }
 
         currentCode = nextByte;
@@ -87,15 +97,20 @@ public static class ShrinkEncoder {
     return ms.ToArray();
   }
 
-  private static void PartialClear(Dictionary<(int, byte), int> trie, ref int nextCode) {
-    // Collect which codes are referenced as prefixes
-    var referencedAsPrefix = new HashSet<int>();
-    foreach (var ((parent, _), child) in trie) {
-      if (child >= 257)
-        referencedAsPrefix.Add(parent);
-    }
+  /// <summary>Advances <paramref name="nextCode"/> to the next free slot (or MaxCode if none remain).</summary>
+  private static void AdvanceNextCode(bool[] slotUsed, ref int nextCode) {
+    while (nextCode < MaxCode && slotUsed[nextCode])
+      ++nextCode;
+  }
 
-    // Remove entries whose codes are not referenced by any other entry
+  private static void PartialClear(Dictionary<(int, byte), int> trie, bool[] slotUsed) {
+    // A code survives the clear only if it is used as the prefix of another code
+    // (an interior trie node); leaf codes are evicted. This must match the
+    // decoder's survivor rule exactly.
+    var referencedAsPrefix = new HashSet<int>();
+    foreach (var ((parent, _), _) in trie)
+      referencedAsPrefix.Add(parent);
+
     var toRemove = new List<(int, byte)>();
     foreach (var (key, code) in trie) {
       if (code >= 257 && !referencedAsPrefix.Contains(code))
@@ -105,10 +120,9 @@ public static class ShrinkEncoder {
     foreach (var key in toRemove)
       trie.Remove(key);
 
-    // Find next available code
-    var usedCodes = new HashSet<int>(trie.Values);
-    nextCode = 257;
-    while (nextCode < MaxCode && usedCodes.Contains(nextCode))
-      ++nextCode;
+    // Rebuild the occupancy map from the survivors.
+    Array.Clear(slotUsed, 0, slotUsed.Length);
+    foreach (var code in trie.Values)
+      slotUsed[code] = true;
   }
 }
