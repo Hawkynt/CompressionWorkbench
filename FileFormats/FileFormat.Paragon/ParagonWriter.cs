@@ -129,6 +129,17 @@ public sealed class ParagonWriter : IDisposable {
   /// <summary>On-disk size of a single chunk-table entry.</summary>
   public const int ChunkEntrySize = 40;
 
+  /// <summary>
+  /// Sentinel value the in-place modifier writes into the chunk-table
+  /// entry's <c>IsCompressed</c> byte (offset +16 within the entry) to
+  /// flag the entry as a Remove tombstone. Combined with
+  /// <c>ChunkSize = 0</c> the tombstone suppresses the chunk identified
+  /// by <c>ChunkNumber</c> from the live view. Picked as a non-ASCII
+  /// value so it can never collide with the vendor-style <c>'Y'</c> /
+  /// <c>'N'</c> compress flag.
+  /// </summary>
+  public const byte TombstoneFlag = 0xFF;
+
   /// <summary>Default sectors per chunk — 256 sectors × 512 B = 128 KiB per chunk.</summary>
   public const int DefaultSectorsPerChunk = 256;
 
@@ -138,14 +149,22 @@ public sealed class ParagonWriter : IDisposable {
   /// <summary>Default chunk size in bytes (128 KiB).</summary>
   public const int DefaultChunkSize = DefaultSectorsPerChunk * SectorSize;
 
-  /// <summary>CWBP table-of-contents field offsets.</summary>
-  internal const int OffsetCwbpDiscriminator = 0xF8;
-  internal const int OffsetChunkCount = 0x100;
-  internal const int OffsetChunkTableOffset = 0x104;
-  internal const int OffsetSectorsPerChunk = 0x10C;
-  internal const int OffsetSegmentCount = 0x110;
-  internal const int OffsetTotalLogicalSize = 0x114;
-  internal const int OffsetHeaderSize = 0x11C;
+  /// <summary>CWBP table-of-contents field offsets — exposed so the
+  /// in-place modifier and round-trip tests can patch / verify the same
+  /// canonical layout.</summary>
+  public const int OffsetCwbpDiscriminator = 0xF8;
+  /// <summary>CWBP TOC offset of the <c>ChunkCount u32</c> field.</summary>
+  public const int OffsetChunkCount = 0x100;
+  /// <summary>CWBP TOC offset of the <c>ChunkTableOffset u64</c> field.</summary>
+  public const int OffsetChunkTableOffset = 0x104;
+  /// <summary>CWBP TOC offset of the <c>SectorsPerChunk u32</c> field.</summary>
+  public const int OffsetSectorsPerChunk = 0x10C;
+  /// <summary>CWBP TOC offset of the <c>SegmentCount u32</c> field.</summary>
+  public const int OffsetSegmentCount = 0x110;
+  /// <summary>CWBP TOC offset of the <c>TotalLogicalSize u64</c> field.</summary>
+  public const int OffsetTotalLogicalSize = 0x114;
+  /// <summary>CWBP TOC offset of the <c>HeaderSize u32</c> field.</summary>
+  public const int OffsetHeaderSize = 0x11C;
 
   private readonly Stream _output;
   private readonly bool _leaveOpen;

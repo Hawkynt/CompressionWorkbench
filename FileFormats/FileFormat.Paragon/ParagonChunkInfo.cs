@@ -27,6 +27,16 @@ public sealed class ParagonChunkInfo {
   /// stream, false when stored verbatim.</summary>
   public bool IsCompressed { get; init; }
 
+  /// <summary>
+  /// True when this entry is a tombstone marker emitted by
+  /// <c>ParagonInPlaceModifier.Remove</c>. Tombstones encode
+  /// <c>IsCompressed = 0xFF</c> + <c>ChunkSize = 0</c> on the wire and
+  /// suppress the chunk identified by <see cref="ChunkNumber"/> from the
+  /// live-entry view. The original chunk body bytes stay byte-identical
+  /// at their on-disk offset; only the chunk-table tail grows.
+  /// </summary>
+  public bool IsTombstone { get; init; }
+
   /// <summary>Decompressed (logical) byte size of the chunk — equal to
   /// <see cref="ChunkSize"/> when the chunk is stored verbatim.</summary>
   public uint LogicalSize { get; init; }

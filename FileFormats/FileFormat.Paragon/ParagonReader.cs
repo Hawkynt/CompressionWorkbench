@@ -325,8 +325,22 @@ public sealed class ParagonReader : IDisposable {
       // CWBP files surface real chunks alongside metadata, NOT an opaque blob.
       var meta = BuildMetadata();
       _entries.Add(new ParagonEntry { Name = "metadata.ini", Size = meta.Length, IsDirectory = false, Offset = 0, Data = meta });
-      for (var i = 0; i < this._chunkTable.Count; i++) {
-        var info = this._chunkTable[i];
+
+      // Latest-entry-wins per ChunkNumber: the in-place modifier appends
+      // fresh entries on Replace/Remove keyed by the original ChunkNumber.
+      // The reader walks the table in order, so the LAST entry per
+      // ChunkNumber is the live state. Tombstones (IsTombstone=true) wipe
+      // the chunk from the live view entirely.
+      var latestByChunkNumber = new Dictionary<uint, ParagonChunkInfo>();
+      var ordering = new List<uint>();
+      foreach (var info in this._chunkTable) {
+        if (!latestByChunkNumber.ContainsKey(info.ChunkNumber))
+          ordering.Add(info.ChunkNumber);
+        latestByChunkNumber[info.ChunkNumber] = info;
+      }
+      foreach (var chunkNumber in ordering) {
+        var info = latestByChunkNumber[chunkNumber];
+        if (info.IsTombstone) continue;
         var bytes = this.ExtractChunkBytes(info);
         var name = string.Create(CultureInfo.InvariantCulture, $"chunk_{info.ChunkNumber:D6}.bin");
         _entries.Add(new ParagonEntry {
@@ -371,15 +385,20 @@ public sealed class ParagonReader : IDisposable {
     for (var i = 0; i < this.ChunkCount; i++) {
       var entryOffset = (int)(chunkTableOffset + (ulong)(i * ParagonWriter.ChunkEntrySize));
       var entry = span.Slice(entryOffset, ParagonWriter.ChunkEntrySize);
+      var flagByte = entry[16];
+      var isTombstone = flagByte == ParagonWriter.TombstoneFlag;
       var info = new ParagonChunkInfo {
         ChunkNumber = BinaryPrimitives.ReadUInt32LittleEndian(entry[..4]),
         ChunkOffset = BinaryPrimitives.ReadUInt64LittleEndian(entry.Slice(4, 8)),
         ChunkSize = BinaryPrimitives.ReadUInt32LittleEndian(entry.Slice(12, 4)),
-        IsCompressed = entry[16] == (byte)'Y',
+        IsCompressed = flagByte == (byte)'Y',
+        IsTombstone = isTombstone,
         LogicalSize = BinaryPrimitives.ReadUInt32LittleEndian(entry.Slice(20, 4)),
         Adler32 = BinaryPrimitives.ReadUInt32LittleEndian(entry.Slice(24, 4)),
       };
       // Per-entry bounds — refuse the whole walk if any entry overflows.
+      // Tombstones legitimately carry ChunkSize=0 + ChunkOffset=0 so they
+      // always pass this check.
       if (info.ChunkOffset + info.ChunkSize > (ulong)this._data.LongLength) return false;
       this._chunkTable.Add(info);
     }
@@ -429,9 +448,22 @@ public sealed class ParagonReader : IDisposable {
         + "Vendor-produced files require the chunk-table-inside-segment offset, "
         + "the bitmap-chain encoding, and the .pfi sidecar — none of which are "
         + "byte-validated against a real sample.");
+    // Latest-wins per ChunkNumber + skip tombstones — matches the live
+    // entry view materialised by Parse() so in-place-modified images
+    // round-trip the post-mutation payload.
+    var latestByChunkNumber = new Dictionary<uint, ParagonChunkInfo>();
+    var ordering = new List<uint>();
+    foreach (var info in this._chunkTable) {
+      if (!latestByChunkNumber.ContainsKey(info.ChunkNumber))
+        ordering.Add(info.ChunkNumber);
+      latestByChunkNumber[info.ChunkNumber] = info;
+    }
     using var ms = new MemoryStream(capacity: (int)Math.Min(int.MaxValue, this.TotalLogicalSize));
-    foreach (var info in this._chunkTable)
+    foreach (var chunkNumber in ordering) {
+      var info = latestByChunkNumber[chunkNumber];
+      if (info.IsTombstone) continue;
       ms.Write(this.ExtractChunkBytes(info));
+    }
     return ms.ToArray();
   }
 
@@ -447,6 +479,8 @@ public sealed class ParagonReader : IDisposable {
       bldr.Append("cwbp_discriminator_ascii=CWBPbpf1\n");
       bldr.Append("cwbp_chunk_entry_size_bytes=40\n");
       bldr.Append("cwbp_chunk_entry_layout=ChunkNumber u32 | ChunkOffset u64 | ChunkSize u32 | IsCompressed u8 | Pad[3] | LogicalSize u32 | Adler32 u32 | Reserved u64\n");
+      bldr.Append("cwbp_rw_scope=Add / Replace / Remove via true in-place chunk-table append (ParagonInPlaceModifier). Existing chunk bodies in [0, oldChunkTableOffset) stay byte-identical. Replace appends fresh entry with same ChunkNumber (latest-wins). Remove appends tombstone (IsCompressed=0xFF + ChunkSize=0); original bytes survive, reader hides the entry.\n");
+      bldr.Append("cwbp_tombstone_flag=0xFF\n");
       bldr.Append("cwbp_note=This file was produced by ParagonWriter. The CWBP marker + trailing chunk-table layout is OUR layout, not the vendor's. Vendor-tool round-trip is explicitly out of scope.\n");
     } else {
       bldr.Append("parse_status=ro-metadata\n");

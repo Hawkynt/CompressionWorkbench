@@ -101,7 +101,7 @@ namespace FileFormat.Paragon;
 /// openthefile.net, fileinfo.com, file.org, solvusoft.com.
 /// </para>
 /// </summary>
-public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 
   public string Id => "Paragon";
   public string DisplayName => "Paragon Backup";
@@ -109,6 +109,7 @@ public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".pbf";
   public IReadOnlyList<string> Extensions => [".pbf"];
@@ -130,7 +131,18 @@ public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "Paragon Backup & Recovery (.pbf) - R/O metadata + structured header on vendor-produced " +
-    "files; WORM (write-once round-trippable) for our own writer's CWBP-discriminated layout. " +
+    "files; R/W (Add / Replace / Remove) for our own writer's CWBP-discriminated layout via " +
+    "true in-place chunk-table append (see ParagonInPlaceModifier). The CWBP layout places the " +
+    "chunk-offset table at the file tail; mutations overwrite the OLD chunk-table position with " +
+    "new chunk bodies and re-lay the table at the new tail, so every byte in the chunk-body " +
+    "region [HeaderSize, oldChunkTableOffset) — every existing chunk body and its per-chunk " +
+    "Adler-32 — stays byte-identical at its original offset (the only fields the modifier " +
+    "patches are ChunkCount at +0x100, ChunkTableOffset at +0x104, and TotalLogicalSize at " +
+    "+0x114). Replace appends a fresh entry sharing the target's " +
+    "ChunkNumber (reader picks latest-per-chunk-number). Remove appends a tombstone entry " +
+    "(IsCompressed = 0xFF + ChunkSize = 0) and the reader suppresses the chunk from the live " +
+    "view; the original body bytes survive on disk (operation is byte-preserving on payload, " +
+    "not forensic wipe). " +
     "Vendor-tool byte-compat is explicitly out of scope - HDM 16+ is restore-only, no real PBF " +
     "samples available for clean-room byte validation. Proprietary " +
     "Paragon Software backup container produced by Backup & Recovery / Hard Disk Manager / " +
@@ -232,5 +244,30 @@ public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     foreach (var (_, data) in FlatFiles(inputs))
       w.WriteChunk(data);
     w.Finalise();
+  }
+
+  // ── IArchiveModifiable (true in-place R/W via CWBP chunk-table append) ──
+
+  /// <summary>
+  /// Appends each input as a fresh chunk via
+  /// <see cref="ParagonInPlaceModifier.AddChunks(Stream, IReadOnlyList{ArchiveInputInfo}, bool)"/>.
+  /// Existing chunk-body bytes stay byte-identical at their original
+  /// offsets; only the chunk-offset table tail grows.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => ParagonInPlaceModifier.AddChunks(archive, inputs, compressChunks: true);
+
+  /// <summary>
+  /// Appends a tombstone entry per named chunk via
+  /// <see cref="ParagonInPlaceModifier.RemoveChunk(Stream, string)"/>.
+  /// Original chunk-body bytes stay byte-identical at their offsets; the
+  /// reader's latest-wins-per-chunk-number semantic suppresses the chunk
+  /// from the live view.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames)
+      ParagonInPlaceModifier.RemoveChunk(archive, name);
   }
 }
