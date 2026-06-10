@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cdi;
 
-public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
 
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
@@ -16,6 +16,7 @@ public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".cdi";
@@ -27,7 +28,7 @@ public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [new("iso9660", "ISO 9660")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "DiscJuggler CDI disc image";
+  public string Description => "DiscJuggler CDI disc image (R/W via in-place sector rewrite at fixed offsets; inner ISO 9660 directory mutation delegated to FileSystem.Iso; multi-track DAOI layouts deferred)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new CdiReader(stream, leaveOpen: true);
@@ -57,5 +58,38 @@ public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(footer, 0x80000004);
     System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(footer[4..], 0);
     output.Write(footer);
+  }
+
+  // ── IArchiveModifiable ──────────────────────────────────────────────
+
+  /// <summary>
+  /// Rewrites raw CD sectors in place. Inputs whose <c>ArchiveName</c> matches
+  /// <c>sector-NNNNNN.bin</c> are written at the fixed byte offset
+  /// <c>lba * sectorSize + dataOffset</c>; everything outside the touched
+  /// 2 048-byte user-data region — including the 8-byte CDI footer — stays
+  /// byte-identical (the footer migrates with the new EOF when the data area
+  /// grows past the previous end).
+  ///
+  /// <para>Inputs not matching the synthetic sector schema are skipped —
+  /// inner-ISO 9660 directory mutation is delegated to <c>FileSystem.Iso</c>
+  /// and is out of scope for the sector-rewrite modifier.</para>
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    CdiInPlaceModifier.AddOrReplaceSectors(archive,
+      inputs.Where(i => !i.IsDirectory).Select(i => (i.ArchiveName, i.ReadContent())));
+  }
+
+  /// <summary>
+  /// Zeros the 2 048-byte user-data region of each named sector. Sector
+  /// framing bytes (sync / address / mode / EDC) on raw geometries and the
+  /// trailing CDI footer are preserved so the LBA-to-offset map and the rest
+  /// of the image remain byte-identical.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    CdiInPlaceModifier.RemoveSectors(archive, entryNames);
   }
 }

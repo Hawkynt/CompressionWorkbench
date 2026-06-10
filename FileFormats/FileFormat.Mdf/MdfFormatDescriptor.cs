@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Mdf;
 
-public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
 
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
@@ -16,6 +16,7 @@ public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".mdf";
@@ -27,7 +28,7 @@ public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [new("iso9660", "ISO 9660")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Alcohol 120% MDF/MDS disc image";
+  public string Description => "Alcohol 120% MDF/MDS disc image (R/W via in-place sector rewrite at fixed offsets; inner ISO 9660 directory mutation delegated to FileSystem.Iso; multi-track .mds layouts deferred — the modifier mutates the MDF data only)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new MdfReader(stream, leaveOpen: true);
@@ -52,5 +53,38 @@ public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var (name, data) in FlatFiles(inputs))
       iso.AddFile(name, data);
     output.Write(iso.Build());
+  }
+
+  // ── IArchiveModifiable ──────────────────────────────────────────────
+
+  /// <summary>
+  /// Rewrites raw CD sectors in place. Inputs whose <c>ArchiveName</c> matches
+  /// <c>sector-NNNNNN.bin</c> are written at the fixed byte offset
+  /// <c>lba * sectorSize + dataOffset</c>; everything outside the touched
+  /// 2 048-byte user-data region stays byte-identical.
+  ///
+  /// <para>Inputs not matching the synthetic sector schema are skipped —
+  /// inner-ISO 9660 directory mutation is delegated to <c>FileSystem.Iso</c>
+  /// and is out of scope for the sector-rewrite modifier. The accompanying
+  /// <c>.mds</c> sidecar (if any) is not touched; the modifier only mutates
+  /// the MDF byte stream.</para>
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    MdfInPlaceModifier.AddOrReplaceSectors(archive,
+      inputs.Where(i => !i.IsDirectory).Select(i => (i.ArchiveName, i.ReadContent())));
+  }
+
+  /// <summary>
+  /// Zeros the 2 048-byte user-data region of each named sector. Sector
+  /// framing bytes (sync / address / mode / EDC) on raw geometries are
+  /// preserved so the LBA-to-offset map and the rest of the image remain
+  /// byte-identical.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    MdfInPlaceModifier.RemoveSectors(archive, entryNames);
   }
 }

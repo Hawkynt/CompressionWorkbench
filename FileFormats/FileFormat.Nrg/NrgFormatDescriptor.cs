@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Nrg;
 
-public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
 
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
@@ -16,6 +16,7 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".nrg";
@@ -28,7 +29,7 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [new("iso9660", "ISO 9660")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Nero Burning ROM disc image";
+  public string Description => "Nero Burning ROM disc image (R/W via in-place sector rewrite at fixed offsets; inner ISO 9660 directory mutation delegated to FileSystem.Iso; multi-track DAOI/CUEX layouts deferred)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new NrgReader(stream, leaveOpen: true);
@@ -59,5 +60,38 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     footer[0] = (byte)'N'; footer[1] = (byte)'E'; footer[2] = (byte)'R'; footer[3] = (byte)'5';
     System.Buffers.Binary.BinaryPrimitives.WriteUInt64BigEndian(footer[4..], (ulong)image.Length);
     output.Write(footer);
+  }
+
+  // ── IArchiveModifiable ──────────────────────────────────────────────
+
+  /// <summary>
+  /// Rewrites raw CD sectors in place. Inputs whose <c>ArchiveName</c> matches
+  /// <c>sector-NNNNNN.bin</c> are written at the fixed byte offset
+  /// <c>lba * sectorSize + dataOffset</c>; everything outside the touched
+  /// 2 048-byte user-data region — including the trailing NRG footer — stays
+  /// byte-identical (the footer migrates with the new EOF when the data area
+  /// grows past the previous end).
+  ///
+  /// <para>Inputs not matching the synthetic sector schema are skipped —
+  /// inner-ISO 9660 directory mutation is delegated to <c>FileSystem.Iso</c>
+  /// and is out of scope for the sector-rewrite modifier.</para>
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    NrgInPlaceModifier.AddOrReplaceSectors(archive,
+      inputs.Where(i => !i.IsDirectory).Select(i => (i.ArchiveName, i.ReadContent())));
+  }
+
+  /// <summary>
+  /// Zeros the 2 048-byte user-data region of each named sector. Sector
+  /// framing bytes (sync / address / mode / EDC) on raw geometries and the
+  /// trailing NRG footer are preserved so the LBA-to-offset map and the rest
+  /// of the image remain byte-identical.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    NrgInPlaceModifier.RemoveSectors(archive, entryNames);
   }
 }
