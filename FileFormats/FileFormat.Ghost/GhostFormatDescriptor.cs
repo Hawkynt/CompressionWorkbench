@@ -39,14 +39,14 @@ namespace FileFormat.Ghost;
 /// extension hint (<c>.gho</c> / <c>.ghs</c>) to disambiguate.
 /// </para>
 /// </remarks>
-public sealed class GhostFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class GhostFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 
   public string Id => "Ghost";
   public string DisplayName => "Symantec / Norton Ghost";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".gho";
   public IReadOnlyList<string> Extensions => [".gho", ".ghs"];
@@ -63,10 +63,13 @@ public sealed class GhostFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
   public string Description =>
-    "Symantec / Norton Ghost — R/W for the FE EF record container shared across " +
-    "the entire Binary Research → Symantec → Norton lineage (Ghost 3.0 / 1998 " +
-    "through Ghost 11.x / 12.x). 0x012F18D8 record framing, Fast LZ Z1 + zlib " +
-    "Z3-Z9 compression, CRC-16 stream cipher encryption, .ghs spanning. Format " +
+    "Symantec / Norton Ghost — R/W (Create + Add/Remove/Replace) for the FE EF " +
+    "record container shared across the entire Binary Research → Symantec → " +
+    "Norton lineage (Ghost 3.0 / 1998 through Ghost 11.x / 12.x). " +
+    "0x012F18D8 record framing, Fast LZ Z1 + zlib " +
+    "Z3-Z9 compression, CRC-16 stream cipher encryption, .ghs spanning. " +
+    "Modify is rebuild-based — the source image's compression mode + " +
+    "encryption state are preserved across Add/Remove/Replace. Format " +
     "reverse-engineered from Norton Ghost 11.5.1 binaries (ported from " +
     "MIT-licensed nyarime/gho) and independently cross-confirmed against " +
     "Symantec Ghost Explorer 2003.789 — the Fast LZ \"123456789012345678\" hash " +
@@ -165,6 +168,39 @@ public sealed class GhostFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
     w.WriteEnd();
   }
+
+  // ── IArchiveModifiable ─────────────────────────────────────────────
+
+  /// <summary>
+  /// Adds (or replaces by name) entries inside an existing Ghost image.
+  /// Routes to <see cref="GhostModifier"/> with <c>password=null</c> — the
+  /// IArchiveModifiable contract carries no password parameter so this
+  /// surface only handles unencrypted images. Callers holding an encrypted
+  /// image should use <see cref="GhostModifier.Add"/> directly, which
+  /// accepts the password.
+  /// </summary>
+  /// <remarks>
+  /// <para>
+  /// Modify is rebuild-based: the source image is parsed (preserving its
+  /// compression mode + encryption state), the entry list is mutated, and a
+  /// fresh image is written into the stream. The on-disk FE EF +
+  /// 0x012F18D8 record framing and the CRC-16 stream cipher state are
+  /// re-emitted by <see cref="GhostWriter"/> so the resulting bytes are
+  /// indistinguishable from a freshly-created image with the modified
+  /// content.
+  /// </para>
+  /// </remarks>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => GhostModifier.Add(archive, inputs, password: null);
+
+  /// <summary>
+  /// Removes named entries from an existing Ghost image via rebuild. The
+  /// old payload bytes are wiped because the new image is written from a
+  /// fresh buffer — no forensic recovery of the removed content from the
+  /// resulting stream is possible.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames)
+    => GhostModifier.Remove(archive, entryNames, password: null);
 
   private static byte MapMethodName(string? name) => name?.ToLowerInvariant() switch {
     null or "" or "fastlz" or "fast" or "z1" => GhostConstants.CompressionFast,

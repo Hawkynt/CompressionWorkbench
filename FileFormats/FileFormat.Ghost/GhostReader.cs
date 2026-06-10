@@ -70,6 +70,14 @@ public sealed class GhostReader : IDisposable {
   /// <summary>True when the file header indicates encryption (byte 12, bit 1).</summary>
   public bool IsEncrypted => this._header?.IsEncrypted ?? false;
 
+  /// <summary>
+  /// Compression byte from the parsed file header (offset 3) — 0 = None,
+  /// 2 = FastLZ, 3..9 = zlib levels. Returns 0 when the modern container
+  /// did not parse cleanly. Read by <see cref="GhostModifier"/> so the
+  /// rebuilt image keeps the same codec as the source.
+  /// </summary>
+  public byte HeaderCompression => this._header?.Compression ?? GhostConstants.CompressionNone;
+
   /// <summary>True when the modern record container parsed cleanly.</summary>
   public bool IsModernContainerParsed => this._header != null && this._partitions.Count >= 0 && this.GenerationHint == GhostGenerationHint.Modern11Plus;
 
