@@ -8,7 +8,7 @@ namespace FileSystem.Ubifs;
 
 /// <summary>
 /// Builds a minimal UBIFS image holding a flat list of small regular files plus
-/// the directory tree needed to reach them. Honest WORM scope:
+/// the directory tree needed to reach them.
 /// </summary>
 /// <remarks>
 /// <para><b>What this writer emits</b>: a linear node stream — superblock, master,
@@ -41,32 +41,32 @@ public sealed class UbifsWriter {
   public const int DefaultLebSize = 65536;
 
   // Common header: magic(4) crc(4) sqnum(8) len(4) type(1) group(1) pad(2) = 24 bytes
-  private const int CommonHeaderSize = 24;
+  internal const int CommonHeaderSize = 24;
 
   // Node types
-  private const byte NodeTypeInode = 0;
-  private const byte NodeTypeData = 1;
-  private const byte NodeTypeDentry = 2;
-  private const byte NodeTypeSuperblock = 6;
-  private const byte NodeTypeMaster = 7;
+  internal const byte NodeTypeInode = 0;
+  internal const byte NodeTypeData = 1;
+  internal const byte NodeTypeDentry = 2;
+  internal const byte NodeTypeSuperblock = 6;
+  internal const byte NodeTypeMaster = 7;
 
   // Key types (top 3 bits of upper key word)
-  private const uint KeyTypeIno = 0;
-  private const uint KeyTypeData = 1;
-  private const uint KeyTypeDent = 2;
+  internal const uint KeyTypeIno = 0;
+  internal const uint KeyTypeData = 1;
+  internal const uint KeyTypeDent = 2;
 
   // Compression types (UBIFS_COMPR_*)
-  private const ushort ComprNone = 0;
-  private const ushort ComprZlib = 2;
+  internal const ushort ComprNone = 0;
+  internal const ushort ComprZlib = 2;
 
   // Mode bits
-  private const uint ModeDir = 0x4000;   // S_IFDIR
-  private const uint ModeFile = 0x8000;  // S_IFREG
-  private const uint ModePerms = 0x01ED; // 0755 for dirs; we use 0644 for files via OR/mask below
+  internal const uint ModeDir = 0x4000;   // S_IFDIR
+  internal const uint ModeFile = 0x8000;  // S_IFREG
+  internal const uint ModePerms = 0x01ED; // 0755 for dirs; we use 0644 for files via OR/mask below
 
   // dt_type values
-  private const byte DtReg = 1;
-  private const byte DtDir = 4;
+  internal const byte DtReg = 1;
+  internal const byte DtDir = 4;
 
   // Inode layout (after common header):
   //   key[16] creat_sqnum[8] size[8] atime[8] ctime[8] mtime[8]
@@ -74,24 +74,24 @@ public sealed class UbifsWriter {
   //   flags[4] data_len[4] xattr_cnt[4] xattr_size[4] pad[4] xattr_names[4]
   //   compr_type[2] pad2[2+24]
   // Total = 24 (common) + 16+8+8+8+8+8 + 4+4+4+4+4+4+4 + 4+4+4+4+4+4 + 2+2+24 = 24+160 = 184
-  private const int InodeNodeSize = 184;
+  internal const int InodeNodeSize = 184;
 
   // Dentry payload (after common header):
   //   key[16] inum[8] padding[1] type[1] nlen[2] name[nlen + 1 NUL]
   // Length is 24 + 16 + 8 + 4 + nlen + 1 (kernel always NUL-terminates)
-  private const int DentryFixedSize = 24 + 16 + 8 + 4;
+  internal const int DentryFixedSize = 24 + 16 + 8 + 4;
 
   // Data payload (after common header):
   //   key[16] size[4] compr_type[2] compr_size[2] data[compr_size]
-  private const int DataFixedSize = 24 + 16 + 4 + 2 + 2;
+  internal const int DataFixedSize = 24 + 16 + 4 + 2 + 2;
 
   // Superblock node total length (kernel: sizeof(struct ubifs_sb_node) = 4096).
   // We don't need the full 4 KiB for self-round-trip; the scanner only reads
   // the common header (len/type). Use 4096 to keep it LEB-pad friendly.
-  private const int SuperblockNodeSize = 4096;
+  internal const int SuperblockNodeSize = 4096;
 
   // Master node total length (kernel: sizeof(struct ubifs_mst_node) = 512).
-  private const int MasterNodeSize = 512;
+  internal const int MasterNodeSize = 512;
 
   private readonly int _lebSize;
   private ulong _sqnum;
@@ -236,7 +236,7 @@ public sealed class UbifsWriter {
   /// starting at byte 8 (i.e. excluding the magic + CRC field), then stamps it
   /// into bytes 4..7 little-endian.
   /// </summary>
-  private static void FinalizeCrc(byte[] node) {
+  internal static void FinalizeCrc(byte[] node) {
     var crc = Crc32.Compute(node.AsSpan(8, node.Length - 8));
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(4, 4), crc);
   }
@@ -375,7 +375,7 @@ public sealed class UbifsWriter {
     return node;
   }
 
-  private static byte[] ZlibCompress(byte[] data) {
+  internal static byte[] ZlibCompress(byte[] data) {
     using var output = new MemoryStream();
     using (var zls = new ZLibStream(output, CompressionLevel.Optimal, leaveOpen: true))
       zls.Write(data, 0, data.Length);
@@ -387,7 +387,7 @@ public sealed class UbifsWriter {
   /// reader does not enforce a particular hash since it linearly scans dentries,
   /// but we compute it anyway so the keyspace is well-formed.
   /// </summary>
-  private static uint NameHash(byte[] name) {
+  internal static uint NameHash(byte[] name) {
     uint a = 0;
     foreach (var b in name)
       a += b * 11u;

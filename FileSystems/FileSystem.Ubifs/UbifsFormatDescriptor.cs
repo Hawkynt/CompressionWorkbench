@@ -12,17 +12,21 @@ namespace FileSystem.Ubifs;
 /// Read path: triage artifacts (passthrough, node-counts metadata, flat inode +
 /// dentry tables) plus real per-file extraction via linear log scan with zlib /
 /// stored DATA-node support.
-/// Write path (WORM): emits a flat sequence of superblock + master + inode +
-/// dentry + zlib-compressed data nodes — sufficient for self-round-trip via our
-/// linear reader, NOT for kernel mount (full LPT/TNC commit pipeline is
-/// multi-week work and out of scope here).
+/// Write path (R/W): emits a flat sequence of superblock + master + inode +
+/// dentry + zlib-compressed data nodes for Create, and appends fresh INO /
+/// DENT / DATA nodes at the journal head for Add / Replace / Remove. Committed
+/// nodes stay byte-identical at their original offsets — the kernel-style
+/// log-structured invariant (no in-place rewrites until commit-merge) is
+/// preserved. Full TNC / LPT commit pipeline (required for kernel mount) is
+/// multi-week work and remains out of scope.
 /// </summary>
-public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Ubifs";
   public string DisplayName => "UBIFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".ubifs";
   public IReadOnlyList<string> Extensions => [".ubifs", ".ubi", ".img"];
@@ -34,7 +38,7 @@ public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Unsorted Block Image File System (Linux raw-flash) — linear log scan w/ zlib data nodes; WORM writer emits superblock+master+inode+dentry+data nodes (self-round-trip only — wandering-tree commit out of scope).";
+  public string Description => "Unsorted Block Image File System (Linux raw-flash) — linear log scan w/ zlib data nodes; Create emits superblock+master+inode+dentry+data, Add/Replace/Remove append journal-style nodes at the journal head (committed nodes byte-identical; self-round-trip only — full TNC/LPT commit out of scope).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -145,8 +149,8 @@ public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <summary>
   /// Emits a self-contained UBIFS image (superblock + master + linear log of
   /// inode/dentry/data nodes) over <paramref name="output"/>. Round-trips through
-  /// this descriptor's reader; kernel-mount round-trip requires a full commit
-  /// pipeline which is out of scope here.
+  /// this descriptor's reader; kernel-mount round-trip requires the full
+  /// wandering-tree commit pipeline which is out of scope here.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
@@ -155,6 +159,34 @@ public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     foreach (var (name, data) in FilesOnly(inputs))
       writer.AddFile(name, data);
     writer.WriteTo(output);
+  }
+
+  // ── IArchiveModifiable ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Appends fresh INO + DENT + DATA nodes at the journal head for each input.
+  /// Existing entries with the same leaf name are replaced (same inode #, new
+  /// sqnum on a fresh INO + DATA), preserving the kernel UBIFS invariant that
+  /// committed nodes are never overwritten until commit-merge. Every byte of
+  /// every previously written node stays byte-identical at its original offset
+  /// after Add — only the trailing 0xFF padding of the journal-head LEB is
+  /// overwritten (and the image grows if the appended nodes spill past it).
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    UbifsInPlaceModifier.AddFiles(archive, inputs);
+  }
+
+  /// <summary>
+  /// Appends tombstone DENT nodes (inum=0) for each named entry at the journal
+  /// head. Reader's last-sqnum-wins drops the entry from the listing; old DENT
+  /// + INO + DATA nodes stay byte-identical at their original offsets.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    UbifsInPlaceModifier.RemoveFiles(archive, entryNames);
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {

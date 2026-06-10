@@ -86,14 +86,18 @@ public sealed class UbifsFileReader {
   private readonly byte[] _image;
   private readonly List<FileEntry> _entries = [];
 
-  // inode → (size, mode) from the latest INO node seen.
-  private readonly Dictionary<uint, (long Size, uint Mode)> _inodes = new();
+  // inode → (size, mode, sqnum-of-last-write) — highest-sqnum INO node wins.
+  private readonly Dictionary<uint, (long Size, uint Mode, ulong Sqnum)> _inodes = new();
 
-  // inode → block index → raw decompressed data bytes for that block.
-  private readonly Dictionary<uint, SortedDictionary<uint, byte[]>> _dataBlocks = new();
+  // inode → block index → (raw decompressed data bytes, sqnum-of-last-write).
+  // Highest-sqnum DATA node per (inum, blockIdx) wins, matching the kernel's
+  // TNC lookup semantic for a log-structured filesystem.
+  private readonly Dictionary<uint, SortedDictionary<uint, (byte[] Data, ulong Sqnum)>> _dataBlocks = new();
 
-  // Dentry list (parent inode, child name, child inode, dt-type).
-  private readonly List<(uint Parent, string Name, uint Child, byte DtType)> _dentries = [];
+  // Latest dentry per (parent, name) keyed by highest sqnum. Tombstones
+  // (child == 0) are kept too — they suppress earlier-sqnum dentries the
+  // same way the kernel UBIFS journal replay does.
+  private readonly Dictionary<(uint Parent, string Name), (uint Child, byte DtType, ulong Sqnum)> _dentries = new();
 
   /// <summary>True if at least one inode and at least one parseable dentry was found.</summary>
   public bool ParseOk { get; private set; }
@@ -125,14 +129,14 @@ public sealed class UbifsFileReader {
     if (!this._dataBlocks.TryGetValue(entry.Inode, out var blocks) || blocks.Count == 0)
       return [];
 
-    var size = entry.Size > 0 ? (int)entry.Size : (int)blocks.Sum(b => (long)b.Value.Length);
+    var size = entry.Size > 0 ? (int)entry.Size : (int)blocks.Sum(b => (long)b.Value.Data.Length);
     var result = new byte[size];
-    foreach (var (blockIdx, blockData) in blocks) {
+    foreach (var (blockIdx, slot) in blocks) {
       var dst = (int)blockIdx * DefaultBlockSize;
       if (dst >= size) break;
-      var copy = Math.Min(blockData.Length, size - dst);
+      var copy = Math.Min(slot.Data.Length, size - dst);
       if (copy > 0)
-        Array.Copy(blockData, 0, result, dst, copy);
+        Array.Copy(slot.Data, 0, result, dst, copy);
     }
     return result;
   }
@@ -176,17 +180,20 @@ public sealed class UbifsFileReader {
 
   private void ParseInodeNode(ReadOnlySpan<byte> span, int off, int nodeLen) {
     if (off + InodeModeOffset + 4 > span.Length) return;
+    var sqnum = BinaryPrimitives.ReadUInt64LittleEndian(span.Slice(off + 8, 8));
     var inum = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(off + InodeKeyOffset, 4));
     var size = (long)BinaryPrimitives.ReadUInt64LittleEndian(span.Slice(off + InodeSizeOffset, 8));
     var mode = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(off + InodeModeOffset, 4));
-    // Last write wins (sqnum ordering would be more correct but linear scan
-    // already approximates that on log-structured layouts).
-    this._inodes[inum] = (size, mode);
+    // Highest-sqnum INO node wins (matches kernel UBIFS TNC lookup after
+    // journal replay).
+    if (this._inodes.TryGetValue(inum, out var prev) && prev.Sqnum > sqnum) return;
+    this._inodes[inum] = (size, mode, sqnum);
     _ = nodeLen;
   }
 
   private void ParseDataNode(ReadOnlySpan<byte> span, int off, int nodeLen, HashSet<string> unsupported) {
     if (off + DataPayloadOffset > span.Length) return;
+    var sqnum = BinaryPrimitives.ReadUInt64LittleEndian(span.Slice(off + 8, 8));
     var inum = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(off + DataKeyOffset, 4));
     var keyHi = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(off + DataKeyOffset + 4, 4));
     var blockIdx = keyHi & 0x1FFFFFFFu; // low 29 bits = block index for DATA keys
@@ -216,10 +223,13 @@ public sealed class UbifsFileReader {
     }
 
     if (!this._dataBlocks.TryGetValue(inum, out var blocks)) {
-      blocks = new SortedDictionary<uint, byte[]>();
+      blocks = new SortedDictionary<uint, (byte[], ulong)>();
       this._dataBlocks[inum] = blocks;
     }
-    blocks[blockIdx] = decompressed;
+    // Highest-sqnum DATA node per (inum, block) wins. Earlier-sqnum nodes for
+    // the same block stay on disk (log-structured) but are masked from reads.
+    if (blocks.TryGetValue(blockIdx, out var prev) && prev.Sqnum > sqnum) return;
+    blocks[blockIdx] = (decompressed, sqnum);
   }
 
   private static byte[] TryInflateZlib(ReadOnlySpan<byte> compressed, int expectedSize) {
@@ -237,6 +247,7 @@ public sealed class UbifsFileReader {
 
   private void ParseDentryNode(ReadOnlySpan<byte> span, int off, int nodeLen) {
     if (off + DentNameOffset > span.Length) return;
+    var sqnum = BinaryPrimitives.ReadUInt64LittleEndian(span.Slice(off + 8, 8));
     var parent = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(off + DentKeyOffset, 4));
     var child = BinaryPrimitives.ReadUInt32LittleEndian(span.Slice(off + DentInumOffset, 4));
     var dtType = span[off + DentTypeOffset];
@@ -244,21 +255,26 @@ public sealed class UbifsFileReader {
     if (nlen == 0 || nlen > 255 || off + DentNameOffset + nlen > span.Length) return;
     var name = Encoding.UTF8.GetString(span.Slice(off + DentNameOffset, nlen));
     if (name.Length == 0 || name == "." || name == "..") return;
-    this._dentries.Add((parent, name, child, dtType));
+    // Highest-sqnum DENT per (parent, name) wins — tombstones (child == 0)
+    // included so a later Remove suppresses the earlier non-zero dentry.
+    var key = (parent, name);
+    if (this._dentries.TryGetValue(key, out var prev) && prev.Sqnum > sqnum) return;
+    this._dentries[key] = (child, dtType, sqnum);
     _ = nodeLen;
   }
 
   private void BuildEntries() {
-    // Build child → (parent, name) map for path reconstruction (latest dentry per child wins).
+    // Live (non-tombstone) dentries keyed by child inode — for path reconstruction.
     var byChild = new Dictionary<uint, (uint Parent, string Name)>();
-    foreach (var (parent, name, child, _) in this._dentries) {
-      if (child == 0) continue;
-      byChild[child] = (parent, name);
+    foreach (var ((parent, name), entry) in this._dentries) {
+      if (entry.Child == 0) continue; // tombstone
+      byChild[entry.Child] = (parent, name);
     }
 
-    foreach (var (parent, name, child, dtType) in this._dentries) {
-      if (child == 0) continue;
-      var isDir = dtType == 4 // DT_DIR
+    foreach (var ((parent, name), entry) in this._dentries) {
+      if (entry.Child == 0) continue; // tombstone — drop from listing
+      var child = entry.Child;
+      var isDir = entry.DtType == 4 // DT_DIR
         || (this._inodes.TryGetValue(child, out var ino) && (ino.Mode & ModeFormatMask) == ModeDirectory);
       var size = this._inodes.TryGetValue(child, out var inodeInfo) ? inodeInfo.Size : 0;
       var fullPath = BuildPath(child, byChild);

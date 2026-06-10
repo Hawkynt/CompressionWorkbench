@@ -215,12 +215,13 @@ public class UbifsReaderTests {
   }
 
   [Test, Category("Spec")]
-  public void Descriptor_WormCreateOnly_NoModify() {
+  public void Descriptor_AdvertisesRwScope() {
     var d = new UbifsFormatDescriptor();
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>(),
-      "UBIFS now ships WORM — descriptor must advertise CanCreate via IArchiveCreatable.");
-    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>(),
-      "UBIFS modify (Add/Remove without rebuild) requires wandering-tree commits — must not advertise CanModify.");
+      "UBIFS write path emits superblock + master + linear log of inode/dentry/data nodes.");
+    Assert.That(d, Is.InstanceOf<IArchiveModifiable>(),
+      "UBIFS R/W path appends fresh INO/DENT/DATA nodes at the journal head (committed nodes byte-identical).");
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
   }
 }
