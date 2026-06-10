@@ -116,14 +116,29 @@ public static class AcronisRecordReader {
 
   /// <summary>
   /// Reads records starting at <paramref name="stream"/>'s current position and ending at
-  /// <paramref name="endExclusive"/>. Stops at end-of-stream, after an
-  /// <see cref="AcronisRecordType.EndTrailer"/> record, or when an unparseable record is
+  /// <paramref name="endExclusive"/>. Stops at end-of-stream, or when an unparseable record is
   /// encountered (partial result is returned in that case rather than thrown).
   /// </summary>
+  /// <remarks>
+  /// <para>
+  /// Tolerates embedded <c>EndTrailer + 12-byte fs trailer + 48-byte mirror footer</c> blocks
+  /// that appear MID-STREAM. These are the natural result of true in-place R/W modification: each
+  /// modify step appends a fresh batch of records followed by a fresh trailer/footer at the new
+  /// EOF, leaving every prior batch's trailer/footer block byte-identical at its original offset.
+  /// When the walker encounters an embedded EndTrailer it sniffs the next 12 bytes for the
+  /// file-system trailer magic (<c>2C 8A E1 94</c> at +8); on hit, it skips 60 bytes (12-byte
+  /// trailer + 48-byte mirror footer) and continues. On miss the EndTrailer is treated as a
+  /// terminator (legacy single-batch behaviour).
+  /// </para>
+  /// </remarks>
   public static List<AcronisRecord> ReadAll(Stream stream, long endExclusive) {
     ArgumentNullException.ThrowIfNull(stream);
     var records = new List<AcronisRecord>();
     var limit = Math.Min(endExclusive, stream.Length);
+    const int FileSystemTrailerLength = 12;
+    const int FooterLength = 48;
+    const int EmbeddedTrailerBlockLength = FileSystemTrailerLength + FooterLength;
+    Span<byte> embeddedProbe = stackalloc byte[FileSystemTrailerLength];
     while (stream.Position < limit) {
       AcronisRecord rec;
       try {
@@ -134,7 +149,22 @@ public static class AcronisRecordReader {
         break;
       }
       records.Add(rec);
-      if (rec.Type == AcronisRecordType.EndTrailer) break;
+      if (rec.Type != AcronisRecordType.EndTrailer) continue;
+
+      // EndTrailer encountered. In a legacy single-batch slice this terminates the walk. In a
+      // multi-batch slice (true in-place R/W) the next 60 bytes are the prior batch's trailer +
+      // mirror footer that the modifier left byte-identical mid-stream — skip them and resume.
+      if (stream.Position + EmbeddedTrailerBlockLength > limit) break;
+      var probeStart = stream.Position;
+      var read = stream.Read(embeddedProbe);
+      if (read != FileSystemTrailerLength) break;
+      var isFs = embeddedProbe[8] == 0x2C && embeddedProbe[9] == 0x8A && embeddedProbe[10] == 0xE1 && embeddedProbe[11] == 0x94;
+      if (!isFs) {
+        // Legacy / unknown trailer shape — preserve the original terminator contract.
+        stream.Position = probeStart;
+        break;
+      }
+      stream.Position = probeStart + EmbeddedTrailerBlockLength;
     }
     return records;
   }

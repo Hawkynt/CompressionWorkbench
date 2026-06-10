@@ -30,12 +30,13 @@ namespace FileFormat.Acronis;
 /// and the .tibx format (Acronis True Image 2020+).
 /// </para>
 /// </remarks>
-public sealed class AcronisFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class AcronisFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveModifiable {
   public string Id => "AcronisTib";
   public string DisplayName => "Acronis True Image (.tib)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanModify
+    | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".tib";
   public IReadOnlyList<string> Extensions => [".tib"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -44,7 +45,53 @@ public sealed class AcronisFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate (record stream)")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Acronis True Image classic .tib backup — R/O listing + R/O file extraction via spec-grounded FileMeta chain walk (Listing.MetaOffset → FirstFileMetaRecord(102) → next RecordIndex(108)) with sequential pairing as fallback; FileMeta 102/1/2/5 body shape reverse-engineered as an InputItem attribute stream (uint32 count + N×{uint32 idAndFlags, uint16 size, body}) with the high-value ids decoded — ItemCommon(0x10)=filename+altname+DosAttributes+4 FILETIMEs (CreationTime/LastWriteTime/LastAccessTime/ChangeTime via BackupCommonAttributes writer) + trailer dword, SourceItem(0x40)=path, HardLinkId(0x14), BackupTime(0x50), TimeZone(0x60), Replica(0x17)=GUID+2 cookies, ItemCommonExtra(0x18)=uint64 cookie, SliceItem(0x80)=GUID+2 cookies+flag+optional name, SliceItemBlob(0x90)=opaque variable bytes; per-entry DecodedName surfaced when the 102 body parses; per-blob MD5 integrity check still gates extraction. Documented-TODO: ACL blob shape on record-5 bodies — the per-id handler was not located in the binary inspection pass; record-5 bodies are still surfaced as attribute streams if they decode as such, otherwise as raw payload.";
+  public string Description => "Acronis True Image classic .tib backup — R/W via true in-place record-stream append: Add/Replace/Remove each append a fresh Listing + chain (102 → 1 → 2 → 5 → 108 → 109) + EndTrailer + 12-byte fs trailer + 48-byte mirror footer at EOF, leaving [0, oldLength) byte-identical. Reader's per-name latest-Listing-wins gate + tombstone MetaOffset sentinel (0xFFFFFFFFFFFF) surfaces the post-mutation entry view; the walker tolerates mid-stream EndTrailer + trailer + footer blocks by sniffing the fs magic (2C 8A E1 94) at +8 and skipping 60 bytes. R/O listing + R/O file extraction via spec-grounded FileMeta chain walk (Listing.MetaOffset → FirstFileMetaRecord(102) → next RecordIndex(108)) with sequential pairing as fallback; FileMeta 102/1/2/5 body shape reverse-engineered as an InputItem attribute stream (uint32 count + N×{uint32 idAndFlags, uint16 size, body}) with the high-value ids decoded — ItemCommon(0x10)=filename+altname+DosAttributes+4 FILETIMEs (CreationTime/LastWriteTime/LastAccessTime/ChangeTime via BackupCommonAttributes writer) + trailer dword, SourceItem(0x40)=path, HardLinkId(0x14), BackupTime(0x50), TimeZone(0x60), Replica(0x17)=GUID+2 cookies, ItemCommonExtra(0x18)=uint64 cookie, SliceItem(0x80)=GUID+2 cookies+flag+optional name, SliceItemBlob(0x90)=opaque variable bytes; per-entry DecodedName surfaced when the 102 body parses; per-blob MD5 integrity check still gates extraction. Documented-TODO: ACL blob shape on record-5 bodies — the per-id handler was not located in the binary inspection pass; record-5 bodies are still surfaced as attribute streams if they decode as such, otherwise as raw payload.";
+
+  /// <summary>
+  /// Appends one or more new files to the slice via true in-place record-stream append.
+  /// Delegates to <see cref="AcronisInPlaceModifier.Add"/>. Existing bytes are byte-identical;
+  /// the reader's per-name latest-Listing-wins gate surfaces the new entries.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    // Replace-by-name semantic: if any existing entry has the same name, append a fresh chain so
+    // the per-name latest-wins gate hands the new content back. The OLD chain stays byte-identical.
+    var existing = new HashSet<string>(StringComparer.Ordinal);
+    archive.Position = 0;
+    var reader = new AcronisReader(archive);
+    foreach (var entry in reader.Entries) {
+      var full = string.IsNullOrEmpty(entry.Path)
+        ? entry.Name
+        : entry.Path.TrimEnd('/', '\\') + "/" + entry.Name;
+      existing.Add(full);
+    }
+
+    var addInputs = new List<ArchiveInputInfo>(inputs.Count);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      if (existing.Contains(input.ArchiveName)) {
+        // True Replace path: append a fresh chain carrying the new bytes under the same name.
+        AcronisInPlaceModifier.Replace(archive, input.ArchiveName, input.ReadContent());
+      } else {
+        addInputs.Add(input);
+      }
+    }
+    if (addInputs.Count > 0)
+      AcronisInPlaceModifier.Add(archive, addInputs);
+  }
+
+  /// <summary>
+  /// Appends a tombstone Listing record per name via
+  /// <see cref="AcronisInPlaceModifier.Remove"/>. The reader's per-name latest-wins gate sees
+  /// the tombstone <c>MetaOffset</c> sentinel and drops the entry from the live view.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames)
+      AcronisInPlaceModifier.Remove(archive, name);
+  }
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);

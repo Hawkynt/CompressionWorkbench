@@ -44,6 +44,27 @@ namespace FileFormat.Acronis;
 /// </list>
 /// </remarks>
 public sealed class AcronisReader {
+
+  /// <summary>
+  /// Sentinel <see cref="AcronisFileEntry.MetaOffset"/> value (max uint48) signalling that the
+  /// Listing entry is a TOMBSTONE: a true in-place removal marker carrying the entry's full
+  /// name and zero size. The reader treats the latest tombstone-for-name as authoritative and
+  /// drops the entry from <see cref="Entries"/>; any later non-tombstone Listing for the same
+  /// name resurrects the entry. This sentinel is appended by
+  /// <see cref="AcronisInPlaceModifier"/> from the modifier surface.
+  /// </summary>
+  public const long TombstoneMetaOffset = 0xFFFFFFFFFFFFL;
+
+  /// <summary>
+  /// Composes a Listing entry's canonical full name (path-joined) for latest-wins +
+  /// tombstone bookkeeping. Mirrors the descriptor's
+  /// <c>List</c> Name composition so callers see the same identity.
+  /// </summary>
+  private static string MakeFullName(AcronisFileEntry entry)
+    => string.IsNullOrEmpty(entry.Path)
+      ? entry.Name
+      : entry.Path.TrimEnd('/', '\\') + "/" + entry.Name;
+
   public AcronisVolumeHeader Header { get; }
   public AcronisSliceTrailer? Trailer { get; }
   public IReadOnlyList<AcronisFileEntry> Entries { get; }
@@ -168,16 +189,36 @@ public sealed class AcronisReader {
         && t.MetadataOffset < stream.Length) {
       stream.Position = t.MetadataOffset;
       // Records live between metadataOffset and the start of the trailer payload (the 12-byte
-      // file-system trailer that precedes the 48-byte footer).
+      // file-system trailer that precedes the 48-byte footer). The walker tolerates embedded
+      // EndTrailer + fs-trailer + footer blocks mid-stream (true in-place R/W appends a fresh
+      // record batch after each prior batch's byte-identical trailer/footer block).
       const int FileSystemTrailerLength = 12;
       const int FooterLength = 48;
       var recordsEnd = stream.Length - FooterLength - FileSystemTrailerLength;
       records = AcronisRecordReader.ReadAll(stream, recordsEnd);
 
+      // Collect per-name Listing entries — latest Listing record (highest Start) wins per name,
+      // and a tombstone MetaOffset (TombstoneMetaOffset) means "entry removed; drop". This is
+      // the canonical semantic for in-place R/W mutation via record-stream append.
+      var listingEntriesPerName = new Dictionary<string, AcronisFileEntry>(StringComparer.Ordinal);
+      var nameOrder = new List<string>();
       foreach (var rec in records) {
-        if (rec.Files is { } files) entries.AddRange(files);
         if (rec.ConfigAttrs is { } attrs) configAttrs.AddRange(attrs);
         switch (rec.Type) {
+          case AcronisRecordType.Listing:
+            if (rec.Files is { } files) {
+              foreach (var entry in files) {
+                var fullName = MakeFullName(entry);
+                var isTombstone = entry.MetaOffset == TombstoneMetaOffset;
+                if (isTombstone) {
+                  if (listingEntriesPerName.Remove(fullName)) nameOrder.Remove(fullName);
+                  continue;
+                }
+                if (!listingEntriesPerName.ContainsKey(fullName)) nameOrder.Add(fullName);
+                listingEntriesPerName[fullName] = entry;
+              }
+            }
+            break;
           case AcronisRecordType.RecordIndex:
             indices.Add(rec);
             break;
@@ -193,6 +234,8 @@ public sealed class AcronisReader {
             break;
         }
       }
+
+      foreach (var name in nameOrder) entries.Add(listingEntriesPerName[name]);
     }
 
     this.Entries = entries;
