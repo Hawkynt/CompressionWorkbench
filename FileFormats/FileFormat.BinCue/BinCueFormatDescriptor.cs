@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.BinCue;
 
-public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
@@ -16,6 +16,7 @@ public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".bin";
@@ -53,6 +54,37 @@ public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     foreach (var (name, data) in FlatFiles(inputs))
       iso.AddFile(name, data);
     output.Write(iso.Build());
+  }
+
+  // ── IArchiveModifiable ──────────────────────────────────────────────
+
+  /// <summary>
+  /// Rewrites raw CD sectors in place. Inputs whose <c>ArchiveName</c>
+  /// matches <c>sector-NNNNNN.bin</c> are written at the fixed byte offset
+  /// <c>lba * sectorSize + dataOffset</c>; everything outside the touched
+  /// 2 048-byte user-data region stays byte-identical.
+  ///
+  /// <para>Inputs not matching the synthetic sector schema are skipped —
+  /// inner-ISO 9660 directory mutation is delegated to <c>FileSystem.Iso</c>
+  /// and is out of scope for the sector-rewrite modifier.</para>
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    BinCueInPlaceModifier.AddOrReplaceSectors(archive,
+      inputs.Where(i => !i.IsDirectory).Select(i => (i.ArchiveName, i.ReadContent())));
+  }
+
+  /// <summary>
+  /// Zeros the 2 048-byte user-data region of each named sector. The
+  /// sector framing bytes (sync / address / mode / EDC) on raw geometries
+  /// are preserved so the LBA-to-offset map and the rest of the image
+  /// remain byte-identical.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    BinCueInPlaceModifier.RemoveSectors(archive, entryNames);
   }
 
   // ── IArchiveLayoutMap ───────────────────────────────────────────────
