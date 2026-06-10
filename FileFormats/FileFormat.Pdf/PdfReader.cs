@@ -136,25 +136,40 @@ public sealed partial class PdfReader : IDisposable {
     }
 
     // --- Second pass: extract file attachments (/Type /EmbeddedFile) ---
+    // When the file carries a parseable xref + trailer chain (ISO 32000-1 §7.5.4),
+    // honour incremental-update tombstones: only objects whose latest xref entry
+    // is in-use ('n') are considered live. This lets RemoveFiles tombstone an
+    // attachment by emitting a new xref subsection marking its Filespec +
+    // EmbeddedFile entries 'f' — their bytes survive but become unreachable.
+    var liveObjects = TryBuildLiveObjectSet(text);
+
     // Build map: stream-object-number → (name, offset, length).
     // First collect Filespec objects to get filenames and their EF stream refs.
     var filespecs = new Dictionary<int, string>(); // stream-obj-number → filename
+    var seenFilespecNames = new HashSet<int>();
     foreach (Match m in objMatches) {
+      var objNum = int.Parse(m.Groups[1].Value);
       var objBody = m.Groups[2].Value;
       if (!objBody.Contains("/Type") || !objBody.Contains("/Filespec")) continue;
+      if (liveObjects != null && !liveObjects.Contains(objNum)) continue;
       var fnMatch = FilespecFnPattern().Match(objBody);
       if (!fnMatch.Success) continue;
       var fn = fnMatch.Groups[1].Value.Replace("\\(", "(").Replace("\\)", ")").Replace("\\\\", "\\");
+      // Skip filespecs with empty names — defensive against any in-place
+      // tombstone scheme that might null out the name without xref tracking.
+      if (string.IsNullOrEmpty(fn)) continue;
       var efMatch = EfRefPattern().Match(objBody);
       if (!efMatch.Success) continue;
       var efObjNum = int.Parse(efMatch.Groups[1].Value);
       filespecs[efObjNum] = fn;
+      seenFilespecNames.Add(efObjNum);
     }
 
     // Now collect EmbeddedFile stream objects referenced by filespecs.
     foreach (Match m in objMatches) {
       var objNum = int.Parse(m.Groups[1].Value);
       if (!filespecs.TryGetValue(objNum, out var fileName)) continue;
+      if (liveObjects != null && !liveObjects.Contains(objNum)) continue;
       var objBody = m.Groups[2].Value;
       if (!objBody.Contains("/Type") || !objBody.Contains("/EmbeddedFile")) continue;
 
@@ -180,6 +195,74 @@ public sealed partial class PdfReader : IDisposable {
         Filter = "EmbeddedFile",
       });
     }
+  }
+
+  /// <summary>
+  /// Walks the most recent <c>startxref</c> + every <c>/Prev</c>-linked
+  /// trailer to build the set of object numbers whose latest xref entry is
+  /// in-use ('n'). Returns <c>null</c> if the file has no parseable xref
+  /// (typical for ad-hoc / minimal-test PDFs without proper sections) —
+  /// in that case the caller falls back to "treat every lexically present
+  /// object as live", matching the original behaviour.
+  /// </summary>
+  private static HashSet<int>? TryBuildLiveObjectSet(string text) {
+    var startXrefIdx = text.LastIndexOf("startxref", StringComparison.Ordinal);
+    if (startXrefIdx < 0) return null;
+    var p = startXrefIdx + "startxref".Length;
+    while (p < text.Length && (text[p] == ' ' || text[p] == '\r' || text[p] == '\n')) p++;
+    var start = p;
+    while (p < text.Length && text[p] >= '0' && text[p] <= '9') p++;
+    if (p == start) return null;
+    if (!long.TryParse(text.AsSpan(start, p - start), out var xrefOffset)) return null;
+
+    var latest = new Dictionary<int, char>();
+    var visited = new HashSet<long>();
+    var current = xrefOffset;
+    var anyEntries = false;
+    while (current >= 0 && current < text.Length) {
+      if (!visited.Add(current)) break;
+      if (text[(int)current] != 'x') break;
+      if (text.AsSpan((int)current, 4) is not "xref") break;
+      var q = (int)current + 4;
+      while (q < text.Length && (text[q] == ' ' || text[q] == '\r' || text[q] == '\n')) q++;
+
+      while (q < text.Length) {
+        var lineStart = q;
+        while (q < text.Length && text[q] != '\n') q++;
+        var line = text[lineStart..q].TrimEnd('\r', ' ');
+        if (q < text.Length) q++;
+        if (line.StartsWith("trailer", StringComparison.Ordinal)) {
+          // Walk to "startxref"; chase /Prev.
+          var trailerEnd = text.IndexOf("startxref", lineStart, StringComparison.Ordinal);
+          if (trailerEnd < 0) trailerEnd = text.Length;
+          var trailer = text[lineStart..trailerEnd];
+          var prev = PrevPattern().Match(trailer);
+          current = prev.Success && long.TryParse(prev.Groups[1].Value, out var pv) ? pv : -1;
+          break;
+        }
+        if (string.IsNullOrEmpty(line)) continue;
+        var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 2 || !int.TryParse(parts[0], out var first) || !int.TryParse(parts[1], out var count))
+          return null;
+        for (var i = 0; i < count; i++) {
+          if (q + 20 > text.Length) return null;
+          var entry = text.Substring(q, 20);
+          q += 20;
+          if (entry.Length < 18) continue;
+          var objNum = first + i;
+          var tag = entry[17];
+          anyEntries = true;
+          if (!latest.ContainsKey(objNum))
+            latest[objNum] = tag;
+        }
+      }
+    }
+
+    if (!anyEntries) return null;
+    var live = new HashSet<int>();
+    foreach (var (obj, tag) in latest)
+      if (tag == 'n') live.Add(obj);
+    return live;
   }
 
   private static int FindStreamStart(string text, int objStart, int objLen) {
@@ -305,4 +388,7 @@ public sealed partial class PdfReader : IDisposable {
 
   [GeneratedRegex(@"/EF\s*<<\s*/F\s+(\d+)\s+0\s+R")]
   private static partial Regex EfRefPattern();
+
+  [GeneratedRegex(@"/Prev\s+(\d+)")]
+  private static partial Regex PrevPattern();
 }

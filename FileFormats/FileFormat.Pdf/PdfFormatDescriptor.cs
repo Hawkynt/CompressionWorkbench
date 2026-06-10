@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Pdf;
 
-public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
@@ -20,7 +20,7 @@ public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".pdf";
   public IReadOnlyList<string> Extensions => [".pdf"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -30,7 +30,11 @@ public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     [new("dct", "DCTDecode (JPEG)"), new("jpx", "JPXDecode (JPEG2000)"), new("flate", "FlateDecode")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "PDF image extraction (JPEG, JPEG2000, raw image streams)";
+  public string Description =>
+    "PDF image extraction + file-attachment R/W. Add/Remove use ISO 32000-1 §7.5.6 " +
+    "incremental updates: every byte before the original %%EOF stays byte-identical; " +
+    "mutations append a new xref subsection + trailer with /Prev linking back to the " +
+    "prior xref. Removal tombstones via xref free-list entries ('f' tag, generation+1).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new PdfReader(stream);
@@ -58,5 +62,39 @@ public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
     }
     w.WriteTo(output);
+  }
+
+  /// <summary>
+  /// Adds file attachments to an existing PDF via ISO 32000-1 §7.5.6
+  /// incremental updates. Every byte before the original <c>%%EOF</c> stays
+  /// byte-identical; a single new section is appended carrying the new
+  /// EmbeddedFile + Filespec objects, a revised Catalog, a new xref
+  /// subsection and a trailer with <c>/Prev</c> linking to the original
+  /// xref.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var attachments = new List<(string Name, byte[] Data)>(inputs.Count);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      attachments.Add((i.ArchiveName, i.ReadContent()));
+    }
+    if (attachments.Count == 0) return;
+    PdfInPlaceModifier.AddFiles(archive, attachments);
+  }
+
+  /// <summary>
+  /// Tombstones the named attachments via an incremental update. Their
+  /// original Filespec + EmbeddedFile object bytes survive (true in-place —
+  /// not overwritten) but are marked free ('f', generation+1) in the new
+  /// xref subsection, so the spec-aware <see cref="PdfReader"/> stops
+  /// listing them.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    if (entryNames.Length == 0) return;
+    PdfInPlaceModifier.RemoveFiles(archive, entryNames);
   }
 }

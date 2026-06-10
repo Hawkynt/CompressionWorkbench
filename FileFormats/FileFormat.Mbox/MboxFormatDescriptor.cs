@@ -10,13 +10,13 @@ namespace FileFormat.Mbox;
 /// mailbox is surfaced as a separate <c>.eml</c> entry; the message body is
 /// preserved verbatim (including any "&gt;From " byte-stuffed lines).
 /// </summary>
-public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable {
+public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Mbox";
   public string DisplayName => "mbox (Unix mailbox)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".mbox";
   public IReadOnlyList<string> Extensions => [".mbox", ".mbx"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -27,13 +27,23 @@ public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Unix mbox mailbox: stream of RFC 822 messages separated by \"From \" lines.";
+  public string Description =>
+    "Unix mbox mailbox: flat stream of RFC 822 messages separated by \"From \" lines. " +
+    "True in-place R/W: Add appends a new \"From \" separator + message at EOF (every " +
+    "pre-existing byte byte-identical); Remove tombstones a record with an X-Status: D " +
+    "marker + zero-wiped body, preserving record length so byte offsets of every other " +
+    "message stay stable.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var messages = Load(stream);
     var result = new List<ArchiveEntryInfo>(messages.Count);
     for (var i = 0; i < messages.Count; i++) {
       var m = messages[i];
+      // Tombstoned (deleted) messages carry the canonical "X-Status: D" + our
+      // "X-Cwb-Tombstone: 1" markers — skip them so callers see the live set
+      // after an in-place Remove. The bytes remain on disk; only the listing
+      // surface omits them.
+      if (IsTombstone(m)) continue;
       var name = EntryName(m, i);
       DateTime? lastMod = m.Date != null && DateTime.TryParse(m.Date, null,
         System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
@@ -44,10 +54,19 @@ public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return result;
   }
 
+  private static bool IsTombstone(MboxMessage m) {
+    if (m.EmlBytes.Length < 32) return false;
+    // Headers area runs until the first blank line; bound the scan at 1 KiB.
+    var n = Math.Min(m.EmlBytes.Length, 1024);
+    var headers = System.Text.Encoding.Latin1.GetString(m.EmlBytes, 0, n);
+    return headers.Contains("X-Cwb-Tombstone: 1", StringComparison.Ordinal);
+  }
+
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var messages = Load(stream);
     for (var i = 0; i < messages.Count; i++) {
       var m = messages[i];
+      if (IsTombstone(m)) continue;
       var name = EntryName(m, i);
       if (files != null && files.Length > 0 && !MatchesFilter(name, files)) continue;
       WriteFile(outputDir, name, m.EmlBytes);
@@ -110,6 +129,46 @@ public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     using var w = new MboxWriter(output, leaveOpen: true);
     foreach (var (_, data) in FilesOnly(inputs))
       w.AddMessage(data);
+  }
+
+  /// <summary>
+  /// Appends every input as a new mbox message in place. The mailbox bytes
+  /// before <see cref="Stream.Length"/> stay byte-identical; only a new
+  /// <c>From&#32;</c> separator + the input's bytes are written at EOF.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      MboxInPlaceModifier.Append(archive, input.ReadContent());
+    }
+  }
+
+  /// <summary>
+  /// Tombstones the named messages in place. The match is by entry name —
+  /// see <see cref="EntryName"/> — so callers should pass the names returned
+  /// by <see cref="List"/>. The byte offsets of every non-targeted message
+  /// are unchanged after this call.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    if (entryNames.Length == 0) return;
+
+    archive.Position = 0;
+    var messages = Load(archive);
+    var nameToIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    for (var i = 0; i < messages.Count; i++)
+      nameToIndex[EntryName(messages[i], i)] = i;
+
+    var hits = new List<int>();
+    foreach (var entryName in entryNames) {
+      if (nameToIndex.TryGetValue(entryName, out var idx)) hits.Add(idx);
+    }
+    hits.Sort();
+    for (var i = hits.Count - 1; i >= 0; i--)
+      MboxInPlaceModifier.TombstoneAt(archive, hits[i]);
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
