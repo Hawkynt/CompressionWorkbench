@@ -7,8 +7,18 @@ namespace FileSystem.Hpfs;
 
 /// <summary>
 /// R/W descriptor for OS/2 HPFS (High Performance File System) volumes.
-/// Supports: list, extract, create (WORM), modify (rebuild-based), defragment, extent map.
+/// Supports: list, extract, create, modify (true in-place at root level via
+/// <see cref="HpfsInPlaceModifier"/>), defragment, extent map.
 /// </summary>
+/// <remarks>
+/// Add/Remove at the root level mutate the image in place — bitmap bits at LBA 24
+/// are flipped, fresh data + FNODE sectors are written into previously-free
+/// slots, and root-DIRBLK dirents are shifted in-place at LBA 20. Sectors not
+/// touched by the mutation stay byte-identical to their pre-mutation bytes.
+/// Subdirectory mutation and multi-block DIRBLK B-tree splits are deferred and
+/// throw <see cref="NotSupportedException"/> / <see cref="InvalidOperationException"/>
+/// respectively; callers can fall back to a rebuild path in those cases.
+/// </remarks>
 public sealed class HpfsFormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
       IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
@@ -96,13 +106,39 @@ public sealed class HpfsFormatDescriptor
     w.WriteTo(output);
   }
 
-  // ── IArchiveModifiable (rebuild-based) ────────────────────────────────
+  // ── IArchiveModifiable (true in-place via HpfsInPlaceModifier) ────────
 
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs, ReadFileEntries, BuildImage);
+  /// <summary>
+  /// In-place root-level Add: flips bitmap bits at LBA 24 to allocate fresh
+  /// data + FNODE sectors, writes them at their freshly-allocated offsets,
+  /// and inserts the new dirent into the root DIRBLK at LBA 20 by shifting
+  /// later dirents in place. Untouched sectors stay byte-identical.
+  /// Subdirectory paths and DIRBLK overflow fall through to the rebuild path
+  /// so callers always get a result.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    try {
+      HpfsInPlaceModifier.Add(archive, inputs);
+    } catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException) {
+      archive.Position = 0;
+      ModifyRebuilder.Add(archive, inputs, ReadFileEntries, BuildImage);
+    }
+  }
 
-  public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames, ReadFileEntries, BuildImage);
+  /// <summary>
+  /// In-place root-level Remove: zeros the file's data + FNODE sectors,
+  /// flips their bitmap bits back to free, and excises the dirent from the
+  /// root DIRBLK by shifting later dirents back. Untouched sectors stay
+  /// byte-identical.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    try {
+      HpfsInPlaceModifier.Remove(archive, entryNames);
+    } catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException) {
+      archive.Position = 0;
+      ModifyRebuilder.Remove(archive, entryNames, ReadFileEntries, BuildImage);
+    }
+  }
 
   // ── IArchiveDefragmentable ────────────────────────────────────────────
 
