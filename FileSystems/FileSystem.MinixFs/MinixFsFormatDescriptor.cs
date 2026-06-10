@@ -82,15 +82,20 @@ public sealed class MinixFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   /// <summary>
-  /// Adds (or replaces by name) files inside an existing MinixFs image. Uses
-  /// <see cref="MinixFsModifier"/> for true O(touched bytes) random-access I/O.
-  /// Falls back to rebuild if the image has no free inodes or zones.
+  /// Adds (or replaces by name) files inside an existing MinixFs image using
+  /// <see cref="MinixFsInPlaceModifier"/> for TRUE in-place
+  /// O(touched bytes) random-access I/O across V1, V2 and V3 superblock
+  /// variants — only the inode bitmap byte, zone bitmap byte, the new
+  /// inode slot, the affected directory zone and the file's data zones
+  /// are written; every other byte of the image stays identical.
+  /// Falls back to whole-image rebuild only when the image has no free
+  /// inode/zone or the file exceeds the direct-pointer ceiling.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     try {
       foreach (var (name, data) in FilesOnly(inputs)) {
-        MinixFsModifier.RemoveFile(archive, name, wipeData: true);
-        MinixFsModifier.AddFile(archive, name, data);
+        MinixFsInPlaceModifier.RemoveFile(archive, name, wipeData: true);
+        MinixFsInPlaceModifier.AddFile(archive, name, data);
       }
     } catch (IOException) {
       archive.Position = 0;
@@ -111,11 +116,12 @@ public sealed class MinixFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
   /// <summary>
   /// Removes the named entries from an existing MinixFs image using
-  /// <see cref="MinixFsModifier"/> for O(touched bytes) random-access I/O.
+  /// <see cref="MinixFsInPlaceModifier"/> for true in-place
+  /// O(touched bytes) random-access I/O across V1/V2/V3.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     foreach (var name in entryNames)
-      MinixFsModifier.RemoveFile(archive, name, wipeData: true);
+      MinixFsInPlaceModifier.RemoveFile(archive, name, wipeData: true);
   }
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
