@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Wad2;
 
-public sealed class Wad2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class Wad2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the WAD2 archive in listing order.</summary>
   public void Defragment(Stream archive)
@@ -44,6 +44,7 @@ public sealed class Wad2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".wad";
   public IReadOnlyList<string> Extensions => [".wad"];
@@ -106,5 +107,39 @@ public sealed class Wad2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     using var w = new Wad2Writer(output, leaveOpen: true);
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
       w.AddEntry(name, data);
+  }
+
+  // ── IArchiveModifiable (in-place) ─────────────────────────────────────
+
+  /// <summary>
+  /// Appends (or replaces by name) entries inside an existing WAD2/WAD3 archive.
+  /// WAD's directory lives at the END of the file with a pointer in the 12-byte
+  /// header, so Add only has to:
+  /// <list type="number">
+  ///   <item>Truncate the trailing directory.</item>
+  ///   <item>Append the new entry's bytes at the new EOF.</item>
+  ///   <item>Re-emit the directory (old entries + new entry).</item>
+  ///   <item>Patch the 4-byte numEntries and 4-byte dirOffset fields in the header.</item>
+  /// </list>
+  /// The 4-byte magic at <c>[0, 4)</c> and the data region <c>[12, oldDirOffset)</c>
+  /// survive byte-identical — that's the contract.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs)) {
+      var entryName = Path.GetFileName(name);
+      Wad2Modifier.RemoveEntry(archive, entryName);
+      Wad2Modifier.AddEntry(archive, entryName, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing WAD2/WAD3 archive. For each
+  /// entry, walks the directory to find it, rewrites the data region with
+  /// that entry's bytes dropped, re-emits the directory, and patches the
+  /// header.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      Wad2Modifier.RemoveEntry(archive, Path.GetFileName(name));
   }
 }

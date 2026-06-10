@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Hog;
 
-public sealed class HogFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class HogFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
@@ -26,6 +26,7 @@ public sealed class HogFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".hog";
   public IReadOnlyList<string> Extensions => [".hog"];
@@ -87,6 +88,36 @@ public sealed class HogFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     using var w = new HogWriter(output, leaveOpen: true);
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
       w.AddFile(name, data);
+  }
+
+  // ── IArchiveModifiable (in-place) ─────────────────────────────────────
+
+  /// <summary>
+  /// Appends (or replaces by name) files inside an existing HOG archive.
+  /// HOG's record chain is naturally append-friendly: each entry is a
+  /// 13-byte name + 4-byte LE size + raw data, so AddFile is a pure
+  /// append at EOF — bytes <c>[0, oldLength)</c> are byte-identical
+  /// afterwards. Replacement semantics drop the prior entry with the
+  /// same name first (single-pass shift over the tail), then append the
+  /// replacement at the new EOF.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs)) {
+      var entryName = Path.GetFileName(name);
+      HogModifier.RemoveFile(archive, entryName);
+      HogModifier.AddFile(archive, entryName, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing HOG archive. Each
+  /// removal walks the record chain to locate the entry, then shifts
+  /// every trailing record toward offset 0 and truncates the stream.
+  /// O(image size) on the shift, O(touched bytes) on every other axis.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      HogModifier.RemoveFile(archive, Path.GetFileName(name));
   }
 
   public void Defragment(Stream archive)
