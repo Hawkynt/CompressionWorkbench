@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Pak;
 
-public sealed class PakFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class PakFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the PAK archive in listing order.</summary>
   public void Defragment(Stream archive)
@@ -53,7 +53,28 @@ public sealed class PakFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing PAK archive.
+  /// PAK shares the ARC binary layout so this delegates to
+  /// <see cref="PakInPlaceModifier"/>, which itself wraps
+  /// <see cref="Arc.ArcModifier"/>. Add overwrites only the trailing
+  /// end-of-archive marker; Remove walks the entry chain and shifts
+  /// trailing bytes (no central directory).
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      PakInPlaceModifier.RemoveFile(archive, name, wipeData: true);
+      PakInPlaceModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>Removes named entries via <see cref="PakInPlaceModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      PakInPlaceModifier.RemoveFile(archive, name, wipeData: true);
+  }
   public string DefaultExtension => ".pak";
   public IReadOnlyList<string> Extensions => [".pak"];
   public IReadOnlyList<string> CompoundExtensions => [];

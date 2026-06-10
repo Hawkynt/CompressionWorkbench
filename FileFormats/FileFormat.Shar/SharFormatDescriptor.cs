@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Shar;
 
-public sealed class SharFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+public sealed class SharFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the SHAR archive in listing order.</summary>
   public void Defragment(Stream archive)
@@ -31,7 +31,30 @@ public sealed class SharFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>
+  /// Appends file entries to an existing shell archive. Shar's trailing
+  /// <c>exit 0</c> sentinel is overwritten with the new entry's
+  /// <c>echo x - name</c> block (heredoc for text, uudecode for binary) and
+  /// a fresh <c>exit 0</c> sentinel — bytes before the old sentinel are
+  /// byte-identical after the operation. See <see cref="SharInPlaceModifier"/>.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
+      SharInPlaceModifier.AddFile(archive, name, data);
+  }
+
+  /// <summary>
+  /// In-place Remove is not implemented for Shar — the heredoc/uudecode
+  /// block boundaries depend on arbitrary user content and cannot be
+  /// scanned safely without re-parsing the whole script. Callers should
+  /// rebuild via the rebuild-based <c>Defragment</c> path instead.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) =>
+    throw new NotSupportedException(
+      "Shar Remove is not implemented in-place — rebuild via the defragmenter " +
+      "to drop entries (heredoc bodies can contain arbitrary delimiter-lookalike text).");
   public string DefaultExtension => ".shar";
   public IReadOnlyList<string> Extensions => [".shar", ".sh"];
   public IReadOnlyList<string> CompoundExtensions => [];
