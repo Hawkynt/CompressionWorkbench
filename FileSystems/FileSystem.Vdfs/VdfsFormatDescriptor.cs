@@ -81,15 +81,32 @@ public sealed class VdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   // ── IArchiveModifiable ─────────────────────────────────────────────────
 
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => ModifyRebuilder.Add(archive, inputs,
-      readEntries: ReadEntries,
-      buildImage: BuildImage);
+  /// <summary>
+  /// Adds (or replaces) files in a VDFS archive by appending the new data at
+  /// end-of-stream and relocating the entry table past it — surviving file
+  /// extents keep their original absolute byte offsets so their jump pointers
+  /// stay valid without rewriting them. See <see cref="VdfsInPlaceModifier"/>
+  /// for the full mutation strategy.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var (name, data) in FlatFiles(inputs))
+      VdfsInPlaceModifier.AddFile(archive, name, data);
+  }
 
-  public void Remove(Stream archive, string[] entryNames)
-    => ModifyRebuilder.Remove(archive, entryNames,
-      readEntries: ReadEntries,
-      buildImage: BuildImage);
+  /// <summary>
+  /// Removes the named entries by zeroing each entry record on disk (an empty
+  /// first byte makes the reader skip it) and zero-wiping each removed file's
+  /// data extent. Neighbour entry positions and live data extents are not
+  /// disturbed. See <see cref="VdfsInPlaceModifier"/>.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames)
+      VdfsInPlaceModifier.RemoveFile(archive, name);
+  }
 
   // ── IArchiveDefragmentable ─────────────────────────────────────────────
 
