@@ -368,8 +368,8 @@ public sealed class UfsWriter {
     BinaryPrimitives.WriteInt32LittleEndian(sb[24..], 0);                 // fs_old_cgoffset
     BinaryPrimitives.WriteInt32LittleEndian(sb[28..], -1);                // fs_old_cgmask
     BinaryPrimitives.WriteUInt32LittleEndian(sb[32..], (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds()); // fs_old_time
-    BinaryPrimitives.WriteInt32LittleEndian(sb[36..], totalFrags / Frag); // fs_old_size
-    BinaryPrimitives.WriteInt32LittleEndian(sb[40..], (totalFrags - DblkNo) / Frag); // fs_old_dsize
+    BinaryPrimitives.WriteInt32LittleEndian(sb[36..], totalFrags);        // fs_old_size (in frags)
+    BinaryPrimitives.WriteInt32LittleEndian(sb[40..], totalFrags - DblkNo); // fs_old_dsize (in frags)
     BinaryPrimitives.WriteUInt32LittleEndian(sb[44..], 1);                // fs_ncg
     BinaryPrimitives.WriteInt32LittleEndian(sb[48..], BlockSize);         // fs_bsize
     BinaryPrimitives.WriteInt32LittleEndian(sb[52..], FragSize);          // fs_fsize
@@ -417,8 +417,8 @@ public sealed class UfsWriter {
     BinaryPrimitives.WriteInt64LittleEndian(sb[1024..], InodesPerGroup - usedInodes);
     BinaryPrimitives.WriteInt64LittleEndian(sb[1032..], 0);
     BinaryPrimitives.WriteInt64LittleEndian(sb[1072..], DateTimeOffset.UtcNow.ToUnixTimeSeconds()); // fs_time
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1080..], totalFrags / Frag);                         // fs_size
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1088..], (totalFrags - DblkNo) / Frag);              // fs_dsize
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1080..], totalFrags);                                // fs_size (in frags)
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1088..], totalFrags - DblkNo);                       // fs_dsize (in frags)
     BinaryPrimitives.WriteInt64LittleEndian(sb[1096..], FsCsAddrBlock);                             // fs_csaddr
     BinaryPrimitives.WriteUInt32LittleEndian(sb[1196..], 16384);                                    // fs_avgfilesize
     BinaryPrimitives.WriteUInt32LittleEndian(sb[1200..], 64);                                       // fs_avgfpdir
@@ -448,7 +448,7 @@ public sealed class UfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(cg[8..], (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds()); // cg_old_time
     BinaryPrimitives.WriteUInt32LittleEndian(cg[12..], 0);                 // cg_cgx
     BinaryPrimitives.WriteInt16LittleEndian(cg[16..], 0);                  // cg_old_ncyl
-    BinaryPrimitives.WriteInt16LittleEndian(cg[18..], 0);                  // cg_old_niblk
+    BinaryPrimitives.WriteInt16LittleEndian(cg[18..], (short)InodesPerGroup); // cg_old_niblk = fs_ipg
     BinaryPrimitives.WriteUInt32LittleEndian(cg[20..], (uint)Math.Min(FragsPerGroup, totalFrags)); // cg_ndblk
     // cg_cs (csum) @ 24
     var freeBlocks = (Math.Min(FragsPerGroup, totalFrags) - usedFragsTotal) / Frag;
@@ -459,27 +459,31 @@ public sealed class UfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(cg[40..], 0);                 // cg_rotor
     BinaryPrimitives.WriteUInt32LittleEndian(cg[44..], 0);                 // cg_frotor
     BinaryPrimitives.WriteUInt32LittleEndian(cg[48..], (uint)usedInodes);  // cg_irotor
-    BinaryPrimitives.WriteInt32LittleEndian(cg[84..], 0);                  // cg_old_btotoff
-    BinaryPrimitives.WriteInt32LittleEndian(cg[88..], 0);                  // cg_old_boff
+    // Cylinder-group internal layout, following FFS (newfs initcg) exactly so
+    // fsck_ffs's offset recomputation matches. With fs_old_cpg = 0 the legacy
+    // rotational tables are zero-length, and with fs_contigsumsize = 0 there is
+    // no cluster-summary table — so the offsets collapse to:
+    //   cg_old_btotoff = cg_old_boff = cg_iusedoff = sizeof(struct cg)
+    //   cg_freeoff     = cg_iusedoff + howmany(fs_ipg, 8)
+    //   cg_nextfreeoff = cg_freeoff  + howmany(fs_fpg, 8)
+    const int CgHeaderSize = 168;                                          // sizeof(struct cg)
+    BinaryPrimitives.WriteInt32LittleEndian(cg[84..], CgHeaderSize);       // cg_old_btotoff = start
+    BinaryPrimitives.WriteInt32LittleEndian(cg[88..], CgHeaderSize);       // cg_old_boff (zero-length rotational table)
 
-    const int CgHeaderSize = 184;
     var iusedOff = CgHeaderSize;
-    var iusedSize = (InodesPerGroup + 7) / 8;
+    var iusedSize = (InodesPerGroup + 7) / 8;                              // howmany(fs_ipg, 8)
     var freeOff = iusedOff + iusedSize;
-    var freeSize = (FragsPerGroup + 7) / 8;
-    var clusterSumOff = freeOff + freeSize;
-    var clusterSumSize = 32;
-    var clusterOff = clusterSumOff + clusterSumSize;
-    var clusterSize = (FragsPerGroup / Frag + 7) / 8;
+    var freeSize = (FragsPerGroup + 7) / 8;                               // howmany(fs_fpg, 8)
+    var nextFreeOff = freeOff + freeSize;
 
     BinaryPrimitives.WriteUInt32LittleEndian(cg[92..], (uint)iusedOff);    // cg_iusedoff
     BinaryPrimitives.WriteUInt32LittleEndian(cg[96..], (uint)freeOff);     // cg_freeoff
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[100..], (uint)(clusterOff + clusterSize)); // cg_nextfreeoff
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[104..], (uint)clusterSumOff); // cg_clustersumoff
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[108..], (uint)clusterOff); // cg_clusteroff
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[112..], (uint)(FragsPerGroup / Frag)); // cg_nclusterblks
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[116..], InodesPerGroup);   // cg_niblk
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[120..], InodesPerGroup);   // cg_initediblk
+    BinaryPrimitives.WriteUInt32LittleEndian(cg[100..], (uint)nextFreeOff);// cg_nextfreeoff
+    BinaryPrimitives.WriteUInt32LittleEndian(cg[104..], 0);                // cg_clustersumoff (no cluster summary)
+    BinaryPrimitives.WriteUInt32LittleEndian(cg[108..], 0);                // cg_clusteroff
+    BinaryPrimitives.WriteUInt32LittleEndian(cg[112..], 0);                // cg_nclusterblks
+    BinaryPrimitives.WriteUInt32LittleEndian(cg[116..], 0);                // cg_niblk (UFS2-only; 0 on UFS1)
+    BinaryPrimitives.WriteUInt32LittleEndian(cg[120..], 0);                // cg_initediblk (UFS2-only; 0 on UFS1)
     BinaryPrimitives.WriteUInt32LittleEndian(cg[124..], 0);                // cg_unrefs
     BinaryPrimitives.WriteInt64LittleEndian(cg[136..], DateTimeOffset.UtcNow.ToUnixTimeSeconds()); // cg_time
 
@@ -487,19 +491,13 @@ public sealed class UfsWriter {
     for (var ino = 0; ino < usedInodes; ino++)
       cg[iusedOff + ino / 8] |= (byte)(1 << (ino % 8));
 
-    // free-frag bitmap (1 = free)
+    // free-frag bitmap (1 = free). Frags in use, and frags past the fs end, are 0.
     for (var i = 0; i < freeSize; i++) cg[freeOff + i] = 0xFF;
     for (var f = 0; f < usedFragsTotal && f < FragsPerGroup; f++)
       cg[freeOff + f / 8] &= (byte)~(1 << (f % 8));
     var cgFrags = Math.Min(FragsPerGroup, totalFrags);
     for (var f = cgFrags; f < FragsPerGroup; f++)
       cg[freeOff + f / 8] &= (byte)~(1 << (f % 8));
-
-    // free-cluster bitmap
-    var usedBlocks = (usedFragsTotal + Frag - 1) / Frag;
-    var cgBlocks = cgFrags / Frag;
-    for (var b = usedBlocks; b < cgBlocks; b++)
-      cg[clusterOff + b / 8] |= (byte)(1 << (b % 8));
   }
 
   // ── ufs1_dinode (128 bytes) ───────────────────────────────────────────
