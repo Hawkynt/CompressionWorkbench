@@ -295,6 +295,14 @@ internal static class ZstdSequences {
       ofExtraVals[i] = encodedOffset - (1 << ofCodes[i]);
     }
 
+    // Carry the evolved repeat-offset history back to the caller so the next block
+    // inherits it: zstd maintains the offset history continuously across the blocks
+    // of a frame (the decoder does the same), and emitting a repeat-offset code that
+    // assumes a per-block [1,4,8] reset would desync against a spec decoder.
+    repeatOffsets[0] = encRepeatOffsets[0];
+    repeatOffsets[1] = encRepeatOffsets[1];
+    repeatOffsets[2] = encRepeatOffsets[2];
+
     // Build encoding tables: for each symbol, collect all states that decode to it,
     // sorted by state value. During encoding, we pick a state whose symbol matches
     // and which is reachable from the current encoding state.

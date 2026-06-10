@@ -68,13 +68,24 @@ internal sealed class ZstdCompressor {
     if (allData.Length == 0)
       ZstdBlock.WriteBlockHeader(this._output, ZstdConstants.BlockTypeRaw, 0, true);
     else {
+      // One match finder spans the WHOLE frame, so a block can reference data in
+      // earlier blocks (the frame header already advertises a full-content window).
+      // This is what lets long repeats collapse to a single sequence per block
+      // instead of repeating the leading literals in every block.
+      var maxChainDepth = this._compressionLevel switch { <= 1 => 4, <= 3 => 16, <= 6 => 64, _ => 128 };
+      var matchFinder = new HashChainMatchFinder(Math.Max(allData.Length, 1024), maxChainDepth);
+
+      // Repeat-offset history is maintained continuously across the frame's blocks.
+      var frameRepeatOffsets = this._dictionary?.RepeatOffsets is { Length: >= 3 } r
+        ? new[] { r[0], r[1], r[2] }
+        : new[] { 1, 4, 8 };
+
       var offset = 0;
       while (offset < allData.Length) {
         var blockSize = Math.Min(ZstdConstants.MaxBlockSize, allData.Length - offset);
         var lastBlock = offset + blockSize >= allData.Length;
-        ReadOnlySpan<byte> blockData = allData.AsSpan(offset, blockSize);
 
-        WriteBlock(blockData, lastBlock);
+        WriteBlock(allData, offset, blockSize, lastBlock, matchFinder, frameRepeatOffsets);
         offset += blockSize;
       }
     }
@@ -90,22 +101,32 @@ internal sealed class ZstdCompressor {
   /// <summary>
   /// Writes a single block, choosing between compressed, RLE, and raw format.
   /// </summary>
-  private void WriteBlock(ReadOnlySpan<byte> blockData, bool lastBlock) {
-    // Check for RLE block (all bytes the same)
+  private void WriteBlock(ReadOnlySpan<byte> allData, int blockStart, int blockLen, bool lastBlock,
+      HashChainMatchFinder matchFinder, int[] frameRepeatOffsets) {
+    var blockData = allData.Slice(blockStart, blockLen);
+    // Check for RLE block (all bytes the same). Raw/RLE blocks carry no sequences,
+    // so they leave the repeat-offset history unchanged (matching the decoder).
     if (IsAllSameByte(blockData)) {
+      // Still feed the run into the finder so later blocks can match against it.
+      for (var i = 0; i < blockLen; ++i) matchFinder.InsertPosition(allData, blockStart + i);
       ZstdBlock.WriteBlockHeader(this._output, ZstdConstants.BlockTypeRle,
         blockData.Length, lastBlock);
       this._output.WriteByte(blockData[0]);
       return;
     }
 
-    // Try to create a compressed block
-    var compressedBlock = TryCompressBlock(blockData);
+    // Try to create a compressed block (matches may reference earlier blocks). The
+    // evolved repeat-offset history is returned separately and only committed to the
+    // frame state when the compressed block is actually emitted — a raw fallback must
+    // leave the history untouched, or the decoder desyncs.
+    var compressedBlock = TryCompressBlock(allData, blockStart, blockLen, matchFinder,
+      frameRepeatOffsets, out var blockRepeatOffsets);
 
     if (compressedBlock != null && compressedBlock.Length < blockData.Length) {
       ZstdBlock.WriteBlockHeader(this._output, ZstdConstants.BlockTypeCompressed,
         compressedBlock.Length, lastBlock);
       this._output.Write(compressedBlock);
+      Array.Copy(blockRepeatOffsets, frameRepeatOffsets, 3); // commit the evolved history
     }
     else {
       ZstdBlock.WriteBlockHeader(this._output, ZstdConstants.BlockTypeRaw,
@@ -133,68 +154,69 @@ internal sealed class ZstdCompressor {
   /// When a dictionary is present, uses dictionary-derived repeat offsets for
   /// better sequence encoding.
   /// </summary>
-  private byte[]? TryCompressBlock(ReadOnlySpan<byte> blockData) {
-    if (blockData.Length < ZstdConstants.MinMatch)
+  private byte[]? TryCompressBlock(ReadOnlySpan<byte> allData, int blockStart, int blockLen,
+      HashChainMatchFinder matchFinder, int[] currentRepeatOffsets, out int[] blockRepeatOffsets) {
+    // Default: history unchanged (used by every early/raw return).
+    blockRepeatOffsets = currentRepeatOffsets;
+    if (blockLen < ZstdConstants.MinMatch) {
+      for (var i = 0; i < blockLen; ++i) matchFinder.InsertPosition(allData, blockStart + i);
       return null;
+    }
 
-    // Find matches using hash chain
-    var maxChainDepth = this._compressionLevel switch {
-      <= 1 => 4,
-      <= 3 => 16,
-      <= 6 => 64,
-      _ => 128
-    };
-
-    var windowSize = blockData.Length;
-    var matchFinder = new HashChainMatchFinder(
-      Math.Max(windowSize, 1024), maxChainDepth);
-
+    // Zstd encodes match lengths far beyond Deflate's 258 cap (ML codes reach
+    // baseline 65536 + 16 extra bits = 131071), so let a single sequence cover a
+    // long run instead of fragmenting it into thousands of 258-byte matches.
+    const int MaxMatch = ZstdConstants.MaxBlockSize - 1; // 131071, the largest encodable ML
+    var blockEnd = blockStart + blockLen;
     var sequences = new List<ZstdSequence>();
-    var litStart = 0;
-    var pos = 0;
+    var litStart = blockStart;
+    var pos = blockStart;
 
-    while (pos < blockData.Length) {
-      if (pos + ZstdConstants.MinMatch > blockData.Length) {
+    while (pos < blockEnd) {
+      if (pos + ZstdConstants.MinMatch > blockEnd) {
+        matchFinder.InsertPosition(allData, pos);
         ++pos;
         continue;
       }
 
-      var match = matchFinder.FindMatch(blockData, pos, pos, 258, ZstdConstants.MinMatch);
+      // A match's length is bounded by this block (its decoded size is fixed),
+      // but its offset may reach back into earlier blocks within the frame window.
+      var maxLen = Math.Min(MaxMatch, blockEnd - pos);
+      var match = matchFinder.FindMatch(allData, pos, pos, maxLen, ZstdConstants.MinMatch);
 
       if (match.Length >= ZstdConstants.MinMatch) {
-        var litLength = pos - litStart;
-        sequences.Add(new ZstdSequence(litLength, match.Length, match.Distance));
-
-        for (var i = 1; i < match.Length && pos + i + 2 < blockData.Length; ++i)
-          matchFinder.InsertPosition(blockData, pos + i);
-
-        pos += match.Length;
+        sequences.Add(new ZstdSequence(pos - litStart, match.Length, match.Distance));
+        var end = pos + match.Length;
+        for (; pos < end; ++pos)
+          matchFinder.InsertPosition(allData, pos);
         litStart = pos;
       }
-      else
+      else {
+        matchFinder.InsertPosition(allData, pos);
         ++pos;
+      }
     }
 
     if (sequences.Count == 0)
       return null;
 
-    // Collect all literal bytes
+    // Collect all literal bytes (absolute coordinates within the frame buffer).
     var allLiterals = new MemoryStream();
-    var litRunStart = 0;
+    var litRunStart = blockStart;
     foreach (var seq in sequences) {
       if (seq.LiteralLength > 0)
-        allLiterals.Write(blockData.Slice(litRunStart, seq.LiteralLength));
+        allLiterals.Write(allData.Slice(litRunStart, seq.LiteralLength));
       litRunStart += seq.LiteralLength + seq.MatchLength;
     }
 
-    var trailingLiterals = blockData.Length - litRunStart;
+    var trailingLiterals = blockEnd - litRunStart;
     if (trailingLiterals > 0)
-      allLiterals.Write(blockData.Slice(litRunStart, trailingLiterals));
+      allLiterals.Write(allData.Slice(litRunStart, trailingLiterals));
 
     var allLiteralBytes = allLiterals.ToArray();
 
     // Output buffer
-    var outputLen = blockData.Length * 2 + 1024;
+    var outputLen = blockLen * 2 + 1024;
     var output = ArrayPool<byte>.Shared.Rent(outputLen);
     try {
       var outputPos = 0;
@@ -202,9 +224,12 @@ internal sealed class ZstdCompressor {
       // Write literals section (Raw encoding)
       outputPos += ZstdLiterals.CompressLiterals(allLiteralBytes, output, outputPos);
 
-      // Write sequences section — use dictionary repeat offsets when available
-      int[] repeatOffsets = this._dictionary?.RepeatOffsets ?? [1, 4, 8];
+      // Write sequences section. Work on a copy of the frame's repeat-offset history
+      // (EncodeSequences evolves it in place); the caller commits it only if this
+      // compressed block is actually used.
+      var repeatOffsets = new[] { currentRepeatOffsets[0], currentRepeatOffsets[1], currentRepeatOffsets[2] };
       outputPos += ZstdSequences.EncodeSequences(sequences.ToArray(), output, outputPos, repeatOffsets);
+      blockRepeatOffsets = repeatOffsets;
 
       return output.AsSpan(0, outputPos).ToArray();
     } finally {
