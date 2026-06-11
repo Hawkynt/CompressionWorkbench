@@ -98,6 +98,11 @@
     <Project Path="FileFormats/FileFormat.CloneCd/FileFormat.CloneCd.csproj" />
     <Project Path="FileFormats/FileFormat.Ova/FileFormat.Ova.csproj" />
     <Project Path="FileFormats/FileFormat.Qed/FileFormat.Qed.csproj" />
+    <Project Path="FileFormats/FileFormat.Aff4/FileFormat.Aff4.csproj" />
+    <Project Path="FileFormats/FileFormat.Dar/FileFormat.Dar.csproj" />
+    <Project Path="FileFormats/FileFormat.Par2/FileFormat.Par2.csproj" />
+    <Project Path="FileFormats/FileFormat.Ffu/FileFormat.Ffu.csproj" />
+    <Project Path="FileFormats/FileFormat.ParallelsHdd/FileFormat.ParallelsHdd.csproj" />
     <Project Path="FileSystems/FileSystem.D64/FileSystem.D64.csproj" />
     <Project Path="FileSystems/FileSystem.D71/FileSystem.D71.csproj" />
     <Project Path="FileSystems/FileSystem.D81/FileSystem.D81.csproj" />
