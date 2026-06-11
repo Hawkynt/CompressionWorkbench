@@ -455,6 +455,13 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Zoo\FileFormat.Zoo.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zpaq\FileFormat.Zpaq.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Zstd\FileFormat.Zstd.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Med\FileFormat.Med.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ahx\FileFormat.Ahx.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Psm\FileFormat.Psm.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Dbm\FileFormat.Dbm.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Spc\FileFormat.Spc.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ay\FileFormat.Ay.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Gym\FileFormat.Gym.csproj" />
   </ItemGroup>
 
 </Project>

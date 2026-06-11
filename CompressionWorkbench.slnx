@@ -329,6 +329,13 @@
     <Project Path="FileFormats/FileFormat.Sid/FileFormat.Sid.csproj" />
     <Project Path="FileFormats/FileFormat.Nsf/FileFormat.Nsf.csproj" />
     <Project Path="FileFormats/FileFormat.Gbs/FileFormat.Gbs.csproj" />
+    <Project Path="FileFormats/FileFormat.Med/FileFormat.Med.csproj" />
+    <Project Path="FileFormats/FileFormat.Ahx/FileFormat.Ahx.csproj" />
+    <Project Path="FileFormats/FileFormat.Psm/FileFormat.Psm.csproj" />
+    <Project Path="FileFormats/FileFormat.Dbm/FileFormat.Dbm.csproj" />
+    <Project Path="FileFormats/FileFormat.Spc/FileFormat.Spc.csproj" />
+    <Project Path="FileFormats/FileFormat.Ay/FileFormat.Ay.csproj" />
+    <Project Path="FileFormats/FileFormat.Gym/FileFormat.Gym.csproj" />
     <Project Path="FileFormats/FileFormat.Ppt/FileFormat.Ppt.csproj" />
     <Project Path="FileSystems/FileSystem.ProDos/FileSystem.ProDos.csproj" />
     <Project Path="FileFormats/FileFormat.Pptx/FileFormat.Pptx.csproj" />

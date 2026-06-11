@@ -389,6 +389,13 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Sid\FileFormat.Sid.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Nsf\FileFormat.Nsf.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Gbs\FileFormat.Gbs.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Med\FileFormat.Med.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ahx\FileFormat.Ahx.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Psm\FileFormat.Psm.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Dbm\FileFormat.Dbm.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Spc\FileFormat.Spc.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ay\FileFormat.Ay.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Gym\FileFormat.Gym.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Psd\FileFormat.Psd.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Pst\FileFormat.Pst.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Qcow2\FileFormat.Qcow2.csproj" />
