@@ -309,6 +309,13 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Mix\FileFormat.Mix.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Mobi\FileFormat.Mobi.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Mod\FileFormat.Mod.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Mod669\FileFormat.Mod669.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Mtm\FileFormat.Mtm.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Far\FileFormat.Far.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ult\FileFormat.Ult.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Stm\FileFormat.Stm.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Okt\FileFormat.Okt.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ptm\FileFormat.Ptm.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Mp3\FileFormat.Mp3.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Mp4\FileFormat.Mp4.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ogg\FileFormat.Ogg.csproj" />

@@ -250,6 +250,13 @@
     <Project Path="FileFormats/FileFormat.Mix/FileFormat.Mix.csproj" />
     <Project Path="FileFormats/FileFormat.Mobi/FileFormat.Mobi.csproj" />
     <Project Path="FileFormats/FileFormat.Mod/FileFormat.Mod.csproj" />
+    <Project Path="FileFormats/FileFormat.Mod669/FileFormat.Mod669.csproj" />
+    <Project Path="FileFormats/FileFormat.Mtm/FileFormat.Mtm.csproj" />
+    <Project Path="FileFormats/FileFormat.Far/FileFormat.Far.csproj" />
+    <Project Path="FileFormats/FileFormat.Ult/FileFormat.Ult.csproj" />
+    <Project Path="FileFormats/FileFormat.Stm/FileFormat.Stm.csproj" />
+    <Project Path="FileFormats/FileFormat.Okt/FileFormat.Okt.csproj" />
+    <Project Path="FileFormats/FileFormat.Ptm/FileFormat.Ptm.csproj" />
     <Project Path="FileFormats/FileFormat.Mp3/FileFormat.Mp3.csproj" />
     <Project Path="FileFormats/FileFormat.Mp4/FileFormat.Mp4.csproj" />
     <Project Path="FileFormats/FileFormat.Ogg/FileFormat.Ogg.csproj" />
