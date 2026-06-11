@@ -2112,9 +2112,12 @@ public class ExternalFsInteropTests {
                     "drops to a login prompt and times out — for full automation build a custom live " +
                     "image with /etc/rc.local that runs 'hammer info /dev/da1; halt'.");
 
-    // Build minimal HAMMER image via our descriptor (read-only currently — uses synthetic)
+    // Build a real, mountable HAMMER image via our writer.
     var imgPath = Path.Combine(this._tmpDir, "hammer.img");
-    File.WriteAllBytes(imgPath, new byte[16 * 1024 * 1024]);  // placeholder until HAMMER writer exists
+    var hammer = new FileSystem.Hammer.HammerWriter { Label = "test" };
+    hammer.AddFile("hello.txt", SmallText);
+    using (var fs = File.Create(imgPath))
+      hammer.WriteTo(fs);
     var logPath = Path.Combine(this._tmpDir, "hammer.serial.log");
 
     var (exit, log) = Compression.Tests.Support.QemuRunner.RunHammerInfo(

@@ -25,12 +25,13 @@ namespace FileSystem.Hammer;
 ///   <item><description><c>https://www.dragonflybsd.org/hammer/</c></description></item>
 /// </list>
 /// </summary>
-public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Hammer";
   public string DisplayName => "HAMMER (DragonFly BSD)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanCreate;
   public string DefaultExtension => ".hammer";
   public IReadOnlyList<string> Extensions => [".hammer"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -70,6 +71,29 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     if (hdr.Valid)
       entries.Add(new ArchiveEntryInfo(idx++, "volume_header.bin", hdr.HeaderRaw.LongLength, hdr.HeaderRaw.LongLength, "stored", false, false, null));
     return entries;
+  }
+
+  /// <summary>
+  /// Produces a fresh, mountable single-volume HAMMER image from <paramref name="inputs"/>.
+  /// HAMMER's UNDO FIFO floor forces a volume size of ~1 GB minimum; see
+  /// <see cref="HammerWriter"/>. Directory contents are not yet materialised
+  /// (the root directory is created empty, exactly as <c>newfs_hammer</c> leaves it).
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    var writer = new HammerWriter();
+    var label = options?.GetOption("label", "hammer");
+    if (!string.IsNullOrEmpty(label))
+      writer.Label = label;
+
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      writer.AddFile(input.ArchiveName, input.ReadContent());
+    }
+
+    writer.WriteTo(output);
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
