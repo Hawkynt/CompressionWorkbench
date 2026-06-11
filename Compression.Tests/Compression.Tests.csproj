@@ -367,6 +367,11 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Psarc\FileFormat.Psarc.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Psb\FileFormat.Psb.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Psf\FileFormat.Psf.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ktx2\FileFormat.Ktx2.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Vgm\FileFormat.Vgm.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sid\FileFormat.Sid.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Nsf\FileFormat.Nsf.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Gbs\FileFormat.Gbs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Psd\FileFormat.Psd.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Pst\FileFormat.Pst.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Qcow2\FileFormat.Qcow2.csproj" />

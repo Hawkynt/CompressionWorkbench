@@ -307,6 +307,11 @@
     <Project Path="FileFormats/FileFormat.PowerPacker/FileFormat.PowerPacker.csproj" />
     <Project Path="FileFormats/FileFormat.Psarc/FileFormat.Psarc.csproj" />
     <Project Path="FileFormats/FileFormat.Psf/FileFormat.Psf.csproj" />
+    <Project Path="FileFormats/FileFormat.Ktx2/FileFormat.Ktx2.csproj" />
+    <Project Path="FileFormats/FileFormat.Vgm/FileFormat.Vgm.csproj" />
+    <Project Path="FileFormats/FileFormat.Sid/FileFormat.Sid.csproj" />
+    <Project Path="FileFormats/FileFormat.Nsf/FileFormat.Nsf.csproj" />
+    <Project Path="FileFormats/FileFormat.Gbs/FileFormat.Gbs.csproj" />
     <Project Path="FileFormats/FileFormat.Ppt/FileFormat.Ppt.csproj" />
     <Project Path="FileSystems/FileSystem.ProDos/FileSystem.ProDos.csproj" />
     <Project Path="FileFormats/FileFormat.Pptx/FileFormat.Pptx.csproj" />

@@ -145,6 +145,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Freeze\FileFormat.Freeze.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.GameMaker\FileFormat.GameMaker.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Gettext\FileFormat.Gettext.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Gbs\FileFormat.Gbs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Gif\FileFormat.Gif.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Glb\FileFormat.Glb.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Gob\FileFormat.Gob.csproj" />
@@ -225,6 +226,7 @@
     <ProjectReference Include="..\FileSystems\FileSystem.Jffs2\FileSystem.Jffs2.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Jfs\FileSystem.Jfs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Kmz\FileFormat.Kmz.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ktx2\FileFormat.Ktx2.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Kwaj\FileFormat.Kwaj.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Lbr\FileFormat.Lbr.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Leveldb\FileFormat.Leveldb.csproj" />
@@ -292,6 +294,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Nes\FileFormat.Nes.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.NetAssembly\FileFormat.NetAssembly.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.NetCdf\FileFormat.NetCdf.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Nsf\FileFormat.Nsf.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.NuPkg\FileFormat.NuPkg.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Narc\FileFormat.Narc.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Nrg\FileFormat.Nrg.csproj" />
@@ -344,6 +347,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Sarc\FileFormat.Sarc.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.SevenZip\FileFormat.SevenZip.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Sfar\FileFormat.Sfar.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sid\FileFormat.Sid.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Shar\FileFormat.Shar.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Sketch\FileFormat.Sketch.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Slf\FileFormat.Slf.csproj" />
@@ -379,6 +383,7 @@
     <ProjectReference Include="..\FileSystems\FileSystem.Vdfs\FileSystem.Vdfs.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.VxFs\FileSystem.VxFs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Vdi\FileFormat.Vdi.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Vgm\FileFormat.Vgm.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Vhd\FileFormat.Vhd.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Vmdk\FileFormat.Vmdk.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Vpk\FileFormat.Vpk.csproj" />
