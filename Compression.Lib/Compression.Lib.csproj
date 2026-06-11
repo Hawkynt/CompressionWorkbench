@@ -38,6 +38,11 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Alac\FileFormat.Alac.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Au\FileFormat.Au.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Avi\FileFormat.Avi.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Caf\FileFormat.Caf.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.W64\FileFormat.W64.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Rf64\FileFormat.Rf64.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Shorten\FileFormat.Shorten.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Tta\FileFormat.Tta.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.Adf\FileSystem.Adf.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.AlZip\FileFormat.AlZip.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ampk\FileFormat.Ampk.csproj" />
