@@ -169,6 +169,11 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Crunch\FileFormat.Crunch.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Csc\FileFormat.Csc.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cso\FileFormat.Cso.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Afio\FileFormat.Afio.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.BochsDisk\FileFormat.BochsDisk.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.CloneCd\FileFormat.CloneCd.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ova\FileFormat.Ova.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Qed\FileFormat.Qed.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.D64\FileSystem.D64.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.D71\FileSystem.D71.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.D81\FileSystem.D81.csproj" />

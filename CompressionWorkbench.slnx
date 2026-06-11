@@ -88,6 +88,11 @@
     <Project Path="FileFormats/FileFormat.Crunch/FileFormat.Crunch.csproj" />
     <Project Path="FileFormats/FileFormat.Csc/FileFormat.Csc.csproj" />
     <Project Path="FileFormats/FileFormat.Cso/FileFormat.Cso.csproj" />
+    <Project Path="FileFormats/FileFormat.Afio/FileFormat.Afio.csproj" />
+    <Project Path="FileFormats/FileFormat.BochsDisk/FileFormat.BochsDisk.csproj" />
+    <Project Path="FileFormats/FileFormat.CloneCd/FileFormat.CloneCd.csproj" />
+    <Project Path="FileFormats/FileFormat.Ova/FileFormat.Ova.csproj" />
+    <Project Path="FileFormats/FileFormat.Qed/FileFormat.Qed.csproj" />
     <Project Path="FileSystems/FileSystem.D64/FileSystem.D64.csproj" />
     <Project Path="FileSystems/FileSystem.D71/FileSystem.D71.csproj" />
     <Project Path="FileSystems/FileSystem.D81/FileSystem.D81.csproj" />
