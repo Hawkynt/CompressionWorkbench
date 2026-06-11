@@ -244,8 +244,8 @@ public class ExternalFsInteropTests {
 
   [Test]
   public void Vhd_OurFixed_InspectableByQemuImg() {
-    if (!FsInteropToolbox.QemuImgAvailable)
-      Assert.Ignore("qemu-img not found. Install from https://qemu.weilnetz.de/w64/ or add its dir to PATH.");
+    if (!FsInteropToolbox.QemuImgAnywhereAvailable)
+      Assert.Ignore("qemu-img not found on Windows PATH or in WSL. Install qemu-utils (WSL: apt install qemu-utils) or from https://qemu.weilnetz.de/w64/.");
 
     // Build a tiny FAT image and wrap it in a VHD
     var fat = new FatWriter();
@@ -258,7 +258,7 @@ public class ExternalFsInteropTests {
     var vhdPath = Path.Combine(this._tmpDir, "fixed.vhd");
     File.WriteAllBytes(vhdPath, vhdBytes);
 
-    var result = FsInteropToolbox.RunPath("qemu-img", $"info \"{vhdPath}\"");
+    var result = FsInteropToolbox.RunQemuImg($"info '{FsInteropToolbox.WinToWsl(vhdPath)}'");
     Assert.That(result.ExitCode, Is.EqualTo(0), $"qemu-img rejected our fixed VHD:\n{result.StdErr}");
     Assert.That(result.StdOut, Does.Contain("vpc").Or.Contain("vhd"), "qemu-img should report format as vpc/vhd");
   }
@@ -282,8 +282,8 @@ public class ExternalFsInteropTests {
 
   [Test]
   public void Vmdk_OurImage_InspectableByQemuImg() {
-    if (!FsInteropToolbox.QemuImgAvailable)
-      Assert.Ignore("qemu-img not found. Install from https://qemu.weilnetz.de/w64/ or add its dir to PATH.");
+    if (!FsInteropToolbox.QemuImgAnywhereAvailable)
+      Assert.Ignore("qemu-img not found on Windows PATH or in WSL. Install qemu-utils (WSL: apt install qemu-utils) or from https://qemu.weilnetz.de/w64/.");
 
     var fat = new FatWriter();
     fat.AddFile("HELLO.TXT", SmallText);
@@ -292,7 +292,7 @@ public class ExternalFsInteropTests {
     var vmdkPath = Path.Combine(this._tmpDir, "image.vmdk");
     File.WriteAllBytes(vmdkPath, vmdk.Build());
 
-    var result = FsInteropToolbox.RunPath("qemu-img", $"info \"{vmdkPath}\"");
+    var result = FsInteropToolbox.RunQemuImg($"info '{FsInteropToolbox.WinToWsl(vmdkPath)}'");
     Assert.That(result.ExitCode, Is.EqualTo(0), $"qemu-img rejected our VMDK:\n{result.StdErr}");
     Assert.That(result.StdOut, Does.Contain("vmdk"), "qemu-img should report format as vmdk");
   }
@@ -316,8 +316,8 @@ public class ExternalFsInteropTests {
 
   [Test]
   public void Qcow2_OurImage_CheckedByQemuImg() {
-    if (!FsInteropToolbox.QemuImgAvailable)
-      Assert.Ignore("qemu-img not found. Install from https://qemu.weilnetz.de/w64/ or add its dir to PATH.");
+    if (!FsInteropToolbox.QemuImgAnywhereAvailable)
+      Assert.Ignore("qemu-img not found on Windows PATH or in WSL. Install qemu-utils (WSL: apt install qemu-utils) or from https://qemu.weilnetz.de/w64/.");
 
     var fat = new FatWriter();
     fat.AddFile("HELLO.TXT", SmallText);
@@ -328,11 +328,12 @@ public class ExternalFsInteropTests {
     using (var fs = File.Create(qcowPath))
       qcow.WriteTo(fs);
 
-    var info = FsInteropToolbox.RunPath("qemu-img", $"info \"{qcowPath}\"");
+    var wslQcow = FsInteropToolbox.WinToWsl(qcowPath);
+    var info = FsInteropToolbox.RunQemuImg($"info '{wslQcow}'");
     Assert.That(info.ExitCode, Is.EqualTo(0), $"qemu-img info failed:\n{info.StdErr}");
     Assert.That(info.StdOut, Does.Contain("qcow2"), "qemu-img should report format as qcow2");
 
-    var check = FsInteropToolbox.RunPath("qemu-img", $"check \"{qcowPath}\"");
+    var check = FsInteropToolbox.RunQemuImg($"check '{wslQcow}'");
     Assert.That(check.ExitCode, Is.EqualTo(0), $"qemu-img check reported errors:\n{check.StdOut}\n{check.StdErr}");
   }
 
