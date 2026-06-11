@@ -363,6 +363,33 @@ public class EndToEndInteropTests {
     // BinCue at the dispatch layer, so a roundtrip.bin would route to BinCue rather than OTA.
     // Detection is magic-only for AndroidOta; WORM creation is driven by the descriptor directly.
     ".bin",
+    // Commodore G64 GCR-encoded floppy: writer wants per-track GCR sectors, not loose files.
+    ".g64",
+    // ANI cursor: only accepts CUR/ICO inputs validated against the cursor-frame magic.
+    ".ani",
+    // AppleSingle entry IDs come from a documented namespace; arbitrary names map to a
+    // synthetic high-range id whose reverse-mapping doesn't survive Extract verbatim.
+    ".as",
+    // Flattened Device Tree: writer wants a property-tree shaped input, not loose files.
+    ".dtb",
+    // MS-SHLLINK shortcut: writer emits one target — multi-input round-trip drops every
+    // entry past the first; .lnk descriptor is honest WORM-only per the Description.
+    ".lnk",
+    // CISO/Compressed-ISO container: each block must be a 2 KiB ISO sector — generic
+    // 100-byte .txt inputs can't satisfy the inner-ISO block-size invariant.
+    ".cso",
+    // ESD/WIM payload: writer delegates to WimWriter (CompressionNone) which expects
+    // a WIM-shaped input set, not loose files.
+    ".esd",
+    // GNU gettext MO catalog: writer expects msgid/msgstr pairs in a specific layout,
+    // not loose files. Descriptor is honestly WORM-only per the Description.
+    ".mo",
+    // TrueType Collection: writer expects SFNT-shaped inputs (each entry must be a
+    // valid TTF/OTF face), not loose 100-byte text payloads.
+    ".ttc",
+    // GameMaker IFF FORM container: writer expects per-chunk binary blobs named
+    // "chunks/<TAG>.bin"; arbitrary .txt/.dat names don't satisfy the chunk layout.
+    ".win",
   };
 
   private static IEnumerable<string> RoundTripFormats() {

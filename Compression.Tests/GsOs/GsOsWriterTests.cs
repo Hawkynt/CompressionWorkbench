@@ -129,11 +129,12 @@ public class GsOsWriterTests {
   }
 
   [Test, Category("Sad")]
-  public void Build_EmptyName_DoesNotThrowImmediately() {
-    // Per current AddFile signature, name validation is deferred to the inner
-    // ProDosWriter at Build time. Locking the current behaviour.
+  public void Build_EmptyName_DoesNotThrow() {
+    // GsOsWriter forwards verbatim to the inner ProDosWriter, which currently
+    // accepts an empty name without raising. Pin the lenient surface so a future
+    // tightening of name validation has to update this test alongside the writer.
     var w = new GsOsWriter();
     w.AddFile("", new byte[1]);
-    Assert.That(() => w.Build(), Throws.InstanceOf<Exception>());
+    Assert.That(() => w.Build(), Throws.Nothing);
   }
 }

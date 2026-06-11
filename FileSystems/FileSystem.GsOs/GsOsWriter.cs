@@ -26,7 +26,11 @@ public sealed class GsOsWriter {
   private readonly List<(string Name, byte[] Data)> _files = [];
 
   /// <summary>Adds a file to the inner ProDOS volume.</summary>
-  public void AddFile(string name, byte[] data) => this._files.Add((name, data));
+  public void AddFile(string name, byte[] data) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(data);
+    this._files.Add((name, data));
+  }
 
   /// <summary>
   /// Builds the 2IMG-wrapped ProDOS image. The inner volume is built via
