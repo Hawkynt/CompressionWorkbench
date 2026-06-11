@@ -26,10 +26,23 @@ public sealed class VhdWriter {
   /// <param name="blockSize">Block size in bytes. Must be a power of 2, typically 2 MB (0x00200000).</param>
   public byte[] BuildDynamic(int blockSize = 0x00200000) {
     var data = _diskData ?? [];
-    var virtualSize = data.Length;
-    if (virtualSize == 0) virtualSize = blockSize; // at least one block worth
+    var payload = data.Length;
+    if (payload == 0) payload = blockSize; // at least one block worth
 
-    var totalBlocks = (virtualSize + blockSize - 1) / blockSize;
+    // The footer's current-size field stays at the exact payload size so our
+    // own reader round-trips byte-for-byte. The qemu "vpc" driver, however,
+    // derives the virtual disk size from the CHS geometry rather than that
+    // field — so a geometry that rounds *down* (cyls*heads*spt*512 < payload)
+    // makes qemu present a truncated disk and silently drop the tail sectors.
+    // ComputeChs rounds the geometry *up*, and the BAT is sized to cover that
+    // CHS-aligned size so a CHS-size reader stays in-bounds; the extra tail
+    // blocks are sparse and read back as zero.
+    var virtualSize = (long)payload;
+    ComputeChs(payload, out var chsC, out var chsH, out var chsS);
+    var chsAlignedSize = (long)chsC * chsH * chsS * 512;
+    var batCoverSize = Math.Max(virtualSize, chsAlignedSize);
+
+    var totalBlocks = (batCoverSize + blockSize - 1) / blockSize;
     var sectorsPerBlock = blockSize / 512;
     // Bitmap: one bit per sector, rounded up to whole sectors
     var bitmapSectors = (sectorsPerBlock + 512 * 8 - 1) / (512 * 8);
@@ -155,20 +168,34 @@ public sealed class VhdWriter {
   }
 
   private static void ComputeChs(long diskSize, out ushort cylinders, out byte heads, out byte sectors) {
-    var totalSectors = diskSize / 512;
+    var totalSectors = (diskSize + 511) / 512;
     if (totalSectors > 65535 * 16 * 255)
       totalSectors = 65535 * 16 * 255;
     if (totalSectors >= 65535 * 16 * 63) {
       sectors = 255;
       heads = 16;
-      cylinders = (ushort)(totalSectors / (16 * 255));
     } else {
       sectors = 17;
       var cylsTimesHeads = totalSectors / 17;
       heads = (byte)Math.Max(4, (cylsTimesHeads + 1023) / 1024);
-      cylinders = (ushort)(cylsTimesHeads / heads);
+      // Escalate sectors-per-track when the geometry would otherwise need too
+      // many cylinders, matching the Microsoft VHD CHS algorithm tiers.
+      if (cylsTimesHeads >= (long)heads * 1024) {
+        sectors = 31;
+        heads = 16;
+      }
+      if (totalSectors / sectors >= (long)heads * 1024) {
+        sectors = 63;
+        heads = 16;
+      }
     }
-    if (cylinders > 65535) cylinders = 65535;
-    if (cylinders == 0) cylinders = 1;
+    // Round cylinders UP so cyls*heads*sectors >= totalSectors. The qemu vpc
+    // driver derives the virtual size from this geometry; rounding down would
+    // truncate the disk and drop tail sectors. The extra sectors are sparse.
+    var perCylinder = (long)heads * sectors;
+    var cyls = (totalSectors + perCylinder - 1) / perCylinder;
+    if (cyls > 65535) cyls = 65535;
+    if (cyls == 0) cyls = 1;
+    cylinders = (ushort)cyls;
   }
 }
