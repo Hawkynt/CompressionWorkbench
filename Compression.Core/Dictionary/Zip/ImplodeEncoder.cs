@@ -218,10 +218,22 @@ public static class ImplodeEncoder {
         codes[sym] = (0, 0);
         continue;
       }
-      codes[sym] = (nextCode[len]++, len);
+      // The bitstream is written/read LSB-first, so the canonical (MSB-first)
+      // code must be bit-reversed to stay prefix-free in that order. The decoder
+      // applies the identical reversal when building its lookup table.
+      codes[sym] = (ReverseBits(nextCode[len]++, len), len);
     }
 
     return codes;
+  }
+
+  private static int ReverseBits(int value, int count) {
+    var result = 0;
+    for (var i = 0; i < count; ++i) {
+      result = (result << 1) | (value & 1);
+      value >>= 1;
+    }
+    return result;
   }
 
   private static void WriteSfTree(List<byte> output, ref int bitPos, ref byte currentByte,

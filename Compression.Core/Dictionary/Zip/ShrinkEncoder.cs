@@ -55,9 +55,13 @@ public static class ShrinkEncoder {
         if (nextCode < MaxCode) {
           // Check if we need to increase bit width
           if (nextCode >= (1 << currentBits) && currentBits < MaxBits) {
+            // The decoder reads both the control code and its sub-command at the
+            // current width and only widens afterwards, so emit both at the old
+            // width and bump last — otherwise the sub-command desyncs by one bit
+            // at every 9->10->...->13 boundary.
             writer.WriteBits(ControlCode, currentBits);
-            ++currentBits;
             writer.WriteBits(SubCmdIncrease, currentBits);
+            ++currentBits;
           }
 
           trie[key] = nextCode;

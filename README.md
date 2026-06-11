@@ -13,8 +13,8 @@
 ![Code Size](https://img.shields.io/github/languages/code-size/Hawkynt/CompressionWorkbench?color=4CAF50)
 ![Repo Size](https://img.shields.io/github/repo-size/Hawkynt/CompressionWorkbench?color=FF9800)
 
-[![Release](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench?sort=semver)](https://github.com/Hawkynt/CompressionWorkbench/releases/latest)
-[![Nightly](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench?include_prereleases=true&sort=date&label=nightly&color=FF9800)](https://github.com/Hawkynt/CompressionWorkbench/releases)
+[![Release](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench)](https://github.com/Hawkynt/CompressionWorkbench/releases/latest)
+[![Nightly](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench?include_prereleases&sort=date&filter=nightly-*&label=nightly&color=FF9800)](https://github.com/Hawkynt/CompressionWorkbench/releases)
 [![Downloads](https://img.shields.io/github/downloads/Hawkynt/CompressionWorkbench/total)](https://github.com/Hawkynt/CompressionWorkbench/releases)
 [![NuGet Core](https://img.shields.io/nuget/v/Hawkynt.Compression.Core?label=Core)](https://www.nuget.org/packages/Hawkynt.Compression.Core/)
 [![NuGet Audio](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Audio?label=Audio)](https://www.nuget.org/packages/Hawkynt.FileFormats.Audio/)
@@ -246,10 +246,10 @@ single-responsibility:
 
 | Package | Surface | NuGet |
 |---|---|---|
-| `Hawkynt.Compression.Core` | Compression primitives + `IBuildingBlock` registry. PCM / WAV / archive / filesystem code lives elsewhere. | [![Core](https://img.shields.io/nuget/v/Hawkynt.Compression.Core.svg?label=Hawkynt.Compression.Core)](https://www.nuget.org/packages/Hawkynt.Compression.Core/) |
-| `Hawkynt.FileFormats.Audio` | PCM + lossy/lossless audio codecs (MP3 / AAC / Vorbis / Opus / FLAC / ALAC) + audio containers + tracker / chiptune / game-audio bundles. | [![Audio](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Audio.svg?label=Hawkynt.FileFormats.Audio)](https://www.nuget.org/packages/Hawkynt.FileFormats.Audio/) |
-| `Hawkynt.FileFormats.Archives` | Catch-all for every format with multiple addressable payloads: archives (zip / tar / 7z / rar / cab / wim) + compression streams + Office / ODF / web bundles + software / installer packages + game / engine archives + pseudo-archives (PE resources, ICO, font collections, gettext) + multi-track video / subtitle containers + scientific / ML / CAD / 3D / medical containers + executable packer detection. | [![Archives](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Archives.svg?label=Hawkynt.FileFormats.Archives)](https://www.nuget.org/packages/Hawkynt.FileFormats.Archives/) |
-| `Hawkynt.FileFormats.FileSystems` | FAT / exFAT / NTFS / ext / Btrfs / XFS / HFS+ / APFS / SquashFS / ISO9660 / UDF / ZFS + retro-disk formats + disk-image containers (VHD / VHDX / VMDK / VDI / QCOW2 / DMG) + firmware / embedded boot images (uImage / Device Tree Blob / UEFI FV / Intel HEX / SREC). | [![FileSystems](https://img.shields.io/nuget/v/Hawkynt.FileFormats.FileSystems.svg?label=Hawkynt.FileFormats.FileSystems)](https://www.nuget.org/packages/Hawkynt.FileFormats.FileSystems/) |
+| `Hawkynt.Compression.Core` | Compression primitives + `IBuildingBlock` registry. PCM / WAV / archive / filesystem code lives elsewhere. | [![Core](https://img.shields.io/nuget/v/Hawkynt.Compression.Core?label=Hawkynt.Compression.Core)](https://www.nuget.org/packages/Hawkynt.Compression.Core/) |
+| `Hawkynt.FileFormats.Audio` | PCM + lossy/lossless audio codecs (MP3 / AAC / Vorbis / Opus / FLAC / ALAC) + audio containers + tracker / chiptune / game-audio bundles. | [![Audio](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Audio?label=Hawkynt.FileFormats.Audio)](https://www.nuget.org/packages/Hawkynt.FileFormats.Audio/) |
+| `Hawkynt.FileFormats.Archives` | Catch-all for every format with multiple addressable payloads: archives (zip / tar / 7z / rar / cab / wim) + compression streams + Office / ODF / web bundles + software / installer packages + game / engine archives + pseudo-archives (PE resources, ICO, font collections, gettext) + multi-track video / subtitle containers + scientific / ML / CAD / 3D / medical containers + executable packer detection. | [![Archives](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Archives?label=Hawkynt.FileFormats.Archives)](https://www.nuget.org/packages/Hawkynt.FileFormats.Archives/) |
+| `Hawkynt.FileFormats.FileSystems` | FAT / exFAT / NTFS / ext / Btrfs / XFS / HFS+ / APFS / SquashFS / ISO9660 / UDF / ZFS + retro-disk formats + disk-image containers (VHD / VHDX / VMDK / VDI / QCOW2 / DMG) + firmware / embedded boot images (uImage / Device Tree Blob / UEFI FV / Intel HEX / SREC). | [![FileSystems](https://img.shields.io/nuget/v/Hawkynt.FileFormats.FileSystems?label=Hawkynt.FileFormats.FileSystems)](https://www.nuget.org/packages/Hawkynt.FileFormats.FileSystems/) |
 
 A fifth sister package — `Hawkynt.FileFormats.Images` — lives in the
 [`Hawkynt/PNGCrushCS`](https://github.com/Hawkynt/PNGCrushCS) sibling repo and supplies
