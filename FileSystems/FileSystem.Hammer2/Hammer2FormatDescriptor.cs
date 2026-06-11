@@ -29,12 +29,13 @@ namespace FileSystem.Hammer2;
 ///   <item><description><c>https://gitweb.dragonflybsd.org/dragonfly.git/blob/HEAD:/sys/vfs/hammer2/DESIGN</c></description></item>
 /// </list>
 /// </summary>
-public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Hammer2";
   public string DisplayName => "HAMMER2 (DragonFly BSD)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanCreate;
   public string DefaultExtension => ".hammer2";
   public IReadOnlyList<string> Extensions => [".hammer2"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -73,6 +74,31 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     if (hdr.Valid)
       entries.Add(new ArchiveEntryInfo(idx++, "volume_header.bin", hdr.HeaderRaw.LongLength, hdr.HeaderRaw.LongLength, "stored", false, false, null));
     return entries;
+  }
+
+  /// <summary>
+  /// Produces a fresh, mountable single-volume HAMMER2 image from
+  /// <paramref name="inputs"/>. The output mirrors <c>newfs_hammer2</c>: a
+  /// volume header, the super-root inode, and the "LOCAL" + labelled PFS
+  /// inodes, each with an empty root directory (see <see cref="Hammer2Writer"/>).
+  /// Directory contents are not yet materialised (the root directories are
+  /// created empty, exactly as <c>newfs_hammer2</c> leaves them).
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    var writer = new Hammer2Writer();
+    var label = options?.GetOption("label", "DATA");
+    if (!string.IsNullOrEmpty(label))
+      writer.Label = label;
+
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      writer.AddFile(input.ArchiveName, input.ReadContent());
+    }
+
+    writer.WriteTo(output);
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {

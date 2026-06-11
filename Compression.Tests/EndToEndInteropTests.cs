@@ -272,7 +272,7 @@ public class EndToEndInteropTests {
     // Filesystem images (HFS, NTFS, ext, etc. require full FS creation)
     ".hfs", ".hfsp", ".mfs", ".ntfs", ".ext", ".exfat", ".fat", ".img",
     ".ufs", ".xfs", ".jfs", ".reiserfs", ".f2fs", ".romfs", ".minixfs", ".minix",
-    ".apfs", ".zfs", ".btrfs", ".vdfs", ".hammer",
+    ".apfs", ".zfs", ".btrfs", ".vdfs", ".hammer", ".hammer2",
     // Xenix V (s5fs): 10 direct zones × 1024 B blocks = 10 240 byte ceiling
     // per file (indirect blocks out of scope); generic 10 400-byte repeat.txt
     // exceeds the budget. Cleanly throws InvalidOperationException — tests in

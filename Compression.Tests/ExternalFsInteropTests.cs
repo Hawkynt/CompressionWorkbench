@@ -2140,7 +2140,10 @@ public class ExternalFsInteropTests {
                     "Custom live ISO with 'hammer2 info /dev/da1; halt' in /etc/rc.local needed for full automation.");
 
     var imgPath = Path.Combine(this._tmpDir, "hammer2.img");
-    File.WriteAllBytes(imgPath, new byte[16 * 1024 * 1024]);
+    var hammer2 = new FileSystem.Hammer2.Hammer2Writer { Label = "test" };
+    hammer2.AddFile("hello.txt", SmallText);
+    using (var fs = File.Create(imgPath))
+      hammer2.WriteTo(fs);
     var logPath = Path.Combine(this._tmpDir, "hammer2.serial.log");
 
     var (exit, log) = Compression.Tests.Support.QemuRunner.RunHammerInfo(
