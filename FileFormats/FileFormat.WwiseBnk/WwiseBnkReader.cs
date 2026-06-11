@@ -33,6 +33,26 @@ public sealed class WwiseBnkReader {
   public List<HircObject> HircObjects { get; } = [];
   public Dictionary<string, long> Chunks { get; } = [];
 
+  /// <summary>Maps each top-level chunk tag to its (body offset, body length) so
+  /// callers can surface a raw per-section blob (BKHD.bin, HIRC.bin, …).</summary>
+  public Dictionary<string, (long Offset, long Length)> ChunkSpans { get; } = [];
+
+  /// <summary>Reads a top-level chunk's raw body bytes by its 4CC tag.</summary>
+  public byte[] ExtractChunk(string tag) {
+    if (!this.ChunkSpans.TryGetValue(tag, out var span))
+      throw new InvalidDataException($"No {tag} chunk present.");
+    this._stream.Position = span.Offset;
+    var buf = new byte[span.Length];
+    var read = 0;
+    while (read < buf.Length) {
+      var n = this._stream.Read(buf, read, buf.Length - read);
+      if (n == 0) break;
+      read += n;
+    }
+    if (read < buf.Length) throw new InvalidDataException($"Truncated {tag} chunk.");
+    return buf;
+  }
+
   public WwiseBnkReader(Stream stream) {
     this._stream = stream;
     stream.Position = 0;
@@ -44,6 +64,7 @@ public sealed class WwiseBnkReader {
       var size = ReadUInt32LE();
       var chunkStart = stream.Position;
       this.Chunks[tag] = chunkStart;
+      this.ChunkSpans[tag] = (chunkStart, Math.Min(size, Math.Max(0, stream.Length - chunkStart)));
 
       switch (tag) {
         case "BKHD":

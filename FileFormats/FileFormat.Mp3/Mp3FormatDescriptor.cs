@@ -118,7 +118,124 @@ public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (lyrics != null)
       entries.Add(("lyrics.txt", "Tag", lyrics.Payload));
 
+    // Raw ID3v1 trailer (last 128 bytes starting with "TAG") surfaced verbatim so
+    // the byte-exact tag can be round-tripped, independent of the parsed metadata.ini.
+    if (hasV1 && blob.Length >= 128 &&
+        blob[^128] == (byte)'T' && blob[^127] == (byte)'A' && blob[^126] == (byte)'G')
+      entries.Add(("id3v1.bin", "Tag", blob.AsSpan(blob.Length - 128).ToArray()));
+
+    // Per-frame MPEG audio blocks. Splitting by the 11-bit frame sync is byte-safe
+    // (no decode needed); each frame is sliced from one sync header to the next.
+    AddMpegFrames(blob, entries);
+
     return entries;
+  }
+
+  // Splits the audio region into individual MPEG frames by walking the frame
+  // headers. The frame length is computed from the bitrate/sample-rate/padding
+  // fields, so each block is a self-contained MPEG audio frame. Cannot throw:
+  // any malformed header simply ends the scan.
+  private static void AddMpegFrames(byte[] blob, List<(string Name, string Kind, byte[] Data)> entries) {
+    var audioStart = AudioRegionStart(blob);
+    var audioEnd = AudioRegionEnd(blob);
+    if (audioEnd - audioStart < 4) return;
+
+    var pos = audioStart;
+    var index = 0;
+    const int MaxFrames = 100_000; // guard against pathological inputs
+    while (pos + 4 <= audioEnd && index < MaxFrames) {
+      if (!TryParseFrameHeader(blob, pos, out var frameLen)) {
+        // Resync: advance one byte and look for the next sync word.
+        ++pos;
+        continue;
+      }
+      var end = Math.Min(pos + frameLen, audioEnd);
+      if (end <= pos) break;
+      entries.Add(($"frames/frame_{index:D5}.bin", "Frame", blob.AsSpan(pos, end - pos).ToArray()));
+      ++index;
+      pos = end;
+    }
+  }
+
+  // Returns the offset just past any leading ID3v2 tag.
+  private static int AudioRegionStart(byte[] blob) {
+    if (blob.Length >= 10 && blob[0] == 'I' && blob[1] == 'D' && blob[2] == '3') {
+      var size = (blob[6] & 0x7F) << 21 | (blob[7] & 0x7F) << 14 | (blob[8] & 0x7F) << 7 | (blob[9] & 0x7F);
+      return Math.Min(10 + size, blob.Length);
+    }
+    return 0;
+  }
+
+  // Returns the offset of the trailing ID3v1 tag (if present), else end of file.
+  private static int AudioRegionEnd(byte[] blob) {
+    if (blob.Length >= 128 && blob[^128] == 'T' && blob[^127] == 'A' && blob[^126] == 'G')
+      return blob.Length - 128;
+    return blob.Length;
+  }
+
+  // Decodes an MPEG-1/2/2.5 Layer I/II/III frame header at offset and returns its
+  // on-disk length in bytes. MPEG bitrate/sample-rate tables are version+layer
+  // dependent; "free" or "reserved" combinations are rejected.
+  private static bool TryParseFrameHeader(byte[] b, int off, out int frameLen) {
+    frameLen = 0;
+    if (off + 4 > b.Length) return false;
+    // Sync: 11 bits set (FF Ex/Fx).
+    if (b[off] != 0xFF || (b[off + 1] & 0xE0) != 0xE0) return false;
+
+    var versionBits = (b[off + 1] >> 3) & 0x03; // 0=MPEG2.5,2=MPEG2,3=MPEG1
+    var layerBits = (b[off + 1] >> 1) & 0x03;    // 1=LayerIII,2=LayerII,3=LayerI
+    if (versionBits == 1) return false;           // reserved version
+    if (layerBits == 0) return false;             // reserved layer
+
+    var bitrateIndex = (b[off + 2] >> 4) & 0x0F;
+    var sampleRateIndex = (b[off + 2] >> 2) & 0x03;
+    var padding = (b[off + 2] >> 1) & 0x01;
+    if (bitrateIndex is 0 or 0x0F) return false;  // free-format or invalid
+    if (sampleRateIndex == 3) return false;       // reserved
+
+    var isMpeg1 = versionBits == 3;
+    var layer = 4 - layerBits;                    // 1, 2, or 3
+
+    var bitrate = BitrateKbps(isMpeg1, layer, bitrateIndex);
+    if (bitrate == 0) return false;
+    var sampleRate = SampleRate(versionBits, sampleRateIndex);
+    if (sampleRate == 0) return false;
+
+    if (layer == 1)
+      frameLen = (12 * bitrate * 1000 / sampleRate + padding) * 4;
+    else {
+      // Layer II uses 1152 samples/frame; Layer III uses 576 for MPEG2/2.5, 1152 for MPEG1.
+      var samplesPerFrame = layer == 3 && !isMpeg1 ? 576 : 1152;
+      frameLen = samplesPerFrame / 8 * bitrate * 1000 / sampleRate + padding;
+    }
+    return frameLen >= 4;
+  }
+
+  private static readonly int[,] Mpeg1Bitrates = {
+    // index 0 is free, handled by caller; values in kbps
+    { 0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0 }, // Layer I
+    { 0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 0 },    // Layer II
+    { 0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0 },     // Layer III
+  };
+  private static readonly int[,] Mpeg2Bitrates = {
+    { 0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0 },    // Layer I
+    { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0 },         // Layer II
+    { 0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0 },         // Layer III
+  };
+
+  private static int BitrateKbps(bool isMpeg1, int layer, int index) {
+    if (index is <= 0 or >= 15) return 0;
+    var table = isMpeg1 ? Mpeg1Bitrates : Mpeg2Bitrates;
+    return table[layer - 1, index];
+  }
+
+  private static int SampleRate(int versionBits, int srIndex) {
+    int[] rates = versionBits switch {
+      3 => [44100, 48000, 32000],  // MPEG1
+      2 => [22050, 24000, 16000],  // MPEG2
+      _ => [11025, 12000, 8000],   // MPEG2.5
+    };
+    return srIndex < rates.Length ? rates[srIndex] : 0;
   }
 
   private static byte[] BuildV2MetadataIni(IReadOnlyList<Id3v2Reader.Frame> frames) {

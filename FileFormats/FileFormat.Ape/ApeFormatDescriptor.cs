@@ -30,7 +30,9 @@ public sealed class ApeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored"), new("ape", "APE")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Classic;
-  public string Description => "Monkey's Audio; exposes WAV header + frame blob + seek table.";
+  public string Description => "Monkey's Audio; WAV header + per-frame blocks + seek table + APEv2 tags.";
+
+  private static readonly byte[] ApeTagMagic = "APETAGEX"u8.ToArray();
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
@@ -146,6 +148,108 @@ public sealed class ApeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     AddSlice(file, seekStart, seekEnd, "seek_table.bin", "SeekTable", entries);
     AddSlice(file, frameStart, frameEnd, "frames.bin", "Frames", entries);
     AddSlice(file, termStart, termEnd, "terminating.bin", "Terminating", entries);
+
+    // Split the frame-data blob into per-frame blocks using the seek table.
+    // The seek table is an array of u32 absolute file offsets, one per compressed
+    // frame; each frame runs from its offset to the next (or to the end of the
+    // frame-data region for the final frame).
+    AddPerFrameBlocks(file, seekStart, seekEnd, frameStart, frameEnd, entries);
+
+    // APEv2 tag (if present) lives in the terminating-data region (after the
+    // frame data). Surface its text items as tags.ini.
+    AddApeTags(file, termStart, termEnd, entries);
+  }
+
+  // The seek table holds u32 absolute offsets into the file, one per frame. We
+  // clamp each [start,next) span to the frame-data region so a malformed table
+  // can never read into the header or out of bounds.
+  private static void AddPerFrameBlocks(
+      byte[] file, long seekStart, long seekEnd, long frameStart, long frameEnd,
+      List<(string Name, string Kind, byte[] Data)> entries) {
+    if (seekEnd <= seekStart || frameEnd <= frameStart) return;
+    var clampedSeekEnd = Math.Min(seekEnd, file.Length);
+    var entryCount = (int)((clampedSeekEnd - seekStart) / 4);
+    if (entryCount <= 0) return;
+
+    var offsets = new long[entryCount];
+    for (var i = 0; i < entryCount; ++i)
+      offsets[i] = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan((int)(seekStart + 4L * i)));
+
+    var dataEnd = Math.Min(frameEnd, file.Length);
+    for (var i = 0; i < entryCount; ++i) {
+      var start = offsets[i];
+      var end = i + 1 < entryCount ? offsets[i + 1] : dataEnd;
+      // A frame must start inside the frame-data region and grow forwards.
+      if (start < frameStart || start >= dataEnd) continue;
+      if (end < start || end > dataEnd) end = dataEnd;
+      var len = (int)(end - start);
+      if (len <= 0) continue;
+      entries.Add(($"frames/frame_{i:D4}.bin", "Frame", file.AsSpan((int)start, len).ToArray()));
+    }
+  }
+
+  // Scans the terminating-data region for an APEv2 footer ("APETAGEX") and, if
+  // found, decodes the UTF-8 text items into a key=value tags.ini. Binary items
+  // (cover art etc.) are listed by name+size only.
+  private static void AddApeTags(
+      byte[] file, long termStart, long termEnd,
+      List<(string Name, string Kind, byte[] Data)> entries) {
+    var clampedEnd = Math.Min(termEnd, file.Length);
+    if (clampedEnd - termStart < 32) return;
+
+    // The footer is the last 32 bytes of the APEv2 tag. Search the terminating
+    // region for the footer magic at a 32-byte-aligned tail position.
+    for (var footerPos = clampedEnd - 32; footerPos >= termStart; --footerPos) {
+      if (!MatchesMagic(file, (int)footerPos, ApeTagMagic)) continue;
+      var tagSize = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan((int)footerPos + 12)); // items + footer
+      var itemCount = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan((int)footerPos + 16));
+      if (tagSize < 32 || itemCount == 0 || itemCount > 65535) continue;
+      var itemsStart = footerPos + 32 - (long)tagSize; // items begin tagSize-32 before the footer
+      if (itemsStart < termStart) continue;
+
+      var ini = TryParseApeItems(file, itemsStart, footerPos, itemCount);
+      if (ini != null) {
+        entries.Add(("tags.ini", "Tag", Encoding.UTF8.GetBytes(ini)));
+        return;
+      }
+    }
+  }
+
+  private static string? TryParseApeItems(byte[] file, long itemsStart, long itemsEnd, uint itemCount) {
+    var sb = new StringBuilder();
+    sb.AppendLine("; APEv2 tags");
+    var pos = (int)itemsStart;
+    var end = (int)itemsEnd;
+    for (var i = 0; i < itemCount; ++i) {
+      if (pos + 8 > end) break;
+      var valueLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(pos));
+      var flags = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(pos + 4));
+      pos += 8;
+      // Key is a null-terminated ASCII string.
+      var keyStart = pos;
+      while (pos < end && file[pos] != 0) ++pos;
+      if (pos >= end) break;
+      var key = Encoding.ASCII.GetString(file, keyStart, pos - keyStart);
+      ++pos; // skip null
+      if (valueLen < 0 || pos + valueLen > end) break;
+      // Item value type lives in bits 1-2 of the flags: 0 = UTF-8 text.
+      var isText = ((flags >> 1) & 0x03) == 0;
+      if (isText) {
+        var value = Encoding.UTF8.GetString(file, pos, valueLen).Replace("\0", "; ");
+        sb.Append(key).Append('=').AppendLine(value);
+      } else {
+        sb.Append("; ").Append(key).Append(" (binary, ").Append(valueLen.ToString(CultureInfo.InvariantCulture)).AppendLine(" bytes)");
+      }
+      pos += valueLen;
+    }
+    return sb.Length > "; APEv2 tags\r\n".Length ? sb.ToString() : null;
+  }
+
+  private static bool MatchesMagic(byte[] buffer, int offset, byte[] magic) {
+    if (offset < 0 || offset + magic.Length > buffer.Length) return false;
+    for (var i = 0; i < magic.Length; ++i)
+      if (buffer[offset + i] != magic[i]) return false;
+    return true;
   }
 
   // Legacy (pre-3.98) APE_HEADER layout (32 bytes) immediately after "MAC " + version:

@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.WwiseBnk;
 
-public sealed class WwiseBnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class WwiseBnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   public string Id => "WwiseBnk";
   public string DisplayName => "Wwise SoundBank";
   public FormatCategory Category => FormatCategory.Archive;
@@ -27,12 +27,16 @@ public sealed class WwiseBnkFormatDescriptor : IFormatDescriptor, IArchiveFormat
     var r = new WwiseBnkReader(stream);
     var list = new List<ArchiveEntryInfo>();
     int idx = 0;
-    list.Add(new ArchiveEntryInfo(idx++, "FULL.bnk", stream.Length, stream.Length, "Stored", false, false, null));
-    list.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "Stored", false, false, null));
+    list.Add(new ArchiveEntryInfo(idx++, "FULL.bnk", stream.Length, stream.Length, "Stored", false, false, null, Kind: "Track"));
+    list.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "Stored", false, false, null, Kind: "Tag"));
     if (r.HircObjects.Count > 0)
-      list.Add(new ArchiveEntryInfo(idx++, "hirc_objects.txt", 0, 0, "Stored", false, false, null));
+      list.Add(new ArchiveEntryInfo(idx++, "hirc_objects.txt", 0, 0, "Stored", false, false, null, Kind: "Tag"));
+    // Per-section raw blobs (sections/BKHD.bin, sections/HIRC.bin, …) for every
+    // top-level chunk, indexed in file order via ChunkSpans.
+    foreach (var (tag, span) in r.ChunkSpans)
+      list.Add(new ArchiveEntryInfo(idx++, SectionName(tag), span.Length, span.Length, "Stored", false, false, null, Kind: "Section"));
     foreach (var w in r.Wems)
-      list.Add(new ArchiveEntryInfo(idx++, $"wems/{w.WemId}.wem", w.Size, w.Size, "Stored", false, false, null));
+      list.Add(new ArchiveEntryInfo(idx++, $"wems/{w.WemId}.wem", w.Size, w.Size, "Stored", false, false, null, Kind: "Sample"));
     return list;
   }
 
@@ -74,6 +78,12 @@ public sealed class WwiseBnkFormatDescriptor : IFormatDescriptor, IArchiveFormat
       return new Compression.Registry.Streaming.BoundedEntryStream(
         new MemoryStream(hirc, writable: false), hirc.Length, leaveOpen: false);
     }
+    foreach (var (tag, _) in r.ChunkSpans) {
+      if (!string.Equals(SectionName(tag), entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      var bytes = r.ExtractChunk(tag);
+      return new Compression.Registry.Streaming.BoundedEntryStream(
+        new MemoryStream(bytes, writable: false), bytes.Length, leaveOpen: false);
+    }
     foreach (var w in r.Wems) {
       var name = $"wems/{w.WemId}.wem";
       if (!string.Equals(name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
@@ -92,6 +102,14 @@ public sealed class WwiseBnkFormatDescriptor : IFormatDescriptor, IArchiveFormat
     s.CopyTo(memoryStream);
     return memoryStream.ToArray();
   }
+
+  /// <inheritdoc />
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+    using var s = this.OpenEntry(input, entryName, password);
+    s.CopyTo(output);
+  }
+
+  private static string SectionName(string tag) => $"sections/{tag.Trim()}.bin";
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new WwiseBnkReader(stream);
@@ -119,6 +137,12 @@ public sealed class WwiseBnkFormatDescriptor : IFormatDescriptor, IArchiveFormat
       foreach (var h in r.HircObjects)
         sb.AppendLine($"{h.Type} 0x{h.Id:X8} {h.Size}");
       WriteFile(outputDir, "hirc_objects.txt", Encoding.UTF8.GetBytes(sb.ToString()));
+    }
+
+    foreach (var (tag, _) in r.ChunkSpans) {
+      var name = SectionName(tag);
+      if (files != null && !MatchesFilter(name, files)) continue;
+      WriteFile(outputDir, name, r.ExtractChunk(tag));
     }
 
     foreach (var w in r.Wems) {
