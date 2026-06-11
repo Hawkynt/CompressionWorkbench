@@ -1,11 +1,9 @@
 #pragma warning disable CS1591
 using Compression.Registry;
-using FileFormat.Core;
-using FileFormat.Tiff;
 
 namespace FileFormat.PngCrushAdapters;
 
-public sealed class TiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFileInternalLayoutMap {
+public sealed class TiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IFileInternalLayoutMap {
   public string Id => "Tiff";
   public string DisplayName => "TIFF (multi-page)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -22,17 +20,23 @@ public sealed class TiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Multi-page TIFF; each IFD is one page extracted as PNG.";
+  public string Description =>
+    "Multi-page TIFF surfaced as a pseudo-archive: FULL.tif + metadata.ini " +
+    "(byte-order, page count) + one self-contained single-page TIFF per IFD " +
+    "(pages/page_NNN.tif) with strip/tile data re-based into each page.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
-    MultiImageArchiveHelper.List(stream, "page", ReadAll);
+    StructuralArchiveHelper.ToArchiveEntries(
+      StructuralArchiveHelper.DecomposeTiff(StructuralArchiveHelper.ReadAllBytes(stream)));
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
-    MultiImageArchiveHelper.Extract(stream, outputDir, files, "page", ReadAll);
+    StructuralArchiveExtract.Extract(
+      StructuralArchiveHelper.DecomposeTiff(StructuralArchiveHelper.ReadAllBytes(stream)), outputDir, files);
+
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) =>
+    StructuralArchiveExtract.ExtractEntry(
+      StructuralArchiveHelper.DecomposeTiff(StructuralArchiveHelper.ReadAllBytes(input)), entryName, output);
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => TiffLayoutMap.Enumerate(file);
-
-  private static IReadOnlyList<RawImage> ReadAll(Stream s) =>
-    MultiImageArchiveHelper.ToRawImages<TiffFile>(TiffReader.FromStream(s));
 }

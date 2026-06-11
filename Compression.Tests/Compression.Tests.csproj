@@ -46,7 +46,12 @@
     <Compile Remove="Image\ColorSpaceLazyExtractTests.cs" />
     <Compile Remove="Image\ColorSpaceSplitterTests.cs" />
     <Compile Remove="Png\PngLayoutMapTests.cs" />
+    <Compile Remove="Png\PngPseudoArchiveTests.cs" />
     <Compile Remove="Tiff\TiffLayoutMapTests.cs" />
+    <Compile Remove="Tiff\TiffPseudoArchiveTests.cs" />
+    <Compile Remove="Mpo\MpoPseudoArchiveTests.cs" />
+    <Compile Remove="Dcx\DcxPseudoArchiveTests.cs" />
+    <Compile Remove="Icns\IcnsPseudoArchiveTests.cs" />
     <Compile Remove="PngCrushAdapters\**\*.cs" />
   </ItemGroup>
 

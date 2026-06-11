@@ -1,11 +1,9 @@
 #pragma warning disable CS1591
 using Compression.Registry;
-using FileFormat.Core;
-using FileFormat.Icns;
 
 namespace FileFormat.PngCrushAdapters;
 
-public sealed class IcnsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class IcnsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   public string Id => "Icns";
   public string DisplayName => "ICNS (Apple icon)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -20,14 +18,20 @@ public sealed class IcnsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Apple icon image format; each variant is one image.";
+  public string Description =>
+    "Apple icon suite (ICNS) surfaced as a pseudo-archive: FULL.icns + metadata.ini " +
+    "(element count) + one sub-image per icon element (icons/<OSType>.png|.jp2|.bin), " +
+    "split via the ICNS element table.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
-    MultiImageArchiveHelper.List(stream, "icon", ReadAll);
+    StructuralArchiveHelper.ToArchiveEntries(
+      StructuralArchiveHelper.DecomposeIcns(StructuralArchiveHelper.ReadAllBytes(stream)));
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
-    MultiImageArchiveHelper.Extract(stream, outputDir, files, "icon", ReadAll);
+    StructuralArchiveExtract.Extract(
+      StructuralArchiveHelper.DecomposeIcns(StructuralArchiveHelper.ReadAllBytes(stream)), outputDir, files);
 
-  private static IReadOnlyList<RawImage> ReadAll(Stream s) =>
-    MultiImageArchiveHelper.ToRawImages<IcnsFile>(IcnsReader.FromStream(s));
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) =>
+    StructuralArchiveExtract.ExtractEntry(
+      StructuralArchiveHelper.DecomposeIcns(StructuralArchiveHelper.ReadAllBytes(input)), entryName, output);
 }

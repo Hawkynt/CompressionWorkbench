@@ -1,11 +1,9 @@
 #pragma warning disable CS1591
 using Compression.Registry;
-using FileFormat.Core;
-using FileFormat.Mpo;
 
 namespace FileFormat.PngCrushAdapters;
 
-public sealed class MpoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class MpoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   public string Id => "Mpo";
   public string DisplayName => "MPO (stereoscopic JPEG)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -20,14 +18,20 @@ public sealed class MpoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Multi-Picture Object (stereoscopic JPEG); each view is one image.";
+  public string Description =>
+    "Multi-Picture Object (stereoscopic JPEG) surfaced as a pseudo-archive: " +
+    "FULL.mpo + metadata.ini (picture count) + one JPEG per embedded picture " +
+    "(pictures/picture_NN.jpg), split by SOI..EOI marker pairs.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
-    MultiImageArchiveHelper.List(stream, "view", ReadAll);
+    StructuralArchiveHelper.ToArchiveEntries(
+      StructuralArchiveHelper.DecomposeMpo(StructuralArchiveHelper.ReadAllBytes(stream)));
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
-    MultiImageArchiveHelper.Extract(stream, outputDir, files, "view", ReadAll);
+    StructuralArchiveExtract.Extract(
+      StructuralArchiveHelper.DecomposeMpo(StructuralArchiveHelper.ReadAllBytes(stream)), outputDir, files);
 
-  private static IReadOnlyList<RawImage> ReadAll(Stream s) =>
-    MultiImageArchiveHelper.ToRawImages<MpoFile>(MpoReader.FromStream(s));
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) =>
+    StructuralArchiveExtract.ExtractEntry(
+      StructuralArchiveHelper.DecomposeMpo(StructuralArchiveHelper.ReadAllBytes(input)), entryName, output);
 }
