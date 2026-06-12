@@ -426,8 +426,13 @@ public sealed class Hammer2Writer {
     const int IndRadix = 12;                       // HAMMER2_IND_BYTES = 4 KB
     const int Fanout = (1 << IndRadix) / BlockrefBytes; // 32 blockrefs per indirect
 
-    // When everything fits, emit a single indirect block over this keyspace.
-    if (entries.Count <= Fanout) {
+    // When everything fits, emit a single indirect block over this keyspace —
+    // but never with keybits 64 (a full-64-bit span). The kernel caps keybits at
+    // 63 (1<<64 is undefined), so a top-level [0,2^64) range must first split at
+    // bit 63 into a low half (inode brefs, keys < 2^63) and a high half (dirent
+    // brefs, keys >= 2^63), each a keybits=63 indirect — exactly as the kernel
+    // lays out a directory that overflows the inode's embedded blockset.
+    if (entries.Count <= Fanout && keyBits <= 63) {
       var block = new byte[1 << IndRadix];
       for (var i = 0; i < entries.Count; ++i)
         entries[i].Bref.CopyTo(block.AsSpan(i * BlockrefBytes, BlockrefBytes));
@@ -436,6 +441,10 @@ public sealed class Hammer2Writer {
       this.WriteBlockref(bref, BrefTypeIndirect, checkAlgo: CheckXxhash64, compAlgo: CompNone,
         flags: 0, key: keyStart, vradix: IndRadix, dataOff: off, check: ComputeXxCheck(block));
       bref[3] = (byte)keyBits;                     // keybits: span of this indirect
+      // leaf_count: number of leaf blockrefs under this indirect. The kernel uses
+      // it to size directory iteration; 0 makes readdir treat the subtree as empty.
+      BinaryPrimitives.WriteUInt16LittleEndian(bref.AsSpan(6, 2),
+        (ushort)Math.Min(entries.Count, ushort.MaxValue));
       return [bref];
     }
 
@@ -523,7 +532,7 @@ public sealed class Hammer2Writer {
     BinaryPrimitives.WriteUInt16LittleEndian(br.Slice(6, 2), 0);             // leaf_count
     BinaryPrimitives.WriteUInt64LittleEndian(br.Slice(8, 8), key);           // key
     BinaryPrimitives.WriteUInt64LittleEndian(br.Slice(16, 8), this._mirrorTid); // mirror_tid
-    BinaryPrimitives.WriteUInt64LittleEndian(br.Slice(24, 8), 0);            // modify_tid
+    BinaryPrimitives.WriteUInt64LittleEndian(br.Slice(24, 8), this._mirrorTid); // modify_tid (non-zero; the live kernel treats modify_tid==0 as uninitialised)
     BinaryPrimitives.WriteInt64LittleEndian(br.Slice(32, 8), dataOff);       // data_off (radix in low bits)
     BinaryPrimitives.WriteUInt64LittleEndian(br.Slice(40, 8), 0);            // update_tid
     // embed @0x30 stays zero (stats: data_count/inode_count = 0).

@@ -103,11 +103,11 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <paramref name="inputs"/>. The output mirrors <c>newfs_hammer2</c>: a
   /// volume header, the super-root inode, and the "LOCAL" + labelled PFS inodes.
   /// The labelled PFS root is populated with the input files — each a regular-file
-  /// inode plus a directory entry — which round-trip byte-exact through
-  /// <see cref="Hammer2Reader"/> (see <see cref="Hammer2Writer"/>). The DragonFly
-  /// kernel mounts the image cleanly; surfacing these files to the kernel's own
-  /// directory walk additionally requires freemap allocation and blockref-indirect
-  /// wiring that is not yet emitted (the kernel currently mounts an empty root).
+  /// inode plus a directory entry (see <see cref="Hammer2Writer"/>). The DragonFly
+  /// kernel mounts the labelled PFS and reads every file's contents byte-exact
+  /// (validated via <c>mount_hammer2 …@&lt;label&gt;</c> + <c>cksum</c>, including
+  /// directories large enough to spill into a blockref-indirect block and files
+  /// stored in an out-of-line data block).
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
