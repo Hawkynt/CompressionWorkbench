@@ -99,11 +99,10 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// Produces a fresh, mountable single-volume HAMMER image from <paramref name="inputs"/>.
   /// HAMMER's UNDO FIFO floor forces a volume size of ~1 GB minimum; see
   /// <see cref="HammerWriter"/>. Each input becomes an inode + directory-entry +
-  /// data record in the global B-Tree, round-tripping byte-exact through
-  /// <see cref="HammerReader"/>. The DragonFly kernel mounts the image and lists
-  /// the files with their correct sizes; full kernel-readable file <em>data</em>
-  /// additionally requires zone-2 blockmap allocation, which is not yet emitted
-  /// (the kernel currently reads the data region as zero-fill).
+  /// data record in the global B-Tree. The DragonFly kernel mounts the image and
+  /// reads every file's contents byte-exact (validated via <c>mount_hammer</c> +
+  /// <c>cksum</c>, including multi-block files spanning the large- and small-data
+  /// zones); the image also passes <c>hammer show</c> and <c>hammer checkmap</c>.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);

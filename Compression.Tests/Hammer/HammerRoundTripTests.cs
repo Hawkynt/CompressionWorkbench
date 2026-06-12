@@ -51,6 +51,9 @@ public class HammerRoundTripTests {
       ["greeting.txt"] = "The quick brown fox jumps over the lazy dog.\n"u8.ToArray(),
       ["block.dat"] = Enumerable.Range(0, 200).Select(i => (byte)(i * 7)).ToArray(),
       ["bigger.dat"] = Enumerable.Range(0, 5000).Select(i => (byte)(i ^ (i >> 3))).ToArray(),
+      // Spans multiple data records, exercising full 16 KB large-data blocks
+      // (zone 10) plus a small-data tail (zone 11).
+      ["multiblock.bin"] = Enumerable.Range(0, 40000).Select(i => (byte)(i * 37 + 11)).ToArray(),
     };
 
     var image = WriteImage(expected.Select(kv => (kv.Key, kv.Value)).ToArray());

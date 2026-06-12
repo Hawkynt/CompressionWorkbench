@@ -407,12 +407,22 @@ public sealed class HammerWriter {
         DataLen = InodeDataSize, DataCrc = this.LeafDataCrc(RectypeInode, fIdata, InodeDataSize),
       });
 
-      // Directory entry under the root directory.
+      // Directory entry under the root directory. Direntry data is metadata and
+      // lives in the META zone (zone 9), exactly as the kernel allocates it —
+      // storing it in small-data (zone 11) alongside file data makes the shared
+      // big-block's zone ambiguous and the kernel's blockmap validation rejects
+      // file-data reads from it (returning a zero-fill hole).
       var nameBytes = Encoding.UTF8.GetBytes(name);
       var direntryLen = DirentryHeaderSize + nameBytes.Length;
-      var dirent = this.AllocBlockmap(ZoneSmallData, direntryLen, out var direntOff);
+      var dirent = this.AllocBlockmap(ZoneMeta, direntryLen, out var direntOff);
       BinaryPrimitives.WriteInt64LittleEndian(dirent.AsSpan(0, 8), fileObjId);        // obj_id
-      BinaryPrimitives.WriteUInt32LittleEndian(dirent.AsSpan(8, 4), LocalizeInode);   // localization
+      // The direntry's embedded localization is the TARGET inode's pseudofs
+      // localization (pfs_id << 16) — 0 for PFS#0 — NOT the INODE app bit. The
+      // kernel sets ip->obj_localization from this field, then reads file data
+      // with (obj_localization | HAMMER_LOCALIZE_MISC); a non-zero value here
+      // makes the data query localization 3 instead of 2 and the read finds no
+      // data record (zero-fill), even though the inode lookup still succeeds.
+      BinaryPrimitives.WriteUInt32LittleEndian(dirent.AsSpan(8, 4), 0);               // target pseudofs localization
       nameBytes.CopyTo(dirent.AsSpan(DirentryHeaderSize));
       this.WriteAtZone2(this.ZoneXToZone2(direntOff), dirent, direntryLen);
       elms.Add(new LeafElm {
@@ -425,11 +435,18 @@ public sealed class HammerWriter {
       // Data records: split the payload into <= 16 KB blocks; each block's
       // data_len is rounded up to the next power of two (min 16). base.key is the
       // end offset (file_offset + block_len), localization MISC, rec_type DATA.
+      //
+      // A full HAMMER_BUFSIZE (16 KB) block must live in the LARGE_DATA zone
+      // (zone 10); a sub-16 KB block lives in SMALL_DATA (zone 11). This mirrors
+      // hammer_data_zone_index() — the kernel's direct-read path asserts
+      // hammer_is_zone_large_data() for any aligned full-buffer block and panics
+      // if such a block is stored in small-data.
       long offset = 0;
       while (offset < content.LongLength) {
         var remaining = (int)Math.Min(SmallDataBlock, content.LongLength - offset);
         var blockLen = PowerOfTwoBlock(remaining);
-        var block = this.AllocBlockmap(ZoneSmallData, blockLen, out var blockOff);
+        var dataZone = blockLen >= SmallDataBlock ? ZoneLargeData : ZoneSmallData;
+        var block = this.AllocBlockmap(dataZone, blockLen, out var blockOff);
         Array.Copy(content, offset, block, 0, remaining);   // tail padded with zeros
         this.WriteAtZone2(this.ZoneXToZone2(blockOff), block, blockLen);
         elms.Add(new LeafElm {
@@ -450,11 +467,16 @@ public sealed class HammerWriter {
       throw new InvalidOperationException(
         $"HAMMER writer: {elms.Count} B-Tree elements exceed the single-leaf ceiling of {BtreeLeafElms}");
 
+    // A node's mirror_tid must be >= the create_tid/delete_tid of every element it
+    // holds; otherwise the kernel flags the elements as BADMIRRORTID and the ASOF
+    // cursor in hammer_vop_read prunes the node, reading file bodies as zero-fill.
+    var nodeMirrorTid = elms.Count == 0 ? 0UL : elms.Max(e => e.CreateTid);
+
     var bnode = this.AllocBtreeNode(out var btreeOff);
     BinaryPrimitives.WriteUInt64LittleEndian(bnode.AsSpan(8, 8), 0);                 // parent = 0
     BinaryPrimitives.WriteInt32LittleEndian(bnode.AsSpan(16, 4), elms.Count);        // count
     bnode[20] = BtreeTypeLeaf;                                                        // type 'L'
-    BinaryPrimitives.WriteUInt64LittleEndian(bnode.AsSpan(56, 8), 0);                // mirror_tid
+    BinaryPrimitives.WriteUInt64LittleEndian(bnode.AsSpan(56, 8), nodeMirrorTid);    // mirror_tid
     for (var i = 0; i < elms.Count; ++i)
       WriteLeafElm(bnode, i, elms[i], nowSecs);
 

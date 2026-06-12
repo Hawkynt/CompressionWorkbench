@@ -15,6 +15,13 @@ public class HammerImageDumpTests {
   public void WriteVerifyImage() {
     var w = new HammerWriter { Label = "test" };
     w.AddFile("hello.txt", "hello hammer\n"u8.ToArray());
+    w.AddFile("readme.md", "# HAMMER\nfull read/write\n"u8.ToArray());
+    var mid = new byte[5000];
+    for (var i = 0; i < mid.Length; ++i) mid[i] = (byte)('A' + (i % 26));
+    w.AddFile("mid.txt", mid);
+    var big = new byte[40000];
+    for (var i = 0; i < big.Length; ++i) big[i] = (byte)(i * 37 + 11);
+    w.AddFile("big.bin", big);
 
     using var fs = File.Create("/tmp/hammer_verify.img");
     w.WriteTo(fs);
