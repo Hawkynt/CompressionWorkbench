@@ -70,14 +70,40 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
     if (hdr.Valid)
       entries.Add(new ArchiveEntryInfo(idx++, "volume_header.bin", hdr.HeaderRaw.LongLength, hdr.HeaderRaw.LongLength, "stored", false, false, null));
+
+    // Walk the B-Tree for the real files. The header parse above used a bounded
+    // read; re-read the whole image for the walk only when the header is valid
+    // (a deliberately-opened HAMMER archive, not speculative carving).
+    if (hdr.Valid)
+      foreach (var f in ReadFiles(stream))
+        entries.Add(new ArchiveEntryInfo(idx++, f.Path, f.Content.LongLength, f.Content.LongLength, "stored", false, false, null));
+
     return entries;
+  }
+
+  // Walks the HAMMER B-Tree and returns the regular files it holds. Never throws
+  // — returns nothing when the walk fails.
+  private static IReadOnlyList<HammerReader.FileEntry> ReadFiles(Stream stream) {
+    try {
+      if (stream.CanSeek)
+        stream.Position = 0;
+      using var ms = new MemoryStream();
+      stream.CopyTo(ms);
+      return HammerReader.Open(ms.ToArray()).ReadFiles();
+    } catch {
+      return [];
+    }
   }
 
   /// <summary>
   /// Produces a fresh, mountable single-volume HAMMER image from <paramref name="inputs"/>.
   /// HAMMER's UNDO FIFO floor forces a volume size of ~1 GB minimum; see
-  /// <see cref="HammerWriter"/>. Directory contents are not yet materialised
-  /// (the root directory is created empty, exactly as <c>newfs_hammer</c> leaves it).
+  /// <see cref="HammerWriter"/>. Each input becomes an inode + directory-entry +
+  /// data record in the global B-Tree, round-tripping byte-exact through
+  /// <see cref="HammerReader"/>. The DragonFly kernel mounts the image and lists
+  /// the files with their correct sizes; full kernel-readable file <em>data</em>
+  /// additionally requires zone-2 blockmap allocation, which is not yet emitted
+  /// (the kernel currently reads the data region as zero-fill).
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
@@ -118,6 +144,13 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(hdr), files);
     if (hdr.Valid)
       WriteIfMatch(outputDir, "volume_header.bin", hdr.HeaderRaw, files);
+
+    // Materialise the real files by walking the B-Tree (best-effort; the surface
+    // files above are still written when the walk yields nothing). The header
+    // parse above used a bounded read, so re-read the whole image for the walk.
+    if (hdr.Valid)
+      foreach (var f in ReadFiles(stream))
+        WriteIfMatch(outputDir, f.Path, f.Content, files);
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {

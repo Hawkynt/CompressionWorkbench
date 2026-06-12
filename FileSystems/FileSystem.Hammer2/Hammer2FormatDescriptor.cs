@@ -73,16 +73,41 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
     if (hdr.Valid)
       entries.Add(new ArchiveEntryInfo(idx++, "volume_header.bin", hdr.HeaderRaw.LongLength, hdr.HeaderRaw.LongLength, "stored", false, false, null));
+
+    // Walk the blockref tree for the real files. The header parse above used a
+    // bounded read; re-read the whole image for the walk only when the header is
+    // valid (a deliberately-opened HAMMER2 archive, not speculative carving).
+    if (hdr.Valid)
+      foreach (var (name, content) in ReadFiles(stream))
+        entries.Add(new ArchiveEntryInfo(idx++, name, content.LongLength, content.LongLength, "stored", false, false, null));
+
     return entries;
+  }
+
+  // Walks the HAMMER2 blockref tree and returns the real regular files it holds,
+  // keyed by path. Never throws — returns nothing when the walk fails.
+  private static IEnumerable<KeyValuePair<string, byte[]>> ReadFiles(Stream stream) {
+    try {
+      if (stream.CanSeek)
+        stream.Position = 0;
+      using var ms = new MemoryStream();
+      stream.CopyTo(ms);
+      return new Hammer2Reader(ms.ToArray()).ReadAllFiles();
+    } catch {
+      return [];
+    }
   }
 
   /// <summary>
   /// Produces a fresh, mountable single-volume HAMMER2 image from
   /// <paramref name="inputs"/>. The output mirrors <c>newfs_hammer2</c>: a
-  /// volume header, the super-root inode, and the "LOCAL" + labelled PFS
-  /// inodes, each with an empty root directory (see <see cref="Hammer2Writer"/>).
-  /// Directory contents are not yet materialised (the root directories are
-  /// created empty, exactly as <c>newfs_hammer2</c> leaves them).
+  /// volume header, the super-root inode, and the "LOCAL" + labelled PFS inodes.
+  /// The labelled PFS root is populated with the input files — each a regular-file
+  /// inode plus a directory entry — which round-trip byte-exact through
+  /// <see cref="Hammer2Reader"/> (see <see cref="Hammer2Writer"/>). The DragonFly
+  /// kernel mounts the image cleanly; surfacing these files to the kernel's own
+  /// directory walk additionally requires freemap allocation and blockref-indirect
+  /// wiring that is not yet emitted (the kernel currently mounts an empty root).
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
@@ -104,7 +129,7 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] image;
     try {
-      image = ReadAllBounded(stream);
+      image = ReadAllFull(stream);
     } catch {
       WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"), files);
       return;
@@ -123,6 +148,16 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(hdr), files);
     if (hdr.Valid)
       WriteIfMatch(outputDir, "volume_header.bin", hdr.HeaderRaw, files);
+
+    // Materialise the real files by walking the blockref tree.
+    if (hdr.Valid) {
+      try {
+        foreach (var (name, content) in new Hammer2Reader(image).ReadAllFiles())
+          WriteIfMatch(outputDir, name, content, files);
+      } catch {
+        // Best-effort; the surface files above are still written.
+      }
+    }
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
@@ -166,6 +201,16 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     int read;
     while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
       ms.Write(buf, 0, read);
+    return ms.ToArray();
+  }
+
+  // Full read for an explicit extract: the caller deliberately opened a HAMMER2
+  // image, so the whole device is pulled in to walk the blockref tree.
+  private static byte[] ReadAllFull(Stream stream) {
+    if (stream.CanSeek)
+      stream.Position = 0;
+    using var ms = new MemoryStream();
+    stream.CopyTo(ms);
     return ms.ToArray();
   }
 }

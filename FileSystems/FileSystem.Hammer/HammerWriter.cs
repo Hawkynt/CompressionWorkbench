@@ -23,11 +23,14 @@ namespace FileSystem.Hammer;
 /// the order of ~1 GB. The output stream is grown to that size (sparse on
 /// filesystems that support holes).</para>
 ///
-/// <para>The root directory is created empty (exactly as <c>newfs_hammer</c>
-/// leaves it). File payloads passed to <see cref="AddFile"/> are recorded for
-/// the label/inode-count surface but are not yet materialised as directory
-/// entries — adding real directory entries requires additional B-Tree records
-/// and is out of scope for v1.</para>
+/// <para>Files passed to <see cref="AddFile"/> are materialised as real records
+/// readable by the DragonFly kernel: each gets a regular-file inode record, a
+/// directory-entry record under the root directory (keyed by the ALG1 directory
+/// namehash) and one or more zone-11 small-data records (payload split into
+/// 16 KB blocks, each rounded up to a power-of-two block). All records, plus the
+/// root inode and PFS#0 record, live in a single sorted leaf B-Tree node — which
+/// caps the image at <c>HAMMER_BTREE_LEAF_ELMS (63)</c> elements (~20 files).
+/// Files are placed flat in the root directory (no sub-directory nesting).</para>
 /// </summary>
 public sealed class HammerWriter {
   // --- Constants from sys/vfs/hammer/hammer_disk.h ---
@@ -87,10 +90,15 @@ public sealed class HammerWriter {
   private const ushort InodeDataVersion = 1;
   private const long ObjidRoot = 1;                          // HAMMER_OBJID_ROOT
   private const ushort RectypeInode = 0x0001;
+  private const ushort RectypeData = 0x0010;
+  private const ushort RectypeDirentry = 0x0011;
   private const ushort RectypePfs = 0x0015;
   private const byte ObjtypeDirectory = 1;
+  private const byte ObjtypeRegfile = 2;
   private const uint LocalizeInode = 0x00000001;
   private const uint LocalizeMisc = 0x00000002;
+  private const int DirentryHeaderSize = 16;   // sizeof(hammer_direntry_data) before name[]
+  private const int SmallDataBlock = Bufsize;  // 16 KB small-data block ceiling
   private const byte InodeCapDirLocalIno = 0x04;
   private const byte InodeCapDirhashAlg1 = 0x01;
 
@@ -100,7 +108,7 @@ public sealed class HammerWriter {
 
   private readonly List<(string Name, byte[] Content)> _files = [];
   private string _label = "hammer";
-  private long _volumeSize = 2L * 1024 * 1024 * 1024 + 64 * 1024 * 1024; // ~2.06 GB default
+  private long _volumeSize = 1024L * 1024 * 1024; // 1 GB default (HAMMER UNDO-FIFO floor)
 
   /// <summary>Filesystem label (max 63 chars, ASCII). Mirrors <c>newfs_hammer -L</c>.</summary>
   public string Label {
@@ -118,8 +126,9 @@ public sealed class HammerWriter {
   }
 
   /// <summary>
-  /// Records a file for inclusion. v1 stores the entry for label/inode-count
-  /// purposes; directory-entry materialisation is not yet implemented.
+  /// Adds a regular file to the root directory. The payload is materialised as a
+  /// kernel-readable inode + directory entry + small-data records when the image
+  /// is written.
   /// </summary>
   public void AddFile(string name, byte[] content) {
     ArgumentException.ThrowIfNullOrEmpty(name);
@@ -335,51 +344,119 @@ public sealed class HammerWriter {
     }
   }
 
-  // ---- format_root_directory (newfs_hammer.c) ----
+  // A B-Tree leaf element, staged before being sorted and emitted into the node.
+  private sealed class LeafElm {
+    public long ObjId;
+    public long Key;
+    public ulong CreateTid;
+    public ushort RecType;
+    public byte ObjType;
+    public uint Localization;
+    public long DataOff;
+    public int DataLen;
+    public uint DataCrc;
+  }
+
+  // ---- format_root_directory (newfs_hammer.c) + file materialisation ----
+  // Builds the root directory inode and PFS#0 record, then for every file added
+  // via AddFile lays down an inode record, a directory-entry record and one or
+  // more data records, collecting them into a single sorted leaf B-Tree node.
   private long FormatRootDirectory() {
-    var bnode = this.AllocBtreeNode(out var btreeOff);
-    var idata = this.AllocMetaElement(InodeDataSize, out var idataOff);
-    var pfsd = this.AllocMetaElement(PfsdSize, out var pfsdOff);
-    var createTid = this.CreateTid();
+    var elms = new List<LeafElm>();
+    var rootCreateTid = this.CreateTid();
+    var nowSecs = (uint)(NowTimeMicros() / 1_000_000UL);
     var xtime = NowTimeMicros();
 
-    // ---- inode data (struct hammer_inode_data) ----
-    // version(2)@0, mode(2)@2, uflags(4)@4, rmajor(4)@8, rminor(4)@12, ctime(8)@16,
-    // parent_obj_id(8)@24, uid(16)@32, gid(16)@48, obj_type(1)@64, cap_flags(1)@65,
-    // reserved01(2)@66, reserved02(4)@68, nlinks(8)@72, size(8)@80, ext.symlink[24]@88,
-    // mtime(8)@112, atime(8)@120.
-    BinaryPrimitives.WriteUInt16LittleEndian(idata.AsSpan(0, 2), InodeDataVersion);   // version
-    BinaryPrimitives.WriteUInt16LittleEndian(idata.AsSpan(2, 2), 0x01ED);             // mode 0755
-    BinaryPrimitives.WriteUInt64LittleEndian(idata.AsSpan(16, 8), xtime);            // ctime
-    idata[64] = ObjtypeDirectory;                                                    // obj_type
-    idata[65] = InodeCapDirLocalIno | InodeCapDirhashAlg1;                            // cap_flags (v7 >= 6 & >= 2)
-    BinaryPrimitives.WriteUInt64LittleEndian(idata.AsSpan(72, 8), 1);                // nlinks
-    BinaryPrimitives.WriteUInt64LittleEndian(idata.AsSpan(80, 8), 0);                // size
-    BinaryPrimitives.WriteUInt64LittleEndian(idata.AsSpan(112, 8), xtime);          // mtime
-    BinaryPrimitives.WriteUInt64LittleEndian(idata.AsSpan(120, 8), xtime);          // atime
-    this.WriteAtZone2(this.ZoneXToZone2(idataOff), idata, InodeDataSize);
+    // ---- root directory inode (struct hammer_inode_data) ----
+    var rootIdata = this.AllocMetaElement(InodeDataSize, out var rootIdataOff);
+    this.FillInode(rootIdata, ObjtypeDirectory, 0x01ED, 0, ObjidRoot,
+                   InodeCapDirLocalIno | InodeCapDirhashAlg1, xtime);
+    this.WriteAtZone2(this.ZoneXToZone2(rootIdataOff), rootIdata, InodeDataSize);
+    elms.Add(new LeafElm {
+      ObjId = ObjidRoot, Key = 0, CreateTid = rootCreateTid, RecType = RectypeInode,
+      ObjType = ObjtypeDirectory, Localization = LocalizeInode, DataOff = rootIdataOff,
+      DataLen = InodeDataSize, DataCrc = this.LeafDataCrc(RectypeInode, rootIdata, InodeDataSize),
+    });
 
     // ---- PFS#0 data (struct hammer_pseudofs_data) ----
-    // sync_low_tid(8)@0, sync_beg_tid(8)@8, sync_end_tid(8)@16, sync_beg_ts(8)@24,
-    // sync_end_ts(8)@32, shared_uuid(16)@40, unique_uuid(16)@56, reserved01(4)@72,
-    // mirror_flags(4)@76, label[64]@80, snapshots[64]@144, ...
+    var pfsd = this.AllocMetaElement(PfsdSize, out var pfsdOff);
     BinaryPrimitives.WriteUInt64LittleEndian(pfsd.AsSpan(0, 8), 1);                  // sync_low_tid
     this._volFsid.CopyTo(pfsd.AsSpan(40, 16));                                       // shared_uuid = vol_fsid
     this._volFsid.CopyTo(pfsd.AsSpan(56, 16));                                       // unique_uuid = vol_fsid
     Encoding.ASCII.GetBytes(Truncate(this._label, 63)).CopyTo(pfsd.AsSpan(80));      // label[64] @ 80
     this.WriteAtZone2(this.ZoneXToZone2(pfsdOff), pfsd, PfsdSize);
+    elms.Add(new LeafElm {
+      ObjId = ObjidRoot, Key = 0, CreateTid = rootCreateTid, RecType = RectypePfs,
+      ObjType = ObjtypeDirectory, Localization = LocalizeMisc, DataOff = pfsdOff,
+      DataLen = PfsdSize, DataCrc = this.LeafDataCrc(RectypePfs, pfsd, PfsdSize),
+    });
 
-    // ---- root B-Tree node (leaf, 2 elements) ----
+    // ---- per-file records ----
+    long nextObjId = ObjidRoot + 1;
+    foreach (var (name, content) in this._files) {
+      var fileObjId = nextObjId++;
+      var fileCreateTid = this.CreateTid();
+
+      // File inode (regular file, mode 0644, parent = root, no dirhash caps).
+      var fIdata = this.AllocMetaElement(InodeDataSize, out var fIdataOff);
+      this.FillInode(fIdata, ObjtypeRegfile, 0x01A4, content.LongLength, ObjidRoot, 0, xtime);
+      this.WriteAtZone2(this.ZoneXToZone2(fIdataOff), fIdata, InodeDataSize);
+      elms.Add(new LeafElm {
+        ObjId = fileObjId, Key = 0, CreateTid = fileCreateTid, RecType = RectypeInode,
+        ObjType = ObjtypeRegfile, Localization = LocalizeInode, DataOff = fIdataOff,
+        DataLen = InodeDataSize, DataCrc = this.LeafDataCrc(RectypeInode, fIdata, InodeDataSize),
+      });
+
+      // Directory entry under the root directory.
+      var nameBytes = Encoding.UTF8.GetBytes(name);
+      var direntryLen = DirentryHeaderSize + nameBytes.Length;
+      var dirent = this.AllocBlockmap(ZoneSmallData, direntryLen, out var direntOff);
+      BinaryPrimitives.WriteInt64LittleEndian(dirent.AsSpan(0, 8), fileObjId);        // obj_id
+      BinaryPrimitives.WriteUInt32LittleEndian(dirent.AsSpan(8, 4), LocalizeInode);   // localization
+      nameBytes.CopyTo(dirent.AsSpan(DirentryHeaderSize));
+      this.WriteAtZone2(this.ZoneXToZone2(direntOff), dirent, direntryLen);
+      elms.Add(new LeafElm {
+        ObjId = ObjidRoot, Key = DirentryNamekey(nameBytes), CreateTid = fileCreateTid,
+        RecType = RectypeDirentry, ObjType = ObjtypeRegfile, Localization = LocalizeInode,
+        DataOff = direntOff, DataLen = direntryLen,
+        DataCrc = HammerCrc.DataCrc(VolVersion, dirent.AsSpan(0, direntryLen)),
+      });
+
+      // Data records: split the payload into <= 16 KB blocks; each block's
+      // data_len is rounded up to the next power of two (min 16). base.key is the
+      // end offset (file_offset + block_len), localization MISC, rec_type DATA.
+      long offset = 0;
+      while (offset < content.LongLength) {
+        var remaining = (int)Math.Min(SmallDataBlock, content.LongLength - offset);
+        var blockLen = PowerOfTwoBlock(remaining);
+        var block = this.AllocBlockmap(ZoneSmallData, blockLen, out var blockOff);
+        Array.Copy(content, offset, block, 0, remaining);   // tail padded with zeros
+        this.WriteAtZone2(this.ZoneXToZone2(blockOff), block, blockLen);
+        elms.Add(new LeafElm {
+          ObjId = fileObjId, Key = offset + blockLen, CreateTid = fileCreateTid,
+          RecType = RectypeData, ObjType = ObjtypeRegfile, Localization = LocalizeMisc,
+          DataOff = blockOff, DataLen = blockLen,
+          DataCrc = HammerCrc.DataCrc(VolVersion, block.AsSpan(0, blockLen)),
+        });
+        offset += blockLen;
+      }
+
+      ++this._vol0StatInodes;
+    }
+
+    // ---- emit the leaf node, elements ordered by the HAMMER base-element key ----
+    elms.Sort(CompareBase);
+    if (elms.Count > BtreeLeafElms)
+      throw new InvalidOperationException(
+        $"HAMMER writer: {elms.Count} B-Tree elements exceed the single-leaf ceiling of {BtreeLeafElms}");
+
+    var bnode = this.AllocBtreeNode(out var btreeOff);
     BinaryPrimitives.WriteUInt64LittleEndian(bnode.AsSpan(8, 8), 0);                 // parent = 0
-    BinaryPrimitives.WriteInt32LittleEndian(bnode.AsSpan(16, 4), 2);                 // count
+    BinaryPrimitives.WriteInt32LittleEndian(bnode.AsSpan(16, 4), elms.Count);        // count
     bnode[20] = BtreeTypeLeaf;                                                        // type 'L'
     BinaryPrimitives.WriteUInt64LittleEndian(bnode.AsSpan(56, 8), 0);                // mirror_tid
-
-    var nowSecs = (uint)(NowTimeMicros() / 1_000_000UL);
-    WriteLeafElm(bnode, 0, createTid, RectypeInode, LocalizeInode, idataOff, InodeDataSize,
-                 this.LeafDataCrc(RectypeInode, idata, InodeDataSize), nowSecs);
-    WriteLeafElm(bnode, 1, createTid, RectypePfs, LocalizeMisc, pfsdOff, PfsdSize,
-                 this.LeafDataCrc(RectypePfs, pfsd, PfsdSize), nowSecs);
+    for (var i = 0; i < elms.Count; ++i)
+      WriteLeafElm(bnode, i, elms[i], nowSecs);
 
     this.SetBtreeCrc(bnode);
     this.WriteAtZone2(this.ZoneXToZone2(btreeOff), bnode, NodeOndiskSize);
@@ -387,25 +464,90 @@ public sealed class HammerWriter {
     return btreeOff;
   }
 
-  private static void WriteLeafElm(byte[] node, int idx, ulong createTid, ushort recType,
-                                   uint localize, long dataOff, int dataLen, uint dataCrc,
-                                   uint createTs) {
+  // Fills a 128-byte hammer_inode_data:
+  // version(2)@0, mode(2)@2, ctime(8)@16, parent_obj_id(8)@24, obj_type(1)@64,
+  // cap_flags(1)@65, nlinks(8)@72, size(8)@80, mtime(8)@112, atime(8)@120.
+  private void FillInode(byte[] idata, byte objType, ushort mode, long size,
+                         long parentObjId, byte capFlags, ulong xtime) {
+    BinaryPrimitives.WriteUInt16LittleEndian(idata.AsSpan(0, 2), InodeDataVersion);
+    BinaryPrimitives.WriteUInt16LittleEndian(idata.AsSpan(2, 2), mode);
+    BinaryPrimitives.WriteUInt64LittleEndian(idata.AsSpan(16, 8), xtime);
+    BinaryPrimitives.WriteInt64LittleEndian(idata.AsSpan(24, 8), parentObjId);
+    idata[64] = objType;
+    idata[65] = capFlags;
+    BinaryPrimitives.WriteUInt64LittleEndian(idata.AsSpan(72, 8), 1);                // nlinks
+    BinaryPrimitives.WriteInt64LittleEndian(idata.AsSpan(80, 8), size);
+    BinaryPrimitives.WriteUInt64LittleEndian(idata.AsSpan(112, 8), xtime);
+    BinaryPrimitives.WriteUInt64LittleEndian(idata.AsSpan(120, 8), xtime);
+  }
+
+  // HAMMER base-element ordering: (localization, obj_id, rec_type, key, create_tid).
+  private static int CompareBase(LeafElm a, LeafElm b) {
+    var c = a.Localization.CompareTo(b.Localization);
+    if (c != 0) return c;
+    c = a.ObjId.CompareTo(b.ObjId);
+    if (c != 0) return c;
+    c = a.RecType.CompareTo(b.RecType);
+    if (c != 0) return c;
+    c = a.Key.CompareTo(b.Key);
+    if (c != 0) return c;
+    return a.CreateTid.CompareTo(b.CreateTid);
+  }
+
+  // Round a data-block length up to the next power of two, clamped to [16, 16 KB].
+  private static int PowerOfTwoBlock(int n) {
+    var size = 16;
+    while (size < n)
+      size <<= 1;
+    return size;
+  }
+
+  // hammer_direntry_namekey ALG1 (hammer_subs.c): folds '.','-','_','~'-separated
+  // tokens via classic crc32 into the high 31 bits, mixes a whole-name crc into
+  // bits [16,32), and reserves the low 16 bits for the collision counter (0 here).
+  private static long DirentryNamekey(byte[] name) {
+    long key = 0;
+    uint crcx = 0;
+    var j = 0;
+    for (var i = 0; i < name.Length; ++i) {
+      var ch = name[i];
+      if (ch is (byte)'.' or (byte)'-' or (byte)'_' or (byte)'~') {
+        if (i != j)
+          crcx += HammerCrc.Crc32(name.AsSpan(j, i - j));
+        j = i + 1;
+      }
+    }
+    if (name.Length != j)
+      crcx += HammerCrc.Crc32(name.AsSpan(j, name.Length - j));
+    crcx &= 0x7FFFFFFFU;
+    key |= (long)crcx << 32;
+
+    var whole = HammerCrc.Crc32(name);
+    whole ^= whole << 16;
+    key |= whole & 0xFFFF0000U;
+
+    if ((key & unchecked((long)0xFFFFFFFF00000000UL)) == 0)
+      key |= 0x100000000L;
+    return key;
+  }
+
+  private static void WriteLeafElm(byte[] node, int idx, LeafElm e, uint createTs) {
     // elms[] start at byte 64; each element is 64 bytes.
     var b = 64 + idx * 64;
     // base: obj_id(8), key(8), create_tid(8), delete_tid(8), rec_type(2), obj_type(1), btype(1), localization(4).
-    BinaryPrimitives.WriteInt64LittleEndian(node.AsSpan(b + 0, 8), ObjidRoot);
-    BinaryPrimitives.WriteInt64LittleEndian(node.AsSpan(b + 8, 8), 0);               // key
-    BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(b + 16, 8), createTid);
+    BinaryPrimitives.WriteInt64LittleEndian(node.AsSpan(b + 0, 8), e.ObjId);
+    BinaryPrimitives.WriteInt64LittleEndian(node.AsSpan(b + 8, 8), e.Key);
+    BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(b + 16, 8), e.CreateTid);
     BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(b + 24, 8), 0);             // delete_tid
-    BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(b + 32, 2), recType);
-    node[b + 34] = ObjtypeDirectory;                                                  // obj_type
-    node[b + 35] = BtreeTypeRecord;                                                   // btype 'R'
-    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(b + 36, 4), localize);
+    BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(b + 32, 2), e.RecType);
+    node[b + 34] = e.ObjType;
+    node[b + 35] = BtreeTypeRecord;                                                  // btype 'R'
+    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(b + 36, 4), e.Localization);
     // leaf: create_ts(4)@40, delete_ts(4)@44, data_offset(8)@48, data_len(4)@56, data_crc(4)@60.
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(b + 40, 4), createTs);
-    BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(b + 48, 8), (ulong)dataOff);
-    BinaryPrimitives.WriteInt32LittleEndian(node.AsSpan(b + 56, 4), dataLen);
-    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(b + 60, 4), dataCrc);
+    BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(b + 48, 8), (ulong)e.DataOff);
+    BinaryPrimitives.WriteInt32LittleEndian(node.AsSpan(b + 56, 4), e.DataLen);
+    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(b + 60, 4), e.DataCrc);
   }
 
   // ===== allocators (blockmap.c) =====
