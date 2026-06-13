@@ -197,7 +197,10 @@ public sealed class F2fsWriter {
     // segment_count counts segments from segment0 onwards.
     var countedSegments = totalSegments - 1;
     var segmentCountMain = countedSegments - (SegMain - SegCp); // = 31 - 7 = 24 for default.
-    var totalSections = countedSegments / SegsPerSec;
+    // section_count covers only the MAIN area (matches mkfs.f2fs); using the
+    // total segment count made it 31 vs main's 24, so the kernel rejected the
+    // superblock with "Invalid segment/section count (31, 31 x 1)".
+    var totalSections = segmentCountMain / SegsPerSec;
     var totalZones = totalSections / SecsPerZone;
 
     // ---- Build the directory tree from slash-separated names ----
