@@ -191,10 +191,8 @@ public class ReiserFsPostMutationExternalTests {
   }
 
   private static void RequireWslAndReiserfsck() {
-    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-      Assert.Ignore("WSL-gated test runs on Windows only.");
     if (RunWsl("command -v reiserfsck").ExitCode != 0)
-      Assert.Ignore("reiserfsck not installed in WSL. Run: `wsl sudo apt-get install -y reiserfsprogs`.");
+      Assert.Ignore("reiserfsck not installed. Run: `sudo apt-get install -y reiserfsprogs` (or via WSL on Windows).");
   }
 
   private static string WinToWsl(string p) {
@@ -207,9 +205,10 @@ public class ReiserFsPostMutationExternalTests {
 
   private static (string StdOut, string StdErr, int ExitCode) RunWsl(string cmd) {
     var dqEscaped = cmd.Replace("\"", "\\\"");
+    var onWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
     var psi = new ProcessStartInfo {
-      FileName = "wsl",
-      Arguments = $"-e bash -c \"{dqEscaped}\"",
+      FileName = onWindows ? "wsl" : "/bin/bash",
+      Arguments = onWindows ? $"-e bash -c \"{dqEscaped}\"" : $"-c \"{dqEscaped}\"",
       RedirectStandardOutput = true,
       RedirectStandardError = true,
       UseShellExecute = false,

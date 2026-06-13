@@ -63,6 +63,8 @@ public class JfsPostMutationExternalTests {
 
   private static (string StdOut, string StdErr, int ExitCode) RunWsl(string linuxCommand) {
     var dq = linuxCommand.Replace("\"", "\\\"");
+    if (!IsWindows)
+      return RunExact("/bin/bash", $"-c \"{dq}\"");
     return RunExact("wsl", $"-e bash -c \"{dq}\"");
   }
 
@@ -82,7 +84,7 @@ public class JfsPostMutationExternalTests {
     get {
       if (_wslAvailableChecked) return _wslAvailable;
       _wslAvailableChecked = true;
-      if (!IsWindows) return _wslAvailable = false;
+      if (!IsWindows) return _wslAvailable = true;   // POSIX host runs the tools directly
       try {
         var r = RunExact("wsl", "--status", timeoutMs: 5_000);
         _wslAvailable = r.ExitCode == 0;

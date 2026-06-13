@@ -151,7 +151,7 @@ public class F2fsPostMutationExternalTests {
   }
 
   private static bool WslAvailable() {
-    if (!IsWindows) return false;
+    if (!IsWindows) return true;   // POSIX host: the machine itself runs the Linux tools
     try {
       var r = RunExact("wsl", "--status");
       return r.ExitCode == 0 && !string.IsNullOrWhiteSpace(r.StdOut);
@@ -167,6 +167,8 @@ public class F2fsPostMutationExternalTests {
 
   private static (string StdOut, string StdErr, int ExitCode) RunWsl(string linuxCommand) {
     var dqEscaped = linuxCommand.Replace("\"", "\\\"");
+    if (!IsWindows)
+      return RunExact("/bin/bash", $"-c \"{dqEscaped}\"");
     return RunExact("wsl", $"-e bash -c \"{dqEscaped}\"");
   }
 

@@ -2467,7 +2467,10 @@ internal static class FsInteropToolbox {
   }
 
   private static bool DetectWsl() {
-    if (!OperatingSystem.IsWindows()) return false;
+    // On a non-Windows host the machine itself IS the POSIX/Linux tool
+    // environment — the "WSL" abstraction collapses to running commands
+    // directly. RunWsl/WinToWsl/WslHasTool all special-case this below.
+    if (!OperatingSystem.IsWindows()) return true;
     var wslExe = TryFromPath("wsl");
     if (wslExe is null) return false;
     // `wsl --status` prints default distro info when a distro is installed;
@@ -2498,8 +2501,12 @@ internal static class FsInteropToolbox {
   /// the single-quotes inside.
   /// </summary>
   public static (string StdOut, string StdErr, int ExitCode) RunWsl(string linuxCommand) {
-    var wsl = TryFromPath("wsl") ?? "wsl";
     var dqEscaped = linuxCommand.Replace("\"", "\\\"");
+    // On Linux/macOS run the command directly through the host shell — there is
+    // no WSL indirection; the tools live on the native PATH.
+    if (!OperatingSystem.IsWindows())
+      return RunExact("/bin/bash", $"-c \"{dqEscaped}\"");
+    var wsl = TryFromPath("wsl") ?? "wsl";
     return RunExact(wsl, $"-e bash -c \"{dqEscaped}\"");
   }
 
@@ -2510,6 +2517,11 @@ internal static class FsInteropToolbox {
   /// </summary>
   public static string WinToWsl(string winPath) {
     if (string.IsNullOrEmpty(winPath)) return winPath;
+    // On a POSIX host the path is already native — return it bare so it works
+    // both through `bash -c` (RunWsl) and through a direct exec (RunQemuImg).
+    // Test temp paths contain no spaces, matching the pre-existing contract.
+    if (!OperatingSystem.IsWindows())
+      return Path.GetFullPath(winPath);
     var full = Path.GetFullPath(winPath);
     if (full.Length < 2 || full[1] != ':') return full.Replace('\\', '/');
     var drive = char.ToLowerInvariant(full[0]);
