@@ -156,6 +156,17 @@ public sealed class SquashFsWriter : IDisposable {
     WriteSuperblock(
       (uint)inodeCount, modTime, rootRef, (ulong)imageEnd,
       (ulong)idTableStart, (ulong)inodeTableStart, (ulong)dirTableStart);
+
+    // 8. Pad the image to a 4 KiB device boundary (mksquashfs does the same).
+    //    The kernel reads the backing block device in sector units; an unpadded
+    //    sub-sector image presents a zero-sector device and the very first
+    //    superblock read fails with EIO ("Failed to read block 0x0: -5").
+    //    bytes_used in the superblock stays the true (unpadded) size.
+    var padded = (imageEnd + 4095) & ~4095L;
+    if (padded > _stream.Length) {
+      _stream.Position = padded - 1;
+      _stream.WriteByte(0);
+    }
   }
 
   // ──── Tree construction ────
