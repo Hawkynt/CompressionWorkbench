@@ -120,10 +120,6 @@ jobs:
             echo "::warning::NUGET_TOKEN secret is not set; skipping publish."
             exit 0
           fi
-          dotnet nuget push "dist-nuget/*.nupkg" \
-            --api-key "$NUGET_TOKEN" \
-            --source https://api.nuget.org/v3/index.json \
-            --skip-duplicate
 
   prune:
     needs: publish
