@@ -14,15 +14,27 @@ public sealed class ChainReconstructor {
   private readonly AlgorithmFingerprinter _fingerprinter = new();
   private readonly TrialDecompressor _decompressor;
   private readonly int _maxDepth;
+  private readonly int _perTrialTimeoutMs;
 
   /// <summary>
   /// Creates a chain reconstructor.
   /// </summary>
   /// <param name="maxDepth">Maximum chain depth to attempt (default 10).</param>
-  /// <param name="perTrialTimeoutMs">Per-trial timeout in milliseconds (default 200).</param>
+  /// <param name="perTrialTimeoutMs">Base per-trial timeout in milliseconds (default 200).
+  /// The blind-trial sweep scales this up with the layer size so a large layer is not
+  /// abandoned mid-decompress.</param>
   public ChainReconstructor(int maxDepth = 10, int perTrialTimeoutMs = 200) {
     _maxDepth = maxDepth;
+    _perTrialTimeoutMs = perTrialTimeoutMs;
     _decompressor = new TrialDecompressor(perTrialTimeoutMs: perTrialTimeoutMs);
+  }
+
+  // The blind-trial budget scales with the layer size (a megabyte-scale layer needs
+  // more than the 200 ms a few-KB header does) but is capped so one pathological
+  // strategy cannot stall the whole sweep.
+  private int BlindTrialTimeoutMs(int inputLength) {
+    var scaled = (long)_perTrialTimeoutMs + inputLength / 1024; // +1 ms per KiB
+    return (int)Math.Min(scaled, 5000);
   }
 
   /// <summary>
@@ -75,17 +87,18 @@ public sealed class ChainReconstructor {
     foreach (var candidate in candidates) {
       if (candidate.Confidence < 0.3) continue;
 
-      // Map fingerprint algorithm name to trial strategy name
-      var trialName = MapToTrialName(candidate.Algorithm);
-      if (trialName == null) continue;
+      // Map the fingerprint to an ordered set of likely raw-algorithm trials and
+      // try each in priority order; the blind sweep remains the safety net for
+      // anything not covered here.
+      foreach (var trialName in MapToTrialNames(candidate.Algorithm)) {
+        var attempt = _decompressor.TryOne(current, trialName);
+        if (!attempt.Success || attempt.Output == null) continue;
 
-      var attempt = _decompressor.TryOne(current, trialName);
-      if (!attempt.Success || attempt.Output == null) continue;
-
-      var quality = SuccessEvaluator.Evaluate(current, attempt.Output, trialName);
-      var outputHash = ComputeHash(attempt.Output);
-      if (quality.IsImprovement && !seenHashes.Contains(outputHash))
-        return (trialName, attempt.Output, candidate.Confidence);
+        var quality = SuccessEvaluator.Evaluate(current, attempt.Output, trialName);
+        var outputHash = ComputeHash(attempt.Output);
+        if (quality.IsImprovement && !seenHashes.Contains(outputHash))
+          return (trialName, attempt.Output, candidate.Confidence);
+      }
     }
 
     return null;
@@ -99,7 +112,7 @@ public sealed class ChainReconstructor {
       if (strategy.Category is TrialCategory.Magic or TrialCategory.Archive) continue;
 
       try {
-        using var cts = new CancellationTokenSource(200);
+        using var cts = new CancellationTokenSource(BlindTrialTimeoutMs(current.Length));
         var attempt = strategy.TryDecompress(current, Math.Min(current.Length * 4, 1024 * 1024), cts.Token);
         if (!attempt.Success || attempt.Output == null) continue;
 
@@ -116,19 +129,30 @@ public sealed class ChainReconstructor {
     return null;
   }
 
-  private static string? MapToTrialName(string fingerprintAlgorithm) => fingerprintAlgorithm switch {
-    "Deflate" => "Deflate",
-    "RLE" => "RLE",
-    "MTF" => "MTF",
-    "BWT" => "BWT",
-    "LZW" => "LZW",
-    "LZ/LZSS" => "LZSS",
-    "Huffman" => "Huffman",
-    "Arithmetic" => null, // No raw arithmetic trial
-    "Dictionary-Compressed" => null, // Too generic
-    "Strong-Compression" => null,
-    "Encrypted/Random" => null,
-    _ => null,
+  // Ordered raw-algorithm trial candidates for each fingerprint class. A precise
+  // fingerprint maps to a single trial; the generic classes ("Dictionary-Compressed",
+  // "Strong-Compression") map to a priority-ordered shortlist of the raw trials most
+  // likely to peel them, so a confident-but-unspecific fingerprint still gets a fast
+  // path instead of falling straight through to the full blind sweep. Truly random /
+  // encrypted data maps to nothing (there is no layer to peel).
+  private static readonly string[] NoCandidates = [];
+
+  private static string[] MapToTrialNames(string fingerprintAlgorithm) => fingerprintAlgorithm switch {
+    "Deflate" => ["Deflate"],
+    "RLE" => ["RLE"],
+    "MTF" => ["MTF"],
+    "BWT" => ["BWT"],
+    "LZW" => ["LZW"],
+    "LZ/LZSS" => ["LZSS"],
+    "Huffman" => ["Huffman"],
+    // Generic dictionary signature: try the byte-oriented dictionary coders first.
+    "Dictionary-Compressed" => ["Deflate", "LZSS", "LZW"],
+    // High-entropy "strong" output: most likely Deflate-family or an entropy stage;
+    // try the dictionary coders then the entropy/transform trials.
+    "Strong-Compression" => ["Deflate", "LZSS", "LZW", "Huffman", "BWT"],
+    "Arithmetic" => NoCandidates,     // No raw arithmetic trial strategy
+    "Encrypted/Random" => NoCandidates, // Nothing to peel
+    _ => NoCandidates,
   };
 
   /// <summary>
