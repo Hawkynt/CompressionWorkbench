@@ -490,18 +490,38 @@ formatsCmd.SetAction((ParseResult _) => {
 // ── optimize ─────────────────────────────────────────────────────────
 
 var optimizeInputArg = new Argument<FileInfo>("input") { Description = "Archive to optimize" };
-var optimizeOutputArg = new Argument<FileInfo>("output") { Description = "Optimized output (same format)" };
+var optimizeOutputArg = new Argument<FileInfo?>("output") {
+  Description = "Optimized output (same format); optional with --search-blocks",
+  Arity = ArgumentArity.ZeroOrOne,
+};
+var searchBlocksOpt = new Option<bool>("--search-blocks", "--best") {
+  Description = "Instead of same-format re-encode, find the best building block for this data",
+};
+var applyOpt = new Option<FileInfo?>("--apply") {
+  Description = "With --search-blocks: write the winning block's compressed output to this path",
+};
 
 var optimizeCmd = new Command("optimize", "Re-encode with optimal compression (Zopfli for Deflate, Best for LZMA)") {
-  optimizeInputArg, optimizeOutputArg, passwordOpt
+  optimizeInputArg, optimizeOutputArg, passwordOpt, searchBlocksOpt, applyOpt
 };
 optimizeCmd.Aliases.Add("opt");
 optimizeCmd.SetAction((ParseResult ctx) => {
   var input = ctx.GetValue(optimizeInputArg)!;
-  var output = ctx.GetValue(optimizeOutputArg)!;
+  var output = ctx.GetValue(optimizeOutputArg);
   var password = ctx.GetValue(passwordOpt);
 
   if (!input.Exists) { Console.Error.WriteLine($"File not found: {input.FullName}"); return 1; }
+
+  // --search-blocks / --best: cross-block auto-selection on the raw bytes.
+  if (ctx.GetValue(searchBlocksOpt)) {
+    var apply = ctx.GetValue(applyOpt);
+    return RunBestFit(input, apply);
+  }
+
+  if (output is null) {
+    Console.Error.WriteLine("An output path is required (or use --search-blocks to report the best building block).");
+    return 1;
+  }
 
   var format = FormatDetector.Detect(input.FullName);
   Console.Write($"Optimizing {input.Name} ({format})...");
@@ -514,6 +534,30 @@ optimizeCmd.SetAction((ParseResult ctx) => {
   Console.WriteLine($"  Original:  {FormatSize(origSize)}");
   Console.WriteLine($"  Optimized: {FormatSize(optSize)} ({saving:F1}% smaller, {count} entries)");
   return 0;
+});
+
+// ── bestfit ──────────────────────────────────────────────────────────
+
+var bestfitInputArg = new Argument<FileInfo>("file") { Description = "File whose data to fit a compressor to" };
+var bestfitApplyOpt = new Option<FileInfo?>("--apply") {
+  Description = "Write the winning building block's compressed output to this path",
+};
+var bestfitRatioOpt = new Option<bool>("--ratio") {
+  Description = "Objective: best ratio within a speed window of the fastest block (default: smallest output)",
+};
+
+var bestfitCmd = new Command("bestfit", """
+  Benchmark every building block on a file's data, print the ranked table, and
+  report the winning compressor. Use --apply to write the winner's output.
+  Example: cwb bestfit data.bin --apply data.best
+  """) { bestfitInputArg, bestfitApplyOpt, bestfitRatioOpt };
+bestfitCmd.SetAction((ParseResult ctx) => {
+  var file = ctx.GetValue(bestfitInputArg)!;
+  if (!file.Exists) { Console.Error.WriteLine($"File not found: {file.FullName}"); return 1; }
+  var objective = ctx.GetValue(bestfitRatioOpt)
+    ? Compression.Analysis.BestBlockSelector.Objective.BestRatioWithinSpeedWindow
+    : Compression.Analysis.BestBlockSelector.Objective.SmallestOutput;
+  return RunBestFit(file, ctx.GetValue(bestfitApplyOpt), objective);
 });
 
 // ── analyze ──────────────────────────────────────────────────────────
@@ -2253,7 +2297,7 @@ var root = new RootCommand("""
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, convertCmd, optimizeCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, shrinkCmd, wipeCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
+  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, convertCmd, optimizeCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, shrinkCmd, wipeCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
 };
 
 return root.Parse(args).Invoke();
@@ -2285,6 +2329,50 @@ static void BenchmarkBlock(string name, byte[] data, IBuildingBlock block) {
   catch (Exception ex) {
     Console.WriteLine($"{name,-16} {"FAILED",-12} {ex.Message}");
   }
+}
+
+static int RunBestFit(
+    FileInfo file,
+    FileInfo? apply,
+    Compression.Analysis.BestBlockSelector.Objective objective
+      = Compression.Analysis.BestBlockSelector.Objective.SmallestOutput) {
+  var data = File.ReadAllBytes(file.FullName);
+  Console.WriteLine($"Searching building blocks for: {file.Name} ({FormatSize(data.Length)})");
+  Console.WriteLine();
+
+  Compression.Analysis.BestBlockSelector.Result result;
+  try {
+    result = Compression.Analysis.BestBlockSelector.Select(data, new Compression.Analysis.BestBlockSelector.Options {
+      Objective = objective,
+    });
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"Selection failed: {ex.Message}");
+    return 1;
+  }
+
+  Console.WriteLine($"{"Algorithm",-16} {"Compressed",12} {"Ratio",8} {"Compress",10} {"Status",10}");
+  Console.WriteLine(new string('-', 60));
+  foreach (var c in result.Table) {
+    var marker = c.BlockId == result.WinningBlockId ? " <-best" : "";
+    if (c.Succeeded)
+      Console.WriteLine($"{c.DisplayName,-16} {FormatSize(c.CompressedSize),12} {c.Ratio * 100,7:F1}% {c.CompressTimeMs,7:F0}ms {"ok",10}{marker}");
+    else
+      Console.WriteLine($"{c.DisplayName,-16} {"-",12} {"-",8} {"-",10} {c.Error ?? "failed",10}");
+  }
+
+  Console.WriteLine();
+  var saving = result.OriginalSize > 0 ? (1.0 - result.Ratio) * 100 : 0;
+  Console.WriteLine($"Winner: {result.WinningDisplayName} -> {FormatSize(result.CompressedSize)} ({saving:F1}% smaller, ratio {result.Ratio * 100:F1}%)");
+  if (result.BestParameters is { Count: > 0 } && result.OptimizedFormatId is not null) {
+    var paramStr = string.Join(", ", result.BestParameters.Select(kv => $"{kv.Key}={kv.Value}"));
+    Console.WriteLine($"Tuned via {result.OptimizedFormatId}: {paramStr}");
+  }
+
+  if (apply is not null) {
+    File.WriteAllBytes(apply.FullName, result.CompressedBytes);
+    Console.WriteLine($"Wrote winning output: {apply.FullName} ({FormatSize(result.CompressedBytes.LongLength)})");
+  }
+  return 0;
 }
 
 static List<string> ResolveDefragTargets(string imageArg, bool isBatch, bool isRecursive) {

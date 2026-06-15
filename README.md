@@ -288,7 +288,8 @@ Universal archive tool with smart conversion, optimal re-encoding, benchmarking,
 | `replace <archive> <entry> <file>` | -   | Replace a single entry with a new file                      |
 | `info <archive>`               | -       | Show detailed archive information                           |
 | `convert <input> <output>`     | -       | Convert between any formats (archive, FS, stream)           |
-| `optimize <input> <output>`    | `opt`   | Re-encode with optimal compression                          |
+| `optimize <input> <output>`    | `opt`   | Re-encode with optimal compression. `--search-blocks`/`--best` instead finds the best building block for the data (`--apply <out>` writes the winner) |
+| `bestfit <file>`               | -       | Benchmark every building block on the data, rank them, and report the winning compressor (`--apply <out>` writes its output; `--ratio` favours best-ratio-within-speed-window) |
 | `benchmark <file>`             | `bench` | Benchmark all building blocks on the supplied data          |
 | `formats`                      | -       | List all supported formats                                  |
 | `analyze <file>`               | -       | Run binary analysis (detection + entropy + trial decompress)|

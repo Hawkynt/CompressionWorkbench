@@ -116,4 +116,82 @@ public class CompressionOptimizerTests {
     var result = CompressionOptimizer.OptimizeStream(data, d, d);
     Assert.That(Decompress(d, result.Bytes), Is.EqualTo(data));
   }
+
+  [Test, Category("Spec")]
+  public void Optimizer_DefaultBalanced_MatchesLegacyExhaustivePick() {
+    // The new options-based overload with defaults must produce the same winning
+    // bytes as the legacy maxCombinations overload (byte-for-byte compatibility).
+    var d = new ZstdFormatDescriptor();
+    var data = CompressibleSample();
+
+    var legacy = CompressionOptimizer.OptimizeStream(data, d, d, 512);
+    var modern = CompressionOptimizer.OptimizeStream(data, d, d, new CompressionOptimizer.OptimizerOptions());
+
+    Assert.That(modern.Bytes, Is.EqualTo(legacy.Bytes), "default options reproduce legacy result byte-for-byte");
+  }
+
+  [Test, Category("Spec")]
+  public void Optimizer_Caching_FewerProbesThanCombinations_ForCoordinateDescent() {
+    // Force coordinate descent (tiny combo cap) so the current point is revisited;
+    // the probe cache must keep the distinct-compress count below the naive count.
+    var d = new ZstdFormatDescriptor();
+    var data = CompressibleSample();
+
+    // Level axis alone has many values; capping at 1 forces coordinate descent.
+    var result = CompressionOptimizer.OptimizeStream(
+      data, d, d, new CompressionOptimizer.OptimizerOptions { MaxCombinations = 1 });
+
+    Assert.That(result.Probes, Is.GreaterThan(0));
+    // Round-trip still holds and a winner exists.
+    Assert.That(Decompress(d, result.Bytes), Is.EqualTo(data));
+    // Coordinate descent over a single axis of N values probes each value once:
+    // it never exceeds the axis cardinality, proving revisits were deduped.
+    var levelAxis = ((IFormatOptionsSchema)d).OptionsSchema.First(o => o.Key == "Level");
+    Assert.That(result.Probes, Is.LessThanOrEqualTo(levelAxis.AllowedValues!.Count),
+      "cached coordinate descent never compresses a combo twice");
+  }
+
+  [Test, Category("Spec")]
+  public void Optimizer_CachedResult_IdenticalToUncached() {
+    // Same data, same options: a cached run (coordinate descent) yields the same
+    // bytes as a fully exhaustive run because both minimise the same objective.
+    var d = new ZstdFormatDescriptor();
+    var data = CompressibleSample();
+
+    var exhaustive = CompressionOptimizer.OptimizeStream(
+      data, d, d, new CompressionOptimizer.OptimizerOptions { Effort = CompressionOptimizer.Effort.Max });
+    var descent = CompressionOptimizer.OptimizeStream(
+      data, d, d, new CompressionOptimizer.OptimizerOptions { MaxCombinations = 1 });
+
+    // Single-axis schema: coordinate descent and exhaustive must reach the same minimum.
+    Assert.That(descent.CompressedSize, Is.EqualTo(exhaustive.CompressedSize));
+  }
+
+  [Test, Category("Spec")]
+  public void Optimizer_FastEffort_CapsCombosBelowMax() {
+    // Fast effort uses a far smaller combination budget than Max.
+    Assert.That(
+      new CompressionOptimizer.OptimizerOptions { Effort = CompressionOptimizer.Effort.Fast }.ResolvedMaxCombinations,
+      Is.LessThan(new CompressionOptimizer.OptimizerOptions { Effort = CompressionOptimizer.Effort.Max }.ResolvedMaxCombinations));
+  }
+
+  [Test, Category("Spec")]
+  public void Optimizer_MultiObjective_CanChangeThePick() {
+    // The size-vs-speed objective may select a different (faster) combination than
+    // pure size. We assert it still returns a valid round-tripping result; if it
+    // diverges from the size-optimal pick, that difference is the multi-objective
+    // effect in action.
+    var d = new ZstdFormatDescriptor();
+    var data = CompressibleSample();
+
+    var bySize = CompressionOptimizer.OptimizeStream(
+      data, d, d, new CompressionOptimizer.OptimizerOptions { Objective = CompressionOptimizer.Objective.Size });
+    var bySpeed = CompressionOptimizer.OptimizeStream(
+      data, d, d, new CompressionOptimizer.OptimizerOptions { Objective = CompressionOptimizer.Objective.SizeAndSpeed });
+
+    Assert.That(Decompress(d, bySpeed.Bytes), Is.EqualTo(data), "speed-blended pick still round-trips");
+    // The size objective is the global size minimum by construction.
+    Assert.That(bySize.CompressedSize, Is.LessThanOrEqualTo(bySpeed.CompressedSize),
+      "pure-size objective is never larger than the blended one");
+  }
 }
