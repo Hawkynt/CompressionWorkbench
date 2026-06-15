@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Text;
 using Codec.Pcm;
 using Compression.Registry;
+using FileFormat.Wav;
 
 namespace FileFormat.Aiff;
 
@@ -10,12 +11,13 @@ namespace FileFormat.Aiff;
 /// Exposes an AIFF / AIFC file as an archive of <c>FULL.aif</c>, one <c>LEFT.wav</c>/
 /// <c>RIGHT.wav</c>/… per channel, plus <c>metadata/annotations.txt</c> and
 /// <c>metadata/markers.bin</c>. Compressed AIFC payloads are decoded to linear PCM
-/// before being split per channel (μ-law, A-law, and <c>fl32</c>/<c>fl64</c> IEEE
-/// float are supported; <c>ima4</c> and <c>GSM</c> are recognised but passed
-/// through as raw bytes in the <c>FULL.aif</c> entry only).
+/// before being split per channel (μ-law, A-law, <c>fl32</c>/<c>fl64</c> IEEE
+/// float, and <c>ima4</c> Apple/QuickTime IMA ADPCM are decoded to per-channel PCM;
+/// <c>GSM</c> is recognised but passed through as raw bytes in the <c>FULL.aif</c>
+/// entry only).
 /// </summary>
 public sealed class AiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-  IArchiveInMemoryExtract, IArchiveWriteConstraints {
+  IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
 
   public string Id => "Aiff";
   public string DisplayName => "AIFF / AIFC (Apple audio)";
@@ -74,6 +76,63 @@ public sealed class AiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return false;
   }
 
+  // ── IArchiveCreatable: assemble a multi-channel AIFF from per-channel mono WAVs ──
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var fileList = FormatHelpers.FilesOnly(inputs).ToList();
+
+    // FULL.aif/.aiff/.aifc → passthrough verbatim (archive-view semantics).
+    var full = fileList.FirstOrDefault(f => {
+      var n = Path.GetFileName(f.Name).ToLowerInvariant();
+      return n is "full.aif" or "full.aiff" or "full.aifc";
+    });
+    if (full.Data != null) {
+      output.Write(full.Data);
+      return;
+    }
+
+    var channelBlobs = fileList
+      .Where(f => {
+        var name = Path.GetFileName(f.Name);
+        return name.EndsWith(".wav", StringComparison.OrdinalIgnoreCase);
+      })
+      .OrderBy(f => ChannelOrder(Path.GetFileNameWithoutExtension(f.Name)))
+      .ToList();
+
+    if (channelBlobs.Count == 0)
+      throw new InvalidOperationException("AIFF archive create needs either FULL.aif or one or more per-channel WAVs.");
+
+    var channels = channelBlobs.Select(b => new WavReader().Read(b.Data)).ToList();
+    var first = channels[0];
+    if (channels.Any(c => c.SampleRate != first.SampleRate || c.BitsPerSample != first.BitsPerSample || c.NumChannels != 1))
+      throw new InvalidOperationException("All channel WAVs must be mono and share sample rate + bit depth.");
+
+    var bytesPerSample = first.BitsPerSample / 8;
+    if (channels.Any(c => c.InterleavedPcm.Length != first.InterleavedPcm.Length))
+      throw new InvalidOperationException("All channel WAVs must have the same frame count.");
+
+    // Interleave the little-endian channels, then byte-swap each sample to the
+    // big-endian order AIFF stores PCM in.
+    var interleavedLe = PcmCodec.Interleave(channels.Select(c => c.InterleavedPcm).ToList(), first.BitsPerSample);
+    var interleavedBe = SwapSampleEndianness(interleavedLe, bytesPerSample);
+
+    var blob = new AiffWriter().Write(interleavedBe, channels.Count, first.SampleRate, first.BitsPerSample);
+    output.Write(blob);
+  }
+
+  /// <summary>Reverses the byte order within each fixed-width sample (LE↔BE).</summary>
+  private static byte[] SwapSampleEndianness(byte[] pcm, int bytesPerSample) {
+    if (bytesPerSample <= 1) return pcm;
+    var swapped = new byte[pcm.Length];
+    for (var i = 0; i + bytesPerSample <= pcm.Length; i += bytesPerSample)
+      for (var j = 0; j < bytesPerSample; ++j)
+        swapped[i + j] = pcm[i + bytesPerSample - 1 - j];
+    return swapped;
+  }
+
+  // Canonical speaker ordering (FFmpeg/WAVE bit order, mono through 22.2).
+  private static int ChannelOrder(string name) => ChannelLayout.OrderIndex(name);
+
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -81,7 +140,7 @@ public sealed class AiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var parsed = new AiffReader().Read(blob);
 
     var entries = new List<(string, string, byte[])> {
-      ("FULL.aif", "Track", blob),
+      ("FULL.aif", "Container", blob),
     };
 
     // Decode to linear PCM (LE) if possible.
@@ -156,7 +215,15 @@ public sealed class AiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       bitsOut = 64;
       return BigEndianFloat64ToLeFloat64(p.SoundData);
     }
-    // ima4/GSM: not decoded (would need QuickTime-specific adpcm frame shape).
+    if (id == "ima4") {
+      // Apple/QuickTime IMA ADPCM: 34-byte packets, round-robin per channel.
+      var channels = Math.Max(1, p.NumChannels);
+      var perChannel = Codec.ImaAdpcm.ImaAdpcmCodec.DecodeQuickTime(p.SoundData, channels);
+      var monoLe = perChannel.Select(ch => ShortsToLePcm(ch)).ToList();
+      bitsOut = 16;
+      return PcmCodec.Interleave(monoLe, 16);
+    }
+    // GSM: not decoded (would need a GSM 06.10 frame decoder).
     return null;
   }
 

@@ -58,7 +58,7 @@ public sealed class FlacArchiveDescriptor : IFormatDescriptor, IArchiveFormatOpe
     stream.CopyTo(ms);
     var blob = ms.ToArray();
     var entries = new List<(string, string, byte[])> {
-      ("FULL.flac", "Track", blob),
+      ("FULL.flac", "Container", blob),
     };
 
     var props = FlacReader.ReadAudioProperties(blob);

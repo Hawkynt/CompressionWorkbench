@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using System.Text;
-using Compression.Registry;
+using Codec.Brr;
 using FileFormat.Spc;
 
 namespace Compression.Tests.Spc;
@@ -8,106 +9,137 @@ namespace Compression.Tests.Spc;
 [TestFixture]
 public class SpcTests {
 
-  // Builds a minimal text-format SPC: 33-byte magic + header + ID666 text tag +
-  // 64KB RAM + 128-byte DSP registers.
-  private static byte[] MakeSyntheticSpc(bool binaryTag = false) {
-    var buf = new byte[0x10100 + 128];
-    var magic = "SNES-SPC700 Sound File Data v0.30"u8.ToArray();
-    Buffer.BlockCopy(magic, 0, buf, 0, magic.Length);
-    buf[0x21] = 26; buf[0x22] = 26; // header 0x1A1A
-    buf[0x23] = 26; // has ID666
-    // Registers.
-    buf[0x25] = 0x00; buf[0x26] = 0x02; // PC = 0x0200
-    buf[0x27] = 0x12; // A
-    buf[0x28] = 0x34; // X
-    buf[0x29] = 0x56; // Y
-    buf[0x2A] = 0x02; // PSW
-    buf[0x2B] = 0xFF; // SP
+  private const int HasId666Offset = 0x23;
+  private const int Id666Offset = 0x2E;
+  private const int AramOffset = 0x100;
+  private const int AramSize = 0x10000;
+  private const int DspOffset = 0x10100;
+  private const int DirRegister = 0x5D;
+  private const int FileSize = 0x10180;
 
-    void Ascii(int off, string s) {
-      var a = Encoding.ASCII.GetBytes(s);
-      Buffer.BlockCopy(a, 0, buf, off, a.Length);
-    }
-    Ascii(0x2E, "SpcSongTitle");
-    Ascii(0x4E, "SpcGameTitle");
-    Ascii(0x6E, "Dumper");
-    Ascii(0x7E, "A comment");
-    Ascii(0xB1, "SpcArtist");
-    if (binaryTag) {
-      // Put a non-date byte in the date field → binary detection.
-      buf[0x9E] = 0x07;
-    } else {
-      Ascii(0x9E, "06/11/2026");
-      Ascii(0xA9, "120");
+  private static readonly short[] PcmA = MakeRamp(48, 5000);
+  private static readonly short[] PcmB = MakeRamp(32, -4000);
+
+  private static short[] MakeRamp(int count, int amplitude) {
+    var pcm = new short[count];
+    for (var i = 0; i < count; ++i)
+      pcm[i] = (short)(Math.Sin(i / 4.0) * amplitude);
+    return pcm;
+  }
+
+  // Builds a 0x10180-byte SPC with ID666 text tags and an ARAM directory of two BRR chains.
+  private static byte[] BuildSpc(byte dirPage, bool garbageDirectory = false) {
+    var spc = new byte[FileSize];
+    "SNES-SPC700 Sound File Data v0.30"u8.CopyTo(spc);
+    spc[0x21] = 0x1A;
+    spc[0x22] = 0x1A;
+    spc[HasId666Offset] = 0x1A;   // ID666 present (text format)
+    spc[0x24] = 30;               // version minor
+
+    // ID666 text tags.
+    WriteText(spc, Id666Offset + 0x00, "Boss Theme", 32);
+    WriteText(spc, Id666Offset + 0x20, "Test Game", 32);
+    WriteText(spc, Id666Offset + 0x40, "Dumper", 16);
+    WriteText(spc, Id666Offset + 0x50, "Some comments", 32);
+    WriteText(spc, 0xB1, "Composer", 32);
+
+    // DSP DIR register.
+    spc[DspOffset + DirRegister] = dirPage;
+
+    var aram = spc.AsSpan(AramOffset, AramSize);
+
+    if (garbageDirectory) {
+      // Fill the directory page with junk that never forms a terminating BRR chain.
+      for (var i = 0; i < 256; ++i)
+        aram.Slice(dirPage * 0x100 + i, 1).Fill(0xAB);
+      return spc;
     }
 
-    // RAM ramp + DSP register pattern.
-    for (var i = 0; i < 256; ++i) buf[0x100 + i] = (byte)i;
-    for (var i = 0; i < 128; ++i) buf[0x10100 + i] = (byte)(0x80 + (i & 0x7F));
-    return buf;
+    // Encode two samples and place them in ARAM, then point directory entries at them.
+    var brrA = BrrCodec.Encode(PcmA);
+    var brrB = BrrCodec.Encode(PcmB);
+    // Place sample data well away from the directory page (dirPage * 0x100).
+    var addrA = 0x4000;
+    var addrB = 0x4000 + brrA.Length;
+    brrA.CopyTo(aram[addrA..]);
+    brrB.CopyTo(aram[addrB..]);
+
+    var dirBase = dirPage * 0x100;
+    BinaryPrimitives.WriteUInt16LittleEndian(aram[dirBase..], (ushort)addrA);
+    BinaryPrimitives.WriteUInt16LittleEndian(aram[(dirBase + 2)..], (ushort)addrA); // loop = start
+    BinaryPrimitives.WriteUInt16LittleEndian(aram[(dirBase + 4)..], (ushort)addrB);
+    BinaryPrimitives.WriteUInt16LittleEndian(aram[(dirBase + 6)..], (ushort)addrB);
+    // Remaining slots stay zero → invalid run terminates the directory.
+
+    return spc;
+  }
+
+  private static void WriteText(byte[] spc, int offset, string text, int length) {
+    var bytes = Encoding.ASCII.GetBytes(text);
+    Array.Copy(bytes, 0, spc, offset, Math.Min(bytes.Length, length - 1));
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void List_SurfacesFullContainerAndTwoSamples() {
+    using var ms = new MemoryStream(BuildSpc(dirPage: 0x20));
+    var entries = new SpcFormatDescriptor().List(ms, null);
+
+    Assert.That(entries.First(e => e.Name == "FULL.spc").Kind, Is.EqualTo("Container"));
+
+    var samples = entries.Where(e => e.Kind == "Sample").ToList();
+    Assert.That(samples.Count, Is.EqualTo(2), "two valid BRR chains surface");
+    Assert.That(samples.Any(e => e.Name == "samples/00.wav"), Is.True);
+    Assert.That(samples.Any(e => e.Name == "samples/01.wav"), Is.True);
   }
 
   [Test]
-  public void List_ExposesFullMetadataRamAndDsp() {
-    using var ms = new MemoryStream(MakeSyntheticSpc());
+  public void ExtractedSample_DecodesToExactBrrPcm() {
+    using var ms = new MemoryStream(BuildSpc(dirPage: 0x20));
+    using var output = new MemoryStream();
+    new SpcFormatDescriptor().ExtractEntry(ms, "samples/00.wav", output, null);
+    var wav = output.ToArray();
+
+    Assert.That(wav.AsSpan(0, 4).ToArray(), Is.EqualTo("RIFF"u8.ToArray()));
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(22)), Is.EqualTo(1)); // mono
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24)), Is.EqualTo(32000u));
+
+    // The WAV payload must equal the decode of the exact BRR bytes we stored.
+    var expected = BrrCodec.Decode(BrrCodec.Encode(PcmA));
+    var dataSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(40));
+    Assert.That(dataSize, Is.EqualTo(expected.Length * 2));
+    for (var i = 0; i < expected.Length; ++i)
+      Assert.That(BinaryPrimitives.ReadInt16LittleEndian(wav.AsSpan(44 + i * 2)), Is.EqualTo(expected[i]), $"sample {i}");
+  }
+
+  [Test]
+  public void Id666Tags_ParseIntoMetadataIni() {
+    using var ms = new MemoryStream(BuildSpc(dirPage: 0x20));
+    using var output = new MemoryStream();
+    new SpcFormatDescriptor().ExtractEntry(ms, "metadata.ini", output, null);
+    var ini = Encoding.UTF8.GetString(output.ToArray());
+
+    Assert.That(ini, Does.Contain("song_title=Boss Theme"));
+    Assert.That(ini, Does.Contain("game_title=Test Game"));
+    Assert.That(ini, Does.Contain("artist=Composer"));
+  }
+
+  [Test]
+  public void GarbageDirectory_DegradesToFullAndMetadataOnly() {
+    using var ms = new MemoryStream(BuildSpc(dirPage: 0x20, garbageDirectory: true));
     var entries = new SpcFormatDescriptor().List(ms, null);
+
     Assert.That(entries.Any(e => e.Name == "FULL.spc"), Is.True);
     Assert.That(entries.Any(e => e.Name == "metadata.ini"), Is.True);
-    Assert.That(entries.Any(e => e.Name == "ram.bin"), Is.True);
-    Assert.That(entries.Any(e => e.Name == "dsp_registers.bin"), Is.True);
-    Assert.That(entries.First(e => e.Name == "ram.bin").OriginalSize, Is.EqualTo(0x10000));
+    Assert.That(entries.Any(e => e.Kind == "Sample"), Is.False, "no samples from a garbage directory");
   }
 
   [Test]
-  public void Extract_FullByteIdentical_TextId666Parsed() {
-    var blob = MakeSyntheticSpc();
-    var tmp = Path.Combine(Path.GetTempPath(), "spc_" + Guid.NewGuid().ToString("N"));
-    try {
-      using var ms = new MemoryStream(blob);
-      new SpcFormatDescriptor().Extract(ms, tmp, null, null);
-      Assert.That(File.ReadAllBytes(Path.Combine(tmp, "FULL.spc")), Is.EqualTo(blob));
-      Assert.That(File.ReadAllBytes(Path.Combine(tmp, "ram.bin")).Length, Is.EqualTo(0x10000));
-      var meta = File.ReadAllText(Path.Combine(tmp, "metadata.ini"));
-      Assert.That(meta, Does.Contain("id666_format = text"));
-      Assert.That(meta, Does.Contain("song_title = SpcSongTitle"));
-      Assert.That(meta, Does.Contain("artist = SpcArtist"));
-      Assert.That(meta, Does.Contain("reg_pc = 0x0200"));
-    } finally {
-      if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
-    }
-  }
-
-  [Test]
-  public void BinaryId666_Detected() {
-    using var ms = new MemoryStream(MakeSyntheticSpc(binaryTag: true));
+  public void ShortBlob_DegradesGracefully() {
+    using var ms = new MemoryStream(new byte[0x100]); // signature region only, no ARAM/DSP
     var entries = new SpcFormatDescriptor().List(ms, null);
-    var tmp = Path.Combine(Path.GetTempPath(), "spcb_" + Guid.NewGuid().ToString("N"));
-    try {
-      using var ms2 = new MemoryStream(MakeSyntheticSpc(binaryTag: true));
-      new SpcFormatDescriptor().Extract(ms2, tmp, null, null);
-      var meta = File.ReadAllText(Path.Combine(tmp, "metadata.ini"));
-      Assert.That(meta, Does.Contain("id666_format = binary"));
-    } finally {
-      if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
-    }
     Assert.That(entries.Any(e => e.Name == "FULL.spc"), Is.True);
-  }
-
-  [Test]
-  public void List_Malformed_DoesNotThrow() {
-    var garbage = new byte[64];
-    Array.Fill(garbage, (byte)0xCC);
-    using var ms = new MemoryStream(garbage);
-    List<ArchiveEntryInfo> entries = null!;
-    Assert.DoesNotThrow(() => entries = new SpcFormatDescriptor().List(ms, null));
-    Assert.That(entries[0].Name, Is.EqualTo("FULL.spc"));
-    Assert.That(entries.Any(e => e.Name == "metadata.ini"), Is.True);
-  }
-
-  [Test]
-  public void Detection_Magic() {
-    var d = new SpcFormatDescriptor();
-    Assert.That(d.MagicSignatures[0].Bytes, Is.EqualTo("SNES-SPC700 Sound File Data"u8.ToArray()));
-    Assert.That(d.Extensions, Does.Contain(".spc"));
+    Assert.That(entries.Any(e => e.Kind == "Sample"), Is.False);
   }
 }

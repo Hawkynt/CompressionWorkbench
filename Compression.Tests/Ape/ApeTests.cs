@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Codec.MonkeysAudio;
 using FileFormat.Ape;
 
 namespace Compression.Tests.Ape;
@@ -166,5 +167,74 @@ public class ApeTests {
     using var output = new MemoryStream();
     new ApeFormatDescriptor().ExtractEntry(ms, "FULL.ape", output, null);
     Assert.That(output.ToArray(), Is.EqualTo(ape));
+  }
+
+  // ── Channel-split (decoded per-channel PCM) ──────────────────────────────────
+
+  private static byte[] EncodeApe(byte[] pcm, int channels, int sampleRate, int bits) {
+    using var input = new MemoryStream(pcm);
+    using var output = new MemoryStream();
+    MonkeysAudioCodec.Compress(input, output, channels, sampleRate, bits);
+    return output.ToArray();
+  }
+
+  [Test, Category("HappyPath")]
+  public void Channels_Appear_For_Stereo_EncoderOutput() {
+    const int frames = 2000;
+    var pcm = new byte[frames * 2 * 2];
+    for (var i = 0; i < frames; ++i) {
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 4), (short)(Math.Sin(i * 0.05) * 10000));
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 4 + 2), (short)(Math.Cos(i * 0.04) * 8000));
+    }
+    var ape = EncodeApe(pcm, 2, 44100, 16);
+
+    using var ms = new MemoryStream(ape);
+    var entries = new ApeFormatDescriptor().List(ms, null);
+    var names = entries.Select(e => e.Name).ToList();
+
+    Assert.That(names, Does.Contain("LEFT.wav"));
+    Assert.That(names, Does.Contain("RIGHT.wav"));
+    Assert.That(entries.Where(e => e.Kind == "Channel").Select(e => e.Method),
+      Has.All.EqualTo("pcm"));
+    // The container/metadata view is still present.
+    Assert.That(names, Does.Contain("FULL.ape"));
+    Assert.That(names, Does.Contain("metadata.ini"));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Channels_Appear_For_Mono_EncoderOutput() {
+    const int frames = 1500;
+    var pcm = new byte[frames * 2];
+    for (var i = 0; i < frames; ++i)
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), (short)(Math.Sin(i * 0.1) * 9000));
+    var ape = EncodeApe(pcm, 1, 22050, 16);
+
+    using var ms = new MemoryStream(ape);
+    var names = new ApeFormatDescriptor().List(ms, null).Select(e => e.Name).ToList();
+    Assert.That(names, Does.Contain("MONO.wav"));
+    Assert.That(names, Does.Contain("FULL.ape"));
+  }
+
+  [Test, Category("EdgeCase")]
+  public void HighCompressionLevel_Falls_Back_To_Container_Listing_Only() {
+    // A synthetic high-level (2000 = "normal") file the decoder rejects: the
+    // channel split must fail internally and leave the container view intact.
+    var wav = new byte[] { (byte)'R', (byte)'I', (byte)'F', (byte)'F', 0x20, 0, 0, 0 };
+    var seek = new byte[] { 0x00, 0x01, 0x02, 0x03 };
+    var frames = new byte[] { 0xAA, 0xBB, 0xCC, 0xDD };
+    var term = new byte[] { 0xEE };
+    var ape = BuildModernApe(
+      version: 3990, compressionLevel: 2000, formatFlags: 0,
+      blocksPerFrame: 73728, finalFrameBlocks: 12345, totalFrames: 10,
+      bitsPerSample: 16, channels: 2, sampleRate: 44100,
+      wav, seek, frames, term);
+
+    using var ms = new MemoryStream(ape);
+    var entries = new ApeFormatDescriptor().List(ms, null);
+    var names = entries.Select(e => e.Name).ToList();
+
+    Assert.That(names, Does.Contain("FULL.ape"));
+    Assert.That(names, Does.Contain("metadata.ini"));
+    Assert.That(entries.Any(e => e.Kind == "Channel"), Is.False);
   }
 }

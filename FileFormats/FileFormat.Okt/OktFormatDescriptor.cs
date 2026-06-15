@@ -1,22 +1,28 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Codec.Pcm;
 using Compression.Registry;
-using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Okt;
 
 /// <summary>
-/// Exposes an Oktalyzer (OKT) module as an archive of <c>FULL.okt</c>,
-/// <c>metadata.ini</c>, <c>patterns/pattern_NN.bin</c> (raw PBOD chunk bodies,
-/// NO decode) and <c>samples/NN_{name}.raw</c> per SBOD chunk (raw signed 8-bit
-/// PCM). The OKT IFF-like chunk layout was recovered through binary inspection of
-/// the documented Oktalyzer file format and the OpenMPT/libmodplug loaders.
+/// Exposes an Oktalyzer (OKTASONG) module as a pseudo-archive of <c>FULL.okt</c>
+/// (Kind <c>Container</c>), a <c>metadata.ini</c> (Kind <c>Tag</c>),
+/// <c>patterns/pattern_NN.bin</c> from each <c>PBOD</c> chunk (Kind <c>Pattern</c>),
+/// and one playable WAV per <c>SBOD</c> sample body (Kind <c>Sample</c>).
 /// </summary>
+/// <remarks>
+/// The container is a sequence of IFF-style chunks (4CC + big-endian u32 length + body)
+/// directly after the 8-byte <c>OKTASONG</c> magic, WITHOUT a FORM wrapper. <c>SAMP</c>
+/// holds 36-byte sample descriptors; each <c>SBOD</c> body is the 8-bit signed PCM for the
+/// next non-zero-length descriptor in <c>SAMP</c> order. No per-sample rate is stored, so
+/// 8363 Hz is assumed (documented in metadata).
+/// </remarks>
 public sealed class OktFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 
   public string Id => "Okt";
-  public string DisplayName => "OKT (Oktalyzer)";
+  public string DisplayName => "Oktalyzer";
   public FormatCategory Category => FormatCategory.Audio;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
@@ -30,119 +36,100 @@ public sealed class OktFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Classic;
-  public string Description => "Oktalyzer module; full file + PBOD pattern blocks + SBOD raw signed 8-bit PCM samples.";
+  public string Description => "Oktalyzer tracker module; full file + patterns + playable 8-bit sample WAVs.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
-    BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
-      Index: i, Name: e.Name,
-      OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
-      Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null,
-      Kind: e.Kind)).ToList();
+  public List<ArchiveEntryInfo> List(Stream stream, string? password)
+    => AudioPseudoArchive.List(BuildEntries(stream));
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    foreach (var e in BuildEntries(stream)) {
-      if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files))
-        continue;
-      WriteFile(outputDir, e.Name, e.Data);
-    }
-  }
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+    => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
-  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
-    foreach (var e in BuildEntries(input)) {
-      if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {
-        output.Write(e.Data);
-        return;
-      }
-    }
-    throw new FileNotFoundException($"Entry not found: {entryName}");
-  }
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
+    => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
-  private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
+  private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
-    return Parse(ms.ToArray());
+    var blob = ms.ToArray();
+    return Parse(blob);
   }
 
-  private static IReadOnlyList<(string Name, string Kind, byte[] Data)> Parse(byte[] blob) {
-    var entries = new List<(string, string, byte[])> {
-      ("FULL.okt", "Track", blob),
+  private const int AssumedSampleRate = 8363;
+
+  private readonly record struct SampleDesc(string Name, long Length, byte Volume);
+
+  private static IReadOnlyList<AudioPseudoArchive.Entry> Parse(byte[] blob) {
+    var entries = new List<AudioPseudoArchive.Entry> {
+      new("FULL.okt", "Container", blob),
     };
-    var validMagic = blob.Length >= 8 && blob.AsSpan(0, 8).SequenceEqual("OKTASONG"u8);
-    if (!validMagic) {
-      AddPartial(entries);
+
+    if (blob.Length < 8 || Encoding.ASCII.GetString(blob, 0, 8) != "OKTASONG")
       return entries;
-    }
 
-    var off = 8;
-    var channels = 0;
-    var patternCount = 0;
-    var sampleCount = 0;
-    var patternIdx = 0;
-    var sampleIdx = 0;
-    var sampleNames = new List<string>();
+    var sampleDescs = new List<SampleDesc>();
+    var sbodIndex = 0;
+    var patternIndex = 0;
+    var sampleEntryIndex = 0;
 
-    while (off + 8 <= blob.Length) {
-      var id = Encoding.ASCII.GetString(blob, off, 4);
-      var len = (int)BinaryPrimitives.ReadUInt32BigEndian(blob.AsSpan(off + 4, 4));
-      off += 8;
-      if (len < 0 || off + len > blob.Length) break;
-      var body = blob.AsSpan(off, len);
+    try {
+      var pos = 8;
+      while (pos + 8 <= blob.Length) {
+        var id = Encoding.ASCII.GetString(blob, pos, 4);
+        var len = (int)Math.Min(int.MaxValue, BinaryPrimitives.ReadUInt32BigEndian(blob.AsSpan(pos + 4, 4)));
+        var body = pos + 8;
+        if (len < 0 || body + len > blob.Length) break;
 
-      switch (id) {
-        case "CMOD":
-          // 8 u16 BE channel-mode flags: 1 = mono channel, 2 = a stereo pair.
-          for (var i = 0; i + 2 <= len; i += 2) {
-            var mode = BinaryPrimitives.ReadUInt16BigEndian(body.Slice(i, 2));
-            channels += mode == 1 ? 1 : (mode == 2 ? 2 : 0);
-          }
-          break;
-        case "SAMP":
-          // 32 bytes per sample header: name(20) + len u32 BE + ...
-          for (var so = 0; so + 32 <= len; so += 32) {
-            var nm = ReadAsciiTrim(blob, off + so, 20);
-            sampleNames.Add(nm);
-          }
-          break;
-        case "SLEN":
-          if (len >= 2) patternCount = BinaryPrimitives.ReadUInt16BigEndian(body[..2]);
-          break;
-        case "PBOD": {
-          var data = body.ToArray();
-          entries.Add(($"patterns/pattern_{patternIdx:D2}.bin", "Pattern", data));
-          ++patternIdx;
-          break;
+        switch (id) {
+          case "SAMP":
+            // 36-byte descriptors: char[20] name | u32 length | u16 repStart | u16 repLen | u8 pad | u8 volume | u16 pad.
+            for (var o = 0; o + 36 <= len; o += 36) {
+              var dOff = body + o;
+              var name = ReadAsciiTrim(blob, dOff, 20);
+              var sampLen = BinaryPrimitives.ReadUInt32BigEndian(blob.AsSpan(dOff + 20, 4));
+              var vol = blob[dOff + 28];
+              sampleDescs.Add(new SampleDesc(name, sampLen, vol));
+            }
+            break;
+          case "PBOD":
+            var pat = blob.AsSpan(body, len).ToArray();
+            entries.Add(new($"patterns/pattern_{patternIndex:D2}.bin", "Pattern", pat));
+            ++patternIndex;
+            break;
+          case "SBOD":
+            // Map this body onto the next non-zero-length SAMP descriptor.
+            while (sbodIndex < sampleDescs.Count && sampleDescs[sbodIndex].Length == 0)
+              ++sbodIndex;
+            var desc = sbodIndex < sampleDescs.Count ? sampleDescs[sbodIndex] : default;
+            ++sbodIndex;
+            ++sampleEntryIndex;
+            var pcm = ToUnsigned8(blob.AsSpan(body, len));
+            var label = string.IsNullOrWhiteSpace(desc.Name) ? "sample" : SanitizeFileName(desc.Name);
+            entries.Add(new($"samples/{sampleEntryIndex:D2}_{label}.wav", "Sample",
+              PcmCodec.ToWavBlob(pcm, 1, AssumedSampleRate, 8)));
+            break;
         }
-        case "SBOD": {
-          var data = body.ToArray();
-          var nm = sampleIdx < sampleNames.Count ? sampleNames[sampleIdx] : "";
-          var safe = string.IsNullOrWhiteSpace(nm) ? "sample" : SanitizeFileName(nm);
-          entries.Add(($"samples/{(sampleIdx + 1):D2}_{safe}.raw", "Sample", data));
-          ++sampleIdx;
-          ++sampleCount;
-          break;
-        }
+        pos = body + len;
       }
-
-      off += len;
+    } catch {
+      // Graceful FULL-only fallback.
     }
 
     var info = new StringBuilder();
-    info.AppendLine($"format=OKT");
-    info.AppendLine($"channels={(channels > 0 ? channels : 4)}");
-    info.AppendLine($"num_patterns={(patternCount > 0 ? patternCount : patternIdx)}");
-    info.AppendLine($"num_patterns_emitted={patternIdx}");
-    info.AppendLine($"num_samples={sampleCount}");
-    info.AppendLine($"sample_format=8-bit signed PCM");
-    entries.Insert(1, ("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));
+    info.AppendLine("format=OKTASONG");
+    info.AppendLine($"sample_descriptor_count={sampleDescs.Count}");
+    info.AppendLine($"sample_count={sampleEntryIndex}");
+    info.AppendLine($"pattern_count={patternIndex}");
+    info.AppendLine($"sample_rate_assumed={AssumedSampleRate} (OKT carries no per-sample rate)");
+    entries.Insert(1, new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));
 
     return entries;
   }
 
-  private static void AddPartial(List<(string, string, byte[])> entries) {
-    var info = new StringBuilder();
-    info.AppendLine("parse_status=partial");
-    info.AppendLine("format=OKT");
-    entries.Insert(1, ("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));
+  private static byte[] ToUnsigned8(ReadOnlySpan<byte> signed) {
+    var r = new byte[signed.Length];
+    for (var i = 0; i < signed.Length; ++i)
+      r[i] = unchecked((byte)(signed[i] + 128));
+    return r;
   }
 
   private static string ReadAsciiTrim(byte[] blob, int offset, int length) {
@@ -158,10 +145,8 @@ public sealed class OktFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   private static string SanitizeFileName(string name) {
     var sb = new StringBuilder(name.Length);
-    foreach (var c in name) {
-      if (char.IsLetterOrDigit(c) || c == '_' || c == '-' || c == '.') sb.Append(c);
-      else sb.Append('_');
-    }
+    foreach (var c in name)
+      sb.Append(char.IsLetterOrDigit(c) || c is '_' or '-' or '.' ? c : '_');
     var s = sb.ToString().Trim('.');
     return s.Length == 0 ? "sample" : s;
   }

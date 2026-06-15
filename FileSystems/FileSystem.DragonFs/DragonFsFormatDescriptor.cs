@@ -13,12 +13,12 @@ namespace FileSystem.DragonFs;
 /// images — detection is by .dfs extension plus an optional "DragonFS"
 /// ASCII tag at offset 0 for self-produced research images.
 /// </summary>
-public sealed class DragonFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
+public sealed class DragonFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
   public string Id => "DragonFs";
   public string DisplayName => "DragonFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".dfs";
   public IReadOnlyList<string> Extensions => [".dfs"];
@@ -47,6 +47,20 @@ public sealed class DragonFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       if (files != null && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
+  }
+
+  /// <summary>
+  /// Produces a fresh DragonFS image from scratch holding <paramref name="inputs"/>.
+  /// DragonFS is a flat filesystem, so subdirectory paths are flattened to their
+  /// leaf names via <see cref="DragonFsWriter.AddFile"/>.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = new DragonFsWriter();
+    foreach (var (name, data) in FlatFiles(inputs))
+      w.AddFile(name, data);
+    w.WriteTo(output);
   }
 
   public void Defragment(Stream archive)

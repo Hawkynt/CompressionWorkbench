@@ -309,7 +309,7 @@ public class ExtExternalConformanceTests {
     File.WriteAllBytes(imgPath, BuildExt4Image());
 
     // `-R "ls <dir>"` runs one read-only command and exits.
-    var root = RunE2fsTool("debugfs", "-R 'ls -l /'", imgPath);
+    var root = RunE2fsTool("debugfs", "-R \"ls -l /\"", imgPath);
     Assert.That(root.ExitCode, Is.EqualTo(0),
       $"debugfs ls / failed (exit {root.ExitCode}):\nstdout:\n{root.StdOut}\nstderr:\n{root.StdErr}");
     Assert.That(root.StdOut, Does.Contain("hello.txt"),
@@ -319,7 +319,7 @@ public class ExtExternalConformanceTests {
     Assert.That(root.StdOut, Does.Contain("docs"),
       $"debugfs root listing missing docs/ subdirectory:\n{root.StdOut}");
 
-    var docs = RunE2fsTool("debugfs", "-R 'ls -l /docs'", imgPath);
+    var docs = RunE2fsTool("debugfs", "-R \"ls -l /docs\"", imgPath);
     Assert.That(docs.ExitCode, Is.EqualTo(0),
       $"debugfs ls /docs failed (exit {docs.ExitCode}):\nstdout:\n{docs.StdOut}\nstderr:\n{docs.StdErr}");
     Assert.That(docs.StdOut, Does.Contain("guide.txt"),

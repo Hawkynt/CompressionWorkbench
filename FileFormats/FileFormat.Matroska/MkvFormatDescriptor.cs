@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using System.Text;
 using Compression.Registry;
 
 namespace FileFormat.Matroska;
@@ -71,6 +72,8 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var result = new MkvDemuxer().Demux(file);
 
     var entries = new List<(string, string, byte[])>();
+    var audioMeta = new StringBuilder();
+    var audioOrdinal = 0;
     foreach (var t in result.Tracks) {
       var ext = CodecToExtension(t.CodecId);
       var lang = string.IsNullOrEmpty(t.Language) ? "und" : t.Language;
@@ -83,7 +86,22 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         for (var f = 0; f < frameCount; ++f)
           entries.Add(($"frames/track_{t.Number:D2}/frame_{f + 1:D6}{frameExt}", "Frame", t.Frames[f].Data));
       }
+
+      // Best-effort per-audio-track decode → one mono WAV per speaker (Kind Channel).
+      // The raw track entry above is always kept; failures record a metadata reason.
+      if (t.TrackType == "audio") {
+        var decode = MkvAudioChannels.Decode(t);
+        audioMeta.Append("track").Append(audioOrdinal).Append("_codec=").AppendLine(decode.Codec);
+        if (decode.Channels != null)
+          foreach (var ch in decode.Channels)
+            entries.Add(($"TRACK{audioOrdinal}_{ch.Name}.wav", "Channel", ch.Wav));
+        else if (decode.Reason != null)
+          audioMeta.Append("track").Append(audioOrdinal).Append("_decode=").AppendLine(decode.Reason);
+        ++audioOrdinal;
+      }
     }
+    if (audioMeta.Length > 0)
+      entries.Add(("metadata.ini", "Tag", Encoding.UTF8.GetBytes(audioMeta.ToString())));
     foreach (var a in result.Attachments)
       entries.Add(($"attachments/{a.FileName}", "File", a.Data));
     if (result.ChaptersXml != null)

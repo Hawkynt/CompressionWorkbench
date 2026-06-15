@@ -5,48 +5,50 @@ using System.Text;
 namespace FileSystem.Ufs;
 
 /// <summary>
-/// Writes a minimal UFS1 (FreeBSD/BSD FFS) filesystem image with a single cylinder
-/// group, a flat root directory, and direct-block-only file extents.
+/// Writes a UFS1 (FreeBSD FFS) filesystem image that faithfully reproduces a
+/// <c>newfs -O1</c> layout: multiple cylinder groups, per-group superblock
+/// backups, a root directory plus a <c>.snap</c> directory (exactly as newfs
+/// emits), and direct-block-plus-single-indirect file extents.
 /// <para>
-/// All on-disk structures (superblock <c>fs</c>, cylinder-group header <c>cg</c>,
-/// and <c>ufs1_dinode</c>) use the exact field offsets defined in FreeBSD's
-/// <c>sys/ufs/ffs/fs.h</c> and <c>sys/ufs/ufs/dinode.h</c>. The superblock is 1376
-/// bytes; <c>fs_magic = 0x00011954</c> sits at its last 4 bytes (offset 1372 within
-/// the superblock, i.e. image offset 9564). Cylinder-group <c>cg_magic = 0x00090255</c>
-/// sits at offset 4 of the cg structure (image-relative offset <c>cgstart + 4</c>).
-/// Free-block / free-inode bitmaps, fragment-summary array, and the summary-info
-/// block (<c>fs_csp</c>) are populated so that <c>fsck_ffs -n</c>-grade structural
-/// invariants hold.
+/// All on-disk structures (superblock <c>struct fs</c>, cylinder-group header
+/// <c>struct cg</c>, and <c>ufs1_dinode</c>) use the exact field offsets defined
+/// in FreeBSD's <c>sys/ufs/ffs/fs.h</c> and <c>sys/ufs/ufs/dinode.h</c>. The
+/// primary superblock lives at <c>SBLOCK_UFS1 = 8192</c>; each cylinder group
+/// carries a backup at <c>cgbase(cg) + fs_sblkno</c>. Free-block / free-inode
+/// bitmaps, the fragment-summary array, cluster summaries, and the per-group
+/// <c>cs_*</c> summary records are populated so that <c>fsck_ffs -f -n</c> passes
+/// all five phases cleanly.
 /// </para>
 /// </summary>
 public sealed class UfsWriter {
-  // ── on-disk geometry ──────────────────────────────────────────────────────
-  internal const int SuperblockOffset = 8192;     // SBLOCK_UFS1
+  // ── fixed UFS1 geometry (newfs -O1 -b 8192 -f 1024 defaults) ─────────────
+  internal const int SuperblockOffset = 8192;     // SBLOCK_UFS1 (byte offset)
   internal const int SuperblockSize = 1376;       // sizeof(struct fs)
+  internal const int SbWriteSize = 2048;          // fs_sbsize (sector-aligned)
   internal const int BlockSize = 8192;            // fs_bsize
   internal const int FragSize = 1024;             // fs_fsize
   internal const int Frag = BlockSize / FragSize; // fs_frag = 8
   internal const int Ufs1Magic = 0x00011954;      // FS_UFS1_MAGIC
   internal const int CgMagic = 0x00090255;        // CG_MAGIC
   internal const int InodeSize = 128;             // sizeof(ufs1_dinode)
-  internal const int InodesPerGroup = 2048;       // fs_ipg
+  internal const int InodesPerBlock = BlockSize / InodeSize; // fs_inopb = 64
   internal const int RootIno = 2;
+  internal const int SnapIno = 3;                 // newfs emits /.snap as inode 3
+  internal const int FirstUserIno = 4;
   internal const int MaxDirectBlocks = 12;        // UFS_NDADDR
   internal const int PointersPerBlock = BlockSize / 4; // single-indirect fan-out (2048)
+  internal const int ContigSumSize = 16;          // fs_contigsumsize
+  internal const int MaxContig = 128;             // fs_maxcontig
 
-  // Layout inside CG 0:
-  //   sb at frag 8 (byte 8192), cg header at frag 16 (byte 16384),
-  //   inode table at frag 24; data starts after inode table.
-  internal const int SblkNo = 8;
-  internal const int CblkNo = 16;
-  internal const int IblkNo = 24;
-  internal const int InodeTableFrags = (InodesPerGroup * InodeSize + FragSize - 1) / FragSize;
-  internal const int DblkNo = IblkNo + InodeTableFrags;    // = 280 frags
-  internal const int FragsPerGroup = 16384;                // fs_fpg (16 MB / 1 KB)
-  internal const int MinImageBytes = 16 * 1024 * 1024;     // 16 MB floor
+  // newfs places metadata at constant frag offsets for this block/frag pairing.
+  internal const int SblkNo = 16;                 // fs_sblkno  (superblock backup)
+  internal const int CblkNo = 24;                 // fs_cblkno  (cg header)
+  internal const int IblkNo = 32;                 // fs_iblkno  (inode table)
+
+  internal const int NumCylinderGroups = 4;       // newfs small-fs cylinder-group count
+  internal const int MinImageBytes = 16 * 1024 * 1024; // 16 MB floor (matches default tests)
 
   internal static readonly int FsMagicOffset = SuperblockSize - 4; // 1372
-  internal static readonly int FsCsAddrBlock = DblkNo;             // first data block holds fs_cs summary
 
   private readonly List<(string Name, byte[] Data)> _files = [];
   private readonly byte[] _volumeUuid = Guid.NewGuid().ToByteArray();
@@ -57,24 +59,46 @@ public sealed class UfsWriter {
     _files.Add((name, data));
   }
 
-  // ── in-memory directory tree ───────────────────────────────────────────
-  // A node is either the root, an intermediate directory, or a regular file.
-  // Directories are laid out as a single 8-KB block of UFS dir entries; files
-  // occupy direct-block extents.
+  // ── derived geometry for a chosen total size ─────────────────────────────
+  private sealed record class Geometry(
+    int TotalFrags, int Ncg, int Fpg, int Ipg, int Dblkno, int Bpg,
+    int CsAddr, int CsSizeBytes, int CgSizeBytes
+  );
+
+  private static int RoundUp(int a, int b) => (a + b - 1) / b * b;
+  private static int HowMany(int a, int b) => (a + b - 1) / b;
+
+  // newfs sizing: ncg = 4 (small-fs heuristic), fpg = roundup(size/ncg, frag)+frag,
+  // ipg = inopb * inode-blocks-per-cg where blocks-per-cg = (bpg-1)/16 + 1.
+  private static Geometry ComputeGeometry(int totalFrags) {
+    var ncg = NumCylinderGroups;
+    var fpg = RoundUp(HowMany(totalFrags, ncg), Frag) + Frag;
+    var bpg = fpg / Frag;                                   // blocks per group
+    var inodeBlocksPerCg = (bpg - 1) / 16 + 1;
+    var ipg = InodesPerBlock * inodeBlocksPerCg;            // inodes per group
+    var dblkno = IblkNo + inodeBlocksPerCg * Frag;          // first data frag in a cg
+    var csSizeBytes = RoundUp(ncg * 16, FragSize);          // fs_cssize (cs records)
+    // fs_cgsize = roundup(cg header + bitmaps to a sector), capped at one block.
+    var iusedoff = 168 + 4 + 2;
+    var freeoff = iusedoff + HowMany(ipg, 8);
+    var clustersumoff = RoundUp(freeoff + HowMany(fpg, 8) - 4, 4);
+    var clusteroff = clustersumoff + (ContigSumSize + 1) * 4;
+    var nextfreeoff = clusteroff + HowMany(fpg / Frag, 8);
+    var cgSizeBytes = Math.Min(BlockSize, RoundUp(nextfreeoff, FragSize));
+    return new Geometry(totalFrags, ncg, fpg, ipg, dblkno, bpg, dblkno, csSizeBytes, cgSizeBytes);
+  }
+
+  // ── in-memory directory tree ─────────────────────────────────────────────
   private sealed class TreeNode {
-    public string Name = "";              // leaf name (no path separators)
+    public string Name = "";
     public bool IsDirectory;
-    public byte[] Data = [];              // file payload (empty for directories)
-    public int Inode;                     // assigned inode number
+    public byte[] Data = [];
+    public int Inode;
     public TreeNode? Parent;
-    // Children keyed by leaf name; insertion order preserved for stable layout.
     public readonly Dictionary<string, TreeNode> Children = new(StringComparer.Ordinal);
     public readonly List<TreeNode> Order = [];
   }
 
-  // Builds the directory tree from the flat list of '/'-separated paths,
-  // creating intermediate directory nodes on demand and sharing them between
-  // siblings.
   private TreeNode BuildTree() {
     var root = new TreeNode { IsDirectory = true, Name = "" };
     foreach (var (rawName, data) in _files) {
@@ -85,17 +109,12 @@ public sealed class UfsWriter {
         var part = parts[i];
         var isLeaf = i == parts.Length - 1;
         if (cursor.Children.TryGetValue(part, out var existing)) {
-          if (isLeaf && !existing.IsDirectory)
-            existing.Data = data; // duplicate file path → last write wins
+          if (isLeaf && !existing.IsDirectory) existing.Data = data;
           cursor = existing;
           continue;
         }
-
         var node = new TreeNode {
-          Name = part,
-          IsDirectory = !isLeaf,
-          Data = isLeaf ? data : [],
-          Parent = cursor,
+          Name = part, IsDirectory = !isLeaf, Data = isLeaf ? data : [], Parent = cursor,
         };
         cursor.Children[part] = node;
         cursor.Order.Add(node);
@@ -111,41 +130,57 @@ public sealed class UfsWriter {
     var root = BuildTree();
     root.Inode = RootIno;
 
-    // ── inode assignment (root = 2, then every directory and file) ───────
-    var directories = new List<TreeNode> { root };
+    // ── inode assignment (root=2, .snap=3, then directories and files) ──────
+    // .snap is a synthetic newfs directory that always lives in the root and is
+    // listed first (inode 3), exactly as newfs emits it.
+    var snap = new TreeNode { Name = ".snap", IsDirectory = true, Parent = root, Inode = SnapIno };
+    root.Children[snap.Name] = snap;
+    root.Order.Insert(0, snap);
+
+    var directories = new List<TreeNode> { root, snap };
     var regularFiles = new List<TreeNode>();
-    var nextIno = RootIno + 1;
+    var nextIno = FirstUserIno;
     var queue = new Queue<TreeNode>();
     queue.Enqueue(root);
     while (queue.Count > 0) {
       var dir = queue.Dequeue();
       foreach (var child in dir.Order) {
+        if (child == snap) continue;             // already assigned inode 3 + listed
         child.Inode = nextIno++;
-        if (child.IsDirectory) {
-          directories.Add(child);
-          queue.Enqueue(child);
-        } else {
-          regularFiles.Add(child);
-        }
+        if (child.IsDirectory) { directories.Add(child); queue.Enqueue(child); } else regularFiles.Add(child);
       }
     }
 
-    // A directory's entries are packed into 8-KB blocks (no entry crosses a
-    // block boundary). The number of data blocks must not exceed what the inode
-    // can address via its direct pointers plus one single-indirect block.
-    var dirBlockOffsets = new Dictionary<TreeNode, IReadOnlyList<int>>();
+    // ── pick image size; grow if user data needs more than the 16 MB floor ──
+    var imageBytes = (int)Math.Max(MinImageBytes, EstimateBytes(directories, regularFiles));
+    imageBytes = RoundUp(imageBytes, BlockSize);
+    var totalFrags = imageBytes / FragSize;
+    var geom = ComputeGeometry(totalFrags);
+    var disk = new byte[imageBytes];
+
+    // The inode table and data area live inside cylinder group 0; all live
+    // inodes (root, .snap, user tree) fit comfortably in cg0's first ipg slots.
+    var inodeTableOffset = IblkNo * FragSize;
+
+    // ── data-frag allocation inside cg0 ─────────────────────────────────────
+    // newfs lays out: [meta 0..dblkno) | csum block | root dir | .snap dir | ...
+    // The csum block occupies one block (block-aligned at dblkno). Each directory
+    // and file starts on a fs-block boundary; a small object only fills the
+    // fragments it needs but the next object still starts block-aligned.
+    var nextFrag = geom.Dblkno + Frag;             // skip the csum block
+    _placedCg0Frags.Clear();
+
+    // Render every directory's on-disk byte image (DIRBLKSIZ-chunk packed).
+    var dirImage = new Dictionary<TreeNode, byte[]>();
     foreach (var dir in directories) {
       var parentIno = dir.Parent?.Inode ?? RootIno;
-      var offsets = PackDirectoryEntries(dir, parentIno);
-      dirBlockOffsets[dir] = offsets;
-      EnsureDirectoryAddressable(dir, offsets.Count);
+      var img = BuildDirectoryImage(dir, parentIno);
+      EnsureDirectoryAddressable(dir, HowMany(img.Length, BlockSize));
+      dirImage[dir] = img;
     }
-
-    // Files are limited to what direct blocks plus one single-indirect block
-    // can address.
     const int MaxAddressableBlocks = MaxDirectBlocks + PointersPerBlock;
     foreach (var file in regularFiles) {
-      var blocks = (file.Data.Length + BlockSize - 1) / BlockSize;
+      var blocks = HowMany(file.Data.Length, BlockSize);
       if (blocks > MaxAddressableBlocks)
         throw new InvalidOperationException(
           $"UFS writer supports direct blocks plus one single-indirect block " +
@@ -153,186 +188,137 @@ public sealed class UfsWriter {
           $"'{file.Name}' needs {file.Data.Length} bytes.");
     }
 
-    // ── layout: directory data blocks (+ indirect), then file data ───────
-    var currentFrag = DblkNo + Frag;               // skip 1 block for fs_cs summary
-    // For each directory: the frags of its data blocks, plus (if it spills past
-    // the direct pointers) one frag-block holding the single-indirect table.
-    var dirDataFrags = new Dictionary<TreeNode, int[]>();
-    var dirIndirectFrag = new Dictionary<TreeNode, int>();
+    // ── directories: lay out and emit inodes ────────────────────────────────
     foreach (var dir in directories) {
-      var blockCount = dirBlockOffsets[dir].Count;
-      var frags = new int[blockCount];
-      for (var b = 0; b < blockCount; b++) {
-        frags[b] = currentFrag;
-        currentFrag += Frag;
-      }
-      dirDataFrags[dir] = frags;
-      if (blockCount > MaxDirectBlocks) {
-        dirIndirectFrag[dir] = currentFrag;
-        currentFrag += Frag;                       // one block for the indirect pointer table
-      }
-    }
+      var img = dirImage[dir];
+      var first = nextFrag;
+      var (directBlocks, indirectFrag, fragsUsed) = PlaceObject(disk, img, ref nextFrag);
 
-    var fileFirstFrag = new Dictionary<TreeNode, int>();
-    var fileFrags = new Dictionary<TreeNode, int>();
-    var fileIndirectFrag = new Dictionary<TreeNode, int>();
-    foreach (var file in regularFiles) {
-      fileFirstFrag[file] = currentFrag;
-      var frags = Math.Max(1, (file.Data.Length + FragSize - 1) / FragSize);
-      fileFrags[file] = frags;
-      currentFrag += frags;
-      var blocks = Math.Max(1, (file.Data.Length + BlockSize - 1) / BlockSize);
-      if (blocks > MaxDirectBlocks) {
-        fileIndirectFrag[file] = currentFrag;
-        currentFrag += Frag;                       // one block for the indirect pointer table
-      }
-    }
-
-    // Round used-frag count up to a whole block to keep the bitmap simple.
-    var usedFrags = ((currentFrag + Frag - 1) / Frag) * Frag;
-    var totalFrags = Math.Max(FragsPerGroup, usedFrags + Frag);
-    var imageBytes = Math.Max(MinImageBytes, totalFrags * FragSize);
-    totalFrags = imageBytes / FragSize;
-    var disk = new byte[imageBytes];
-
-    var inodeTableOffset = IblkNo * FragSize;
-    // Accounting matches the historical flat-layout convention: the two reserved
-    // inodes (0,1) plus every allocated inode (root + subdirectories + files).
-    // nextIno is the first unused inode number, so nextIno-1 counts inodes
-    // 1..nextIno-1, i.e. one reserved slot + the live tree.
-    var usedInodes = nextIno - 1;
-
-    // ── directory blocks + directory inodes ──────────────────────────────
-    foreach (var dir in directories) {
-      var parentIno = dir.Parent?.Inode ?? RootIno;     // root's ".." points at itself
-      var offsets = dirBlockOffsets[dir];
-      var blockFrags = dirDataFrags[dir];
-
-      // Render every data block. Each block packs the entries assigned to it by
-      // PackDirectoryEntries; the final entry per block pads to the block end.
-      var allEntries = EnumerateEntries(dir, parentIno).ToList();
-      for (var b = 0; b < offsets.Count; b++) {
-        var startEntry = offsets[b];
-        var endEntry = b + 1 < offsets.Count ? offsets[b + 1] : allEntries.Count;
-        var block = BuildDirectoryBlock(allEntries, startEntry, endEntry);
-        block.CopyTo(disk, (long)blockFrags[b] * FragSize);
-      }
-
-      // Direct + single-indirect block pointers.
-      var directBlocks = new int[MaxDirectBlocks];
-      for (var b = 0; b < blockFrags.Length && b < MaxDirectBlocks; b++)
-        directBlocks[b] = blockFrags[b];
-      var indirectFrag = 0;
-      var totalFragsUsed = blockFrags.Length * Frag;
-      if (blockFrags.Length > MaxDirectBlocks) {
-        indirectFrag = dirIndirectFrag[dir];
-        WriteIndirectBlock(disk, indirectFrag, blockFrags, MaxDirectBlocks);
-        totalFragsUsed += Frag;                    // the indirect table block counts too
-      }
-
-      // di_nlink for a directory = 2 ("." + entry in parent) + one extra link
-      // per child subdirectory (each child's ".." points back here).
       var childDirs = dir.Order.Count(c => c.IsDirectory);
+      // di_dirdepth: distance from the root (root=0, its children=1, …). fsck
+      // expects directory inodes to record their depth (UFS directory-depth
+      // tracking); a missing depth provokes a Phase 5 "track directory depth" fix.
+      var depth = 0;
+      for (var n = dir.Parent; n != null; n = n.Parent) depth++;
       WriteUfs1Inode(disk, inodeTableOffset + dir.Inode * InodeSize,
-        mode: 0x41ED, nlink: (ushort)(2 + childDirs),
-        size: (ulong)((long)offsets.Count * BlockSize),
-        blocksUsed512: (uint)((long)totalFragsUsed * FragSize / 512),
+        mode: dir == snap ? (uint)0x41FD : 0x41ED, nlink: (ushort)(2 + childDirs),
+        size: (ulong)img.Length,
+        blocksUsed512: (uint)((long)fragsUsed * FragSize / 512),
+        directBlocks: directBlocks, indirectBlock: indirectFrag, dirDepth: (uint)depth);
+      _ = first;
+    }
+
+    // ── file blocks + inodes ────────────────────────────────────────────────
+    foreach (var file in regularFiles) {
+      var (directBlocks, indirectFrag, fragsUsed) = PlaceObject(disk, file.Data, ref nextFrag);
+      WriteUfs1Inode(disk, inodeTableOffset + file.Inode * InodeSize,
+        mode: 0x81A4, nlink: 1, size: (ulong)file.Data.Length,
+        blocksUsed512: (uint)((long)fragsUsed * FragSize / 512),
         directBlocks: directBlocks, indirectBlock: indirectFrag);
     }
 
-    // ── file blocks + file inodes ─────────────────────────────────────────
-    foreach (var file in regularFiles) {
-      var data = file.Data;
-      var first = fileFirstFrag[file];
-      var dblks = new int[MaxDirectBlocks];
-      // One direct-block pointer per 8-KB block; each block is Frag frags.
-      var blocks = Math.Max(1, (data.Length + BlockSize - 1) / BlockSize);
-      for (var b = 0; b < blocks && b < MaxDirectBlocks; b++) dblks[b] = first + b * Frag;
+    // The highest data frag consumed in cg0 (relative to image start).
+    var cg0DataEndFrag = nextFrag;
 
-      var indirectFrag = 0;
-      var totalFragsUsed = fileFrags[file];
-      if (blocks > MaxDirectBlocks) {
-        indirectFrag = fileIndirectFrag[file];
-        var blockFrags = new int[blocks];
-        for (var b = 0; b < blocks; b++) blockFrags[b] = first + b * Frag;
-        WriteIndirectBlock(disk, indirectFrag, blockFrags, MaxDirectBlocks);
-        totalFragsUsed += Frag;                    // the indirect table block counts too
-      }
-
-      WriteUfs1Inode(disk, inodeTableOffset + file.Inode * InodeSize,
-        mode: 0x81A4, nlink: 1, size: (ulong)data.Length,
-        blocksUsed512: (uint)((long)totalFragsUsed * FragSize / 512),
-        directBlocks: dblks, indirectBlock: indirectFrag);
-      if (data.Length > 0) data.CopyTo(disk, (long)first * FragSize);
-    }
-
-    // ── cylinder group header + bitmaps ─────────────────────────────────
-    var usedFragsTotal = currentFrag;
+    // ── per-cg headers + bitmaps and the cs summary block ───────────────────
     var dirCount = directories.Count;
-    WriteCylinderGroup(disk, usedInodes, usedFragsTotal, totalFrags, dirCount);
+    var liveInodes = nextIno;                      // inodes 0..(nextIno-1) used: 0,1 reserved + live tree
+    WriteCylinderGroups(disk, geom, dirCount, liveInodes, cg0DataEndFrag);
 
-    // ── fs_cs summary block (first data block, referenced by fs_csaddr) ──
-    var csOffset = (long)FsCsAddrBlock * FragSize;
-    BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan((int)csOffset + 0), dirCount);                   // cs_ndir
-    BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan((int)csOffset + 4), (totalFrags - usedFragsTotal) / Frag); // cs_nbfree
-    BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan((int)csOffset + 8), InodesPerGroup - usedInodes); // cs_nifree
-    BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan((int)csOffset + 12), 0);                         // cs_nffree
-
-    // ── superblock ──────────────────────────────────────────────────────
-    WriteSuperblock(disk, totalFrags, usedInodes, usedFragsTotal, dirCount);
+    // ── superblock ──────────────────────────────────────────────────────────
+    WriteSuperblock(disk, geom, dirCount, liveInodes, cg0DataEndFrag);
 
     output.Write(disk);
   }
 
-  // The flat sequence of directory entries: ".", "..", then one per child.
+  private static long EstimateBytes(List<TreeNode> directories, List<TreeNode> regularFiles) {
+    long frags = 1024;                             // generous slack for metadata
+    foreach (var d in directories) frags += Math.Max(1, d.Order.Count / 16 + 1) * Frag + Frag;
+    foreach (var f in regularFiles) frags += (long)(HowMany(f.Data.Length, BlockSize) + 1) * Frag;
+    return frags * FragSize;
+  }
+
+  // Writes an object's payload at the current allocation cursor (block-aligned),
+  // recording the frags it touches, and returns its di_db[] direct pointers, the
+  // single-indirect fragment (0 if none), and the fragment count for di_blocks.
+  // Each fs block before the tail consumes Frag fragments; the tail consumes only
+  // as many fragments as it needs (newfs fragment-tail optimisation).
+  private (int[] DirectBlocks, int IndirectFrag, int FragsUsed) PlaceObject(byte[] disk, byte[] payload, ref int nextFrag) {
+    var length = payload.Length;
+    var blocks = Math.Max(1, HowMany(length, BlockSize));
+    var fullBlocks = length / BlockSize;
+    var tailBytes = length - fullBlocks * BlockSize;
+    var tailFrags = tailBytes > 0 ? HowMany(tailBytes, FragSize) : (length == 0 ? 1 : 0);
+
+    var first = nextFrag;
+    if (length > 0) payload.CopyTo(disk, (long)first * FragSize);
+
+    // Record the frags each block actually occupies (block-aligned addressing,
+    // tail filling only tailFrags).
+    var blockFrags = new int[blocks];
+    var fragsUsed = 0;
+    for (var b = 0; b < blocks; b++) {
+      var blockBase = first + b * Frag;
+      blockFrags[b] = blockBase;
+      var fragsInBlock = b < fullBlocks ? Frag : tailFrags;
+      for (var f = 0; f < fragsInBlock; f++) _placedCg0Frags.Add(blockBase + f);
+      fragsUsed += fragsInBlock;
+    }
+    nextFrag += blocks * Frag;
+
+    var directBlocks = new int[MaxDirectBlocks];
+    for (var b = 0; b < blocks && b < MaxDirectBlocks; b++) directBlocks[b] = blockFrags[b];
+
+    var indirectFrag = 0;
+    if (blocks > MaxDirectBlocks) {
+      indirectFrag = nextFrag;
+      WriteIndirectBlock(disk, indirectFrag, blockFrags, MaxDirectBlocks);
+      for (var f = 0; f < Frag; f++) _placedCg0Frags.Add(indirectFrag + f);
+      nextFrag += Frag;
+      fragsUsed += Frag;
+    }
+    return (directBlocks, indirectFrag, fragsUsed);
+  }
+
+  // Builds a directory's on-disk byte image: entries packed into DIRBLKSIZ
+  // (512-byte) chunks; no entry crosses a chunk boundary; the last entry in each
+  // chunk has its reclen extended to the chunk end. di_size = the image length.
+  private static byte[] BuildDirectoryImage(TreeNode dir, int parentIno) {
+    const int DirBlkSiz = 512;
+    var chunks = new List<byte[]>();
+    var chunk = new byte[DirBlkSiz];
+    var pos = 0;
+    var lastStart = 0;
+    foreach (var e in EnumerateEntries(dir, parentIno)) {
+      var reclen = DirEntryReclen(e.Name);
+      if (pos + reclen > DirBlkSiz) {
+        BinaryPrimitives.WriteUInt16LittleEndian(chunk.AsSpan(lastStart + 4), (ushort)(DirBlkSiz - lastStart));
+        chunks.Add(chunk);
+        chunk = new byte[DirBlkSiz];
+        pos = 0;
+        lastStart = 0;
+      }
+      lastStart = pos;
+      WriteDirEntry(chunk, ref pos, e.Inode, e.Name, e.Type);
+    }
+    BinaryPrimitives.WriteUInt16LittleEndian(chunk.AsSpan(lastStart + 4), (ushort)(DirBlkSiz - lastStart));
+    chunks.Add(chunk);
+
+    var image = new byte[chunks.Count * DirBlkSiz];
+    for (var i = 0; i < chunks.Count; i++) chunks[i].CopyTo(image, i * DirBlkSiz);
+    return image;
+  }
+
+  // ── directory entries ─────────────────────────────────────────────────────
   private readonly record struct DirEntry(int Inode, string Name, byte Type);
 
   private static IEnumerable<DirEntry> EnumerateEntries(TreeNode dir, int parentIno) {
-    yield return new DirEntry(dir.Inode, ".", 4);   // DT_DIR = 4
+    yield return new DirEntry(dir.Inode, ".", 4);
     yield return new DirEntry(parentIno, "..", 4);
     foreach (var child in dir.Order)
-      yield return new DirEntry(child.Inode, child.Name, child.IsDirectory ? (byte)4 : (byte)8); // DT_DIR / DT_REG
+      yield return new DirEntry(child.Inode, child.Name, child.IsDirectory ? (byte)4 : (byte)8);
   }
 
-  // Packs a directory's entries into 8-KB blocks so that no entry crosses a
-  // block boundary. Returns the index (into the entry sequence) of the first
-  // entry of each block; the block count is the returned list's length. "."/".."
-  // are always the first two entries, hence at the start of block 0.
-  private static IReadOnlyList<int> PackDirectoryEntries(TreeNode dir, int parentIno) {
-    var blockStarts = new List<int> { 0 };
-    var used = 0;
-    var index = 0;
-    foreach (var entry in EnumerateEntries(dir, parentIno)) {
-      var reclen = DirEntryReclen(entry.Name);
-      if (used + reclen > BlockSize) {
-        blockStarts.Add(index);                     // entry begins a fresh block
-        used = 0;
-      }
-      used += reclen;
-      index++;
-    }
-    return blockStarts;
-  }
-
-  // Renders one directory data block holding entries [startEntry, endEntry).
-  // The last entry's reclen is extended to cover the rest of the block.
-  private static byte[] BuildDirectoryBlock(IReadOnlyList<DirEntry> entries, int startEntry, int endEntry) {
-    var block = new byte[BlockSize];
-    var dirPos = 0;
-    for (var i = startEntry; i < endEntry; i++) {
-      var e = entries[i];
-      WriteDirEntry(block, ref dirPos, e.Inode, e.Name, e.Type);
-    }
-    if (dirPos < BlockSize) {
-      var lastEntryStart = FindLastEntryStart(block, dirPos);
-      var newLastReclen = BlockSize - lastEntryStart;
-      BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(lastEntryStart + 4), (ushort)newLastReclen);
-    }
-    return block;
-  }
-
-  // Verifies a directory's data blocks are reachable through the inode's direct
-  // pointers plus one single-indirect block.
   private static void EnsureDirectoryAddressable(TreeNode dir, int blockCount) {
     var maxBlocks = MaxDirectBlocks + PointersPerBlock;
     if (blockCount > maxBlocks)
@@ -342,8 +328,6 @@ public sealed class UfsWriter {
         $"'{(dir.Name.Length == 0 ? "/" : dir.Name)}' with {dir.Order.Count} entries needs {blockCount}.");
   }
 
-  // Writes a single-indirect pointer table: the frag numbers of every data block
-  // beyond the direct pointers, one int32 each.
   private static void WriteIndirectBlock(byte[] disk, int indirectFrag, int[] blockFrags, int firstIndirectBlock) {
     var tableOffset = (long)indirectFrag * FragSize;
     for (var b = firstIndirectBlock; b < blockFrags.Length; b++)
@@ -356,172 +340,349 @@ public sealed class UfsWriter {
     return (8 + nameLen + 3) & ~3;
   }
 
-  // ── struct fs (superblock) ────────────────────────────────────────────
-  private void WriteSuperblock(byte[] disk, int totalFrags, int usedInodes, int usedFragsTotal, int dirCount) {
+  // ── struct fs (superblock) ────────────────────────────────────────────────
+  // Field offsets and values mirror the bytes a real `newfs -O1 -b8192 -f1024`
+  // emits for this geometry (verified by byte-comparing a FreeBSD image).
+  private void WriteSuperblock(byte[] disk, Geometry geom, int dirCount, int liveInodes, int cg0DataEndFrag) {
     var sb = disk.AsSpan(SuperblockOffset, SuperblockSize);
     sb.Clear();
 
-    BinaryPrimitives.WriteInt32LittleEndian(sb[8..], SblkNo);
-    BinaryPrimitives.WriteInt32LittleEndian(sb[12..], CblkNo);
-    BinaryPrimitives.WriteInt32LittleEndian(sb[16..], IblkNo);
-    BinaryPrimitives.WriteInt32LittleEndian(sb[20..], DblkNo);
-    BinaryPrimitives.WriteInt32LittleEndian(sb[24..], 0);                 // fs_old_cgoffset
-    BinaryPrimitives.WriteInt32LittleEndian(sb[28..], -1);                // fs_old_cgmask
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[32..], (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds()); // fs_old_time
-    BinaryPrimitives.WriteInt32LittleEndian(sb[36..], totalFrags / Frag); // fs_old_size
-    BinaryPrimitives.WriteInt32LittleEndian(sb[40..], (totalFrags - DblkNo) / Frag); // fs_old_dsize
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[44..], 1);                // fs_ncg
-    BinaryPrimitives.WriteInt32LittleEndian(sb[48..], BlockSize);         // fs_bsize
-    BinaryPrimitives.WriteInt32LittleEndian(sb[52..], FragSize);          // fs_fsize
-    BinaryPrimitives.WriteInt32LittleEndian(sb[56..], Frag);              // fs_frag
-    BinaryPrimitives.WriteInt32LittleEndian(sb[60..], 8);                 // fs_minfree
-    BinaryPrimitives.WriteInt32LittleEndian(sb[72..], ~(BlockSize - 1));  // fs_bmask
-    BinaryPrimitives.WriteInt32LittleEndian(sb[76..], ~(FragSize - 1));   // fs_fmask
-    BinaryPrimitives.WriteInt32LittleEndian(sb[80..], 13);                // fs_bshift
-    BinaryPrimitives.WriteInt32LittleEndian(sb[84..], 10);                // fs_fshift
-    BinaryPrimitives.WriteInt32LittleEndian(sb[88..], 16);                // fs_maxcontig
-    BinaryPrimitives.WriteInt32LittleEndian(sb[92..], 2048);              // fs_maxbpg
-    BinaryPrimitives.WriteInt32LittleEndian(sb[96..], 3);                 // fs_fragshift
-    BinaryPrimitives.WriteInt32LittleEndian(sb[100..], 1);                // fs_fsbtodb
-    BinaryPrimitives.WriteInt32LittleEndian(sb[104..], SuperblockSize);   // fs_sbsize
-    BinaryPrimitives.WriteInt32LittleEndian(sb[116..], BlockSize / 4);    // fs_nindir
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[120..], (uint)(BlockSize / InodeSize)); // fs_inopb
-    BinaryPrimitives.WriteInt32LittleEndian(sb[124..], 2);                // fs_old_nspf
-    BinaryPrimitives.WriteInt32LittleEndian(sb[128..], 0);                // fs_optim
-    BinaryPrimitives.WriteInt32LittleEndian(sb[152..], FsCsAddrBlock);    // fs_old_csaddr
-    BinaryPrimitives.WriteInt32LittleEndian(sb[156..], FragSize);         // fs_cssize
-    BinaryPrimitives.WriteInt32LittleEndian(sb[160..], FragSize);         // fs_cgsize
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[184..], InodesPerGroup);  // fs_ipg
-    BinaryPrimitives.WriteInt32LittleEndian(sb[188..], FragsPerGroup);    // fs_fpg
-    // fs_old_cstotal at 192..207
+    var totalFrags = geom.TotalFrags;
+    var dsize = DataFrags(geom);
+    var spc = geom.Fpg * (FragSize / 512);                // sectors per cylinder = fpg * nspf (nspf=2)
+    var maxbpg = BlockSize / 4 / 2;                        // fs_maxbpg = 1024
+    var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    var freeBlocks = TotalFreeBlocks(geom, cg0DataEndFrag);
+    var freeFrags = TotalFreeFrags(geom, cg0DataEndFrag);
+    var freeInodes = geom.Ipg * geom.Ncg - liveInodes;
+
+    BinaryPrimitives.WriteInt32LittleEndian(sb[8..], SblkNo);              // fs_sblkno
+    BinaryPrimitives.WriteInt32LittleEndian(sb[12..], CblkNo);             // fs_cblkno
+    BinaryPrimitives.WriteInt32LittleEndian(sb[16..], IblkNo);             // fs_iblkno
+    BinaryPrimitives.WriteInt32LittleEndian(sb[20..], geom.Dblkno);        // fs_dblkno
+    BinaryPrimitives.WriteInt32LittleEndian(sb[24..], 0);                  // fs_old_cgoffset
+    BinaryPrimitives.WriteInt32LittleEndian(sb[28..], -1);                 // fs_old_cgmask
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[32..], now);               // fs_old_time
+    BinaryPrimitives.WriteInt32LittleEndian(sb[36..], totalFrags);         // fs_old_size (frags)
+    BinaryPrimitives.WriteInt32LittleEndian(sb[40..], dsize);              // fs_old_dsize (frags)
+    BinaryPrimitives.WriteInt32LittleEndian(sb[44..], geom.Ncg);           // fs_ncg
+    BinaryPrimitives.WriteInt32LittleEndian(sb[48..], BlockSize);          // fs_bsize
+    BinaryPrimitives.WriteInt32LittleEndian(sb[52..], FragSize);           // fs_fsize
+    BinaryPrimitives.WriteInt32LittleEndian(sb[56..], Frag);               // fs_frag
+    BinaryPrimitives.WriteInt32LittleEndian(sb[60..], 8);                  // fs_minfree
+    BinaryPrimitives.WriteInt32LittleEndian(sb[64..], 0);                  // fs_old_rotdelay
+    BinaryPrimitives.WriteInt32LittleEndian(sb[68..], 60);                 // fs_old_rps
+    BinaryPrimitives.WriteInt32LittleEndian(sb[72..], ~(BlockSize - 1));   // fs_bmask
+    BinaryPrimitives.WriteInt32LittleEndian(sb[76..], ~(FragSize - 1));    // fs_fmask
+    BinaryPrimitives.WriteInt32LittleEndian(sb[80..], 13);                 // fs_bshift
+    BinaryPrimitives.WriteInt32LittleEndian(sb[84..], 10);                 // fs_fshift
+    BinaryPrimitives.WriteInt32LittleEndian(sb[88..], MaxContig);          // fs_maxcontig
+    BinaryPrimitives.WriteInt32LittleEndian(sb[92..], maxbpg);             // fs_maxbpg
+    BinaryPrimitives.WriteInt32LittleEndian(sb[96..], 3);                  // fs_fragshift
+    BinaryPrimitives.WriteInt32LittleEndian(sb[100..], 1);                 // fs_fsbtodb
+    BinaryPrimitives.WriteInt32LittleEndian(sb[104..], SbWriteSize);       // fs_sbsize
+    BinaryPrimitives.WriteInt32LittleEndian(sb[116..], BlockSize / 4);     // fs_nindir
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[120..], InodesPerBlock);   // fs_inopb
+    BinaryPrimitives.WriteInt32LittleEndian(sb[124..], 2);                 // fs_old_nspf
+    BinaryPrimitives.WriteInt32LittleEndian(sb[128..], 0);                 // fs_optim (FS_OPTTIME)
+    BinaryPrimitives.WriteInt32LittleEndian(sb[132..], spc);               // fs_old_cpc-area → spc value newfs stores
+    BinaryPrimitives.WriteInt32LittleEndian(sb[136..], 1);                 // (newfs: 1)
+    // fs_id[2] at 144 (filesystem id, time-derived). Keep deterministic-ish.
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[144..], now);              // fs_id[0]
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[148..], (uint)_volumeUuid[0] | ((uint)_volumeUuid[1] << 8) | ((uint)_volumeUuid[2] << 16) | ((uint)_volumeUuid[3] << 24)); // fs_id[1]
+    BinaryPrimitives.WriteInt32LittleEndian(sb[152..], geom.CsAddr);       // fs_old_csaddr
+    BinaryPrimitives.WriteInt32LittleEndian(sb[156..], geom.CsSizeBytes);  // fs_cssize
+    BinaryPrimitives.WriteInt32LittleEndian(sb[160..], geom.CgSizeBytes);  // fs_cgsize
+    BinaryPrimitives.WriteInt32LittleEndian(sb[168..], spc);               // fs_old_nsect
+    BinaryPrimitives.WriteInt32LittleEndian(sb[172..], spc);               // fs_old_spc
+    BinaryPrimitives.WriteInt32LittleEndian(sb[176..], geom.Ncg);          // fs_old_ncyl
+    BinaryPrimitives.WriteInt32LittleEndian(sb[180..], 1);                 // fs_old_cpg
+    BinaryPrimitives.WriteInt32LittleEndian(sb[184..], geom.Ipg);          // fs_ipg
+    BinaryPrimitives.WriteInt32LittleEndian(sb[188..], geom.Fpg);          // fs_fpg
+    // fs_old_cstotal at 192 (csum: ndir, nbfree, nifree, nffree)
     BinaryPrimitives.WriteInt32LittleEndian(sb[192..], dirCount);
-    BinaryPrimitives.WriteInt32LittleEndian(sb[196..], (totalFrags - usedFragsTotal) / Frag);
-    BinaryPrimitives.WriteInt32LittleEndian(sb[200..], InodesPerGroup - usedInodes);
-    BinaryPrimitives.WriteInt32LittleEndian(sb[204..], 0);
+    BinaryPrimitives.WriteInt32LittleEndian(sb[196..], freeBlocks);
+    BinaryPrimitives.WriteInt32LittleEndian(sb[200..], freeInodes);
+    BinaryPrimitives.WriteInt32LittleEndian(sb[204..], freeFrags);
+    sb[208] = 0;                                                           // fs_fmod
     sb[209] = 1;                                                           // fs_clean
-    // fs_fsmnt at 212
-    var mntName = Encoding.ASCII.GetBytes("/ufs-workbench");
-    mntName.AsSpan(0, Math.Min(mntName.Length, 468)).CopyTo(sb[212..]);
-    var vol = Encoding.ASCII.GetBytes("ufs-workbench");
-    vol.AsSpan(0, Math.Min(vol.Length, 32)).CopyTo(sb[680..]);             // fs_volname
+    sb[210] = 0;                                                           // fs_ronly
+    sb[211] = 0x80;                                                        // fs_old_flags (FS_FLAGS_UPDATED)
     BinaryPrimitives.WriteInt32LittleEndian(sb[860..], BlockSize);         // fs_maxbsize
-    BinaryPrimitives.WriteInt64LittleEndian(sb[872..], (long)totalFrags * FragSize / 512); // fs_providersize
-    _volumeUuid.CopyTo(sb[896..]);                                         // (fs_sparecon64[0..1] → UUID 16B)
-    BinaryPrimitives.WriteInt64LittleEndian(sb[992..], SuperblockOffset);  // fs_sblockactualloc
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1000..], SuperblockOffset); // fs_sblockloc
+    BinaryPrimitives.WriteInt64LittleEndian(sb[872..], (long)totalFrags);  // fs_unrefs-area placeholder
+    BinaryPrimitives.WriteInt32LittleEndian(sb[880..], 160);               // fs_metaspace
+    _volumeUuid.CopyTo(sb[896..]);                                         // UUID in spare area
+    BinaryPrimitives.WriteInt64LittleEndian(sb[992..], SuperblockOffset);  // newfs: 8192
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1000..], SuperblockOffset); // newfs: 8192
     // fs_cstotal (csum_total, 8 int64s) at 1008
     BinaryPrimitives.WriteInt64LittleEndian(sb[1008..], dirCount);
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1016..], (totalFrags - usedFragsTotal) / Frag);
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1024..], InodesPerGroup - usedInodes);
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1032..], 0);
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1072..], DateTimeOffset.UtcNow.ToUnixTimeSeconds()); // fs_time
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1080..], totalFrags / Frag);                         // fs_size
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1088..], (totalFrags - DblkNo) / Frag);              // fs_dsize
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1096..], FsCsAddrBlock);                             // fs_csaddr
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[1196..], 16384);                                    // fs_avgfilesize
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[1200..], 64);                                       // fs_avgfpdir
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1208..], DateTimeOffset.UtcNow.ToUnixTimeSeconds()); // fs_mtime
-    BinaryPrimitives.WriteInt32LittleEndian(sb[1320..], 60);                                        // fs_maxsymlinklen
-    BinaryPrimitives.WriteInt32LittleEndian(sb[1324..], 2);                                         // fs_old_inodefmt
-    BinaryPrimitives.WriteUInt64LittleEndian(sb[1328..], 1UL << 42);                                // fs_maxfilesize (cap)
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1336..], ~(long)(BlockSize - 1));                    // fs_qbmask
-    BinaryPrimitives.WriteInt64LittleEndian(sb[1344..], ~(long)(FragSize - 1));                     // fs_qfmask
-    // fs_magic — canary at sb[1372]
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1016..], freeBlocks);
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1024..], freeInodes);
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1032..], freeFrags);
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1072..], now);              // fs_time
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1080..], totalFrags);       // fs_size (frags)
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1088..], dsize);            // fs_dsize (frags)
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1096..], geom.CsAddr);      // fs_csaddr
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[1196..], 16384);           // fs_avgfilesize
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[1200..], 64);              // fs_avgfpdir
+    BinaryPrimitives.WriteInt32LittleEndian(sb[1316..], 16);               // fs_save_cgsize (newfs: 16)
+    BinaryPrimitives.WriteInt32LittleEndian(sb[1320..], 60);               // fs_maxsymlinklen
+    BinaryPrimitives.WriteInt32LittleEndian(sb[1324..], 2);                // fs_old_inodefmt (FS_44INODEFMT)
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1328..], 70403120791551L);  // fs_maxfilesize
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1336..], BlockSize - 1);    // fs_qbmask = ~fs_bmask
+    BinaryPrimitives.WriteInt64LittleEndian(sb[1344..], FragSize - 1);     // fs_qfmask = ~fs_fmask
+    BinaryPrimitives.WriteInt32LittleEndian(sb[1356..], 1);                // fs_old_postblformat (FS_DYNAMICPOSTBLFMT)
+    BinaryPrimitives.WriteInt32LittleEndian(sb[1360..], 1);                // fs_old_nrpos
+    // fs_magic — last int32 of struct fs at +1372.
     BinaryPrimitives.WriteInt32LittleEndian(sb[FsMagicOffset..], Ufs1Magic);
   }
 
-  // ── struct cg (cylinder-group header) ─────────────────────────────────
-  private static void WriteCylinderGroup(byte[] disk, int usedInodes, int usedFragsTotal, int totalFrags, int dirCount) {
-    var cgOffset = CblkNo * FragSize;
-    var cg = disk.AsSpan(cgOffset, BlockSize);
-    cg.Clear();
-
-    BinaryPrimitives.WriteInt32LittleEndian(cg[4..], CgMagic);             // cg_magic
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[8..], (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds()); // cg_old_time
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[12..], 0);                 // cg_cgx
-    BinaryPrimitives.WriteInt16LittleEndian(cg[16..], 0);                  // cg_old_ncyl
-    BinaryPrimitives.WriteInt16LittleEndian(cg[18..], 0);                  // cg_old_niblk
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[20..], (uint)Math.Min(FragsPerGroup, totalFrags)); // cg_ndblk
-    // cg_cs (csum) @ 24
-    var freeBlocks = (Math.Min(FragsPerGroup, totalFrags) - usedFragsTotal) / Frag;
-    BinaryPrimitives.WriteInt32LittleEndian(cg[24..], dirCount);
-    BinaryPrimitives.WriteInt32LittleEndian(cg[28..], freeBlocks);
-    BinaryPrimitives.WriteInt32LittleEndian(cg[32..], InodesPerGroup - usedInodes);
-    BinaryPrimitives.WriteInt32LittleEndian(cg[36..], 0);
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[40..], 0);                 // cg_rotor
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[44..], 0);                 // cg_frotor
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[48..], (uint)usedInodes);  // cg_irotor
-    BinaryPrimitives.WriteInt32LittleEndian(cg[84..], 0);                  // cg_old_btotoff
-    BinaryPrimitives.WriteInt32LittleEndian(cg[88..], 0);                  // cg_old_boff
-
-    const int CgHeaderSize = 184;
-    var iusedOff = CgHeaderSize;
-    var iusedSize = (InodesPerGroup + 7) / 8;
-    var freeOff = iusedOff + iusedSize;
-    var freeSize = (FragsPerGroup + 7) / 8;
-    var clusterSumOff = freeOff + freeSize;
-    var clusterSumSize = 32;
-    var clusterOff = clusterSumOff + clusterSumSize;
-    var clusterSize = (FragsPerGroup / Frag + 7) / 8;
-
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[92..], (uint)iusedOff);    // cg_iusedoff
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[96..], (uint)freeOff);     // cg_freeoff
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[100..], (uint)(clusterOff + clusterSize)); // cg_nextfreeoff
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[104..], (uint)clusterSumOff); // cg_clustersumoff
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[108..], (uint)clusterOff); // cg_clusteroff
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[112..], (uint)(FragsPerGroup / Frag)); // cg_nclusterblks
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[116..], InodesPerGroup);   // cg_niblk
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[120..], InodesPerGroup);   // cg_initediblk
-    BinaryPrimitives.WriteUInt32LittleEndian(cg[124..], 0);                // cg_unrefs
-    BinaryPrimitives.WriteInt64LittleEndian(cg[136..], DateTimeOffset.UtcNow.ToUnixTimeSeconds()); // cg_time
-
-    // inode-used bitmap
-    for (var ino = 0; ino < usedInodes; ino++)
-      cg[iusedOff + ino / 8] |= (byte)(1 << (ino % 8));
-
-    // free-frag bitmap (1 = free)
-    for (var i = 0; i < freeSize; i++) cg[freeOff + i] = 0xFF;
-    for (var f = 0; f < usedFragsTotal && f < FragsPerGroup; f++)
-      cg[freeOff + f / 8] &= (byte)~(1 << (f % 8));
-    var cgFrags = Math.Min(FragsPerGroup, totalFrags);
-    for (var f = cgFrags; f < FragsPerGroup; f++)
-      cg[freeOff + f / 8] &= (byte)~(1 << (f % 8));
-
-    // free-cluster bitmap
-    var usedBlocks = (usedFragsTotal + Frag - 1) / Frag;
-    var cgBlocks = cgFrags / Frag;
-    for (var b = usedBlocks; b < cgBlocks; b++)
-      cg[clusterOff + b / 8] |= (byte)(1 << (b % 8));
+  // fs_dsize: usable data frags. cg0 loses everything below dblkno; cg>0 keeps
+  // the [0, sblkno) boot gap; the cs summary block costs one fragment.
+  private static int DataFrags(Geometry geom) {
+    var total = geom.TotalFrags - geom.Dblkno;                  // cg0 overhead
+    for (var cg = 1; cg < geom.Ncg; cg++) total -= geom.Dblkno - SblkNo; // cg>0 overhead
+    total -= geom.CsSizeBytes / FragSize;                       // cs summary fragment(s)
+    return total;
   }
 
-  // ── ufs1_dinode (128 bytes) ───────────────────────────────────────────
+  private static int CgNdblk(Geometry geom, int cg) {
+    var cgbase = cg * geom.Fpg;
+    return Math.Min(geom.Fpg, geom.TotalFrags - cgbase);
+  }
+
+  // ── per-cg cluster/free accounting shared by the cg headers and the cs block ─
+  private readonly record struct CgCounts(int Ndir, int Nbfree, int Nifree, int Nffree);
+
+  private CgCounts ComputeCgCounts(Geometry geom, int cg, int dirCount, int liveInodes, int cg0DataEndFrag) {
+    var ndblk = CgNdblk(geom, cg);
+    var ndir = cg == 0 ? dirCount : 0;
+
+    // Inodes: cg0 holds every live inode; other cgs are empty.
+    int usedInodes;
+    if (cg == 0) usedInodes = liveInodes;
+    else usedInodes = 0;
+    var nifree = geom.Ipg - usedInodes;
+
+    // Build the per-cg used-frag map to count free whole blocks vs free frags.
+    var used = new bool[ndblk];
+    MarkCgMetadata(geom, cg, used);
+    if (cg == 0) MarkCg0Data(geom, used, cg0DataEndFrag);
+
+    var nbfree = 0;
+    var nffree = 0;
+    for (var blk = 0; blk * Frag < ndblk; blk++) {
+      var baseFrag = blk * Frag;
+      var freeInBlock = 0;
+      var anyUsed = false;
+      for (var f = 0; f < Frag && baseFrag + f < ndblk; f++) {
+        if (used[baseFrag + f]) anyUsed = true; else freeInBlock++;
+      }
+      var blockComplete = baseFrag + Frag <= ndblk;
+      if (!anyUsed && blockComplete) nbfree++;
+      else nffree += freeInBlock;
+    }
+    return new CgCounts(ndir, nbfree, nifree, nffree);
+  }
+
+  // Marks the metadata frags (sb backup, cg header, inode table) of a cg as used.
+  private static void MarkCgMetadata(Geometry geom, int cg, bool[] used) {
+    // cg0: frags [0, dblkno) are all metadata (boot block + primary superblock +
+    // backup + cg header + inode table). cg>0: the [0, sblkno) boot/label gap is
+    // free data; only [sblkno, dblkno) is metadata. (Matches newfs/dumpfs.)
+    var firstMeta = cg == 0 ? 0 : SblkNo;
+    for (var f = firstMeta; f < geom.Dblkno && f < used.Length; f++) used[f] = true;
+  }
+
+  // Marks cg0's allocated data frags (csum summary fragments + directory/file data).
+  private void MarkCg0Data(Geometry geom, bool[] used, int cg0DataEndFrag) {
+    // The cs summary occupies howmany(cssize, fsize) FRAGMENTS at fs_csaddr; the
+    // rest of that block stays free (newfs marks only the populated fragments).
+    var csumFrags = HowMany(geom.CsSizeBytes, FragSize);
+    for (var f = 0; f < csumFrags && geom.Dblkno + f < used.Length; f++) used[geom.Dblkno + f] = true;
+    // Plus every fragment the layout actually placed for directories/files.
+    foreach (var f in _placedCg0Frags) if (f < used.Length) used[f] = true;
+    _ = cg0DataEndFrag;
+  }
+
+  // Fragments actually written into cg0's data region (besides metadata/csum).
+  private readonly List<int> _placedCg0Frags = [];
+
+  private void WriteCylinderGroups(byte[] disk, Geometry geom, int dirCount, int liveInodes, int cg0DataEndFrag) {
+    // Write the cs summary block first (referenced by fs_csaddr): one cs record
+    // (ndir, nbfree, nifree, nffree) per cylinder group, 16 bytes each.
+    var csOffset = (long)geom.CsAddr * FragSize;
+    for (var cg = 0; cg < geom.Ncg; cg++) {
+      var c = ComputeCgCounts(geom, cg, dirCount, liveInodes, cg0DataEndFrag);
+      // struct csum on-disk order: cs_ndir, cs_nbfree, cs_nifree, cs_nffree.
+      var rec = (int)csOffset + cg * 16;
+      BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan(rec + 0), c.Ndir);
+      BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan(rec + 4), c.Nbfree);
+      BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan(rec + 8), c.Nifree);
+      BinaryPrimitives.WriteInt32LittleEndian(disk.AsSpan(rec + 12), c.Nffree);
+    }
+
+    for (var cg = 0; cg < geom.Ncg; cg++) {
+      var c = ComputeCgCounts(geom, cg, dirCount, liveInodes, cg0DataEndFrag);
+      WriteOneCylinderGroup(disk, geom, cg, c, liveInodes, cg0DataEndFrag);
+    }
+  }
+
+  private void WriteOneCylinderGroup(byte[] disk, Geometry geom, int cg, CgCounts c, int liveInodes, int cg0DataEndFrag) {
+    var cgbase = cg * geom.Fpg;
+    var cgOffset = (cgbase + CblkNo) * FragSize;
+    var cg0 = disk.AsSpan(cgOffset, BlockSize);
+    cg0.Clear();
+
+    var ndblk = CgNdblk(geom, cg);
+    var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    var usedInodes = cg == 0 ? liveInodes : 0;
+
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[4..], CgMagic);            // cg_magic
+    BinaryPrimitives.WriteUInt32LittleEndian(cg0[8..], now);               // cg_old_time
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[12..], cg);               // cg_cgx
+    BinaryPrimitives.WriteInt16LittleEndian(cg0[16..], 1);                 // cg_old_ncyl
+    BinaryPrimitives.WriteInt16LittleEndian(cg0[18..], (short)geom.Ipg);   // cg_old_niblk
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[20..], ndblk);             // cg_ndblk
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[24..], c.Ndir);            // cg_cs.cs_ndir
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[28..], c.Nbfree);          // cg_cs.cs_nbfree
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[32..], c.Nifree);          // cg_cs.cs_nifree
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[36..], c.Nffree);          // cg_cs.cs_nffree
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[40..], 0);                 // cg_rotor
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[44..], 0);                 // cg_frotor
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[48..], 0);                 // cg_irotor
+
+    // cg layout offsets (newfs initcg, Oflag=1).
+    var btotoff = 168;
+    var boff = btotoff + 4;                          // old_cpg(1) * sizeof(int32)
+    var iusedoff = boff + 2;                          // old_cpg(1)*old_nrpos(1)*sizeof(int16)
+    var freeoff = iusedoff + HowMany(geom.Ipg, 8);
+    var clustersumoff = RoundUp(freeoff + HowMany(geom.Fpg, 8) - 4, 4);
+    var clusteroff = clustersumoff + (ContigSumSize + 1) * 4;
+    var nextfreeoff = clusteroff + HowMany(geom.Fpg / Frag, 8);
+
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[84..], btotoff);           // cg_old_btotoff
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[88..], boff);              // cg_old_boff
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[92..], iusedoff);          // cg_iusedoff
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[96..], freeoff);           // cg_freeoff
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[100..], nextfreeoff);      // cg_nextfreeoff
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[104..], clustersumoff);    // cg_clustersumoff
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[108..], clusteroff);       // cg_clusteroff
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[112..], ndblk / Frag);     // cg_nclusterblks
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[116..], 0);                // cg_niblk (UFS2 only → 0)
+    BinaryPrimitives.WriteInt32LittleEndian(cg0[120..], 0);                // cg_initediblk (UFS2 only → 0)
+    BinaryPrimitives.WriteInt64LittleEndian(cg0[136..], now);              // cg_time
+
+    // Build the per-cg used-frag map.
+    var used = new bool[ndblk];
+    MarkCgMetadata(geom, cg, used);
+    if (cg == 0) MarkCg0Data(geom, used, cg0DataEndFrag);
+
+    // inode-used bitmap (bit i = inode (cgbase-relative) i used).
+    for (var ino = 0; ino < usedInodes && ino < geom.Ipg; ino++)
+      cg0[iusedoff + ino / 8] |= (byte)(1 << (ino % 8));
+
+    // free-frag bitmap (1 = free) for frags [0, ndblk).
+    for (var f = 0; f < ndblk; f++)
+      if (!used[f]) cg0[freeoff + f / 8] |= (byte)(1 << (f % 8));
+
+    // cg_frsum[i] = count of free-fragment runs of length i within blocks that are
+    // not wholly free (1 ≤ i < frag). Whole free blocks do not contribute.
+    var frsum = new int[Frag];                       // index 0 unused, 1..frag-1
+    var blocks = ndblk / Frag;
+    for (var blk = 0; blk < blocks; blk++) {
+      var baseFrag = blk * Frag;
+      var whole = true;
+      for (var f = 0; f < Frag; f++) if (used[baseFrag + f]) { whole = false; break; }
+      if (whole) continue;                            // whole free block → not a fragment run
+      var fragRun = 0;
+      for (var f = 0; f <= Frag; f++) {
+        var free = f < Frag && !used[baseFrag + f];
+        if (free) fragRun++;
+        else { if (fragRun > 0 && fragRun < Frag) frsum[fragRun]++; fragRun = 0; }
+      }
+    }
+    for (var i = 1; i < Frag; i++)
+      BinaryPrimitives.WriteInt32LittleEndian(cg0[(52 + i * 4)..], frsum[i]);
+
+    // cluster-free bitmap (whole free blocks) + cluster summary array. Each
+    // maximal run of whole free blocks of length L increments clustersum[min(L,
+    // contigsumsize)] by one.
+    var clusterSums = new int[ContigSumSize + 1];    // index 0 unused, 1..contigsumsize
+    var run = 0;
+    for (var blk = 0; blk < blocks; blk++) {
+      var baseFrag = blk * Frag;
+      var whole = true;
+      for (var f = 0; f < Frag; f++) if (used[baseFrag + f]) { whole = false; break; }
+      if (whole) {
+        cg0[clusteroff + blk / 8] |= (byte)(1 << (blk % 8));
+        run++;
+      } else {
+        AccumulateRun(clusterSums, run);
+        run = 0;
+      }
+    }
+    AccumulateRun(clusterSums, run);
+    for (var i = 1; i <= ContigSumSize; i++)
+      BinaryPrimitives.WriteInt32LittleEndian(cg0[(clustersumoff + i * 4)..], clusterSums[i]);
+
+    // ── superblock backup at cgbase + fs_sblkno ─────────────────────────────
+    var primarySb = disk.AsSpan(SuperblockOffset, SuperblockSize);
+    var backupOffset = (cgbase + SblkNo) * FragSize;
+    primarySb.CopyTo(disk.AsSpan(backupOffset, SuperblockSize));
+  }
+
+  // A maximal run of free whole blocks of length `run` contributes one to the
+  // bucket min(run, contigsumsize) (the top bucket counts runs ≥ contigsumsize).
+  private static void AccumulateRun(int[] clusterSums, int run) {
+    if (run <= 0) return;
+    clusterSums[Math.Min(run, ContigSumSize)]++;
+  }
+
+  private int TotalFreeBlocks(Geometry geom, int cg0DataEndFrag) {
+    var total = 0;
+    for (var cg = 0; cg < geom.Ncg; cg++) {
+      var c = ComputeCgCounts(geom, cg, 0, 0, cg0DataEndFrag);
+      total += c.Nbfree;
+    }
+    return total;
+  }
+
+  private int TotalFreeFrags(Geometry geom, int cg0DataEndFrag) {
+    var total = 0;
+    for (var cg = 0; cg < geom.Ncg; cg++) {
+      var c = ComputeCgCounts(geom, cg, 0, 0, cg0DataEndFrag);
+      total += c.Nffree;
+    }
+    return total;
+  }
+
+  // ── ufs1_dinode (128 bytes) ───────────────────────────────────────────────
   private static void WriteUfs1Inode(
     byte[] disk, long inodeByteOffset,
     uint mode, ushort nlink, ulong size, uint blocksUsed512,
-    ReadOnlySpan<int> directBlocks, int indirectBlock = 0
+    ReadOnlySpan<int> directBlocks, int indirectBlock = 0, uint dirDepth = 0
   ) {
     var di = disk.AsSpan((int)inodeByteOffset, InodeSize);
     di.Clear();
-    BinaryPrimitives.WriteUInt16LittleEndian(di[0..], (ushort)mode);         // di_mode
-    BinaryPrimitives.WriteUInt16LittleEndian(di[2..], nlink);                // di_nlink
-    BinaryPrimitives.WriteUInt32LittleEndian(di[4..], 0);                    // di_freelink/dirdepth
-    BinaryPrimitives.WriteUInt64LittleEndian(di[8..], size);                 // di_size
+    BinaryPrimitives.WriteUInt16LittleEndian(di[0..], (ushort)mode);       // di_mode
+    BinaryPrimitives.WriteUInt16LittleEndian(di[2..], nlink);              // di_nlink
+    BinaryPrimitives.WriteUInt32LittleEndian(di[4..], dirDepth);           // di_dirdepth (UFS dir depth from root)
+    BinaryPrimitives.WriteUInt64LittleEndian(di[8..], size);               // di_size
     var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-    BinaryPrimitives.WriteUInt32LittleEndian(di[16..], now);                 // di_atime
-    BinaryPrimitives.WriteUInt32LittleEndian(di[24..], now);                 // di_mtime
-    BinaryPrimitives.WriteUInt32LittleEndian(di[32..], now);                 // di_ctime
+    BinaryPrimitives.WriteUInt32LittleEndian(di[16..], now);               // di_atime
+    BinaryPrimitives.WriteUInt32LittleEndian(di[24..], now);               // di_mtime
+    BinaryPrimitives.WriteUInt32LittleEndian(di[32..], now);               // di_ctime
     for (var i = 0; i < MaxDirectBlocks && i < directBlocks.Length; i++)
       BinaryPrimitives.WriteInt32LittleEndian(di[(40 + i * 4)..], directBlocks[i]);
-    // di_ib[0] (first single-indirect) immediately follows the 12 direct blocks.
-    BinaryPrimitives.WriteInt32LittleEndian(di[(40 + MaxDirectBlocks * 4)..], indirectBlock);
-    BinaryPrimitives.WriteUInt32LittleEndian(di[104..], blocksUsed512);      // di_blocks
-    BinaryPrimitives.WriteUInt32LittleEndian(di[108..], 1);                  // di_gen
-    BinaryPrimitives.WriteUInt32LittleEndian(di[112..], 0);                  // di_uid
-    BinaryPrimitives.WriteUInt32LittleEndian(di[116..], 0);                  // di_gid
-    BinaryPrimitives.WriteUInt64LittleEndian(di[120..], 0);                  // di_modrev
+    BinaryPrimitives.WriteInt32LittleEndian(di[(40 + MaxDirectBlocks * 4)..], indirectBlock); // di_ib[0]
+    BinaryPrimitives.WriteUInt32LittleEndian(di[104..], blocksUsed512);    // di_blocks (512-sectors)
+    BinaryPrimitives.WriteUInt32LittleEndian(di[108..], 1);               // di_gen
+    BinaryPrimitives.WriteUInt32LittleEndian(di[112..], 0);               // di_uid
+    BinaryPrimitives.WriteUInt32LittleEndian(di[116..], 0);               // di_gid
   }
 
-  // ── directory entry ───────────────────────────────────────────────────
+  // ── directory entry ───────────────────────────────────────────────────────
   private static void WriteDirEntry(byte[] block, ref int pos, int ino, string name, byte dtype) {
     var nameBytes = Encoding.ASCII.GetBytes(name);
     var reclen = (8 + nameBytes.Length + 3) & ~3;
@@ -531,17 +692,5 @@ public sealed class UfsWriter {
     block[pos + 7] = (byte)nameBytes.Length;
     nameBytes.CopyTo(block, pos + 8);
     pos += reclen;
-  }
-
-  private static int FindLastEntryStart(byte[] block, int consumedLen) {
-    var p = 0;
-    var last = 0;
-    while (p < consumedLen) {
-      var rl = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(p + 4));
-      if (rl < 8 || rl > consumedLen - p) break;
-      last = p;
-      p += rl;
-    }
-    return last;
   }
 }

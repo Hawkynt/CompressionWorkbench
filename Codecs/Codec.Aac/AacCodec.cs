@@ -6,11 +6,16 @@ namespace Codec.Aac;
 /// Stream-level information about an AAC bitstream extracted from its first
 /// frame header (ADTS) or AudioSpecificConfig (raw / MP4).
 /// </summary>
-/// <param name="SampleRate">Output sample rate in Hz.</param>
+/// <param name="SampleRate">Output sample rate in Hz. Doubled when SBR (HE-AAC) is detected.</param>
 /// <param name="Channels">Number of decoded PCM channels (1 or 2 for AAC-LC mono/stereo).</param>
 /// <param name="Profile">AAC profile / object type as the integer value of <see cref="AacObjectType"/>.</param>
 /// <param name="DurationSamples">Estimated total decoded samples per channel (-1 if unknown).</param>
-public sealed record AacStreamInfo(int SampleRate, int Channels, int Profile, long DurationSamples);
+/// <param name="Sbr">
+/// True when a Spectral Band Replication (HE-AAC) header was detected. The reported
+/// <paramref name="SampleRate"/> is the doubled effective rate; the decoded PCM is
+/// still the AAC-LC core band (SBR audio reconstruction is gated, see <c>AacSbr</c>).
+/// </param>
+public sealed record AacStreamInfo(int SampleRate, int Channels, int Profile, long DurationSamples, bool Sbr = false);
 
 /// <summary>
 /// Top-level AAC-LC decoder. Wraps an <see cref="AacAdtsReader"/> for framing
@@ -107,11 +112,47 @@ public static class AacCodec {
     var channels = header.ChannelConfiguration is >= 1 and <= 2
       ? header.ChannelConfiguration
       : 2;
+
+    // Detect SBR by decoding the first frame ahead: the LC core is self-contained,
+    // so this is cheap and lets ReadStreamInfo report the effective (doubled) rate
+    // for HE-AAC without needing a second decode pass. The PCM itself is unchanged.
+    var sbr = DetectSbr(data, pos, header);
+
     return new AacStreamInfo(
-      SampleRate: header.SampleRate,
+      SampleRate: sbr ? header.SampleRate * 2 : header.SampleRate,
       Channels: channels,
       Profile: (int)header.ObjectType,
-      DurationSamples: samplesPerChannel);
+      DurationSamples: samplesPerChannel,
+      Sbr: sbr);
+  }
+
+  /// <summary>The base (core) sample rate of an AAC stream — never SBR-doubled.</summary>
+  public static int ReadCoreSampleRate(Stream input) {
+    ArgumentNullException.ThrowIfNull(input);
+    var data = ReadAll(input);
+    var pos = FindAdtsSync(data, 0);
+    if (pos < 0)
+      throw new InvalidDataException("AAC: no ADTS sync word found.");
+    return AacAdtsReader.ParseHeader(data, pos).SampleRate;
+  }
+
+  // Decodes only the first frame to learn whether an SBR header is present.
+  private static bool DetectSbr(byte[] data, int pos, AdtsHeader header) {
+    try {
+      if (header.ObjectType != AacObjectType.AacLc) return false;
+      if (header.ChannelConfiguration is < 1 or > 2) return false;
+      var decoder = new AacDecoder(header.ObjectType, header.SampleRateIndex, header.ChannelConfiguration);
+      var payloadOffset = pos + header.HeaderLengthBytes;
+      var payloadLength = header.FrameLength - header.HeaderLengthBytes;
+      if (payloadLength <= 0 || payloadOffset + payloadLength > data.Length) return false;
+      var reader = new AacBitReader(data, payloadOffset, payloadLength);
+      var blocks = header.NumberOfRawDataBlocks + 1;
+      for (var i = 0; i < blocks; ++i)
+        decoder.DecodeRawDataBlock(reader);
+      return decoder.SbrDetected;
+    } catch (Exception) {
+      return false;
+    }
   }
 
   /// <summary>

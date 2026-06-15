@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using System.Text;
 using Compression.Registry;
 
 namespace FileFormat.Mp4;
@@ -75,6 +76,23 @@ public sealed class Mp4FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         for (var f = 0; f < frameCount; ++f)
           entries.Add(($"frames/track_{t.Id:D2}/frame_{f + 1:D6}{frameExt}", "Frame", t.Samples[f].Data));
       }
+    }
+
+    // Best-effort per-audio-track decode → one mono WAV per speaker (Kind Channel).
+    // Audio traks keep their raw concatenated-sample entry above; here we add the
+    // decoded channels plus a metadata.ini note. Failures fall back to raw-only.
+    var audioTracks = Mp4AudioChannels.Decode(file);
+    if (audioTracks.Count > 0) {
+      var meta = new StringBuilder();
+      foreach (var at in audioTracks) {
+        meta.Append("track").Append(at.TrackId).Append("_codec=").AppendLine(at.Codec);
+        if (at.Channels != null)
+          foreach (var ch in at.Channels)
+            entries.Add(($"TRACK{at.TrackId}_{ch.Name}.wav", "Channel", ch.Wav));
+        else if (at.Reason != null)
+          meta.Append("track").Append(at.TrackId).Append("_decode=").AppendLine(at.Reason);
+      }
+      entries.Add(("metadata.ini", "Tag", Encoding.UTF8.GetBytes(meta.ToString())));
     }
     return entries;
   }

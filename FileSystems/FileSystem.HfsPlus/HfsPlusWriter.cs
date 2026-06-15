@@ -40,13 +40,16 @@ public sealed class HfsPlusWriter {
   /// </summary>
   /// <param name="caseSensitive">When <c>true</c>, emit the HFSX (<c>HX</c>) signature and
   /// binary key comparator so filenames compare case-sensitively. Default <c>false</c> (classic <c>H+</c>).</param>
-  /// <param name="journalEnabled">When <c>true</c>, set the <c>kHFSVolumeJournaledBit</c>
-  /// attribute and reserve space for a journal info block. Default <c>true</c>.
-  /// The minimal writer reserves the slot but doesn't emit a full journal file yet.</param>
-  /// <param name="journalSize">Journal size in bytes (8/16/32/64 MiB). Default 8 MiB.
-  /// Recorded in the volume header reserved word for forward compatibility.</param>
+  /// <param name="journalEnabled">Reserved for forward compatibility. A real journal
+  /// (journal info block + journal file) is not emitted yet, so the volume is written
+  /// as a non-journaled HFS+ volume regardless — exactly what <c>mkfs.hfsplus</c>
+  /// produces without <c>-J</c>, and what <c>fsck.hfsplus</c> accepts as clean.
+  /// Setting <c>kHFSVolumeJournaledBit</c> without a valid <c>journalInfoBlock</c> would
+  /// make fsck report "Volume header needs minor repair", so the bit stays clear until
+  /// journaling is genuinely implemented. Default <c>false</c>.</param>
+  /// <param name="journalSize">Journal size in bytes. Reserved for forward compatibility.</param>
   /// <param name="volumeName">Volume name used as the root directory key. Default "Untitled".</param>
-  public HfsPlusWriter(bool caseSensitive = false, bool journalEnabled = true,
+  public HfsPlusWriter(bool caseSensitive = false, bool journalEnabled = false,
       int journalSize = 8 * 1024 * 1024, string volumeName = "Untitled") {
     ArgumentNullException.ThrowIfNull(volumeName);
     this._caseSensitive = caseSensitive;
@@ -198,10 +201,12 @@ public sealed class HfsPlusWriter {
     var ver = this._caseSensitive ? HfsxVersion : HfsPlusVersion;
     BinaryPrimitives.WriteUInt16BigEndian(vh, sig);
     BinaryPrimitives.WriteUInt16BigEndian(vh[2..], ver);
-    // attributes: kHFSVolumeUnmountedBit (0x100); add kHFSVolumeJournaledBit (0x2000)
-    // when journaling is requested.
+    // attributes: kHFSVolumeUnmountedBit (0x100) marks a cleanly-unmounted volume.
+    // kHFSVolumeJournaledBit (0x2000) is intentionally NOT set: we don't emit a
+    // journalInfoBlock + journal yet, and a journaled bit without a valid journal
+    // makes fsck.hfsplus report "Volume header needs minor repair". A non-journaled
+    // HFS+ volume is fully standard and passes fsck cleanly.
     var attrs = 0x00000100u;
-    if (this._journalEnabled) attrs |= 0x00002000u;
     BinaryPrimitives.WriteUInt32BigEndian(vh[4..], attrs);
     // lastMountedVersion: ASCII "10.0" (the value mkfs.hfsplus writes).
     "10.0"u8.ToArray().CopyTo(vh[8..12]);

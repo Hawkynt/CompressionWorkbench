@@ -8,5 +8,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\FileSystem.D64\FileSystem.D64.csproj" />
   </ItemGroup>
 </Project>

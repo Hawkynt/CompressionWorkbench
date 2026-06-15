@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>FileFormat.Nelly</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
+    <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Nellymoser\Codec.Nellymoser.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Pcm\Codec.Pcm.csproj" />
+  </ItemGroup>
+
+</Project>

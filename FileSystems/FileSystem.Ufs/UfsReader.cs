@@ -97,7 +97,8 @@ public sealed class UfsReader : IDisposable {
 
       if (dino != 0 && namlen > 0 && pos + 8 + namlen <= dirData.Length) {
         var name = Encoding.ASCII.GetString(dirData, pos + 8, namlen);
-        if (name != "." && name != "..") {
+        // Skip "." / ".." and the synthetic newfs snapshot directory.
+        if (name != "." && name != ".." && !(basePath.Length == 0 && name == ".snap")) {
           var childInodeOff = InodeOffset((int)dino);
           var isDir = false;
           long size = 0;

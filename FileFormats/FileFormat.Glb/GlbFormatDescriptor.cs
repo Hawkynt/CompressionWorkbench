@@ -62,7 +62,7 @@ public sealed class GlbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.glb", "Track", blob),
+      ("FULL.glb", "Container", blob),
     };
     if (blob.Length < 12) return entries;
     if (blob[0] != 'g' || blob[1] != 'l' || blob[2] != 'T' || blob[3] != 'F') return entries;

@@ -1,24 +1,32 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Codec.Ay8910;
+using Codec.Pcm;
 using Compression.Registry;
-using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ay;
 
 /// <summary>
-/// Exposes a ZX Spectrum / Amstrad CPC AY-3-8910 music file (.ay) as a read-only
-/// pseudo-archive of <c>FULL.ay</c>, <c>metadata.ini</c> (author, misc, song names)
-/// and <c>songs/NN_{name}.bin</c> per-song data block. The big-endian, relative
-/// signed-16-bit pointer layout was recovered through binary inspection of the
-/// documented ZXAYEMUL file format. The AY chip is never emulated; every pointer is
-/// resolved relative to its own offset and clamped to the buffer, and a malformed
-/// file surfaces FULL + metadata(parse_status=partial) instead of throwing.
+/// Surfaces a ZX Spectrum / Amstrad CPC AY music file (<c>.ay</c>) as a metadata-rich
+/// pseudo-archive. An AY file carries Z80 memory blocks that an AY-3-8910/12 player drives; there
+/// is no audio to decode, so each song's loaded memory blocks are surfaced verbatim as Kind
+/// <c>Stream</c> blobs.
+/// <para>The header (magic <c>ZXAYEMUL</c>) is <b>big-endian</b> and pointer-chased: every
+/// 16-bit pointer is a <b>signed self-relative offset</b> measured from the byte position of the
+/// pointer field itself. Strings are NUL-terminated at the pointed location. The header points to
+/// an author string, a misc string and a song table; each song entry points to a song-name string
+/// and a song-data structure; the song-data structure points to a memory-block list whose entries
+/// are (u16 address, u16 length, u16 self-relative data offset), terminated by a zero address.</para>
+/// <para>Every pointer dereference is bounds-checked against the file; an out-of-range pointer is
+/// skipped rather than throwing, so a truncated or corrupt file degrades gracefully to whatever
+/// could be parsed (down to FULL-only).</para>
+/// Per song, memory blocks are surfaced as <c>songs/NN_&lt;name&gt;.bin</c>.
 /// </summary>
-public sealed class AyFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class AyFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 
   public string Id => "Ay";
-  public string DisplayName => "AY (ZX Spectrum / AY-3-8910)";
+  public string DisplayName => "ZX Spectrum AY";
   public FormatCategory Category => FormatCategory.Audio;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
@@ -27,123 +35,233 @@ public sealed class AyFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
   public IReadOnlyList<string> Extensions => [".ay"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    new("ZXAYEMUL"u8.ToArray(), Offset: 0, Confidence: 0.97),
+    new("ZXAYEMUL"u8.ToArray(), Confidence: 0.95),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
-    "ZX Spectrum / Amstrad AY-3-8910 music file surfaced as a read-only pseudo-archive " +
-    "(FULL + metadata + per-song data blocks); the AY chip is never emulated.";
+  public string Description => "ZX Spectrum AY music file; full file + header metadata + per-song memory blocks.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
-    Decompose(ReadAll(stream)).Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Data.LongLength, e.Data.LongLength, "stored", false, false, null, e.Kind)).ToList();
+  public List<ArchiveEntryInfo> List(Stream stream, string? password)
+    => AudioPseudoArchive.List(BuildEntries(stream));
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    foreach (var e in Decompose(ReadAll(stream))) {
-      if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, e.Data);
-    }
-  }
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+    => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
-  private static byte[] ReadAll(Stream stream) {
-    if (stream.CanSeek) stream.Position = 0;
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
+    => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
+
+  private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
-    return ms.ToArray();
-  }
+    var blob = ms.ToArray();
 
-  private readonly record struct Entry(string Name, byte[] Data, string Kind);
+    var entries = new List<AudioPseudoArchive.Entry> {
+      new("FULL.ay", "Container", blob),
+    };
 
-  private static List<Entry> Decompose(byte[] f) {
-    var entries = new List<Entry> { new("FULL.ay", f, "Track") };
-    var meta = new StringBuilder().AppendLine("[ay]");
-    var ok = false;
+    var renderNote = new StringBuilder();
+    AddRenderedChannels(blob, entries, renderNote);
 
     try {
-      if (f.Length >= 0x14 && f.AsSpan(0, 8).SequenceEqual("ZXAYEMUL"u8)) {
-        // Header (big-endian, all pointers are signed-16 relative to their offset):
-        //  0x08 FileVersion, 0x09 PlayerVersion,
-        //  0x0A rel ptr SpecialPlayer, 0x0C rel ptr Author,
-        //  0x0E rel ptr Misc, 0x10 NumOfSongs (u8), 0x11 FirstSong (u8),
-        //  0x12 rel ptr SongStructure.
-        meta.Append("file_version = ").Append(f[0x08]).Append('\n');
-        meta.Append("player_version = ").Append(f[0x09]).Append('\n');
+      Parse(blob, entries, renderNote.ToString());
+    } catch {
+      // Any parse failure degrades to FULL-only.
+    }
 
-        var author = ReadRelString(f, 0x0C);
-        var misc = ReadRelString(f, 0x0E);
-        if (author.Length > 0) meta.Append("author = ").Append(author).Append('\n');
-        if (misc.Length > 0) meta.Append("misc = ").Append(misc).Append('\n');
-
-        var numSongs = f[0x10];
-        var firstSong = f[0x11];
-        meta.Append("num_songs = ").Append(numSongs).Append('\n');
-        meta.Append("first_song = ").Append(firstSong).Append('\n');
-
-        var songStruct = ResolveRel(f, 0x12);
-        // SongStructure: per song, 4 bytes (rel ptr SongName @0, rel ptr SongData @2).
-        if (songStruct >= 0 && numSongs > 0) {
-          for (var s = 0; s < numSongs; ++s) {
-            var entryOff = songStruct + s * 4;
-            if (!InRange(f, entryOff, 4)) break;
-            var name = ReadRelString(f, entryOff);
-            if (name.Length > 0) meta.Append($"song_{s + 1:D2}_name = ").Append(name).Append('\n');
-
-            // SongData: 14-byte block then per-channel pointers; we surface a
-            // bounded slice from the SongData pointer up to the next song's data
-            // (or EOF) as the raw per-song block.
-            var dataPtr = ResolveRel(f, entryOff + 2);
-            if (dataPtr < 0 || !InRange(f, dataPtr, 1)) continue;
-            var nextPtr = f.Length;
-            if (s + 1 < numSongs && InRange(f, songStruct + (s + 1) * 4 + 2, 2)) {
-              var np = ResolveRel(f, songStruct + (s + 1) * 4 + 2);
-              if (np > dataPtr && np <= f.Length) nextPtr = np;
-            }
-            var take = Math.Min(nextPtr - dataPtr, f.Length - dataPtr);
-            if (take <= 0) continue;
-            var safe = name.Length == 0 ? "song" : Sanitize(name);
-            entries.Add(new($"songs/{s + 1:D2}_{safe}.bin", f.AsSpan(dataPtr, take).ToArray(), "Track"));
-          }
-        }
-        ok = true;
-      }
-    } catch { /* fall through to partial */ }
-
-    if (!ok) meta.Append("parse_status = partial\n");
-    entries.Insert(1, new("metadata.ini", Encoding.UTF8.GetBytes(meta.ToString()), "Tag"));
     return entries;
   }
 
-  // Resolve a big-endian signed-16 relative pointer stored at <paramref name="off"/>.
-  private static int ResolveRel(byte[] f, int off) {
-    if (!InRange(f, off, 2)) return -1;
-    var rel = (short)BinaryPrimitives.ReadUInt16BigEndian(f.AsSpan(off, 2));
-    if (rel == 0) return -1;
-    var target = off + rel;
-    return InRange(f, target, 1) ? target : -1;
+  /// <summary>
+  /// Plays the first song through the Z80 + AY-3-8910 player and surfaces rendered
+  /// <c>LEFT.wav</c> / <c>RIGHT.wav</c> (Kind <c>Channel</c>, 44.1 kHz, 30 s cap). Any failure
+  /// (unparsable song, no init) degrades silently to FULL + metadata only.
+  /// </summary>
+  private static void AddRenderedChannels(byte[] blob, List<AudioPseudoArchive.Entry> entries, StringBuilder note) {
+    try {
+      var player = new AyPlayer(blob, songIndex: 0);
+      const double seconds = 30.0;
+      var stereo = player.Render(seconds);
+      var (left, right) = DeinterleaveStereo(stereo);
+      entries.Add(new("LEFT.wav", "Channel", PcmCodec.ToWavBlob(left, 1, Ay8910Chip.OutputSampleRate, 16), "pcm"));
+      entries.Add(new("RIGHT.wav", "Channel", PcmCodec.ToWavBlob(right, 1, Ay8910Chip.OutputSampleRate, 16), "pcm"));
+      note.AppendLine("rendered=LEFT.wav,RIGHT.wav");
+      note.AppendLine("rendered_seconds=30");
+      note.AppendLine("rendered_rate=44100");
+      note.AppendLine("rendered_chip=AY-3-8910");
+      note.AppendLine("rendered_stereo=ABC");
+    } catch {
+      // Undecodable — FULL + metadata only.
+    }
   }
 
-  private static string ReadRelString(byte[] f, int off) {
-    var target = ResolveRel(f, off);
-    if (target < 0) return "";
-    var sb = new StringBuilder();
-    for (var i = target; i < f.Length; ++i) {
-      var b = f[i];
-      if (b == 0) break;
-      if (b is >= 0x20 and < 0x7F) sb.Append((char)b);
+  private static (byte[] Left, byte[] Right) DeinterleaveStereo(short[] stereo) {
+    var frames = stereo.Length / 2;
+    var left = new byte[frames * 2];
+    var right = new byte[frames * 2];
+    for (var f = 0; f < frames; ++f) {
+      BinaryPrimitives.WriteInt16LittleEndian(left.AsSpan(f * 2), stereo[f * 2]);
+      BinaryPrimitives.WriteInt16LittleEndian(right.AsSpan(f * 2), stereo[f * 2 + 1]);
     }
-    return sb.ToString().Trim();
+    return (left, right);
+  }
+
+  private static void Parse(byte[] blob, List<AudioPseudoArchive.Entry> entries, string renderNote) {
+    if (blob.Length < 0x14)
+      return;
+
+    var fileVersion = blob[0x08];
+    var playerVersion = blob[0x09];
+    var pAuthor = ReadPointer(blob, 0x0C);
+    var pMisc = ReadPointer(blob, 0x0E);
+    var numSongs = blob[0x10] + 1;
+    var firstSong = blob[0x11] + 1;
+    var pSongs = ReadPointer(blob, 0x12);
+
+    var sb = new StringBuilder();
+    sb.AppendLine("[ay]");
+    sb.AppendLine($"file_version={fileVersion}");
+    sb.AppendLine($"player_version={playerVersion}");
+    sb.AppendLine($"num_songs={numSongs}");
+    sb.AppendLine($"first_song={firstSong}");
+    AppendField(sb, "author", ReadNulString(blob, pAuthor));
+    AppendField(sb, "misc", ReadNulString(blob, pMisc));
+
+    if (pSongs >= 0 && pSongs + numSongs * 4 <= blob.Length) {
+      for (var i = 0; i < numSongs; ++i) {
+        var entryPos = pSongs + i * 4;
+        var pName = ReadPointer(blob, entryPos);
+        var pData = ReadPointer(blob, entryPos + 2);
+        var name = ReadNulString(blob, pName);
+        sb.AppendLine($"song{i}_name={name}");
+        ExtractSongBlocks(blob, pData, i, name, entries);
+      }
+    }
+
+    if (renderNote.Length > 0)
+      sb.Append(renderNote);
+
+    // Surface every subtune as a lazily-rendered stereo TRACK_nn_LEFT/RIGHT.wav pair. Only added
+    // when the default render succeeded (a tune we cannot drive yields no per-track audio either).
+    var trackEntries = BuildTrackEntries(blob, numSongs, renderNote.Length > 0, sb);
+
+    entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
+    entries.AddRange(trackEntries);
+  }
+
+  /// <summary>Above this count tracks are still all surfaced but a note records the overflow.</summary>
+  private const int MaxSurfacedTracks = 64;
+
+  /// <summary>The exact byte size of one mono 16-bit side WAV rendered for the 30 s cap.</summary>
+  private static long MonoWavSize() => 44L + (long)(RenderSeconds * Ay8910Chip.OutputSampleRate) * 2;
+
+  private const double RenderSeconds = 30.0;
+
+  /// <summary>
+  /// Builds lazily-rendered stereo TRACK_nn_LEFT/RIGHT.wav pairs for every subtune (1-based,
+  /// zero-padded). Each pair renders that song through the Z80 + AY player on extraction.
+  /// </summary>
+  private static List<AudioPseudoArchive.Entry> BuildTrackEntries(byte[] blob, int numSongs, bool renderable, StringBuilder sb) {
+    var result = new List<AudioPseudoArchive.Entry>();
+    if (!renderable || numSongs <= 0)
+      return result;
+
+    sb.AppendLine($"total_tracks={numSongs}");
+    if (numSongs > MaxSurfacedTracks)
+      sb.AppendLine($"tracks_note=all {numSongs} subtunes surfaced (exceeds {MaxSurfacedTracks})");
+
+    var width = Math.Max(2, numSongs.ToString().Length);
+    var size = MonoWavSize();
+    for (var s = 0; s < numSongs; ++s) {
+      var song = s;                 // 0-based song index
+      var no = (s + 1).ToString().PadLeft(width, '0');
+      var lazyPair = new Lazy<(byte[] Left, byte[] Right)>(() => RenderTrackPair(blob, song));
+      result.Add(AudioPseudoArchive.Entry.Lazy(
+        $"TRACK_{no}_LEFT.wav", "Track", () => lazyPair.Value.Left, size, "render"));
+      result.Add(AudioPseudoArchive.Entry.Lazy(
+        $"TRACK_{no}_RIGHT.wav", "Track", () => lazyPair.Value.Right, size, "render"));
+    }
+    return result;
+  }
+
+  /// <summary>Renders one 0-based subtune to a per-side LEFT/RIGHT WAV pair.</summary>
+  private static (byte[] Left, byte[] Right) RenderTrackPair(byte[] blob, int song) {
+    var player = new AyPlayer(blob, songIndex: song);
+    var stereo = player.Render(RenderSeconds);
+    var (left, right) = DeinterleaveStereo(stereo);
+    return (
+      PcmCodec.ToWavBlob(left, 1, Ay8910Chip.OutputSampleRate, 16),
+      PcmCodec.ToWavBlob(right, 1, Ay8910Chip.OutputSampleRate, 16));
+  }
+
+  /// <summary>
+  /// Dereferences a song-data structure and walks its memory-block list. The structure's last
+  /// pointer (at +4) is <c>pAddresses</c>, the block list; each block is
+  /// (u16 address, u16 length, u16 self-relative data offset), terminated by address == 0.
+  /// </summary>
+  private static void ExtractSongBlocks(byte[] blob, int pData, int songIndex, string name, List<AudioPseudoArchive.Entry> entries) {
+    // Song-data structure: u8 chanA,B,C,D | u16 noise | u16 pPoints | u16 pAddresses.
+    if (pData < 0 || pData + 14 > blob.Length)
+      return;
+
+    var pAddresses = ReadPointer(blob, pData + 12);
+    if (pAddresses < 0)
+      return;
+
+    var safeName = Sanitize(name);
+    var block = 0;
+    var pos = pAddresses;
+    while (pos + 6 <= blob.Length) {
+      var address = BinaryPrimitives.ReadUInt16BigEndian(blob.AsSpan(pos));
+      var length = BinaryPrimitives.ReadUInt16BigEndian(blob.AsSpan(pos + 2));
+      if (address == 0 && length == 0)
+        break;
+
+      var dataOffset = ReadPointer(blob, pos + 4);
+      if (dataOffset >= 0 && length > 0 && dataOffset + length <= blob.Length) {
+        var payload = blob[dataOffset..(dataOffset + length)];
+        var label = string.IsNullOrEmpty(safeName) ? $"song{songIndex:D2}" : $"{songIndex:D2}_{safeName}";
+        entries.Add(new($"songs/{label}_{address:X4}.bin", "Stream", payload));
+      }
+
+      ++block;
+      pos += 6;
+      if (block > 256)
+        break; // defensive cap against a cyclic/garbage list.
+    }
+  }
+
+  /// <summary>
+  /// Reads a big-endian signed self-relative pointer at <paramref name="position"/> and returns
+  /// the absolute file offset it targets, or -1 when the field or target is out of range.
+  /// </summary>
+  private static int ReadPointer(byte[] blob, int position) {
+    if (position < 0 || position + 2 > blob.Length)
+      return -1;
+    var rel = (short)BinaryPrimitives.ReadUInt16BigEndian(blob.AsSpan(position));
+    if (rel == 0)
+      return -1; // null pointer
+    var target = position + rel;
+    return target >= 0 && target < blob.Length ? target : -1;
+  }
+
+  private static string ReadNulString(byte[] blob, int offset) {
+    if (offset < 0 || offset >= blob.Length)
+      return string.Empty;
+    var end = offset;
+    while (end < blob.Length && blob[end] != 0)
+      ++end;
+    return Encoding.Latin1.GetString(blob, offset, end - offset).Trim();
   }
 
   private static string Sanitize(string name) {
-    var sb = new StringBuilder(name.Length);
-    foreach (var c in name)
-      sb.Append(char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_');
-    var s = sb.ToString().Trim('_');
-    return s.Length == 0 ? "song" : s;
+    var chars = name.Where(c => char.IsLetterOrDigit(c) || c is '_' or '-').ToArray();
+    return new string(chars);
   }
 
-  private static bool InRange(byte[] f, int off, int len) =>
-    off >= 0 && len >= 0 && (long)off + len <= f.Length;
+  private static void AppendField(StringBuilder sb, string key, string value) {
+    value = value.Trim();
+    if (value.Length > 0)
+      sb.AppendLine($"{key}={value}");
+  }
 }

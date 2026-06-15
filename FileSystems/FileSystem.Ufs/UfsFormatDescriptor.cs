@@ -62,7 +62,8 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 16L * 1024 * 1024;
   public string AcceptedInputsDescription =>
-    "UFS1 filesystem image; single cylinder group, flat root, direct-block files (< 96 KB).";
+    "UFS1 filesystem image; multiple cylinder groups, nested directories, " +
+    "direct- plus single-indirect-block files (up to ~16 MB each).";
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     reason = null;
     return true;

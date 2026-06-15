@@ -3,6 +3,8 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
+using Codec.Pcm;
+using Codec.WavPack;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -13,6 +15,12 @@ namespace FileFormat.WavPack;
 /// its constituent blocks. Each 32-byte <c>wvpk</c> block header plus its body
 /// is extracted verbatim as <c>block_NNNN.wv</c>; a <c>metadata.ini</c> lists
 /// the top-level stream parameters (sample count, rate, channels, bit depth).
+/// When the stream is a lossless WavPack v4/v5 file the decoder can handle, the
+/// listing also gains one playable mono WAV per speaker (<c>LEFT.wav</c>/
+/// <c>RIGHT.wav</c>/<c>MONO.wav</c>/…, Kind <c>Channel</c>, method <c>pcm</c>),
+/// named per <see cref="ChannelLayout"/>. The decode is best-effort: hybrid/lossy,
+/// float, DSD or otherwise unsupported streams leave the block/metadata view
+/// intact rather than failing.
 /// </summary>
 public sealed class WavPackFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   public string Id => "WavPack";
@@ -30,7 +38,7 @@ public sealed class WavPackFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Classic;
-  public string Description => "WavPack hybrid lossless; each wvpk block surfaced verbatim.";
+  public string Description => "WavPack hybrid lossless; wvpk blocks verbatim + decoded per-channel PCM (lossless v4/v5).";
 
   private const int HeaderSize = 32;
 
@@ -38,7 +46,8 @@ public sealed class WavPackFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
       OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
-      Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null,
+      Method: e.Kind == "Channel" ? "pcm" : "stored",
+      IsDirectory: false, IsEncrypted: false, LastModified: null,
       Kind: e.Kind)).ToList();
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -94,7 +103,49 @@ public sealed class WavPackFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     if (first.HasValue)
       entries.Add(("metadata.ini", "Metadata", Encoding.UTF8.GetBytes(BuildMetadata(first.Value))));
 
+    AddChannelEntries(file, entries);
+
     return entries;
+  }
+
+  /// <summary>
+  /// Best-effort decode-and-split. The codec handles lossless WavPack v4/v5 and
+  /// throws <see cref="NotSupportedException"/> for hybrid/float/DSD and
+  /// <see cref="InvalidDataException"/> for malformed input; in every failure
+  /// case the block/metadata listing is left untouched.
+  /// </summary>
+  private static void AddChannelEntries(byte[] file, List<(string Name, string Kind, byte[] Data)> entries) {
+    try {
+      using var probe = new MemoryStream(file, writable: false);
+      var info = WavPackCodec.ReadStreamInfo(probe);
+
+      using var src = new MemoryStream(file, writable: false);
+      using var pcm = new MemoryStream();
+      WavPackCodec.Decompress(src, pcm);
+      var pcmBytes = pcm.ToArray();
+
+      // Float streams decode to raw 32-bit IEEE floats and surface as RIFF float
+      // WAVs (format code 3); integer streams stay format code 1.
+      if (info.IsFloat) {
+        if (info.Channels <= 1) {
+          entries.Add(("MONO.wav", "Channel",
+            PcmCodec.ToWavBlob(pcmBytes, 1, info.SampleRate, info.BitsPerSample, formatCode: 3)));
+        } else {
+          foreach (var (name, wav) in PcmCodec.SplitInterleavedFloat(
+              pcmBytes, info.Channels, info.SampleRate, info.BitsPerSample))
+            entries.Add(($"{name}.wav", "Channel", wav));
+        }
+      } else if (info.Channels <= 1) {
+        entries.Add(("MONO.wav", "Channel",
+          PcmCodec.ToWavBlob(pcmBytes, 1, info.SampleRate, info.BitsPerSample, formatCode: 1)));
+      } else {
+        foreach (var (name, wav) in PcmCodec.SplitInterleavedPcm(
+            pcmBytes, info.Channels, info.SampleRate, info.BitsPerSample))
+          entries.Add(($"{name}.wav", "Channel", wav));
+      }
+    } catch (Exception) {
+      // Graceful fallback: keep the block/metadata listing only.
+    }
   }
 
   private readonly record struct ParsedHeader(

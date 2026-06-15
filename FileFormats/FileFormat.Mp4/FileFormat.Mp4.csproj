@@ -5,7 +5,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Compression.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Pcm\Codec.Pcm.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Aac\Codec.Aac.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Mp3\Codec.Mp3.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Ac3\Codec.Ac3.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Flac\Codec.Flac.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Alac\Codec.Alac.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Opus\Codec.Opus.csproj" />
   </ItemGroup>
 
 </Project>

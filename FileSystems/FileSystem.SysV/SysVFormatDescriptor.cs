@@ -50,8 +50,9 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<string> Extensions => [".s5", ".sysv"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // 0xFD187E20 little-endian at file offset 1024+504 = 1528 (0x5F8)
-    new([0x20, 0x7E, 0x18, 0xFD], Offset: 1528, Confidence: 0.90),
+    // 0xFD187E20 little-endian at file offset 512+504 = 1016 (0x3F8) — the
+    // superblock sits at block 0 + BLOCK_SIZE/2, where the Linux sysv driver reads it.
+    new([0x20, 0x7E, 0x18, 0xFD], Offset: 1016, Confidence: 0.90),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;

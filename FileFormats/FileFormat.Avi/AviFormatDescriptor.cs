@@ -82,8 +82,11 @@ public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var parsed = new AviReader().Read(blob);
 
     var entries = new List<(string, string, byte[])> {
-      ("FULL.avi", "Track", blob),
+      ("FULL.avi", "Container", blob),
     };
+
+    // Per-audio-track codec/decode notes, surfaced in metadata.ini below.
+    var trackCodecNotes = new List<(int Index, string Codec, string? Reason)>();
 
     for (var i = 0; i < parsed.Tracks.Count; ++i) {
       var t = parsed.Tracks[i];
@@ -113,6 +116,15 @@ public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
           var ext = AudioFormatTagToExtension(t.AudioFormatTag);
           entries.Add(($"track_{i:D2}_audio{ext}", "Track", t.Data));
         }
+
+        // Best-effort per-channel decode: surface each speaker as a playable mono WAV
+        // (Kind Channel). Any unsupported tag or decode failure keeps the raw track above
+        // and records a reason in metadata.ini. The raw entry is never removed.
+        var decode = AviAudioChannels.Decode(t);
+        trackCodecNotes.Add((i, decode.Codec, decode.Reason));
+        if (decode.Channels != null)
+          foreach (var ch in decode.Channels)
+            entries.Add(($"TRACK{i}_{ch.Name}.wav", "Channel", ch.Wav));
       } else {
         entries.Add(($"track_{i:D2}_{t.StreamType}.bin", "Track", t.Data));
       }
@@ -137,6 +149,12 @@ public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         info.AppendLine($"track_{i}.sample_rate={t.AudioSampleRate}");
         info.AppendLine($"track_{i}.bits_per_sample={t.AudioBitsPerSample}");
         info.AppendLine($"track_{i}.format_tag=0x{t.AudioFormatTag:X4}");
+        var note = trackCodecNotes.FirstOrDefault(n => n.Index == i);
+        if (note.Codec != null) {
+          info.AppendLine($"track{i}_codec={note.Codec}");
+          if (note.Reason != null)
+            info.AppendLine($"track{i}_decode={note.Reason}");
+        }
       }
     }
     entries.Add(("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));

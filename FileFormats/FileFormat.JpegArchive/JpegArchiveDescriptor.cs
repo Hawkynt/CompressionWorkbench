@@ -64,7 +64,7 @@ public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOpe
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.jpg", "Track", blob),
+      ("FULL.jpg", "Container", blob),
     };
 
     // Walk APP markers.

@@ -66,32 +66,124 @@ public class Mp3CodecTests {
     Assert.That(hdr.SamplesPerFrame, Is.EqualTo(576), "MPEG-2 LSF Layer III = 576 samples");
   }
 
-  // ──────────── 2. Layer I / II rejection ────────────
+  // ──────────── 2. Layer I / II header tables ────────────
 
-  /// <summary>Layer I header (layer bits = 11). Decoder must throw <see cref="NotSupportedException"/>.</summary>
+  /// <summary>MPEG-1 Layer II 128 kbps 48 kHz mono header (<c>FF FD 84 C0</c>) — table lookups.</summary>
   [Test]
-  public void Decompress_LayerI_ThrowsNotSupported() {
-    // MPEG-1 Layer I, 128 kbps, 44.1 kHz, stereo, no CRC.
-    // byte1 = 1111 1111 → 0xFF; byte2 = sync(0xE0) + version(11)+layer(11)+prot(1) = 1111 1111 = 0xFF
-    // byte2 = 0xFF: 111 11 11 1 → version=11, layer=11 (Layer I), prot=1
-    // bitrate idx 1001 = 128k, samplerate 00 = 44.1 kHz, no padding/private = 0x90
-    var bytes = new byte[] { 0xFF, 0xFF, 0x90, 0x00 };
+  public void Parse_Mpeg1LayerII_128k_48000_Mono_HeaderFieldsCorrect() {
+    var bytes = new byte[] { 0xFF, 0xFD, 0x84, 0xC0 };
+    var hdr = Mp3FrameHeader.Parse(bytes);
 
-    using var input = new MemoryStream(bytes);
-    using var output = new MemoryStream();
-    Assert.Throws<NotSupportedException>(() => Mp3Codec.Decompress(input, output));
+    Assert.Multiple(() => {
+      Assert.That(hdr.IsMpeg1, Is.True);
+      Assert.That(hdr.Layer, Is.EqualTo(2), "Layer should be II");
+      Assert.That(hdr.HasCrc, Is.False);
+      Assert.That(hdr.BitrateKbps, Is.EqualTo(128));
+      Assert.That(hdr.SampleRateHz, Is.EqualTo(48000));
+      Assert.That(hdr.IsMono, Is.True);
+      Assert.That(hdr.SamplesPerFrame, Is.EqualTo(1152), "MPEG-1 Layer II = 1152 samples/frame");
+      // 1152 * 128000 / 48000 / 8 = 384 bytes, no padding.
+      Assert.That(hdr.FrameLengthBytes, Is.EqualTo(384));
+    });
   }
 
-  /// <summary>Layer II header (layer bits = 10). Decoder must throw <see cref="NotSupportedException"/>.</summary>
+  /// <summary>MPEG-1 Layer I 128 kbps 44.1 kHz stereo header — Layer I bitrate table + 384 samples/frame.</summary>
   [Test]
-  public void Decompress_LayerII_ThrowsNotSupported() {
-    // MPEG-1 Layer II, 128 kbps, 44.1 kHz, stereo, no CRC.
-    // byte2 = 0xFD = 1111 1101 → version=11, layer=10 (Layer II), prot=1
-    var bytes = new byte[] { 0xFF, 0xFD, 0x90, 0x00 };
+  public void Parse_Mpeg1LayerI_128k_44100_Stereo_HeaderFieldsCorrect() {
+    // byte2 = 0xFF → version=11, layer=11 (Layer I), prot=1; bitrate idx 1001, samplerate 00.
+    var bytes = new byte[] { 0xFF, 0xFF, 0x90, 0x00 };
+    var hdr = Mp3FrameHeader.Parse(bytes);
 
-    using var input = new MemoryStream(bytes);
+    Assert.Multiple(() => {
+      Assert.That(hdr.Layer, Is.EqualTo(1), "Layer should be I");
+      Assert.That(hdr.BitrateKbps, Is.EqualTo(288), "MPEG-1 Layer I index 9 = 288 kbps");
+      Assert.That(hdr.SampleRateHz, Is.EqualTo(44100));
+      Assert.That(hdr.SamplesPerFrame, Is.EqualTo(384), "Layer I = 384 samples/frame");
+    });
+  }
+
+  // ──────────── 2b. Layer II / I silence decode ────────────
+
+  /// <summary>
+  /// A hand-built MPEG-1 Layer II 48 kHz mono frame with all bit allocations zero
+  /// (silence) must decode to exactly 1152 samples of digital silence per frame —
+  /// two frames → 2304 zero samples, no exception.
+  /// </summary>
+  [Test]
+  public void Decompress_LayerII_MonoSilence_TwoFrames_YieldsSilence() {
+    var frame = Mp3SyntheticFrames.BuildLayerIIMonoSilenceFrame();
+    var stream = Concat(frame, frame);
+
+    using var input = new MemoryStream(stream);
     using var output = new MemoryStream();
-    Assert.Throws<NotSupportedException>(() => Mp3Codec.Decompress(input, output));
+    Assert.DoesNotThrow(() => Mp3Codec.Decompress(input, output));
+
+    var pcm = output.ToArray();
+    Assert.That(pcm.Length, Is.EqualTo(2 * 1152 * 2), "2 frames × 1152 samples × 2 bytes (mono 16-bit)");
+    Assert.That(pcm.All(b => b == 0), Is.True, "All-zero allocation → digital silence");
+  }
+
+  /// <summary>A stereo Layer II silence frame decodes to 1152 frames × 2 channels of silence.</summary>
+  [Test]
+  public void Decompress_LayerII_StereoSilence_YieldsSilence() {
+    var frame = Mp3SyntheticFrames.BuildLayerIIStereoSilenceFrame();
+
+    using var input = new MemoryStream(frame);
+    using var output = new MemoryStream();
+    Assert.DoesNotThrow(() => Mp3Codec.Decompress(input, output));
+
+    var pcm = output.ToArray();
+    Assert.That(pcm.Length, Is.EqualTo(1152 * 2 * 2), "1152 samples × 2 channels × 2 bytes");
+    Assert.That(pcm.All(b => b == 0), Is.True);
+  }
+
+  /// <summary>
+  /// A Layer II frame with a single active subband (a non-zero quantized sample) must
+  /// produce non-zero PCM output and must not throw.
+  /// </summary>
+  [Test]
+  public void Decompress_LayerII_OneActiveSubband_ProducesNonZeroOutput() {
+    var frame = Mp3SyntheticFrames.BuildLayerIIMonoOneActiveSubbandFrame();
+
+    using var input = new MemoryStream(frame);
+    using var output = new MemoryStream();
+    Assert.DoesNotThrow(() => Mp3Codec.Decompress(input, output));
+
+    var pcm = output.ToArray();
+    Assert.That(pcm.Length, Is.EqualTo(1152 * 2));
+    Assert.That(pcm.Any(b => b != 0), Is.True, "An active subband must yield non-zero PCM");
+  }
+
+  /// <summary>A Layer I 48 kHz mono silence frame decodes to 384 samples of silence without throwing.</summary>
+  [Test]
+  public void Decompress_LayerI_MonoSilence_YieldsSilence() {
+    var frame = Mp3SyntheticFrames.BuildLayerIMonoSilenceFrame();
+
+    using var input = new MemoryStream(frame);
+    using var output = new MemoryStream();
+    Assert.DoesNotThrow(() => Mp3Codec.Decompress(input, output));
+
+    var pcm = output.ToArray();
+    Assert.That(pcm.Length, Is.EqualTo(384 * 2), "Layer I = 384 samples/frame (mono 16-bit)");
+    Assert.That(pcm.All(b => b == 0), Is.True);
+  }
+
+  /// <summary>A truncated Layer II frame must stop gracefully (no exception) per the resync semantics.</summary>
+  [Test]
+  public void Decompress_LayerII_TruncatedFrame_DoesNotThrow() {
+    var frame = Mp3SyntheticFrames.BuildLayerIIMonoOneActiveSubbandFrame();
+    var truncated = frame.Take(frame.Length / 2).ToArray();
+
+    using var input = new MemoryStream(truncated);
+    using var output = new MemoryStream();
+    Assert.DoesNotThrow(() => Mp3Codec.Decompress(input, output));
+  }
+
+  private static byte[] Concat(byte[] a, byte[] b) {
+    var r = new byte[a.Length + b.Length];
+    a.CopyTo(r, 0);
+    b.CopyTo(r, a.Length);
+    return r;
   }
 
   // ──────────── 3. Reserved / invalid headers ────────────

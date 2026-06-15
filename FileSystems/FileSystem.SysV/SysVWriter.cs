@@ -86,7 +86,7 @@ public sealed class SysVWriter : IDisposable {
   internal const int DirectZones = 10;
   internal const int FreeCacheSize = 50;         // s_free[50]
   internal const int InodeCacheSize = 100;       // s_inode[100]
-  internal const int SuperblockOffset = 1024;    // Block 1
+  internal const int SuperblockOffset = 512;     // block 0 + BLOCK_SIZE/2, where the Linux sysv driver reads it
   internal const int FirstInodeBlock = 2;        // Block 2 onward
   internal const uint MagicSysV = 0xFD187E20;
   internal const uint TypeCode1024 = 2;          // s_type = 2 → 1024-byte blocks
@@ -284,9 +284,12 @@ public sealed class SysVWriter : IDisposable {
       freeInodes.Add((ushort)ino);
     var totalFreeInodes = ilistCapacity - totalInodes;
 
-    // 9. Write the superblock.
+    // 9. Write the superblock. s_isize is the FIRST DATA ZONE (block number of
+    // the first data block = FirstInodeBlock + ilist blocks), not the ilist
+    // size — the Linux sysv driver reads it as s_firstdatazone and rejects the
+    // mount if it is below s_firstinodezone (=2).
     WriteSuperblock(disk,
-      isize: (ushort)ilistBlocks,
+      isize: (ushort)firstDataBlock,
       fsize: (uint)totalBlocks,
       sNFree: sNFree,
       sFree: sFree,

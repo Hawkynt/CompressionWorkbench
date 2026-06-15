@@ -65,7 +65,7 @@ public sealed class AvifFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       throw new InvalidDataException($"AVIF: ftyp brand {reader.MajorBrand} not accepted.");
 
     var entries = new List<(string, string, byte[])> {
-      ("FULL.avif", "Track", blob),
+      ("FULL.avif", "Container", blob),
     };
 
     var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "FULL.avif" };

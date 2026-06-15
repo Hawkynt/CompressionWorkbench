@@ -3,17 +3,20 @@ using System.Buffers.Binary;
 using System.Text;
 using Codec.Pcm;
 using Compression.Registry;
+using FileFormat.Wav;
 
 namespace FileFormat.Au;
 
 /// <summary>
 /// Exposes a Sun/NeXT <c>.au</c> / <c>.snd</c> file as an archive of
-/// <c>FULL.au</c>, one WAV per channel (after decoding μ-law/A-law/PCM), and
+/// <c>FULL.au</c>, one WAV per channel (after decoding μ-law/A-law/PCM,
+/// G.721 (G.726 @ 32 kbit/s), G.723 3-bit (G.726 @ 24 kbit/s) and 5-bit
+/// (G.726 @ 40 kbit/s) ADPCM, and G.722 sub-band ADPCM), and
 /// a <c>metadata.ini</c> carrying the encoding type, sample rate and any
 /// annotation string.
 /// </summary>
 public sealed class AuFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-  IArchiveInMemoryExtract, IArchiveWriteConstraints {
+  IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
 
   public string Id => "Au";
   public string DisplayName => "Sun/NeXT .au (.snd)";
@@ -71,6 +74,56 @@ public sealed class AuFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     return false;
   }
 
+  // ── IArchiveCreatable: assemble a multi-channel .au from per-channel mono WAVs ──
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var fileList = FormatHelpers.FilesOnly(inputs).ToList();
+
+    var full = fileList.FirstOrDefault(f => {
+      var n = Path.GetFileName(f.Name).ToLowerInvariant();
+      return n is "full.au" or "full.snd";
+    });
+    if (full.Data != null) {
+      output.Write(full.Data);
+      return;
+    }
+
+    var channelBlobs = fileList
+      .Where(f => Path.GetFileName(f.Name).EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+      .OrderBy(f => ChannelOrder(Path.GetFileNameWithoutExtension(f.Name)))
+      .ToList();
+
+    if (channelBlobs.Count == 0)
+      throw new InvalidOperationException(".au archive create needs either FULL.au or one or more per-channel WAVs.");
+
+    var channels = channelBlobs.Select(b => new WavReader().Read(b.Data)).ToList();
+    var first = channels[0];
+    if (channels.Any(c => c.SampleRate != first.SampleRate || c.BitsPerSample != first.BitsPerSample || c.NumChannels != 1))
+      throw new InvalidOperationException("All channel WAVs must be mono and share sample rate + bit depth.");
+    if (channels.Any(c => c.InterleavedPcm.Length != first.InterleavedPcm.Length))
+      throw new InvalidOperationException("All channel WAVs must have the same frame count.");
+
+    // .au stores big-endian PCM; the per-channel WAVs are little-endian.
+    var interleavedLe = PcmCodec.Interleave(channels.Select(c => c.InterleavedPcm).ToList(), first.BitsPerSample);
+    var interleavedBe = SwapSampleEndianness(interleavedLe, first.BitsPerSample / 8);
+
+    var blob = new AuWriter().Write(interleavedBe, channels.Count, first.SampleRate, first.BitsPerSample);
+    output.Write(blob);
+  }
+
+  /// <summary>Reverses the byte order within each fixed-width sample (LE↔BE).</summary>
+  private static byte[] SwapSampleEndianness(byte[] pcm, int bytesPerSample) {
+    if (bytesPerSample <= 1) return pcm;
+    var swapped = new byte[pcm.Length];
+    for (var i = 0; i + bytesPerSample <= pcm.Length; i += bytesPerSample)
+      for (var j = 0; j < bytesPerSample; ++j)
+        swapped[i + j] = pcm[i + bytesPerSample - 1 - j];
+    return swapped;
+  }
+
+  // Canonical speaker ordering (FFmpeg/WAVE bit order, mono through 22.2).
+  private static int ChannelOrder(string name) => ChannelLayout.OrderIndex(name);
+
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -78,7 +131,7 @@ public sealed class AuFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     var parsed = new AuReader().Read(blob);
 
     var entries = new List<(string, string, byte[])> {
-      ("FULL.au", "Track", blob),
+      ("FULL.au", "Container", blob),
     };
 
     var (pcm, bitsOut) = DecodeToPcm(parsed);
@@ -117,7 +170,23 @@ public sealed class AuFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
       case 3: return (ConvertBeToLe(p.SoundData, 2), 16);       // 16-bit BE PCM
       case 4: return (ConvertBeToLe(p.SoundData, 3), 24);       // 24-bit BE PCM
       case 5: return (ConvertBeToLe(p.SoundData, 4), 32);       // 32-bit BE PCM
-      default: return (null, 0);                                 // float/G.721: not decoded
+      case 23: { // G.721 (G.726 @ 32 kbit/s) 4-bit ADPCM
+        var decoded = Codec.G72x.G72xCodec.DecodeG721(p.SoundData);
+        return (ShortsToLePcm(decoded), 16);
+      }
+      case 24: { // G.722 sub-band ADPCM (decodes to 16 kHz linear)
+        var decoded = Codec.G722.G722Codec.Decode(p.SoundData);
+        return (ShortsToLePcm(decoded), 16);
+      }
+      case 25: { // G.723 3-bit (G.726 @ 24 kbit/s) ADPCM
+        var decoded = Codec.G72x.G72xCodec.DecodeG726(p.SoundData, 3);
+        return (ShortsToLePcm(decoded), 16);
+      }
+      case 26: { // G.723 5-bit (G.726 @ 40 kbit/s) ADPCM
+        var decoded = Codec.G72x.G72xCodec.DecodeG726(p.SoundData, 5);
+        return (ShortsToLePcm(decoded), 16);
+      }
+      default: return (null, 0);                                 // float: not decoded
     }
   }
 
@@ -146,6 +215,9 @@ public sealed class AuFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     6 => "32-bit IEEE float",
     7 => "64-bit IEEE float",
     23 => "G.721 4-bit ADPCM",
+    24 => "G.722 ADPCM",
+    25 => "G.723 3-bit ADPCM",
+    26 => "G.723 5-bit ADPCM",
     27 => "8-bit G.711 A-law",
     _ => $"unknown ({e})",
   };

@@ -79,7 +79,7 @@ public sealed class DxfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.dxf", "Track", blob),
+      ("FULL.dxf", "Container", blob),
     };
 
     var text = Encoding.ASCII.GetString(blob);

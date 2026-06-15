@@ -59,7 +59,7 @@ public sealed class SysVReader : IDisposable {
   public ushort IListBlocks { get; private set; }
 
   // Constants
-  private const int SuperblockOffset = 1024;
+  private const int SuperblockOffset = 512;
   internal const int InodeSize = 64;
   internal const uint MagicSysV = 0xFD187E20;
   internal const int RootInode = 2;

@@ -43,24 +43,14 @@ internal static class CbmNibbleEntries {
 /// <summary>
 /// Commodore G64 GCR track container (VICE emulator). Detected by the
 /// 8-byte "GCR-1541" ASCII magic at offset 0.
-///
-/// <para><b>WORM tier.</b> <see cref="Create"/> emits a G64 v2 image with
-/// the canonical 35-track / 84-half-track layout, spec-correct speed-zone
-/// table, SYNC + header + data framing on every sector, and a minimal CBM
-/// DOS BAM + directory on track 18. Files are GCR-encoded (4-to-5 nibble
-/// mapping) and placed on tracks 1..17 in track-order with up to eight
-/// directory entries. The reader still surfaces per-track raw GCR data —
-/// see <see cref="CbmNibbleReader"/>.</para>
 /// </summary>
-public sealed class G64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IFormatOptionsSchema {
+public sealed class G64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "G64";
   public string DisplayName => "G64 (Commodore GCR)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".g64";
   public IReadOnlyList<string> Extensions => [".g64"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -71,46 +61,24 @@ public sealed class G64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description => "Commodore 1541 GCR-encoded disk image (VICE G64)";
 
-  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
-    new FormatOptionDescriptor(
-      Key: "DiskName",
-      DisplayName: "Disk label",
-      Kind: FormatOptionKind.String,
-      Default: "WORMDISK",
-      Description: "CBM disk label (max 16 chars, uppercased and PETSCII-mapped)."),
-    new FormatOptionDescriptor(
-      Key: "DiskId",
-      DisplayName: "Disk ID",
-      Kind: FormatOptionKind.String,
-      Default: "WW",
-      Description: "Two-character disk identifier (BAM offsets 0xA2..0xA3)."),
-    new FormatOptionDescriptor(
-      Key: "MaxTrackSize",
-      DisplayName: "Max track size (bytes)",
-      Kind: FormatOptionKind.Integer,
-      Default: CbmNibbleWriter.DefaultMaxTrackSize.ToString(System.Globalization.CultureInfo.InvariantCulture),
-      Description: "Per-track byte budget (G64 header field at offset 0x0A). 7928 is the VICE reference value."),
-  ];
-
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     CbmNibbleEntries.List(stream, "image.g64");
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
     CbmNibbleEntries.Extract(stream, outputDir, files, "image.g64");
 
+  /// <summary>
+  /// Builds a fresh G64 image from the inputs. The Commodore filesystem is flat,
+  /// so names are reduced to their filename component and stored in the single
+  /// track-18 directory by <see cref="CbmNibbleWriter"/>.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    ArgumentNullException.ThrowIfNull(output);
-    ArgumentNullException.ThrowIfNull(inputs);
-    options ??= new FormatCreateOptions();
-
-    var diskName = options.GetOption("DiskName", "WORMDISK");
-    var diskId = options.GetOption("DiskId", "WW");
-    var maxTrackSize = options.GetOptionInt("MaxTrackSize", CbmNibbleWriter.DefaultMaxTrackSize);
-
-    var w = new CbmNibbleWriter();
-    foreach (var input in inputs.Where(i => !i.IsDirectory))
-      w.AddFile(input.ArchiveName, input.ReadContent());
-    output.Write(w.Build(diskName, diskId, maxTrackSize));
+    var writer = new CbmNibbleWriter();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      writer.AddFile(Path.GetFileName(input.ArchiveName), input.ReadContent());
+    }
+    writer.WriteTo(output);
   }
 }
 

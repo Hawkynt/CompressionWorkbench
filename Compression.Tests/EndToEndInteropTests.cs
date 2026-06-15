@@ -182,8 +182,17 @@ public class EndToEndInteropTests {
   }
 
   private static string? FindFile(string dir, string name) {
+    // Exact match first.
     foreach (var f in Directory.EnumerateFiles(dir, name, SearchOption.AllDirectories))
       return f;
+    // Fall back to a case-insensitive match: vintage 8.3 filesystems (GEMDOS,
+    // TRS-DOS, TI-99, Apple Pascal, Cromemco RDOS, PC-98, Human68k) are physically
+    // uppercase-only, so "repeat.txt" faithfully round-trips as "REPEAT.TXT". The
+    // content is still byte-compared by the caller; only the name case differs,
+    // which is format-inherent rather than a data-loss bug.
+    foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+      if (string.Equals(Path.GetFileName(f), name, StringComparison.OrdinalIgnoreCase))
+        return f;
     return null;
   }
 
@@ -242,7 +251,8 @@ public class EndToEndInteropTests {
   // special constraints, or formats that store metadata differently.
   private static readonly HashSet<string> _selfRoundTripExclusions = new(StringComparer.OrdinalIgnoreCase) {
     // Filesystem images that need specific disk geometry or block layout
-    ".d64", ".d71", ".d81", ".t64", ".adf", ".tap",
+    // (.g64 wraps a GCR-encoded D64 and shares its PETSCII name constraints)
+    ".d64", ".d71", ".d81", ".g64", ".t64", ".adf", ".tap",
     // Retro FSes with strict native filename constraints (length/charset) that
     // can't round-trip generic repeat.txt/small.txt/random.dat names verbatim.
     ".ssd", ".po", ".scl", ".atr",
@@ -272,7 +282,7 @@ public class EndToEndInteropTests {
     // Filesystem images (HFS, NTFS, ext, etc. require full FS creation)
     ".hfs", ".hfsp", ".mfs", ".ntfs", ".ext", ".exfat", ".fat", ".img",
     ".ufs", ".xfs", ".jfs", ".reiserfs", ".f2fs", ".romfs", ".minixfs", ".minix",
-    ".apfs", ".zfs", ".btrfs", ".vdfs",
+    ".apfs", ".zfs", ".btrfs", ".vdfs", ".hammer", ".hammer2",
     // Xenix V (s5fs): 10 direct zones × 1024 B blocks = 10 240 byte ceiling
     // per file (indirect blocks out of scope); generic 10 400-byte repeat.txt
     // exceeds the budget. Cleanly throws InvalidOperationException — tests in

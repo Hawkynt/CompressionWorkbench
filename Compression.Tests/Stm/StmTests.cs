@@ -8,78 +8,79 @@ namespace Compression.Tests.Stm;
 [TestFixture]
 public class StmTests {
 
-  private const int PatternBytes = 64 * 4 * 4; // 1024
+  private const int InstrumentCount = 31;
+  private const int Sample1Len = 6;
+  private const int Sample1C2Spd = 11025;
 
-  // 1 pattern, sample 0 with 8 bytes of data.
   private static byte[] MakeSyntheticStm() {
-    const int numPatterns = 1;
-    const int sampleLen = 8;
-    var headerEnd = 48 + 31 * 32 + 128; // header + sample hdrs + order table
-    var size = headerEnd + numPatterns * PatternBytes + sampleLen;
-    var buf = new byte[size];
+    const byte numPatterns = 1;
+    var headerSize = 48;
+    var instrTable = InstrumentCount * 32;
+    var orderTable = 128;
+    var patterns = numPatterns * 1024;
+    var total = headerSize + instrTable + orderTable + patterns + Sample1Len;
+    var buf = new byte[total];
 
-    var title = Encoding.ASCII.GetBytes("SynthSTM");
-    Buffer.BlockCopy(title, 0, buf, 0, title.Length);
-    var tracker = Encoding.ASCII.GetBytes("!Scream!");
-    Buffer.BlockCopy(tracker, 0, buf, 20, 8);
-    buf[28] = 0x1A; // type
-    buf[29] = 2;    // module
-    buf[30] = 2; buf[31] = 21; // version 2.21
-    buf[32] = 96;   // tempo
+    var songName = Encoding.ASCII.GetBytes("SynthStm");
+    Buffer.BlockCopy(songName, 0, buf, 0, songName.Length);
+    var tag = Encoding.ASCII.GetBytes("!Scream!");
+    Buffer.BlockCopy(tag, 0, buf, 20, tag.Length);
+    buf[28] = 0x1A;
+    buf[29] = 2;      // fileType = module
+    buf[30] = 2;      // verMajor
+    buf[31] = 21;     // verMinor
+    buf[32] = 96;     // initTempo
     buf[33] = numPatterns;
-    buf[34] = 64;   // global vol
+    buf[34] = 64;     // globalVolume
 
-    // Sample 0 header at offset 48: name(12), len u16 at +16.
-    var sName = Encoding.ASCII.GetBytes("StmSample");
-    Buffer.BlockCopy(sName, 0, buf, 48, sName.Length);
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(48 + 16, 2), sampleLen);
+    // Instrument 0 (with data), the rest empty.
+    var i0 = headerSize;
+    var fn = Encoding.ASCII.GetBytes("SIGNED.SMP");
+    Buffer.BlockCopy(fn, 0, buf, i0, fn.Length);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(i0 + 16, 2), Sample1Len);   // length
+    buf[i0 + 24] = 64;                                                              // volume
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(i0 + 26, 2), Sample1C2Spd); // c2spd
 
-    // Sample data ramp at end.
-    for (var i = 0; i < sampleLen; ++i) buf[size - sampleLen + i] = (byte)(i + 1);
+    // Sample data: 8-bit signed.
+    var dataOff = headerSize + instrTable + orderTable + patterns;
+    sbyte[] src = [-128, -1, 0, 1, 63, 127];
+    for (var i = 0; i < Sample1Len; ++i) buf[dataOff + i] = (byte)src[i];
+
     return buf;
   }
 
   [Test]
-  public void List_ExposesFullMetadataPatternAndSample() {
-    using var ms = new MemoryStream(MakeSyntheticStm());
-    var entries = new StmFormatDescriptor().List(ms, null);
+  public void List_SurfacesContainerPatternAndSampleWav() {
+    var entries = new StmFormatDescriptor().List(new MemoryStream(MakeSyntheticStm()), null);
     Assert.That(entries.Any(e => e.Name == "FULL.stm"), Is.True);
     Assert.That(entries.Any(e => e.Name == "metadata.ini"), Is.True);
     Assert.That(entries.Any(e => e.Name == "patterns/pattern_00.bin"), Is.True);
-    Assert.That(entries.Any(e => e.Name.StartsWith("samples/01_")), Is.True);
+    Assert.That(entries.Any(e => e.Name.StartsWith("samples/01_") && e.Name.EndsWith(".wav")), Is.True);
   }
 
   [Test]
-  public void Extract_WritesFullByteIdentical() {
-    var blob = MakeSyntheticStm();
+  public void Extract_SignedSampleConvertedToUnsigned8WithC2SpdRate() {
     var tmp = Path.Combine(Path.GetTempPath(), "stm_" + Guid.NewGuid().ToString("N"));
     try {
-      using var ms = new MemoryStream(blob);
-      new StmFormatDescriptor().Extract(ms, tmp, null, null);
-      Assert.That(File.ReadAllBytes(Path.Combine(tmp, "FULL.stm")), Is.EqualTo(blob));
-      Assert.That(File.Exists(Path.Combine(tmp, "patterns", "pattern_00.bin")), Is.True);
+      new StmFormatDescriptor().Extract(new MemoryStream(MakeSyntheticStm()), tmp, null, null);
+      var wav = File.ReadAllBytes(Directory.GetFiles(Path.Combine(tmp, "samples")).Single());
+      Assert.That(Encoding.ASCII.GetString(wav, 0, 4), Is.EqualTo("RIFF"));
+      Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(34, 2)), Is.EqualTo(8));
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24, 4)), Is.EqualTo((uint)Sample1C2Spd));
+      var data = wav.AsSpan(44).ToArray();
+      sbyte[] src = [-128, -1, 0, 1, 63, 127];
+      Assert.That(data.Length, Is.EqualTo(Sample1Len));
+      for (var i = 0; i < Sample1Len; ++i)
+        Assert.That(data[i], Is.EqualTo((byte)(src[i] + 128)));
     } finally {
       if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
     }
   }
 
   [Test]
-  public void List_Malformed_DoesNotThrow() {
-    var buf = new byte[40];
-    Encoding.ASCII.GetBytes("!Scream!").CopyTo(buf, 20);
-    using var ms = new MemoryStream(buf);
-    List<Compression.Registry.ArchiveEntryInfo> entries = null!;
-    Assert.DoesNotThrow(() => entries = new StmFormatDescriptor().List(ms, null));
-    Assert.That(entries.Any(e => e.Name == "metadata.ini"), Is.True);
-  }
-
-  [Test]
-  public void Detection_ScreamSignatureAtOffset20_DistinctFromS3m() {
-    var blob = MakeSyntheticStm();
-    var sig = new StmFormatDescriptor().MagicSignatures[0];
-    Assert.That(sig.Offset, Is.EqualTo(20));
-    Assert.That(blob.AsSpan(20, 8).SequenceEqual(sig.Bytes), Is.True);
-    // S3M's "SCRM" sits at offset 44 — ensure our synthetic STM does not carry it.
-    Assert.That(blob.AsSpan(44, 4).SequenceEqual("SCRM"u8), Is.False);
+  public void GracefulFallback_GarbageYieldsFullOnly() {
+    var entries = new StmFormatDescriptor().List(new MemoryStream(new byte[64]), null);
+    Assert.That(entries, Has.Count.EqualTo(1));
+    Assert.That(entries[0].Name, Is.EqualTo("FULL.stm"));
   }
 }

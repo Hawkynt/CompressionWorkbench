@@ -3,6 +3,8 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
+using Codec.Alac;
+using Codec.Pcm;
 using Compression.Registry;
 using FileFormat.Mp4;
 using static Compression.Registry.FormatHelpers;
@@ -13,7 +15,11 @@ namespace FileFormat.Alac;
 /// Surfaces an ALAC (Apple Lossless) audio file — usually wrapped in an M4A
 /// (ISOBMFF) container — as a read-only archive of the container passthrough,
 /// the ALAC codec-specific "magic cookie", the raw ALAC frame bytes extracted
-/// via stsz/stsc/stco, and a metadata.ini describing the cookie fields.
+/// via stsz/stsc/stco, a metadata.ini describing the cookie fields, and — when the
+/// stream decodes — one playable mono WAV per speaker (Kind <c>Channel</c>, method
+/// <c>pcm</c>), named per <see cref="ChannelLayout"/>. The decode is best-effort:
+/// any unsupported cookie or truncated stream leaves the FULL/Track/metadata view
+/// intact.
 /// </summary>
 public sealed class AlacFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   public string Id => "Alac";
@@ -38,7 +44,7 @@ public sealed class AlacFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
       OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
-      Method: e.Kind == "Track" ? "alac" : "stored",
+      Method: e.Kind switch { "Track" => "alac", "Channel" => "pcm", _ => "stored" },
       IsDirectory: false, IsEncrypted: false, LastModified: null,
       Kind: e.Kind)).ToList();
 
@@ -107,6 +113,23 @@ public sealed class AlacFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         var frames = ExtractFrames(file, stsz, stsc, stco, co64);
         var name = $"track_{trackIndex:D2}_alac.bin";
         entries.Add((name, "Track", frames));
+
+        // Best-effort channel split: decode the ALAC frames against the magic cookie and
+        // surface each speaker as a playable mono WAV. ALAC frames are self-delimiting in
+        // order, so decoding the concatenation reproduces every sample. Any failure (an
+        // unsupported cookie, a truncated stream, …) leaves the FULL/Track/Tag-only view
+        // untouched.
+        try {
+          var alacCookie = AlacCookie.Parse(cookie);
+          var pcm = AlacCodec.Decode(frames, alacCookie);
+          if (pcm.Length > 0 && alacCookie.NumChannels >= 1) {
+            foreach (var (chanName, wav) in PcmCodec.SplitInterleavedPcm(
+                pcm, alacCookie.NumChannels, (int)alacCookie.SampleRate, alacCookie.BitDepth))
+              entries.Add(($"{chanName}.wav", "Channel", wav));
+          }
+        } catch (Exception) {
+          // Keep the existing FULL/Track/Tag-only behaviour.
+        }
       }
 
       ++trackIndex;

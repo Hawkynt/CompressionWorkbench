@@ -1,8 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
     <RootNamespace>FileFormat.Vgm</RootNamespace>
   </PropertyGroup>
+
   <ItemGroup>
+    <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Pcm\Codec.Pcm.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Sn76489\Codec.Sn76489.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Ym2612\Codec.Ym2612.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Ym2413\Codec.Ym2413.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Ym2151\Codec.Ym2151.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Ym2203\Codec.Ym2203.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Ym2608\Codec.Ym2608.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Opl\Codec.Opl.csproj" />
   </ItemGroup>
+
 </Project>

@@ -42,7 +42,7 @@ public class SysVRwTests {
     SysVModifier.AddFile(ms, "added.txt", "freshly added"u8.ToArray());
 
     // Image still detects as s5fs.
-    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(ms.GetBuffer().AsSpan(1528, 4)),
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(ms.GetBuffer().AsSpan(1016, 4)),
       Is.EqualTo(0xFD187E20u));
 
     ms.Position = 0;

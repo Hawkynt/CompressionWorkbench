@@ -1,7 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
-using Compression.Registry;
 using FileFormat.Psm;
 
 namespace Compression.Tests.Psm;
@@ -9,82 +8,86 @@ namespace Compression.Tests.Psm;
 [TestFixture]
 public class PsmTests {
 
-  // Builds a minimal new-format PSM: "PSM " + "FILE" wrapper + TITL + PBOD + DSMP.
+  private const int Sample1Len = 6;
+  private const int Sample1C2Freq = 22050;
+  private static readonly sbyte[] DeltaBytes = [7, -2, 50, -100, 3, 12];
+
+  private static void WriteChunk(MemoryStream ms, string id, byte[] body) {
+    ms.Write(Encoding.ASCII.GetBytes(id));
+    Span<byte> len = stackalloc byte[4];
+    BinaryPrimitives.WriteUInt32LittleEndian(len, (uint)body.Length);
+    ms.Write(len);
+    ms.Write(body);
+  }
+
+  private static byte[] MakeDsmpBody() {
+    var body = new byte[96 + Sample1Len];
+    var name = Encoding.ASCII.GetBytes("DeltaSample");
+    Buffer.BlockCopy(name, 0, body, 13, name.Length);
+    BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(51, 4), Sample1Len);
+    BinaryPrimitives.WriteUInt16LittleEndian(body.AsSpan(70, 2), Sample1C2Freq);
+    for (var i = 0; i < Sample1Len; ++i) body[96 + i] = (byte)DeltaBytes[i];
+    return body;
+  }
+
   private static byte[] MakeSyntheticPsm() {
+    using var inner = new MemoryStream();
+    WriteChunk(inner, "TITL", Encoding.ASCII.GetBytes("SynthPsm"));
+    WriteChunk(inner, "SDFT", Encoding.ASCII.GetBytes("MAINSONG"));
+    WriteChunk(inner, "PBOD", [1, 2, 3, 4]);
+    WriteChunk(inner, "DSMP", MakeDsmpBody());
+    var chunks = inner.ToArray();
+
     using var ms = new MemoryStream();
-    void Chunk(string tag, byte[] payload) {
-      ms.Write(Encoding.ASCII.GetBytes(tag));
-      var len = new byte[4];
-      BinaryPrimitives.WriteUInt32LittleEndian(len, (uint)payload.Length);
-      ms.Write(len);
-      ms.Write(payload);
-      if (payload.Length % 2 == 1) ms.WriteByte(0);
-    }
     ms.Write("PSM "u8);
+    Span<byte> size = stackalloc byte[4];
+    BinaryPrimitives.WriteUInt32LittleEndian(size, (uint)(4 + chunks.Length));
+    ms.Write(size);
     ms.Write("FILE"u8);
-    Chunk("TITL", Encoding.ASCII.GetBytes("PsmSong"));
-    Chunk("PBOD", [1, 2, 3, 4]);
-    Chunk("DSMP", [0x10, 0x20, 0x30, 0x40]);
+    ms.Write(chunks);
     return ms.ToArray();
   }
 
-  private static byte[] MakeOldPsm() {
-    var buf = new byte[64];
-    buf[0] = (byte)'P'; buf[1] = (byte)'S'; buf[2] = (byte)'M'; buf[3] = 0xFE;
-    var name = Encoding.ASCII.GetBytes("OldPsmName");
-    Buffer.BlockCopy(name, 0, buf, 4, name.Length);
-    return buf;
+  private static byte[] ExpectedUnsigned8() {
+    var result = new byte[Sample1Len];
+    sbyte acc = 0;
+    for (var i = 0; i < Sample1Len; ++i) {
+      acc = unchecked((sbyte)(acc + DeltaBytes[i]));
+      result[i] = (byte)(acc + 128);
+    }
+    return result;
   }
 
   [Test]
-  public void List_NewFormat_ExposesChunksPatternsSamples() {
-    using var ms = new MemoryStream(MakeSyntheticPsm());
-    var entries = new PsmFormatDescriptor().List(ms, null);
+  public void List_SurfacesContainerTitlePatternAndSampleWav() {
+    var entries = new PsmFormatDescriptor().List(new MemoryStream(MakeSyntheticPsm()), null);
     Assert.That(entries.Any(e => e.Name == "FULL.psm"), Is.True);
     Assert.That(entries.Any(e => e.Name == "metadata.ini"), Is.True);
-    Assert.That(entries.Any(e => e.Name.StartsWith("patterns/pattern_")), Is.True);
-    Assert.That(entries.Any(e => e.Name.StartsWith("samples/")), Is.True);
+    Assert.That(entries.Any(e => e.Name == "title.txt"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "patterns/pattern_00.bin"), Is.True);
+    Assert.That(entries.Any(e => e.Name.StartsWith("samples/01_") && e.Name.EndsWith(".wav")), Is.True);
   }
 
   [Test]
-  public void Extract_NewFormat_FullByteIdentical_TitleParsed() {
-    var blob = MakeSyntheticPsm();
+  public void Extract_DeltaSampleDecodedToUnsigned8WithC2FreqRate() {
     var tmp = Path.Combine(Path.GetTempPath(), "psm_" + Guid.NewGuid().ToString("N"));
     try {
-      using var ms = new MemoryStream(blob);
-      new PsmFormatDescriptor().Extract(ms, tmp, null, null);
-      Assert.That(File.ReadAllBytes(Path.Combine(tmp, "FULL.psm")), Is.EqualTo(blob));
-      var meta = File.ReadAllText(Path.Combine(tmp, "metadata.ini"));
-      Assert.That(meta, Does.Contain("variant = new"));
-      Assert.That(meta, Does.Contain("title = PsmSong"));
-      Assert.That(meta, Does.Contain("num_patterns = 1"));
+      new PsmFormatDescriptor().Extract(new MemoryStream(MakeSyntheticPsm()), tmp, null, null);
+      var wav = File.ReadAllBytes(Directory.GetFiles(Path.Combine(tmp, "samples")).Single());
+      Assert.That(Encoding.ASCII.GetString(wav, 0, 4), Is.EqualTo("RIFF"));
+      Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(34, 2)), Is.EqualTo(8));
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24, 4)), Is.EqualTo((uint)Sample1C2Freq));
+      var data = wav.AsSpan(44).ToArray();
+      Assert.That(data, Is.EqualTo(ExpectedUnsigned8()));
     } finally {
       if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
     }
   }
 
   [Test]
-  public void List_OldFormat_DetectedAndNamed() {
-    using var ms = new MemoryStream(MakeOldPsm());
-    var entries = new PsmFormatDescriptor().List(ms, null);
-    Assert.That(entries.Any(e => e.Name == "FULL.psm"), Is.True);
-    var meta = entries.First(e => e.Name == "metadata.ini");
-    Assert.That(meta.OriginalSize, Is.GreaterThan(0));
-  }
-
-  [Test]
-  public void List_Malformed_DoesNotThrow() {
-    using var ms = new MemoryStream([(byte)'P', (byte)'S', (byte)'M', (byte)' ', 0xFF]);
-    List<ArchiveEntryInfo> entries = null!;
-    Assert.DoesNotThrow(() => entries = new PsmFormatDescriptor().List(ms, null));
-    Assert.That(entries.Any(e => e.Name == "FULL.psm"), Is.True);
-    Assert.That(entries.Any(e => e.Name == "metadata.ini"), Is.True);
-  }
-
-  [Test]
-  public void Detection_MagicBothVariants() {
-    var d = new PsmFormatDescriptor();
-    Assert.That(d.MagicSignatures.Any(s => s.Bytes.SequenceEqual("PSM "u8.ToArray())), Is.True);
-    Assert.That(d.MagicSignatures.Any(s => s.Bytes.SequenceEqual(new byte[] { 0x50, 0x53, 0x4D, 0xFE })), Is.True);
+  public void GracefulFallback_GarbageYieldsFullOnly() {
+    var entries = new PsmFormatDescriptor().List(new MemoryStream(Encoding.ASCII.GetBytes("PSM NOPE")), null);
+    Assert.That(entries.Any(e => e.Name.StartsWith("samples/")), Is.False);
+    Assert.That(entries[0].Name, Is.EqualTo("FULL.psm"));
   }
 }

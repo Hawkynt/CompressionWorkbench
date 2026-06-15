@@ -50,7 +50,7 @@ public sealed class Fb2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var blob = ms.ToArray();
 
     var entries = new List<(string, string, byte[])> {
-      ("FULL.fb2", "Track", blob),
+      ("FULL.fb2", "Container", blob),
     };
 
     XDocument doc;

@@ -61,7 +61,7 @@ public sealed class MidiFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var blob = ms.ToArray();
 
     var entries = new List<(string, string, byte[])> {
-      ("FULL.mid", "Track", blob),
+      ("FULL.mid", "Container", blob),
     };
 
     var codec = new MidiCodec();

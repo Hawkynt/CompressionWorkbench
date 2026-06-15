@@ -62,7 +62,7 @@ public sealed class ObjFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.obj", "Track", blob),
+      ("FULL.obj", "Container", blob),
     };
 
     var text = Encoding.UTF8.GetString(blob);

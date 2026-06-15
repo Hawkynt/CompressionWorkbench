@@ -2113,9 +2113,12 @@ public class ExternalFsInteropTests {
                     "drops to a login prompt and times out — for full automation build a custom live " +
                     "image with /etc/rc.local that runs 'hammer info /dev/da1; halt'.");
 
-    // Build minimal HAMMER image via our descriptor (read-only currently — uses synthetic)
+    // Build a real, mountable HAMMER image via our writer.
     var imgPath = Path.Combine(this._tmpDir, "hammer.img");
-    File.WriteAllBytes(imgPath, new byte[16 * 1024 * 1024]);  // placeholder until HAMMER writer exists
+    var hammer = new FileSystem.Hammer.HammerWriter { Label = "test" };
+    hammer.AddFile("hello.txt", SmallText);
+    using (var fs = File.Create(imgPath))
+      hammer.WriteTo(fs);
     var logPath = Path.Combine(this._tmpDir, "hammer.serial.log");
 
     var (exit, log) = Compression.Tests.Support.QemuRunner.RunHammerInfo(
@@ -2138,7 +2141,10 @@ public class ExternalFsInteropTests {
                     "Custom live ISO with 'hammer2 info /dev/da1; halt' in /etc/rc.local needed for full automation.");
 
     var imgPath = Path.Combine(this._tmpDir, "hammer2.img");
-    File.WriteAllBytes(imgPath, new byte[16 * 1024 * 1024]);
+    var hammer2 = new FileSystem.Hammer2.Hammer2Writer { Label = "test" };
+    hammer2.AddFile("hello.txt", SmallText);
+    using (var fs = File.Create(imgPath))
+      hammer2.WriteTo(fs);
     var logPath = Path.Combine(this._tmpDir, "hammer2.serial.log");
 
     var (exit, log) = Compression.Tests.Support.QemuRunner.RunHammerInfo(
@@ -2462,7 +2468,10 @@ internal static class FsInteropToolbox {
   }
 
   private static bool DetectWsl() {
-    if (!OperatingSystem.IsWindows()) return false;
+    // On a non-Windows host the machine itself IS the POSIX/Linux tool
+    // environment — the "WSL" abstraction collapses to running commands
+    // directly. RunWsl/WinToWsl/WslHasTool all special-case this below.
+    if (!OperatingSystem.IsWindows()) return true;
     var wslExe = TryFromPath("wsl");
     if (wslExe is null) return false;
     // `wsl --status` prints default distro info when a distro is installed;
@@ -2493,8 +2502,12 @@ internal static class FsInteropToolbox {
   /// the single-quotes inside.
   /// </summary>
   public static (string StdOut, string StdErr, int ExitCode) RunWsl(string linuxCommand) {
-    var wsl = TryFromPath("wsl") ?? "wsl";
     var dqEscaped = linuxCommand.Replace("\"", "\\\"");
+    // On Linux/macOS run the command directly through the host shell — there is
+    // no WSL indirection; the tools live on the native PATH.
+    if (!OperatingSystem.IsWindows())
+      return RunExact("/bin/bash", $"-c \"{dqEscaped}\"");
+    var wsl = TryFromPath("wsl") ?? "wsl";
     return RunExact(wsl, $"-e bash -c \"{dqEscaped}\"");
   }
 
@@ -2505,6 +2518,11 @@ internal static class FsInteropToolbox {
   /// </summary>
   public static string WinToWsl(string winPath) {
     if (string.IsNullOrEmpty(winPath)) return winPath;
+    // On a POSIX host the path is already native — return it bare so it works
+    // both through `bash -c` (RunWsl) and through a direct exec (RunQemuImg).
+    // Test temp paths contain no spaces, matching the pre-existing contract.
+    if (!OperatingSystem.IsWindows())
+      return Path.GetFullPath(winPath);
     var full = Path.GetFullPath(winPath);
     if (full.Length < 2 || full[1] != ':') return full.Replace('\\', '/');
     var drive = char.ToLowerInvariant(full[0]);

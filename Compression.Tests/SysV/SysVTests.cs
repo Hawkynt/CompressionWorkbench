@@ -18,9 +18,9 @@ public class SysVTests {
   private static byte[] BuildMinimalSysV() {
     var image = new byte[8 * 1024];
 
-    // Superblock
-    var sb = 1024;
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(sb + 0, 2), 1);    // s_isize: 1 block ilist
+    // Superblock at block 0 + BLOCK_SIZE/2 (offset 512) — where the Linux sysv driver reads it.
+    var sb = 512;
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(sb + 0, 2), 3);    // s_isize: first data zone (block 3)
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + 2, 4), 8);    // s_fsize: 8 blocks
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + 504, 4), 0xFD187E20);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + 508, 4), 2);  // 1024-byte blocks
@@ -72,7 +72,7 @@ public class SysVTests {
     Assert.That(d.Extensions, Does.Contain(".s5"));
     Assert.That(d.Category, Is.EqualTo(FormatCategory.Archive));
     Assert.That(d.MagicSignatures, Has.Count.EqualTo(1));
-    Assert.That(d.MagicSignatures[0].Offset, Is.EqualTo(1528));
+    Assert.That(d.MagicSignatures[0].Offset, Is.EqualTo(1016));
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>(),
       "WORM promotion: SysV descriptor must opt in to IArchiveCreatable.");
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True,
@@ -110,7 +110,7 @@ public class SysVTests {
   public void Reader_RejectsCorruptedImage() {
     var img = BuildMinimalSysV();
     // Bit-flip in magic at file offset 1024+504 = 1528
-    img[1528] ^= 0xFF;
+    img[1016] ^= 0xFF;
     using var ms = new MemoryStream(img);
     Assert.Throws<InvalidDataException>(() => new SysVReader(ms));
   }
@@ -135,11 +135,11 @@ public class SysVTests {
     var content = "Hello from CWB SysV writer!\n"u8.ToArray();
     var bytes = SysVWriter.Build([("hello.txt", content)]);
 
-    // Image must look like a real s5fs image: magic at +1528, type=2 at +1532.
-    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(1528, 4)),
-      Is.EqualTo(0xFD187E20u), "magic at +1528 must match s5fs");
-    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(1532, 4)),
-      Is.EqualTo(2u), "s_type at +1532 must be 2 (1024-byte blocks)");
+    // Image must look like a real s5fs image: magic at +1016, type=2 at +1532.
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(1016, 4)),
+      Is.EqualTo(0xFD187E20u), "magic at +1016 must match s5fs");
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(1020, 4)),
+      Is.EqualTo(2u), "s_type at +1020 must be 2 (1024-byte blocks)");
 
     using var ms = new MemoryStream(bytes);
     var r = new SysVReader(ms);
@@ -232,7 +232,7 @@ public class SysVTests {
     // must hold for the writer's output to be readable by a real Linux
     // kernel's sysv driver.
     var bytes = SysVWriter.Build([("file", "x"u8.ToArray())]);
-    var sb = bytes.AsSpan(1024, 1024);
+    var sb = bytes.AsSpan(512, 512);
 
     // s_isize at +0 — non-zero (we always allocate at least one ilist block).
     var isize = BinaryPrimitives.ReadUInt16LittleEndian(sb);
@@ -283,7 +283,7 @@ public class SysVTests {
     d.Create(ms, inputs, new FormatCreateOptions());
     var bytes = ms.ToArray();
 
-    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(1528, 4)),
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(1016, 4)),
       Is.EqualTo(0xFD187E20u), "Create() output must carry s5fs magic");
 
     using var read = new MemoryStream(bytes);

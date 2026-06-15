@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>FileFormat.Amr</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
+    <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Pcm\Codec.Pcm.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.AmrNb\Codec.AmrNb.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.AmrWb\Codec.AmrWb.csproj" />
+  </ItemGroup>
+
+</Project>

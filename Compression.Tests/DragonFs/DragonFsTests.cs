@@ -92,9 +92,10 @@ public class DragonFsTests {
     Assert.Throws<NotSupportedException>(() => d.Defragment(ms));
   }
 
-  [Test, Category("Sad")]
-  public void NoCreatable_Interface() {
+  [Test, Category("HappyPath")]
+  public void Implements_Creatable_Interface() {
     var d = new FileSystem.DragonFs.DragonFsFormatDescriptor();
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>());
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
   }
 }

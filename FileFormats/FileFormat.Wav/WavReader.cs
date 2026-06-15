@@ -12,6 +12,7 @@ namespace FileFormat.Wav;
 ///   <item>7 — G.711 μ-law (decoded to 16-bit LE PCM via <c>Codec.MuLaw</c>).</item>
 ///   <item>0x0002 — Microsoft ADPCM (decoded via <c>Codec.MsAdpcm</c>).</item>
 ///   <item>0x0011 — IMA ADPCM (decoded via <c>Codec.ImaAdpcm</c>).</item>
+///   <item>0x0022 — DSP Group TrueSpeech (decoded to mono 16-bit PCM via <c>Codec.TrueSpeech</c>).</item>
 ///   <item>0x0031 — GSM 06.10 full-rate (decoded via <c>Codec.Gsm610</c>).</item>
 ///   <item>0xFFFE — WAVEFORMAT_EXTENSIBLE, real sub-format at +24 in <c>fmt</c> body.</item>
 /// </list>
@@ -30,7 +31,8 @@ public sealed class WavReader {
     int BitsPerSample,
     int FormatCode,
     byte[] InterleavedPcm,
-    IReadOnlyList<(string Id, byte[] Data)> MetadataChunks);
+    IReadOnlyList<(string Id, byte[] Data)> MetadataChunks,
+    uint? ChannelMask = null);
 
   public ParsedWav Read(ReadOnlySpan<byte> data) {
     if (data.Length < 44)
@@ -42,6 +44,7 @@ public sealed class WavReader {
 
     var pos = 12;
     int formatCode = 0, numChannels = 0, sampleRate = 0, bitsPerSample = 0, blockAlign = 0;
+    uint? channelMask = null;
     var fmtParsed = false;
     byte[]? rawData = null;
     var metadata = new List<(string, byte[])>();
@@ -60,9 +63,11 @@ public sealed class WavReader {
           sampleRate = (int)BinaryPrimitives.ReadUInt32LittleEndian(data[(bodyStart + 4)..]);
           blockAlign = BinaryPrimitives.ReadUInt16LittleEndian(data[(bodyStart + 12)..]);
           bitsPerSample = BinaryPrimitives.ReadUInt16LittleEndian(data[(bodyStart + 14)..]);
-          // WAVE_FORMAT_EXTENSIBLE: real code lives 24 bytes in.
-          if (formatCode == 0xFFFE && size >= 40)
+          // WAVE_FORMAT_EXTENSIBLE: dwChannelMask at +20, real code 24 bytes in.
+          if (formatCode == 0xFFFE && size >= 40) {
+            channelMask = BinaryPrimitives.ReadUInt32LittleEndian(data[(bodyStart + 20)..]);
             formatCode = BinaryPrimitives.ReadUInt16LittleEndian(data[(bodyStart + 24)..]);
+          }
           fmtParsed = true;
           break;
         }
@@ -85,32 +90,37 @@ public sealed class WavReader {
       case 6: { // A-law
         var shorts = Codec.ALaw.ALawCodec.Decode(rawData);
         return new ParsedWav(numChannels, sampleRate, 16, FormatCode: 1,
-          InterleavedPcm: ShortsToLePcm(shorts), MetadataChunks: metadata);
+          InterleavedPcm: ShortsToLePcm(shorts), MetadataChunks: metadata, ChannelMask: channelMask);
       }
       case 7: { // μ-law
         var shorts = Codec.MuLaw.MuLawCodec.Decode(rawData);
         return new ParsedWav(numChannels, sampleRate, 16, FormatCode: 1,
-          InterleavedPcm: ShortsToLePcm(shorts), MetadataChunks: metadata);
+          InterleavedPcm: ShortsToLePcm(shorts), MetadataChunks: metadata, ChannelMask: channelMask);
       }
       case 0x0011: { // IMA ADPCM
         if (blockAlign <= 0) throw new InvalidDataException("IMA ADPCM needs blockAlign.");
         var perChannel = Codec.ImaAdpcm.ImaAdpcmCodec.Decode(rawData, blockAlign, numChannels);
         return new ParsedWav(numChannels, sampleRate, 16, FormatCode: 1,
-          InterleavedPcm: InterleaveChannels(perChannel), MetadataChunks: metadata);
+          InterleavedPcm: InterleaveChannels(perChannel), MetadataChunks: metadata, ChannelMask: channelMask);
       }
       case 0x0002: { // MS ADPCM
         if (blockAlign <= 0) throw new InvalidDataException("MS ADPCM needs blockAlign.");
         var perChannel = Codec.MsAdpcm.MsAdpcmCodec.Decode(rawData, blockAlign, numChannels);
         return new ParsedWav(numChannels, sampleRate, 16, FormatCode: 1,
-          InterleavedPcm: InterleaveChannels(perChannel), MetadataChunks: metadata);
+          InterleavedPcm: InterleaveChannels(perChannel), MetadataChunks: metadata, ChannelMask: channelMask);
+      }
+      case 0x0022: { // DSP Group TrueSpeech (mono 8 kHz; 32-byte frames → 240 samples)
+        var shorts = Codec.TrueSpeech.TrueSpeechCodec.Decode(rawData);
+        return new ParsedWav(NumChannels: 1, sampleRate, 16, FormatCode: 1,
+          InterleavedPcm: ShortsToLePcm(shorts), MetadataChunks: metadata, ChannelMask: channelMask);
       }
       case 0x0031: { // GSM 06.10
         var shorts = Codec.Gsm610.Gsm610Codec.Decode(rawData, numChannels);
         return new ParsedWav(numChannels, sampleRate, 16, FormatCode: 1,
-          InterleavedPcm: ShortsToLePcm(shorts), MetadataChunks: metadata);
+          InterleavedPcm: ShortsToLePcm(shorts), MetadataChunks: metadata, ChannelMask: channelMask);
       }
       default:
-        return new ParsedWav(numChannels, sampleRate, bitsPerSample, formatCode, rawData, metadata);
+        return new ParsedWav(numChannels, sampleRate, bitsPerSample, formatCode, rawData, metadata, channelMask);
     }
   }
 

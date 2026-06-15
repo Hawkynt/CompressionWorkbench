@@ -15,10 +15,10 @@ public sealed record Mp3StreamInfo(int SampleRate, int Channels, int Bitrate, lo
 /// <summary>
 /// Clean-room MP3 decoder. Ported from <c>minimp3</c>
 /// (https://github.com/lieff/minimp3, commit 7b590fdcfa5a79c033e76eacc05d0c3e4c79f536,
-/// public domain / CC0). Decodes MPEG-1 / MPEG-2 / MPEG-2.5 Layer III to interleaved
-/// little-endian signed 16-bit PCM. Layer I and Layer II are detected and rejected
-/// with <see cref="NotSupportedException"/>; free-format bitrates, ancillary data
-/// and CRC verification are not implemented (CRC bytes are skipped if present).
+/// public domain / CC0). Decodes MPEG-1 / MPEG-2 / MPEG-2.5 Layer I, Layer II and
+/// Layer III to interleaved little-endian signed 16-bit PCM. Free-format bitrates,
+/// ancillary data and CRC verification are not implemented (CRC bytes are skipped if
+/// present).
 /// </summary>
 public static class Mp3Codec {
 
@@ -160,11 +160,6 @@ public static class Mp3Codec {
     if (syncIdx > pos) return -(syncIdx - pos); // skip junk
 
     var hdr = Mp3FrameHeader.Parse(data.AsSpan(syncIdx, HdrSize));
-    if (hdr.Layer != 3) {
-      throw new NotSupportedException(
-        $"MPEG Layer {(hdr.Layer == 1 ? "I" : "II")} is not supported by this decoder " +
-        "(only Layer III is implemented).");
-    }
 
     var frameSize = hdr.FrameLengthBytes;
     if (frameSize == 0) {
@@ -177,6 +172,9 @@ public static class Mp3Codec {
     var bsFrame = new Mp3BitReader(SliceBuffer(data, syncIdx + HdrSize, frameSize - HdrSize), frameSize - HdrSize);
 
     if (hdr.HasCrc) bsFrame.GetBits(16);
+
+    if (hdr.Layer != 3)
+      return DecodeFrameLayer12(dec, scratch, hdr, bsFrame, frameSize, output);
 
     var mainDataBegin = Mp3Layer3.ReadSideInfo(bsFrame, scratch.GrInfo, hdr);
     if (mainDataBegin < 0 || bsFrame.Pos > bsFrame.Limit) {
@@ -203,6 +201,53 @@ public static class Mp3Codec {
     SaveReservoir(dec, scratch);
 
     // Write PCM as little-endian int16 interleaved.
+    if (success) {
+      var bytes = new byte[pcm.Length * 2];
+      for (var i = 0; i < pcm.Length; i++) {
+        bytes[i * 2] = (byte)(pcm[i] & 0xFF);
+        bytes[i * 2 + 1] = (byte)((pcm[i] >> 8) & 0xFF);
+      }
+      output.Write(bytes, 0, bytes.Length);
+    }
+
+    return frameSize;
+  }
+
+  // Layer I / II frame decode. group_size = 1 (Layer I) or 3 (Layer II): each granule
+  // dequantizes group_size samples per subband per channel, four groups per call. The
+  // accumulated buffer is synthesised once 12 time slots (one 384-sample synthesis
+  // block per channel) have been filled — 1 block for Layer I, 3 for Layer II.
+  private static int DecodeFrameLayer12(DecoderState dec, Scratch scratch, in Mp3FrameHeader hdr,
+                                        Mp3BitReader bsFrame, int frameSize, Stream output) {
+    var sci = new Mp3Layer12.ScaleInfo();
+    Mp3Layer12.ReadScaleInfo(hdr, bsFrame, sci);
+
+    var nch = hdr.Channels;
+    var groupSize = hdr.Layer | 1;            // Layer I → 1, Layer II → 3
+    var blocks = hdr.Layer == 1 ? 1 : 3;      // 384-sample synthesis blocks per frame
+    var grbuf = new float[1152];
+
+    var pcm = new short[384 * nch * blocks];
+    var pcmOff = 0;
+    var slot = 0;
+    var success = true;
+
+    for (var igr = 0; igr < 3; igr++) {
+      slot += Mp3Layer12.DequantizeGranule(grbuf, slot, bsFrame, sci, groupSize);
+      if (slot == 12) {
+        slot = 0;
+        Mp3Layer12.ApplyScf384(sci, sci.Scf, igr, grbuf, 0);
+        Mp3Synthesis.SynthGranule(dec.QmfState, grbuf, 12, nch, pcm, pcmOff, scratch.Syn);
+        Array.Clear(grbuf, 0, grbuf.Length);
+        pcmOff += 384 * nch;
+      }
+      if (bsFrame.Pos > bsFrame.Limit) {
+        ResetDecoder(dec);
+        success = false;
+        break;
+      }
+    }
+
     if (success) {
       var bytes = new byte[pcm.Length * 2];
       for (var i = 0; i < pcm.Length; i++) {

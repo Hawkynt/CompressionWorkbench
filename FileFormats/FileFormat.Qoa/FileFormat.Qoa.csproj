@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>FileFormat.Qoa</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
+    <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Pcm\Codec.Pcm.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Qoa\Codec.Qoa.csproj" />
+    <ProjectReference Include="..\..\FileFormats\FileFormat.Wav\FileFormat.Wav.csproj" />
+  </ItemGroup>
+
+</Project>

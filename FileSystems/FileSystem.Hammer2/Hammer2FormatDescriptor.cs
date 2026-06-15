@@ -29,12 +29,13 @@ namespace FileSystem.Hammer2;
 ///   <item><description><c>https://gitweb.dragonflybsd.org/dragonfly.git/blob/HEAD:/sys/vfs/hammer2/DESIGN</c></description></item>
 /// </list>
 /// </summary>
-public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Hammer2";
   public string DisplayName => "HAMMER2 (DragonFly BSD)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanCreate;
   public string DefaultExtension => ".hammer2";
   public IReadOnlyList<string> Extensions => [".hammer2"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -78,13 +79,63 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
     if (hdr.Valid)
       entries.Add(new ArchiveEntryInfo(idx++, "volume_header.bin", hdr.HeaderRaw.LongLength, hdr.HeaderRaw.LongLength, "stored", false, false, null));
+
+    // Walk the blockref tree for the real files. The header parse above used a
+    // bounded read; re-read the whole image for the walk only when the header is
+    // valid (a deliberately-opened HAMMER2 archive, not speculative carving).
+    if (hdr.Valid)
+      foreach (var (name, content) in ReadFiles(stream))
+        entries.Add(new ArchiveEntryInfo(idx++, name, content.LongLength, content.LongLength, "stored", false, false, null));
+
     return entries;
+  }
+
+  // Walks the HAMMER2 blockref tree and returns the real regular files it holds,
+  // keyed by path. Never throws — returns nothing when the walk fails.
+  private static IEnumerable<KeyValuePair<string, byte[]>> ReadFiles(Stream stream) {
+    try {
+      if (stream.CanSeek)
+        stream.Position = 0;
+      using var ms = new MemoryStream();
+      stream.CopyTo(ms);
+      return new Hammer2Reader(ms.ToArray()).ReadAllFiles();
+    } catch {
+      return [];
+    }
+  }
+
+  /// <summary>
+  /// Produces a fresh, mountable single-volume HAMMER2 image from
+  /// <paramref name="inputs"/>. The output mirrors <c>newfs_hammer2</c>: a
+  /// volume header, the super-root inode, and the "LOCAL" + labelled PFS inodes.
+  /// The labelled PFS root is populated with the input files — each a regular-file
+  /// inode plus a directory entry (see <see cref="Hammer2Writer"/>). The DragonFly
+  /// kernel mounts the labelled PFS and reads every file's contents byte-exact
+  /// (validated via <c>mount_hammer2 …@&lt;label&gt;</c> + <c>cksum</c>, including
+  /// directories large enough to spill into a blockref-indirect block and files
+  /// stored in an out-of-line data block).
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    var writer = new Hammer2Writer();
+    var label = options?.GetOption("label", "DATA");
+    if (!string.IsNullOrEmpty(label))
+      writer.Label = label;
+
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      writer.AddFile(input.ArchiveName, input.ReadContent());
+    }
+
+    writer.WriteTo(output);
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] image;
     try {
-      image = ReadAllBounded(stream);
+      image = ReadAllFull(stream);
     } catch {
       WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"), files);
       return;
@@ -103,6 +154,16 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(hdr), files);
     if (hdr.Valid)
       WriteIfMatch(outputDir, "volume_header.bin", hdr.HeaderRaw, files);
+
+    // Materialise the real files by walking the blockref tree.
+    if (hdr.Valid) {
+      try {
+        foreach (var (name, content) in new Hammer2Reader(image).ReadAllFiles())
+          WriteIfMatch(outputDir, name, content, files);
+      } catch {
+        // Best-effort; the surface files above are still written.
+      }
+    }
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
@@ -146,6 +207,16 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     int read;
     while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
       ms.Write(buf, 0, read);
+    return ms.ToArray();
+  }
+
+  // Full read for an explicit extract: the caller deliberately opened a HAMMER2
+  // image, so the whole device is pulled in to walk the blockref tree.
+  private static byte[] ReadAllFull(Stream stream) {
+    if (stream.CanSeek)
+      stream.Position = 0;
+    using var ms = new MemoryStream();
+    stream.CopyTo(ms);
     return ms.ToArray();
   }
 }

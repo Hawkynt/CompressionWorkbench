@@ -6,6 +6,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Pcm\Codec.Pcm.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Vorbis\Codec.Vorbis.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Opus\Codec.Opus.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Speex\Codec.Speex.csproj" />
   </ItemGroup>
 
 </Project>

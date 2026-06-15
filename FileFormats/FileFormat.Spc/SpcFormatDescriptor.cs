@@ -1,24 +1,31 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using System.Text;
+using Codec.Brr;
+using Codec.Pcm;
+using Codec.Spc700;
 using Compression.Registry;
-using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Spc;
 
 /// <summary>
-/// Exposes a SNES SPC700 sound dump (.spc) as a read-only pseudo-archive of
-/// <c>FULL.spc</c>, <c>metadata.ini</c> (ID666 tags + SPC700 registers),
-/// <c>ram.bin</c> (the 64&#160;KB APU RAM dump) and <c>dsp_registers.bin</c> (the
-/// 128-byte DSP register block). Both the text and binary ID666 tag layouts are
-/// handled. The SPC700 / DSP are never emulated; all reads are clamped and a
-/// malformed file surfaces FULL + metadata(parse_status=partial) instead of throwing.
+/// Exposes an SPC700 sound-file save-state (<c>.spc</c>) as a pseudo-archive: <c>FULL.spc</c>
+/// (the byte-exact save state), the ID666 tag block as <c>metadata.ini</c>, one decoded mono
+/// WAV per extractable BRR sample (<c>samples/NN.wav</c>, 32000 Hz), and — when the tune can be
+/// emulated — the rendered stereo song as <c>LEFT.wav</c> / <c>RIGHT.wav</c> (32000 Hz). The
+/// render boots the SPC700 CPU and S-DSP from the snapshot (see <c>Codec.Spc700</c>).
+/// <para>An SPC file is a 0x10180-byte snapshot of the SNES audio subsystem: a 33-byte
+/// signature, an ID666 tag block at <c>0x2E</c>, the 64&#160;KB APU RAM (ARAM) at
+/// <c>0x100</c>, and the 128 S-DSP registers at <c>0x10100</c>. Samples are located via the
+/// S-DSP <c>DIR</c> register (<c>0x5D</c>): the sample directory lives at
+/// <c>ARAM[DIR &#215; 0x100]</c> as up to 256 four-byte entries (u16 LE start address, u16 LE
+/// loop address). Each referenced BRR chain is walked to its end-flagged block and decoded.</para>
+/// Read-only — reconstructing a playable save state requires a full APU snapshot.
 /// </summary>
-public sealed class SpcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
-
-  private static readonly byte[] MagicBytes = "SNES-SPC700 Sound File Data v0.30"u8.ToArray();
+public sealed class SpcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 
   public string Id => "Spc";
-  public string DisplayName => "SNES SPC700 Sound Dump";
+  public string DisplayName => "SNES SPC700";
   public FormatCategory Category => FormatCategory.Audio;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
@@ -27,116 +34,191 @@ public sealed class SpcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<string> Extensions => [".spc"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    new("SNES-SPC700 Sound File Data"u8.ToArray(), Offset: 0, Confidence: 0.97),
+    new("SNES-SPC700 Sound File Data"u8.ToArray(), Confidence: 0.95),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
-    "SNES SPC700 sound dump surfaced as a read-only pseudo-archive (FULL + ID666 " +
-    "metadata + SPC700 registers + 64KB RAM + DSP registers); never emulated.";
+  public string Description => "SNES SPC700 save state; full file + ID666 tags + decoded BRR samples.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
-    Decompose(ReadAll(stream)).Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Data.LongLength, e.Data.LongLength, "stored", false, false, null, e.Kind)).ToList();
+  private const int HasId666Offset = 0x23;
+  private const int Id666Offset = 0x2E;
+  private const int AramOffset = 0x100;
+  private const int AramSize = 0x10000;
+  private const int DspOffset = 0x10100;
+  private const int DspSize = 128;
+  private const int DirRegister = 0x5D;
+  private const int SampleRate = 32000;
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    foreach (var e in Decompose(ReadAll(stream))) {
-      if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, e.Data);
-    }
-  }
+  // Sanity bounds for accepting a decoded BRR sample run.
+  private const int MinDecodedSamples = 16;
+  private const int MaxBrrBytes = AramSize; // a chain can't exceed ARAM.
+  private const int MaxInvalidRun = 4;      // tolerate a few bad directory slots, then stop.
 
-  private static byte[] ReadAll(Stream stream) {
-    if (stream.CanSeek) stream.Position = 0;
+  public List<ArchiveEntryInfo> List(Stream stream, string? password)
+    => AudioPseudoArchive.List(BuildEntries(stream));
+
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+    => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
+
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
+    => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
+
+  // ── parsing ────────────────────────────────────────────────────────────────
+
+  private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
-    return ms.ToArray();
-  }
+    var blob = ms.ToArray();
 
-  private readonly record struct Entry(string Name, byte[] Data, string Kind);
+    var entries = new List<AudioPseudoArchive.Entry> {
+      new("FULL.spc", "Container", blob),
+    };
 
-  private static List<Entry> Decompose(byte[] f) {
-    var entries = new List<Entry> { new("FULL.spc", f, "Track") };
-    var meta = new StringBuilder().AppendLine("[spc]");
-    var ok = false;
+    // Render the tune to stereo (best-effort; failure leaves the rest of the archive intact).
+    var renderInfo = RenderChannels(blob, entries);
 
-    try {
-      if (f.Length >= 0x10100 && f.AsSpan(0, MagicBytes.Length).SequenceEqual(MagicBytes)) {
-        // Header registers: PC@0x25 (u16 LE), A@0x27, X@0x28, Y@0x29, PSW@0x2A, SP@0x2B.
-        var hasId666 = f[0x23] == 26; // 0x1A => contains ID666 tag
-        meta.Append("has_id666_tag = ").Append(hasId666 ? "true" : "false").Append('\n');
-        meta.Append("reg_pc = 0x").Append((f[0x25] | (f[0x26] << 8)).ToString("X4")).Append('\n');
-        meta.Append("reg_a = 0x").Append(f[0x27].ToString("X2")).Append('\n');
-        meta.Append("reg_x = 0x").Append(f[0x28].ToString("X2")).Append('\n');
-        meta.Append("reg_y = 0x").Append(f[0x29].ToString("X2")).Append('\n');
-        meta.Append("reg_psw = 0x").Append(f[0x2A].ToString("X2")).Append('\n');
-        meta.Append("reg_sp = 0x").Append(f[0x2B].ToString("X2")).Append('\n');
+    // ID666 tags (best-effort; absent or unparsable → skip).
+    var ini = BuildMetadataIni(blob);
+    if (renderInfo is { } info)
+      ini += $"rendered_seconds={info.Seconds}\nrendered_source={(info.FromTag ? "id666" : "default")}\n";
+    if (ini.Length > 0)
+      entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(ini)));
 
-        if (hasId666)
-          ReadId666(f, meta);
+    // BRR samples via the DSP DIR register and ARAM directory.
+    if (blob.Length >= DspOffset + DspSize) {
+      var aram = blob.AsSpan(AramOffset, AramSize);
+      var dir = blob[DspOffset + DirRegister];
+      ExtractSamples(aram, dir, entries);
+    }
 
-        // 64 KB SPC700 RAM dump at 0x100.
-        entries.Add(new("ram.bin", f.AsSpan(0x100, 0x10000).ToArray(), "Track"));
-        // 128-byte DSP register block at 0x10100.
-        var dspLen = Math.Min(128, f.Length - 0x10100);
-        if (dspLen > 0)
-          entries.Add(new("dsp_registers.bin", f.AsSpan(0x10100, dspLen).ToArray(), "Tag"));
-
-        ok = true;
-      }
-    } catch { /* fall through to partial */ }
-
-    if (!ok) meta.Append("parse_status = partial\n");
-    entries.Insert(1, new("metadata.ini", Encoding.UTF8.GetBytes(meta.ToString()), "Tag"));
     return entries;
   }
 
-  private static void ReadId666(byte[] f, StringBuilder meta) {
-    // ID666 tag begins at 0x2E. Text and binary variants differ only from the
-    // dump-date field onward. Detect by inspecting the date region: in the text
-    // layout 0x9E..0xA8 holds an ASCII "MM/DD/YYYY" date (digits, '/', or zeros);
-    // in the binary layout those bytes are packed integers (often non-printable).
-    var binary = IsBinaryTag(f);
-    meta.Append("id666_format = ").Append(binary ? "binary" : "text").Append('\n');
-
-    meta.Append("song_title = ").Append(ReadAscii(f, 0x2E, 32)).Append('\n');
-    meta.Append("game_title = ").Append(ReadAscii(f, 0x4E, 32)).Append('\n');
-    meta.Append("dumper = ").Append(ReadAscii(f, 0x6E, 16)).Append('\n');
-    meta.Append("comments = ").Append(ReadAscii(f, 0x7E, 32)).Append('\n');
-
-    if (binary) {
-      // Binary layout: artist string at 0xB1 (32 bytes).
-      meta.Append("artist = ").Append(ReadAscii(f, 0xB1, 32)).Append('\n');
-    } else {
-      // Text layout: dump date 0x9E (11), song length 0xA9 (3), fade 0xAC (5),
-      // artist 0xB1 (32).
-      meta.Append("dump_date = ").Append(ReadAscii(f, 0x9E, 11)).Append('\n');
-      meta.Append("song_length_seconds = ").Append(ReadAscii(f, 0xA9, 3)).Append('\n');
-      meta.Append("artist = ").Append(ReadAscii(f, 0xB1, 32)).Append('\n');
+  /// <summary>
+  /// Boots the SPC700 + S-DSP from the snapshot and surfaces the rendered song as
+  /// <c>LEFT.wav</c> / <c>RIGHT.wav</c>. Any failure (short blob, emulation error) leaves the
+  /// pseudo-archive at its sample-only behaviour and returns <see langword="null"/>.
+  /// </summary>
+  private static (int Seconds, bool FromTag)? RenderChannels(byte[] blob, List<AudioPseudoArchive.Entry> entries) {
+    if (blob.Length < DspOffset + DspSize)
+      return null;
+    try {
+      var player = new SpcPlayer(blob);
+      var (left, right) = player.RenderStereoChannels();
+      entries.Add(new("LEFT.wav", "Channel",
+        PcmCodec.ToWavBlob(left, channels: 1, SampleRate, bitsPerSample: 16, formatCode: 1), "spc700"));
+      entries.Add(new("RIGHT.wav", "Channel",
+        PcmCodec.ToWavBlob(right, channels: 1, SampleRate, bitsPerSample: 16, formatCode: 1), "spc700"));
+      return (player.DurationSeconds, player.DurationFromTag);
+    } catch {
+      return null;
     }
   }
 
-  private static bool IsBinaryTag(byte[] f) {
-    // Heuristic: scan the text date field 0x9E..0xA8. If every non-zero byte is a
-    // digit or '/', treat as text; otherwise binary.
-    for (var i = 0x9E; i <= 0xA8 && i < f.Length; ++i) {
-      var b = f[i];
-      if (b == 0) continue;
-      var isDateChar = (b is >= (byte)'0' and <= (byte)'9') || b == (byte)'/' || b == (byte)' ';
-      if (!isDateChar) return true;
+  /// <summary>
+  /// Walks the sample directory at <c>ARAM[dir * 0x100]</c>. Directory slots are contiguous,
+  /// so the walk stops once a run of invalid entries (out-of-range / null / undecodable BRR)
+  /// reaches <see cref="MaxInvalidRun"/>, which marks the end of the real table.
+  /// </summary>
+  private static void ExtractSamples(ReadOnlySpan<byte> aram, byte dir, List<AudioPseudoArchive.Entry> entries) {
+    var dirBase = dir * 0x100;
+    if (dirBase < 0 || dirBase + 4 > aram.Length)
+      return;
+
+    var emitted = 0;
+    var invalidRun = 0;
+    for (var i = 0; i < 256; ++i) {
+      var entryOffset = dirBase + i * 4;
+      if (entryOffset + 4 > aram.Length)
+        break;
+
+      var start = BinaryPrimitives.ReadUInt16LittleEndian(aram.Slice(entryOffset, 2));
+      if (!TryDecodeChain(aram, start, out var samples)) {
+        if (++invalidRun >= MaxInvalidRun)
+          break;
+        continue;
+      }
+
+      invalidRun = 0;
+      var pcm = ShortsToLePcm(samples);
+      entries.Add(new($"samples/{emitted:D2}.wav", "Sample",
+        PcmCodec.ToWavBlob(pcm, channels: 1, SampleRate, bitsPerSample: 16, formatCode: 1), "brr"));
+      ++emitted;
     }
-    return false;
   }
 
-  private static string ReadAscii(byte[] f, int off, int maxLen) {
-    var end = Math.Min(off + maxLen, f.Length);
+  /// <summary>
+  /// Validates and decodes a BRR chain starting at <paramref name="start"/> inside ARAM. The
+  /// chain must begin at a real address (not 0, not 0xFFFF), terminate on an end-flagged block
+  /// within ARAM, fit inside <see cref="MaxBrrBytes"/>, and yield at least
+  /// <see cref="MinDecodedSamples"/> samples.
+  /// </summary>
+  private static bool TryDecodeChain(ReadOnlySpan<byte> aram, int start, out short[] samples) {
+    samples = [];
+    if (start is 0 or 0xFFFF || start + BrrCodec.BlockSize > aram.Length)
+      return false;
+
+    // Find the end-flagged terminating block without overrunning ARAM or the size budget.
+    var pos = start;
+    var ended = false;
+    while (pos + BrrCodec.BlockSize <= aram.Length && pos - start < MaxBrrBytes) {
+      var header = aram[pos];
+      pos += BrrCodec.BlockSize;
+      if ((header & 0x01) != 0) {
+        ended = true;
+        break;
+      }
+    }
+    if (!ended)
+      return false;
+
+    var chainLength = pos - start;
+    var decoded = BrrCodec.Decode(aram.Slice(start, chainLength));
+    if (decoded.Length < MinDecodedSamples)
+      return false;
+
+    samples = decoded;
+    return true;
+  }
+
+  // ── ID666 ────────────────────────────────────────────────────────────────
+
+  private static string BuildMetadataIni(byte[] blob) {
+    if (blob.Length < AramOffset)
+      return string.Empty;
+
+    // hasId666: 0x1A = yes, 0x1B = no. Anything else: assume text-format tags present.
+    var marker = blob[HasId666Offset];
+    if (marker == 0x1B)
+      return string.Empty;
+
     var sb = new StringBuilder();
-    for (var i = off; i < end; ++i) {
-      var b = f[i];
-      if (b == 0) break;
-      if (b is >= 0x20 and < 0x7F) sb.Append((char)b);
-    }
-    return sb.ToString().Trim();
+    AppendField(sb, "song_title", blob, Id666Offset + 0x00, 32);
+    AppendField(sb, "game_title", blob, Id666Offset + 0x20, 32);
+    AppendField(sb, "dumper", blob, Id666Offset + 0x40, 16);
+    AppendField(sb, "comments", blob, Id666Offset + 0x50, 32);
+    AppendField(sb, "dump_date", blob, Id666Offset + 0x70, 11);
+    AppendField(sb, "artist", blob, 0xB1, 32);
+    return sb.ToString();
+  }
+
+  private static void AppendField(StringBuilder sb, string key, byte[] blob, int offset, int length) {
+    if (offset + length > blob.Length)
+      return;
+    var raw = blob.AsSpan(offset, length);
+    var end = raw.IndexOf((byte)0);
+    if (end < 0)
+      end = raw.Length;
+    var value = Encoding.Latin1.GetString(raw[..end]).Trim();
+    if (value.Length > 0)
+      sb.AppendLine($"{key}={value}");
+  }
+
+  private static byte[] ShortsToLePcm(ReadOnlySpan<short> samples) {
+    var pcm = new byte[samples.Length * 2];
+    for (var i = 0; i < samples.Length; ++i)
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), samples[i]);
+    return pcm;
   }
 }

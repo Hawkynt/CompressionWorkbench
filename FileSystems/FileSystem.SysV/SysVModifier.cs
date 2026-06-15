@@ -54,7 +54,7 @@ public static class SysVModifier {
   private const int DirectZones = SysVWriter.DirectZones;
   private const int FreeCacheSize = SysVWriter.FreeCacheSize;
   private const int InodeCacheSize = SysVWriter.InodeCacheSize;
-  private const int SuperblockOffset = 1024;
+  private const int SuperblockOffset = 512;
   private const int FirstInodeBlock = SysVWriter.FirstInodeBlock;
   private const uint MagicSysV = SysVWriter.MagicSysV;
   private const ushort ModeRegularFile = SysVWriter.ModeRegularFile;
@@ -196,7 +196,9 @@ public static class SysVModifier {
     if (magic != MagicSysV)
       throw new InvalidDataException($"SysV: invalid magic 0x{magic:X8} (expected 0x{MagicSysV:X8}).");
     var sb = new Superblock {
-      IListBlocks = BinaryPrimitives.ReadUInt16LittleEndian(buf),
+      // s_isize is the first data zone (FirstInodeBlock + ilist size); the ilist
+      // size is s_isize - FirstInodeBlock.
+      IListBlocks = (ushort)(BinaryPrimitives.ReadUInt16LittleEndian(buf) - FirstInodeBlock),
       TotalBlocks = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(2)),
       NFree = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(6)),
       NInode = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(216)),
@@ -214,7 +216,7 @@ public static class SysVModifier {
     var buf = new byte[BlockSize];
     image.Position = SuperblockOffset;
     image.ReadExactly(buf);  // preserve unchanged fields (timestamps, label, magic, type)
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(0), sb.IListBlocks);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(0), (ushort)(sb.IListBlocks + FirstInodeBlock)); // s_isize = first data zone
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(2), sb.TotalBlocks);
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(6), sb.NFree);
     for (var i = 0; i < FreeCacheSize; i++)

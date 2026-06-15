@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Codec.WavPack;
 using FileFormat.WavPack;
 
 namespace Compression.Tests.WavPack;
@@ -115,5 +116,120 @@ public class WavPackTests {
     using var output = new MemoryStream();
     Assert.Throws<FileNotFoundException>(() =>
       new WavPackFormatDescriptor().ExtractEntry(ms, "nope.bin", output, null));
+  }
+
+  // ── Channel-split (decoded per-channel PCM) ──────────────────────────────────
+
+  private static byte[] EncodeWavPack(byte[] pcm, int channels, int sampleRate, int bits) {
+    using var input = new MemoryStream(pcm);
+    using var output = new MemoryStream();
+    WavPackCodec.Compress(input, output, channels, sampleRate, bits);
+    return output.ToArray();
+  }
+
+  [Test, Category("HappyPath")]
+  public void Channels_Appear_For_Stereo_EncoderOutput() {
+    const int frames = 2000;
+    var pcm = new byte[frames * 2 * 2];
+    for (var i = 0; i < frames; ++i) {
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 4), (short)(Math.Sin(i * 0.05) * 10000));
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 4 + 2), (short)(Math.Cos(i * 0.04) * 8000));
+    }
+    var wv = EncodeWavPack(pcm, 2, 44100, 16);
+
+    using var ms = new MemoryStream(wv);
+    var entries = new WavPackFormatDescriptor().List(ms, null);
+    var names = entries.Select(e => e.Name).ToList();
+
+    Assert.That(names, Does.Contain("LEFT.wav"));
+    Assert.That(names, Does.Contain("RIGHT.wav"));
+    Assert.That(entries.Where(e => e.Kind == "Channel").Select(e => e.Method),
+      Has.All.EqualTo("pcm"));
+    // The verbatim block view is still present.
+    Assert.That(names, Does.Contain("block_0000.wv"));
+    Assert.That(names, Does.Contain("metadata.ini"));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Channels_Appear_For_Mono_EncoderOutput() {
+    const int frames = 1500;
+    var pcm = new byte[frames * 2];
+    for (var i = 0; i < frames; ++i)
+      BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), (short)(Math.Sin(i * 0.1) * 9000));
+    var wv = EncodeWavPack(pcm, 1, 22050, 16);
+
+    using var ms = new MemoryStream(wv);
+    var names = new WavPackFormatDescriptor().List(ms, null).Select(e => e.Name).ToList();
+    Assert.That(names, Does.Contain("MONO.wav"));
+  }
+
+  private static byte[] EncodeWavPackFloat(byte[] pcm, int channels, int sampleRate) {
+    using var input = new MemoryStream(pcm);
+    using var output = new MemoryStream();
+    WavPackCodec.Compress(input, output, channels, sampleRate, bitsPerSample: 32, isFloat: true);
+    return output.ToArray();
+  }
+
+  [Test, Category("HappyPath")]
+  public void FloatChannels_AreFloatWavs_FormatCode3() {
+    const int frames = 1500;
+    var pcm = new byte[frames * 2 * 4];
+    for (var i = 0; i < frames; ++i) {
+      BinaryPrimitives.WriteSingleLittleEndian(pcm.AsSpan(i * 8), (float)(Math.Sin(i * 0.05) * 0.6));
+      BinaryPrimitives.WriteSingleLittleEndian(pcm.AsSpan(i * 8 + 4), (float)(Math.Cos(i * 0.04) * 0.4));
+    }
+    var wv = EncodeWavPackFloat(pcm, 2, 44100);
+
+    using var ms = new MemoryStream(wv);
+    var entries = new WavPackFormatDescriptor().List(ms, null);
+    var channelEntries = entries.Where(e => e.Kind == "Channel").ToList();
+    Assert.That(channelEntries, Has.Count.EqualTo(2));
+
+    // Re-extract each channel WAV and confirm RIFF format code 3 (IEEE float).
+    var d = new WavPackFormatDescriptor();
+    foreach (var ce in channelEntries) {
+      using var src = new MemoryStream(wv);
+      using var outWav = new MemoryStream();
+      d.ExtractEntry(src, ce.Name, outWav, null);
+      var wav = outWav.ToArray();
+      var formatCode = BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(20));
+      Assert.That(formatCode, Is.EqualTo(3), $"{ce.Name} must be a float WAV (format code 3)");
+      var bits = BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(34));
+      Assert.That(bits, Is.EqualTo(32));
+    }
+  }
+
+  [Test, Category("HappyPath")]
+  public void FloatMono_IsMonoFloatWav() {
+    const int frames = 1200;
+    var pcm = new byte[frames * 4];
+    for (var i = 0; i < frames; ++i)
+      BinaryPrimitives.WriteSingleLittleEndian(pcm.AsSpan(i * 4), (float)(Math.Sin(i * 0.1) * 0.3));
+    var wv = EncodeWavPackFloat(pcm, 1, 22050);
+
+    using var ms = new MemoryStream(wv);
+    var entries = new WavPackFormatDescriptor().List(ms, null);
+    var mono = entries.Single(e => e.Name == "MONO.wav");
+    Assert.That(mono.Kind, Is.EqualTo("Channel"));
+
+    using var src = new MemoryStream(wv);
+    using var outWav = new MemoryStream();
+    new WavPackFormatDescriptor().ExtractEntry(src, "MONO.wav", outWav, null);
+    var wav = outWav.ToArray();
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(20)), Is.EqualTo(3));
+  }
+
+  [Test, Category("EdgeCase")]
+  public void Garbage_Block_Falls_Back_To_BlockListing_Only() {
+    // A structurally valid header but no decodable bitstream sub-block: decode
+    // must fail internally and leave the block/metadata view intact.
+    var file = BuildMultiBlock(count: 1, blockSamples: 1024, totalSamples: 1024, Flags16Stereo44k);
+    using var ms = new MemoryStream(file);
+    var entries = new WavPackFormatDescriptor().List(ms, null);
+    var names = entries.Select(e => e.Name).ToList();
+
+    Assert.That(names, Does.Contain("block_0000.wv"));
+    Assert.That(names, Does.Contain("metadata.ini"));
+    Assert.That(entries.Any(e => e.Kind == "Channel"), Is.False);
   }
 }

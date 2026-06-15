@@ -92,6 +92,61 @@ public class ItTests {
   }
 
   [Test]
+  public void List_IncludesRenderedSongWavAsStereoTrack() {
+    var blob = MakeSyntheticIt();
+    using var ms = new MemoryStream(blob);
+    var entries = new ItFormatDescriptor().List(ms, null);
+    var song = entries.FirstOrDefault(e => e.Name == "SONG.wav");
+    Assert.That(song, Is.Not.Null);
+    Assert.That(song!.Kind, Is.EqualTo("Track"));
+  }
+
+  [Test]
+  public void SongWav_IsValidStereo44100Riff() {
+    var blob = MakeSyntheticIt();
+    using var output = new MemoryStream();
+    new ItFormatDescriptor().ExtractEntry(new MemoryStream(blob), "SONG.wav", output, null);
+    var wav = output.ToArray();
+    Assert.That(wav.AsSpan(0, 4).ToArray(), Is.EqualTo("RIFF"u8.ToArray()));
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(22)), Is.EqualTo(2));
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24)), Is.EqualTo(44100u));
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(34)), Is.EqualTo(16));
+  }
+
+  [Test]
+  public void SongWav_AlsoSurfacesPerChannelMonoWavs() {
+    var blob = MakeSyntheticIt();
+    using var ms = new MemoryStream(blob);
+    var entries = new ItFormatDescriptor().List(ms, null);
+
+    var channels = entries.Where(e => e.Kind == "Channel").Select(e => e.Name).ToList();
+    Assert.That(channels, Does.Contain("SONG_LEFT.wav"));
+    Assert.That(channels, Does.Contain("SONG_RIGHT.wav"));
+
+    using var output = new MemoryStream();
+    new ItFormatDescriptor().ExtractEntry(new MemoryStream(blob), "SONG_RIGHT.wav", output, null);
+    var wav = output.ToArray();
+    Assert.That(wav.AsSpan(0, 4).ToArray(), Is.EqualTo("RIFF"u8.ToArray()));
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(22)), Is.EqualTo(1));       // mono
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24)), Is.EqualTo(44100u));
+  }
+
+  [Test]
+  public void Sample_IsSurfacedAsWav() {
+    var blob = MakeSyntheticIt();
+    using var ms = new MemoryStream(blob);
+    var entries = new ItFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name.StartsWith("samples/01_") && e.Name.EndsWith(".wav") && e.Kind == "Sample"), Is.True);
+  }
+
+  [Test]
+  public void Malformed_DegradesToFullOnly() {
+    using var ms = new MemoryStream("IMPM"u8.ToArray());
+    var entries = new ItFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "FULL.it"), Is.True);
+  }
+
+  [Test]
   public void Extract_WritesExpectedFiles() {
     var blob = MakeSyntheticIt();
     var tmp = Path.Combine(Path.GetTempPath(), "it_test_" + Guid.NewGuid().ToString("N"));

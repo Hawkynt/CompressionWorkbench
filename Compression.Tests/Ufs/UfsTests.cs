@@ -87,19 +87,21 @@ public class UfsTests {
     Assert.That(BinaryPrimitives.ReadInt32LittleEndian(sb[80..]), Is.EqualTo(13), "fs_bshift");
     // fs_fshift at offset 84 = log2(1024) = 10
     Assert.That(BinaryPrimitives.ReadInt32LittleEndian(sb[84..]), Is.EqualTo(10), "fs_fshift");
-    // fs_ncg at offset 44 = 1
-    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(sb[44..]), Is.EqualTo(1u), "fs_ncg");
-    // fs_ipg at offset 184
-    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(sb[184..]), Is.EqualTo(2048u), "fs_ipg");
-    // fs_fpg at offset 188
-    Assert.That(BinaryPrimitives.ReadInt32LittleEndian(sb[188..]), Is.EqualTo(16384), "fs_fpg");
+    // fs_ncg at offset 44 = 4 (faithful newfs -O1 multi-cylinder-group layout;
+    // the previous single-cg value of 1 encoded the old non-newfs writer).
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(sb[44..]), Is.EqualTo(4u), "fs_ncg");
+    // fs_ipg at offset 184 — inodes per group for the 16 MB newfs profile.
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(sb[184..]), Is.EqualTo(2112u), "fs_ipg");
+    // fs_fpg at offset 188 — fragments per group for the 16 MB newfs profile.
+    Assert.That(BinaryPrimitives.ReadInt32LittleEndian(sb[188..]), Is.EqualTo(4104), "fs_fpg");
   }
 
   [Test, Category("HappyPath")]
   public void Writer_CgHeaderHasCgMagic() {
     var img = BuildImage(("t", "x"u8.ToArray()));
-    // CG 0 header is at fragment fs_cblkno * fragSize = 16 * 1024 = 16384
-    var cg = img.AsSpan(16 * 1024);
+    // CG 0 header is at fragment fs_cblkno * fragSize = 24 * 1024 = 24576
+    // (newfs -O1 places sblkno=16, cblkno=24, iblkno=32 for 8K/1K geometry).
+    var cg = img.AsSpan(24 * 1024);
     Assert.That(BinaryPrimitives.ReadInt32LittleEndian(cg[4..]), Is.EqualTo(0x00090255),
       "cg_magic must be 0x00090255 at cg_firstfield+4 offset");
     // cg_cgx at offset 12
@@ -110,8 +112,11 @@ public class UfsTests {
     // cg_freeoff > cg_iusedoff
     var freeOff = BinaryPrimitives.ReadUInt32LittleEndian(cg[96..]);
     Assert.That(freeOff, Is.GreaterThan(iusedOff), "cg_freeoff after cg_iusedoff");
-    // cg_niblk at offset 116 = 2048
-    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(cg[116..]), Is.EqualTo(2048u), "cg_niblk");
+    // cg_niblk at offset 116 = 0 for UFS1 (it is a UFS2-only field; the old
+    // assertion of 2048 encoded the previous writer's bug — niblk lives in the
+    // historic cg_old_niblk@18 instead, which is fs_ipg = 2112).
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(cg[116..]), Is.EqualTo(0u), "cg_niblk (UFS1: 0)");
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(cg[18..]), Is.EqualTo((ushort)2112), "cg_old_niblk = fs_ipg");
   }
 
   [Test, Category("HappyPath")]
@@ -129,14 +134,17 @@ public class UfsTests {
     // fs_cstotal (csum_total: 8 int64s) at offset 1008: ndir, nbfree, nifree, nffree...
     var ndir = BinaryPrimitives.ReadInt64LittleEndian(sb[1008..]);
     var nifree = BinaryPrimitives.ReadInt64LittleEndian(sb[1024..]);
-    Assert.That(ndir, Is.EqualTo(1), "exactly one directory (root)");
-    Assert.That(nifree, Is.EqualTo(2048 - 4), "2048 inodes/group - (2 reserved + root + 2 files) = 2044");
+    // newfs emits two directories: the root and the synthetic /.snap (the old
+    // single value of 1 predated faithful newfs emulation).
+    Assert.That(ndir, Is.EqualTo(2), "root + /.snap directories");
+    // 4 cgs × 2112 ipg − 6 used inodes (0,1 reserved + root + .snap + f1 + f2).
+    Assert.That(nifree, Is.EqualTo(4 * 2112 - 6), "free inodes across all cylinder groups");
 
-    // CG0's cg_cs echoes the same summary. CG header at 16384.
-    var cg = img.AsSpan(16 * 1024);
+    // CG0's cg_cs echoes the cg-local summary. CG 0 header at 24 KiB.
+    var cg = img.AsSpan(24 * 1024);
     var cgNdir = BinaryPrimitives.ReadInt32LittleEndian(cg[24..]);
     var cgNifree = BinaryPrimitives.ReadInt32LittleEndian(cg[32..]);
-    Assert.That(cgNdir, Is.EqualTo(1), "cg_cs.ndir matches fs_cstotal.ndir");
-    Assert.That(cgNifree, Is.EqualTo(2048 - 4), "cg_cs.nifree matches fs_cstotal.nifree");
+    Assert.That(cgNdir, Is.EqualTo(2), "cg0 holds both directories");
+    Assert.That(cgNifree, Is.EqualTo(2112 - 6), "cg0 holds every live inode");
   }
 }

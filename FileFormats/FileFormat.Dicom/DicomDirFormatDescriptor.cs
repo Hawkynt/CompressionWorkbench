@@ -96,7 +96,7 @@ public sealed class DicomDirFormatDescriptor : IFormatDescriptor, IArchiveFormat
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.dcmdir", "Track", blob),
+      ("FULL.dcmdir", "Container", blob),
     };
 
     var parse = DicomDirParser.Parse(blob);

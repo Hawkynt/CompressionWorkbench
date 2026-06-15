@@ -1,19 +1,36 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Codec.Pcm;
 using Compression.Registry;
-using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Far;
 
 /// <summary>
-/// Exposes a Farandole Composer (FAR) module as an archive of <c>FULL.far</c>,
-/// <c>metadata.ini</c>, <c>patterns/pattern_NN.bin</c> (raw packed pattern blocks
-/// with their 2-byte length prefix stripped, NO decode) and
-/// <c>samples/NN_{name}.raw</c> per non-empty sample (raw PCM). The FAR layout
-/// was recovered through binary inspection of the documented Farandole Composer
-/// file format and the OpenMPT/libmodplug loaders.
+/// Exposes a Farandole Composer (<c>.far</c>) module as a read-only pseudo-archive
+/// of <c>FULL.far</c> (byte-exact original), <c>metadata.ini</c>, the song message
+/// text as <c>message.txt</c> and one playable mono WAV per present sample under
+/// <c>samples/NN_{name}.wav</c>.
 /// </summary>
+/// <remarks>
+/// Layout interpretation (all little-endian). The 4-byte magic is
+/// <c>{'F','A','R',0xFE}</c>. Main header: <c>magic[4]</c>, <c>char[40] name</c>,
+/// <c>u8[3] eof = {13,10,26}</c>, <c>u16 headerLen</c>, <c>u8 version</c>,
+/// <c>u8 onOff[16]</c> channel-enable flags, 9 reserved bytes, <c>u16 messageLen</c>.
+/// The variable part of the header (orders, pattern-size table, message text) is
+/// spanned by <c>headerLen</c>, so the song text is read at offset 98 for
+/// <c>messageLen</c> bytes and the sample section is located at
+/// <c>headerLen</c>. The sample section opens with a <c>u8[8] / 64-bit</c> bitfield
+/// marking which of 64 sample slots are present; each present slot has a 48-byte
+/// header — <c>char[32] name</c>, <c>u32 length</c>, <c>u8 finetune</c>,
+/// <c>u8 volume</c>, <c>u32 repStart</c>, <c>u32 repEnd</c>, <c>u8 type</c>
+/// (bit0 = 16-bit), <c>u8 loop</c> — immediately followed by its sample data.
+/// FAR samples are signed (8-bit signed → converted to unsigned-8 WAV; 16-bit
+/// signed little-endian surfaced as-is). FAR stores no per-sample replay rate, so
+/// a fixed 8363 Hz is used and recorded in <c>metadata.ini</c>. Simplification:
+/// the order list and pattern grid inside the header are not individually
+/// surfaced — only their span (<c>headerLen</c>) is used to find the samples.
+/// </remarks>
 public sealed class FarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 
   public string Id => "Far";
@@ -26,148 +43,104 @@ public sealed class FarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<string> Extensions => [".far"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    new([(byte)'F', (byte)'A', (byte)'R', 0xFE], Offset: 0, Confidence: 0.95),
+    new([(byte)'F', (byte)'A', (byte)'R', 0xFE], Confidence: 0.95),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Classic;
-  public string Description => "Farandole Composer module; full file + 16-channel pattern blocks + raw signed 8-bit PCM samples.";
+  public string Description => "Farandole Composer module; full file + message + per-sample WAVs.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
-    BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
-      Index: i, Name: e.Name,
-      OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
-      Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null,
-      Kind: e.Kind)).ToList();
+  public List<ArchiveEntryInfo> List(Stream stream, string? password)
+    => AudioPseudoArchive.List(BuildEntries(stream));
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    foreach (var e in BuildEntries(stream)) {
-      if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files))
-        continue;
-      WriteFile(outputDir, e.Name, e.Data);
-    }
-  }
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+    => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
-  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
-    foreach (var e in BuildEntries(input)) {
-      if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {
-        output.Write(e.Data);
-        return;
-      }
-    }
-    throw new FileNotFoundException($"Entry not found: {entryName}");
-  }
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
+    => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
-  private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
+  private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     return Parse(ms.ToArray());
   }
 
-  private static IReadOnlyList<(string Name, string Kind, byte[] Data)> Parse(byte[] blob) {
-    var entries = new List<(string, string, byte[])> {
-      ("FULL.far", "Track", blob),
-    };
-    var validMagic = blob.Length >= 4 &&
-      blob[0] == 'F' && blob[1] == 'A' && blob[2] == 'R' && blob[3] == 0xFE;
-    // Fixed header is 98 bytes (before the variable pattern-size table).
-    if (blob.Length < 98 || !validMagic) {
-      AddPartial(entries);
-      return entries;
-    }
+  private const int SampleRate = 8363;
 
-    var title = ReadAsciiTrim(blob, 4, 40);
+  private static IReadOnlyList<AudioPseudoArchive.Entry> Parse(byte[] blob) {
+    var entries = new List<AudioPseudoArchive.Entry> {
+      new("FULL.far", "Container", blob),
+    };
+    if (blob.Length < 98 || blob[0] != 'F' || blob[1] != 'A' || blob[2] != 'R' || blob[3] != 0xFE)
+      return entries;
+
+    var name = ReadAsciiTrim(blob, 4, 40);
     var headerLen = BinaryPrimitives.ReadUInt16LittleEndian(blob.AsSpan(47, 2));
     var version = blob[49];
-    var channelsOn = 0;
-    for (var c = 0; c < 16; ++c)
-      if (blob[50 + c] != 0) ++channelsOn;
+    var messageLen = BinaryPrimitives.ReadUInt16LittleEndian(blob.AsSpan(96, 2));
 
-    // Layout after channel bytes:
-    //   50..65 channel on/off (16)
-    //   66..81 editing state (16)
-    //   82     break position
-    //   83     panning (16) -> 83..98
-    //   99..   reserved (1 byte editing string len) ... but per spec orders begin at 0x42? Use documented offsets:
-    //   0x42 (66) order list (256), 0x142 (322) numPatterns, 0x143 songLen, 0x144 restart,
-    //   0x145 (325) pattern size table: 256 u16.
-    var numPatterns = blob[0x142];  // 322
-    var restart = blob[0x143];      // 323 (songLength/restart per variant)
-    var patternSizeTableOff = 0x145; // 325
-
-    // Read up to 256 pattern sizes (u16). Sizes of 0 indicate no pattern.
-    var patternSizes = new int[256];
-    for (var p = 0; p < 256; ++p) {
-      var so = patternSizeTableOff + p * 2;
-      if (so + 2 > blob.Length) break;
-      patternSizes[p] = BinaryPrimitives.ReadUInt16LittleEndian(blob.AsSpan(so, 2));
+    // Song message text sits at offset 98 for messageLen bytes.
+    if (messageLen > 0 && 98 + messageLen <= blob.Length) {
+      var msg = new byte[messageLen];
+      Buffer.BlockCopy(blob, 98, msg, 0, messageLen);
+      entries.Add(new("message.txt", "Tag", msg));
     }
 
-    // Pattern data begins right after the fixed header (headerLen bytes from start).
+    // Sample section begins at headerLen: 8-byte (64-bit) present-slot bitfield.
+    var samplesWithData = 0;
+    var presentSlots = 0;
     int off = headerLen;
-    var emittedPatterns = 0;
-    for (var p = 0; p < 256; ++p) {
-      var size = patternSizes[p];
-      if (size <= 0) continue;
-      if (off + size > blob.Length) break;
-      // First 2 bytes of each pattern block are the break-row + tempo header.
-      var dataLen = size >= 2 ? size - 2 : size;
-      var src = size >= 2 ? off + 2 : off;
-      var data = new byte[dataLen];
-      Buffer.BlockCopy(blob, src, data, 0, dataLen);
-      entries.Add(($"patterns/pattern_{p:D2}.bin", "Pattern", data));
-      off += size;
-      ++emittedPatterns;
-    }
-
-    // After the patterns: sample on/off bitmap (8 bytes = 64 bits), then sample headers
-    // (48 bytes each) for each set bit, then sample data inline after each header.
-    var numSamples = 0;
     if (off + 8 <= blob.Length) {
-      var bitmap = new bool[64];
+      Span<bool> present = stackalloc bool[64];
       for (var i = 0; i < 64; ++i)
-        bitmap[i] = (blob[off + (i >> 3)] & (1 << (i & 7))) != 0;
+        present[i] = (blob[off + (i >> 3)] & (1 << (i & 7))) != 0;
       off += 8;
 
-      for (var i = 0; i < 64; ++i) {
-        if (!bitmap[i]) continue;
+      for (var slot = 0; slot < 64; ++slot) {
+        if (!present[slot]) continue;
+        ++presentSlots;
         if (off + 48 > blob.Length) break;
-        var name = ReadAsciiTrim(blob, off, 32);
-        var byteLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(blob.AsSpan(off + 32, 4));
+        var sName = ReadAsciiTrim(blob, off, 32);
+        var length = BinaryPrimitives.ReadUInt32LittleEndian(blob.AsSpan(off + 32, 4));
+        var type = blob[off + 46];
+        var is16Bit = (type & 0x01) != 0;
         off += 48;
-        if (byteLen > 0 && off < blob.Length) {
-          var take = Math.Min(byteLen, blob.Length - off);
-          var data = new byte[take];
-          Buffer.BlockCopy(blob, off, data, 0, take);
-          var safe = string.IsNullOrWhiteSpace(name) ? "sample" : SanitizeFileName(name);
-          entries.Add(($"samples/{(i + 1):D2}_{safe}.raw", "Sample", data));
-          off += byteLen;
+        if (length == 0) continue;
+        if (off >= blob.Length) break;
+        var take = (int)Math.Min(length, (uint)(blob.Length - off));
+        if (take <= 0) break;
+        var pcm = new byte[take];
+        Buffer.BlockCopy(blob, off, pcm, 0, take);
+        off += (int)length;
+        byte[] wav;
+        if (is16Bit) {
+          wav = PcmCodec.ToWavBlob(pcm, channels: 1, SampleRate, bitsPerSample: 16);
+        } else {
+          // 8-bit signed → unsigned-8 WAV.
+          var u = new byte[pcm.Length];
+          for (var i = 0; i < pcm.Length; ++i) u[i] = (byte)(pcm[i] + 128);
+          wav = PcmCodec.ToWavBlob(u, channels: 1, SampleRate, bitsPerSample: 8);
         }
-        ++numSamples;
+        var label = string.IsNullOrWhiteSpace(sName) ? "sample" : SanitizeFileName(sName);
+        entries.Add(new($"samples/{(slot + 1):D2}_{label}.wav", "Sample", wav));
+        ++samplesWithData;
       }
     }
 
     var info = new StringBuilder();
-    info.AppendLine($"title={title}");
     info.AppendLine($"format=FAR");
     info.AppendLine($"version=0x{version:X2}");
-    info.AppendLine($"channels=16");
-    info.AppendLine($"channels_enabled={channelsOn}");
-    info.AppendLine($"num_patterns_header={numPatterns}");
-    info.AppendLine($"num_patterns_emitted={emittedPatterns}");
-    info.AppendLine($"num_samples={numSamples}");
-    info.AppendLine($"restart_position={restart}");
-    info.AppendLine($"sample_format=8/16-bit PCM (per-sample type byte bit0)");
-    entries.Insert(1, ("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));
+    info.AppendLine($"name={name}");
+    info.AppendLine($"header_length={headerLen}");
+    info.AppendLine($"message_length={messageLen}");
+    info.AppendLine($"present_sample_slots={presentSlots}");
+    info.AppendLine($"samples_with_data={samplesWithData}");
+    info.AppendLine($"sample_rate={SampleRate}");
+    info.AppendLine($"sample_8bit_encoding=signed");
+    info.AppendLine($"note=FAR stores no per-sample replay rate; WAVs use 8363 Hz.");
+    entries.Insert(1, new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));
 
     return entries;
-  }
-
-  private static void AddPartial(List<(string, string, byte[])> entries) {
-    var info = new StringBuilder();
-    info.AppendLine("parse_status=partial");
-    info.AppendLine("format=FAR");
-    entries.Insert(1, ("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));
   }
 
   private static string ReadAsciiTrim(byte[] blob, int offset, int length) {
@@ -183,10 +156,8 @@ public sealed class FarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   private static string SanitizeFileName(string name) {
     var sb = new StringBuilder(name.Length);
-    foreach (var c in name) {
-      if (char.IsLetterOrDigit(c) || c == '_' || c == '-' || c == '.') sb.Append(c);
-      else sb.Append('_');
-    }
+    foreach (var c in name)
+      sb.Append(char.IsLetterOrDigit(c) || c is '_' or '-' or '.' ? c : '_');
     var s = sb.ToString().Trim('.');
     return s.Length == 0 ? "sample" : s;
   }

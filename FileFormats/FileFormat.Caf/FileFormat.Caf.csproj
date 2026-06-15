@@ -8,6 +8,8 @@
     <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Pcm\Codec.Pcm.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.MuLaw\Codec.MuLaw.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.ALaw\Codec.ALaw.csproj" />
     <ProjectReference Include="..\FileFormat.Wav\FileFormat.Wav.csproj" />
   </ItemGroup>
 

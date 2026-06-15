@@ -87,7 +87,7 @@ public sealed class MobiFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.mobi", "Track", blob),
+      ("FULL.mobi", "Container", blob),
     };
 
     if (blob.Length < 78) return entries;

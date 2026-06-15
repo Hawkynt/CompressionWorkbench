@@ -87,6 +87,53 @@ public static class ImaAdpcmCodec {
     return output;
   }
 
+  /// <summary>
+  /// Decodes the Apple/QuickTime <c>ima4</c> packet variant (as carried by AIFC) into
+  /// one PCM buffer per channel. The data is a sequence of fixed 34-byte packets that
+  /// round-robin through the channels (ch0, ch1, …, ch0, …). Each packet is:
+  /// <list type="bullet">
+  ///   <item>a 2-byte big-endian preamble: the top 9 bits are the signed initial
+  ///         predictor (<c>(short)(preamble &amp; 0xFF80)</c>) and the low 7 bits are the
+  ///         initial step index (clamped to ≤ 88);</item>
+  ///   <item>32 data bytes = 64 nibbles, low nibble first within each byte, decoded with
+  ///         the standard IMA step tables.</item>
+  /// </list>
+  /// Every packet therefore yields exactly 64 samples for its channel. Unlike the WAV
+  /// block layout the packet does <b>not</b> emit the predictor itself as a sample.
+  /// </summary>
+  public static short[][] DecodeQuickTime(ReadOnlySpan<byte> data, int channels) {
+    if (channels < 1)
+      throw new ArgumentException("QuickTime IMA ADPCM needs at least one channel.", nameof(channels));
+
+    const int packetBytes = 34;
+    const int samplesPerPacket = 64;
+    var packetCount = data.Length / packetBytes;
+    var packetsPerChannel = packetCount / channels;
+
+    var output = new short[channels][];
+    for (var c = 0; c < channels; ++c)
+      output[c] = new short[packetsPerChannel * samplesPerPacket];
+
+    for (var p = 0; p < packetsPerChannel * channels; ++p) {
+      var channel = p % channels;
+      var packet = data.Slice(p * packetBytes, packetBytes);
+
+      var preamble = BinaryPrimitives.ReadUInt16BigEndian(packet);
+      var predictor = (int)(short)(preamble & 0xFF80);
+      var index = preamble & 0x007F;
+      if (index > 88) index = 88;
+
+      var outBase = (p / channels) * samplesPerPacket;
+      for (var i = 0; i < 32; ++i) {
+        var byteVal = packet[2 + i];
+        output[channel][outBase + i * 2] = DecodeNibble((byte)(byteVal & 0x0F), ref predictor, ref index);
+        output[channel][outBase + i * 2 + 1] = DecodeNibble((byte)(byteVal >> 4), ref predictor, ref index);
+      }
+    }
+
+    return output;
+  }
+
   private static short DecodeNibble(byte nibble, ref int predictor, ref int index) {
     var step = StepTable[index];
     var diff = step >> 3;

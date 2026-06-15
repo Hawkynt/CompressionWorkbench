@@ -138,81 +138,83 @@ public class VorbisCodecTests {
     Assert.That(output.Length, Is.GreaterThan(0), "decoder must emit at least one frame");
   }
 
-  // ── 3. Floor-0 rejection ────────────────────────────────────────────────
+  // ── 3. Synthetic end-to-end decode — no external vector needed ──────────
 
   [Test]
-  public void ParseSetup_Floor0_ThrowsNotSupported() {
-    // Vorbis setup packets need a valid codebook chain before the floor-type check
-    // is reached. Hand-crafting a buffer that fails specifically at the floor-0
-    // check (rather than earlier in codebook parsing) requires more bit-stream
-    // mechanics than fit a unit test. The rejection itself is exercised whenever
-    // a real Vorbis stream that uses floor 0 is decoded — see VorbisFloor.cs.
-    Assert.Ignore("Hand-crafted floor-0 fixture requires synthesizing a valid codebook chain first; rejection is exercised via real-stream tests when test vectors are available.");
-    var bytes = new List<byte>();
-    // '\x05vorbis' header
-    bytes.Add(0x05);
-    bytes.AddRange("vorbis"u8.ToArray());
+  public void Decompress_Synthetic_Floor1_SilenceDecodesToZeroPcm() {
+    var ogg = VorbisSyntheticStream.Build(floorType: 1);
+    using var input = new MemoryStream(ogg);
+    using var output = new MemoryStream();
+    VorbisCodec.Decompress(input, output);
 
-    // We build the rest by hand via a tiny bit-writer — but easier to cheat: we
-    // verify the rejection by invoking VorbisSetup.ParseSetup with a buffer that
-    // is *crafted* to fail at the floor-0 check regardless of codebook parsing
-    // by putting a codebook header that decodes to an empty book, then zero
-    // time-transforms, then one floor with type=0.
-    //
-    // Instead, take a simpler approach: assert that the decoder surfaces the
-    // NotSupportedException message substring when it encounters floor 0 in a
-    // live stream. We do that by injecting a direct call path via reflection
-    // of the internal VorbisSetup, OR by decoding a pre-captured floor-0 OGG.
-    //
-    // Because producing a valid codebook section by hand is intricate, this
-    // test asserts that the public-facing exception TYPE is plumbed through
-    // for the expected scenario: decoding a synthetic audio packet whose
-    // setup references floor 0 causes NotSupportedException. Since we can't
-    // easily build that without a full encoder, we instead just confirm the
-    // message constant is referenced in the codebase via a direct class
-    // instantiation.
-
-    // Sanity: VorbisSetup is internal; verify NotSupportedException has the
-    // documented prefix by invoking ParseSetup through a bare reflection path.
-    var setupType = typeof(VorbisCodec).Assembly.GetType("Codec.Vorbis.VorbisSetup");
-    Assert.That(setupType, Is.Not.Null, "VorbisSetup type must exist");
-    var parseSetup = setupType!.GetMethod("ParseSetup");
-    Assert.That(parseSetup, Is.Not.Null, "ParseSetup method must exist");
-
-    // Construct a setup packet: header(7) + 1 codebook placeholder that fails
-    // cheaply, but here we craft the minimum that reaches the floor-type read:
-    //   - codebooks:  count-1 = 0 ⇒ 1 codebook; we use a valid tiny codebook
-    //   - time xfms:  0 ⇒ 1 entry with value 0
-    //   - floors:     0 ⇒ 1 entry with type 0  ← should throw
-    // That codebook would take careful bit construction. Instead, we assert
-    // via the error message that the decoder throws NotSupportedException for
-    // any floor-0 reference, documented as public contract.
-
-    // We invoke the decoder against a stream shorter than needed to force an
-    // InvalidDataException, then separately verify NotSupportedException is
-    // part of the public surface by confirming the type is defined:
-    var notSupported = typeof(NotSupportedException);
-    Assert.That(notSupported.FullName, Is.EqualTo("System.NotSupportedException"));
-
-    // Finally, perform a structural check: scan the Codec.Vorbis assembly for
-    // the "floor 0" rejection message so regressions (someone silently
-    // deleting the NotSupportedException throw) are caught.
-    var asmPath = typeof(VorbisCodec).Assembly.Location;
-    if (File.Exists(asmPath)) {
-      var raw = File.ReadAllBytes(asmPath);
-      var marker = System.Text.Encoding.UTF8.GetBytes("floor 0 decoding is not supported");
-      var found = IndexOf(raw, marker) >= 0;
-      Assert.That(found, Is.True, "Codec.Vorbis assembly must carry the floor-0 NotSupportedException message.");
-    }
+    var pcm = output.ToArray();
+    // One emitted half-block (blocksize_0 = 64 ⇒ 32 samples) × mono × 2 bytes.
+    Assert.That(pcm.Length, Is.EqualTo(64), "exactly one mono half-block frame");
+    Assert.That(pcm, Is.All.EqualTo((byte)0), "floor 'unused' ⇒ pure silence");
   }
 
-  private static int IndexOf(byte[] haystack, byte[] needle) {
-    if (needle.Length == 0) return 0;
-    for (var i = 0; i <= haystack.Length - needle.Length; ++i) {
-      var ok = true;
-      for (var j = 0; j < needle.Length; ++j) if (haystack[i + j] != needle[j]) { ok = false; break; }
-      if (ok) return i;
-    }
-    return -1;
+  [Test]
+  public void Decompress_Synthetic_Floor0_SilenceDecodesToZeroPcm() {
+    var ogg = VorbisSyntheticStream.Build(floorType: 0);
+    using var input = new MemoryStream(ogg);
+    using var output = new MemoryStream();
+    VorbisCodec.Decompress(input, output);
+
+    var pcm = output.ToArray();
+    Assert.That(pcm.Length, Is.EqualTo(64), "exactly one mono half-block frame");
+    Assert.That(pcm, Is.All.EqualTo((byte)0), "floor 0 amplitude 0 ⇒ pure silence");
   }
+
+  [Test]
+  public void Decompress_Synthetic_Floor1_ActiveCurveSynthesisesFiniteFrame() {
+    var ogg = VorbisSyntheticStream.Build(floorType: 1, activeFloor: true);
+    using var input = new MemoryStream(ogg);
+    using var output = new MemoryStream();
+    VorbisCodec.Decompress(input, output);
+
+    // Floor curve is synthesised but residue range is empty ⇒ floor × 0 = 0.
+    // A NaN/Inf in the floor would surface as non-zero PCM, so all-zero proves
+    // the curve was finite.
+    var pcm = output.ToArray();
+    Assert.That(pcm.Length, Is.EqualTo(64));
+    Assert.That(pcm, Is.All.EqualTo((byte)0), "finite floor × zero residue ⇒ silence");
+  }
+
+  [Test]
+  public void Decompress_Synthetic_Floor0_ActiveLspSynthesisesFiniteFrame() {
+    var ogg = VorbisSyntheticStream.Build(floorType: 0, activeFloor: true);
+    using var input = new MemoryStream(ogg);
+    using var output = new MemoryStream();
+    VorbisCodec.Decompress(input, output);
+
+    // Drives the LSP bark-map synthesis (amplitude 200, order-4 coefficients).
+    var pcm = output.ToArray();
+    Assert.That(pcm.Length, Is.EqualTo(64), "floor 0 LSP path must emit one frame");
+    Assert.That(pcm, Is.All.EqualTo((byte)0), "finite LSP floor × zero residue ⇒ silence");
+  }
+
+  // ── 4. Robustness / fuzz-ish ────────────────────────────────────────────
+
+  [Test]
+  public void Decompress_Synthetic_Floor0_TruncatedAudioPacketDegradesToSilence() {
+    var ogg = VorbisSyntheticStream.BuildTruncatedAudio(floorType: 0);
+    using var input = new MemoryStream(ogg);
+    using var output = new MemoryStream();
+    // End-of-packet during floor 0 decode must degrade to silence, never throw.
+    Assert.DoesNotThrow(() => VorbisCodec.Decompress(input, output));
+    Assert.That(output.ToArray(), Is.All.EqualTo((byte)0));
+  }
+
+  [Test]
+  public void Decompress_Synthetic_Floor1_TruncatedAudioPacketDegradesToSilence() {
+    var ogg = VorbisSyntheticStream.BuildTruncatedAudio(floorType: 1);
+    using var input = new MemoryStream(ogg);
+    using var output = new MemoryStream();
+    Assert.DoesNotThrow(() => VorbisCodec.Decompress(input, output));
+    Assert.That(output.ToArray(), Is.All.EqualTo((byte)0));
+  }
+
+  // The real .ogg-vector end-to-end test lives above under section 2; it stays
+  // Inconclusive until a permissively-licensed sample is dropped into
+  // test-corpus/, while the synthetic tests above give positive coverage.
 }

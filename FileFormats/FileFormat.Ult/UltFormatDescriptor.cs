@@ -1,21 +1,31 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using System.Text;
+using Codec.Pcm;
 using Compression.Registry;
-using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ult;
 
 /// <summary>
-/// Exposes an UltraTracker (ULT) module as an archive of <c>FULL.ult</c>,
-/// <c>metadata.ini</c>, <c>patterns/track_NN.bin</c> (raw RLE-packed track data,
-/// NO decode) and <c>samples/NN_{name}.raw</c> per non-empty sample (raw PCM).
-/// The ULT layout was recovered through binary inspection of the documented
-/// UltraTracker file format and the OpenMPT/libmodplug loaders.
+/// Exposes an UltraTracker (MAS_UTrack) module as a pseudo-archive of <c>FULL.ult</c>
+/// (Kind <c>Container</c>), a <c>metadata.ini</c> (Kind <c>Tag</c>) and one playable WAV
+/// per sample (Kind <c>Sample</c>).
 /// </summary>
+/// <remarks>
+/// PRAGMATIC SCOPE: only the header up to the sample-descriptor table is parsed
+/// (<c>char[15]</c> magic+version, <c>char[32]</c> title, <c>u8</c> message-line count +
+/// message, <c>u8</c> numSamples, then V004 sample headers: <c>char[32]</c> name,
+/// <c>char[12]</c> DOS name, <c>u32</c> loopStart, <c>u32</c> loopEnd, <c>u32</c> sizeStart,
+/// <c>u32</c> sizeEnd, <c>u8</c> volume, <c>u8</c> flags, <c>u16</c> speed, <c>s16</c> finetune).
+/// Sample byte length = <c>(sizeEnd - sizeStart)</c> × (bits/8) where bit&#160;2 of flags marks
+/// 16-bit. Rather than walk the order/pattern tables, the sample PCM is taken from the END
+/// of the file: the last Σ(byte length) bytes, sliced in descriptor order. Per-sample rate
+/// is not surfaced by this view, so 8363 Hz is assumed (documented in metadata).
+/// </remarks>
 public sealed class UltFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 
   public string Id => "Ult";
-  public string DisplayName => "ULT (UltraTracker)";
+  public string DisplayName => "UltraTracker";
   public FormatCategory Category => FormatCategory.Audio;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
@@ -29,162 +39,103 @@ public sealed class UltFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Classic;
-  public string Description => "UltraTracker module; full file + RLE-packed track blocks + raw PCM samples.";
+  public string Description => "UltraTracker module; full file + playable 8/16-bit sample WAVs.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
-    BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
-      Index: i, Name: e.Name,
-      OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
-      Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null,
-      Kind: e.Kind)).ToList();
+  public List<ArchiveEntryInfo> List(Stream stream, string? password)
+    => AudioPseudoArchive.List(BuildEntries(stream));
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    foreach (var e in BuildEntries(stream)) {
-      if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files))
-        continue;
-      WriteFile(outputDir, e.Name, e.Data);
-    }
-  }
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+    => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
-  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
-    foreach (var e in BuildEntries(input)) {
-      if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {
-        output.Write(e.Data);
-        return;
-      }
-    }
-    throw new FileNotFoundException($"Entry not found: {entryName}");
-  }
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
+    => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
-  private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
+  private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
-    return Parse(ms.ToArray());
+    var blob = ms.ToArray();
+    return Parse(blob);
   }
 
-  private static IReadOnlyList<(string Name, string Kind, byte[] Data)> Parse(byte[] blob) {
-    var entries = new List<(string, string, byte[])> {
-      ("FULL.ult", "Track", blob),
+  private const int AssumedSampleRate = 8363;
+  private const int SampleHeaderSize = 64; // 32+12+4+4+4+4+1+1+2 = 64.
+
+  private readonly record struct SampleInfo(string Name, long ByteLength, bool Is16Bit, byte Volume);
+
+  private static IReadOnlyList<AudioPseudoArchive.Entry> Parse(byte[] blob) {
+    var entries = new List<AudioPseudoArchive.Entry> {
+      new("FULL.ult", "Container", blob),
     };
-    var magic = "MAS_UTrack_V00"u8;
-    var validMagic = blob.Length >= 15 && blob.AsSpan(0, 14).SequenceEqual(magic);
-    if (!validMagic) {
-      AddPartial(entries);
+
+    if (blob.Length < 48 || Encoding.ASCII.GetString(blob, 0, 14) != "MAS_UTrack_V00")
       return entries;
-    }
 
-    // Version digit at offset 14: '1'..'4'.
-    var version = blob[14] - '0';
-    var title = ReadAsciiTrim(blob, 15, 32);
+    var version = (char)blob[14];
+    var samples = new List<SampleInfo>();
 
-    var off = 47; // after 14-byte magic + version digit + 32-char title.
+    try {
+      var pos = 15;                       // after magic+version
+      var title = ReadAsciiTrim(blob, pos, 32);
+      pos += 32;
+      var messageLines = blob[pos];
+      ++pos;
+      pos += messageLines * 32;           // song message
+      if (pos >= blob.Length) throw new InvalidDataException("truncated header");
+      var numSamples = blob[pos];
+      ++pos;
 
-    // Song message: one byte = number of 32-char lines, followed by that many lines.
-    if (off >= blob.Length) { AddPartial(entries, title, version); return entries; }
-    var msgLines = blob[off];
-    ++off;
-    off += msgLines * 32;
+      for (var s = 0; s < numSamples; ++s) {
+        if (pos + SampleHeaderSize > blob.Length) throw new InvalidDataException("truncated sample header");
+        var name = ReadAsciiTrim(blob, pos, 32);
+        var sizeStart = BinaryPrimitives.ReadUInt32LittleEndian(blob.AsSpan(pos + 52, 4));
+        var sizeEnd = BinaryPrimitives.ReadUInt32LittleEndian(blob.AsSpan(pos + 56, 4));
+        var vol = blob[pos + 60];
+        var flags = blob[pos + 61];
+        var is16 = (flags & 0x04) != 0;
+        var sampleCount = sizeEnd >= sizeStart ? sizeEnd - sizeStart : 0;
+        var byteLen = (long)sampleCount * (is16 ? 2 : 1);
+        samples.Add(new SampleInfo(name, byteLen, is16, vol));
+        pos += SampleHeaderSize;
+      }
 
-    if (off >= blob.Length) { AddPartial(entries, title, version); return entries; }
-    var numSamples = blob[off];
-    ++off;
-
-    // Sample headers: 64 bytes (version < 4) or 66 bytes (version >= 4).
-    var sampleHeaderSize = version >= 4 ? 66 : 64;
-    var samples = new List<(string Name, long Length, bool Is16)>();
-    for (var s = 0; s < numSamples; ++s) {
-      if (off + sampleHeaderSize > blob.Length) break;
-      var name = ReadAsciiTrim(blob, off, 32);
-      // dosName(12) at +32, loopStart u32 at +44, loopEnd u32 at +48,
-      // sizeStart u32 at +52, sizeEnd u32 at +56, volume(1) at +60, flags(1) at +61.
-      var sizeStart = ReadU32(blob, off + 52);
-      var sizeEnd = ReadU32(blob, off + 56);
-      var flags = off + 61 < blob.Length ? blob[off + 61] : (byte)0;
-      var is16 = (flags & 0x04) != 0;
-      var len = (long)(sizeEnd - sizeStart) * (is16 ? 2 : 1);
-      samples.Add((name, len, is16));
-      off += sampleHeaderSize;
-    }
-
-    // Order table: 256 bytes.
-    off += 256;
-
-    if (off + 2 > blob.Length) { AddPartial(entries, title, version); return entries; }
-    var lastChannel = blob[off];     // numChannels - 1
-    var lastPattern = blob[off + 1]; // numPatterns - 1
-    off += 2;
-    var numChannels = lastChannel + 1;
-    var numPatterns = lastPattern + 1;
-
-    // Pan positions: one byte per channel (version >= 3 only).
-    if (version >= 3) off += numChannels;
-
-    // Track data: numChannels * numPatterns tracks, each RLE-packed (64 rows decoded).
-    // We surface raw track bytes per track without RLE decode; each track is a
-    // self-delimiting RLE stream terminating once 64 rows are accounted for.
-    var totalTracks = numChannels * numPatterns;
-    for (var t = 0; t < totalTracks; ++t) {
-      var start = off;
-      var rows = 0;
-      // Walk the RLE stream: 0xFC = repeat-count prefix (count, then 5-byte event);
-      // otherwise a single 5-byte event.
-      while (rows < 64 && off + 5 <= blob.Length) {
-        if (blob[off] == 0xFC) {
-          if (off + 6 > blob.Length) { off = blob.Length; break; }
-          var count = blob[off + 1];
-          rows += count;
-          off += 6;
-        } else {
-          rows += 1;
-          off += 5;
+      // Sample PCM is the trailing Σ(byteLen) bytes of the file, in descriptor order.
+      var totalBytes = samples.Sum(s => s.ByteLength);
+      var dataStart = blob.LongLength - totalBytes;
+      if (totalBytes > 0 && dataStart >= 0) {
+        var cursor = dataStart;
+        for (var s = 0; s < samples.Count; ++s) {
+          var si = samples[s];
+          if (si.ByteLength <= 0) continue;
+          var take = (int)Math.Min(si.ByteLength, blob.LongLength - cursor);
+          if (take <= 0) break;
+          var raw = blob.AsSpan((int)cursor, take);
+          var bits = si.Is16Bit ? 16 : 8;
+          // 8-bit signed → unsigned WAV; 16-bit signed stays as-is (little-endian).
+          var pcm = si.Is16Bit ? raw.ToArray() : ToUnsigned8(raw);
+          var label = string.IsNullOrWhiteSpace(si.Name) ? "sample" : SanitizeFileName(si.Name);
+          entries.Add(new($"samples/{(s + 1):D2}_{label}.wav", "Sample",
+            PcmCodec.ToWavBlob(pcm, 1, AssumedSampleRate, bits)));
+          cursor += si.ByteLength;
         }
       }
-      if (off <= start) break;
-      var len = off - start;
-      var data = new byte[len];
-      Buffer.BlockCopy(blob, start, data, 0, len);
-      entries.Add(($"patterns/track_{(t + 1):D3}.bin", "Pattern", data));
-      if (off >= blob.Length) break;
-    }
-
-    // Sample data follows the track data.
-    for (var s = 0; s < samples.Count; ++s) {
-      var (name, len, _) = samples[s];
-      if (len <= 0) continue;
-      if (off >= blob.Length) break;
-      var take = (int)Math.Min(len, blob.Length - off);
-      var data = new byte[take];
-      Buffer.BlockCopy(blob, off, data, 0, take);
-      var safe = string.IsNullOrWhiteSpace(name) ? "sample" : SanitizeFileName(name);
-      entries.Add(($"samples/{(s + 1):D2}_{safe}.raw", "Sample", data));
-      off += (int)len;
+    } catch {
+      // Graceful FULL-only fallback.
     }
 
     var info = new StringBuilder();
-    info.AppendLine($"title={title}");
-    info.AppendLine($"format=ULT");
-    info.AppendLine($"version=V{version:D2}");
-    info.AppendLine($"channels={numChannels}");
-    info.AppendLine($"num_patterns={numPatterns}");
-    info.AppendLine($"num_samples={numSamples}");
-    info.AppendLine($"sample_format=8/16-bit signed PCM (per-sample flags bit2)");
-    entries.Insert(1, ("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));
+    info.AppendLine($"format=MAS_UTrack_V00{version}");
+    info.AppendLine($"sample_count={samples.Count}");
+    info.AppendLine($"sample_rate_assumed={AssumedSampleRate} (ULT view carries no per-sample rate)");
+    entries.Insert(1, new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));
 
     return entries;
   }
 
-  private static uint ReadU32(byte[] blob, int off) =>
-    off + 4 <= blob.Length
-      ? (uint)(blob[off] | (blob[off + 1] << 8) | (blob[off + 2] << 16) | (blob[off + 3] << 24))
-      : 0u;
-
-  private static void AddPartial(List<(string, string, byte[])> entries, string? title = null, int version = 0) {
-    var info = new StringBuilder();
-    info.AppendLine("parse_status=partial");
-    info.AppendLine("format=ULT");
-    if (title != null) info.AppendLine($"title={title}");
-    if (version > 0) info.AppendLine($"version=V{version:D2}");
-    entries.Insert(1, ("metadata.ini", "Tag", Encoding.UTF8.GetBytes(info.ToString())));
+  private static byte[] ToUnsigned8(ReadOnlySpan<byte> signed) {
+    var r = new byte[signed.Length];
+    for (var i = 0; i < signed.Length; ++i)
+      r[i] = unchecked((byte)(signed[i] + 128));
+    return r;
   }
 
   private static string ReadAsciiTrim(byte[] blob, int offset, int length) {
@@ -200,10 +151,8 @@ public sealed class UltFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   private static string SanitizeFileName(string name) {
     var sb = new StringBuilder(name.Length);
-    foreach (var c in name) {
-      if (char.IsLetterOrDigit(c) || c == '_' || c == '-' || c == '.') sb.Append(c);
-      else sb.Append('_');
-    }
+    foreach (var c in name)
+      sb.Append(char.IsLetterOrDigit(c) || c is '_' or '-' or '.' ? c : '_');
     var s = sb.ToString().Trim('.');
     return s.Length == 0 ? "sample" : s;
   }

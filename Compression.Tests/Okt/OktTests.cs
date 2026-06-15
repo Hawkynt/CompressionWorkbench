@@ -8,83 +8,79 @@ namespace Compression.Tests.Okt;
 [TestFixture]
 public class OktTests {
 
-  private static void AddChunk(List<byte> b, string id, byte[] body) {
-    b.AddRange(Encoding.ASCII.GetBytes(id));
-    var len = new byte[4];
-    BinaryPrimitives.WriteUInt32BigEndian(len, (uint)body.Length);
-    b.AddRange(len);
-    b.AddRange(body);
+  private static byte[] Chunk(string id, byte[] body) {
+    var r = new byte[8 + body.Length];
+    Encoding.ASCII.GetBytes(id).CopyTo(r, 0);
+    BinaryPrimitives.WriteUInt32BigEndian(r.AsSpan(4), (uint)body.Length);
+    body.CopyTo(r, 8);
+    return r;
   }
 
-  private static byte[] MakeSyntheticOkt() {
-    var b = new List<byte>();
-    b.AddRange("OKTASONG"u8.ToArray());
+  private static byte[] SampDescriptor(string name, uint length, byte volume) {
+    var d = new byte[36];
+    Encoding.ASCII.GetBytes(name).CopyTo(d, 0);
+    BinaryPrimitives.WriteUInt32BigEndian(d.AsSpan(20), length);
+    d[28] = volume;
+    return d;
+  }
 
-    // CMOD: 8 u16 BE; first 4 channels mode 1 (mono).
-    var cmod = new byte[16];
-    for (var i = 0; i < 4; ++i) BinaryPrimitives.WriteUInt16BigEndian(cmod.AsSpan(i * 2, 2), 1);
-    AddChunk(b, "CMOD", cmod);
+  private static byte[] MakeOkt(out byte[] expectedPcm) {
+    var signed = new byte[] { 0, 10, unchecked((byte)-10), 127 };
+    expectedPcm = new byte[] { 128, 138, 118, 255 };
 
-    // SAMP: one 32-byte sample header. name(20) + len u32 BE.
-    var samp = new byte[32];
-    Encoding.ASCII.GetBytes("OktSample").CopyTo(samp, 0);
-    BinaryPrimitives.WriteUInt32BigEndian(samp.AsSpan(20, 4), 8);
-    AddChunk(b, "SAMP", samp);
-
-    // SLEN: pattern count = 1.
-    var slen = new byte[2];
-    BinaryPrimitives.WriteUInt16BigEndian(slen, 1);
-    AddChunk(b, "SLEN", slen);
-
-    // PBOD: pattern body.
-    var pbod = new byte[10];
-    for (var i = 0; i < pbod.Length; ++i) pbod[i] = (byte)(0xC0 + i);
-    AddChunk(b, "PBOD", pbod);
-
-    // SBOD: sample data.
-    var sbod = new byte[8];
-    for (var i = 0; i < sbod.Length; ++i) sbod[i] = (byte)(i + 1);
-    AddChunk(b, "SBOD", sbod);
-
-    return b.ToArray();
+    using var ms = new MemoryStream();
+    ms.Write("OKTASONG"u8);
+    // Two descriptors: one with data (len 4), one empty (len 0).
+    var samp = new byte[72];
+    SampDescriptor("Lead", 4, 64).CopyTo(samp, 0);
+    SampDescriptor("Empty", 0, 0).CopyTo(samp, 36);
+    ms.Write(Chunk("SAMP", samp));
+    ms.Write(Chunk("PATT", new byte[] { 1 }));
+    ms.Write(Chunk("PBOD", new byte[] { 0xAA, 0xBB, 0xCC }));
+    ms.Write(Chunk("SBOD", signed)); // belongs to descriptor 0 ("Lead")
+    return ms.ToArray();
   }
 
   [Test]
-  public void List_ExposesFullMetadataPatternAndSample() {
-    using var ms = new MemoryStream(MakeSyntheticOkt());
+  public void List_SurfacesFullMetadataPatternAndSample() {
+    var blob = MakeOkt(out _);
+    using var ms = new MemoryStream(blob);
+    var entries = new OktFormatDescriptor().List(ms, null);
+
+    Assert.That(entries.First(e => e.Name == "FULL.okt").Kind, Is.EqualTo("Container"));
+    Assert.That(entries.Any(e => e.Name == "metadata.ini" && e.Kind == "Tag"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "patterns/pattern_00.bin" && e.Kind == "Pattern"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "samples/01_Lead.wav" && e.Kind == "Sample"), Is.True);
+  }
+
+  [Test]
+  public void Sample_DecodesToRebiasedUnsigned8Wav() {
+    var blob = MakeOkt(out var expected);
+    using var ms = new MemoryStream(blob);
+    using var output = new MemoryStream();
+    new OktFormatDescriptor().ExtractEntry(ms, "samples/01_Lead.wav", output, null);
+    var wav = output.ToArray();
+
+    Assert.That(wav.AsSpan(0, 4).ToArray(), Is.EqualTo("RIFF"u8.ToArray()));
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24)), Is.EqualTo(8363u));
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(34)), Is.EqualTo(8));
+    Assert.That(wav.AsSpan(44).ToArray(), Is.EqualTo(expected));
+  }
+
+  [Test]
+  public void Pattern_PreservesRawBytes() {
+    var blob = MakeOkt(out _);
+    using var ms = new MemoryStream(blob);
+    using var output = new MemoryStream();
+    new OktFormatDescriptor().ExtractEntry(ms, "patterns/pattern_00.bin", output, null);
+    Assert.That(output.ToArray(), Is.EqualTo(new byte[] { 0xAA, 0xBB, 0xCC }));
+  }
+
+  [Test]
+  public void Truncated_FallsBackToFullOnly() {
+    using var ms = new MemoryStream("OKTASONG"u8.ToArray());
     var entries = new OktFormatDescriptor().List(ms, null);
     Assert.That(entries.Any(e => e.Name == "FULL.okt"), Is.True);
-    Assert.That(entries.Any(e => e.Name == "metadata.ini"), Is.True);
-    Assert.That(entries.Any(e => e.Name == "patterns/pattern_00.bin"), Is.True);
-    Assert.That(entries.Any(e => e.Name.StartsWith("samples/01_")), Is.True);
-  }
-
-  [Test]
-  public void Extract_WritesFullByteIdentical() {
-    var blob = MakeSyntheticOkt();
-    var tmp = Path.Combine(Path.GetTempPath(), "okt_" + Guid.NewGuid().ToString("N"));
-    try {
-      using var ms = new MemoryStream(blob);
-      new OktFormatDescriptor().Extract(ms, tmp, null, null);
-      Assert.That(File.ReadAllBytes(Path.Combine(tmp, "FULL.okt")), Is.EqualTo(blob));
-      Assert.That(File.Exists(Path.Combine(tmp, "patterns", "pattern_00.bin")), Is.True);
-    } finally {
-      if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
-    }
-  }
-
-  [Test]
-  public void List_Malformed_DoesNotThrow() {
-    using var ms = new MemoryStream("OKTASONG"u8.ToArray());
-    List<Compression.Registry.ArchiveEntryInfo> entries = null!;
-    Assert.DoesNotThrow(() => entries = new OktFormatDescriptor().List(ms, null));
-    Assert.That(entries.Any(e => e.Name == "metadata.ini"), Is.True);
-  }
-
-  [Test]
-  public void Detection_MagicMatches() {
-    var blob = MakeSyntheticOkt();
-    var sig = new OktFormatDescriptor().MagicSignatures[0];
-    Assert.That(blob.AsSpan(0, 8).SequenceEqual(sig.Bytes), Is.True);
+    Assert.That(entries.Any(e => e.Kind == "Sample"), Is.False);
   }
 }

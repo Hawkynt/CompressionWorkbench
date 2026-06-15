@@ -71,7 +71,10 @@ public class ExtSchemaTests {
 
   [Test, Category("HappyPath")]
   public void Create_WithVersionExt4Default_SetsExtentsAndJournalFlags() {
-    // Default Version (= ext4) must flip on HAS_JOURNAL + EXTENTS + 64BIT.
+    // Default Version (= ext4) flips on HAS_JOURNAL + EXTENTS. 64BIT is deliberately
+    // NOT set: it mandates 64-byte block group descriptors (s_desc_size=64) that the
+    // writer doesn't emit, so advertising it makes dumpe2fs/e2fsck reject the volume
+    // ("block group descriptor size invalid"). 64BIT is only needed past 16 TiB.
     var desc = new ExtFormatDescriptor();
     var tmpFile = Path.GetTempFileName();
     try {
@@ -85,7 +88,7 @@ public class ExtSchemaTests {
 
       Assert.That(compatFlags & 0x4u, Is.EqualTo(0x4u), "ext4 default must advertise HAS_JOURNAL.");
       Assert.That(incompatFlags & 0x40u, Is.EqualTo(0x40u), "ext4 default must advertise EXTENTS.");
-      Assert.That(incompatFlags & 0x80u, Is.EqualTo(0x80u), "ext4 default must advertise 64BIT.");
+      Assert.That(incompatFlags & 0x80u, Is.EqualTo(0u), "ext4 default must NOT advertise 64BIT (32-byte descriptors).");
     } finally {
       File.Delete(tmpFile);
     }

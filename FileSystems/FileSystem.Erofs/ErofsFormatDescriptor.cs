@@ -4,16 +4,18 @@ using Compression.Registry;
 namespace FileSystem.Erofs;
 
 /// <summary>
-/// Read-only descriptor for EROFS images. Write support is intentionally absent —
-/// generating EROFS is the job of <c>mkfs.erofs</c>; our role is the triage /
-/// extraction side (typical user: pulled an Android system.img, needs to list it).
+/// Descriptor for EROFS images. Reading covers the uncompressed + inline inode layouts;
+/// creation produces a minimal uncompressed (FLAT_PLAIN) image via <see cref="ErofsWriter"/>.
+/// Full-fidelity, compressed images remain the job of <c>mkfs.erofs</c>; our writer targets
+/// the round-trippable WORM subset (compact inodes, plain data, nested directories).
 /// </summary>
-public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Erofs";
   public string DisplayName => "EROFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".erofs";
   public IReadOnlyList<string> Extensions => [".erofs", ".img"];
@@ -93,6 +95,13 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     using var memoryStream = new MemoryStream();
     s.CopyTo(memoryStream);
     return memoryStream.ToArray();
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var writer = new ErofsWriter();
+    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
+      writer.AddFile(name, data);
+    writer.WriteTo(output);
   }
 
   private static ErofsReader OpenReader(Stream stream) {

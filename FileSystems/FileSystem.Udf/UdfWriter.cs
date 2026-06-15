@@ -332,6 +332,25 @@ public sealed class UdfWriter {
 
   // ── Descriptor writers ────────────────────────────────────────────────────
 
+  // UDF domain entity-identifier suffix (UDF 1.02): UDFRevision(2 LE)=0x0102,
+  // DomainFlags(1)=0, Reserved(5). Stamped after the "*OSTA UDF Compliant" id.
+  private static readonly byte[] DomainSuffix = [0x02, 0x01, 0, 0, 0, 0, 0, 0];
+
+  // ECMA-167 §7.4 EntityID (regid): Flags(1) + Identifier(23) + Suffix(8).
+  private static void WriteRegid(byte[] buf, int off, string id, ReadOnlySpan<byte> suffix) {
+    buf[off] = 0;
+    var idb = Encoding.ASCII.GetBytes(id);
+    Array.Copy(idb, 0, buf, off + 1, Math.Min(idb.Length, 23));
+    if (!suffix.IsEmpty)
+      suffix[..Math.Min(suffix.Length, 8)].CopyTo(buf.AsSpan(off + 24, 8));
+  }
+
+  // ECMA-167 §7.2.1 charspec: CharacterSetType(1)=0 (CS0) + CharacterSetInfo(63).
+  private static void WriteCharspec(byte[] buf, int off) {
+    buf[off] = 0;
+    Encoding.ASCII.GetBytes("OSTA Compressed Unicode").CopyTo(buf, off + 1);
+  }
+
   private static void WriteTag(byte[] buf, int off, ushort tagId, uint tagLocation) {
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(off), tagId);
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(off + 2), 2); // descriptor version
@@ -405,6 +424,11 @@ public sealed class UdfWriter {
   private static void WritePartitionDescriptor(Stream output, int sectorNum, int partStart, int partLen) {
     var buf = new byte[Sector];
     WriteTag(buf, 0, 5, (uint)sectorNum);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(16), 1);          // VDS number
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(20), 1);          // partition flags = allocated
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(22), 0);          // partition number 0
+    WriteRegid(buf, 24, "+NSR02", default);                              // partition contents (ECMA-167 §4)
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(184), 1);         // access type = read-only
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(188), (uint)partStart);
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(192), (uint)partLen);
     FinalizeTag(buf, 0, PdBodySize);
@@ -414,12 +438,23 @@ public sealed class UdfWriter {
   private void WriteLvd(Stream output, int sectorNum) {
     var buf = new byte[Sector];
     WriteTag(buf, 0, 6, (uint)sectorNum);
+    WriteCharspec(buf, 20);                                              // descriptor character set (CS0)
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(212), (uint)Sector); // logical block size
-    // FSD location: long_ad at offset 248 (length=4, lbn=4, partRef=2, impl=6)
+    WriteRegid(buf, 216, "*OSTA UDF Compliant", DomainSuffix);          // domain identifier (kernel-mandatory)
+    // logical_volume_contents_use @248: FSD long_ad (length=4, lbn=4, partRef=2, impl=6)
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(248), (uint)Sector); // extent length
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(252), 0); // FSD LBN = 0
     // partRef at 256 = 0 (default)
-    FinalizeTag(buf, 0, LvdBodySize);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(264), 6);        // map table length (one Type-1 map)
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(268), 1);        // number of partition maps
+    WriteRegid(buf, 272, "*CompressionWorkbench", default);             // implementation identifier
+    // Type-1 partition map @440: type(1)=1, length(1)=6, vol_seq(2)=1, part_num(2)=0
+    buf[440] = 1;
+    buf[441] = 6;
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(442), 1);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(444), 0);
+    // CRC must cover through the partition map (offset 16..446).
+    FinalizeTag(buf, 0, 446 - 16);
     output.Write(buf);
   }
 
@@ -433,9 +468,16 @@ public sealed class UdfWriter {
   private static void WriteFsd(Stream output, int lbn, int rootIcbLbn) {
     var buf = new byte[Sector];
     WriteTag(buf, 0, 256, (uint)lbn);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(28), 3);          // interchange level
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(30), 3);          // max interchange level
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(32), 1);          // charset list
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(36), 1);          // max charset list
+    WriteCharspec(buf, 48);                                              // logical volume id charset (CS0)
+    WriteCharspec(buf, 240);                                             // file set charset (CS0)
     // Root ICB: long_ad at offset 400
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(400), (uint)Sector);
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(404), (uint)rootIcbLbn);
+    WriteRegid(buf, 416, "*OSTA UDF Compliant", DomainSuffix);          // domain identifier (kernel-checked)
     FinalizeTag(buf, 0, FsdBodySize);
     output.Write(buf);
   }
@@ -448,11 +490,16 @@ public sealed class UdfWriter {
   private static void WriteDirectoryFe(Stream output, Node dir) {
     var buf = new byte[Sector];
     WriteTag(buf, 0, 261, (uint)dir.FeLbn);
-    // ICB tag at offset 16: strategy type etc — keep zeros
+    // ICB tag at offset 16: strategy_type(2)@20 must be 4 (the only type the
+    // kernel supports; 0 → "unsupported strategy type"), max_entries(2)@24 = 1.
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(20), 4);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(24), 1);
     buf[27] = 4; // file type = directory
-    // File link count at offset 28 (uint16): parent link + one per child dir.
+    // File link count is at FE offset 48 (ECMA-167 §14.9, after uid/gid/perms);
+    // offset 28 falls inside the ICB tag and leaves the kernel seeing link
+    // count 0 → "Error in udf_iget". Parent link + one per child directory.
     var subDirCount = dir.Children.Count(c => c.IsDirectory);
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(28), (ushort)(1 + subDirCount));
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(48), (ushort)(1 + subDirCount));
     // icb flags at offset 34: adType=0 (short ADs)
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(34), 0);
     // info length at offset 56 — the directory's FID data is block-aligned, so
@@ -488,8 +535,10 @@ public sealed class UdfWriter {
   private static void WriteFileFe(Stream output, int lbn, int fileSize, int dataLbn) {
     var buf = new byte[Sector];
     WriteTag(buf, 0, 261, (uint)lbn);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(20), 4); // ICB strategy type 4
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(24), 1); // max entries 1
     buf[27] = 5; // file type = file (regular)
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(28), 1); // file link count
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(48), 1); // file link count (ECMA-167 §14.9 offset)
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(34), 0); // adType=0 short
     BinaryPrimitives.WriteUInt64LittleEndian(buf.AsSpan(56), (ulong)fileSize);
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(172), 8); // L_AD = 8

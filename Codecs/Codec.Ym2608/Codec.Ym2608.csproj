@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Codec.Ym2608</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Codec.Ym2612\Codec.Ym2612.csproj" />
+    <ProjectReference Include="..\Codec.Ay8910\Codec.Ay8910.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -440,7 +440,7 @@ public sealed class NtfsWriter {
 
     // Record 2: $LogFile
     WriteMftRecord(
-      disk, mftOffset, 2, sequence: 1,
+      disk, mftOffset, 2, sequence: 2,
       fileName: "$LogFile",
       parentRecord: 5,
       isDirectory: false,
@@ -451,7 +451,7 @@ public sealed class NtfsWriter {
 
     // Record 3: $Volume — volume information + name (small, so resident).
     WriteMftRecord(
-      disk, mftOffset, 3, sequence: 1,
+      disk, mftOffset, 3, sequence: 3,
       fileName: "$Volume",
       parentRecord: 5,
       isDirectory: false,
@@ -468,7 +468,7 @@ public sealed class NtfsWriter {
     var attrDef = BuildAttrDefTable();
     if (attrDef.Length <= ResidentThreshold) {
       WriteMftRecord(
-        disk, mftOffset, 4, sequence: 1,
+        disk, mftOffset, 4, sequence: 4,
         fileName: "$AttrDef",
         parentRecord: 5,
         isDirectory: false,
@@ -485,7 +485,7 @@ public sealed class NtfsWriter {
       nextCluster += attrDefClusters;
       WriteBytesToClusters(disk, attrDefCluster, attrDef);
       WriteMftRecord(
-        disk, mftOffset, 4, sequence: 1,
+        disk, mftOffset, 4, sequence: 4,
         fileName: "$AttrDef",
         parentRecord: 5,
         isDirectory: false,
@@ -514,7 +514,7 @@ public sealed class NtfsWriter {
       treeNodes.Where(n => n.IsDirectory).Prepend(rootNode).ToList());
     WriteBytesToClusters(disk, bitmapCluster, bitmap);
     WriteMftRecord(
-      disk, mftOffset, 6, sequence: 1,
+      disk, mftOffset, 6, sequence: 6,
       fileName: "$Bitmap",
       parentRecord: 5,
       isDirectory: false,
@@ -527,7 +527,7 @@ public sealed class NtfsWriter {
     // reserved tail, mirrored by the last sector of the volume in real NTFS;
     // we just point at the first cluster).
     WriteMftRecord(
-      disk, mftOffset, 7, sequence: 1,
+      disk, mftOffset, 7, sequence: 7,
       fileName: "$Boot",
       parentRecord: 5,
       isDirectory: false,
@@ -541,7 +541,7 @@ public sealed class NtfsWriter {
     // cluster reads as zero. We write the unnamed default $DATA as a
     // zero-length resident stream (the canonical NTFS "placeholder" pattern).
     WriteMftRecord(
-      disk, mftOffset, 8, sequence: 1,
+      disk, mftOffset, 8, sequence: 8,
       fileName: "$BadClus",
       parentRecord: 5,
       isDirectory: false,
@@ -555,7 +555,7 @@ public sealed class NtfsWriter {
     // fall back to per-file security attributes. No $SDH/$SII indexes for
     // our minimal image.
     WriteMftRecord(
-      disk, mftOffset, 9, sequence: 1,
+      disk, mftOffset, 9, sequence: 9,
       fileName: "$Secure",
       parentRecord: 5,
       isDirectory: false,
@@ -569,7 +569,7 @@ public sealed class NtfsWriter {
     var upCase = BuildUpCaseTable();
     WriteBytesToClusters(disk, upCaseCluster, upCase);
     WriteMftRecord(
-      disk, mftOffset, 10, sequence: 1,
+      disk, mftOffset, 10, sequence: 10,
       fileName: "$UpCase",
       parentRecord: 5,
       isDirectory: false,
@@ -580,7 +580,7 @@ public sealed class NtfsWriter {
 
     // Record 11: $Extend — empty directory (no children in a minimal image).
     WriteMftRecord(
-      disk, mftOffset, 11, sequence: 1,
+      disk, mftOffset, 11, sequence: 11,
       fileName: "$Extend",
       parentRecord: 5,
       isDirectory: true,
@@ -865,7 +865,11 @@ public sealed class NtfsWriter {
     //   • record  < cluster  → store the negative base-2 log of the byte size
     //                          (e.g. 1024-byte record → -10, since 2^10 = 1024).
     disk[64] = EncodeClustersPerRecord(this._mftRecordSize, this._clusterSize);
-    disk[68] = 4;                    // 4 clusters per index block
+    // clusters_per_index_record (offset 68): same signed encoding as the MFT
+    // record field. The index block is IndexBlockSize (4 KiB); hardcoding 4
+    // meant 4×cluster bytes (16384 with a 4 KiB cluster) → ntfs3 rejects with
+    // "unsupported bytes per index 16384".
+    disk[68] = EncodeClustersPerRecord(IndexBlockSize, this._clusterSize);
     BinaryPrimitives.WriteInt64LittleEndian(disk.AsSpan(72), volumeSerial);
     disk[510] = 0x55; disk[511] = 0xAA;
   }

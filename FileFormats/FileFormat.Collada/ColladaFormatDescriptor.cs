@@ -84,7 +84,7 @@ public sealed class ColladaFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.dae", "Track", blob),
+      ("FULL.dae", "Container", blob),
       ("document.xml", "Track", blob),
     };
 

@@ -1,231 +1,138 @@
 #pragma warning disable CS1591
-using System.Buffers.Binary;
-using System.Globalization;
 using System.Text;
+using Codec.Pcm;
+using Codec.Tta;
 using Compression.Registry;
-using static Compression.Registry.FormatHelpers;
+using FileFormat.Wav;
 
 namespace FileFormat.Tta;
 
 /// <summary>
-/// Exposes a True Audio (.tta) lossless file as a read-only archive of
-/// <c>FULL.tta</c>, a <c>metadata.ini</c> describing the header (channels, bits,
-/// sample rate, sample count), one raw block per frame carved via the seek table
-/// (<c>frames/frame_NNNN.bin</c>), and a <c>tags.ini</c> when an ID3v2 or APEv2
-/// tag is present.
+/// Exposes a True Audio (<c>.tta</c>) file as a pseudo-archive of <c>FULL.tta</c>
+/// (Kind <c>Container</c>) plus, when the bitstream decodes, one mono WAV per
+/// channel (Kind <c>Channel</c>, named via <see cref="ChannelLayout"/>) and a
+/// <c>metadata.ini</c> (Kind <c>Tag</c>). Decode failures degrade gracefully to a
+/// FULL-only listing. The descriptor is also creatable (WORM): it assembles a
+/// fresh <c>.tta</c> either by passing through a supplied <c>FULL.tta</c> or by
+/// interleaving per-channel mono WAVs and encoding them with <see cref="TtaCodec"/>.
 /// </summary>
-/// <remarks>
-/// <para>The TTA1 header is: magic "TTA1" + format(u16) + channels(u16) +
-/// bits-per-sample(u16) + sample-rate(u32) + data-length-in-samples(u32) +
-/// header CRC32(u32). It is followed by a seek table of one u32 compressed-frame
-/// size per frame plus a trailing CRC32. The frame length in samples is
-/// <c>floor(sampleRate * 256 / 245)</c>, so the frame count is
-/// <c>ceil(dataLength / frameLength)</c>.</para>
-/// <para><b>Deferred:</b> the adaptive-filter + Rice audio decode is not
-/// implemented — this descriptor surfaces the container structure (header, seek
-/// table, per-frame compressed blocks, tags) only; it does not reconstruct PCM.</para>
-/// </remarks>
 public sealed class TtaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-  IArchiveInMemoryExtract {
+  IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
 
   public string Id => "Tta";
-  public string DisplayName => "True Audio (.tta)";
+  public string DisplayName => "True Audio (TTA)";
   public FormatCategory Category => FormatCategory.Audio;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".tta";
   public IReadOnlyList<string> Extensions => [".tta"];
   public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
-    new("TTA1"u8.ToArray(), Confidence: 0.95),
-  ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored"), new("tta", "TTA")];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [new("TTA1"u8.ToArray(), Confidence: 0.95)];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("tta", "TTA")];
   public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Classic;
-  public string Description =>
-    "True Audio lossless; full file + header metadata + per-frame blocks (seek table) + ID3/APE tags. Audio decode deferred — structural only.";
-
-  private static readonly byte[] ApeTagMagic = "APETAGEX"u8.ToArray();
+  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+  public string Description => "True Audio (TTA) lossless audio; full file + decoded per-channel PCM.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
-    BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
-      Index: i, Name: e.Name,
-      OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
-      Method: e.Kind == "Frame" ? "tta" : "stored",
-      IsDirectory: false, IsEncrypted: false, LastModified: null,
-      Kind: e.Kind)).ToList();
+    AudioPseudoArchive.List(BuildEntries(stream));
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    foreach (var e in BuildEntries(stream)) {
-      if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files))
-        continue;
-      WriteFile(outputDir, e.Name, e.Data);
+  public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
+    AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
+
+  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) =>
+    AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
+
+  // ── IArchiveWriteConstraints ────────────────────────────────────────────────
+
+  public long? MaxTotalArchiveSize => null;
+  public string AcceptedInputsDescription =>
+    "TTA archive accepts: FULL.tta, LEFT/RIGHT/… .wav (per-channel), metadata.ini";
+
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
+    if (name is "full.tta" or "metadata.ini" || name.EndsWith(".wav")) {
+      reason = null;
+      return true;
     }
+    reason = $"not a TTA-archive input (got {input.ArchiveName}); {AcceptedInputsDescription}";
+    return false;
   }
 
-  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
-    foreach (var e in BuildEntries(input)) {
-      if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {
-        output.Write(e.Data);
-        return;
-      }
+  // ── IArchiveCreatable: pass through FULL.tta or assemble from per-channel WAVs ──
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var fileList = FormatHelpers.FilesOnly(inputs).ToList();
+
+    var full = fileList.FirstOrDefault(f =>
+      Path.GetFileName(f.Name).Equals("FULL.tta", StringComparison.OrdinalIgnoreCase));
+    if (full.Data != null) {
+      output.Write(full.Data);
+      return;
     }
-    throw new FileNotFoundException($"Entry not found: {entryName}");
+
+    var channelBlobs = fileList
+      .Where(f => Path.GetFileName(f.Name).EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+      .OrderBy(f => ChannelLayout.OrderIndex(Path.GetFileNameWithoutExtension(f.Name)))
+      .ToList();
+
+    if (channelBlobs.Count == 0)
+      throw new InvalidOperationException("TTA archive create needs either FULL.tta or one or more per-channel WAVs.");
+
+    var channels = channelBlobs.Select(b => new WavReader().Read(b.Data)).ToList();
+    var first = channels[0];
+    if (channels.Any(c => c.SampleRate != first.SampleRate || c.BitsPerSample != first.BitsPerSample || c.NumChannels != 1))
+      throw new InvalidOperationException("All channel WAVs must be mono and share sample rate + bit depth.");
+    if (channels.Any(c => c.InterleavedPcm.Length != first.InterleavedPcm.Length))
+      throw new InvalidOperationException("All channel WAVs must have the same frame count.");
+
+    var interleaved = PcmCodec.Interleave(channels.Select(c => c.InterleavedPcm).ToList(), first.BitsPerSample);
+
+    using var pcm = new MemoryStream(interleaved);
+    TtaCodec.Compress(pcm, output, channels.Count, first.SampleRate, first.BitsPerSample);
   }
 
-  private static List<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
+  // ── Shared archive-entry builder ─────────────────────────────────────────────
+
+  private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
-    var file = ms.ToArray();
+    var blob = ms.ToArray();
 
-    var entries = new List<(string, string, byte[])> {
-      ("FULL.tta", "Container", file),
+    var entries = new List<AudioPseudoArchive.Entry> {
+      new("FULL.tta", "Container", blob, "tta"),
     };
 
-    var meta = new StringBuilder();
-    meta.AppendLine("[tta]");
+    // Best-effort decode-and-split; on any failure keep the FULL-only listing.
+    try {
+      using var probe = new MemoryStream(blob, writable: false);
+      var info = TtaCodec.ReadStreamInfo(probe);
 
-    // A leading ID3v2 tag may precede the TTA1 magic; account for it so we still
-    // find the header.
-    var headerOffset = SkipLeadingId3v2(file);
+      using var src = new MemoryStream(blob, writable: false);
+      using var pcm = new MemoryStream();
+      TtaCodec.Decompress(src, pcm);
+      var pcmBytes = pcm.ToArray();
 
-    if (file.Length < headerOffset + 22 ||
-        file[headerOffset] != 'T' || file[headerOffset + 1] != 'T' ||
-        file[headerOffset + 2] != 'A' || file[headerOffset + 3] != '1') {
-      meta.AppendLine("parse_status=partial");
-      entries.Add(("metadata.ini", "Tag", Encoding.UTF8.GetBytes(meta.ToString())));
-      return entries;
-    }
-
-    var format = BinaryPrimitives.ReadUInt16LittleEndian(file.AsSpan(headerOffset + 4));
-    var channels = BinaryPrimitives.ReadUInt16LittleEndian(file.AsSpan(headerOffset + 6));
-    var bits = BinaryPrimitives.ReadUInt16LittleEndian(file.AsSpan(headerOffset + 8));
-    var sampleRate = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(headerOffset + 10));
-    var dataLength = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(headerOffset + 14));
-    // headerOffset + 18..22 = header CRC32
-
-    meta.Append("format=").AppendLine(format.ToString(CultureInfo.InvariantCulture));
-    meta.Append("channels=").AppendLine(channels.ToString(CultureInfo.InvariantCulture));
-    meta.Append("bits_per_sample=").AppendLine(bits.ToString(CultureInfo.InvariantCulture));
-    meta.Append("sample_rate=").AppendLine(sampleRate.ToString(CultureInfo.InvariantCulture));
-    meta.Append("sample_count=").AppendLine(dataLength.ToString(CultureInfo.InvariantCulture));
-    if (sampleRate > 0)
-      meta.Append("duration_seconds=")
-        .AppendLine(((double)dataLength / sampleRate).ToString("0.###", CultureInfo.InvariantCulture));
-
-    // Frame length in samples: floor(sampleRate * 256 / 245). Frame count:
-    // ceil(dataLength / frameLength).
-    if (sampleRate > 0 && dataLength > 0) {
-      var frameLength = (long)sampleRate * 256 / 245;
-      if (frameLength > 0) {
-        var frameCount = (int)((dataLength + frameLength - 1) / frameLength);
-        meta.Append("frame_count=").AppendLine(frameCount.ToString(CultureInfo.InvariantCulture));
-
-        // Seek table: frameCount × u32 frame sizes + u32 CRC, immediately after
-        // the 22-byte header.
-        var seekTableStart = headerOffset + 22;
-        var seekTableBytes = (frameCount + 1) * 4; // sizes + trailing CRC
-        var frameDataStart = seekTableStart + seekTableBytes;
-        if (frameDataStart <= file.Length) {
-          var pos = frameDataStart;
-          for (var i = 0; i < frameCount; ++i) {
-            var sizeOff = seekTableStart + i * 4;
-            var frameSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(sizeOff));
-            if (frameSize <= 0 || pos + frameSize > file.Length) break;
-            entries.Add(($"frames/frame_{i:D4}.bin", "Frame",
-              file.AsSpan(pos, frameSize).ToArray()));
-            pos += frameSize;
-          }
-        }
+      if (info.Channels <= 1) {
+        entries.Add(new("MONO.wav", "Channel",
+          PcmCodec.ToWavBlob(pcmBytes, 1, info.SampleRate, info.BitsPerSample, formatCode: 1), "pcm"));
+      } else {
+        foreach (var (name, wav) in PcmCodec.SplitInterleavedPcm(
+            pcmBytes, info.Channels, info.SampleRate, info.BitsPerSample))
+          entries.Add(new($"{name}.wav", "Channel", wav, "pcm"));
       }
+
+      var meta = new StringBuilder();
+      meta.AppendLine("format=TTA1");
+      meta.AppendLine($"channels={info.Channels}");
+      meta.AppendLine($"sample_rate={info.SampleRate}");
+      meta.AppendLine($"bits_per_sample={info.BitsPerSample}");
+      meta.AppendLine($"samples_per_channel={info.SampleCount}");
+      entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(meta.ToString()), "stored"));
+    } catch (Exception) {
+      // Graceful fallback: surface the original TTA file only.
     }
-
-    entries.Add(("metadata.ini", "Tag", Encoding.UTF8.GetBytes(meta.ToString())));
-
-    // Tags: ID3v2 at the very front (before TTA1), or APEv2 footer at the tail.
-    var tags = ExtractTags(file, headerOffset);
-    if (tags != null)
-      entries.Add(("tags.ini", "Tag", Encoding.UTF8.GetBytes(tags)));
 
     return entries;
-  }
-
-  // A leading ID3v2 tag is "ID3" + version(2) + flags(1) + syncsafe-size(4); the
-  // header total length is 10 + size. Returns the byte offset of the TTA1 magic.
-  private static int SkipLeadingId3v2(byte[] file) {
-    if (file.Length < 10 || file[0] != 'I' || file[1] != 'D' || file[2] != '3') return 0;
-    var size = (file[6] << 21) | (file[7] << 14) | (file[8] << 7) | file[9];
-    var offset = 10 + size;
-    return offset >= 0 && offset + 4 <= file.Length ? offset : 0;
-  }
-
-  private static string? ExtractTags(byte[] file, int headerOffset) {
-    var sb = new StringBuilder();
-
-    // Leading ID3v2 tag (before the header) — report its presence + size.
-    if (headerOffset > 0 && file.Length >= 10 &&
-        file[0] == 'I' && file[1] == 'D' && file[2] == '3') {
-      sb.AppendLine("[id3v2]");
-      sb.Append("version=2.").Append(file[3]).Append('.').AppendLine(file[4].ToString(CultureInfo.InvariantCulture));
-      sb.Append("size_bytes=").AppendLine(headerOffset.ToString(CultureInfo.InvariantCulture));
-    }
-
-    // Trailing APEv2 footer (last 32 bytes, possibly before an ID3v1 trailer).
-    var apeFooter = FindApeFooter(file);
-    if (apeFooter >= 0) {
-      var tagSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(apeFooter + 12));
-      var itemCount = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(apeFooter + 16));
-      var itemsStart = apeFooter + 32 - tagSize;
-      if (itemsStart >= 0 && tagSize >= 32) {
-        sb.AppendLine("[apev2]");
-        ParseApeItems(file, itemsStart, apeFooter, itemCount, sb);
-      }
-    }
-
-    return sb.Length > 0 ? sb.ToString() : null;
-  }
-
-  private static int FindApeFooter(byte[] file) {
-    // Search the last 256 bytes for the APETAGEX footer magic.
-    var start = Math.Max(0, file.Length - 256);
-    for (var p = file.Length - 32; p >= start; --p) {
-      if (MatchesMagic(file, p, ApeTagMagic)) {
-        // The footer flag bit 29 (0x20000000) distinguishes footer from header;
-        // both are acceptable for our reporting.
-        return p;
-      }
-    }
-    return -1;
-  }
-
-  private static void ParseApeItems(byte[] file, int itemsStart, int itemsEnd, uint itemCount, StringBuilder sb) {
-    var pos = itemsStart;
-    for (var i = 0; i < itemCount && i < 256; ++i) {
-      if (pos + 8 > itemsEnd) break;
-      var valueLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(pos));
-      var flags = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(pos + 4));
-      pos += 8;
-      var keyStart = pos;
-      while (pos < itemsEnd && file[pos] != 0) ++pos;
-      if (pos >= itemsEnd) break;
-      var key = Encoding.ASCII.GetString(file, keyStart, pos - keyStart);
-      ++pos;
-      if (valueLen < 0 || pos + valueLen > itemsEnd) break;
-      var isText = ((flags >> 1) & 0x03) == 0;
-      if (isText)
-        sb.Append(key).Append('=')
-          .AppendLine(Encoding.UTF8.GetString(file, pos, valueLen).Replace("\0", "; "));
-      else
-        sb.Append("; ").Append(key).Append(" (binary, ").Append(valueLen).AppendLine(" bytes)");
-      pos += valueLen;
-    }
-  }
-
-  private static bool MatchesMagic(byte[] buffer, int offset, byte[] magic) {
-    if (offset < 0 || offset + magic.Length > buffer.Length) return false;
-    for (var i = 0; i < magic.Length; ++i)
-      if (buffer[offset + i] != magic[i]) return false;
-    return true;
   }
 }

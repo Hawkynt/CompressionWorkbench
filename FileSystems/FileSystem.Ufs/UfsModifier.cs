@@ -31,6 +31,7 @@ public static class UfsModifier {
   private const int InodeSize = UfsWriter.InodeSize;
   private const int RootIno = UfsWriter.RootIno;
   private const int MaxDirectBlocks = UfsWriter.MaxDirectBlocks;
+  private const int DirBlkSiz = 512; // UFS directory block (DIRBLKSIZ) — dirents never cross it.
 
   // Inode mode bits (POSIX).
   private const ushort InodeModeRegular = 0x8000;
@@ -80,8 +81,9 @@ public static class UfsModifier {
     if (rootDirFrag == 0)
       throw new IOException("UFS: root directory has no data block.");
 
-    // Read root dir block, ensure name is unique, find slot for new entry.
-    var dirBlock = ReadBlock(image, geom, rootDirFrag);
+    // Read the root directory's first DIRBLKSIZ chunk (newfs lays the root dir
+    // out as 512-byte directory blocks; "." / ".." / ".snap" live in chunk 0).
+    var dirBlock = ReadDirChunk(image, geom, rootDirFrag);
     if (FindEntry(dirBlock, name, out _, out _, out _))
       throw new IOException($"UFS: entry '{name}' already exists; remove it first to replace.");
 
@@ -132,10 +134,10 @@ public static class UfsModifier {
     var inode = BuildFileInode((uint)data.Length, allocatedBlocks, geom);
     WriteInode(image, geom, newInode, inode);
 
-    // Splice new dirent into root dir block at insertOffset, rec_len covers
+    // Splice new dirent into root dir chunk at insertOffset, rec_len covers
     // remaining slack (UFS convention — last entry's reclen extends to end).
     WriteDirEntry(dirBlock, insertOffset, newInode, name, DtReg, blockEnd - insertOffset);
-    WriteBlock(image, geom, rootDirFrag, dirBlock);
+    WriteDirChunk(image, geom, rootDirFrag, dirBlock);
 
     // Persist the CG header (bitmaps + cg_cs).
     UpdateCgFreeCounts(cgBlock, freeBlocksDelta: -allocatedBlocks.Count, freeInodesDelta: -1);
@@ -162,7 +164,7 @@ public static class UfsModifier {
     var rootDirFrag = BinaryPrimitives.ReadInt32LittleEndian(rootInode.AsSpan(40, 4));
     if (rootDirFrag == 0) return false;
 
-    var dirBlock = ReadBlock(image, geom, rootDirFrag);
+    var dirBlock = ReadDirChunk(image, geom, rootDirFrag);
     if (!FindEntry(dirBlock, name, out var entryOffset, out var prevOffset, out var inodeNum))
       return false;
 
@@ -196,7 +198,7 @@ public static class UfsModifier {
     // Splice the dirent out: extend prev entry's reclen to absorb this one
     // (or, if first, zero its inode field — readers skip ino==0 entries).
     SpliceOutDirEntry(dirBlock, entryOffset, prevOffset);
-    WriteBlock(image, geom, rootDirFrag, dirBlock);
+    WriteDirChunk(image, geom, rootDirFrag, dirBlock);
 
     // Persist CG header + fs_cs/fs_cstotal counts.
     UpdateCgFreeCounts(cgBlock, freeBlocksDelta: freedBlocks, freeInodesDelta: 1);
@@ -451,6 +453,21 @@ public static class UfsModifier {
     if (data.Length != geom.BlockSize)
       throw new ArgumentException("block payload size mismatch", nameof(data));
     image.Position = (long)blockFrag * geom.FragSize;
+    image.Write(data);
+  }
+
+  /// <summary>Reads the first DIRBLKSIZ (512-byte) directory block at the given fragment.</summary>
+  private static byte[] ReadDirChunk(Stream image, Geometry geom, int dirFrag) {
+    var buf = new byte[DirBlkSiz];
+    image.Position = (long)dirFrag * geom.FragSize;
+    image.ReadExactly(buf);
+    return buf;
+  }
+
+  private static void WriteDirChunk(Stream image, Geometry geom, int dirFrag, ReadOnlySpan<byte> data) {
+    if (data.Length != DirBlkSiz)
+      throw new ArgumentException("directory chunk size mismatch", nameof(data));
+    image.Position = (long)dirFrag * geom.FragSize;
     image.Write(data);
   }
 

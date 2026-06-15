@@ -80,7 +80,7 @@ public sealed class DicomFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     var blob = ms.ToArray();
 
     var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.dcm", "Track", blob),
+      ("FULL.dcm", "Container", blob),
     };
 
     var hasPreamble = blob.Length >= 132

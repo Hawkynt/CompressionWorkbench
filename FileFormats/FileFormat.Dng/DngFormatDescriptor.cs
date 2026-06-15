@@ -64,7 +64,7 @@ public sealed class DngFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var reader = new DngReader(blob);
 
     var entries = new List<(string, string, byte[])> {
-      ("FULL.dng", "Track", blob),
+      ("FULL.dng", "Container", blob),
     };
 
     // IFD0 thumbnail: if it has JPEG interchange tags, dump as thumbnail.jpg; otherwise

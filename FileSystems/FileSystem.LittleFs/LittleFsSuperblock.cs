@@ -54,10 +54,24 @@ internal sealed class LittleFsSuperblock {
     //   ... tag stream ...
     //   tag(SUPERBLOCK)  — id 0, size variable
     //   "littlefs" ASCII (8 bytes)
+    //   [inline_struct tag word (u32) — present when the magic and the inline
+    //    struct are separate tags, as the reference writer emits them]
     //   inline_struct payload  — u32 version, u32 block_size, u32 block_count,
     //                            u32 name_max, u32 file_max, u32 attr_max
-    var payloadOffset = pos + 8;
-    if (payloadOffset + 24 > image.Length) return new LittleFsSuperblock();
+    //
+    // Some synthesised images pack the payload directly after the magic; the
+    // reference layout interposes a 4-byte inline-struct tag word. Try the tight
+    // layout first, then the tag-interposed one, accepting whichever yields a
+    // power-of-two block size and a plausible block count.
+    if (TryReadPayload(image, pos, pos + 8, out var sb) || TryReadPayload(image, pos, pos + 12, out sb))
+      return sb!;
+
+    return new LittleFsSuperblock();
+  }
+
+  private static bool TryReadPayload(ReadOnlySpan<byte> image, int magicPos, int payloadOffset, out LittleFsSuperblock? sb) {
+    sb = null;
+    if (payloadOffset + 24 > image.Length) return false;
 
     var version = ReadU32(image, payloadOffset + 0);
     var blockSize = ReadU32(image, payloadOffset + 4);
@@ -68,21 +82,21 @@ internal sealed class LittleFsSuperblock {
 
     // Sanity-check: block_size must be a power of two between 128 and 64 KB.
     if (blockSize is < 128u or > 65536u || (blockSize & (blockSize - 1)) != 0)
-      return new LittleFsSuperblock();
-    if (blockCount == 0 || blockCount > (1u << 24)) return new LittleFsSuperblock();
+      return false;
+    if (blockCount == 0 || blockCount > (1u << 24)) return false;
 
     // The block revision is the very first u32 of the metadata block — find the
-    // start of the block by rounding pos down to a block_size boundary.
-    var blockStart = pos / (int)blockSize * (int)blockSize;
+    // start of the block by rounding the magic position down to a block boundary.
+    var blockStart = magicPos / (int)blockSize * (int)blockSize;
     var revision = ReadU32(image, blockStart);
 
     // Capture a reasonable raw slice for downstream tools.
-    var rawLen = Math.Min(512, image.Length - pos + 8);
-    var raw = image.Slice(Math.Max(0, pos - 16), rawLen).ToArray();
+    var rawLen = Math.Min(512, image.Length - magicPos + 8);
+    var raw = image.Slice(Math.Max(0, magicPos - 16), rawLen).ToArray();
 
-    return new LittleFsSuperblock {
+    sb = new LittleFsSuperblock {
       Valid = true,
-      SuperblockOffset = pos,
+      SuperblockOffset = magicPos,
       VersionMajor = (version >> 16) & 0xFFFF,
       VersionMinor = version & 0xFFFF,
       BlockSize = blockSize,
@@ -93,6 +107,7 @@ internal sealed class LittleFsSuperblock {
       Revision = revision,
       RawBytes = raw,
     };
+    return true;
   }
 
   private static uint ReadU32(ReadOnlySpan<byte> s, int off) =>

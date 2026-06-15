@@ -12,12 +12,13 @@ namespace FileSystem.LittleFs;
 /// pair commit log with CRC validation is intentionally out of scope — that's a
 /// full reference-implementation port. Detection + structural surfacing is the win.
 /// </summary>
-public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "LittleFs";
   public string DisplayName => "LittleFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".littlefs";
   public IReadOnlyList<string> Extensions => [".littlefs", ".lfs"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -33,12 +34,7 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
-    "LittleFS embedded-flash FS — superblock surface only. " +
-    "WORM write deferred — the tag-based metadata-pair commit log with XOR-chained tags, " +
-    "CRC32-tag terminators per metadata block, mirrored superblock pairs, and inline-vs-CTZ " +
-    "data-region split is ~1500 LOC of reference-implementation port; no Windows/WSL " +
-    "validator exists to prove an emitted image correct end-to-end.";
+  public string Description => "LittleFS embedded-flash FS — metadata-pair walk + CTZ/inline file extraction.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -49,6 +45,16 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       entries.Add(new ArchiveEntryInfo(0, "FULL.littlefs", 0, 0, "stored", false, false, null));
       entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
       return entries;
+    }
+
+    // Preferred path: walk the metadata-pair commit log and list the real files.
+    try {
+      var reader = new LittleFsReader(image);
+      if (reader.Files.Count > 0)
+        return reader.Files.Select((f, i) => new ArchiveEntryInfo(
+          i, f.Path, f.Size, f.Size, "stored", false, false, null)).ToList();
+    } catch {
+      // fall through to the superblock surface below
     }
 
     LittleFsSuperblock sb;
@@ -76,6 +82,21 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       return;
     }
 
+    // Preferred path: extract the real files via the commit-walking reader.
+    try {
+      var reader = new LittleFsReader(image);
+      if (reader.Files.Count > 0) {
+        foreach (var f in reader.Files) {
+          if (files != null && files.Length > 0 && !MatchesFilter(f.Path, files))
+            continue;
+          WriteFile(outputDir, f.Path, reader.ReadFile(f));
+        }
+        return;
+      }
+    } catch {
+      // fall through to the superblock surface below
+    }
+
     LittleFsSuperblock sb;
     try {
       sb = LittleFsSuperblock.TryParse(image);
@@ -89,6 +110,24 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(sb), files);
     if (sb.Valid)
       WriteIfMatch(outputDir, "superblock.bin", sb.RawBytes, files);
+  }
+
+  /// <summary>
+  /// Builds a fresh littlefs image from <paramref name="inputs"/>. Files keep
+  /// their archive-relative paths (forward-slash separated), so subdirectories
+  /// are recreated as littlefs directory metadata pairs. Small files are stored
+  /// inline; larger ones use CTZ skip-lists. The result round-trips through
+  /// <see cref="LittleFsReader"/>.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = new LittleFsWriter();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      w.AddFile(input.ArchiveName, input.ReadContent());
+    }
+    w.WriteTo(output);
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
@@ -112,14 +151,12 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  private const int HeaderReadCap = 64 * 1024;
-
   private static byte[] ReadAll(Stream stream) {
+    // The commit-log walk and CTZ extraction address blocks anywhere in the
+    // image, so the whole stream is needed (the old 64 KiB header cap only
+    // sufficed for the superblock-surface fallback).
     using var ms = new MemoryStream();
-    var buf = new byte[8192];
-    int read;
-    while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
-      ms.Write(buf, 0, read);
+    stream.CopyTo(ms);
     return ms.ToArray();
   }
 }

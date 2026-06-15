@@ -1,6 +1,7 @@
+#pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.IO.Compression;
-using Compression.Registry;
+using System.Text;
 using FileFormat.Vgm;
 
 namespace Compression.Tests.Vgm;
@@ -8,125 +9,558 @@ namespace Compression.Tests.Vgm;
 [TestFixture]
 public class VgmTests {
 
-  // Builds a minimal valid VGM: 0x40-byte header + command stream + GD3 tag.
-  private static byte[] BuildSample(out byte[] commandStream) {
-    commandStream = [0x50, 0x80, 0x50, 0x90, 0x66 /* end-of-sound-data */];
+  // Builds a v1.51 VGM with SN76489 + YM2612 clocks, a command log, and a GD3 tag block.
+  private static byte[] BuildVgm() {
+    // Header is 0x80 bytes for v1.51; place commands after it, GD3 after commands.
+    var commands = new byte[] { 0x50, 0x9F, 0x52, 0x00, 0x40, 0x62, 0x66 };
 
-    // GD3 v1.00 tag: "Gd3 " + version + length + 11 UTF-16LE NUL-terminated strings.
+    var gd3 = BuildGd3();
+    var headerLen = 0x80;
+    var total = headerLen + commands.Length + gd3.Length;
+    var blob = new byte[total];
+
+    "Vgm "u8.CopyTo(blob);
+    var dataOffset = headerLen;
+    var gd3Offset = headerLen + commands.Length;
+
+    // eofOffset (rel to 0x04)
+    WriteU32(blob, 0x04, (uint)(total - 0x04));
+    WriteU32(blob, 0x08, 0x00000151);                // version BCD 1.51
+    WriteU32(blob, 0x0C, 3579545);                   // SN76489
+    WriteU32(blob, 0x10, 0);                          // YM2413 (absent)
+    WriteU32(blob, 0x14, (uint)(gd3Offset - 0x14));  // GD3 offset (rel to 0x14)
+    WriteU32(blob, 0x18, 88200);                      // total samples = 2.0 s @ 44100
+    WriteU32(blob, 0x2C, 7670454);                    // YM2612
+    WriteU32(blob, 0x34, (uint)(dataOffset - 0x34));  // data offset (rel to 0x34)
+
+    commands.CopyTo(blob.AsSpan(dataOffset));
+    gd3.CopyTo(blob.AsSpan(gd3Offset));
+    return blob;
+  }
+
+  private static byte[] BuildGd3() {
     var fields = new[] {
-      "Test Title", "", "Test Game", "", "Sega Mega Drive", "",
-      "Test Author", "", "2026", "Workbench", "notes here",
+      "Stage 1", "ステージ1", "Test Game", "テストゲーム", "Sega Mega Drive", "メガドライブ",
+      "Composer", "作曲者", "1991/01/01", "Ripper", "Some notes",
     };
-    using var gms = new MemoryStream();
-    using (var bw = new BinaryWriter(gms)) {
-      foreach (var f in fields) {
-        foreach (var ch in f) bw.Write((ushort)ch);
-        bw.Write((ushort)0);
-      }
+    using var body = new MemoryStream();
+    foreach (var f in fields) {
+      body.Write(Encoding.Unicode.GetBytes(f));
+      body.Write([0, 0]);                              // NUL terminator (UTF-16)
     }
-    var gd3Strings = gms.ToArray();
-    var gd3 = new byte[12 + gd3Strings.Length];
-    BinaryPrimitives.WriteUInt32LittleEndian(gd3, 0x20336447); // "Gd3 "
-    BinaryPrimitives.WriteUInt32LittleEndian(gd3.AsSpan(4), 0x00000100);
-    BinaryPrimitives.WriteUInt32LittleEndian(gd3.AsSpan(8), (uint)gd3Strings.Length);
-    Array.Copy(gd3Strings, 0, gd3, 12, gd3Strings.Length);
+    var bodyBytes = body.ToArray();
 
-    var dataStart = 0x40;
-    var gd3Abs = dataStart + commandStream.Length;
-    var total = gd3Abs + gd3.Length;
-    var file = new byte[total];
-    BinaryPrimitives.WriteUInt32LittleEndian(file, 0x206D6756); // "Vgm "
-    BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(0x04), (uint)(total - 4)); // EOF offset
-    BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(0x08), 0x00000150); // version 1.50
-    BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(0x0C), 3579545);    // SN76489 clock
-    BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(0x2C), 7670454);    // YM2612 clock
-    BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(0x14), (uint)(gd3Abs - 0x14)); // GD3 rel offset
-    BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(0x18), 12345);      // total samples
-    BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(0x34), 0);          // data offset (0 → 0x40)
-
-    Array.Copy(commandStream, 0, file, dataStart, commandStream.Length);
-    Array.Copy(gd3, 0, file, gd3Abs, gd3.Length);
-    return file;
+    using var ms = new MemoryStream();
+    ms.Write("Gd3 "u8);
+    var u32 = new byte[4];
+    BinaryPrimitives.WriteUInt32LittleEndian(u32, 0x00000100);
+    ms.Write(u32);
+    BinaryPrimitives.WriteUInt32LittleEndian(u32, (uint)bodyBytes.Length);
+    ms.Write(u32);
+    ms.Write(bodyBytes);
+    return ms.ToArray();
   }
 
-  [Test, Category("HappyPath")]
-  public void List_ExposesFullMetadataGd3AndStream() {
-    var sample = BuildSample(out _);
-    var desc = new VgmFormatDescriptor();
-    using var ms = new MemoryStream(sample);
-    var entries = desc.List(ms, null);
+  private static void WriteU32(byte[] blob, int offset, uint value)
+    => BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(offset, 4), value);
 
-    Assert.That(entries[0].Name, Is.EqualTo("FULL.vgm"));
-    Assert.That(entries.Any(e => e.Name == "metadata.ini"), Is.True);
-    Assert.That(entries.Any(e => e.Name == "command_stream.bin"), Is.True);
-    Assert.That(entries.Any(e => e.Name == "gd3.ini"), Is.True);
-    Assert.That(entries.Any(e => e.Name == "gd3.bin"), Is.True);
+  private static string Extract(byte[] blob, string entry) {
+    using var ms = new MemoryStream(blob);
+    using var output = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(ms, entry, output, null);
+    return Encoding.UTF8.GetString(output.ToArray());
   }
 
-  [Test, Category("RoundTrip")]
-  public void Extract_FullIsByteIdentical_AndMetadataParsed() {
-    var sample = BuildSample(out var commandStream);
-    var desc = new VgmFormatDescriptor();
-    var dir = Path.Combine(Path.GetTempPath(), "vgm_" + Guid.NewGuid().ToString("N")[..8]);
-    try {
-      using (var ms = new MemoryStream(sample))
-        desc.Extract(ms, dir, null, null);
-      Assert.That(File.ReadAllBytes(Path.Combine(dir, "FULL.vgm")), Is.EqualTo(sample));
-      Assert.That(File.ReadAllBytes(Path.Combine(dir, "command_stream.bin")), Is.EqualTo(commandStream));
-      var meta = File.ReadAllText(Path.Combine(dir, "metadata.ini"));
-      Assert.That(meta, Does.Contain("active_chips"));
-      Assert.That(meta, Does.Contain("SN76489"));
-      Assert.That(meta, Does.Contain("YM2612"));
-      Assert.That(meta, Does.Contain("total_samples = 12345"));
-      var gd3 = File.ReadAllText(Path.Combine(dir, "gd3.ini"));
-      Assert.That(gd3, Does.Contain("Test Title"));
-      Assert.That(gd3, Does.Contain("Test Author"));
-    } finally {
-      if (Directory.Exists(dir)) Directory.Delete(dir, true);
-    }
+  // ──────────────────────────────────────────────────────────────────────────
+
+  [Test]
+  public void List_SurfacesFullMetadataCommandsAndGd3() {
+    using var ms = new MemoryStream(BuildVgm());
+    var entries = new VgmFormatDescriptor().List(ms, null);
+
+    Assert.That(entries.First(e => e.Name == "FULL.vgm").Kind, Is.EqualTo("Container"));
+    Assert.That(entries.Any(e => e.Name == "metadata.ini" && e.Kind == "Tag"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "commands.bin" && e.Kind == "Stream"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "metadata/gd3.ini" && e.Kind == "Tag"), Is.True);
   }
 
-  [Test, Category("HappyPath"), Category("Vgz")]
-  public void List_GzipWrappedVgz_GunzipsHeader_FullKeepsGzippedBytes() {
-    var inner = BuildSample(out _);
-    using var gms = new MemoryStream();
-    using (var gz = new GZipStream(gms, CompressionLevel.Optimal, leaveOpen: true))
-      gz.Write(inner, 0, inner.Length);
-    var vgz = gms.ToArray();
-
-    var desc = new VgmFormatDescriptor();
-    using var ms = new MemoryStream(vgz);
-    var entries = desc.List(ms, null);
-
-    // FULL is the gzipped bytes, not the inner VGM.
-    var dir = Path.Combine(Path.GetTempPath(), "vgz_" + Guid.NewGuid().ToString("N")[..8]);
-    try {
-      using (var ms2 = new MemoryStream(vgz))
-        desc.Extract(ms2, dir, null, null);
-      Assert.That(File.ReadAllBytes(Path.Combine(dir, "FULL.vgm")), Is.EqualTo(vgz));
-      var meta = File.ReadAllText(Path.Combine(dir, "metadata.ini"));
-      Assert.That(meta, Does.Contain("gzip_wrapped = true"));
-      Assert.That(meta, Does.Contain("SN76489"));
-      Assert.That(entries.Any(e => e.Name == "command_stream.bin"), Is.True);
-    } finally {
-      if (Directory.Exists(dir)) Directory.Delete(dir, true);
-    }
+  [Test]
+  public void Metadata_ReportsVersionDurationAndChipClocks() {
+    var ini = Extract(BuildVgm(), "metadata.ini");
+    Assert.That(ini, Does.Contain("version=1.51"));
+    Assert.That(ini, Does.Contain("duration_seconds=2.000"));
+    Assert.That(ini, Does.Contain("SN76489=3579545"));
+    Assert.That(ini, Does.Contain("YM2612=7670454"));
+    Assert.That(ini, Does.Not.Contain("YM2413="), "zero clock is omitted");
   }
 
-  [Test, Category("ErrorHandling")]
-  public void List_Malformed_DoesNotThrow() {
-    var garbage = new byte[64];
-    Array.Fill(garbage, (byte)0xCC);
-    var desc = new VgmFormatDescriptor();
-    using var ms = new MemoryStream(garbage);
-    List<ArchiveEntryInfo> entries = null!;
-    Assert.That(() => entries = desc.List(ms, null), Throws.Nothing);
+  [Test]
+  public void Gd3_ParsesUtf16Fields() {
+    var ini = Extract(BuildVgm(), "metadata/gd3.ini");
+    Assert.That(ini, Does.Contain("track_en=Stage 1"));
+    Assert.That(ini, Does.Contain("track_jp=ステージ1"));
+    Assert.That(ini, Does.Contain("game_en=Test Game"));
+    Assert.That(ini, Does.Contain("author_en=Composer"));
+    Assert.That(ini, Does.Contain("date=1991/01/01"));
+    Assert.That(ini, Does.Contain("notes=Some notes"));
+  }
+
+  [Test]
+  public void Commands_AreExtractedExactly() {
+    using var ms = new MemoryStream(BuildVgm());
+    using var output = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(ms, "commands.bin", output, null);
+    Assert.That(output.ToArray(), Is.EqualTo(new byte[] { 0x50, 0x9F, 0x52, 0x00, 0x40, 0x62, 0x66 }));
+  }
+
+  [Test]
+  public void Vgz_GzipCompressedInputIsTransparentlyDecompressed() {
+    var raw = BuildVgm();
+    using var compressed = new MemoryStream();
+    using (var gz = new GZipStream(compressed, CompressionLevel.Optimal, leaveOpen: true))
+      gz.Write(raw);
+
+    using var ms = new MemoryStream(compressed.ToArray());
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    var full = entries.First(e => e.Name == "FULL.vgm");
+    Assert.That(full.OriginalSize, Is.EqualTo(raw.Length), "FULL.vgm is the decompressed log");
+
+    var ini = Extract(compressed.ToArray(), "metadata.ini");
+    Assert.That(ini, Does.Contain("SN76489=3579545"));
+  }
+
+  [Test]
+  public void GarbageInput_DegradesToFullOnly() {
+    using var ms = new MemoryStream(new byte[] { 0x00, 0x01, 0x02, 0x03 });
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Count, Is.EqualTo(1));
     Assert.That(entries[0].Name, Is.EqualTo("FULL.vgm"));
   }
 
-  [Test, Category("Detection")]
-  public void Magic_MatchesVgm() {
-    var desc = new VgmFormatDescriptor();
-    Assert.That(desc.MagicSignatures[0].Bytes, Is.EqualTo("Vgm "u8.ToArray()));
+  // ──────────── rendering ────────────
+
+  // Builds a v1.51 VGM with only a PSG clock and a command stream that plays a square tone.
+  private static byte[] BuildPsgToneVgm(int period, uint totalSamples, byte[] commands) {
+    var headerLen = 0x80;
+    var total = headerLen + commands.Length;
+    var blob = new byte[total];
+    "Vgm "u8.CopyTo(blob);
+    WriteU32(blob, 0x04, (uint)(total - 0x04));
+    WriteU32(blob, 0x08, 0x00000151);
+    WriteU32(blob, 0x0C, 3579545);                   // SN76489 only
+    WriteU32(blob, 0x18, totalSamples);
+    WriteU32(blob, 0x34, (uint)(headerLen - 0x34));  // data offset
+    commands.CopyTo(blob.AsSpan(headerLen));
+    return blob;
+  }
+
+  private static short[] ReadWavLeftSamples(byte[] wav) {
+    // Minimal RIFF: data starts at offset 44.
+    var count = (wav.Length - 44) / 2;
+    var samples = new short[count];
+    for (var i = 0; i < count; ++i)
+      samples[i] = BinaryPrimitives.ReadInt16LittleEndian(wav.AsSpan(44 + i * 2, 2));
+    return samples;
+  }
+
+  private static int CountZeroCrossings(short[] s) {
+    var crossings = 0;
+    for (var i = 1; i < s.Length; ++i)
+      if ((s[i - 1] < 0 && s[i] >= 0) || (s[i - 1] >= 0 && s[i] < 0))
+        ++crossings;
+    return crossings;
+  }
+
+  [Test]
+  public void Render_PsgTone_ProducesLeftRightWavsWithExpectedFrequency() {
+    const int period = 0x100;
+    // Commands: latch ch0 tone low nibble 0, data high bits, ch0 volume full, then wait.
+    var commands = new byte[] {
+      0x50, (byte)(0x80 | (period & 0x0F)),    // latch ch0 tone low
+      0x50, (byte)((period >> 4) & 0x3F),      // data high
+      0x50, (byte)(0x80 | 0x10 | 0x00),        // ch0 volume full
+      0x50, (byte)(0x80 | (1 << 5) | 0x10 | 0x0F), // ch1 mute
+      0x50, (byte)(0x80 | (2 << 5) | 0x10 | 0x0F), // ch2 mute
+      0x50, (byte)(0x80 | (3 << 5) | 0x10 | 0x0F), // noise mute
+      0x61, 0x44, 0xAC,                        // wait 44100 samples (1 s)
+      0x66,
+    };
+    var blob = BuildPsgToneVgm(period, totalSamples: 44100, commands);
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav" && e.Kind == "Channel"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "RIGHT.wav" && e.Kind == "Channel"), Is.True);
+
+    using var output = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "LEFT.wav", output, null);
+    var samples = ReadWavLeftSamples(output.ToArray());
+    var measuredHz = CountZeroCrossings(samples) / 2.0;
+    var expectedHz = 3579545.0 / (32.0 * period);
+    Assert.That(measuredHz, Is.EqualTo(expectedHz).Within(expectedHz * 0.05),
+      $"expected ~{expectedHz:F1} Hz, measured {measuredHz:F1} Hz");
+  }
+
+  [Test]
+  public void Render_DacDataBlock_FeedsYm2612Dac() {
+    // VGM with YM2612 + PSG clocks; a data block then DAC writes (0x8x) + waits.
+    var commands = new List<byte> {
+      // data block: 0x67 0x66 type ssssssss <data>
+      0x67, 0x66, 0x00, 0x04, 0x00, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00,
+      0x52, 0x2B, 0x80,        // YM2612: enable DAC
+      0x80,                    // DAC write sample 0 + wait 0
+      0x61, 0x10, 0x00,        // wait 16 samples
+      0x80,                    // DAC write sample 1 + wait 0
+      0x61, 0x10, 0x00,
+      0x66,
+    };
+    var headerLen = 0x80;
+    var blob = new byte[headerLen + commands.Count];
+    "Vgm "u8.CopyTo(blob);
+    WriteU32(blob, 0x08, 0x00000151);
+    WriteU32(blob, 0x0C, 3579545);    // PSG
+    WriteU32(blob, 0x18, 64);
+    WriteU32(blob, 0x2C, 7670454);    // YM2612
+    WriteU32(blob, 0x34, (uint)(headerLen - 0x34));
+    commands.ToArray().CopyTo(blob.AsSpan(headerLen));
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True, "DAC stream renders audio");
+  }
+
+  // ──────────── YM2413 (OPLL) rendering ────────────
+
+  [Test]
+  public void Render_Ym2413_ProducesPcmAndReportsRenderedChip() {
+    // v1.51 VGM with only a YM2413 clock; play a sustained voice via 0x51 writes.
+    var commands = new List<byte> {
+      0x51, 0x30, 0x40,        // ch0: instrument 4 (Flute), volume 0
+      0x51, 0x10, 0x80,        // ch0: F-num low
+      0x51, 0x20, 0x19,        // ch0: F-num bit8=1, block=4, key-on (bit4)
+      0x61, 0x44, 0xAC,        // wait 44100 samples (1 s)
+      0x66,
+    };
+    var headerLen = 0x80;
+    var blob = new byte[headerLen + commands.Count];
+    "Vgm "u8.CopyTo(blob);
+    WriteU32(blob, 0x08, 0x00000151);
+    WriteU32(blob, 0x10, 3579545);     // YM2413 only
+    WriteU32(blob, 0x18, 44100);
+    WriteU32(blob, 0x34, (uint)(headerLen - 0x34));
+    commands.ToArray().CopyTo(blob.AsSpan(headerLen));
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True, "OPLL renders audio");
+    Assert.That(entries.Any(e => e.Name == "RIGHT.wav"), Is.True);
+
+    // rendered_chips metadata mentions YM2413.
+    var rendered = Extract(blob, "rendered.ini");
+    Assert.That(rendered, Does.Contain("rendered_chips="));
+    Assert.That(rendered, Does.Contain("YM2413"));
+
+    // Output is non-silent.
+    using var output = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "LEFT.wav", output, null);
+    var samples = ReadWavLeftSamples(output.ToArray());
+    Assert.That(samples.Sum(s => (long)Math.Abs(s)), Is.GreaterThan(0L), "non-silent PCM");
+  }
+
+  [Test]
+  public void Render_Ym2413_NoLongerBlockedAsUnsupported() {
+    // A YM2413-only VGM must render rather than emit a render.txt skip note.
+    var commands = new byte[] { 0x51, 0x30, 0x40, 0x66 };
+    var headerLen = 0x80;
+    var blob = new byte[headerLen + commands.Length];
+    "Vgm "u8.CopyTo(blob);
+    WriteU32(blob, 0x08, 0x00000151);
+    WriteU32(blob, 0x10, 3579545);
+    WriteU32(blob, 0x18, 100);
+    WriteU32(blob, 0x34, (uint)(headerLen - 0x34));
+    commands.CopyTo(blob.AsSpan(headerLen));
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "render.txt"), Is.False, "YM2413 is supported now");
+  }
+
+  // ──────────── OPL FM family rendering ────────────
+
+  [Test]
+  public void Render_Opl2_ProducesPcmAndReportsRenderedChip() {
+    // v1.51 VGM with only a YM3812 (OPL2) clock; play a sustained 2-op voice via 0x5A writes.
+    var commands = new List<byte> {
+      0x5A, 0x20, 0x21,   // ch0 modulator: EG sustain, MUL=1
+      0x5A, 0x23, 0x21,   // ch0 carrier: EG sustain, MUL=1
+      0x5A, 0x40, 0x3F,   // mod TL=63 (silenced)
+      0x5A, 0x43, 0x00,   // car TL=0 (loud)
+      0x5A, 0x60, 0xF0,   // mod AR=15
+      0x5A, 0x63, 0xF0,   // car AR=15
+      0x5A, 0x80, 0x0F,   // mod SL/RR
+      0x5A, 0x83, 0x0F,   // car SL/RR
+      0x5A, 0xC0, 0x00,   // FB=0, FM
+      0x5A, 0xA0, 0x80,   // F-num low
+      0x5A, 0xB0, 0x32,   // F-num hi + block + key-on (0x20)
+      0x61, 0x44, 0xAC,   // wait 44100 samples (1 s)
+      0x66,
+    };
+    var headerLen = 0x80;
+    var blob = new byte[headerLen + commands.Count];
+    "Vgm "u8.CopyTo(blob);
+    WriteU32(blob, 0x08, 0x00000151);
+    WriteU32(blob, 0x50, 3579545);     // YM3812 only
+    WriteU32(blob, 0x18, 44100);
+    WriteU32(blob, 0x34, (uint)(headerLen - 0x34));
+    commands.ToArray().CopyTo(blob.AsSpan(headerLen));
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True, "OPL2 renders audio");
+    Assert.That(entries.Any(e => e.Name == "RIGHT.wav"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "render.txt"), Is.False, "OPL2 is supported now");
+
+    var rendered = Extract(blob, "rendered.ini");
+    Assert.That(rendered, Does.Contain("rendered_chips="));
+    Assert.That(rendered, Does.Contain("YM3812"));
+
+    using var output = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "LEFT.wav", output, null);
+    var samples = ReadWavLeftSamples(output.ToArray());
+    Assert.That(samples.Sum(s => (long)Math.Abs(s)), Is.GreaterThan(0L), "non-silent OPL2 PCM");
+  }
+
+  [Test]
+  public void Render_Opl3Stereo_RoutesLeftOnlyToLeftWav() {
+    // YMF262 (OPL3) VGM: enable OPL3, program a voice panned LEFT only via 0x5E writes.
+    var commands = new List<byte> {
+      0x5F, 0x05, 0x01,   // bank1 reg 0x105: enable OPL3
+      0x5E, 0x20, 0x21,   // ch0 modulator
+      0x5E, 0x23, 0x21,   // ch0 carrier
+      0x5E, 0x40, 0x3F,   // mod silenced
+      0x5E, 0x43, 0x00,   // car loud
+      0x5E, 0x60, 0xF0,
+      0x5E, 0x63, 0xF0,
+      0x5E, 0x80, 0x00,
+      0x5E, 0x83, 0x00,
+      0x5E, 0xC0, 0x10,   // FB=0, FM, LEFT only (bit4)
+      0x5E, 0xA0, 0x80,
+      0x5E, 0xB0, 0x32,   // block + key-on
+      0x61, 0x44, 0xAC,
+      0x66,
+    };
+    var headerLen = 0x80;
+    var blob = new byte[headerLen + commands.Count];
+    "Vgm "u8.CopyTo(blob);
+    WriteU32(blob, 0x08, 0x00000151);
+    WriteU32(blob, 0x5C, 14318180);    // YMF262 only
+    WriteU32(blob, 0x18, 44100);
+    WriteU32(blob, 0x34, (uint)(headerLen - 0x34));
+    commands.ToArray().CopyTo(blob.AsSpan(headerLen));
+
+    var rendered = Extract(blob, "rendered.ini");
+    Assert.That(rendered, Does.Contain("YMF262"));
+
+    using var left = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "LEFT.wav", left, null);
+    using var right = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "RIGHT.wav", right, null);
+    var leftEnergy = ReadWavLeftSamples(left.ToArray()).Sum(s => (long)Math.Abs(s));
+    var rightEnergy = ReadWavLeftSamples(right.ToArray()).Sum(s => (long)Math.Abs(s));
+    Assert.That(leftEnergy, Is.GreaterThan(0L), "left carries the OPL3 voice");
+    Assert.That(rightEnergy, Is.EqualTo(0L), "OPL3 LEFT-only panning silences the right side");
+  }
+
+  [Test]
+  public void Render_Y8950_NoLongerBlockedAsUnsupported() {
+    var commands = new byte[] { 0x5C, 0x20, 0x21, 0x66 };
+    var headerLen = 0x80;
+    var blob = new byte[headerLen + commands.Length];
+    "Vgm "u8.CopyTo(blob);
+    WriteU32(blob, 0x08, 0x00000151);
+    WriteU32(blob, 0x58, 3579545);   // Y8950
+    WriteU32(blob, 0x18, 100);
+    WriteU32(blob, 0x34, (uint)(headerLen - 0x34));
+    commands.CopyTo(blob.AsSpan(headerLen));
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "render.txt"), Is.False, "Y8950 is supported now");
+  }
+
+  // ──────────── Game Gear PSG stereo (0x4F) ────────────
+
+  [Test]
+  public void Render_GameGearStereo_LeftOnlyMaskSilencesRight() {
+    // Tone on channel 0, then a 0x4F GG-stereo write enabling only the LEFT speaker for ch0.
+    const int period = 0x100;
+    var commands = new byte[] {
+      0x50, (byte)(0x80 | (period & 0x0F)),         // latch ch0 tone low
+      0x50, (byte)((period >> 4) & 0x3F),           // data high
+      0x50, (byte)(0x80 | 0x10 | 0x00),             // ch0 volume full
+      0x50, (byte)(0x80 | (1 << 5) | 0x10 | 0x0F),  // ch1 mute
+      0x50, (byte)(0x80 | (2 << 5) | 0x10 | 0x0F),  // ch2 mute
+      0x50, (byte)(0x80 | (3 << 5) | 0x10 | 0x0F),  // noise mute
+      0x4F, 0x10,                                   // GG stereo: bit4 = ch0 LEFT only
+      0x61, 0x44, 0xAC,                             // wait 1 s
+      0x66,
+    };
+    var blob = BuildPsgToneVgm(period, totalSamples: 44100, commands);
+
+    using var left = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "LEFT.wav", left, null);
+    using var right = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "RIGHT.wav", right, null);
+
+    var leftSamples = ReadWavLeftSamples(left.ToArray());
+    var rightSamples = ReadWavLeftSamples(right.ToArray());
+
+    var leftEnergy = leftSamples.Sum(s => (long)Math.Abs(s));
+    var rightEnergy = rightSamples.Sum(s => (long)Math.Abs(s));
+    Assert.That(leftEnergy, Is.GreaterThan(0L), "left speaker carries the tone");
+    Assert.That(rightEnergy, Is.EqualTo(0L), "right speaker is masked off");
+  }
+
+  [Test]
+  public void Render_UnsupportedChip_KeepsMetadataOnly() {
+    // SegaPCM clock present (unsupported) → no WAVs, a render.txt note instead.
+    var commands = new byte[] { 0x50, 0x9F, 0x66 };
+    var headerLen = 0x80;
+    var blob = new byte[headerLen + commands.Length];
+    "Vgm "u8.CopyTo(blob);
+    WriteU32(blob, 0x08, 0x00000151);
+    WriteU32(blob, 0x0C, 3579545);   // SN76489 (supported)
+    WriteU32(blob, 0x38, 4000000);   // SegaPCM (unsupported) → blocks rendering
+    WriteU32(blob, 0x18, 100);
+    WriteU32(blob, 0x34, (uint)(headerLen - 0x34));
+    commands.CopyTo(blob.AsSpan(headerLen));
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.False, "unsupported chip blocks rendering");
+    Assert.That(entries.Any(e => e.Name == "render.txt"), Is.True, "records why rendering was skipped");
+  }
+
+  // ──────────── YM2151 (OPM) / YM2203 (OPN) / YM2608 (OPNA) rendering ────────────
+
+  // Builds a v1.51 VGM whose only chip clock is at `clockOffset`, with the given command stream.
+  private static byte[] BuildSingleChipVgm(int clockOffset, uint clock, uint totalSamples, byte[] commands) {
+    var headerLen = 0x80;
+    var blob = new byte[headerLen + commands.Length];
+    "Vgm "u8.CopyTo(blob);
+    WriteU32(blob, 0x08, 0x00000151);
+    WriteU32(blob, clockOffset, clock);
+    WriteU32(blob, 0x18, totalSamples);
+    WriteU32(blob, 0x34, (uint)(headerLen - 0x34));
+    commands.CopyTo(blob.AsSpan(headerLen));
+    return blob;
+  }
+
+  [Test]
+  public void Render_Ym2151_ProducesPcmAndReportsRenderedChip() {
+    // Program channel 0 as an algorithm-7 voice (operator M1 audible), key on, then wait.
+    var commands = new List<byte> {
+      0x54, 0x20, 0xC7,  // ch0: RL on, CONNECT 7
+      0x54, 0x40, 0x01,  // M1 DT1=0 MUL=1
+      0x54, 0x60, 0x00,  // M1 TL=0
+      0x54, 0x80, 0x1F,  // M1 KS=0 AR=31
+      0x54, 0xE0, 0x0F,  // M1 D1L=0 RR=15
+      0x54, 0x60 + 0x08, 0x7F, // C1 muted
+      0x54, 0x60 + 0x10, 0x7F, // M2 muted
+      0x54, 0x60 + 0x18, 0x7F, // C2 muted
+      0x54, 0x28, 0x4C,  // KC = A4
+      0x54, 0x08, 0x78,  // key on ch0
+      0x61, 0x44, 0xAC,  // wait 1 s
+      0x66,
+    };
+    var blob = BuildSingleChipVgm(0x30, 3579545, 44100, commands.ToArray());
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "RIGHT.wav"), Is.True);
+
+    var rendered = Extract(blob, "rendered.ini");
+    Assert.That(rendered, Does.Contain("YM2151"));
+
+    using var output = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "LEFT.wav", output, null);
+    var samples = ReadWavLeftSamples(output.ToArray());
+    Assert.That(samples.Sum(s => (long)Math.Abs(s)), Is.GreaterThan(0L), "non-silent PCM");
+  }
+
+  [Test]
+  public void Render_Ym2203_ProducesPcmAndReportsRenderedChip() {
+    // FM channel 0 algorithm-7 voice (operator 0 audible) plus an SSG tone, then wait.
+    var commands = new List<byte> {
+      0x55, 0xB0, 0x07,  // alg 7
+      0x55, 0x30, 0x01,  // op0 DT=0 MUL=1
+      0x55, 0x40, 0x00,  // op0 TL=0
+      0x55, 0x50, 0x1F,  // op0 KS=0 AR=31
+      0x55, 0x80, 0x0F,  // op0 SL=0 RR=15
+      0x55, 0x44, 0x7F, 0x55, 0x48, 0x7F, 0x55, 0x4C, 0x7F, // other ops muted
+      0x55, 0xA4, (4 << 3) | 0x04, // block 4 F-num high
+      0x55, 0xA0, 0x00,  // F-num low
+      0x55, 0x28, 0xF0,  // key on
+      0x55, 0x01, 0x01,  // SSG tone A coarse
+      0x55, 0x07, 0xFE,  // SSG mixer: tone A on
+      0x55, 0x08, 0x0F,  // SSG channel A full volume
+      0x61, 0x44, 0xAC,  // wait 1 s
+      0x66,
+    };
+    var blob = BuildSingleChipVgm(0x44, 3993600, 44100, commands.ToArray());
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True);
+
+    var rendered = Extract(blob, "rendered.ini");
+    Assert.That(rendered, Does.Contain("YM2203"));
+
+    using var output = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "LEFT.wav", output, null);
+    var samples = ReadWavLeftSamples(output.ToArray());
+    Assert.That(samples.Sum(s => (long)Math.Abs(s)), Is.GreaterThan(0L), "non-silent PCM");
+  }
+
+  [Test]
+  public void Render_Ym2608_ProducesStereoPcmReportsChipAndGatesRhythm() {
+    // FM channel 1 (port 0) algorithm-7 voice + SSG tone + a rhythm key-on (gated).
+    var commands = new List<byte> {
+      0x56, 0xB0, 0x07,  // ch1 alg 7
+      0x56, 0xB4, 0xC0,  // ch1 L/R both
+      0x56, 0x30, 0x01,  // op0 DT=0 MUL=1
+      0x56, 0x40, 0x00,  // op0 TL=0
+      0x56, 0x50, 0x1F,  // op0 KS=0 AR=31
+      0x56, 0x80, 0x0F,  // op0 SL=0 RR=15
+      0x56, 0x44, 0x7F, 0x56, 0x48, 0x7F, 0x56, 0x4C, 0x7F,
+      0x56, 0xA4, (4 << 3) | 0x04,
+      0x56, 0xA0, 0x00,
+      0x56, 0x28, 0xF0,  // key on ch1
+      0x56, 0x01, 0x01,  // SSG tone A coarse
+      0x56, 0x07, 0xFE,  // SSG tone A on
+      0x56, 0x08, 0x0F,  // SSG channel A volume
+      0x56, 0x10, 0x01,  // rhythm key-on (bass drum) → gated
+      0x61, 0x44, 0xAC,  // wait 1 s
+      0x66,
+    };
+    var blob = BuildSingleChipVgm(0x48, 7987200, 44100, commands.ToArray());
+
+    using var ms = new MemoryStream(blob);
+    var entries = new VgmFormatDescriptor().List(ms, null);
+    Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True);
+    Assert.That(entries.Any(e => e.Name == "RIGHT.wav"), Is.True);
+
+    var rendered = Extract(blob, "rendered.ini");
+    Assert.That(rendered, Does.Contain("YM2608"));
+
+    // The gated rhythm note is surfaced via render.txt.
+    var note = Extract(blob, "render.txt");
+    Assert.That(note, Does.Contain("rhythm"), "rhythm gating is noted");
+
+    using var output = new MemoryStream();
+    new VgmFormatDescriptor().ExtractEntry(new MemoryStream(blob), "LEFT.wav", output, null);
+    var samples = ReadWavLeftSamples(output.ToArray());
+    Assert.That(samples.Sum(s => (long)Math.Abs(s)), Is.GreaterThan(0L), "non-silent PCM");
   }
 }
