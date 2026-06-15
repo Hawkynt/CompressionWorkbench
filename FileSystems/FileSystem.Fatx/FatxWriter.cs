@@ -57,12 +57,17 @@ public sealed class FatxWriter {
     var root = this.BuildTree();
     var totalBytes = SumPayload(root);
 
-    // Auto-pick a cluster size proportional to the payload so small synthetic
-    // images stay small but real Xbox-scale workloads land on the canonical
-    // 16 KiB cluster. The reader doesn't care what we pick as long as it's
-    // a power of two — we round entries up to the next valid value.
+    // Auto-pick the cluster size that minimises wasted slack across the actual
+    // file-set plus the per-size FAT-table overhead, via the shared layout
+    // optimizer. The reader is cluster-size-agnostic (it reads sectors_per_cluster
+    // straight from the superblock), so every candidate round-trips; the legal
+    // window is power-of-two clusters from 2 KiB (4 sectors) up to 64 KiB
+    // (128 sectors), bracketing the canonical 16 KiB Xbox HDD cluster. Tiny
+    // synthetic images naturally land on the smallest cluster (least slack),
+    // large workloads on a bigger one (less FAT overhead) — matching the old
+    // payload-threshold heuristic at the extremes but optimal in between.
     if (sectorsPerCluster <= 0)
-      sectorsPerCluster = totalBytes > 1024L * 1024 ? 32 : 4;
+      sectorsPerCluster = SelectOptimalSectorsPerCluster(totalBytes);
     if (sectorsPerCluster < 1 || (sectorsPerCluster & (sectorsPerCluster - 1)) != 0)
       throw new ArgumentException(
         $"FATX: sectors_per_cluster must be a power of two (got {sectorsPerCluster}).",
@@ -133,6 +138,41 @@ public sealed class FatxWriter {
     WritePayload(image, root, (int)dataRegionStart, clusterSize, fatType);
 
     return image;
+  }
+
+  /// <summary>
+  /// Power-of-two sectors-per-cluster candidates (512-byte sectors): 2 KiB …
+  /// 64 KiB clusters. Every value is legal FATX geometry; the reader honours
+  /// whatever <c>sectors_per_cluster</c> the superblock records.
+  /// </summary>
+  private static readonly int[] SectorsPerClusterCandidates = [4, 8, 16, 32, 64, 128];
+
+  /// <summary>
+  /// Picks the sectors-per-cluster value that minimises file-tail slack plus the
+  /// FAT-table footprint for the current file-set, delegating the search to
+  /// <see cref="Compression.Core.Layout.LayoutOptimizerAdapter"/>. Returns the
+  /// number of 512-byte sectors per cluster (a power of two).
+  /// </summary>
+  private int SelectOptimalSectorsPerCluster(long totalBytes) {
+    var fileSizes = this._files.Select(f => (long)f.Data.Length).ToList();
+    // Empty volumes have no slack signal — keep the canonical small cluster.
+    if (totalBytes <= 0) return SectorsPerClusterCandidates[0];
+
+    // Optimise over cluster sizes (bytes), then map the winner back to sectors.
+    var clusterCandidates = SectorsPerClusterCandidates.Select(spc => spc * SectorSize).ToArray();
+    var bestClusterBytes = Compression.Core.Layout.LayoutOptimizerAdapter.SelectAllocationUnit(
+      clusterCandidates,
+      fileSizes,
+      fixedOverhead: clusterBytes => {
+        // FAT footprint grows as the data-cluster count grows (smaller clusters
+        // ⇒ more entries ⇒ a bigger FAT). Approximate cluster count from the
+        // payload, width from the FAT16/32 threshold, rounded to 4 KiB pages.
+        var dataClusters = Compression.Core.Layout.FilesystemLayoutOptimizer.DataClusters(fileSizes, clusterBytes);
+        var entryBytes = dataClusters < 0xFFF4 ? 2L : 4L;
+        var fatRaw = (dataClusters + 2) * entryBytes;
+        return (fatRaw + 0xFFFL) & ~0xFFFL;
+      });
+    return bestClusterBytes / SectorSize;
   }
 
   // ── tree ─────────────────────────────────────────────────────────────

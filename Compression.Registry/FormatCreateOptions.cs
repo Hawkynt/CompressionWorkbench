@@ -51,6 +51,17 @@ public sealed class FormatCreateOptions {
   /// </summary>
   public IReadOnlyDictionary<string, string>? FormatSpecific { get; init; }
 
+  /// <summary>
+  /// True when the caller explicitly supplied <paramref name="key"/> (with a
+  /// non-empty value). Writers use this to distinguish "caller pinned a size"
+  /// from "use the format default / auto-optimise" — an unset size must leave the
+  /// auto-selection path free, while a pinned size must be honoured byte-for-byte.
+  /// </summary>
+  public bool HasOption(string key)
+    => this.FormatSpecific != null
+       && this.FormatSpecific.TryGetValue(key, out var v)
+       && !string.IsNullOrEmpty(v);
+
   /// <summary>Reads a format-specific string option, returning <paramref name="fallback"/> if absent.</summary>
   public string GetOption(string key, string fallback) {
     if (this.FormatSpecific == null) return fallback;

@@ -56,22 +56,10 @@ public sealed class ExtWriter {
   /// <param name="requestedBlockSize">Block size in bytes (0 = auto-select).</param>
   public byte[] BuildAutoSized(int requestedBlockSize = 0) {
     var fileSizes = _files.Select(f => f.StreamingSize ?? (long)f.Data.Length).ToList();
-    var estimatedInodes = ChooseInodeCount(_files.Count + 1);
 
-    // ext block sizes: 1 KB, 2 KB, 4 KB (this minimal writer supports up to 4 KB).
-    int[] candidates = [1024, 2048, 4096];
     var blockSize = requestedBlockSize > 0
       ? requestedBlockSize
-      : Compression.Core.Layout.FilesystemLayoutOptimizer.SelectClusterSize(
-          candidates,
-          bs => {
-            var clusters = Compression.Core.Layout.FilesystemLayoutOptimizer.DataClusters(fileSizes, bs);
-            var slack    = Compression.Core.Layout.FilesystemLayoutOptimizer.Slack(fileSizes, bs);
-            // ext metadata: superblock + group desc + 2 bitmaps + inode table.
-            var inodeTableBytes = estimatedInodes * 128; // inodesPerGroup × inodeSize
-            var metaBytes = 4L * bs + inodeTableBytes;
-            return slack + metaBytes;
-          });
+      : this.SelectOptimalBlockSize();
 
     // Distinct directories implied by the nested paths (the root plus every
     // path prefix), and the number of entries (children) each holds — a
@@ -111,6 +99,33 @@ public sealed class ExtWriter {
     var dataBlocks = fileSizes.Sum(s => s <= 0 ? 0L : (s + blockSize - 1) / blockSize);
     var totalBlocks = (int)Math.Max(4096, (4 + dirBlocks + inodeTableBlocks + dataBlocks) * 11 / 10);
     return Build(blockSize, totalBlocks);
+  }
+
+  /// <summary>
+  /// ext block sizes legal for this minimal writer: 1 KB, 2 KB, 4 KB.
+  /// </summary>
+  private static readonly int[] BlockSizeCandidates = [1024, 2048, 4096];
+
+  /// <summary>
+  /// Picks the block size (bytes) that minimises file-tail slack plus the ext
+  /// metadata footprint (superblock + group descriptor + block/inode bitmaps +
+  /// inode table) for the current file-set, via the shared
+  /// <see cref="Compression.Core.Layout.LayoutOptimizerAdapter"/>. Every candidate
+  /// is a legal ext block size, so the chosen image always round-trips.
+  /// </summary>
+  /// <param name="inodeSize">On-disk inode size in bytes (128 or 256), used to
+  /// weight the inode-table overhead term.</param>
+  public int SelectOptimalBlockSize(int inodeSize = 128) {
+    var fileSizes = _files.Select(f => f.StreamingSize ?? (long)f.Data.Length).ToList();
+    var estimatedInodes = ChooseInodeCount(_files.Count + 1);
+    return Compression.Core.Layout.LayoutOptimizerAdapter.SelectAllocationUnit(
+      BlockSizeCandidates,
+      fileSizes,
+      fixedOverhead: bs => {
+        // ext metadata: superblock + group desc + 2 bitmaps + inode table.
+        var inodeTableBytes = (long)estimatedInodes * inodeSize;
+        return 4L * bs + inodeTableBytes;
+      });
   }
 
   /// <summary>

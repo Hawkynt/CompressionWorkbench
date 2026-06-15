@@ -26,7 +26,26 @@ namespace FileSystem.Nilfs2;
 /// through this descriptor's reader.</para>
 /// </summary>
 public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
+    IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  /// <summary>Synthetic surface entries the reader always injects — excluded from rebuilds.</summary>
+  private static readonly HashSet<string> SyntheticEntries =
+    new(StringComparer.Ordinal) { "FULL.nilfs2", "metadata.ini", "superblock.bin" };
+
+  /// <summary>
+  /// Creation knobs. <c>BlockSize</c> is the NILFS2 block size (power of two in
+  /// [1024, 65536], recorded in <c>s_log_block_size</c>): leave it at "auto" (0)
+  /// to let the layout optimiser pick the legal size that minimises wasted tail
+  /// padding for the file-set, or pin a value. <c>VolumeLabel</c> fills the 16-byte
+  /// superblock label slot.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new("BlockSize", "Block size", FormatOptionKind.Enum, "0",
+      AllowedValues: ["0", "1024", "2048", "4096", "8192", "16384", "32768", "65536"],
+      Description: "NILFS2 block size in bytes (0 = auto-optimise for least padding slack; spec allows 1024..65536)."),
+    new("VolumeLabel", "Volume label", FormatOptionKind.String, "",
+      Description: "Up to 16 ASCII characters written into the superblock volume-label slot."),
+  ];
   public string Id => "Nilfs2";
   public string DisplayName => "NILFS2";
   public FormatCategory Category => FormatCategory.Archive;
@@ -71,9 +90,21 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     var writer = new Nilfs2Writer();
-    foreach (var (name, data) in FilesOnly(inputs))
+    var files = FilesOnly(inputs).ToList();
+    foreach (var (name, data) in files)
       writer.AddFile(name, data);
-    writer.WriteTo(output);
+
+    // Block size: a pinned value is honoured verbatim; when unset, the optimiser
+    // picks the legal size minimising tail-padding slack for the file-set. The
+    // NILFS2 reader/modifier are block-size-agnostic (they key off the writer
+    // directory magic and s_log_block_size), so every candidate round-trips.
+    var label = options.GetOption("VolumeLabel", "");
+    var blockSize = options.HasOption("BlockSize")
+      ? options.GetOptionInt("BlockSize", 4096)
+      : Compression.Core.Layout.LayoutOptimizerAdapter.SelectAllocationUnit(
+          [1024, 2048, 4096, 8192, 16384, 32768, 65536],
+          files.Select(f => (long)f.Data.Length).ToList());
+    output.Write(writer.Build(blockSize, string.IsNullOrEmpty(label) ? null : label));
   }
 
   // ── IArchiveModifiable ────────────────────────────────────────────────
@@ -109,4 +140,80 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
 
   public void Defragment(Stream archive, DefragOptions options)
     => throw new NotSupportedException("Nilfs2 R/W is log-structured (append-only segments) — defragmentation would re-pack snapshots, which violates the continuous-snapshot invariant.");
+
+  // ── ILayoutOptimizable ────────────────────────────────────────────────
+  //
+  // NILFS2's block size is reader-agnostic (read back from s_log_block_size),
+  // so any legal size round-trips. Because the writer packs payloads
+  // contiguously rather than in per-file blocks, the slack the optimiser trims
+  // here is the image's tail padding to a whole block, not per-file cluster
+  // tails — the contract still fits, just with a smaller savings surface than a
+  // cluster-allocating filesystem. PatchInPlace updates the 16-byte volume
+  // label; a block-size change is a structural rebuild.
+
+  private static readonly int[] BlockCandidates = [1024, 2048, 4096, 8192, 16384, 32768, 65536];
+
+  /// <inheritdoc />
+  public LayoutAnalysis AnalyzeLayout(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (image.CanSeek) image.Position = 0;
+    var reader = new Nilfs2Reader(image);
+    var current = 1024 << (int)reader.LogBlockSize;
+    var fileSizes = reader.Entries
+      .Where(e => !e.IsDirectory && !SyntheticEntries.Contains(e.Name))
+      .Select(e => e.Size).ToList();
+
+    var optimal = Compression.Core.Layout.LayoutOptimizerAdapter.SelectAllocationUnit(BlockCandidates, fileSizes);
+    var currentSlack = Compression.Core.Layout.LayoutOptimizerAdapter.SlackAt(fileSizes, current);
+    var optimalSlack = Compression.Core.Layout.LayoutOptimizerAdapter.SlackAt(fileSizes, optimal);
+    return new LayoutAnalysis {
+      ImageSize = image.CanSeek ? image.Length : 0,
+      CurrentUnitSize = current,
+      CurrentSlackBytes = currentSlack,
+      OptimalUnitSize = optimal,
+      OptimalSlackBytes = optimalSlack,
+      InPlaceChanges = ["volume label"],
+      RequiresRebuild = optimal != current ? ["block size"] : [],
+      Notes = optimal == current
+        ? ["Block size is already optimal for this file-set."]
+        : [$"Rebuild at {optimal}-byte blocks trims padding slack."],
+    };
+  }
+
+  /// <inheritdoc />
+  public void PatchInPlace(Stream image, LayoutPatch patch) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(patch);
+    if (patch.VolumeLabel is { } label) {
+      // Volume label: 16 bytes at superblock offset 1024 + 0x80.
+      Span<byte> buf = stackalloc byte[16];
+      var bytes = System.Text.Encoding.ASCII.GetBytes(label);
+      bytes.AsSpan(0, Math.Min(bytes.Length, 16)).CopyTo(buf);
+      image.Position = 1024 + 0x80;
+      image.Write(buf);
+    }
+  }
+
+  /// <inheritdoc />
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    ArgumentNullException.ThrowIfNull(source);
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(options);
+    if (source.CanSeek) source.Position = 0;
+    var reader = new Nilfs2Reader(source);
+    var w = new Nilfs2Writer();
+    var fileSizes = new List<long>();
+    foreach (var e in reader.Entries) {
+      if (e.IsDirectory || SyntheticEntries.Contains(e.Name)) continue;
+      var data = reader.Extract(e);
+      w.AddFile(e.Name, data);
+      fileSizes.Add(data.LongLength);
+    }
+    var blockSize = options.UnitSize > 0
+      ? options.UnitSize
+      : Compression.Core.Layout.LayoutOptimizerAdapter.SelectAllocationUnit(BlockCandidates, fileSizes);
+    var image = w.Build(blockSize);
+    target.Write(image);
+    options.OnProgress?.Invoke(image.Length, image.Length);
+  }
 }

@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Ext;
 
-public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   /// <summary>
   /// Zeros all unused space in the ext2/3/4 image: free blocks, block-tip slack
@@ -224,10 +224,15 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       "ext3" => ExtWriter.ExtVersion.Ext3,
       _ => ExtWriter.ExtVersion.Ext4,
     };
-    var blockSize = options.GetOptionInt("BlockSize", 4096);
+    // Block size: when the caller pinned one, honour it byte-for-byte; when it
+    // was left unset, let the layout optimiser pick the legal block size that
+    // minimises slack + metadata overhead for the actual file-set.
     var journal = options.GetOptionBool("Journal", true);
     var volumeLabel = options.GetOption("VolumeLabel", "");
     var inodeSize = options.GetOptionInt("InodeSize", 256);
+    var blockSize = options.HasOption("BlockSize")
+      ? options.GetOptionInt("BlockSize", 4096)
+      : w.SelectOptimalBlockSize(inodeSize);
 
     output.Write(w.Build(blockSize, totalBlocks: 4096, version, journal, volumeLabel, inodeSize));
   }
@@ -255,10 +260,12 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       "ext3" => ExtWriter.ExtVersion.Ext3,
       _ => ExtWriter.ExtVersion.Ext4,
     };
-    var blockSize = options.GetOptionInt("BlockSize", 4096);
     var journal = options.GetOptionBool("Journal", true);
     var volumeLabel = options.GetOption("VolumeLabel", "");
     var inodeSize = options.GetOptionInt("InodeSize", 256);
+    var blockSize = options.HasOption("BlockSize")
+      ? options.GetOptionInt("BlockSize", 4096)
+      : w.SelectOptimalBlockSize(inodeSize);
     if (output.CanSeek) {
       w.BuildToStreaming(output, blockSize, totalBlocks: 4096, version, journal, volumeLabel, inodeSize);
       return;
@@ -297,5 +304,83 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Remove(Stream archive, string[] entryNames) {
     foreach (var name in entryNames)
       ExtModifier.RemoveFile(archive, name, wipeData: true);
+  }
+
+  // ── ILayoutOptimizable ────────────────────────────────────────────────
+  //
+  // ext exposes a genuine per-file block allocation, so the block-size choice
+  // materially changes file-tail slack. AnalyzeLayout reads only the superblock
+  // (s_log_block_size at +24) plus the file-set sizes; RebuildStreaming re-emits
+  // the volume at the target block size via the same auto-sizing path Create
+  // uses. PatchInPlace handles the 16-byte volume label (superblock +120); a
+  // block-size change is a structural rebuild, not an in-place patch.
+
+  /// <inheritdoc />
+  public LayoutAnalysis AnalyzeLayout(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (image.CanSeek) image.Position = 0;
+
+    // s_log_block_size lives at superblock offset 1024 + 24; blockSize = 1024 << v.
+    Span<byte> sb = stackalloc byte[28];
+    image.Position = 1024;
+    image.ReadExactly(sb);
+    var logBlockSize = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(sb[24..]);
+    var current = 1024 << (int)logBlockSize;
+
+    if (image.CanSeek) image.Position = 0;
+    var reader = new ExtReader(image, leaveOpen: true);
+    var fileSizes = reader.Entries.Where(e => !e.IsDirectory).Select(e => e.Size).ToList();
+
+    int[] candidates = [1024, 2048, 4096];
+    var optimal = Compression.Core.Layout.LayoutOptimizerAdapter.SelectAllocationUnit(
+      candidates, fileSizes,
+      fixedOverhead: bs => 4L * bs + (long)Math.Max(16, fileSizes.Count + 1) * 256);
+
+    var currentSlack = Compression.Core.Layout.LayoutOptimizerAdapter.SlackAt(fileSizes, current);
+    var optimalSlack = Compression.Core.Layout.LayoutOptimizerAdapter.SlackAt(fileSizes, optimal);
+    return new LayoutAnalysis {
+      ImageSize = image.CanSeek ? image.Length : 0,
+      CurrentUnitSize = current,
+      CurrentSlackBytes = currentSlack,
+      OptimalUnitSize = optimal,
+      OptimalSlackBytes = optimalSlack,
+      InPlaceChanges = ["volume label"],
+      RequiresRebuild = optimal != current ? ["block size"] : [],
+      Notes = optimal == current
+        ? ["Block size is already optimal for this file-set."]
+        : [$"Rebuild at {optimal}-byte blocks saves {currentSlack - optimalSlack} slack bytes."],
+    };
+  }
+
+  /// <inheritdoc />
+  public void PatchInPlace(Stream image, LayoutPatch patch) {
+    ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(patch);
+    if (patch.VolumeLabel is { } label) {
+      // s_volume_name: 16 bytes at superblock offset 1024 + 120.
+      Span<byte> buf = stackalloc byte[16];
+      var bytes = System.Text.Encoding.ASCII.GetBytes(label);
+      bytes.AsSpan(0, Math.Min(bytes.Length, 16)).CopyTo(buf);
+      image.Position = 1024 + 120;
+      image.Write(buf);
+    }
+  }
+
+  /// <inheritdoc />
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    ArgumentNullException.ThrowIfNull(source);
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(options);
+    if (source.CanSeek) source.Position = 0;
+    var reader = new ExtReader(source, leaveOpen: true);
+    var w = new ExtWriter();
+    foreach (var e in reader.Entries) {
+      if (e.IsDirectory) continue;
+      w.AddFile(e.Name, reader.Extract(e));
+    }
+    // UnitSize 0 = auto-select the slack-optimal block size; explicit wins.
+    var image = w.BuildAutoSized(options.UnitSize);
+    target.Write(image);
+    options.OnProgress?.Invoke(image.Length, image.Length);
   }
 }

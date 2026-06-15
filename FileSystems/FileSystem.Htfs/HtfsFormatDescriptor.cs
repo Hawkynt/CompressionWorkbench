@@ -84,6 +84,10 @@ public sealed class HtfsFormatDescriptor :
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new HtfsWriter();
     w.SetVolumeLabel(options.GetOption("VolumeLabel", "WORM"));
+    // NOTE: the block-size auto-optimiser is intentionally NOT wired here. The
+    // HTFS reader's block-size detection only recovers 512-byte images, so a
+    // non-512 default would not round-trip — see HtfsReader.DetectBlockSize. The
+    // BlockSize knob therefore stays an explicit, caller-pinned choice only.
     var blockSize = options.GetOptionInt("BlockSize", 512);
     if (blockSize is 512 or 1024 or 2048) w.SetBlockSize(blockSize);
     foreach (var i in inputs) {

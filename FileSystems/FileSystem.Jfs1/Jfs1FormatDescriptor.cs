@@ -86,14 +86,28 @@ public sealed class Jfs1FormatDescriptor :
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new Jfs1Writer();
     w.SetVolumeLabel(options.GetOption("VolumeLabel", "WORM"));
-    var bs = options.GetOptionInt("BlockSize", 4096);
+
+    var files = inputs.Where(i => !i.IsDirectory).Select(i => (i.ArchiveName, Data: i.ReadContent())).ToList();
+    foreach (var (name, data) in files)
+      w.AddFile(name, data);
+
+    // Block size: a pinned value wins verbatim; when unset, the shared layout
+    // optimiser picks the legal 1024/2048/4096 size that minimises slack +
+    // metadata overhead instead of defaulting to 4096. Routed through the shared
+    // adapter (rather than the bespoke Jfs1Optimizer) to prove consolidation; the
+    // aggregate block size tracks the data block size.
+    var bs = options.HasOption("BlockSize")
+      ? options.GetOptionInt("BlockSize", 4096)
+      : Compression.Core.Layout.LayoutOptimizerAdapter.SelectAllocationUnit(
+          [1024, 2048, 4096],
+          files.Select(f => (long)f.Data.Length).ToList(),
+          fixedOverhead: blk => 3L * blk); // sb + inode block + root dir
     if (bs is 1024 or 2048 or 4096) w.SetBlockSize(bs);
-    var abs = options.GetOptionInt("AggregateBlockSize", 4096);
+    var abs = options.HasOption("AggregateBlockSize")
+      ? options.GetOptionInt("AggregateBlockSize", 4096)
+      : bs;
     if (abs is 1024 or 2048 or 4096) w.SetAggregateBlockSize(abs);
-    foreach (var i in inputs) {
-      if (i.IsDirectory) continue;
-      w.AddFile(i.ArchiveName, i.ReadContent());
-    }
+
     w.WriteTo(output);
   }
 
