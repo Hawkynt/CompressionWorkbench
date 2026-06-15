@@ -251,6 +251,12 @@
     <ProjectReference Include="..\FileFormats\FileFormat.CloneCd\FileFormat.CloneCd.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ova\FileFormat.Ova.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Qed\FileFormat.Qed.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Td0\FileFormat.Td0.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Imd\FileFormat.Imd.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Hfe\FileFormat.Hfe.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Woz\FileFormat.Woz.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Qoi\FileFormat.Qoi.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Dpx\FileFormat.Dpx.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Aff4\FileFormat.Aff4.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Dar\FileFormat.Dar.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Par2\FileFormat.Par2.csproj" />

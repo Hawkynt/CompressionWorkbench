@@ -99,6 +99,12 @@
     <Project Path="FileFormats/FileFormat.CloneCd/FileFormat.CloneCd.csproj" />
     <Project Path="FileFormats/FileFormat.Ova/FileFormat.Ova.csproj" />
     <Project Path="FileFormats/FileFormat.Qed/FileFormat.Qed.csproj" />
+    <Project Path="FileFormats/FileFormat.Td0/FileFormat.Td0.csproj" />
+    <Project Path="FileFormats/FileFormat.Imd/FileFormat.Imd.csproj" />
+    <Project Path="FileFormats/FileFormat.Hfe/FileFormat.Hfe.csproj" />
+    <Project Path="FileFormats/FileFormat.Woz/FileFormat.Woz.csproj" />
+    <Project Path="FileFormats/FileFormat.Qoi/FileFormat.Qoi.csproj" />
+    <Project Path="FileFormats/FileFormat.Dpx/FileFormat.Dpx.csproj" />
     <Project Path="FileFormats/FileFormat.Aff4/FileFormat.Aff4.csproj" />
     <Project Path="FileFormats/FileFormat.Dar/FileFormat.Dar.csproj" />
     <Project Path="FileFormats/FileFormat.Par2/FileFormat.Par2.csproj" />
