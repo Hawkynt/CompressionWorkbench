@@ -10,6 +10,7 @@ namespace FileFormat.Xz;
 /// </summary>
 public sealed class XzStream : CompressionStream {
   private readonly int _dictionarySize;
+  private readonly LzmaCompressionLevel _level;
   private readonly byte _checkType;
   private readonly List<(ulong FilterId, byte[] Properties)> _preFilters;
 
@@ -54,8 +55,28 @@ public sealed class XzStream : CompressionStream {
     int dictionarySize, byte checkType,
     IEnumerable<(ulong FilterId, byte[] Properties)>? preFilters,
     bool leaveOpen = false)
+    : this(stream, mode, dictionarySize, checkType, preFilters, LzmaCompressionLevel.Normal, leaveOpen) {
+  }
+
+  /// <summary>
+  /// Initializes a new <see cref="XzStream"/> with a specific check type, pre-filters
+  /// and LZMA2 compression level.
+  /// </summary>
+  /// <param name="stream">The underlying stream.</param>
+  /// <param name="mode">Whether to compress or decompress.</param>
+  /// <param name="dictionarySize">The LZMA2 dictionary size.</param>
+  /// <param name="checkType">The integrity check type.</param>
+  /// <param name="preFilters">Optional pre-filters applied before LZMA2.</param>
+  /// <param name="level">The LZMA2 match-finder effort (decode is unaffected).</param>
+  /// <param name="leaveOpen">Whether to leave the inner stream open.</param>
+  public XzStream(Stream stream, CompressionStreamMode mode,
+    int dictionarySize, byte checkType,
+    IEnumerable<(ulong FilterId, byte[] Properties)>? preFilters,
+    LzmaCompressionLevel level,
+    bool leaveOpen = false)
     : base(stream, mode, leaveOpen) {
     this._dictionarySize = dictionarySize;
+    this._level = level;
     this._checkType = checkType;
     this._preFilters = preFilters != null ? new(preFilters) : [];
 
@@ -117,7 +138,7 @@ public sealed class XzStream : CompressionStream {
       filteredData = ApplyForwardFilter(filterId, props, filteredData);
 
     // LZMA2 compress
-    var lzma2Encoder = new Lzma2Encoder(this._dictionarySize);
+    var lzma2Encoder = new Lzma2Encoder(this._dictionarySize, this._level);
     using var compressedBlock = new MemoryStream();
     lzma2Encoder.Encode(compressedBlock, filteredData);
     var compressedData = compressedBlock.ToArray();

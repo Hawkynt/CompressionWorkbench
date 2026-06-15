@@ -21,6 +21,11 @@ public sealed class ZlibFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public string Description => "Deflate with Adler32 checksum, foundational compression library";
 
   // ── IFormatOptionsSchema ───────────────────────────────────────────────
+  // Level is the only honored axis. A Deflate *strategy* (filtered / huffman-only
+  // / RLE / fixed) is NOT exposed because our Deflate core has no strategy
+  // concept — the encoder only varies match-finding depth and static-vs-dynamic
+  // Huffman by level, so a strategy knob would be ignored by the writer.
+
   /// <summary>The Deflate compression level applied to the Zlib payload. The
   /// optimizer searches these tiers to find the smallest output for the input.</summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [

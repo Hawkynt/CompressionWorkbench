@@ -20,6 +20,11 @@ public sealed class ZstdFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   public string Description => "Facebook's modern codec, excellent speed/ratio tradeoff with dictionary support";
 
   // ── IFormatOptionsSchema ───────────────────────────────────────────────
+  // Level is the only honored axis: our Zstd encoder derives the window size
+  // per-frame from the content length and uses a single fixed hash-chain match
+  // strategy with no long-distance-matching pass, so window-log / strategy / LDM
+  // knobs would be ignored by the writer and are deliberately NOT exposed.
+
   /// <summary>Compression level 1..9 (higher = smaller/slower). The optimizer
   /// searches these to find the smallest output for the given input.</summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
