@@ -2,21 +2,37 @@ namespace Compression.Core.Entropy.ContextMixing;
 
 /// <summary>
 /// Combines predictions from multiple <see cref="ContextModel"/> instances
-/// using adaptive linear mixing (weighted average).
+/// in the logistic (stretch) domain — the genuine PAQ/lpaq mixer.
 /// </summary>
 /// <remarks>
-/// This is the core component of PAQ-style compressors (used in ZPAQ, KGB, etc.).
-/// Each model provides a probability prediction, and the mixer assigns learned
-/// weights to produce a combined prediction. Weights are updated using gradient
-/// descent on the prediction error after each bit is observed.
+/// <para>
+/// Each model's probability <c>pᵢ</c> is mapped into the logit domain via
+/// <c>stretch(pᵢ)</c>. The mixer forms the dot product
+/// <c>y = Σ wᵢ · stretch(pᵢ)</c> and squashes it back to a probability,
+/// <c>p = squash(y)</c>. After the true bit is observed the weights follow the
+/// logistic-regression gradient
+/// <c>wᵢ += lr · (bit − p) · stretch(pᵢ)</c>,
+/// which is exactly online gradient descent on coding cost (cross-entropy).
+/// </para>
+/// <para>
+/// Weights live in fixed point (16 fractional bits) so encoder and decoder
+/// evolve identically. Mixing in the logit domain — rather than averaging
+/// probabilities — lets a single confident model dominate when it is right,
+/// which is what makes context mixing beat a plain linear blend.
+/// </para>
 /// </remarks>
 public sealed class ContextMixer {
-  private readonly ContextModel[] _models;
-  private readonly double[] _weights;
-  private readonly int _numModels;
+  /// <summary>Fixed-point fractional bits for mixer weights.</summary>
+  private const int WeightShift = 16;
 
-  /// <summary>Learning rate for weight updates.</summary>
-  private const double LearningRate = 0.002;
+  /// <summary>Learning-rate numerator (paired with <see cref="WeightShift"/>).</summary>
+  private const int LearningRate = 3;
+
+  private readonly ContextModel[] _models;
+  private readonly int _numModels;
+  private readonly int[] _weights;     // fixed-point Q16 weights
+  private readonly int[] _stretched;   // stretch(pᵢ) cached from the last Predict
+  private int _lastProbability;        // p from the last Predict (12-bit)
 
   /// <summary>
   /// Initializes a new <see cref="ContextMixer"/> with the given models.
@@ -25,10 +41,12 @@ public sealed class ContextMixer {
   public ContextMixer(params ContextModel[] models) {
     this._models = models;
     this._numModels = models.Length;
-    this._weights = new double[models.Length];
-    // Start with uniform weights
-    var w = 1.0 / models.Length;
-    this._weights.AsSpan().Fill(w);
+    this._weights = new int[models.Length];
+    this._stretched = new int[models.Length];
+
+    // Start with a modest uniform weight so the initial blend sits near 0.5.
+    var initial = (1 << ContextMixer.WeightShift) / Math.Max(1, models.Length);
+    this._weights.AsSpan().Fill(initial);
   }
 
   /// <summary>
@@ -37,18 +55,20 @@ public sealed class ContextMixer {
   /// <param name="contexts">Context hash values, one per model.</param>
   /// <returns>Probability of 1, scaled to [1, 65535] out of 65536.</returns>
   public int Predict(ReadOnlySpan<int> contexts) {
-    double mixed = 0;
+    long dot = 0;
     for (var i = 0; i < this._numModels; ++i) {
-      var p = this._models[i].Predict(contexts[i]);
-      // Convert 12-bit probability to logistic space for better mixing
-      var prob = p / 4096.0;
-      mixed += this._weights[i] * prob;
+      var s = Logistic.Stretch(this._models[i].Predict(contexts[i]));
+      this._stretched[i] = s;
+      dot += (long)this._weights[i] * s;
     }
 
-    // Clamp and scale to 16-bit
-    mixed = Math.Clamp(mixed, 0.0001, 0.9999);
-    var result = (int)(mixed * 65536);
-    return Math.Clamp(result, 1, 65535);
+    var logit = (int)(dot >> ContextMixer.WeightShift);
+    var p12 = Logistic.Squash(logit);
+    this._lastProbability = p12;
+
+    // Scale 12-bit probability to the 16-bit precision the arithmetic coder uses.
+    var p16 = p12 << (16 - Logistic.ProbabilityBits);
+    return Math.Clamp(p16, 1, 65535);
   }
 
   /// <summary>
@@ -56,37 +76,17 @@ public sealed class ContextMixer {
   /// </summary>
   /// <param name="contexts">Context hash values used for prediction.</param>
   /// <param name="bit">The observed bit (0 or 1).</param>
+  /// <remarks>Must be called after <see cref="Predict"/> with the same contexts.</remarks>
   public void Update(ReadOnlySpan<int> contexts, int bit) {
-    // Update weights using gradient descent
-    double target = bit;
-    var preds = new double[this._numModels];
-    double mixed = 0;
+    // Error in 12-bit probability units: (bit - p).
+    var error = (bit << Logistic.ProbabilityBits) - this._lastProbability;
 
+    // Gradient step: wᵢ += lr · error · stretch(pᵢ), kept in fixed point.
     for (var i = 0; i < this._numModels; ++i) {
-      preds[i] = this._models[i].Predict(contexts[i]) / 4096.0;
-      mixed += this._weights[i] * preds[i];
+      var grad = ContextMixer.LearningRate * error * this._stretched[i];
+      this._weights[i] += grad >> Logistic.ProbabilityBits;
     }
 
-    mixed = Math.Clamp(mixed, 0.0001, 0.9999);
-    var error = target - mixed;
-
-    // Update weights: w_i += lr * error * p_i
-    for (var i = 0; i < this._numModels; ++i) {
-      this._weights[i] += ContextMixer.LearningRate * error * preds[i];
-      // Keep weights positive
-      if (this._weights[i] < 0.001)
-        this._weights[i] = 0.001;
-    }
-
-    // Normalize weights
-    double sum = 0;
-    for (var i = 0; i < this._numModels; ++i)
-      sum += this._weights[i];
-
-    for (var i = 0; i < this._numModels; ++i)
-      this._weights[i] /= sum;
-
-    // Update individual models
     for (var i = 0; i < this._numModels; ++i)
       this._models[i].Update(contexts[i], bit);
   }
