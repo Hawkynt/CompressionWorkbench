@@ -110,7 +110,7 @@ public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var total = 0L;
-    foreach (var i in inputs) if (!i.IsDirectory) total += new FileInfo(i.FullPath).Length;
+    foreach (var i in inputs) if (!i.IsDirectory) total += i.InMemoryContent?.LongLength ?? new FileInfo(i.FullPath).Length;
     if (total > BbcWriter.DiskSize40)
       throw new InvalidOperationException(
         $"BBC DFS: combined input size {total} bytes exceeds 40-track SSD capacity ({BbcWriter.DiskSize40} bytes).");

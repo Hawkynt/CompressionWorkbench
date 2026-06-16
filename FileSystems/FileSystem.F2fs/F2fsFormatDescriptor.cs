@@ -63,8 +63,8 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     if (input.IsDirectory) { reason = null; return true; }
     try {
-      var info = new FileInfo(input.FullPath);
-      if (info.Length > 923L * 4096L) {
+      var length = input.InMemoryContent?.LongLength ?? new FileInfo(input.FullPath).Length;
+      if (length > 923L * 4096L) {
         reason = $"F2FS writer supports only direct-pointer files (max {923 * 4096} bytes per file).";
         return false;
       }

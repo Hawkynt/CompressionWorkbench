@@ -73,7 +73,7 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       if (input.IsDirectory) {
         w.AddDirectory(input.ArchiveName.TrimEnd('/'));
       } else {
-        var data = File.ReadAllBytes(input.FullPath);
+        var data = input.ReadContent();
         w.AddFile(input.ArchiveName, data);
       }
     }

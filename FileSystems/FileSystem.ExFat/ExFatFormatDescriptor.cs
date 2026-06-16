@@ -227,7 +227,7 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new ExFatWriter();
     foreach (var input in inputs.Where(i => !i.IsDirectory))
-      w.AddFile(input.ArchiveName, File.ReadAllBytes(input.FullPath));
+      w.AddFile(input.ArchiveName, input.ReadContent());
 
     var specific = options.FormatSpecific;
     var sizeMB = ParseExFatImageSizeMB(specific?.GetValueOrDefault("ImageSize"));

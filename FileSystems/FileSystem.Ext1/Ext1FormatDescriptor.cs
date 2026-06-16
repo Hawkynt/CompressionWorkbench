@@ -149,7 +149,7 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       return false;
     }
     try {
-      var size = new FileInfo(input.FullPath).Length;
+      var size = input.InMemoryContent?.LongLength ?? new FileInfo(input.FullPath).Length;
       if (size > 12 * 1024) {
         reason = $"file '{input.ArchiveName}' exceeds the 12 KiB direct-block limit.";
         return false;

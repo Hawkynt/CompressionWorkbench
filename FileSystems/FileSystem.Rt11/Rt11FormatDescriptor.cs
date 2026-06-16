@@ -126,7 +126,7 @@ public sealed class Rt11FormatDescriptor :
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var files = inputs
       .Where(i => !i.IsDirectory)
-      .Select(i => (Path.GetFileName(i.ArchiveName), File.ReadAllBytes(i.FullPath)))
+      .Select(i => (Path.GetFileName(i.ArchiveName), i.ReadContent()))
       .ToList();
     var label = options?.GetOption("VolumeLabel", "") ?? "";
     if (string.IsNullOrEmpty(label)) label = "RT11A   ";

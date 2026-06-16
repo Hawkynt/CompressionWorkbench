@@ -105,7 +105,7 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       // We surface the file list in metadata only — no content goes into the
       // image. Reading the file is therefore optional, but we honour it so
       // future scope expansion has the bytes available.
-      try { w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath)); }
+      try { w.AddFile(i.ArchiveName, i.ReadContent()); }
       catch { /* unreadable input — skip silently, image is SB-only anyway */ }
     }
     w.WriteTo(output);

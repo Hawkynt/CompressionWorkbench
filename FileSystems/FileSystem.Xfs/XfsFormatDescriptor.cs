@@ -172,7 +172,7 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new XfsWriter();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+      w.AddFile(i.ArchiveName, i.ReadContent());
     }
     w.WriteTo(output);
   }
@@ -184,7 +184,7 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     var toAdd = inputs
       .Where(i => !i.IsDirectory)
-      .Select(i => (i.ArchiveName, File.ReadAllBytes(i.FullPath)))
+      .Select(i => (i.ArchiveName, i.ReadContent()))
       .ToList();
     XfsModifier.AddOrReplace(archive, toAdd);
   }

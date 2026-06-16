@@ -103,7 +103,7 @@ public sealed class CpmFormatDescriptor :
     var userCode = (byte)Math.Clamp(options?.GetOptionInt("UserCode", 0) ?? 0, 0, 15);
     var files = inputs
       .Where(i => !i.IsDirectory)
-      .Select(i => (i.ArchiveName, File.ReadAllBytes(i.FullPath), userCode))
+      .Select(i => (i.ArchiveName, i.ReadContent(), userCode))
       .ToList();
     var image = CpmWriter.Build(files);
     output.Write(image);
@@ -119,7 +119,7 @@ public sealed class CpmFormatDescriptor :
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
-      var data = File.ReadAllBytes(input.FullPath);
+      var data = input.ReadContent();
       CpmModifier.RemoveFile(archive, input.ArchiveName, userCode: 0, wipeData: true);
       CpmModifier.AddFile(archive, input.ArchiveName, data, userCode: 0);
     }
