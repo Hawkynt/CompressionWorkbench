@@ -61,7 +61,7 @@ public sealed class HpiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     using var w = new HpiWriter(output, leaveOpen: true);
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
-      var bytes = File.ReadAllBytes(input.FullPath);
+      var bytes = input.ReadContent();
       // HPI is path-aware (TA reads "units/armcom.fbi" etc.), so we preserve archive paths verbatim.
       w.AddFile(input.ArchiveName, bytes);
     }

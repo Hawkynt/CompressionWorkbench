@@ -73,7 +73,7 @@ public sealed class CurFormatDescriptor :
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var images = inputs
       .Where(i => !i.IsDirectory)
-      .Select(i => new IcoWriter.Image(File.ReadAllBytes(i.FullPath)))
+      .Select(i => new IcoWriter.Image(i.ReadContent()))
       .ToList();
     if (images.Count == 0) throw new InvalidOperationException("CUR: no images to write.");
     var bytes = IcoWriter.BuildCur(images);

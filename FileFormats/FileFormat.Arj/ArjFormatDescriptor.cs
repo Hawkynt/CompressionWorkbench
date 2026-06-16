@@ -129,7 +129,7 @@ public sealed class ArjFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new ArjWriter(arjMethod, password: options.Password);
     foreach (var i in inputs) {
       if (i.IsDirectory) w.AddDirectory(i.ArchiveName);
-      else w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+      else w.AddFile(i.ArchiveName, i.ReadContent());
     }
     w.WriteTo(output);
   }

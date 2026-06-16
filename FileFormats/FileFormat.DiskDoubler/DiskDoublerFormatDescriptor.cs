@@ -97,7 +97,7 @@ public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFor
     var w = new DiskDoublerWriter();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      w.SetFile(Path.GetFileName(i.ArchiveName), File.ReadAllBytes(i.FullPath));
+      w.SetFile(Path.GetFileName(i.ArchiveName), i.ReadContent());
       break;
     }
     w.WriteTo(output);

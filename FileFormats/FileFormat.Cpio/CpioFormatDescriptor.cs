@@ -134,7 +134,7 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var w = new CpioWriter(output);
     foreach (var i in inputs) {
       if (i.IsDirectory) w.AddDirectory(i.ArchiveName);
-      else w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+      else w.AddFile(i.ArchiveName, i.ReadContent());
     }
     w.Finish();
   }

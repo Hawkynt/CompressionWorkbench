@@ -75,7 +75,7 @@ public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       // skip explicit directory inputs (mirrors how the RarReader exposes them).
       if (i.IsDirectory) continue;
       var modified = File.Exists(i.FullPath) ? new DateTimeOffset(File.GetLastWriteTimeUtc(i.FullPath), TimeSpan.Zero) : (DateTimeOffset?)null;
-      w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath), modified);
+      w.AddFile(i.ArchiveName, i.ReadContent(), modified);
     }
   }
 }

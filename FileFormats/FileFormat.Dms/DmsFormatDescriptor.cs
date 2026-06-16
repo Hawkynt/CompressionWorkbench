@@ -58,7 +58,7 @@ public sealed class DmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var fileInputs = inputs.Where(i => !i.IsDirectory).ToArray();
     if (fileInputs.Length != 1)
       throw new ArgumentException("DMS format requires exactly one input file (disk image).");
-    var data = File.ReadAllBytes(fileInputs[0].FullPath);
+    var data = fileInputs[0].ReadContent();
     using var w = new DmsWriter(output, leaveOpen: true);
     w.WriteDisk(data, compressionMode: 0);
   }

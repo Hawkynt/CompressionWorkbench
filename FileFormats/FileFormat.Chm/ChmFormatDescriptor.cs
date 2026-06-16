@@ -77,7 +77,7 @@ public sealed class ChmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new ChmWriter();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+      w.AddFile(i.ArchiveName, i.ReadContent());
     }
     var useLzx = string.Equals(options.MethodName, "lzx", StringComparison.OrdinalIgnoreCase);
     w.WriteTo(output, useLzx);

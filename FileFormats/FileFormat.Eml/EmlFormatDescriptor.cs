@@ -154,7 +154,7 @@ public sealed class EmlFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(inputs);
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
-      var content = File.ReadAllBytes(input.FullPath);
+      var content = input.ReadContent();
       var fileName = Path.GetFileName(input.ArchiveName);
       EmlInPlaceModifier.AddAttachment(archive, fileName, content);
     }

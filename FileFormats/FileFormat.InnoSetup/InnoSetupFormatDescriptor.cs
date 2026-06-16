@@ -69,7 +69,7 @@ public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveForma
     byte[]? embedded = null;
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      embedded = File.ReadAllBytes(i.FullPath);
+      embedded = i.ReadContent();
       break;
     }
     new InnoSetupWriter().WriteTo(output, embedded);

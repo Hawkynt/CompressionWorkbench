@@ -77,7 +77,7 @@ public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new DmgWriter();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      w.AddPartition(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+      w.AddPartition(i.ArchiveName, i.ReadContent());
     }
     w.WriteTo(output);
   }

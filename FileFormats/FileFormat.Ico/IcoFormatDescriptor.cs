@@ -75,7 +75,7 @@ public sealed class IcoFormatDescriptor :
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var images = inputs
       .Where(i => !i.IsDirectory)
-      .Select(i => new IcoWriter.Image(File.ReadAllBytes(i.FullPath)))
+      .Select(i => new IcoWriter.Image(i.ReadContent()))
       .ToList();
     if (images.Count == 0) throw new InvalidOperationException("ICO: no images to write.");
     var bytes = IcoWriter.BuildIco(images);
@@ -93,7 +93,7 @@ public sealed class IcoFormatDescriptor :
     ArgumentNullException.ThrowIfNull(inputs);
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
-      var image = File.ReadAllBytes(input.FullPath);
+      var image = input.ReadContent();
       IcoInPlaceModifier.AddImage(archive, image);
     }
   }
