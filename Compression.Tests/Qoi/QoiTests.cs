@@ -7,6 +7,15 @@ namespace Compression.Tests.Qoi;
 [TestFixture]
 public class QoiTests {
 
+  // Best-effort temp-dir cleanup: a cleanup failure (a transient handle held by an
+  // AV/indexer on Windows under combined-run disk pressure) must never fail the test
+  // whose assertions already passed.
+  private static void SafeDelete(string dir) {
+    try { Directory.Delete(dir, recursive: true); }
+    catch (IOException) { /* transient handle — leave for the OS temp sweep */ }
+    catch (UnauthorizedAccessException) { /* same */ }
+  }
+
   // Build a 4x4 RGBA test pattern exercising runs, diffs, index hits and full RGBA.
   private static byte[] BuildRgba(int w, int h) {
     var px = new byte[w * h * 4];
@@ -72,7 +81,7 @@ public class QoiTests {
       Assert.That(meta, Does.Contain("channels=4"));
       Assert.That(meta, Does.Contain("parse_status=ok"));
     } finally {
-      Directory.Delete(dir, recursive: true);
+      SafeDelete(dir);
     }
   }
 
@@ -101,7 +110,7 @@ public class QoiTests {
       var full = File.ReadAllBytes(Path.Combine(dir, "FULL.qoi"));
       Assert.That(full, Is.EqualTo(qoi));
     } finally {
-      Directory.Delete(dir, recursive: true);
+      SafeDelete(dir);
     }
   }
 
@@ -128,7 +137,7 @@ public class QoiTests {
       var meta = File.ReadAllText(Path.Combine(dir, "metadata.ini"));
       Assert.That(meta, Does.Contain("parse_status=partial"));
     } finally {
-      Directory.Delete(dir, recursive: true);
+      SafeDelete(dir);
     }
   }
 }
