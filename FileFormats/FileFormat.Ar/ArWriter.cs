@@ -73,6 +73,99 @@ public sealed class ArWriter : IDisposable {
     this._stream.Flush();
   }
 
+  /// <summary>
+  /// Describes a single streaming ar member: its metadata plus a pre-known
+  /// payload size and an on-demand source stream. Used by
+  /// <see cref="WriteStreaming"/> so multi-GB members never materialize in RAM.
+  /// </summary>
+  /// <param name="Name">The member name.</param>
+  /// <param name="Size">The member's logical byte size.</param>
+  /// <param name="OpenData">Factory that opens the member's payload stream.</param>
+  /// <param name="ModifiedTime">The member's modification time.</param>
+  /// <param name="OwnerId">The numeric owner (user) ID.</param>
+  /// <param name="GroupId">The numeric group ID.</param>
+  /// <param name="FileMode">The file permission mode (octal).</param>
+  public readonly record struct StreamingMember(
+    string Name,
+    long Size,
+    Func<Stream> OpenData,
+    DateTimeOffset ModifiedTime,
+    int OwnerId = 0,
+    int GroupId = 0,
+    int FileMode = 0x81A4);
+
+  /// <summary>
+  /// Writes all <paramref name="members"/> to the stream as a complete ar
+  /// archive, streaming each member's payload from its
+  /// <see cref="StreamingMember.OpenData"/> factory in bounded 64 KB chunks
+  /// rather than buffering it into RAM. The ar header encodes each member's
+  /// size before its payload, so the pre-known <see cref="StreamingMember.Size"/>
+  /// drives the header; the GNU string table for overlong names is built from
+  /// the names alone in a first pass.
+  /// </summary>
+  /// <remarks>
+  /// Produces byte-identical output to <see cref="Write"/> for the same
+  /// names/sizes/metadata/payloads. Peak memory is the 64 KB copy buffer
+  /// regardless of member size.
+  /// </remarks>
+  /// <param name="members">The members to write.</param>
+  public void WriteStreaming(IReadOnlyList<StreamingMember> members) {
+    ArgumentNullException.ThrowIfNull(members);
+
+    // Write global magic.
+    this._stream.Write(ArConstants.GlobalMagic);
+
+    // Build GNU string table for names that exceed the inline limit. Names
+    // only — no payload is read in this pass.
+    var sb = new StringBuilder();
+    foreach (var m in members)
+      if (m.Name.Length > ArConstants.MaxInlineNameLength)
+        sb.Append(m.Name).Append("/\n");
+    var gnuStringTable = sb.ToString();
+
+    if (gnuStringTable.Length > 0) {
+      var tableData = Encoding.ASCII.GetBytes(gnuStringTable);
+      WriteEntryHeader(this._stream, ArConstants.GnuStringTableName, DateTimeOffset.UnixEpoch,
+        0, 0, 0, tableData.Length);
+      this._stream.Write(tableData);
+      if (tableData.Length % 2 != 0)
+        this._stream.WriteByte(ArConstants.PaddingByte);
+    }
+
+    var buffer = new byte[64 * 1024];
+    var tableOffset = 0;
+    foreach (var m in members) {
+      string nameField;
+      if (m.Name.Length > ArConstants.MaxInlineNameLength) {
+        nameField = $"/{tableOffset}";
+        tableOffset += Encoding.ASCII.GetByteCount(m.Name) + 2;
+      } else {
+        nameField = m.Name + "/";
+      }
+
+      WriteEntryHeader(this._stream, nameField, m.ModifiedTime,
+        m.OwnerId, m.GroupId, m.FileMode, m.Size);
+
+      if (m.Size > 0) {
+        using var src = m.OpenData();
+        var remaining = m.Size;
+        while (remaining > 0) {
+          var toRead = (int)Math.Min(buffer.Length, remaining);
+          var read = src.Read(buffer, 0, toRead);
+          if (read <= 0)
+            throw new EndOfStreamException(
+              $"AR streaming member '{m.Name}': source ended {remaining} bytes short of the declared size {m.Size}.");
+          this._stream.Write(buffer, 0, read);
+          remaining -= read;
+        }
+      }
+      if (m.Size % 2 != 0)
+        this._stream.WriteByte(ArConstants.PaddingByte);
+    }
+
+    this._stream.Flush();
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   /// <summary>

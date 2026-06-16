@@ -132,6 +132,19 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// extension similarity, segregates incompressible files, and per-block
   /// recommends BCJ x86 filter for executables.
   /// </summary>
+  /// <remarks>
+  /// This descriptor deliberately keeps the buffering
+  /// <see cref="IArchiveCreatable.CreateFromStreams"/> default and does NOT
+  /// override it. 7z uses solid compression: multiple files are concatenated
+  /// into a single compressed coder stream, and the header (written last)
+  /// encodes per-file unpack sizes and the block's total packed size, both of
+  /// which are only known after every member of the block has been read and
+  /// compressed. There is no per-entry append point at which a bounded
+  /// chunk-copy could write a file's bytes independently, so a streaming
+  /// override could not honor the bounded-memory contract without effectively
+  /// buffering each solid block anyway. Faking a per-entry streaming path here
+  /// would be dishonest, so the buffering default stands.
+  /// </remarks>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // Three-tier fallback: FormatSpecific (schema) → direct property → hardcoded default.
     var methodName = !string.IsNullOrEmpty(options.MethodName)

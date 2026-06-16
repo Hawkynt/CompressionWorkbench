@@ -172,6 +172,37 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     w.Finish();
   }
 
+  /// <summary>
+  /// Large-file-safe streaming variant of <see cref="Create"/>. TAR encodes
+  /// each entry's size in its header before any payload byte, so the
+  /// pre-known <see cref="StreamingArchiveInput.Size"/> lets the writer emit
+  /// the header and then copy the payload in 64 KB chunks via
+  /// <see cref="TarWriter.AddStreamingEntry"/> — peak memory is bounded by the
+  /// copy buffer regardless of entry size. Output is byte-identical to
+  /// <see cref="Create"/> for the same inputs.
+  /// </summary>
+  public void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var blockingFactor = options.GetOptionInt("BlockingFactor", 20);
+    var formatName = options.GetOption("Format", "ustar").ToLowerInvariant();
+    var headerFormat = formatName switch {
+      "gnu" => TarHeaderFormat.Gnu,
+      "pax" => TarHeaderFormat.Pax,
+      _ => TarHeaderFormat.Ustar,
+    };
+    var w = new TarWriter(target, leaveOpen: false, format: headerFormat, blockingFactor: blockingFactor);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) {
+        w.AddEntry(new TarEntry { Name = input.Name, Size = 0, TypeFlag = (byte)'5' }, []);
+      } else {
+        using var src = input.OpenStream();
+        w.AddStreamingEntry(new TarEntry { Name = input.Name }, input.Size, src);
+      }
+    }
+    w.Finish();
+  }
+
   // ── IFormatValidator ─────────────────────────────────────────────
 
   public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {

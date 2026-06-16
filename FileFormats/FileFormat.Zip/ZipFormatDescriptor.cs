@@ -203,6 +203,69 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     w.Finish();
   }
 
+  /// <summary>
+  /// Large-file-safe streaming variant of <see cref="Create"/> for the STORE
+  /// method. STORE entries are uncompressed, so the local header can be written
+  /// with the pre-known <see cref="StreamingArchiveInput.Size"/> up front and
+  /// the payload copied in 64 KB chunks while the CRC is computed incrementally
+  /// and patched back into the header — peak memory is the copy buffer
+  /// regardless of entry size. Output is byte-identical to <see cref="Create"/>
+  /// with <c>Method=store</c>.
+  /// </summary>
+  /// <remarks>
+  /// <para>Streaming applies only when the resolved method is STORE and no
+  /// password/encryption is requested. DEFLATE and the other compressing
+  /// methods (deflate64, bzip2, lzma, zstd, ppmd) keep the buffering default:
+  /// the local header must carry the compressed size and CRC before the
+  /// compressed bytes, which for a single-pass compressing writer would require
+  /// either buffering the whole entry or emitting a data descriptor (changing
+  /// the byte layout vs <see cref="Create"/>). Encrypted entries also buffer
+  /// (encryption transforms the byte stream and AES needs a MAC trailer).</para>
+  /// </remarks>
+  public void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    var methodName = options.MethodName ?? options.GetOption("Method", "deflate");
+    var passwordFromSchema = options.GetOption("Password", "");
+    var password = !string.IsNullOrEmpty(options.Password) ? options.Password
+      : !string.IsNullOrEmpty(passwordFromSchema) ? passwordFromSchema : null;
+    var (zipMethod, _) = ZipOptionsResolver.ResolveMethod(methodName, options.Optimize);
+
+    var canStream = zipMethod == ZipCompressionMethod.Store
+      && string.IsNullOrEmpty(password)
+      && target.CanSeek;
+
+    if (!canStream) {
+      // Buffering fallback: identical to the IArchiveCreatable default —
+      // materialize each entry then dispatch to the classic Create. Honest
+      // because compressing/encrypted entries can't stream a Create-identical
+      // header without a data descriptor.
+      var buffered = new List<ArchiveInputInfo>();
+      foreach (var input in inputs) {
+        if (input.IsDirectory) {
+          buffered.Add(new ArchiveInputInfo(input.Name, input.Name, IsDirectory: true));
+          continue;
+        }
+        using var src = input.OpenStream();
+        using var ms = new MemoryStream();
+        src.CopyTo(ms);
+        buffered.Add(ArchiveInputInfo.InMemory(input.Name, ms.ToArray()));
+      }
+      this.Create(target, buffered, options);
+      return;
+    }
+
+    var w = new ZipWriter(target, leaveOpen: true,
+      compressionLevel: Compression.Core.Deflate.DeflateCompressionLevel.Default);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) { w.AddDirectory(input.Name); continue; }
+      using var src = input.OpenStream();
+      w.AddStreamingStoredEntry(input.Name, input.Size, src);
+    }
+    w.Finish();
+  }
+
   // ── IFormatValidator ─────────────────────────────────────────────
 
   public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {

@@ -138,4 +138,25 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
     w.Finish();
   }
+
+  /// <summary>
+  /// Large-file-safe streaming variant of <see cref="Create"/>. The cpio
+  /// "new" ASCII header encodes each member's size before its payload, so the
+  /// pre-known <see cref="StreamingArchiveInput.Size"/> lets the writer emit
+  /// the header and then copy the payload in 64 KB chunks via
+  /// <see cref="CpioWriter.AddStreamingFile"/> — peak memory is bounded by the
+  /// copy buffer regardless of member size. Inode allocation, headers, and
+  /// padding match <see cref="Create"/> byte-for-byte for the same inputs.
+  /// </summary>
+  public void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = new CpioWriter(target);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) { w.AddDirectory(i.Name); continue; }
+      using var src = i.OpenStream();
+      w.AddStreamingFile(i.Name, i.Size, src);
+    }
+    w.Finish();
+  }
 }

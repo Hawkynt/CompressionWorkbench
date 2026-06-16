@@ -114,6 +114,33 @@ public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
   }
 
   /// <summary>
+  /// Large-file-safe streaming variant of <see cref="Create"/>. The 60-byte ar
+  /// member header encodes the payload size before the payload, so the
+  /// pre-known <see cref="StreamingArchiveInput.Size"/> drives the header and
+  /// the payload is copied in 64 KB chunks via
+  /// <see cref="ArWriter.WriteStreaming"/> — peak memory is bounded by the copy
+  /// buffer regardless of member size. AR has no directory concept, so
+  /// directory inputs are skipped exactly as <see cref="Create"/> does via
+  /// <c>FilesOnly</c>. Output is byte-identical to <see cref="Create"/> for the
+  /// same file inputs (default <see cref="ArEntry"/> metadata: Unix-epoch
+  /// mtime, uid/gid 0, mode 0644).
+  /// </summary>
+  public void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var members = inputs
+      .Where(i => !i.IsDirectory)
+      .Select(i => new ArWriter.StreamingMember(
+        Name: i.Name,
+        Size: i.Size,
+        OpenData: i.OpenStream,
+        ModifiedTime: DateTimeOffset.UnixEpoch))
+      .ToList();
+    using var w = new ArWriter(target, leaveOpen: true);
+    w.WriteStreaming(members);
+  }
+
+  /// <summary>
   /// Adds (or replaces by name) files inside an existing AR archive.
   /// Uses <see cref="ArModifier"/> for true random-access I/O — Add is
   /// O(touched bytes) (append at EOF after a quick header walk); Remove

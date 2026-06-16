@@ -71,6 +71,91 @@ public sealed class TarWriter : IDisposable {
   }
 
   /// <summary>
+  /// Adds an entry whose payload is streamed from <paramref name="data"/> in
+  /// bounded chunks rather than buffered into RAM. The entry's logical
+  /// <paramref name="size"/> must be known up front (TAR encodes it in the
+  /// header before any payload byte), so this writes the header with the
+  /// supplied size, then copies exactly <paramref name="size"/> bytes from
+  /// <paramref name="data"/> in 64 KB chunks, then the 512-byte padding.
+  /// </summary>
+  /// <remarks>
+  /// Produces byte-identical output to <see cref="AddEntry(TarEntry, ReadOnlySpan{byte})"/>
+  /// for the same name/size/payload: identical PAX/GNU long-name handling,
+  /// identical header, identical padding. Peak memory is the 64 KB copy buffer
+  /// regardless of <paramref name="size"/>.
+  /// </remarks>
+  /// <param name="entry">The entry metadata. Its <see cref="TarEntry.Size"/> is set to <paramref name="size"/>.</param>
+  /// <param name="size">The entry's logical byte size.</param>
+  /// <param name="data">The source stream supplying exactly <paramref name="size"/> bytes.</param>
+  public void AddStreamingEntry(TarEntry entry, long size, Stream data) {
+    if (this._finished)
+      throw new InvalidOperationException("Cannot add entries after Finish() has been called.");
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(data);
+
+    entry.Size = size;
+    WriteEntryHeaderOnly(entry);
+
+    // Copy the payload in bounded chunks.
+    if (size > 0) {
+      var buffer = new byte[64 * 1024];
+      var remaining = size;
+      while (remaining > 0) {
+        var toRead = (int)Math.Min(buffer.Length, remaining);
+        var read = data.Read(buffer, 0, toRead);
+        if (read <= 0)
+          throw new EndOfStreamException(
+            $"TAR streaming entry '{entry.Name}': source ended {remaining} bytes short of the declared size {size}.");
+        this._stream.Write(buffer, 0, read);
+        this._bytesWritten += read;
+        remaining -= read;
+      }
+
+      // Pad to the 512-byte block boundary, matching WriteEntryInternal.
+      var padding = (int)((TarConstants.BlockSize - (size % TarConstants.BlockSize)) % TarConstants.BlockSize);
+      if (padding > 0) {
+        var zeroPad = new byte[padding];
+        this._stream.Write(zeroPad, 0, padding);
+        this._bytesWritten += padding;
+      }
+    }
+  }
+
+  /// <summary>
+  /// Writes only the entry's header blocks (any PAX/GNU long-name prelude plus
+  /// the 512-byte ustar header) without touching the payload — the shared
+  /// header path for both buffered and streaming writes.
+  /// </summary>
+  private void WriteEntryHeaderOnly(TarEntry entry) {
+    var paxAttrs = new Dictionary<string, string>();
+    var nameUtf8 = Encoding.UTF8.GetBytes(entry.Name);
+    var nameNeedsExt = nameUtf8.Length > TarConstants.NameLength || !IsAscii(nameUtf8);
+    var linkUtf8 = !string.IsNullOrEmpty(entry.LinkName) ? Encoding.UTF8.GetBytes(entry.LinkName) : [];
+    var linkNeedsExt = linkUtf8.Length > 0 && (linkUtf8.Length > TarConstants.LinkNameLength || !IsAscii(linkUtf8));
+
+    if (this._format == TarHeaderFormat.Pax) {
+      if (nameNeedsExt) paxAttrs["path"] = entry.Name;
+      if (linkNeedsExt) paxAttrs["linkpath"] = entry.LinkName;
+    } else if (this._format == TarHeaderFormat.Ustar) {
+      if (nameNeedsExt) paxAttrs["path"] = entry.Name;
+      if (linkNeedsExt) paxAttrs["linkpath"] = entry.LinkName;
+    }
+
+    if (entry.Size > 0x1FFFFFFFFFL)
+      paxAttrs["size"] = entry.Size.ToString();
+
+    if (paxAttrs.Count > 0) {
+      WritePaxHeader(paxAttrs);
+    } else {
+      if (nameNeedsExt) WriteGnuLongName(entry.Name);
+      if (linkNeedsExt) WriteGnuLongLink(entry.LinkName);
+    }
+
+    TarHeader.WriteHeader(this._stream, entry);
+    this._bytesWritten += TarConstants.BlockSize;
+  }
+
+  /// <summary>
   /// Adds an entry to the archive with data from a byte span.
   /// </summary>
   /// <param name="entry">The entry metadata.</param>
@@ -132,42 +217,12 @@ public sealed class TarWriter : IDisposable {
   }
 
   private void WriteEntryInternal(TarEntry entry, byte[]? data) {
-    // Collect PAX attributes for fields that can't fit in the standard header.
-    // PAX dialect always prefers PAX records for non-ASCII / overlong names;
-    // GNU dialect prefers GNU @LongLink; ustar uses PAX only when truly forced
-    // (e.g. size > 8 GiB, which cannot be encoded in the 12-byte octal size field).
-    var paxAttrs = new Dictionary<string, string>();
-    var nameUtf8 = Encoding.UTF8.GetBytes(entry.Name);
-    var nameNeedsExt = nameUtf8.Length > TarConstants.NameLength || !IsAscii(nameUtf8);
-    var linkUtf8 = !string.IsNullOrEmpty(entry.LinkName) ? Encoding.UTF8.GetBytes(entry.LinkName) : [];
-    var linkNeedsExt = linkUtf8.Length > 0 && (linkUtf8.Length > TarConstants.LinkNameLength || !IsAscii(linkUtf8));
-
-    if (this._format == TarHeaderFormat.Pax) {
-      if (nameNeedsExt) paxAttrs["path"] = entry.Name;
-      if (linkNeedsExt) paxAttrs["linkpath"] = entry.LinkName;
-    } else {
-      // ustar / gnu: fall through to GNU LongLink below, but still PAX when ASCII fails for ustar.
-      if (this._format == TarHeaderFormat.Ustar) {
-        if (nameNeedsExt) paxAttrs["path"] = entry.Name;
-        if (linkNeedsExt) paxAttrs["linkpath"] = entry.LinkName;
-      }
-    }
-
-    if (data != null && entry.Size > 0x1FFFFFFFFFL)
-      paxAttrs["size"] = entry.Size.ToString();
-
-    if (paxAttrs.Count > 0) {
-      WritePaxHeader(paxAttrs);
-    } else {
-      // GNU dialect path (or ustar where the name fits but is non-ASCII — ascii branch
-      // already shunted to PAX above).
-      if (nameNeedsExt) WriteGnuLongName(entry.Name);
-      if (linkNeedsExt) WriteGnuLongLink(entry.LinkName);
-    }
-
-    // Write the entry header
-    TarHeader.WriteHeader(this._stream, entry);
-    this._bytesWritten += TarConstants.BlockSize;
+    // Header (PAX/GNU prelude + 512-byte ustar header) is written by the
+    // shared helper so the buffered and streaming paths emit identical bytes.
+    // The buffered path passes data==null for directories where the size-PAX
+    // promotion never applies; the shared helper keys solely on entry.Size,
+    // which is 0 for those, so behavior is preserved.
+    WriteEntryHeaderOnly(entry);
 
     // Write data
     if (data != null && data.Length > 0) {

@@ -36,6 +36,49 @@ public sealed class CpioWriter : IDisposable {
   }
 
   /// <summary>
+  /// Adds a file entry whose payload is streamed from <paramref name="data"/>
+  /// in bounded 64 KB chunks rather than buffered into RAM. The cpio "new"
+  /// header encodes the file size before the payload, so the pre-known
+  /// <paramref name="size"/> is written into the header, then exactly
+  /// <paramref name="size"/> bytes are copied, then the 4-byte alignment pad.
+  /// </summary>
+  /// <remarks>
+  /// Produces byte-identical output to <see cref="AddFile(string, ReadOnlySpan{byte}, uint)"/>
+  /// for the same name/size/payload: identical inode allocation, header, and
+  /// padding. Peak memory is the 64 KB copy buffer regardless of
+  /// <paramref name="size"/>.
+  /// </remarks>
+  /// <param name="name">The file name.</param>
+  /// <param name="size">The entry's logical byte size.</param>
+  /// <param name="data">The source stream supplying exactly <paramref name="size"/> bytes.</param>
+  /// <param name="mode">The file mode. Defaults to regular file with 0644 permissions.</param>
+  public void AddStreamingFile(string name, long size, Stream data, uint mode = 0x81A4) {
+    if (this._finished)
+      throw new InvalidOperationException("Cannot add entries after Finish() has been called.");
+    ArgumentNullException.ThrowIfNull(data);
+
+    WriteEntryHeader(name, size, mode);
+
+    if (size > 0) {
+      var buffer = new byte[64 * 1024];
+      var remaining = size;
+      while (remaining > 0) {
+        var toRead = (int)Math.Min(buffer.Length, remaining);
+        var read = data.Read(buffer, 0, toRead);
+        if (read <= 0)
+          throw new EndOfStreamException(
+            $"CPIO streaming entry '{name}': source ended {remaining} bytes short of the declared size {size}.");
+        this._stream.Write(buffer, 0, read);
+        remaining -= read;
+      }
+
+      var dataPadding = (int)((4 - (size % 4)) % 4);
+      for (var i = 0; i < dataPadding; ++i)
+        this._stream.WriteByte(0);
+    }
+  }
+
+  /// <summary>
   /// Adds a directory entry.
   /// </summary>
   /// <param name="name">The directory name.</param>
@@ -60,6 +103,25 @@ public sealed class CpioWriter : IDisposable {
   }
 
   private void WriteEntry(string name, ReadOnlySpan<byte> data, uint mode) {
+    WriteEntryHeader(name, data.Length, mode);
+
+    // Write data
+    if (data.Length > 0) {
+      this._stream.Write(data);
+
+      // Pad to 4-byte boundary after data
+      var dataPadding = (4 - (data.Length % 4)) % 4;
+      for (var i = 0; i < dataPadding; ++i)
+        this._stream.WriteByte(0);
+    }
+  }
+
+  /// <summary>
+  /// Writes the 110-byte "new" ASCII header, the null-terminated name, and the
+  /// post-name 4-byte alignment padding — the shared header path for both the
+  /// buffered <see cref="WriteEntry"/> and streaming <see cref="AddStreamingFile"/>.
+  /// </summary>
+  private void WriteEntryHeader(string name, long fileSize, uint mode) {
     // Name must include null terminator
     var nameBytes = Encoding.ASCII.GetBytes(name + '\0');
     var nameSize = nameBytes.Length;
@@ -76,7 +138,7 @@ public sealed class CpioWriter : IDisposable {
       0u,             // c_gid
       1u,             // c_nlink
       0u,             // c_mtime
-      (uint)data.Length, // c_filesize
+      (uint)fileSize, // c_filesize
       0u,             // c_devmajor
       0u,             // c_devminor
       0u,             // c_rdevmajor
@@ -94,16 +156,6 @@ public sealed class CpioWriter : IDisposable {
     var namePadding = (4 - (headerPlusName % 4)) % 4;
     for (var i = 0; i < namePadding; ++i)
       this._stream.WriteByte(0);
-
-    // Write data
-    if (data.Length > 0) {
-      this._stream.Write(data);
-
-      // Pad to 4-byte boundary after data
-      var dataPadding = (4 - (data.Length % 4)) % 4;
-      for (var i = 0; i < dataPadding; ++i)
-        this._stream.WriteByte(0);
-    }
   }
 
   /// <inheritdoc />

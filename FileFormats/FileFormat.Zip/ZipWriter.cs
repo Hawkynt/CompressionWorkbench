@@ -243,6 +243,87 @@ public sealed class ZipWriter : IDisposable {
   }
 
   /// <summary>
+  /// Adds a STORE (uncompressed) entry whose payload is streamed from
+  /// <paramref name="data"/> in bounded 64 KB chunks rather than buffered into
+  /// RAM. The local file header is written up front with the pre-known
+  /// <paramref name="size"/> (STORE ⇒ compressed size = uncompressed size) and
+  /// a placeholder CRC, the payload is copied while the CRC is computed
+  /// incrementally, and the 4-byte CRC field in the just-written header is
+  /// patched in place. Peak memory is the 64 KB copy buffer regardless of
+  /// <paramref name="size"/>.
+  /// </summary>
+  /// <remarks>
+  /// <para>Produces byte-identical output to
+  /// <c>AddEntry(name, data, ZipCompressionMethod.Store, lastModified)</c> for
+  /// the same payload: same header, same CRC, same data, same central-directory
+  /// entry. The CRC patch leaves no trace because the final bytes equal what a
+  /// CRC-first single-pass write would have produced.</para>
+  /// <para>Requires a seekable output stream (to patch the CRC). Encryption is
+  /// not supported on this path — callers needing encrypted STORE must use the
+  /// buffered <see cref="AddEntry(string, byte[], ZipCompressionMethod, DateTime?)"/>.</para>
+  /// </remarks>
+  /// <param name="fileName">The file name in the archive.</param>
+  /// <param name="size">The entry's logical (uncompressed) byte size.</param>
+  /// <param name="data">The source stream supplying exactly <paramref name="size"/> bytes.</param>
+  /// <param name="lastModified">The last modification time.</param>
+  public void AddStreamingStoredEntry(string fileName, long size, Stream data, DateTime? lastModified = null) {
+    if (this._finished)
+      throw new InvalidOperationException("Cannot add entries after Finish() has been called.");
+    ArgumentNullException.ThrowIfNull(data);
+    if (this._password != null && this._encryptionMethod != ZipEncryptionMethod.None)
+      throw new NotSupportedException("Streaming STORE does not support encryption; use the buffered AddEntry.");
+    if (!this._stream.CanSeek)
+      throw new NotSupportedException("Streaming STORE requires a seekable output stream to patch the CRC.");
+
+    var entry = new ZipEntry {
+      FileName = fileName,
+      CompressionMethod = ZipCompressionMethod.Store,
+      Crc32 = 0, // patched after the payload is streamed
+      CompressedSize = size,
+      UncompressedSize = size,
+      LastModified = lastModified ?? new DateTime(1980, 1, 1),
+      LocalHeaderOffset = this._stream.Position,
+      IsEncrypted = false,
+    };
+
+    var headerOffset = this._stream.Position;
+    var writer = new BinaryWriter(this._stream, System.Text.Encoding.UTF8, leaveOpen: true);
+    ZipLocalFileHeader.Write(writer, entry, encrypted: false);
+    writer.Flush();
+    var dataOffset = this._stream.Position;
+
+    // Stream the payload, computing the CRC incrementally.
+    var crc = new Crc32();
+    if (size > 0) {
+      var buffer = new byte[64 * 1024];
+      var remaining = size;
+      while (remaining > 0) {
+        var toRead = (int)Math.Min(buffer.Length, remaining);
+        var read = data.Read(buffer, 0, toRead);
+        if (read <= 0)
+          throw new EndOfStreamException(
+            $"ZIP streaming entry '{fileName}': source ended {remaining} bytes short of the declared size {size}.");
+        crc.Update(buffer.AsSpan(0, read));
+        this._stream.Write(buffer, 0, read);
+        remaining -= read;
+      }
+    }
+    var endOffset = this._stream.Position;
+    entry.Crc32 = crc.Value;
+
+    // Patch the 4-byte CRC field in the local header (offset 14 from header
+    // start: sig(4)+ver(2)+flags(2)+method(2)+time(2)+date(2) = 14).
+    this._stream.Position = headerOffset + 14;
+    Span<byte> crcBytes = stackalloc byte[4];
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(crcBytes, entry.Crc32);
+    this._stream.Write(crcBytes);
+    this._stream.Position = endOffset;
+    _ = dataOffset;
+
+    this._entries.Add(entry);
+  }
+
+  /// <summary>
   /// Adds a directory entry.
   /// </summary>
   /// <param name="name">The directory name (should end with '/').</param>
