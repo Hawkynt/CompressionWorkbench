@@ -311,14 +311,9 @@ public sealed class SevenZipWriter : IDisposable {
         return CompressBzip2(data, out coder);
       case SevenZipCodec.PPMd:
         return CompressPpmd(data, out coder);
-      default: {
+      default:
         // Copy (store) — no compression
-        coder = new SevenZipCoder {
-          CodecId = SevenZipConstants.CodecCopy.ToArray(),
-          NumInStreams = 1, NumOutStreams = 1,
-        };
-        return data;
-      }
+        return StoreCopy(data, out coder);
     }
   }
 
@@ -745,8 +740,19 @@ public sealed class SevenZipWriter : IDisposable {
       SevenZipCodec.Deflate => CompressDeflate(solidData, out coder),
       SevenZipCodec.BZip2 => CompressBzip2(solidData, out coder),
       SevenZipCodec.PPMd => CompressPpmd(solidData, out coder),
+      SevenZipCodec.Copy => StoreCopy(solidData, out coder),
       _ => throw new NotSupportedException($"Unsupported codec: {this._codec}"),
     };
+
+  /// <summary>Stores data uncompressed under the Copy (store) coder.</summary>
+  private static byte[] StoreCopy(byte[] data, out SevenZipCoder coder) {
+    coder = new SevenZipCoder {
+      CodecId = SevenZipConstants.CodecCopy.ToArray(),
+      NumInStreams = 1,
+      NumOutStreams = 1,
+    };
+    return data;
+  }
 
   private byte[] CompressLzma2(byte[] data, out SevenZipCoder coder) {
     var encoder = new Lzma2Encoder(this._dictionarySize);

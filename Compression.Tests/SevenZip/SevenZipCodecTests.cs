@@ -136,6 +136,45 @@ public class SevenZipCodecTests {
   [Category("HappyPath")]
   [Category("RoundTrip")]
   [Test]
+  public void RoundTrip_Copy_SingleFile() {
+    // Copy (store) must round-trip via the default Finish() path, which previously
+    // threw NotSupportedException because CompressData lacked a Copy arm.
+    var data = "Stored uncompressed inside 7z!"u8.ToArray();
+    var archive = CreateArchive(data, SevenZipCodec.Copy);
+    var extracted = ExtractFirst(archive);
+    Assert.That(extracted, Is.EqualTo(data));
+  }
+
+  [Category("End2End")]
+  [Category("RoundTrip")]
+  [Test]
+  public void RoundTrip_Copy_MultipleFiles() {
+    var data1 = "Copy file one."u8.ToArray();
+    var data2 = "Copy file two with more content."u8.ToArray();
+
+    var archive = CreateMultiFileArchive(SevenZipCodec.Copy, data1, data2);
+    using var reader = new SevenZipReader(new MemoryStream(archive));
+    Assert.That(reader.Entries, Has.Count.EqualTo(2));
+    Assert.That(reader.Extract(0), Is.EqualTo(data1));
+    Assert.That(reader.Extract(1), Is.EqualTo(data2));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void RoundTrip_Copy_LargeRepetitiveData() {
+    var data = new byte[10_000];
+    for (var i = 0; i < data.Length; ++i)
+      data[i] = (byte)(i % 7);
+
+    var archive = CreateArchive(data, SevenZipCodec.Copy);
+    var extracted = ExtractFirst(archive);
+    Assert.That(extracted, Is.EqualTo(data));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
   public void RoundTrip_Lzma_LargeRepetitiveData() {
     var data = new byte[10_000];
     for (var i = 0; i < data.Length; ++i)
