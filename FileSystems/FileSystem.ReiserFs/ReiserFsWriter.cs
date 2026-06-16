@@ -104,7 +104,7 @@ public sealed class ReiserFsWriter {
   // Superblock magic for ReiserFS 3.6.
   private static readonly byte[] Magic36 = "ReIsEr2Fs"u8.ToArray();
 
-  private readonly List<(string path, byte[] data)> _files = [];
+  private readonly List<(string path, byte[] data, long? streamSize, Func<Stream>? opener)> _files = [];
 
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
@@ -114,12 +114,60 @@ public sealed class ReiserFsWriter {
     // object (SD with mode S_IFDIR + DIRENTRY item) for each intermediate
     // component, exactly as reiserfs_add_entry would.
     var normalised = name.Replace('\\', '/').Trim('/');
-    _files.Add((normalised, data));
+    _files.Add((normalised, data, null, null));
   }
+
+  /// <summary>
+  /// Adds a streaming file. ReiserFS v3.6 carries NO block checksums (see the
+  /// header note), so file bodies are fully streamable. Bodies up to
+  /// <see cref="MaxDirectBody"/> bytes are tail-packed as DIRECT items inside a
+  /// shared leaf, so those small streaming entries are read in full up front (a
+  /// bounded ≤1 KiB read) and treated as a normal <see cref="AddFile"/>. Bodies
+  /// above the threshold become INDIRECT items backed by dedicated data blocks;
+  /// their bytes are pulled from <paramref name="openStream"/> in 64 KiB chunks
+  /// during <see cref="BuildToStreaming"/> and never buffered as a <c>byte[]</c>.
+  /// The on-disk image is byte-identical to <see cref="WriteTo"/> for the same
+  /// inputs.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
+    var normalised = name.Replace('\\', '/').Trim('/');
+    if (size <= MaxDirectBody) {
+      // Tail-packed DIRECT item lives inside a shared formatted leaf, not a
+      // dedicated data block — read the small bounded body up front.
+      using var src = openStream();
+      using var ms = new MemoryStream();
+      src.CopyTo(ms);
+      _files.Add((normalised, ms.ToArray(), null, null));
+      return;
+    }
+    // INDIRECT body — dedicated data blocks; stream in pass 2.
+    _files.Add((normalised, [], size, openStream));
+  }
+
+  /// <summary>
+  /// When non-null, every INDIRECT streaming file's (absolute data byte-offset,
+  /// byte length, opener) is recorded here during <see cref="WriteTo"/> so
+  /// <see cref="BuildToStreaming"/> can post-fill the data blocks. Null in the
+  /// classic buffered path.
+  /// </summary>
+  private List<(long ByteOffset, long Size, Func<Stream> Opener)>? _streamingSink;
 
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
+    output.Write(this.BuildImageBytes());
+  }
 
+  /// <summary>
+  /// Builds the full ReiserFS image into a byte array. INDIRECT streaming files
+  /// (added via <see cref="AddStreamingFile"/> with bodies above
+  /// <see cref="MaxDirectBody"/>) leave their data-block run zero and, when
+  /// <see cref="_streamingSink"/> is set, record their (offset, size, opener)
+  /// for the post-fill pass in <see cref="BuildToStreaming"/>.
+  /// </summary>
+  private byte[] BuildImageBytes() {
     // Materialise the directory tree (root + intermediate dirs + files) into a
     // flat list of OBJECTS, each with a stable objectid. The root is object 2
     // (parent dir_id 1); every other object is assigned a user objectid from
@@ -192,7 +240,7 @@ public sealed class ReiserFsWriter {
     // copies into the leaf block as-is), and the actual file bytes are written
     // into the dedicated data blocks.
     if (dataBlocksTotal > 0)
-      ResolveIndirectPlaceholders(indirectPlaceholders, image, firstDataBlock);
+      ResolveIndirectPlaceholders(indirectPlaceholders, image, firstDataBlock, this._streamingSink);
 
     // For free-block accounting: blocks 0..lastUsedBlock are all in use.
     var usedBlocks = lastUsedBlock + 1;
@@ -335,7 +383,54 @@ public sealed class ReiserFsWriter {
     if (hasInternal)
       WriteInternal(image.AsSpan(internalBlockNum * BlockSize, BlockSize), leaves, firstTreeBlock);
 
+    return image;
+  }
+
+  /// <summary>
+  /// Two-pass streaming write: pass 1 builds the complete image byte array with
+  /// INDIRECT streaming bodies left zero (recorded into a sink); pass 2 seeks to
+  /// each body's contiguous data-block run and copies it from the opener in
+  /// 64 KiB chunks. ReiserFS v3.6 has no block checksums, so the emitted bytes
+  /// are identical to <see cref="WriteTo"/> for the same inputs — only WHERE the
+  /// body bytes originate changes. Small (≤ <see cref="MaxDirectBody"/>) bodies
+  /// were already read up front by <see cref="AddStreamingFile"/> and ride the
+  /// classic in-leaf DIRECT path. Requires a writable, seekable stream.
+  /// </summary>
+  public void BuildToStreaming(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
+
+    var sink = new List<(long ByteOffset, long Size, Func<Stream> Opener)>();
+    this._streamingSink = sink;
+    byte[] image;
+    try {
+      image = this.BuildImageBytes();
+    } finally {
+      this._streamingSink = null;
+    }
+
+    output.SetLength(image.Length);
+    output.Position = 0;
     output.Write(image);
+
+    var buf = new byte[64 * 1024];
+    foreach (var (byteOffset, size, opener) in sink) {
+      if (size <= 0) continue;
+      if (byteOffset < 0 || byteOffset >= output.Length) continue;
+      output.Position = byteOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+      // Last-block tail past `size` keeps the zero from the image init.
+    }
+    output.Flush();
   }
 
   /// <summary>
@@ -555,7 +650,12 @@ public sealed class ReiserFsWriter {
     public required uint ParentObjectId;  // parent's objectid (== this object's key dir_id)
     public required bool IsDirectory;
     public required string Name;          // leaf name within its parent ("" for root)
-    public byte[] Data = [];              // file body (files only)
+    public byte[] Data = [];              // file body (files only; empty when streamed)
+    // Streaming INDIRECT file: when StreamOpener is non-null the body lives in
+    // dedicated data blocks streamed from the opener; StreamSize is its length.
+    public long? StreamSize;
+    public Func<Stream>? StreamOpener;
+    public long EffectiveLength => this.StreamSize ?? this.Data.Length;
     public readonly List<(string Name, uint ChildObjectId)> Children = []; // dirs only
   }
 
@@ -582,7 +682,7 @@ public sealed class ReiserFsWriter {
     // Maps a directory's full path ("a/b") to its object. "" == root.
     var dirByPath = new Dictionary<string, TreeObject>(StringComparer.Ordinal) { [""] = root };
 
-    foreach (var (path, data) in _files) {
+    foreach (var (path, data, streamSize, opener) in _files) {
       if (path.Length == 0) continue;
       var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
       if (segments.Length == 0) continue;
@@ -609,6 +709,7 @@ public sealed class ReiserFsWriter {
       var file = new TreeObject {
         ObjectId = nextId++, ParentObjectId = parent.ObjectId,
         IsDirectory = false, Name = leaf, Data = data,
+        StreamSize = streamSize, StreamOpener = opener,
       };
       objects.Add(file);
       parent.Children.Add((leaf, file.ObjectId));
@@ -628,7 +729,11 @@ public sealed class ReiserFsWriter {
   /// </summary>
   private sealed record IndirectPlaceholder(
     LeafItem Item, byte[] Payload, int FirstDataBlockIndex, int BlockCount,
-    (uint DirId, uint ObjectId) OwnerKey);
+    (uint DirId, uint ObjectId) OwnerKey,
+    // Streaming body: when StreamOpener is non-null the data blocks are filled
+    // from the opener (in BuildToStreaming's seek pass) instead of from Payload;
+    // StreamSize is the body length.
+    Func<Stream>? StreamOpener = null, long StreamSize = 0);
 
   /// <summary>
   /// File-body cutoff: bodies up to this size go in a single DIRECT item;
@@ -678,8 +783,9 @@ public sealed class ReiserFsWriter {
         // STAT_DATA — mode S_IFREG | 0644. sd_blocks is patched by
         // PatchStatDataBlockCounts once the leaf placement (DIRECT) or
         // data-block region (INDIRECT) is known.
+        var bodyLength = obj.EffectiveLength;
         var sd = new byte[SdV2Size];
-        WriteStatDataV2(sd, mode: 0x81A4, nlink: 1, size: (ulong)obj.Data.Length,
+        WriteStatDataV2(sd, mode: 0x81A4, nlink: 1, size: (ulong)bodyLength,
           uid: 0, gid: 0, blocks: 0u);
         items.Add(new LeafItem {
           DirId = obj.ParentObjectId, ObjectId = obj.ObjectId,
@@ -687,9 +793,10 @@ public sealed class ReiserFsWriter {
           KeyFormat = KeyFormat2, UField = 0, Body = sd, ItemType = 0,
         });
 
-        if (obj.Data.Length == 0) continue;
-        if (obj.Data.Length <= MaxDirectBody) {
-          // DIRECT — inline body at offset 1.
+        if (bodyLength == 0) continue;
+        if (bodyLength <= MaxDirectBody) {
+          // DIRECT — inline body at offset 1. (Streaming entries this small were
+          // already read up front by AddStreamingFile, so obj.Data holds them.)
           items.Add(new LeafItem {
             DirId = obj.ParentObjectId, ObjectId = obj.ObjectId,
             OffsetV2 = TypeDirectV2 | 1u, OffsetV1 = 1, UniquenessV1 = V1DirectUniqueness,
@@ -701,7 +808,7 @@ public sealed class ReiserFsWriter {
           // layout homogeneous-INDIRECT keeps the reader / sd_blocks accounting
           // simple and still passes reiserfsck (tail-packing is an
           // optimisation, not a correctness requirement).
-          var blockCount = (obj.Data.Length + BlockSize - 1) / BlockSize;
+          var blockCount = (int)((bodyLength + BlockSize - 1) / BlockSize);
           var indirectBody = new byte[blockCount * 4]; // pointers patched later
           var item = new LeafItem {
             DirId = obj.ParentObjectId, ObjectId = obj.ObjectId,
@@ -711,7 +818,8 @@ public sealed class ReiserFsWriter {
           };
           items.Add(item);
           indirectPlaceholders.Add(new IndirectPlaceholder(
-            Item: item, Payload: obj.Data,
+            Item: item, Payload: obj.Data, StreamOpener: obj.StreamOpener,
+            StreamSize: bodyLength,
             FirstDataBlockIndex: dataBlocksTotal,
             BlockCount: blockCount,
             OwnerKey: (obj.ParentObjectId, obj.ObjectId)));
@@ -730,17 +838,27 @@ public sealed class ReiserFsWriter {
   /// little-endian uint32.
   /// </summary>
   private static void ResolveIndirectPlaceholders(
-    List<IndirectPlaceholder> placeholders, byte[] image, int firstDataBlock) {
+    List<IndirectPlaceholder> placeholders, byte[] image, int firstDataBlock,
+    List<(long ByteOffset, long Size, Func<Stream> Opener)>? streamingSink) {
     foreach (var p in placeholders) {
       var body = p.Item.Body;
-      for (var i = 0; i < p.BlockCount; i++) {
-        var blockNum = (uint)(firstDataBlock + p.FirstDataBlockIndex + i);
-        BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(i * 4), blockNum);
+      var firstBlockNum = (uint)(firstDataBlock + p.FirstDataBlockIndex);
+      for (var i = 0; i < p.BlockCount; i++)
+        BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(i * 4), firstBlockNum + (uint)i);
 
+      // Streaming body: the contiguous data-block run is recorded for the
+      // post-fill pass and left zero here. Block pointers above are already
+      // contiguous so a single forward write covers the whole run.
+      if (p.StreamOpener != null) {
+        streamingSink?.Add(((long)firstBlockNum * BlockSize, p.StreamSize, p.StreamOpener));
+        continue;
+      }
+
+      for (var i = 0; i < p.BlockCount; i++) {
         var srcOff = i * BlockSize;
         var copyLen = Math.Min(BlockSize, p.Payload.Length - srcOff);
         if (copyLen <= 0) continue;
-        var dstOff = (long)blockNum * BlockSize;
+        var dstOff = (long)(firstBlockNum + (uint)i) * BlockSize;
         Array.Copy(p.Payload, srcOff, image, dstOff, copyLen);
         // Remainder of the last block (when partial) stays zero — matches how
         // mkfs.reiserfs / the kernel zero-pad short tails when tail-packing is

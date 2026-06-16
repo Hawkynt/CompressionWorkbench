@@ -86,8 +86,20 @@ public sealed class BtrfsWriter {
     public required long AlignedLength;
     public required byte[] ExtentDataItem; // the FS-tree EXTENT_DATA value bytes
     public long DiskBytenr;                // assigned in ComputeLayout
+    // Streaming: when set, the payload is pulled from this factory in <=64 KB
+    // chunks during BuildToStreaming instead of being copied from Payload (which
+    // is then empty). Size is the exact logical byte count to copy.
+    public Func<Stream>? StreamOpener;
+    public long StreamSize;
   }
   private readonly List<DataExtent> _dataExtents = [];
+
+  // Streaming sink: when non-null, regular (non-inline) data extents append
+  // their absolute image byte offset + size + opener here instead of being
+  // copied from a byte[]. WriteDataExtents leaves their bytes zero; the second
+  // pass of BuildToStreaming post-fills them from the source. When null the
+  // writer behaves identically to before (WriteTo copies from Payload).
+  private List<(long ByteOffset, long Size, Func<Stream> Opener)>? _streamingSink;
 
   // Logical/physical offsets of every FS-tree block, in write order. Index 0 is
   // the root node (an internal node when _fsTreeBlockCount > 2, otherwise the
@@ -140,7 +152,7 @@ public sealed class BtrfsWriter {
     0x00, 0x00, 0x00, 0x00, 0x64, 0x65, 0x76, 0x31,
   };
 
-  private readonly List<(string name, byte[] data)> _files = [];
+  private readonly List<(string name, byte[] data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
 
   /// <summary>Adds a file to the image. The <paramref name="name"/> may
   /// contain '/' (or '\\') separators; each path component becomes a real
@@ -149,13 +161,54 @@ public sealed class BtrfsWriter {
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    // Normalise separators and drop empty components (leading "/", "a//b").
+    this._files.Add((NormalizePath(name), data, null, null));
+  }
+
+  /// <summary>
+  /// Adds a streaming file: <paramref name="size"/> drives extent + inode +
+  /// chunk sizing in pass 1; the bytes are pulled from
+  /// <paramref name="openStream"/> in pass 2 of <see cref="BuildToStreaming"/>.
+  /// A file whose size is below the inline threshold
+  /// (<see cref="MaxInlineDataSize"/>) is stored inline inside the FS-tree leaf,
+  /// so its (small, bounded) bytes are read up front here and treated exactly
+  /// like an <see cref="AddFile"/> entry; only files at or above the threshold
+  /// (regular data extents) are streamed and never buffered as a
+  /// <c>byte[]</c> by the writer.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
+
+    // Inline files live in the metadata leaf and are tiny by definition
+    // (< one sector). Read the bounded bytes up front and treat as a normal
+    // AddFile so the inline EXTENT_DATA path is taken byte-for-byte identically.
+    if (size < MaxInlineDataSize) {
+      using var src = openStream();
+      var buf = new byte[(int)size];
+      var read = 0;
+      while (read < buf.Length) {
+        var n = src.Read(buf, read, buf.Length - read);
+        if (n <= 0) break;
+        read += n;
+      }
+      if (read != buf.Length) Array.Resize(ref buf, read);
+      this._files.Add((NormalizePath(name), buf, null, null));
+      return;
+    }
+
+    this._files.Add((NormalizePath(name), System.Array.Empty<byte>(), size, openStream));
+  }
+
+  // Normalises separators and drops empty components (leading "/", "a//b");
+  // truncates each component to 255 bytes (the on-disk name limit).
+  private static string NormalizePath(string name) {
     var parts = name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
     if (parts.Length == 0)
       throw new ArgumentException("File name must contain at least one path component.", nameof(name));
     for (var i = 0; i < parts.Length; i++)
       if (parts[i].Length > 255) parts[i] = parts[i][..255];
-    this._files.Add((string.Join('/', parts), data));
+    return string.Join('/', parts);
   }
 
   public void WriteTo(Stream output) {
@@ -204,8 +257,90 @@ public sealed class BtrfsWriter {
   // would normally expect CSUM_ITEMs. We instead mark the inode NODATASUM (see
   // BuildInodeItem flags) so the checker does not demand data checksums.
   private void WriteDataExtents(byte[] image) {
-    foreach (var ext in this._dataExtents)
+    foreach (var ext in this._dataExtents) {
+      if (ext.StreamOpener != null) {
+        // Streaming entry: leave the data region zero here; BuildToStreaming's
+        // second pass post-fills DiskBytenr..DiskBytenr+StreamSize from the
+        // source in <=64 KB chunks. The extent's sector tail stays zero, exactly
+        // as the byte[] path leaves it (Payload shorter than AlignedLength).
+        this._streamingSink?.Add((ext.DiskBytenr, ext.StreamSize, ext.StreamOpener));
+        continue;
+      }
       ext.Payload.CopyTo(image.AsSpan((int)ext.DiskBytenr));
+    }
+  }
+
+  /// <summary>
+  /// Two-pass streaming variant of <see cref="WriteTo"/>: pass 1 builds the
+  /// complete disk image byte[] exactly as <see cref="WriteTo"/> would
+  /// (all metadata + CRC-32C + inline file data), but leaves the bytes of every
+  /// regular (non-inline) data extent zero and records each extent's absolute
+  /// image offset; pass 2 writes the image to <paramref name="output"/> and then
+  /// streams each recorded extent's bytes from its factory into place via 64 KB
+  /// chunks. Data extents carry no Btrfs csum (the inode is NODATASUM and the
+  /// CSUM_TREE is empty), so post-filling them does not invalidate any checksum.
+  /// The produced bytes are identical to <see cref="WriteTo"/> for the same
+  /// inputs.
+  /// </summary>
+  public void BuildToStreaming(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
+
+    var sink = new List<(long ByteOffset, long Size, Func<Stream> Opener)>();
+
+    var fsLeaves = BuildFsTreeLeaves();
+    var fsTreeBlocks = fsLeaves.Count == 1 ? 1 : fsLeaves.Count + 1;
+    ComputeLayout(fsTreeBlocks);
+
+    var image = new byte[this._totalSize];
+
+    WriteSuperblock(image);
+    WriteChunkTree(image);
+    WriteDevTree(image);
+    WriteRootTree(image);
+    WriteFsTree(image, fsLeaves);
+    WriteExtentTree(image);
+    WriteEmptyTree(image, (int)this._csumTreeOff, CsumTreeObjectId);
+
+    this._streamingSink = sink;
+    try {
+      WriteDataExtents(image); // streaming extents recorded, left zero
+    } finally {
+      this._streamingSink = null;
+    }
+
+    WriteBlockChecksum(image, SbOffset, SectorSize);
+    WriteBlockChecksum(image, ChunkTreeOff, NodeSize);
+    WriteBlockChecksum(image, DevTreeOff, NodeSize);
+    WriteBlockChecksum(image, RootTreeOff, NodeSize);
+    foreach (var off in this._fsTreeBlockOffsets)
+      WriteBlockChecksum(image, (int)off, NodeSize);
+    WriteBlockChecksum(image, (int)this._extentTreeOff, NodeSize);
+    WriteBlockChecksum(image, (int)this._csumTreeOff, NodeSize);
+
+    output.SetLength(image.Length);
+    output.Position = 0;
+    output.Write(image);
+
+    // Pass 2: stream each regular extent's bytes into its DATA-chunk slot.
+    var buf = new byte[64 * 1024];
+    foreach (var (byteOffset, size, opener) in sink) {
+      if (size <= 0) continue;
+      if (byteOffset < 0 || byteOffset >= output.Length) continue;
+      output.Position = byteOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+      // Sector tail past `size` retains zero from the image init.
+    }
+    output.Flush();
   }
 
   // Decides the physical placement of every block whose offset depends on the
@@ -674,8 +809,8 @@ public sealed class BtrfsWriter {
     public string Name = "";
     // child name → directory node (deterministic insertion order).
     public readonly Dictionary<string, DirNode> SubDirs = new(StringComparer.Ordinal);
-    // file name → payload, in insertion order.
-    public readonly List<(string name, byte[] data)> Files = [];
+    // file name → payload (+ optional streaming size/opener), in insertion order.
+    public readonly List<(string name, byte[] data, long? StreamingSize, Func<Stream>? StreamOpener)> Files = [];
     // file name → its allocated inode objectid.
     public readonly Dictionary<string, long> FileObjectIds = new(StringComparer.Ordinal);
   }
@@ -704,7 +839,7 @@ public sealed class BtrfsWriter {
       Name = "",
     };
 
-    foreach (var (path, data) in this._files) {
+    foreach (var (path, data, streamingSize, opener) in this._files) {
       var parts = path.Split('/');
       var dir = root;
       for (var p = 0; p < parts.Length - 1; p++) {
@@ -720,7 +855,7 @@ public sealed class BtrfsWriter {
         dir = child;
       }
       var fileName = parts[^1];
-      dir.Files.Add((fileName, data));
+      dir.Files.Add((fileName, data, streamingSize, opener));
       dir.FileObjectIds[fileName] = nextObjectId++;
     }
 
@@ -816,8 +951,8 @@ public sealed class BtrfsWriter {
     long dirSize = 0;
     foreach (var sub in dir.SubDirs.Values)
       dirSize += Encoding.UTF8.GetBytes(sub.Name).Length * 2;
-    foreach (var (name, _) in dir.Files)
-      dirSize += Encoding.UTF8.GetBytes(name).Length * 2;
+    foreach (var file in dir.Files)
+      dirSize += Encoding.UTF8.GetBytes(file.name).Length * 2;
 
     // Btrfs counts only "." against a directory's nlink — not ".." and not
     // children — so every directory has nlink=1 regardless of child count.
@@ -844,13 +979,18 @@ public sealed class BtrfsWriter {
       EmitChildBackRef(items, sub.ObjectId, dir.ObjectId, sub.Name, index - 1);
     }
 
-    foreach (var (name, data) in dir.Files) {
+    foreach (var (name, data, streamingSize, streamOpener) in dir.Files) {
       var fileObjectId = AllocateFileObjectId(dir, name);
 
       EmitChildLink(items, dir.ObjectId, fileObjectId, name, isDir: false, ref index);
       EmitChildBackRef(items, fileObjectId, dir.ObjectId, name, index - 1);
 
-      if (data.Length < MaxInlineDataSize) {
+      // Streaming entries are only ever created for sizes >= MaxInlineDataSize
+      // (smaller files are read up front in AddStreamingFile and stored inline),
+      // so a non-null opener always takes the regular-extent path below.
+      var effectiveLength = (long)(streamingSize ?? data.Length);
+
+      if (streamOpener == null && data.Length < MaxInlineDataSize) {
         // Inline EXTENT_DATA (btrfs_file_extent_item). Layout:
         //   0..7  generation, 8..15 ram_bytes, 16 compression (0=none),
         //   17 encryption (0), 18..19 other_encoding, 20 type (0=inline),
@@ -874,8 +1014,8 @@ public sealed class BtrfsWriter {
       // as a sector-aligned extent; its disk_bytenr is filled in after layout
       // (ComputeLayout) once the data region's logical address is known. The
       // inode's on-disk byte count is the sector-aligned extent length.
-      var alignedLength = RoundUpToSector(data.Length);
-      var fileInodeReg = BuildInodeItem(mode: 0x81A4, size: data.Length, bytes: alignedLength, nlink: 1, flags: InodeNoDataSum);
+      var alignedLength = RoundUpToSector(effectiveLength);
+      var fileInodeReg = BuildInodeItem(mode: 0x81A4, size: effectiveLength, bytes: alignedLength, nlink: 1, flags: InodeNoDataSum);
       items.Add((fileObjectId, InodeItem, 0L, fileInodeReg));
 
       // btrfs_file_extent_item (regular): 21-byte header then disk_bytenr(8)@21,
@@ -893,9 +1033,11 @@ public sealed class BtrfsWriter {
 
       this._dataExtents.Add(new DataExtent {
         FileObjectId = fileObjectId,
-        Payload = data,
+        Payload = data,                 // empty for streaming entries
         AlignedLength = alignedLength,
         ExtentDataItem = reg,
+        StreamOpener = streamOpener,    // non-null => stream in pass 2
+        StreamSize = effectiveLength,   // exact bytes to copy
       });
     }
 

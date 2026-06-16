@@ -165,6 +165,47 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     output.Write(w.Build());
   }
 
+  /// <summary>
+  /// Two-pass streaming creation: the pre-known per-input sizes drive the
+  /// ISO 9660 path table + directory + file-extent layout in pass 1 (identical
+  /// to <see cref="Create"/>, which flattens to leaf filenames); pass 2 streams
+  /// each file's bytes from its
+  /// <see cref="Compression.Registry.Streaming.StreamingArchiveInput.OpenStream"/>
+  /// factory into its data extent via 64 KB chunks — no file is ever buffered
+  /// as a <c>byte[]</c>. Output is byte-identical to <see cref="Create"/> for
+  /// the same inputs (the ECMA-119 volume/record timestamps are sampled once
+  /// per <c>Build</c>). Falls back to a buffered build when the target stream
+  /// is not seekable.
+  /// </summary>
+  public void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = new IsoWriter {
+      VolumeIdentifier      = options?.GetOption("VolumeLabel", "CDROM") ?? "CDROM",
+      SystemIdentifier      = options?.GetOption("SystemId", "") ?? "",
+      PublisherIdentifier   = options?.GetOption("Publisher", "") ?? "",
+      ApplicationIdentifier = options?.GetOption("Application", "") ?? "",
+      EnableJoliet          = options?.GetOptionBool("Joliet", true) ?? true,
+    };
+    if (!output.CanSeek) {
+      foreach (var input in inputs) {
+        if (input.IsDirectory) continue;
+        using var src = input.OpenStream();
+        using var ms = new MemoryStream();
+        src.CopyTo(ms);
+        w.AddFile(Path.GetFileName(input.Name), ms.ToArray());
+      }
+      output.Write(w.Build());
+      return;
+    }
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      // Match Create's FlatFiles flattening: ISO records the leaf filename.
+      w.AddStreamingFile(Path.GetFileName(input.Name), input.Size, input.OpenStream);
+    }
+    w.BuildToStreaming(output);
+  }
+
   /// <inheritdoc/>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new IsoReader(stream);

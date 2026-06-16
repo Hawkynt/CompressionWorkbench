@@ -17,7 +17,11 @@ namespace FileSystem.MinixFs;
 public sealed class MinixFsWriter : IDisposable {
   private readonly Stream _output;
   private readonly bool _leaveOpen;
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
+
+  // Per-streaming-file post-write copy descriptors, collected during Finish:
+  // (absolute byte offset of the file's first data zone, logical size, opener).
+  private readonly List<(long ByteOffset, long Size, Func<Stream> Opener)> _streamingSink = [];
 
   private const ushort MagicV3 = 0x4D5A;
   private const int BlockSize = 1024;
@@ -32,7 +36,21 @@ public sealed class MinixFsWriter : IDisposable {
   }
 
   /// <summary>Registers a file to be written into the image.</summary>
-  public void AddFile(string path, byte[] data) => _files.Add((path, data));
+  public void AddFile(string path, byte[] data) => _files.Add((path, data, null, null));
+
+  /// <summary>
+  /// Registers a streaming file: <paramref name="size"/> drives zone allocation
+  /// and inode sizing during <see cref="Finish"/>; bytes are pulled from
+  /// <paramref name="openStream"/> after the metadata image is written, copied
+  /// directly into the file's data zones in 64 KB chunks (only when the output
+  /// stream is seekable). Never buffered as <c>byte[]</c>.
+  /// </summary>
+  public void AddStreamingFile(string path, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(path);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
+    _files.Add((path, System.Array.Empty<byte>(), size, openStream));
+  }
 
   // V3 dir entry: uint32 inode (4 bytes) + char[60] name (60 bytes) = 64 bytes per entry.
   private const int DirEntrySize = 64;
@@ -56,10 +74,16 @@ public sealed class MinixFsWriter : IDisposable {
     public uint Inode;
     public bool IsDirectory;
     public byte[] FileData = [];
+    public long? StreamingSize;
+    public Func<Stream>? StreamOpener;
     // Child directories/files keyed by their (single-component) name, in
     // insertion order so the on-disk layout is deterministic.
     public readonly List<KeyValuePair<string, TreeNode>> Children = [];
     public readonly Dictionary<string, TreeNode> ChildIndex = [];
+
+    // Logical byte length: declared streaming size for a streaming entry, else
+    // the buffered byte[] length.
+    public long EffectiveLength => this.StreamingSize ?? this.FileData.Length;
   }
 
   /// <summary>
@@ -72,8 +96,9 @@ public sealed class MinixFsWriter : IDisposable {
     var root = new TreeNode { IsDirectory = true };
     var allDirs = new List<TreeNode> { root };
     var allFiles = new List<TreeNode>();
+    this._streamingSink.Clear();
 
-    foreach (var (rawPath, data) in _files) {
+    foreach (var (rawPath, data, streamingSize, streamOpener) in _files) {
       var parts = SplitPath(rawPath);
       if (parts.Count == 0) continue;
 
@@ -96,7 +121,7 @@ public sealed class MinixFsWriter : IDisposable {
       var leaf = parts[^1];
       if (cursor.ChildIndex.ContainsKey(leaf))
         throw new InvalidOperationException($"MinixFs: duplicate entry '{rawPath}'.");
-      var fileNode = new TreeNode { IsDirectory = false, FileData = data };
+      var fileNode = new TreeNode { IsDirectory = false, FileData = data, StreamingSize = streamingSize, StreamOpener = streamOpener };
       AddChild(cursor, leaf, fileNode);
       allFiles.Add(fileNode);
     }
@@ -141,7 +166,7 @@ public sealed class MinixFsWriter : IDisposable {
       dataZonesNeeded += dirZones + (dirZones > DirectZones ? 1 : 0);
     }
     foreach (var file in allFiles)
-      dataZonesNeeded += file.FileData.Length == 0 ? 0 : (file.FileData.Length + BlockSize - 1) / BlockSize;
+      dataZonesNeeded += file.EffectiveLength == 0 ? 0 : (int)((file.EffectiveLength + BlockSize - 1) / BlockSize);
 
     var totalZones = firstdatazone + dataZonesNeeded;
     var totalBlocks = totalZones; // zones == blocks for log_zone_size=0
@@ -225,7 +250,8 @@ public sealed class MinixFsWriter : IDisposable {
     // --- Allocate and write each file's zones, then its inode ---
     foreach (var file in allFiles) {
       var data = file.FileData;
-      var zonesNeeded = data.Length == 0 ? 0 : (data.Length + BlockSize - 1) / BlockSize;
+      var length = (int)file.EffectiveLength;
+      var zonesNeeded = length == 0 ? 0 : (length + BlockSize - 1) / BlockSize;
       if (zonesNeeded > 7)
         throw new InvalidOperationException(
           $"MinixFs writer only supports direct zones (max {7 * BlockSize} bytes per file).");
@@ -239,16 +265,24 @@ public sealed class MinixFsWriter : IDisposable {
 
       WriteV3Inode(disk, inodeTableOff, inodeIndex: (int)(file.Inode - 1),
         mode: ModeRegularFile,
-        size: (uint)data.Length,
+        size: (uint)length,
         nlinks: 1,
         zones: fileZones);
 
-      var written = 0;
-      for (var z = 0; z < 7 && written < data.Length; z++) {
-        if (fileZones[z] == 0) break;
-        var toWrite = Math.Min(BlockSize, data.Length - written);
-        Array.Copy(data, written, disk, (int)fileZones[z] * BlockSize, toWrite);
-        written += toWrite;
+      if (file.StreamOpener != null) {
+        // Streaming entry: leave its data zones zero here. The zones are
+        // contiguous (allocated in order above), so the file's bytes occupy
+        // [firstZone*BlockSize, +length). Recorded for the post-write copy pass.
+        if (length > 0 && zonesNeeded > 0)
+          this._streamingSink.Add(((long)fileZones[0] * BlockSize, length, file.StreamOpener));
+      } else {
+        var written = 0;
+        for (var z = 0; z < 7 && written < data.Length; z++) {
+          if (fileZones[z] == 0) break;
+          var toWrite = Math.Min(BlockSize, data.Length - written);
+          Array.Copy(data, written, disk, (int)fileZones[z] * BlockSize, toWrite);
+          written += toWrite;
+        }
       }
     }
 
@@ -278,7 +312,38 @@ public sealed class MinixFsWriter : IDisposable {
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(24),    MagicV3);
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(28),    BlockSize);
 
+    if (this._streamingSink.Count == 0) {
+      // No streaming entries — emit the fully populated image as before.
+      _output.Write(disk);
+      return;
+    }
+
+    // Streaming entries present: the metadata image is complete with their data
+    // zones left zero. Write it, then seek to each entry's first data zone and
+    // stream its bytes in 64 KB chunks. Byte-identical to the buffered path.
+    if (!_output.CanSeek || !_output.CanWrite)
+      throw new InvalidOperationException(
+        "MinixFs: streaming entries require a writable, seekable output stream.");
+
+    _output.Position = 0;
     _output.Write(disk);
+
+    var buf = new byte[64 * 1024];
+    foreach (var (byteOffset, size, opener) in this._streamingSink) {
+      if (size <= 0) continue;
+      if (byteOffset < 0 || byteOffset >= disk.Length) continue;
+      _output.Position = byteOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        _output.Write(buf, 0, n);
+        copied += n;
+      }
+    }
+    _output.Flush();
   }
 
   // Splits a registered path into its directory/file components, discarding

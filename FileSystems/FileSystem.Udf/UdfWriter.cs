@@ -64,6 +64,31 @@ public sealed class UdfWriter {
     _files.Add((name, data));
   }
 
+  /// <summary>
+  /// Streaming files keyed by normalised tree path. Populated by
+  /// <see cref="AddStreamingFile"/>; consumed in <see cref="BuildTree"/> so the
+  /// matching leaf <see cref="Node"/> carries an opener instead of a buffered
+  /// body. UDF's descriptor CRC covers only the descriptor tag bytes (FID / FE /
+  /// VDS), never file data, so a streamed body produces byte-identical output.
+  /// </summary>
+  private readonly List<(string name, long size, Func<Stream> opener)> _streamingFiles = [];
+
+  /// <summary>
+  /// Adds a streaming file whose body is pulled from <paramref name="openStream"/>
+  /// in 64 KiB chunks while the image is written sequentially, never buffered as
+  /// a <c>byte[]</c>. <paramref name="size"/> drives the directory/file layout.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
+    // Register both a placeholder file entry (so BuildTree materialises the leaf
+    // node + intermediate directories exactly as the buffered path would) and the
+    // opener keyed by the same path.
+    _files.Add((name, []));
+    _streamingFiles.Add((name, size, openStream));
+  }
+
   // ── Directory tree ──────────────────────────────────────────────────────
 
   /// <summary>
@@ -75,6 +100,13 @@ public sealed class UdfWriter {
     public required string Name;
     public required bool IsDirectory;
     public byte[] Data = [];
+    // Streaming file: when StreamOpener is non-null the body is pulled from the
+    // opener during the sequential block emit instead of being buffered in Data.
+    // StreamSize is the declared byte length driving all layout (DataLength,
+    // DataSectors, the FE info-length + allocation descriptor).
+    public long? StreamSize;
+    public Func<Stream>? StreamOpener;
+    public long EffectiveLength => this.StreamSize ?? this.Data.Length;
     public readonly List<Node> Children = [];
     public Node? Parent;
 
@@ -151,6 +183,14 @@ public sealed class UdfWriter {
   private Node BuildTree() {
     var root = new Node { Name = "", IsDirectory = true };
 
+    // Streaming openers keyed by normalised path. The matching leaf takes the
+    // opener + declared size instead of a buffered body.
+    var streamByPath = new Dictionary<string, (long size, Func<Stream> opener)>(StringComparer.Ordinal);
+    foreach (var (name, size, opener) in _streamingFiles) {
+      var key = string.Join('/', name.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries));
+      streamByPath[key] = (size, opener);
+    }
+
     foreach (var (path, data) in _files) {
       var parts = path.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
       if (parts.Length == 0) continue;
@@ -170,12 +210,18 @@ public sealed class UdfWriter {
       // A file path collapsing onto an existing entry is ignored (last writer
       // would otherwise silently overwrite); keep the first occurrence.
       if (current.Children.Any(c => c.Name == fileName)) continue;
-      current.Children.Add(new Node {
+      var key = string.Join('/', parts);
+      var node = new Node {
         Name = fileName,
         IsDirectory = false,
         Data = data,
         Parent = current,
-      });
+      };
+      if (streamByPath.TryGetValue(key, out var s)) {
+        node.StreamSize = s.size;
+        node.StreamOpener = s.opener;
+      }
+      current.Children.Add(node);
     }
 
     return root;
@@ -204,8 +250,9 @@ public sealed class UdfWriter {
       foreach (var child in node.Children)
         AssignLayout(child, ref nextLbn);
     } else {
-      node.DataLength = node.Data.Length;
-      node.DataSectors = Math.Max(1, (node.Data.Length + Sector - 1) / Sector);
+      var len = node.EffectiveLength;
+      node.DataLength = (int)len;
+      node.DataSectors = Math.Max(1, (int)((len + Sector - 1) / Sector));
       node.DataLbn = nextLbn;
       nextLbn += node.DataSectors;
     }
@@ -234,10 +281,18 @@ public sealed class UdfWriter {
         CollectBlocks(child, blocks);
     } else {
       var fileNode = node;
-      blocks[node.FeLbn] = () => WriteFileFe(blocksOutput, fileNode.FeLbn, fileNode.Data.Length, fileNode.DataLbn);
+      blocks[node.FeLbn] = () => WriteFileFe(blocksOutput, fileNode.FeLbn, fileNode.DataLength, fileNode.DataLbn);
       blocks[node.DataLbn] = () => {
-        blocksOutput.Write(fileNode.Data);
-        var pad = fileNode.DataSectors * Sector - fileNode.Data.Length;
+        long produced;
+        if (fileNode.StreamOpener != null) {
+          // Stream the body straight into the sequential output in 64 KiB chunks
+          // — never buffered as a byte[]. Exactly DataLength bytes are copied.
+          produced = StreamCopy(blocksOutput, fileNode.StreamOpener, fileNode.DataLength);
+        } else {
+          blocksOutput.Write(fileNode.Data);
+          produced = fileNode.Data.Length;
+        }
+        var pad = (long)fileNode.DataSectors * Sector - produced;
         if (pad > 0) blocksOutput.Write(new byte[pad]);
       };
     }
@@ -246,6 +301,26 @@ public sealed class UdfWriter {
   // The output stream is captured for the duration of WriteTo so the block
   // actions stay simple closures; set before CollectBlocks runs.
   private Stream blocksOutput = Stream.Null;
+
+  /// <summary>
+  /// Copies up to <paramref name="size"/> bytes from a freshly opened source
+  /// stream to <paramref name="dst"/> in 64 KiB chunks and returns the number of
+  /// bytes actually written. Never buffers the whole body.
+  /// </summary>
+  private static long StreamCopy(Stream dst, Func<Stream> opener, long size) {
+    if (size <= 0) return 0;
+    var buf = new byte[64 * 1024];
+    using var src = opener();
+    long copied = 0;
+    while (copied < size) {
+      var want = (int)Math.Min(buf.Length, size - copied);
+      var n = src.Read(buf, 0, want);
+      if (n <= 0) break;
+      dst.Write(buf, 0, n);
+      copied += n;
+    }
+    return copied;
+  }
 
   // ── FID building ──────────────────────────────────────────────────────────
 

@@ -35,7 +35,15 @@ public sealed class IsoWriter {
   // the post-gap, while the recorded Volume Space Size still spans the whole file.
   private const int TrailingPadSectors = 150;
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
+
+  /// <summary>
+  /// Streaming-allocations side-effect: when non-null, every streaming file's
+  /// (absolute data-extent byte offset, size, opener) is appended for use by
+  /// <see cref="BuildToStreaming"/>'s post-stream pass. When null, the writer
+  /// behaves identically to before.
+  /// </summary>
+  private List<(long ByteOffset, long Size, Func<Stream> Opener)>? _streamingSink;
 
   /// <summary>
   /// Whether to emit a Joliet Supplementary Volume Descriptor and a parallel
@@ -72,7 +80,19 @@ public sealed class IsoWriter {
   /// Adds a file to the image. The name may contain '/' path separators, in
   /// which case the intermediate segments are created as directories.
   /// </summary>
-  public void AddFile(string name, byte[] data) => _files.Add((name, data));
+  public void AddFile(string name, byte[] data) => _files.Add((name, data, null, null));
+
+  /// <summary>
+  /// Adds a streaming file: <paramref name="size"/> drives extent + path-table
+  /// + directory-record sizing in pass 1; bytes are pulled from
+  /// <paramref name="openStream"/> in pass 2 of <see cref="BuildToStreaming"/>.
+  /// Never buffered as <c>byte[]</c>.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
+    _files.Add((name, System.Array.Empty<byte>(), size, openStream));
+  }
 
   // ── Directory tree ───────────────────────────────────────────────────────
 
@@ -99,7 +119,12 @@ public sealed class IsoWriter {
     public required string Identifier;      // ECMA-119 identifier, includes ";1" version suffix
     public required string JolietName;      // original (long, mixed-case) file name (truncated per spec)
     public required byte[] Data;
+    public long? StreamingSize;             // when set, data is streamed (Data is empty)
+    public Func<Stream>? StreamOpener;      // streaming entries only
     public int Lba;
+
+    /// <summary>Logical file length, whether in-memory or streamed.</summary>
+    public long Length => this.StreamingSize ?? this.Data.Length;
   }
 
   /// <summary>
@@ -161,7 +186,7 @@ public sealed class IsoWriter {
     foreach (var dir in dirs)
       foreach (var file in dir.Files) {
         file.Lba = cursor;
-        var sectors = file.Data.Length == 0 ? 1 : (file.Data.Length + SectorSize - 1) / SectorSize;
+        var sectors = file.Length == 0 ? 1 : (int)((file.Length + SectorSize - 1) / SectorSize);
         cursor += sectors;
       }
 
@@ -203,12 +228,68 @@ public sealed class IsoWriter {
       foreach (var dir in dirs)
         WriteDirectoryExtent(image, dir, joliet: true);
 
-    // Shared file data.
+    // Shared file data. Streaming entries leave their extent zero; the
+    // streaming pass post-fills from this absolute byte offset. The sector
+    // tail past the logical size stays zero (matches the in-memory path,
+    // which copies only Data.Length bytes).
     foreach (var dir in dirs)
-      foreach (var file in dir.Files)
-        file.Data.CopyTo(image, file.Lba * SectorSize);
+      foreach (var file in dir.Files) {
+        if (file.StreamOpener != null) {
+          if (this._streamingSink != null && file.Length > 0)
+            this._streamingSink.Add(((long)file.Lba * SectorSize, file.Length, file.StreamOpener));
+        } else {
+          file.Data.CopyTo(image, file.Lba * SectorSize);
+        }
+      }
 
     return image;
+  }
+
+  /// <summary>
+  /// Two-pass streaming Build: pass 1 lays out the identical ISO image (same
+  /// descriptors, path tables, directory extents, and file-data extent
+  /// placement as <see cref="Build"/>) with each streaming file's data extent
+  /// left zero; pass 2 seeks to each file's extent byte offset and copies its
+  /// bytes from the opener in 64 KB chunks. The sector tail past each file's
+  /// logical size stays zero, exactly as the in-memory path leaves it. For the
+  /// same inputs (and same wall-clock second for the volatile ECMA-119
+  /// timestamps) the output is byte-for-byte identical to <see cref="Build"/>.
+  /// </summary>
+  public void BuildToStreaming(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
+
+    var sink = new List<(long ByteOffset, long Size, Func<Stream> Opener)>();
+    this._streamingSink = sink;
+    byte[] image;
+    try {
+      image = Build();
+    } finally {
+      this._streamingSink = null;
+    }
+
+    output.SetLength(image.Length);
+    output.Position = 0;
+    output.Write(image);
+
+    var buf = new byte[64 * 1024];
+    foreach (var (byteOffset, size, opener) in sink) {
+      if (size <= 0) continue;
+      if (byteOffset < 0 || byteOffset >= output.Length) continue;
+      output.Position = byteOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+      // Sector tail past `size` retains zero from the image init.
+    }
+    output.Flush();
   }
 
   private static int SectorsFor(int byteLength) {
@@ -218,7 +299,7 @@ public sealed class IsoWriter {
 
   private DirNode BuildTree() {
     var root = new DirNode { Name = "" };
-    foreach (var (rawName, data) in _files) {
+    foreach (var (rawName, data, streamingSize, opener) in _files) {
       var segments = rawName.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
       if (segments.Length == 0) continue;
 
@@ -241,6 +322,8 @@ public sealed class IsoWriter {
         Identifier = identifier,
         JolietName = TruncateJolietName(segments[^1]),
         Data = data,
+        StreamingSize = streamingSize,
+        StreamOpener = opener,
       });
     }
     return root;
@@ -476,7 +559,7 @@ public sealed class IsoWriter {
     foreach (var file in dir.Files) {
       var identifier = FileIdentifierBytes(file, joliet);
       pos = AdvancePastSectorBoundary(baseOff, pos, identifier.Length);
-      WriteDirectoryRecord(image, pos, file.Lba, file.Data.Length, 0x00, identifier);
+      WriteDirectoryRecord(image, pos, file.Lba, (int)file.Length, 0x00, identifier);
       pos += image[pos];
     }
   }

@@ -182,6 +182,43 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   }
 
   /// <summary>
+  /// Two-pass streaming creation. Pass 1 plans the chunk/extent/inode layout
+  /// from each input's pre-known size; pass 2 emits all metadata (with CRC-32C)
+  /// plus inline file data, then streams each regular (non-inline) file's bytes
+  /// into its DATA-chunk extent via 64 KB chunks — file bytes never travel
+  /// through a writer-held <c>byte[]</c>. Btrfs data extents carry no checksum
+  /// (the inode is NODATASUM and the CSUM_TREE is empty), so post-filling the
+  /// extent bytes after the metadata CRCs are stamped is sound and the output is
+  /// byte-identical to <see cref="Create"/> for the same inputs. Files smaller
+  /// than one sector are stored inline in the FS-tree leaf, so their (bounded)
+  /// bytes are read up front and treated like a classic <c>AddFile</c>.
+  /// Non-seekable targets fall back to the buffering base implementation.
+  /// </summary>
+  public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = new BtrfsWriter();
+    if (!output.CanSeek) {
+      // Non-seekable target: cannot do the seek-back second pass, so buffer
+      // each entry into the writer's byte[] path and emit in one shot.
+      foreach (var input in inputs) {
+        if (input.IsDirectory) continue;
+        using var src = input.OpenStream();
+        using var ms = new MemoryStream();
+        src.CopyTo(ms);
+        w.AddFile(input.Name, ms.ToArray());
+      }
+      w.WriteTo(output);
+      return;
+    }
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
+    }
+    w.BuildToStreaming(output);
+  }
+
+  /// <summary>
   /// Rebuild-style add/replace (see <see cref="BtrfsModifier"/>). Emits a fresh
   /// <c>btrfs check --readonly</c>-clean image over the old bytes.
   /// </summary>

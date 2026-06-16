@@ -133,7 +133,15 @@ internal sealed class BfsWriter {
   private const int InodeDataStreamOffset = 72;
   private const int NumDirectBlocks = 12;
 
-  private readonly List<(string Path, byte[] Data)> _files = [];
+  private readonly List<(string Path, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
+
+  /// <summary>
+  /// Streaming-allocations side-effect: when non-null, every streaming entry's
+  /// (absolute data-block byte offset, size, opener) is appended for use by
+  /// <see cref="BuildToStreaming"/>'s post-stream pass. When null, the writer
+  /// behaves identically to before.
+  /// </summary>
+  private List<(long ByteOffset, long Size, Func<Stream> Opener)>? _streamingSink;
 
   /// <summary>
   /// Adds a file to the image. The name may contain '/' (or '\') separators,
@@ -144,7 +152,21 @@ internal sealed class BfsWriter {
     var normalized = name.Replace('\\', '/').Trim('/');
     if (string.IsNullOrEmpty(normalized))
       throw new ArgumentException("File name must not be empty.", nameof(name));
-    _files.Add((normalized, data));
+    _files.Add((normalized, data, null, null));
+  }
+
+  /// <summary>
+  /// Adds a streaming file: <paramref name="size"/> drives extent + inode + AG
+  /// sizing in pass 1; bytes are pulled from <paramref name="openStream"/> in
+  /// pass 2 of <see cref="BuildToStreaming"/>. Never buffered as <c>byte[]</c>.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(openStream);
+    var normalized = name.Replace('\\', '/').Trim('/');
+    if (string.IsNullOrEmpty(normalized))
+      throw new ArgumentException("File name must not be empty.", nameof(name));
+    if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
+    _files.Add((normalized, System.Array.Empty<byte>(), size, openStream));
   }
 
   /// <summary>
@@ -156,6 +178,8 @@ internal sealed class BfsWriter {
     public required string Name;
     public bool IsDir;
     public byte[]? Data;
+    public long? StreamingSize;
+    public Func<Stream>? StreamOpener;
     public readonly SortedDictionary<string, TreeNode> Children =
       new(StringComparer.Ordinal);
 
@@ -174,7 +198,7 @@ internal sealed class BfsWriter {
     // 1) Build the directory tree from the flat file list. The synthetic root
     //    uses the fixed root-dir inode/B+ tree blocks (11/12).
     var root = new TreeNode { Name = string.Empty, IsDir = true, InodeBlock = RootDirInodeBlock, BtreeBlock = RootDirBtreeBlock };
-    foreach (var (path, data) in _files) {
+    foreach (var (path, data, streamingSize, opener) in _files) {
       var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
       var cursor = root;
       for (var i = 0; i < segments.Length; i++) {
@@ -184,7 +208,7 @@ internal sealed class BfsWriter {
           // Leaf segment: the file itself. Reject collisions with a directory.
           if (cursor.Children.TryGetValue(seg, out var existing) && existing.IsDir)
             throw new InvalidOperationException($"BFS: '{path}' collides with an existing directory of the same name.");
-          cursor.Children[seg] = new TreeNode { Name = seg, IsDir = false, Data = data };
+          cursor.Children[seg] = new TreeNode { Name = seg, IsDir = false, Data = data, StreamingSize = streamingSize, StreamOpener = opener };
         } else {
           if (!cursor.Children.TryGetValue(seg, out var child)) {
             child = new TreeNode { Name = seg, IsDir = true };
@@ -242,6 +266,51 @@ internal sealed class BfsWriter {
   }
 
   /// <summary>
+  /// Two-pass streaming Build: pass 1 lays out the identical BFS image (same
+  /// block allocation + inodes + B+ trees as <see cref="Build"/>) with each
+  /// streaming file's data run left zero; pass 2 seeks to each file's first
+  /// data-block byte offset and copies its bytes from the opener in 64 KB
+  /// chunks. Output is byte-for-byte identical to <see cref="Build"/>'s result
+  /// for the same inputs.
+  /// </summary>
+  public void BuildToStreaming(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
+
+    var sink = new List<(long ByteOffset, long Size, Func<Stream> Opener)>();
+    this._streamingSink = sink;
+    byte[] image;
+    try {
+      image = Build();
+    } finally {
+      this._streamingSink = null;
+    }
+
+    output.SetLength(image.Length);
+    output.Position = 0;
+    output.Write(image);
+
+    var buf = new byte[64 * 1024];
+    foreach (var (byteOffset, size, opener) in sink) {
+      if (size <= 0) continue;
+      if (byteOffset < 0 || byteOffset >= output.Length) continue;
+      output.Position = byteOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+      // Block tail past `size` retains zero from the image init.
+    }
+    output.Flush();
+  }
+
+  /// <summary>
   /// Walks the tree depth-first assigning on-disk blocks. The current
   /// directory's inode/B+ tree blocks are assumed pre-assigned; this routine
   /// assigns blocks for its children and recurses into subdirectories.
@@ -260,8 +329,8 @@ internal sealed class BfsWriter {
         child.BtreeBlocks = leafCount;
       } else {
         child.InodeBlock = nextBlock++;
-        var data = child.Data ?? [];
-        child.DataBlocks = (data.Length + BlockSize - 1) / BlockSize;
+        var length = child.StreamingSize ?? (child.Data?.Length ?? 0);
+        child.DataBlocks = (int)((length + BlockSize - 1) / BlockSize);
         child.DataStartBlock = nextBlock;
         nextBlock += child.DataBlocks;
       }
@@ -319,10 +388,19 @@ internal sealed class BfsWriter {
         WriteDirectoryInode(image, child.InodeBlock, child.BtreeBlock, child.ParentInodeBlock, 0);
         WriteDirBtreeLeaf(image, child);
       } else {
-        var data = child.Data ?? [];
-        WriteFileInode(image, child.InodeBlock, child.ParentInodeBlock, child.DataStartBlock, child.DataBlocks, data.Length);
-        if (data.Length > 0)
-          data.CopyTo(image.AsSpan(child.DataStartBlock * BlockSize));
+        var length = child.StreamingSize ?? (child.Data?.Length ?? 0);
+        WriteFileInode(image, child.InodeBlock, child.ParentInodeBlock, child.DataStartBlock, child.DataBlocks, (int)length);
+        if (child.StreamOpener != null) {
+          // Streaming entry: leave the data blocks zero; the streaming pass
+          // post-fills from this absolute byte offset. Block tail past the
+          // logical size stays zero (matches the in-memory path).
+          if (this._streamingSink != null && length > 0)
+            this._streamingSink.Add(((long)child.DataStartBlock * BlockSize, length, child.StreamOpener));
+        } else {
+          var data = child.Data ?? [];
+          if (data.Length > 0)
+            data.CopyTo(image.AsSpan(child.DataStartBlock * BlockSize));
+        }
       }
     }
 

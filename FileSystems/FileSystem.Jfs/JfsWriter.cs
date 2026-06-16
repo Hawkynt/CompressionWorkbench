@@ -151,6 +151,13 @@ public sealed class JfsWriter {
     public readonly List<Node> Children = [];     // directory children (empty for files)
     public int DataBlock;                         // first data block (files only)
     public int BlockCount;                        // data blocks (files only)
+    // Streaming file: when StreamOpener is non-null the file's bytes are not
+    // buffered in Data — Data stays empty and the body is pulled from the
+    // opener in BuildToStreaming's second pass. StreamSize is the declared
+    // byte length used for all geometry (xtree extent, di_size, block count).
+    public long? StreamSize;
+    public Func<Stream>? StreamOpener;
+    public long EffectiveLength => this.StreamSize ?? (this.Data?.Length ?? 0L);
     public bool IsDirectory => this.Data == null;
 
     // External directory B+tree (directories with more children than the
@@ -218,6 +225,51 @@ public sealed class JfsWriter {
   }
 
   /// <summary>
+  /// Adds a streaming file whose <paramref name="size"/> drives extent + inode
+  /// sizing in pass 1 of <see cref="BuildToStreaming"/>; the body is pulled from
+  /// <paramref name="openStream"/> in 64 KiB chunks in pass 2 and never buffered
+  /// as a <c>byte[]</c>. JFS has no data checksums and stores file bodies in
+  /// dedicated xtree extents, so the on-disk image is byte-identical to the
+  /// classic <see cref="WriteTo"/> path for the same inputs.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
+    this._root.Ino = RootIno;
+
+    var parts = name.Split('/', '\\').Where(p => p.Length > 0).ToArray();
+    if (parts.Length == 0)
+      throw new ArgumentException("File name must contain at least one path component.", nameof(name));
+
+    var dir = this._root;
+    for (var i = 0; i < parts.Length - 1; i++) {
+      var part = parts[i];
+      var child = dir.Children.FirstOrDefault(c => c.IsDirectory && c.Name == part);
+      if (child == null) {
+        child = new Node { Name = part };
+        dir.Children.Add(child);
+      }
+      dir = child;
+    }
+
+    var leaf = parts[^1];
+    if (dir.Children.Any(c => c.Name == leaf))
+      throw new InvalidOperationException($"Duplicate entry '{leaf}' in the same directory.");
+    // Data is an empty (non-null) array so the node reads as a regular file;
+    // the real bytes flow through StreamOpener in BuildToStreaming.
+    dir.Children.Add(new Node { Name = leaf, Data = [], StreamSize = size, StreamOpener = openStream });
+  }
+
+  /// <summary>
+  /// When non-null, every streaming file's (absolute data byte-offset, byte
+  /// length, opener) is recorded here during <see cref="WriteTo"/>'s data pass
+  /// so <see cref="BuildToStreaming"/> can post-fill the bodies. Null in the
+  /// classic buffered path, where file bytes are copied from <c>Node.Data</c>.
+  /// </summary>
+  private List<(long ByteOffset, long Size, Func<Stream> Opener)>? _streamingSink;
+
+  /// <summary>
   /// Assigns fileset inode numbers (4+) to every directory and file in the tree
   /// (root keeps <see cref="RootIno"/>), in a deterministic pre-order walk, and
   /// returns the flat node list excluding the root.
@@ -244,7 +296,16 @@ public sealed class JfsWriter {
 
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
+    output.Write(this.BuildImageBytes());
+  }
 
+  /// <summary>
+  /// Builds the full aggregate image into a byte array. Streaming files (added
+  /// via <see cref="AddStreamingFile"/>) leave their data extent zero and, when
+  /// <see cref="_streamingSink"/> is set, record their (offset, size, opener)
+  /// for the post-fill pass in <see cref="BuildToStreaming"/>.
+  /// </summary>
+  private byte[] BuildImageBytes() {
     this._writeTimestamp = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
     // ── lay out the directory tree and assign inodes ──────────────────────
@@ -276,7 +337,7 @@ public sealed class JfsWriter {
     // regular files claim data blocks here.
     foreach (var file in files) {
       file.DataBlock = nextBlock;
-      file.BlockCount = Math.Max(1, (file.Data!.Length + BlockSize - 1) / BlockSize);
+      file.BlockCount = Math.Max(1, (int)((file.EffectiveLength + BlockSize - 1) / BlockSize));
       nextBlock += file.BlockCount;
     }
 
@@ -332,14 +393,67 @@ public sealed class JfsWriter {
         foreach (var page in dir.DtreePages)
           WriteExternalDtreePage(image, page);
 
-    // File data
+    // File data. Streaming files leave their extent zero here and record into
+    // the sink for BuildToStreaming's chunked post-fill; buffered files copy
+    // their Data straight into the extent.
     foreach (var file in files) {
+      var byteOffset = (long)file.DataBlock * BlockSize;
+      if (file.StreamOpener != null) {
+        if (this._streamingSink != null && file.EffectiveLength > 0)
+          this._streamingSink.Add((byteOffset, file.EffectiveLength, file.StreamOpener));
+        continue;
+      }
       var data = file.Data!;
       if (data.Length > 0)
-        data.CopyTo(image, (long)file.DataBlock * BlockSize);
+        data.CopyTo(image, byteOffset);
     }
 
+    return image;
+  }
+
+  /// <summary>
+  /// Two-pass streaming write: pass 1 builds the complete image byte array
+  /// (file data extents left zero, recorded into a sink); pass 2 seeks to each
+  /// streaming file's extent and copies its body from the opener in 64 KiB
+  /// chunks. The emitted bytes are identical to <see cref="WriteTo"/> for the
+  /// same inputs — JFS carries no data checksum, so only WHERE the body bytes
+  /// originate changes. Requires a writable, seekable stream.
+  /// </summary>
+  public void BuildToStreaming(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
+
+    var sink = new List<(long ByteOffset, long Size, Func<Stream> Opener)>();
+    this._streamingSink = sink;
+    byte[] image;
+    try {
+      image = this.BuildImageBytes();
+    } finally {
+      this._streamingSink = null;
+    }
+
+    output.SetLength(image.Length);
+    output.Position = 0;
     output.Write(image);
+
+    var buf = new byte[64 * 1024];
+    foreach (var (byteOffset, size, opener) in sink) {
+      if (size <= 0) continue;
+      if (byteOffset < 0 || byteOffset >= output.Length) continue;
+      output.Position = byteOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+      // Extent tail past `size` keeps the zero from the image init.
+    }
+    output.Flush();
   }
 
   private static void MarkRange(bool[] map, int start, int count) {
@@ -624,10 +738,9 @@ public sealed class JfsWriter {
       if (node.IsDirectory) {
         this.WriteDirectoryInode(image, inoOff, node, parentIno: node.ParentIno);
       } else {
-        var data = node.Data!;
         this.WriteFsitInode(image, inoOff, ino: (uint)node.Ino, fileset: FilesetIno,
           mode: IfJournal | IfReg | 0x1A4,                          // 0644
-          size: data.Length, nblocks: node.BlockCount,
+          size: node.EffectiveLength, nblocks: node.BlockCount,
           hasXtreeData: true,
           xtreeEntries: [(0, (uint)node.BlockCount, (ulong)node.DataBlock)]);
       }

@@ -13,6 +13,70 @@ namespace FileSystem.Cpm;
 public sealed class CpmWriter {
 
   public static byte[] Build(IReadOnlyList<(string Name, byte[] Data, byte UserCode)> files) {
+    // Adapt the in-memory file list to the shared layout core: the streaming
+    // size is the byte length and the data is copied directly (no sink).
+    var adapted = files
+      .Select(f => (f.Name, (long)f.Data.Length, (Func<Stream>?)null, f.UserCode, f.Data))
+      .ToList();
+    return BuildCore(adapted, sink: null);
+  }
+
+  /// <summary>
+  /// Two-pass streaming Build: pass 1 lays out the identical CP/M image (same
+  /// block allocation + directory entries as <see cref="Build"/>) with each
+  /// streaming file's data region left zero; pass 2 seeks to each file's first
+  /// data-block byte offset and copies its bytes from the opener in 64 KB
+  /// chunks. The output is byte-for-byte identical to writing
+  /// <see cref="Build"/>'s result for the same inputs.
+  /// </summary>
+  public static void BuildToStreaming(
+      Stream output,
+      IReadOnlyList<(string Name, long Size, Func<Stream> Opener, byte UserCode)> files) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(files);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
+
+    var sink = new List<(long ByteOffset, long Size, Func<Stream> Opener)>();
+    var adapted = files
+      .Select(f => (f.Name, f.Size, (Func<Stream>?)f.Opener, f.UserCode, System.Array.Empty<byte>()))
+      .ToList();
+    var image = BuildCore(adapted, sink);
+
+    output.SetLength(image.Length);
+    output.Position = 0;
+    output.Write(image);
+
+    var buf = new byte[64 * 1024];
+    foreach (var (byteOffset, size, opener) in sink) {
+      if (size <= 0) continue;
+      if (byteOffset < 0 || byteOffset >= output.Length) continue;
+      output.Position = byteOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+      // Block tail past `size` retains zero from the image init.
+    }
+    output.Flush();
+  }
+
+  /// <summary>
+  /// Shared layout core. Allocates blocks + emits directory entries exactly as
+  /// the classic writer always has. When <paramref name="sink"/> is non-null,
+  /// a streaming entry (StreamOpener != null) leaves its data region zero and
+  /// records its absolute first-block byte offset for the streaming pass;
+  /// otherwise the in-memory bytes are copied in place. Geometry is driven by
+  /// the declared size, so both routes produce an identical image layout.
+  /// </summary>
+  private static byte[] BuildCore(
+      IReadOnlyList<(string Name, long Size, Func<Stream>? StreamOpener, byte UserCode, byte[] Data)> files,
+      List<(long ByteOffset, long Size, Func<Stream> Opener)>? sink) {
     var image = new byte[CpmLayout.TotalBytes];
     // Fill the directory area with the CP/M 'empty slot' marker (0xE5 throughout each entry).
     for (var i = CpmLayout.ReservedBytes; i < CpmLayout.ReservedBytes + CpmLayout.DirectoryBytes; i++)
@@ -21,25 +85,32 @@ public sealed class CpmWriter {
     // Plan block allocations.
     var nextBlock = CpmLayout.DataBlockStart;
     var entries = new List<byte[]>();
-    foreach (var (name, data, user) in files) {
+    foreach (var (name, size, opener, user, data) in files) {
       var (baseName, ext) = SplitName(name);
-      var totalRecords = (int)Math.Ceiling(data.Length / (double)CpmLayout.SectorSize);
-      var totalBlocks = (int)Math.Ceiling(data.Length / (double)CpmLayout.BlockSize);
+      var totalRecords = (int)Math.Ceiling(size / (double)CpmLayout.SectorSize);
+      var totalBlocks = (int)Math.Ceiling(size / (double)CpmLayout.BlockSize);
       if (totalBlocks == 0) totalBlocks = 1; // empty file still gets one block
 
       if (nextBlock + totalBlocks > CpmLayout.TotalBlocks)
         throw new InvalidOperationException($"CP/M: disk full — cannot fit {name} ({totalBlocks} blocks needed).");
 
-      // Allocate blocks and copy data.
+      // Allocate blocks; copy in-memory data in place, or record streaming entry.
       var blockNumbers = new int[totalBlocks];
+      var firstBlock = nextBlock;
       for (var b = 0; b < totalBlocks; b++) {
         blockNumbers[b] = nextBlock;
-        var srcStart = b * CpmLayout.BlockSize;
-        var srcLen = Math.Min(CpmLayout.BlockSize, data.Length - srcStart);
-        if (srcLen > 0)
-          Array.Copy(data, srcStart, image, CpmLayout.ReservedBytes + nextBlock * CpmLayout.BlockSize, srcLen);
+        if (opener == null) {
+          var srcStart = b * CpmLayout.BlockSize;
+          var srcLen = (int)Math.Min(CpmLayout.BlockSize, size - srcStart);
+          if (srcLen > 0)
+            Array.Copy(data, srcStart, image, CpmLayout.ReservedBytes + nextBlock * CpmLayout.BlockSize, srcLen);
+        }
         nextBlock++;
       }
+      // Streaming files leave their data region zero; the streaming pass
+      // post-fills from `firstBlock`'s byte offset (blocks are contiguous).
+      if (opener != null && sink != null && size > 0)
+        sink.Add((CpmLayout.ReservedBytes + (long)firstBlock * CpmLayout.BlockSize, size, opener));
 
       // Emit one directory entry per extent.
       var extentsNeeded = (totalBlocks + CpmLayout.BlocksPerExtent - 1) / CpmLayout.BlocksPerExtent;

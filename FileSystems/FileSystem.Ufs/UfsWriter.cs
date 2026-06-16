@@ -50,13 +50,34 @@ public sealed class UfsWriter {
 
   internal static readonly int FsMagicOffset = SuperblockSize - 4; // 1372
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
   private readonly byte[] _volumeUuid = Guid.NewGuid().ToByteArray();
+
+  /// <summary>
+  /// Streaming-allocations side-effect: when non-null, every streaming file's
+  /// (absolute byte offset of its first data fragment, logical size, opener) is
+  /// appended for use by <see cref="BuildToStreaming"/>'s post-stream pass.
+  /// When null the writer behaves exactly as before.
+  /// </summary>
+  private List<(long ByteOffset, long Size, Func<Stream> Opener)>? _streamingSink;
 
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    _files.Add((name, data));
+    _files.Add((name, data, null, null));
+  }
+
+  /// <summary>
+  /// Adds a streaming file: <paramref name="size"/> drives image sizing and
+  /// fragment allocation in pass 1; bytes are pulled from
+  /// <paramref name="openStream"/> in pass 2 of <see cref="BuildToStreaming"/>.
+  /// Never buffered as <c>byte[]</c>.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
+    _files.Add((name, System.Array.Empty<byte>(), size, openStream));
   }
 
   // ── derived geometry for a chosen total size ─────────────────────────────
@@ -93,15 +114,21 @@ public sealed class UfsWriter {
     public string Name = "";
     public bool IsDirectory;
     public byte[] Data = [];
+    public long? StreamingSize;
+    public Func<Stream>? StreamOpener;
     public int Inode;
     public TreeNode? Parent;
     public readonly Dictionary<string, TreeNode> Children = new(StringComparer.Ordinal);
     public readonly List<TreeNode> Order = [];
+
+    // Logical byte length: declared streaming size for a streaming entry, else
+    // the buffered byte[] length. Drives fragment allocation and di_size.
+    public long EffectiveLength => this.StreamingSize ?? this.Data.Length;
   }
 
   private TreeNode BuildTree() {
     var root = new TreeNode { IsDirectory = true, Name = "" };
-    foreach (var (rawName, data) in _files) {
+    foreach (var (rawName, data, streamingSize, streamOpener) in _files) {
       var parts = rawName.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
       if (parts.Length == 0) continue;
       var cursor = root;
@@ -109,12 +136,14 @@ public sealed class UfsWriter {
         var part = parts[i];
         var isLeaf = i == parts.Length - 1;
         if (cursor.Children.TryGetValue(part, out var existing)) {
-          if (isLeaf && !existing.IsDirectory) existing.Data = data;
+          if (isLeaf && !existing.IsDirectory) { existing.Data = data; existing.StreamingSize = streamingSize; existing.StreamOpener = streamOpener; }
           cursor = existing;
           continue;
         }
         var node = new TreeNode {
           Name = part, IsDirectory = !isLeaf, Data = isLeaf ? data : [], Parent = cursor,
+          StreamingSize = isLeaf ? streamingSize : null,
+          StreamOpener = isLeaf ? streamOpener : null,
         };
         cursor.Children[part] = node;
         cursor.Order.Add(node);
@@ -126,7 +155,59 @@ public sealed class UfsWriter {
 
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
+    var disk = BuildDisk();
+    output.Write(disk);
+  }
 
+  /// <summary>
+  /// Two-pass streaming Build: pass 1 derives image geometry from the declared
+  /// sizes of <see cref="AddStreamingFile"/> entries and emits the full disk
+  /// image (superblock, cylinder groups, inodes, directories) with the streaming
+  /// files' data fragments left zero; pass 2 seeks to each file's first data
+  /// fragment and streams its bytes from the factory in 64 KB chunks. The output
+  /// is byte-identical to <see cref="WriteTo"/> for the same inputs — only WHERE
+  /// the file-data bytes come from differs. The UFS <c>cs</c> records are
+  /// cylinder-group free-space summaries, not content checksums, so streaming the
+  /// data fragments in afterward is byte-safe.
+  /// </summary>
+  /// <param name="output">A writable, seekable target stream.</param>
+  public void BuildToStreaming(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
+
+    var sink = new List<(long ByteOffset, long Size, Func<Stream> Opener)>();
+    this._streamingSink = sink;
+    byte[] disk;
+    try {
+      disk = BuildDisk();
+    } finally {
+      this._streamingSink = null;
+    }
+
+    output.SetLength(disk.Length);
+    output.Position = 0;
+    output.Write(disk, 0, disk.Length);
+
+    var buf = new byte[64 * 1024];
+    foreach (var (byteOffset, size, opener) in sink) {
+      if (size <= 0) continue;
+      if (byteOffset < 0 || byteOffset >= output.Length) continue;
+      output.Position = byteOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+    }
+    output.Flush();
+  }
+
+  private byte[] BuildDisk() {
     var root = BuildTree();
     root.Inode = RootIno;
 
@@ -180,12 +261,12 @@ public sealed class UfsWriter {
     }
     const int MaxAddressableBlocks = MaxDirectBlocks + PointersPerBlock;
     foreach (var file in regularFiles) {
-      var blocks = HowMany(file.Data.Length, BlockSize);
+      var blocks = HowMany((int)file.EffectiveLength, BlockSize);
       if (blocks > MaxAddressableBlocks)
         throw new InvalidOperationException(
           $"UFS writer supports direct blocks plus one single-indirect block " +
           $"(max {(long)MaxAddressableBlocks * BlockSize} bytes per file); " +
-          $"'{file.Name}' needs {file.Data.Length} bytes.");
+          $"'{file.Name}' needs {file.EffectiveLength} bytes.");
     }
 
     // ── directories: lay out and emit inodes ────────────────────────────────
@@ -210,9 +291,20 @@ public sealed class UfsWriter {
 
     // ── file blocks + inodes ────────────────────────────────────────────────
     foreach (var file in regularFiles) {
-      var (directBlocks, indirectFrag, fragsUsed) = PlaceObject(disk, file.Data, ref nextFrag);
+      var firstFrag = nextFrag;
+      var (directBlocks, indirectFrag, fragsUsed) = file.StreamOpener != null
+        ? PlaceObjectGeometry(disk, (int)file.EffectiveLength, ref nextFrag)
+        : PlaceObject(disk, file.Data, ref nextFrag);
+
+      // Streaming entries leave their data fragments zero; BuildToStreaming
+      // post-fills them from the source in 64 KB chunks. The data fragments are
+      // contiguous from `firstFrag`, so the file's bytes occupy
+      // [firstFrag*FragSize, +EffectiveLength).
+      if (file.StreamOpener != null && this._streamingSink != null && file.EffectiveLength > 0)
+        this._streamingSink.Add(((long)firstFrag * FragSize, file.EffectiveLength, file.StreamOpener));
+
       WriteUfs1Inode(disk, inodeTableOffset + file.Inode * InodeSize,
-        mode: 0x81A4, nlink: 1, size: (ulong)file.Data.Length,
+        mode: 0x81A4, nlink: 1, size: (ulong)file.EffectiveLength,
         blocksUsed512: (uint)((long)fragsUsed * FragSize / 512),
         directBlocks: directBlocks, indirectBlock: indirectFrag);
     }
@@ -228,13 +320,13 @@ public sealed class UfsWriter {
     // ── superblock ──────────────────────────────────────────────────────────
     WriteSuperblock(disk, geom, dirCount, liveInodes, cg0DataEndFrag);
 
-    output.Write(disk);
+    return disk;
   }
 
   private static long EstimateBytes(List<TreeNode> directories, List<TreeNode> regularFiles) {
     long frags = 1024;                             // generous slack for metadata
     foreach (var d in directories) frags += Math.Max(1, d.Order.Count / 16 + 1) * Frag + Frag;
-    foreach (var f in regularFiles) frags += (long)(HowMany(f.Data.Length, BlockSize) + 1) * Frag;
+    foreach (var f in regularFiles) frags += (long)(HowMany((int)f.EffectiveLength, BlockSize) + 1) * Frag;
     return frags * FragSize;
   }
 
@@ -255,6 +347,44 @@ public sealed class UfsWriter {
 
     // Record the frags each block actually occupies (block-aligned addressing,
     // tail filling only tailFrags).
+    var blockFrags = new int[blocks];
+    var fragsUsed = 0;
+    for (var b = 0; b < blocks; b++) {
+      var blockBase = first + b * Frag;
+      blockFrags[b] = blockBase;
+      var fragsInBlock = b < fullBlocks ? Frag : tailFrags;
+      for (var f = 0; f < fragsInBlock; f++) _placedCg0Frags.Add(blockBase + f);
+      fragsUsed += fragsInBlock;
+    }
+    nextFrag += blocks * Frag;
+
+    var directBlocks = new int[MaxDirectBlocks];
+    for (var b = 0; b < blocks && b < MaxDirectBlocks; b++) directBlocks[b] = blockFrags[b];
+
+    var indirectFrag = 0;
+    if (blocks > MaxDirectBlocks) {
+      indirectFrag = nextFrag;
+      WriteIndirectBlock(disk, indirectFrag, blockFrags, MaxDirectBlocks);
+      for (var f = 0; f < Frag; f++) _placedCg0Frags.Add(indirectFrag + f);
+      nextFrag += Frag;
+      fragsUsed += Frag;
+    }
+    return (directBlocks, indirectFrag, fragsUsed);
+  }
+
+  // Streaming-file geometry: replicates PlaceObject's fragment allocation and
+  // direct/indirect block accounting for a file of `length` bytes WITHOUT copying
+  // any payload (the data fragments stay zero — BuildToStreaming post-fills them).
+  // Byte-for-byte identical placement to PlaceObject(disk, payloadOfLength, ...).
+  private (int[] DirectBlocks, int IndirectFrag, int FragsUsed) PlaceObjectGeometry(byte[] disk, int length, ref int nextFrag) {
+    var blocks = Math.Max(1, HowMany(length, BlockSize));
+    var fullBlocks = length / BlockSize;
+    var tailBytes = length - fullBlocks * BlockSize;
+    var tailFrags = tailBytes > 0 ? HowMany(tailBytes, FragSize) : (length == 0 ? 1 : 0);
+
+    var first = nextFrag;
+    // No payload copy — fragments remain zero until BuildToStreaming streams them.
+
     var blockFrags = new int[blocks];
     var fragsUsed = 0;
     for (var b = 0; b < blocks; b++) {

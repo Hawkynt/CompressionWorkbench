@@ -108,6 +108,38 @@ public sealed class BfsFormatDescriptor
     output.Write(w.Build());
   }
 
+  /// <summary>
+  /// Two-pass streaming creation: the pre-known per-input sizes drive the BFS
+  /// block allocation + inode + B+ tree layout in pass 1 (identical to
+  /// <see cref="Create"/>); pass 2 streams each file's bytes from its
+  /// <see cref="Compression.Registry.Streaming.StreamingArchiveInput.OpenStream"/>
+  /// factory into its contiguous data-block run via 64 KB chunks — no file is
+  /// ever buffered as a <c>byte[]</c>. Output is byte-identical to
+  /// <see cref="Create"/> for the same inputs. Falls back to a buffered build
+  /// when the target stream is not seekable.
+  /// </summary>
+  public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = new BfsWriter();
+    if (!output.CanSeek) {
+      foreach (var input in inputs) {
+        if (input.IsDirectory) continue;
+        using var src = input.OpenStream();
+        using var ms = new MemoryStream();
+        src.CopyTo(ms);
+        w.AddFile(input.Name, ms.ToArray());
+      }
+      output.Write(w.Build());
+      return;
+    }
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
+    }
+    w.BuildToStreaming(output);
+  }
+
   // ── IArchiveModifiable (true in-place R/W) ────────────────────────
   //
   // BfsInPlaceModifier flips inode + B+ tree leaf + AG bitmap bits at fixed

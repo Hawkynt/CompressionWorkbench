@@ -157,8 +157,17 @@ public sealed class F2fsWriter {
   /// </summary>
   public const int MinimumSegmentCount = MinTotalSegments;
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
   private string _volumeLabel = "CompressionWorkbench";
+
+  /// <summary>
+  /// Streaming-allocations side-effect: when non-null, every streaming entry's
+  /// (firstDataBlock, blockCount, size, opener) is appended for use by
+  /// <see cref="BuildToStreaming"/>'s post-stream pass. ByteOffset is computed
+  /// from the first WARM_DATA block × <see cref="BlockSize"/>. When null, the
+  /// writer behaves identically to before.
+  /// </summary>
+  private List<(long ByteOffset, long Size, Func<Stream> Opener)>? _streamingSink;
 
   /// <summary>
   /// Sets the UTF-16 volume label stored in the superblock's <c>volume_name</c> field.
@@ -176,7 +185,25 @@ public sealed class F2fsWriter {
     if (data.Length > (long)AddrsPerInode * BlockSize)
       throw new InvalidOperationException(
         $"F2FS writer supports only direct-pointer files (<= {(long)AddrsPerInode * BlockSize} bytes).");
-    this._files.Add((name, data));
+    this._files.Add((name, data, null, null));
+  }
+
+  /// <summary>
+  /// Adds a streaming file: <paramref name="size"/> drives the WARM_DATA block
+  /// allocation + inode sizing in pass 1; bytes are pulled from
+  /// <paramref name="openStream"/> in pass 2 of <see cref="BuildToStreaming"/>.
+  /// Never buffered as <c>byte[]</c>. F2FS never stores file contents inline
+  /// (only directory dentries are inline), so every file — regardless of size —
+  /// is laid out into ordinary WARM_DATA blocks and is streamable.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
+    if (size > (long)AddrsPerInode * BlockSize)
+      throw new InvalidOperationException(
+        $"F2FS writer supports only direct-pointer files (<= {(long)AddrsPerInode * BlockSize} bytes).");
+    this._files.Add((name, System.Array.Empty<byte>(), size, openStream));
   }
 
   public byte[] Build(int totalSegments = DefaultSegmentCount) {
@@ -215,7 +242,7 @@ public sealed class F2fsWriter {
     var filePlan = new List<FilePlan>();
     var subdirPlan = new List<DirPlan>();
 
-    foreach (var (name, data) in this._files) {
+    foreach (var (name, data, streamingSize, streamOpener) in this._files) {
       var parts = name.Split('/', StringSplitOptions.RemoveEmptyEntries);
       if (parts.Length == 0)
         continue;
@@ -244,6 +271,8 @@ public sealed class F2fsWriter {
         Nid = fileNid,
         Name = fileName,
         Data = data,
+        StreamingSize = streamingSize,
+        StreamOpener = streamOpener,
         InodeBlock = -1,
         DataBlocks = [],
         ParentNid = dir.Nid,
@@ -277,8 +306,8 @@ public sealed class F2fsWriter {
     // than a single segment's worth of blocks.
     var warmNodeBlockCount = subdirPlan.Count + filePlan.Count;
     var dentryBlockTotal = allDirs.Sum(d => d.DentryLayout.Count);
-    var dataBlockTotal = filePlan.Sum(f => f.Data.Length == 0
-      ? 0 : (f.Data.Length + BlockSize - 1) / BlockSize);
+    var dataBlockTotal = filePlan.Sum(f => f.EffectiveLength == 0
+      ? 0 : (int)((f.EffectiveLength + BlockSize - 1) / BlockSize));
 
     // Each populated region spans as many segments as its block count needs. The root
     // inode lives alone in HOT_NODE; subdir/file inodes in WARM_NODE; dentry blocks in
@@ -357,7 +386,7 @@ public sealed class F2fsWriter {
     // the block's index within that inode.
     var nextWarmDataBlk = 0;
     foreach (var f in filePlan) {
-      var blocksNeeded = f.Data.Length == 0 ? 0 : (f.Data.Length + BlockSize - 1) / BlockSize;
+      var blocksNeeded = f.EffectiveLength == 0 ? 0 : (int)((f.EffectiveLength + BlockSize - 1) / BlockSize);
       for (var i = 0; i < blocksNeeded; ++i) {
         var blk = warmDataBlkBase + nextWarmDataBlk++;
         f.DataBlocks.Add(blk);
@@ -380,13 +409,23 @@ public sealed class F2fsWriter {
 
     // ---- 1) Write file data and file inodes (regular files in WARM_NODE/WARM_DATA) ----
     foreach (var f in filePlan) {
-      var remaining = f.Data.Length;
-      for (var i = 0; i < f.DataBlocks.Count; ++i) {
-        var len = Math.Min(BlockSize, remaining);
-        Buffer.BlockCopy(f.Data, i * BlockSize, disk, f.DataBlocks[i] * BlockSize, len);
-        remaining -= len;
+      if (f.StreamOpener != null) {
+        // Streaming entry: leave the WARM_DATA blocks zero here; BuildToStreaming
+        // post-fills them from the source in 64 KB chunks. The data blocks are
+        // contiguous (allocated in order above), so the file's bytes occupy
+        // [firstDataBlock*BlockSize, +EffectiveLength). Block tail past
+        // EffectiveLength stays sparse-zero from the disk init.
+        if (this._streamingSink != null && f.DataBlocks.Count > 0 && f.EffectiveLength > 0)
+          this._streamingSink.Add(((long)f.DataBlocks[0] * BlockSize, f.EffectiveLength, f.StreamOpener));
+      } else {
+        var remaining = f.Data.Length;
+        for (var i = 0; i < f.DataBlocks.Count; ++i) {
+          var len = Math.Min(BlockSize, remaining);
+          Buffer.BlockCopy(f.Data, i * BlockSize, disk, f.DataBlocks[i] * BlockSize, len);
+          remaining -= len;
+        }
       }
-      WriteRegularFileInode(disk, f.InodeBlock * BlockSize, f.Nid, f.Name, f.Data.Length, f.DataBlocks, f.ParentNid);
+      WriteRegularFileInode(disk, f.InodeBlock * BlockSize, f.Nid, f.Name, (int)f.EffectiveLength, f.DataBlocks, f.ParentNid);
     }
 
     // ---- 2) Write directory inodes (root + subdirectories). Small directories keep
@@ -539,7 +578,10 @@ public sealed class F2fsWriter {
     // file is one inode (WARM_NODE) plus ceil(size/block) data blocks (WARM_DATA); each path
     // component beyond the file is at most one subdirectory inode; dentry storage is bounded by
     // the number of children. Over-estimating only adds slack.
-    var dataBlocks = this._files.Sum(f => f.Data.Length == 0 ? 0L : (f.Data.Length + BlockSize - 1) / BlockSize);
+    var dataBlocks = this._files.Sum(f => {
+      var len = f.StreamingSize ?? f.Data.Length;
+      return len == 0 ? 0L : (len + BlockSize - 1) / BlockSize;
+    });
     var nodeBlocks = this._files.Count * 2L + 1; // file + at most one dir inode per file, + root.
     var dentryBlocks = Math.Max(1L, this._files.Count / 100); // generous bound on hash-bucket blocks.
 
@@ -556,6 +598,59 @@ public sealed class F2fsWriter {
   public void WriteTo(Stream output) {
     var bytes = this.Build();
     output.Write(bytes, 0, bytes.Length);
+  }
+
+  /// <summary>
+  /// Two-pass streaming Build: pass 1 derives segment geometry from the declared
+  /// sizes of <see cref="AddStreamingFile"/> entries and emits the full metadata
+  /// image (checkpoint, SIT, NAT, SSA, superblocks, inodes, dentries) with the
+  /// streaming entries' WARM_DATA blocks left zero; pass 2 seeks to each entry's
+  /// first data-block byte offset and streams its bytes from the factory in
+  /// 64 KB chunks. The byte output is identical to <see cref="Build(int)"/> for
+  /// the same inputs — only WHERE the file-data bytes come from differs. F2FS
+  /// has no per-block content checksum (its CRC-32 covers only the checkpoint
+  /// header), so streaming the data blocks in afterward is byte-safe.
+  /// </summary>
+  /// <param name="output">A writable, seekable target stream.</param>
+  /// <param name="totalSegments">Total segment count (0 = auto-size from inputs).</param>
+  public void BuildToStreaming(Stream output, int totalSegments = 0) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
+
+    var sink = new List<(long ByteOffset, long Size, Func<Stream> Opener)>();
+    this._streamingSink = sink;
+    byte[] disk;
+    try {
+      disk = totalSegments > 0 ? this.Build(totalSegments) : this.BuildAutoSized();
+    } finally {
+      this._streamingSink = null;
+    }
+
+    output.SetLength(disk.Length);
+    output.Position = 0;
+    output.Write(disk, 0, disk.Length);
+
+    // Pass 2: stream each entry's bytes into its first WARM_DATA block. The data
+    // blocks of a file are contiguous (allocated in order), so a single forward
+    // write of exactly `size` bytes covers them.
+    var buf = new byte[64 * 1024];
+    foreach (var (byteOffset, size, opener) in sink) {
+      if (size <= 0) continue;
+      if (byteOffset < 0 || byteOffset >= output.Length) continue;
+      output.Position = byteOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+      // Last-block tail past `size` retains zero from the disk init.
+    }
+    output.Flush();
   }
 
   // ==================================================================
@@ -585,9 +680,15 @@ public sealed class F2fsWriter {
     public uint Nid;
     public string Name = string.Empty;
     public byte[] Data = [];
+    public long? StreamingSize;
+    public Func<Stream>? StreamOpener;
     public int InodeBlock;
     public List<int> DataBlocks = [];
     public uint ParentNid;
+
+    // Logical byte length: the declared streaming size for a streaming entry,
+    // else the buffered byte[] length. Drives block sizing and i_size.
+    public long EffectiveLength => this.StreamingSize ?? this.Data.Length;
   }
 
   // A planned directory inode (root or subdirectory). Children are the direct entries

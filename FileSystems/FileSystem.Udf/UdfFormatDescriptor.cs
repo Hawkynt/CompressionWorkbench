@@ -194,6 +194,27 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     w.WriteTo(output);
   }
 
+  /// <summary>
+  /// Streaming creation. UDF descriptor CRCs (FID / File Entry / VDS tags) cover
+  /// only the 16-byte tag bodies, NEVER file data, and the writer emits sectors
+  /// strictly forward in LBN order — so each file's body can be streamed from
+  /// <see cref="StreamingArchiveInput.OpenStream"/> in 64 KiB chunks straight
+  /// into the sequential output when its data block is reached. No buffering of
+  /// the body is required and the output is byte-identical to <see cref="Create"/>.
+  /// </summary>
+  public void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = new UdfWriter {
+      VolumeIdentifier = options?.GetOption("VolumeLabel", "UDF Volume") ?? "UDF Volume",
+    };
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
+    }
+    w.WriteTo(output);
+  }
+
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

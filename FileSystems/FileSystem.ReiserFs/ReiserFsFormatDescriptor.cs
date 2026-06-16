@@ -102,6 +102,40 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     w.WriteTo(output);
   }
 
+  /// <summary>
+  /// Two-pass streaming creation. ReiserFS v3.6 has NO block checksums by
+  /// design, so file bodies are fully streamable. Bodies above the writer's
+  /// DIRECT/tail threshold (1 KiB) become INDIRECT items backed by dedicated
+  /// data blocks: pass 1 builds the S+tree with those data-block runs left zero;
+  /// pass 2 seeks to each run and copies its bytes from
+  /// <see cref="Compression.Registry.Streaming.StreamingArchiveInput.OpenStream"/>
+  /// in 64 KiB chunks. Tail-packed bodies ≤ 1 KiB live inside shared leaves, so
+  /// the writer reads those small bodies up front (a bounded read). The output
+  /// is byte-identical to <see cref="Create"/> for the same inputs. Falls back
+  /// to the buffered default on a non-seekable target.
+  /// </summary>
+  public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = new ReiserFsWriter();
+    if (!output.CanSeek) {
+      foreach (var input in inputs) {
+        if (input.IsDirectory) continue;
+        using var src = input.OpenStream();
+        using var ms = new MemoryStream();
+        src.CopyTo(ms);
+        w.AddFile(input.Name, ms.ToArray());
+      }
+      w.WriteTo(output);
+      return;
+    }
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
+    }
+    w.BuildToStreaming(output);
+  }
+
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

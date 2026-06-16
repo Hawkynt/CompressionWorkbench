@@ -178,6 +178,40 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
+  /// Two-pass streaming creation. Pass 1 plans the AG / inode / data-extent
+  /// geometry from each input's pre-known size; pass 2 emits all metadata (with
+  /// CRC-32C), then streams each file's bytes into its data extent via 64 KB
+  /// chunks — file bytes never travel through a writer-held <c>byte[]</c>. XFS
+  /// stores every regular file as a data extent (no inline file form) and file
+  /// data carries no CRC (only metadata/dir blocks are checksummed), so the
+  /// streamed output is byte-identical to <see cref="Create"/> for the same
+  /// inputs. Non-seekable targets fall back to the buffering base implementation.
+  /// </summary>
+  public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var w = new XfsWriter();
+    if (!output.CanSeek) {
+      // Non-seekable target: cannot do the seek-back second pass, so buffer
+      // each entry into the writer's byte[] path and emit in one shot.
+      foreach (var input in inputs) {
+        if (input.IsDirectory) continue;
+        using var src = input.OpenStream();
+        using var ms = new MemoryStream();
+        src.CopyTo(ms);
+        w.AddFile(input.Name, ms.ToArray());
+      }
+      w.WriteTo(output);
+      return;
+    }
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
+    }
+    w.BuildToStreaming(output);
+  }
+
+  /// <summary>
   /// Rebuild-style add/replace (see <see cref="XfsModifier"/>). Emits a fresh
   /// <c>xfs_repair -n -f</c>-clean image over the old bytes.
   /// </summary>

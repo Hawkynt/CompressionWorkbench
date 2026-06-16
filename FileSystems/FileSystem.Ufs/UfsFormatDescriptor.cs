@@ -144,6 +144,34 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
+  /// Two-pass streaming creation: pre-known per-input sizes drive the UFS1
+  /// cylinder-group geometry in pass 1; pass 2 emits the disk image with each
+  /// file's data fragments left zero, then streams each input's bytes from its
+  /// <see cref="Compression.Registry.Streaming.StreamingArchiveInput.OpenStream"/>
+  /// factory into its first allocated fragment via 64 KB chunks. The output is
+  /// byte-identical to <see cref="Create"/> for the same inputs (the UFS cs
+  /// records are free-space summaries, not content checksums). Falls back to the
+  /// buffered default when the target stream is not seekable.
+  /// </summary>
+  public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    var inputList = inputs.ToList();
+    if (!output.CanSeek) {
+      ((IArchiveCreatable)this).CreateFromStreams(output, inputList, options);
+      return;
+    }
+
+    var w = new UfsWriter();
+    foreach (var input in inputList) {
+      if (input.IsDirectory) continue;
+      w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
+    }
+    w.BuildToStreaming(output);
+  }
+
+  /// <summary>
   /// Adds (or replaces by name) files inside an existing UFS1 image. Uses
   /// <see cref="UfsModifier"/> for true O(touched bytes) random-access I/O —
   /// only the superblock, CG header (with bitmaps), the affected inode slot,

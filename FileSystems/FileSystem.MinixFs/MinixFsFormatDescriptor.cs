@@ -82,6 +82,35 @@ public sealed class MinixFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   /// <summary>
+  /// Two-pass streaming creation: pre-known per-input sizes drive the Minix v3
+  /// zone allocation in pass 1; pass 2 writes the metadata image with each
+  /// file's data zones left zero, then streams each input's bytes from its
+  /// <see cref="Compression.Registry.Streaming.StreamingArchiveInput.OpenStream"/>
+  /// factory into its first allocated zone via 64 KB chunks. The output is
+  /// byte-identical to <see cref="Create"/> for the same inputs (Minix has no
+  /// data checksums). Falls back to the buffered default when the target stream
+  /// is not seekable. Note: Minix v3 caps a file at 7 direct zones (7168 bytes),
+  /// so large-file streaming is bounded by that ceiling.
+  /// </summary>
+  public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    var inputList = inputs.ToList();
+    if (!output.CanSeek) {
+      ((IArchiveCreatable)this).CreateFromStreams(output, inputList, options);
+      return;
+    }
+
+    using var w = new MinixFsWriter(output, leaveOpen: true);
+    foreach (var input in inputList) {
+      if (input.IsDirectory) continue;
+      w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
+    }
+    w.Finish();
+  }
+
+  /// <summary>
   /// Adds (or replaces by name) files inside an existing MinixFs image using
   /// <see cref="MinixFsInPlaceModifier"/> for TRUE in-place
   /// O(touched bytes) random-access I/O across V1, V2 and V3 superblock

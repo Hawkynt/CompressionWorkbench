@@ -109,19 +109,45 @@ public sealed class XfsWriter {
   private const int BtreeCrcOffset = 52;
   private const int BtreeRecOffset = 56;
 
-  private readonly List<(string name, byte[] data)> _files = [];
+  private readonly List<(string name, byte[] data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
   private static readonly Guid VolumeUuid = new("7fb1c7a0-b71b-4f34-9d8a-5c7f6a2e11d3");
   private static readonly byte[] UuidBytes = VolumeUuid.ToByteArray();
+
+  // Streaming sink: when non-null, each regular file's (absolute image byte
+  // offset, exact size, opener) is recorded here during WriteTo instead of the
+  // data being copied from a byte[]; the data block region is left zero and
+  // BuildToStreaming's second pass post-fills it in <=64 KB chunks. XFS file
+  // data carries no CRC, so streaming it does not invalidate any checksum.
+  private List<(long ByteOffset, long Size, Func<Stream> Opener)>? _streamingSink;
 
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    // Preserve the full path; subdirectory inodes are materialised in WriteTo.
-    // Normalise separators and trim leading/trailing slashes.
+    this._files.Add((NormalizeName(name), data, null, null));
+  }
+
+  /// <summary>
+  /// Adds a streaming file: <paramref name="size"/> drives data-block + inode
+  /// geometry in pass 1; the bytes are pulled from <paramref name="openStream"/>
+  /// in pass 2 of <see cref="BuildToStreaming"/>, never buffered as a
+  /// <c>byte[]</c>. XFS stores every regular file as a data extent (there is no
+  /// inline file form), so all streaming files take the extent path. The total
+  /// content must still fit in a single allocation group (see <see cref="WriteTo"/>).
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
+    this._files.Add((NormalizeName(name), System.Array.Empty<byte>(), size, openStream));
+  }
+
+  // Normalises separators and trims leading/trailing slashes; subdirectory
+  // inodes are materialised in WriteTo from the surviving path components.
+  private static string NormalizeName(string name) {
     var normalized = name.Replace('\\', '/').Trim('/');
     if (normalized.Length == 0)
       throw new ArgumentException("XfsWriter: file name must not be empty.", nameof(name));
-    this._files.Add((normalized, data));
+    return normalized;
   }
 
   /// <summary>
@@ -132,7 +158,12 @@ public sealed class XfsWriter {
   private sealed class TreeNode {
     public required string Name;            // single path component ("" for root)
     public bool IsDirectory;
-    public byte[] Data = [];                // payload for regular files
+    public byte[] Data = [];                // payload for regular files (empty when streaming)
+    public long? StreamingSize;             // when set, the file's logical size
+    public Func<Stream>? StreamOpener;      // when set, the file's byte source (pass 2)
+    // Logical size of a regular file: the streaming size when streaming, else
+    // the in-memory payload length.
+    public long FileLength => this.StreamingSize ?? this.Data.Length;
     public readonly List<TreeNode> Children = [];
     public ulong Ino;                       // assigned inode number
     public int Slot;                        // slot index in the root inode chunk
@@ -152,7 +183,7 @@ public sealed class XfsWriter {
   private (TreeNode Root, List<TreeNode> Nodes) BuildTree(int firstNodeSlot) {
     var root = new TreeNode { Name = "", IsDirectory = true };
 
-    foreach (var (path, data) in this._files) {
+    foreach (var (path, data, streamingSize, opener) in this._files) {
       var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
       var cursor = root;
       for (var p = 0; p < parts.Length; p++) {
@@ -161,7 +192,10 @@ public sealed class XfsWriter {
         var isLast = p == parts.Length - 1;
         if (isLast) {
           // A regular file leaf.
-          cursor.Children.Add(new TreeNode { Name = leaf, IsDirectory = false, Data = data });
+          cursor.Children.Add(new TreeNode {
+            Name = leaf, IsDirectory = false, Data = data,
+            StreamingSize = streamingSize, StreamOpener = opener,
+          });
         } else {
           // An intermediate directory: reuse if it already exists.
           var existing = cursor.Children.FirstOrDefault(c => c.IsDirectory && c.Name == leaf);
@@ -200,6 +234,60 @@ public sealed class XfsWriter {
   }
 
   public void WriteTo(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    var image = BuildImage();
+    output.Write(image);
+  }
+
+  /// <summary>
+  /// Two-pass streaming variant of <see cref="WriteTo"/>: pass 1 builds the
+  /// full disk image byte[] exactly as <see cref="WriteTo"/> would (all
+  /// metadata + CRC-32C), but leaves the bytes of every regular file's data
+  /// extent zero and records each extent's absolute image offset; pass 2 writes
+  /// the image to <paramref name="output"/> and then streams each recorded
+  /// file's bytes from its factory into place via 64 KB chunks. XFS file data
+  /// has no CRC (only metadata/dir blocks are checksummed), so post-filling the
+  /// data blocks after the metadata CRCs are stamped is sound and the produced
+  /// bytes are byte-identical to <see cref="WriteTo"/> for the same inputs.
+  /// </summary>
+  public void BuildToStreaming(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
+
+    var sink = new List<(long ByteOffset, long Size, Func<Stream> Opener)>();
+    this._streamingSink = sink;
+    byte[] image;
+    try {
+      image = BuildImage(); // streaming files recorded into sink, left zero
+    } finally {
+      this._streamingSink = null;
+    }
+
+    output.SetLength(image.Length);
+    output.Position = 0;
+    output.Write(image);
+
+    var buf = new byte[64 * 1024];
+    foreach (var (byteOffset, size, opener) in sink) {
+      if (size <= 0) continue;
+      if (byteOffset < 0 || byteOffset >= output.Length) continue;
+      output.Position = byteOffset;
+      using var src = opener();
+      long copied = 0;
+      while (copied < size) {
+        var want = (int)Math.Min(buf.Length, size - copied);
+        var n = src.Read(buf, 0, want);
+        if (n <= 0) break;
+        output.Write(buf, 0, n);
+        copied += n;
+      }
+      // Data-block tail past `size` retains zero from the image init.
+    }
+    output.Flush();
+  }
+
+  private byte[] BuildImage() {
     // Root chunk slot layout (AG 0, inode chunk starting at agbno=InodeChunkBlock):
     //   slot 0  = root directory (rootino)
     //   slot 1  = sb_rbmino (realtime bitmap inode) — empty regular file
@@ -231,7 +319,7 @@ public sealed class XfsWriter {
     foreach (var node in nodes) {
       if (node.IsDirectory) continue;
       node.DataBlock = nextBlock;
-      node.BlockCount = Math.Max(1, (node.Data.Length + BlockSize - 1) / BlockSize);
+      node.BlockCount = Math.Max(1, (int)((node.FileLength + BlockSize - 1) / BlockSize));
       nextBlock += node.BlockCount;
     }
 
@@ -379,7 +467,7 @@ public sealed class XfsWriter {
       var ioff = InodeOffsetForSlot(node.Slot);
       WriteInodeCoreV3(image, ioff, node.Ino,
         mode: 0x81A4 /* S_IFREG|0644 */, format: 2, nlink: 1);
-      BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(ioff + 56), (ulong)node.Data.Length);
+      BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(ioff + 56), (ulong)node.FileLength);
       BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(ioff + 64), (ulong)node.BlockCount);
       BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(ioff + 76), 1);
 
@@ -390,7 +478,16 @@ public sealed class XfsWriter {
       BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(ioff + 176), hi);
       BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(ioff + 184), lo);
 
-      node.Data.CopyTo(image, node.DataBlock * BlockSize);
+      // Streaming files leave their data-block region zero here and record the
+      // absolute byte offset + exact size for BuildToStreaming's second pass.
+      // Block tail past FileLength stays zero (matching the byte[] path, which
+      // copies fewer bytes than the block-rounded region). XFS file data has no
+      // CRC, so post-filling these bytes is sound.
+      var dataByteOffset = (long)node.DataBlock * BlockSize;
+      if (node.StreamOpener != null)
+        this._streamingSink?.Add((dataByteOffset, node.FileLength, node.StreamOpener));
+      else
+        node.Data.CopyTo(image, (int)dataByteOffset);
     }
 
     // ── Format the log at (logStartAgBno, LogBlocks) ──
@@ -432,7 +529,7 @@ public sealed class XfsWriter {
     foreach (var (byteOffset, crcOffset) in this._dirBlockCrcs)
       BackfillCrc(image.AsSpan(byteOffset, this._dirBlockSize), crcOffset);
 
-    output.Write(image);
+    return image;
   }
 
   /// <summary>
