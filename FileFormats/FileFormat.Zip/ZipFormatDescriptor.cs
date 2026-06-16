@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Zip;
 
-public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema {
+public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -22,6 +22,51 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
+
+  /// <summary>
+  /// A ZIP has no fixed media geometry; the single canonical size is the
+  /// archive's minimal terminated length — the last byte of the end-of-central-
+  /// directory record (plus its comment). Anything past that is trailing junk.
+  /// </summary>
+  public IReadOnlyList<long> CanonicalSizes => [0];
+
+  /// <summary>
+  /// Drops any bytes trailing the end-of-central-directory record — tape/disk
+  /// padding, a stale second EOCD left by an in-place editor, or data appended
+  /// after the archive was finalized. The central directory, every local file
+  /// entry and the EOCD (including its comment) are copied through
+  /// byte-identically, so the shrunk archive lists and extracts identically.
+  /// When there is no trailing junk the output is byte-identical to the input.
+  /// </summary>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+
+    // ZipEndOfCentralDirectory.Read leaves the stream positioned exactly one
+    // byte past the EOCD comment — i.e. the first trailing-junk byte (or EOF
+    // when the archive is already tight). That position is the minimal length.
+    input.Position = 0;
+    long keep;
+    try {
+      _ = ZipEndOfCentralDirectory.Read(input);
+      keep = input.Position;
+    } catch (InvalidDataException) {
+      // No locatable EOCD: don't risk corrupting — copy everything through.
+      keep = input.Length;
+    }
+    keep = Math.Min(keep, input.Length);
+
+    input.Position = 0;
+    var buf = new byte[64 * 1024];
+    var remaining = keep;
+    while (remaining > 0) {
+      var chunk = (int)Math.Min(buf.Length, remaining);
+      var read = input.Read(buf, 0, chunk);
+      if (read == 0) break;
+      output.Write(buf, 0, read);
+      remaining -= read;
+    }
+  }
 
   /// <summary>Rebuild-based defrag: extracts every entry then re-creates the archive in listing order.</summary>
   public void Defragment(Stream archive)

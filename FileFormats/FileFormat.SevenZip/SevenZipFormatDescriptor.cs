@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.SevenZip;
 
-public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IFormatOptionsSchema {
+public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -52,6 +52,21 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => SevenZipLayoutMap.Enumerate(archive);
+
+  /// <summary>
+  /// Zeros every dead byte in the 7z archive: gaps between packed solid blocks
+  /// and any junk before the compressed metadata or trailing the file. The
+  /// signature header, solid blocks and end-of-archive metadata are live and
+  /// preserved, so the archive still extracts byte-identically. Cluster-tip
+  /// wiping is N/A (7z packs solid blocks with no per-file slack).
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = SevenZipLayoutMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
+  }
 
   public string Id => "SevenZip";
   public string DisplayName => "7z";

@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Tar;
 
-public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFormatOptionsSchema {
+public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -49,6 +49,90 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => TarLayoutMap.Enumerate(archive);
+
+  /// <summary>
+  /// Zeros every dead byte in the TAR archive: intra-block padding after each
+  /// entry's data (the 512-byte alignment slack), and any junk trailing the
+  /// two-block end-of-archive marker. Header blocks, file data and the
+  /// terminator are live and preserved, so every entry still extracts
+  /// byte-identically. Cluster-tip wiping is N/A — the layout map already
+  /// classifies per-entry alignment padding as Free.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = TarLayoutMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
+  }
+
+  /// <summary>
+  /// TAR has no fixed media geometry, so the only canonical size is the
+  /// archive's minimal terminated length: every live entry plus the two-block
+  /// zero terminator, rounded up to the configured blocking factor.
+  /// </summary>
+  public IReadOnlyList<long> CanonicalSizes => [0];
+
+  /// <summary>
+  /// Drops any bytes trailing the end-of-archive marker (left behind by
+  /// truncating writers, tape padding, or external concatenation) by walking
+  /// the entries and re-terminating at the minimal length. File data is copied
+  /// through byte-identically — no header is rewritten, so the output is the
+  /// exact prefix of the input up to and including the terminator (padded to
+  /// the blocking factor). When the input already has no trailing junk the
+  /// output is byte-identical to the input.
+  /// </summary>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    input.Position = 0;
+
+    // The end-of-archive marker is the only MetadataReserved tile the layout
+    // map emits whose name starts with "End". Its offset+length is the first
+    // byte past all live content; everything beyond is trailing junk.
+    long liveEnd = -1;
+    foreach (var b in TarLayoutMap.Enumerate(input)) {
+      if (b.Kind == DefragBlockKind.MetadataReserved &&
+          b.FileName is { } n && n.StartsWith("End", StringComparison.Ordinal)) {
+        liveEnd = b.Offset + b.Length;
+        break;
+      }
+    }
+
+    // No terminator found (degenerate / un-terminated archive): keep every byte.
+    if (liveEnd < 0) liveEnd = input.Length;
+
+    // Pad the live prefix up to a 512-byte block boundary — the minimal valid
+    // TAR alignment. The on-disk blocking factor is unrecoverable from the byte
+    // stream, so we never re-impose a larger record (which would grow a tight
+    // archive); excess zero-block padding beyond the two-block terminator is
+    // legitimately reclaimable. Every well-formed TAR is already 512-aligned, so
+    // a tight archive's kept length equals its full length (idempotent).
+    var record = (long)TarConstants.BlockSize;
+    var padded = (liveEnd + record - 1) / record * record;
+    var keep = Math.Min(padded, input.Length);
+
+    input.Position = 0;
+    var buf = new byte[64 * 1024];
+    var remaining = keep;
+    while (remaining > 0) {
+      var chunk = (int)Math.Min(buf.Length, remaining);
+      var read = input.Read(buf, 0, chunk);
+      if (read == 0) break;
+      output.Write(buf, 0, read);
+      remaining -= read;
+    }
+    // If the live prefix is shorter than the padded length (input was already
+    // truncated below the blocking boundary) top up with zero blocks.
+    if (remaining > 0) {
+      var zero = new byte[(int)Math.Min(buf.Length, remaining)];
+      while (remaining > 0) {
+        var chunk = (int)Math.Min(zero.Length, remaining);
+        output.Write(zero, 0, chunk);
+        remaining -= chunk;
+      }
+    }
+  }
 
   public string Id => "Tar";
   public string DisplayName => "TAR";
