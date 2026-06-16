@@ -34,8 +34,12 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".mfs";
-  public IReadOnlyList<string> Extensions => [".mfs", ".mfsd"];
+  // ".mfs" is shared with the classic Mac MFS filesystem (FileSystem.Mfs, strong
+  // 0xD2D7 magic) whose reader rejects an Acorn MFS-1 image. MFS-1's own boot
+  // pattern is a weak 0x0080, so detection is extension-driven; default to the
+  // Mfs1-unique ".mfsd" so a freshly-written image re-detects as Mfs1, not Mfs.
+  public string DefaultExtension => ".mfsd";
+  public IReadOnlyList<string> Extensions => [".mfsd", ".mfs"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // 0x00 0x80 at offsets 0-1 is the MFS-1 boot pattern. Extremely weak

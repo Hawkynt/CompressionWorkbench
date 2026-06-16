@@ -149,6 +149,38 @@ public static partial class FormatDetector {
     if (singleExt == ".img")
       return Format.Fat;
 
+    // The ".wad" extension is shared by Doom WADs (IWAD/PWAD magic, the "Wad"
+    // descriptor) and Quake/Half-Life texture WADs (WAD2/WAD3 magic, the "Wad2"
+    // descriptor). The registry's first-claim-wins extension map routes every
+    // ".wad" to one of them, so the other's own output is mis-detected and its
+    // reader rejects the foreign magic. Disambiguate by the 4-byte magic.
+    if (singleExt == ".wad") {
+      var wad = DetectWadByMagic(path);
+      if (wad != Format.Unknown)
+        return wad;
+    }
+
+    // The ".dsk" extension is shared by several disk-image filesystems (AppleDOS,
+    // CP/M, Amstrad CPC). AppleDOS claims it first and has no magic, so a CPC DSK
+    // image (which DOES carry a strong "MV - CPC"/"EXTENDED" magic) is routed to
+    // the AppleDOS reader, which rejects it. Honor the CPC magic when present.
+    if (singleExt == ".dsk") {
+      var cpc = DetectCpcDskByMagic(path);
+      if (cpc != Format.Unknown)
+        return cpc;
+    }
+
+    // The ".arc" extension is shared by the legacy SEA ARC format (every entry
+    // header starts with the 0x1A magic byte, the "Arc" descriptor) and FreeArc
+    // (magic "ArC\x01", the "FreeArc" descriptor). The first-claim-wins map routes
+    // every ".arc" to the legacy reader, which rejects FreeArc's own output.
+    // Disambiguate by the leading bytes.
+    if (singleExt == ".arc") {
+      var arc = DetectArcByMagic(path);
+      if (arc != Format.Unknown)
+        return arc;
+    }
+
     // Single extension lookup from registry
     if (!string.IsNullOrEmpty(singleExt) && FormatDetector._extToFormat!.TryGetValue(singleExt, out var format))
       return format;
@@ -159,23 +191,95 @@ public static partial class FormatDetector {
   private static Format DetectArOrDeb(string lower)
     => lower.EndsWith(".deb") ? Format.Deb : Format.Ar;
 
+  /// <summary>
+  ///   Resolves a ".dsk" file to CpcDsk when the leading bytes carry the Amstrad
+  ///   CPC "MV - CPC" or "EXTENDED" magic; otherwise returns <see cref="Format.Unknown"/>
+  ///   so the caller falls back to the registry extension map (AppleDOS default).
+  /// </summary>
+  private static Format DetectCpcDskByMagic(string path) {
+    try {
+      if (!File.Exists(path)) return Format.Unknown;
+      using var fs = File.OpenRead(path);
+      Span<byte> head = stackalloc byte[8];
+      if (fs.Read(head) < 8) return Format.Unknown;
+      if (head.StartsWith("MV - CPC"u8) || head.SequenceEqual("EXTENDED"u8))
+        return Format.CpcDsk;
+    } catch {
+      /* ignore detection failure */
+    }
+    return Format.Unknown;
+  }
+
+  /// <summary>
+  ///   Resolves a ".arc" file to FreeArc (magic "ArC\x01") or the legacy SEA ARC
+  ///   format by reading the leading bytes. Returns <see cref="Format.Unknown"/>
+  ///   when unreadable so the caller falls back to the registry extension map.
+  /// </summary>
+  private static Format DetectArcByMagic(string path) {
+    try {
+      if (!File.Exists(path)) return Format.Unknown;
+      using var fs = File.OpenRead(path);
+      Span<byte> magic = stackalloc byte[4];
+      if (fs.Read(magic) < 4) return Format.Unknown;
+      if (magic[0] == 'A' && magic[1] == 'r' && magic[2] == 'C' && magic[3] == 0x01)
+        return Format.FreeArc;
+      if (magic[0] == 0x1A)
+        return Format.Arc;
+    } catch {
+      /* ignore detection failure */
+    }
+    return Format.Unknown;
+  }
+
+  /// <summary>
+  ///   Resolves a ".wad" file to either the Doom WAD descriptor (IWAD/PWAD magic)
+  ///   or the Quake/Half-Life WAD2/WAD3 descriptor by reading the 4-byte magic.
+  ///   Returns <see cref="Format.Unknown"/> when the file is missing/unreadable so
+  ///   the caller falls back to the registry extension map.
+  /// </summary>
+  private static Format DetectWadByMagic(string path) {
+    try {
+      if (!File.Exists(path)) return Format.Unknown;
+      using var fs = File.OpenRead(path);
+      Span<byte> magic = stackalloc byte[4];
+      if (fs.Read(magic) < 4) return Format.Unknown;
+      if (magic[0] == 'W' && magic[1] == 'A' && magic[2] == 'D'
+          && (magic[3] == '2' || magic[3] == '3'))
+        return Format.Wad2;
+      if ((magic[0] == 'I' || magic[0] == 'P')
+          && magic[1] == 'W' && magic[2] == 'A' && magic[3] == 'D')
+        return Format.Wad;
+    } catch {
+      /* ignore detection failure */
+    }
+    return Format.Unknown;
+  }
+
   private static Format DetectInstaller(string path) {
     try {
       using var fs = File.OpenRead(path);
       var buf = new byte[2];
-      // Quick check: must be a PE (MZ header)
-      if (fs.Read(buf, 0, 2) < 2 || buf[0] != 'M' || buf[1] != 'Z')
-        return Format.Unknown;
+      var isPe = fs.Read(buf, 0, 2) >= 2 && buf[0] == 'M' && buf[1] == 'Z';
 
-      // Check for NSIS/InnoSetup signatures in tail
-      if (fs.Length > 65536) {
-        fs.Seek(-65536, SeekOrigin.End);
-        var tail = new byte[65536];
+      // NSIS/InnoSetup markers can live anywhere in the file (our own stub-less
+      // NSIS writer puts the "NullsoftInst" signature in a leading overlay
+      // header, not a PE overlay), so scan the whole file when it is small and
+      // the tail otherwise — independent of the MZ check, so a stub-less
+      // installer image still re-detects as its own format.
+      var scanLen = (int)Math.Min(fs.Length, 65536L);
+      if (scanLen > 0) {
+        fs.Seek(fs.Length <= 65536L ? 0 : -65536L,
+          fs.Length <= 65536L ? SeekOrigin.Begin : SeekOrigin.End);
+        var tail = new byte[scanLen];
         var bytesRead = fs.Read(tail, 0, tail.Length);
         var tailSpan = tail.AsSpan(0, bytesRead);
         if (ContainsBytes(tailSpan, "NullsoftInst"u8)) return Format.Nsis;
         if (ContainsBytes(tailSpan, "Inno Setup"u8)) return Format.InnoSetup;
       }
+
+      // Beyond the installer-marker scan, a non-PE file is not an installer.
+      if (!isPe)
+        return Format.Unknown;
 
       // Check for our own SFX trailer (SFX! magic at end)
       if (fs.Length >= 12) {

@@ -220,7 +220,10 @@ public class ZpaqTests {
 
   [Category("Exception")]
   [Test]
-  public void Extract_AlwaysThrowsNotSupportedException() {
+  public void Extract_WithoutStoredDataBlock_ThrowsNotSupportedException() {
+    // A header that declares a size but carries no STORED data ('d') block has
+    // no recoverable bytes (a ZPAQL-compressed block would need a VM), so
+    // Extract reports the unsupported case rather than returning empty.
     using var ms = new MemoryStream();
     WriteBlockHeader(ms, ZpaqConstants.BlockTypeHeader);
     WriteHeaderPayload(ms, ToFileTime(DateTime.UtcNow), [("f.txt", 1L, 0x20)]);
@@ -232,6 +235,34 @@ public class ZpaqTests {
     Assert.That(
       () => reader.Extract(reader.Entries[0]),
       Throws.InstanceOf<NotSupportedException>());
+  }
+
+  [Category("HappyPath")]
+  [Test]
+  public void Writer_Then_Reader_RoundTripsStoredContent() {
+    // ZpaqWriter stores data uncompressed in 'd' blocks; ZpaqReader must recover
+    // the exact bytes for each file it lists (the conversion-matrix contract).
+    var files = new (string Name, byte[] Data)[] {
+      ("hello.txt", "hello conversion matrix"u8.ToArray()),
+      ("data.bin",  Enumerable.Range(0, 256).Select(i => (byte)i).ToArray()),
+      ("big.dat",   Enumerable.Range(0, 4096).Select(i => (byte)((i * 31 + 7) & 0xFF)).ToArray()),
+    };
+
+    using var ms = new MemoryStream();
+    using (var w = new ZpaqWriter(ms, leaveOpen: true))
+      foreach (var (name, data) in files)
+        w.AddFile(name, data);
+
+    ms.Position = 0;
+    using var reader = new ZpaqReader(ms, leaveOpen: true);
+
+    foreach (var (name, data) in files) {
+      var entry = reader.Entries.Single(e => e.FileName == name);
+      using var es = reader.Extract(entry);
+      using var got = new MemoryStream();
+      es.CopyTo(got);
+      Assert.That(got.ToArray(), Is.EqualTo(data), $"content of '{name}' must round-trip");
+    }
   }
 
   // ── Non-seekable stream ──────────────────────────────────────────────────

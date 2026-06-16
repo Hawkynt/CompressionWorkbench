@@ -26,12 +26,18 @@ Measured on the full grid (8 representative sources x all creatable targets):
 
 | Bucket | Failing targets | Failing pairs |
 |---|---:|---:|
-| self-rejecting reader | 8 | 64 |
-| not in Format enum | 1 | 8 |
-| single-payload/whole-image target | 20 | 160 |
+| self-rejecting reader | 1 | 8 |
+| single-payload/whole-image target | 21 | 168 |
 | name/charset/size constraint | 11 | 88 |
 | other | 30 | 241 |
-| **Total** | **70** (+1 pair-specific) | **561** |
+| **Total** | **63** (+1 pair-specific) | **505** |
+
+> Fixed and flipped to enforced-pass: `Svx8` (descriptor class renamed so the
+> source-generated Format enum Id matches its registry Id), `Crate`, `FreeArc`,
+> `Wad2`, `Zpaq` (self-rejecting reader / detection-collision fixes), and `Mfs1`
+> + `Nsis` (now re-readable; reclassified as name-synthesizing so the matrix
+> content-matches their folded/synthesized entry names). `CpcDsk` moved to the
+> single-payload bucket: its reader has no filesystem layer.
 
 > Most gaps are **target-wide** (the target fails from every one of the 8 sources, so
 > the failing-pair count is `targets x 8`). Pair-specific gaps are listed in their own
@@ -43,22 +49,7 @@ Writer emits a file its own reader (or the converter's auto-detected reader) can
 
 | Target | Reason |
 |---|---|
-| `CpcDsk` | writer output is re-detected as AppleDOS, whose reader rejects it (VTOC sectors-per-track != 16); CpcDsk reader never re-reads its own image |
-| `Crate` | writer output its own reader rejects: 'Not a Rust crate: missing <name-version>/Cargo.toml under a single top-level dir' |
-| `FreeArc` | writer output its own reader rejects: 'Expected ARC magic byte 0x1A, found 0x41' |
 | `HfsPlus` | writer output is re-detected as DMG, whose reader rejects it: 'missing koly trailer signature' |
-| `Mfs1` | writer output its own reader rejects: 'MFS: invalid signature' |
-| `Nsis` | writer output is not re-listable: 'Cannot list format: Unknown' (NSIS reader cannot re-detect its own installer stub) |
-| `Wad2` | writer emits WAD3 magic but the reader only accepts WAD2: 'Invalid WAD magic: WAD3' |
-| `Zpaq` | writer output lists entries but extraction returns null (ZPAQ block round-trip is broken) |
-
-## Bucket: not in Format enum
-
-The descriptor advertises `IArchiveCreatable` in the registry, but its `Id` is missing from the source-generated `FormatDetector.Format` enum, so `ConvertArchive` cannot resolve the target. Fix: ensure the descriptor is discovered by the source generator / added to the enum.
-
-| Target | Reason |
-|---|---|
-| `Svx8` | registry-advertised IArchiveCreatable but the Id 'Svx8' is absent from the generated Format enum, so ConvertArchive raises 'Unknown target format: Svx8' |
 
 ## Bucket: single-payload/whole-image target
 
@@ -69,6 +60,7 @@ The target collapses an arbitrary file tree into a single stream or whole-image 
 | `AndroidOta` | OTA update payload; writer emits a whole-image blob that re-lists as 0 files |
 | `Awb` | CRI AWB audio bank; writer collapses the tree to a single FULL.amr stream |
 | `BcacheFs` | bcachefs image writer emits a whole-image (FULL.bcachefs+superblock.bin stub) not a file tree |
+| `CpcDsk` | Amstrad CPC disk image; reader exposes raw 512-byte track/sector blocks (T00S0_C1…) with no AMSDOS/CP/M filesystem layer, so padded sectors can't content-match the payload |
 | `DiskDoubler` | single-fork compressor; carries only one payload (lists 1 file) |
 | `ExFat` | exFAT image writer emits an empty/whole-image that re-lists as 0 files |
 | `Hpfs` | HPFS image writer emits a whole-image that re-lists as 0 files |

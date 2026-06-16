@@ -13,7 +13,7 @@ namespace FileFormat.Svx;
 /// chunks (<c>NAME</c>, <c>ANNO</c>, …). Mono surfaces as <c>MONO.wav</c>; stereo
 /// surfaces as <c>LEFT.wav</c> / <c>RIGHT.wav</c> by de-planarising the BODY halves.
 /// </summary>
-public sealed class SvxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
+public sealed class Svx8FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
 
   public string Id => "Svx8";

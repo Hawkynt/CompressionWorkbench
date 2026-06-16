@@ -17,6 +17,10 @@ public sealed class ZpaqReader : IDisposable {
   private readonly Stream         _stream;
   private readonly bool           _leaveOpen;
   private readonly List<ZpaqEntry> _entries = [];
+  // Captured uncompressed data-block bytes keyed by filename (last write wins),
+  // populated for STORED data blocks so this reader can extract archives that
+  // were written without ZPAQL compression (the layout ZpaqWriter emits).
+  private readonly Dictionary<string, byte[]> _dataByName = new(StringComparer.Ordinal);
   private bool                    _disposed;
 
   /// <summary>
@@ -85,6 +89,8 @@ public sealed class ZpaqReader : IDisposable {
     var  txVersion      = 0;
     // Names collected from the current transaction's header block.
     var  txNames        = new List<(string Name, long Size, DateTime? Modified)>();
+    // Raw STORED bytes from the current transaction's data ('d') block(s).
+    var  txData         = new List<byte>();
     // Running block-start position (approximate; only accurate when seekable).
     long blockStart     = 0;
     var foundAnyBlock  = false;
@@ -107,11 +113,12 @@ public sealed class ZpaqReader : IDisposable {
         case ZpaqConstants.BlockTypeHeader:
           // 'c' block — start of a new transaction.
           // Flush the previous transaction into the entry list.
-          FlushTransaction(latestByName, txNames, txDataBytes, txVersion);
+          FlushTransaction(latestByName, txNames, txDataBytes, txVersion, txData, _dataByName);
 
           txVersion++;
           txDataBytes = 0;
           txNames.Clear();
+          txData.Clear();
 
           // A header block in a level-1 archive that was created with
           // "zpaq add" uses stored (uncompressed) content so that the
@@ -122,16 +129,20 @@ public sealed class ZpaqReader : IDisposable {
           break;
 
         case ZpaqConstants.BlockTypeData:
-          // 'd' block — data payload.  Measure its size.
-          txDataBytes += MeasureBlockPayload(rawBytes);
+          // 'd' block — data payload. Capture the STORED bytes so Extract can
+          // return them; MeasureBlockPayload's accounting comes from the count.
+          var captured = CaptureBlockPayload(rawBytes);
+          txData.AddRange(captured);
+          txDataBytes += captured.Length;
           break;
 
         case ZpaqConstants.BlockTypeIndex:
           // 'h' block — transaction close / hash block.  Flush.
-          FlushTransaction(latestByName, txNames, txDataBytes, txVersion);
+          FlushTransaction(latestByName, txNames, txDataBytes, txVersion, txData, _dataByName);
           txVersion++;
           txDataBytes = 0;
           txNames.Clear();
+          txData.Clear();
           SkipBlockPayload(rawBytes);
           break;
 
@@ -144,7 +155,7 @@ public sealed class ZpaqReader : IDisposable {
     }
 
     // Flush any trailing transaction that had no 'h' block.
-    FlushTransaction(latestByName, txNames, txDataBytes, txVersion);
+    FlushTransaction(latestByName, txNames, txDataBytes, txVersion, txData, _dataByName);
 
     if (!foundAnyBlock)
       ThrowInvalidData("No ZPAQ blocks found in stream.");
@@ -228,6 +239,14 @@ public sealed class ZpaqReader : IDisposable {
   }
 
   /// <summary>
+  /// Captures the current block's payload bytes (everything up to, but not
+  /// including, the next "zPQ" prefix or end of stream). Used for STORED data
+  /// blocks so their raw bytes can be returned by <see cref="Extract"/>.
+  /// </summary>
+  private static byte[] CaptureBlockPayload(RawByteReader reader) =>
+    reader.CaptureToNextBlock();
+
+  /// <summary>
   /// Skips the current block payload, positioning the reader just before
   /// the next "zPQ" prefix (or at end of stream).
   /// </summary>
@@ -240,7 +259,9 @@ public sealed class ZpaqReader : IDisposable {
       Dictionary<string, ZpaqEntry>                       dest,
       List<(string Name, long Size, DateTime? Modified)>  names,
       long                                                 dataBytes,
-      int                                                  version) {
+      int                                                  version,
+      List<byte>                                           data,
+      Dictionary<string, byte[]>                           dataByName) {
     if (names.Count == 0)
       return;
 
@@ -248,6 +269,11 @@ public sealed class ZpaqReader : IDisposable {
     // as a rough approximation (ZPAQ doesn't store per-file compressed sizes).
     var perFile = names.Count > 0 ? dataBytes / names.Count : 0;
 
+    // Slice the captured STORED transaction bytes per file in header order using
+    // each file's recorded size. Only valid for the uncompressed layout this
+    // toolkit's writer emits; ZPAQL-compressed blocks leave dataByName unset and
+    // Extract surfaces them as empty.
+    var dataOffset = 0;
     foreach (var (name, size, modified) in names) {
       var isDir = name.EndsWith('/') || name.EndsWith('\\');
       var entry = new ZpaqEntry(
@@ -259,6 +285,13 @@ public sealed class ZpaqReader : IDisposable {
         version:        version);
 
       dest[entry.FileName] = entry; // later transaction supersedes earlier
+
+      if (!isDir && size >= 0 && dataOffset + size <= data.Count) {
+        var slice = new byte[size];
+        data.CopyTo(dataOffset, slice, 0, (int)size);
+        dataByName[entry.FileName] = slice; // later transaction supersedes earlier
+        dataOffset += (int)size;
+      }
     }
   }
 
@@ -288,13 +321,23 @@ public sealed class ZpaqReader : IDisposable {
   // ── Extract (not supported) ───────────────────────────────────────────────
 
   /// <summary>
-  /// Not supported.  ZPAQ decompression requires executing a ZPAQL virtual
-  /// machine program embedded in each archive block.
+  /// Returns the entry's uncompressed bytes as a stream when the data block was
+  /// STORED (the layout this toolkit's <see cref="ZpaqWriter"/> emits).
   /// </summary>
-  /// <exception cref="NotSupportedException">Always thrown.</exception>
-  public Stream Extract(ZpaqEntry entry) =>
+  /// <remarks>
+  /// General ZPAQL-compressed archives require executing a ZPAQL virtual machine
+  /// which is out of scope; for those the captured-data map is empty and this
+  /// method throws <see cref="NotSupportedException"/>.
+  /// </remarks>
+  public Stream Extract(ZpaqEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (entry.IsDirectory)
+      return new MemoryStream([], writable: false);
+    if (_dataByName.TryGetValue(entry.FileName, out var bytes))
+      return new MemoryStream(bytes, writable: false);
     throw new NotSupportedException(
-      "ZPAQ decompression requires a ZPAQL virtual machine which is not implemented.");
+      "ZPAQ decompression of ZPAQL-compressed blocks requires a ZPAQL virtual machine which is not implemented.");
+  }
 
   // ── IDisposable ───────────────────────────────────────────────────────────
 
@@ -417,6 +460,53 @@ internal sealed class RawByteReader {
         // Mismatch — restart, but check whether this byte starts the prefix.
         matched = (b == prefix[0]) ? 1 : 0;
       }
+    }
+  }
+
+  /// <summary>
+  /// Reads the current block's payload bytes, stopping just before the next
+  /// "zPQ" block prefix (or at end-of-stream). The prefix is NOT consumed.
+  /// Equivalent to <see cref="SkipToNextBlock"/> but returns the bytes consumed.
+  /// </summary>
+  internal byte[] CaptureToNextBlock() {
+    using var ms = new MemoryStream();
+    var prefix = Prefix;
+
+    while (true) {
+      if (!EnsureAvailable(PrefixLen)) {
+        // Fewer than PrefixLen bytes remain — they cannot start a new block, so
+        // they belong to this payload. Drain them and stop.
+        while (_pos < _len) ms.WriteByte(_buf[_pos++]);
+        return ms.ToArray();
+      }
+
+      var available = _len - _pos;
+      var window = _buf.AsSpan(_pos, available);
+
+      for (var i = 0; i < window.Length; i++) {
+        if (window[i] != prefix[0])
+          continue;
+
+        if (i + PrefixLen - 1 >= window.Length) {
+          // Not enough in buffer to confirm — flush up to i, then refill.
+          for (var j = 0; j < i; j++) ms.WriteByte(window[j]);
+          _pos += i;
+          goto refill;
+        }
+
+        if (window[i + 1] == prefix[1] && window[i + 2] == prefix[2]) {
+          for (var j = 0; j < i; j++) ms.WriteByte(window[j]);
+          _pos += i; // stop before the next prefix
+          return ms.ToArray();
+        }
+      }
+
+      for (var j = 0; j < window.Length; j++) ms.WriteByte(window[j]);
+      _pos = _len;
+      refill:
+      Refill();
+      if (_len == _pos)
+        return ms.ToArray();
     }
   }
 

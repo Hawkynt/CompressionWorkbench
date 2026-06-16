@@ -79,7 +79,7 @@ public class SvxTests {
   [Test]
   public void Mono_ListsFullAndMonoChannel() {
     using var ms = new MemoryStream(MakeMono8Svx());
-    var entries = new SvxFormatDescriptor().List(ms, null);
+    var entries = new Svx8FormatDescriptor().List(ms, null);
 
     Assert.That(entries.First(e => e.Name == "FULL.8svx").Kind, Is.EqualTo("Container"));
     var mono = entries.First(e => e.Name == "MONO.wav");
@@ -90,7 +90,7 @@ public class SvxTests {
   public void Mono_ChannelIsValidMonoWavWithRebiasedSamples() {
     using var ms = new MemoryStream(MakeMono8Svx());
     using var output = new MemoryStream();
-    new SvxFormatDescriptor().ExtractEntry(ms, "MONO.wav", output, null);
+    new Svx8FormatDescriptor().ExtractEntry(ms, "MONO.wav", output, null);
     var wav = output.ToArray();
 
     Assert.That(wav.AsSpan(0, 4).ToArray(), Is.EqualTo("RIFF"u8.ToArray()));
@@ -106,17 +106,17 @@ public class SvxTests {
   [Test]
   public void Stereo_SplitsPlanarHalvesIntoLeftAndRight() {
     using var ms = new MemoryStream(MakeStereo8Svx());
-    var entries = new SvxFormatDescriptor().List(ms, null);
+    var entries = new Svx8FormatDescriptor().List(ms, null);
     Assert.That(entries.Any(e => e.Name == "LEFT.wav"), Is.True);
     Assert.That(entries.Any(e => e.Name == "RIGHT.wav"), Is.True);
 
     using var left = new MemoryStream();
-    new SvxFormatDescriptor().ExtractEntry(new MemoryStream(MakeStereo8Svx()), "LEFT.wav", left, null);
+    new Svx8FormatDescriptor().ExtractEntry(new MemoryStream(MakeStereo8Svx()), "LEFT.wav", left, null);
     var leftPcm = left.ToArray().AsSpan(44).ToArray();
     Assert.That(leftPcm, Is.EqualTo(new byte[] { 129, 130 })); // {1,2} + 128
 
     using var right = new MemoryStream();
-    new SvxFormatDescriptor().ExtractEntry(new MemoryStream(MakeStereo8Svx()), "RIGHT.wav", right, null);
+    new Svx8FormatDescriptor().ExtractEntry(new MemoryStream(MakeStereo8Svx()), "RIGHT.wav", right, null);
     var rightPcm = right.ToArray().AsSpan(44).ToArray();
     Assert.That(rightPcm, Is.EqualTo(new byte[] { 127, 126 })); // {-1,-2} + 128
   }
@@ -128,7 +128,7 @@ public class SvxTests {
     var inputs = new List<ArchiveInputInfo> { ArchiveInputInfo.InMemory("MONO.wav", wav) };
 
     using var output = new MemoryStream();
-    new SvxFormatDescriptor().Create(output, inputs, new FormatCreateOptions());
+    new Svx8FormatDescriptor().Create(output, inputs, new FormatCreateOptions());
     var svx = output.ToArray();
 
     var parsed = new SvxReader().Read(svx);
@@ -147,7 +147,7 @@ public class SvxTests {
     };
 
     using var output = new MemoryStream();
-    new SvxFormatDescriptor().Create(output, inputs, new FormatCreateOptions());
+    new Svx8FormatDescriptor().Create(output, inputs, new FormatCreateOptions());
     var parsed = new SvxReader().Read(output.ToArray());
 
     Assert.That(parsed.Channels, Is.EqualTo(SvxReader.ChannelStereo));

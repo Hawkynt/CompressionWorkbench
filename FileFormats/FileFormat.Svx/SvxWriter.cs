@@ -9,7 +9,7 @@ namespace FileFormat.Svx;
 /// <c>VHDR</c>, optional <c>CHAN</c> and a <c>BODY</c> of 8-bit signed PCM. For
 /// stereo the left samples are written first, then the right samples (the planar
 /// layout 8SVX uses for a stereo voice at octave 0). Used by
-/// <see cref="SvxFormatDescriptor"/> to assemble a file from per-channel mono WAVs.
+/// <see cref="Svx8FormatDescriptor"/> to assemble a file from per-channel mono WAVs.
 /// </summary>
 public sealed class SvxWriter {
 

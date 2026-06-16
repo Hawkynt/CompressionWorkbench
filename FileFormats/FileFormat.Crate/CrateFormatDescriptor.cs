@@ -166,12 +166,43 @@ public sealed class CrateFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
     // Need to lift inputs into a <name-version>/ directory.
     var topDir = DeriveTopDir(raw);
-    var lifted = new List<(string, byte[], bool)>(raw.Count + 1) {
+    var lifted = new List<(string, byte[], bool)>(raw.Count + 2) {
       ($"{topDir}/", [], true),
     };
     foreach (var (name, data, isDir) in raw)
       lifted.Add(($"{topDir}/{name}", data, isDir));
+
+    // A crate is only valid (and only re-readable by this descriptor) with a
+    // Cargo.toml at the top of the single root directory. When the inputs carry
+    // none — e.g. an arbitrary file tree converted into a crate — synthesise a
+    // minimal manifest so the written package round-trips through List/Extract.
+    var hasCargoToml = raw.Any(r =>
+      !r.IsDir && Path.GetFileName(r.Name).Equals("Cargo.toml", StringComparison.OrdinalIgnoreCase));
+    if (!hasCargoToml)
+      lifted.Add(($"{topDir}/Cargo.toml", SynthesizeCargoToml(topDir), false));
+
     return lifted;
+  }
+
+  /// <summary>
+  /// Builds a minimal but valid <c>Cargo.toml</c> for a synthesised crate whose
+  /// top-level directory is <c>&lt;name&gt;-&lt;version&gt;</c>. The name/version are
+  /// recovered from that directory so the manifest agrees with the layout.
+  /// </summary>
+  private static byte[] SynthesizeCargoToml(string topDir) {
+    var name = topDir;
+    var version = "0.0.0";
+    var dash = topDir.LastIndexOf('-');
+    if (dash > 0 && dash < topDir.Length - 1) {
+      name = topDir[..dash];
+      version = topDir[(dash + 1)..];
+    }
+    var sb = new StringBuilder();
+    sb.AppendLine("[package]");
+    sb.Append("name = \"").Append(name).AppendLine("\"");
+    sb.Append("version = \"").Append(version).AppendLine("\"");
+    sb.AppendLine("edition = \"2021\"");
+    return Encoding.UTF8.GetBytes(sb.ToString());
   }
 
   /// <summary>

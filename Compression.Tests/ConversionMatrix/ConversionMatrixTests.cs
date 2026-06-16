@@ -36,6 +36,10 @@ public class ConversionMatrixTests {
     new(StringComparer.OrdinalIgnoreCase) {
       "D64", "D71", "D81", "T64", "Cpm", "Atari8", "AppleDos", "ProDos",
       "Bbc", "ZxScl", "TrDos", "Mfs",
+      // Mfs1 folds names to 7-char DFS slots (HELLO.TXT -> HELLO.T); Nsis stores
+      // no per-block names and the reader exposes block_N. Both extract the exact
+      // stored bytes, so they round-trip by content, not by verbatim name.
+      "Mfs1", "Nsis",
     };
 
   // Case-folding targets (8.3 / uppercase) — compare names case-insensitively
@@ -94,16 +98,14 @@ public class ConversionMatrixTests {
   private static readonly Dictionary<string, string> KnownGapTargets =
     new(StringComparer.OrdinalIgnoreCase) {
       // -- bucket: self-rejecting reader --
-      { "CpcDsk", "[self-rejecting reader] writer output is re-detected as AppleDOS, whose reader rejects it (VTOC sectors-per-track != 16); CpcDsk reader never re-reads its own image" },
-      { "Crate", "[self-rejecting reader] writer output its own reader rejects: 'Not a Rust crate: missing <name-version>/Cargo.toml under a single top-level dir'" },
-      { "FreeArc", "[self-rejecting reader] writer output its own reader rejects: 'Expected ARC magic byte 0x1A, found 0x41'" },
+      // CpcDsk now re-detects as itself (the ".dsk" magic disambiguation routes the
+      // Amstrad "MV - CPC" image to the CpcDsk reader, not AppleDOS), but the reader
+      // is a raw track/sector dumper with no AMSDOS/CP/M filesystem layer: it exposes
+      // 512-byte sector blocks (T00S0_C1…) whose padded bytes can never equal a small
+      // payload, so neither verbatim-name nor content matching can succeed. A real fix
+      // needs a CPC filesystem reader, which is a separate effort.
+      { "CpcDsk", "[single-payload/whole-image target] CpcDsk reader exposes raw 512-byte track/sector blocks (T00S0_C1…), not files; padded sectors can't content-match the payload and no AMSDOS/CP/M filesystem layer exists" },
       { "HfsPlus", "[self-rejecting reader] writer output is re-detected as DMG, whose reader rejects it: 'missing koly trailer signature'" },
-      { "Mfs1", "[self-rejecting reader] writer output its own reader rejects: 'MFS: invalid signature'" },
-      { "Nsis", "[self-rejecting reader] writer output is not re-listable: 'Cannot list format: Unknown' (NSIS reader cannot re-detect its own installer stub)" },
-      { "Wad2", "[self-rejecting reader] writer emits WAD3 magic but the reader only accepts WAD2: 'Invalid WAD magic: WAD3'" },
-      { "Zpaq", "[self-rejecting reader] writer output lists entries but extraction returns null (ZPAQ block round-trip is broken)" },
-      // -- bucket: not in Format enum --
-      { "Svx8", "[not in Format enum] registry-advertised IArchiveCreatable but the Id 'Svx8' is absent from the generated Format enum, so ConvertArchive raises 'Unknown target format: Svx8'" },
       // -- bucket: single-payload/whole-image target --
       { "AndroidOta", "[single-payload/whole-image target] OTA update payload; writer emits a whole-image blob that re-lists as 0 files" },
       { "Awb", "[single-payload/whole-image target] CRI AWB audio bank; writer collapses the tree to a single FULL.amr stream" },
