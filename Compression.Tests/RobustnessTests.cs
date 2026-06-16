@@ -386,9 +386,7 @@ public class RobustnessTests {
     var repoRoot = FindRepoRoot();
     Assert.That(repoRoot, Is.Not.Null, "Could not find repository root");
 
-    var csFiles = Directory.GetFiles(repoRoot!, "*.cs", SearchOption.AllDirectories)
-      .Where(f => !f.Contains("obj") && !f.Contains("bin") && !f.Contains("RobustnessTests.cs"))
-      .ToList();
+    var csFiles = EnumerateAuditableSourceFiles(repoRoot!);
 
     var issues = new List<string>();
 
@@ -439,9 +437,7 @@ public class RobustnessTests {
     var repoRoot = FindRepoRoot();
     Assert.That(repoRoot, Is.Not.Null, "Could not find repository root");
 
-    var csFiles = Directory.GetFiles(repoRoot!, "*.cs", SearchOption.AllDirectories)
-      .Where(f => !f.Contains("obj") && !f.Contains("bin") && !f.Contains("RobustnessTests.cs"))
-      .ToList();
+    var csFiles = EnumerateAuditableSourceFiles(repoRoot!);
 
     var issues = new List<string>();
 
@@ -476,6 +472,18 @@ public class RobustnessTests {
   #endregion
 
   // ── Helpers ──────────────────────────────────────────────────────
+
+  // Enumerates the repo's own first-party .cs sources for the audit tests,
+  // skipping build artifacts (obj/bin), this file's own scanner literals, and
+  // anything under .claude/ (agent worktrees carry full repo copies plus
+  // generated trees, which would otherwise multiply every finding many-fold).
+  private static List<string> EnumerateAuditableSourceFiles(string repoRoot) =>
+    Directory.GetFiles(repoRoot, "*.cs", SearchOption.AllDirectories)
+      .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                  && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
+                  && !f.Contains($"{Path.DirectorySeparatorChar}.claude{Path.DirectorySeparatorChar}")
+                  && !f.Contains("RobustnessTests.cs"))
+      .ToList();
 
   private static string? FindRepoRoot() {
     var dir = AppDomain.CurrentDomain.BaseDirectory;
