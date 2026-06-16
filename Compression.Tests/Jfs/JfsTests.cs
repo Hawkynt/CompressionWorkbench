@@ -53,6 +53,40 @@ public class JfsTests {
     Assert.That(extracted, Is.EqualTo(data));
   }
 
+  // Long directory-entry names span continuation dtslots beyond the 11-char
+  // head capacity. Boundary cases: exactly the head limit, head + 1 / 2 / 5
+  // continuation slots, and a mix of short and long names that exercises the
+  // sorted-table ordering across slot chains.
+  [Test, Category("BoundaryValue")]
+  [TestCase("name11chars")]                                                   // 11 = head only
+  [TestCase("twelve-chars")]                                                  // 12 = head + 1 cont
+  [TestCase("this-is-a-rather-long-name")]                                    // 26 = head + 1 cont
+  [TestCase("this-is-an-even-much-longer-file-name-indeed.txt")]              // 48 = head + 3 cont
+  [TestCase("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")] // 80 = head + 5 cont
+  public void LongName_RoundTrips(string name) {
+    var content = System.Text.Encoding.UTF8.GetBytes("payload-for-" + name);
+    using var ms = new MemoryStream(BuildImage((name, content)));
+    var r = new FileSystem.Jfs.JfsReader(ms);
+    Assert.That(r.Entries, Has.Count.EqualTo(1));
+    Assert.That(r.Entries[0].Name, Is.EqualTo(name));
+    Assert.That(r.Extract(r.Entries[0]), Is.EqualTo(content));
+  }
+
+  [Test, Category("HappyPath")]
+  public void MixedShortAndLongNames_RoundTrip() {
+    var files = new (string, byte[])[] {
+      ("a.txt", "1"u8.ToArray()),
+      ("this-is-a-rather-long-name", "2"u8.ToArray()),
+      ("z.txt", "3"u8.ToArray()),
+      ("another-rather-lengthy-filename.dat", "4"u8.ToArray()),
+    };
+    using var ms = new MemoryStream(BuildImage(files));
+    var r = new FileSystem.Jfs.JfsReader(ms);
+    var byName = r.Entries.ToDictionary(e => e.Name);
+    foreach (var (n, d) in files)
+      Assert.That(r.Extract(byName[n]), Is.EqualTo(d), $"content mismatch for '{n}'");
+  }
+
   [Test, Category("HappyPath")]
   public void Descriptor_Properties() {
     var desc = new FileSystem.Jfs.JfsFormatDescriptor();

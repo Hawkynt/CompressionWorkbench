@@ -138,12 +138,6 @@ public class JfsPostMutationExternalTests {
 
   // ── tests ─────────────────────────────────────────────────────────────
 
-  // Notes: we deliberately limit Add tests to ≤11-char short names because
-  // the pre-existing JfsWriter has an open bug emitting long-name continuation
-  // slots that fsck.jfs rejects with "DF2 corrupt data (40)" — see Control
-  // test in JfsDebugAddTest (deleted). That bug is in the writer, not the
-  // mutator; the mutator's continuation-slot path is byte-for-byte
-  // structurally identical to the writer's, so they fail and pass together.
   [Test]
   public void PostAdd_PassesFsckJfs() {
     RequireFsckJfs();
@@ -209,8 +203,7 @@ public class JfsPostMutationExternalTests {
   }
 
   // Builds an image whose root dtroot is router-promoted (>8 entries) and adds
-  // a new entry — exercises the external-dtree leaf-insert path. Uses only
-  // short (≤11-char) names to avoid the writer's continuation-slot bug.
+  // a new entry — exercises the external-dtree leaf-insert path.
   [Test]
   public void PostExternalDtreeInsert_PassesFsckJfs() {
     RequireFsckJfs();
@@ -248,5 +241,84 @@ public class JfsPostMutationExternalTests {
     File.WriteAllBytes(imgPath, img.ToArray());
 
     AssertFsckClean(imgPath, "PostExternalDtreeDelete");
+  }
+
+  // Writer-produced image with directory-entry names longer than the 11-char
+  // ldtentry head capacity, so the names chain through continuation dtslots.
+  // Covers 1, 3, and 5 continuation slots plus a mix of short and long names.
+  // This is the direct regression gate for the long-name continuation-slot
+  // encoding fix ("DF2 corrupt data (40)" before the fix).
+  // Inline dtroot mixing short and long names (head + 1 / + 3 continuation
+  // slots). Kept within the 8-slot inline budget; longer chains spill to the
+  // external dtree exercised by WriterExternalLongNames.
+  [Test]
+  public void WriterLongNames_PassFsckJfs() {
+    RequireFsckJfs();
+
+    using var img = BuildImage([
+      ("short.txt", "s"u8.ToArray()),                                                     // 1 slot
+      ("this-is-a-rather-long-name", "one continuation"u8.ToArray()),                     // 26 -> 2 slots
+      ("another-rather-lengthy-filename.dat", "three continuations"u8.ToArray()),         // 35 -> 3 slots
+    ]);
+
+    var imgPath = Path.Combine(this._tmpDir, "writer_longnames.jfs");
+    File.WriteAllBytes(imgPath, img.ToArray());
+
+    AssertFsckClean(imgPath, "WriterLongNames");
+  }
+
+  // A single name long enough to chain through five continuation dtslots
+  // (head 11 + 5×15 = 86-char capacity) inside the inline dtroot.
+  [Test]
+  public void WriterFiveSlotName_PassesFsckJfs() {
+    RequireFsckJfs();
+
+    var longName = new string('a', 80);                                                   // head + 5 cont
+    using var img = BuildImage([(longName, "five"u8.ToArray())]);
+
+    var imgPath = Path.Combine(this._tmpDir, "writer_fiveslot.jfs");
+    File.WriteAllBytes(imgPath, img.ToArray());
+
+    AssertFsckClean(imgPath, "WriterFiveSlotName");
+  }
+
+  // External (router-promoted) directory whose leaf entries all carry long
+  // names, exercising the continuation-slot encoding in external dtpages.
+  [Test]
+  public void WriterExternalLongNames_PassFsckJfs() {
+    RequireFsckJfs();
+
+    var inputs = new List<(string Name, byte[] Data)>();
+    for (var i = 0; i < 20; i++)
+      inputs.Add(($"entry-with-a-fairly-long-name-number-{i:D2}.txt", Encoding.UTF8.GetBytes($"v{i}")));
+    using var img = BuildImage(inputs);
+
+    var imgPath = Path.Combine(this._tmpDir, "writer_ext_longnames.jfs");
+    File.WriteAllBytes(imgPath, img.ToArray());
+
+    AssertFsckClean(imgPath, "WriterExternalLongNames");
+  }
+
+  // Mutator Add of long-name entries (head + continuation slots) into an
+  // existing inline dtroot. The mutator's continuation-slot encoder is the
+  // structural twin of the writer's, so this gates the mutator path too.
+  [Test]
+  public void PostAddLongNames_PassFsckJfs() {
+    RequireFsckJfs();
+
+    using var img = BuildImage([
+      ("readme.txt", "hello jfs"u8.ToArray()),
+    ]);
+
+    var d = new JfsFormatDescriptor();
+    ((IArchiveModifiable)d).Add(img, [
+      ArchiveInputInfo.InMemory("this-is-a-rather-long-name", Encoding.UTF8.GetBytes("added-long-1")),
+      ArchiveInputInfo.InMemory("another-rather-lengthy-filename.dat", Encoding.UTF8.GetBytes("added-long-2")),
+    ]);
+
+    var imgPath = Path.Combine(this._tmpDir, "post_add_longnames.jfs");
+    File.WriteAllBytes(imgPath, img.ToArray());
+
+    AssertFsckClean(imgPath, "PostAddLongNames");
   }
 }

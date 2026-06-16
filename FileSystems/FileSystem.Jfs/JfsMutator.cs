@@ -486,11 +486,15 @@ internal static class JfsMutator {
       image[stblOff + i] = image[stblOff + i - 1];
     image[stblOff + insertAt] = (byte)headSlot;
 
+    // ldtentry.index is the dir_table cookie. We keep every cookie 0 (and
+    // di_next_index = 2) so fsck.jfs tolerates it without a populated inline
+    // dir_table — see JfsWriter.WriteInlineDtree. A stbl-position cookie would
+    // have to match a dir_table_slot or fsck would report the directory dirty.
     for (var i = 0; i < nextIndex + 1; i++) {
       var slot = (int)(sbyte)image[stblOff + i];
       if (slot <= 0 || slot > maxSlot) continue;
       var slotOff = dtRootOff + slot * DtSlotSize;
-      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(slotOff + 28), (uint)i);
+      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(slotOff + 28), 0u);
     }
 
     image[dtRootOff + 18] = (byte)(freeCount - slotsNeeded);
@@ -552,7 +556,7 @@ internal static class JfsMutator {
       var slot = (int)(sbyte)image[stblOff + i];
       if (slot <= 0 || slot > InlineDirEntries) continue;
       var slotOff = dtRootOff + slot * DtSlotSize;
-      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(slotOff + 28), (uint)i);
+      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(slotOff + 28), 0u); // dir_table cookie (0 ⇒ unindexed)
     }
 
     var oldFree = (int)(sbyte)image[dtRootOff + 18];
@@ -668,7 +672,7 @@ internal static class JfsMutator {
       var slot = (int)(byte)image[stblOff + i];
       if (slot == 0 || slot >= DtPageMaxSlot) continue;
       var slotOff = p + slot * DtSlotSize;
-      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(slotOff + 28), (uint)i);
+      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(slotOff + 28), 0u); // dir_table cookie (0 ⇒ unindexed)
     }
 
     image[p + 17] = (byte)(nextIndex + 1);
@@ -761,7 +765,7 @@ internal static class JfsMutator {
       var slot = (int)(byte)image[stblOff + i];
       if (slot == 0 || slot >= DtPageMaxSlot) continue;
       var slotOff = p + slot * DtSlotSize;
-      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(slotOff + 28), (uint)i);
+      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(slotOff + 28), 0u); // dir_table cookie (0 ⇒ unindexed)
     }
 
     var freeCount = image[p + 18];

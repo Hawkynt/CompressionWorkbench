@@ -483,7 +483,15 @@ public sealed class JfsWriter {
     const uint JfsLinux = 0x10000000u;
     const uint JfsGroupCommit = 0x00000100u;
     const uint JfsInlineLog = 0x00000800u;
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[36..], JfsLinux | JfsGroupCommit | JfsInlineLog);
+    // JFS_DIR_INDEX selects the modern (11-char head) ldtentry layout in which
+    // the head slot is followed by a 4-byte dir_table cookie at +28. fsck.jfs
+    // keys the head's inline name capacity off this flag: set ⇒ DTLHDRDATALEN
+    // (11), clear ⇒ DTLHDRDATALEN_LEGACY (13). Our dtree writer emits the
+    // 11-char-head + index@28 layout, so the flag must be set or fsck splits
+    // long names at the wrong offset and rejects the directory ("DF2 corrupt
+    // data"). mkfs.jfs sets this bit for every Linux JFS volume.
+    const uint JfsDirIndex = 0x00200000u;
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[36..], JfsLinux | JfsDirIndex | JfsGroupCommit | JfsInlineLog);
     BinaryPrimitives.WriteUInt32LittleEndian(sb[40..], 0);                                // s_state = FM_CLEAN
     BinaryPrimitives.WriteUInt32LittleEndian(sb[44..], 0);                                // s_compress
     WritePxd(sb[48..], length: (uint)InodeExtentBlocks, address: SecondaryAitBlock);      // s_ait2
@@ -769,10 +777,17 @@ public sealed class JfsWriter {
     }
 
     // External dtree: the inline dtroot is promoted to a router addressing the
-    // top-level dtree pages; di_size/di_nblocks reflect the out-of-line pages.
+    // top-level dtree pages. The leaf pages are out-of-line, so they count
+    // toward di_nblocks. di_size, however, stays IDATASIZE: with JFS_DIR_INDEX
+    // set (DO_INDEX), the kernel never folds dtree-page bytes into the
+    // directory's di_size — only legacy (non-indexed) directories grow di_size
+    // by PSIZE per page. fsck.jfs enforces this: under DIR_INDEX it excludes
+    // dtree pages from the directory's data_size, so a page-sized di_size would
+    // exceed max_size (IDATASIZE) and the root would be rejected as "Invalid
+    // data format".
     this.WriteFsitInode(image, inoOff, ino: (uint)dir.Ino, fileset: FilesetIno,
       mode: IfJournal | IfDir | 0x1ED,                              // 0755
-      size: (long)dir.DtreePages.Count * BlockSize, nblocks: dir.DtreePages.Count,
+      size: IdataSize, nblocks: dir.DtreePages.Count,
       hasXtreeData: false, xtreeEntries: null,
       nlink: (uint)(2 + subdirs), nextIndex: 2);
     WriteRouterDtree(image.AsSpan(inoOff + XtreeDataOffset, DiDataSize), dir, parentIno);
@@ -926,7 +941,13 @@ public sealed class JfsWriter {
       data[headOff + 5] = (byte)name.Length;                             // total namlen
       for (var c = 0; c < headChars; c++)
         BinaryPrimitives.WriteUInt16LittleEndian(data[(headOff + 6 + c * 2)..], name[c]);
-      BinaryPrimitives.WriteUInt32LittleEndian(data[(headOff + 28)..], (uint)i);
+      // ldtentry.index is the dir_table cookie (DTLHDRDATALEN layout, +28).
+      // 0 means "no persistent index entry": fsck.jfs explicitly tolerates a
+      // zero cookie (the live FS lazily rebuilds the dir_table on first use),
+      // so we keep di_next_index = 2 and emit no inline dir_table. A nonzero
+      // cookie would have to match a populated dir_table_slot or fsck reports
+      // it dirty.
+      BinaryPrimitives.WriteUInt32LittleEndian(data[(headOff + 28)..], 0u);
 
       // Chain continuation slots for any characters beyond the head capacity.
       var prevNextOff = headOff + 4;                                      // head ldtentry `next` byte
@@ -1181,7 +1202,7 @@ public sealed class JfsWriter {
         var headChars = Math.Min(e.Name.Length, DtHeadNameChars);
         for (var c = 0; c < headChars; c++)
           BinaryPrimitives.WriteUInt16LittleEndian(data[(headOff + 6 + c * 2)..], e.Name[c]);
-        BinaryPrimitives.WriteUInt32LittleEndian(data[(headOff + 28)..], (uint)i); // index
+        BinaryPrimitives.WriteUInt32LittleEndian(data[(headOff + 28)..], 0u); // dir_table cookie (0 ⇒ unindexed; see WriteInlineDtree)
         nextSlot = WriteNameContinuation(data, headOff + 4, e.Name, headChars, nextSlot, DtPageMaxSlot - 1, usedSlots);
       } else {
         nextSlot = WriteIdtentry(data, headSlot, e.ChildBlock, e.Name, nextSlot, DtPageMaxSlot - 1, usedSlots);
