@@ -113,7 +113,7 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         solid: options.SolidSize == 0, password: options.Password);
       foreach (var i in inputs) {
         if (i.IsDirectory) continue; // RAR writer doesn't track empty dirs here
-        w4.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+        w4.AddFile(i.ArchiveName, i.ReadContent());
       }
       w4.Finish();
     } else {
@@ -124,7 +124,7 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         encryptHeaders: options.EncryptFilenames);
       foreach (var i in inputs) {
         if (i.IsDirectory) continue;
-        w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+        w.AddFile(i.ArchiveName, i.ReadContent());
       }
       w.Finish();
     }

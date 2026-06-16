@@ -39,7 +39,7 @@ public static class ParallelZipCreator {
     var options = new ParallelOptions { MaxDegreeOfParallelism = maxThreads };
     Parallel.For(0, files.Count, options, i => {
       var input = files[i];
-      var data = File.ReadAllBytes(input.FullPath);
+      var data = input.ReadContent();
       var crc = Crc32.Compute(data);
 
       var entryMethod = incompressible != null && incompressible.Contains(input.FullPath)
@@ -79,7 +79,7 @@ public static class ParallelZipCreator {
       compressionLevel: level, password: password, encryptionMethod: encryptionMethod);
     foreach (var i in inputs) {
       if (i.IsDirectory) { w.AddDirectory(i.ArchiveName); continue; }
-      var data = File.ReadAllBytes(i.FullPath);
+      var data = i.ReadContent();
       var entryMethod = incompressible != null && incompressible.Contains(i.FullPath)
         ? ZipCompressionMethod.Store
         : method;

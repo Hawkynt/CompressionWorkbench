@@ -95,7 +95,7 @@ public sealed class WarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var w = new WarcWriter();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      var data = File.ReadAllBytes(i.FullPath);
+      var data = i.ReadContent();
       // Use the archive name as the WARC-Target-URI so the extractor can
       // reconstruct it (SanitizeUri keeps slashes/dots/dashes/alphanumeric).
       w.AddResource(i.ArchiveName, data);

@@ -137,7 +137,7 @@ public sealed class Atari8FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var total = 0L;
-    foreach (var i in inputs) if (!i.IsDirectory) total += new FileInfo(i.FullPath).Length;
+    foreach (var i in inputs) if (!i.IsDirectory) total += i.InMemoryContent?.LongLength ?? new FileInfo(i.FullPath).Length;
     if (this.MaxTotalArchiveSize is long cap && total > cap)
       throw new InvalidOperationException(
         $"AtariDOS: combined input size {total} bytes exceeds SS/SD capacity ({cap} bytes).");

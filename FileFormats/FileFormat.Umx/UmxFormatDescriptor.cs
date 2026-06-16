@@ -58,7 +58,7 @@ public sealed class UmxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     byte[]? embedded = null;
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      embedded = File.ReadAllBytes(i.FullPath);
+      embedded = i.ReadContent();
       break;
     }
     new UmxWriter().WriteTo(output, embedded);

@@ -77,7 +77,7 @@ public sealed class U8FormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     foreach (var input in inputs) {
       if (input.IsDirectory)
         continue;
-      var data = File.ReadAllBytes(input.FullPath);
+      var data = input.ReadContent();
       w.AddEntry(input.ArchiveName, data);
     }
   }

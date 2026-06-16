@@ -73,7 +73,7 @@ public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       if (input.IsDirectory) {
         w.AddDirectory(input.ArchiveName);
       } else {
-        var data = File.ReadAllBytes(input.FullPath);
+        var data = input.ReadContent();
         w.AddFile(input.ArchiveName, data);
       }
     }
