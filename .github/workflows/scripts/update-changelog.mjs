@@ -129,6 +129,19 @@ function isoToday() {
     return new Date().toISOString().slice(0, 10);
 }
 
+// GitHub rejects a release body over 125,000 characters. Cap the notes body
+// under a safe limit, cutting at a line boundary and appending a pointer to the
+// full CHANGELOG.md so a large nightly delta still publishes.
+const GITHUB_RELEASE_BODY_LIMIT = 125_000;
+function capReleaseBody(body) {
+    const FOOTER = '\n\n_…release notes truncated; see [CHANGELOG.md](CHANGELOG.md) for the full list._';
+    if (body.length <= GITHUB_RELEASE_BODY_LIMIT) return body;
+    const budget = GITHUB_RELEASE_BODY_LIMIT - FOOTER.length;
+    let cut = body.lastIndexOf('\n', budget);
+    if (cut < budget * 0.5) cut = budget; // no nearby newline — hard cut
+    return body.slice(0, cut).trimEnd() + FOOTER;
+}
+
 // ---------------------------------------------------------------------------
 // CLI entry
 // ---------------------------------------------------------------------------
@@ -170,9 +183,16 @@ function main() {
     // Release-notes body = the buckets without the leading "## <header>" line
     // (the GitHub release title already carries it). Written even when empty so
     // the workflow's body_path always resolves.
+    //
+    // GitHub rejects a release body longer than 125,000 characters, so when a
+    // nightly accumulates a huge delta (e.g. many commits since the last tag) the
+    // body is truncated at a line boundary under a safe cap and a pointer to the
+    // committed CHANGELOG.md is appended. The full history always lives in
+    // CHANGELOG.md (written below), so nothing is lost — only the release page
+    // shows an excerpt.
     if (notesPath) {
-        const body = section.replace(/^##[^\n]*\n\n?/, '');
-        fs.writeFileSync(notesPath, body.trimEnd() + '\n');
+        const body = section.replace(/^##[^\n]*\n\n?/, '').trimEnd();
+        fs.writeFileSync(notesPath, capReleaseBody(body) + '\n');
         console.log(`Wrote release notes to ${notesPath}.`);
     }
 
