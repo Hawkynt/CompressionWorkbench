@@ -76,7 +76,7 @@ public sealed class LhFFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var name = Path.GetFileNameWithoutExtension(i.ArchiveName);
       var underscore = name.LastIndexOf('_');
       var explicitTrack = underscore >= 0 && int.TryParse(name[(underscore + 1)..], out var n) ? n : trackNum;
-      w.AddTrack(explicitTrack, File.ReadAllBytes(i.FullPath));
+      w.AddTrack(explicitTrack, i.ReadContent());
       trackNum++;
     }
     w.WriteTo(output);

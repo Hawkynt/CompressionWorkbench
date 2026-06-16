@@ -90,7 +90,7 @@ public sealed class NsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new NsaWriter();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      w.AddFile(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+      w.AddFile(i.ArchiveName, i.ReadContent());
     }
     w.WriteTo(output);
   }

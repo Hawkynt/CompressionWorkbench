@@ -43,7 +43,7 @@ public sealed class PackDiskFormatDescriptor : IFormatDescriptor, IArchiveFormat
     var w = new PackDiskWriter("PDSK");
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      w.AddTrack(File.ReadAllBytes(i.FullPath));
+      w.AddTrack(i.ReadContent());
     }
     w.WriteTo(output);
   }

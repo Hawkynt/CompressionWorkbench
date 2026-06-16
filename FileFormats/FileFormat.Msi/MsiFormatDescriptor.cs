@@ -91,7 +91,7 @@ public sealed class MsiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var leaf = Path.GetFileName(i.ArchiveName);
       if (string.IsNullOrEmpty(leaf)) leaf = i.ArchiveName;
       if (leaf.Length > 31) leaf = leaf[..31];
-      w.AddStream(leaf, File.ReadAllBytes(i.FullPath));
+      w.AddStream(leaf, i.ReadContent());
     }
     w.WriteTo(output);
   }

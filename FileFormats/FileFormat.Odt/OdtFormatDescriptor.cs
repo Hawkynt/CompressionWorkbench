@@ -116,7 +116,7 @@ public sealed class OdtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     using var w = new FileFormat.Zip.ZipWriter(output, leaveOpen: true);
     foreach (var i in inputs) {
       if (i.IsDirectory) { w.AddDirectory(i.ArchiveName); continue; }
-      w.AddEntry(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+      w.AddEntry(i.ArchiveName, i.ReadContent());
     }
   }
 }

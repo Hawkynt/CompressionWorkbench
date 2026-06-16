@@ -54,7 +54,7 @@ public sealed class MsgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new Msi.CfbWriter();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      w.AddStream(CfbStreamName(i.ArchiveName), File.ReadAllBytes(i.FullPath));
+      w.AddStream(CfbStreamName(i.ArchiveName), i.ReadContent());
     }
     w.WriteTo(output);
   }

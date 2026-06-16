@@ -58,7 +58,7 @@ public sealed class DcsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new PackDiskWriter("DCS\0");
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      w.AddTrack(File.ReadAllBytes(i.FullPath));
+      w.AddTrack(i.ReadContent());
     }
     w.WriteTo(output);
   }

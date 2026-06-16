@@ -175,7 +175,7 @@ public sealed class MsixFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         w.AddDirectory(i.ArchiveName);
         continue;
       }
-      w.AddEntry(i.ArchiveName, File.ReadAllBytes(i.FullPath));
+      w.AddEntry(i.ArchiveName, i.ReadContent());
     }
   }
 

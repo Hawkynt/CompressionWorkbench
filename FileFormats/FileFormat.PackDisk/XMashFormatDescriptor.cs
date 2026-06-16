@@ -59,7 +59,7 @@ public sealed class XMashFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     var w = new PackDiskWriter("XMSH");
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
-      w.AddTrack(File.ReadAllBytes(i.FullPath));
+      w.AddTrack(i.ReadContent());
     }
     w.WriteTo(output);
   }
