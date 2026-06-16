@@ -14,6 +14,49 @@ public class SzddTests {
     Assert.That(result, Is.EqualTo(input));
   }
 
+  // ── Old "SZ " (QBasic / pre-SZDD) COMPRESS variant ────────────────────────
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void QBasic_RoundTrip_TextWithMatches() {
+    var input = "MZ........the quick brown fox the quick brown fox the quick brown fox"u8.ToArray();
+    var compressed = SzddStream.CompressQBasic(input);
+    // 12-byte "SZ " header: magic at 0-7, u32 length at 8-11, stream at 12.
+    Assert.That(compressed[0], Is.EqualTo(0x53)); // 'S'
+    Assert.That(compressed[1], Is.EqualTo(0x5A)); // 'Z'
+    Assert.That(compressed[2], Is.EqualTo(0x20)); // ' '
+    Assert.That(compressed[7], Is.EqualTo(0xD1)); // trailing 0xD1 distinguishes from SZDD
+    var result = SzddStream.Decompress(compressed);
+    Assert.That(result, Is.EqualTo(input));
+  }
+
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
+  [Test]
+  public void QBasic_RoundTrip_Empty() {
+    byte[] input = [];
+    var compressed = SzddStream.CompressQBasic(input);
+    Assert.That(compressed.Length, Is.GreaterThanOrEqualTo(12));
+    Assert.That(SzddStream.Decompress(compressed), Is.EqualTo(input));
+  }
+
+  // Validates the real-format literal path the user observed: a first control
+  // byte 0xFF (8 set bits = 8 literals) over the 12-byte "SZ " header yields the
+  // 8 literal bytes verbatim — e.g. an "MZ" EXE header.
+  [Category("Boundary")]
+  [Test]
+  public void QBasic_FirstControl0xFF_YieldsEightLiterals() {
+    var literals = new byte[] { (byte)'M', (byte)'Z', 0x90, 0x00, 0x03, 0x00, 0x00, 0x00 };
+    var blob = new byte[12 + 1 + literals.Length];
+    new byte[] { 0x53, 0x5A, 0x20, 0x88, 0xF0, 0x27, 0x33, 0xD1 }.CopyTo(blob, 0);
+    blob[8] = (byte)literals.Length; // u32 LE uncompressed length = 8
+    blob[12] = 0xFF;                  // control: all 8 items are literals
+    literals.CopyTo(blob, 13);
+    var result = SzddStream.Decompress(blob);
+    Assert.That(result, Is.EqualTo(literals));
+  }
+
   [Category("EdgeCase")]
   [Category("RoundTrip")]
   [Test]

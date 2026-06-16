@@ -80,6 +80,22 @@ public static class SzddStream {
     CompressCore(data, missingChar);
 
   /// <summary>
+  /// Compresses <paramref name="data"/> in the older "SZ " (QBasic) COMPRESS
+  /// variant and returns the result. The body is the same LZSS stream as SZDD,
+  /// wrapped in the 12-byte "SZ " header (8-byte magic + little-endian u32
+  /// uncompressed length). Round-trips through <see cref="Decompress(ReadOnlySpan{byte})"/>.
+  /// </summary>
+  public static byte[] CompressQBasic(ReadOnlySpan<byte> data) =>
+    CompressCore(data, missingChar: '\0', qbasic: true);
+
+  /// <summary>Stream overload of <see cref="CompressQBasic(ReadOnlySpan{byte})"/>.</summary>
+  public static void CompressQBasic(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    output.Write(CompressCore(ReadAllBytes(input), missingChar: '\0', qbasic: true));
+  }
+
+  /// <summary>
   /// Decompresses an SZDD-encoded byte array and returns the raw data.
   /// </summary>
   /// <param name="data">The complete SZDD file contents.</param>
@@ -91,7 +107,7 @@ public static class SzddStream {
 
   // ── Core compression ────────────────────────────────────────────────────────
 
-  private static byte[] CompressCore(ReadOnlySpan<byte> input, char missingChar) {
+  private static byte[] CompressCore(ReadOnlySpan<byte> input, char missingChar, bool qbasic = false) {
     // Initialise ring buffer
     var window = new byte[SzddConstants.WindowSize];
     window.AsSpan().Fill(SzddConstants.WindowFill);
@@ -174,7 +190,18 @@ public static class SzddStream {
 
     var bodyBytes = body.ToArray();
 
-    // Build header + body.
+    // Build header + body. The QBasic variant has a 12-byte header (8-byte magic
+    // + u32 length); the SZDD variant a 14-byte header (magic + mode + missing
+    // char + u32 length). The LZSS body is identical.
+    if (qbasic) {
+      var qResult = new byte[SzddConstants.QBasicHeaderSize + bodyBytes.Length];
+      var qHdr = qResult.AsSpan(0, SzddConstants.QBasicHeaderSize);
+      SzddConstants.QBasicMagic.CopyTo(qHdr);                            // 0-7
+      BinaryPrimitives.WriteUInt32LittleEndian(qHdr[8..], (uint)input.Length); // 8-11
+      bodyBytes.AsSpan().CopyTo(qResult.AsSpan(SzddConstants.QBasicHeaderSize));
+      return qResult;
+    }
+
     var result = new byte[SzddConstants.HeaderSize + bodyBytes.Length];
     var hdr = result.AsSpan(0, SzddConstants.HeaderSize);
 
@@ -257,12 +284,22 @@ public static class SzddStream {
   // ── Core decompression ──────────────────────────────────────────────────────
 
   private static byte[] DecompressCore(ReadOnlySpan<byte> data) {
-    if (data.Length < SzddConstants.HeaderSize)
+    if (data.Length < SzddConstants.MagicLength)
+      throw new InvalidDataException("Input is shorter than the SZDD magic.");
+
+    // Both the modern "SZDD" (14-byte header, u32 length at offset 10) and the
+    // older "SZ " / QBasic variant (12-byte header, u32 length at offset 8) share
+    // the identical 4096-byte-ring LZSS body, so only the header geometry differs.
+    var isQBasic = data[..SzddConstants.MagicLength].SequenceEqual(SzddConstants.QBasicMagic);
+    var headerSize = isQBasic ? SzddConstants.QBasicHeaderSize : SzddConstants.HeaderSize;
+    if (data.Length < headerSize)
       throw new InvalidDataException("Input is shorter than the SZDD header.");
 
     ValidateHeader(data);
 
-    var uncompressedSize = BinaryPrimitives.ReadUInt32LittleEndian(data[10..]);
+    var uncompressedSize = isQBasic
+      ? BinaryPrimitives.ReadUInt32LittleEndian(data[8..])
+      : BinaryPrimitives.ReadUInt32LittleEndian(data[10..]);
 
     // Initialise ring buffer.
     var window = new byte[SzddConstants.WindowSize];
@@ -271,7 +308,7 @@ public static class SzddStream {
 
     var output = new byte[uncompressedSize];
     var outPos = 0;
-    var srcPos = SzddConstants.HeaderSize;
+    var srcPos = headerSize;
     var srcLen = data.Length;
 
     while (srcPos < srcLen && outPos < (int)uncompressedSize) {
@@ -315,6 +352,10 @@ public static class SzddStream {
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
   private static void ValidateHeader(ReadOnlySpan<byte> header) {
+    // Old "SZ " / QBasic variant — 8-byte magic, no mode byte.
+    if (header[..SzddConstants.MagicLength].SequenceEqual(SzddConstants.QBasicMagic))
+      return;
+
     if (!header[..4].SequenceEqual(SzddConstants.Magic) ||
         !header[4..8].SequenceEqual(SzddConstants.MagicSuffix)) {
       throw new InvalidDataException("Invalid SZDD magic bytes.");
