@@ -139,7 +139,9 @@ public class Nilfs2WriterTests {
     var w = new Nilfs2Writer();
     w.AddFile("x", new byte[] { 1 });
     var img = w.Build(volumeLabel: "TEST_VOL");
-    var label = Encoding.ASCII.GetString(img.AsSpan(1024 + 0x80, 8));
+    // s_volume_name lives at superblock+0xA8 (verified byte-for-byte against
+    // mkfs.nilfs2 output); the earlier +0x80 was a non-spec offset.
+    var label = Encoding.ASCII.GetString(img.AsSpan(1024 + 0xA8, 8));
     Assert.That(label, Is.EqualTo("TEST_VOL"));
   }
 }

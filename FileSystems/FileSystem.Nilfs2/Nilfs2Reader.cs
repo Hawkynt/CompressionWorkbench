@@ -46,6 +46,22 @@ public sealed class Nilfs2Reader : IDisposable {
   public ulong DevSize { get; private set; }
   public uint BlocksPerSegment { get; private set; }
   public ulong LastCheckpoint { get; private set; }
+  public ushort SBytes { get; private set; }
+  public uint CrcSeed { get; private set; }
+  public uint StoredSum { get; private set; }
+  public string Uuid { get; private set; } = "";
+  public string VolumeLabel { get; private set; } = "";
+
+  /// <summary>
+  /// True when the parsed superblock's stored <c>s_sum</c> matches a freshly
+  /// computed Linux <c>crc32_le</c> over its first <c>s_bytes</c> bytes. mkfs and
+  /// our own writer both produce CRC-valid superblocks; a false here flags a
+  /// corrupt or hand-edited image.
+  /// </summary>
+  public bool ChecksumValid { get; private set; }
+
+  /// <summary>Which superblock copy was chosen as authoritative.</summary>
+  public string SuperblockSource { get; private set; } = "";
 
   public bool ValidSuperblock { get; private set; }
 
@@ -64,23 +80,37 @@ public sealed class Nilfs2Reader : IDisposable {
     if (_data.Length < SuperblockOffset + 0x80)
       throw new InvalidDataException("Nilfs2: image too small for superblock.");
 
-    var sb = _data.AsSpan(SuperblockOffset);
-    var magic = BinaryPrimitives.ReadUInt16LittleEndian(sb.Slice(6));
-    if (magic != SuperMagic)
-      throw new InvalidDataException($"Nilfs2: invalid magic 0x{magic:X4} at superblock+6 (expected 0x{SuperMagic:X4}).");
+    // NILFS2 carries two superblocks: primary at offset 1024 and a backup one
+    // block (4096 B) before EOF. Read both, validate magic + checksum, and pick
+    // the authoritative copy (the valid one with the higher s_last_cno — i.e.
+    // the most recently committed). This mirrors the kernel's mount-time choice
+    // and is what makes our reader correct against real mkfs.nilfs2 images, not
+    // just our own writer's output (reverse gate).
+    var primary = TryReadSuperblock(SuperblockOffset);
+    var secondaryOffset = _data.Length - Nilfs2Superblock.SecondaryBackOffset;
+    var secondary = secondaryOffset >= SuperblockOffset + Nilfs2Superblock.Size
+      ? TryReadSuperblock((int)secondaryOffset)
+      : (ParsedSb?)null;
 
-    var rev = BinaryPrimitives.ReadUInt32LittleEndian(sb);
-    if (rev < 2)
-      throw new InvalidDataException($"Nilfs2: s_rev_level={rev} (NILFS2 requires rev>=2; rev==1 is NILFS v1, handled by Nilfs1 descriptor).");
+    var chosen = ChooseSuperblock(primary, secondary, out var source)
+      ?? throw new InvalidDataException(
+        "Nilfs2: no valid superblock (magic 0x3434 / s_rev_level>=2) found at offset 1024 or dev_size-4096.");
 
-    this.Magic = magic;
+    this.Magic = chosen.Magic;
     this.ValidSuperblock = true;
-    this.RevLevel         = rev;
-    this.LogBlockSize     = BinaryPrimitives.ReadUInt32LittleEndian(sb.Slice(0x14));
-    this.NumSegments      = BinaryPrimitives.ReadUInt64LittleEndian(sb.Slice(0x18));
-    this.DevSize          = BinaryPrimitives.ReadUInt64LittleEndian(sb.Slice(0x20));
-    this.BlocksPerSegment = BinaryPrimitives.ReadUInt32LittleEndian(sb.Slice(0x30));
-    this.LastCheckpoint   = BinaryPrimitives.ReadUInt64LittleEndian(sb.Slice(0x38));
+    this.RevLevel         = chosen.RevLevel;
+    this.SBytes           = chosen.SBytes;
+    this.CrcSeed          = chosen.CrcSeed;
+    this.StoredSum        = chosen.StoredSum;
+    this.ChecksumValid    = chosen.ChecksumValid;
+    this.LogBlockSize     = chosen.LogBlockSize;
+    this.NumSegments      = chosen.NumSegments;
+    this.DevSize          = chosen.DevSize;
+    this.BlocksPerSegment = chosen.BlocksPerSegment;
+    this.LastCheckpoint   = chosen.LastCno;
+    this.Uuid             = chosen.Uuid;
+    this.VolumeLabel      = chosen.VolumeLabel;
+    this.SuperblockSource = source;
 
     // Build the always-present surface entries: full image + parsed metadata + raw superblock
     var meta = BuildMetadata();
@@ -218,6 +248,79 @@ public sealed class Nilfs2Reader : IDisposable {
     }
   }
 
+  /// <summary>Parsed view of one on-disk superblock copy.</summary>
+  private readonly record struct ParsedSb(
+    ushort Magic, uint RevLevel, ushort SBytes, uint CrcSeed, uint StoredSum,
+    bool ChecksumValid, uint LogBlockSize, ulong NumSegments, ulong DevSize,
+    uint BlocksPerSegment, ulong LastCno, ushort State, string Uuid, string VolumeLabel);
+
+  /// <summary>
+  /// Decodes the superblock at <paramref name="offset"/>, validating magic and
+  /// s_rev_level. Returns <c>null</c> when the copy is absent / not a NILFS2
+  /// superblock; a present-but-checksum-invalid copy is still returned (with
+  /// <see cref="ParsedSb.ChecksumValid"/> = false) so the caller can prefer the
+  /// other copy or surface the integrity flag.
+  /// </summary>
+  private ParsedSb? TryReadSuperblock(int offset) {
+    if (offset < 0 || offset + Nilfs2Superblock.Size > _data.Length) {
+      if (offset < 0 || offset + 0x80 > _data.Length) return null;
+    }
+    var sb = _data.AsSpan(offset);
+    var magic = BinaryPrimitives.ReadUInt16LittleEndian(sb[6..]);
+    if (magic != SuperMagic) return null;
+    var rev = BinaryPrimitives.ReadUInt32LittleEndian(sb);
+    if (rev < 2) return null; // rev==1 is NILFS v1, handled by the Nilfs1 descriptor.
+
+    var sbytes = BinaryPrimitives.ReadUInt16LittleEndian(sb[8..]);
+    var crcSeed = BinaryPrimitives.ReadUInt32LittleEndian(sb[0x0C..]);
+    var stored = BinaryPrimitives.ReadUInt32LittleEndian(sb[0x10..]);
+    var checksumValid = sb.Length >= Nilfs2Superblock.SBytes && Nilfs2Superblock.VerifyChecksum(sb);
+
+    var uuid = "";
+    if (sb.Length >= 0xA8)
+      uuid = Convert.ToHexString(sb.Slice(0x98, 16)).ToLowerInvariant();
+    var label = "";
+    if (sb.Length >= 0xA8 + 80) {
+      var raw = sb.Slice(0xA8, 80);
+      var nul = raw.IndexOf((byte)0);
+      label = Encoding.ASCII.GetString(nul < 0 ? raw : raw[..nul]);
+    }
+
+    return new ParsedSb(
+      magic, rev, sbytes, crcSeed, stored, checksumValid,
+      BinaryPrimitives.ReadUInt32LittleEndian(sb[0x14..]),
+      BinaryPrimitives.ReadUInt64LittleEndian(sb[0x18..]),
+      BinaryPrimitives.ReadUInt64LittleEndian(sb[0x20..]),
+      BinaryPrimitives.ReadUInt32LittleEndian(sb[0x30..]),
+      BinaryPrimitives.ReadUInt64LittleEndian(sb[0x38..]),
+      sb.Length >= 0x76 ? BinaryPrimitives.ReadUInt16LittleEndian(sb[0x74..]) : (ushort)0,
+      uuid, label);
+  }
+
+  /// <summary>
+  /// Picks the authoritative superblock: prefer a checksum-valid copy; among
+  /// equally-valid copies prefer the higher s_last_cno (most recent commit);
+  /// fall back to any present copy if neither checksum matches.
+  /// </summary>
+  private static ParsedSb? ChooseSuperblock(ParsedSb? primary, ParsedSb? secondary, out string source) {
+    source = "";
+    if (primary is null && secondary is null) return null;
+    if (primary is null) { source = "secondary"; return secondary; }
+    if (secondary is null) { source = "primary"; return primary; }
+
+    var p = primary.Value;
+    var s = secondary.Value;
+    // Valid copy wins over invalid.
+    if (p.ChecksumValid != s.ChecksumValid) {
+      if (p.ChecksumValid) { source = "primary"; return p; }
+      source = "secondary"; return s;
+    }
+    // Both same validity: newer checkpoint wins.
+    if (s.LastCno > p.LastCno) { source = "secondary"; return s; }
+    source = "primary";
+    return p;
+  }
+
   private byte[] BuildMetadata() {
     var bldr = new StringBuilder();
     bldr.Append("parse_status=ok\n");
@@ -231,7 +334,14 @@ public sealed class Nilfs2Reader : IDisposable {
     bldr.Append(CultureInfo.InvariantCulture, $"dev_size={this.DevSize}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"blocks_per_segment={this.BlocksPerSegment}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"last_checkpoint={this.LastCheckpoint}\n");
-    bldr.Append("note=DAT/segment traversal not implemented (research read-only).\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"s_bytes={this.SBytes}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"crc_seed=0x{this.CrcSeed:X8}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"s_sum=0x{this.StoredSum:X8}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"checksum_valid={(this.ChecksumValid ? "true" : "false")}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"superblock_source={this.SuperblockSource}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"uuid={this.Uuid}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"volume_label={this.VolumeLabel}\n");
+    bldr.Append("note=DAT/segment B-tree traversal not implemented (file listing via writer-private directory only).\n");
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 

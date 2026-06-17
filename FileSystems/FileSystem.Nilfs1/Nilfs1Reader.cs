@@ -30,7 +30,7 @@ namespace FileSystem.Nilfs1;
 ///   0x20 u64 s_dev_size
 ///   0x30 u32 s_blocks_per_segment
 ///   0x38 u64 s_last_cno          (last checkpoint number)
-///   0x80 byte[16] volume label   (written by Nilfs1Writer; ignored by NILFS-v1 kernels)
+///   0xA8 byte[80] volume label   (s_volume_name; written by Nilfs1Writer)
 ///   ...
 /// </para>
 /// </summary>

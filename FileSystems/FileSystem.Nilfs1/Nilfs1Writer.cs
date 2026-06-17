@@ -37,6 +37,44 @@ public sealed class Nilfs1Writer {
   /// boot / superblock region).</summary>
   internal const int SegmentStart = 2048;
 
+  /// <summary>
+  /// Bytes of the superblock covered by the checksum. The <c>nilfs_super_block</c>
+  /// struct is shared between NILFS v1 and v2 (only <c>s_rev_level</c> differs), so
+  /// the same 280-byte checksum length, crc32_le scheme, and field offsets apply.
+  /// </summary>
+  internal const ushort SuperBytes = 280;
+  internal const int SuperblockSize = 1024;
+  internal const int SecondaryBackOffset = 4096;
+  internal const ushort StateValid = 0x0001;
+
+  /// <summary>Deterministic per-volume UUID + CRC seed for reproducible output.</summary>
+  private static readonly byte[] FixedUuid = [
+    0xC0, 0x4F, 0x5B, 0x21, 0x77, 0xE5, 0x4A, 0x12,
+    0x9D, 0xC1, 0xF1, 0x80, 0x03, 0xBE, 0x8C, 0xD2,
+  ];
+  private const uint FixedCrcSeed = 0x5A4C3A80u;
+
+  /// <summary>
+  /// Linux <c>crc32_le</c> (reflected IEEE polynomial, no input/output inversion).
+  /// The <paramref name="seed"/> is the literal LFSR init (NILFS s_crc_seed).
+  /// </summary>
+  internal static uint Crc32Le(uint seed, ReadOnlySpan<byte> data) {
+    var crc = seed;
+    foreach (var b in data) {
+      crc ^= b;
+      for (var k = 0; k < 8; ++k)
+        crc = (crc >> 1) ^ (0xEDB88320u & (uint)(-(int)(crc & 1)));
+    }
+    return crc;
+  }
+
+  /// <summary>Seals the s_sum checksum over the first <see cref="SuperBytes"/> bytes.</summary>
+  internal static void FinalizeSuperblockChecksum(Span<byte> sb, uint seed) {
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[0x10..], 0);
+    var sum = Crc32Le(seed, sb[..SuperBytes]);
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[0x10..], sum);
+  }
+
   private readonly List<(string Name, byte[] Data)> _files = [];
 
   /// <summary>Adds a file to the image. Subdirectory paths are encoded with
@@ -50,7 +88,7 @@ public sealed class Nilfs1Writer {
   /// <summary>Builds the NILFS v1 image. <paramref name="blockSize"/> drives the
   /// superblock's <c>s_log_block_size</c> field (must be a power of two between 1024
   /// and 65536). <paramref name="volumeLabel"/> is stored in the superblock's
-  /// volume-label area (NILFS v1 has a 16-byte label slot at offset 0x80).
+  /// volume-label area (s_volume_name, an 80-byte slot at offset 0xA8).
   /// <paramref name="enableChecksum"/> sets the corresponding feature flag bit.
   /// </summary>
   public byte[] Build(int blockSize = 4096, int segmentSize = 0, string? volumeLabel = null, bool enableChecksum = false) {
@@ -65,34 +103,31 @@ public sealed class Nilfs1Writer {
     foreach (var (_, data) in _files) dataSize += data.LongLength;
     var bodyBytes = WriterMagic.Length + 8 + dirSize + dataSize;
     // Pad image to at least 64 KB and to a multiple of blockSize so external
-    // tools that walk in block units don't read past EOF.
-    var minImageBytes = Math.Max(64 * 1024L, SegmentStart + bodyBytes + blockSize);
+    // tools that walk in block units don't read past EOF. Reserve a tail block
+    // for the secondary superblock at imageBytes - 4096.
+    var tailReserve = Math.Max(SecondaryBackOffset, blockSize);
+    var minImageBytes = Math.Max(64 * 1024L, SegmentStart + bodyBytes + tailReserve);
     var imageBytes = (long)((minImageBytes + blockSize - 1) / blockSize) * blockSize;
 
     var img = new byte[imageBytes];
 
-    // ── Superblock at offset 1024 ──────────────────────────────────────────
-    var sb = img.AsSpan(1024);
-    BinaryPrimitives.WriteUInt32LittleEndian(sb, 1u);                                // s_rev_level
-    BinaryPrimitives.WriteUInt16LittleEndian(sb[4..], 0);                            // s_minor_rev_level
-    BinaryPrimitives.WriteUInt16LittleEndian(sb[6..], 0x3434);                       // s_magic
-    BinaryPrimitives.WriteUInt16LittleEndian(sb[8..], 1024);                         // s_bytes
-    BinaryPrimitives.WriteUInt16LittleEndian(sb[10..], (ushort)(enableChecksum ? 1 : 0)); // s_flags
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[0x14..], logBlockSize);              // s_log_block_size
-    // Segment size: caller may override; default = 8 blocks per segment, capped
-    // to at least one block.
     var actualSegBlocks = (uint)Math.Max(1, segmentSize > 0 ? segmentSize / blockSize : 8);
-    BinaryPrimitives.WriteUInt64LittleEndian(sb[0x18..], 1ul);                       // s_nsegments
-    BinaryPrimitives.WriteUInt64LittleEndian(sb[0x20..], (ulong)imageBytes);         // s_dev_size
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[0x30..], actualSegBlocks);           // s_blocks_per_segment
-    BinaryPrimitives.WriteUInt64LittleEndian(sb[0x38..], 1ul);                       // s_last_cno
+    var totalBlocks = (ulong)(imageBytes / blockSize);
+    var nSegments = Math.Max(1ul, (totalBlocks - 1) / actualSegBlocks);
+    const ulong fixedCtime = 1_700_000_000ul;
 
-    // Volume label at +0x80 (16 bytes, ASCII, NUL-padded).
-    if (!string.IsNullOrEmpty(volumeLabel)) {
-      var lbl = Encoding.ASCII.GetBytes(volumeLabel);
-      var copyLen = Math.Min(16, lbl.Length);
-      lbl.AsSpan(0, copyLen).CopyTo(sb[0x80..(0x80 + copyLen)]);
-    }
+    // ── Superblock pair (shared nilfs_super_block layout, s_rev_level=1) ────
+    // Byte-accurate to the v1/v2 struct: s_bytes=280, crc32_le-sealed s_sum,
+    // label at +0xA8, secondary copy one block before EOF. NILFS v1 predates the
+    // mainline driver and has no mkfs/mount tool, so there is no external gate;
+    // the hardening keeps the superblock structurally faithful regardless.
+    WriteSuperblock(img.AsSpan(1024), 1u, logBlockSize, nSegments, (ulong)imageBytes,
+      actualSegBlocks, enableChecksum, fixedCtime, volumeLabel);
+
+    var secondaryOffset = imageBytes - SecondaryBackOffset;
+    if (secondaryOffset >= SegmentStart + bodyBytes)
+      WriteSuperblock(img.AsSpan((int)secondaryOffset), 1u, logBlockSize, nSegments,
+        (ulong)imageBytes, actualSegBlocks, enableChecksum, fixedCtime, volumeLabel);
 
     // ── Segment / directory / payload at SegmentStart ──────────────────────
     var seg = img.AsSpan(SegmentStart);
@@ -120,6 +155,52 @@ public sealed class Nilfs1Writer {
     }
 
     return img;
+  }
+
+  /// <summary>
+  /// Encodes a complete 1024-byte NILFS superblock (shared v1/v2 struct) at
+  /// <paramref name="dest"/> and seals it with a valid crc32_le checksum.
+  /// </summary>
+  private static void WriteSuperblock(
+      Span<byte> dest, uint revLevel, uint logBlockSize, ulong nSegments,
+      ulong devSize, uint blocksPerSegment, bool enableChecksum, ulong ctime,
+      string? volumeLabel) {
+    dest[..SuperblockSize].Clear();
+    BinaryPrimitives.WriteUInt32LittleEndian(dest, revLevel);                  // s_rev_level
+    BinaryPrimitives.WriteUInt16LittleEndian(dest[4..], 0);                    // s_minor_rev_level
+    BinaryPrimitives.WriteUInt16LittleEndian(dest[6..], 0x3434);             // s_magic
+    BinaryPrimitives.WriteUInt16LittleEndian(dest[8..], SuperBytes);           // s_bytes
+    BinaryPrimitives.WriteUInt16LittleEndian(dest[10..], (ushort)(enableChecksum ? 1 : 0)); // s_flags
+    BinaryPrimitives.WriteUInt32LittleEndian(dest[0x0C..], FixedCrcSeed);      // s_crc_seed
+    // 0x10 s_sum filled below.
+    BinaryPrimitives.WriteUInt32LittleEndian(dest[0x14..], logBlockSize);      // s_log_block_size
+    BinaryPrimitives.WriteUInt64LittleEndian(dest[0x18..], nSegments);         // s_nsegments
+    BinaryPrimitives.WriteUInt64LittleEndian(dest[0x20..], devSize);           // s_dev_size
+    BinaryPrimitives.WriteUInt64LittleEndian(dest[0x28..], 1ul);             // s_first_data_block
+    BinaryPrimitives.WriteUInt32LittleEndian(dest[0x30..], blocksPerSegment);  // s_blocks_per_segment
+    BinaryPrimitives.WriteUInt32LittleEndian(dest[0x34..], 5u);              // s_r_segments_percentage
+    BinaryPrimitives.WriteUInt64LittleEndian(dest[0x38..], 1ul);             // s_last_cno
+    BinaryPrimitives.WriteUInt64LittleEndian(dest[0x40..], 1ul);             // s_last_pseg
+    BinaryPrimitives.WriteUInt64LittleEndian(dest[0x58..], ctime);             // s_ctime
+    BinaryPrimitives.WriteUInt64LittleEndian(dest[0x60..], ctime);             // s_mtime
+    BinaryPrimitives.WriteUInt64LittleEndian(dest[0x68..], ctime);             // s_wtime
+    BinaryPrimitives.WriteUInt16LittleEndian(dest[0x72..], 50);              // s_max_mnt_count
+    BinaryPrimitives.WriteUInt16LittleEndian(dest[0x74..], StateValid);        // s_state
+    BinaryPrimitives.WriteUInt16LittleEndian(dest[0x76..], 1);               // s_errors=CONTINUE
+    BinaryPrimitives.WriteUInt64LittleEndian(dest[0x78..], ctime);             // s_lastcheck
+    BinaryPrimitives.WriteUInt32LittleEndian(dest[0x8C..], 11u);             // s_first_ino
+    BinaryPrimitives.WriteUInt16LittleEndian(dest[0x90..], 128);             // s_inode_size
+    BinaryPrimitives.WriteUInt16LittleEndian(dest[0x92..], 32);              // s_dat_entry_size
+    BinaryPrimitives.WriteUInt16LittleEndian(dest[0x94..], 192);            // s_checkpoint_size
+    BinaryPrimitives.WriteUInt16LittleEndian(dest[0x96..], 16);             // s_segment_usage_size
+    FixedUuid.AsSpan().CopyTo(dest[0x98..]);                                   // s_uuid
+
+    if (!string.IsNullOrEmpty(volumeLabel)) {
+      var lbl = Encoding.ASCII.GetBytes(volumeLabel);
+      lbl.AsSpan(0, Math.Min(80, lbl.Length)).CopyTo(dest[0xA8..]);            // s_volume_name
+    }
+
+    FinalizeSuperblockChecksum(dest, FixedCrcSeed);
   }
 
   private int ComputeDirectoryBytes() {

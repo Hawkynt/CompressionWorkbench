@@ -61,10 +61,18 @@ public sealed class Nilfs2Writer {
   /// <summary>Offset of <c>s_last_cno</c> field within the superblock.</summary>
   internal const int LastCnoFieldOffset = 0x38;
 
-  private const ushort SuperMagic = 0x3434;
-  private const int SuperblockOffset = 1024;
-
   private readonly List<(string Name, byte[] Data)> _files = [];
+
+  /// <summary>
+  /// Deterministic UUID/CRC-seed source. NILFS images carry a per-volume random
+  /// UUID and CRC seed; the writer derives them from a fixed seed so output is
+  /// reproducible (and the checksum recomputes identically on read-back).
+  /// </summary>
+  private static readonly byte[] FixedUuid = [
+    0xC0, 0x4F, 0x5B, 0x21, 0x77, 0xE5, 0x4A, 0x12,
+    0x9D, 0xC1, 0xF1, 0x80, 0x03, 0xBE, 0x8C, 0xD2,
+  ];
+  private const uint FixedCrcSeed = 0x5A4C3A80u;
 
   /// <summary>Adds a file to the image.</summary>
   public void AddFile(string name, byte[] data) {
@@ -90,35 +98,48 @@ public sealed class Nilfs2Writer {
     var bodyBytes = WriterMagic.Length + 8 + dirSize + dataSize;
 
     // Pad image to at least 64 KB and to a multiple of blockSize so external
-    // tools that walk in block units don't read past EOF.
-    var minImageBytes = Math.Max(64L * 1024, SegmentStart + bodyBytes + blockSize);
+    // tools that walk in block units don't read past EOF. Reserve one extra
+    // tail block of slack so the secondary superblock (placed at
+    // imageBytes - 4096) never overlaps the writer body.
+    var tailReserve = Math.Max(Nilfs2Superblock.SecondaryBackOffset, blockSize);
+    var minImageBytes = Math.Max(64L * 1024, SegmentStart + bodyBytes + tailReserve);
     var imageBytes = ((minImageBytes + blockSize - 1) / blockSize) * blockSize;
 
     var img = new byte[imageBytes];
 
-    // ── Superblock at offset 1024 (NILFS2 layout) ─────────────────────────
-    var sb = img.AsSpan(SuperblockOffset);
-    BinaryPrimitives.WriteUInt32LittleEndian(sb, 2u);                                // s_rev_level = 2 (NILFS2)
-    BinaryPrimitives.WriteUInt16LittleEndian(sb[4..], 0);                            // s_minor_rev_level
-    BinaryPrimitives.WriteUInt16LittleEndian(sb[6..], SuperMagic);                   // s_magic
-    BinaryPrimitives.WriteUInt16LittleEndian(sb[8..], 1024);                         // s_bytes
-    BinaryPrimitives.WriteUInt16LittleEndian(sb[10..], 0);                           // s_flags
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[0x0C..], 0);                         // s_crc_seed
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[0x10..], 0);                         // s_sum
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[0x14..], logBlockSize);              // s_log_block_size
-    BinaryPrimitives.WriteUInt64LittleEndian(sb[0x18..], 1ul);                       // s_nsegments
-    BinaryPrimitives.WriteUInt64LittleEndian(sb[0x20..], (ulong)imageBytes);         // s_dev_size
-    BinaryPrimitives.WriteUInt64LittleEndian(sb[0x28..], 1ul);                       // s_first_data_block
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[0x30..], (uint)(imageBytes / blockSize)); // s_blocks_per_segment
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[0x34..], 5);                         // s_r_segments_percentage
-    BinaryPrimitives.WriteUInt64LittleEndian(sb[0x38..], 1ul);                       // s_last_cno (single checkpoint)
-    BinaryPrimitives.WriteUInt64LittleEndian(sb[0x40..], (ulong)(SegmentStart / blockSize)); // s_last_pseg
+    // ── Superblock pair (NILFS2 layout) ───────────────────────────────────
+    // Both copies are byte-accurate, CRC-valid superblocks matching the field
+    // layout mkfs.nilfs2 emits (s_bytes=280, crc32_le-sealed s_sum, label at
+    // +0xA8, secondary copy one block before EOF). The geometry fields are
+    // derived from the chosen block size so external NILFS2 sniffers that read
+    // s_dev_size / s_nsegments / s_blocks_per_segment see a self-consistent
+    // volume description.
+    var totalBlocks = (ulong)(imageBytes / blockSize);
+    // NILFS reserves the first segment for the boot/super region; blocks per
+    // segment defaults to 16 (mkfs -B). nsegments = usable blocks / bps.
+    var blocksPerSegment = (uint)Math.Min(16, Math.Max(1, totalBlocks));
+    var nSegments = Math.Max(1ul, (totalBlocks - 1) / blocksPerSegment);
+    // ctime is fixed so output is byte-reproducible.
+    const ulong fixedCtime = 1_700_000_000ul;
+    var freeBlocks = nSegments * blocksPerSegment;
 
-    if (!string.IsNullOrEmpty(volumeLabel)) {
-      var lbl = Encoding.ASCII.GetBytes(volumeLabel);
-      var copyLen = Math.Min(16, lbl.Length);
-      lbl.AsSpan(0, copyLen).CopyTo(sb[0x80..(0x80 + copyLen)]);
-    }
+    // Primary superblock at file offset 1024 (s_state advertises a clean FS).
+    Nilfs2Superblock.Encode(
+      img.AsSpan(Nilfs2Superblock.PrimaryOffset),
+      logBlockSize, nSegments, (ulong)imageBytes, blocksPerSegment,
+      lastCno: 1, lastPseg: 1, lastSeq: 0, freeBlocks: freeBlocks,
+      ctime: fixedCtime, state: Nilfs2Superblock.StateValid,
+      crcSeed: FixedCrcSeed, uuid: FixedUuid, volumeLabel: volumeLabel);
+
+    // Secondary superblock one block before EOF (mkfs writes a backup here).
+    var secondaryOffset = imageBytes - Nilfs2Superblock.SecondaryBackOffset;
+    if (secondaryOffset >= SegmentStart + bodyBytes)
+      Nilfs2Superblock.Encode(
+        img.AsSpan((int)secondaryOffset),
+        logBlockSize, nSegments, (ulong)imageBytes, blocksPerSegment,
+        lastCno: 1, lastPseg: 1, lastSeq: 0, freeBlocks: freeBlocks,
+        ctime: fixedCtime, state: Nilfs2Superblock.StateValid,
+        crcSeed: FixedCrcSeed, uuid: FixedUuid, volumeLabel: volumeLabel);
 
     // ── Segment region at SegmentStart: writer directory + payloads ───────
     var seg = img.AsSpan(SegmentStart);

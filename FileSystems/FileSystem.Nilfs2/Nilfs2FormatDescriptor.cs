@@ -63,7 +63,7 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "NILFS2 continuous-snapshot log-structured filesystem — Create emits superblock + base directory; Add/Replace/Remove append a fresh log segment at the tail and bump s_last_cno (only in-place edit, spec-sanctioned). Prior segments stay byte-identical at original offsets (continuous-snapshot invariant). Full DAT/IFile/CPFile/SUFile + segment-log replay out of scope — not kernel-mountable.";
+  public string Description => "NILFS2 continuous-snapshot log-structured filesystem — Create emits a byte-accurate, CRC-valid superblock pair (primary at 1024 + backup before EOF, s_bytes=280, crc32_le-sealed s_sum, label at +0xA8) plus a base directory; Add/Replace/Remove append a fresh log segment at the tail and bump s_last_cno (only in-place edit, spec-sanctioned). Prior segments stay byte-identical at original offsets (continuous-snapshot invariant). The reader validates real mkfs.nilfs2 superblocks (checksum + dual-SB selection). Full DAT/IFile/CPFile/SUFile + segment-log replay (super root) out of scope — the kernel nilfs2 driver rejects the image (not kernel-mountable).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new Nilfs2Reader(stream);
