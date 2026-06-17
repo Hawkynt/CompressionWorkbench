@@ -52,6 +52,8 @@ public sealed class DoubleSpaceReader : IDisposable {
   private int _dataLenSectors;
   private int _rootDirSectors;
   private int _firstDataSector; // inner FAT volume's first data sector
+  private int _innerBaseSector; // base sector of the embedded inner FAT volume (real MSDBL CVFs)
+  private int _realMdfatBaseOffset; // byte offset of MDFAT[0] for real MSDBL CVFs (0 if not real)
 
   // MDFAT: cluster index -> packed entry.
   // Packed entry format:
@@ -79,7 +81,11 @@ public sealed class DoubleSpaceReader : IDisposable {
     // ReadCluster — see IsDriveSpace3.
     this.Signature = Encoding.ASCII.GetString(this._data, 3, 8);
     var oem7 = Encoding.ASCII.GetString(this._data, 3, 7);
-    if (this.Signature is not ("MSDSP6.0" or "MSDSP6.2" or "DRVSPACE") && oem7 != "MS_DSP3")
+    // The genuine MS-DOS 6.x DoubleSpace/DriveSpace tools stamp the MDBPB OEM as "MSDBL6.0"/"MSDBL6.2"
+    // (verified against a real MS-DOS 6.22 `DRVSPACE /COMPRESS` image). Older docs/our own writer used
+    // "MSDSP6.x"; accept both so we read real DOS-created CVFs as well as our own output.
+    if (this.Signature is not ("MSDBL6.0" or "MSDBL6.2" or "MSDSP6.0" or "MSDSP6.2" or "DRVSPACE")
+        && oem7 != "MS_DSP3")
       throw new InvalidDataException($"DoubleSpace: invalid OEM signature '{this.Signature}'.");
 
     this._bytesPerSector = BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(11));
@@ -98,6 +104,41 @@ public sealed class DoubleSpaceReader : IDisposable {
 
     this._fatSize = BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(22));
 
+    // Real MS-DOS 6.x DoubleSpace/DriveSpace (OEM "MSDBL6.x", as stamped by a
+    // genuine DBLSPACE/DRVSPACE /COMPRESS) embed a complete inner FAT12/16
+    // volume whose own boot sector starts at the base sector recorded in the
+    // DoubleSpace geometry substructure at offset 0x27 (byte-packed right after
+    // the standard BPB; the following words hold the inner root-dir and
+    // first-data sector offsets). The inner volume's system area — boot, FAT
+    // and root directory — is stored contiguously from that base, so we parse
+    // the directory there. (Our own writer emits "MSDSP*"/"DRVSPACE" images
+    // whose inner volume starts at file offset 0, so this only triggers for
+    // real DOS-created CVFs.)
+    this._innerBaseSector = 0;
+    this._realMdfatBaseOffset = 0;
+    if (this.Signature is "MSDBL6.0" or "MSDBL6.2") {
+      var candidate = BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(0x27));
+      var candOff = candidate * this._bytesPerSector;
+      if (candidate > 0 && candidate < this._totalSectors
+          && candOff + 11 <= this._data.Length
+          && Encoding.ASCII.GetString(this._data, candOff + 3, 5) == "MSDBL")
+        this._innerBaseSector = candidate;
+
+      // The real DoubleSpace MDFAT maps each inner-volume cluster to a physical
+      // sector run in the CVF. MDFAT[0] lives at sector (u16@0x24 + 1), offset
+      // (u16@0x2D) entries in; entry C is a u32 at MDFAT[0] + C*4. Each entry's
+      // low 21 bits are the physical sector minus one (physical = (e&0x1FFFFF)+1);
+      // the upper bits carry the compressed run length / store flag. (Verified
+      // against real MS-DOS 6.22 DRVSPACE /COMPRESS images.)
+      if (this._innerBaseSector > 0) {
+        var mdfatStartSec = BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(0x24)) + 1;
+        var idxOff = BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(0x2D));
+        var baseOff = mdfatStartSec * this._bytesPerSector + idxOff * 4;
+        if (baseOff > 0 && baseOff < this._data.Length)
+          this._realMdfatBaseOffset = baseOff;
+      }
+    }
+
     // CVF-specific fields at offset 36 onwards.
     this.CvfSignature = Encoding.ASCII.GetString(this._data, 36, 4);
     this._mdfatStartSector = (int)BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(44));
@@ -108,10 +149,13 @@ public sealed class DoubleSpaceReader : IDisposable {
     this._dataLenSectors = (int)BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(64));
 
     this._rootDirSectors = (this._rootEntryCount * 32 + this._bytesPerSector - 1) / this._bytesPerSector;
-    this._firstDataSector = this._reservedSectors + this._fatCount * this._fatSize + this._rootDirSectors;
+    this._firstDataSector = this._innerBaseSector + this._reservedSectors + this._fatCount * this._fatSize + this._rootDirSectors;
 
-    // Read MDFAT if present.
-    if (this._mdfatStartSector > 0
+    // Read MDFAT if present. For real MSDBL CVFs the offset-36+ fields are
+    // geometry bytes, not a CVF MDFAT, so we skip it and read the inner volume
+    // contiguously from its base instead.
+    if (this._innerBaseSector == 0
+        && this._mdfatStartSector > 0
         && this._mdfatLenSectors > 0
         && this._mdfatStartSector < this._totalSectors) {
       var entryCount = this._mdfatLenSectors * this._bytesPerSector / 4;
@@ -125,7 +169,7 @@ public sealed class DoubleSpaceReader : IDisposable {
     }
 
     // Parse the inner FAT12/16 root directory.
-    var rootOffset = (this._reservedSectors + this._fatCount * this._fatSize) * this._bytesPerSector;
+    var rootOffset = (this._innerBaseSector + this._reservedSectors + this._fatCount * this._fatSize) * this._bytesPerSector;
     if (rootOffset + this._rootDirSectors * this._bytesPerSector <= this._data.Length)
       this.ReadDirectory(rootOffset, this._rootEntryCount, "");
   }
@@ -235,8 +279,19 @@ public sealed class DoubleSpaceReader : IDisposable {
   }
 
   private int ReadInnerFatEntry(int cluster) {
-    // FAT16 (we always produce FAT16) — 2 bytes per entry.
-    var fatOffset = this._reservedSectors * this._bytesPerSector;
+    var fatOffset = (this._innerBaseSector + this._reservedSectors) * this._bytesPerSector;
+
+    // Real MS-DOS DoubleSpace/DriveSpace inner volumes are FAT12.
+    if (this._realMdfatBaseOffset > 0) {
+      var o = fatOffset + cluster * 3 / 2;
+      if (o + 2 > this._data.Length) return 0xFFF;
+      var v = this._data[o] | (this._data[o + 1] << 8);
+      var e = (cluster & 1) == 0 ? v & 0xFFF : v >> 4;
+      // Normalise FAT12 end-of-chain to the FAT16 range the caller checks.
+      return e >= 0xFF8 ? 0xFFFF : e;
+    }
+
+    // Our own writer produces FAT16 — 2 bytes per entry.
     var entryOffset = fatOffset + cluster * 2;
     if (entryOffset + 2 > this._data.Length) return 0xFFFF;
     return BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(entryOffset));
@@ -244,6 +299,31 @@ public sealed class DoubleSpaceReader : IDisposable {
 
   private byte[] ReadCluster(int cluster) {
     var clusterBytes = this._bytesPerSector * this._sectorsPerCluster;
+
+    // Real MS-DOS DoubleSpace/DriveSpace CVF: resolve the cluster through the
+    // genuine MDFAT to its physical sector run. Clusters whose data the DOS
+    // driver could not compress are stored verbatim (the common case for
+    // already-compressed or high-entropy content) and read back byte-exact;
+    // compressible clusters carry an LZ run we decode via DsCompression.
+    if (this._realMdfatBaseOffset > 0 && cluster >= 0) {
+      var entryOff = this._realMdfatBaseOffset + cluster * 4;
+      if (entryOff + 4 <= this._data.Length) {
+        var entry = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(entryOff));
+        var physSector = (int)((entry & 0x1FFFFFu) + 1);
+        var physOffset = physSector * this._bytesPerSector;
+        if (entry != 0 && physOffset + clusterBytes <= this._data.Length) {
+          var run = this._data.AsSpan(physOffset, clusterBytes).ToArray();
+          try {
+            var dec = DsCompression.Decompress(run);
+            if (dec.Length >= clusterBytes) return dec;
+          } catch (InvalidDataException) {
+            // Not a valid LZ run — the cluster is stored verbatim.
+          }
+          return run;
+        }
+      }
+      return new byte[clusterBytes];
+    }
 
     // Try MDFAT indirection first.
     if (this._mdfat != null && cluster < this._mdfat.Length) {
