@@ -44,7 +44,7 @@ public static class XenixModifier {
   private const int BlockSize = 1024;          // we always emit type-code 2 (1024 B blocks)
   private const int InodeSize = 64;
   private const int InodesPerBlock = BlockSize / InodeSize; // 16
-  internal const uint MagicXenix = 0xFD187E20;
+  internal const uint MagicXenix = 0x002B5544;
   private const int RootInode = 2;
   private const int DirectZones = 10;
   private const int DirEntrySize = 16;
@@ -84,8 +84,8 @@ public static class XenixModifier {
   private const int OffSNinode = OffSFree + 4 * NicFree;          // 208
   private const int OffSInode = OffSNinode + 2;                   // 210
   private const int CacheEndOff = OffSInode + 2 * NicInod;        // 410
-  private const int OffSMagic = 504;
-  private const int OffSType = 508;
+  private const int OffSMagic = 0x3F8;  // genuine Xenix s_magic (0x2B5544)
+  private const int OffSType = 0x3FC;   // genuine Xenix s_type
 
   // ── Public API ──────────────────────────────────────────────────────────
 

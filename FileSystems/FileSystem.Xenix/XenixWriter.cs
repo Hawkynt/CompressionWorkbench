@@ -40,7 +40,14 @@ public sealed class XenixWriter : IDisposable {
   private const int BootBlockSize = 1024;
   private const int SuperblockOffset = 1024;
   private const int InodeSize = 64;
-  internal const uint MagicXenix = 0xFD187E20;
+  // Genuine Xenix superblock magic and offsets, as written by mkfs.xenix and
+  // checked verbatim by the Linux sysv driver's detect_xenix(): s_magic at
+  // struct offset 0x3F8 holds 0x2B5544, s_type at 0x3FC selects the block size
+  // (1=512B, 2=1024B, 3=2048B). The whole xenix_super_block is exactly one
+  // 1024-byte block, so it fits in block 1.
+  internal const uint MagicXenix = 0x002B5544;
+  internal const int MagicOffset = 0x3F8;
+  internal const int TypeOffset = 0x3FC;
   private const uint TypeCode1024 = 2; // matches reader BlockSize==1024
   private const int BlockSize = 1024;
   private const int RootInode = 2;
@@ -189,12 +196,15 @@ public sealed class XenixWriter : IDisposable {
     foreach (var dir in allDirs) {
       var zones = dirZones[dir];
       var size = (uint)(zones.Length * BlockSize);
-      WriteInode(disk, inodeTableOffset, (int)dir.Inode, ModeDirectory, size, zones);
+      // A directory's link count is 2 (itself + its "." entry) plus one ".."
+      // back-reference for each immediate subdirectory.
+      var subdirs = dir.Children.Count(c => c.Value.IsDirectory);
+      WriteInode(disk, inodeTableOffset, (int)dir.Inode, ModeDirectory, size, zones, (ushort)(2 + subdirs));
     }
     foreach (var file in allFiles) {
       var zones = fileZones[file];
       var size = (uint)file.FileData.Length;
-      WriteInode(disk, inodeTableOffset, (int)file.Inode, ModeRegularFile, size, zones);
+      WriteInode(disk, inodeTableOffset, (int)file.Inode, ModeRegularFile, size, zones, 1);
     }
 
     // ── 6. Emit directory zones (.,..,child×N) ─────────────────────────────
@@ -231,14 +241,21 @@ public sealed class XenixWriter : IDisposable {
     }
 
     // ── 8. Superblock ──────────────────────────────────────────────────────
-    // We populate the two fields the reader (and external sysv-style tools)
-    // actually consult: the magic at +504 and the block-size type code at
-    // +508. Other fields are left zero — Xenix images without inline
-    // free-list caches mount read-only via Linux's sysv driver, which is what
-    // we want for WORM emission.
+    // Genuine xenix_super_block fields the Linux sysv driver consults to mount
+    // a Xenix volume read-only:
+    //   s_isize (fs16 @ 0x000) — first data zone = first block past the inode
+    //                            table; the kernel derives the inode count as
+    //                            (s_isize - 2) * inodes_per_block from it.
+    //   s_fsize (fs32 @ 0x002) — total number of zones (blocks) in the volume.
+    //   s_magic (@ 0x3F8)      — 0x2B5544.
+    //   s_type  (@ 0x3FC)      — 2 (1024-byte blocks).
+    // The free-block/free-inode caches are left empty (we emit read-only WORM
+    // images); the kernel does not need them to enumerate and read files.
     var sb = disk.AsSpan(SuperblockOffset);
-    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(504), MagicXenix);
-    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(508), TypeCode1024);
+    BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(0x000), (ushort)firstDataBlock);
+    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(0x002), (uint)totalBlocks);
+    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(MagicOffset), MagicXenix);
+    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(TypeOffset), TypeCode1024);
 
     this._output.Write(disk);
   }
@@ -298,11 +315,12 @@ public sealed class XenixWriter : IDisposable {
   // The reader only consults mode/size/zones[0..12] — matching how the kernel
   // sysv driver enumerates a Xenix volume in read-only mode.
   private static void WriteInode(byte[] disk, int tableOff, int inodeNumber,
-      ushort mode, uint size, uint[] zones) {
+      ushort mode, uint size, uint[] zones, ushort nlink) {
     // Inodes are 1-based on disk: inode N lives at tableOff + (N-1)*InodeSize.
     var off = tableOff + (inodeNumber - 1) * InodeSize;
     var span = disk.AsSpan(off, InodeSize);
     BinaryPrimitives.WriteUInt16LittleEndian(span, mode);
+    BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(2), nlink);
     BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(8), size);
     for (var i = 0; i < Math.Min(zones.Length, DirectZones); i++)
       Write24(span.Slice(12 + i * 3), zones[i]);

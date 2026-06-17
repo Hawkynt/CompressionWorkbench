@@ -39,7 +39,12 @@ public sealed class XenixReader : IDisposable {
 
   internal const int SuperblockOffset = 1024;
   private const int InodeSize = 64;
-  internal const uint MagicXenix = 0xFD187E20;
+  // Genuine Xenix superblock magic (s_magic @ struct offset 0x3F8 = 0x2B5544),
+  // as written by mkfs.xenix and matched verbatim by the Linux sysv driver's
+  // detect_xenix(); s_type at 0x3FC selects the block size.
+  internal const uint MagicXenix = 0x002B5544;
+  internal const int MagicOffset = 0x3F8;
+  internal const int TypeOffset = 0x3FC;
   private const int RootInode = 2;
 
   public XenixReader(Stream stream) {
@@ -52,13 +57,13 @@ public sealed class XenixReader : IDisposable {
   }
 
   private void Parse() {
-    if (this._data.Length < SuperblockOffset + 512)
+    if (this._data.Length < SuperblockOffset + 1024)
       throw new InvalidDataException("Xenix: image too small for superblock.");
     var sb = this._data.AsSpan(SuperblockOffset);
-    this.Magic = BinaryPrimitives.ReadUInt32LittleEndian(sb.Slice(504));
+    this.Magic = BinaryPrimitives.ReadUInt32LittleEndian(sb.Slice(MagicOffset));
     if (this.Magic != MagicXenix)
       throw new InvalidDataException($"Xenix: invalid magic 0x{this.Magic:X8} (expected 0x{MagicXenix:X8}).");
-    var typeCode = BinaryPrimitives.ReadUInt32LittleEndian(sb.Slice(508));
+    var typeCode = BinaryPrimitives.ReadUInt32LittleEndian(sb.Slice(TypeOffset));
     this.BlockSize = typeCode switch {
       1 => 512,
       2 => 1024,

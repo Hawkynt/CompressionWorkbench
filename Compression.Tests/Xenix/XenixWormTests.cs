@@ -26,7 +26,7 @@ public class XenixWormTests {
 
     ms.Position = 0;
     using var r = new FileSystem.Xenix.XenixReader(ms);
-    Assert.That(r.Magic, Is.EqualTo(0xFD187E20u));
+    Assert.That(r.Magic, Is.EqualTo(0x002B5544u));
     Assert.That(r.BlockSize, Is.EqualTo(1024));
     Assert.That(r.Entries, Has.Count.EqualTo(1));
     Assert.That(r.Entries[0].Name, Is.EqualTo("notice.txt"));
@@ -141,11 +141,11 @@ public class XenixWormTests {
     }
     var img = ms.ToArray();
 
-    // Magic at sb+504 = file offset 1024+504 = 1528.
-    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(1528, 4)),
-      Is.EqualTo(0xFD187E20u));
-    // Type code at sb+508 = file offset 1024+508 = 1532; 2 == 1024-byte blocks.
-    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(1532, 4)),
+    // Magic at sb+0x3F8 = file offset 1024+1016 = 2040.
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(2040, 4)),
+      Is.EqualTo(0x002B5544u));
+    // Type code at sb+0x3FC = file offset 1024+1020 = 2044; 2 == 1024-byte blocks.
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(2044, 4)),
       Is.EqualTo(2u));
   }
 

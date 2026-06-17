@@ -267,10 +267,10 @@ public class XenixRwTests {
 
     var raw = ms.ToArray();
     var magic = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
-      raw.AsSpan(1528, 4));
-    Assert.That(magic, Is.EqualTo(0xFD187E20u));
+      raw.AsSpan(2040, 4));
+    Assert.That(magic, Is.EqualTo(0x002B5544u));
     var typeCode = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
-      raw.AsSpan(1532, 4));
+      raw.AsSpan(2044, 4));
     Assert.That(typeCode, Is.EqualTo(2u));
   }
 
@@ -279,7 +279,7 @@ public class XenixRwTests {
   [Test, Category("Sad")]
   public void AddFile_CorruptMagic_Throws() {
     var image = BuildSeedImage(("seed", "s"u8.ToArray()));
-    image[1528] ^= 0xFF;
+    image[2040] ^= 0xFF;
     using var ms = new MemoryStream();
     ms.Write(image);
 

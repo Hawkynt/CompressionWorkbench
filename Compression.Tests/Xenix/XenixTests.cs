@@ -9,12 +9,14 @@ namespace Compression.Tests.Xenix;
 public class XenixTests {
 
   // Minimal Xenix V image — same shape as our SysV synthetic. 1024-byte
-  // blocks, magic 0xFD187E20, type=2.
+  // blocks, genuine s_magic 0x2B5544 at struct offset 0x3F8, s_type=2 at 0x3FC.
   private static byte[] BuildMinimalXenix() {
     var image = new byte[8 * 1024];
     var sb = 1024;
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + 504, 4), 0xFD187E20);
-    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + 508, 4), 2);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(sb + 0x000, 2), 4);  // s_isize: first data zone
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + 0x002, 4), 8);  // s_fsize: total zones
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + 0x3F8, 4), 0x002B5544);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + 0x3FC, 4), 2);
 
     var ilist = 2 * 1024;
     var ino2 = ilist + (2 - 1) * 64;
@@ -53,7 +55,7 @@ public class XenixTests {
     Assert.That(d.Id, Is.EqualTo("Xenix"));
     Assert.That(d.Extensions, Does.Contain(".xnx"));
     Assert.That(d.MagicSignatures, Has.Count.EqualTo(1));
-    Assert.That(d.MagicSignatures[0].Offset, Is.EqualTo(1528));
+    Assert.That(d.MagicSignatures[0].Offset, Is.EqualTo(2040));
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
   }
@@ -63,7 +65,7 @@ public class XenixTests {
     var img = BuildMinimalXenix();
     using var ms = new MemoryStream(img);
     var r = new FileSystem.Xenix.XenixReader(ms);
-    Assert.That(r.Magic, Is.EqualTo(0xFD187E20u));
+    Assert.That(r.Magic, Is.EqualTo(0x002B5544u));
     Assert.That(r.BlockSize, Is.EqualTo(1024));
     Assert.That(r.Entries, Has.Count.EqualTo(1));
     Assert.That(r.Entries[0].Name, Is.EqualTo("notice"));
@@ -87,7 +89,7 @@ public class XenixTests {
   [Test, Category("Sad")]
   public void Reader_RejectsCorruptedImage() {
     var img = BuildMinimalXenix();
-    img[1528] ^= 0xFF;
+    img[2040] ^= 0xFF;
     using var ms = new MemoryStream(img);
     Assert.Throws<InvalidDataException>(() => new FileSystem.Xenix.XenixReader(ms));
   }

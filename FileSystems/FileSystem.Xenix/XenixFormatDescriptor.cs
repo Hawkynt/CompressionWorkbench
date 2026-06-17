@@ -7,9 +7,10 @@ namespace FileSystem.Xenix;
 
 /// <summary>
 /// Descriptor for Microsoft/SCO Xenix System V filesystem images.
-/// Shares the s5fs 0xFD187E20 magic with SysV — distinguished by extension
-/// (.xnx/.xenix vs .s5/.sysv). Reads existing Xenix images and emits fresh
-/// WORM images via <see cref="XenixWriter"/>.
+/// Carries the genuine Xenix superblock magic 0x2B5544 at s_magic (struct
+/// offset 0x3F8 → file offset 2040), the value the Linux sysv driver matches.
+/// Reads existing Xenix images and emits fresh WORM images via
+/// <see cref="XenixWriter"/>.
 /// </summary>
 public sealed class XenixFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Xenix";
@@ -23,9 +24,8 @@ public sealed class XenixFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<string> Extensions => [".xnx", ".xenix"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // Same magic as s5fs — extension disambiguates so we keep magic at
-    // low confidence so SysV wins by default for .s5/.sysv.
-    new([0x20, 0x7E, 0x18, 0xFD], Offset: 1528, Confidence: 0.50),
+    // Genuine Xenix s_magic 0x2B5544 (LE) at file offset 2040 (block 1 + 0x3F8).
+    new([0x44, 0x55, 0x2B, 0x00], Offset: 2040, Confidence: 0.70),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
