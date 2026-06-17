@@ -15,6 +15,15 @@ namespace FileSystem.Gfs2;
 /// inode's inline directory entries (single-leaf, di_height==0). For
 /// regular files with inline data (height==0) we extract the bytes.
 ///
+/// On-disk layout reverse-validated against real <c>mkfs.gfs2</c> output
+/// (gfs2-utils 3.5.1): the <c>gfs2_meta_header</c> is 24 bytes, the sb carries
+/// a reserved <c>__pad2</c> inum between master and root, and the
+/// <c>gfs2_dirent</c> header is 40 bytes. See
+/// <c>Gfs2ExternalConformanceTests</c> for the mkfs.gfs2 / fsck.gfs2 gate.
+/// Creating GFS2 images (resource groups, journals, master system inodes that
+/// satisfy <c>fsck.gfs2</c>) remains future work — capabilities advertise
+/// read/list/extract/test only, never CanCreate.
+///
 /// Out of scope (multi-week effort each): ExHash multi-leaf directories,
 /// multi-level block indirection (di_height &gt; 0), journal replay, cluster
 /// lock manager state, extended attributes.

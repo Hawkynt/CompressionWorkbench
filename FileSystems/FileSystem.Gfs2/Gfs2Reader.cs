@@ -44,14 +44,22 @@ public sealed class Gfs2Reader {
   /// <summary>gfs2_meta_header.mh_type for a dinode.</summary>
   public const uint MetaTypeDinode = 4;
 
-  /// <summary>Filesystem format version expected in sb_fs_format.</summary>
-  public const uint FormatFs = 1801;
+  /// <summary>Filesystem format version expected in sb_fs_format (GFS2_FORMAT_FS).</summary>
+  public const uint FormatFs = 1802;
 
-  /// <summary>Multi-host format version expected in sb_multihost_format.</summary>
+  /// <summary>Multi-host format version expected in sb_multihost_format (GFS2_FORMAT_MULTI).</summary>
   public const uint FormatMultihost = 1900;
 
   /// <summary>Superblock byte offset within the device (sector 128 × 512 B).</summary>
   public const long SbByteOffset = 65536;
+
+  /// <summary>
+  /// Size of <c>struct gfs2_meta_header</c> on disk: 24 bytes —
+  /// <c>mh_magic</c>(4) + <c>mh_type</c>(4) + <c>__pad0</c>(8) + <c>mh_format</c>(4) +
+  /// <c>mh_jid</c>(4). Real <c>mkfs.gfs2</c> output uses the 24-byte header; every
+  /// metadata struct (sb, dinode, leaf, rgrp, log header) embeds it at offset 0.
+  /// </summary>
+  public const int MetaHeaderSize = 24;
 
   private readonly byte[] _image;
   private readonly List<Gfs2Entry> _entries = new();
@@ -91,32 +99,34 @@ public sealed class Gfs2Reader {
 
     this.SuperblockValid = true;
 
-    // gfs2_sb layout after 16-byte mh:
-    // u32 sb_fs_format         @16
-    // u32 sb_multihost_format  @20
-    // u32 __pad0               @24
-    // u32 sb_bsize             @28
-    // u32 sb_bsize_shift       @32
-    // u32 __pad1               @36
-    // gfs2_inum sb_master_dir  @40  (u64 no_formal_ino, u64 no_addr)
-    // gfs2_inum sb_root_dir    @56
-    // char sb_lockproto[64]    @72
-    // char sb_locktable[64]    @136
-    // ... reserved ...
-    // u8 sb_uuid[16]           @200 (since GFS2 v1)
-    this.BlockSize = BinaryPrimitives.ReadUInt32BigEndian(sb.Slice(28, 4));
-    this.BlockSizeShift = BinaryPrimitives.ReadUInt32BigEndian(sb.Slice(32, 4));
+    // gfs2_sb layout, all fields after the 24-byte gfs2_meta_header (mh ends @24):
+    // u32 sb_fs_format         @24
+    // u32 sb_multihost_format  @28
+    // u32 __pad0               @32
+    // u32 sb_bsize             @36
+    // u32 sb_bsize_shift       @40
+    // u32 __pad1               @44
+    // gfs2_inum sb_master_dir  @48  (u64 no_formal_ino @48, u64 no_addr @56)
+    // gfs2_inum __pad2         @64  (16 bytes — historically sb_quota_di, now reserved)
+    // gfs2_inum sb_root_dir    @80  (u64 no_formal_ino @80, u64 no_addr @88)
+    // char sb_lockproto[64]    @96
+    // char sb_locktable[64]    @160
+    // gfs2_inum __pad3         @224
+    // gfs2_inum __pad4         @240
+    // u8 sb_uuid[16]           @256
+    this.BlockSize = BinaryPrimitives.ReadUInt32BigEndian(sb.Slice(36, 4));
+    this.BlockSizeShift = BinaryPrimitives.ReadUInt32BigEndian(sb.Slice(40, 4));
 
-    this.MasterFormalIno = BinaryPrimitives.ReadUInt64BigEndian(sb.Slice(40, 8));
-    this.MasterInodeBlock = BinaryPrimitives.ReadUInt64BigEndian(sb.Slice(48, 8));
-    this.RootFormalIno = BinaryPrimitives.ReadUInt64BigEndian(sb.Slice(56, 8));
-    this.RootInodeBlock = BinaryPrimitives.ReadUInt64BigEndian(sb.Slice(64, 8));
+    this.MasterFormalIno = BinaryPrimitives.ReadUInt64BigEndian(sb.Slice(48, 8));
+    this.MasterInodeBlock = BinaryPrimitives.ReadUInt64BigEndian(sb.Slice(56, 8));
+    this.RootFormalIno = BinaryPrimitives.ReadUInt64BigEndian(sb.Slice(80, 8));
+    this.RootInodeBlock = BinaryPrimitives.ReadUInt64BigEndian(sb.Slice(88, 8));
 
-    this.LockProto = ReadCString(sb.Slice(72, 64));
-    this.LockTable = ReadCString(sb.Slice(136, 64));
+    this.LockProto = ReadCString(sb.Slice(96, 64));
+    this.LockTable = ReadCString(sb.Slice(160, 64));
 
-    if (sb.Length >= 200 + 16)
-      this.UuidHex = Convert.ToHexString(sb.Slice(200, 16));
+    if (sb.Length >= 256 + 16)
+      this.UuidHex = Convert.ToHexString(sb.Slice(256, 16));
 
     // Walk the root inode. Errors are non-fatal — we still surface the
     // superblock metadata.
@@ -141,29 +151,37 @@ public sealed class Gfs2Reader {
     if (mhMagic != MetaMagic || mhType != MetaTypeDinode)
       return;
 
-    // gfs2_dinode layout (BE) after 16-byte mh:
-    // gfs2_inum di_num         @16  (16 bytes)
-    // u32 di_mode              @32
-    // u32 di_uid               @36
-    // u32 di_gid               @40
-    // u32 di_nlink             @44
-    // u64 di_size              @48
-    // u64 di_blocks            @56
-    // u64 di_atime             @64
-    // u64 di_mtime             @72
-    // u64 di_ctime             @80
-    // ... goal, generation, flags ...
-    // u16 di_height            @114
-    // u16 __pad2/3/4 ...
-    // u16 di_depth             @122
-    // u32 di_entries           @124
+    // gfs2_dinode layout (BE) after the 24-byte gfs2_meta_header:
+    // gfs2_inum di_num         @24  (16 bytes: no_formal_ino @24, no_addr @32)
+    // u32 di_mode              @40
+    // u32 di_uid               @44
+    // u32 di_gid               @48
+    // u32 di_nlink             @52
+    // u64 di_size              @56
+    // u64 di_blocks            @64
+    // u64 di_atime             @72
+    // u64 di_mtime             @80
+    // u64 di_ctime             @88
+    // u32 di_major             @96
+    // u32 di_minor             @100
+    // u64 di_goal_meta         @104
+    // u64 di_goal_data         @112
+    // u64 di_generation        @120
+    // u32 di_flags             @128
+    // u32 di_payload_format    @132
+    // u16 __pad1               @136
+    // u16 di_height            @138
+    // u32 __pad2               @140
+    // u16 __pad3               @144
+    // u16 di_depth             @146
+    // u32 di_entries           @148
     // The dinode header is 232 bytes (sizeof gfs2_dinode). Inline directory
     // entries (or inline data) follow at offset 232.
-    var diMode = BinaryPrimitives.ReadUInt32BigEndian(rootBlock.Slice(32, 4));
-    var diSize = BinaryPrimitives.ReadUInt64BigEndian(rootBlock.Slice(48, 8));
-    var diMtime = BinaryPrimitives.ReadUInt64BigEndian(rootBlock.Slice(72, 8));
-    var diHeight = BinaryPrimitives.ReadUInt16BigEndian(rootBlock.Slice(114, 2));
-    var diEntries = BinaryPrimitives.ReadUInt32BigEndian(rootBlock.Slice(124, 4));
+    var diMode = BinaryPrimitives.ReadUInt32BigEndian(rootBlock.Slice(40, 4));
+    var diSize = BinaryPrimitives.ReadUInt64BigEndian(rootBlock.Slice(56, 8));
+    var diMtime = BinaryPrimitives.ReadUInt64BigEndian(rootBlock.Slice(80, 8));
+    var diHeight = BinaryPrimitives.ReadUInt16BigEndian(rootBlock.Slice(138, 2));
+    var diEntries = BinaryPrimitives.ReadUInt32BigEndian(rootBlock.Slice(148, 4));
 
     // S_IFDIR check — must be a directory for root.
     var isDir = (diMode & 0xF000) == 0x4000;
@@ -186,16 +204,17 @@ public sealed class Gfs2Reader {
   }
 
   private void ParseDentries(ReadOnlySpan<byte> area, ulong dirMtimeBe, uint maxEntries) {
-    // gfs2_dirent layout (BE):
+    // gfs2_dirent layout (BE) — sizeof on disk is 40 bytes (verified against
+    // real mkfs.gfs2 output, gfs2-utils 3.5.1):
     // gfs2_inum de_inum     @0   (u64 no_formal_ino, u64 no_addr) - 16 bytes
     // u32 de_hash           @16
     // u16 de_rec_len        @20
     // u16 de_name_len       @22
     // u16 de_type           @24
-    // u16 __pad1            @26
-    // u32 __pad2            @28
-    // name (variable)       @32
-    const int direntHeaderSize = 32;
+    // u16 de_rahead         @26
+    // u8  de_cookie/__pad[12] @28  (reserved tail — the name starts AFTER it)
+    // name (variable)       @40
+    const int direntHeaderSize = 40;
 
     var off = 0;
     uint count = 0;
@@ -264,8 +283,8 @@ public sealed class Gfs2Reader {
     var magic = BinaryPrimitives.ReadUInt32BigEndian(b[..4]);
     var type = BinaryPrimitives.ReadUInt32BigEndian(b.Slice(4, 4));
     if (magic != MetaMagic || type != MetaTypeDinode) return false;
-    size = BinaryPrimitives.ReadUInt64BigEndian(b.Slice(48, 8));
-    mtimeBe = BinaryPrimitives.ReadUInt64BigEndian(b.Slice(72, 8));
+    size = BinaryPrimitives.ReadUInt64BigEndian(b.Slice(56, 8));
+    mtimeBe = BinaryPrimitives.ReadUInt64BigEndian(b.Slice(80, 8));
     return true;
   }
 
@@ -285,8 +304,8 @@ public sealed class Gfs2Reader {
     var type = BinaryPrimitives.ReadUInt32BigEndian(b.Slice(4, 4));
     if (magic != MetaMagic || type != MetaTypeDinode) return [];
 
-    var diSize = BinaryPrimitives.ReadUInt64BigEndian(b.Slice(48, 8));
-    var diHeight = BinaryPrimitives.ReadUInt16BigEndian(b.Slice(114, 2));
+    var diSize = BinaryPrimitives.ReadUInt64BigEndian(b.Slice(56, 8));
+    var diHeight = BinaryPrimitives.ReadUInt16BigEndian(b.Slice(138, 2));
     if (diHeight != 0) return []; // multi-level indirection not supported
 
     const int dinodeHeaderSize = 232;
