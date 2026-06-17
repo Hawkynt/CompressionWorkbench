@@ -105,11 +105,10 @@ public class CoherentInPlaceModifyTests {
     CoherentInPlaceModifier.Add(image, [ArchiveInputInfo.InMemory("x.txt", "hello"u8.ToArray())]);
 
     var after = image.ToArray();
-    // Magic at 1528, isize at 1024 — both must survive.
-    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(after.AsSpan(1528, 2)),
-      Is.EqualTo((ushort)0xFD18));
-    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(after.AsSpan(1024, 2)),
-      Is.EqualTo(BinaryPrimitives.ReadUInt16LittleEndian(before.AsSpan(1024, 2))),
+    // No numeric magic in Coherent: the s_fname "noname" string (offset 484) and s_isize (offset 0) must survive.
+    Assert.That(Encoding.ASCII.GetString(after, 484, 6), Is.EqualTo("noname"));
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(after.AsSpan(0, 2)),
+      Is.EqualTo(BinaryPrimitives.ReadUInt16LittleEndian(before.AsSpan(0, 2))),
       "s_isize must not change when Add only grows the data area");
   }
 
@@ -141,10 +140,9 @@ public class CoherentInPlaceModifyTests {
     // The superblock magic + isize fields are at fixed offsets and must
     // survive untouched.
     var after = image.ToArray();
-    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(after.AsSpan(1528, 2)),
-      Is.EqualTo((ushort)0xFD18));
-    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(after.AsSpan(1024, 2)),
-      Is.EqualTo(BinaryPrimitives.ReadUInt16LittleEndian(before.AsSpan(1024, 2))));
+    Assert.That(Encoding.ASCII.GetString(after, 484, 6), Is.EqualTo("noname"));
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(after.AsSpan(0, 2)),
+      Is.EqualTo(BinaryPrimitives.ReadUInt16LittleEndian(before.AsSpan(0, 2))));
 
     // The keep.bin payload block (identified by its first 32 bytes in BEFORE)
     // is at a fixed block index and must be byte-identical AFTER.
@@ -221,8 +219,7 @@ public class CoherentInPlaceModifyTests {
       Is.EqualTo(before.AsSpan(blockOff, 512).ToArray()));
 
     // Superblock magic + isize untouched.
-    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(after.AsSpan(1528, 2)),
-      Is.EqualTo((ushort)0xFD18));
+    Assert.That(Encoding.ASCII.GetString(after, 484, 6), Is.EqualTo("noname"));
   }
 
   [Test, Category("HappyPath")]
@@ -331,8 +328,7 @@ public class CoherentInPlaceModifyTests {
 
     // 4) Magic survived all three operations
     var img = image.ToArray();
-    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(1528, 2)),
-      Is.EqualTo((ushort)0xFD18));
+    Assert.That(Encoding.ASCII.GetString(img, 484, 6), Is.EqualTo("noname"));
   }
 
   // ── Validation: bad magic ────────────────────────────────────────────────
@@ -340,7 +336,7 @@ public class CoherentInPlaceModifyTests {
   [Test, Category("ExceptionalCase")]
   public void Add_OnImageWithBadMagic_Throws() {
     var ms = new MemoryStream();
-    ms.SetLength(4096); // empty buffer — magic byte at 1528 will be zero
+    ms.SetLength(4096); // empty buffer — s_fname at offset 484 is zero, not "noname"
     Assert.Throws<InvalidDataException>(() =>
       CoherentInPlaceModifier.Add(ms, [ArchiveInputInfo.InMemory("x", "y"u8.ToArray())]));
   }

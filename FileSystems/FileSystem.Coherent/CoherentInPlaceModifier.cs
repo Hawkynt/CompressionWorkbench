@@ -57,8 +57,11 @@ public static class CoherentInPlaceModifier {
   private const int BlockSize = 512;
   private const int InodeSize = 64;
   private const int InodesPerBlock = BlockSize / InodeSize; // 8
-  private const int SuperblockOffset = 1024;
-  private const ushort MagicCoherent = 0xFD18;
+  // The genuine coh_super_block lives at file offset 0 (mirror at 512); it has
+  // no numeric magic — the volume is recognised by the s_fname/s_fpack strings
+  // (offsets 0x1E4/0x1EA). All multi-byte on-disk integers are PDP-11
+  // middle-endian. The inode table starts at block 2 (offset 1024).
+  private const int CohFnameOffset = 0x1E4;
   private const int RootInode = 2;
   private const int DirEntrySize = 16;
   private const int MaxNameLen = 14;
@@ -141,16 +144,15 @@ public static class CoherentInPlaceModifier {
   // ── Internals ────────────────────────────────────────────────────────────
 
   private static void ValidateSuperblock(Stream image) {
-    if (image.Length < SuperblockOffset + BlockSize)
+    if (image.Length < 1024 + InodeSize)
       throw new InvalidDataException("Coherent: image too small for superblock.");
-    var magicBuf = new byte[2];
-    image.Position = SuperblockOffset + 504;
-    image.ReadExactly(magicBuf);
-    var magic = BinaryPrimitives.ReadUInt16LittleEndian(magicBuf);
-    if (magic != MagicCoherent)
+    var buf = new byte[6];
+    image.Position = CohFnameOffset;
+    image.ReadExactly(buf);
+    var fname = System.Text.Encoding.ASCII.GetString(buf);
+    if (fname is not ("noname" or "xxxxx "))
       throw new InvalidDataException(
-        $"Coherent: invalid superblock magic 0x{magic:X4} at offset {SuperblockOffset + 504} "
-        + $"(expected 0x{MagicCoherent:X4}).");
+        $"Coherent: not a coh_super_block (s_fname='{fname}' at offset {CohFnameOffset}).");
   }
 
   private static string TruncatedLeaf(string raw) {
@@ -242,9 +244,9 @@ public static class CoherentInPlaceModifier {
       }
     }
 
-    // Patch i_size only; zone pointers stay byte-identical.
+    // Patch i_size only (PDP-32); zone pointers stay byte-identical.
     var sizeBuf = new byte[4];
-    BinaryPrimitives.WriteUInt32LittleEndian(sizeBuf, (uint)newData.Length);
+    WritePdp32(sizeBuf, (uint)newData.Length);
     image.Position = 2L * BlockSize + (long)(inum - 1) * InodeSize + 8;
     image.Write(sizeBuf, 0, 4);
     return true;
@@ -256,7 +258,7 @@ public static class CoherentInPlaceModifier {
     image.Position = 2L * BlockSize + (long)(inum - 1) * InodeSize;
     image.ReadExactly(buf);
     var mode = BinaryPrimitives.ReadUInt16LittleEndian(buf.AsSpan(0, 2));
-    var size = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(8, 4));
+    var size = ReadPdp32(buf.AsSpan(8, 4));
     var direct = new uint[DirectZones];
     for (var i = 0; i < DirectZones; i++)
       direct[i] = Read24(buf.AsSpan(12 + i * 3, 3));
@@ -280,8 +282,20 @@ public static class CoherentInPlaceModifier {
     return result;
   }
 
+  // PDP-11 3-byte zone address: disk [d0,d1,d2] → block d1 | d2<<8 | d0<<16.
   private static uint Read24(ReadOnlySpan<byte> s) =>
-    s[0] | ((uint)s[1] << 8) | ((uint)s[2] << 16);
+    s[1] | ((uint)s[2] << 8) | ((uint)s[0] << 16);
+
+  // PDP-11 middle-endian 32-bit: high 16-bit half first, each half LE.
+  private static uint ReadPdp32(ReadOnlySpan<byte> s) =>
+    s[2] | ((uint)s[3] << 8) | ((uint)s[0] << 16) | ((uint)s[1] << 24);
+
+  private static void WritePdp32(Span<byte> dest, uint value) {
+    dest[0] = (byte)((value >> 16) & 0xFF);
+    dest[1] = (byte)((value >> 24) & 0xFF);
+    dest[2] = (byte)(value & 0xFF);
+    dest[3] = (byte)((value >> 8) & 0xFF);
+  }
 
   private static string ReadNullTermAscii(byte[] data, int offset, int maxLen) {
     var end = offset;

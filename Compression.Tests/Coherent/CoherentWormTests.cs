@@ -24,7 +24,7 @@ public class CoherentWormTests {
     var img = CreateImage();
     using var ms = new MemoryStream(img);
     var r = new CoherentReader(ms);
-    Assert.That(r.Magic, Is.EqualTo((ushort)0xFD18));
+    Assert.That(r.Valid, Is.True);
     Assert.That(r.Entries, Is.Empty);
   }
 
@@ -35,7 +35,7 @@ public class CoherentWormTests {
 
     using var ms = new MemoryStream(img);
     var r = new CoherentReader(ms);
-    Assert.That(r.Magic, Is.EqualTo((ushort)0xFD18));
+    Assert.That(r.Valid, Is.True);
     Assert.That(r.Entries, Has.Count.EqualTo(1));
     Assert.That(r.Entries[0].Name, Is.EqualTo("hello.txt"));
     Assert.That(r.Entries[0].IsDirectory, Is.False);
@@ -151,27 +151,35 @@ public class CoherentWormTests {
     Assert.That(Encoding.ASCII.GetString(fooBytes), Is.EqualTo("foo content"));
   }
 
-  // Magic must be at the well-known offset for external Coherent-aware tools.
+  // The coh_super_block volume strings must be at the offsets the Linux sysv
+  // detect_coherent() reads: s_fname @0x1E4, s_fpack @0x1EA, in the copy at
+  // file offset 512 (and the duplicate at offset 0).
   [Test, Category("HappyPath")]
-  public void Writer_PlacesMagicAtExpectedOffset() {
+  public void Writer_PlacesSuperblockStringsAtExpectedOffsets() {
     var img = CreateImage(("hi", "hi"u8.ToArray()));
-    Assert.That(img.Length, Is.GreaterThan(1528 + 2));
-    var magic = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(1528, 2));
-    Assert.That(magic, Is.EqualTo((ushort)0xFD18));
+    Assert.That(img.Length, Is.GreaterThan(512 + 0x1F0));
+    foreach (var b in new[] { 0, 512 }) {
+      Assert.That(Encoding.ASCII.GetString(img.AsSpan(b + 0x1E4, 6).ToArray()), Is.EqualTo("noname"));
+      Assert.That(Encoding.ASCII.GetString(img.AsSpan(b + 0x1EA, 6).ToArray()), Is.EqualTo("nopack"));
+    }
   }
 
-  // Superblock s_isize / s_fsize sanity.
+  // Superblock s_isize / s_fsize sanity (coh_super_block at file offset 0;
+  // s_isize is the first data zone, LE u16; s_fsize is PDP-32).
   [Test, Category("HappyPath")]
   public void Writer_SuperblockFieldsAreSane() {
     var payload = new byte[2048];
     var img = CreateImage(("p", payload));
 
-    var isize = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(1024 + 0, 2));
-    var fsize = BinaryPrimitives.ReadUInt32LittleEndian(img.AsSpan(1024 + 2, 4));
-    Assert.That(isize, Is.GreaterThanOrEqualTo(1));
-    Assert.That(fsize, Is.GreaterThanOrEqualTo(2 + isize), "fsize covers boot + ilist + at least one data block");
+    var isize = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(0, 2));
+    var fsize = ReadPdp32(img.AsSpan(2, 4));
+    Assert.That(isize, Is.GreaterThanOrEqualTo(3), "first data zone is past the two superblock blocks + inode list");
+    Assert.That(fsize, Is.GreaterThan(isize), "fsize covers the inode list + at least one data block");
     Assert.That(fsize * 512L, Is.EqualTo(img.Length), "fsize should describe the whole image");
   }
+
+  private static uint ReadPdp32(ReadOnlySpan<byte> s) =>
+    s[2] | ((uint)s[3] << 8) | ((uint)s[0] << 16) | ((uint)s[1] << 24);
 
   // External-tool gate: Linux's sysv driver (kernel CONFIG_SYSV_FS) supports
   // the Coherent variant. We mount the image read-only inside WSL and list

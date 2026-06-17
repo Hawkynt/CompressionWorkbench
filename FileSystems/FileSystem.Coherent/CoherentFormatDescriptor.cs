@@ -6,9 +6,10 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Coherent;
 
 /// <summary>
-/// Read-only descriptor for Mark Williams Coherent OS file system. Magic
-/// 0xFD18 at file offset 1024+504. Distinguished from Xenix by extension /
-/// 32-bit magic absence — Coherent uses a 16-bit magic only.
+/// Descriptor for Mark Williams Coherent OS file system. Coherent carries no
+/// numeric magic — it is recognised by the coh_super_block s_fname/s_fpack
+/// volume strings ("noname"/"nopack"), which is exactly how the Linux sysv
+/// driver's detect_coherent() identifies it.
 /// </summary>
 public sealed class CoherentFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Coherent";
@@ -22,10 +23,10 @@ public sealed class CoherentFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public IReadOnlyList<string> Extensions => [".coh", ".coherent"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // 0xFD18 at file offset 1024+504 = 1528 — confidence kept low because
-    // Xenix and other s5-derivatives share the same magic; extension
-    // disambiguates.
-    new([0x18, 0xFD], Offset: 1528, Confidence: 0.55),
+    // s_fname "noname" at coh_super_block offset 0x1E4 (file offset 484). The
+    // coh_super_block has no magic number; the volume-name string is the
+    // canonical recogniser (matched by the Linux sysv detect_coherent).
+    new([0x6E, 0x6F, 0x6E, 0x61, 0x6D, 0x65], Offset: 484, Confidence: 0.60),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;

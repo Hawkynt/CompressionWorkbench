@@ -46,7 +46,10 @@ public sealed class CoherentWriter : IDisposable {
   internal const int InodeSize = 64;
   internal const int InodesPerBlock = BlockSize / InodeSize; // 8
   internal const int SuperblockOffset = 1024;
-  internal const ushort MagicCoherent = 0xFD18;
+  // coh_super_block volume-name string offsets (the Linux sysv detect_coherent
+  // match fields); the structure carries no numeric magic.
+  internal const int CohFnameOffset = 0x1E4;
+  internal const int CohFpackOffset = 0x1EA;
   internal const int RootInode = 2;
   internal const int DirEntrySize = 16;
   internal const int MaxNameLen = 14;
@@ -128,24 +131,22 @@ public sealed class CoherentWriter : IDisposable {
     var imageSize = (long)fsize * BlockSize;
     var image = new byte[imageSize];
 
-    // 4a. Superblock fields. Layout (from /usr/include/sys/filsys.h):
-    //   offset  0  s_isize  : ushort
-    //   offset  2  s_fsize  : uint
-    //   offset  6  s_nfree  : ushort
-    //   offset  8  s_free[] : uint x NICFREE
-    //   ...
-    //   offset 504 s_magic  : ushort (0xFD18)
-    // We deliberately keep s_nfree/s_ninode zero so external readers don't
-    // try to consume our free caches (a fresh image's free list lives on
-    // the free-block chain seeded below). The magic is the only field the
-    // in-tree reader inspects.
-    var sb = image.AsSpan(SuperblockOffset);
-    BinaryPrimitives.WriteUInt16LittleEndian(sb[..2], (ushort)isize);
-    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(2, 4), fsize);
-    BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(6, 2), 0);   // s_nfree
-    BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(408, 2), 0); // s_ninode (rough V7 offset)
-    BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(496, 4), (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-    BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(504, 2), MagicCoherent);
+    // 4a. Superblock (genuine coh_super_block, 500 bytes). The Linux sysv
+    // driver detects Coherent by the s_fname/s_fpack strings ("noname"/"nopack")
+    // — it has no numeric magic — and reads it PDP-11 middle-endian. The driver
+    // checks the strings in the copy at file offset 512 (block 0 + BLOCK_SIZE/2
+    // during 1024-byte detection) but reads s_isize/s_fsize from the copy at
+    // file offset 0 (s_bh1 after the 512-byte re-read), so we write an identical
+    // superblock at both offsets.
+    //   s_isize  (le16  @0x000)  first data zone = first block past the inodes
+    //   s_fsize  (pdp32 @0x002)  total number of zones
+    //   s_fname  (char  @0x1E4)  "noname"
+    //   s_fpack  (char  @0x1EA)  "nopack"
+    // Free caches (s_nfree/s_ninode) stay zero — a read-only mount never
+    // consults them.
+    var firstDataZone = (uint)dataStart;
+    WriteCoherentSuperblock(image, 0, (ushort)firstDataZone, fsize);
+    WriteCoherentSuperblock(image, BlockSize, (ushort)firstDataZone, fsize);
 
     // 4b. Inode 2 (root directory).
     WriteInode(image, RootInode, ModeDirectory, (uint)rootDirBytes.Length,
@@ -312,7 +313,7 @@ public sealed class CoherentWriter : IDisposable {
     BinaryPrimitives.WriteUInt16LittleEndian(ino.Slice(2, 2), 1);     // i_nlink
     BinaryPrimitives.WriteUInt16LittleEndian(ino.Slice(4, 2), 0);     // i_uid
     BinaryPrimitives.WriteUInt16LittleEndian(ino.Slice(6, 2), 0);     // i_gid
-    BinaryPrimitives.WriteUInt32LittleEndian(ino.Slice(8, 4), size);  // i_size
+    WritePdp32(ino.Slice(8, 4), size);                                // i_size (PDP-32)
 
     // 13 × 3-byte zone pointers starting at offset 12.
     for (var i = 0; i < DirectZones; i++)
@@ -325,10 +326,36 @@ public sealed class CoherentWriter : IDisposable {
     // leave them as zero (Coherent kernels accept 0 timestamps).
   }
 
+  // 3-byte zone address in PDP-11 byte order, the form the Linux sysv driver's
+  // read3byte() reconstructs for a Coherent (BYTESEX_PDP) volume: from disk
+  // bytes [d0,d1,d2] it forms the block number d1 | d2<<8 | d0<<16. Inverting:
+  // d0 = (B>>16), d1 = B&0xFF, d2 = (B>>8)&0xFF.
   private static void Write24(Span<byte> dest, uint value) {
-    dest[0] = (byte)(value & 0xFF);
-    dest[1] = (byte)((value >> 8) & 0xFF);
-    dest[2] = (byte)((value >> 16) & 0xFF);
+    dest[0] = (byte)((value >> 16) & 0xFF);
+    dest[1] = (byte)(value & 0xFF);
+    dest[2] = (byte)((value >> 8) & 0xFF);
+  }
+
+  // 32-bit value in PDP-11 middle-endian: the high 16-bit half first, each half
+  // little-endian. fs32_to_cpu() for BYTESEX_PDP swaps the two halves back.
+  private static void WritePdp32(Span<byte> dest, uint value) {
+    dest[0] = (byte)((value >> 16) & 0xFF);
+    dest[1] = (byte)((value >> 24) & 0xFF);
+    dest[2] = (byte)(value & 0xFF);
+    dest[3] = (byte)((value >> 8) & 0xFF);
+  }
+
+  // Writes a 500-byte coh_super_block at file offset baseOffset. s_isize is a
+  // plain little-endian u16; s_fsize is PDP-32; the s_fname/s_fpack volume
+  // strings carry the canonical "noname"/"nopack" the driver matches on.
+  private static void WriteCoherentSuperblock(byte[] image, int baseOffset, ushort isize, uint fsize) {
+    var sb = image.AsSpan(baseOffset);
+    BinaryPrimitives.WriteUInt16LittleEndian(sb[..2], isize);   // s_isize @0x000
+    WritePdp32(sb.Slice(0x002, 4), fsize);                      // s_fsize @0x002 (PDP)
+    BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(0x006, 2), 0); // s_nfree
+    BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(0x108, 2), 0); // s_ninode
+    "noname"u8.CopyTo(sb.Slice(CohFnameOffset, 6));             // s_fname @0x1E4
+    "nopack"u8.CopyTo(sb.Slice(CohFpackOffset, 6));             // s_fpack @0x1EA
   }
 
   public void Dispose() {

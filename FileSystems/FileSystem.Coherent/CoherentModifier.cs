@@ -45,8 +45,13 @@ public static class CoherentModifier {
   private const int BlockSize = 512;
   private const int InodeSize = 64;
   private const int InodesPerBlock = BlockSize / InodeSize; // 8
-  private const int SuperblockOffset = 1024;
-  private const ushort MagicCoherent = 0xFD18;
+  // The coh_super_block lives at file offset 0 (and a duplicate at 512); the
+  // inode table starts at block 2 (offset 1024). Coherent has no numeric magic
+  // — it is recognised by the s_fname/s_fpack strings.
+  private const int SuperblockOffset = 0;
+  private const int SuperblockMirror = 512;
+  private const int CohFnameOffset = 0x1E4;
+  private const int CohFpackOffset = 0x1EA;
   private const int RootInode = 2;
   private const int DirEntrySize = 16;
   private const int MaxNameLen = 14;
@@ -234,20 +239,23 @@ public static class CoherentModifier {
   // ── Geometry / superblock ────────────────────────────────────────────────
 
   private static Geometry ReadGeometry(Stream image) {
-    if (image.Length < SuperblockOffset + BlockSize)
+    if (image.Length < 1024 + InodeSize)
       throw new InvalidDataException("Coherent: image too small for superblock.");
     var sb = new byte[BlockSize];
     image.Position = SuperblockOffset;
     image.ReadExactly(sb);
-    var magic = BinaryPrimitives.ReadUInt16LittleEndian(sb.AsSpan(504, 2));
-    if (magic != MagicCoherent)
-      throw new InvalidDataException($"Coherent: invalid magic 0x{magic:X4} at sb+504 (expected 0x{MagicCoherent:X4}).");
+    var fname = Encoding.ASCII.GetString(sb.AsSpan(CohFnameOffset, 6));
+    var fpack = Encoding.ASCII.GetString(sb.AsSpan(CohFpackOffset, 6));
+    if (fname is not ("noname" or "xxxxx ") || fpack is not ("nopack" or "xxxxx\n"))
+      throw new InvalidDataException(
+        $"Coherent: not a coh_super_block (s_fname='{fname}', s_fpack='{fpack}').");
 
+    // s_isize (LE u16) is the first data zone; the inode list occupies blocks
+    // 2..s_isize-1. s_fsize (PDP-32) is the total zone count.
     var isize = BinaryPrimitives.ReadUInt16LittleEndian(sb.AsSpan(0, 2));
-    var fsize = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(2, 4));
-    var dataStart = 2 + isize;
-    // Inode list starts at block 2; max inode = isize * InodesPerBlock.
-    var maxInode = Math.Max(RootInode, isize * InodesPerBlock);
+    var fsize = ReadPdp32(sb.AsSpan(2, 4));
+    var dataStart = isize;
+    var maxInode = Math.Max(RootInode, (isize - 2) * InodesPerBlock);
     return new Geometry {
       Isize = isize,
       Fsize = fsize,
@@ -258,9 +266,12 @@ public static class CoherentModifier {
   }
 
   private static void WriteFsize(Stream image, uint newFsize) {
-    image.Position = SuperblockOffset + 2;
     var buf = new byte[4];
-    BinaryPrimitives.WriteUInt32LittleEndian(buf, newFsize);
+    WritePdp32(buf, newFsize);
+    // Update both superblock copies (offset 0 and the mirror at 512).
+    image.Position = SuperblockOffset + 2;
+    image.Write(buf, 0, 4);
+    image.Position = SuperblockMirror + 2;
     image.Write(buf, 0, 4);
   }
 
@@ -285,7 +296,7 @@ public static class CoherentModifier {
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(2, 2), 1);     // i_nlink
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(4, 2), 0);     // i_uid
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(6, 2), 0);     // i_gid
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(8, 4), size);  // i_size
+    WritePdp32(buf.AsSpan(8, 4), size);                                // i_size (PDP-32)
     for (var i = 0; i < DirectZones; i++)
       Write24(buf.AsSpan(12 + i * 3, 3), direct[i]);
     Write24(buf.AsSpan(12 + SingleIndirectSlot * 3, 3), singleIndirect);
@@ -296,7 +307,7 @@ public static class CoherentModifier {
   private static (ushort mode, uint size, uint[] direct, uint single, uint dbl, uint trip)
       ParseInode(byte[] inode) {
     var mode = BinaryPrimitives.ReadUInt16LittleEndian(inode.AsSpan(0, 2));
-    var size = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(8, 4));
+    var size = ReadPdp32(inode.AsSpan(8, 4));
     var direct = new uint[DirectZones];
     for (var i = 0; i < DirectZones; i++)
       direct[i] = Read24(inode.AsSpan(12 + i * 3, 3));
@@ -338,23 +349,13 @@ public static class CoherentModifier {
   /// magic at offset 504, the size/freecount/time fields at 0..7, 408, 496).
   /// </summary>
   private static bool InodeOverlapsSuperblockFields(int inum) {
-    // Inodes 9+ live in block 3 or later, well past the superblock area.
-    if (inum > InodesPerBlock) return false;
-    var inodeStart = (inum - 1) * InodeSize;       // byte offset within block 2
-    var inodeEnd = inodeStart + InodeSize;         // exclusive
-    // SB byte ranges (inclusive..exclusive) inside block 2:
-    //   [0, 8)       — s_isize + s_fsize
-    //   [408, 410)   — s_ninode
-    //   [496, 500)   — s_time
-    //   [504, 506)   — s_magic
-    return Overlap(inodeStart, inodeEnd, 0, 8)
-        || Overlap(inodeStart, inodeEnd, 408, 410)
-        || Overlap(inodeStart, inodeEnd, 496, 500)
-        || Overlap(inodeStart, inodeEnd, 504, 506);
+    // In the genuine Coherent layout the superblock occupies blocks 0 and 1
+    // (file offsets 0 and 512) and the inode table starts at block 2 (offset
+    // 1024), so no inode slot aliases superblock bytes. Inode 1 is reserved by
+    // convention (callers allocate from inode 3 and enumerate from inode 2).
+    _ = inum;
+    return false;
   }
-
-  private static bool Overlap(int aStart, int aEnd, int bStart, int bEnd)
-    => aStart < bEnd && bStart < aEnd;
 
   // ── Zone allocation ───────────────────────────────────────────────────────
 
@@ -588,7 +589,7 @@ public static class CoherentModifier {
     WriteRootDataDirectZones(image, direct, newData, sizeUnchanged: false, currentSize: 0);
 
     // Update root inode's size + zone pointers.
-    BinaryPrimitives.WriteUInt32LittleEndian(rootBytes.AsSpan(8, 4), newSize);
+    WritePdp32(rootBytes.AsSpan(8, 4), newSize);
     for (var i = 0; i < DirectZones; i++)
       Write24(rootBytes.AsSpan(12 + i * 3, 3), direct[i]);
     WriteInodeRaw(image, RootInode, rootBytes);
@@ -623,13 +624,25 @@ public static class CoherentModifier {
 
   // ── Tiny utilities ────────────────────────────────────────────────────────
 
+  // PDP-11 3-byte zone address: disk [d0,d1,d2] → block d1 | d2<<8 | d0<<16.
   private static uint Read24(ReadOnlySpan<byte> s) =>
-    s[0] | ((uint)s[1] << 8) | ((uint)s[2] << 16);
+    s[1] | ((uint)s[2] << 8) | ((uint)s[0] << 16);
 
   private static void Write24(Span<byte> dest, uint value) {
-    dest[0] = (byte)(value & 0xFF);
-    dest[1] = (byte)((value >> 8) & 0xFF);
-    dest[2] = (byte)((value >> 16) & 0xFF);
+    dest[0] = (byte)((value >> 16) & 0xFF);
+    dest[1] = (byte)(value & 0xFF);
+    dest[2] = (byte)((value >> 8) & 0xFF);
+  }
+
+  // PDP-11 middle-endian 32-bit: high 16-bit half first, each half LE.
+  private static uint ReadPdp32(ReadOnlySpan<byte> s) =>
+    s[2] | ((uint)s[3] << 8) | ((uint)s[0] << 16) | ((uint)s[1] << 24);
+
+  private static void WritePdp32(Span<byte> dest, uint value) {
+    dest[0] = (byte)((value >> 16) & 0xFF);
+    dest[1] = (byte)((value >> 24) & 0xFF);
+    dest[2] = (byte)(value & 0xFF);
+    dest[3] = (byte)((value >> 8) & 0xFF);
   }
 
   private static void WriteAt(Stream image, long offset, byte[] data) {

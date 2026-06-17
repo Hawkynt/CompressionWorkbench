@@ -260,18 +260,17 @@ public class CoherentRwTests {
 
   [Test, Category("ExceptionalCase")]
   public void Add_BeyondInodeTableCapacity_ThrowsCleanly() {
-    // Build with 1 file → isize = ceil((3 + 1 - 1) / 8) = 1 → 8 inode slots
-    // in block 2. Inode 1 is SB-aliased (s_isize/s_fsize), inode 7 overlaps
-    // s_ninode at byte 408, inode 8 overlaps s_time at 496 AND s_magic at 504
-    // — all three are unsafe to write through. Inode 2 = root. Inode 3 used
-    // by seed. So slots 4..6 = 3 free.
+    // Build with 1 file → s_isize = 3 (first data zone) → one inode block
+    // (block 2) holding 8 inode slots. Inode 1 is reserved by convention,
+    // inode 2 = root, inode 3 = seed; the allocator hands out inodes 4..8, so
+    // 5 files can be added in place before the inode table is exhausted.
     var image = Expandable(BuildImage(("seed", "s"u8.ToArray())));
 
-    // Add 3 files — should all succeed.
-    for (var i = 0; i < 3; i++)
+    // Add 5 files — should all succeed (slots 4..8).
+    for (var i = 0; i < 5; i++)
       CoherentModifier.AddFile(image, $"f{i}", new byte[] { (byte)i });
 
-    // 4th add must fail because the free inode slots in the SB-aliased block are exhausted.
+    // 6th add must fail: no free inode slots remain in the inode table.
     Assert.Throws<IOException>(() => CoherentModifier.AddFile(image, "boom", "x"u8.ToArray()));
   }
 
@@ -283,11 +282,12 @@ public class CoherentRwTests {
     var image = Expandable(BuildImage(("seed", "s"u8.ToArray())));
     var d = new CoherentFormatDescriptor();
 
-    // Three files: fits via in-place. Fourth: SB-aliased inode slots 7+
-    // are reserved, so the inode table only has 3 free slots after the
-    // seed and root. Adding a fourth must throw cleanly.
+    // The genuine Coherent inode table (block 2, separate from the superblock
+    // at blocks 0/1) holds 8 slots; inode 1 is reserved, 2 = root, 3 = seed, so
+    // 5 free slots remain (4..8). Adding 6 files therefore exhausts the table
+    // and the sixth must surface a clean IOException (no silent rebuild).
     var inputs = new List<ArchiveInputInfo>();
-    for (var i = 0; i < 4; i++)
+    for (var i = 0; i < 6; i++)
       inputs.Add(ArchiveInputInfo.InMemory($"f{i}", new byte[] { (byte)i }));
 
     Assert.Throws<IOException>(() => d.Add(image, inputs));
@@ -374,18 +374,20 @@ public class CoherentRwTests {
     Assert.That(got, Is.EqualTo(addPayload));
   }
 
-  // The superblock magic must survive Add+Remove cycles — external tools
-  // identify the FS by this signature.
+  // The coh_super_block recognition strings must survive Add+Remove cycles —
+  // the Linux sysv driver identifies the FS by s_fname/s_fpack.
   [Test, Category("HappyPath")]
-  public void Magic_SurvivesAddRemoveCycle() {
+  public void SuperblockStrings_SurviveAddRemoveCycle() {
     var image = Expandable(BuildImage(("seed", "s"u8.ToArray())));
     CoherentModifier.AddFile(image, "x.bin", Pattern(2048, seed: 7));
     CoherentModifier.RemoveFile(image, "x.bin", wipeData: true);
     CoherentModifier.AddFile(image, "y.bin", Pattern(50_000, seed: 9));
 
     var img = image.ToArray();
-    var magic = BinaryPrimitives.ReadUInt16LittleEndian(img.AsSpan(1528, 2));
-    Assert.That(magic, Is.EqualTo((ushort)0xFD18));
+    foreach (var b in new[] { 0, 512 }) {
+      Assert.That(Encoding.ASCII.GetString(img.AsSpan(b + 0x1E4, 6).ToArray()), Is.EqualTo("noname"));
+      Assert.That(Encoding.ASCII.GetString(img.AsSpan(b + 0x1EA, 6).ToArray()), Is.EqualTo("nopack"));
+    }
   }
 
   // ── Utilities ────────────────────────────────────────────────────────────

@@ -23,12 +23,20 @@ public sealed class CoherentReader : IDisposable {
   private readonly List<CoherentEntry> _entries = [];
 
   public IReadOnlyList<CoherentEntry> Entries => this._entries;
-  public ushort Magic { get; private set; }
+  /// <summary>True once a valid coh_super_block (s_fname/s_fpack volume strings) was found.</summary>
+  public bool Valid { get; private set; }
+  /// <summary>Volume name from the superblock s_fname field (e.g. "noname").</summary>
+  public string VolumeName { get; private set; } = "";
   public int BlockSize { get; private set; } = 512;
 
-  internal const int SuperblockOffset = 1024;
+  // The coh_super_block sits at file offset 0 (the copy the Linux sysv driver
+  // reads fields from); a second identical copy lives at offset 512 (the one
+  // detect_coherent checks). Coherent carries no numeric magic — the volume is
+  // recognised by the s_fname/s_fpack strings.
+  private const int SuperblockOffset = 0;
   private const int InodeSize = 64;
-  internal const ushort MagicCoherent = 0xFD18;
+  internal const int CohFnameOffset = 0x1E4;
+  internal const int CohFpackOffset = 0x1EA;
   private const int RootInode = 2;
 
   public CoherentReader(Stream stream) {
@@ -41,12 +49,21 @@ public sealed class CoherentReader : IDisposable {
   }
 
   private void Parse() {
-    if (this._data.Length < SuperblockOffset + 512)
+    if (this._data.Length < 1024 + InodeSize)
       throw new InvalidDataException("Coherent: image too small for superblock.");
     var sb = this._data.AsSpan(SuperblockOffset);
-    this.Magic = BinaryPrimitives.ReadUInt16LittleEndian(sb.Slice(504));
-    if (this.Magic != MagicCoherent)
-      throw new InvalidDataException($"Coherent: invalid magic 0x{this.Magic:X4} (expected 0x{MagicCoherent:X4}).");
+    // Recognise the volume by the coh_super_block s_fname/s_fpack strings; the
+    // filesystem has no numeric magic. Accept the canonical "noname"/"nopack"
+    // (and the "xxxxx " / "xxxxx\n" mkfs placeholders the kernel also allows).
+    var fname = Encoding.ASCII.GetString(sb.Slice(CohFnameOffset, 6));
+    var fpack = Encoding.ASCII.GetString(sb.Slice(CohFpackOffset, 6));
+    var fnameOk = fname is "noname" or "xxxxx ";
+    var fpackOk = fpack is "nopack" or "xxxxx\n";
+    if (!fnameOk || !fpackOk)
+      throw new InvalidDataException(
+        $"Coherent: not a coh_super_block (s_fname='{fname}', s_fpack='{fpack}').");
+    this.Valid = true;
+    this.VolumeName = fname.TrimEnd();
     this.ReadDirectory(RootInode, "");
   }
 
@@ -60,12 +77,19 @@ public sealed class CoherentReader : IDisposable {
     return this._data.AsSpan((int)offset, InodeSize).ToArray();
   }
 
+  // PDP-11 3-byte zone address: disk [d0,d1,d2] → block d1 | d2<<8 | d0<<16
+  // (the inverse of CoherentWriter.Write24 / the kernel's read3byte for PDP).
   private static uint Read24(ReadOnlySpan<byte> s) =>
-    s[0] | ((uint)s[1] << 8) | ((uint)s[2] << 16);
+    s[1] | ((uint)s[2] << 8) | ((uint)s[0] << 16);
+
+  // PDP-11 middle-endian 32-bit: the two 16-bit halves are stored high-half
+  // first, each little-endian.
+  private static uint ReadPdp32(ReadOnlySpan<byte> s) =>
+    s[2] | ((uint)s[3] << 8) | ((uint)s[0] << 16) | ((uint)s[1] << 24);
 
   private static (ushort mode, uint size, uint[] zones) ParseInode(byte[] inode) {
     var mode = BinaryPrimitives.ReadUInt16LittleEndian(inode);
-    var size = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(8));
+    var size = ReadPdp32(inode.AsSpan(8));
     var zones = new uint[13];
     for (var i = 0; i < 13; i++) zones[i] = Read24(inode.AsSpan(12 + i * 3));
     return (mode, size, zones);
