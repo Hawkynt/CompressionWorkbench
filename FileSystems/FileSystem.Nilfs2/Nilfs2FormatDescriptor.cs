@@ -17,13 +17,16 @@ namespace FileSystem.Nilfs2;
 /// prior segment stays byte-identical at its original offset, so the older
 /// state is byte-recoverable as a snapshot (continuous-snapshot semantic).</para>
 ///
-/// <para><b>Honest scope — what's NOT done.</b> Full kernel-grade DAT
-/// (Disk Address Translation) B-tree, IFile / CPFile / SUFile metadata files,
-/// segment-summary CRCs and segment-log replay are multi-week and remain out
-/// of scope. A real <c>mount -t nilfs2</c> rejects the image. What's load-bearing
-/// here is the spec-canonical "append new segment + bump last_cno" mutation
-/// semantic + the byte-identical-old-segment preservation, which round-trips
-/// through this descriptor's reader.</para>
+/// <para><b>Kernel-mountable.</b> Create emits the full single-checkpoint log the
+/// Linux <c>nilfs2</c> driver needs to mount: a super root with the DAT / cpfile /
+/// sufile inodes (+ their CRC), a segment summary with the spec
+/// ss_sumsum / ss_datasum checksums, an ifile holding the root directory inode, a
+/// DAT (Disk Address Translation) table, and a flat root directory carrying the
+/// files. A real <c>mount -t nilfs2</c> mounts the image, lists the directory,
+/// and reads the files back (verified via the libguestfs appliance kernel).
+/// Subdirectories and files larger than a direct block map stay in the
+/// writer-private directory for the reader but are not materialised in the
+/// mountable tree; snapshots / multi-checkpoint chains remain out of scope.</para>
 /// </summary>
 public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
@@ -63,7 +66,7 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "NILFS2 continuous-snapshot log-structured filesystem — Create emits a byte-accurate, CRC-valid superblock pair (primary at 1024 + backup before EOF, s_bytes=280, crc32_le-sealed s_sum, label at +0xA8) plus a base directory; Add/Replace/Remove append a fresh log segment at the tail and bump s_last_cno (only in-place edit, spec-sanctioned). Prior segments stay byte-identical at original offsets (continuous-snapshot invariant). The reader validates real mkfs.nilfs2 superblocks (checksum + dual-SB selection). Full DAT/IFile/CPFile/SUFile + segment-log replay (super root) out of scope — the kernel nilfs2 driver rejects the image (not kernel-mountable).";
+  public string Description => "NILFS2 continuous-snapshot log-structured filesystem — Create emits a kernel-mountable single-checkpoint image: a byte-accurate, CRC-valid superblock pair (primary at 1024 + backup before EOF, s_bytes=280, crc32_le-sealed s_sum, label at +0xA8) plus the full log (super root with DAT/cpfile/sufile inodes + CRC, segment summary with ss_sumsum/ss_datasum, ifile holding the root-dir inode, DAT table, flat root directory with the files). The real nilfs2 kernel driver mounts it and reads the files back (verified via the libguestfs appliance). Add/Replace/Remove append a fresh log segment at the tail and bump s_last_cno (spec-sanctioned in-place edit); prior segments stay byte-identical (continuous-snapshot invariant). The reader validates real mkfs.nilfs2 superblocks (checksum + dual-SB selection). Subdirectories / large files and multi-checkpoint snapshots remain out of scope.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new Nilfs2Reader(stream);
@@ -185,12 +188,21 @@ public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(patch);
     if (patch.VolumeLabel is { } label) {
-      // Volume label: 16 bytes at superblock offset 1024 + 0x80.
-      Span<byte> buf = stackalloc byte[16];
-      var bytes = System.Text.Encoding.ASCII.GetBytes(label);
-      bytes.AsSpan(0, Math.Min(bytes.Length, 16)).CopyTo(buf);
-      image.Position = 1024 + 0x80;
-      image.Write(buf);
+      // Volume label lives at superblock + 0xA8 (the spec offset the encoder
+      // writes and the reader parses). Editing it invalidates the superblock
+      // CRC, so reseal s_sum afterwards over the first s_bytes with the stored
+      // crc seed (Linux crc32_le).
+      var sb = new byte[Nilfs2Superblock.Size];
+      image.Position = 1024;
+      if (image.Read(sb, 0, sb.Length) == sb.Length) {
+        Array.Clear(sb, 0xA8, 16);
+        var bytes = System.Text.Encoding.ASCII.GetBytes(label);
+        bytes.AsSpan(0, Math.Min(bytes.Length, 16)).CopyTo(sb.AsSpan(0xA8));
+        var seed = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(0x0C));
+        Nilfs2Superblock.FinalizeChecksum(sb, seed);
+        image.Position = 1024;
+        image.Write(sb, 0, sb.Length);
+      }
     }
   }
 

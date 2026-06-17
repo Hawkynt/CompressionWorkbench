@@ -27,11 +27,11 @@ namespace Compression.Tests.Nilfs2;
 ///   our writer's image must carry a checksum that re-validates on read-back,
 ///   and a correctly-placed secondary copy.</description></item>
 ///   <item><description><b>Mount gate</b> (guestfish appliance): loop-mount the
-///   image via the appliance nilfs2 driver. The real <c>mkfs.nilfs2</c> image
-///   mounts and round-trips; our writer's image is rejected because the full
-///   log structure (super root + DAT/cpfile/sufile/ifile B-trees) is not
-///   emitted — the documented, honest limit. The test asserts both outcomes so
-///   the gap can never silently regress into a false R/W claim.</description></item>
+///   image via the appliance nilfs2 driver. Both the real <c>mkfs.nilfs2</c>
+///   image and our writer's image mount and round-trip — our writer emits the
+///   full single-checkpoint log structure (super root + DAT/cpfile/sufile/ifile
+///   + segment summary with the spec checksums + a flat root directory), so the
+///   kernel mounts it and reads back the files we wrote.</description></item>
 /// </list>
 /// </summary>
 [TestFixture]
@@ -184,18 +184,21 @@ public class Nilfs2ExternalConformanceTests {
       $"stdout:\n{r.StdOut}\nstderr:\n{r.StdErr}");
   }
 
-  // ── Gate 3b: mount gate — our image is honestly NOT kernel-mountable ─
+  // ── Gate 3b: mount gate — OUR image mounts + round-trips via the driver ─
 
   /// <summary>
-  /// Documents and pins the honest limit: our writer emits a byte-accurate,
-  /// CRC-valid superblock pair, but not the full log structure (super root +
-  /// DAT/cpfile/sufile/ifile B-trees + segment summaries) the kernel needs to
-  /// mount. The real nilfs2 driver therefore rejects the image. Asserting the
-  /// rejection means a future "we made it mountable" change must update this
-  /// test deliberately — it can never silently regress into a false R/W claim.
+  /// Pins the achieved capability: <see cref="Nilfs2Writer"/> now emits the full
+  /// single-checkpoint log structure the kernel needs — a super root carrying the
+  /// DAT / cpfile / sufile inodes, a segment summary with the spec
+  /// (ss_sumsum / ss_datasum) checksums, an ifile holding the root directory
+  /// inode, a DAT (disk-address-translation) table, and a flat root directory
+  /// with the user files. The real <c>nilfs2</c> appliance kernel mounts the
+  /// image, lists the directory, and reads back a file we wrote. If this ever
+  /// regresses (mount fails), the writer lost real mountability — fix the writer,
+  /// do not silently weaken the assertion.
   /// </summary>
   [Test]
-  public void MountGate_OurImage_IsNotKernelMountable_DocumentedLimit() {
+  public void MountGate_OurImage_MountsAndReadsBackViaAppliance() {
     if (!GuestfishNilfsCapable)
       Assert.Ignore("guestfish appliance with nilfs2 support unavailable.");
 
@@ -207,21 +210,16 @@ public class Nilfs2ExternalConformanceTests {
 
     var script =
       GuestfishEnv() +
-      "printf 'run\\nmount /dev/sda /\\n' | " +
-      $"timeout 420 guestfish -a {wsl} 2>&1; true";
+      "printf 'run\\n" +
+      "mount /dev/sda /\\n" +
+      "cat /hello.txt\\n" +
+      "umount /\\n' | " +
+      $"timeout 420 guestfish -a {wsl} 2>&1";
     var r = FsInteropToolbox.RunWsl(script);
 
-    // The kernel rejects it: either no nilfs2 detected, or the mount fails with a
-    // bad-superblock / wrong-fs-type error. Both are the documented limit.
-    var rejected =
-      r.StdOut.Contains("wrong fs type", StringComparison.OrdinalIgnoreCase) ||
-      r.StdOut.Contains("bad superblock", StringComparison.OrdinalIgnoreCase) ||
-      r.StdOut.Contains("mount exited", StringComparison.OrdinalIgnoreCase) ||
-      r.StdOut.Contains("libguestfs: error", StringComparison.OrdinalIgnoreCase);
-    Assert.That(rejected, Is.True,
-      "Our image is documented as NOT kernel-mountable (no super root / metadata " +
-      "B-trees). If this now mounts, the writer gained real R/W — update the " +
-      "descriptor capabilities and this test deliberately.\n" +
+    Assert.That(r.StdOut, Does.Contain(System.Text.Encoding.UTF8.GetString(SmallText)),
+      "The real nilfs2 kernel driver must mount our image and read back the file " +
+      "we wrote. If this fails, the writer lost kernel-grade mountability.\n" +
       $"stdout:\n{r.StdOut}\nstderr:\n{r.StdErr}");
   }
 }
