@@ -107,6 +107,11 @@ public static class HfsPlusModifier {
     // Decrement leafRecords in catalog header.
     DecrementLeafRecords(img, ctx, indices.Length);
 
+    // The removed file was a direct child of the root folder, so drop the root
+    // folder record's valence by 1 to keep fsck_hfs's directory-item-count
+    // check satisfied.
+    AdjustRootFolderValence(img, ctx, -1);
+
     // Mirror VH to alternate.
     MirrorAlternateVh(img);
 
@@ -172,6 +177,13 @@ public static class HfsPlusModifier {
 
     // Bump leafRecords by 2 in catalog header.
     IncrementLeafRecords(img, ctx, 2);
+
+    // The new file lives directly under the root folder, so the root folder
+    // record's valence (its child count) must rise by 1; fsck_hfs reports
+    // "Invalid directory item count" otherwise. The root folder record is
+    // keyed (parent=1, name=volume), the only recordType-1 record under
+    // parent CNID 1.
+    AdjustRootFolderValence(img, ctx, +1);
 
     // Mirror to alt VH.
     MirrorAlternateVh(img);
@@ -439,6 +451,38 @@ public static class HfsPlusModifier {
     var hdr = img.AsSpan(hdrBase + 14);
     var n = BinaryPrimitives.ReadUInt32BigEndian(hdr[6..]);
     BinaryPrimitives.WriteUInt32BigEndian(hdr[6..], n >= delta ? n - (uint)delta : 0u);
+  }
+
+  /// <summary>
+  /// Adjusts the root folder record's valence (its direct-child count) by
+  /// <paramref name="delta"/>. The root folder record is the single
+  /// recordType-1 (kHFSPlusFolderRecord) record whose catalog key has parent
+  /// CNID 1; its valence field sits at body offset 4 (TN1150
+  /// HFSPlusCatalogFolder). Re-scans the leaf so it is robust to record shifts
+  /// from a preceding insert/remove.
+  /// </summary>
+  private static void AdjustRootFolderValence(byte[] img, VolumeContext ctx, int delta) {
+    var catalogBase = (int)(ctx.CatalogStartBlock * ctx.BlockSize);
+    var leafBase = catalogBase + (int)ctx.FirstLeafNode * ctx.NodeSize;
+    var leaf = img.AsSpan(leafBase, ctx.NodeSize);
+    var numRecords = BinaryPrimitives.ReadUInt16BigEndian(leaf[10..]);
+    for (var i = 0; i < numRecords; i++) {
+      var recOff = ReadOffset(leaf, ctx.NodeSize, i);
+      if (recOff < 14 || recOff + 8 > ctx.NodeSize) continue;
+      var keyLen = BinaryPrimitives.ReadUInt16BigEndian(leaf[recOff..]);
+      var parent = BinaryPrimitives.ReadUInt32BigEndian(leaf[(recOff + 2)..]);
+      if (parent != 1) continue; // root folder is keyed under CnidRootParent (1)
+      var dataOff = recOff + 2 + keyLen;
+      if ((dataOff & 1) != 0) dataOff++;
+      if (dataOff + 8 > ctx.NodeSize) continue;
+      var recType = BinaryPrimitives.ReadInt16BigEndian(leaf[dataOff..]);
+      if (recType != 1) continue; // kHFSPlusFolderRecord
+      var valence = BinaryPrimitives.ReadUInt32BigEndian(leaf[(dataOff + 4)..]);
+      var adjusted = delta >= 0 ? valence + (uint)delta
+                                : (valence >= (uint)(-delta) ? valence - (uint)(-delta) : 0u);
+      BinaryPrimitives.WriteUInt32BigEndian(leaf[(dataOff + 4)..], adjusted);
+      return;
+    }
   }
 
   // ── Bitmap helpers ──────────────────────────────────────────────────────

@@ -821,14 +821,22 @@ public sealed class HfsWriter {
     var d = rec.AsSpan(AlignEven(key.Length));
     d[0] = RecFile;
     d[1] = 0;
-    d[2] = 0;                                               // filFlags
+    // filFlags bit 1 (kHFSThreadExistsMask, 0x02) declares that a file thread
+    // record exists for this file. We always emit a paired file thread, so the
+    // flag must be set or fsck_hfs reports "Incorrect number of thread records".
+    d[2] = 0x02;                                            // filFlags = thread-exists
     d[3] = 0;                                               // filTyp
     // filUsrWds[16] at 4 — zero
     BinaryPrimitives.WriteUInt32BigEndian(d[20..], fileID); // filFlNum
-    BinaryPrimitives.WriteUInt16BigEndian(d[24..], dataStart); // filStBlk
+    // filStBlk (d[24]) is the File Manager's in-memory first-allocation-block
+    // cache, NOT an on-disk field: Inside Macintosh keeps it 0 on disk and the
+    // authoritative data-fork extent lives in filExtRec[0] at d[74]. fsck_hfs
+    // flags any non-zero filStBlk as "Reserved fields ... have incorrect data",
+    // so leave it zero (the reader already reads the extent from d[74]).
+    BinaryPrimitives.WriteUInt16BigEndian(d[24..], 0);      // filStBlk (on-disk: always 0)
     BinaryPrimitives.WriteUInt32BigEndian(d[26..], dataSize);  // filLgLen
     BinaryPrimitives.WriteUInt32BigEndian(d[30..], (uint)(dataBlocks * AllocBlockSize)); // filPyLen
-    BinaryPrimitives.WriteUInt16BigEndian(d[34..], 0);      // filRStBlk
+    BinaryPrimitives.WriteUInt16BigEndian(d[34..], 0);      // filRStBlk (on-disk: always 0)
     BinaryPrimitives.WriteUInt32BigEndian(d[36..], 0);      // filRLgLen
     BinaryPrimitives.WriteUInt32BigEndian(d[40..], 0);      // filRPyLen
     BinaryPrimitives.WriteUInt32BigEndian(d[44..], crDate); // filCrDat

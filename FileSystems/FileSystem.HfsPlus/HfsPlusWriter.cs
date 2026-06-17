@@ -278,8 +278,15 @@ public sealed class HfsPlusWriter {
       BinaryPrimitives.WriteUInt32BigEndian(ehdr[14..], 0);      // lastLeafNode
       BinaryPrimitives.WriteUInt16BigEndian(ehdr[18..], nodeSize);
       BinaryPrimitives.WriteUInt16BigEndian(ehdr[20..], 10);     // maxKeyLength = HFSPlusExtentKey size = 10
-      BinaryPrimitives.WriteUInt32BigEndian(ehdr[22..], 1);      // totalNodes = 1
-      BinaryPrimitives.WriteUInt32BigEndian(ehdr[26..], 0);      // freeNodes = 0
+      // totalNodes must equal the whole fork's capacity (forkBytes / nodeSize),
+      // not just the single header node — fsck recomputes it as forkBytes/
+      // nodeSize and rejects the B-tree header ("Invalid B-tree header") on a
+      // mismatch. The extents fork is 1 allocation block; when the block size
+      // exceeds the 4 KB node size that block holds several nodes, all free
+      // except the header node.
+      var extTotalNodes = (uint)(blockSize / nodeSize);
+      BinaryPrimitives.WriteUInt32BigEndian(ehdr[22..], extTotalNodes);     // totalNodes
+      BinaryPrimitives.WriteUInt32BigEndian(ehdr[26..], extTotalNodes - 1); // freeNodes (all but header)
       BinaryPrimitives.WriteUInt32BigEndian(ehdr[32..], blockSize); // clumpSize
       ehdr[36] = 0; ehdr[37] = 0;                                 // btreeType, keyCompareType (binary)
       BinaryPrimitives.WriteUInt32BigEndian(ehdr[38..], 2);       // attributes = kBTBigKeysMask only
@@ -290,7 +297,8 @@ public sealed class HfsPlusWriter {
       BinaryPrimitives.WriteUInt16BigEndian(extHeader[(nodeSize - 6)..], 248); // BTMapRec
       BinaryPrimitives.WriteUInt16BigEndian(extHeader[(nodeSize - 8)..], (ushort)(nodeSize - 8));
 
-      // Map: only this header node (node 0) used.
+      // Map: only this header node (node 0) used; the rest of the fork's nodes
+      // stay free (their bits are already zero).
       extHeader[248] = 0x80;
     }
 
@@ -677,8 +685,15 @@ public sealed class HfsPlusWriter {
       }
     }
 
-    var totalNodes = nextNodeNumber; // node numbers 0..nextNodeNumber-1 are used
-    catalogBlockCount = (uint)(((long)totalNodes * nodeSize + blockSize - 1) / blockSize);
+    var usedNodes = nextNodeNumber; // node numbers 0..nextNodeNumber-1 are used
+    catalogBlockCount = (uint)(((long)usedNodes * nodeSize + blockSize - 1) / blockSize);
+    // The catalog fork occupies whole allocation blocks. When the block size
+    // exceeds the 4 KB node size, the fork's byte capacity holds more node
+    // slots than we actually use. fsck.hfsplus computes the B-tree's node count
+    // as forkBytes / nodeSize and rejects the header ("Invalid B-tree header")
+    // unless totalNodes matches that capacity, with the surplus marked free.
+    var nodeCapacity = (uint)((long)catalogBlockCount * blockSize / nodeSize);
+    var totalNodes = Math.Max(usedNodes, nodeCapacity);
 
     // ── Assign user-data start blocks now that the fork size is known ──────
     // Walk the sorted records; every file record (ForkPatchOffset >= 0) gets the
@@ -712,10 +727,13 @@ public sealed class HfsPlusWriter {
     }
 
     // ── Assemble all node images in node-number order ──────────────────────
-    var nodes = new byte[totalNodes][];
+    // Only the used nodes get an image; surplus fork-capacity slots (when the
+    // allocation block size exceeds the node size) stay zero on disk and are
+    // flagged free in the header bitmap.
+    var nodes = new byte[usedNodes][];
     nodes[0] = BuildCatalogHeaderNode(nodeSize, treeDepth, rootNode,
         (uint)records.Count, firstLeafNodeNumber,
-        firstLeafNodeNumber + (uint)leafCount - 1, totalNodes);
+        firstLeafNodeNumber + (uint)leafCount - 1, totalNodes, usedNodes);
     for (var i = 0; i < leafCount; i++)
       nodes[firstLeafNodeNumber + i] = leafImages[i];
     foreach (var (nodeNo, img) in indexNodeImages)
@@ -837,7 +855,7 @@ public sealed class HfsPlusWriter {
   /// always fits the header node's map record.
   /// </summary>
   private static byte[] BuildCatalogHeaderNode(int nodeSize, uint treeDepth, uint rootNode,
-      uint leafRecords, uint firstLeafNode, uint lastLeafNode, uint totalNodes) {
+      uint leafRecords, uint firstLeafNode, uint lastLeafNode, uint totalNodes, uint usedNodes) {
     var node = new byte[nodeSize];
     node[8] = 1; // kind = kBTHeaderNode
     node[9] = 0; // height
@@ -863,8 +881,8 @@ public sealed class HfsPlusWriter {
         $"HFS+ catalog requires {totalNodes} nodes, exceeding the {mapCapacity}-node "
         + "single-header-map limit; map nodes are not implemented.");
 
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[22..], totalNodes); // totalNodes
-    BinaryPrimitives.WriteUInt32BigEndian(hdr[26..], 0);          // freeNodes
+    BinaryPrimitives.WriteUInt32BigEndian(hdr[22..], totalNodes);              // totalNodes (fork capacity)
+    BinaryPrimitives.WriteUInt32BigEndian(hdr[26..], totalNodes - usedNodes);  // freeNodes (surplus slots)
     hdr[36] = 0;    // btreeType = kHFSBTreeType
     hdr[37] = 0xCF; // keyCompareType = kHFSBinaryCompare
     // attributes: kBTBigKeysMask (2) | kBTVariableIndexKeysMask (4) = 6.
@@ -878,9 +896,9 @@ public sealed class HfsPlusWriter {
     BinaryPrimitives.WriteUInt16BigEndian(node.AsSpan(nodeSize - 6), 248);
     BinaryPrimitives.WriteUInt16BigEndian(node.AsSpan(nodeSize - 8), (ushort)(nodeSize - 8));
 
-    // Map record at offset 248: one bit per node, MSB = lowest node. Mark the
-    // first `totalNodes` bits used.
-    for (var n = 0u; n < totalNodes; n++) {
+    // Map record at offset 248: one bit per node, MSB = lowest node. Mark only
+    // the first `usedNodes` bits used; any surplus fork-capacity nodes stay free.
+    for (var n = 0u; n < usedNodes; n++) {
       var byteIndex = 248 + (int)(n / 8);
       var bitIndex = 7 - (int)(n % 8);
       node[byteIndex] |= (byte)(1 << bitIndex);
