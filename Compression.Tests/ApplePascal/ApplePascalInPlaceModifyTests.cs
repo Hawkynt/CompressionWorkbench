@@ -14,7 +14,7 @@ namespace Compression.Tests.ApplePascal;
 /// <c>ApplePascalConversionTests</c> + detection suites; this file locks the
 /// true in-place mutation semantics.
 ///
-/// Boundaries exercised (given-when-then style per CLAUDE.md):
+/// Boundaries exercised (given-when-then style):
 /// <list type="bullet">
 ///   <item>Add: appears in List / Extract picks up the new file</item>
 ///   <item>Add: untouched blocks byte-identical at their original offsets</item>

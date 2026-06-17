@@ -338,7 +338,7 @@ public class ExtExternalConformanceTests {
                     "On Linux CI use the e2fsck/debugfs gates above.");
     if (!FsInteropToolbox.WslHasPasswordlessSudo)
       Assert.Ignore("WSL loop-mount requires passwordless sudo (mount /dev/loop*). " +
-                    "Add 'username ALL=(ALL) NOPASSWD: ALL' to /etc/sudoers.d/wsl-claude inside WSL " +
+                    "Add 'username ALL=(ALL) NOPASSWD: ALL' to /etc/sudoers.d/wsl-nopasswd inside WSL " +
                     "to enable this gate.");
 
     // 64 MiB image — larger than the 4 MiB writer default so the mount path
