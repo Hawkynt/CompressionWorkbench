@@ -11,11 +11,26 @@ namespace FileSystem.Ocfs2;
 /// R/W descriptor for OCFS2 (Oracle Cluster Filesystem 2).
 /// Supports: list, extract, create, true in-place modify (Add/Replace/Remove via
 /// <see cref="Ocfs2InPlaceModifier"/>), defragment, extent map.
-/// The writer produces a single-node (no DLM) image with 4 KB blocks/clusters,
-/// inline directory entries, and extent-based file data allocation. Modifier
-/// scope: root-directory mutations only (subdirectory and extent-backed root
-/// directory paths fall back to the rebuild path). DLM/heartbeat lockdown and
-/// multi-node cluster semantics are out of scope by design.
+///
+/// <para><b>Reading</b> is spec-correct against <c>fs/ocfs2/ocfs2_fs.h</c> (see
+/// <see cref="Ocfs2Reader"/>): INODE01 dinode signatures, the real
+/// <c>ocfs2_dinode</c> field offsets, the 8-byte <c>ocfs2_inline_data</c> header,
+/// and the 16-byte extent-list header. It reads images produced by the reference
+/// <c>mkfs.ocfs2</c> as well as the toolkit's own writer (verified by an external
+/// conformance test that reads a real <c>mkfs.ocfs2 -M local</c> volume).</para>
+///
+/// <para><b>Writing</b> produces a single-node (no DLM) image with 4 KB
+/// blocks/clusters, inline directory entries, and extent-based file data. The
+/// superblock and dinode layout are spec-correct — the reference
+/// <c>debugfs.ocfs2 stats</c> reads the written superblock at exit 0. The writer
+/// does NOT yet emit the full chain-allocator / journal / slot-map / local-alloc
+/// system-file suite a mountable volume needs, so <c>fsck.ocfs2</c> does not pass
+/// on a written image. Create/modify are therefore scoped to structurally-correct
+/// construction with self/round-trip readback, not fsck-clean conformance.</para>
+///
+/// <para>Modifier scope: root-directory mutations only (subdirectory and
+/// extent-backed root directory paths fall back to the rebuild path). DLM/heartbeat
+/// lockdown and multi-node cluster semantics are out of scope by design.</para>
 /// </summary>
 public sealed class Ocfs2FormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
@@ -37,11 +52,16 @@ public sealed class Ocfs2FormatDescriptor
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "OCFS2 (Oracle Cluster Filesystem 2) — read/write with extent-based allocation; "
-    + "true in-place Add/Replace/Remove on the root directory via Ocfs2InPlaceModifier "
-    + "(O(touched bytes) random-access I/O). Subdirectory and extent-backed-root "
-    + "mutations fall back to the rebuild path. Single-node only — DLM/heartbeat "
-    + "lockdown and multi-node cluster semantics are out of scope.";
+    "OCFS2 (Oracle Cluster Filesystem 2) — spec-correct reader (INODE01 dinodes, "
+    + "real ocfs2_dinode offsets, 8-byte inline-data header, 16-byte extent-list "
+    + "header) that parses real mkfs.ocfs2 images as well as our own; extent-based "
+    + "writer with true in-place Add/Replace/Remove on the root directory via "
+    + "Ocfs2InPlaceModifier (O(touched bytes) random-access I/O). Written superblock "
+    + "is read by the reference debugfs.ocfs2, but the writer does not yet emit the "
+    + "full journal/chain-allocator system files, so written images are not yet "
+    + "fsck.ocfs2-clean/mountable. Subdirectory and extent-backed-root mutations fall "
+    + "back to the rebuild path. Single-node only — DLM/heartbeat lockdown and "
+    + "multi-node cluster semantics are out of scope.";
 
   // ── IArchiveFormatOperations (List / Extract) ─────────────────────────
 
@@ -262,151 +282,15 @@ public sealed class Ocfs2FormatDescriptor
   }
 
   /// <summary>
-  /// Reads file entries from an OCFS2 image by walking the root directory dinode's
-  /// inline directory entries, recursing into subdirectories, and extracting file
-  /// data from extent records. Files are surfaced at their full nested path.
+  /// Reads file entries from an OCFS2 image. Delegates to <see cref="Ocfs2Reader"/>,
+  /// which is spec-correct against <c>fs/ocfs2/ocfs2_fs.h</c> (INODE01 dinode
+  /// signature, the real dinode field offsets, the 8-byte inline-data header, and
+  /// the 16-byte extent-list header) so it reads images produced by the reference
+  /// <c>mkfs.ocfs2</c> as well as the toolkit's own writer. Files are surfaced at
+  /// their full nested path.
   /// </summary>
-  private static List<(string Name, byte[] Data)> ReadFilesFromImage(byte[] image) {
-    var result = new List<(string Name, byte[] Data)>();
-
-    var rootOff = Ocfs2Writer.RootDirBlkno * Ocfs2Writer.BlockSize;
-    if (rootOff + Ocfs2Writer.BlockSize > image.Length) return result;
-
-    // Verify signature of the root directory dinode.
-    if (!image.AsSpan(rootOff, 6).SequenceEqual(Ocfs2Superblock.SignatureBytes))
-      return result;
-
-    var visited = new HashSet<long>();
-    WalkDirectory(image, Ocfs2Writer.RootDirBlkno, "", result, visited);
-    return result;
-  }
-
-  /// <summary>
-  /// Walks an inline directory dinode, appending regular files (with their full
-  /// path prefix) to <paramref name="result"/> and recursing into subdirectories.
-  /// "." / ".." and already-visited inodes are skipped to avoid cycles.
-  /// </summary>
-  private static void WalkDirectory(
-      byte[] image, long dirBlkno, string prefix,
-      List<(string Name, byte[] Data)> result, HashSet<long> visited) {
-    const int blockSize = Ocfs2Writer.BlockSize;
-    const int id2Off = 0xC0;
-
-    if (!visited.Add(dirBlkno)) return;
-
-    var dirOff = (int)(dirBlkno * blockSize);
-    if (dirOff + blockSize > image.Length) return;
-    if (!image.AsSpan(dirOff, 6).SequenceEqual(Ocfs2Superblock.SignatureBytes)) return;
-
-    // Collect subdirectories to recurse into after this directory is fully read.
-    var subdirs = new List<(long Blkno, string Path)>();
-
-    // Inline data flag (i_dyn_features at +0x4C). Inline directories keep their
-    // ocfs2_dir_entry records in the dinode's id2 area; extent-backed
-    // directories store them in data blocks referenced by an extent list.
-    var dynFeatures = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(dirOff + 0x4C, 2));
-    if ((dynFeatures & 0x0001) != 0) {
-      var inlineStart = dirOff + id2Off + 2; // after id_count (u16)
-      var dirSize = (int)BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(dirOff + 0x1C, 8));
-      var inlineEnd = inlineStart + Math.Min(dirSize, blockSize - id2Off - 2);
-      ParseDirEntries(image, inlineStart, inlineEnd, prefix, result, subdirs);
-    } else {
-      // Extent-backed: walk the extent list (id2) and parse each directory block.
-      var extOff = dirOff + id2Off;
-      var nextFreeRec = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(extOff + 4, 2));
-      for (var i = 0; i < nextFreeRec; i++) {
-        var recOff = extOff + 8 + i * 16;
-        if (recOff + 16 > image.Length) break;
-        var clusters = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(recOff + 4, 2));
-        var blkno = (long)BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(recOff + 8, 8));
-        for (var c = 0; c < clusters; c++) {
-          var blockStart = (int)((blkno + c) * blockSize);
-          if (blockStart + blockSize > image.Length) break;
-          ParseDirEntries(image, blockStart, blockStart + blockSize, prefix, result, subdirs);
-        }
-      }
-    }
-
-    foreach (var (blkno, path) in subdirs)
-      WalkDirectory(image, blkno, path, result, visited);
-  }
-
-  /// <summary>
-  /// Parses a run of <c>ocfs2_dir_entry</c> records in [start, end): for each
-  /// record, regular files are appended to <paramref name="result"/> and
-  /// subdirectories collected into <paramref name="subdirs"/>. "." / ".." are
-  /// skipped. rec_len drives advancement; a zero/too-short rec_len ends the run
-  /// (e.g. a block whose final entry was stretched to the boundary).
-  /// </summary>
-  private static void ParseDirEntries(
-      byte[] image, int start, int end, string prefix,
-      List<(string Name, byte[] Data)> result, List<(long Blkno, string Path)> subdirs) {
-    var cursor = start;
-    while (cursor + 12 <= end && cursor + 12 <= image.Length) {
-      var inode = BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(cursor, 8));
-      var recLen = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(cursor + 8, 2));
-      var nameLen = image[cursor + 10];
-      var fileType = image[cursor + 11];
-
-      if (recLen < 12 || cursor + recLen > end) break;
-      if (inode == 0 || nameLen == 0 || cursor + 12 + nameLen > image.Length) {
-        cursor += recLen;
-        continue;
-      }
-
-      var name = Encoding.UTF8.GetString(image, cursor + 12, nameLen);
-      cursor += recLen;
-
-      if (name is "." or "..") continue;
-      var path = prefix.Length == 0 ? name : prefix + "/" + name;
-
-      if (fileType == 1)
-        result.Add((path, ExtractFileData(image, (long)inode)));
-      else if (fileType == 2)
-        subdirs.Add(((long)inode, path));
-    }
-  }
-
-  /// <summary>Extracts file data from a file dinode's extent records.</summary>
-  private static byte[] ExtractFileData(byte[] image, long dinodeBlkno) {
-    const int blockSize = Ocfs2Writer.BlockSize;
-    const int id2Off = 0xC0;
-
-    var off = (int)(dinodeBlkno * blockSize);
-    if (off + blockSize > image.Length) return [];
-
-    // Verify signature
-    if (!image.AsSpan(off, 6).SequenceEqual(Ocfs2Superblock.SignatureBytes))
-      return [];
-
-    var fileSize = (long)BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(off + 0x1C, 8));
-    if (fileSize == 0) return [];
-
-    // Read extent list
-    var extOff = off + id2Off;
-    var nextFreeRec = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(extOff + 4, 2));
-
-    var result = new byte[fileSize];
-    var resultPos = 0;
-
-    for (var i = 0; i < nextFreeRec; i++) {
-      var recOff = extOff + 8 + i * 16;
-      if (recOff + 24 > image.Length) break;
-
-      var clusters = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(recOff + 4, 2));
-      var blkno = (long)BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(recOff + 8, 8));
-
-      var dataOff = (int)(blkno * blockSize);
-      var dataLen = clusters * blockSize;
-      var copyLen = (int)Math.Min(dataLen, fileSize - resultPos);
-      if (dataOff + copyLen > image.Length) copyLen = Math.Max(0, image.Length - dataOff);
-      if (copyLen > 0)
-        Buffer.BlockCopy(image, dataOff, result, resultPos, copyLen);
-      resultPos += copyLen;
-    }
-
-    return result;
-  }
+  private static List<(string Name, byte[] Data)> ReadFilesFromImage(byte[] image)
+    => Ocfs2Reader.ReadFiles(image);
 
   // ── Triage path (for non-writer-produced images) ──────────────────────
 

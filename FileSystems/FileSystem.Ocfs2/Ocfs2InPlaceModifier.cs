@@ -16,8 +16,9 @@ namespace FileSystem.Ocfs2;
 ///   <item>4 KB blocks = 4 KB clusters; one dinode per block.</item>
 ///   <item>Superblock dinode at block 2; global bitmap dinode at block 3;
 ///   bitmap data at block 4 (1 bit per cluster, LSB-first, bit=1 means used).</item>
-///   <item>Root directory dinode at block 5 with inline dirents in id2 (+0xC0),
-///   each entry <c>inode(8) | rec_len(2) | name_len(1) | file_type(1) | name[]</c>.</item>
+///   <item>Root directory dinode at block 5 (INODE01) with inline dirents in
+///   id2 after the 8-byte ocfs2_inline_data header (id2 + 8), each entry
+///   <c>inode(8) | rec_len(2) | name_len(1) | file_type(1) | name[]</c>.</item>
 ///   <item>User files start at block 8: each gets one dinode block, plus
 ///   contiguous data clusters whose run is held in a single extent record.</item>
 /// </list></para>
@@ -33,6 +34,21 @@ public static class Ocfs2InPlaceModifier {
   private const int ClusterSize = Ocfs2Writer.ClusterSize;
   private const int Id2Offset = 0xC0;
 
+  // ocfs2_dinode field offsets (spec-correct, per ocfs2_fs.h).
+  private const int OffClusters = 0x14;       // i_clusters (u32)
+  private const int OffSize = 0x20;           // i_size (u64)
+  private const int OffMode = 0x28;           // i_mode (u16)
+  private const int OffLinks = 0x2A;          // i_links_count (u16)
+  private const int OffFlags = 0x2C;          // i_flags (u32)
+  private const int OffBlkno = 0x50;          // i_blkno (u64)
+  private const int OffFsGeneration = 0x60;   // i_fs_generation (u32)
+  private const int OffDynFeatures = 0x76;    // i_dyn_features (u16)
+
+  // ocfs2_inline_data header (id_count u16 + 6 reserved) and ocfs2_extent_list
+  // header (16 bytes) — records / data start after these.
+  private const int InlineHeaderLen = 8;
+  private const int ListHeaderLen = 0x10;
+
   // Dinode file type for regular files in directory entries (ocfs2 FT_REG_FILE).
   // Subdir mutation (FT_DIR = 2) is out of MVP scope.
   private const byte FtRegFile = 1;
@@ -41,6 +57,9 @@ public static class Ocfs2InPlaceModifier {
   private const uint InodeValid = 0x00000001;
   private const ushort DynInlineData = 0x0001;
   private const uint ModeFile = 0x8000 | 0x1B4; // -rw-r--r--
+
+  // Regular-inode signature ("INODE01"); the superblock dinode uses "OCFSV2".
+  private static readonly byte[] InodeSignature = "INODE01"u8.ToArray();
 
   // ── Public API ────────────────────────────────────────────────────────
 
@@ -152,16 +171,16 @@ public static class Ocfs2InPlaceModifier {
     // Walk the file's dinode and free its data extent (single extent record only,
     // matching the writer's emission). Then free the dinode block itself.
     var dinodeBytes = ReadBlock(image, inodeBlk);
-    if (!HasSignature(dinodeBytes))
+    if (!HasInodeSignature(dinodeBytes))
       throw new InvalidDataException(
-        $"ocfs2: dirent points at block {inodeBlk} which lacks the OCFSV2 signature.");
+        $"ocfs2: dirent points at block {inodeBlk} which lacks the INODE01 signature.");
 
     var bitmap = ReadBlock(image, Ocfs2Writer.BitmapDataBlkno);
 
     var extOff = Id2Offset;
     var nextFreeRec = BinaryPrimitives.ReadUInt16LittleEndian(dinodeBytes.AsSpan(extOff + 4, 2));
     for (var i = 0; i < nextFreeRec; i++) {
-      var recOff = extOff + 8 + i * 16;
+      var recOff = extOff + ListHeaderLen + i * 16;
       var clusters = BinaryPrimitives.ReadUInt16LittleEndian(dinodeBytes.AsSpan(recOff + 4, 2));
       var blkno = (long)BinaryPrimitives.ReadUInt64LittleEndian(dinodeBytes.AsSpan(recOff + 8, 8));
       for (var c = 0; c < clusters; c++) {
@@ -209,9 +228,9 @@ public static class Ocfs2InPlaceModifier {
       throw new NotSupportedException($"ocfs2: '{name}' is not a regular file.");
 
     var dinodeBytes = ReadBlock(image, inodeBlk);
-    if (!HasSignature(dinodeBytes))
+    if (!HasInodeSignature(dinodeBytes))
       throw new InvalidDataException(
-        $"ocfs2: dirent for '{name}' points at block {inodeBlk} which lacks the OCFSV2 signature.");
+        $"ocfs2: dirent for '{name}' points at block {inodeBlk} which lacks the INODE01 signature.");
 
     var extOff = Id2Offset;
     var nextFreeRec = BinaryPrimitives.ReadUInt16LittleEndian(dinodeBytes.AsSpan(extOff + 4, 2));
@@ -222,7 +241,7 @@ public static class Ocfs2InPlaceModifier {
     // Sum existing allocation to verify the new payload fits.
     var totalAllocClusters = 0;
     for (var i = 0; i < nextFreeRec; i++) {
-      var recOff = extOff + 8 + i * 16;
+      var recOff = extOff + ListHeaderLen + i * 16;
       totalAllocClusters += BinaryPrimitives.ReadUInt16LittleEndian(dinodeBytes.AsSpan(recOff + 4, 2));
     }
 
@@ -236,7 +255,7 @@ public static class Ocfs2InPlaceModifier {
     // allocated (no bitmap change).
     var written = 0;
     for (var i = 0; i < nextFreeRec; i++) {
-      var recOff = extOff + 8 + i * 16;
+      var recOff = extOff + ListHeaderLen + i * 16;
       var clusters = BinaryPrimitives.ReadUInt16LittleEndian(dinodeBytes.AsSpan(recOff + 4, 2));
       var blkno = (long)BinaryPrimitives.ReadUInt64LittleEndian(dinodeBytes.AsSpan(recOff + 8, 8));
       for (var c = 0; c < clusters; c++) {
@@ -248,8 +267,8 @@ public static class Ocfs2InPlaceModifier {
       }
     }
 
-    // Update i_size in the file dinode header (+0x1C).
-    BinaryPrimitives.WriteUInt64LittleEndian(dinodeBytes.AsSpan(0x1C, 8), (ulong)newData.Length);
+    // Update i_size in the file dinode header (+0x20).
+    BinaryPrimitives.WriteUInt64LittleEndian(dinodeBytes.AsSpan(OffSize, 8), (ulong)newData.Length);
     WriteBlock(image, inodeBlk, dinodeBytes);
     return true;
   }
@@ -263,17 +282,23 @@ public static class Ocfs2InPlaceModifier {
       throw new InvalidDataException("ocfs2: image too small to be a writer-emitted OCFS2 volume.");
 
     var sb = ReadBlock(image, Ocfs2Writer.SuperBlockBlkno);
-    if (!HasSignature(sb))
+    if (!HasSuperSignature(sb))
       throw new InvalidDataException("ocfs2: superblock dinode lacks the OCFSV2 signature.");
   }
 
-  private static bool HasSignature(byte[] block)
+  /// <summary>True iff the block begins with the OCFSV2 superblock signature.</summary>
+  private static bool HasSuperSignature(byte[] block)
     => block.Length >= 6 && block.AsSpan(0, 6).SequenceEqual(Ocfs2Superblock.SignatureBytes);
 
+  /// <summary>True iff the block begins with the INODE01 regular-inode signature.</summary>
+  private static bool HasInodeSignature(byte[] block)
+    => block.Length >= InodeSignature.Length
+       && block.AsSpan(0, InodeSignature.Length).SequenceEqual(InodeSignature);
+
   private static void EnsureInlineRootDir(byte[] rootDirBytes) {
-    if (!HasSignature(rootDirBytes))
-      throw new InvalidDataException("ocfs2: root directory dinode lacks the OCFSV2 signature.");
-    var dynFeatures = BinaryPrimitives.ReadUInt16LittleEndian(rootDirBytes.AsSpan(0x4C, 2));
+    if (!HasInodeSignature(rootDirBytes))
+      throw new InvalidDataException("ocfs2: root directory dinode lacks the INODE01 signature.");
+    var dynFeatures = BinaryPrimitives.ReadUInt16LittleEndian(rootDirBytes.AsSpan(OffDynFeatures, 2));
     if ((dynFeatures & DynInlineData) == 0)
       throw new NotSupportedException(
         "ocfs2: in-place modifier supports inline-data root directories only; "
@@ -287,9 +312,9 @@ public static class Ocfs2InPlaceModifier {
   /// length is recorded in the dinode's i_size (+0x1C).
   /// </summary>
   private static (int Start, int Capacity, int CurrentSize) GetRootDirInlineWindow(byte[] rootDirBytes) {
-    var start = Id2Offset + 2; // skip the id_count u16
+    var start = Id2Offset + InlineHeaderLen; // skip the 8-byte ocfs2_inline_data header
     var capacity = BlockSize - start;
-    var currentSize = (int)BinaryPrimitives.ReadUInt64LittleEndian(rootDirBytes.AsSpan(0x1C, 8));
+    var currentSize = (int)BinaryPrimitives.ReadUInt64LittleEndian(rootDirBytes.AsSpan(OffSize, 8));
     if (currentSize < 0 || currentSize > capacity)
       throw new InvalidDataException(
         $"ocfs2: root dir i_size {currentSize} is outside inline capacity [0..{capacity}].");
@@ -297,7 +322,7 @@ public static class Ocfs2InPlaceModifier {
   }
 
   private static void UpdateDinodeSize(byte[] dinodeBytes, long newSize)
-    => BinaryPrimitives.WriteUInt64LittleEndian(dinodeBytes.AsSpan(0x1C, 8), (ulong)newSize);
+    => BinaryPrimitives.WriteUInt64LittleEndian(dinodeBytes.AsSpan(OffSize, 8), (ulong)newSize);
 
   // ── Directory entry helpers ───────────────────────────────────────────
 
@@ -420,50 +445,51 @@ public static class Ocfs2InPlaceModifier {
 
   /// <summary>
   /// Builds a 4 KB file dinode block matching the format <see cref="Ocfs2Writer"/>
-  /// emits: OCFSV2 signature at offset 0, i_size + i_mode + i_flags + i_blkno
-  /// + i_clusters + i_fs_generation in the header, and a single-extent
-  /// <c>ocfs2_extent_list</c> at id2 (+0xC0) pointing at the contiguous data
-  /// run. Reader (Ocfs2FormatDescriptor.ExtractFileData) traverses these
-  /// fields, so writing them in the writer's format is what makes the file
-  /// surface in List/Extract.
+  /// emits (spec-correct per ocfs2_fs.h): INODE01 signature at offset 0, then
+  /// i_clusters (+0x14), i_size (+0x20), i_mode (+0x28), i_links_count (+0x2A),
+  /// i_flags (+0x2C), i_blkno (+0x50), i_fs_generation (+0x60), and a single-extent
+  /// <c>ocfs2_extent_list</c> at id2 (+0xC0, records at id2+0x10) pointing at the
+  /// contiguous data run. <see cref="Ocfs2Reader"/> traverses these fields, so
+  /// writing them in the canonical format is what makes the file surface in
+  /// List/Extract.
   /// </summary>
   private static byte[] BuildFileDinodeBlock(long blkno, long dataBlkno, int dataClusters, int fileSize) {
     var block = new byte[BlockSize];
 
-    // i_signature[8] at offset 0
-    Ocfs2Superblock.SignatureBytes.CopyTo(block.AsSpan(0, 6));
+    // i_signature[8] at offset 0 — regular-inode magic.
+    InodeSignature.CopyTo(block.AsSpan(0, InodeSignature.Length));
     // i_generation at +8
     BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(0x08, 4), (uint)(blkno + 100));
-    // i_suballoc_slot at +12 (i16): -1
+    // i_suballoc_slot at +0x0C (i16): -1
     BinaryPrimitives.WriteInt16LittleEndian(block.AsSpan(0x0C, 2), -1);
-    // i_suballoc_bit at +14 (u16)
+    // i_suballoc_bit at +0x0E (u16)
     BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(0x0E, 2), (ushort)blkno);
-    // i_links_count at +0x10
-    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(0x10, 2), 1);
-    // i_size at +0x1C
-    BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(0x1C, 8), (ulong)fileSize);
-    // i_mode at +0x24
-    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(0x24, 2), (ushort)ModeFile);
-    // i_flags at +0x28
-    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(0x28, 4), InodeValid);
-    // i_blkno at +0x30
-    BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(0x30, 8), (ulong)blkno);
-    // i_clusters at +0x38
-    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(0x38, 4), (uint)dataClusters);
-    // i_fs_generation at +0x40
-    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(0x40, 4), 1);
+    // i_clusters at +0x14
+    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(OffClusters, 4), (uint)dataClusters);
+    // i_size at +0x20
+    BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(OffSize, 8), (ulong)fileSize);
+    // i_mode at +0x28
+    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(OffMode, 2), (ushort)ModeFile);
+    // i_links_count at +0x2A
+    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(OffLinks, 2), 1);
+    // i_flags at +0x2C
+    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(OffFlags, 4), InodeValid);
+    // i_blkno at +0x50
+    BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(OffBlkno, 8), (ulong)blkno);
+    // i_fs_generation at +0x60
+    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(OffFsGeneration, 4), (uint)(blkno + 100));
 
     if (fileSize == 0) return block;
 
-    // ocfs2_extent_list at id2:
+    // ocfs2_extent_list at id2 (records start at id2 + 0x10):
     var off = Id2Offset;
     BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(off + 0, 2), 0); // l_tree_depth
     BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(off + 2, 2), 1); // l_count
     BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(off + 4, 2), 1); // l_next_free_rec
     // extent record:
-    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(off + 8, 4), 0);            // e_cpos
-    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(off + 12, 2), (ushort)dataClusters); // e_int_clusters
-    BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(off + 16, 8), (ulong)dataBlkno);     // e_blkno
+    BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(off + ListHeaderLen + 0, 4), 0);            // e_cpos
+    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(off + ListHeaderLen + 4, 2), (ushort)dataClusters); // e_leaf_clusters
+    BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(off + ListHeaderLen + 8, 8), (ulong)dataBlkno);     // e_blkno
     return block;
   }
 
