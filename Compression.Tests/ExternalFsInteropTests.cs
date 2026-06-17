@@ -14,6 +14,8 @@ using FileSystem.Fat;
 using FileSystem.Hfs;
 using FileSystem.HfsPlus;
 using FileSystem.Iso;
+using FileSystem.MinixV1;
+using FileSystem.MinixV2;
 using FileSystem.Ntfs;
 using FileSystem.Reiser4;
 using FileSystem.SquashFs;
@@ -1025,6 +1027,42 @@ public class ExternalFsInteropTests {
     var result = FsInteropToolbox.RunWsl($"fsck.cramfs {FsInteropToolbox.WinToWsl(imgPath)}");
     Assert.That(result.ExitCode, Is.EqualTo(0),
       $"fsck.cramfs rejected our image:\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+  }
+
+  // ── Minix v1/v2 (fsck.minix — validates legacy v1/v2 superblocks) ───
+
+  [Test]
+  public void MinixV1_OurImage_FsckMinixAccepts() {
+    RequireWslTool("fsck.minix");
+    var imgPath = Path.Combine(this._tmpDir, "minixv1.img");
+    using (var fs = File.Create(imgPath)) {
+      using var w = new MinixV1Writer(fs, leaveOpen: true);
+      w.AddFile("readme.txt", SmallText);
+      w.AddFile("docs/guide.txt", RepetitiveText);
+      w.Finish();
+    }
+
+    // fsck.minix auto-detects v1 (magic 0x137F/0x138F); -f forces a full check.
+    var result = FsInteropToolbox.RunWsl($"fsck.minix -f {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"fsck.minix rejected our v1 image:\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+  }
+
+  [Test]
+  public void MinixV2_OurImage_FsckMinixAccepts() {
+    RequireWslTool("fsck.minix");
+    var imgPath = Path.Combine(this._tmpDir, "minixv2.img");
+    using (var fs = File.Create(imgPath)) {
+      using var w = new MinixV2Writer(fs, leaveOpen: true);
+      w.AddFile("readme.txt", SmallText);
+      w.AddFile("docs/guide.txt", RepetitiveText);
+      w.Finish();
+    }
+
+    // fsck.minix auto-detects v2 (magic 0x2468/0x2478); -f forces a full check.
+    var result = FsInteropToolbox.RunWsl($"fsck.minix -f {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"fsck.minix rejected our v2 image:\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
   }
 
   // ── Reverse direction: Linux mkfs → our reader ─────────────────────
