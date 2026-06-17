@@ -112,6 +112,7 @@ public class ConversionMatrixTests {
       { "BcacheFs", "[single-payload/whole-image target] bcachefs image writer emits a whole-image (FULL.bcachefs+superblock.bin stub) not a file tree" },
       { "DiskDoubler", "[single-payload/whole-image target] single-fork compressor; carries only one payload (lists 1 file)" },
       { "ExFat", "[single-payload/whole-image target] exFAT image writer emits an empty/whole-image that re-lists as 0 files" },
+      { "Gfs2", "[empty-volume target] GFS2 writer creates a fresh fsck-clean empty volume only; populating it with files (block allocation across resource groups, ExHash dirs) is out of scope, so it carries no payload" },
       { "Hpfs", "[single-payload/whole-image target] HPFS image writer emits a whole-image that re-lists as 0 files" },
       { "Lrzip", "[single-payload/whole-image target] single-stream long-range compressor; one 'data' member only" },
       { "Mp3", "[single-payload/whole-image target] single audio stream; collapses tree to one FULL.mp3" },

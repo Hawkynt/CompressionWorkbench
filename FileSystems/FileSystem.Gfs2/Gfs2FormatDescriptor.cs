@@ -7,8 +7,8 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Gfs2;
 
 /// <summary>
-/// Read-only descriptor for GFS2 (Global File System 2) — Red Hat's
-/// cluster filesystem, mainline Linux since 2.6.19.
+/// GFS2 (Global File System 2) descriptor — Red Hat's cluster filesystem,
+/// mainline Linux since 2.6.19.
 ///
 /// We parse the superblock at offset 65536, surface block size + lock
 /// proto/table + UUID + master/root inode pointers, and walk the root
@@ -20,13 +20,22 @@ namespace FileSystem.Gfs2;
 /// a reserved <c>__pad2</c> inum between master and root, and the
 /// <c>gfs2_dirent</c> header is 40 bytes. See
 /// <c>Gfs2ExternalConformanceTests</c> for the mkfs.gfs2 / fsck.gfs2 gate.
-/// Creating GFS2 images (resource groups, journals, master system inodes that
-/// satisfy <c>fsck.gfs2</c>) remains future work — capabilities advertise
-/// read/list/extract/test only, never CanCreate.
 ///
-/// Out of scope (multi-week effort each): ExHash multi-leaf directories,
-/// multi-level block indirection (di_height &gt; 0), journal replay, cluster
-/// lock manager state, extended attributes.
+/// <para>Creation (<see cref="Create"/>, <see cref="Gfs2Writer"/>) emits a fresh,
+/// empty standalone (lock_nolock, single-journal) volume — superblock, the
+/// fixed first resource group plus a second data resource group with a correct
+/// (multi-block) allocation bitmap, the master directory and its system inodes
+/// (jindex, per_node, inum, statfs, rindex, quota), a formatted 8&#160;MB journal
+/// of clean unmount log headers, and the root directory — all sized so real
+/// <c>fsck.gfs2 -n</c> passes clean (exit 0). Supported size range 16–256&#160;MB
+/// (single data resource group); the volume is empty, since populating it with
+/// files is out of scope.</para>
+///
+/// Out of scope (multi-week effort each): writing files/directories, ExHash
+/// multi-leaf directories, multi-level block indirection (di_height &gt; 0),
+/// devices &gt; 256&#160;MB (which gfs2-utils splits into several evenly-spaced
+/// resource groups), journal replay, cluster lock manager state, extended
+/// attributes.
 ///
 /// Magic: <c>mh_magic = 0x01161970</c> (BE u32) at the start of the
 /// superblock meta header. On disk at byte offset 65536 this serialises as
@@ -41,12 +50,14 @@ namespace FileSystem.Gfs2;
 ///   <item><description>Red Hat Cluster Suite / Resilient Storage Add-On documentation</description></item>
 /// </list>
 /// </summary>
-public sealed class Gfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
+public sealed class Gfs2FormatDescriptor
+    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
   public string Id => "Gfs2";
   public string DisplayName => "GFS2 (Global File System 2)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".gfs2";
   public IReadOnlyList<string> Extensions => [".gfs2"];
@@ -59,7 +70,7 @@ public sealed class Gfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "GFS2 (Red Hat cluster filesystem) — read-only superblock parse + single-leaf root directory walk + inline-data file extract.";
+    "GFS2 (Red Hat cluster filesystem) — read superblock + single-leaf root directory + inline-data files; create a fresh empty lock_nolock volume that fsck.gfs2 accepts.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
@@ -112,12 +123,60 @@ public sealed class Gfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
-  // Throws NotSupported per project policy — Create requires a real writer.
+  /// <summary>
+  /// Creates a fresh, empty standalone (lock_nolock, single-journal) GFS2 volume
+  /// that real <c>fsck.gfs2</c> accepts clean. The volume size defaults to 32&#160;MB
+  /// and may be overridden with the <c>size</c> format option (bytes, clamped to
+  /// 16–256&#160;MB; <c>K</c>/<c>M</c> suffixes accepted).
+  /// </summary>
+  /// <remarks>
+  /// Populating the volume with files is out of scope — GFS2 file/directory
+  /// writing (ExHash directories, multi-level indirection, block allocation
+  /// across resource groups) is multi-week work. The created root directory is
+  /// therefore empty; any non-directory inputs are rejected so callers are not
+  /// silently handed an archive missing their data.
+  /// </remarks>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (inputs != null) {
+      foreach (var i in inputs) {
+        if (!i.IsDirectory)
+          throw new NotSupportedException(
+            "GFS2 creation produces an empty volume only; adding files is not supported.");
+      }
+    }
+
+    var size = ParseSizeOption(options);
+    new Gfs2Writer(size).Build(output);
+  }
+
+  private static long ParseSizeOption(FormatCreateOptions? options) {
+    const long defaultSize = 32L * 1024 * 1024;
+    var raw = options?.GetOption("size", "");
+    if (string.IsNullOrWhiteSpace(raw))
+      return defaultSize;
+
+    raw = raw.Trim();
+    var mult = 1L;
+    var last = char.ToUpperInvariant(raw[^1]);
+    if (last is 'K' or 'M' or 'G') {
+      mult = last switch { 'K' => 1024L, 'M' => 1024L * 1024, _ => 1024L * 1024 * 1024 };
+      raw = raw[..^1].Trim();
+    }
+    if (!long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+      return defaultSize;
+    var bytes = n * mult;
+    // Clamp to the writer's supported single-data-resource-group range.
+    return Math.Clamp(bytes, 16L * 1024 * 1024, 256L * 1024 * 1024);
+  }
+
+  // Throws NotSupported per project policy — Create makes a fresh empty volume,
+  // but in-place modification (defragmentation) is read-only / unsupported.
   public void Defragment(Stream archive)
-    => throw new NotSupportedException("Gfs2 read-only — defragmentation requires a writer.");
+    => throw new NotSupportedException("Gfs2 read-only for in-place edits — defragmentation requires rewrite support.");
 
   public void Defragment(Stream archive, DefragOptions options)
-    => throw new NotSupportedException("Gfs2 read-only — defragmentation requires a writer.");
+    => throw new NotSupportedException("Gfs2 read-only for in-place edits — defragmentation requires rewrite support.");
 
   private static long TryGetImageLen(Gfs2Reader r)
     => r.SuperblockRaw.LongLength > 0 ? Gfs2Reader.SbByteOffset + r.SuperblockRaw.LongLength : 0;
