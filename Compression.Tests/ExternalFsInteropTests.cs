@@ -6,6 +6,7 @@ using FileFormat.Vhd;
 using FileFormat.Vhdx;
 using FileFormat.Vmdk;
 using FileSystem.Adfs;
+using FileSystem.CramFs;
 using FileSystem.DoubleSpace;
 using FileSystem.ExFat;
 using FileSystem.Ext;
@@ -1004,6 +1005,26 @@ public class ExternalFsInteropTests {
       $"unsquashfs rejected our image:\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
     Assert.That(result.StdOut, Does.Contain("Found a valid").IgnoreCase.Or.Contain("Superblock"),
       "unsquashfs -s should report a valid SquashFS superblock");
+  }
+
+  // ── CramFS (fsck.cramfs) ───────────────────────────────────────────
+
+  [Test]
+  public void CramFs_OurImage_FsckCramfsAccepts() {
+    RequireWslTool("fsck.cramfs");
+    var imgPath = Path.Combine(this._tmpDir, "cramfs.img");
+    using (var fs = File.Create(imgPath)) {
+      using var cfs = new CramFsWriter(fs, leaveOpen: true);
+      cfs.AddFile("/hello.txt", SmallText);
+      cfs.AddDirectory("/sub");
+      cfs.AddFile("/sub/repeat.txt", RepetitiveText);
+    }
+
+    // fsck.cramfs verifies the superblock, CRC, and inode tree; non-zero exit
+    // means our image is malformed in a way the reference tool rejects.
+    var result = FsInteropToolbox.RunWsl($"fsck.cramfs {FsInteropToolbox.WinToWsl(imgPath)}");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"fsck.cramfs rejected our image:\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
   }
 
   // ── Reverse direction: Linux mkfs → our reader ─────────────────────
