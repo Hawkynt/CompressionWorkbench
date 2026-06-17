@@ -25,8 +25,8 @@ public class ErofsTests {
     var sb = img.AsSpan(1024);
     BinaryPrimitives.WriteUInt32LittleEndian(sb, ErofsReader.Magic);      // magic
     sb[12] = 12;                                                           // blkszbits = log2(4096)
-    BinaryPrimitives.WriteUInt16LittleEndian(sb[16..], 0);                 // root_nid = 0
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[36..], 1);                 // meta_blkaddr = 1
+    BinaryPrimitives.WriteUInt16LittleEndian(sb[14..], 0);                 // root_nid = 0
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[40..], 1);                 // meta_blkaddr = 1
 
     // ── Meta block (block 1) @ offset 4096 ────────────────────
     // Root inode (nid=0, offset 4096..4127) — compact, dir, inline-layout
@@ -64,8 +64,8 @@ public class ErofsTests {
     var sb = img.AsSpan(1024);
     BinaryPrimitives.WriteUInt32LittleEndian(sb, ErofsReader.Magic);
     sb[12] = 12;                                               // blkszbits = 12
-    BinaryPrimitives.WriteUInt16LittleEndian(sb[16..], 0);     // root_nid
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[36..], 1);     // meta_blkaddr = 1
+    BinaryPrimitives.WriteUInt16LittleEndian(sb[14..], 0);     // root_nid
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[40..], 1);     // meta_blkaddr = 1
 
     // Root inode: compact, directory, PLAIN layout pointing to block 2
     var rootInode = img.AsSpan(4096);

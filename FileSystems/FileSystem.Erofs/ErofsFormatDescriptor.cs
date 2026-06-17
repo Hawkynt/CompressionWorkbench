@@ -21,9 +21,9 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public IReadOnlyList<string> Extensions => [".erofs", ".img"];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // Magic sits at offset 1024 (start of superblock). Value is 0xE0F5E2E0 stored
-    // little-endian, so the on-disk byte sequence is E0 E2 F5 E0.
-    new([0xE0, 0xE2, 0xF5, 0xE0], Offset: 1024, Confidence: 0.95),
+    // Magic sits at offset 1024 (start of superblock). Value is 0xE0F5E1E2 stored
+    // little-endian, so the on-disk byte sequence is E2 E1 F5 E0.
+    new([0xE2, 0xE1, 0xF5, 0xE0], Offset: 1024, Confidence: 0.95),
   ];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
