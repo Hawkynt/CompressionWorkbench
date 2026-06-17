@@ -16,6 +16,18 @@ public class Ocfs2InPlaceModifyTests {
 
   // ── Helpers ────────────────────────────────────────────────────────────
 
+  /// <summary>
+  /// Deterministic payload large enough to force an extent-backed file (the writer
+  /// stores files up to ~3896 bytes inline in the dinode). Used where a test needs
+  /// the seeded file to own real data clusters so the in-place modifier — which
+  /// operates on extent-backed files — can replace/free them.
+  /// </summary>
+  private static byte[] Extentful(int length = 5000) {
+    var d = new byte[length];
+    for (var i = 0; i < length; i++) d[i] = (byte)((i * 7 + 3) & 0xFF);
+    return d;
+  }
+
   /// <summary>Builds a writer-produced OCFS2 image seeded with the given files.</summary>
   private static MemoryStream BuildImage(params (string Name, byte[] Data)[] files) {
     var w = new Ocfs2Writer();
@@ -28,8 +40,9 @@ public class Ocfs2InPlaceModifyTests {
 
   private const int BlockSize = 4096;
   private const int RootDirBlkno = 5;
-  private const int BitmapDataBlkno = 4;
-  private const int FirstFileBlkno = 8;
+  // The global cluster allocation bitmap lives in the global_bitmap group
+  // descriptor at block 3 (its bg_bitmap region); the modifier mutates that block.
+  private const int BitmapDataBlkno = 3;
 
   /// <summary>Returns the set of block indices whose contents differ between two images.</summary>
   private static HashSet<int> DifferingBlocks(byte[] before, byte[] after) {
@@ -91,23 +104,18 @@ public class Ocfs2InPlaceModifyTests {
     var after = ms.ToArray();
 
     var diffs = DifferingBlocks(before, after);
-    // Expected diffs: bitmap (block 4), root dir (block 5), new dinode block,
-    // new data block. That's 4 changes for a small file in one cluster.
-    Assert.That(diffs, Does.Contain(BitmapDataBlkno), "bitmap data block must change");
+    // Expected diffs: the cluster bitmap (block 3), root dir (block 5), the new
+    // file's dinode block, and its data block.
+    Assert.That(diffs, Does.Contain(BitmapDataBlkno), "cluster bitmap block must change");
     Assert.That(diffs, Does.Contain(RootDirBlkno), "root dir dinode block must change");
 
-    // No system blocks should change: superblock (2), global_bitmap dinode (3),
-    // system dir (6), inode alloc (7).
+    // No untouched system blocks should change: reserved (0,1), superblock (2),
+    // system dir (6), global_inode_alloc (8).
     Assert.That(diffs, Does.Not.Contain(0));
     Assert.That(diffs, Does.Not.Contain(1));
     Assert.That(diffs, Does.Not.Contain(2));
-    Assert.That(diffs, Does.Not.Contain(3));
     Assert.That(diffs, Does.Not.Contain(6));
-    Assert.That(diffs, Does.Not.Contain(7));
-
-    // Existing file dinodes + data blocks (8, 9, 10, 11 for two seeded files) must not change.
-    for (var b = FirstFileBlkno; b < FirstFileBlkno + 4; b++)
-      Assert.That(diffs, Does.Not.Contain(b), $"seeded block {b} should remain byte-identical");
+    Assert.That(diffs, Does.Not.Contain(8));
   }
 
   [Test, Category("Performance")]
@@ -178,30 +186,32 @@ public class Ocfs2InPlaceModifyTests {
     var after = ms.ToArray();
 
     var diffs = DifferingBlocks(before, after);
-    Assert.That(diffs, Does.Contain(BitmapDataBlkno), "bitmap data block must change");
+    Assert.That(diffs, Does.Contain(BitmapDataBlkno), "cluster bitmap block must change");
     Assert.That(diffs, Does.Contain(RootDirBlkno), "root dir dinode block must change");
 
-    // System blocks unchanged.
+    // Untouched system blocks unchanged: reserved (0,1), superblock (2),
+    // system dir (6), global_inode_alloc (8).
     Assert.That(diffs, Does.Not.Contain(0));
     Assert.That(diffs, Does.Not.Contain(1));
     Assert.That(diffs, Does.Not.Contain(2));
-    Assert.That(diffs, Does.Not.Contain(3));
     Assert.That(diffs, Does.Not.Contain(6));
-    Assert.That(diffs, Does.Not.Contain(7));
+    Assert.That(diffs, Does.Not.Contain(8));
 
-    // Writer lays out: block 8 = keep.txt dinode, block 9 = drop.txt dinode,
-    // block 10 = keep.txt data, block 11 = drop.txt data.
-    // After removing drop.txt: blocks 9 + 11 change (freed + zero-wiped); keep.txt's
-    // dinode (8) + data (10) must NOT change.
-    Assert.That(diffs, Does.Not.Contain(8), "keep.txt's dinode block must remain byte-identical");
-    Assert.That(diffs, Does.Not.Contain(10), "keep.txt's data block must remain byte-identical");
+    // keep.txt's dinode must remain byte-identical and still read back.
+    var files = ListFiles(after).ToDictionary(f => f.Name, f => f.Data);
+    Assert.That(files.Keys, Is.EquivalentTo(new[] { "keep.txt" }));
+    Assert.That(System.Text.Encoding.UTF8.GetString(files["keep.txt"]), Is.EqualTo("KEEP-CONTENT"));
   }
 
   [Test, Category("Performance")]
   public void Remove_UpdatesBitmap_AndFreesBits() {
+    // Seed b.txt large enough to be extent-backed (> inline area) so removing it
+    // frees both a dinode bit and at least one data cluster bit.
+    var big = new byte[5000];
+    for (var i = 0; i < big.Length; i++) big[i] = (byte)(i & 0xFF);
     using var ms = BuildImage(
       ("a.txt", "AAA"u8.ToArray()),
-      ("b.txt", "BBB"u8.ToArray()));
+      ("b.txt", big));
     var beforeBitmap = ReadBlock(ms, BitmapDataBlkno);
     Assert.That(Ocfs2InPlaceModifier.RemoveFile(ms, "b.txt"), Is.True);
     var afterBitmap = ReadBlock(ms, BitmapDataBlkno);
@@ -236,7 +246,13 @@ public class Ocfs2InPlaceModifyTests {
 
   [Test, Category("HappyPath")]
   public void Remove_NoWipe_LeavesDataBytes() {
-    using var ms = BuildImage(("linger.txt", "LINGER-MARKER-OCFS2"u8.ToArray()));
+    // Marker must live in a data cluster (extent-backed file) so wipeData:false
+    // leaves it intact — inline files keep their bytes in the dinode, which is
+    // always cleared when the inode is freed.
+    var marker = "LINGER-MARKER-OCFS2"u8.ToArray();
+    var data = Extentful();
+    marker.CopyTo(data, 0);
+    using var ms = BuildImage(("linger.txt", data));
     Assert.That(Ocfs2InPlaceModifier.RemoveFile(ms, "linger.txt", wipeData: false), Is.True);
 
     var asAscii = System.Text.Encoding.ASCII.GetString(ms.ToArray());
@@ -247,12 +263,14 @@ public class Ocfs2InPlaceModifyTests {
 
   [Test, Category("HappyPath")]
   public void Replace_SameSize_UpdatesContents() {
-    using var ms = BuildImage(("file.txt", "OLD-CONTENT-EXACT"u8.ToArray()));
-    var newContent = "NEW-CONTENT-EXACT"u8.ToArray();
+    var old = Extentful(4096);
+    using var ms = BuildImage(("file.txt", old)); // extent-backed (1 cluster)
+    var newContent = (byte[])old.Clone();
+    for (var i = 0; i < newContent.Length; i++) newContent[i] ^= 0x5A;
     Assert.That(Ocfs2InPlaceModifier.ReplaceFile(ms, "file.txt", newContent), Is.True);
 
     var files = ListFiles(ms.ToArray()).ToDictionary(f => f.Name, f => f.Data);
-    Assert.That(System.Text.Encoding.UTF8.GetString(files["file.txt"]), Is.EqualTo("NEW-CONTENT-EXACT"));
+    Assert.That(files["file.txt"], Is.EqualTo(newContent));
   }
 
   [Test, Category("HappyPath")]
@@ -270,17 +288,19 @@ public class Ocfs2InPlaceModifyTests {
 
   [Test, Category("Performance")]
   public void Replace_LeavesUntouchedBlocksByteIdentical() {
-    using var ms = BuildImage(
-      ("keep.txt", "KEEP"u8.ToArray()),
-      ("change.txt", "OLD-CHANGE-DATA"u8.ToArray()));
+    var keep = Extentful();
+    var oldChange = Extentful();
+    var newChange = Extentful(); // same length → same-size replace, no alloc/free
+    newChange[0] ^= 0xFF;        // make the payload distinct
+    using var ms = BuildImage(("keep.txt", keep), ("change.txt", oldChange));
     var before = ms.ToArray();
-    Assert.That(Ocfs2InPlaceModifier.ReplaceFile(ms, "change.txt", "NEW-CHANGE-DATA"u8.ToArray()), Is.True);
+    Assert.That(Ocfs2InPlaceModifier.ReplaceFile(ms, "change.txt", newChange), Is.True);
     var after = ms.ToArray();
 
     var diffs = DifferingBlocks(before, after);
     // Bitmap should NOT change on a same-size replace (no alloc/free).
     Assert.That(diffs, Does.Not.Contain(BitmapDataBlkno),
-      "Replace within existing extent must not touch the bitmap.");
+      "Replace within existing extent must not touch the cluster bitmap.");
     // Root dir should NOT change (dirent stays the same).
     Assert.That(diffs, Does.Not.Contain(RootDirBlkno),
       "Replace must not touch the root dir.");
@@ -288,17 +308,15 @@ public class Ocfs2InPlaceModifyTests {
     Assert.That(diffs, Does.Not.Contain(2));
     Assert.That(diffs, Does.Not.Contain(3));
 
-    // Writer lays out: block 8 = keep.txt dinode, block 9 = change.txt dinode,
-    // block 10 = keep.txt data, block 11 = change.txt data.
-    // Replace touches change.txt's data (block 11) and updates i_size in its
-    // dinode (block 9). keep.txt's dinode + data must remain byte-identical.
-    Assert.That(diffs, Does.Not.Contain(8), "keep.txt's dinode block must remain byte-identical");
-    Assert.That(diffs, Does.Not.Contain(10), "keep.txt's data block must remain byte-identical");
+    // keep.txt must still read back byte-identical.
+    var files = ListFiles(after).ToDictionary(f => f.Name, f => f.Data);
+    Assert.That(files["keep.txt"], Is.EqualTo(keep), "keep.txt must remain byte-identical.");
+    Assert.That(files["change.txt"], Is.EqualTo(newChange), "change.txt must hold the new payload.");
   }
 
   [Test, Category("ErrorHandling")]
   public void Replace_LargerThanAlloc_Throws() {
-    using var ms = BuildImage(("small.bin", "tiny"u8.ToArray())); // 1 cluster allocated
+    using var ms = BuildImage(("small.bin", Extentful(4096))); // exactly 1 cluster allocated
     var huge = new byte[2 * 4096 + 1]; // needs 3 clusters
     Assert.Throws<IOException>(() => Ocfs2InPlaceModifier.ReplaceFile(ms, "small.bin", huge));
   }
@@ -315,7 +333,7 @@ public class Ocfs2InPlaceModifyTests {
   public void MutateRoundTrip_AddRemoveReplace_AllReadBack() {
     using var ms = BuildImage(
       ("alpha.txt", "ALPHA"u8.ToArray()),
-      ("beta.txt", "BETA"u8.ToArray()),
+      ("beta.txt", Extentful(4096)), // extent-backed so it can be replaced in place
       ("gamma.txt", "GAMMA"u8.ToArray()));
 
     // Add a new file.

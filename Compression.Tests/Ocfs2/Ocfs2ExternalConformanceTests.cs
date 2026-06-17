@@ -92,34 +92,20 @@ public class Ocfs2ExternalConformanceTests {
     // Honest gate: fsck.ocfs2 exit 0 == clean. The tool IS installed, so this
     // test never skips — it runs fsck and records the real verdict.
     //
-    // Reality: Ocfs2Writer emits a spec-correct superblock and dinode layout
-    // (INODE01 signatures, correct field offsets, inline directories — proven
-    // by OurWriterImage_DebugfsReadsSuperblock, where the reference debugfs.ocfs2
-    // parses the superblock at exit 0). It does NOT yet emit the full
-    // chain-allocator / journal / slot-map / local-alloc system-file suite that a
-    // mountable OCFS2 volume needs, so fsck.ocfs2 cannot replay the (absent)
-    // journals and reports errors. The writer's CanCreate is therefore honestly
-    // scoped to structural image construction + self/round-trip readback, NOT
-    // fsck-clean conformance — and the descriptor's Capabilities reflect that.
+    // Ocfs2Writer emits a complete single-node ("local") OCFS2 volume: the full
+    // system-file suite (global_bitmap + global_inode_alloc + inode_alloc:0000 +
+    // extent_alloc:0000 chain allocators with GROUP01 group descriptors and
+    // correct bitmaps, slot_map, local_alloc:0000, truncate_log:0000,
+    // orphan_dir:0000, heartbeat, bad_blocks, a valid empty JBD2 journal:0000),
+    // a spec-correct superblock and dinode layout, lost+found, and matching
+    // allocation accounting + directory link counts. fsck.ocfs2 -fn must pass
+    // every check at exit 0.
     Assert.That(r.ExitCode, Is.Not.EqualTo(int.MinValue),
       "fsck.ocfs2 did not run on any channel (tool should be installed).");
-
-    if (r.ExitCode == 0) {
-      Assert.That(r.StdOut, Does.Contain("All passes succeeded").IgnoreCase,
-        $"fsck.ocfs2 exited 0 but did not confirm all passes succeeded:\n{r.StdOut}");
-      return; // full forward-gate conformance achieved
-    }
-
-    // Non-zero is the known, documented current limit. Assert the verdict matches
-    // the expected cause (journal/system-file absence) so a regression that
-    // changed the failure mode would surface, rather than silently ignoring.
-    var combined = r.StdOut + "\n" + r.StdErr;
-    Assert.That(combined, Does.Contain("fsck.ocfs2"),
-      $"fsck.ocfs2 produced no recognisable output (exit {r.ExitCode}):\n{combined}");
-    TestContext.Out.WriteLine(
-      $"[documented limit] fsck.ocfs2 exit {r.ExitCode}: writer image is not yet a " +
-      "complete mountable volume (missing journal/chain-allocator system files). " +
-      "Superblock/dinode structure is spec-correct (see DebugfsReadsSuperblock).");
+    Assert.That(r.ExitCode, Is.EqualTo(0),
+      $"fsck.ocfs2 did not report the image clean (exit {r.ExitCode}):\n{r.StdOut}\n{r.StdErr}");
+    Assert.That(r.StdOut, Does.Contain("All passes succeeded").IgnoreCase,
+      $"fsck.ocfs2 exited 0 but did not confirm all passes succeeded:\n{r.StdOut}");
   }
 
   /// <summary>

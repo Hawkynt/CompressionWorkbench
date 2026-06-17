@@ -192,53 +192,48 @@ public sealed class Ocfs2FormatDescriptor
 
     if (data.Length < (Ocfs2Writer.SuperBlockBlkno + 1) * blockSize) return result;
 
-    // Reserved blocks 0-1
-    result.Add(new DefragBlockInfo(0, blockSize * 2, DefragBlockKind.MetadataReserved, "Reserved"));
+    var totalBlocks = data.Length / blockSize;
 
-    // Superblock at block 2
-    result.Add(new DefragBlockInfo(Ocfs2Writer.SuperBlockBlkno * blockSize, blockSize, DefragBlockKind.MetadataReserved, "Superblock"));
-
-    // Global bitmap dinode at block 3
-    if (data.Length >= (Ocfs2Writer.GlobalBitmapBlkno + 1) * blockSize)
-      result.Add(new DefragBlockInfo(Ocfs2Writer.GlobalBitmapBlkno * blockSize, blockSize, DefragBlockKind.MetadataReserved, "GlobalBitmap"));
-
-    // Bitmap data at block 4
-    if (data.Length >= (Ocfs2Writer.BitmapDataBlkno + 1) * blockSize)
-      result.Add(new DefragBlockInfo(Ocfs2Writer.BitmapDataBlkno * blockSize, blockSize, DefragBlockKind.MetadataReserved, "BitmapData"));
-
-    // Root dir at block 5
-    if (data.Length >= (Ocfs2Writer.RootDirBlkno + 1) * blockSize)
-      result.Add(new DefragBlockInfo(Ocfs2Writer.RootDirBlkno * blockSize, blockSize, DefragBlockKind.MetadataReserved, "RootDir"));
-
-    // System dir at block 6
-    if (data.Length >= (Ocfs2Writer.SystemDirBlkno + 1) * blockSize)
-      result.Add(new DefragBlockInfo(Ocfs2Writer.SystemDirBlkno * blockSize, blockSize, DefragBlockKind.MetadataReserved, "SystemDir"));
-
-    // Inode alloc at block 7
-    if (data.Length >= (Ocfs2Writer.InodeAllocBlkno + 1) * blockSize)
-      result.Add(new DefragBlockInfo(Ocfs2Writer.InodeAllocBlkno * blockSize, blockSize, DefragBlockKind.MetadataReserved, "InodeAlloc"));
-
-    // File dinodes and data
+    // Identify each regular file's data-cluster run so it can surface as a Used
+    // extent (clamped to logical size, leaving the cluster tip as a free gap),
+    // rather than being lumped into the reserved metadata region.
+    var fileDataClusters = new Dictionary<long, (long Size, string Name)>();
     try {
-      var files = ReadFilesFromImage(data);
-      var nextBlk = (long)Ocfs2Writer.FirstFileBlkno;
-      // Each file has a dinode block
-      for (var i = 0; i < files.Count; i++) {
-        var dinodeOff = nextBlk * blockSize;
-        result.Add(new DefragBlockInfo(dinodeOff, blockSize, DefragBlockKind.MetadataReserved, $"Inode: {files[i].Name}"));
-        nextBlk++;
+      foreach (var f in Ocfs2Reader.ReadFilePlacements(data)) {
+        if (f.Inline || f.Size <= 0) continue;
+        fileDataClusters[f.DataBlkno] = (f.Size, f.Name);
       }
-      // Then data blocks
-      for (var i = 0; i < files.Count; i++) {
-        if (files[i].Data.Length > 0) {
-          var dataOff = nextBlk * blockSize;
-          var clusters = (files[i].Data.Length + blockSize - 1) / blockSize;
-          result.Add(new DefragBlockInfo(dataOff, Math.Min((long)clusters * blockSize, files[i].Data.Length), DefragBlockKind.Used, files[i].Name));
-          nextBlk += clusters;
-        }
+    } catch { /* best-effort */ }
+
+    // Every cluster set in the global bitmap (block 3 group descriptor) is
+    // allocated. Mark allocated clusters as reserved — except file data clusters,
+    // which are emitted as Used extents — so the wiper never zeroes live metadata.
+    var bmpOff = Ocfs2Writer.GlobalBitmapGroupBlkno * blockSize + Ocfs2Writer.BitmapInGroupOffset;
+    long cluster = 0;
+    while (cluster < totalBlocks) {
+      if (fileDataClusters.TryGetValue(cluster, out var file)) {
+        var clusters = (file.Size + blockSize - 1) / blockSize;
+        var dataOff = cluster * blockSize;
+        // Used portion clamped to logical size; the remaining tip is left as a gap.
+        result.Add(new DefragBlockInfo(dataOff, file.Size, DefragBlockKind.Used, file.Name));
+        cluster += clusters;
+        continue;
       }
-    } catch {
-      // Best-effort
+      var byteIdx = bmpOff + (int)(cluster >> 3);
+      var used = byteIdx < data.Length && (data[byteIdx] & (1 << (int)(cluster & 7))) != 0;
+      if (used) {
+        // Coalesce a run of reserved clusters.
+        var runStart = cluster;
+        while (cluster < totalBlocks
+               && !fileDataClusters.ContainsKey(cluster)
+               && (bmpOff + (int)(cluster >> 3)) < data.Length
+               && (data[bmpOff + (int)(cluster >> 3)] & (1 << (int)(cluster & 7))) != 0)
+          cluster++;
+        result.Add(new DefragBlockInfo(runStart * blockSize, (cluster - runStart) * blockSize,
+          DefragBlockKind.MetadataReserved, runStart < Ocfs2Writer.FirstFileBlkno ? "SystemMetadata" : "Allocated"));
+        continue;
+      }
+      cluster++;
     }
 
     return result;

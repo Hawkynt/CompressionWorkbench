@@ -117,6 +117,85 @@ internal static class Ocfs2Reader {
   }
 
   /// <summary>
+  /// Describes a regular file's on-disk data placement: its dinode block, the
+  /// first data block of its (single-record) extent, byte size, and whether the
+  /// bytes are stored inline in the dinode. Used by the descriptor's extent map
+  /// to locate real data offsets for cluster-tip wiping.
+  /// </summary>
+  public readonly record struct FilePlacement(string Name, long DinodeBlkno, long DataBlkno, long Size, bool Inline);
+
+  /// <summary>Walks the tree and returns the on-disk placement of every regular file.</summary>
+  public static List<FilePlacement> ReadFilePlacements(byte[] image) {
+    var result = new List<FilePlacement>();
+    if (!TryReadSuperblock(image, out var blockSize, out var rootBlkno)) return result;
+    var rootOff = checked(rootBlkno * blockSize);
+    if (rootOff < 0 || rootOff + blockSize > image.Length) return result;
+    if (!IsDinode(image, (int)rootOff)) return result;
+    WalkPlacements(image, rootBlkno, blockSize, "", result, []);
+    return result;
+  }
+
+  private static void WalkPlacements(
+      byte[] image, long dirBlkno, int blockSize, string prefix,
+      List<FilePlacement> result, HashSet<long> visited) {
+    if (!visited.Add(dirBlkno)) return;
+    var dirOff = (int)(dirBlkno * blockSize);
+    if (dirOff < 0 || dirOff + blockSize > image.Length || !IsDinode(image, dirOff)) return;
+
+    var subdirs = new List<(long Blkno, string Path)>();
+    var dynFeatures = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(dirOff + OffDynFeatures, 2));
+    var dirSize = (long)BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(dirOff + OffSize, 8));
+
+    void Handle(int start, int end) {
+      var cursor = start;
+      while (cursor + 12 <= end && cursor + 12 <= image.Length) {
+        var inode = BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(cursor, 8));
+        var recLen = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(cursor + 8, 2));
+        var nameLen = image[cursor + 10];
+        var fileType = image[cursor + 11];
+        if (recLen < 12 || cursor + recLen > end) break;
+        if (inode != 0 && nameLen != 0 && cursor + 12 + nameLen <= image.Length) {
+          var name = Encoding.UTF8.GetString(image, cursor + 12, nameLen);
+          if (name is not ("." or "..")) {
+            var path = prefix.Length == 0 ? name : prefix + "/" + name;
+            if (fileType is FtRegFile or FtSymlink)
+              result.Add(MakePlacement(image, (long)inode, blockSize, path));
+            else if (fileType == FtDir)
+              subdirs.Add(((long)inode, path));
+          }
+        }
+        cursor += recLen;
+      }
+    }
+
+    if ((dynFeatures & DynInlineData) != 0) {
+      var inlineStart = dirOff + Id2Offset + InlineHeaderLen;
+      var maxInline = blockSize - Id2Offset - InlineHeaderLen;
+      Handle(inlineStart, inlineStart + (int)Math.Clamp(dirSize, 0, maxInline));
+    } else {
+      foreach (var (blkno, clusters) in ReadExtents(image, dirOff))
+        for (long b = 0; b < clusters; b++) {
+          var bs = (int)((blkno + b) * blockSize);
+          if (bs < 0 || bs + blockSize > image.Length) break;
+          Handle(bs, bs + blockSize);
+        }
+    }
+    foreach (var (blkno, path) in subdirs)
+      WalkPlacements(image, blkno, blockSize, path, result, visited);
+  }
+
+  private static FilePlacement MakePlacement(byte[] image, long dinodeBlkno, int blockSize, string name) {
+    var off = (int)(dinodeBlkno * blockSize);
+    var size = (long)BinaryPrimitives.ReadUInt64LittleEndian(image.AsSpan(off + OffSize, 8));
+    var dyn = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(off + OffDynFeatures, 2));
+    if ((dyn & DynInlineData) != 0)
+      return new FilePlacement(name, dinodeBlkno, dinodeBlkno, size, Inline: true);
+    long dataBlk = 0;
+    foreach (var (blkno, _) in ReadExtents(image, off)) { dataBlk = blkno; break; }
+    return new FilePlacement(name, dinodeBlkno, dataBlk, size, Inline: false);
+  }
+
+  /// <summary>
   /// Reads all regular files from the image, surfaced at their full nested path.
   /// Returns an empty list when the image is not a recognisable OCFS2 volume.
   /// </summary>

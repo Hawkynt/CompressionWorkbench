@@ -83,14 +83,11 @@ public static class Ocfs2InPlaceModifier {
     var rootDirBytes = ReadBlock(image, Ocfs2Writer.RootDirBlkno);
     EnsureInlineRootDir(rootDirBytes);
 
-    var (inlineStart, inlineCapacity, currentSize) = GetRootDirInlineWindow(rootDirBytes);
-    if (FindDirEntry(rootDirBytes, inlineStart, currentSize, name, out _, out _))
+    var (inlineStart, inlineCapacity, _) = GetRootDirInlineWindow(rootDirBytes);
+    if (FindDirEntry(rootDirBytes, inlineStart, inlineCapacity, name, out _, out _))
       throw new IOException($"ocfs2: entry '{name}' already exists in root directory.");
 
     var newEntrySize = ComputeDirEntrySize(name);
-    if (currentSize + newEntrySize > inlineCapacity)
-      throw new IOException($"ocfs2: root directory inline area is full (cannot add '{name}'); "
-                            + "extent-backed root directories are not supported by the in-place modifier.");
 
     // Allocate clusters for the file dinode + data clusters.
     var dataClusters = data.Length == 0 ? 0 : (data.Length + ClusterSize - 1) / ClusterSize;
@@ -132,10 +129,16 @@ public static class Ocfs2InPlaceModifier {
       }
     }
 
-    // Append a new dirent into the root dir inline area.
-    AppendInlineDirEntry(rootDirBytes, inlineStart, currentSize, newDinodeBlk, name, FtRegFile);
-    var newDirSize = currentSize + newEntrySize;
-    UpdateDinodeSize(rootDirBytes, newDirSize);
+    // Insert a new dirent into the slack of the inline directory (OCFS2 inline
+    // dirs keep the last entry's rec_len stretched to the inline end; we carve
+    // the new entry out of that slack). i_size stays the full inline capacity.
+    if (!InsertInlineDirEntry(rootDirBytes, inlineStart, inlineCapacity, newEntrySize, newDinodeBlk, name, FtRegFile)) {
+      // No slack — roll back the cluster allocations.
+      ClearBit(bitmap, (int)newDinodeBlk);
+      if (dataClusters > 0)
+        for (var i = 0; i < dataClusters; i++) ClearBit(bitmap, (int)(firstDataBlk + i));
+      throw new IOException($"ocfs2: root directory inline area is full (cannot add '{name}').");
+    }
     WriteBlock(image, Ocfs2Writer.RootDirBlkno, rootDirBytes);
 
     // Persist the bitmap.
@@ -157,8 +160,8 @@ public static class Ocfs2InPlaceModifier {
     var rootDirBytes = ReadBlock(image, Ocfs2Writer.RootDirBlkno);
     EnsureInlineRootDir(rootDirBytes);
 
-    var (inlineStart, _, currentSize) = GetRootDirInlineWindow(rootDirBytes);
-    if (!FindDirEntry(rootDirBytes, inlineStart, currentSize, name, out var entryOffset, out var entryLen))
+    var (inlineStart, inlineCapacity, _) = GetRootDirInlineWindow(rootDirBytes);
+    if (!FindDirEntry(rootDirBytes, inlineStart, inlineCapacity, name, out var entryOffset, out var entryLen))
       return false;
 
     // Read fields before splicing.
@@ -193,9 +196,10 @@ public static class Ocfs2InPlaceModifier {
     ClearBit(bitmap, (int)inodeBlk);
     WriteBlock(image, inodeBlk, new byte[BlockSize]);
 
-    // Splice the dirent out of the inline area: shift trailing entries forward.
-    SpliceOutInlineDirEntry(rootDirBytes, inlineStart, currentSize, entryOffset, entryLen);
-    UpdateDinodeSize(rootDirBytes, currentSize - entryLen);
+    // Remove the dirent: merge its space into the previous entry's rec_len
+    // (OCFS2 dirent removal extends the predecessor over the deleted slot).
+    // i_size stays the full inline capacity.
+    RemoveInlineDirEntry(rootDirBytes, inlineStart, inlineCapacity, entryOffset, entryLen);
     WriteBlock(image, Ocfs2Writer.RootDirBlkno, rootDirBytes);
 
     WriteBlock(image, Ocfs2Writer.BitmapDataBlkno, bitmap);
@@ -218,8 +222,8 @@ public static class Ocfs2InPlaceModifier {
     var rootDirBytes = ReadBlock(image, Ocfs2Writer.RootDirBlkno);
     EnsureInlineRootDir(rootDirBytes);
 
-    var (inlineStart, _, currentSize) = GetRootDirInlineWindow(rootDirBytes);
-    if (!FindDirEntry(rootDirBytes, inlineStart, currentSize, name, out var entryOffset, out _))
+    var (inlineStart, inlineCapacity, _) = GetRootDirInlineWindow(rootDirBytes);
+    if (!FindDirEntry(rootDirBytes, inlineStart, inlineCapacity, name, out var entryOffset, out _))
       return false;
 
     var inodeBlk = (long)BinaryPrimitives.ReadUInt64LittleEndian(rootDirBytes.AsSpan(entryOffset, 8));
@@ -306,23 +310,18 @@ public static class Ocfs2InPlaceModifier {
   }
 
   /// <summary>
-  /// Returns the byte range of the inline dirent area inside the root
-  /// directory dinode: (start, capacity, currentSize). The id2 area opens with
-  /// a u16 id_count, followed by the inline dirent stream whose total byte
-  /// length is recorded in the dinode's i_size (+0x1C).
+  /// Returns the inline dirent area inside the root directory dinode:
+  /// (start, capacity). OCFS2 inline directories fill the whole inline area —
+  /// the dirent chain runs from <c>start</c> for <c>capacity</c> bytes with the
+  /// final entry's rec_len stretched to the end, and i_size == capacity. The
+  /// third tuple element (currentSize) is retained as the capacity for callers
+  /// that walk the full chain.
   /// </summary>
   private static (int Start, int Capacity, int CurrentSize) GetRootDirInlineWindow(byte[] rootDirBytes) {
     var start = Id2Offset + InlineHeaderLen; // skip the 8-byte ocfs2_inline_data header
     var capacity = BlockSize - start;
-    var currentSize = (int)BinaryPrimitives.ReadUInt64LittleEndian(rootDirBytes.AsSpan(OffSize, 8));
-    if (currentSize < 0 || currentSize > capacity)
-      throw new InvalidDataException(
-        $"ocfs2: root dir i_size {currentSize} is outside inline capacity [0..{capacity}].");
-    return (start, capacity, currentSize);
+    return (start, capacity, capacity);
   }
-
-  private static void UpdateDinodeSize(byte[] dinodeBytes, long newSize)
-    => BinaryPrimitives.WriteUInt64LittleEndian(dinodeBytes.AsSpan(OffSize, 8), (ulong)newSize);
 
   // ── Directory entry helpers ───────────────────────────────────────────
 
@@ -337,17 +336,19 @@ public static class Ocfs2InPlaceModifier {
   /// matching name. Returns the entry's absolute byte offset and aligned length.
   /// Skips "." and ".." (caller asks for user-named entries only).
   /// </summary>
-  private static bool FindDirEntry(byte[] block, int start, int currentSize, string name,
+  private static bool FindDirEntry(byte[] block, int start, int capacity, string name,
                                    out int entryOffset, out int entryLen) {
     entryOffset = -1; entryLen = 0;
     var nameBytes = Encoding.UTF8.GetBytes(name);
     var cursor = start;
-    var end = start + currentSize;
+    var end = start + capacity;
     while (cursor + 12 <= end) {
+      var inode = BinaryPrimitives.ReadUInt64LittleEndian(block.AsSpan(cursor, 8));
       var recLen = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(cursor + 8, 2));
       var nameLen = block[cursor + 10];
       if (recLen < 12 || cursor + recLen > end) return false;
-      if (nameLen == nameBytes.Length && block.AsSpan(cursor + 12, nameLen).SequenceEqual(nameBytes)) {
+      if (inode != 0 && nameLen == nameBytes.Length
+          && block.AsSpan(cursor + 12, nameLen).SequenceEqual(nameBytes)) {
         entryOffset = cursor;
         entryLen = recLen;
         return true;
@@ -358,56 +359,94 @@ public static class Ocfs2InPlaceModifier {
   }
 
   /// <summary>
-  /// Appends a new dirent at the end of the inline area. Caller has verified
-  /// there is room (newEntrySize ≤ capacity − currentSize).
+  /// Inserts a new dirent into the inline dir chain by carving it from the slack
+  /// of an existing entry (an entry whose rec_len exceeds its natural size).
+  /// OCFS2 always keeps the final entry stretched to the inline end, so there is
+  /// slack there once the directory is not completely packed. Returns false when
+  /// no entry has enough slack for <paramref name="newRecLen"/>.
   /// </summary>
-  private static void AppendInlineDirEntry(byte[] block, int start, int currentSize,
-                                           long inodeBlk, string name, byte fileType) {
-    var nameBytes = Encoding.UTF8.GetBytes(name);
-    var recLen = (8 + 2 + 1 + 1 + nameBytes.Length + 3) & ~3;
-    var pos = start + currentSize;
+  private static bool InsertInlineDirEntry(byte[] block, int start, int capacity,
+                                           int newRecLen, long inodeBlk, string name, byte fileType) {
+    var end = start + capacity;
+    var cursor = start;
+    while (cursor + 12 <= end) {
+      var inode = BinaryPrimitives.ReadUInt64LittleEndian(block.AsSpan(cursor, 8));
+      var recLen = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(cursor + 8, 2));
+      var nameLen = block[cursor + 10];
+      if (recLen < 12 || cursor + recLen > end) return false;
 
-    BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(pos, 8), (ulong)inodeBlk);
-    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(pos + 8, 2), (ushort)recLen);
-    block[pos + 10] = (byte)nameBytes.Length;
-    block[pos + 11] = fileType;
-    nameBytes.CopyTo(block.AsSpan(pos + 12, nameBytes.Length));
-    // Zero the alignment padding between name end and recLen.
-    for (var i = pos + 12 + nameBytes.Length; i < pos + recLen; i++)
-      block[i] = 0;
+      var naturalLen = inode == 0 ? 0 : (12 + nameLen + 3) & ~3;
+      var slack = recLen - naturalLen;
+      if (slack >= newRecLen) {
+        // Shrink the current entry to its natural size, place the new entry in
+        // the freed slack and stretch it to consume the remaining slack so the
+        // chain stays gap-free.
+        var newEntryOff = cursor + naturalLen;
+        var newEntryRecLen = slack; // absorb all remaining slack into the new (now last-in-run) entry
+        if (inode != 0)
+          BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(cursor + 8, 2), (ushort)naturalLen);
+
+        var nameBytes = Encoding.UTF8.GetBytes(name);
+        Array.Clear(block, newEntryOff, newEntryRecLen);
+        BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(newEntryOff, 8), (ulong)inodeBlk);
+        BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(newEntryOff + 8, 2), (ushort)newEntryRecLen);
+        block[newEntryOff + 10] = (byte)nameBytes.Length;
+        block[newEntryOff + 11] = fileType;
+        nameBytes.CopyTo(block.AsSpan(newEntryOff + 12, nameBytes.Length));
+        return true;
+      }
+      cursor += recLen;
+    }
+    return false;
   }
 
   /// <summary>
-  /// Splices a dirent out of the inline area: shifts the trailing entries
-  /// forward by entryLen bytes and zero-fills the freed tail. Preserves the
-  /// reader's contract that the inline area is a packed stream of dirents up
-  /// to currentSize.
+  /// Removes a dirent by absorbing its rec_len into the previous entry (so the
+  /// chain stays contiguous). If the entry is the first in the area, it is marked
+  /// unused (inode = 0) instead. i_size is unchanged (inline dirs span the whole
+  /// inline area).
   /// </summary>
-  private static void SpliceOutInlineDirEntry(byte[] block, int start, int currentSize,
-                                              int entryOffset, int entryLen) {
-    var endOfArea = start + currentSize;
-    var tailStart = entryOffset + entryLen;
-    var tailLen = endOfArea - tailStart;
-    if (tailLen > 0)
-      Buffer.BlockCopy(block, tailStart, block, entryOffset, tailLen);
-    // Zero the now-unused tail so old name bytes don't linger forensically.
-    Array.Clear(block, entryOffset + tailLen, entryLen);
+  private static void RemoveInlineDirEntry(byte[] block, int start, int capacity,
+                                           int entryOffset, int entryLen) {
+    var prev = -1;
+    var cursor = start;
+    while (cursor < entryOffset) {
+      prev = cursor;
+      cursor += BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(cursor + 8, 2));
+    }
+    if (prev >= 0) {
+      var prevLen = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(prev + 8, 2));
+      BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(prev + 8, 2), (ushort)(prevLen + entryLen));
+    } else {
+      // No predecessor — blank the inode so it reads as an empty slot.
+      BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(entryOffset, 8), 0);
+      block[entryOffset + 10] = 0;
+    }
+    Array.Clear(block, entryOffset + 8 + 2 + 1 + 1, Math.Max(0, entryLen - 12)); // wipe name bytes
   }
 
+  /// <summary>
+  /// Appends a new dirent at the end of the inline area. Caller has verified
+  /// there is room (newEntrySize ≤ capacity − currentSize).
+  /// </summary>
   // ── Bitmap helpers ────────────────────────────────────────────────────
+  // The cluster allocation bitmap is the bg_bitmap field of the global_bitmap
+  // group descriptor (block 3), which begins BitmapBase bytes into the block.
+  // Bit N (= cluster N) therefore lives at byte BitmapBase + N/8.
+  private const int BitmapBase = Ocfs2Writer.BitmapInGroupOffset;
 
   private static bool TestBit(byte[] bitmap, int bit)
-    => (bitmap[bit / 8] & (1 << (bit % 8))) != 0;
+    => (bitmap[BitmapBase + bit / 8] & (1 << (bit % 8))) != 0;
 
   private static void SetBit(byte[] bitmap, int bit)
-    => bitmap[bit / 8] |= (byte)(1 << (bit % 8));
+    => bitmap[BitmapBase + bit / 8] |= (byte)(1 << (bit % 8));
 
   private static void ClearBit(byte[] bitmap, int bit)
-    => bitmap[bit / 8] &= (byte)~(1 << (bit % 8));
+    => bitmap[BitmapBase + bit / 8] &= (byte)~(1 << (bit % 8));
 
   /// <summary>Allocates the first free cluster (LSB-first scan). bit N = cluster N.</summary>
   private static long? AllocateCluster(byte[] bitmap) {
-    var maxBit = bitmap.Length * 8;
+    var maxBit = (bitmap.Length - BitmapBase) * 8;
     for (var bit = 0; bit < maxBit; bit++) {
       if (TestBit(bitmap, bit)) continue;
       SetBit(bitmap, bit);
@@ -422,7 +461,7 @@ public static class Ocfs2InPlaceModifier {
   /// </summary>
   private static long? AllocateContiguousClusters(byte[] bitmap, int count) {
     if (count <= 0) return 0;
-    var maxBit = bitmap.Length * 8;
+    var maxBit = (bitmap.Length - BitmapBase) * 8;
     var runStart = -1;
     var runLen = 0;
     for (var bit = 0; bit < maxBit; bit++) {

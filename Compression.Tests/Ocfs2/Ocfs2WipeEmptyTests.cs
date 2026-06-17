@@ -31,7 +31,9 @@ public class Ocfs2WipeEmptyTests {
 
   [Test, Category("RoundTrip")]
   public void WipeEmpty_ClusterTip_ZeroedAndFileRoundTrips() {
-    var fileSize = ClusterSize - 500; // 3596 bytes in a 4096-byte cluster — leaves a tip.
+    // Files up to ~3896 bytes live inline in the dinode; pick a size that spans
+    // two clusters so the file is extent-backed and leaves a real cluster tip.
+    var fileSize = ClusterSize + 500; // 4596 bytes → 2 clusters, tip = 3596 bytes.
     var content = new byte[fileSize];
     Array.Fill(content, (byte)0xAA);
     var image = BuildImageWith("secret.bin", content);
