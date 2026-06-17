@@ -324,12 +324,18 @@ public sealed class JfsWriter {
     this._dataStartBlock = FsitBlock + fsitBlocks;
 
     // ── build external directory B+trees and allocate their pages ──────────
-    // A directory whose children exceed the inline dtroot spills into external
-    // dtpage_t leaf pages with the inline dtroot promoted to a router. Pages are
-    // single-block extents laid out right after the fileset inode table.
+    // A directory whose children no longer fit the inline dtroot spills into
+    // external dtpage_t leaf pages with the inline dtroot promoted to a router.
+    // The inline dtroot has exactly InlineDirEntries (8) slots; each child
+    // consumes one head slot plus one continuation slot per name chunk beyond
+    // the head's inline capacity, so the spill decision must sum the per-name
+    // slot cost rather than count children — a directory packed with multi-slot
+    // long names can blow the 8-slot budget well before the child count reaches
+    // 8. Pages are single-block extents laid out right after the fileset inode
+    // table.
     var nextBlock = this._dataStartBlock;
     foreach (var dir in directories.Prepend(this._root))
-      if (dir.Children.Count > InlineDirEntries)
+      if (InlineSlotsRequired(dir.Children) > InlineDirEntries)
         nextBlock = BuildExternalDtree(dir, nextBlock);
 
     // ── allocate file data blocks ─────────────────────────────────────────
@@ -1030,6 +1036,17 @@ public sealed class JfsWriter {
   private static int EntrySlotCost(string name) {
     if (name.Length <= DtHeadNameChars) return 1;
     return 1 + (name.Length - DtHeadNameChars + DtSlotNameChars - 1) / DtSlotNameChars;
+  }
+
+  // Total inline dtroot slots a directory's children would consume if kept
+  // inline. The inline dtroot has InlineDirEntries (8) entry slots; the spill
+  // decision compares this sum (not the child count) against that budget so a
+  // directory packed with multi-slot long names spills before it overflows.
+  private static int InlineSlotsRequired(IReadOnlyList<Node> children) {
+    var total = 0;
+    foreach (var child in children)
+      total += EntrySlotCost(child.Name);
+    return total;
   }
 
   // Builds the directory's external B+tree (leaves bottom-up, then internal
