@@ -3,29 +3,35 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Compression.Registry;
-using FileFormat.Tar;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ova;
 
 /// <summary>
-/// OVA (Open Virtual Appliance) — an uncompressed TAR archive carrying an OVF
+/// OVA (Open Virtual Appliance) — an uncompressed TAR carrying an OVF
 /// (Open Virtualization Format) XML descriptor, one or more virtual disk images
 /// (typically <c>.vmdk</c>), and an optional <c>.mf</c> manifest of checksums.
 ///
-/// <para>List/Extract are delegated to the TAR reader: every TAR member is
+/// <para>List/Extract delegate to <see cref="OvaReader"/>: every TAR member is
 /// surfaced verbatim alongside a <c>FULL.ova</c> copy of the whole container and
 /// a <c>metadata.ini</c> distilled from the OVF XML (VM name, disk count, guest
 /// OS type). The OVF is parsed with lightweight pattern matching — no schema
 /// validation — so any well-formed appliance round-trips, and malformed input
 /// degrades to <c>parse_status=partial</c> rather than throwing.</para>
+///
+/// <para>Create/Add build a spec-correct ustar TAR via <see cref="OvaWriter"/>:
+/// the OVF first, then disks, then a freshly generated <c>.mf</c> with correct
+/// SHA-256 lines. When no OVF input is supplied a minimal valid envelope is
+/// synthesised that references each disk's <c>ovf:href</c>.</para>
 /// </summary>
-public sealed class OvaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class OvaFormatDescriptor
+    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Ova";
   public string DisplayName => "OVA/OVF Virtual Appliance";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".ova";
   public IReadOnlyList<string> Extensions => [".ova"];
@@ -39,8 +45,6 @@ public sealed class OvaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Description =>
     "OVA Open Virtual Appliance: uncompressed TAR with an .ovf descriptor, .vmdk disks and an optional .mf manifest.";
 
-  private sealed record OvaMember(string Name, byte[] Data);
-
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var fullSize = SafeLength(stream);
     var entries = new List<ArchiveEntryInfo> {
@@ -48,11 +52,10 @@ public sealed class OvaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       new(1, "metadata.ini", 0, 0, "Stored", false, false, null),
     };
 
-    var members = TryReadMembers(stream, out var partial);
+    var reader = OvaReader.Read(stream);
     var idx = 2;
-    foreach (var m in members)
+    foreach (var m in reader.Members)
       entries.Add(new ArchiveEntryInfo(idx++, m.Name, m.Data.Length, m.Data.Length, "Stored", false, false, null));
-    _ = partial;
     return entries;
   }
 
@@ -62,53 +65,122 @@ public sealed class OvaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       WriteFile(outputDir, "FULL.ova", full);
     }
 
-    var members = TryReadMembers(stream, out var partial);
+    var reader = OvaReader.Read(stream);
     if (Wants(files, "metadata.ini"))
-      WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes(BuildMetadataIni(members, partial)));
+      WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes(BuildMetadataIni(reader)));
 
-    foreach (var m in members) {
+    foreach (var m in reader.Members) {
       if (!Wants(files, m.Name)) continue;
       WriteFile(outputDir, m.Name, m.Data);
     }
   }
 
+  // ── IArchiveCreatable ────────────────────────────────────────────
+
+  /// <summary>
+  /// Builds a spec-correct OVA from <paramref name="inputs"/>: the OVF is
+  /// placed first, disks next, then a generated <c>.mf</c> with correct
+  /// SHA-256 lines. A minimal OVF envelope is synthesised when none is
+  /// supplied so the appliance is still well-formed.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var writer = new OvaWriter();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      writer.Add(LeafName(i.ArchiveName), i.ReadContent());
+    }
+    writer.Write(output);
+  }
+
+  // ── IArchiveModifiable ───────────────────────────────────────────
+
+  /// <summary>
+  /// Adds (or replaces by name) members and rebuilds the appliance so the
+  /// regenerated <c>.mf</c> stays consistent with the new member set. TAR has
+  /// no central directory, so this is a full rewrite-in-place.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var members = ReadCurrentMembers(archive);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var name = LeafName(i.ArchiveName);
+      members[name] = i.ReadContent();
+    }
+    Rebuild(archive, members);
+  }
+
+  /// <summary>
+  /// Removes named members and rebuilds the appliance with a regenerated
+  /// manifest reflecting the survivors.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    var members = ReadCurrentMembers(archive);
+    foreach (var n in entryNames)
+      members.Remove(LeafName(n));
+    Rebuild(archive, members);
+  }
+
+  /// <summary>
+  /// Reads the current members (manifest excluded — it is regenerated on
+  /// rebuild) into an order-preserving map keyed by name.
+  /// </summary>
+  private static Dictionary<string, byte[]> ReadCurrentMembers(Stream archive) {
+    var reader = OvaReader.Read(archive);
+    var map = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+    foreach (var m in reader.Members) {
+      if (m.Name.EndsWith(".mf", StringComparison.OrdinalIgnoreCase)) continue;
+      map[m.Name] = m.Data;
+    }
+    return map;
+  }
+
+  /// <summary>Rewrites <paramref name="archive"/> in place from <paramref name="members"/>.</summary>
+  private static void Rebuild(Stream archive, Dictionary<string, byte[]> members) {
+    var writer = new OvaWriter();
+    foreach (var (name, data) in members)
+      writer.Add(name, data);
+    var bytes = writer.ToArray();
+    archive.Position = 0;
+    archive.SetLength(0);
+    archive.Write(bytes, 0, bytes.Length);
+    archive.Flush();
+  }
+
+  private static string LeafName(string archiveName) {
+    var normalized = archiveName.Replace('\\', '/');
+    var slash = normalized.LastIndexOf('/');
+    return slash >= 0 ? normalized[(slash + 1)..] : normalized;
+  }
+
+  // ── Metadata.ini ─────────────────────────────────────────────────
+
   private static bool Wants(string[]? files, string name)
     => files == null || files.Length == 0 || MatchesFilter(name, files);
 
-  private static List<OvaMember> TryReadMembers(Stream stream, out bool partial) {
-    partial = false;
-    var members = new List<OvaMember>();
-    try {
-      if (stream.CanSeek) stream.Position = 0;
-      using var r = new TarReader(stream, leaveOpen: true);
-      while (r.GetNextEntry() is { } entry) {
-        if (entry.IsDirectory) continue;
-        using var data = r.GetEntryStream();
-        using var ms = new MemoryStream();
-        data.CopyTo(ms);
-        members.Add(new OvaMember(entry.Name, ms.ToArray()));
-      }
-    } catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or IOException or FormatException or ArgumentException) {
-      partial = true;
-    }
-    return members;
-  }
-
-  private static string BuildMetadataIni(List<OvaMember> members, bool partial) {
-    var ovf = members.FirstOrDefault(m => m.Name.EndsWith(".ovf", StringComparison.OrdinalIgnoreCase));
-    var diskCount = members.Count(m =>
-      m.Name.EndsWith(".vmdk", StringComparison.OrdinalIgnoreCase) ||
-      m.Name.EndsWith(".vhd", StringComparison.OrdinalIgnoreCase) ||
-      m.Name.EndsWith(".img", StringComparison.OrdinalIgnoreCase));
-    var hasManifest = members.Any(m => m.Name.EndsWith(".mf", StringComparison.OrdinalIgnoreCase));
+  private static string BuildMetadataIni(OvaReader reader) {
+    var ovf = reader.Ovf;
+    var diskCount = reader.Disks.Count();
+    var hasManifest = reader.Manifest != null;
 
     var sb = new StringBuilder();
     sb.Append("[Ova]\n");
-    sb.Append(CultureInfo.InvariantCulture, $"member_count={members.Count}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"member_count={reader.Members.Count}\n");
     sb.Append(CultureInfo.InvariantCulture, $"disk_count={diskCount}\n");
     sb.Append(CultureInfo.InvariantCulture, $"has_manifest={(hasManifest ? 1 : 0)}\n");
     sb.Append(CultureInfo.InvariantCulture, $"ovf_member={(ovf?.Name ?? string.Empty)}\n");
-    sb.Append(CultureInfo.InvariantCulture, $"parse_status={(partial ? "partial" : "ok")}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"parse_status={(reader.Partial ? "partial" : "ok")}\n");
+
+    if (hasManifest) {
+      var checks = reader.VerifyManifest();
+      var verified = checks.Count > 0 && checks.All(c => c.Matches);
+      sb.Append(CultureInfo.InvariantCulture, $"manifest_verified={(verified ? 1 : 0)}\n");
+    }
 
     if (ovf != null) {
       var xml = Encoding.UTF8.GetString(ovf.Data);
