@@ -1,17 +1,22 @@
 # Microsoft DriveSpace 3 (DVR3) CVF — format notes
 
-> **Driver-verification status (2026-06-18): NOT genuine / NOT driver-mountable.**
-> This writer's `MS_DSP3` / `DVR3` / offset-36 output is **rejected** by the
-> independent `dmsdos` driver (`cvftest` → "not a known CVF"). The `MS_DSP3` /
-> `DVR3` / offset-36 assumptions below are **unconfirmed** — no reproducible
-> genuine-Microsoft oracle stands behind them. The real `dmsdos` driver (validated
-> against actual Win95 DriveSpace 3 disks) expects DriveSpace 3 to be the
-> **`MSDBL6.0` / `MSDSP6.0` container** with `sectors/cluster = 64` (boot byte 13)
-> and `version_flag = 3` (boot byte 51), **5-byte MDFAT entries** (102 per sector +
-> 2 pad bytes; `pos = (s_dcluster+cl)*5 + ((s_dcluster+cl)/102)*2 + 512*mdfatstart`)
-> and an inner **FAT16** volume — i.e. the same family as
-> `FileSystem.DoubleSpace.GenuineCvfWriter`, which IS driver-proven. Treat the rest
-> of this file as a working hypothesis pending a rewrite to the genuine layout.
+> **Driver-verification status (2026-06-18).**
+> - **`GenuineDvr3Writer` is driver-proven (read):** the independent `dmsdos`
+>   driver detects its output as "drivespace 3 CVF", mounts it, and reads every
+>   file back **byte-exact** (gated by `DriveSpace3GenuineDmsdosTests`).
+> - **The legacy `DriveSpace3Writer` (`MS_DSP3` / `DVR3` / offset-36) is NOT
+>   genuine:** `dmsdos` rejects it (`cvftest` → "not a known CVF"). Its `MS_DSP3` /
+>   offset-36 assumptions below were never confirmed against a real driver and are
+>   wrong about genuine DriveSpace 3; it is retained only for self-round-trip.
+>
+> Genuine DriveSpace 3 is a member of the DOS **`MSDBL6.0` / `MSDSP6.0`** CVF
+> family (same container as `FileSystem.DoubleSpace.GenuineCvfWriter`) with
+> `sectors/cluster = 64` (boot byte 13), `version_flag = 3` (boot byte 51),
+> **5-byte MDFAT entries** (102 per sector + 2 pad bytes;
+> `pos = (s_dcluster+cl)*5 + ((s_dcluster+cl)/102)*2 + 512*mdfatstart`; stored
+> cluster = flags 3 / size_lo = size_hi = 63) and an inner **FAT16** volume —
+> exactly as `GenuineDvr3Writer` emits. The offset-36 notes below describe only
+> the legacy self-format.
 
 Clean-room notes for the on-disk shape of a Microsoft DriveSpace 3 Compressed
 Volume File (CVF), as shipped with the Windows 95 Plus! Pack (1995) and OSR2.
