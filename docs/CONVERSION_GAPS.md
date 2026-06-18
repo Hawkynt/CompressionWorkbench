@@ -27,10 +27,10 @@ Measured on the full grid (8 representative sources x all creatable targets):
 | Bucket | Failing targets | Failing pairs |
 |---|---:|---:|
 | self-rejecting reader | 1 | 8 |
-| single-payload/whole-image target | 21 | 168 |
+| single-payload/whole-image target | 22 | 168 |
 | name/charset/size constraint | 11 | 88 |
 | other | 30 | 241 |
-| **Total** | **63** (+1 pair-specific) | **505** |
+| **Total** | **64** (+1 pair-specific) | **505** |
 
 > Fixed and flipped to enforced-pass: `Svx8` (descriptor class renamed so the
 > source-generated Format enum Id matches its registry Id), `Crate`, `FreeArc`,
@@ -62,6 +62,7 @@ The target collapses an arbitrary file tree into a single stream or whole-image 
 | `BcacheFs` | bcachefs image writer emits a whole-image (FULL.bcachefs+superblock.bin stub) not a file tree |
 | `CpcDsk` | Amstrad CPC disk image; reader exposes raw 512-byte track/sector blocks (T00S0_C1…) with no AMSDOS/CP/M filesystem layer, so padded sectors can't content-match the payload |
 | `DiskDoubler` | single-fork compressor; carries only one payload (lists 1 file) |
+| `Ewf` | EnCase EWF (.E01) wraps raw media as opaque chunks; the reader surfaces section blobs (volume/sectors/table/...), not the original files |
 | `ExFat` | exFAT image writer emits an empty/whole-image that re-lists as 0 files |
 | `Hpfs` | HPFS image writer emits a whole-image that re-lists as 0 files |
 | `Lrzip` | single-stream long-range compressor; one 'data' member only |

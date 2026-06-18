@@ -111,6 +111,7 @@ public class ConversionMatrixTests {
       { "Awb", "[single-payload/whole-image target] CRI AWB audio bank; writer collapses the tree to a single FULL.amr stream" },
       { "BcacheFs", "[single-payload/whole-image target] bcachefs image writer emits a whole-image (FULL.bcachefs+superblock.bin stub) not a file tree" },
       { "DiskDoubler", "[single-payload/whole-image target] single-fork compressor; carries only one payload (lists 1 file)" },
+      { "Ewf", "[single-payload/whole-image target] EnCase EWF (.E01) wraps raw media as opaque chunks; the reader surfaces section blobs (volume/sectors/table/...), not the original files" },
       { "ExFat", "[single-payload/whole-image target] exFAT image writer emits an empty/whole-image that re-lists as 0 files" },
       { "Gfs2", "[empty-volume target] GFS2 writer creates a fresh fsck-clean empty volume only; populating it with files (block allocation across resource groups, ExHash dirs) is out of scope, so it carries no payload" },
       { "Hpfs", "[single-payload/whole-image target] HPFS image writer emits a whole-image that re-lists as 0 files" },

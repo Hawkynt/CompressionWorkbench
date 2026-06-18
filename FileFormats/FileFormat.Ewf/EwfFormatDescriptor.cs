@@ -15,13 +15,14 @@ namespace FileFormat.Ewf;
 /// deferred to a later phase — forensic tooling (libewf, EnCase) can decode
 /// the per-section data directly.
 /// </summary>
-public sealed class EwfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class EwfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Ewf";
   public string DisplayName => "EnCase EWF (E01)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
+    FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".e01";
   public IReadOnlyList<string> Extensions => [".e01", ".ewf", ".l01"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -46,6 +47,32 @@ public sealed class EwfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, e.Data);
     }
+  }
+
+  /// <summary>
+  /// Creates a single-segment .E01 image wrapping the supplied input(s) as raw
+  /// media. EWF is a media-wrapper format, so file inputs are concatenated into
+  /// one contiguous raw image (the common case is a single disk-image input).
+  /// The produced image is accepted by libewf's <c>ewfverify</c>.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    byte[] media;
+    var files = inputs.Where(i => !i.IsDirectory).ToList();
+    if (files.Count == 0)
+      media = [];
+    else if (files.Count == 1)
+      media = files[0].ReadContent();
+    else {
+      using var ms = new MemoryStream();
+      foreach (var f in files) ms.Write(f.ReadContent());
+      media = ms.ToArray();
+    }
+
+    var image = new EwfWriter().Build(media);
+    output.Write(image);
   }
 
   private static List<(string Name, byte[] Data)> BuildEntries(Stream stream) {
