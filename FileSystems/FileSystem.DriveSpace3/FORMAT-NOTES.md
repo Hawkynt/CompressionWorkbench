@@ -1,11 +1,21 @@
-# Microsoft DriveSpace 3 (DVR3) CVF — verified format notes
+# Microsoft DriveSpace 3 (DVR3) CVF — format notes
+
+> **Driver-verification status (2026-06-18): NOT genuine / NOT driver-mountable.**
+> This writer's `MS_DSP3` / `DVR3` / offset-36 output is **rejected** by the
+> independent `dmsdos` driver (`cvftest` → "not a known CVF"). The `MS_DSP3` /
+> `DVR3` / offset-36 assumptions below are **unconfirmed** — no reproducible
+> genuine-Microsoft oracle stands behind them. The real `dmsdos` driver (validated
+> against actual Win95 DriveSpace 3 disks) expects DriveSpace 3 to be the
+> **`MSDBL6.0` / `MSDSP6.0` container** with `sectors/cluster = 64` (boot byte 13)
+> and `version_flag = 3` (boot byte 51), **5-byte MDFAT entries** (102 per sector +
+> 2 pad bytes; `pos = (s_dcluster+cl)*5 + ((s_dcluster+cl)/102)*2 + 512*mdfatstart`)
+> and an inner **FAT16** volume — i.e. the same family as
+> `FileSystem.DoubleSpace.GenuineCvfWriter`, which IS driver-proven. Treat the rest
+> of this file as a working hypothesis pending a rewrite to the genuine layout.
 
 Clean-room notes for the on-disk shape of a Microsoft DriveSpace 3 Compressed
 Volume File (CVF), as shipped with the Windows 95 Plus! Pack (1995) and OSR2.
-All offsets/encodings below were confirmed byte-for-byte against a **genuine**
-DriveSpace 3 image produced by Microsoft's own `DRVSPACE` tool (the oracle
-`drvspace3.cvf`, OEM `MS_DSP3`, CvfSignature `DVR3`). No driver code was copied;
-only format facts were extracted.
+No driver code was copied; only format facts were extracted.
 
 ## Correction to the "MSDBL inner-base @0x27" assumption
 

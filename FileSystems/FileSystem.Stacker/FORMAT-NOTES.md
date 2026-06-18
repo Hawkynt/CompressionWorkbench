@@ -1,10 +1,19 @@
 # Stacker STACVOL on-disk format
 
-Clean-room notes derived from byte-for-byte analysis of a STACVOL produced by
-the genuine Stac Electronics Stacker 3.10 `CREATE` tool under MS-DOS, plus
-structural inspection of the resident driver. These notes describe data-layout
-facts only (field offsets, the BPB describing the inner volume, the cluster
-sector-map encoding). No driver code was copied.
+> **Driver-verification status (2026-06-18): NOT genuine / NOT driver-mountable.**
+> This writer's STACVOL output is **rejected** by the independent `dmsdos` driver:
+> `cvftest` detects the `"STACKER"` magic but the mount **panics** ("Too many
+> clusters") because our superblock is not the genuine **obfuscated SCB**. Genuine
+> Stacker XOR-obfuscates 0x30 bytes of the superblock at offset 0x50 (rolling key
+> seeded at byte 0x4c: `b=0xc4-b; b = b<0x80 ? b*2 : b*2+1; b ^= *p`), keeps raw
+> `0x4e=0x0a`,`0x4f=0x1a`, stores the version little-endian at decoded `0x60/0x61`
+> (>=410 → v4), and uses interleaved 3-byte (12-bit FAT) / 4-byte (16-bit) MDFAT
+> entries (`area = (area/6)*9 + area%6 + 3 + fatstart`). The notes below are a
+> working hypothesis pending a rewrite to that genuine layout.
+
+Clean-room notes describing STACVOL data-layout facts (field offsets, the BPB
+describing the inner volume, the cluster sector-map encoding). No driver code was
+copied.
 
 A Stacker compressed volume is an ordinary MS-DOS host file (canonically
 `STACVOL.DSK`, also `*.STA`/`*.STK`) that wraps a compressed inner FAT volume.

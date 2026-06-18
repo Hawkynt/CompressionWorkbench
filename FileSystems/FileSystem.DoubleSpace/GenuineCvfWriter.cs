@@ -6,9 +6,11 @@ namespace FileSystem.DoubleSpace;
 
 /// <summary>
 /// Builds a <b>genuine</b> MS-DOS DoubleSpace/DriveSpace Compressed Volume File
-/// (CVF) in the exact on-disk shape the real <c>DRVSPACE.BIN</c> driver mounts —
-/// verified by booting MS-DOS 6.22 under QEMU and having the driver
-/// <c>/MOUNT</c> our image and read our files byte-exact.
+/// (CVF) in the on-disk shape a real DoubleSpace/DriveSpace driver mounts —
+/// verified by the independent GPL <c>dmsdos</c> driver (the Linux
+/// DoubleSpace/DriveSpace/Stacker driver): it mounts this writer's output,
+/// lists the inner directory, and reads every file back byte-exact
+/// (detected as "drivespace CVF version 2").
 /// <para>
 /// Unlike <see cref="DoubleSpaceWriter"/> (which emits the older
 /// <c>MSDSP*</c> / offset-36 layout our own reader round-trips), this writer
