@@ -21,15 +21,15 @@ namespace FileFormat.Bkf;
 /// unknown DBLK type and skips it.
 /// </para>
 /// </summary>
-public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveModifiable {
+public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveModifiable, IArchiveCreatable {
 
   public string Id => "Bkf";
   public string DisplayName => "Microsoft NTBackup (MTF)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanModify |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
-    FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".bkf";
   public IReadOnlyList<string> Extensions => [".bkf"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -70,6 +70,29 @@ public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var data = r.Extract(e);
       WriteFile(outputDir, e.Name, data);
     }
+  }
+
+  // ── IArchiveCreatable ──────────────────────────────────────────────
+
+  /// <summary>
+  /// Produces a fresh MTF backup at <paramref name="output"/> from
+  /// <paramref name="inputs"/>. Emits the full TAPE → SSET → VOLB →
+  /// (DIRB → FILE*)* → ESET → EOTM DBLK chain via <see cref="BkfWriter"/>.
+  /// Files are bucketed by their parent directory; directory inputs become
+  /// DIRB blocks. Payloads are stored uncompressed.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    var items = new List<BkfWriter.Item>(inputs.Count);
+    foreach (var input in inputs)
+      items.Add(input.IsDirectory
+        ? new BkfWriter.Item(input.ArchiveName, [], IsDirectory: true)
+        : new BkfWriter.Item(input.ArchiveName, input.ReadContent(), IsDirectory: false));
+
+    var bytes = BkfWriter.Build(items);
+    output.Write(bytes, 0, bytes.Length);
   }
 
   // ── IArchiveModifiable ─────────────────────────────────────────────

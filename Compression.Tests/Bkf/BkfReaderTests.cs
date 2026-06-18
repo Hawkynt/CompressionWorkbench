@@ -180,7 +180,7 @@ public class BkfReaderTests {
     var desc = new FileFormat.Bkf.BkfFormatDescriptor();
     Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanList), Is.True);
     Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanExtract), Is.True);
-    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.False);
+    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
     Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.True);
     Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveModifiable>());
   }
