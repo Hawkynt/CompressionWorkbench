@@ -43,7 +43,8 @@ public class DriveSpace3GenuineDmsdosTests {
       Assert.That(detected, Does.Contain("drivespace 3 CVF"),
         $"dmsdos did not detect a genuine DriveSpace 3 CVF; got: {detected.Trim()}");
 
-      // 2. Read-back: every file must decompress byte-exact through the driver.
+      // 2. Read-back (write proof): every file must decompress byte-exact
+      //    through the real driver — i.e. our writer's output is genuine.
       foreach (var (name, expected) in files) {
         var (exit, raw) = DmsdosCache.RunTool(DmsdosCache.DcRead(build!), $"\"{cvfPath}\" /{name} raw");
         Assert.That(exit, Is.EqualTo(0), $"dcread failed for {name}");
@@ -52,6 +53,17 @@ public class DriveSpace3GenuineDmsdosTests {
           $"dcread returned too few bytes for {name}");
         Assert.That(payload.AsSpan(0, expected.Length).ToArray(), Is.EqualTo(expected),
           $"{name} did not read back byte-exact through the dmsdos driver");
+      }
+
+      // 3. Read proof: our own reader must read the SAME image — now certified
+      //    genuine by the independent driver — byte-exact. Writer + reader thus
+      //    form a full r/w path over the driver-verified genuine format.
+      using var ours = new GenuineDvr3Reader(new MemoryStream(image));
+      foreach (var (name, expected) in files) {
+        var entry = ours.Entries.FirstOrDefault(e => e.Name == name);
+        Assert.That(entry, Is.Not.Null, $"our reader missed {name} in the genuine CVF");
+        Assert.That(ours.Extract(entry!), Is.EqualTo(expected),
+          $"our reader did not read {name} byte-exact from the driver-certified CVF");
       }
     } finally {
       try { File.Delete(cvfPath); } catch { /* best effort */ }
