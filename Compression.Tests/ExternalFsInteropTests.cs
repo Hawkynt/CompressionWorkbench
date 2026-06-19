@@ -2245,26 +2245,40 @@ public class ExternalFsInteropTests {
   //
   // For now both tests skip cleanly with actionable instructions.
 
-  [Test]
+  [Test, Category("DriverProof")]
   public void DoubleSpace_OurImage_DmsdosAccepts() {
-    if (!FsInteropToolbox.WslHasTool("dmsdos") &&
-        !FsInteropToolbox.WslHasTool("dmsdosfsck")) {
-      Assert.Ignore(
-        "dmsdos not found. The original DBLSPACE/DRVSPACE Linux tool was a kernel module " +
-        "(in-tree until ~2.4) plus a userspace fsck. To enable: clone a maintained dmsdos " +
-        "fork (e.g. https://github.com/search?q=dmsdos+linux) into WSL and `make`. " +
-        "Then run: 'dmsdosfsck <our.cvf>'. Since dmsdos doesn't ship in apt, this skip is " +
-        "expected on stock distros. The CVF writer self-validates via round-trip tests.");
-    }
-    var dbl = new DoubleSpaceWriter();
-    dbl.AddFile("HELLO.TXT", SmallText);
-    dbl.AddFile("REPEAT.TXT", RepetitiveText);
-    var imgPath = Path.Combine(this._tmpDir, "dblspace.cvf");
-    File.WriteAllBytes(imgPath, dbl.Build());
+    // Driver-proof: the independent dmsdos driver (built on demand via
+    // DmsdosCache) must detect our genuine DoubleSpace/DriveSpace v2 CVF,
+    // mount it, and read every file back byte-exact. The feature-rich
+    // DoubleSpaceWriter emits a self-consistent (non-genuine) layout; the
+    // driver-genuine emitter is GenuineCvfWriter, proven here.
+    var build = DmsdosCache.EnsureTools();
+    if (build is null)
+      Assert.Ignore("dmsdos tools unavailable (need Linux + git + cmake + C compiler, or set CWB_DMSDOS_BUILD).");
 
-    var result = FsInteropToolbox.RunWsl($"dmsdosfsck {FsInteropToolbox.WinToWsl(imgPath)}");
-    Assert.That(result.ExitCode, Is.EqualTo(0),
-      $"dmsdosfsck rejected our CVF:\n{result.StdOut}\n{result.StdErr}");
+    var files = new (string Name, byte[] Data)[] {
+      ("HELLO.TXT", SmallText),
+      ("REPEAT.TXT", RepetitiveText),
+    };
+    var w = new GenuineCvfWriter();
+    foreach (var (n, d) in files) w.AddFile(n, d);
+    var image = w.Build();
+
+    var cvfPath = Path.Combine(this._tmpDir, "dblspace_genuine.cvf");
+    File.WriteAllBytes(cvfPath, image);
+
+    var (_, det) = DmsdosCache.RunTool(DmsdosCache.CvfTest(build!), $"\"{cvfPath}\" -v");
+    Assert.That(Encoding.ASCII.GetString(det), Does.Contain("drivespace CVF (version 2)"),
+      "dmsdos did not detect our CVF as a genuine DoubleSpace/DriveSpace v2 volume");
+
+    foreach (var (name, expected) in files) {
+      var (exit, raw) = DmsdosCache.RunTool(DmsdosCache.DcRead(build!), $"\"{cvfPath}\" /{name} raw");
+      Assert.That(exit, Is.EqualTo(0), $"dcread failed for {name}");
+      var payload = DmsdosCache.PayloadAfterDiagnostics(raw);
+      Assert.That(payload.Length, Is.GreaterThanOrEqualTo(expected.Length), $"short read for {name}");
+      Assert.That(payload.AsSpan(0, expected.Length).ToArray(), Is.EqualTo(expected),
+        $"{name} did not read back byte-exact through the dmsdos driver");
+    }
   }
 
   // ── Shared CVF/CHKDSK harness ──────────────────────────────────────
