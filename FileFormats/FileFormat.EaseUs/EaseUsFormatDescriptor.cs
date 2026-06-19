@@ -84,7 +84,11 @@ public sealed class EaseUsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     "entries, parent-chain replay, encrypted-body decryption) requires either the EaseUS engine " +
     "itself or a sample-driven diff of the header-bank zlib sub-streams at file offsets 0x98 and " +
     "0x10F — chunk-stream + container-shape surfacing is the honest promotion ceiling without that " +
-    "corpus.";
+    "corpus. A container writer (EaseUsWriter) is implemented: it emits the recovered 0x4E8 header " +
+    "block + zlib-substream body (one stream per stored file behind a manifest) + 0xC0 trailer block, " +
+    "and its output round-trips byte-identical through this reader. CanCreate is NOT advertised yet — " +
+    "writer implemented; pending vendor-restore validation (a human runs the EaseUS app's restore " +
+    "against the produced container to confirm the engine reconstructs the original file tree).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new EaseUsReader(stream);
