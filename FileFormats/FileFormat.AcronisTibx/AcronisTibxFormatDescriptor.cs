@@ -108,7 +108,15 @@ public sealed class AcronisTibxFormatDescriptor : IFormatDescriptor, IArchiveFor
     + "metadata-only at the file-listing level — page-frame-walk surfaces per-page summaries but "
     + "no LSM record-stream decoder is wired (next stage would reuse the InputItem "
     + "attribute-stream layout from FileFormat.Acronis via AcronisFileMetaBodyDecoder to expose "
-    + "filenames once the per-page Golomb-coded key/value stream is decoded).";
+    + "filenames once the per-page Golomb-coded key/value stream is decoded). "
+    + "Whole-archive writer implemented (AcronisTibxWriter.Build emits a from-scratch 4 KiB-page "
+    + "container: page-zero ARCH header + one LSM_LEAF page per file whose LZ4-chained-stream body "
+    + "carries an ItemCommon(0x10) attribute naming the file + one DATA page per file + a closing "
+    + "CI page; page-frame CRCs are real IEEE CRC-32). Self-round-trips through our reader: header "
+    + "valid, page-type counts match, every LSM_LEAF LZ4 body decodes ok, the ItemCommon scan "
+    + "recovers every leaf name. The full LSM B+-tree (LDIR/Golomb index/dedup/commit chain/AES/"
+    + "content-defined chunking) is NOT reproduced, so CanCreate is NOT advertised — pending "
+    + "vendor-restore validation (the Acronis app must restore the emitted .tibx).";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);
