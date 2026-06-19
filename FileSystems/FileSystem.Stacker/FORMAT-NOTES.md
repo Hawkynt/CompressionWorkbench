@@ -1,15 +1,25 @@
 # Stacker STACVOL on-disk format
 
-> **Driver-verification status (2026-06-18): NOT genuine / NOT driver-mountable.**
-> This writer's STACVOL output is **rejected** by the independent `dmsdos` driver:
-> `cvftest` detects the `"STACKER"` magic but the mount **panics** ("Too many
-> clusters") because our superblock is not the genuine **obfuscated SCB**. Genuine
-> Stacker XOR-obfuscates 0x30 bytes of the superblock at offset 0x50 (rolling key
-> seeded at byte 0x4c: `b=0xc4-b; b = b<0x80 ? b*2 : b*2+1; b ^= *p`), keeps raw
-> `0x4e=0x0a`,`0x4f=0x1a`, stores the version little-endian at decoded `0x60/0x61`
-> (>=410 → v4), and uses interleaved 3-byte (12-bit FAT) / 4-byte (16-bit) MDFAT
-> entries (`area = (area/6)*9 + area%6 + 3 + fatstart`). The notes below are a
-> working hypothesis pending a rewrite to that genuine layout.
+> **Driver-verification status (2026-06-19).**
+> - **`GenuineStackerWriter` + `GenuineStackerReader` are driver-proven (full
+>   r/w over the genuine format):** the independent `dmsdos` driver detects the
+>   output as "stacker version 3 CVF", mounts it, and reads every file back
+>   **byte-exact**; our reader reads the same driver-certified image byte-exact
+>   (gated by `GenuineStackerDmsdosTests` + `GenuineStackerRoundTripTests`).
+> - **The legacy `StackerWriter` (invented `STKMAP01` trailer) is NOT genuine:**
+>   `dmsdos` panics on it. It is retained only for self-round-trip.
+>
+> Genuine STACVOL shape (as `GenuineStackerWriter` emits): sector 0 = `"STACKER"`
+> magic + a minimal FAT BPB (so the generic FAT layer parses sector 0 without a
+> divide-by-zero) + raw `0x4e=0x0a`,`0x4f=0x1a` + an **obfuscated superblock** at
+> 0x50 (0x30 bytes, rolling-XOR cipher seeded at 0x4c:
+> `tk = ROL1(0xc4 - key); enc = tk ^ plain; key = enc`). Decoded fields: version
+> @0x60 (&lt;410 ⇒ v3), sector size @0x62, total sectors @0x6C, emulated boot
+> block @0x70, AMAP start @0x74, FAT start @0x76, data start @0x7a. The emulated
+> boot block holds the inner BPB; the AMAP (Stacker MDFAT) sector for a cluster is
+> `(area/6)*9 + area%6 + 3 + fatStart` (`area = cluster*3/512` for FAT12), each
+> 3-byte entry holding the absolute physical sector + a stored-cluster flag.
+> The legacy notes below describe only the non-genuine self-format.
 
 Clean-room notes describing STACVOL data-layout facts (field offsets, the BPB
 describing the inner volume, the cluster sector-map encoding). No driver code was

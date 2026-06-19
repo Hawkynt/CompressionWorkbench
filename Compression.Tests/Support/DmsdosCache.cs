@@ -89,6 +89,24 @@ internal static class DmsdosCache {
   }
 
   /// <summary>
+  /// <c>dcread … raw</c> prints diagnostic text lines (mount info and a final
+  /// <c>scan_dir: searching for NAME in N</c> line) to stdout before the raw
+  /// cluster bytes, and emits the whole untruncated cluster. The real payload
+  /// begins right after the last <c>scan_dir:</c> line; callers compare the
+  /// first &lt;filesize&gt; bytes of the returned span.
+  /// </summary>
+  public static byte[] PayloadAfterDiagnostics(byte[] output) {
+    var marker = "scan_dir:"u8;
+    var idx = -1;
+    for (var i = output.Length - marker.Length; i >= 0; i--) {
+      if (output.AsSpan(i, marker.Length).SequenceEqual(marker)) { idx = i; break; }
+    }
+    if (idx < 0) return output;
+    var nl = Array.IndexOf(output, (byte)'\n', idx);
+    return nl >= 0 ? output[(nl + 1)..] : output;
+  }
+
+  /// <summary>
   /// Runs a built dmsdos tool, capturing raw stdout bytes (tool output is
   /// binary for <c>dcread … raw</c>). Returns (exitCode, stdoutBytes).
   /// </summary>
