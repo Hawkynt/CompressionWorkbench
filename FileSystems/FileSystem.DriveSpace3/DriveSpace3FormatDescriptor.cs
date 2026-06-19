@@ -28,7 +28,7 @@ namespace FileSystem.DriveSpace3;
 /// disambiguates by magic.
 /// </para>
 /// </summary>
-public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
   /// <inheritdoc />
   public string Id => "DriveSpace3";
   /// <inheritdoc />
@@ -81,20 +81,58 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   public string Description =>
     "Microsoft DriveSpace 3 CVF (Win95 Plus! Pack 1995) — defrag/wipe/modify/extent-map/block-mover parity with DoubleSpace via shared MDBPB infrastructure; per-cluster MS LZH with full effort tiers (greedy / lazy / iterated) and stored-run fallback at every tier.";
 
+  // ── IFormatOptionsSchema ──────────────────────────────────────────────────
+  /// <inheritdoc />
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "Compatibility",
+      DisplayName: "On-disk layout",
+      Kind: FormatOptionKind.Enum,
+      Default: "Extended",
+      AllowedValues: ["Genuine", "Extended"],
+      Description:
+        "Genuine — the real Windows 95 DriveSpace 3 layout (MSDBL6.0 container, 32 KB "
+        + "clusters, version flag 3, 5-byte MDFAT, inner FAT16). Mounted and read "
+        + "byte-exact by the independent dmsdos driver (and the real Win95 Plus!/OSR2 "
+        + "DriveSpace 3 driver). Clusters are STORED (uncompressed); single flat root "
+        + "directory; up to ~511 clusters. Choose this for interoperability with real "
+        + "DriveSpace tooling — the MS LZH compression methods do not apply here.\n"
+        + "Extended — CompressionWorkbench's feature layout (MS_DSP3/DVR3 header). Adds "
+        + "per-cluster MS LZH compression, long filenames, in-place add/remove, defrag "
+        + "and block-mover support, but is readable ONLY by CompressionWorkbench — NOT "
+        + "by the genuine DriveSpace driver or dmsdos."),
+  ];
+
   // =========================================================================
   //                         Archive read / extract
   // =========================================================================
 
   /// <inheritdoc />
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    using var r = new DoubleSpaceReader(stream);
+    var data = ReadAll(stream);
+    if (IsGenuineDvr3(data)) {
+      using var g = new GenuineDvr3Reader(new MemoryStream(data));
+      return g.Entries.Select((e, i) => new ArchiveEntryInfo(
+        i, e.Name, e.Size, e.Size, "stored", e.IsDirectory, false, null)).ToList();
+    }
+    using var r = new DoubleSpaceReader(new MemoryStream(data));
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, -1, "ms-lzh", e.IsDirectory, false, null)).ToList();
   }
 
   /// <inheritdoc />
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    using var r = new DoubleSpaceReader(stream);
+    var data = ReadAll(stream);
+    if (IsGenuineDvr3(data)) {
+      using var g = new GenuineDvr3Reader(new MemoryStream(data));
+      foreach (var e in g.Entries) {
+        if (e.IsDirectory) continue;
+        if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
+        WriteFile(outputDir, e.Name, g.Extract(e));
+      }
+      return;
+    }
+    using var r = new DoubleSpaceReader(new MemoryStream(data));
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
@@ -112,6 +150,14 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
     ArgumentNullException.ThrowIfNull(inputs);
     ArgumentNullException.ThrowIfNull(options);
 
+    if (options.GetOption("Compatibility", "Extended").Equals("Genuine", StringComparison.OrdinalIgnoreCase)) {
+      var gw = new GenuineDvr3Writer();
+      foreach (var (name, data) in FlatFiles(inputs))
+        gw.AddFile(name, data);
+      output.Write(gw.Build());
+      return;
+    }
+
     var w = new DoubleSpaceWriter {
       Variant = CvfVariant.DriveSpace3,
       MethodName = options.MethodName,
@@ -119,6 +165,22 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());
+  }
+
+  // The genuine Win95 DriveSpace 3 container: MSDBL6.0 signature, 64 sectors per
+  // cluster (boot byte 13) and version flag 3 (boot byte 51) — distinct from the
+  // Extended MS_DSP3 layout and from DoubleSpace/DriveSpace v2 (16 sec/cluster).
+  private static bool IsGenuineDvr3(byte[] data) =>
+    data.Length > 0x34
+    && System.Text.Encoding.ASCII.GetString(data, 3, 8) == "MSDBL6.0"
+    && data[0x0D] == 64
+    && data[0x33] == 3;
+
+  private static byte[] ReadAll(Stream stream) {
+    if (stream.CanSeek) stream.Position = 0;
+    using var ms = new MemoryStream();
+    stream.CopyTo(ms);
+    return ms.ToArray();
   }
 
   // =========================================================================
