@@ -1,6 +1,8 @@
 #pragma warning disable CS1591
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
 
 namespace Compression.Registry.Cvf;
 
@@ -8,7 +10,7 @@ namespace Compression.Registry.Cvf;
 /// Compression methods for the MS-DOS DoubleSpace/DriveSpace CVF cluster codec
 /// family, byte-compatible with the dmsdos driver's <c>ds_dec</c>/<c>jm_dec</c>.
 /// </summary>
-public enum CvfLzMethod { Stored, Ds, Jm, Auto }
+public enum CvfLzMethod { Stored, Ds, Jm, Auto, Sq }
 
 /// <summary>
 /// Genuine DoubleSpace/DriveSpace per-cluster compression codec (DS-0-x and
@@ -20,9 +22,11 @@ public enum CvfLzMethod { Stored, Ds, Jm, Auto }
 public static class CvfLzCodec {
   public const uint DS_0_0 = 0x00005344;
   public const uint JM_0_0 = 0x00004D4A;
+  public const uint SQ_0_0 = 0x00005153;
 
   private const int DsMagic = 0x5344;
   private const int JmMagic = 0x4D4A;
+  private const int SqMagic = 0x5153;
   private const int Sync = 0x113f;
   private const int MaxLen = 512;          // safe for both (DS replen<=512, JM<=513)
 
@@ -141,12 +145,14 @@ public static class CvfLzCodec {
     switch (method) {
       case CvfLzMethod.Ds: return CompressDs(data, level);
       case CvfLzMethod.Jm: return CompressJm(data, level);
+      case CvfLzMethod.Sq: return CompressSq(data);
       case CvfLzMethod.Auto:
         // Per-cluster best-of: each cluster carries its own method header, so we
         // pick whichever codec yields the smallest payload for this cluster.
-        var ds = CompressDs(data, level);
-        var jm = CompressJm(data, level);
-        return ds is null ? jm : jm is null ? ds : ds.Length <= jm.Length ? ds : jm;
+        byte[]?[] cands = [CompressDs(data, level), CompressJm(data, level), CompressSq(data)];
+        byte[]? best = null;
+        foreach (var c in cands) if (c is not null && (best is null || c.Length < best.Length)) best = c;
+        return best;
       default: return null;
     }
   }
@@ -198,6 +204,27 @@ public static class CvfLzCodec {
     return w.ToBytes();
   }
 
+  // SQ-0-0 (DriveSpace 3 "Ultra") is, byte-for-byte, "SQ" + 16-bit version + a
+  // raw RFC-1951 DEFLATE stream: dmsdos sq_dec's fixed-Huffman table, length and
+  // distance base/extra tables, and bit-reversed LSB-first packing all match
+  // DEFLATE exactly. So .NET's DeflateStream produces a genuine SQ body.
+  private static byte[] CompressSq(ReadOnlySpan<byte> data) {
+    using var ms = new MemoryStream();
+    ms.WriteByte(0x53); ms.WriteByte(0x51); ms.WriteByte(0); ms.WriteByte(0); // "SQ", version 0
+    using (var ds = new DeflateStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+      ds.Write(data);
+    return ms.ToArray();
+  }
+
+  private static byte[] DecompressSq(byte[] payload, int inLen, int outLen) {
+    using var ins = new MemoryStream(payload, 4, inLen - 4);
+    using var ds = new DeflateStream(ins, CompressionMode.Decompress);
+    var outp = new byte[outLen];
+    var n = 0; int r;
+    while (n < outLen && (r = ds.Read(outp, n, outLen - n)) > 0) n += r;
+    return outp;
+  }
+
   // Greedy longest-match finder. level scales the search depth (chain length).
   private static (int Len, int Off) FindMatch(byte[] src, int pos, int maxOff, int minLen, int level) {
     var bestLen = 0; var bestOff = 0;
@@ -222,6 +249,7 @@ public static class CvfLzCodec {
   public static byte[] Decompress(byte[] payload, int inLen, int outLen) {
     var method = (uint)(payload[0] | (payload[1] << 8) | (payload[2] << 16) | (payload[3] << 24));
     var magic16 = (int)(method & 0xFFFF);
+    if (magic16 == SqMagic) return DecompressSq(payload, inLen, outLen);
     var br = new BitReader(payload, inLen);
     var read = br.ReadN(16);
     if (read != (uint)magic16) throw new InvalidDataException($"CVF codec: bad magic 0x{read:X4}");

@@ -27,6 +27,7 @@ public class DriveSpace3GenuineDmsdosTests {
   [TestCase(CvfLzMethod.Stored)]
   [TestCase(CvfLzMethod.Ds)]
   [TestCase(CvfLzMethod.Jm)]
+  [TestCase(CvfLzMethod.Sq)]
   [TestCase(CvfLzMethod.Auto)]
   public void GenuineDvr3_IsMountedAndReadByteExact_ByRealDmsdosDriver(CvfLzMethod method) {
     var build = DmsdosCache.EnsureTools();

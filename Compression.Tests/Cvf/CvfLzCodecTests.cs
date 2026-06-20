@@ -36,6 +36,9 @@ public class CvfLzCodecTests {
   [Test, Category("Codec")]
   public void Jm_RoundTrips([Values] bool unused) => RoundTrip(CvfLzMethod.Jm);
 
+  [Test, Category("Codec")]
+  public void Sq_RoundTrips([Values] bool unused) => RoundTrip(CvfLzMethod.Sq);
+
   private static void RoundTrip(CvfLzMethod method) {
     foreach (var (name, data) in Samples()) {
       var payload = CvfLzCodec.Compress(data, method, level: 1);
