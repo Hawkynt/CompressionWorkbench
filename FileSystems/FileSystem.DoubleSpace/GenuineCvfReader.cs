@@ -118,13 +118,24 @@ public sealed class GenuineCvfReader : IDisposable {
       if (p + 4 > this._data.Length) break;
       var res = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(p));
       var flags = (res >> 30) & 3;
+      var sizeLo = (int)((res >> 22) & 0xF);
       if ((flags & 2) != 0) {
-        var physSector = (int)(res & 0x1FFFFF) + 1;
-        var srcOff = physSector * Ss;
-        var copy = Math.Min(this._spc * Ss, (int)entry.Size - written);
-        if (copy > 0 && srcOff + copy <= this._data.Length)
-          Array.Copy(this._data, srcOff, output, written, copy);
-        written += copy;
+        var srcOff = ((int)(res & 0x1FFFFF) + 1) * Ss;
+        var clusterBytes = this._spc * Ss;
+        var want = Math.Min(clusterBytes, (int)entry.Size - written);
+        if ((flags & 1) != 0) {                          // stored
+          if (want > 0 && srcOff + want <= this._data.Length)
+            Array.Copy(this._data, srcOff, output, written, want);
+        } else {                                         // compressed
+          var inLen = (sizeLo + 1) * Ss;
+          if (srcOff + inLen <= this._data.Length) {
+            var payload = new byte[inLen];
+            Array.Copy(this._data, srcOff, payload, 0, inLen);
+            var full = Compression.Registry.Cvf.CvfLzCodec.Decompress(payload, inLen, clusterBytes);
+            Array.Copy(full, 0, output, written, want);
+          }
+        }
+        written += want;
       }
       cluster = this.NextCluster(cluster);
     }

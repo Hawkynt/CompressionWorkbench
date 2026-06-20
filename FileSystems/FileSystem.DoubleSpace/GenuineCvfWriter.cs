@@ -67,6 +67,17 @@ public sealed class GenuineCvfWriter {
   /// Default (before 1980) leaves the FAT date/time fields zero.</summary>
   public DateTime Timestamp { get; init; }
 
+  /// <summary>Per-cluster compression codec. Stored (default) emits uncompressed
+  /// clusters; DS = DoubleSpace DS-0-x, JM = DriveSpace JM-0-x.</summary>
+  public Compression.Registry.Cvf.CvfLzMethod CompressionMethod { get; init; }
+    = Compression.Registry.Cvf.CvfLzMethod.Stored;
+
+  /// <summary>Codec effort (search depth). Higher = better ratio, slower.</summary>
+  public int CompressionLevel { get; init; } = 1;
+
+  /// <summary>Keep a compressed cluster even if it does not shrink (auto-best off).</summary>
+  public bool ForceCompress { get; init; }
+
   /// <summary>Adds a file to the root directory of the compressed volume.</summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
@@ -76,22 +87,46 @@ public sealed class GenuineCvfWriter {
     this._files.Add((leaf, data));
   }
 
+  private readonly record struct ClusterPlan(
+    int Cluster, byte[] Payload, int Sectors, bool Compressed, int PhysSector);
+
   /// <summary>Builds the CVF image bytes.</summary>
   public byte[] Build() {
-    // Plan clusters: each file occupies ceil(size / 8 KB) clusters, numbered
-    // from 2, laid out contiguously in the inner FAT12 data area.
-    var plans = new List<(string Name, byte[] Data, int FirstCluster, int ClusterCount)>();
+    // 1. Plan files → clusters; capture each file's first cluster + size, and
+    //    each cluster's full (zero-padded) logical bytes.
+    var files = new List<(string Name, int First, int Count, long Size)>();
+    var clusterFull = new List<(int Cluster, byte[] Full)>();
     var nextCluster = 2;
     foreach (var (name, data) in this._files) {
-      var clusters = Math.Max(1, (data.Length + ClusterBytes - 1) / ClusterBytes);
-      plans.Add((name, data, nextCluster, clusters));
-      nextCluster += clusters;
+      var count = Math.Max(1, (data.Length + ClusterBytes - 1) / ClusterBytes);
+      files.Add((name, nextCluster, count, data.Length));
+      for (var i = 0; i < count; i++) {
+        var full = new byte[ClusterBytes];
+        var off = i * ClusterBytes;
+        var copy = Math.Min(ClusterBytes, data.Length - off);
+        if (copy > 0) Array.Copy(data, off, full, 0, copy);
+        clusterFull.Add((nextCluster + i, full));
+      }
+      nextCluster += count;
     }
-    var totalDataClusters = nextCluster - 2;
 
-    // Physical data is contiguous from the inner-volume's first data sector.
+    // 2. Compress each cluster (auto-best) and pack into physical sectors.
     var physDataStart = InnerBase + FirstData;
-    var totalSectors = Math.Max(1152, physDataStart + totalDataClusters * Spc);
+    var physCursor = physDataStart;
+    var layout = new List<ClusterPlan>();
+    foreach (var (cl, full) in clusterFull) {
+      var comp = Compression.Registry.Cvf.CvfLzCodec.Encode(full, this.CompressionMethod, this.CompressionLevel);
+      var ksize = comp is null ? Spc : (comp.Length + Ss - 1) / Ss;
+      if (comp is not null && ksize <= Spc && (ksize < Spc || this.ForceCompress)) {
+        layout.Add(new ClusterPlan(cl, comp, ksize, true, physCursor));
+        physCursor += ksize;
+      } else {
+        layout.Add(new ClusterPlan(cl, full, Spc, false, physCursor));
+        physCursor += Spc;
+      }
+    }
+
+    var totalSectors = Math.Max(1152, physCursor);
     if ((totalSectors & 1) != 0) totalSectors++;
     var img = new byte[totalSectors * Ss];
 
@@ -113,36 +148,32 @@ public sealed class GenuineCvfWriter {
     }
     var (stampTime, stampDate) = Compression.Registry.FatDirStamp.Encode(this.Timestamp);
 
-    foreach (var (name, data, firstCluster, clusterCount) in plans) {
-      // Directory entry (8.3, archive attribute).
+    foreach (var (name, first, count, size) in files) {
       var de = rootOff + dirIndex * 32;
       WriteShortName(img, de, name);
       img[de + 11] = 0x20;
       BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(de + 22), stampTime);
       BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(de + 24), stampDate);
-      BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(de + 26), (ushort)firstCluster);
-      BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(de + 28), (uint)data.Length);
+      BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(de + 26), (ushort)first);
+      BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(de + 28), (uint)size);
       dirIndex++;
 
-      var written = 0;
-      for (var i = 0; i < clusterCount; i++) {
-        var cluster = firstCluster + i;
-        var isLast = i == clusterCount - 1;
-
-        // FAT12 chain: link to next cluster, or EOC on the last.
+      for (var i = 0; i < count; i++) {
+        var cluster = first + i;
+        var isLast = i == count - 1;
         WriteFat12(img, fatOff, cluster, isLast ? 0xFFF : cluster + 1);
-
-        // Data: contiguous physical position for this cluster.
-        var physSector = physDataStart + (cluster - 2) * Spc;
-        var copy = Math.Min(ClusterBytes, data.Length - written);
-        if (copy > 0) Array.Copy(data, written, img, physSector * Ss, copy);
-        written += copy;
-
-        // MDFAT entry: physical sector (minus one) + full-cluster stored flag.
-        BinaryPrimitives.WriteUInt32LittleEndian(
-          img.AsSpan(mdfatBase + cluster * 4),
-          ((uint)(physSector - 1) & 0x1FFFFFu) | FlagFullCluster);
       }
+    }
+
+    // Cluster payloads + 4-byte MDFAT entries (DBLSP/DRVSP packing: sector in
+    // bits 0..20, size_lo bits 22..25, size_hi bits 26..29, flags bits 30..31).
+    foreach (var plan in layout) {
+      Array.Copy(plan.Payload, 0, img, plan.PhysSector * Ss, plan.Payload.Length);
+      var entry = ((uint)(plan.PhysSector - 1) & 0x1FFFFFu)
+        | ((uint)(plan.Sectors - 1) << 22)
+        | (15u << 26)
+        | ((uint)(plan.Compressed ? 2 : 3) << 30);
+      BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(mdfatBase + plan.Cluster * 4), entry);
     }
 
     // BITFAT: mirror the real driver's first marked region.
