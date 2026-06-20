@@ -22,6 +22,16 @@ Clean-room notes for the on-disk shape of a Microsoft DriveSpace 3 Compressed
 Volume File (CVF), as shipped with the Windows 95 Plus! Pack (1995) and OSR2.
 No driver code was copied; only format facts were extracted.
 
+**Confirmed against the dmsdos documentation**
+(<https://github.com/sandsmark/dmsdos/tree/master/doc>, `dmsdos.doc`): cluster
+size is **32 KB for DriveSpace 3** (= 64 sectors/cluster, what `GenuineDvr3Writer`
+emits) versus 8 KB for the other compressed filesystems. Per-cluster compression
+is an orthogonal codec keyed by a 4-byte header — `JM-0-0` (DriveSpace 3 *Normal*,
+shared with DOS 6.22 DriveSpace), `JM-0-1` (*High*), `SQ-0-0` (*Ultra*).
+`GenuineDvr3Writer` writes **STORED (uncompressed)** clusters (MDFAT flag = used +
+uncompressed), a driver-accepted mode that sidesteps codec parity; emitting
+`JM`/`SQ`-compressed clusters is a future enhancement.
+
 ## Correction to the "MSDBL inner-base @0x27" assumption
 
 DriveSpace 3 (`MS_DSP3` / `DVR3`) does **not** use the DOS-6.22 `MSDBL6.x`

@@ -25,6 +25,14 @@ Clean-room notes describing STACVOL data-layout facts (field offsets, the BPB
 describing the inner volume, the cluster sector-map encoding). No driver code was
 copied.
 
+**Confirmed against the dmsdos documentation**
+(<https://github.com/sandsmark/dmsdos/tree/master/doc>, `dmsdos.doc`): Stacker
+uses an 8 KB cluster (= 16 sectors/cluster, what `GenuineStackerWriter` emits) and
+two compressed-cluster codecs keyed by a header — `SD-3` (Stacker 3) and `0x81-0`
+(Stacker 4, "more powerful than SD-3"). `GenuineStackerWriter` writes **STORED
+(uncompressed)** clusters, a driver-accepted mode; emitting SD-3/SD-4-compressed
+clusters is a future enhancement.
+
 A Stacker compressed volume is an ordinary MS-DOS host file (canonically
 `STACVOL.DSK`, also `*.STA`/`*.STK`) that wraps a compressed inner FAT volume.
 Everything is little-endian, sector size 512.
