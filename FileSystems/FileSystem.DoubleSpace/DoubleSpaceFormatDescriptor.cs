@@ -77,7 +77,32 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
       Description: "Optional ISO-8601 date/time (e.g. 1993-05-01) stamped on every file's "
         + "FAT directory entry. Blank leaves the date/time unset (Genuine layout only).",
       DependsOn: "Compatibility=Genuine"),
+    new FormatOptionDescriptor(
+      Key: "Method", DisplayName: "Compression", Kind: FormatOptionKind.Enum,
+      Default: "DS",
+      AllowedValues: ["Stored", "DS", "JM"],
+      Description: "Per-cluster compression for the Genuine layout. Stored = none. "
+        + "DS = DoubleSpace 'DS-0-x' LZ (DOS 6.0/6.2). JM = DriveSpace 'JM-0-x' LZ (DOS 6.22). "
+        + "Both are read by the real driver and dmsdos; each cluster keeps the smaller of "
+        + "compressed/stored.",
+      DependsOn: "Compatibility=Genuine"),
+    new FormatOptionDescriptor(
+      Key: "Level", DisplayName: "Compression level", Kind: FormatOptionKind.Integer,
+      Default: "2",
+      Description: "Codec search effort (1 = fast, higher = better ratio, slower).",
+      DependsOn: "Compatibility=Genuine"),
+    new FormatOptionDescriptor(
+      Key: "ForceCompress", DisplayName: "Force compression", Kind: FormatOptionKind.Boolean,
+      Default: "false",
+      Description: "Keep the compressed form even when it does not shrink a cluster.",
+      DependsOn: "Compatibility=Genuine"),
   ];
+
+  private static Compression.Registry.Cvf.CvfLzMethod ParseMethod(string s) => s.ToLowerInvariant() switch {
+    "ds" => Compression.Registry.Cvf.CvfLzMethod.Ds,
+    "jm" => Compression.Registry.Cvf.CvfLzMethod.Jm,
+    _ => Compression.Registry.Cvf.CvfLzMethod.Stored,
+  };
 
   private static bool IsGenuineV2(byte[] data) =>
     data.Length > 0x0E
@@ -129,6 +154,9 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
       var gw = new GenuineCvfWriter {
         VolumeLabel = options.GetOption("VolumeLabel", ""),
         Timestamp = FatDirStamp.Parse(options.GetOption("Timestamp", "")),
+        CompressionMethod = ParseMethod(options.GetOption("Method", "DS")),
+        CompressionLevel = options.GetOptionInt("Level", 2),
+        ForceCompress = options.GetOptionBool("ForceCompress", false),
       };
       foreach (var (name, data) in FlatFiles(inputs))
         gw.AddFile(name, data);

@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using Compression.Core.Layout;
 using Compression.Registry;
+using Compression.Registry.Cvf;
 using FileSystem.DoubleSpace;
 using static Compression.Registry.FormatHelpers;
 
@@ -112,7 +113,33 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
       Description: "Optional ISO-8601 date/time (e.g. 1996-08-24) stamped on every file's "
         + "FAT directory entry. Blank leaves the date/time unset (Genuine layout only).",
       DependsOn: "Compatibility=Genuine"),
+    new FormatOptionDescriptor(
+      Key: "Method", DisplayName: "Compression", Kind: FormatOptionKind.Enum,
+      Default: "JM",
+      AllowedValues: ["Stored", "JM"],
+      Description: "Per-cluster compression for the Genuine layout. Stored = no compression. "
+        + "JM = genuine DriveSpace 3 'JM-0-x' LZ (DriveSpace 3 Normal/High; read by the real "
+        + "driver and dmsdos). Each cluster keeps whichever of compressed/stored is smaller. "
+        + "(SQ 'Ultra' is a planned addition.)",
+      DependsOn: "Compatibility=Genuine"),
+    new FormatOptionDescriptor(
+      Key: "Level", DisplayName: "Compression level", Kind: FormatOptionKind.Integer,
+      Default: "2",
+      Description: "Codec search effort (1 = fast, higher = better ratio, slower).",
+      DependsOn: "Compatibility=Genuine"),
+    new FormatOptionDescriptor(
+      Key: "ForceCompress", DisplayName: "Force compression", Kind: FormatOptionKind.Boolean,
+      Default: "false",
+      Description: "Keep the compressed form even when it does not shrink a cluster "
+        + "(overrides the per-cluster auto-best stored fallback).",
+      DependsOn: "Compatibility=Genuine"),
   ];
+
+  private static CvfLzMethod ParseMethod(string s) => s.ToLowerInvariant() switch {
+    "ds" => CvfLzMethod.Ds,
+    "jm" => CvfLzMethod.Jm,
+    _ => CvfLzMethod.Stored,
+  };
 
   // =========================================================================
   //                         Archive read / extract
@@ -165,6 +192,9 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
       var gw = new GenuineDvr3Writer {
         VolumeLabel = options.GetOption("VolumeLabel", ""),
         Timestamp = FatDirStamp.Parse(options.GetOption("Timestamp", "")),
+        CompressionMethod = ParseMethod(options.GetOption("Method", "JM")),
+        CompressionLevel = options.GetOptionInt("Level", 2),
+        ForceCompress = options.GetOptionBool("ForceCompress", false),
       };
       foreach (var (name, data) in FlatFiles(inputs))
         gw.AddFile(name, data);
