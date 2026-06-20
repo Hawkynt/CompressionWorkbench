@@ -79,12 +79,12 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
       DependsOn: "Compatibility=Genuine"),
     new FormatOptionDescriptor(
       Key: "Method", DisplayName: "Compression", Kind: FormatOptionKind.Enum,
-      Default: "DS",
-      AllowedValues: ["Stored", "DS", "JM"],
+      Default: "Auto",
+      AllowedValues: ["Stored", "DS", "JM", "Auto"],
       Description: "Per-cluster compression for the Genuine layout. Stored = none. "
         + "DS = DoubleSpace 'DS-0-x' LZ (DOS 6.0/6.2). JM = DriveSpace 'JM-0-x' LZ (DOS 6.22). "
-        + "Both are read by the real driver and dmsdos; each cluster keeps the smaller of "
-        + "compressed/stored.",
+        + "Auto = per cluster keep the smallest available codec, else stored. All are read by "
+        + "the real driver and dmsdos.",
       DependsOn: "Compatibility=Genuine"),
     new FormatOptionDescriptor(
       Key: "Level", DisplayName: "Compression level", Kind: FormatOptionKind.Integer,
@@ -101,6 +101,7 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
   private static Compression.Registry.Cvf.CvfLzMethod ParseMethod(string s) => s.ToLowerInvariant() switch {
     "ds" => Compression.Registry.Cvf.CvfLzMethod.Ds,
     "jm" => Compression.Registry.Cvf.CvfLzMethod.Jm,
+    "auto" => Compression.Registry.Cvf.CvfLzMethod.Auto,
     _ => Compression.Registry.Cvf.CvfLzMethod.Stored,
   };
 

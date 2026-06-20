@@ -8,7 +8,7 @@ namespace Compression.Registry.Cvf;
 /// Compression methods for the MS-DOS DoubleSpace/DriveSpace CVF cluster codec
 /// family, byte-compatible with the dmsdos driver's <c>ds_dec</c>/<c>jm_dec</c>.
 /// </summary>
-public enum CvfLzMethod { Stored, Ds, Jm }
+public enum CvfLzMethod { Stored, Ds, Jm, Auto }
 
 /// <summary>
 /// Genuine DoubleSpace/DriveSpace per-cluster compression codec (DS-0-x and
@@ -137,12 +137,19 @@ public static class CvfLzCodec {
   /// payload (4-byte header + token stream), or <c>null</c> for
   /// <see cref="CvfLzMethod.Stored"/> / unsupported methods. The caller decides
   /// whether the result fits the cluster's sector budget.</summary>
-  public static byte[]? Encode(ReadOnlySpan<byte> data, CvfLzMethod method, int level) =>
-    method switch {
-      CvfLzMethod.Ds => CompressDs(data, level),
-      CvfLzMethod.Jm => CompressJm(data, level),
-      _ => null,
-    };
+  public static byte[]? Encode(ReadOnlySpan<byte> data, CvfLzMethod method, int level) {
+    switch (method) {
+      case CvfLzMethod.Ds: return CompressDs(data, level);
+      case CvfLzMethod.Jm: return CompressJm(data, level);
+      case CvfLzMethod.Auto:
+        // Per-cluster best-of: each cluster carries its own method header, so we
+        // pick whichever codec yields the smallest payload for this cluster.
+        var ds = CompressDs(data, level);
+        var jm = CompressJm(data, level);
+        return ds is null ? jm : jm is null ? ds : ds.Length <= jm.Length ? ds : jm;
+      default: return null;
+    }
+  }
 
   private static byte[] CompressDs(ReadOnlySpan<byte> data, int level) {
     var w = new BitWriter();

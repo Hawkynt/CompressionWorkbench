@@ -115,12 +115,12 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
       DependsOn: "Compatibility=Genuine"),
     new FormatOptionDescriptor(
       Key: "Method", DisplayName: "Compression", Kind: FormatOptionKind.Enum,
-      Default: "JM",
-      AllowedValues: ["Stored", "JM"],
+      Default: "Auto",
+      AllowedValues: ["Stored", "JM", "Auto"],
       Description: "Per-cluster compression for the Genuine layout. Stored = no compression. "
         + "JM = genuine DriveSpace 3 'JM-0-x' LZ (DriveSpace 3 Normal/High; read by the real "
-        + "driver and dmsdos). Each cluster keeps whichever of compressed/stored is smaller. "
-        + "(SQ 'Ultra' is a planned addition.)",
+        + "driver and dmsdos). Auto = per cluster keep the smallest of the available codecs, "
+        + "falling back to stored. (SQ 'Ultra' is a planned addition.)",
       DependsOn: "Compatibility=Genuine"),
     new FormatOptionDescriptor(
       Key: "Level", DisplayName: "Compression level", Kind: FormatOptionKind.Integer,
@@ -138,6 +138,7 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   private static CvfLzMethod ParseMethod(string s) => s.ToLowerInvariant() switch {
     "ds" => CvfLzMethod.Ds,
     "jm" => CvfLzMethod.Jm,
+    "auto" => CvfLzMethod.Auto,
     _ => CvfLzMethod.Stored,
   };
 
