@@ -241,8 +241,11 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   /// without rewriting any unrelated bytes. MS LZH codec is auto-selected
   /// from the OEM signature (<c>MS_DSP3</c>).
   /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => DoubleSpaceInPlaceModifier.Add(archive, inputs);
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    var data = ReadAll(archive);
+    if (IsGenuineDvr3(data)) { WriteBack(archive, RebuildGenuine(data, inputs, null)); return; }
+    DoubleSpaceInPlaceModifier.Add(archive, inputs);
+  }
 
   /// <inheritdoc />
   /// <summary>
@@ -251,8 +254,48 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   /// zeros each physical run, clears BitFAT bits, zeros MDFAT entries,
   /// zeros inner FAT chain, and scratches the dirent (+ LFN chain) with 0xE5.
   /// </summary>
-  public void Remove(Stream archive, string[] entryNames)
-    => DoubleSpaceInPlaceModifier.Remove(archive, entryNames);
+  public void Remove(Stream archive, string[] entryNames) {
+    var data = ReadAll(archive);
+    if (IsGenuineDvr3(data)) { WriteBack(archive, RebuildGenuine(data, null, entryNames)); return; }
+    DoubleSpaceInPlaceModifier.Remove(archive, entryNames);
+  }
+
+  // Rebuild a genuine DVR3 image from its current contents — the basis for
+  // add/remove/defrag/purge on the WORM-style genuine layout. Reading every
+  // file and re-emitting packs clusters contiguously (defrag), re-runs the
+  // auto-best compressor (optimize/shrink) and drops any stale/unused sectors
+  // (purge). The inner volume label is preserved.
+  private static byte[] RebuildGenuine(byte[] data, IReadOnlyList<ArchiveInputInfo>? add, string[]? remove) {
+    using var r = new GenuineDvr3Reader(new MemoryStream(data));
+    var keep = new List<(string Name, byte[] Data)>();
+    var removeSet = remove is null ? null : new HashSet<string>(remove.Select(LeafLower));
+    foreach (var e in r.Entries) {
+      if (e.IsDirectory) continue;
+      if (removeSet is not null && removeSet.Contains(LeafLower(e.Name))) continue;
+      keep.Add((e.Name, r.Extract(e)));
+    }
+    if (add is not null)
+      foreach (var (n, d) in FlatFiles(add)) {
+        keep.RemoveAll(k => LeafLower(k.Name) == LeafLower(n));
+        keep.Add((n, d));
+      }
+    var w = new GenuineDvr3Writer {
+      VolumeLabel = r.VolumeLabel,
+      CompressionMethod = CvfLzMethod.Auto,
+      CompressionLevel = 2,
+    };
+    foreach (var (n, d) in keep) w.AddFile(n, d);
+    return w.Build();
+  }
+
+  private static string LeafLower(string name) {
+    var slash = Math.Max(name.LastIndexOf('/'), name.LastIndexOf('\\'));
+    return (slash >= 0 ? name[(slash + 1)..] : name).ToLowerInvariant();
+  }
+
+  private static void WriteBack(Stream s, byte[] img) {
+    s.Position = 0; s.SetLength(img.Length); s.Write(img); s.Position = 0;
+  }
 
   // =========================================================================
   //                         Filesystem extent map
@@ -275,6 +318,15 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
+    var data = ReadAll(image);
+    if (IsGenuineDvr3(data)) {
+      // Purge: a fresh rebuild contains only live clusters packed contiguously,
+      // so no stale/unused payload sectors survive.
+      var before = data.Length;
+      var rebuilt = RebuildGenuine(data, null, null);
+      WriteBack(image, rebuilt);
+      return Math.Max(0, before - rebuilt.Length);
+    }
     image.Position = 0;
     var imageSize = image.Length;
     var extents = DoubleSpaceExtentMap.Enumerate(image);
@@ -321,6 +373,9 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
+
+    var data = ReadAll(archive);
+    if (IsGenuineDvr3(data)) { WriteBack(archive, RebuildGenuine(data, null, null)); return; }
 
     if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
       try {
