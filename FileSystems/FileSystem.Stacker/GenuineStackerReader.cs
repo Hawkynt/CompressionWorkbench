@@ -121,17 +121,22 @@ public sealed class GenuineStackerReader : IDisposable {
     }
   }
 
-  // Absolute physical sector (1-based) of a cluster, via the interleaved AMAP.
-  private int AmapPhysSector(int cluster) {
+  // Physical sector (1-based) + on-disk sector count of a cluster, from the
+  // interleaved AMAP. Sectors == s_spc ⇒ stored; fewer ⇒ DS-compressed.
+  private (int Phys, int Sectors) AmapEntry(int cluster) {
     var bytesPer = this._fat16 ? 4 : 3;
     var pos = cluster * bytesPer;
     var area = pos / Ss;
     var amapSector = (area / 6) * 9 + (area % 6) + 3 + this._fatStart;
     var p = amapSector * Ss + (pos % Ss);
-    if (p + bytesPer > this._data.Length) return 0;
+    if (p + bytesPer > this._data.Length) return (0, 0);
     var sec = this._data[p] | (this._data[p + 1] << 8);
-    if (this._fat16) sec |= (this._data[p + 3] & 0x3f) << 16;
-    return sec;   // 1-based physical sector
+    var sizeLo = this._data[p + 2] & 0x0f;
+    if (this._fat16) {
+      sec |= (this._data[p + 3] & 0x3f) << 16;
+      sizeLo += (this._data[p + 3] >> 2) & 0x30;
+    }
+    return (sec, sizeLo + 1);
   }
 
   private int NextCluster(int cluster) {
@@ -154,13 +159,24 @@ public sealed class GenuineStackerReader : IDisposable {
     var guard = 0;
 
     while (cluster >= 2 && cluster < eoc && written < entry.Size && guard++ <= this._maxCluster + 2) {
-      var phys = this.AmapPhysSector(cluster);
+      var (phys, sectors) = this.AmapEntry(cluster);
       if (phys > 0) {
         var srcOff = phys * Ss;
-        var copy = Math.Min(this._spc * Ss, (int)entry.Size - written);
-        if (copy > 0 && srcOff + copy <= this._data.Length)
-          Array.Copy(this._data, srcOff, output, written, copy);
-        written += copy;
+        var clusterBytes = this._spc * Ss;
+        var want = Math.Min(clusterBytes, (int)entry.Size - written);
+        if (sectors >= this._spc) {                       // stored
+          if (want > 0 && srcOff + want <= this._data.Length)
+            Array.Copy(this._data, srcOff, output, written, want);
+        } else {                                          // DS-compressed
+          var inLen = sectors * Ss;
+          if (srcOff + inLen <= this._data.Length) {
+            var payload = new byte[inLen];
+            Array.Copy(this._data, srcOff, payload, 0, inLen);
+            var full = Compression.Registry.Cvf.CvfLzCodec.Decompress(payload, inLen, clusterBytes);
+            Array.Copy(full, 0, output, written, want);
+          }
+        }
+        written += want;
       }
       cluster = this.NextCluster(cluster);
     }

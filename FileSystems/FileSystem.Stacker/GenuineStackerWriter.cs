@@ -57,6 +57,19 @@ public sealed class GenuineStackerWriter {
   /// Default (before 1980) leaves the FAT date/time fields zero.</summary>
   public DateTime Timestamp { get; init; }
 
+  /// <summary>Per-cluster compression. Stored (default) or DS — the dmsdos
+  /// Stacker reader dispatches a 0x5344 ("DS") cluster header to the DS decoder,
+  /// so DS-compressed Stacker clusters are read by the real driver. (JM/Auto map
+  /// to DS here, as the Stacker path only recognises DS among the LZ headers.)</summary>
+  public Compression.Registry.Cvf.CvfLzMethod CompressionMethod { get; init; }
+    = Compression.Registry.Cvf.CvfLzMethod.Stored;
+
+  /// <summary>Codec effort (search depth). Higher = better ratio, slower.</summary>
+  public int CompressionLevel { get; init; } = 1;
+
+  /// <summary>Keep a compressed cluster even if it does not shrink (auto-best off).</summary>
+  public bool ForceCompress { get; init; }
+
   private readonly List<(string Name, byte[] Data)> _files = [];
 
   /// <summary>Adds a file to the root directory of the compressed volume.</summary>
@@ -70,23 +83,53 @@ public sealed class GenuineStackerWriter {
 
   private static int Rol1(int x) => ((x << 1) | (x >> 7)) & 0xff;
 
+  private readonly record struct ClusterPlan(
+    int Cluster, byte[] Payload, int Sectors, int PhysSector);
+
   /// <summary>Builds the STACVOL image bytes.</summary>
   public byte[] Build() {
-    var plans = new List<(string Name, byte[] Data, int First, int Count)>();
+    // 1. Plan files → clusters; capture each cluster's full (zero-padded) bytes.
+    var files = new List<(string Name, int First, int Count, long Size)>();
+    var clusterFull = new List<(int Cluster, byte[] Full)>();
     var next = 2;
     foreach (var (name, data) in this._files) {
-      var clusters = Math.Max(1, (data.Length + ClusterBytes - 1) / ClusterBytes);
-      plans.Add((name, data, next, clusters));
-      next += clusters;
+      var count = Math.Max(1, (data.Length + ClusterBytes - 1) / ClusterBytes);
+      files.Add((name, next, count, data.Length));
+      for (var i = 0; i < count; i++) {
+        var full = new byte[ClusterBytes];
+        var off = i * ClusterBytes;
+        var copy = Math.Min(ClusterBytes, data.Length - off);
+        if (copy > 0) Array.Copy(data, off, full, 0, copy);
+        clusterFull.Add((next + i, full));
+      }
+      next += count;
     }
-    var totalDataClusters = next - 2;
     // Each AMAP "area" (512-byte sector) holds entries for 170 clusters; only
     // areas 0..2 sit in the reserved FAT band before the root directory.
     if (next > 512)
       throw new InvalidOperationException("GenuineStackerWriter: too many clusters for the fixed AMAP band.");
 
-    var dataEnd = RealFirstData + totalDataClusters * Spc;
-    var totalSects = Math.Max(200, dataEnd + Spc);
+    // The Stacker reader only recognises DS among the LZ cluster headers.
+    var method = this.CompressionMethod == Compression.Registry.Cvf.CvfLzMethod.Stored
+      ? Compression.Registry.Cvf.CvfLzMethod.Stored
+      : Compression.Registry.Cvf.CvfLzMethod.Ds;
+
+    // 2. Compress each cluster (auto-best) and pack into physical sectors.
+    var physCursor = RealFirstData;
+    var layout = new List<ClusterPlan>();
+    foreach (var (cl, full) in clusterFull) {
+      var comp = Compression.Registry.Cvf.CvfLzCodec.Encode(full, method, this.CompressionLevel);
+      var ksize = comp is null ? Spc : (comp.Length + Ss - 1) / Ss;
+      if (comp is not null && ksize < Spc || (comp is not null && this.ForceCompress && ksize <= Spc)) {
+        layout.Add(new ClusterPlan(cl, comp!, ksize, physCursor));
+        physCursor += ksize;
+      } else {
+        layout.Add(new ClusterPlan(cl, full, Spc, physCursor));
+        physCursor += Spc;
+      }
+    }
+
+    var totalSects = Math.Max(200, physCursor + Spc);
     if ((totalSects & 1) != 0) totalSects++;
     var img = new byte[totalSects * Ss];
 
@@ -104,36 +147,35 @@ public sealed class GenuineStackerWriter {
     }
     var (stampTime, stampDate) = Compression.Registry.FatDirStamp.Encode(this.Timestamp);
 
-    foreach (var (name, data, first, count) in plans) {
+    foreach (var (name, first, count, size) in files) {
       var de = rootOff + dirIndex * 32;
       WriteShortName(img, de, name);
       img[de + 11] = 0x20;
       BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(de + 22), stampTime);
       BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(de + 24), stampDate);
       BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(de + 26), (ushort)first);
-      BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(de + 28), (uint)data.Length);
+      BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(de + 28), (uint)size);
       dirIndex++;
 
-      var written = 0;
       for (var i = 0; i < count; i++) {
         var cluster = first + i;
         var isLast = i == count - 1;
         WriteFat12(img, fatOff, cluster, isLast ? 0xFFF : cluster + 1);
-
-        var physSector = RealFirstData + (cluster - 2) * Spc;
-        var copy = Math.Min(ClusterBytes, data.Length - written);
-        if (copy > 0) Array.Copy(data, written, img, physSector * Ss, copy);
-        written += copy;
-
-        // STAC AMAP 3-byte entry (FAT12): absolute physical sector + stored flag.
-        var pos = cluster * 3;
-        var area = pos / Ss;
-        var amapSector = (area / 6) * 9 + (area % 6) + 3 + FatStart;
-        var p = amapSector * Ss + (pos % Ss);
-        img[p + 0] = (byte)physSector;
-        img[p + 1] = (byte)(physSector >> 8);
-        img[p + 2] = (byte)((Spc - 1) & 0x0f);   // size_lo=15, flags nibble 0 ⇒ stored
       }
+    }
+
+    // 3. Cluster payloads + STAC AMAP 3-byte entries. Stored cluster: size_lo =
+    // spc-1 (flags |= stored). Compressed: size_lo = ksize-1 < spc-1 (flags = used,
+    // not stored), payload starts with the DS "DS" header the reader dispatches.
+    foreach (var plan in layout) {
+      Array.Copy(plan.Payload, 0, img, plan.PhysSector * Ss, plan.Payload.Length);
+      var pos = plan.Cluster * 3;
+      var area = pos / Ss;
+      var amapSector = (area / 6) * 9 + (area % 6) + 3 + FatStart;
+      var p = amapSector * Ss + (pos % Ss);
+      img[p + 0] = (byte)plan.PhysSector;
+      img[p + 1] = (byte)(plan.PhysSector >> 8);
+      img[p + 2] = (byte)((plan.Sectors - 1) & 0x0f);
     }
 
     return img;

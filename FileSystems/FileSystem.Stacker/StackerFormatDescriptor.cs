@@ -76,7 +76,31 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       Description: "Optional ISO-8601 date/time (e.g. 1994-02-01) stamped on every file's "
         + "FAT directory entry. Blank leaves the date/time unset (Genuine layout only).",
       DependsOn: "Compatibility=Genuine"),
+    new FormatOptionDescriptor(
+      Key: "Method", DisplayName: "Compression", Kind: FormatOptionKind.Enum,
+      Default: "Auto",
+      AllowedValues: ["Stored", "DS", "Auto"],
+      Description: "Per-cluster compression for the Genuine layout. Stored = none. "
+        + "DS = the 'DS' LZ stream the Stacker driver (and dmsdos) decode for compressed "
+        + "clusters. Auto = compress each cluster and keep it only if it shrinks (else stored).",
+      DependsOn: "Compatibility=Genuine"),
+    new FormatOptionDescriptor(
+      Key: "Level", DisplayName: "Compression level", Kind: FormatOptionKind.Integer,
+      Default: "2",
+      Description: "Codec search effort (1 = fast, higher = better ratio, slower).",
+      DependsOn: "Compatibility=Genuine"),
+    new FormatOptionDescriptor(
+      Key: "ForceCompress", DisplayName: "Force compression", Kind: FormatOptionKind.Boolean,
+      Default: "false",
+      Description: "Keep the compressed form even when it does not shrink a cluster.",
+      DependsOn: "Compatibility=Genuine"),
   ];
+
+  private static Compression.Registry.Cvf.CvfLzMethod ParseMethod(string s) => s.ToLowerInvariant() switch {
+    "ds" => Compression.Registry.Cvf.CvfLzMethod.Ds,
+    "auto" => Compression.Registry.Cvf.CvfLzMethod.Auto,
+    _ => Compression.Registry.Cvf.CvfLzMethod.Stored,
+  };
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var data = ReadAll(stream);
@@ -120,6 +144,9 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
         Version = options.GetOptionInt("Version", 3),
         VolumeLabel = options.GetOption("VolumeLabel", ""),
         Timestamp = FatDirStamp.Parse(options.GetOption("Timestamp", "")),
+        CompressionMethod = ParseMethod(options.GetOption("Method", "Auto")),
+        CompressionLevel = options.GetOptionInt("Level", 2),
+        ForceCompress = options.GetOptionBool("ForceCompress", false),
       };
       foreach (var input in inputs) {
         if (input.IsDirectory) continue;

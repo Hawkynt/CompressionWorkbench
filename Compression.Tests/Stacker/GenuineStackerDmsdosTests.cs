@@ -1,4 +1,5 @@
 using System.Text;
+using Compression.Registry.Cvf;
 using Compression.Tests.Support;
 using FileSystem.Stacker;
 
@@ -23,13 +24,15 @@ public class GenuineStackerDmsdosTests {
   }
 
   [Test, Category("DriverProof")]
-  public void GenuineStacker_IsMountedAndReadByteExact_ByRealDmsdosDriver() {
+  [TestCase(CvfLzMethod.Stored)]
+  [TestCase(CvfLzMethod.Ds)]
+  public void GenuineStacker_IsMountedAndReadByteExact_ByRealDmsdosDriver(CvfLzMethod method) {
     var build = DmsdosCache.EnsureTools();
     if (build is null)
       Assert.Ignore("dmsdos tools unavailable (need Linux + git + cmake + C compiler, or set CWB_DMSDOS_BUILD). Skipping driver-proof gate.");
 
     var files = SampleFiles();
-    var writer = new GenuineStackerWriter();
+    var writer = new GenuineStackerWriter { CompressionMethod = method, CompressionLevel = 2 };
     foreach (var (n, d) in files) writer.AddFile(n, d);
     var image = writer.Build();
 
