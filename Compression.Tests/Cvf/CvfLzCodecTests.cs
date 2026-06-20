@@ -39,6 +39,15 @@ public class CvfLzCodecTests {
   [Test, Category("Codec")]
   public void Sq_RoundTrips([Values] bool unused) => RoundTrip(CvfLzMethod.Sq);
 
+  [Test, Category("Codec")]
+  public void Sd4_SelfRoundTrips() {
+    foreach (var (name, data) in Samples()) {
+      var payload = Sd4Codec.Encode(data);
+      var back = Sd4Codec.Decode(payload, payload.Length, data.Length);
+      Assert.That(back, Is.EqualTo(data), $"SD-4 self round-trip failed for {name}");
+    }
+  }
+
   private static void RoundTrip(CvfLzMethod method) {
     foreach (var (name, data) in Samples()) {
       var payload = CvfLzCodec.Compress(data, method, level: 1);

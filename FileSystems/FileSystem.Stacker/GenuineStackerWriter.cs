@@ -83,6 +83,9 @@ public sealed class GenuineStackerWriter {
 
   private static int Rol1(int x) => ((x << 1) | (x >> 7)) & 0xff;
 
+  private static byte[]? Smaller(byte[]? a, byte[]? b) =>
+    a is null ? b : b is null ? a : a.Length <= b.Length ? a : b;
+
   private readonly record struct ClusterPlan(
     int Cluster, byte[] Payload, int Sectors, int PhysSector);
 
@@ -109,16 +112,20 @@ public sealed class GenuineStackerWriter {
     if (next > 512)
       throw new InvalidOperationException("GenuineStackerWriter: too many clusters for the fixed AMAP band.");
 
-    // The Stacker reader only recognises DS among the LZ cluster headers.
-    var method = this.CompressionMethod == Compression.Registry.Cvf.CvfLzMethod.Stored
-      ? Compression.Registry.Cvf.CvfLzMethod.Stored
-      : Compression.Registry.Cvf.CvfLzMethod.Ds;
-
-    // 2. Compress each cluster (auto-best) and pack into physical sectors.
+    // 2. Compress each cluster (auto-best) and pack into physical sectors. The
+    // Stacker reader recognises only DS (0x5344) and SD-4 (0x0081); Auto keeps
+    // the smaller of the two per cluster, JM/SQ fall back to DS.
     var physCursor = RealFirstData;
     var layout = new List<ClusterPlan>();
     foreach (var (cl, full) in clusterFull) {
-      var comp = Compression.Registry.Cvf.CvfLzCodec.Encode(full, method, this.CompressionLevel);
+      var comp = this.CompressionMethod switch {
+        Compression.Registry.Cvf.CvfLzMethod.Stored => null,
+        Compression.Registry.Cvf.CvfLzMethod.Sd4 => Compression.Registry.Cvf.CvfLzCodec.Encode(full, Compression.Registry.Cvf.CvfLzMethod.Sd4, this.CompressionLevel),
+        Compression.Registry.Cvf.CvfLzMethod.Auto => Smaller(
+          Compression.Registry.Cvf.CvfLzCodec.Encode(full, Compression.Registry.Cvf.CvfLzMethod.Ds, this.CompressionLevel),
+          Compression.Registry.Cvf.CvfLzCodec.Encode(full, Compression.Registry.Cvf.CvfLzMethod.Sd4, this.CompressionLevel)),
+        _ => Compression.Registry.Cvf.CvfLzCodec.Encode(full, Compression.Registry.Cvf.CvfLzMethod.Ds, this.CompressionLevel),
+      };
       var ksize = comp is null ? Spc : (comp.Length + Ss - 1) / Ss;
       if (comp is not null && ksize < Spc || (comp is not null && this.ForceCompress && ksize <= Spc)) {
         layout.Add(new ClusterPlan(cl, comp!, ksize, physCursor));

@@ -10,7 +10,7 @@ namespace Compression.Registry.Cvf;
 /// Compression methods for the MS-DOS DoubleSpace/DriveSpace CVF cluster codec
 /// family, byte-compatible with the dmsdos driver's <c>ds_dec</c>/<c>jm_dec</c>.
 /// </summary>
-public enum CvfLzMethod { Stored, Ds, Jm, Auto, Sq }
+public enum CvfLzMethod { Stored, Ds, Jm, Auto, Sq, Sd4 }
 
 /// <summary>
 /// Genuine DoubleSpace/DriveSpace per-cluster compression codec (DS-0-x and
@@ -146,6 +146,7 @@ public static class CvfLzCodec {
       case CvfLzMethod.Ds: return CompressDs(data, level);
       case CvfLzMethod.Jm: return CompressJm(data, level);
       case CvfLzMethod.Sq: return CompressSq(data);
+      case CvfLzMethod.Sd4: return Sd4Codec.Encode(data);
       case CvfLzMethod.Auto:
         // Per-cluster best-of: each cluster carries its own method header, so we
         // pick whichever codec yields the smallest payload for this cluster.
@@ -250,6 +251,7 @@ public static class CvfLzCodec {
     var method = (uint)(payload[0] | (payload[1] << 8) | (payload[2] << 16) | (payload[3] << 24));
     var magic16 = (int)(method & 0xFFFF);
     if (magic16 == SqMagic) return DecompressSq(payload, inLen, outLen);
+    if (magic16 == 0x0081) return Sd4Codec.Decode(payload, inLen, outLen);
     var br = new BitReader(payload, inLen);
     var read = br.ReadN(16);
     if (read != (uint)magic16) throw new InvalidDataException($"CVF codec: bad magic 0x{read:X4}");

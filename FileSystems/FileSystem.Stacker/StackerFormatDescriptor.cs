@@ -80,10 +80,11 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     new FormatOptionDescriptor(
       Key: "Method", DisplayName: "Compression", Kind: FormatOptionKind.Enum,
       Default: "Auto",
-      AllowedValues: ["Stored", "DS", "Auto"],
+      AllowedValues: ["Stored", "DS", "SD4", "Auto"],
       Description: "Per-cluster compression for the Genuine layout. Stored = none. "
-        + "DS = the 'DS' LZ stream the Stacker driver (and dmsdos) decode for compressed "
-        + "clusters. Auto = compress each cluster and keep it only if it shrinks (else stored).",
+        + "DS = the 'DS' LZ stream the Stacker driver (and dmsdos) decode. SD4 = Stacker 4 "
+        + "native Huffman codec (header 0x0081). Auto = per cluster keep the smaller of DS/SD4, "
+        + "else stored.",
       DependsOn: "Compatibility=Genuine"),
     new FormatOptionDescriptor(
       Key: "Level", DisplayName: "Compression level", Kind: FormatOptionKind.Integer,
@@ -99,6 +100,7 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
   private static Compression.Registry.Cvf.CvfLzMethod ParseMethod(string s) => s.ToLowerInvariant() switch {
     "ds" => Compression.Registry.Cvf.CvfLzMethod.Ds,
+    "sd4" => Compression.Registry.Cvf.CvfLzMethod.Sd4,
     "auto" => Compression.Registry.Cvf.CvfLzMethod.Auto,
     _ => Compression.Registry.Cvf.CvfLzMethod.Stored,
   };

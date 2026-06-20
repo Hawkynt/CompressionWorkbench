@@ -26,6 +26,7 @@ public class GenuineStackerDmsdosTests {
   [Test, Category("DriverProof")]
   [TestCase(CvfLzMethod.Stored)]
   [TestCase(CvfLzMethod.Ds)]
+  [TestCase(CvfLzMethod.Sd4)]
   public void GenuineStacker_IsMountedAndReadByteExact_ByRealDmsdosDriver(CvfLzMethod method) {
     var build = DmsdosCache.EnsureTools();
     if (build is null)
