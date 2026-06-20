@@ -179,16 +179,56 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// are written in place, inner FAT chains extended, and VFAT dirents are
   /// inserted into the root directory without rewriting any unrelated bytes.
   /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => DoubleSpaceInPlaceModifier.Add(archive, inputs);
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    var data = ReadAll(archive);
+    if (IsGenuineV2(data)) { WriteBack(archive, RebuildGenuine(data, inputs, null)); return; }
+    DoubleSpaceInPlaceModifier.Add(archive, inputs);
+  }
 
   /// <summary>
   /// True in-place remove: walks the inner FAT chain, zeros each physical
   /// run, clears BitFAT bits, zeros MDFAT entries, zeros inner FAT chain,
   /// and scratches the dirent (+ LFN chain) with 0xE5.
   /// </summary>
-  public void Remove(Stream archive, string[] entryNames)
-    => DoubleSpaceInPlaceModifier.Remove(archive, entryNames);
+  public void Remove(Stream archive, string[] entryNames) {
+    var data = ReadAll(archive);
+    if (IsGenuineV2(data)) { WriteBack(archive, RebuildGenuine(data, null, entryNames)); return; }
+    DoubleSpaceInPlaceModifier.Remove(archive, entryNames);
+  }
+
+  // Rebuild a genuine v2 image from its current contents — basis for
+  // add/remove/defrag/purge on the WORM-style genuine layout.
+  private static byte[] RebuildGenuine(byte[] data, IReadOnlyList<ArchiveInputInfo>? add, string[]? remove) {
+    using var r = new GenuineCvfReader(new MemoryStream(data));
+    var keep = new List<(string Name, byte[] Data)>();
+    var removeSet = remove is null ? null : new HashSet<string>(remove.Select(LeafLower));
+    foreach (var e in r.Entries) {
+      if (e.IsDirectory) continue;
+      if (removeSet is not null && removeSet.Contains(LeafLower(e.Name))) continue;
+      keep.Add((e.Name, r.Extract(e)));
+    }
+    if (add is not null)
+      foreach (var (n, d) in FlatFiles(add)) {
+        keep.RemoveAll(k => LeafLower(k.Name) == LeafLower(n));
+        keep.Add((n, d));
+      }
+    var w = new GenuineCvfWriter {
+      VolumeLabel = r.VolumeLabel,
+      CompressionMethod = Compression.Registry.Cvf.CvfLzMethod.Auto,
+      CompressionLevel = 2,
+    };
+    foreach (var (n, d) in keep) w.AddFile(n, d);
+    return w.Build();
+  }
+
+  private static string LeafLower(string name) {
+    var slash = Math.Max(name.LastIndexOf('/'), name.LastIndexOf('\\'));
+    return (slash >= 0 ? name[(slash + 1)..] : name).ToLowerInvariant();
+  }
+
+  private static void WriteBack(Stream s, byte[] img) {
+    s.Position = 0; s.SetLength(img.Length); s.Write(img); s.Position = 0;
+  }
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => DoubleSpaceExtentMap.Enumerate(image);
@@ -207,6 +247,12 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
+    var probe = ReadAll(image);
+    if (IsGenuineV2(probe)) {
+      var rebuilt = RebuildGenuine(probe, null, null);
+      WriteBack(image, rebuilt);
+      return Math.Max(0, probe.Length - rebuilt.Length);
+    }
     image.Position = 0;
     var imageSize = image.Length;
     var extents = DoubleSpaceExtentMap.Enumerate(image);
@@ -246,6 +292,10 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// with rebuild fallback on error.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    {
+      var data = ReadAll(archive);
+      if (IsGenuineV2(data)) { WriteBack(archive, RebuildGenuine(data, null, null)); return; }
+    }
     ArgumentNullException.ThrowIfNull(options);
 
     if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
