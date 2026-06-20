@@ -1,4 +1,5 @@
 using System.Text;
+using Compression.Registry.Cvf;
 using Compression.Tests.Support;
 using FileSystem.DriveSpace3;
 
@@ -23,13 +24,16 @@ public class DriveSpace3GenuineDmsdosTests {
   }
 
   [Test, Category("DriverProof")]
-  public void GenuineDvr3_IsMountedAndReadByteExact_ByRealDmsdosDriver() {
+  [TestCase(CvfLzMethod.Stored)]
+  [TestCase(CvfLzMethod.Ds)]
+  [TestCase(CvfLzMethod.Jm)]
+  public void GenuineDvr3_IsMountedAndReadByteExact_ByRealDmsdosDriver(CvfLzMethod method) {
     var build = DmsdosCache.EnsureTools();
     if (build is null)
       Assert.Ignore("dmsdos tools unavailable (need Linux + git + cmake + C compiler, or set CWB_DMSDOS_BUILD). Skipping driver-proof gate.");
 
     var files = SampleFiles();
-    var writer = new GenuineDvr3Writer();
+    var writer = new GenuineDvr3Writer { CompressionMethod = method, CompressionLevel = 2 };
     foreach (var (n, d) in files) writer.AddFile(n, d);
     var image = writer.Build();
 

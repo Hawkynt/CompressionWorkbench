@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Registry.Cvf;
 
 namespace FileSystem.DriveSpace3;
 
@@ -49,6 +50,19 @@ public sealed class GenuineDvr3Writer {
   /// Default (before 1980) leaves the FAT date/time fields zero.</summary>
   public DateTime Timestamp { get; init; }
 
+  /// <summary>Per-cluster compression codec. <see cref="Compression.Registry.Cvf.CvfLzMethod.Stored"/>
+  /// (default) emits uncompressed clusters; DS/JM emit genuine DriveSpace 3 compressed clusters.</summary>
+  public Compression.Registry.Cvf.CvfLzMethod CompressionMethod { get; init; }
+    = Compression.Registry.Cvf.CvfLzMethod.Stored;
+
+  /// <summary>Codec effort (search depth). Higher = better ratio, slower.</summary>
+  public int CompressionLevel { get; init; } = 1;
+
+  /// <summary>When true, keep a compressed cluster even if it does not shrink
+  /// (as long as it still fits the cluster's sector budget); otherwise the
+  /// smaller of compressed/stored is chosen per cluster (auto-best).</summary>
+  public bool ForceCompress { get; init; }
+
   /// <summary>Adds a file to the root directory of the compressed volume.</summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
@@ -63,19 +77,47 @@ public sealed class GenuineDvr3Writer {
   private static int MdfatBytePos(int cluster) =>
     (SDcluster + cluster) * 5 + ((SDcluster + cluster) / 102) * 2 + Ss * MdfatStartSec;
 
+  // One planned cluster: its number, the full (zero-padded) logical bytes, the
+  // payload actually written to disk, its sector count, and whether compressed.
+  private readonly record struct ClusterPlan(
+    int Cluster, byte[] Payload, int Sectors, bool Compressed, int PhysSector);
+
   /// <summary>Builds the CVF image bytes.</summary>
   public byte[] Build() {
-    var plans = new List<(string Name, byte[] Data, int First, int Count)>();
+    // 1. Plan files → clusters; capture each file's first cluster + size.
+    var files = new List<(string Name, int First, int Count, long Size)>();
+    var clusterFull = new List<(int Cluster, byte[] Full)>();
     var next = 2;
     foreach (var (name, data) in this._files) {
-      var clusters = Math.Max(1, (data.Length + ClusterBytes - 1) / ClusterBytes);
-      plans.Add((name, data, next, clusters));
-      next += clusters;
+      var count = Math.Max(1, (data.Length + ClusterBytes - 1) / ClusterBytes);
+      files.Add((name, next, count, data.Length));
+      for (var i = 0; i < count; i++) {
+        var full = new byte[ClusterBytes];
+        var off = i * ClusterBytes;
+        var copy = Math.Min(ClusterBytes, data.Length - off);
+        if (copy > 0) Array.Copy(data, off, full, 0, copy);
+        clusterFull.Add((next + i, full));
+      }
+      next += count;
     }
-    var totalDataClusters = next - 2;
 
+    // 2. Compress each cluster (auto-best), assigning packed physical sectors.
     var physDataStart = InnerBase + FirstData;
-    var totalSectors = physDataStart + totalDataClusters * Spc + 2;
+    var physCursor = physDataStart;
+    var layout = new List<ClusterPlan>();
+    foreach (var (cl, full) in clusterFull) {
+      var comp = CvfLzCodec.Encode(full, this.CompressionMethod, this.CompressionLevel);
+      var ksize = comp is null ? Spc : (comp.Length + Ss - 1) / Ss;
+      if (comp is not null && ksize <= Spc && (ksize < Spc || this.ForceCompress)) {
+        layout.Add(new ClusterPlan(cl, comp, ksize, true, physCursor));
+        physCursor += ksize;
+      } else {
+        layout.Add(new ClusterPlan(cl, full, Spc, false, physCursor));
+        physCursor += Spc;
+      }
+    }
+
+    var totalSectors = physCursor + 2;
     if ((totalSectors & 1) != 0) totalSectors++;
     var img = new byte[totalSectors * Ss];
 
@@ -89,6 +131,7 @@ public sealed class GenuineDvr3Writer {
     // FAT16 reserved entries (clusters 0 and 1).
     img[fatOff] = 0xF8; img[fatOff + 1] = 0xFF; img[fatOff + 2] = 0xFF; img[fatOff + 3] = 0xFF;
 
+    // 3. Root directory (optional volume label first) + FAT16 chains.
     var dirIndex = 0;
     if (!string.IsNullOrEmpty(this.VolumeLabel)) {
       Compression.Registry.FatDirStamp.WriteVolumeLabel(img, rootOff, this.VolumeLabel);
@@ -96,41 +139,37 @@ public sealed class GenuineDvr3Writer {
     }
     var (stampTime, stampDate) = Compression.Registry.FatDirStamp.Encode(this.Timestamp);
 
-    foreach (var (name, data, first, count) in plans) {
+    foreach (var (name, first, count, size) in files) {
       var de = rootOff + dirIndex * 32;
       WriteShortName(img, de, name);
       img[de + 11] = 0x20;
       BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(de + 22), stampTime);
       BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(de + 24), stampDate);
       BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(de + 26), (ushort)first);
-      BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(de + 28), (uint)data.Length);
+      BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(de + 28), (uint)size);
       dirIndex++;
 
-      var written = 0;
       for (var i = 0; i < count; i++) {
         var cluster = first + i;
         var isLast = i == count - 1;
         BinaryPrimitives.WriteUInt16LittleEndian(
           img.AsSpan(fatOff + cluster * 2), (ushort)(isLast ? 0xFFFF : cluster + 1));
-
-        var physSector = physDataStart + (cluster - 2) * Spc;
-        var copy = Math.Min(ClusterBytes, data.Length - written);
-        if (copy > 0) Array.Copy(data, written, img, physSector * Ss, copy);
-        written += copy;
-
-        // 5-byte MDFAT entry: stored full cluster (flags=3, not fragmented).
-        var p = MdfatBytePos(cluster);
-        var sm1 = physSector - 1;
-        img[p + 0] = (byte)sm1;
-        img[p + 1] = (byte)(sm1 >> 8);
-        img[p + 2] = (byte)(sm1 >> 16);
-        img[p + 3] = (byte)((Spc - 1) << 2);              // unknown=0, size_lo_minus_1=63
-        img[p + 4] = (byte)(((Spc - 1) & 0x3F) | (3 << 6)); // size_hi_minus_1=63, flags=3
       }
     }
 
-    // MDR end-of-CVF signature at the final sector (the driver looks for it
-    // near s_dataend; absence is only a warning, presence is the genuine shape).
+    // 4. Cluster payloads + 5-byte MDFAT entries (flags 3 = stored, 2 = compressed).
+    foreach (var plan in layout) {
+      Array.Copy(plan.Payload, 0, img, plan.PhysSector * Ss, plan.Payload.Length);
+      var p = MdfatBytePos(plan.Cluster);
+      var sm1 = plan.PhysSector - 1;
+      img[p + 0] = (byte)sm1;
+      img[p + 1] = (byte)(sm1 >> 8);
+      img[p + 2] = (byte)(sm1 >> 16);
+      img[p + 3] = (byte)(((plan.Sectors - 1) & 0x3F) << 2);          // unknown=0, size_lo
+      img[p + 4] = (byte)(((Spc - 1) & 0x3F) | ((plan.Compressed ? 2 : 3) << 6)); // size_hi, flags
+    }
+
+    // MDR end-of-CVF signature at the final sector.
     "MDR"u8.CopyTo(img.AsSpan((totalSectors - 1) * Ss, 3));
     return img;
   }
