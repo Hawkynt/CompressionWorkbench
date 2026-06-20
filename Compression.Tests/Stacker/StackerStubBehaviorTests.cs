@@ -32,9 +32,10 @@ public class StackerStubBehaviorTests {
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True,
       "Stacker now emits valid STACVOL volumes — must advertise CanCreate.");
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
-      "Stacker creation is WORM (fresh volume), not in-place modify.");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
+      "Stacker now supports add/remove/defrag/purge via rebuild — must advertise CanModify.");
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
+    Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
   }
 
   [Test, Category("Sad")]

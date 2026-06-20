@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using Compression.Core.Layout;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -12,13 +13,13 @@ namespace FileSystem.Stacker;
 /// clusters are STORED verbatim or Stac-LZS compressed (RFC 1967/2395).
 /// Detection is by the ASCII "STACKER" banner at file offset 0.
 /// </summary>
-public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatOptionsSchema {
+public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IWipeEmpty, IFormatOptionsSchema {
   public string Id => "Stacker";
   public string DisplayName => "Stacker CVF";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract
-    | FormatCapabilities.CanTest | FormatCapabilities.CanCreate;
+    | FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify;
   public string DefaultExtension => ".sta";
   public IReadOnlyList<string> Extensions => [".sta", ".stk"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -183,5 +184,86 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       reader = null;
       return false;
     }
+  }
+
+  // ── Modify / defrag / purge (rebuild) ─────────────────────────────────────
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(inputs);
+    WriteBack(archive, Rebuild(ReadAll(archive), inputs, null));
+  }
+
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(entryNames);
+    WriteBack(archive, Rebuild(ReadAll(archive), null, entryNames));
+  }
+
+  public void Defragment(Stream archive)
+    => WriteBack(archive, Rebuild(ReadAll(archive), null, null));
+
+  public void Defragment(Stream archive, DefragOptions options)
+    => this.Defragment(archive);
+
+  /// <summary>Purges unused space by repacking; returns bytes reclaimed.</summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    var data = ReadAll(image);
+    var rebuilt = Rebuild(data, null, null);
+    WriteBack(image, rebuilt);
+    return Math.Max(0, data.Length - rebuilt.Length);
+  }
+
+  // Read every file and re-emit: contiguous AMAP packing (defrag), auto-best
+  // recompression (optimize/shrink) and a fresh image (purge). Works for the
+  // genuine layout (preserving the volume label) and the Extended self-format.
+  private static byte[] Rebuild(byte[] data, IReadOnlyList<ArchiveInputInfo>? add, string[]? remove) {
+    var keep = new List<(string Name, byte[] Data)>();
+    var removeSet = remove is null ? null : new HashSet<string>(remove.Select(LeafLower));
+    var label = "";
+    var genuine = TryGenuine(data, out var gr);
+    if (genuine) {
+      label = gr!.VolumeLabel;
+      foreach (var e in gr.Entries) {
+        if (e.IsDirectory) continue;
+        if (removeSet is not null && removeSet.Contains(LeafLower(e.Name))) continue;
+        keep.Add((e.Name, gr.Extract(e)));
+      }
+    } else {
+      using var r = new StackerReader(new MemoryStream(data));
+      foreach (var e in r.Entries) {
+        if (e.IsDirectory) continue;
+        if (removeSet is not null && removeSet.Contains(LeafLower(e.Name))) continue;
+        keep.Add((e.Name, r.Extract(e)));
+      }
+    }
+    if (add is not null)
+      foreach (var input in add) {
+        if (input.IsDirectory) continue;
+        var n = Path.GetFileName(input.ArchiveName);
+        keep.RemoveAll(k => LeafLower(k.Name) == LeafLower(n));
+        keep.Add((n, input.ReadContent()));
+      }
+
+    if (genuine) {
+      var w = new GenuineStackerWriter {
+        VolumeLabel = label,
+        CompressionMethod = Compression.Registry.Cvf.CvfLzMethod.Auto,
+        CompressionLevel = 2,
+      };
+      foreach (var (n, d) in keep) w.AddFile(n, d);
+      return w.Build();
+    } else {
+      var w = new StackerWriter();
+      foreach (var (n, d) in keep) w.AddFile(n, d);
+      return w.Build();
+    }
+  }
+
+  private static string LeafLower(string name) {
+    var slash = Math.Max(name.LastIndexOf('/'), name.LastIndexOf('\\'));
+    return (slash >= 0 ? name[(slash + 1)..] : name).ToLowerInvariant();
+  }
+
+  private static void WriteBack(Stream s, byte[] img) {
+    s.Position = 0; s.SetLength(img.Length); s.Write(img); s.Position = 0;
   }
 }
