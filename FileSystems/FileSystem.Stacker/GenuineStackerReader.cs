@@ -36,6 +36,9 @@ public sealed class GenuineStackerReader : IDisposable {
   public IReadOnlyList<StackerEntry> Entries => this._entries;
   public int Version { get; private set; }
 
+  /// <summary>The inner volume label (0x08 root entry), or "" when none was written.</summary>
+  public string VolumeLabel { get; private set; } = "";
+
   public GenuineStackerReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
@@ -101,7 +104,11 @@ public sealed class GenuineStackerReader : IDisposable {
       if (first == 0x00) break;
       if (first == 0xE5) continue;
       var attr = this._data[de + 11];
-      if (attr == 0x0F || (attr & 0x08) != 0 || (attr & 0x10) != 0) continue;
+      if ((attr & 0x08) != 0 && attr != 0x0F) {  // volume label
+        this.VolumeLabel = Encoding.ASCII.GetString(this._data, de, 11).TrimEnd(' ');
+        continue;
+      }
+      if (attr == 0x0F || (attr & 0x10) != 0) continue;
 
       var stem = Encoding.ASCII.GetString(this._data, de, 8).TrimEnd(' ');
       var ext = Encoding.ASCII.GetString(this._data, de + 8, 3).TrimEnd(' ');

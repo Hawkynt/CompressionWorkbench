@@ -101,6 +101,17 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
         + "per-cluster MS LZH compression, long filenames, in-place add/remove, defrag "
         + "and block-mover support, but is readable ONLY by CompressionWorkbench — NOT "
         + "by the genuine DriveSpace driver or dmsdos."),
+    new FormatOptionDescriptor(
+      Key: "VolumeLabel", DisplayName: "Volume label", Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Optional 11-char inner-volume label written to the root directory (Genuine layout only).",
+      DependsOn: "Compatibility=Genuine"),
+    new FormatOptionDescriptor(
+      Key: "Timestamp", DisplayName: "File timestamp", Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Optional ISO-8601 date/time (e.g. 1996-08-24) stamped on every file's "
+        + "FAT directory entry. Blank leaves the date/time unset (Genuine layout only).",
+      DependsOn: "Compatibility=Genuine"),
   ];
 
   // =========================================================================
@@ -151,7 +162,10 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
     ArgumentNullException.ThrowIfNull(options);
 
     if (options.GetOption("Compatibility", "Extended").Equals("Genuine", StringComparison.OrdinalIgnoreCase)) {
-      var gw = new GenuineDvr3Writer();
+      var gw = new GenuineDvr3Writer {
+        VolumeLabel = options.GetOption("VolumeLabel", ""),
+        Timestamp = FatDirStamp.Parse(options.GetOption("Timestamp", "")),
+      };
       foreach (var (name, data) in FlatFiles(inputs))
         gw.AddFile(name, data);
       output.Write(gw.Build());

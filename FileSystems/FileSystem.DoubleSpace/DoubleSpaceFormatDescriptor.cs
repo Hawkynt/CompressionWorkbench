@@ -6,7 +6,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.DoubleSpace;
 
-public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
   public string Id => "DoubleSpace";
   public string DisplayName => "DoubleSpace CVF";
   public FormatCategory Category => FormatCategory.Archive;
@@ -43,15 +43,79 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
   /// </summary>
   public string Description => "Microsoft DoubleSpace compressed volume file MS-DOS 6.0 (MDBPB/MDFAT/BitFAT layout; stored runs, VFAT LFN)";
 
+  // ── IFormatOptionsSchema ──────────────────────────────────────────────────
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "Compatibility",
+      DisplayName: "On-disk layout",
+      Kind: FormatOptionKind.Enum,
+      Default: "Extended",
+      AllowedValues: ["Genuine", "Extended"],
+      Description:
+        "Genuine — the real MS-DOS 6.x DoubleSpace/DriveSpace v2 container (MSDBL6.0, "
+        + "16 sectors/cluster, inner FAT12, 4-byte MDFAT). Mounted and read byte-exact by "
+        + "the independent dmsdos driver, which reports it as 'drivespace CVF version 2' "
+        + "(also the layout the real DRVSPACE.BIN driver mounts). Clusters are STORED "
+        + "(uncompressed); single flat root directory; ~69 clusters (557 KB) fixed "
+        + "geometry. Choose this for interoperability with real DOS DriveSpace tooling.\n"
+        + "Extended — CompressionWorkbench's feature layout (MSDSP6.0): DS-LZ77 "
+        + "compression, long filenames, in-place add/remove, defrag and block-mover "
+        + "support, readable ONLY by CompressionWorkbench — NOT by the real DriveSpace "
+        + "driver or dmsdos."),
+    new FormatOptionDescriptor(
+      Key: "VolumeLabel",
+      DisplayName: "Volume label",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Optional 11-char inner-volume label (Genuine layout only).",
+      DependsOn: "Compatibility=Genuine"),
+    new FormatOptionDescriptor(
+      Key: "Timestamp",
+      DisplayName: "File timestamp",
+      Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Optional ISO-8601 date/time (e.g. 1993-05-01) stamped on every file's "
+        + "FAT directory entry. Blank leaves the date/time unset (Genuine layout only).",
+      DependsOn: "Compatibility=Genuine"),
+  ];
+
+  private static bool IsGenuineV2(byte[] data) =>
+    data.Length > 0x0E
+    && Encoding.ASCII.GetString(data, 3, 8) == "MSDBL6.0"
+    && data[0x0D] == 16;
+
+  private static byte[] ReadAll(Stream stream) {
+    if (stream.CanSeek) stream.Position = 0;
+    using var ms = new MemoryStream();
+    stream.CopyTo(ms);
+    return ms.ToArray();
+  }
+
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new DoubleSpaceReader(stream);
+    var data = ReadAll(stream);
+    if (IsGenuineV2(data)) {
+      using var g = new GenuineCvfReader(new MemoryStream(data));
+      return g.Entries.Select((e, i) => new ArchiveEntryInfo(
+        i, e.Name, e.Size, e.Size, "stored", e.IsDirectory, false, null)).ToList();
+    }
+    var r = new DoubleSpaceReader(new MemoryStream(data));
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, -1, "DS-LZ77", e.IsDirectory, false, null
     )).ToList();
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new DoubleSpaceReader(stream);
+    var data = ReadAll(stream);
+    if (IsGenuineV2(data)) {
+      using var g = new GenuineCvfReader(new MemoryStream(data));
+      foreach (var e in g.Entries) {
+        if (e.IsDirectory) continue;
+        if (files != null && !MatchesFilter(e.Name, files)) continue;
+        WriteFile(outputDir, e.Name, g.Extract(e));
+      }
+      return;
+    }
+    var r = new DoubleSpaceReader(new MemoryStream(data));
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
@@ -60,6 +124,18 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.GetOption("Compatibility", "Extended").Equals("Genuine", StringComparison.OrdinalIgnoreCase)) {
+      var gw = new GenuineCvfWriter {
+        VolumeLabel = options.GetOption("VolumeLabel", ""),
+        Timestamp = FatDirStamp.Parse(options.GetOption("Timestamp", "")),
+      };
+      foreach (var (name, data) in FlatFiles(inputs))
+        gw.AddFile(name, data);
+      output.Write(gw.Build());
+      return;
+    }
+
     var w = new DoubleSpaceWriter {
       Variant = CvfVariant.DoubleSpace60,
       MethodName = options.MethodName,

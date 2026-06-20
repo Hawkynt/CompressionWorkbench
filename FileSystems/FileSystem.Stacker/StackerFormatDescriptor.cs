@@ -65,6 +65,17 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
         + "(MS-DOS 6 era); 4 = Stacker 4.x. The dmsdos driver reads both. Applies to the "
         + "Genuine layout only.",
       DependsOn: "Compatibility=Genuine"),
+    new FormatOptionDescriptor(
+      Key: "VolumeLabel", DisplayName: "Volume label", Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Optional 11-char inner-volume label written to the root directory (Genuine layout only).",
+      DependsOn: "Compatibility=Genuine"),
+    new FormatOptionDescriptor(
+      Key: "Timestamp", DisplayName: "File timestamp", Kind: FormatOptionKind.String,
+      Default: "",
+      Description: "Optional ISO-8601 date/time (e.g. 1994-02-01) stamped on every file's "
+        + "FAT directory entry. Blank leaves the date/time unset (Genuine layout only).",
+      DependsOn: "Compatibility=Genuine"),
   ];
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -105,7 +116,11 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
     byte[] image;
     if (genuine) {
-      var w = new GenuineStackerWriter { Version = options.GetOptionInt("Version", 3) };
+      var w = new GenuineStackerWriter {
+        Version = options.GetOptionInt("Version", 3),
+        VolumeLabel = options.GetOption("VolumeLabel", ""),
+        Timestamp = FatDirStamp.Parse(options.GetOption("Timestamp", "")),
+      };
       foreach (var input in inputs) {
         if (input.IsDirectory) continue;
         w.AddFile(Path.GetFileName(input.ArchiveName), input.ReadContent());

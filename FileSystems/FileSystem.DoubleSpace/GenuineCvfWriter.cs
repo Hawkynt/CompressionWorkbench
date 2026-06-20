@@ -60,6 +60,13 @@ public sealed class GenuineCvfWriter {
 
   private readonly List<(string Name, byte[] Data)> _files = [];
 
+  /// <summary>Optional inner-volume label (≤11 chars). Empty = no label entry.</summary>
+  public string VolumeLabel { get; init; } = "";
+
+  /// <summary>Creation/modification timestamp stamped on every file entry.
+  /// Default (before 1980) leaves the FAT date/time fields zero.</summary>
+  public DateTime Timestamp { get; init; }
+
   /// <summary>Adds a file to the root directory of the compressed volume.</summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
@@ -100,11 +107,19 @@ public sealed class GenuineCvfWriter {
     img[fatOff] = 0xF8; img[fatOff + 1] = 0xFF; img[fatOff + 2] = 0xFF;
 
     var dirIndex = 0;
+    if (!string.IsNullOrEmpty(this.VolumeLabel)) {
+      Compression.Registry.FatDirStamp.WriteVolumeLabel(img, rootOff, this.VolumeLabel);
+      dirIndex = 1;
+    }
+    var (stampTime, stampDate) = Compression.Registry.FatDirStamp.Encode(this.Timestamp);
+
     foreach (var (name, data, firstCluster, clusterCount) in plans) {
       // Directory entry (8.3, archive attribute).
       var de = rootOff + dirIndex * 32;
       WriteShortName(img, de, name);
       img[de + 11] = 0x20;
+      BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(de + 22), stampTime);
+      BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(de + 24), stampDate);
       BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(de + 26), (ushort)firstCluster);
       BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(de + 28), (uint)data.Length);
       dirIndex++;
