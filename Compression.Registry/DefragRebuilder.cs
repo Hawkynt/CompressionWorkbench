@@ -122,6 +122,18 @@ public static class DefragRebuilder {
 
     var rebuilt = buildImage(ordered);
 
+    // Identity guard: the rebuilt image must list back the EXACT same set of
+    // entry names. Content-addressed / resource formats (hashed filenames,
+    // resource-map entries) can't round-trip identity through extract→recreate —
+    // re-hashing or re-deriving names silently changes or duplicates entries.
+    // For those, committing the rebuild would corrupt the archive, so we leave
+    // the original untouched instead (a safe no-op defrag). Name-preserving
+    // formats (the vast majority) pass this and commit normally.
+    if (!RebuiltPreservesEntries(files, rebuilt, readEntries)) {
+      options.OnProgress?.Invoke(BuildScanEvent(files, originalLength, "complete"));
+      return;
+    }
+
     // Emit "writing" updates while we copy the rebuilt image back. Chunked at
     // 64 KB so the UI can animate a write head without the listener getting
     // spammed; for small images the loop runs once.
@@ -307,6 +319,28 @@ public static class DefragRebuilder {
       }
     } finally {
       try { System.IO.File.Delete(tempPath); } catch { /* best-effort cleanup */ }
+    }
+  }
+
+  /// <summary>
+  /// True when re-reading <paramref name="rebuilt"/> yields exactly the same
+  /// multiset of entry names as <paramref name="original"/>. Guards against
+  /// rebuilds that drop, duplicate, or rename entries (formats whose identity
+  /// can't survive an extract→recreate round-trip). Any read failure counts as
+  /// "not preserved" so a malformed rebuild is never committed.
+  /// </summary>
+  private static bool RebuiltPreservesEntries(
+      System.Collections.Generic.IReadOnlyList<(string Name, byte[] Data)> original,
+      byte[] rebuilt,
+      System.Func<System.IO.Stream, System.Collections.Generic.IEnumerable<(string Name, byte[] Data)>> readEntries) {
+    try {
+      using var ms = new System.IO.MemoryStream(rebuilt);
+      var after = readEntries(ms).Select(static e => e.Name).OrderBy(static x => x, System.StringComparer.Ordinal).ToList();
+      if (after.Count != original.Count) return false;
+      var before = original.Select(static e => e.Name).OrderBy(static x => x, System.StringComparer.Ordinal).ToList();
+      return before.SequenceEqual(after, System.StringComparer.Ordinal);
+    } catch {
+      return false;
     }
   }
 

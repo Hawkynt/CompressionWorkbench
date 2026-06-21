@@ -34,6 +34,13 @@ public static class RebuildVerb {
     var tmpDir = Path.Combine(Path.GetTempPath(), "cwb_rebuild_" + Guid.NewGuid().ToString("N")[..8]);
     Directory.CreateDirectory(tmpDir);
     try {
+      // Capture the source's live entry names (as a sorted MULTISET — duplicates
+      // matter) as the descriptor itself reports them. This is the identity a
+      // faithful rebuild must reproduce exactly.
+      input.Position = 0;
+      var sourceNames = LiveNameList(ops, input);
+      var sourceFileCount = sourceNames.Count;
+
       input.Position = 0;
       ops.Extract(input, tmpDir, null, null);
 
@@ -42,11 +49,9 @@ public static class RebuildVerb {
         var rel = Path.GetRelativePath(tmpDir, dir).Replace('\\', '/');
         inputs.Add(new ArchiveInputInfo("", rel + "/", true));
       }
-      var sourceFileCount = 0;
       foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
         var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
         inputs.Add(new ArchiveInputInfo(file, rel, false));
-        sourceFileCount++;
       }
 
       var options = new FormatCreateOptions { FormatSpecific = formatSpecific };
@@ -54,25 +59,35 @@ public static class RebuildVerb {
       output.SetLength(0);
       creator.Create(output, inputs, options);
 
-      // Verify the rebuild round-trips: a faithful create must list back at
-      // least every live file we fed it. Anything less means data loss.
+      // Identity guard: a faithful rebuild must list back the EXACT same set of
+      // live entry names. Anything else — dropped, duplicated, renamed (e.g.
+      // content-addressed/hashed names, synthetic metadata entries the writer
+      // re-derives) — means the round-trip isn't identity-preserving, so refuse
+      // to commit and leave the caller to fall back / keep the original.
       output.Position = 0;
-      int rebuiltFileCount;
+      List<string> rebuiltNames;
       try {
-        rebuiltFileCount = ops.List(output, null).Count(e => !e.IsDirectory);
+        rebuiltNames = LiveNameList(ops, output);
       } catch (Exception ex) {
         throw new InvalidOperationException(
           $"Rebuilt image could not be listed back ({ex.GetType().Name}: {ex.Message}); refusing a lossy rebuild.", ex);
       }
-      if (rebuiltFileCount < sourceFileCount)
+      if (!rebuiltNames.SequenceEqual(sourceNames, StringComparer.Ordinal))
         throw new InvalidOperationException(
-          $"Rebuild dropped files ({rebuiltFileCount} of {sourceFileCount} survived); refusing a lossy rebuild.");
+          $"Rebuild changed the entry set ({sourceFileCount} → {rebuiltNames.Count}); refusing a non-identity-preserving rebuild.");
 
       output.Position = 0;
       return sourceFileCount;
     } finally {
       try { Directory.Delete(tmpDir, true); } catch { /* best effort */ }
     }
+  }
+
+  /// <summary>The sorted multiset of live (non-directory) entry names the descriptor lists.</summary>
+  private static List<string> LiveNameList(IArchiveFormatOperations ops, Stream stream) {
+    stream.Position = 0;
+    return ops.List(stream, null).Where(e => !e.IsDirectory).Select(e => e.Name)
+      .OrderBy(n => n, StringComparer.Ordinal).ToList();
   }
 
   /// <summary>
