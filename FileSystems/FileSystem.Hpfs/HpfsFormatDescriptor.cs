@@ -20,7 +20,7 @@ namespace FileSystem.Hpfs;
 /// respectively; callers can fall back to a rebuild path in those cases.
 /// </remarks>
 public sealed class HpfsFormatDescriptor
-    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
+    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
       IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
 
   public string Id => "Hpfs";

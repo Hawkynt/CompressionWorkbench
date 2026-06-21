@@ -26,7 +26,7 @@ namespace FileSystem.Mfs1;
 /// <para>Distinct from <c>FileSystem.Mfs</c>, which targets the Macintosh File
 /// System with a strong <c>0xD2D7</c> magic.</para>
 /// </remarks>
-public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "Mfs1";
   public string DisplayName => "MFS-1 (Acorn Master File System v1)";
   public FormatCategory Category => FormatCategory.Archive;

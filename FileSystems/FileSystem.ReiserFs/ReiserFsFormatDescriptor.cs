@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ReiserFs;
 
-public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
+public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
   // R/W write constraints — ReiserFS has no inherent ceiling; real mkfs.reiserfs minimum ≈ 128 MB.
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 128L * 1024 * 1024;

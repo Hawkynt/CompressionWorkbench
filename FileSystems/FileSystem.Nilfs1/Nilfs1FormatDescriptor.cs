@@ -23,7 +23,7 @@ namespace FileSystem.Nilfs1;
 /// <see cref="FormatHelpers.WriteFile(string, string, byte[])"/>.</para>
 /// </summary>
 public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
+    IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
 
   public string Id => "Nilfs1";
   public string DisplayName => "NILFS v1";

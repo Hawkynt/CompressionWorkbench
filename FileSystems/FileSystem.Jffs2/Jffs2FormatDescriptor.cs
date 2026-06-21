@@ -14,7 +14,7 @@ namespace FileSystem.Jffs2;
 /// the JFFS2 spec — fresh node at the tail with bumped version, existing
 /// nodes left byte-identical), defragment, extent map.
 /// </summary>
-public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
+public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "Jffs2";
   public string DisplayName => "JFFS2";
   public FormatCategory Category => FormatCategory.Archive;

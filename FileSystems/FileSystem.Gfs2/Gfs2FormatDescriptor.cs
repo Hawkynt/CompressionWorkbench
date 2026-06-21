@@ -51,7 +51,7 @@ namespace FileSystem.Gfs2;
 /// </list>
 /// </summary>
 public sealed class Gfs2FormatDescriptor
-    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable {
   public string Id => "Gfs2";
   public string DisplayName => "GFS2 (Global File System 2)";
   public FormatCategory Category => FormatCategory.Archive;

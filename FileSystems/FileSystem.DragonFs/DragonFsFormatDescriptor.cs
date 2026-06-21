@@ -13,7 +13,7 @@ namespace FileSystem.DragonFs;
 /// images — detection is by .dfs extension plus an optional "DragonFS"
 /// ASCII tag at offset 0 for self-produced research images.
 /// </summary>
-public sealed class DragonFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+public sealed class DragonFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable {
   public string Id => "DragonFs";
   public string DisplayName => "DragonFS";
   public FormatCategory Category => FormatCategory.Archive;

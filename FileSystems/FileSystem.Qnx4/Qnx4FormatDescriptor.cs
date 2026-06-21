@@ -16,7 +16,7 @@ namespace FileSystem.Qnx4;
 /// <see cref="NotSupportedException"/>, matching the WORM writer's capacity
 /// guard. Subdirectory emission is still out of scope.</para>
 /// </summary>
-public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "Qnx4";
   public string DisplayName => "QNX4 FS";
   public FormatCategory Category => FormatCategory.Archive;

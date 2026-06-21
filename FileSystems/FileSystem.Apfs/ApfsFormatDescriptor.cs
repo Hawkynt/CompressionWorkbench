@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Apfs;
 
 public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable, IArchiveModifiable {
+    IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "Apfs";
   public string DisplayName => "APFS";
   public FormatCategory Category => FormatCategory.Archive;

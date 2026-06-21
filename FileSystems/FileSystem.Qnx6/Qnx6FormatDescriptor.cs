@@ -15,7 +15,7 @@ namespace FileSystem.Qnx6;
 /// after each Add/Remove so the dual-superblock pairing remains byte-identical.
 /// Self-round-trips through <see cref="Qnx6Reader"/>.
 /// </summary>
-public sealed class Qnx6FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class Qnx6FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "Qnx6";
   public string DisplayName => "QNX6 Neutrino FS";
   public FormatCategory Category => FormatCategory.Archive;

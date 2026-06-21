@@ -19,7 +19,7 @@ namespace FileSystem.AmigaPfs;
 /// is still <em>not</em> FS-UAE/WinUAE mountable (full PFS3aio anode-table /
 /// bitmap / rootinfo emission deferred to a future Stage 2 promotion).
 /// </summary>
-public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "AmigaPfs";
   public string DisplayName => "Amiga Professional FS";
   public FormatCategory Category => FormatCategory.Archive;

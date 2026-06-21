@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Zfs;
 
 public sealed class ZfsFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
 
   public string Id => "Zfs";
   public string DisplayName => "ZFS";

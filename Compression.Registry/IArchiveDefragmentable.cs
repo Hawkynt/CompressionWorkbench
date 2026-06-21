@@ -10,11 +10,21 @@ namespace Compression.Registry;
 public interface IArchiveDefragmentable {
   /// <summary>
   /// Rebuilds the archive content in place so every file is contiguous. Outer byte size
-  /// is preserved. Free space is consolidated at the end. Equivalent to calling
-  /// <see cref="Defragment(System.IO.Stream, DefragOptions)"/> with
-  /// <c>new DefragOptions { Mode = DefragMode.ConsolidateAtStart }</c>.
+  /// is preserved. Free space is consolidated at the end.
+  ///
+  /// <para><b>Default implementation</b>: any descriptor that also implements
+  /// <see cref="IArchiveFormatOperations"/> + <see cref="IArchiveCreatable"/> gets
+  /// defragmentation for free — a verified in-place extract → re-create rebuild via
+  /// <see cref="RebuildVerb.RebuildInPlace"/> (the rebuild-via-WORM pattern inherently
+  /// lays every file out contiguously) that refuses to commit a lossy result. Formats
+  /// with a true in-place block mover override this for efficiency and full mode support.</para>
   /// </summary>
-  void Defragment(Stream archive);
+  void Defragment(Stream archive) {
+    if (this is not IArchiveFormatOperations ops || this is not IArchiveCreatable creator)
+      throw new System.NotSupportedException(
+        "The default Defragment requires the descriptor to also implement IArchiveFormatOperations + IArchiveCreatable.");
+    RebuildVerb.RebuildInPlace(archive, ops, creator);
+  }
 
   /// <summary>
   /// Rewrites the archive content according to <paramref name="options"/>. Default

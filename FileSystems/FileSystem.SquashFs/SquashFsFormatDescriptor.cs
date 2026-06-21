@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.SquashFs;
 
-public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
+public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "SquashFs";
   public string DisplayName => "SquashFS";
   public FormatCategory Category => FormatCategory.Archive;

@@ -29,7 +29,7 @@ namespace FileSystem.DriveSpace3;
 /// disambiguates by magic.
 /// </para>
 /// </summary>
-public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
   /// <inheritdoc />
   public string Id => "DriveSpace3";
   /// <inheritdoc />

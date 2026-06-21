@@ -33,7 +33,7 @@ namespace FileSystem.OpenVms;
 /// modifier can round-trip end-to-end through Add / Remove / Replace.
 /// </para>
 /// </summary>
-public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "OpenVms";
   public string DisplayName => "OpenVMS Files-11";
   public FormatCategory Category => FormatCategory.Archive;

@@ -12,7 +12,7 @@ namespace FileSystem.MinixV1;
 /// names) or 0x138F (30-byte names — Coherent variant). Predecessor to
 /// Linux's ext filesystem family.
 /// </summary>
-public sealed class MinixV1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+public sealed class MinixV1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable {
   public string Id => "MinixV1";
   public string DisplayName => "Minix V1 FS";
   public FormatCategory Category => FormatCategory.Archive;

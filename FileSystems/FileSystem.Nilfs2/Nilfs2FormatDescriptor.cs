@@ -29,7 +29,7 @@ namespace FileSystem.Nilfs2;
 /// mountable tree; snapshots / multi-checkpoint chains remain out of scope.</para>
 /// </summary>
 public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+    IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
 
   /// <summary>Synthetic surface entries the reader always injects — excluded from rebuilds.</summary>
   private static readonly HashSet<string> SyntheticEntries =

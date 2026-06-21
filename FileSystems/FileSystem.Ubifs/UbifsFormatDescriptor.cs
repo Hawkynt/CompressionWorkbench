@@ -20,7 +20,7 @@ namespace FileSystem.Ubifs;
 /// preserved. Full TNC / LPT commit pipeline (required for kernel mount) is
 /// multi-week work and remains out of scope.
 /// </summary>
-public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "Ubifs";
   public string DisplayName => "UBIFS";
   public FormatCategory Category => FormatCategory.Archive;

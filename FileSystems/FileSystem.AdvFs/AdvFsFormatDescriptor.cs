@@ -38,7 +38,7 @@ namespace FileSystem.AdvFs;
 ///   <item><description>Wikipedia "Advanced File System"</description></item>
 /// </list>
 /// </summary>
-public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable, IArchiveCreatable {
+public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable, IArchiveShrinkable, IArchiveCreatable {
   public string Id => "AdvFs";
   public string DisplayName => "AdvFS (Tru64 UNIX)";
   public FormatCategory Category => FormatCategory.Archive;

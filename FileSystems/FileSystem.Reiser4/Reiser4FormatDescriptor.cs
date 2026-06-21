@@ -18,7 +18,7 @@ namespace FileSystem.Reiser4;
 ///   <item><description><c>"ReIsEr4"</c> at offset 65536 — master superblock <c>ms_magic[16]</c>.</description></item>
 /// </list>
 /// </summary>
-public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveDefragmentable {
+public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveDefragmentable {
   public string Id => "Reiser4";
   public string DisplayName => "Reiser4";
   public FormatCategory Category => FormatCategory.Archive;

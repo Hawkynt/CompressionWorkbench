@@ -12,7 +12,7 @@ namespace FileSystem.Fatx;
 /// mutate via <see cref="FatxModifier"/> (in-place Add/Remove on the root
 /// directory; sub-directory mutation stays out of scope).
 /// </summary>
-public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
 
   /// <summary>
   /// Creation knobs surfaced by the Convert dialog / CLI. <c>SectorsPerCluster</c>

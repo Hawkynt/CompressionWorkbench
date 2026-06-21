@@ -12,7 +12,7 @@ namespace FileSystem.Xenix;
 /// Reads existing Xenix images and emits fresh WORM images via
 /// <see cref="XenixWriter"/>.
 /// </summary>
-public sealed class XenixFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class XenixFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "Xenix";
   public string DisplayName => "Xenix FS";
   public FormatCategory Category => FormatCategory.Archive;

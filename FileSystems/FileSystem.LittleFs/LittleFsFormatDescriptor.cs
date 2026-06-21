@@ -12,7 +12,7 @@ namespace FileSystem.LittleFs;
 /// pair commit log with CRC validation is intentionally out of scope — that's a
 /// full reference-implementation port. Detection + structural surfacing is the win.
 /// </summary>
-public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveDefragmentable, IArchiveCreatable {
   public string Id => "LittleFs";
   public string DisplayName => "LittleFS";
   public FormatCategory Category => FormatCategory.Archive;

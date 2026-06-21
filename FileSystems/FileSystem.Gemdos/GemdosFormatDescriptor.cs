@@ -28,7 +28,7 @@ namespace FileSystem.Gemdos;
 /// and on-disk layout.</para>
 /// </summary>
 public sealed class GemdosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
+    IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
 
   public string Id => "Gemdos";
   public string DisplayName => "GEMDOS (Atari ST)";

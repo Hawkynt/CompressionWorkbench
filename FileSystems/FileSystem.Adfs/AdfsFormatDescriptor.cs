@@ -12,7 +12,7 @@ namespace FileSystem.Adfs;
 /// Detected by the "Hugo" or "Nick" directory marker at sector 2 — root dir
 /// magic at file offset 0x200 (old map) or 0x400 (new map).
 /// </summary>
-public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "Adfs";
   public string DisplayName => "Acorn ADFS";
   public FormatCategory Category => FormatCategory.Archive;

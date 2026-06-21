@@ -38,7 +38,7 @@ namespace FileSystem.SysV;
 /// WSL2 kernel ships without it).
 /// </para>
 /// </remarks>
-public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "SysV";
   public string DisplayName => "UNIX System V FS";
   public FormatCategory Category => FormatCategory.Archive;

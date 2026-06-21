@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.RomFs;
 
-public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
   public string Id => "RomFs";
   public string DisplayName => "ROMFS";
   public FormatCategory Category => FormatCategory.Archive;

@@ -44,7 +44,7 @@ internal static class CbmNibbleEntries {
 /// Commodore G64 GCR track container (VICE emulator). Detected by the
 /// 8-byte "GCR-1541" ASCII magic at offset 0.
 /// </summary>
-public sealed class G64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class G64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveDefragmentable, IArchiveCreatable {
   public string Id => "G64";
   public string DisplayName => "G64 (Commodore GCR)";
   public FormatCategory Category => FormatCategory.Archive;

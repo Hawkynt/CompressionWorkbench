@@ -11,7 +11,7 @@ namespace FileSystem.Coherent;
 /// volume strings ("noname"/"nopack"), which is exactly how the Linux sysv
 /// driver's detect_coherent() identifies it.
 /// </summary>
-public sealed class CoherentFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class CoherentFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "Coherent";
   public string DisplayName => "Coherent FS";
   public FormatCategory Category => FormatCategory.Archive;

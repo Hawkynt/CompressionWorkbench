@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ZxScl;
 
-public sealed class ZxSclFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class ZxSclFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   // Upper bound: max payload (40 tracks x 16 sectors x 256 bytes x 4 layers) + magic/headers/CRC.
   public long? MaxTotalArchiveSize => ZxSclReader.MaxPayloadSize;

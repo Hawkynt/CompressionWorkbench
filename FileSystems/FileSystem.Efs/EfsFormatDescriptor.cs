@@ -23,7 +23,7 @@ namespace FileSystem.Efs;
 /// its full path.</para>
 /// </remarks>
 public sealed class EfsFormatDescriptor :
-    IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable,
+    IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable,
     IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
 
   public string Id => "Efs";

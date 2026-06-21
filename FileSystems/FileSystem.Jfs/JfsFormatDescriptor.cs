@@ -38,7 +38,7 @@ namespace FileSystem.Jfs;
 /// </para>
 /// </summary>
 public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-                                          IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
+                                          IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
   // WORM write constraints.
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 16L * 1024 * 1024;

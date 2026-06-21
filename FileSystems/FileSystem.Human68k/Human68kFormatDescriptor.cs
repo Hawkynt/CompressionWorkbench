@@ -26,7 +26,7 @@ namespace FileSystem.Human68k;
 /// total-sectors / volume label.</para>
 /// </summary>
 public sealed class Human68kFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable,
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable,
   IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
 
   public string Id => "Human68k";

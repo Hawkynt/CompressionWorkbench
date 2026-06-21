@@ -33,7 +33,7 @@ namespace FileSystem.Ocfs2;
 /// lockdown and multi-node cluster semantics are out of scope by design.</para>
 /// </summary>
 public sealed class Ocfs2FormatDescriptor
-    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
+    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
       IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "Ocfs2";
   public string DisplayName => "OCFS2 (Oracle Cluster Filesystem 2)";

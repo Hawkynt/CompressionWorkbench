@@ -20,7 +20,7 @@ namespace FileSystem.Htfs;
 /// 16-byte dirent chain (single-block dirs cap one BB of entries each).</para>
 /// </remarks>
 public sealed class HtfsFormatDescriptor :
-    IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable,
+    IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable,
     IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
 
   public string Id => "Htfs";

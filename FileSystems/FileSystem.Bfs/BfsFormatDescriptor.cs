@@ -13,7 +13,7 @@ namespace FileSystem.Bfs;
 /// directory and direct block_run extents for file data.
 /// </summary>
 public sealed class BfsFormatDescriptor
-    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
+    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
       IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
 
   public string Id => "Bfs";

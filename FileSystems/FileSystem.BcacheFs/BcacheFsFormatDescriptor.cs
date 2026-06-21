@@ -15,7 +15,7 @@ namespace FileSystem.BcacheFs;
 /// emitting B-tree nodes are explicitly out of scope — see
 /// <c>Hawkynt.FileFormats.FileSystems/README.md</c> for the full gap statement.
 /// </summary>
-public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable {
   public string Id => "BcacheFs";
   public string DisplayName => "BcacheFS";
   public FormatCategory Category => FormatCategory.Archive;

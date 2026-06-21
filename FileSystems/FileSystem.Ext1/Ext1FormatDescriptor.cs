@@ -18,7 +18,7 @@ namespace FileSystem.Ext1;
 /// vintage pre-1993 Linux disk images and forensic tooling for early Linux installs
 /// are the consumers.
 /// </summary>
-public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>
   /// Walks the rev-0 superblock + BGD table + inode tree and yields the

@@ -25,7 +25,7 @@ namespace FileSystem.Yaffs2;
 /// Supports: list, extract, create, in-place modify, defragment, extent map.
 /// </summary>
 public sealed class Yaffs2FormatDescriptor
-    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
+    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
       IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "Yaffs2";
   public string DisplayName => "YAFFS2";

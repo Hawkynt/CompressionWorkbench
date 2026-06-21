@@ -6,7 +6,7 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Ufs;
 
 public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-                                          IArchiveCreatable, IArchiveWriteConstraints,
+                                          IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints,
                                           IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
 
   /// <summary>

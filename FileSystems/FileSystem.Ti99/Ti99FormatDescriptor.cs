@@ -21,7 +21,7 @@ namespace FileSystem.Ti99;
 /// file + the data area.</para>
 /// </summary>
 public sealed class Ti99FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
+    IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
 
   public string Id => "Ti99";
   public string DisplayName => "TI-99/4A DSR";

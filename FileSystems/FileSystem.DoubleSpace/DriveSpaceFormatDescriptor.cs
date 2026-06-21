@@ -6,7 +6,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.DoubleSpace;
 
-public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
   public string Id => "DriveSpace";
   public string DisplayName => "DriveSpace CVF";
   public FormatCategory Category => FormatCategory.Archive;
