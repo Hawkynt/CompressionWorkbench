@@ -1,4 +1,5 @@
 using System.Text;
+using Compression.Registry;
 using Compression.Registry.Cvf;
 using Compression.Tests.Support;
 using FileSystem.DriveSpace3;
@@ -38,6 +39,30 @@ public class DriveSpace3HugeVolumeTests {
     Assert.That(r.Entries, Has.Count.EqualTo(files.Length));
     foreach (var (name, data) in files)
       Assert.That(r.Extract(r.Entries.First(e => e.Name == name)), Is.EqualTo(data), $"{name} round-trip");
+  }
+
+  [Test, Category("Huge")]
+  public void Large_Volume_FullReadWrite_AddRemove_ViaDescriptor() {
+    // Full r/w (not WORM) at scale: create a ~600-cluster genuine volume, then
+    // add and remove files through the descriptor (rebuild path) and verify.
+    var files = BigSet(200, 96 * 1024, 5);
+    var d = new DriveSpace3FormatDescriptor();
+    var opts = new FormatCreateOptions { FormatSpecific = new Dictionary<string, string> { ["Compatibility"] = "Genuine" } };
+    using var ms = new MemoryStream();
+    d.Create(ms, files.Select(f => ArchiveInputInfo.InMemory(f.Name, f.Data)).ToList(), opts);
+
+    var extra = new byte[50000]; new Random(99).NextBytes(extra);
+    d.Add(ms, [ArchiveInputInfo.InMemory("EXTRA.BIN", extra)]);
+    d.Remove(ms, [files[100].Name]);
+
+    // Read the modified large volume back through the genuine reader.
+    using var r = new GenuineDvr3Reader(new MemoryStream(ms.ToArray()));
+    var byName = r.Entries.ToDictionary(e => e.Name, e => r.Extract(e));
+    Assert.That(byName.ContainsKey(files[100].Name), Is.False, "removed file gone");
+    Assert.That(byName["EXTRA.BIN"], Is.EqualTo(extra), "added file intact");
+    Assert.That(byName[files[0].Name], Is.EqualTo(files[0].Data), "first file intact");
+    Assert.That(byName[files[199].Name], Is.EqualTo(files[199].Data), "last file intact");
+    Assert.That(byName, Has.Count.EqualTo(200), "200 files after add + remove");
   }
 
   [Test, Category("DriverProof")]
