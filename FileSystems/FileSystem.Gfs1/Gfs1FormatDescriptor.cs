@@ -27,7 +27,7 @@ namespace FileSystem.Gfs1;
 /// real distributed-lock protocol negotiation is out of WORM scope.</para>
 /// </remarks>
 public sealed class Gfs1FormatDescriptor :
-    IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable,
+    IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
     IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
 
   public string Id => "Gfs1";

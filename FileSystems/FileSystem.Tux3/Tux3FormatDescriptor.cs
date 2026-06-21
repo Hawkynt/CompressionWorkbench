@@ -14,7 +14,7 @@ namespace FileSystem.Tux3;
 /// itable/otable/atable B-tree traversal of real linux-tux3 prototype dumps
 /// is out of scope.
 /// </summary>
-public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable {
+public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable {
   public string Id => "Tux3";
   public string DisplayName => "TUX3";
   public FormatCategory Category => FormatCategory.Archive;

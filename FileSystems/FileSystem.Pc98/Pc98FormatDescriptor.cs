@@ -23,7 +23,7 @@ namespace FileSystem.Pc98;
 /// / volume label.</para>
 /// </summary>
 public sealed class Pc98FormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable,
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
   IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
 
   public string Id => "Pc98";

@@ -21,7 +21,7 @@ namespace FileSystem.Trsdos;
 /// schema for density/track-count selection.</para>
 /// </summary>
 public sealed class TrsdosFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable,
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
   IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
 
   public string Id => "Trsdos";

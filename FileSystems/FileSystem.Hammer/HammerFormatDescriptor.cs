@@ -25,7 +25,7 @@ namespace FileSystem.Hammer;
 ///   <item><description><c>https://www.dragonflybsd.org/hammer/</c></description></item>
 /// </list>
 /// </summary>
-public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveDefragmentable, IArchiveCreatable {
+public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable {
   public string Id => "Hammer";
   public string DisplayName => "HAMMER (DragonFly BSD)";
   public FormatCategory Category => FormatCategory.Archive;

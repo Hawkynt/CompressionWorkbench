@@ -22,7 +22,7 @@ namespace FileSystem.Jfs1;
 /// chains (4-byte LE inode + 1-byte nlen + name) anchored from inode 2.</para>
 /// </remarks>
 public sealed class Jfs1FormatDescriptor :
-    IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable,
+    IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
     IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
 
   public string Id => "Jfs1";

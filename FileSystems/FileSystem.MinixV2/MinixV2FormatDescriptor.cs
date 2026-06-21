@@ -11,7 +11,7 @@ namespace FileSystem.MinixV2;
 /// triple-indirect blocks for large-file support. Magic 0x2468
 /// (14-byte names) or 0x2478 (30-byte names — extended variant).
 /// </summary>
-public sealed class MinixV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable {
+public sealed class MinixV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable {
   public string Id => "MinixV2";
   public string DisplayName => "Minix V2 FS";
   public FormatCategory Category => FormatCategory.Archive;

@@ -29,7 +29,7 @@ namespace FileSystem.Hammer2;
 ///   <item><description><c>https://gitweb.dragonflybsd.org/dragonfly.git/blob/HEAD:/sys/vfs/hammer2/DESIGN</c></description></item>
 /// </list>
 /// </summary>
-public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveDefragmentable, IArchiveCreatable {
+public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable {
   public string Id => "Hammer2";
   public string DisplayName => "HAMMER2 (DragonFly BSD)";
   public FormatCategory Category => FormatCategory.Archive;

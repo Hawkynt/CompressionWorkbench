@@ -21,7 +21,7 @@ namespace FileSystem.Cromemco;
 /// selection through the Convert Archive dialog.</para>
 /// </summary>
 public sealed class CromemcoFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable,
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
   IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
 
   public string Id => "Cromemco";

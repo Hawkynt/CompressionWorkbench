@@ -9,7 +9,7 @@ namespace FileSystem.Erofs;
 /// Full-fidelity, compressed images remain the job of <c>mkfs.erofs</c>; our writer targets
 /// the round-trippable WORM subset (compact inodes, plain data, nested directories).
 /// </summary>
-public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveDefragmentable, IArchiveCreatable {
+public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable {
   public string Id => "Erofs";
   public string DisplayName => "EROFS";
   public FormatCategory Category => FormatCategory.Archive;

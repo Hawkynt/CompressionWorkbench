@@ -13,7 +13,7 @@ namespace FileSystem.Tux2;
 /// legacy prototype images would need a custom parser matching the specific
 /// snapshot of the in-progress code that produced them.
 /// </summary>
-public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable {
+public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable {
   public string Id => "Tux2";
   public string DisplayName => "TUX2";
   public FormatCategory Category => FormatCategory.Archive;
