@@ -1214,7 +1214,7 @@ public sealed class FatWriter {
   /// </summary>
   public byte[] BuildAutoSized(int bytesPerSector = 512, int requestedClusterSize = 0,
     string? volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false,
-    int requestedRootEntries = 0, bool forceLfn = false) {
+    int requestedRootEntries = 0, bool forceLfn = false, bool minimal = false) {
     if (forceLfn) enableLfn = true; // force-LFN implies VFAT is on
     // Lay out the directory tree to size the image. Only the root's *direct*
     // children bound the fixed FAT12/16 root directory; files inside
@@ -1248,6 +1248,31 @@ public sealed class FatWriter {
     var clusterAlignedFiles = fileSizes.Sum(s => RoundUpToCluster(s));
     // Each subdirectory occupies at least one cluster even if its dir entries fit in less.
     var clusterAlignedDirs = dirContentBytes.Sum(b => Math.Max((long)clusterBytes, RoundUpToCluster(b)));
+
+    // ── Minimal-geometry path (compact --minimal) ──────────────────────────
+    // Drop the generous "8 free clusters + 64 KB" headroom and the fixed-224
+    // root directory: size the image to exactly hold the data plus the real
+    // FAT12 metadata (1 reserved + two 9-sector FATs + a root directory sized
+    // to the entries actually present). The result is the smallest valid FAT12
+    // this writer emits — for a near-empty floppy that is a few KB instead of
+    // the 1.44 MB original — but it is no longer a standard mountable floppy.
+    // We only take this path when the payload stays within FAT12 (< 4085 data
+    // clusters); larger sets fall through to the standard headroom below.
+    var spcGuess = Math.Max(1, clusterBytes / bytesPerSector);
+    var dataClusterGuess = (clusterAlignedFiles + clusterAlignedDirs) / clusterBytes;
+    if (minimal && forcedFatType is 0 or 12 && dataClusterGuess < 4084) {
+      const int fat12FatSectors = 9; // Build()'s fixed FAT12 FAT size
+      var neededRootEntries = (int)((ContentLength(tree, isRoot: true) + 31) / 32);
+      var minRoot = Math.Max(16, (neededRootEntries + 15) / 16 * 16);
+      if (requestedRootEntries > minRoot) minRoot = requestedRootEntries;
+      var minRootSectors = (minRoot * 32 + bytesPerSector - 1) / bytesPerSector;
+      var minMetaSectors = 1 + 2 * fat12FatSectors + minRootSectors;
+      var minDataSectors = (int)((clusterAlignedFiles + clusterAlignedDirs + bytesPerSector - 1) / bytesPerSector);
+      var minimalTotal = minMetaSectors + minDataSectors + spcGuess; // +1 cluster safety headroom
+      return Build(minimalTotal, bytesPerSector, clusterBytes, volumeLabel, forcedFatType,
+                   enableLfn, transactionFat, minRoot, forceLfn);
+    }
+
     var neededBytes = clusterAlignedFiles + clusterAlignedDirs + 8L * clusterBytes + 65536;
     var totalSectors = Math.Max(32, (int)((neededBytes + bytesPerSector - 1) / bytesPerSector));
 

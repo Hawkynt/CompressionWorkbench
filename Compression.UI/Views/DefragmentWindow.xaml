@@ -300,6 +300,12 @@
 
     <!-- Action buttons -->
     <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
+      <CheckBox x:Name="MinimalGeometryCheck" Content="Minimal geometry" VerticalAlignment="Center"
+                Margin="0,0,8,0" IsEnabled="False"
+                ToolTip="Compact rebuilds at the smallest geometry the format allows (e.g. a 1.44 MB FAT floppy → a few KB). Contents preserved, but the result may not be a standard mountable image." />
+      <Button x:Name="CompactBtn" Content="Compact" Width="100" Padding="4" Margin="0,0,8,0"
+              Click="OnCompact" IsEnabled="False"
+              ToolTip="Defragment + optimize + shrink in one pass — the smallest valid container that still holds the same contents. Tick 'Minimal geometry' for the bare-minimum (non-standard) rebuild." />
       <Button x:Name="PurgeBtn" Content="Purge" Width="100" Padding="4" Margin="0,0,8,0"
               Click="OnPurge" IsEnabled="False"
               ToolTip="Erase ALL live data, leaving a valid empty container. Distinct from Wipe Empty (which only zeros dead space)." />

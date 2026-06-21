@@ -87,6 +87,7 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand DefragmentEntryCommand { get; }
   public ICommand PurgeEntryCommand { get; }
   public ICommand WipeEntryCommand { get; }
+  public ICommand CompactEntryCommand { get; }
   public ICommand DeleteSelectedCommand { get; }
 
   // True after a successful in-archive delete on a format whose container leaves
@@ -144,6 +145,7 @@ internal sealed class MainViewModel : ViewModelBase {
     DefragmentEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Defragment), _ => CanMaintain(Views.MaintenanceVerb.Defragment));
     PurgeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Purge), _ => CanMaintain(Views.MaintenanceVerb.Purge));
     WipeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.WipeEmpty), _ => CanMaintain(Views.MaintenanceVerb.WipeEmpty));
+    CompactEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Compact), _ => CanMaintain(Views.MaintenanceVerb.Compact));
     DeleteSelectedCommand = new RelayCommand(_ => DeleteSelectedEntries(), _ => CanDeleteSelected);
   }
 
@@ -348,6 +350,7 @@ internal sealed class MainViewModel : ViewModelBase {
       Views.MaintenanceVerb.Defragment => ops is IArchiveDefragmentable,
       Views.MaintenanceVerb.Purge => ops is IArchiveModifiable,
       Views.MaintenanceVerb.WipeEmpty => ops is IWipeEmpty or IFilesystemExtentMap or IArchiveLayoutMap,
+      Views.MaintenanceVerb.Compact => ops is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable,
       _ => false,
     };
   }

@@ -16,6 +16,12 @@ is the coverage matrix.
 | Purge           | `IArchiveModifiable.Remove`-all / empty `Create`     | Erase **all live** data, leaving a valid empty container. No dedicated interface yet (see ARCHIVE-MODEL → Naming note). |
 | Metadata-reorder| `IFileInternalLayoutMap` / `IFileInternalChunkMover` | Move metadata chunks to a canonical/optimal position (e.g. streamable layout). File-internal containers. |
 
+> **Composite verb:** **compact** is not in this matrix because it has no
+> interface of its own — it chains *defrag → optimize → shrink* (or, with
+> `--minimal`, a single minimal-geometry rebuild). A format gets a compact action
+> when it implements at least one of those three. See
+> [`ARCHIVE-MODEL.md`](ARCHIVE-MODEL.md) → *compact — the one-click composite*.
+
 > **Naming:** earlier revisions of this file labelled `IWipeEmpty` as
 > "Purge/Wipe"; under the canonical taxonomy that operation is **wipe** (it
 > removes *dead* bytes). **Purge** is the distinct verb that removes *live* data.

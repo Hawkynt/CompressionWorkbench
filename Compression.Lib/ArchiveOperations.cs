@@ -425,7 +425,7 @@ public static class ArchiveOperations {
   /// using paths relative to the dir itself — so entry names don't include
   /// the dir name as a prefix.
   /// </summary>
-  private static List<ArchiveInput> EnumerateTempInputs(string tempDir) {
+  internal static List<ArchiveInput> EnumerateTempInputs(string tempDir) {
     var inputs = new List<ArchiveInput>();
     foreach (var dir in Directory.GetDirectories(tempDir, "*", SearchOption.AllDirectories)) {
       var rel = Path.GetRelativePath(tempDir, dir).Replace('\\', '/');

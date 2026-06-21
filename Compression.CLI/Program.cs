@@ -1494,6 +1494,63 @@ wipeCmd.SetAction((ParseResult ctx) => {
   return 0;
 });
 
+// ── compact ───────────────────────────────────────────────────────────────
+
+var compactImageArg = new Argument<string>("file") { Description = "Filesystem image or archive to compact" };
+var compactMinimalOpt = new Option<bool>("--minimal") {
+  Description = "Rebuild at the smallest geometry the format allows (auto-fit size, smallest cluster, "
+    + "minimal root directory). Produces the smallest possible file but may no longer be a standard "
+    + "mountable image — e.g. a 1.44 MB FAT floppy collapses to a few KB."
+};
+var compactCmd = new Command("compact", """
+  Make the container as small as possible while keeping its contents identical.
+
+  Standard (default): defragment → optimize → shrink, in place.
+    - defragment  consolidate live data so it is contiguous
+    - optimize    re-encode the payload with the best methods (where re-encodable)
+    - shrink      truncate the freed tail / step down to the smallest canonical size
+
+  --minimal: replace the trio with a single minimal-geometry rebuild — re-create
+  the container at the smallest geometry the format allows. Smaller than the
+  standard pass, but the result may no longer be a standard/mountable image.
+
+  Examples:
+    cwb compact disk.img             Smallest STANDARD image holding the data
+    cwb compact disk.img --minimal   Bare-minimum geometry (tiny, non-standard)
+    cwb compact bundle.zip           Defrag + re-encode + trim a ZIP
+
+  Contents are always preserved byte-for-byte.
+  """) { compactImageArg, compactMinimalOpt };
+compactCmd.SetAction((ParseResult ctx) => {
+  var imageArg = ctx.GetValue(compactImageArg)!;
+  var minimal = ctx.GetValue(compactMinimalOpt);
+
+  if (!File.Exists(imageArg)) { Console.Error.WriteLine($"File not found: {imageArg}"); return 1; }
+
+  FormatRegistration.EnsureInitialized();
+  var formatId = FormatDetector.Detect(imageArg).ToString();
+  Console.WriteLine($"Compacting {Path.GetFileName(imageArg)} ({formatId}){(minimal ? " — minimal geometry" : "")}...");
+  var sw = Stopwatch.StartNew();
+
+  try {
+    var result = Compression.Lib.CompactOperation.Compact(imageArg,
+      new Compression.Lib.CompactOperation.CompactOptions {
+        Minimal = minimal,
+        Log = line => Console.WriteLine("  " + line),
+      });
+    sw.Stop();
+    var delta = result.NewSize - result.OriginalSize;
+    var pct = result.OriginalSize > 0 ? 100.0 * delta / result.OriginalSize : 0;
+    Console.WriteLine($"done ({sw.ElapsedMilliseconds}ms) — steps: {(result.StepsRun.Count > 0 ? string.Join(", ", result.StepsRun) : "none")}");
+    Console.WriteLine($"  {FormatSize(result.OriginalSize)} -> {FormatSize(result.NewSize)} ({pct:+0.0;-0.0;0.0}%)");
+    return 0;
+  } catch (Exception ex) {
+    sw.Stop();
+    Console.Error.WriteLine($"FAILED: {ex.GetType().Name}: {ex.Message}");
+    return 1;
+  }
+});
+
 // ── deploy ──────────────────────────────────────────────────────────────
 
 var deployImageArg = new Argument<FileInfo>("image") { Description = "Source image file to write" };
@@ -2292,6 +2349,8 @@ var root = new RootCommand("""
     cwb shrink disk.img                      Defrag + truncate trailing free space
     cwb shrink disk.vhd --compact            Also compact container (VHD sparse)
     cwb wipe-empty disk.img                  Zero all unused space in image
+    cwb compact disk.img                     Defrag + optimize + shrink (smallest valid)
+    cwb compact disk.img --minimal           Bare-minimum geometry (tiny, non-standard)
     cwb dedup disk.img --dry-run             Find duplicate files in image
     cwb sparsify disk.vhd                    Remove zero-filled blocks
     cwb densify disk.qcow2                   Pre-allocate all blocks
@@ -2302,7 +2361,7 @@ var root = new RootCommand("""
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, convertCmd, optimizeCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, shrinkCmd, wipeCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
+  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, convertCmd, optimizeCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, shrinkCmd, wipeCmd, compactCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
 };
 
 return root.Parse(args).Invoke();

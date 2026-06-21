@@ -223,6 +223,9 @@
           <Separator />
           <MenuItem Header="_Maintenance">
             <MenuItem.Icon><Image Source="{StaticResource DefragmentIcon}" Width="16" Height="16" /></MenuItem.Icon>
+            <MenuItem Header="_Compact (defrag + optimize + shrink)..." Command="{Binding CompactEntryCommand}"
+                      ToolTip="One pass to the smallest valid container holding the same contents. Tick 'Minimal geometry' in the window for the bare-minimum (non-standard) rebuild." />
+            <Separator />
             <MenuItem Header="_Optimize..." Command="{Binding OptimizeEntryCommand}"
                       ToolTip="Find + apply the best layout / re-encode payload. Size preserved where possible." />
             <MenuItem Header="_Shrink..." Command="{Binding ShrinkEntryCommand}"

@@ -25,6 +25,8 @@ public enum MaintenanceVerb {
   Purge,
   /// <summary>Overwrite only unused space (free clusters, slack, deleted entries); size preserved.</summary>
   WipeEmpty,
+  /// <summary>Composite defrag → optimize → shrink: smallest valid container holding the same contents.</summary>
+  Compact,
 }
 
 /// <summary>
@@ -175,12 +177,14 @@ public partial class DefragmentWindow : Window {
       MaintenanceVerb.Defragment => "Defragment",
       MaintenanceVerb.Purge => "Purge",
       MaintenanceVerb.WipeEmpty => "Wipe Empty",
+      MaintenanceVerb.Compact => "Compact",
       _ => "Maintenance",
     };
     var target = verb switch {
       MaintenanceVerb.Shrink => ShrinkBtn,
       MaintenanceVerb.Purge => PurgeBtn,
       MaintenanceVerb.WipeEmpty => WipeEmptyBtn,
+      MaintenanceVerb.Compact => CompactBtn,
       _ => RunBtn, // Optimize + Defragment both live on the morphing Run button.
     };
     if (target is { IsEnabled: true }) {
@@ -300,6 +304,14 @@ public partial class DefragmentWindow : Window {
     // over every entry. See docs/ARCHIVE-MODEL.md → "purge vs. wipe".
     if (PurgeBtn != null)
       PurgeBtn.IsEnabled = ops is IArchiveModifiable;
+
+    // Enable Compact (defrag + optimize + shrink) whenever at least one of its
+    // constituent steps applies. The "Minimal geometry" checkbox unlocks the
+    // smallest-geometry rebuild for formats whose creation exposes size knobs.
+    if (CompactBtn != null)
+      CompactBtn.IsEnabled = ops is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable;
+    if (MinimalGeometryCheck != null)
+      MinimalGeometryCheck.IsEnabled = ops is IArchiveCreatable and IFormatOptionsSchema;
 
     var fi = new FileInfo(path);
     SizeLbl.Text = $"{FormatSize(fi.Length)} ({fi.Length:N0} bytes)";
@@ -1696,6 +1708,69 @@ public partial class DefragmentWindow : Window {
         } else {
           Append($"OK ({sw.ElapsedMilliseconds} ms) — {liveNames.Length} file(s) erased");
           Append($"Container size: {origSize:N0} -> {newSize:N0} bytes (Δ {newSize - origSize:+#,#;-#,#;0})");
+        }
+        Append("");
+        PreviewBlockMap(path, FormatRegistry.GetArchiveOps(formatStr), wasMutated: err == null);
+      });
+    });
+  }
+
+  /// <summary>
+  /// Runs the composite <c>compact</c> verb (defrag → optimize → shrink) via
+  /// <see cref="Compression.Lib.CompactOperation"/>. When "Minimal geometry" is
+  /// ticked, the trio is replaced by a minimal-geometry rebuild — smaller, but
+  /// the result may no longer be a standard/mountable image.
+  /// </summary>
+  private void OnCompact(object sender, RoutedEventArgs e) {
+    if (this._imagePath == null) return;
+    var path = this._imagePath;
+    var minimal = MinimalGeometryCheck?.IsChecked == true;
+    var formatStr = FormatLbl.Text;
+
+    if (minimal) {
+      var confirm = MessageBox.Show(this,
+        "Minimal geometry rebuilds the container at the smallest size the format allows "
+        + "(e.g. a 1.44 MB FAT floppy collapses to a few KB).\n\n"
+        + "Contents are preserved, but the result may no longer be a standard, mountable image. Continue?",
+        "Compact — minimal geometry", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+      if (confirm != MessageBoxResult.Yes) return;
+    }
+
+    Append($"=== {DateTime.Now:HH:mm:ss}  Compacting {Path.GetFileName(path)}{(minimal ? " (minimal geometry)" : "")} ===");
+    CompactBtn.IsEnabled = false;
+    RunBtn.IsEnabled = false;
+    ShrinkBtn.IsEnabled = false;
+    WipeEmptyBtn.IsEnabled = false;
+    PurgeBtn.IsEnabled = false;
+    Progress.IsIndeterminate = true;
+
+    Task.Run(() => {
+      var sw = Stopwatch.StartNew();
+      Exception? err = null;
+      Compression.Lib.CompactOperation.CompactResult? result = null;
+      try {
+        result = Compression.Lib.CompactOperation.Compact(path,
+          new Compression.Lib.CompactOperation.CompactOptions {
+            Minimal = minimal,
+            Log = line => Dispatcher.BeginInvoke(() => Append("  " + line)),
+          });
+      } catch (Exception ex) {
+        err = ex;
+      }
+      sw.Stop();
+
+      Dispatcher.Invoke(() => {
+        Progress.IsIndeterminate = false;
+        Progress.Value = 100;
+        CompactBtn.IsEnabled = true;
+        RunBtn.IsEnabled = true;
+        if (err != null || result == null) {
+          Append($"FAILED ({sw.ElapsedMilliseconds} ms): {err?.GetType().Name}: {err?.Message}");
+        } else {
+          var delta = result.NewSize - result.OriginalSize;
+          var pct = result.OriginalSize > 0 ? 100.0 * delta / result.OriginalSize : 0;
+          Append($"OK ({sw.ElapsedMilliseconds} ms) — steps: {(result.StepsRun.Count > 0 ? string.Join(", ", result.StepsRun) : "none")}");
+          Append($"Container size: {FormatSize(result.OriginalSize)} -> {FormatSize(result.NewSize)} ({pct:+0.0;-0.0;0.0}%)");
         }
         Append("");
         PreviewBlockMap(path, FormatRegistry.GetArchiveOps(formatStr), wasMutated: err == null);

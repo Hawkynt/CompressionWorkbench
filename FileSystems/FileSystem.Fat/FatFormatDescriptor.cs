@@ -539,6 +539,10 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var tfat          = specific?.GetValueOrDefault("TransactionFat") == "true";
     var fatPlus       = specific?.GetValueOrDefault("FatPlus") == "true";
     _ = fatPlus; // modTime always written; DIR_CrtTimeTenth provides sub-second precision
+    // Universal compact --minimal flag: size the image to the smallest valid
+    // geometry that holds the data (tight FAT12 + minimal root). Honoured only
+    // on the auto-size path; an explicit ImageSize still wins.
+    var minimal       = specific?.GetValueOrDefault("MinimalGeometry") == "true";
 
     // Fixed image size + cluster on Auto: optimise the cluster size *within* that
     // fixed size to minimise slack waste (e.g. a 1.44 MB floppy packed tightly)
@@ -567,7 +571,7 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
                 requestedRootEntries: rootEntries, forceLfn: forceLfn)
       : w.BuildAutoSized(requestedClusterSize: clusterBytes, volumeLabel: label,
                          forcedFatType: forcedFatType, enableLfn: enableLfn, transactionFat: tfat,
-                         requestedRootEntries: rootEntries, forceLfn: forceLfn);
+                         requestedRootEntries: rootEntries, forceLfn: forceLfn, minimal: minimal);
     output.Write(disk);
   }
 

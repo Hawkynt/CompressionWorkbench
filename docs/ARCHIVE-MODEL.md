@@ -79,6 +79,7 @@ and the outer container size is *not increased*.** Each verb says whether it may
 | **defrag**   | **Re-order** the things inside so each file/extent is contiguous (consolidate at start/end, fill holes, carve a region). | Preserved              | `IArchiveDefragmentable`; true in-place moves via `IFilesystemBlockMover` |
 | **purge**    | **Erase all live data** from within the container — empty the filesystem / drop every entry — leaving a valid empty container. | Preserved              | `IArchiveModifiable.Remove(all)` or an empty `IArchiveCreatable.Create` *(no dedicated `IArchivePurgeable` yet — see Naming note)* |
 | **wipe**     | Overwrite **only unused space** — free clusters/sectors, cluster-tip slack, deleted directory entries, inter-entry padding, dead trailer bytes. Live data untouched. | Preserved              | `IWipeEmpty` (`WipeUnusedSpace(wipeClusterTips, wipeDeletedEntries)`) |
+| **compact**  | **Composite**: run *defrag → optimize → shrink* in one pass to produce the smallest valid container that still holds the same contents. With `--minimal`, replace the trio with a single **minimal-geometry rebuild**. | Reduced | Any of `IArchiveDefragmentable` / `IArchiveCreatable` / `IArchiveShrinkable`; `--minimal` also needs `IArchiveCreatable` + `IFormatOptionsSchema` geometry knobs |
 
 **optimize vs. shrink:** *optimize* searches the parameter space (e.g. pick the
 cluster size that wastes the least slack) and re-tunes the layout; *shrink* holds
@@ -89,6 +90,39 @@ container is shaped; run shrink to make *that* shape as small as it goes.
 **purge vs. wipe:** *purge* removes the **live** data (you end up with an empty
 container); *wipe* removes only the **dead** data (you keep every live file, but
 no recoverable remnants survive in the gaps).
+
+### compact — the one-click composite
+
+**compact** chains the three size-affecting verbs so the user gets "make this as
+small as possible while keeping the contents" in a single action:
+
+1. **defrag** — consolidate live data so it is contiguous;
+2. **optimize** — re-encode the payload with the best methods (where the format
+   is re-encodable: ZIP, gzip/zlib, compound tar, the CVF family, …);
+3. **shrink** — truncate the freed tail / step down to the smallest canonical
+   size that still fits.
+
+Contents are preserved byte-for-byte. The default compact yields the smallest
+**standard, still-valid** container.
+
+**`--minimal` (opt-in).** Replaces the trio with a single **minimal-geometry
+rebuild**: the contents are extracted and the container is re-created at the
+smallest geometry the format allows — auto-fit image size, smallest allocation
+unit, and a root directory / metadata area sized to exactly the entries present.
+This is driven generically: `CompactOperation` selects the minimal value for each
+geometry knob the descriptor's `IFormatOptionsSchema` declares (image size →
+auto-fit, cluster/block → smallest, root/inode count → smallest) and sets a
+universal `MinimalGeometry=true` create flag that writers honour by dropping
+their free-space headroom. A 1.44 MB FAT floppy holding a few KB collapses to a
+few KB — but the result is **no longer a standard, mountable floppy** (the FAT
+table and root directory are crippled to the minimum). The rebuild only swaps in
+the new image when it both round-trips (lists every entry) and is actually
+smaller; otherwise the original is left untouched.
+
+Compact is surfaced as `cwb compact <file> [--minimal]` and as the explorer's
+**Maintenance → Compact** entry (with a *Minimal geometry* checkbox). It is not a
+new interface — it composes the existing capability interfaces, so any format
+that implements at least one of defrag/optimize/shrink gets a compact action.
 
 ### Naming note / current divergences (to be reconciled)
 
