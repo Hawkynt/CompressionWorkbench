@@ -82,7 +82,7 @@ public sealed class FatWriter {
   /// <returns>Complete disk image as byte array.</returns>
   public byte[] Build(int totalSectors = 2880, int bytesPerSector = 512, int requestedClusterSize = 0,
     string? volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false,
-    int requestedRootEntries = 0, bool forceLfn = false) {
+    int requestedRootEntries = 0, bool forceLfn = false, int requestedFatSize = 0) {
     if (forceLfn) enableLfn = true; // force-LFN implies VFAT is on
     const int fatCount = 2;
 
@@ -91,6 +91,10 @@ public sealed class FatWriter {
     var sectorsPerCluster = 1;
     var rootEntryCount = 224;
     var fatSize = 9; // sectors per FAT for 1.44MB floppy
+    // Caller-computed tight FAT-table size (compact --minimal): sized to exactly
+    // cover the data-cluster count instead of the fixed 9-sector floppy default.
+    // Honoured for the FAT12 path below; FAT16/32 recompute their own FAT size.
+    if (requestedFatSize > 0) fatSize = requestedFatSize;
 
     // Apply requested cluster size if valid.
     if (requestedClusterSize > 0 && requestedClusterSize >= bytesPerSector
@@ -1261,16 +1265,20 @@ public sealed class FatWriter {
     var spcGuess = Math.Max(1, clusterBytes / bytesPerSector);
     var dataClusterGuess = (clusterAlignedFiles + clusterAlignedDirs) / clusterBytes;
     if (minimal && forcedFatType is 0 or 12 && dataClusterGuess < 4084) {
-      const int fat12FatSectors = 9; // Build()'s fixed FAT12 FAT size
       var neededRootEntries = (int)((ContentLength(tree, isRoot: true) + 31) / 32);
       var minRoot = Math.Max(16, (neededRootEntries + 15) / 16 * 16);
       if (requestedRootEntries > minRoot) minRoot = requestedRootEntries;
       var minRootSectors = (minRoot * 32 + bytesPerSector - 1) / bytesPerSector;
-      var minMetaSectors = 1 + 2 * fat12FatSectors + minRootSectors;
-      var minDataSectors = (int)((clusterAlignedFiles + clusterAlignedDirs + bytesPerSector - 1) / bytesPerSector);
-      var minimalTotal = minMetaSectors + minDataSectors + spcGuess; // +1 cluster safety headroom
+      // One safety cluster of headroom, then size the FAT12 table to exactly the
+      // resulting cluster count (entries = clusters + 2 reserved, 1.5 bytes each)
+      // instead of the fixed 9-sector floppy default.
+      var minDataClusters = (int)dataClusterGuess + 1;
+      var fatEntries = minDataClusters + 2;
+      var minFatSectors = (fatEntries * 3 + 1) / 2 / bytesPerSector + 1; // ceil(1.5*entries/bps), +1 guard
+      var minMetaSectors = 1 + 2 * minFatSectors + minRootSectors;
+      var minimalTotal = minMetaSectors + minDataClusters * spcGuess;
       return Build(minimalTotal, bytesPerSector, clusterBytes, volumeLabel, forcedFatType,
-                   enableLfn, transactionFat, minRoot, forceLfn);
+                   enableLfn, transactionFat, minRoot, forceLfn, minFatSectors);
     }
 
     var neededBytes = clusterAlignedFiles + clusterAlignedDirs + 8L * clusterBytes + 65536;

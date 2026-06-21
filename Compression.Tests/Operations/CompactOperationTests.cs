@@ -94,6 +94,10 @@ public class CompactOperationTests {
       Assert.That(minResult.NewSize, Is.LessThan(floppySize), "minimal must shrink the fixed floppy");
       Assert.That(minResult.NewSize, Is.LessThan(stdResult.NewSize),
         "minimal-geometry rebuild must beat the standard (geometry-preserving) compact");
+      // Tight FAT12 geometry: a 4 KB payload should land well under 32 KB — the
+      // image is essentially [reserved + 2 small FATs + 16-entry root + data].
+      Assert.That(minResult.NewSize, Is.LessThan(32 * 1024),
+        "minimal FAT geometry must be a few KB, not the writer's default headroom");
     });
 
     // Contents survive the geometry rewrite, and the result is still a valid FAT.
