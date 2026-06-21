@@ -31,76 +31,148 @@ byte-identical and keep the archive/image valid (the project's defrag
 invariant: total logical content unchanged, files byte-identical, output still
 round-trips and stays fsck-clean where a filesystem tool exists).
 
-## Totals
+## Totals (live registry, all categories)
 
 | Operation        | Descriptors |
 |------------------|-------------|
-| Defragment       | 185 |
-| Wipe             | 35  |
-| Metadata-reorder | 9   |
-| Shrink           | 7   |
-| Optimize         | 2   |
+| Defragment       | 228 |
+| Wipe             | 180 |
+| Purge            | 153 |
+| Shrink           | 90  |
+| Optimize (layout)| 3   |
+| Metadata-reorder | 6   |
 
-(Descriptor-level counts. File-level `grep` counts read slightly higher because
-some source files host a descriptor plus helper adapters.)
+(Counts are `GetArchiveOps(id) is IXxx` over the registered descriptors — i.e.
+what the UI/CLI actually gate on. "Wipe" counts the direct `IWipeEmpty`
+implementers plus the `IFilesystemExtentMap` / `IArchiveLayoutMap` fallback the
+wiper accepts. "Purge" counts `IArchiveModifiable` (Remove-all).)
 
-## Before / after this wave
+## Default-mechanism rollout
 
-This wave filled mainstream archive gaps. No operation was removed; live-content
-invariants were verified by the per-operation tests under
-`Compression.Tests/Operations/`.
+Most maintenance verbs no longer require bespoke per-format code. The capability
+interfaces carry **default implementations** backed by a verified, round-trip-checked
+extract → re-create engine (`Compression.Registry.RebuildVerb`):
 
-| Operation | Before | After | Added |
-|-----------|--------|-------|-------|
-| Shrink    | 5      | 7     | **Zip**, **Tar** |
-| Wipe      | 33     | 35    | **7z**, **Tar** |
-| Defrag    | 185    | 185   | — |
-| Optimize  | 2      | 2     | — |
-| MetaReorder | 9    | 9     | — |
+- **`IArchiveShrinkable.Shrink`** — default rebuild (auto-fit / tight-pack); never
+  grows, never throws, never corrupts (emits the original unchanged if the rebuild
+  isn't smaller or fails).
+- **`IArchiveDefragmentable.Defragment`** — default verified in-place rebuild.
+- **`IArchiveModifiable.Add` / `Remove`** — default verified extract→edit→re-create;
+  `Remove(all)` is the **purge** verb.
+
+A filesystem descriptor therefore gains shrink / defrag / purge by simply declaring
+the interface (it already implements `IArchiveFormatOperations` + `IArchiveCreatable`).
+Bespoke in-place implementations still override the default for efficiency. Coverage
+is guarded by the registry-parametrised `Generic{Shrink,Defrag,Purge}RoundTripTests`
+under `Compression.Tests/Operations/`, which fail loudly on any lossy rebuild.
 
 ## Filesystem descriptors
 
-| Format | Defrag | Shrink | Wipe | Optimize | MetaReorder |
-|--------|:------:|:------:|:----:|:--------:|:-----------:|
-| Adf | Y | Y | Y | N | N |
-| AppleDos | Y | N | Y | N | N |
-| Atari8 | Y | N | Y | N | N |
-| Bbc | Y | N | Y | N | N |
-| Btrfs | Y | N | Y | N | N |
-| CpcDsk | Y | N | Y | N | N |
-| CramFs | Y | N | Y | N | N |
-| D64 | Y | Y | Y | N | N |
-| D71 | Y | Y | Y | N | N |
-| D81 | Y | Y | Y | N | N |
-| DoubleSpace | Y | N | Y | N | N |
-| DriveSpace3 | Y | N | Y | N | N |
-| ExFat | Y | N | Y | N | N |
-| Ext | Y | N | Y | Y | N |
-| Ext1 | Y | N | Y | N | N |
-| Fat | Y | Y | Y | N | N |
-| Fatx | N | N | Y | Y | N |
-| Hfs | Y | N | Y | N | N |
-| HfsPlus | Y | N | Y | N | N |
-| Iso | Y | N | Y | N | N |
-| Jffs2 | Y | N | Y | N | N |
-| Mfs | Y | N | Y | N | N |
-| MinixFs | Y | N | Y | N | N |
-| Msa | Y | N | Y | N | N |
-| Ntfs | Y | N | Y | N | N |
-| ProDos | Y | N | Y | N | N |
-| RomFs | Y | N | Y | N | N |
-| SquashFs | Y | N | Y | N | N |
-| TrDos | Y | N | Y | N | N |
-| Udf | Y | N | Y | N | N |
-| Vdfs | Y | N | Y | N | N |
-| Xfs | Y | N | Y | N | N |
-| Adfs, AmigaPfs, ApplePascal, Coherent, Efs, Erofs, Gemdos, Gfs1, Hammer, Hammer2, Htfs, Human68k, Jfs, Jfs1, Lif, LittleFs, Nilfs1, Nilfs2, Ods1, OpenVms, Qnx4, Qnx6, Refs, Rt11, SysV, Ti99, Trsdos, Ubifs, Wafl, Xenix, Yaffs2, Zfs | N | N | Y | N | N |
+Generated from the live registry (97 filesystem descriptors). **Compact** is the
+composite verb (defrag + optimize + shrink, or a `--minimal` geometry rebuild) and
+is available whenever any of defrag/shrink/create is — see [`ARCHIVE-MODEL.md`](ARCHIVE-MODEL.md).
+Wipe counts the `IWipeEmpty` implementers plus the extent/layout-map fallback;
+filesystems without an extent map cannot expose a true in-place forensic wipe.
 
-Read-only / specialty filesystems that only expose Wipe are grouped on the last
-row. Most read/write filesystems expose Defragment via the generic
-`DefragRebuilder` (rebuild-via-WORM) path; only fixed-geometry disk-image
-families (C64 D64/D71/D81, PC floppies via FAT, Amiga ADF) carry the multi-step
-canonical-size Shrink.
+| Format | Compact | Defrag | Shrink | Purge | Wipe | Optimize |
+|--------|:------:|:------:|:------:|:-----:|:----:|:--------:|
+| Adfs | Y | Y | Y | Y | · | · |
+| Adf | Y | Y | Y | Y | Y | · |
+| AdvFs | Y | Y | Y | Y | · | · |
+| AmigaPfs | Y | Y | Y | Y | · | · |
+| Apfs | Y | Y | Y | Y | · | · |
+| AppleDos | Y | Y | Y | Y | Y | · |
+| ApplePascal | Y | Y | Y | Y | Y | · |
+| Atari8 | Y | Y | Y | Y | Y | · |
+| Bbc | Y | Y | Y | Y | Y | · |
+| BcacheFs | Y | Y | Y | Y | · | · |
+| Bfs | Y | Y | Y | Y | Y | · |
+| Btrfs | Y | Y | Y | Y | Y | · |
+| Coherent | Y | Y | Y | Y | · | · |
+| CpcDsk | Y | Y | Y | Y | Y | · |
+| Cpm | Y | Y | Y | Y | Y | · |
+| CramFs | Y | Y | Y | Y | Y | · |
+| Cromemco | Y | Y | Y | Y | Y | · |
+| D64 | Y | Y | Y | Y | Y | · |
+| D71 | Y | Y | Y | Y | Y | · |
+| D81 | Y | Y | Y | Y | Y | · |
+| DoubleSpace | Y | Y | Y | Y | Y | · |
+| DragonFs | Y | Y | Y | Y | · | · |
+| DriveSpace3 | Y | Y | Y | Y | Y | · |
+| DriveSpace | Y | Y | Y | Y | Y | · |
+| Efs | Y | Y | Y | Y | Y | · |
+| Erofs | Y | Y | Y | Y | · | · |
+| ExFat | Y | Y | Y | Y | Y | · |
+| Ext1 | Y | Y | Y | Y | Y | · |
+| Ext | Y | Y | Y | Y | Y | Y |
+| F2fs | Y | Y | Y | Y | · | · |
+| FatPlus | Y | Y | Y | Y | · | · |
+| Fatx | Y | Y | Y | Y | · | Y |
+| Fat | Y | Y | Y | Y | Y | · |
+| G64 | Y | Y | Y | Y | · | · |
+| Gemdos | Y | Y | Y | Y | Y | · |
+| Gfs1 | Y | Y | Y | Y | Y | · |
+| Gfs2 | Y | Y | Y | Y | · | · |
+| Hammer2 | Y | Y | Y | Y | · | · |
+| Hammer | Y | Y | Y | Y | · | · |
+| HfsPlus | Y | Y | Y | Y | Y | · |
+| Hfs | Y | Y | Y | Y | Y | · |
+| Hpfs | Y | Y | Y | Y | Y | · |
+| Htfs | Y | Y | Y | Y | Y | · |
+| Human68k | Y | Y | Y | Y | Y | · |
+| Iso | Y | Y | Y | Y | Y | · |
+| Jffs2 | Y | Y | Y | Y | Y | · |
+| Jfs1 | Y | Y | Y | Y | Y | · |
+| Jfs | Y | Y | Y | Y | · | · |
+| Lif | Y | Y | Y | Y | Y | · |
+| LittleFs | Y | Y | Y | Y | · | · |
+| Mfs1 | Y | Y | Y | Y | · | · |
+| Mfs | Y | Y | Y | Y | Y | · |
+| MinixFs | Y | Y | Y | Y | Y | · |
+| MinixV1 | Y | Y | Y | Y | · | · |
+| MinixV2 | Y | Y | Y | Y | · | · |
+| Msa | Y | Y | Y | Y | Y | · |
+| Nib | · | · | · | · | · | · |
+| Nilfs1 | Y | Y | Y | Y | Y | · |
+| Nilfs2 | Y | Y | Y | Y | · | Y |
+| Nss | Y | Y | · | · | · | · |
+| Ntfs | Y | Y | Y | Y | Y | · |
+| Nwfs | · | · | · | · | · | · |
+| Nwfs386 | · | · | · | · | · | · |
+| Ocfs2 | Y | Y | Y | Y | Y | · |
+| Ods1 | Y | Y | Y | Y | · | · |
+| OpenVms | Y | Y | Y | Y | · | · |
+| Os9Rbf | Y | Y | Y | Y | Y | · |
+| Pc98 | Y | Y | Y | Y | Y | · |
+| ProDos | Y | Y | Y | Y | Y | · |
+| Qnx4 | Y | Y | Y | Y | · | · |
+| Qnx6 | Y | Y | Y | Y | · | · |
+| Refs | · | · | · | · | · | · |
+| Reiser4 | Y | Y | Y | Y | · | · |
+| ReiserFs | Y | Y | Y | Y | · | · |
+| RomFs | Y | Y | Y | Y | Y | · |
+| Rt11 | Y | Y | Y | Y | Y | · |
+| Sfs | Y | Y | · | · | · | · |
+| SmartFs | Y | Y | · | · | · | · |
+| SquashFs | Y | Y | Y | Y | Y | · |
+| SysV | Y | Y | Y | Y | · | · |
+| TFat | Y | Y | Y | Y | · | · |
+| Tfs | · | · | · | · | · | · |
+| Ti99 | Y | Y | Y | Y | Y | · |
+| TrDos | Y | Y | Y | Y | Y | · |
+| Trsdos | Y | Y | Y | Y | Y | · |
+| Tux2 | Y | Y | Y | Y | · | · |
+| Tux3 | Y | Y | Y | Y | · | · |
+| Ubifs | Y | Y | Y | Y | · | · |
+| Udf | Y | Y | Y | Y | Y | · |
+| Ufs | Y | Y | Y | Y | Y | · |
+| Vdfs | Y | Y | Y | Y | Y | · |
+| VxFs | Y | Y | · | · | · | · |
+| Xenix | Y | Y | Y | Y | · | · |
+| Xfs | Y | Y | Y | Y | Y | · |
+| Yaffs2 | Y | Y | Y | Y | Y | · |
+| Zfs | Y | Y | Y | Y | · | · |
+| ZxScl | Y | Y | Y | Y | Y | · |
 
 ## Archive / stream descriptors with at least one operation
 
