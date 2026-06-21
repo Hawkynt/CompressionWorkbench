@@ -292,15 +292,31 @@ public sealed class Yaffs2FormatDescriptor
   /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
+    long wiped = 0;
+
+    // Log-structured forensic pass: a delete only appends a tombstone header, so the
+    // deleted object's data chunks + old headers linger in the NAND log until GC.
+    // Zero those obsolete chunks so deleted content can't be recovered; live objects'
+    // current chunks are left intact (the reader walks by fixed stride and skips
+    // blanked slots).
+    if (wipeDeletedEntries) {
+      image.Position = 0;
+      using var ms = new MemoryStream();
+      image.CopyTo(ms);
+      var buf = ms.ToArray();
+      wiped += Yaffs2ForensicWiper.WipeObsolete(buf);
+      image.Position = 0;
+      image.Write(buf, 0, buf.Length);
+    }
+
     image.Position = 0;
     var imageSize = image.Length;
-
-    image.Position = 0;
     var extents = this.EnumerateExtents(image).ToList();
 
-    // Log-structured per-chunk layout — no in-place tip slack. Wipe free chunks only.
+    // Then zero genuine free chunks (no in-place tip slack in a per-chunk log).
     image.Position = 0;
-    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
+    wiped += UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
+    return wiped;
   }
 
   // ── Shared helpers ────────────────────────────────────────────────────

@@ -27,21 +27,8 @@ public class WipeForensicEfficacyTests {
       .Where(id => FormatRegistry.GetArchiveOps(id) is IArchiveModifiable and IArchiveCreatable
                    && Enum.TryParse<FormatDetector.Format>(id, out _));
 
-  // Known, documented forensic gaps that need dedicated per-format work (tracked
-  // as a "!" TODO). They are NOT silent — the guard still runs and would catch any
-  // NEW regression in the 46+ working formats. Reasons:
-  //   Jffs2/Yaffs2 — log-structured: a delete appends an obsolete/deletion node but
-  //     the old data node physically persists until garbage collection; forensic
-  //     erasure requires implementing GC (zeroing obsolete nodes), not just free-gap wiping.
-  // (Vdfs's live-data-loss-on-wipe was fixed — its EnumerateExtents now reserves the
-  // whole header+entry-table region instead of a guessed size.)
-  private static readonly HashSet<string> KnownForensicGaps =
-    new(StringComparer.Ordinal) { "Jffs2", "Yaffs2" };
-
   [TestCaseSource(nameof(WipeableModifiableIds))]
   public void DeletedFileBytes_AreGoneAfterWipe(string formatId) {
-    if (KnownForensicGaps.Contains(formatId))
-      Assert.Ignore($"{formatId}: known forensic-wipe gap (see comment) — tracked TODO, not yet fixed.");
     var fmt = Enum.Parse<FormatDetector.Format>(formatId);
     var ops = FormatRegistry.GetArchiveOps(formatId)!;
     var work = Path.Combine(Path.GetTempPath(), "cwb_wipefx_" + Guid.NewGuid().ToString("N")[..8]);

@@ -293,11 +293,28 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
+    long wiped = 0;
+
+    // Log-structured forensic pass: a delete only appends an unlink node, so the
+    // deleted file's data + naming dirents linger in the log until GC. Zero those
+    // obsolete nodes so deleted content can't be recovered. Live nodes stay intact
+    // (a zeroed node is magic-less → the scanner skips it as free space).
+    if (wipeDeletedEntries) {
+      image.Position = 0;
+      using var ms = new MemoryStream();
+      image.CopyTo(ms);
+      var buf = ms.ToArray();
+      wiped += Jffs2ForensicWiper.WipeObsolete(buf);
+      image.Position = 0;
+      image.Write(buf, 0, buf.Length);
+    }
+
     image.Position = 0;
     var imageSize = image.Length;
     var extents = this.EnumerateExtents(image);
-    // Log-structured: no cluster tips. Zero only free regions.
-    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
+    // Then zero genuine free regions (no cluster tips in a log-structured FS).
+    wiped += UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
+    return wiped;
   }
 
   // ── Shared helpers ────────────────────────────────────────────────────
