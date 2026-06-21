@@ -85,7 +85,8 @@
           <MenuItem.Icon><Image Source="{StaticResource AnalyzeIcon}" Width="16" Height="16" /></MenuItem.Icon>
         </MenuItem>
         <Separator />
-        <MenuItem Header="_Defragment Image..." Click="OnDefragment">
+        <MenuItem Header="_Maintenance (Optimize / Shrink / Defragment / Purge / Wipe)..." Click="OnDefragment"
+                  ToolTip="Open the maintenance window for a filesystem image or archive.">
           <MenuItem.Icon><Image Source="{StaticResource DefragmentIcon}" Width="16" Height="16" /></MenuItem.Icon>
         </MenuItem>
         <MenuItem Header="Convert _Archive..." Click="OnConvertArchive">
@@ -220,8 +221,23 @@
             <MenuItem.Icon><Image Source="{StaticResource AddIcon}" Width="16" Height="16" /></MenuItem.Icon>
           </MenuItem>
           <Separator />
-          <MenuItem Header="_Defragment..." Command="{Binding DefragmentEntryCommand}">
+          <MenuItem Header="_Maintenance">
             <MenuItem.Icon><Image Source="{StaticResource DefragmentIcon}" Width="16" Height="16" /></MenuItem.Icon>
+            <MenuItem Header="_Optimize..." Command="{Binding OptimizeEntryCommand}"
+                      ToolTip="Find + apply the best layout / re-encode payload. Size preserved where possible." />
+            <MenuItem Header="_Shrink..." Command="{Binding ShrinkEntryCommand}"
+                      ToolTip="Keep the parameter set; minimise the stored footprint." />
+            <MenuItem Header="_Defragment..." Command="{Binding DefragmentEntryCommand}"
+                      ToolTip="Re-order entries/extents so files are contiguous. Size preserved.">
+              <MenuItem.Icon><Image Source="{StaticResource DefragmentIcon}" Width="16" Height="16" /></MenuItem.Icon>
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="_Purge..." Command="{Binding PurgeEntryCommand}"
+                      ToolTip="Erase ALL live data, leaving a valid empty container.">
+              <MenuItem.Icon><Image Source="{StaticResource RemoveIcon}" Width="16" Height="16" /></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="_Wipe Empty..." Command="{Binding WipeEntryCommand}"
+                      ToolTip="Overwrite only unused space (free clusters, slack, deleted entries). Live data untouched." />
           </MenuItem>
           <MenuItem Header="Con_vert Archive..." Click="OnConvertArchive"
                     ToolTip="Convert the selected file (or the open archive) to another format" />

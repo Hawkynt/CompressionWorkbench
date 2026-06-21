@@ -78,7 +78,7 @@ and the outer container size is *not increased*.** Each verb says whether it may
 | **shrink**   | **Keep the parameter set**; reduce the *stored* footprint by re-encoding payloads with better methods/levels and/or dropping trailing free space / stepping to the smallest canonical container size that still fits. | Preserved, or reduced to the smallest size that holds the content | `IArchiveShrinkable` (+ `IFormatOptionsSchema` for method/level) |
 | **defrag**   | **Re-order** the things inside so each file/extent is contiguous (consolidate at start/end, fill holes, carve a region). | Preserved              | `IArchiveDefragmentable`; true in-place moves via `IFilesystemBlockMover` |
 | **purge**    | **Erase all live data** from within the container — empty the filesystem / drop every entry — leaving a valid empty container. | Preserved              | `IArchiveModifiable.Remove(all)` or an empty `IArchiveCreatable.Create` *(no dedicated `IArchivePurgeable` yet — see Naming note)* |
-| **clean**    | Overwrite **only unused space** — free clusters/sectors, cluster-tip slack, deleted directory entries, inter-entry padding, dead trailer bytes. Live data untouched. | Preserved              | `IWipeEmpty` (`WipeUnusedSpace(wipeClusterTips, wipeDeletedEntries)`) |
+| **wipe**     | Overwrite **only unused space** — free clusters/sectors, cluster-tip slack, deleted directory entries, inter-entry padding, dead trailer bytes. Live data untouched. | Preserved              | `IWipeEmpty` (`WipeUnusedSpace(wipeClusterTips, wipeDeletedEntries)`) |
 
 **optimize vs. shrink:** *optimize* searches the parameter space (e.g. pick the
 cluster size that wastes the least slack) and re-tunes the layout; *shrink* holds
@@ -86,16 +86,16 @@ the layout parameters fixed and squeezes the bytes (recompress / drop trailing
 slack / step to a smaller standard disc size). Run optimize to choose *how* the
 container is shaped; run shrink to make *that* shape as small as it goes.
 
-**purge vs. clean:** *purge* removes the **live** data (you end up with an empty
-container); *clean* removes only the **dead** data (you keep every live file, but
+**purge vs. wipe:** *purge* removes the **live** data (you end up with an empty
+container); *wipe* removes only the **dead** data (you keep every live file, but
 no recoverable remnants survive in the gaps).
 
 ### Naming note / current divergences (to be reconciled)
 
-The taxonomy above is the target model. Today's code diverges in two places:
+The canonical verb set is **optimize · shrink · defrag · purge · wipe**, and
+`IWipeEmpty` backs **wipe** (this is the established name across the code and UI —
+the "clean" alias is retired). Two items still diverge:
 
-- `IWipeEmpty` is historically labelled "Purge/Wipe" (e.g. in
-  `docs/OPERATION_COVERAGE.md`); under this taxonomy that operation is **clean**.
 - A dedicated **purge (empty-all)** verb has no interface yet; it is realised by
   `IArchiveModifiable.Remove` over all entries (or a fresh empty `Create`). A
   future `IArchivePurgeable` could formalise it.
@@ -203,7 +203,7 @@ buffer), but is bounded by RAM; override them to handle multi-GB/TB images.
 | `IFilesystemBlockMover`    | true in-place defrag (extent moves, no rebuild) |
 | `IArchiveShrinkable`       | **shrink** (smallest canonical size / tight-pack) |
 | `ILayoutOptimizable`       | **optimize** (parameter retune, in-place or streaming) |
-| `IWipeEmpty`               | **clean** (zero unused/slack/deleted) |
+| `IWipeEmpty`               | **wipe** (zero unused/slack/deleted) |
 | `IFormatOptionsSchema`     | per-format Method/Level/… choices in the create + optimize/shrink dialogs |
 | `IFilesystemExtentMap` / `IArchiveLayoutMap` | the block-map preview in the Defrag/Optimize window |
 | `IStreamFormatOperations`  | single-stream (de)compression with level/dictionary options |

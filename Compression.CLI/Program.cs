@@ -1245,6 +1245,8 @@ var defragCmd = new Command("defragment", """
   """) {
   defragImageArg, defragModeOpt, defragHoleSizeOpt, defragHoleAtOpt, defragStrideOpt, defragBatchOpt, defragRecursiveOpt
 };
+// Canonical short verb name from the taxonomy in docs/ARCHIVE-MODEL.md.
+defragCmd.Aliases.Add("defrag");
 defragCmd.SetAction((ParseResult ctx) => {
   var imageArg = ctx.GetValue(defragImageArg)!;
   var modeStr = ctx.GetValue(defragModeOpt) ?? "pack-start";
@@ -1417,6 +1419,9 @@ var wipeCmd = new Command("wipe-empty", """
   For formats without a dedicated implementation but with an extent/layout
   map, the generic wiper zeros all gaps between live extents.
   """) { wipeImageArg, wipeNoClusterTipsOpt, wipeNoDeletedOpt };
+// Canonical maintenance-verb name (the taxonomy in docs/ARCHIVE-MODEL.md calls
+// this verb "wipe"); "wipe-empty" stays as the primary descriptive name.
+wipeCmd.Aliases.Add("wipe");
 wipeCmd.SetAction((ParseResult ctx) => {
   var imageArg = ctx.GetValue(wipeImageArg)!;
   var noClusterTips = ctx.GetValue(wipeNoClusterTipsOpt);

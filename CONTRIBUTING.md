@@ -298,7 +298,7 @@ The source generator discovers `IBuildingBlock` implementations automatically. T
 
 > See [`docs/ARCHIVE-MODEL.md`](docs/ARCHIVE-MODEL.md) for the full capability
 > model: the R/O/WORM/R-W tiers, archive vs. pseudo-archive, the five maintenance
-> verbs (optimize / shrink / defrag / purge / clean), the block-map display
+> verbs (optimize / shrink / defrag / purge / wipe), the block-map display
 > contract, the streaming (OOM-free) create/optimize/extract paths, and the
 > **interface ⇒ capability** reference table. The ladder below is the promotion
 > workflow; that doc is the contract each tier and verb must satisfy.

@@ -12,15 +12,15 @@ is the coverage matrix.
 | Defragment      | `IArchiveDefragmentable` (+ `IFilesystemBlockMover`) | Re-order entries/extents so every file is contiguous; outer size preserved; contents byte-identical. |
 | Shrink          | `IArchiveShrinkable`                                 | Keep the parameter set; minimise stored footprint (drop trailing free space / step to the smallest canonical size that still fits). |
 | Optimize        | `ILayoutOptimizable`                                 | Find + apply the best layout parameters (cluster/block/inode size, geometry) via in-place patch or streaming rebuild; outer size preserved where possible. |
-| Clean           | `IWipeEmpty`                                         | Overwrite **only unused** space (free clusters, cluster-tip slack, deleted dir entries, padding, trailing junk); live data untouched; size preserved. |
+| Wipe            | `IWipeEmpty`                                         | Overwrite **only unused** space (free clusters, cluster-tip slack, deleted dir entries, padding, trailing junk); live data untouched; size preserved. |
 | Purge           | `IArchiveModifiable.Remove`-all / empty `Create`     | Erase **all live** data, leaving a valid empty container. No dedicated interface yet (see ARCHIVE-MODEL → Naming note). |
 | Metadata-reorder| `IFileInternalLayoutMap` / `IFileInternalChunkMover` | Move metadata chunks to a canonical/optimal position (e.g. streamable layout). File-internal containers. |
 
 > **Naming:** earlier revisions of this file labelled `IWipeEmpty` as
-> "Purge/Wipe"; under the canonical taxonomy that operation is **clean** (it
+> "Purge/Wipe"; under the canonical taxonomy that operation is **wipe** (it
 > removes *dead* bytes). **Purge** is the distinct verb that removes *live* data.
 
-All defrag / shrink / clean operations preserve live file contents
+All defrag / shrink / wipe operations preserve live file contents
 byte-identical and keep the archive/image valid (the project's defrag
 invariant: total logical content unchanged, files byte-identical, output still
 round-trips and stays fsck-clean where a filesystem tool exists).
@@ -30,7 +30,7 @@ round-trips and stays fsck-clean where a filesystem tool exists).
 | Operation        | Descriptors |
 |------------------|-------------|
 | Defragment       | 185 |
-| Purge / Wipe     | 35  |
+| Wipe             | 35  |
 | Metadata-reorder | 9   |
 | Shrink           | 7   |
 | Optimize         | 2   |

@@ -238,7 +238,7 @@ source code** — `IArchiveCreatable` and `IArchiveModifiable` interface impleme
 | **R/W**         | Can also add / replace / remove entries inside an existing archive with consistent free-space bookkeeping. | `IArchiveModifiable` (or `FormatCapabilities.CanModify`)      |
 
 > The full model — R/O/WORM/R-W tiers, archive vs. pseudo-archive, the five
-> maintenance verbs (optimize / shrink / defrag / purge / clean), the block-map
+> maintenance verbs (optimize / shrink / defrag / purge / wipe), the block-map
 > display contract, and the streaming (OOM-free) paths — and **which interface a
 > format must implement to unlock each** is specified in
 > [`docs/ARCHIVE-MODEL.md`](docs/ARCHIVE-MODEL.md). Per-verb coverage counts are in

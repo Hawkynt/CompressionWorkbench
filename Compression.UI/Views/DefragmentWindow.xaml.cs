@@ -10,12 +10,38 @@ using Compression.UI.Controls;
 namespace Compression.UI.Views;
 
 /// <summary>
-/// User-initiated defragmentation pass over a filesystem image. Shows the
-/// detected format + capability, lets the user pick one of four layout
-/// strategies (mirroring the CLI's <c>cwb defragment --mode</c> options),
-/// and runs the descriptor's <see cref="IArchiveDefragmentable"/> path.
+/// The five canonical maintenance verbs from <c>docs/ARCHIVE-MODEL.md</c>.
+/// Used to pre-focus the matching action when the maintenance window is
+/// opened from a specific context-menu entry.
+/// </summary>
+public enum MaintenanceVerb {
+  /// <summary>Find + apply the best layout / re-encode payload (size preserved where possible).</summary>
+  Optimize,
+  /// <summary>Keep the parameter set; minimise stored footprint.</summary>
+  Shrink,
+  /// <summary>Re-order entries/extents so files are contiguous; size preserved.</summary>
+  Defragment,
+  /// <summary>Erase all live data, leaving a valid empty container.</summary>
+  Purge,
+  /// <summary>Overwrite only unused space (free clusters, slack, deleted entries); size preserved.</summary>
+  WipeEmpty,
+}
+
+/// <summary>
+/// User-initiated maintenance pass over a filesystem image or archive — the
+/// single surface behind the explorer's <em>Maintenance</em> context menu and
+/// the toolbar entry. Shows the detected format + capability, lets the user
+/// pick one of four layout strategies (mirroring the CLI's
+/// <c>cwb defragment --mode</c> options), and runs the descriptor's
+/// optimize / shrink / defragment / purge / wipe paths through the matching
+/// capability interface.
 /// </summary>
 public partial class DefragmentWindow : Window {
+
+  // When the window is opened for a specific verb (from a context-menu item),
+  // we pre-focus / mark-default the matching action button after the image
+  // loads. Null means "no specific verb" (toolbar / Browse entry).
+  private MaintenanceVerb? _requestedVerb;
 
   private string? _imagePath;
   private IArchiveDefragmentable? _defragmentable;
@@ -125,6 +151,44 @@ public partial class DefragmentWindow : Window {
       LoadImage(preselectedImage);
   }
 
+  /// <summary>
+  /// Opens the window pre-targeted at <paramref name="verb"/> — the matching
+  /// action button is highlighted/focused so the user can run it with Enter.
+  /// We deliberately do <em>not</em> auto-run: maintenance ops mutate the image
+  /// in place, so the user confirms by clicking.
+  /// </summary>
+  public DefragmentWindow(string preselectedImage, MaintenanceVerb verb) : this(preselectedImage) {
+    this._requestedVerb = verb;
+    ApplyRequestedVerb();
+  }
+
+  /// <summary>
+  /// Highlights the action button matching <see cref="_requestedVerb"/> and
+  /// reflects the verb in the window title. Called after an image loads so the
+  /// button-enabled state computed in <see cref="LoadImage"/> is already known.
+  /// </summary>
+  private void ApplyRequestedVerb() {
+    if (this._requestedVerb is not { } verb) return;
+    Title = verb switch {
+      MaintenanceVerb.Optimize => "Optimize",
+      MaintenanceVerb.Shrink => "Shrink",
+      MaintenanceVerb.Defragment => "Defragment",
+      MaintenanceVerb.Purge => "Purge",
+      MaintenanceVerb.WipeEmpty => "Wipe Empty",
+      _ => "Maintenance",
+    };
+    var target = verb switch {
+      MaintenanceVerb.Shrink => ShrinkBtn,
+      MaintenanceVerb.Purge => PurgeBtn,
+      MaintenanceVerb.WipeEmpty => WipeEmptyBtn,
+      _ => RunBtn, // Optimize + Defragment both live on the morphing Run button.
+    };
+    if (target is { IsEnabled: true }) {
+      target.IsDefault = true;
+      target.Focus();
+    }
+  }
+
   private void OnBrowse(object sender, RoutedEventArgs e) {
     var dlg = new Microsoft.Win32.OpenFileDialog {
       Title = "Select filesystem image or archive",
@@ -219,9 +283,10 @@ public partial class DefragmentWindow : Window {
     if (MetadataPlacementPanel != null)
       MetadataPlacementPanel.Visibility = this._isFileInternalMode ? Visibility.Visible : Visibility.Collapsed;
 
-    // Enable Shrink button for formats that support it
+    // Enable Shrink button for formats that support it: the dedicated helpers
+    // (Fat/Ext/Vhd) plus any descriptor exposing the canonical IArchiveShrinkable.
     var formatStr = format.ToString();
-    var supportsShrink = formatStr is "Fat" or "Ext" or "Ext1" or "Vhd";
+    var supportsShrink = formatStr is "Fat" or "Ext" or "Ext1" or "Vhd" || ops is IArchiveShrinkable;
     if (ShrinkBtn != null)
       ShrinkBtn.IsEnabled = supportsShrink;
 
@@ -230,12 +295,21 @@ public partial class DefragmentWindow : Window {
     if (WipeEmptyBtn != null)
       WipeEmptyBtn.IsEnabled = supportsWipe;
 
+    // Enable Purge button (erase all live data → empty container) for any
+    // modifiable archive — purge is realised via IArchiveModifiable.Remove
+    // over every entry. See docs/ARCHIVE-MODEL.md → "purge vs. wipe".
+    if (PurgeBtn != null)
+      PurgeBtn.IsEnabled = ops is IArchiveModifiable;
+
     var fi = new FileInfo(path);
     SizeLbl.Text = $"{FormatSize(fi.Length)} ({fi.Length:N0} bytes)";
 
     // Pre-populate the block map with the current state so the user can see
     // what they're about to defragment/optimize.
     PreviewBlockMap(path, ops);
+
+    // Re-apply the requested-verb focus now that button-enabled state is known.
+    ApplyRequestedVerb();
   }
 
   /// <summary>
@@ -1409,6 +1483,24 @@ public partial class DefragmentWindow : Window {
           summary = result.WasReduced
             ? $"Compacted: {FormatSize(result.OriginalSize)} -> {FormatSize(result.NewSize)} ({result.BlocksFreed} blocks freed)"
             : "No reduction (already compact)";
+        } else if (ops is IArchiveShrinkable shrinkable) {
+          // Generic canonical path: descriptor implements IArchiveShrinkable.
+          // Shrink to a temp output then atomically swap it in, so a crash
+          // mid-write can't corrupt the source.
+          Dispatcher.BeginInvoke(() => Progress.Value = 20);
+          var tempOut = path + ".shrink.tmp";
+          try {
+            using (var input = File.OpenRead(path))
+            using (var output = File.Create(tempOut))
+              shrinkable.Shrink(input, output);
+            newSize = new FileInfo(tempOut).Length;
+            Compression.Lib.AtomicFileWriter.WriteAllBytesAtomic(path, File.ReadAllBytes(tempOut));
+            summary = newSize < origSize
+              ? $"Reduced: {FormatSize(origSize)} -> {FormatSize(newSize)}"
+              : "No reduction (already compact)";
+          } finally {
+            if (File.Exists(tempOut)) try { File.Delete(tempOut); } catch { /* best effort */ }
+          }
         } else {
           throw new NotSupportedException($"Shrink not supported for format: {formatId}");
         }
@@ -1527,6 +1619,86 @@ public partial class DefragmentWindow : Window {
 
         // Refresh the block chart to show the cleaned layout.
         PreviewBlockMap(path, ops, wasMutated: err == null);
+      });
+    });
+  }
+
+  /// <summary>
+  /// Runs the purge operation: erases <em>all live data</em> from the container,
+  /// leaving a valid but empty archive/image. Realised via
+  /// <see cref="IArchiveModifiable.Remove"/> over every entry. Distinct from
+  /// wipe-empty, which only zeros <em>dead</em> space (see docs/ARCHIVE-MODEL.md).
+  /// </summary>
+  private void OnPurge(object sender, RoutedEventArgs e) {
+    if (this._imagePath == null) return;
+    var path = this._imagePath;
+    var formatStr = FormatLbl.Text;
+    var ops = FormatRegistry.GetArchiveOps(formatStr);
+    if (ops is not IArchiveModifiable) {
+      Append($"Purge not supported: {formatStr} is not modifiable.");
+      Append("");
+      return;
+    }
+
+    // Enumerate the live entries we're about to erase so the confirmation is honest.
+    List<ArchiveEntryInfo> entries;
+    try {
+      using var probe = File.OpenRead(path);
+      entries = ops.List(probe, password: null);
+    } catch (Exception ex) {
+      Append($"Purge aborted — could not list entries: {ex.Message}");
+      Append("");
+      return;
+    }
+
+    var liveNames = entries.Where(en => !en.IsDirectory).Select(en => en.Name).ToArray();
+    var allNames = entries.Select(en => en.Name).ToArray();
+    if (allNames.Length == 0) {
+      Append("Container is already empty — nothing to purge.");
+      Append("");
+      return;
+    }
+
+    var confirm = MessageBox.Show(this,
+      $"Erase ALL {liveNames.Length} file(s) from {Path.GetFileName(path)}?\n\n"
+      + "This leaves a valid but empty container. The data cannot be recovered.",
+      "Confirm Purge", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+    if (confirm != MessageBoxResult.Yes) return;
+
+    Append($"=== {DateTime.Now:HH:mm:ss}  Purging {Path.GetFileName(path)} ===");
+    PurgeBtn.IsEnabled = false;
+    WipeEmptyBtn.IsEnabled = false;
+    ShrinkBtn.IsEnabled = false;
+    RunBtn.IsEnabled = false;
+    Progress.IsIndeterminate = true;
+
+    Task.Run(() => {
+      var sw = Stopwatch.StartNew();
+      Exception? err = null;
+      var origSize = new FileInfo(path).Length;
+      try {
+        // Remove files first, then directories (deepest paths last avoids
+        // a modifier rejecting a non-empty directory removal).
+        Compression.Lib.ArchiveOperations.Remove(path, allNames);
+      } catch (Exception ex) {
+        err = ex;
+      }
+      sw.Stop();
+      var newSize = File.Exists(path) ? new FileInfo(path).Length : 0L;
+
+      Dispatcher.Invoke(() => {
+        Progress.IsIndeterminate = false;
+        Progress.Value = 100;
+        PurgeBtn.IsEnabled = true;
+        RunBtn.IsEnabled = true;
+        if (err != null) {
+          Append($"FAILED ({sw.ElapsedMilliseconds} ms): {err.GetType().Name}: {err.Message}");
+        } else {
+          Append($"OK ({sw.ElapsedMilliseconds} ms) — {liveNames.Length} file(s) erased");
+          Append($"Container size: {origSize:N0} -> {newSize:N0} bytes (Δ {newSize - origSize:+#,#;-#,#;0})");
+        }
+        Append("");
+        PreviewBlockMap(path, FormatRegistry.GetArchiveOps(formatStr), wasMutated: err == null);
       });
     });
   }
