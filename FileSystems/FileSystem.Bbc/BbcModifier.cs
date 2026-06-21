@@ -80,10 +80,20 @@ public static class BbcModifier {
     var sec1 = ReadSector(image, 1);
     var entries = ParseCatalog(sec0, sec1);
 
-    var sanitized = SanitizeName(name);
+    // Accept both the bare short name ("SECRET") and the "DIR.NAME" form that
+    // List/FullName emits ("$.SECRET") — SanitizeName treats the latter's ".NAME"
+    // as an extension and would otherwise reduce it to the directory char, making
+    // a delete-by-listed-name silently no-op (leaving a forensic remnant).
+    var sanitizedRaw = SanitizeName(name);
+    var dirStripped = name.Length >= 2 && name[1] == '.' ? name[2..] : name;
+    var sanitizedStripped = SanitizeName(dirStripped);
     var match = -1;
     for (var i = 0; i < entries.Count; i++) {
-      if (entries[i].Name.TrimEnd() == sanitized) { match = i; break; }
+      var e = entries[i];
+      var bare = e.Name.TrimEnd();
+      var full = $"{e.Directory}.{bare}";
+      if (bare == sanitizedRaw || bare == sanitizedStripped
+          || string.Equals(full, name, StringComparison.OrdinalIgnoreCase)) { match = i; break; }
     }
     if (match < 0) return false;
 

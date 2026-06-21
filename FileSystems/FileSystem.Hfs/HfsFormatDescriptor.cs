@@ -113,8 +113,24 @@ public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// ignored.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    // The in-place modifier only handles the simple single-leaf catalog shape and
+    // returns false otherwise — a silent no-op would leave the "removed" file (and
+    // its data) intact. Collect anything it couldn't remove and fall back to a
+    // verified clean rebuild so the removal (and forensic erasure) always happens.
+    var unresolved = new List<string>();
     foreach (var name in entryNames)
-      HfsModifier.RemoveFile(archive, name, wipeData: true);
+      if (!HfsModifier.RemoveFile(archive, name, wipeData: true))
+        unresolved.Add(name);
+    if (unresolved.Count == 0) return;
+
+    var skip = new HashSet<string>(unresolved, StringComparer.OrdinalIgnoreCase);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
+        var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
+        if (skip.Contains(rel) || skip.Contains(Path.GetFileName(rel)))
+          File.Delete(file);
+      }
+    });
   }
 
   public string DefaultExtension => ".hfs";
