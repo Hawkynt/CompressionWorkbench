@@ -237,6 +237,13 @@ source code** — `IArchiveCreatable` and `IArchiveModifiable` interface impleme
 | **WORM**        | Write-Once-Read-Many: can produce a fresh archive / image, but cannot modify in place.   | `IArchiveCreatable` (or `FormatCapabilities.CanCreate`)       |
 | **R/W**         | Can also add / replace / remove entries inside an existing archive with consistent free-space bookkeeping. | `IArchiveModifiable` (or `FormatCapabilities.CanModify`)      |
 
+> The full model — R/O/WORM/R-W tiers, archive vs. pseudo-archive, the five
+> maintenance verbs (optimize / shrink / defrag / purge / clean), the block-map
+> display contract, and the streaming (OOM-free) paths — and **which interface a
+> format must implement to unlock each** is specified in
+> [`docs/ARCHIVE-MODEL.md`](docs/ARCHIVE-MODEL.md). Per-verb coverage counts are in
+> [`docs/OPERATION_COVERAGE.md`](docs/OPERATION_COVERAGE.md).
+
 ### NuGet meta-packages
 
 The raw algorithm primitives registered via `IBuildingBlock` live in `Hawkynt.Compression.Core`

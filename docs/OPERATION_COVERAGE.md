@@ -1,18 +1,26 @@
 # Operation Coverage
 
-Measures which of the five user-facing maintenance operations each archive and
+Measures which of the user-facing maintenance operations each archive and
 filesystem descriptor supports. An operation is "supported" when the descriptor
 implements the corresponding capability interface (directly or via a base class).
+The canonical definitions of these verbs live in
+[`ARCHIVE-MODEL.md`](ARCHIVE-MODEL.md) → *The five maintenance verbs*; this file
+is the coverage matrix.
 
 | Operation       | Interface                                            | Meaning |
 |-----------------|------------------------------------------------------|---------|
-| Defragment      | `IArchiveDefragmentable`                             | Relocate entries/extents so every file is contiguous; outer byte size preserved; file contents byte-identical. |
-| Shrink          | `IArchiveShrinkable`                                 | Step down to the smallest canonical size / drop trailing free space; minimal-size rebuild. |
-| Purge / Wipe    | `IWipeEmpty`                                         | Zero every dead byte (free space, slack, inter-entry padding, trailing junk) without touching live data. |
-| Optimize        | `ILayoutOptimizable`                                 | Analyse and re-tune layout parameters (cluster/block size) via in-place patch or streaming rebuild. |
+| Defragment      | `IArchiveDefragmentable` (+ `IFilesystemBlockMover`) | Re-order entries/extents so every file is contiguous; outer size preserved; contents byte-identical. |
+| Shrink          | `IArchiveShrinkable`                                 | Keep the parameter set; minimise stored footprint (drop trailing free space / step to the smallest canonical size that still fits). |
+| Optimize        | `ILayoutOptimizable`                                 | Find + apply the best layout parameters (cluster/block/inode size, geometry) via in-place patch or streaming rebuild; outer size preserved where possible. |
+| Clean           | `IWipeEmpty`                                         | Overwrite **only unused** space (free clusters, cluster-tip slack, deleted dir entries, padding, trailing junk); live data untouched; size preserved. |
+| Purge           | `IArchiveModifiable.Remove`-all / empty `Create`     | Erase **all live** data, leaving a valid empty container. No dedicated interface yet (see ARCHIVE-MODEL → Naming note). |
 | Metadata-reorder| `IFileInternalLayoutMap` / `IFileInternalChunkMover` | Move metadata chunks to a canonical/optimal position (e.g. streamable layout). File-internal containers. |
 
-All defrag / shrink / purge operations preserve live file contents
+> **Naming:** earlier revisions of this file labelled `IWipeEmpty` as
+> "Purge/Wipe"; under the canonical taxonomy that operation is **clean** (it
+> removes *dead* bytes). **Purge** is the distinct verb that removes *live* data.
+
+All defrag / shrink / clean operations preserve live file contents
 byte-identical and keep the archive/image valid (the project's defrag
 invariant: total logical content unchanged, files byte-identical, output still
 round-trips and stays fsck-clean where a filesystem tool exists).
