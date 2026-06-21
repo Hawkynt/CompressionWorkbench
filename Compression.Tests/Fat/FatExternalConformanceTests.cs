@@ -376,6 +376,50 @@ public class FatExternalConformanceTests {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // compact --minimal: the bare-minimum FAT12 geometry (tight FAT table +
+  // 16-entry root, no free-space headroom) must still be a structurally
+  // valid FAT that an independent reader accepts. This proves the geometry
+  // crippling produces a real filesystem, not just one our own reader tolerates.
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// <summary>Minimal-geometry FAT12 image built via
+  /// <see cref="FatWriter.BuildAutoSized"/> with <c>minimal: true</c> — the same
+  /// path <c>compact --minimal</c> drives.</summary>
+  private static byte[] BuildMinimalFat12() {
+    var w = new FatWriter();
+    w.AddFile("HELLO.TXT", "hello from the minimal floppy"u8.ToArray());
+    w.AddFile("DATA.BIN", Bytes(4096, 42));
+    return w.BuildAutoSized(minimal: true);
+  }
+
+  [Test]
+  public void MinimalGeometryFat12_IsCleanUnderFsckFat() {
+    RequireValidator("fsck.fat", "dosfstools");
+    var image = BuildMinimalFat12();
+    // The whole point: a 1.44 MB floppy's worth of files collapses to a few KB.
+    Assert.That(image.Length, Is.LessThan(64 * 1024),
+      $"minimal geometry should be a few KB, was {image.Length} bytes");
+    var path = WriteImage("fat12_minimal.img", image);
+    var (clean, report) = RunFsckFat(path);
+    Assert.That(clean, Is.True, $"fsck.fat flagged the minimal-geometry FAT12 image:\n{report}");
+  }
+
+  [Test]
+  public void MinimalGeometryFat12_ListedByMtoolsMdir_MatchesFileSet() {
+    RequireValidator("mdir", "mtools");
+    var path = WriteImage("fat12_minimal_mdir.img", BuildMinimalFat12());
+    var r = RunMdir(path)
+      ?? throw new InvalidOperationException("mdir unreachable — RequireValidator should have skipped");
+    Assert.That(r.ExitCode, Is.EqualTo(0),
+      $"mdir failed on the minimal-geometry FAT12 image:\nstdout:\n{r.StdOut}\nstderr:\n{r.StdErr}");
+    var listing = r.StdOut.ToUpperInvariant().Replace('\\', '/');
+    Assert.Multiple(() => {
+      Assert.That(listing, Does.Contain("::/HELLO.TXT"), "HELLO.TXT must survive the minimal rebuild");
+      Assert.That(listing, Does.Contain("::/DATA.BIN"), "DATA.BIN must survive the minimal rebuild");
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // Guard: prove the conformance assertion actually bites.
   //
   // fsck.fat -n returns exit 0 even for a FAT-copy mismatch, so a naive
