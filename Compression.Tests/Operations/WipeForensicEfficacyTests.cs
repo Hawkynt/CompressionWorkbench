@@ -33,11 +33,10 @@ public class WipeForensicEfficacyTests {
   //   Jffs2/Yaffs2 — log-structured: a delete appends an obsolete/deletion node but
   //     the old data node physically persists until garbage collection; forensic
   //     erasure requires implementing GC (zeroing obsolete nodes), not just free-gap wiping.
-  //   Vdfs — after an in-place Remove, EnumerateExtents under-reports the surviving
-  //     file's extents, so the generic wiper would zero live data; needs the extent
-  //     map reconciled with the directory post-remove before wipe can be trusted.
+  // (Vdfs's live-data-loss-on-wipe was fixed — its EnumerateExtents now reserves the
+  // whole header+entry-table region instead of a guessed size.)
   private static readonly HashSet<string> KnownForensicGaps =
-    new(StringComparer.Ordinal) { "Jffs2", "Yaffs2", "Vdfs" };
+    new(StringComparer.Ordinal) { "Jffs2", "Yaffs2" };
 
   [TestCaseSource(nameof(WipeableModifiableIds))]
   public void DeletedFileBytes_AreGoneAfterWipe(string formatId) {

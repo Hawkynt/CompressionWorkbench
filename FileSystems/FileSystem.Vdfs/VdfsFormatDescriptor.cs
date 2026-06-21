@@ -124,9 +124,20 @@ public sealed class VdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var r = new VdfsReader(image);
     var entries = r.Entries;
 
-    // Header (16 bytes) + fields (20 bytes) = 36 bytes of metadata
-    var metadataSize = 36L + entries.Count * 80L;
-    yield return new DefragBlockInfo(0, metadataSize, DefragBlockKind.MetadataReserved, "header+entries");
+    // VDFS is packed header → entry-table → file data. The entry table does NOT
+    // start at a fixed offset (the reader honours the header's rootOffset) and can
+    // extend well past a "36 + count*80" estimate, so anchoring the metadata region
+    // on a guessed size let the wiper treat live directory entries as free space and
+    // zero them (live-data loss). Reserve everything up to the FIRST file's data
+    // instead — that provably covers the header, the whole entry table and any
+    // padding, so only genuine trailing free space is ever wiped.
+    var firstData = entries
+      .Where(e => !e.IsDirectory && e.Size > 0)
+      .Select(e => (long)e.DataOffset)
+      .DefaultIfEmpty(image.Length)
+      .Min();
+    if (firstData > 0)
+      yield return new DefragBlockInfo(0, firstData, DefragBlockKind.MetadataReserved, "header+entries");
 
     foreach (var e in entries) {
       if (e.IsDirectory || e.Size <= 0) continue;
