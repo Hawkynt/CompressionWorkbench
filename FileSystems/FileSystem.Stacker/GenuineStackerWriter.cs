@@ -37,15 +37,21 @@ public sealed class GenuineStackerWriter {
   private const int Spc = 16;                                   // 8 KB clusters
   private const int FatStart = 2;
   private const int FatCnt = 1;
-  private const int FatSize = 2;
   private const int RootEntries = 512;
   private const int RootSecs = RootEntries * 32 / Ss;           // 32
-  private const int FirstRoot = FatStart + 3 * FatCnt * FatSize; // 8
-  private const int RealFirstData = FirstRoot + RootSecs;        // 40
   private const int Reserv = 1;
   private const int BootBlock = 1;
-  private const int AmapStart = FatStart + 3;                    // 5
   private const int ClusterBytes = Ss * Spc;
+
+  // Geometry sized to the cluster count (FAT band big enough that the root sits
+  // past the interleaved AMAP). The inner FAT is read sequentially from FatStart,
+  // so it must fit in the 3 sectors before AMAP area 0 — bounding a genuine
+  // sequential-layout STACVOL at ~1023 clusters (8 MB); larger needs the
+  // interleaved-FAT layout.
+  private int _fatSize;
+  private int _firstRoot;
+  private int _realFirstData;
+  private const int AmapStart = FatStart + 3;                    // 5 (informational)
 
   /// <summary>Stacker major version recorded in the decoded superblock (&lt; 410 ⇒ v3).</summary>
   public int Version { get; init; } = 3;
@@ -107,15 +113,25 @@ public sealed class GenuineStackerWriter {
       }
       next += count;
     }
-    // Each AMAP "area" (512-byte sector) holds entries for 170 clusters; only
-    // areas 0..2 sit in the reserved FAT band before the root directory.
-    if (next > 512)
-      throw new InvalidOperationException("GenuineStackerWriter: too many clusters for the fixed AMAP band.");
+    // Size the FAT band: the inner FAT12 is read sequentially from FatStart and
+    // must fit in the 3 sectors before AMAP area 0; the root must sit past the
+    // last AMAP sector for the cluster count.
+    var maxCluster = next - 1;
+    var fatLen = ((maxCluster + 1) * 3 + 2 * Ss - 1) / (2 * Ss);   // FAT12 sectors
+    if (fatLen > 3)
+      throw new InvalidOperationException(
+        "GenuineStackerWriter: volume exceeds the genuine sequential-FAT capacity (~1023 clusters / 8 MB); " +
+        "larger STACVOLs require the interleaved-FAT layout.");
+    var maxArea = maxCluster * 3 / Ss;
+    var maxAmapSec = maxArea / 6 * 9 + maxArea % 6 + 3 + FatStart;
+    this._fatSize = Math.Max(fatLen, (maxAmapSec - FatStart) / 3 + 1);
+    this._firstRoot = FatStart + 3 * FatCnt * this._fatSize;
+    this._realFirstData = this._firstRoot + RootSecs;
 
     // 2. Compress each cluster (auto-best) and pack into physical sectors. The
     // Stacker reader recognises only DS (0x5344) and SD-4 (0x0081); Auto keeps
     // the smaller of the two per cluster, JM/SQ fall back to DS.
-    var physCursor = RealFirstData;
+    var physCursor = this._realFirstData;
     var layout = new List<ClusterPlan>();
     foreach (var (cl, full) in clusterFull) {
       var comp = this.CompressionMethod switch {
@@ -140,13 +156,19 @@ public sealed class GenuineStackerWriter {
     if ((totalSects & 1) != 0) totalSects++;
     var img = new byte[totalSects * Ss];
 
-    this.WriteScb(img, totalSects);
-    WriteBootBlock(img, totalSects);
+    // BB_ClustCnt = (declared - bbFirstData)/spc must stay above the real cluster
+    // count even when compression shrinks the physical image (the field only feeds
+    // that calc; reads use the AMAP's absolute sectors).
+    var bbFirstData = RootSecs + FatCnt * this._fatSize + Reserv;
+    var declaredTotal = Math.Max(totalSects, (maxCluster + 2) * Spc + bbFirstData);
+
+    this.WriteScb(img, declaredTotal);
+    WriteBootBlock(img, declaredTotal, this._fatSize);
 
     var fatOff = FatStart * Ss;
     img[fatOff] = 0xF8; img[fatOff + 1] = 0xFF; img[fatOff + 2] = 0xFF;
 
-    var rootOff = FirstRoot * Ss;
+    var rootOff = this._firstRoot * Ss;
     var dirIndex = 0;
     if (!string.IsNullOrEmpty(this.VolumeLabel)) {
       Compression.Registry.FatDirStamp.WriteVolumeLabel(img, rootOff, this.VolumeLabel);
@@ -200,7 +222,7 @@ public sealed class GenuineStackerWriter {
     if (totalSects < 65536)
       BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x13), (ushort)totalSects);
     img[0x15] = 0xF8;
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x16), FatSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x16), (ushort)this._fatSize);
 
     img[0x4C] = 0x00;                 // cipher seed
     img[0x4E] = 0x0A; img[0x4F] = 0x1A;
@@ -221,7 +243,7 @@ public sealed class GenuineStackerWriter {
     P16(0x70, BootBlock);
     P16(0x74, AmapStart);
     P16(0x76, FatStart);
-    P16(0x7A, RealFirstData);
+    P16(0x7A, this._realFirstData);
 
     var key = (int)img[0x4C];
     for (var i = 0; i < 0x30; i++) {
@@ -232,7 +254,7 @@ public sealed class GenuineStackerWriter {
     }
   }
 
-  private static void WriteBootBlock(byte[] img, int totalSects) {
+  private static void WriteBootBlock(byte[] img, int totalSects, int fatSize) {
     var b = BootBlock * Ss;
     img[b] = 0xEB; img[b + 1] = 0x3C; img[b + 2] = 0x90;
     "STACKER "u8.CopyTo(img.AsSpan(b + 3, 8));
@@ -243,8 +265,10 @@ public sealed class GenuineStackerWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x11), RootEntries);
     if (totalSects < 65536)
       BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x13), (ushort)totalSects);
+    else
+      BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(b + 0x20), (uint)totalSects);
     img[b + 0x15] = 0xF8;
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x16), FatSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x16), (ushort)fatSize);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x18), 17);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x1A), 6);
     img[b + 0x1FE] = 0x55; img[b + 0x1FF] = 0xAA;
