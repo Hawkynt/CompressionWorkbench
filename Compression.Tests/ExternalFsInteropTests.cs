@@ -261,7 +261,7 @@ public class ExternalFsInteropTests {
     var vhdPath = Path.Combine(this._tmpDir, "fixed.vhd");
     File.WriteAllBytes(vhdPath, vhdBytes);
 
-    var result = FsInteropToolbox.RunQemuImg($"info '{FsInteropToolbox.WinToWsl(vhdPath)}'");
+    var result = FsInteropToolbox.RunQemuImg($"info {FsInteropToolbox.WinToWsl(vhdPath)}");
     Assert.That(result.ExitCode, Is.EqualTo(0), $"qemu-img rejected our fixed VHD:\n{result.StdErr}");
     Assert.That(result.StdOut, Does.Contain("vpc").Or.Contain("vhd"), "qemu-img should report format as vpc/vhd");
   }
@@ -295,7 +295,7 @@ public class ExternalFsInteropTests {
     var vmdkPath = Path.Combine(this._tmpDir, "image.vmdk");
     File.WriteAllBytes(vmdkPath, vmdk.Build());
 
-    var result = FsInteropToolbox.RunQemuImg($"info '{FsInteropToolbox.WinToWsl(vmdkPath)}'");
+    var result = FsInteropToolbox.RunQemuImg($"info {FsInteropToolbox.WinToWsl(vmdkPath)}");
     Assert.That(result.ExitCode, Is.EqualTo(0), $"qemu-img rejected our VMDK:\n{result.StdErr}");
     Assert.That(result.StdOut, Does.Contain("vmdk"), "qemu-img should report format as vmdk");
   }
@@ -332,11 +332,11 @@ public class ExternalFsInteropTests {
       qcow.WriteTo(fs);
 
     var wslQcow = FsInteropToolbox.WinToWsl(qcowPath);
-    var info = FsInteropToolbox.RunQemuImg($"info '{wslQcow}'");
+    var info = FsInteropToolbox.RunQemuImg($"info {wslQcow}");
     Assert.That(info.ExitCode, Is.EqualTo(0), $"qemu-img info failed:\n{info.StdErr}");
     Assert.That(info.StdOut, Does.Contain("qcow2"), "qemu-img should report format as qcow2");
 
-    var check = FsInteropToolbox.RunQemuImg($"check '{wslQcow}'");
+    var check = FsInteropToolbox.RunQemuImg($"check {wslQcow}");
     Assert.That(check.ExitCode, Is.EqualTo(0), $"qemu-img check reported errors:\n{check.StdOut}\n{check.StdErr}");
   }
 
