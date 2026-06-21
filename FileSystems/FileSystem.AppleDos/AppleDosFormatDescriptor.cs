@@ -169,12 +169,28 @@ public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
     if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+      // Snapshot first so a planner pass that mutates the image but leaves it
+      // structurally invalid (some payloads make the catalog repatch write an
+      // out-of-range track/sector) can be rolled back. We verify the result is
+      // still readable with the same live-file count; only then keep it.
+      archive.Position = 0;
+      using var snapshot = new MemoryStream();
+      archive.CopyTo(snapshot);
+      var expected = CountLiveFiles(snapshot);
       try {
         DefragmentWithPlanner(archive, options);
-        return;
+        if (CountLiveFilesFromStream(archive) >= expected && expected > 0)
+          return;
       } catch {
-        archive.Position = 0;
+        // fall through to restore + rebuild
       }
+      // Planner failed or corrupted the image — restore the original bytes and
+      // use the always-safe rebuild path below.
+      archive.Position = 0;
+      archive.SetLength(0);
+      snapshot.Position = 0;
+      snapshot.CopyTo(archive);
+      archive.Position = 0;
     }
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
@@ -186,6 +202,32 @@ public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormat
         foreach (var (n, d) in files) w.AddFile(n, d);
         return w.Build();
       });
+  }
+
+  /// <summary>Counts live (non-directory) files in a snapshot stream; 0 on any read error.</summary>
+  private static int CountLiveFiles(Stream snapshot) {
+    try {
+      snapshot.Position = 0;
+      using var copy = new MemoryStream();
+      snapshot.CopyTo(copy);
+      copy.Position = 0;
+      return new AppleDosReader(copy).Entries.Count(e => !e.IsDirectory);
+    } catch {
+      return 0;
+    }
+  }
+
+  /// <summary>Counts live files by reading the image stream in place; -1 if it can't be parsed.</summary>
+  private static int CountLiveFilesFromStream(Stream image) {
+    try {
+      image.Position = 0;
+      using var copy = new MemoryStream();
+      image.CopyTo(copy);
+      copy.Position = 0;
+      return new AppleDosReader(copy).Entries.Count(e => !e.IsDirectory);
+    } catch {
+      return -1;
+    }
   }
 
   private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
