@@ -31,15 +31,18 @@ public sealed class GenuineDvr3Writer {
   private const int Spc = 64;                                   // 32 KB clusters
   private const int Resv = 16;
   private const int NumFats = 1;
-  private const int FatSize = 2;                                // inner FAT16: 2 sectors
   private const int RootEntries = 512;
-  private const int RootLog = Resv + NumFats * FatSize;         // 18
   private const int RootSecs = RootEntries * 32 / Ss;           // 32
-  private const int FirstData = RootLog + RootSecs;             // 50
-  private const int InnerBase = 417;                            // res0 / emulated boot block
   private const int MdfatStartSec = 130;
   private const int SDcluster = 0;                              // boot byte 45
   private const int ClusterBytes = Ss * Spc;                    // 32768
+
+  // Geometry sized to the cluster count (so the volume scales past the old fixed
+  // ~512-cluster limit up to the inner FAT16 / 24-bit-sector ceiling).
+  private int _fatSize;       // inner FAT16 sectors
+  private int _innerBase;     // res0 / emulated boot block sector (after the MDFAT)
+  private int _rootLog;       // Resv + NumFats*fatSize
+  private int _firstData;     // rootLog + RootSecs
 
   private readonly List<(string Name, byte[] Data)> _files = [];
 
@@ -101,8 +104,19 @@ public sealed class GenuineDvr3Writer {
       next += count;
     }
 
+    // Size the geometry to the cluster count: inner FAT16 big enough for all
+    // clusters, MDFAT region big enough for all 5-byte entries, inner volume
+    // placed right after the MDFAT.
+    var maxCluster = next - 1;                                   // highest cluster used (>=1)
+    this._fatSize = Math.Max(1, ((maxCluster + 1) * 2 + Ss - 1) / Ss);
+    var mdfatBytes = MdfatBytePos(maxCluster) + 5 - Ss * MdfatStartSec;
+    var mdfatSectors = Math.Max(1, (mdfatBytes + Ss - 1) / Ss);
+    this._innerBase = MdfatStartSec + mdfatSectors;
+    this._rootLog = Resv + NumFats * this._fatSize;
+    this._firstData = this._rootLog + RootSecs;
+
     // 2. Compress each cluster (auto-best), assigning packed physical sectors.
-    var physDataStart = InnerBase + FirstData;
+    var physDataStart = this._innerBase + this._firstData;
     var physCursor = physDataStart;
     var layout = new List<ClusterPlan>();
     foreach (var (cl, full) in clusterFull) {
@@ -121,12 +135,20 @@ public sealed class GenuineDvr3Writer {
     if ((totalSectors & 1) != 0) totalSectors++;
     var img = new byte[totalSectors * Ss];
 
-    WriteMdbpb(img, totalSectors);
-    WriteInnerBoot(img);
+    // dmsdos derives a DOS max_cluster = (declaredSectors - fatSize - reserved -
+    // rootDirSectors)/spc + 1 from the BPB total-sectors field. With compression
+    // the physical image is far smaller than maxCluster*spc, so declare enough
+    // sectors to keep that cap above the real cluster count (the field only feeds
+    // this calc; physical reads use the MDFAT's absolute sectors).
+    var declaredSectors = Math.Max(totalSectors,
+      (maxCluster + 2) * Spc + this._fatSize + Resv + (RootEntries >> 4) + Spc);
 
-    var innerOff = InnerBase * Ss;
+    this.WriteMdbpb(img, declaredSectors);
+    this.WriteInnerBoot(img);
+
+    var innerOff = this._innerBase * Ss;
     var fatOff = innerOff + Resv * Ss;
-    var rootOff = innerOff + RootLog * Ss;
+    var rootOff = innerOff + this._rootLog * Ss;
 
     // FAT16 reserved entries (clusters 0 and 1).
     img[fatOff] = 0xF8; img[fatOff + 1] = 0xFF; img[fatOff + 2] = 0xFF; img[fatOff + 3] = 0xFF;
@@ -174,7 +196,7 @@ public sealed class GenuineDvr3Writer {
     return img;
   }
 
-  private static void WriteMdbpb(byte[] img, int totalSectors) {
+  private void WriteMdbpb(byte[] img, int totalSectors) {
     img[0] = 0xEB; img[1] = 0x58; img[2] = 0x90;
     "MSDBL6.0"u8.CopyTo(img.AsSpan(3, 8));
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x0B), Ss);
@@ -183,15 +205,15 @@ public sealed class GenuineDvr3Writer {
     img[0x10] = NumFats;
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x11), RootEntries);
     img[0x15] = 0xF8;
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x16), FatSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x16), (ushort)this._fatSize);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x18), 17);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x1A), 6);
     BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(0x20), (uint)totalSectors);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x24), MdfatStartSec - 1);
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x24), (ushort)(MdfatStartSec - 1));
     img[0x26] = 9;
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x27), InnerBase);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x29), RootLog);
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x2B), FirstData);
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x27), (ushort)this._innerBase);
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x29), (ushort)this._rootLog);
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x2B), (ushort)this._firstData);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x2D), SDcluster);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x2F), RootSecs);
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(0x31), 1024);
@@ -200,8 +222,8 @@ public sealed class GenuineDvr3Writer {
     img[0x3D] = 1; img[0x3F] = 1;
   }
 
-  private static void WriteInnerBoot(byte[] img) {
-    var b = InnerBase * Ss;
+  private void WriteInnerBoot(byte[] img) {
+    var b = this._innerBase * Ss;
     img[b] = 0xEB; img[b + 1] = 0x58; img[b + 2] = 0x90;
     "MSDBL6.0"u8.CopyTo(img.AsSpan(b + 3, 8));
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x0B), Ss);
@@ -210,7 +232,7 @@ public sealed class GenuineDvr3Writer {
     img[b + 0x10] = NumFats;
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x11), RootEntries);
     img[b + 0x15] = 0xF8;
-    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x16), FatSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(b + 0x16), (ushort)this._fatSize);
     img[b + 0x26] = 0x29;                                  // extended boot signature
     "FAT16   "u8.CopyTo(img.AsSpan(b + 0x36, 8));          // off57 -> "16  " => 16-bit FAT
     img[b + 0x1FE] = 0x55; img[b + 0x1FF] = 0xAA;
