@@ -16,24 +16,16 @@ namespace Compression.Tests.Operations;
 [TestFixture]
 public class GenericDefragRoundTripTests {
 
-  // Only formats that use the DEFAULT IArchiveDefragmentable.Defragment (the
-  // rebuild-via-WORM mechanism this change rolls out) — formats with a bespoke
-  // in-place defragmenter declare their own Defragment(Stream) and are covered
-  // by their own per-format tests.
-  private static IEnumerable<string> DefragmentableFilesystemIds() {
-    Compression.Lib.FormatRegistration.EnsureInitialized();
-    foreach (var d in FormatRegistry.All.OrderBy(x => x.Id)) {
-      var ops = FormatRegistry.GetArchiveOps(d.Id);
-      if (ops is not IArchiveDefragmentable || ops is not IArchiveCreatable) continue;
-      var t = ops.GetType();
-      if (!(t.Namespace ?? "").StartsWith("FileSystem.", StringComparison.Ordinal)) continue;
-      var own = t.GetMethod("Defragment", [typeof(Stream)]);
-      if (own != null && own.DeclaringType == t) continue; // bespoke impl — not this rollout
-      yield return d.Id;
-    }
-  }
+  // Every format using the DEFAULT IArchiveDefragmentable.Defragment (rebuild-via-WORM):
+  // reflection over the marker interface, scoped to formats that don't declare their
+  // own Defragment(Stream) (bespoke in-place defragmenters have their own tests).
+  private static IEnumerable<string> DefragmentableDefaultIds() =>
+    Compression.Tests.Support.CapabilityImplementers.RegisteredIdsExposing(typeof(IArchiveDefragmentable))
+      .Where(id => FormatRegistry.GetArchiveOps(id) is IArchiveCreatable
+                   && Enum.TryParse<FormatDetector.Format>(id, out _)
+                   && !Compression.Tests.Support.CapabilityImplementers.DeclaresOwn(id, "Defragment", typeof(Stream)));
 
-  [TestCaseSource(nameof(DefragmentableFilesystemIds))]
+  [TestCaseSource(nameof(DefragmentableDefaultIds))]
   public void Defragment_IsNonLossy_OrRefusesCleanly(string formatId) {
     var work = Path.Combine(Path.GetTempPath(), "cwb_gendefrag_" + Guid.NewGuid().ToString("N")[..8]);
     Directory.CreateDirectory(work);

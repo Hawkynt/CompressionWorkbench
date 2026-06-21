@@ -16,21 +16,15 @@ namespace Compression.Tests.Operations;
 [TestFixture]
 public class GenericShrinkRoundTripTests {
 
-  // Filesystem format ids carrying IArchiveShrinkable via the default (rollout set).
-  // Built lazily from the live registry so the list tracks the actual rollout.
-  private static IEnumerable<string> ShrinkableFilesystemIds() {
-    Compression.Lib.FormatRegistration.EnsureInitialized();
-    foreach (var d in FormatRegistry.All.OrderBy(x => x.Id)) {
-      var ops = FormatRegistry.GetArchiveOps(d.Id);
-      if (ops is not IArchiveShrinkable) continue;
-      if (ops is not IArchiveCreatable) continue;
-      var ns = ops.GetType().Namespace ?? "";
-      if (!ns.StartsWith("FileSystem.", StringComparison.Ordinal)) continue;
-      yield return d.Id;
-    }
-  }
+  // EVERY format whose runtime ops exposes IArchiveShrinkable + IArchiveCreatable —
+  // discovered by reflection over the marker interface, so new implementers (of any
+  // category, filesystem or archive) are covered automatically.
+  private static IEnumerable<string> ShrinkableIds() =>
+    Compression.Tests.Support.CapabilityImplementers.RegisteredIdsExposing(typeof(IArchiveShrinkable))
+      .Where(id => FormatRegistry.GetArchiveOps(id) is IArchiveCreatable
+                   && Enum.TryParse<FormatDetector.Format>(id, out _));
 
-  [TestCaseSource(nameof(ShrinkableFilesystemIds))]
+  [TestCaseSource(nameof(ShrinkableIds))]
   public void Shrink_IsNonLossy_OrRefusesCleanly(string formatId) {
     var work = Path.Combine(Path.GetTempPath(), "cwb_genshrink_" + Guid.NewGuid().ToString("N")[..8]);
     Directory.CreateDirectory(work);

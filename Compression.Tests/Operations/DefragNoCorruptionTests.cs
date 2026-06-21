@@ -17,14 +17,11 @@ namespace Compression.Tests.Operations;
 [TestFixture]
 public class DefragNoCorruptionTests {
 
-  private static IEnumerable<string> DefragmentableCreatableIds() {
-    Compression.Lib.FormatRegistration.EnsureInitialized();
-    foreach (var d in FormatRegistry.All.OrderBy(x => x.Id)) {
-      var ops = FormatRegistry.GetArchiveOps(d.Id);
-      if (ops is IArchiveDefragmentable and IArchiveCreatable)
-        yield return d.Id;
-    }
-  }
+  // EVERY creatable defragmentable format (reflection over the marker) — filesystems
+  // AND archives, bespoke AND default. The anti-corruption invariant is universal.
+  private static IEnumerable<string> DefragmentableCreatableIds() =>
+    Compression.Tests.Support.CapabilityImplementers.RegisteredIdsExposing(typeof(IArchiveDefragmentable))
+      .Where(id => FormatRegistry.GetArchiveOps(id) is IArchiveCreatable);
 
   // A handful of payloads — corruption was payload-dependent (AppleDOS only mangled
   // on certain catalog layouts), so probe several.

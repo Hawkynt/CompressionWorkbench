@@ -15,20 +15,16 @@ namespace Compression.Tests.Operations;
 [TestFixture]
 public class GenericPurgeRoundTripTests {
 
-  private static IEnumerable<string> ModifiableFilesystemIds() {
-    Compression.Lib.FormatRegistration.EnsureInitialized();
-    foreach (var d in FormatRegistry.All.OrderBy(x => x.Id)) {
-      var ops = FormatRegistry.GetArchiveOps(d.Id);
-      if (ops is not IArchiveModifiable || ops is not IArchiveCreatable) continue;
-      var t = ops.GetType();
-      if (!(t.Namespace ?? "").StartsWith("FileSystem.", StringComparison.Ordinal)) continue;
-      var own = t.GetMethod("Remove", [typeof(Stream), typeof(string[])]);
-      if (own != null && own.DeclaringType == t) continue; // bespoke remover — not this rollout
-      yield return d.Id;
-    }
-  }
+  // Every format using the DEFAULT IArchiveModifiable.Remove (rebuild-via-WORM):
+  // reflection over the marker, scoped to formats that don't declare their own Remove
+  // (bespoke removers have their own tests).
+  private static IEnumerable<string> ModifiableDefaultIds() =>
+    Compression.Tests.Support.CapabilityImplementers.RegisteredIdsExposing(typeof(IArchiveModifiable))
+      .Where(id => FormatRegistry.GetArchiveOps(id) is IArchiveCreatable
+                   && Enum.TryParse<FormatDetector.Format>(id, out _)
+                   && !Compression.Tests.Support.CapabilityImplementers.DeclaresOwn(id, "Remove", typeof(Stream), typeof(string[])));
 
-  [TestCaseSource(nameof(ModifiableFilesystemIds))]
+  [TestCaseSource(nameof(ModifiableDefaultIds))]
   public void Purge_EmptiesContainer_OrRefusesCleanly(string formatId) {
     var work = Path.Combine(Path.GetTempPath(), "cwb_genpurge_" + Guid.NewGuid().ToString("N")[..8]);
     Directory.CreateDirectory(work);

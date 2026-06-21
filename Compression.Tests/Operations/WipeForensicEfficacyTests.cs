@@ -20,16 +20,12 @@ public class WipeForensicEfficacyTests {
   // 16-byte signature unlikely to occur naturally; the marker file repeats it.
   private static readonly byte[] Marker = "DEADBEEF_WIPEME!"u8.ToArray();
 
-  private static IEnumerable<string> WipeableModifiableFilesystemIds() {
-    Compression.Lib.FormatRegistration.EnsureInitialized();
-    foreach (var d in FormatRegistry.All.OrderBy(x => x.Id)) {
-      var ops = FormatRegistry.GetArchiveOps(d.Id);
-      if (ops is not (IArchiveModifiable and IWipeEmpty and IArchiveCreatable)) continue;
-      if (!(ops.GetType().Namespace ?? "").StartsWith("FileSystem.", StringComparison.Ordinal)) continue;
-      if (!Enum.TryParse<FormatDetector.Format>(d.Id, out _)) continue;
-      yield return d.Id;
-    }
-  }
+  // Every format whose ops exposes IWipeEmpty (reflection over the marker) and can
+  // also modify+create so the plant→delete→wipe cycle is exercisable — any category.
+  private static IEnumerable<string> WipeableModifiableIds() =>
+    Compression.Tests.Support.CapabilityImplementers.RegisteredIdsExposing(typeof(IWipeEmpty))
+      .Where(id => FormatRegistry.GetArchiveOps(id) is IArchiveModifiable and IArchiveCreatable
+                   && Enum.TryParse<FormatDetector.Format>(id, out _));
 
   // Known, documented forensic gaps that need dedicated per-format work (tracked
   // as a "!" TODO). They are NOT silent — the guard still runs and would catch any
@@ -43,7 +39,7 @@ public class WipeForensicEfficacyTests {
   private static readonly HashSet<string> KnownForensicGaps =
     new(StringComparer.Ordinal) { "Jffs2", "Yaffs2", "Vdfs" };
 
-  [TestCaseSource(nameof(WipeableModifiableFilesystemIds))]
+  [TestCaseSource(nameof(WipeableModifiableIds))]
   public void DeletedFileBytes_AreGoneAfterWipe(string formatId) {
     if (KnownForensicGaps.Contains(formatId))
       Assert.Ignore($"{formatId}: known forensic-wipe gap (see comment) — tracked TODO, not yet fixed.");

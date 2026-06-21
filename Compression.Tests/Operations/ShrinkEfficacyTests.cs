@@ -17,17 +17,16 @@ namespace Compression.Tests.Operations;
 [TestFixture]
 public class ShrinkEfficacyTests {
 
-  private static IEnumerable<string> SizeKnobFilesystemIds() {
-    Compression.Lib.FormatRegistration.EnsureInitialized();
-    foreach (var d in FormatRegistry.All.OrderBy(x => x.Id)) {
-      var ops = FormatRegistry.GetArchiveOps(d.Id);
-      if (ops is not (IArchiveShrinkable and IArchiveCreatable and IFormatOptionsSchema)) continue;
-      if (!(ops.GetType().Namespace ?? "").StartsWith("FileSystem.", StringComparison.Ordinal)) continue;
-      if (!Enum.TryParse<FormatDetector.Format>(d.Id, out _)) continue;
-      if (PickLargeImageSize((IFormatOptionsSchema)ops) is null) continue;
-      yield return d.Id;
-    }
-  }
+  // Every shrinkable+creatable format exposing an image-size knob (reflection over
+  // the marker) — any category.
+  private static IEnumerable<string> SizeKnobIds() =>
+    Compression.Tests.Support.CapabilityImplementers.RegisteredIdsExposing(typeof(IArchiveShrinkable))
+      .Where(id => {
+        var ops = FormatRegistry.GetArchiveOps(id);
+        return ops is IArchiveCreatable and IFormatOptionsSchema schema
+               && Enum.TryParse<FormatDetector.Format>(id, out _)
+               && PickLargeImageSize(schema) is not null;
+      });
 
   // Returns (optionKey, largeValue) for an image-size option with a concrete
   // large preset, or null if the format has no usable size knob.
@@ -47,7 +46,7 @@ public class ShrinkEfficacyTests {
     return null;
   }
 
-  [TestCaseSource(nameof(SizeKnobFilesystemIds))]
+  [TestCaseSource(nameof(SizeKnobIds))]
   public void Shrink_ReducesAnOversizedImage(string formatId) {
     var fmt = Enum.Parse<FormatDetector.Format>(formatId);
     var ops = FormatRegistry.GetArchiveOps(formatId)!;
