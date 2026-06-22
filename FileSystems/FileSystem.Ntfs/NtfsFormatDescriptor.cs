@@ -34,6 +34,23 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       Default: "true",
       Description: "Records each $FILE_NAME in the Win32&DOS namespace so the long name doubles as an 8.3 short name (Windows default). " +
         "Disable to suppress DOS short names (Win32-only names), the equivalent of 'fsutil behavior set disable8dot3'."),
+    new FormatOptionDescriptor(
+      Key: "Compression",
+      DisplayName: "File compression",
+      Kind: FormatOptionKind.Enum,
+      Default: "Off",
+      AllowedValues: ["Off", "LZNT1"],
+      Description: "Stores each non-resident file's $DATA as an NTFS LZNT1 compressed attribute " +
+        "(16-cluster compression units, the 0x0001 compressed flag, sparse runs for saved clusters). " +
+        "Resident files (≤ ~700 bytes) are never compressed. Off stores files uncompressed (default)."),
+    new FormatOptionDescriptor(
+      Key: "NtfsVersion",
+      DisplayName: "NTFS version",
+      Kind: FormatOptionKind.Enum,
+      Default: "3.1",
+      AllowedValues: ["3.1", "3.0"],
+      Description: "Volume version stamped into $VOLUME_INFORMATION. 3.1 (Windows XP and later) is the modern default; " +
+        "3.0 marks the volume as a Windows 2000-era NTFS volume."),
   ];
 
   /// <summary>
@@ -267,6 +284,7 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var w = string.IsNullOrEmpty(label)
       ? new NtfsWriter(generateShortNames: generateShortNames)
       : new NtfsWriter(label, generateShortNames);
+    ApplyWriterOptions(w, specific);
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
 
@@ -306,6 +324,10 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var w = string.IsNullOrEmpty(label)
       ? new NtfsWriter(generateShortNames: generateShortNames)
       : new NtfsWriter(label, generateShortNames);
+    // Streaming entries keep the single-run uncompressed layout; only the NTFS
+    // version knob applies on this path (LZNT1 compression is not wired into the
+    // streaming writer).
+    ApplyWriterOptions(w, specific);
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
       w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
@@ -326,6 +348,18 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
                 mftRecordSize > 0 ? mftRecordSize : 1024)
       : w.BuildAutoSized(clusterSize, mftRecordSize);
     output.Write(disk);
+  }
+
+  // Applies the create-glue knobs that the writer can honour for both the
+  // in-memory and streaming build paths: LZNT1 compression (in-memory only —
+  // a no-op on streaming entries, which the writer leaves uncompressed) and the
+  // NTFS minor version stamped into $VOLUME_INFORMATION.
+  private static void ApplyWriterOptions(NtfsWriter w, IReadOnlyDictionary<string, string>? specific) {
+    if (specific == null) return;
+    if (string.Equals(specific.GetValueOrDefault("Compression"), "LZNT1", StringComparison.OrdinalIgnoreCase))
+      w.SetCompression(true);
+    if (specific.GetValueOrDefault("NtfsVersion")?.Trim() == "3.0")
+      w.SetNtfsMinorVersion(0);
   }
 
   // Parses the NTFS image-size labels ("16 MB".."16 GB"); "Auto …" → 0.
