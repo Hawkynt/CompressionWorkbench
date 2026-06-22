@@ -225,6 +225,8 @@
             <MenuItem.Icon><Image Source="{StaticResource DefragmentIcon}" Width="16" Height="16" /></MenuItem.Icon>
             <MenuItem Header="_Compact (defrag + optimize + shrink)..." Command="{Binding CompactEntryCommand}"
                       ToolTip="One pass to the smallest valid container holding the same contents. Tick 'Minimal geometry' in the window for the bare-minimum (non-standard) rebuild." />
+            <MenuItem Header="_Reconfigure (geometry/options)..." Command="{Binding ReconfigureEntryCommand}"
+                      ToolTip="Change an existing image's geometry/options after creation (e.g. FAT cluster size or root entries, NTFS MFT record size). Contents preserved byte-for-byte." />
             <Separator />
             <MenuItem Header="_Optimize..." Command="{Binding OptimizeEntryCommand}"
                       ToolTip="Find + apply the best layout / re-encode payload. Size preserved where possible." />

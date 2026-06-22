@@ -88,6 +88,7 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand PurgeEntryCommand { get; }
   public ICommand WipeEntryCommand { get; }
   public ICommand CompactEntryCommand { get; }
+  public ICommand ReconfigureEntryCommand { get; }
   public ICommand DeleteSelectedCommand { get; }
 
   // True after a successful in-archive delete on a format whose container leaves
@@ -146,6 +147,7 @@ internal sealed class MainViewModel : ViewModelBase {
     PurgeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Purge), _ => CanMaintain(Views.MaintenanceVerb.Purge));
     WipeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.WipeEmpty), _ => CanMaintain(Views.MaintenanceVerb.WipeEmpty));
     CompactEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Compact), _ => CanMaintain(Views.MaintenanceVerb.Compact));
+    ReconfigureEntryCommand = new RelayCommand(_ => Reconfigure(), _ => CanReconfigure());
     DeleteSelectedCommand = new RelayCommand(_ => DeleteSelectedEntries(), _ => CanDeleteSelected);
   }
 
@@ -423,6 +425,109 @@ internal sealed class MainViewModel : ViewModelBase {
     };
     dlg.Closed += (_, _) => cleanup?.Invoke();
     dlg.Show();
+  }
+
+  /// <summary>
+  /// True when the resolved maintenance target's descriptor can be re-created
+  /// (<see cref="IArchiveCreatable"/>) and publishes a tunable options schema
+  /// (<see cref="IFormatOptionsSchema"/>) with at least one knob — the
+  /// preconditions for offering an after-creation geometry/options change.
+  /// </summary>
+  private bool CanReconfigure() {
+    if (!TryResolveMaintenanceTarget(out var formatId, out _)) return false;
+    var ops = FormatRegistry.GetArchiveOps(formatId);
+    return ops is IArchiveCreatable
+        && ops is IFormatOptionsSchema schema
+        && schema.OptionsSchema.Count > 0;
+  }
+
+  /// <summary>
+  /// Opens the format's schema-driven options dialog pre-populated with the
+  /// current format's knobs and, on OK, re-creates the container in place with
+  /// the chosen geometry/options via
+  /// <see cref="ReconfigureOperation.Reconfigure(string, IReadOnlyDictionary{string, string}, string?)"/>.
+  /// Contents are preserved byte-for-byte; on any failure the original is left
+  /// untouched. For a nested archive entry inside the open archive, the result
+  /// is written back into the host when the host is <see cref="IArchiveModifiable"/>.
+  /// </summary>
+  private void Reconfigure() {
+    if (!TryResolveMaintenanceTarget(out var formatId, out var entry)) return;
+    if (!Enum.TryParse<FormatDetector.Format>(formatId, out var format)) return;
+
+    string targetPath;
+    Action? cleanup = null;
+    Action? writeBack = null;
+
+    if (entry != null && IsBrowsingOsFolder) {
+      targetPath = entry.Path;
+      if (string.IsNullOrEmpty(targetPath) || !File.Exists(targetPath)) return;
+    } else if (entry != null) {
+      // Nested archive entry: materialise → reconfigure → write back into host.
+      try {
+        var bytes = ArchiveOperations.ExtractEntry(ArchivePath, entry.Path, password: null);
+        var temp = Path.Combine(Path.GetTempPath(),
+          $"cwb_reconfig_{Guid.NewGuid():N}_{Path.GetFileName(entry.Name)}");
+        File.WriteAllBytes(temp, bytes);
+        targetPath = temp;
+        cleanup = () => { try { File.Delete(temp); } catch { /* best effort */ } };
+
+        var hostPath = ArchivePath;
+        var entryName = entry.Path;
+        var entryLabel = entry.Name;
+        if (FormatRegistry.GetArchiveOps(Format) is IArchiveModifiable) {
+          writeBack = () => {
+            try {
+              ArchiveOperations.Replace(hostPath, entryName, temp);
+              StatusText = $"Wrote reconfigured '{entryLabel}' back into {Path.GetFileName(hostPath)}.";
+            } catch (Exception ex) {
+              StatusText = $"Could not write '{entryLabel}' back into host archive: {ex.Message}";
+            }
+          };
+        } else {
+          StatusText = $"'{Format}' is read-only — '{entryLabel}' will be reconfigured in a copy that is not written back.";
+        }
+      } catch (Exception ex) {
+        StatusText = $"Cannot open nested archive '{entry.Name}': {ex.Message}";
+        return;
+      }
+    } else {
+      if (string.IsNullOrEmpty(ArchivePath) || !File.Exists(ArchivePath)) return;
+      targetPath = ArchivePath;
+    }
+
+    var optsDlg = new CreateOptionsWindow(format) { Owner = Application.Current.MainWindow };
+    optsDlg.Title = "Reconfigure — Geometry / Options";
+    var ok = optsDlg.ShowDialog() == true;
+    if (!ok) { cleanup?.Invoke(); return; }
+
+    var newOptions = optsDlg.Options.FormatSpecificOptions.Count > 0
+      ? optsDlg.Options.FormatSpecificOptions.ToDictionary(o => o.Key, o => o.CurrentValue)
+      : new Dictionary<string, string>();
+    if (newOptions.Count == 0) {
+      StatusText = $"'{format}' exposes no reconfigurable options.";
+      cleanup?.Invoke();
+      return;
+    }
+
+    try {
+      var result = ReconfigureOperation.Reconfigure(targetPath, newOptions);
+      writeBack?.Invoke();
+      StatusText = $"Reconfigured {Path.GetFileName(targetPath)}: "
+        + $"{result.FileCount} file(s) preserved, {result.OriginalSize:N0} → {result.NewSize:N0} bytes.";
+
+      if (writeBack != null && HasArchive)
+        Open(ArchivePath);
+      else if (HasArchive && string.Equals(targetPath, ArchivePath, StringComparison.OrdinalIgnoreCase))
+        Open(ArchivePath);
+      else if (IsBrowsingOsFolder)
+        RefreshVisibleEntries();
+    } catch (Exception ex) {
+      StatusText = $"Reconfigure failed: {ex.Message}";
+      MessageBox.Show($"Reconfigure failed: {ex.Message}\n\nThe original file was left untouched.",
+        "Reconfigure", MessageBoxButton.OK, MessageBoxImage.Warning);
+    } finally {
+      cleanup?.Invoke();
+    }
   }
 
   private bool HasSelectedFile => SelectedEntries.Any(e => !e.IsDirectory && !e.IsParentEntry);
