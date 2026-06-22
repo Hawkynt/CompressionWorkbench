@@ -38,7 +38,19 @@ namespace FileSystem.Jfs;
 /// </para>
 /// </summary>
 public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-                                          IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
+                                          IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable,
+                                          IFormatOptionsSchema, ILayoutOptimizable {
+  /// <summary>
+  /// JFS aggregate geometry (4 KiB blocks, single allocation group, fixed
+  /// metadata layout) is not tunable, so the only honoured knob is the volume
+  /// label stored in the superblock <c>s_label[16]</c> field (offset 152).
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "VolumeLabel", DisplayName: "Volume Label", Kind: FormatOptionKind.String, Default: "",
+      Description: "JFS volume label stored in s_label (max 16 ASCII chars)."),
+  ];
+
   // WORM write constraints.
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 16L * 1024 * 1024;
@@ -118,6 +130,7 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new JfsWriter();
+    if (options.HasOption("VolumeLabel")) w.SetVolumeLabel(options.GetOption("VolumeLabel", ""));
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
       w.AddFile(i.ArchiveName, i.ReadContent());
@@ -140,6 +153,7 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     var w = new JfsWriter();
+    if (options.HasOption("VolumeLabel")) w.SetVolumeLabel(options.GetOption("VolumeLabel", ""));
     if (!output.CanSeek) {
       // Non-seekable target: buffer each entry once and emit the classic image.
       foreach (var input in inputs) {

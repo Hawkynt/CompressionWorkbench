@@ -12,7 +12,21 @@ namespace FileSystem.MinixV1;
 /// names) or 0x138F (30-byte names — Coherent variant). Predecessor to
 /// Linux's ext filesystem family.
 /// </summary>
-public sealed class MinixV1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable {
+public sealed class MinixV1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+  /// <summary>
+  /// Minix v1 geometry (1024-byte blocks, 32-byte inodes) is fixed, but the
+  /// on-disk directory-name width is a genuine format variant the writer
+  /// honours: 14-byte names (magic 0x137F) or 30-byte names (magic 0x138F).
+  /// Selecting "30" changes both the superblock magic and every directory
+  /// entry's size.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "NameLength", DisplayName: "Directory Name Length", Kind: FormatOptionKind.Enum, Default: "14",
+      AllowedValues: ["14", "30"],
+      Description: "Directory-entry name width: 14 bytes (magic 0x137F) or 30 bytes (magic 0x138F)."),
+  ];
+
   public string Id => "MinixV1";
   public string DisplayName => "Minix V1 FS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -79,7 +93,8 @@ public sealed class MinixV1FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// each with its own <c>"."</c>/<c>".."</c> entries.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    using var w = new MinixV1Writer(output, leaveOpen: true);
+    var longNames = options.GetOptionInt("NameLength", 14) == 30;
+    using var w = new MinixV1Writer(output, leaveOpen: true, longNames: longNames);
     foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
     w.Finish();

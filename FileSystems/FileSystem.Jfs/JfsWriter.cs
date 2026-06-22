@@ -192,6 +192,17 @@ public sealed class JfsWriter {
   }
 
   private readonly Node _root = new() { Name = "", ParentIno = RootIno };
+
+  // Optional volume label written into s_label[16] at superblock offset 152.
+  // Defaults to the canonical "JFS Workbench"; ASCII, NUL-padded, max 16 bytes.
+  private string _volumeLabel = "JFS Workbench";
+
+  /// <summary>
+  /// Sets the volume label written into the superblock <c>s_label[16]</c> field
+  /// (offset 152). ASCII, NUL-padded, truncated to 16 bytes.
+  /// </summary>
+  public void SetVolumeLabel(string label) => this._volumeLabel = label ?? "";
+
   private readonly byte[] _volumeUuid = Guid.NewGuid().ToByteArray();
   private readonly byte[] _logUuid = Guid.NewGuid().ToByteArray();
   private uint _writeTimestamp;                                                           // captured at WriteTo() start so primary/secondary copies match byte-for-byte
@@ -518,8 +529,9 @@ public sealed class JfsWriter {
     WritePxd(sb[120..], length: (uint)fsckWspBlocks, address: fsckAddr);                  // s_xfsckpxd
     WritePxd(sb[128..], length: (uint)logBlocks, address: logAddr);                       // s_xlogpxd
     this._volumeUuid.CopyTo(sb[136..]);                                                   // s_uuid[16]
-    var label = Encoding.ASCII.GetBytes("JFS Workbench\0\0\0");
-    label.AsSpan(0, Math.Min(label.Length, 16)).CopyTo(sb[152..]);
+    var label = Encoding.ASCII.GetBytes(this._volumeLabel);
+    sb.Slice(152, 16).Clear();
+    label.AsSpan(0, Math.Min(label.Length, 16)).CopyTo(sb[152..]);                        // s_label[16]
     this._logUuid.CopyTo(sb[168..]);                                                      // s_loguuid[16]
   }
 
