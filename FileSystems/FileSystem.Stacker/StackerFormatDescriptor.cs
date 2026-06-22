@@ -13,7 +13,7 @@ namespace FileSystem.Stacker;
 /// clusters are STORED verbatim or Stac-LZS compressed (RFC 1967/2395).
 /// Detection is by the ASCII "STACKER" banner at file offset 0.
 /// </summary>
-public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IWipeEmpty, IFormatOptionsSchema {
+public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
   public string Id => "Stacker";
   public string DisplayName => "Stacker CVF";
   public FormatCategory Category => FormatCategory.Archive;

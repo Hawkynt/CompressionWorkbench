@@ -37,7 +37,7 @@ namespace FileSystem.TFat;
 /// supplemented by forensic-literature summaries. The runtime protocol
 /// itself is documented in Microsoft's WinCE TFAT design notes.</para>
 /// </summary>
-public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema {
+public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
   //

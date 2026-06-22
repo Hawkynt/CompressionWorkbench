@@ -28,7 +28,7 @@ namespace FileSystem.Gfs1;
 /// </remarks>
 public sealed class Gfs1FormatDescriptor :
     IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
-    IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
+    IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   public string Id => "Gfs1";
   public string DisplayName => "GFS (Sistina/Red Hat, original)";

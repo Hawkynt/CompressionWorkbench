@@ -27,7 +27,7 @@ namespace FileSystem.Human68k;
 /// </summary>
 public sealed class Human68kFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
-  IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
+  IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   public string Id => "Human68k";
   public string DisplayName => "Sharp X68000 Human68k";

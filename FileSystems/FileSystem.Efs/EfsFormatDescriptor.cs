@@ -24,7 +24,7 @@ namespace FileSystem.Efs;
 /// </remarks>
 public sealed class EfsFormatDescriptor :
     IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
-    IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
+    IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   public string Id => "Efs";
   public string DisplayName => "EFS (SGI Extent File System)";

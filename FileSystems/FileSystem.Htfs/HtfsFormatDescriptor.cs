@@ -21,7 +21,7 @@ namespace FileSystem.Htfs;
 /// </remarks>
 public sealed class HtfsFormatDescriptor :
     IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
-    IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
+    IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   public string Id => "Htfs";
   public string DisplayName => "HTFS (SCO High Throughput File System)";

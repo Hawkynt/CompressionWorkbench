@@ -23,7 +23,7 @@ namespace FileSystem.Jfs1;
 /// </remarks>
 public sealed class Jfs1FormatDescriptor :
     IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
-    IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
+    IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   public string Id => "Jfs1";
   public string DisplayName => "JFS1 (OS/2 original IBM JFS)";
