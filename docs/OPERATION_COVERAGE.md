@@ -75,6 +75,12 @@ under `Compression.Tests/Operations/`, which fail loudly on any lossy rebuild.
   via the verified rebuild — contents preserved, only geometry changes.
 - **NTFS per-file compression**: the `Compression` create option (`Off`/`LZNT1`)
   stores files in a compressed `$DATA` attribute; small files stay resident in the MFT.
+- **Creation-option schemas** (`IFormatOptionsSchema`) now cover **73 of 88** creatable
+  filesystems (was 43). The remaining 15 — Bfs, Coherent, CramFs, DragonFs, G64, Hpfs,
+  MinixFs, Msa, Qnx4, Qnx6, Ufs, Vdfs, Xenix, Yaffs2, ZxScl — are intentionally
+  schema-less: fixed-geometry retro containers, read-only formats, or writers whose
+  on-disk fields aren't user-tunable (no fake/no-op knobs are exposed). Every published
+  option is verified by a per-format test that the knob takes effect on disk.
 
 ## Filesystem descriptors
 
