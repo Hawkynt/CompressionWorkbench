@@ -26,7 +26,19 @@ namespace FileSystem.Mfs1;
 /// <para>Distinct from <c>FileSystem.Mfs</c>, which targets the Macintosh File
 /// System with a strong <c>0xD2D7</c> magic.</para>
 /// </remarks>
-public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
+public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// The writer-honoured knob is the 12-char disk title, stored across the
+  /// two-sector DFS catalog (first 8 chars in sector 0, last 4 in sector 1).
+  /// The image geometry defaults to the 200 KB 80-track SSD and is not exposed.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 12),
+  ];
+
   public string Id => "Mfs1";
   public string DisplayName => "MFS-1 (Acorn Master File System v1)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -177,7 +189,8 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var w = new Mfs1Writer();
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
-    output.Write(w.Build());
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    output.Write(string.IsNullOrEmpty(label) ? w.Build() : w.Build(label));
   }
 
   /// <summary>

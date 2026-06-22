@@ -20,7 +20,24 @@ namespace FileSystem.Ubifs;
 /// preserved. Full TNC / LPT commit pipeline (required for kernel mount) is
 /// multi-week work and remains out of scope.
 /// </summary>
-public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
+public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// The only writer-honoured knob is the LEB (logical erase block) size: it is
+  /// written into the superblock's <c>leb_size</c> field and each LEB in the image
+  /// is padded to it (nodes never straddle an LEB boundary). UBIFS carries no
+  /// volume-label field in this writer, so no label knob is published; DATA-node
+  /// compression is fixed to zlib-or-stored and is not exposed.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.PowerOfTwoSize(
+      key: "LebSize", displayName: "LEB size",
+      min: 4096, max: 1048576, defaultLabel: "64 KB",
+      description: "Logical erase-block size. Written to the superblock and used to pad each LEB; 64 KB matches common NAND flash."),
+  ];
+
   public string Id => "Ubifs";
   public string DisplayName => "UBIFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -155,10 +172,20 @@ public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
-    var writer = new UbifsWriter();
+    var writer = new UbifsWriter(ResolveLebSize(options));
     foreach (var (name, data) in FilesOnly(inputs))
       writer.AddFile(name, data);
     writer.WriteTo(output);
+  }
+
+  /// <summary>
+  /// Resolves the writer's LEB size from the schema. "Auto"/absent keeps
+  /// <see cref="UbifsWriter.DefaultLebSize"/>; a pinned power-of-two size label is
+  /// parsed back to bytes.
+  /// </summary>
+  private static int ResolveLebSize(FormatCreateOptions? options) {
+    var parsed = FilesystemSchemaPresets.ParseSize(options?.GetOption("LebSize", "Auto"));
+    return parsed > 0 ? parsed : UbifsWriter.DefaultLebSize;
   }
 
   // ── IArchiveModifiable ────────────────────────────────────────────────

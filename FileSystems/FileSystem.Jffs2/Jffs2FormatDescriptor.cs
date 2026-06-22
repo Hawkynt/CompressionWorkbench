@@ -14,7 +14,23 @@ namespace FileSystem.Jffs2;
 /// the JFFS2 spec — fresh node at the tail with bumped version, existing
 /// nodes left byte-identical), defragment, extent map.
 /// </summary>
-public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
+public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// The only writer-honoured knob is the flash erase-block size: the image is
+  /// padded up to a whole multiple of it (the JFFS2 erase-block granularity).
+  /// JFFS2 is a log-structured flash filesystem with no volume-label field, so
+  /// no label knob is published.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.PowerOfTwoSize(
+      key: "EraseBlockSize", displayName: "Erase block size",
+      min: 4096, max: 1048576, defaultLabel: "128 KB",
+      description: "Flash erase-block size. The image is padded to a whole multiple of it; common NOR flash uses 128 KB."),
+  ];
+
   public string Id => "Jffs2";
   public string DisplayName => "JFFS2";
   public FormatCategory Category => FormatCategory.Archive;
@@ -145,10 +161,20 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   // ── IArchiveCreatable ─────────────────────────────────────────────────
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var w = new Jffs2Writer();
+    var w = new Jffs2Writer(ResolveEraseBlockSize(options));
     foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
     w.WriteTo(output);
+  }
+
+  /// <summary>
+  /// Resolves the writer's erase-block size from the schema. "Auto"/absent keeps
+  /// <see cref="Jffs2Writer.DefaultEraseBlockSize"/>; a pinned power-of-two size
+  /// label is parsed back to bytes.
+  /// </summary>
+  private static int ResolveEraseBlockSize(FormatCreateOptions? options) {
+    var parsed = FilesystemSchemaPresets.ParseSize(options?.GetOption("EraseBlockSize", "Auto"));
+    return parsed > 0 ? parsed : Jffs2Writer.DefaultEraseBlockSize;
   }
 
   // ── IArchiveModifiable (true in-place log append) ─────────────────────

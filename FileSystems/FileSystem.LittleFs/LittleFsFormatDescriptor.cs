@@ -12,7 +12,22 @@ namespace FileSystem.LittleFs;
 /// pair commit log with CRC validation is intentionally out of scope — that's a
 /// full reference-implementation port. Detection + structural surfacing is the win.
 /// </summary>
-public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable {
+public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// The only writer-honoured knob is the block size: it is recorded in the
+  /// littlefs superblock geometry (and bounds the inline-file threshold and CTZ
+  /// block layout). LittleFS stores no volume label, so no label knob is published.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.PowerOfTwoSize(
+      key: "BlockSize", displayName: "Block size",
+      min: 128, max: 65536, defaultLabel: "4 KB",
+      description: "Erase-block size recorded in the superblock. LittleFS allows powers of two from 128 B to 64 KB."),
+  ];
+
   public string Id => "LittleFs";
   public string DisplayName => "LittleFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -122,12 +137,21 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
-    var w = new LittleFsWriter();
+    var w = new LittleFsWriter(ResolveBlockSize(options));
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
       w.AddFile(input.ArchiveName, input.ReadContent());
     }
     w.WriteTo(output);
+  }
+
+  /// <summary>
+  /// Resolves the writer's block size from the schema. "Auto"/absent keeps the
+  /// writer's 4 KiB default; a pinned power-of-two size label is parsed back to bytes.
+  /// </summary>
+  private static uint ResolveBlockSize(FormatCreateOptions? options) {
+    var parsed = FilesystemSchemaPresets.ParseSize(options?.GetOption("BlockSize", "Auto"));
+    return parsed > 0 ? (uint)parsed : 4096u;
   }
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {

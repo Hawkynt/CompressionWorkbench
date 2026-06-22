@@ -5,7 +5,20 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Apfs;
 
 public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveDefragmentable, IArchiveModifiable {
+    IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveDefragmentable, IArchiveModifiable,
+    IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// The only writer-honoured knob is the volume name, written to the APSB
+  /// <c>apfs_volname</c> field. The container block size is fixed at 4 KiB and
+  /// is not exposed.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 255),
+  ];
+
   public string Id => "Apfs";
   public string DisplayName => "APFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -99,6 +112,8 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new ApfsWriter();
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (!string.IsNullOrEmpty(label)) w.SetVolumeName(label);
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());

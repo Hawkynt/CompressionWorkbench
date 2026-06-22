@@ -12,7 +12,19 @@ namespace FileSystem.Adfs;
 /// Detected by the "Hugo" or "Nick" directory marker at sector 2 — root dir
 /// magic at file offset 0x200 (old map) or 0x400 (new map).
 /// </summary>
-public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
+public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// The writer-honoured knob is the disc title, written as the 19-byte ASCII
+  /// title in the root directory tail. The writer always emits the ADFS-L
+  /// 640 KiB / 256-byte-sector geometry, so disc size is not exposed.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 19),
+  ];
+
   public string Id => "Adfs";
   public string DisplayName => "Acorn ADFS";
   public FormatCategory Category => FormatCategory.Archive;
