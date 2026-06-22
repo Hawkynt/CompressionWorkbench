@@ -29,7 +29,21 @@ namespace FileSystem.Hammer2;
 ///   <item><description><c>https://gitweb.dragonflybsd.org/dragonfly.git/blob/HEAD:/sys/vfs/hammer2/DESIGN</c></description></item>
 /// </list>
 /// </summary>
-public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable {
+public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  /// <summary>
+  /// Sole tunable the HAMMER2 writer honours: the PFS label
+  /// (<c>newfs_hammer2 -L</c>) given to the populated PFS that holds the user
+  /// files. Volume size is intentionally not exposed — the boot/aux/topology
+  /// floor pins the minimum regardless. An empty label falls back to the writer
+  /// default ("DATA").
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "Label", DisplayName: "PFS label", Kind: FormatOptionKind.String, Default: "",
+      Description: "Labelled PFS name (newfs_hammer2 -L); max 63 ASCII chars."),
+  ];
+
   public string Id => "Hammer2";
   public string DisplayName => "HAMMER2 (DragonFly BSD)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -120,7 +134,7 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     ArgumentNullException.ThrowIfNull(inputs);
 
     var writer = new Hammer2Writer();
-    var label = options?.GetOption("label", "DATA");
+    var label = options?.GetOption("Label", "DATA");
     if (!string.IsNullOrEmpty(label))
       writer.Label = label;
 

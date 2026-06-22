@@ -16,7 +16,17 @@ namespace FileSystem.Ods1;
 /// bits + zero-fills its data extent; both recompute the home-block additive
 /// checksums). Self-round-trip gated; no Linux fsck for ODS-1 exists.
 /// </summary>
-public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
+public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  /// <summary>
+  /// Sole tunable the Files-11 L1 writer honours: the 12-character home-block
+  /// volume name (hm1$t_volname). The rest of the Stage-1 geometry is fixed.
+  /// An empty label falls back to the writer default ("CWBVOL").
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 12),
+  ];
+
   public string Id => "Ods1";
   public string DisplayName => "ODS-1 (VAX/VMS Files-11 L1)";
   public FormatCategory Category => FormatCategory.Archive;

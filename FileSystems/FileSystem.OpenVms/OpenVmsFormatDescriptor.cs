@@ -33,7 +33,17 @@ namespace FileSystem.OpenVms;
 /// modifier can round-trip end-to-end through Add / Remove / Replace.
 /// </para>
 /// </summary>
-public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
+public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  /// <summary>
+  /// Sole tunable the ODS-2 writer honours: the 12-character home-block volume
+  /// label (HM2$T_VOLNAME). Everything else in the CWB-OVMS-WB geometry is
+  /// fixed. An empty label falls back to the writer default ("CWBVOL").
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 12),
+  ];
+
   public string Id => "OpenVms";
   public string DisplayName => "OpenVMS Files-11";
   public FormatCategory Category => FormatCategory.Archive;

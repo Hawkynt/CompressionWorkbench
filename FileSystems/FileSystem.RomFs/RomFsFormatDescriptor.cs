@@ -4,7 +4,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.RomFs;
 
-public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+
+  /// <summary>
+  /// Sole tunable the ROMFS writer honours: the volume name stored in the
+  /// superblock right after the "-rom1fs-" magic. ROMFS is a packed read-only
+  /// image with no allocation-unit knob. An empty label falls back to the
+  /// writer default ("romfs").
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 16),
+  ];
+
   public string Id => "RomFs";
   public string DisplayName => "ROMFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -73,7 +84,8 @@ public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     using var w = new RomFsWriter(output, leaveOpen: true);
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
       w.AddFile(name, data);
-    w.Finish();
+    var volumeName = options?.GetOption("VolumeLabel", "");
+    w.Finish(string.IsNullOrEmpty(volumeName) ? "romfs" : volumeName);
   }
 
   /// <summary>

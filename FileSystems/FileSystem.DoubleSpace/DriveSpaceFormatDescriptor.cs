@@ -6,7 +6,21 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.DoubleSpace;
 
-public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+
+  /// <summary>
+  /// Sole tunable the DriveSpace writer honours: the per-cluster compression
+  /// method. "stored" forces uncompressed runs; the ds-lz77 family selects the
+  /// genuine DS LZ77 codec at increasing effort tiers (lazy matching, then
+  /// Zopfli-style iteration). The geometry (MDBPB/MDFAT/BitFAT) is fixed.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "Method", DisplayName: "Compression method", Kind: FormatOptionKind.Enum, Default: "ds-lz77",
+      AllowedValues: ["stored", "ds-lz77", "ds-lz77+", "ds-lz77++"],
+      Description: "Per-cluster codec: stored (no compression) or DS LZ77 at rising effort (+ lazy, ++ iterated)."),
+  ];
+
   public string Id => "DriveSpace";
   public string DisplayName => "DriveSpace CVF";
   public FormatCategory Category => FormatCategory.Archive;
@@ -59,9 +73,12 @@ public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveForm
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    // Prefer the schema-published Method knob; fall back to the top-level
+    // MethodName field so callers using either path get the codec they asked for.
+    var method = options.HasOption("Method") ? options.GetOption("Method", "ds-lz77") : options.MethodName;
     var w = new DoubleSpaceWriter {
       Variant = CvfVariant.DriveSpace62,
-      MethodName = options.MethodName,
+      MethodName = method,
     };
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
