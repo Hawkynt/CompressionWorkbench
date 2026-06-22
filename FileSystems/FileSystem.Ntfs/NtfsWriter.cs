@@ -66,6 +66,24 @@ public sealed class NtfsWriter {
   private int _clusterSize = DefaultClusterSize;
   private int _mftRecordSize = DefaultMftRecordSize;
 
+  // Per-build LZNT1 compression toggle. When enabled, every non-resident file's
+  // $DATA is stored as an NTFS compressed attribute (16-cluster compression
+  // units, the 0x0001 compressed flag, and sparse runs for the clusters a unit
+  // saves). Resident files (≤ ResidentThreshold) are never compressed — NTFS
+  // does not compress resident data. Off by default so existing builds stay
+  // byte-identical.
+  private bool _compressFiles;
+
+  // NTFS compression unit: 16 clusters. The compression-unit-size field in a
+  // compressed $DATA attribute header (offset 34) holds the base-2 log of this
+  // value, i.e. 4.
+  private const int ClustersPerCompressionUnit = 16;
+
+  // $VOLUME_INFORMATION minor version written into $Volume (offset 9). NTFS
+  // major version is always 3 for the volumes this writer produces; the minor
+  // version selects 3.0 (Windows 2000) vs 3.1 (Windows XP+). Default 3.1.
+  private byte _ntfsMinorVersion = 1;
+
   // Size of the $LogFile data region in bytes. Real NTFS typically uses
   // ≥2 MiB; for our minimal images we size proportionally to the volume
   // but always allocate at least one cluster.
@@ -112,6 +130,19 @@ public sealed class NtfsWriter {
     public bool Resident;
     public int StartCluster;
     public int ClusterCount;
+
+    // LZNT1 compression layout (set during layout when compression is enabled
+    // and the file is non-resident). When Compressed is true the $DATA attribute
+    // carries the 0x0001 compressed flag, CompressionUnitSizeLog2 (=4 for the
+    // 16-cluster unit), the pre-rendered compressed cluster bytes, and a run
+    // list mixing real runs (the compressed data) with sparse runs (the
+    // clusters a unit saved). ClusterCount counts only the real (allocated)
+    // clusters; AllocatedClusters is the full unit-aligned span the attribute
+    // advertises.
+    public bool Compressed;
+    public byte[]? CompressedBytes;        // concatenated real-cluster bytes
+    public List<(int Cluster, int Count, bool Sparse)>? CompressedRuns;
+    public long AllocatedClusters;         // unit-aligned VCN span (real + sparse)
 
     // Streaming bytes — Size + opener; non-resident streaming entries
     // skip the in-memory data copy and are post-streamed by
@@ -162,6 +193,29 @@ public sealed class NtfsWriter {
     ArgumentNullException.ThrowIfNull(volumeLabel);
     this._volumeLabel = volumeLabel;
     this._fileNameNamespace = generateShortNames ? NamespaceWin32AndDos : NamespaceWin32;
+  }
+
+  /// <summary>
+  /// Enables or disables NTFS LZNT1 compression of file <c>$DATA</c> for this
+  /// build. When enabled every non-resident file is stored as a compressed
+  /// attribute (16-cluster compression units, the <c>0x0001</c> compressed flag,
+  /// sparse runs for saved clusters). Resident files (≤ ~700 bytes) are left
+  /// uncompressed, mirroring real NTFS which never compresses resident data.
+  /// Default is off; call before any <c>Build</c> overload.
+  /// </summary>
+  /// <param name="enabled">Whether to compress non-resident file data.</param>
+  public void SetCompression(bool enabled) => this._compressFiles = enabled;
+
+  /// <summary>
+  /// Sets the NTFS minor version stamped into <c>$VOLUME_INFORMATION</c> (the
+  /// major version is always 3). Accepts 0 (NTFS 3.0, Windows 2000) or 1
+  /// (NTFS 3.1, Windows XP and later — the default).
+  /// </summary>
+  /// <param name="minorVersion">0 for NTFS 3.0, 1 for NTFS 3.1.</param>
+  public void SetNtfsMinorVersion(byte minorVersion) {
+    if (minorVersion > 1)
+      throw new ArgumentOutOfRangeException(nameof(minorVersion), minorVersion, "NTFS minor version must be 0 (3.0) or 1 (3.1).");
+    this._ntfsMinorVersion = minorVersion;
   }
 
   /// <summary>Adds a file to the NTFS image.</summary>
@@ -361,6 +415,14 @@ public sealed class NtfsWriter {
         node.Resident = true;
         continue;
       }
+      // Compressed path: only for in-memory (non-streaming) files. Streaming
+      // entries keep the single-run uncompressed layout the streaming writer
+      // expects.
+      if (this._compressFiles && node.StreamOpener == null && node.Data != null) {
+        this.LayoutCompressedFile(node, ref nextCluster, mftMirrCluster, mftMirrClusters);
+        continue;
+      }
+
       var clusters = (int)((effLen + this._clusterSize - 1) / this._clusterSize);
       // Skip over the mirror region if necessary.
       if (nextCluster < mftMirrCluster && nextCluster + clusters > mftMirrCluster) {
@@ -461,7 +523,7 @@ public sealed class NtfsWriter {
       sizeHintInFileName: 0,
       extraAttrs: [
         new ResidentAttr(0x60, BuildVolumeNameAttr(this._volumeLabel)),
-        new ResidentAttr(0x70, BuildVolumeInformationAttr()),
+        new ResidentAttr(0x70, this.BuildVolumeInformationAttr()),
       ]);
 
     // Record 4: $AttrDef — small, stays resident.
@@ -638,6 +700,32 @@ public sealed class NtfsWriter {
           nonResidentRuns: null,
           dataSize: residentBytes.Length,
           sizeHintInFileName: residentBytes.Length);
+      } else if (node.Compressed) {
+        // LZNT1-compressed $DATA: sparse-run layout + the 0x0001 compressed flag.
+        WriteMftRecord(
+          disk, mftOffset, node.RecordNumber, sequence: 1,
+          fileName: node.Name,
+          parentRecord: node.ParentRecord,
+          isDirectory: false,
+          residentData: null,
+          nonResidentRuns: null,
+          dataSize: effLen,
+          sizeHintInFileName: effLen,
+          compressedRuns: node.CompressedRuns,
+          compressedAllocatedClusters: node.AllocatedClusters);
+
+        // Copy the compressed real-cluster bytes into the reserved real runs in
+        // run order (sparse runs hold no bytes).
+        var src = node.CompressedBytes!;
+        var srcPos = 0;
+        foreach (var (cluster, count, sparse) in node.CompressedRuns!) {
+          if (sparse) continue;
+          var bytes = count * this._clusterSize;
+          var dst = (long)cluster * this._clusterSize;
+          var copy = (int)Math.Min(bytes, Math.Min(src.Length - srcPos, disk.Length - dst));
+          if (copy > 0) Array.Copy(src, srcPos, disk, (int)dst, copy);
+          srcPos += bytes;
+        }
       } else {
         WriteMftRecord(
           disk, mftOffset, node.RecordNumber, sequence: 1,
@@ -843,6 +931,80 @@ public sealed class NtfsWriter {
     return (root, nodes);
   }
 
+  // Lays out a non-resident file as an LZNT1-compressed $DATA attribute. The
+  // file is split into compression units of 16 clusters (ClustersPerCompressionUnit).
+  // Each unit is LZNT1-compressed independently; if the compressed form occupies
+  // fewer clusters than the unit it is stored in K real clusters followed by a
+  // sparse run of (unitClusters - K) clusters. A unit that does not shrink (or
+  // the case where compression would not save a whole cluster) is stored raw as
+  // a full unit run with no sparse tail. The reader distinguishes the two cases
+  // per unit by whether the unit carries a sparse tail. The pre-rendered real
+  // cluster bytes and the run list are stashed on the node; the caller copies the
+  // bytes into the reserved clusters when emitting the record.
+  private void LayoutCompressedFile(TreeNode node, ref int nextCluster, long mftMirrCluster, int mftMirrClusters) {
+    var data = node.Data!;
+    var unitBytes = ClustersPerCompressionUnit * this._clusterSize;
+
+    var runs = new List<(int Cluster, int Count, bool Sparse)>();
+    using var clusterBytes = new MemoryStream();
+    long allocatedClusters = 0;
+
+    for (var unitStart = 0; unitStart < data.Length; unitStart += unitBytes) {
+      var unitLen = Math.Min(unitBytes, data.Length - unitStart);
+      var unit = data.AsSpan(unitStart, unitLen);
+      // Logical cluster span of this unit (16 for a full unit; fewer for the
+      // final partial unit). The unit's runs must add up to exactly this.
+      var unitSpan = (unitLen + this._clusterSize - 1) / this._clusterSize;
+      allocatedClusters += unitSpan;
+
+      var compressed = Lznt1.Compress(unit);
+      var compressedClusters = (compressed.Length + this._clusterSize - 1) / this._clusterSize;
+
+      // Only worthwhile if it saves at least one whole cluster within the unit's
+      // logical cluster span. Otherwise store the unit raw (no sparse tail).
+      if (compressedClusters < unitSpan) {
+        // Place K real clusters (compressed bytes, zero-padded to a cluster) and
+        // a sparse tail filling the rest of the unit span.
+        EnsureNotInMirror(ref nextCluster, compressedClusters, mftMirrCluster, mftMirrClusters);
+        runs.Add((nextCluster, compressedClusters, false));
+        nextCluster += compressedClusters;
+
+        var padded = new byte[compressedClusters * this._clusterSize];
+        compressed.CopyTo(padded, 0);
+        clusterBytes.Write(padded);
+
+        runs.Add((0, unitSpan - compressedClusters, true));
+      } else {
+        // Raw unit: store the literal bytes across unitSpan clusters, no sparse
+        // tail. The reader copies these straight through.
+        EnsureNotInMirror(ref nextCluster, unitSpan, mftMirrCluster, mftMirrClusters);
+        runs.Add((nextCluster, unitSpan, false));
+        nextCluster += unitSpan;
+
+        var padded = new byte[unitSpan * this._clusterSize];
+        unit.CopyTo(padded);
+        clusterBytes.Write(padded);
+      }
+    }
+
+    node.Resident = false;
+    node.Compressed = true;
+    node.CompressedRuns = runs;
+    node.CompressedBytes = clusterBytes.ToArray();
+    node.AllocatedClusters = allocatedClusters;
+    // ClusterCount/StartCluster track the first real run for the bitmap/extent
+    // map; the full run list drives the on-disk attribute.
+    node.StartCluster = runs.Count > 0 ? runs[0].Cluster : 0;
+    node.ClusterCount = runs.Where(r => !r.Sparse).Sum(r => r.Count);
+  }
+
+  // Advances nextCluster past the $MFTMirr reserved region if placing `count`
+  // clusters there would collide with it.
+  private static void EnsureNotInMirror(ref int nextCluster, int count, long mftMirrCluster, int mftMirrClusters) {
+    if (nextCluster < mftMirrCluster && nextCluster + count > mftMirrCluster)
+      nextCluster = (int)mftMirrCluster + mftMirrClusters;
+  }
+
   // Yields the cumulative directory paths a slashed file name implies, e.g.
   // "docs/api/reference.txt" → "docs", "docs/api". Used only for sizing.
   private static IEnumerable<string> EnumerateAncestorDirectories(string name) {
@@ -959,7 +1121,9 @@ public sealed class NtfsWriter {
     NonResidentAttr[]? extraNonResidentAttrs = null,
     List<(int Cluster, int Count)>? indexAllocationRuns = null,
     long indexAllocationSize = 0,
-    byte[]? indexBitmap = null) {
+    byte[]? indexBitmap = null,
+    List<(int Cluster, int Count, bool Sparse)>? compressedRuns = null,
+    long compressedAllocatedClusters = 0) {
 
     var recordOffset = mftBaseOffset + (int)recordNum * this._mftRecordSize;
     if (recordOffset + this._mftRecordSize > disk.Length) return;
@@ -999,7 +1163,9 @@ public sealed class NtfsWriter {
 
     // 0x80 $DATA — only for non-directory records.
     if (!isDirectory) {
-      if (residentData != null) {
+      if (compressedRuns != null) {
+        pos = this.WriteCompressedDataAttr(record, pos, compressedRuns, dataSize, compressedAllocatedClusters);
+      } else if (residentData != null) {
         pos = WriteResidentDataAttr(record, pos, residentData);
       } else if (nonResidentRuns != null) {
         pos = WriteNonResidentDataAttr(record, pos, nonResidentRuns, dataSize);
@@ -1168,6 +1334,75 @@ public sealed class NtfsWriter {
 
     dataRuns.CopyTo(record, pos + dataRunsOffset);
     return pos + attrLen;
+  }
+
+  // Writes the unnamed $DATA attribute as an NTFS LZNT1-compressed attribute:
+  // the 0x0001 compressed flag (attr-header offset 12), the compression-unit
+  // size field (offset 34, base-2 log of clusters-per-unit = 4) and a data-run
+  // list mixing real runs (compressed clusters) with sparse runs (the clusters a
+  // compression unit saved, encoded length-only with no LCN delta so they read
+  // as a hole). Allocated size advertises the full unit-aligned VCN span;
+  // real/initialised size is the file's logical length.
+  private int WriteCompressedDataAttr(byte[] record, int pos,
+    List<(int Cluster, int Count, bool Sparse)> runs, long dataSize, long allocatedClusters) {
+    var dataRuns = EncodeSparseDataRuns(runs);
+    var dataRunsOffset = 64;
+    var attrLen = (dataRunsOffset + dataRuns.Length + 7) & ~7;
+
+    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos), 0x80);
+    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos + 4), (uint)attrLen);
+    record[pos + 8] = 1; // non-resident
+    record[pos + 9] = 0; // unnamed
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(pos + 12), 0x0001); // ATTR_IS_COMPRESSED
+
+    long lastVcn = allocatedClusters - 1;
+    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 16), 0);          // starting VCN
+    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 24), lastVcn);    // last VCN
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(pos + 32), (ushort)dataRunsOffset);
+    // Compression unit size (offset 34): base-2 log of clusters per unit (16 → 4).
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(pos + 34), (ushort)BitOperations_Log2(ClustersPerCompressionUnit));
+    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 40), allocatedClusters * this._clusterSize); // allocated
+    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 48), dataSize);   // real size
+    BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(pos + 56), dataSize);   // initialised size
+
+    dataRuns.CopyTo(record, pos + dataRunsOffset);
+    return pos + attrLen;
+  }
+
+  private static int BitOperations_Log2(int value) {
+    var log = 0;
+    while ((1 << log) < value) log++;
+    return log;
+  }
+
+  // Encodes a data-run list that may contain sparse runs. A sparse run carries a
+  // length but no LCN field (offset-bytes nibble = 0), which NTFS interprets as a
+  // hole; the previous LCN is NOT advanced across it. Real runs encode the LCN as
+  // a signed delta from the previous real LCN, exactly like EncodeDataRuns.
+  private static byte[] EncodeSparseDataRuns(List<(int Cluster, int Count, bool Sparse)> runs) {
+    using var ms = new MemoryStream();
+    long prevLcn = 0;
+
+    foreach (var (cluster, count, sparse) in runs) {
+      if (count <= 0) continue;
+      var lengthBytes = GetSignedFieldBytes(count, unsigned: true);
+
+      if (sparse) {
+        ms.WriteByte((byte)(lengthBytes)); // offset nibble 0 → hole
+        WriteField(ms, count, lengthBytes);
+        continue;
+      }
+
+      var offset = cluster - prevLcn;
+      var offsetBytes = GetSignedFieldBytes(offset, unsigned: false);
+      ms.WriteByte((byte)((offsetBytes << 4) | lengthBytes));
+      WriteField(ms, count, lengthBytes);
+      WriteField(ms, offset, offsetBytes);
+      prevLcn = cluster;
+    }
+
+    ms.WriteByte(0);
+    return ms.ToArray();
   }
 
   // Writes a named non-resident attribute (e.g. $INDEX_ALLOCATION named "$I30").
@@ -1671,12 +1906,12 @@ public sealed class NtfsWriter {
     return Encoding.Unicode.GetBytes(label);
   }
 
-  private static byte[] BuildVolumeInformationAttr() {
+  private byte[] BuildVolumeInformationAttr() {
     // $VOLUME_INFORMATION (type 0x70) layout (12 bytes):
     //   u64 reserved, u8 major_version, u8 minor_version, u16 flags.
     var v = new byte[12];
-    v[8] = 3;  // major version (NTFS 3.1 → major 3)
-    v[9] = 1;  // minor version
+    v[8] = 3;                       // major version (NTFS 3.x → major 3)
+    v[9] = this._ntfsMinorVersion;  // minor version (0 = 3.0, 1 = 3.1)
     // flags = 0 (clean volume; no VOLUME_IS_DIRTY bit set).
     return v;
   }
@@ -1766,7 +2001,14 @@ public sealed class NtfsWriter {
     SetRange(bitmap, mftBitmapStart, mftBitmapCount);
 
     foreach (var f in fileNodes) {
-      if (!f.Resident) SetRange(bitmap, f.StartCluster, f.ClusterCount);
+      if (f.Resident) continue;
+      if (f.Compressed && f.CompressedRuns != null) {
+        // Mark only the real (non-sparse) clusters; sparse runs are holes.
+        foreach (var (cluster, count, sparse) in f.CompressedRuns)
+          if (!sparse) SetRange(bitmap, cluster, count);
+      } else {
+        SetRange(bitmap, f.StartCluster, f.ClusterCount);
+      }
     }
 
     // Directory $INDEX_ALLOCATION clusters (large directories only).

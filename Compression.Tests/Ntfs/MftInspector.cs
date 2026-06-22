@@ -69,6 +69,66 @@ internal static class MftInspector {
     return resident ?? throw new InvalidOperationException("record has no unnamed $DATA attribute");
   }
 
+  // Whether the record's unnamed default $DATA attribute carries the NTFS
+  // compressed flag (attribute-header flags at +12, bit 0x0001). Throws if the
+  // record has no unnamed $DATA.
+  internal static bool DataAttributeIsCompressed(byte[] record) {
+    bool? compressed = null;
+    ForEachAttribute(record, (type, pos) => {
+      if (type != 0x80) return;
+      if (record[pos + 9] != 0) return; // named stream — skip
+      var flags = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(pos + 12));
+      compressed ??= (flags & 0x0001) != 0;
+    });
+    return compressed ?? throw new InvalidOperationException("record has no unnamed $DATA attribute");
+  }
+
+  // Counts the real (non-sparse) clusters allocated by the record's unnamed
+  // non-resident $DATA attribute, by walking its data runs. Sparse runs
+  // (offset-bytes nibble = 0) are skipped. Resident $DATA returns 0.
+  internal static long DataRealClusterCount(byte[] record) {
+    long total = 0;
+    var seen = false;
+    ForEachAttribute(record, (type, pos) => {
+      if (type != 0x80 || record[pos + 9] != 0 || record[pos + 8] == 0) return; // non-resident unnamed only
+      seen = true;
+      var runsOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(pos + 32));
+      var o = pos + runsOffset;
+      long prev = 0;
+      while (o < record.Length) {
+        var header = record[o];
+        if (header == 0) break;
+        var lengthBytes = header & 0x0F;
+        var offsetBytes = (header >> 4) & 0x0F;
+        o++;
+        long length = 0;
+        for (var i = 0; i < lengthBytes; i++) length |= (long)record[o + i] << (i * 8);
+        o += lengthBytes;
+        if (offsetBytes > 0) {
+          total += length; // real run
+          o += offsetBytes;
+        }
+        // sparse run (offsetBytes == 0): no allocated clusters, skip
+        _ = prev;
+      }
+    });
+    if (!seen) return 0;
+    return total;
+  }
+
+  // Reads the (major, minor) version from a $Volume record's $VOLUME_INFORMATION
+  // (type 0x70) attribute value (offsets +8 and +9 of the resident value).
+  internal static (byte Major, byte Minor) VolumeVersion(byte[] record) {
+    (byte, byte)? version = null;
+    ForEachAttribute(record, (type, pos) => {
+      if (type != 0x70) return;
+      var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(pos + 20));
+      var v = pos + valueOffset;
+      version ??= (record[v + 8], record[v + 9]);
+    });
+    return version ?? throw new InvalidOperationException("record has no $VOLUME_INFORMATION attribute");
+  }
+
   // Every $FILE_NAME namespace byte in the record (offset +65 of each
   // attribute value): 0 POSIX, 1 Win32, 2 DOS, 3 Win32&DOS.
   internal static List<byte> FileNameNamespaces(byte[] record) {

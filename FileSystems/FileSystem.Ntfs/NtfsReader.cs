@@ -258,11 +258,20 @@ public sealed class NtfsReader : IDisposable {
       // Non-resident data
       mft.IsResident = false;
 
+      // Attribute flags (offset 12): 0x0001 = compressed. The compression-unit
+      // size (offset 34) is the base-2 log of clusters per unit.
+      var attrFlags = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attrPos + 12));
+      mft.Compressed = (attrFlags & 0x0001) != 0;
+
       if (attrPos + 56 <= record.Length)
         mft.DataSize = BinaryPrimitives.ReadInt64LittleEndian(record.AsSpan(attrPos + 48));
 
       // Parse data runs
       if (attrPos + 34 <= record.Length) {
+        if (mft.Compressed) {
+          var unitLog2 = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attrPos + 34));
+          mft.CompressionUnitClusters = unitLog2 > 0 ? 1 << unitLog2 : 16;
+        }
         var dataRunsOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attrPos + 32));
         mft.DataRuns = ParseDataRuns(record, attrPos + dataRunsOffset);
       }
@@ -391,18 +400,23 @@ public sealed class NtfsReader : IDisposable {
         length |= (long)record[offset + i] << (i * 8);
       offset += lengthBytes;
 
+      // A run with no offset field (offsetBytes == 0) is sparse — a hole that
+      // reads as zeros. The previous-LCN cursor is NOT advanced across it.
+      if (offsetBytes == 0) {
+        runs.Add(new DataRun { Lcn = 0, ClusterCount = length, Sparse = true });
+        continue;
+      }
+
       // Read offset (signed, relative)
       long clusterOffset = 0;
-      if (offsetBytes > 0) {
-        for (var i = 0; i < offsetBytes; i++)
-          clusterOffset |= (long)record[offset + i] << (i * 8);
-        // Sign extend
-        if ((record[offset + offsetBytes - 1] & 0x80) != 0) {
-          for (var i = offsetBytes; i < 8; i++)
-            clusterOffset |= (long)0xFF << (i * 8);
-        }
-        offset += offsetBytes;
+      for (var i = 0; i < offsetBytes; i++)
+        clusterOffset |= (long)record[offset + i] << (i * 8);
+      // Sign extend
+      if ((record[offset + offsetBytes - 1] & 0x80) != 0) {
+        for (var i = offsetBytes; i < 8; i++)
+          clusterOffset |= (long)0xFF << (i * 8);
       }
+      offset += offsetBytes;
 
       var lcn = previousLcn + clusterOffset;
       runs.Add(new DataRun { Lcn = lcn, ClusterCount = length });
@@ -470,11 +484,20 @@ public sealed class NtfsReader : IDisposable {
     if (mft.DataRuns == null || mft.DataRuns.Count == 0)
       return [];
 
+    if (mft.Compressed)
+      return ExtractCompressed(mft);
+
     // Read data from non-resident runs
     using var ms = new MemoryStream();
     foreach (var run in mft.DataRuns) {
       var clusterOffset = run.Lcn * _clusterSize;
       var runBytes = (int)(run.ClusterCount * _clusterSize);
+
+      if (run.Sparse) {
+        // Hole: contributes zeros for the whole run span.
+        ms.Write(new byte[runBytes]);
+        continue;
+      }
 
       if (clusterOffset + runBytes > _data.Length)
         runBytes = (int)Math.Max(0, _data.Length - clusterOffset);
@@ -485,6 +508,89 @@ public sealed class NtfsReader : IDisposable {
 
     var result = ms.ToArray();
     // Trim to actual file size
+    if (mft.DataSize > 0 && result.Length > mft.DataSize)
+      return result.AsSpan(0, (int)mft.DataSize).ToArray();
+    return result;
+  }
+
+  // Extracts an LZNT1-compressed $DATA stream. The runs are walked VCN-by-VCN in
+  // compression-unit-sized windows (CompressionUnitClusters clusters each). A
+  // unit whose window contains a sparse tail was LZNT1-compressed: its real
+  // clusters hold the compressed chunk stream, decompressed to fill the unit's
+  // logical span. A fully-allocated unit (no sparse tail) was stored raw and is
+  // copied straight through. The final partial unit may be shorter than a full
+  // compression unit.
+  private byte[] ExtractCompressed(MftRecord mft) {
+    var unitClusters = mft.CompressionUnitClusters > 0 ? mft.CompressionUnitClusters : 16;
+    var unitBytes = unitClusters * _clusterSize;
+
+    // Flatten the runs into a per-VCN map of (Lcn or sparse) so we can slice
+    // arbitrary unit windows regardless of how runs straddle unit boundaries.
+    var runs = mft.DataRuns!;
+    long totalVcns = 0;
+    foreach (var r in runs) totalVcns += r.ClusterCount;
+
+    using var output = new MemoryStream();
+    long vcn = 0;
+    var runIndex = 0;
+    long runStartVcn = 0;
+
+    while (vcn < totalVcns && output.Length < mft.DataSize) {
+      var windowClusters = (int)Math.Min(unitClusters, totalVcns - vcn);
+
+      // Gather this window's clusters: collect real cluster bytes and detect a
+      // sparse tail. Walk the run list spanning [vcn, vcn+windowClusters).
+      var realBytes = new MemoryStream();
+      var hasSparse = false;
+      var collected = 0;
+      // Advance runIndex/runStartVcn to the run containing `vcn`.
+      while (runIndex < runs.Count && runStartVcn + runs[runIndex].ClusterCount <= vcn) {
+        runStartVcn += runs[runIndex].ClusterCount;
+        runIndex++;
+      }
+      var scanIndex = runIndex;
+      var scanStart = runStartVcn;
+      while (collected < windowClusters && scanIndex < runs.Count) {
+        var run = runs[scanIndex];
+        var withinRunStart = Math.Max(0, vcn + collected - scanStart);
+        var available = run.ClusterCount - withinRunStart;
+        var take = (int)Math.Min(available, windowClusters - collected);
+        if (run.Sparse) {
+          hasSparse = true;
+        } else {
+          var byteOffset = (run.Lcn + withinRunStart) * _clusterSize;
+          var byteLen = take * _clusterSize;
+          if (byteOffset >= 0 && byteOffset + byteLen <= _data.Length)
+            realBytes.Write(_data, (int)byteOffset, (int)byteLen);
+        }
+        collected += take;
+        if (withinRunStart + take >= run.ClusterCount) {
+          scanStart += run.ClusterCount;
+          scanIndex++;
+        }
+      }
+
+      var unitLogicalBytes = (int)Math.Min(unitBytes, mft.DataSize - output.Length);
+      var raw = realBytes.ToArray();
+      if (hasSparse) {
+        // Compressed unit: decompress the real-cluster chunk stream.
+        var decompressed = Lznt1.Decompress(raw, unitLogicalBytes);
+        output.Write(decompressed, 0, Math.Min(decompressed.Length, unitLogicalBytes));
+        // Pad with zeros if decompression produced fewer bytes than the unit's
+        // logical span (defensive; should not happen for our own output).
+        if (decompressed.Length < unitLogicalBytes)
+          output.Write(new byte[unitLogicalBytes - decompressed.Length]);
+      } else {
+        // Raw unit: copy straight through, trimmed to the logical span.
+        output.Write(raw, 0, Math.Min(raw.Length, unitLogicalBytes));
+        if (raw.Length < unitLogicalBytes)
+          output.Write(new byte[unitLogicalBytes - raw.Length]);
+      }
+
+      vcn += windowClusters;
+    }
+
+    var result = output.ToArray();
     if (mft.DataSize > 0 && result.Length > mft.DataSize)
       return result.AsSpan(0, (int)mft.DataSize).ToArray();
     return result;
@@ -506,6 +612,8 @@ public sealed class NtfsReader : IDisposable {
     public byte[]? ResidentData;
     public long DataSize;
     public List<DataRun>? DataRuns;
+    public bool Compressed;
+    public int CompressionUnitClusters;
 
     // Index
     public List<uint>? IndexEntryRefs;
@@ -516,5 +624,6 @@ public sealed class NtfsReader : IDisposable {
   private sealed class DataRun {
     public long Lcn;
     public long ClusterCount;
+    public bool Sparse;
   }
 }
