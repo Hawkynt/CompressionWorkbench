@@ -18,6 +18,7 @@ public sealed class ReiserFsReader : IDisposable {
   private const int Off_RootBlock = 8;
   private const int Off_BlockSize = 44;
   private const int Off_Magic = 52;
+  private const int Off_Label = 100; // s_label[16]
 
   private static readonly byte[][] Magics = [
     "ReIsErFs"u8.ToArray(),   // 3.5
@@ -44,6 +45,9 @@ public sealed class ReiserFsReader : IDisposable {
 
   public IReadOnlyList<ReiserFsEntry> Entries => _entries;
 
+  /// <summary>Volume label from the superblock <c>s_label</c> field (16 bytes, NUL-trimmed ASCII).</summary>
+  public string Label { get; private set; } = "";
+
   public ReiserFsReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
@@ -66,6 +70,11 @@ public sealed class ReiserFsReader : IDisposable {
 
     _blockSize = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(SuperblockOffset + Off_BlockSize));
     if (_blockSize == 0) _blockSize = 4096;
+
+    var labelSpan = _data.AsSpan(SuperblockOffset + Off_Label, 16);
+    var labelLen = labelSpan.IndexOf((byte)0);
+    if (labelLen < 0) labelLen = 16;
+    this.Label = labelLen == 0 ? "" : System.Text.Encoding.ASCII.GetString(labelSpan[..labelLen]);
     _rootBlock = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(SuperblockOffset + Off_RootBlock));
 
     // Pass 1: scan every leaf, indexing stat-data modes and directory entries.

@@ -143,7 +143,7 @@ public sealed class ZfsWriter {
     // ---------- Build NVList ----------
 
     var asize = (ulong)(dataAreaEnd - dataAreaStart);
-    var nv = BuildVdevLabelNvList(poolGuid, vdevGuid, txg, asize);
+    var nv = BuildVdevLabelNvList(poolGuid, vdevGuid, txg, asize, this._poolName);
     var nvBytes = XdrNvList.Encode(nv);
     if (nvBytes.Length > ZfsConstants.NvListSize)
       throw new InvalidOperationException("NvList exceeds 112 KB.");
@@ -476,12 +476,12 @@ public sealed class ZfsWriter {
     };
   }
 
-  private static XdrNvList.NvList BuildVdevLabelNvList(ulong poolGuid, ulong vdevGuid, ulong txg, ulong asize) {
+  private static XdrNvList.NvList BuildVdevLabelNvList(ulong poolGuid, ulong vdevGuid, ulong txg, ulong asize, string poolName) {
     var vdevTree = new XdrNvList.NvList()
       .AddString("type", "disk")
       .AddUInt64("id", 0)
       .AddUInt64("guid", vdevGuid)
-      .AddString("path", "/dev/compworkbench")
+      .AddString("path", $"/dev/{poolName}")
       .AddUInt64("whole_disk", 1)
       .AddUInt64("metaslab_array", 0)
       .AddUInt64("metaslab_shift", 24)    // 16 MB metaslabs
@@ -492,7 +492,7 @@ public sealed class ZfsWriter {
 
     return new XdrNvList.NvList()
       .AddUInt64("version", ZfsConstants.PoolVersion)
-      .AddString("name", "compworkbench")
+      .AddString("name", poolName)
       .AddUInt64("state", ZfsConstants.PoolStateActive)
       .AddUInt64("txg", txg)
       .AddUInt64("pool_guid", poolGuid)

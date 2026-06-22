@@ -128,6 +128,9 @@ public sealed class Gfs2Writer {
                       FiRoot = 12;
   private const ulong NextFreeFormalIno = 13;
 
+  // Cluster lock-table name written to sb_locktable (read back as Gfs2Reader.LockTable).
+  private readonly string _lockTable;
+
   // Set of blocks that are dinodes (bitmap state 3) vs plain used (state 1).
   private readonly SortedSet<long> _dinodeBlocks = [];
   private readonly SortedSet<long> _usedBlocks = [];
@@ -138,7 +141,8 @@ public sealed class Gfs2Writer {
   /// a clean volume (journal + system inodes + slack) is 32&#160;MB.
   /// </summary>
   public Gfs2Writer(long sizeBytes = 32L * 1024 * 1024, byte[]? uuid = null,
-                    DateTime? timestamp = null) {
+                    DateTime? timestamp = null, string? lockTable = null) {
+    this._lockTable = lockTable ?? "";
     this._totalBlocks = sizeBytes / BlockSize;
     if (this._totalBlocks < 4096)
       throw new ArgumentOutOfRangeException(nameof(sizeBytes),
@@ -260,7 +264,7 @@ public sealed class Gfs2Writer {
     WriteInum(o + 80, FiRoot, (ulong)this._rootDinode);
     // sb_lockproto @96, sb_locktable @160
     WriteCString(o + 96, "lock_nolock", 64);
-    WriteCString(o + 160, "", 64);
+    WriteCString(o + 160, this._lockTable, 64);
     // __pad3 @224, __pad4 @240 (zero)
     // sb_uuid @256
     this._uuid.AsSpan().CopyTo(Span(o + 256, 16));

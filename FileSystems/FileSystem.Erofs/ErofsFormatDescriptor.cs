@@ -9,7 +9,21 @@ namespace FileSystem.Erofs;
 /// Full-fidelity, compressed images remain the job of <c>mkfs.erofs</c>; our writer targets
 /// the round-trippable WORM subset (compact inodes, plain data, nested directories).
 /// </summary>
-public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable {
+public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// The one tunable the uncompressed writer honours: the volume label written
+  /// into the superblock <c>volume_name</c> field (16 bytes) via
+  /// <see cref="ErofsWriter.VolumeName"/> and read back as
+  /// <c>ErofsReader.VolumeName</c>. The 4&#160;KB block size is fixed by the
+  /// FLAT_PLAIN/FLAT_INLINE layout, so it is not exposed.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 16),
+  ];
+
   public string Id => "Erofs";
   public string DisplayName => "EROFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -99,6 +113,9 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var writer = new ErofsWriter();
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (!string.IsNullOrEmpty(label))
+      writer.VolumeName = label;
     foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
       writer.AddFile(name, data);
     writer.WriteTo(output);

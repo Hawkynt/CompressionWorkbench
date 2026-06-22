@@ -15,7 +15,24 @@ namespace FileSystem.BcacheFs;
 /// emitting B-tree nodes are explicitly out of scope — see
 /// <c>Hawkynt.FileFormats.FileSystems/README.md</c> for the full gap statement.
 /// </summary>
-public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable {
+public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Knobs the WORM superblock writer honours. <c>VolumeLabel</c> maps to
+  /// <see cref="BcacheFsWriter.SetLabel"/> (label[32], read back as
+  /// <c>BcacheFsSuperblock.Label</c>); <c>ImageSize</c> maps to
+  /// <see cref="BcacheFsWriter.SetImageSize"/> and must be at least
+  /// <see cref="BcacheFsWriter.MinImageSize"/> (128&#160;MiB) so the four backup
+  /// superblocks fit. The 512-byte block size is fixed, so it is not exposed.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 31),
+    FilesystemSchemaPresets.ImageSize(["128 MB", "256 MB", "512 MB"],
+      description: "Total image capacity. Must be at least 128 MB so all four backup superblocks fit."),
+  ];
+
   public string Id => "BcacheFs";
   public string DisplayName => "BcacheFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -100,6 +117,12 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     var w = new BcacheFsWriter();
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (!string.IsNullOrEmpty(label))
+      w.SetLabel(label);
+    var sizeBytes = FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", ""));
+    if (sizeBytes >= BcacheFsWriter.MinImageSize)
+      w.SetImageSize(sizeBytes);
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
       // We surface the file list in metadata only — no content goes into the

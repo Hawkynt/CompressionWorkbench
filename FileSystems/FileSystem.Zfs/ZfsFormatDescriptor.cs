@@ -5,7 +5,26 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Zfs;
 
 public sealed class ZfsFormatDescriptor :
-  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
+  IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Knobs the WORM pool writer honours. <c>VolumeLabel</c> maps to the pool
+  /// name written into the vdev-label NVList <c>name</c> field (and the vdev
+  /// <c>path</c>), read back as <c>ZfsReader.PoolName</c>; <c>ImageSize</c> maps
+  /// to the total pool image size and must be at least
+  /// <see cref="MinTotalArchiveSize"/> (the four 256&#160;KB vdev labels plus a
+  /// usable data area). The 512-byte sector size and Fletcher-4 checksum are
+  /// fixed, so they are not exposed.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "VolumeLabel", DisplayName: "Pool name", Kind: FormatOptionKind.String, Default: "compworkbench",
+      Description: "ZFS pool name stored in the vdev-label NVList."),
+    FilesystemSchemaPresets.ImageSize(["64 MB", "128 MB", "256 MB"],
+      description: "Total pool image size (at least 64 MB)."),
+  ];
 
   public string Id => "Zfs";
   public string DisplayName => "ZFS";
@@ -65,11 +84,18 @@ public sealed class ZfsFormatDescriptor :
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new ZfsWriter();
+    var poolName = options?.GetOption("VolumeLabel", "") ?? "";
+    if (!string.IsNullOrEmpty(poolName))
+      w.SetPoolName(poolName);
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
       w.AddFile(i.ArchiveName, i.ReadContent());
     }
-    w.WriteTo(output);
+    long sizeBytes = FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", ""));
+    if (sizeBytes >= (MinTotalArchiveSize ?? 0))
+      w.WriteTo(output, sizeBytes);
+    else
+      w.WriteTo(output);
   }
 
   public void Defragment(Stream archive)

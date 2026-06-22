@@ -72,6 +72,12 @@ public sealed class ErofsWriter {
   private readonly DirectoryNode _root = new() { Name = "", Mode = ModeDirectory };
 
   /// <summary>
+  /// Volume label written into the superblock <c>volume_name</c> field (16 bytes,
+  /// NUL-padded; longer strings are truncated). Empty leaves the field zero.
+  /// </summary>
+  public string VolumeName { get; set; } = "";
+
+  /// <summary>
   /// Registers a file at the given archive path. Path segments are split on '/' and the
   /// intermediate directories are created on demand so nested layouts round-trip with
   /// their full directory chain intact.
@@ -185,7 +191,7 @@ public sealed class ErofsWriter {
 
     // 3. Superblock at offset 1024.
     WriteSuperblock(image, rootNid: this._root.Nid, inodeCount: allNodes.Count,
-      totalBlocks: totalBlocks, metaBlkAddr: metaBlkAddr);
+      totalBlocks: totalBlocks, metaBlkAddr: metaBlkAddr, volumeName: this.VolumeName);
 
     // 4. Inodes + inline tails. Placement must reproduce pass A exactly so that each
     //    inode lands at the byte its nid encodes.
@@ -261,7 +267,7 @@ public sealed class ErofsWriter {
     return body;
   }
 
-  private static void WriteSuperblock(byte[] image, uint rootNid, int inodeCount, uint totalBlocks, uint metaBlkAddr) {
+  private static void WriteSuperblock(byte[] image, uint rootNid, int inodeCount, uint totalBlocks, uint metaBlkAddr, string volumeName) {
     var sb = image.AsSpan(1024);
     BinaryPrimitives.WriteUInt32LittleEndian(sb, ErofsReader.Magic);            // magic @0
     // checksum @4 left 0 — sb_csum feature bit is NOT advertised, so fsck skips it.
@@ -277,7 +283,11 @@ public sealed class ErofsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(sb[44..], 0);                      // xattr_blkaddr @44
     // uuid @48[16] — a fixed, deterministic non-zero UUID.
     for (var i = 0; i < 16; ++i) sb[48 + i] = (byte)(0x10 + i);
-    // volume_name @64[16] left zero.
+    // volume_name @64[16] — NUL-padded ASCII label (zero when unset).
+    if (!string.IsNullOrEmpty(volumeName)) {
+      var nameBytes = Encoding.ASCII.GetBytes(volumeName);
+      nameBytes.AsSpan(0, Math.Min(nameBytes.Length, 16)).CopyTo(sb[64..]);
+    }
     // feature_incompat @80 left 0.
   }
 

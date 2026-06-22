@@ -43,6 +43,9 @@ internal sealed class Ocfs2Writer {
 
   private readonly List<(string Name, byte[] Data)> _files = [];
 
+  /// <summary>Volume label written into <c>s_label</c> (64-byte field, NUL-padded). Capped at 63 ASCII bytes.</summary>
+  private string _label = "OCFS2VOL";
+
   internal const int BlockSize = 4096;
   internal const int ClusterSize = 4096;
   internal const int BlockSizeBits = 12;
@@ -130,6 +133,12 @@ internal sealed class Ocfs2Writer {
   // Standard clusters-per-group for the global cluster bitmap at 4 KB blocks:
   // a single group descriptor's bg_bitmap holds (blocksize - 0x40) * 8 bits.
   private const int ClustersPerGroup = (BlockSize - 0x40) * 8; // 32256
+
+  /// <summary>Sets the volume label written into <c>s_label</c> (capped at 63 ASCII bytes).</summary>
+  public void SetLabel(string label) {
+    ArgumentNullException.ThrowIfNull(label);
+    this._label = label.Length > 63 ? label[..63] : label;
+  }
 
   /// <summary>Adds a file to the image. '/' separators create directories.</summary>
   public void AddFile(string name, byte[] data) {
@@ -395,7 +404,7 @@ internal sealed class Ocfs2Writer {
 
   // ───────────────────────── superblock ─────────────────────────
 
-  private static void WriteSuperblock(byte[] image, Plan plan) {
+  private void WriteSuperblock(byte[] image, Plan plan) {
     WriteDinodeHeader(image, SuperBlockBlkno, 0, FlValid | FlSystem | FlSuperBlock, 0, 0, -1, 0xFFFF);
     var dinodeOff = (int)(SuperBlockBlkno * BlockSize);
     image.AsSpan(dinodeOff, 8).Clear();
@@ -418,7 +427,10 @@ internal sealed class Ocfs2Writer {
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 0x3C, 4), ClusterSizeBits);
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(off + 0x40, 2), 1);        // s_max_slots
     BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(off + 0x48, 8), GlobalBitmapGroupBlkno); // s_first_cluster_group
-    Encoding.ASCII.GetBytes("OCFS2VOL").CopyTo(image.AsSpan(off + 0x50, 8)); // s_label
+    // s_label[64] @ +0x50 — NUL-padded ASCII. The field is zeroed by the
+    // image allocation, so a short label leaves the tail clean for the reader.
+    var labelBytes = Encoding.ASCII.GetBytes(this._label);
+    labelBytes.AsSpan(0, Math.Min(labelBytes.Length, 64)).CopyTo(image.AsSpan(off + 0x50, 64));
     Uuid.CopyTo(image.AsSpan(off + 0x90, 16)); // s_uuid
   }
 

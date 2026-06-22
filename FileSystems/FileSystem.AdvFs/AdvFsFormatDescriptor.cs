@@ -38,7 +38,20 @@ namespace FileSystem.AdvFs;
 ///   <item><description>Wikipedia "Advanced File System"</description></item>
 /// </list>
 /// </summary>
-public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable, IArchiveShrinkable, IArchiveModifiable, IArchiveCreatable {
+public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable, IArchiveShrinkable, IArchiveModifiable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// The one tunable the WORM writer honours: the textual volume tag stamped
+  /// into the BSR_VD_ATTR record (64-byte field, capped at 63 ASCII bytes).
+  /// <see cref="AdvFsWriter.SetVolumeTag"/> writes it and
+  /// <see cref="AdvFsReader.VolumeTag"/> reads it back, so the knob round-trips.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 63),
+  ];
+
   public string Id => "AdvFs";
   public string DisplayName => "AdvFS (Tru64 UNIX)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -126,6 +139,9 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     using var w = new AdvFsWriter(output, leaveOpen: true);
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (!string.IsNullOrEmpty(label))
+      w.SetVolumeTag(label);
     foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
     w.Finish();
