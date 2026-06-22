@@ -19,8 +19,26 @@ public interface ILayoutOptimizable {
   /// Reads only the superblock / BPB of <paramref name="image"/> to determine the
   /// current layout parameters and compute the optimal alternatives.
   /// The stream must be readable and seekable but is never fully loaded.
+  ///
+  /// <para><b>Default implementation</b>: returns an honest, no-op analysis that
+  /// reports the current image size and recommends no change. Formats that can
+  /// discover their on-disk allocation-unit size cheaply (FAT, ext, …) override
+  /// this to populate <see cref="LayoutAnalysis.CurrentUnitSize"/> and propose an
+  /// optimal alternative. The generic default never claims a saving it cannot
+  /// substantiate, so it is always safe to surface.</para>
   /// </summary>
-  LayoutAnalysis AnalyzeLayout(Stream image);
+  LayoutAnalysis AnalyzeLayout(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var size = image.CanSeek ? image.Length : 0L;
+    return new LayoutAnalysis {
+      ImageSize = size,
+      CurrentUnitSize = 0,
+      CurrentSlackBytes = 0,
+      OptimalUnitSize = 0,
+      OptimalSlackBytes = 0,
+      Notes = ["Generic analysis: current geometry reported as-is; no structural change recommended. Use RebuildStreaming to re-apply explicit layout parameters."],
+    };
+  }
 
   /// <summary>
   /// Applies metadata-only changes (volume label, serial number, geometry CHS
@@ -28,18 +46,59 @@ public interface ILayoutOptimizable {
   /// Throws <see cref="NotSupportedException"/> for changes that would require
   /// moving data clusters (e.g. cluster-size change) — call
   /// <see cref="RebuildStreaming"/> for those.
+  ///
+  /// <para><b>Default implementation</b>: throws <see cref="NotSupportedException"/>.
+  /// In-place superblock patching is necessarily format-specific (each filesystem
+  /// keeps its label/serial at a different offset), so the generic mechanism
+  /// re-applies geometry through the verified rebuild path
+  /// (<see cref="RebuildStreaming"/>) rather than guessing byte offsets.</para>
   /// </summary>
   /// <param name="image">A readable, writable, seekable stream.</param>
   /// <param name="patch">The set of metadata fields to overwrite in-place.</param>
-  void PatchInPlace(Stream image, LayoutPatch patch);
+  void PatchInPlace(Stream image, LayoutPatch patch) =>
+    throw new NotSupportedException(
+      "In-place layout patching is format-specific; the generic default re-applies geometry via RebuildStreaming instead.");
 
   /// <summary>
   /// Converts <paramref name="source"/> to <paramref name="target"/> with the
   /// layout parameters in <paramref name="options"/>. Reads and writes
   /// sequentially — never loads the full source into memory. Suitable for
   /// images of any size; typical peak allocation is O(cluster-size + FAT-sector).
+  ///
+  /// <para><b>Default implementation</b>: any descriptor that also implements
+  /// <see cref="IArchiveFormatOperations"/> + <see cref="IArchiveCreatable"/> gets
+  /// a layout rebuild for free — the requested geometry is mapped to a
+  /// format-specific options dictionary (<see cref="LayoutRebuildOptions.UnitSize"/>
+  /// → <c>ClusterSize</c> in bytes, <see cref="LayoutRebuildOptions.ImageSize"/>
+  /// → <c>ImageSize</c>, plus every entry of
+  /// <see cref="LayoutRebuildOptions.Parameters"/> verbatim, with the explicit
+  /// parameters winning), then handed to the verified extract → re-create engine
+  /// <see cref="RebuildVerb.RebuildToStream"/>, which refuses any lossy round-trip.
+  /// Descriptors that can stream a true in-place geometry conversion override
+  /// this.</para>
   /// </summary>
-  void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options);
+  void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    ArgumentNullException.ThrowIfNull(source);
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(options);
+    if (this is not IArchiveFormatOperations ops || this is not IArchiveCreatable creator)
+      throw new NotSupportedException(
+        "The default RebuildStreaming requires the descriptor to also implement IArchiveFormatOperations + IArchiveCreatable.");
+
+    // Map the structured layout options to the format-specific create dictionary.
+    // Auto-selected geometry seeds the dictionary first; explicit Parameters then
+    // overwrite it (explicit entries win), matching LayoutRebuildOptions's contract.
+    var dict = new Dictionary<string, string>(StringComparer.Ordinal);
+    if (options.UnitSize > 0)
+      dict["ClusterSize"] = options.UnitSize.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    if (options.ImageSize > 0)
+      dict["ImageSize"] = options.ImageSize.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    if (options.Parameters != null)
+      foreach (var kv in options.Parameters)
+        dict[kv.Key] = kv.Value;
+
+    RebuildVerb.RebuildToStream(source, target, ops, creator, dict.Count > 0 ? dict : null);
+  }
 }
 
 // ── Value types ─────────────────────────────────────────────────────────────

@@ -24,7 +24,7 @@ namespace FileSystem.Pc98;
 /// </summary>
 public sealed class Pc98FormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
-  IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
+  IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   public string Id => "Pc98";
   public string DisplayName => "NEC PC-98 DOS";

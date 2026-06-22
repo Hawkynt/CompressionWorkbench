@@ -6,7 +6,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.DoubleSpace;
 
-public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema {
+public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
   public string Id => "DoubleSpace";
   public string DisplayName => "DoubleSpace CVF";
   public FormatCategory Category => FormatCategory.Archive;

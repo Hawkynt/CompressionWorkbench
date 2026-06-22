@@ -22,7 +22,7 @@ namespace FileSystem.Cromemco;
 /// </summary>
 public sealed class CromemcoFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
-  IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
+  IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   public string Id => "Cromemco";
   public string DisplayName => "Cromemco RDOS";

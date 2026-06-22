@@ -19,7 +19,7 @@ namespace FileSystem.ApplePascal;
 /// <para><b>Spec.</b> Apple Pascal Operating System Reference Manual (1980).</para>
 /// </summary>
 public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
+    IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   public string Id => "ApplePascal";
   public string DisplayName => "Apple UCSD Pascal";

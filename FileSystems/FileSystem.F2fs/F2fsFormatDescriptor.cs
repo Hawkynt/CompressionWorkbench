@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.F2fs;
 
-public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema {
+public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
 
   // A F2FS segment is 2 MiB; image size in bytes = segment count × 2 MiB.
   private const long SegmentSizeBytes = 2L * 1024 * 1024;

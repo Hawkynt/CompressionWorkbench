@@ -22,7 +22,7 @@ namespace FileSystem.Trsdos;
 /// </summary>
 public sealed class TrsdosFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
-  IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema {
+  IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   public string Id => "Trsdos";
   public string DisplayName => "TRSDOS / LDOS";
