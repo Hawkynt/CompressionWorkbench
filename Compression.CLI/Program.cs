@@ -1551,6 +1551,79 @@ compactCmd.SetAction((ParseResult ctx) => {
   }
 });
 
+// ── reconfigure ─────────────────────────────────────────────────────────────
+
+var reconfigureFileArg = new Argument<string>("file") { Description = "Filesystem image or archive to reconfigure" };
+var reconfigureSetOpt = new Option<string[]>("--set") {
+  Description = "Geometry/option to change as KEY=VALUE (repeatable). Keys/values match the format's options "
+    + "schema, e.g. --set ClusterSize=\"2 KB\" --set MftRecordSize=\"2 KB\". Bare KEY = true. "
+    + "Later --set for the same KEY overrides earlier ones."
+};
+
+var reconfigureCmd = new Command("reconfigure", """
+  Change an existing container's geometry/options after creation — without losing data.
+
+  Extracts the contents and re-creates the container with the supplied options
+  (e.g. FAT cluster size or root entries, NTFS MFT record size, image size).
+  The rebuild is verified to list back the exact same files before the original
+  is replaced; on any failure the original is left untouched.
+
+  Options are forwarded verbatim to the writer; unknown keys are ignored. Run
+  'cwb create --help' or the format's docs for the available knobs.
+
+  Examples:
+    cwb reconfigure disk.img --set ClusterSize="2 KB"
+    cwb reconfigure disk.img --set ClusterSize="4 KB" --set RootEntries=512
+    cwb reconfigure disk.ntfs --set MftRecordSize="2 KB" --set ClusterSize="8 KB"
+
+  Contents are always preserved byte-for-byte.
+  """) { reconfigureFileArg, reconfigureSetOpt };
+reconfigureCmd.SetAction((ParseResult ctx) => {
+  var fileArg = ctx.GetValue(reconfigureFileArg)!;
+  var setPairs = ctx.GetValue(reconfigureSetOpt) ?? [];
+
+  if (!File.Exists(fileArg)) { Console.Error.WriteLine($"File not found: {fileArg}"); return 1; }
+
+  // Parse --set KEY=VALUE pairs. Bare KEY (no '=') becomes "true"; later
+  // occurrences of the same KEY win (last write wins).
+  var newOptions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+  foreach (var raw in setPairs) {
+    if (string.IsNullOrEmpty(raw)) continue;
+    var eq = raw.IndexOf('=');
+    if (eq < 0) {
+      newOptions[raw] = "true";
+    } else {
+      var key = raw[..eq];
+      var value = raw[(eq + 1)..];
+      if (!string.IsNullOrEmpty(key)) newOptions[key] = value;
+    }
+  }
+  if (newOptions.Count == 0) {
+    Console.Error.WriteLine("No options given. Use --set KEY=VALUE (repeatable).");
+    return 1;
+  }
+
+  FormatRegistration.EnsureInitialized();
+  var formatId = FormatDetector.Detect(fileArg).ToString();
+  Console.WriteLine($"Reconfiguring {Path.GetFileName(fileArg)} ({formatId})...");
+  var sw = Stopwatch.StartNew();
+
+  try {
+    var result = Compression.Lib.ReconfigureOperation.Reconfigure(fileArg, newOptions);
+    sw.Stop();
+    var delta = result.NewSize - result.OriginalSize;
+    var pct = result.OriginalSize > 0 ? 100.0 * delta / result.OriginalSize : 0;
+    Console.WriteLine($"done ({sw.ElapsedMilliseconds}ms) — {result.FileCount} file(s) preserved");
+    Console.WriteLine($"  applied: {string.Join(", ", result.AppliedOptions.Select(kv => $"{kv.Key}={kv.Value}"))}");
+    Console.WriteLine($"  {FormatSize(result.OriginalSize)} -> {FormatSize(result.NewSize)} ({pct:+0.0;-0.0;0.0}%)");
+    return 0;
+  } catch (Exception ex) {
+    sw.Stop();
+    Console.Error.WriteLine($"FAILED: {ex.GetType().Name}: {ex.Message}");
+    return 1;
+  }
+});
+
 // ── deploy ──────────────────────────────────────────────────────────────
 
 var deployImageArg = new Argument<FileInfo>("image") { Description = "Source image file to write" };
@@ -2351,6 +2424,7 @@ var root = new RootCommand("""
     cwb wipe-empty disk.img                  Zero all unused space in image
     cwb compact disk.img                     Defrag + optimize + shrink (smallest valid)
     cwb compact disk.img --minimal           Bare-minimum geometry (tiny, non-standard)
+    cwb reconfigure disk.img --set ClusterSize="2 KB"   Change geometry, keep data
     cwb dedup disk.img --dry-run             Find duplicate files in image
     cwb sparsify disk.vhd                    Remove zero-filled blocks
     cwb densify disk.qcow2                   Pre-allocate all blocks
@@ -2361,7 +2435,7 @@ var root = new RootCommand("""
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, convertCmd, optimizeCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, shrinkCmd, wipeCmd, compactCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
+  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, convertCmd, optimizeCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
 };
 
 return root.Parse(args).Invoke();
