@@ -4,7 +4,19 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Xfs;
 
-public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+
+  /// <summary>
+  /// XFS geometry (block size, inode size, AG layout) is fixed at the
+  /// <c>mkfs.xfs</c>-faithful defaults the writer emits, so the only honoured
+  /// tunable is the volume label stored in the superblock <c>sb_fname[12]</c>
+  /// field (ASCII, truncated to 12 bytes).
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "VolumeLabel", DisplayName: "Volume Label", Kind: FormatOptionKind.String, Default: "",
+      Description: "XFS volume label stored in sb_fname (max 12 ASCII chars)."),
+  ];
 
   /// <summary>
   /// Walks the per-AG superblock + AGF/AGI/AGFL + bnobt/cntbt/inobt headers
@@ -170,6 +182,7 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new XfsWriter();
+    w.SetVolumeLabel(options.GetOption("VolumeLabel", ""));
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
       w.AddFile(i.ArchiveName, i.ReadContent());
@@ -191,6 +204,7 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     var w = new XfsWriter();
+    w.SetVolumeLabel(options.GetOption("VolumeLabel", ""));
     if (!output.CanSeek) {
       // Non-seekable target: cannot do the seek-back second pass, so buffer
       // each entry into the writer's byte[] path and emit in one shot.

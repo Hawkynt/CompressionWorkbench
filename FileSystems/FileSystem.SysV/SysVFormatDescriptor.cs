@@ -38,7 +38,18 @@ namespace FileSystem.SysV;
 /// WSL2 kernel ships without it).
 /// </para>
 /// </remarks>
-public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
+public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
+  /// <summary>
+  /// s5fs geometry (1024-byte blocks, 64-byte inodes, single-group layout) is
+  /// fixed at the classic AT&amp;T variant the writer emits, so the only honoured
+  /// knob is the 6-byte volume name in the superblock <c>s_fname[6]</c> field.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "VolumeLabel", DisplayName: "Volume Label", Kind: FormatOptionKind.String, Default: "",
+      Description: "s5fs volume name stored in s_fname (max 6 ASCII chars)."),
+  ];
+
   public string Id => "SysV";
   public string DisplayName => "UNIX System V FS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -109,6 +120,7 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     using var w = new SysVWriter(output, leaveOpen: true);
+    if (options.HasOption("VolumeLabel")) w.SetVolumeLabel(options.GetOption("VolumeLabel", ""));
     foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
     w.Finish();

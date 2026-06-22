@@ -11,7 +11,21 @@ namespace FileSystem.MinixV2;
 /// triple-indirect blocks for large-file support. Magic 0x2468
 /// (14-byte names) or 0x2478 (30-byte names — extended variant).
 /// </summary>
-public sealed class MinixV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable {
+public sealed class MinixV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+  /// <summary>
+  /// Minix v2 geometry (1024-byte blocks, 64-byte inodes) is fixed, but the
+  /// on-disk directory-name width is a genuine format variant the writer
+  /// honours: 14-byte names (magic 0x2468) or 30-byte names (magic 0x2478).
+  /// Selecting "30" changes both the superblock magic and every directory
+  /// entry's size.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "NameLength", DisplayName: "Directory Name Length", Kind: FormatOptionKind.Enum, Default: "14",
+      AllowedValues: ["14", "30"],
+      Description: "Directory-entry name width: 14 bytes (magic 0x2468) or 30 bytes (magic 0x2478)."),
+  ];
+
   public string Id => "MinixV2";
   public string DisplayName => "Minix V2 FS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -79,7 +93,8 @@ public sealed class MinixV2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// each with its own <c>"."</c>/<c>".."</c> entries.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    using var w = new MinixV2Writer(output, leaveOpen: true);
+    var longNames = options.GetOptionInt("NameLength", 14) == 30;
+    using var w = new MinixV2Writer(output, leaveOpen: true, longNames: longNames);
     foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
     w.Finish();

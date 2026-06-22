@@ -110,6 +110,18 @@ public sealed class XfsWriter {
   private const int BtreeRecOffset = 56;
 
   private readonly List<(string name, byte[] data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
+
+  // Optional volume label written into sb_fname[12] (superblock offset 108). XFS
+  // truncates the label to 12 bytes; empty leaves the field zero (mkfs default).
+  private string _volumeLabel = "";
+
+  /// <summary>
+  /// Sets the volume label written into the superblock <c>sb_fname[12]</c> field.
+  /// ASCII, truncated to 12 bytes; the default (empty) leaves the field zero,
+  /// matching plain <c>mkfs.xfs</c> output.
+  /// </summary>
+  public void SetVolumeLabel(string label) => this._volumeLabel = label ?? "";
+
   private static readonly Guid VolumeUuid = new("7fb1c7a0-b71b-4f34-9d8a-5c7f6a2e11d3");
   private static readonly byte[] UuidBytes = VolumeUuid.ToByteArray();
 
@@ -379,7 +391,8 @@ public sealed class XfsWriter {
         icount: (ulong)(ag == 0 ? totalInodeSlots : 0),
         ifree: (ulong)(ag == 0 ? freeInodeSlots : 0),
         fdblocks: (ulong)(freeLenAg0 + (AgCount - 1) * freeLenAgN),
-        dirBlockLog: this._dirBlockLog);
+        dirBlockLog: this._dirBlockLog,
+        volumeLabel: this._volumeLabel);
 
       WriteAgf(image.AsSpan(agByteOffset + AgfSector * SectorSize),
         agNumber: (uint)ag,
@@ -994,7 +1007,8 @@ public sealed class XfsWriter {
   }
 
   private static void WriteSuperblock(Span<byte> sb, ulong totalBlocks, ulong logStart,
-      int logBlocks, ulong icount, ulong ifree, ulong fdblocks, byte dirBlockLog) {
+      int logBlocks, ulong icount, ulong ifree, ulong fdblocks, byte dirBlockLog,
+      string volumeLabel) {
     BinaryPrimitives.WriteUInt32BigEndian(sb[0..], XfsMagic);
     BinaryPrimitives.WriteUInt32BigEndian(sb[4..], BlockSize);
     BinaryPrimitives.WriteUInt64BigEndian(sb[8..], totalBlocks);        // sb_dblocks
@@ -1020,7 +1034,12 @@ public sealed class XfsWriter {
     BinaryPrimitives.WriteUInt16BigEndian(sb[102..], SectorSize);
     BinaryPrimitives.WriteUInt16BigEndian(sb[104..], InodeSize);
     BinaryPrimitives.WriteUInt16BigEndian(sb[106..], InodesPerBlock);
-    // sb_fname[12] at 108 = zero
+    // sb_fname[12] at 108 — volume label (ASCII, NUL-padded, truncated to 12).
+    if (!string.IsNullOrEmpty(volumeLabel)) {
+      Span<byte> name = stackalloc byte[12];
+      var n = System.Text.Encoding.ASCII.GetBytes(volumeLabel.AsSpan(0, Math.Min(volumeLabel.Length, 12)), name);
+      name[..n].CopyTo(sb[108..]);
+    }
 
     sb[120] = BlockLog;
     sb[121] = SectorLog;

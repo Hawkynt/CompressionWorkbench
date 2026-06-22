@@ -260,10 +260,20 @@ public sealed class Ext1Writer {
     return disk;
   }
 
-  /// <summary>Materialises the image and writes it to the given stream.</summary>
-  public void WriteTo(Stream output) {
+  /// <summary>
+  /// Materialises the image and writes it to the given stream. The optional
+  /// <paramref name="blockSize"/> selects the 1024/2048/4096-byte block size
+  /// (<c>s_log_block_size</c>); the total image is sized to a constant 4 MiB so
+  /// larger blocks mean fewer total blocks.
+  /// </summary>
+  public void WriteTo(Stream output, int blockSize = 1024) {
     ArgumentNullException.ThrowIfNull(output);
-    var data = this.Build();
+    if (blockSize is not (1024 or 2048 or 4096))
+      throw new ArgumentOutOfRangeException(nameof(blockSize), blockSize, "ext1 block size must be 1024, 2048, or 4096.");
+    // Keep the canonical 4 MiB footprint across block sizes: totalBlocks scales
+    // inversely with the block size (4096 blocks at 1 KiB → 1024 blocks at 4 KiB).
+    var totalBlocks = 4 * 1024 * 1024 / blockSize;
+    var data = this.Build(blockSize, totalBlocks);
     output.Write(data, 0, data.Length);
   }
 

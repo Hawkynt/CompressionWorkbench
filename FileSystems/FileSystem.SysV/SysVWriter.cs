@@ -76,6 +76,16 @@ public sealed class SysVWriter : IDisposable {
   private readonly bool _leaveOpen;
   private readonly List<(string Name, byte[] Data)> _files = [];
 
+  // Optional volume name written into s_fname[6] at superblock offset 440.
+  // Defaults to the canonical "CWBSV"; ASCII, space/NUL-padded, max 6 bytes.
+  private string _volumeLabel = "CWBSV";
+
+  /// <summary>
+  /// Sets the 6-byte volume name written into the superblock <c>s_fname[6]</c>
+  /// field (offset 440). ASCII, truncated to 6 bytes, space-padded.
+  /// </summary>
+  public void SetVolumeLabel(string label) => this._volumeLabel = label ?? "";
+
   // Spec constants — every offset audited against linux/fs/sysv/{super,sysv,inode}.h
   // and against the AT&T System V Interface Definition appendix on s5fs.
   internal const int BlockSize = 1024;
@@ -297,7 +307,8 @@ public sealed class SysVWriter : IDisposable {
       sInode: freeInodes,
       sTime: (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
       sTFree: (uint)totalFreeBlocks,
-      sTInode: (ushort)Math.Min(totalFreeInodes, ushort.MaxValue));
+      sTInode: (ushort)Math.Min(totalFreeInodes, ushort.MaxValue),
+      volumeLabel: this._volumeLabel);
 
     // 10. Bootstrap block (block 0) stays all-zero, matching mkfs.s5.
     this._output.Write(disk);
@@ -420,7 +431,8 @@ public sealed class SysVWriter : IDisposable {
       ushort isize, uint fsize,
       ushort sNFree, uint[] sFree,
       ushort sNInode, List<ushort> sInode,
-      uint sTime, uint sTFree, ushort sTInode) {
+      uint sTime, uint sTFree, ushort sTInode,
+      string volumeLabel) {
     var sb = disk.AsSpan(SuperblockOffset, BlockSize);
     // s_isize           [ +0] u16
     BinaryPrimitives.WriteUInt16LittleEndian(sb,                    isize);
@@ -444,9 +456,10 @@ public sealed class SysVWriter : IDisposable {
     BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(434),         sTFree);
     // s_tinode          [+438] u16
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(438),         sTInode);
-    // s_fname[6]        [+440] — volume label, ASCII 6 chars
-    var name = "CWBSV "u8;
-    name.CopyTo(sb.Slice(440, 6));
+    // s_fname[6]        [+440] — volume label, ASCII 6 chars (space-padded).
+    sb.Slice(440, 6).Fill((byte)' ');
+    var nameBytes = Encoding.ASCII.GetBytes(volumeLabel);
+    nameBytes.AsSpan(0, Math.Min(nameBytes.Length, 6)).CopyTo(sb.Slice(440, 6));
     // s_fpack[6]        [+446] — pack name; zero-pad
     var pack = "v1    "u8;
     pack.CopyTo(sb.Slice(446, 6));

@@ -18,7 +18,21 @@ namespace FileSystem.Ext1;
 /// vintage pre-1993 Linux disk images and forensic tooling for early Linux installs
 /// are the consumers.
 /// </summary>
-public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+
+  /// <summary>
+  /// The single tunable ext1 honours: the on-disk block size
+  /// (<c>s_log_block_size</c>). 1024/2048/4096 bytes are the legal rev-0 values;
+  /// the 4 MiB image footprint stays constant across the choice. ext1 is the
+  /// GOOD_OLD revision and stores no volume name (<c>s_volume_name</c> only
+  /// exists in the dynamic revision), so no label knob is offered.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "BlockSize", DisplayName: "Block Size (bytes)", Kind: FormatOptionKind.Integer, Default: "1024",
+      AllowedValues: ["1024", "2048", "4096"],
+      Description: "ext1 block size (s_log_block_size). The 4 MiB image footprint is constant; larger blocks mean fewer total blocks."),
+  ];
 
   /// <summary>
   /// Walks the rev-0 superblock + BGD table + inode tree and yields the
@@ -207,7 +221,8 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var w = new Ext1Writer();
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
-    w.WriteTo(output);
+    var blockSize = options.GetOptionInt("BlockSize", 1024);
+    w.WriteTo(output, blockSize);
   }
 
   public void Defragment(Stream archive)
