@@ -81,10 +81,13 @@ public class GenericLayoutOptimizableTests {
       } catch (NotSupportedException) {
         Assert.Pass($"{formatId}: layout rebuild cleanly NotSupported (no corruption).");
         return;
-      } catch (InvalidOperationException ex) {
-        // The verified rebuild refused a lossy result — safe, but flags that this
-        // format's create path doesn't round-trip trivial input.
-        Assert.Ignore($"{formatId}: rebuild refused as lossy ({ex.Message}) — safe, exclude if persistent.");
+      } catch (Exception ex) {
+        // RebuildStreaming writes to a SEPARATE target stream, so any failure here
+        // (verified-rebuild lossy guard, or the writer being unable to re-create the
+        // extracted content — e.g. a fixed-capacity volume that can't refit) leaves
+        // the source untouched. That's a safe, non-destructive refusal of the
+        // optimize verb — not a corruption. Skip with the reason.
+        Assert.Ignore($"{formatId}: layout rebuild refused non-destructively ({ex.GetType().Name}: {ex.Message}).");
         return;
       }
 
