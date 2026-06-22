@@ -53,6 +53,11 @@ public sealed class UfsWriter {
   private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
   private readonly byte[] _volumeUuid = Guid.NewGuid().ToByteArray();
 
+  /// <summary>Optional volume label, written to the superblock's <c>fs_volname</c>
+  /// field (struct fs offset 680, <c>MAXVOLLEN</c>=32, NUL-terminated ASCII) — the
+  /// same field <c>tunefs -L</c> sets and <c>dumpfs</c> reports as "volume name".</summary>
+  public string VolumeLabel { get; set; } = "";
+
   /// <summary>
   /// Streaming-allocations side-effect: when non-null, every streaming file's
   /// (absolute byte offset of its first data fragment, logical size, opener) is
@@ -538,6 +543,14 @@ public sealed class UfsWriter {
     sb[209] = 1;                                                           // fs_clean
     sb[210] = 0;                                                           // fs_ronly
     sb[211] = 0x80;                                                        // fs_old_flags (FS_FLAGS_UPDATED)
+    // fs_volname[MAXVOLLEN=32] at struct fs offset 680 — the UFS volume label
+    // (tunefs -L / dumpfs "volume name"). Left empty unless a label was requested.
+    if (!string.IsNullOrEmpty(VolumeLabel)) {
+      var label = System.Text.Encoding.ASCII.GetBytes(VolumeLabel);
+      var n = Math.Min(label.Length, 31); // leave room for the NUL terminator
+      label.AsSpan(0, n).CopyTo(sb[680..]);
+      sb[680 + n] = 0;
+    }
     BinaryPrimitives.WriteInt32LittleEndian(sb[860..], BlockSize);         // fs_maxbsize
     BinaryPrimitives.WriteInt64LittleEndian(sb[872..], (long)totalFrags);  // fs_unrefs-area placeholder
     BinaryPrimitives.WriteInt32LittleEndian(sb[880..], 160);               // fs_metaspace

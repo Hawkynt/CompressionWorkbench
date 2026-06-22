@@ -37,6 +37,18 @@ public sealed class UfsReader : IDisposable {
 
   public IReadOnlyList<UfsEntry> Entries => _entries;
 
+  /// <summary>The superblock <c>fs_volname</c> volume label (struct fs offset 680,
+  /// NUL-terminated ASCII), or empty when unset.</summary>
+  public string VolumeName {
+    get {
+      if (_data.Length < SuperblockOffset + 680 + 32) return "";
+      var span = _data.AsSpan(SuperblockOffset + 680, 32);
+      var nul = span.IndexOf((byte)0);
+      var len = nul < 0 ? 32 : nul;
+      return len == 0 ? "" : System.Text.Encoding.ASCII.GetString(span[..len]);
+    }
+  }
+
   public UfsReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();

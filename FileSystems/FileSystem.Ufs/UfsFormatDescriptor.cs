@@ -7,7 +7,15 @@ namespace FileSystem.Ufs;
 
 public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
                                           IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints,
-                                          IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
+                                          IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty,
+                                          IFormatOptionsSchema, ILayoutOptimizable {
+
+  /// <summary>UFS creation knob: the volume label written to the superblock
+  /// <c>fs_volname</c> field (the <c>tunefs -L</c> / <c>dumpfs</c> "volume name").
+  /// Block/fragment geometry stays at the byte-exact <c>newfs -O1</c> layout.</summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 31),
+  ];
 
   /// <summary>
   /// Walks the UFS1 superblock, CG 0 inode table, and root directory tree;
@@ -135,7 +143,7 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var w = new UfsWriter();
+    var w = new UfsWriter { VolumeLabel = options?.GetOption("VolumeLabel", "") ?? "" };
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
       w.AddFile(i.ArchiveName, i.ReadContent());
@@ -163,7 +171,7 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       return;
     }
 
-    var w = new UfsWriter();
+    var w = new UfsWriter { VolumeLabel = options?.GetOption("VolumeLabel", "") ?? "" };
     foreach (var input in inputList) {
       if (input.IsDirectory) continue;
       w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
