@@ -17,17 +17,31 @@ public sealed class SquashFsWriter : IDisposable {
   private readonly List<PendingFile> _files = [];
   private readonly HashSet<string> _directories = new(StringComparer.Ordinal);
 
-  private const uint BlockSize = 131072;
-  private const ushort BlockLog = 17;
+  /// <summary>Default data block size (128 KiB) — the mksquashfs default.</summary>
+  public const uint DefaultBlockSize = 131072;
   private const int MetaMax = SquashFsConstants.MetadataBlockMaxSize; // 8192
+
+  private readonly uint _blockSize;
+  private readonly ushort _blockLog;
 
   /// <summary>
   /// Initializes a new <see cref="SquashFsWriter"/> that writes to <paramref name="stream"/>.
   /// The image is finalized when <see cref="Dispose"/> is called.
   /// </summary>
-  public SquashFsWriter(Stream stream, bool leaveOpen = false) {
+  /// <param name="stream">Target stream.</param>
+  /// <param name="leaveOpen">When true, the stream is not disposed with the writer.</param>
+  /// <param name="blockSize">Data block size in bytes. Must be a power of two in
+  /// [4096, 1048576] (the SquashFS-permitted range); the superblock's
+  /// <c>block_size</c> and <c>block_log</c> are written from it and file data is
+  /// split into chunks of this size. Defaults to <see cref="DefaultBlockSize"/>.</param>
+  public SquashFsWriter(Stream stream, bool leaveOpen = false, uint blockSize = DefaultBlockSize) {
     _stream = stream ?? throw new ArgumentNullException(nameof(stream));
     _leaveOpen = leaveOpen;
+    if (blockSize is < 4096u or > 1048576u || (blockSize & (blockSize - 1)) != 0)
+      throw new ArgumentOutOfRangeException(nameof(blockSize),
+        "SquashFS block size must be a power of two in [4096, 1048576].");
+    _blockSize = blockSize;
+    _blockLog = (ushort)System.Numerics.BitOperations.Log2(blockSize);
   }
 
   /// <summary>Adds a file entry to the image.</summary>
@@ -203,11 +217,11 @@ public sealed class SquashFsWriter : IDisposable {
     if (n.IsFile) {
       n.DataStart = _stream.Position;
       if (n.Data.Length > 0) {
-        var bc = (int)Math.Ceiling((double)n.Data.Length / BlockSize);
+        var bc = (int)Math.Ceiling((double)n.Data.Length / _blockSize);
         n.BlockSizes = new uint[bc];
         for (var i = 0; i < bc; i++) {
-          var off = i * (int)BlockSize;
-          var len = Math.Min(n.Data.Length - off, (int)BlockSize);
+          var off = i * (int)_blockSize;
+          var len = Math.Min(n.Data.Length - off, (int)_blockSize);
           var chunk = n.Data.AsSpan(off, len);
           var comp = CompressZlib(chunk);
           if (comp.Length >= len) {
@@ -387,10 +401,10 @@ public sealed class SquashFsWriter : IDisposable {
     BinaryPrimitives.WriteUInt32LittleEndian(b, SquashFsConstants.Magic);
     BinaryPrimitives.WriteUInt32LittleEndian(b[4..], inodeCount);
     BinaryPrimitives.WriteUInt32LittleEndian(b[8..], ToUnix(modTime));
-    BinaryPrimitives.WriteUInt32LittleEndian(b[12..], BlockSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(b[12..], _blockSize);
     BinaryPrimitives.WriteUInt32LittleEndian(b[16..], 0);
     BinaryPrimitives.WriteUInt16LittleEndian(b[20..], SquashFsConstants.CompressionGzip);
-    BinaryPrimitives.WriteUInt16LittleEndian(b[22..], BlockLog);
+    BinaryPrimitives.WriteUInt16LittleEndian(b[22..], _blockLog);
     BinaryPrimitives.WriteUInt16LittleEndian(b[24..], SquashFsConstants.FlagNoFragments);
     BinaryPrimitives.WriteUInt16LittleEndian(b[26..], 1);
     BinaryPrimitives.WriteUInt16LittleEndian(b[28..], 4);

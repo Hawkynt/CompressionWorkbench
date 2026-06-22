@@ -4,7 +4,24 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.SquashFs;
 
-public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
+public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// The only writer-honoured knob is the data block size: it is split into the
+  /// superblock's <c>block_size</c> / <c>block_log</c> fields and drives how each
+  /// file's payload is chunked into compressed data blocks. SquashFS stores no
+  /// volume label, and this writer always compresses with gzip (zlib), so no label
+  /// or compression-method knob is published.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.PowerOfTwoSize(
+      key: "BlockSize", displayName: "Data block size",
+      min: 4096, max: 1048576, defaultLabel: "128 KB",
+      description: "Compressed data block size. SquashFS allows powers of two from 4 KB to 1 MB; larger blocks compress better but waste more on small files."),
+  ];
+
   public string Id => "SquashFs";
   public string DisplayName => "SquashFS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -71,7 +88,8 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    using var w = new SquashFsWriter(output, leaveOpen: true);
+    var blockSize = ResolveBlockSize(options);
+    using var w = new SquashFsWriter(output, leaveOpen: true, blockSize: blockSize);
     foreach (var input in inputs) {
       if (input.IsDirectory) {
         w.AddDirectory(input.ArchiveName.TrimEnd('/'));
@@ -80,6 +98,16 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
         w.AddFile(input.ArchiveName, data);
       }
     }
+  }
+
+  /// <summary>
+  /// Resolves the writer's data block size from the schema. "Auto"/absent keeps
+  /// the <see cref="SquashFsWriter.DefaultBlockSize"/>; a pinned power-of-two size
+  /// label is parsed back to bytes.
+  /// </summary>
+  private static uint ResolveBlockSize(FormatCreateOptions? options) {
+    var parsed = FilesystemSchemaPresets.ParseSize(options?.GetOption("BlockSize", "Auto"));
+    return parsed > 0 ? (uint)parsed : SquashFsWriter.DefaultBlockSize;
   }
 
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)

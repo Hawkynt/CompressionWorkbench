@@ -40,9 +40,18 @@ public sealed class ApfsWriter {
 
   private readonly List<(string Name, byte[] Data)> _files = [];
   private long _minImageSize = MIN_APFS_IMAGE_SIZE;
+  private string _volumeName = "CWB_Volume";
 
   /// <summary>Adds a file to be included in the volume image.</summary>
   public void AddFile(string name, byte[] data) => this._files.Add((name, data));
+
+  /// <summary>
+  /// Sets the APFS volume name written to the APSB <c>apfs_volname</c> field
+  /// (offset 968, 256-byte NUL-terminated UTF-8). Defaults to <c>CWB_Volume</c>.
+  /// </summary>
+  public void SetVolumeName(string name) {
+    if (!string.IsNullOrEmpty(name)) this._volumeName = name;
+  }
 
   /// <summary>
   /// Overrides the minimum image size (default 512 MB = <see cref="MIN_APFS_IMAGE_SIZE"/>).
@@ -180,7 +189,7 @@ public sealed class ApfsWriter {
       apsbVirtOid, xid, volOmapPhysOid: (ulong)volOmapBlock,
       fsTreeVirtOid, extrefTreeVirtOid, snapMetaTreeVirtOid,
       fileCount: tree.FileCount, dirCount: tree.DirectoryCount,
-      nextObjId: tree.NextObjId);
+      nextObjId: tree.NextObjId, volumeName: this._volumeName);
 
     // ── Container OMAP B-tree root (block 4): maps APSB virtual OID → phys ─
     var ctrOmapRecs = new List<BtreeRecord> {
@@ -299,7 +308,7 @@ public sealed class ApfsWriter {
 
   private static void WriteVolumeSuperblock(Span<byte> block, ulong oid, ulong xid,
       ulong volOmapPhysOid, ulong rootTreeOid, ulong extrefTreeOid, ulong snapMetaTreeOid,
-      ulong fileCount, ulong dirCount, ulong nextObjId) {
+      ulong fileCount, ulong dirCount, ulong nextObjId, string volumeName) {
     WriteObjectHeader(block, oid, xid, OBJECT_TYPE_FS | OBJ_VIRTUAL, subtype: 0);
 
     // apfs_magic at offset 32 — "APSB" stored LE as 0x42535041.
@@ -362,9 +371,11 @@ public sealed class ApfsWriter {
     var formattedBy = "CompressionWorkbench 1.0"u8;
     formattedBy.CopyTo(block[536..]);
     // Skip apfs_modified_by[8] array at 584 (8 × 48 = 384 bytes) — zeros.
-    // apfs_volname[256] at 968.
-    var volname = "CWB_Volume"u8;
-    volname.CopyTo(block[968..]);
+    // apfs_volname[256] at 968 — NUL-terminated UTF-8, truncated to 255 bytes.
+    var volnameBytes = Encoding.UTF8.GetBytes(volumeName);
+    var volnameLen = Math.Min(volnameBytes.Length, 255);
+    block.Slice(968, 256).Clear();
+    volnameBytes.AsSpan(0, volnameLen).CopyTo(block[968..]);
 
     ApfsFletcher64.Stamp(block);
   }

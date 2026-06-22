@@ -19,7 +19,19 @@ namespace FileSystem.AmigaPfs;
 /// is still <em>not</em> FS-UAE/WinUAE mountable (full PFS3aio anode-table /
 /// bitmap / rootinfo emission deferred to a future Stage 2 promotion).
 /// </summary>
-public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
+public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// The writer-honoured knob is the volume label, written as the BCPL disk name
+  /// at root-block offset +26. Block size and root-block location are fixed at the
+  /// floppy convention and are not exposed.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 31),
+  ];
+
   public string Id => "AmigaPfs";
   public string DisplayName => "Amiga Professional FS";
   public FormatCategory Category => FormatCategory.Archive;
