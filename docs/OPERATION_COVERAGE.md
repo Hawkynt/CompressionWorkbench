@@ -75,12 +75,21 @@ under `Compression.Tests/Operations/`, which fail loudly on any lossy rebuild.
   via the verified rebuild — contents preserved, only geometry changes.
 - **NTFS per-file compression**: the `Compression` create option (`Off`/`LZNT1`)
   stores files in a compressed `$DATA` attribute; small files stay resident in the MFT.
-- **Creation-option schemas** (`IFormatOptionsSchema`) now cover **73 of 88** creatable
-  filesystems (was 43). The remaining 15 — Bfs, Coherent, CramFs, DragonFs, G64, Hpfs,
-  MinixFs, Msa, Qnx4, Qnx6, Ufs, Vdfs, Xenix, Yaffs2, ZxScl — are intentionally
-  schema-less: fixed-geometry retro containers, read-only formats, or writers whose
-  on-disk fields aren't user-tunable (no fake/no-op knobs are exposed). Every published
-  option is verified by a per-format test that the knob takes effect on disk.
+- **Creation-option schemas** (`IFormatOptionsSchema`) now cover **74 of 88** creatable
+  filesystems (was 43; Ufs gained a `VolumeLabel` → `fs_volname` knob). The remaining 14 —
+  Bfs, Coherent, CramFs, DragonFs, G64, Hpfs, MinixFs, Msa, Qnx4, Qnx6, Vdfs, Xenix,
+  Yaffs2, ZxScl — are intentionally schema-less for concrete reasons, not laziness:
+  - **Coherent** — `s_fname`/`s_fpack` are the format's *detection signature*
+    (`"noname"/"nopack"`); a custom value would break recognition.
+  - **MinixFs** — no volume label; block size is standard-fixed at 1024 (mainstream
+    `mkfs.minix`), and non-1024 minix v3 is frequently unmountable.
+  - **Hpfs** — HPFS stores no volume label as a simple field; it'd be a structural feature.
+  - **CramFs** — non-standard superblock root-inode offset; adding the spec `name[16]`
+    is a layout correction (regression risk), not a knob.
+  - The rest (Bfs, DragonFs, G64, Msa, Qnx4/6, Vdfs, Xenix, Yaffs2, ZxScl) are
+    fixed-geometry / detection-constrained writers with no user-tunable on-disk field.
+  No fake/no-op knobs are exposed; every published option is verified by a per-format
+  test that the knob takes effect on disk.
 
 ## Filesystem descriptors
 
