@@ -38,6 +38,9 @@ public sealed class ErofsReader {
 
   public IReadOnlyList<Entry> Entries => this._entries;
 
+  /// <summary>Volume label from the superblock <c>volume_name</c> field (16 bytes, NUL-trimmed ASCII).</summary>
+  public string VolumeName { get; private set; } = "";
+
   public ErofsReader(byte[] data) {
     this._data = data;
     if (data.Length < 1024 + 128)
@@ -60,6 +63,12 @@ public sealed class ErofsReader {
     this._blockSize = 1 << blkszbits;
     this._rootNid = BinaryPrimitives.ReadUInt16LittleEndian(sb[14..]);
     this._metaBlkAddr = BinaryPrimitives.ReadUInt32LittleEndian(sb[40..]);
+
+    // volume_name @64[16] — NUL-trimmed ASCII label.
+    var nameSpan = sb.Slice(64, 16);
+    var nameLen = nameSpan.IndexOf((byte)0);
+    if (nameLen < 0) nameLen = 16;
+    this.VolumeName = nameLen == 0 ? "" : System.Text.Encoding.ASCII.GetString(nameSpan[..nameLen]);
 
     this.Walk(this._rootNid, "");
   }

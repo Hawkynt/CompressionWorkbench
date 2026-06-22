@@ -13,7 +13,22 @@ namespace FileSystem.Tux2;
 /// legacy prototype images would need a custom parser matching the specific
 /// snapshot of the in-progress code that produced them.
 /// </summary>
-public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable {
+public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// The single tunable the single-phase WORM writer honours: the on-disk
+  /// format version stamped into the header at offset 0x08. <see cref="Tux2Writer.Version"/>
+  /// is written verbatim and <see cref="Tux2Reader.Version"/> reads it back, so
+  /// the knob round-trips. Defaults to 1 (the version the reader documents).
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "Version", DisplayName: "Image version", Kind: FormatOptionKind.Integer, Default: "1",
+      Description: "Format version stamped into the TUX2 header at offset 0x08."),
+  ];
+
   public string Id => "Tux2";
   public string DisplayName => "TUX2";
   public FormatCategory Category => FormatCategory.Archive;
@@ -53,7 +68,8 @@ public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// u32 data length, raw bytes). Round-trips through <see cref="Tux2Reader"/>.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var w = new Tux2Writer();
+    var version = (uint)Math.Max(0, options.GetOptionInt("Version", 1));
+    var w = new Tux2Writer { Version = version };
     foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
     w.WriteTo(output);

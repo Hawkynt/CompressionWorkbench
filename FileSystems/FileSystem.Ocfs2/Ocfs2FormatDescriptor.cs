@@ -34,7 +34,21 @@ namespace FileSystem.Ocfs2;
 /// </summary>
 public sealed class Ocfs2FormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
-      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
+      IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty,
+      IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// The one tunable the writer honours: the volume label written into
+  /// <c>s_label</c> (64-byte superblock field) via <see cref="Ocfs2Writer.SetLabel"/>
+  /// and read back as <c>Ocfs2Superblock.Label</c>. The 4&#160;KB block/cluster
+  /// size is fixed by the single-node MVP layout, so it is not exposed.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 63),
+  ];
+
   public string Id => "Ocfs2";
   public string DisplayName => "OCFS2 (Oracle Cluster Filesystem 2)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -109,6 +123,9 @@ public sealed class Ocfs2FormatDescriptor
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new Ocfs2Writer();
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (!string.IsNullOrEmpty(label))
+      w.SetLabel(label);
     foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
     w.WriteTo(output);

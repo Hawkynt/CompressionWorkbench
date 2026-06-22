@@ -4,7 +4,20 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ReiserFs;
 
-public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
+public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// The one tunable the writer honours: the volume label written into the
+  /// superblock <c>s_label</c> field (16 bytes) via <see cref="ReiserFsWriter.Label"/>
+  /// and read back as <c>ReiserFsReader.Label</c>. The 4&#160;KB block size and
+  /// R5 hash are fixed by the v3.6 layout, so they are not exposed.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 16),
+  ];
+
   // R/W write constraints — ReiserFS has no inherent ceiling; real mkfs.reiserfs minimum ≈ 128 MB.
   public long? MaxTotalArchiveSize => null;
   public long? MinTotalArchiveSize => 128L * 1024 * 1024;
@@ -95,6 +108,9 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new ReiserFsWriter();
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (!string.IsNullOrEmpty(label))
+      w.Label = label;
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
       w.AddFile(i.ArchiveName, i.ReadContent());

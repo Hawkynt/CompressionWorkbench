@@ -51,7 +51,25 @@ namespace FileSystem.Gfs2;
 /// </list>
 /// </summary>
 public sealed class Gfs2FormatDescriptor
-    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable {
+    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Knobs the empty-volume writer honours. <c>ImageSize</c> drives the writer's
+  /// total size (clamped to the single-data-resource-group range 16–256&#160;MB);
+  /// <c>LockTable</c> is written into <c>sb_locktable</c> and read back as
+  /// <c>Gfs2Reader.LockTable</c>. The 4&#160;KB block size and the
+  /// <c>lock_nolock</c> protocol are fixed by the standalone layout.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.ImageSize(["16 MB", "32 MB", "64 MB", "128 MB", "256 MB"],
+      description: "Total volume size (16–256 MB; a single data resource group)."),
+    new FormatOptionDescriptor(
+      Key: "LockTable", DisplayName: "Lock table", Kind: FormatOptionKind.String, Default: "",
+      Description: "Cluster lock-table name stamped into sb_locktable (empty for a standalone volume)."),
+  ];
+
   public string Id => "Gfs2";
   public string DisplayName => "GFS2 (Global File System 2)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -147,11 +165,18 @@ public sealed class Gfs2FormatDescriptor
     }
 
     var size = ParseSizeOption(options);
-    new Gfs2Writer(size).Build(output);
+    var lockTable = options?.GetOption("LockTable", "") ?? "";
+    new Gfs2Writer(size, lockTable: lockTable).Build(output);
   }
 
   private static long ParseSizeOption(FormatCreateOptions? options) {
     const long defaultSize = 32L * 1024 * 1024;
+    // Accept the schema's "ImageSize" enum ("32 MB", "Auto (fit to files)", …)
+    // as well as the legacy raw "size" key (bytes with optional K/M/G suffix).
+    var imageSize = FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", ""));
+    if (imageSize > 0)
+      return Math.Clamp((long)imageSize, 16L * 1024 * 1024, 256L * 1024 * 1024);
+
     var raw = options?.GetOption("size", "");
     if (string.IsNullOrWhiteSpace(raw))
       return defaultSize;

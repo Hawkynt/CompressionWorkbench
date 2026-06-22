@@ -106,6 +106,13 @@ public sealed class ReiserFsWriter {
 
   private readonly List<(string path, byte[] data, long? streamSize, Func<Stream>? opener)> _files = [];
 
+  /// <summary>
+  /// Volume label written into the superblock <c>s_label</c> field (16 bytes,
+  /// NUL-padded; longer strings are truncated). Defaults to <c>"worm"</c> to
+  /// match the historical writer output.
+  /// </summary>
+  public string Label { get; set; } = "worm";
+
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
@@ -314,8 +321,9 @@ public sealed class ReiserFsWriter {
     uuid[8] = (byte)((uuid[8] & 0x3F) | 0x80);
     uuid.CopyTo(sb[84..]);
 
-    // s_label @ +100 (16 bytes ASCII, zero-padded).
-    Encoding.ASCII.GetBytes("worm").CopyTo(sb[100..]);
+    // s_label @ +100 (16 bytes ASCII, zero-padded). Truncate to the field width.
+    var labelBytes = Encoding.ASCII.GetBytes(this.Label ?? "");
+    labelBytes.AsSpan(0, Math.Min(labelBytes.Length, 16)).CopyTo(sb[100..]);
     // 116..204 zero by default; objectid map at +204.
     for (var i = 0; i < oidMap.Length; i++)
       BinaryPrimitives.WriteUInt32LittleEndian(sb[(SuperblockSize + i * 4)..], oidMap[i]);

@@ -18,7 +18,24 @@ namespace FileSystem.Reiser4;
 ///   <item><description><c>"ReIsEr4"</c> at offset 65536 — master superblock <c>ms_magic[16]</c>.</description></item>
 /// </list>
 /// </summary>
-public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable {
+public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // ── IFormatOptionsSchema ────────────────────────────────────────────────
+
+  /// <summary>
+  /// Knobs the empty-filesystem writer actually honours. <c>VolumeLabel</c> is
+  /// written into the master superblock label field (and the backup record) and
+  /// surfaces through <c>fsck.reiser4</c> / our metadata readback;
+  /// <c>ImageSize</c> drives <see cref="Reiser4Writer.BlockCount"/> (4&#160;KB
+  /// blocks, clamped to the writer minimum). The 4&#160;KB block size is fixed —
+  /// the embedded mkfs.reiser4 templates are byte-exact 4096-byte captures — so
+  /// it is intentionally not exposed.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.VolumeLabel(maxChars: 16),
+    FilesystemSchemaPresets.ImageSize(["16 MB", "32 MB", "64 MB", "128 MB"]),
+  ];
+
   public string Id => "Reiser4";
   public string DisplayName => "Reiser4";
   public FormatCategory Category => FormatCategory.Archive;
@@ -136,11 +153,21 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     var w = new Reiser4Writer();
-    // We surface the encryption-password slot as the volume label since
-    // FormatCreateOptions doesn't carry filesystem labels natively. No
-    // encryption is implemented.
-    if (!string.IsNullOrEmpty(options?.Password))
-      w.Label = options.Password;
+
+    // Volume label: prefer the schema knob, falling back to the legacy
+    // password-slot mapping (kept for callers that pre-date the schema).
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (string.IsNullOrEmpty(label) && !string.IsNullOrEmpty(options?.Password))
+      label = options.Password;
+    if (!string.IsNullOrEmpty(label))
+      w.Label = label;
+
+    // Image size: the writer counts 4 KB blocks. "Auto (fit to files)" and any
+    // unset/unparsable value leave the default (and writer minimum) in place.
+    var sizeBytes = FilesystemSchemaPresets.ParseSize(options?.GetOption("ImageSize", ""));
+    if (sizeBytes > 0)
+      w.BlockCount = (ulong)Math.Max(1, sizeBytes / Reiser4Writer.BlockSize);
+
     w.Write(output);
   }
 
