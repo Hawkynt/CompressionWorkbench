@@ -25,7 +25,21 @@ namespace FileSystem.Hammer;
 ///   <item><description><c>https://www.dragonflybsd.org/hammer/</c></description></item>
 /// </list>
 /// </summary>
-public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable {
+public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable {
+
+  /// <summary>
+  /// Sole tunable the HAMMER writer honours: the filesystem label
+  /// (<c>newfs_hammer -L</c>), written into the volume header and the PFS#0
+  /// data and surfaced back as <c>vol_label</c>. Volume size is intentionally
+  /// not exposed — the UNDO-FIFO floor pins it at ~1 GB regardless. An empty
+  /// label falls back to the writer default ("hammer").
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "Label", DisplayName: "Filesystem label", Kind: FormatOptionKind.String, Default: "",
+      Description: "Volume label (newfs_hammer -L); max 63 ASCII chars."),
+  ];
+
   public string Id => "Hammer";
   public string DisplayName => "HAMMER (DragonFly BSD)";
   public FormatCategory Category => FormatCategory.Archive;
@@ -114,7 +128,7 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     ArgumentNullException.ThrowIfNull(inputs);
 
     var writer = new HammerWriter();
-    var label = options?.GetOption("label", "hammer");
+    var label = options?.GetOption("Label", "hammer");
     if (!string.IsNullOrEmpty(label))
       writer.Label = label;
 
