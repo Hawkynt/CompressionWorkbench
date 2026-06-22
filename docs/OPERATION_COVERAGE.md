@@ -39,7 +39,7 @@ round-trips and stays fsck-clean where a filesystem tool exists).
 | Wipe             | 180 |
 | Purge            | 153 |
 | Shrink           | 90  |
-| Optimize (layout)| 3   |
+| Optimize (layout)| 43  |
 | Metadata-reorder | 6   |
 
 (Counts are `GetArchiveOps(id) is IXxx` over the registered descriptors — i.e.
@@ -65,6 +65,16 @@ the interface (it already implements `IArchiveFormatOperations` + `IArchiveCreat
 Bespoke in-place implementations still override the default for efficiency. Coverage
 is guarded by the registry-parametrised `Generic{Shrink,Defrag,Purge}RoundTripTests`
 under `Compression.Tests/Operations/`, which fail loudly on any lossy rebuild.
+
+- **`ILayoutOptimizable`** now carries the same kind of default (verified rebuild
+  honouring `LayoutRebuildOptions` geometry), rolled out to **43** filesystems
+  (was 3), guarded by `GenericLayoutOptimizableTests`.
+- **`reconfigure`** (`Compression.Lib.ReconfigureOperation`, `cwb reconfigure --set
+  Key=Value`, and the UI *Maintenance → Reconfigure* entry) re-applies geometry/options
+  to an *existing* image (e.g. NTFS MFT-record size, cluster size, FAT root entries)
+  via the verified rebuild — contents preserved, only geometry changes.
+- **NTFS per-file compression**: the `Compression` create option (`Off`/`LZNT1`)
+  stores files in a compressed `$DATA` attribute; small files stay resident in the MFT.
 
 ## Filesystem descriptors
 
