@@ -385,21 +385,49 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <summary>
-  /// Add files to an existing NTFS image. Current implementation re-builds the image
-  /// with all existing files + the new ones — the inherent build-from-scratch design
-  /// of <see cref="NtfsWriter"/> means "add" equals "re-pack" here. Use
-  /// <see cref="Remove"/> first to clean up stale entries.
+  /// Adds (or replaces by name) files into the root directory of an existing NTFS image.
+  /// The common case is a genuine in-place edit via <see cref="NtfsInPlaceAdder"/>: a free
+  /// MFT record slot is claimed, a spec-shaped FILE record (resident or non-resident $DATA)
+  /// is written, data clusters are allocated from $Bitmap, the $MFT:$BITMAP bit is set, and
+  /// a collation-sorted entry is inserted into the root $INDEX_ROOT — existing files, their
+  /// records and clusters stay byte-identical (no re-pack). ntfs-3g (ntfsls/ntfscat/ntfsfix)
+  /// accepts the result. Cases not yet handled in place — the MFT being full (needs a
+  /// reserved contiguous MFT zone + non-contiguous-MFT reader support), the root index
+  /// spilling out of the resident $INDEX_ROOT, or nested sub-directory targets — fall back
+  /// to the verified <see cref="NtfsWriter"/> rebuild.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     archive.Position = 0;
-    var reader = new NtfsReader(archive);
+    using var ms = new MemoryStream();
+    archive.CopyTo(ms);
+    var original = ms.ToArray();
+    var items = FormatHelpers.FilesOnly(inputs).ToList();
+
+    // Genuine in-place on a working copy; commit only if every input succeeds so a
+    // structural limit leaves the source untouched for the rebuild fallback.
+    var work = (byte[])original.Clone();
+    var inPlace = true;
+    try {
+      foreach (var (name, data) in items)
+        NtfsInPlaceAdder.AddFile(work, name, data);
+    } catch (Exception ex) when (ex is NotSupportedException or IOException or InvalidDataException) {
+      inPlace = false;
+    }
+    if (inPlace) {
+      archive.Position = 0;
+      archive.Write(work, 0, work.Length);
+      archive.SetLength(work.Length);
+      return;
+    }
+
+    // Fallback: verified rebuild from the untouched original.
+    var reader = new NtfsReader(new MemoryStream(original, false));
     var combined = new NtfsWriter();
     foreach (var entry in reader.Entries.Where(e => !e.IsDirectory))
       combined.AddFile(entry.Name, reader.Extract(entry));
-    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
+    foreach (var (name, data) in items)
       combined.AddFile(name, data);
-    var totalSize = (int)archive.Length;
-    var rebuilt = combined.Build(totalSize);
+    var rebuilt = combined.Build(original.Length);
     archive.Position = 0;
     archive.Write(rebuilt);
     archive.SetLength(rebuilt.Length);
