@@ -35,6 +35,24 @@ public class GemdosInPlaceModifyTests {
     return r.Extract(e);
   }
 
+  [Test, Category("RoundTrip")]
+  public void Add_IsGenuineInPlace_PreservesJumpByteBootSectorAndExistingFile() {
+    using var image = BuildBaselineImage(("KEEP.TXT", new string('K', 2500)));
+    var before = image.ToArray();
+
+    GemdosInPlaceModifier.AddFiles(image, [("NEW.TXT", Encoding.ASCII.GetBytes("fresh bytes"))]);
+    var after = image.ToArray();
+
+    Assert.Multiple(() => {
+      Assert.That(after.Length, Is.EqualTo(before.Length), "in-place add must not resize the image");
+      Assert.That(after[0], Is.EqualTo(before[0]), "GEMDOS 0x60 BRA.S jump byte must be preserved");
+      Assert.That(after.AsSpan(0, 512).SequenceEqual(before.AsSpan(0, 512)), Is.True,
+        "boot sector must be byte-identical after an in-place add");
+      Assert.That(Encoding.ASCII.GetString(ReadEntry(image, "KEEP.TXT")), Is.EqualTo(new string('K', 2500)));
+      Assert.That(Encoding.ASCII.GetString(ReadEntry(image, "NEW.TXT")), Is.EqualTo("fresh bytes"));
+    });
+  }
+
   // ── Add ─────────────────────────────────────────────────────────────────
 
   [Test, Category("RoundTrip")]
@@ -114,13 +132,12 @@ public class GemdosInPlaceModifyTests {
   // ── Descriptor interface routing ────────────────────────────────────────
 
   [Test, Category("Spec")]
-  public void Descriptor_ImplementsModifiableInterface_ButIsWormNotRw() {
+  public void Descriptor_AdvertisesCanModify_AndImplementsInterface() {
     var d = new GemdosFormatDescriptor();
-    // The verb runs (interface present) ...
     Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
-    // ... but Add re-emits the whole image via FatWriter (rebuild), so this is WORM:
-    // CanModify must not be advertised. See Compression.Registry/FormatCapabilities.cs.
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+    // Genuine in-place R/W: add/remove edit the FAT12 structures directly (FatModifier /
+    // FatRemover). The verb works in place; rebuild is only a structural fallback.
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
   }
 
   [Test, Category("RoundTrip")]

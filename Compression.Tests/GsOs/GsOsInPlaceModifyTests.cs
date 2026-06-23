@@ -83,6 +83,18 @@ public class GsOsInPlaceModifyTests {
     Assert.That(keepAfter, Is.EqualTo(keepBefore));
   }
 
+  [Test, Category("RoundTrip")]
+  public void Add_PreservesImageLength() {
+    // Genuine in-place: the ProDOS volume is edited within its fixed footprint,
+    // so the 2IMG image length is unchanged (no grow-and-rewrite).
+    using var image = BuildBaselineImage(("ALPHA", "AAAA"));
+    var lengthBefore = image.Length;
+    GsOsInPlaceModifier.AddFile(image, "BETA", Encoding.ASCII.GetBytes("BBBB"));
+    Assert.That(image.Length, Is.EqualTo(lengthBefore), "in-place add must not resize the image");
+    Assert.That(ListProDosNames(image), Does.Contain("BETA"));
+    Assert.That(ListProDosNames(image), Does.Contain("ALPHA"));
+  }
+
   // ── Remove ──────────────────────────────────────────────────────────────
 
   [Test, Category("RoundTrip")]
@@ -124,12 +136,12 @@ public class GsOsInPlaceModifyTests {
   // ── Descriptor interface routing ────────────────────────────────────────
 
   [Test, Category("Spec")]
-  public void Descriptor_AdvertisesCanCreate_IsWormNotRw_AndImplementsInterfaces() {
+  public void Descriptor_AdvertisesCanCreateAndCanModify_AndImplementsInterfaces() {
     var d = new GsOsFormatDescriptor();
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
-    // Add/Remove rebuild the inner volume via ProDosWriter (read-all -> re-create) =
-    // WORM, not in-place R/W: CanModify must not be advertised.
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+    // Genuine in-place R/W via ProDosModifier (see Add_PreservesHeaderBytes_ByteForByte
+    // and Add_PreservesExistingFile / Add_PreservesImageLength).
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
     Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
   }

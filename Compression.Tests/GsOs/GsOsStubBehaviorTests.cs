@@ -8,11 +8,11 @@ namespace Compression.Tests.GsOs;
 
 /// <summary>
 /// Pins the capability surface for <see cref="GsOsFormatDescriptor"/>. The
-/// Apple IIgs GS/OS 2IMG wrapper was promoted from stub-tier to a creatable
-/// WORM descriptor (CanCreate via <see cref="GsOsWriter"/>) that emits a
-/// 2IMG-wrapped ProDOS volume; its add/remove implement the verb by rebuilding
-/// the inner payload through ProDosWriter/ProDosReader (a full rewrite, hence
-/// WORM — it does not advertise CanModify). These tests lock the capability and
+/// Apple IIgs GS/OS 2IMG wrapper is a creatable R/W descriptor (CanCreate via
+/// <see cref="GsOsWriter"/>, CanModify via genuine in-place edits of the inner
+/// ProDOS volume through ProDosModifier — the 2IMG header and untouched blocks
+/// stay byte-identical; a verified rebuild is only a structural-edge-case
+/// fallback). These tests lock the capability and
 /// preserve the inner-volume List/Extract shape: when the embedded format
 /// is ProDOS-ordered (image_format = 1) the descriptor walks the inner
 /// ProDOS volume; when it isn't, it falls back to the opaque blob entry.
@@ -45,10 +45,9 @@ public class GsOsStubBehaviorTests {
 
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True,
       "GS/OS 2IMG advertises CanCreate via GsOsWriter (2IMG-wrapped ProDOS emitter).");
-    // Add/Remove rebuild the whole inner volume via ProDosWriter (read-all -> re-create),
-    // i.e. WORM, not in-place R/W — CanModify must not be advertised.
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
-      "GS/OS 2IMG modify is rebuild-backed (WORM); it must not claim R/W (CanModify).");
+    // Add/Remove edit the inner ProDOS volume in place via ProDosModifier — genuine R/W.
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
+      "GS/OS 2IMG advertises CanModify via in-place ProDosModifier edits.");
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
     Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
   }

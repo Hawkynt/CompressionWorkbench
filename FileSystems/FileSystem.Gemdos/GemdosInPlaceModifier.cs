@@ -20,9 +20,12 @@ namespace FileSystem.Gemdos;
 public static class GemdosInPlaceModifier {
 
   /// <summary>
-  /// Adds — or replaces by name — files in an existing GEMDOS image. The
-  /// image is re-packed from its existing files plus the new ones; the
-  /// outer sector count is preserved.
+  /// Adds — or replaces by name — files in an existing GEMDOS image. The common
+  /// case is a genuine in-place FAT edit via <see cref="FileSystem.Fat.FatModifier"/>
+  /// (GEMDOS is byte-for-byte FAT12 below the jump byte, which FAT geometry parsing
+  /// ignores) — existing files, clusters and the boot sector stay byte-identical.
+  /// Structural cases (nested target, full root, no free clusters) fall back to a
+  /// re-pack from the existing file list; the outer sector count is preserved.
   /// </summary>
   public static void AddFiles(Stream archive, IReadOnlyList<(string Name, byte[] Data)> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
@@ -32,11 +35,33 @@ public static class GemdosInPlaceModifier {
     using var ms = new MemoryStream();
     archive.CopyTo(ms);
     var image = ms.ToArray();
+    if (image.Length == 0) return;
 
-    // Snapshot existing files via the GEMDOS reader (which patches the jump
-    // byte internally). We re-pack into a fresh FAT12 image, then patch the
-    // 0x60 jump byte back to match the GEMDOS-specific signature.
-    using var snap = new MemoryStream(image, writable: false);
+    // Genuine in-place: edit FAT + clusters + root directory directly. FatModifier and
+    // FatRemover read geometry from the BPB (offset 0x0B+) and never touch the jump byte,
+    // so the GEMDOS 0x60 signature is preserved verbatim. Attempt on a copy; commit only
+    // on full success so a structural limit leaves the source for the re-pack fallback.
+    var work = (byte[])image.Clone();
+    var inPlace = true;
+    try {
+      foreach (var (name, data) in inputs) {
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(data);
+        FileSystem.Fat.FatModifier.AddFile(work, name, data);
+      }
+    } catch (Exception ex) when (ex is NotSupportedException or IOException
+                                 or InvalidDataException or InvalidOperationException) {
+      inPlace = false;
+    }
+    if (inPlace) {
+      archive.Position = 0;
+      archive.Write(work, 0, work.Length);
+      archive.SetLength(work.Length);
+      return;
+    }
+
+    // Fallback: re-pack into a fresh FAT12 image, then patch the 0x60 jump byte back to
+    // match the GEMDOS-specific signature.
     var reader = new FileSystem.Fat.FatReader(PatchedFatView(image));
     var combined = new FileSystem.Fat.FatWriter();
     foreach (var e in reader.Entries.Where(e => !e.IsDirectory))

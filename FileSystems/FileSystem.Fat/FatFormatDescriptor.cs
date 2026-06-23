@@ -171,13 +171,21 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
     archive.Position = 0;
-    var imageSize = archive.Length;
     var stride = Math.Max(1, options.InterleaveStride);
 
     // Stream-based init: reads only the 512-byte BPB. Avoids loading a
     // multi-GB image into memory.
     var mover = new FatBlockMover();
     mover.Init(archive);
+
+    // Bound the planner at the VBR-declared volume size (end of the cluster heap),
+    // NOT archive.Length. A FAT volume can sit inside a larger partition window or a
+    // padded image (e.g. a default-sized volume formatted into a big partition); using
+    // archive.Length would make ConsolidateAtEnd target the padding past the cluster
+    // heap and move data outside the volume, corrupting it. For a tightly-built raw
+    // image the two coincide to within one (unusable) cluster.
+    var volumeBytes = mover.FirstDataByte + (long)mover.TotalDataClusters * mover.ClusterSize;
+    var imageSize = volumeBytes > 0 ? Math.Min(volumeBytes, archive.Length) : archive.Length;
 
     // Emit scanning progress with the pre-defrag block map. The extent map
     // walks the archive directly (also streaming).
@@ -435,9 +443,12 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Id => "Fat";
   public string DisplayName => "FAT Filesystem Image";
   public FormatCategory Category => FormatCategory.Archive;
+  // R/W: add/remove edit the FAT, clusters and directory in place (FatModifier /
+  // FatRemover); existing files and the boot sector stay byte-identical. A verified
+  // rebuild is only a structural-edge-case fallback. See FormatCapabilities.cs.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".img";
   public IReadOnlyList<string> Extensions => [".img", ".ima", ".flp", ".fat"];
@@ -638,21 +649,51 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   };
 
   /// <summary>
-  /// Add files to an existing FAT image. Current implementation re-builds the image
-  /// with all existing files + the new ones — the inherent build-from-scratch design
-  /// of <see cref="FatWriter"/> means "add" equals "re-pack" here. Use
-  /// <see cref="Remove"/> first to clean up stale slots.
+  /// Adds (or replaces by name) files in an existing FAT image. The common case is a
+  /// genuine in-place edit via <see cref="FatModifier"/>: free clusters are allocated
+  /// from the FAT, the data is written into them, the cluster chain is linked in every
+  /// FAT copy and a directory entry is inserted — existing files, their clusters and the
+  /// boot sector stay byte-identical and the image keeps its length. Structural cases the
+  /// in-place path does not handle (nested sub-directory targets, a full root directory,
+  /// insufficient free space) fall back to the verified <see cref="FatWriter"/> rebuild.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     archive.Position = 0;
-    var reader = new FatReader(archive);
+    using var ms = new MemoryStream();
+    archive.CopyTo(ms);
+    var original = ms.ToArray();
+
+    var items = inputs.Where(i => !i.IsDirectory)
+      .Select(i => (Name: i.ArchiveName, Data: i.ReadContent(),
+                    Mtime: i.InMemoryContent != null ? (DateTime?)null : File.GetLastWriteTime(i.FullPath)))
+      .ToList();
+
+    // Try the genuine in-place edit on a copy; commit only if every input succeeds so a
+    // structural limit leaves the source untouched and the rebuild path takes over.
+    var work = (byte[])original.Clone();
+    var inPlace = true;
+    try {
+      foreach (var (name, data, mtime) in items)
+        FatModifier.AddFile(work, name, data, mtime);
+    } catch (Exception ex) when (ex is NotSupportedException or IOException
+                                 or InvalidDataException or InvalidOperationException) {
+      inPlace = false;
+    }
+    if (inPlace) {
+      archive.Position = 0;
+      archive.Write(work, 0, work.Length);
+      archive.SetLength(work.Length);
+      return;
+    }
+
+    // Fallback: verified rebuild from the untouched original.
+    var reader = new FatReader(new MemoryStream(original, writable: false));
     var combined = new FatWriter();
     foreach (var entry in reader.Entries.Where(e => !e.IsDirectory))
       combined.AddFile(entry.Name, reader.Extract(entry));
-    foreach (var input in inputs.Where(i => !i.IsDirectory))
-      combined.AddFile(input.ArchiveName, input.ReadContent(),
-                       input.InMemoryContent != null ? null : File.GetLastWriteTime(input.FullPath));
-    var totalSectors = (int)(archive.Length / 512);
+    foreach (var (name, data, mtime) in items)
+      combined.AddFile(name, data, mtime);
+    var totalSectors = (int)(original.Length / 512);
     var rebuilt = combined.Build(totalSectors: totalSectors);
     archive.Position = 0;
     archive.Write(rebuilt);

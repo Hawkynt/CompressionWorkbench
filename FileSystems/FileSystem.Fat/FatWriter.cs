@@ -770,8 +770,12 @@ public sealed class FatWriter {
   /// <summary>Builds the slot blob for one file (LFN entries first if the
   /// long name needs them, then the 8.3 entry). Updates <paramref
   /// name="existingShortNames"/> with the chosen alias to detect ~N
-  /// collisions across subsequent files.</summary>
-  private static byte[] BuildDirentSlots(string longName, HashSet<string> existingShortNames, DateTime? modTime = null, bool enableLfn = true, byte attr = 0x20, bool forceLfn = false) {
+  /// collisions across subsequent files. The first-cluster and file-size
+  /// fields of the trailing 8.3 entry are left zero for the caller to patch.
+  /// <para>Exposed to <see cref="FatModifier"/> so genuine in-place adds emit
+  /// directory entries byte-identical to the writer's (same LFN/8.3 + NT-case
+  /// encoding), guaranteeing name round-trips.</para></summary>
+  internal static byte[] BuildDirentSlots(string longName, HashSet<string> existingShortNames, DateTime? modTime = null, bool enableLfn = true, byte attr = 0x20, bool forceLfn = false) {
     if (!enableLfn) {
       // Strict 8.3 mode: no LFN slots, just generate a short-name alias.
       var shortAlias = IsPlain8Dot3(longName)

@@ -9,22 +9,18 @@ namespace FileSystem.GsOs;
 /// 64-byte header at offset 0 followed by the inner ProDOS volume.
 ///
 /// <para>
-/// Mutation rebuilds the inner ProDOS payload from its existing file list
-/// plus the new one via <see cref="FileSystem.ProDos.ProDosWriter"/>, then
-/// re-wraps it with a fresh 2IMG header. The 2IMG header bytes 0..63 stay
-/// byte-identical across operations (creator code, image format, flags,
-/// data offset and length). HFS- and DOS-3.3-ordered 2IMG payloads
-/// (image format = 0 or 2) are rejected.
-/// </para>
-/// <para>
-/// Note: an earlier draft delegated directly to
-/// <see cref="FileSystem.ProDos.ProDosModifier"/>, which has a pre-existing
-/// volume-directory-header / slot-1 byte-offset collision (the volume
-/// header uses 43 bytes but EntrySize is 39) that corrupts the bitmap
-/// pointer and total-blocks fields after the first file is added. The
-/// rebuild path avoids that latent bug by sending the data through the
-/// fresh-build code path which already round-trips correctly through the
-/// reader.
+/// Mutation is genuinely in place: the inner ProDOS catalog, volume bitmap
+/// and data blocks are edited directly via
+/// <see cref="FileSystem.ProDos.ProDosModifier"/> (which auto-detects the
+/// 64-byte 2IMG header through its magic and offsets all block I/O), so the
+/// 2IMG header bytes 0..63 and every untouched ProDOS block stay byte-identical
+/// and the image keeps its original length. The earlier volume-directory-header
+/// / slot-1 byte-offset collision in <c>ProDosModifier</c> is fixed and pinned by
+/// <c>ProDosVolumeHeaderRegressionTests</c>. The edit is applied to an in-memory
+/// copy first and only written back on success, so a failure leaves the image
+/// untouched and the verified rebuild path takes over (catalog-full / structural
+/// edge cases). HFS- and DOS-3.3-ordered 2IMG payloads (image format = 0 or 2)
+/// are rejected.
 /// </para>
 /// </summary>
 public static class GsOsInPlaceModifier {
@@ -36,18 +32,23 @@ public static class GsOsInPlaceModifier {
   /// <summary>
   /// Adds — or replaces by name — files inside the inner ProDOS volume of
   /// an existing 2IMG image. The 2IMG header bytes 0..63 are byte-identical
-  /// before and after the operation.
+  /// before and after the operation; existing ProDOS blocks not touched by the
+  /// edit are preserved in place (no full rebuild for the common case).
   /// </summary>
   public static void AddFile(Stream archive, string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
 
-    var (originalHeader, files) = SnapshotProDosFiles(archive);
-    var byName = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
-    foreach (var (n, d) in files) byName[n] = d;
+    var image = ReadProDosOrderedImage(archive);
+    if (TryInPlace(archive, image, work => FileSystem.ProDos.ProDosModifier.AddFile(work, name, data)))
+      return;
+
+    // Fallback: verified rebuild from the pre-edit snapshot (image untouched on the
+    // failed in-place attempt because the edit ran on a working copy).
+    var byName = SnapshotByName(image);
     byName[name] = data;
-    Rebuild(archive, originalHeader, byName);
+    Rebuild(archive, image.AsSpan(0, HeaderSize).ToArray(), byName);
   }
 
   /// <summary>
@@ -58,45 +59,66 @@ public static class GsOsInPlaceModifier {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(name);
 
-    var (originalHeader, files) = SnapshotProDosFiles(archive);
-    var byName = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
-    foreach (var (n, d) in files) byName[n] = d;
+    var image = ReadProDosOrderedImage(archive);
+    var removed = false;
+    if (TryInPlace(archive, image, work => removed = FileSystem.ProDos.ProDosModifier.RemoveFile(work, name)))
+      return removed;
+
+    var byName = SnapshotByName(image);
     if (!byName.Remove(name)) return false;
-    Rebuild(archive, originalHeader, byName);
+    Rebuild(archive, image.AsSpan(0, HeaderSize).ToArray(), byName);
     return true;
   }
 
-  // ── Internals ───────────────────────────────────────────────────────────
+  // Runs the genuine in-place edit on an in-memory copy of the image and writes the
+  // result back to the archive only if it succeeds and the length is preserved.
+  // Returns false (leaving the archive untouched) when the edit throws a structural
+  // limit so the caller can fall back to the rebuild path.
+  private static bool TryInPlace(Stream archive, byte[] image, Action<Stream> edit) {
+    try {
+      using var work = new MemoryStream(image.Length);
+      work.Write(image, 0, image.Length);
+      work.Position = 0;
+      edit(work);
+      var result = work.ToArray();
+      archive.Position = 0;
+      archive.Write(result, 0, result.Length);
+      archive.SetLength(result.Length);
+      return true;
+    } catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException
+                                 or IOException or InvalidDataException) {
+      return false;
+    }
+  }
 
-  private static (byte[] Header, List<(string Name, byte[] Data)> Files) SnapshotProDosFiles(Stream archive) {
+  private static byte[] ReadProDosOrderedImage(Stream archive) {
     if (archive.Length < HeaderSize)
       throw new InvalidDataException("GS/OS: stream too small for a 2IMG header.");
-
     archive.Position = 0;
     using var ms = new MemoryStream();
     archive.CopyTo(ms);
     var image = ms.ToArray();
-
     if (!image.AsSpan(0, 4).SequenceEqual(Magic))
       throw new InvalidDataException("GS/OS: missing 2IMG magic.");
     var imageFormat = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(12, 4));
     if (imageFormat != ImageFormatProDos)
       throw new NotSupportedException(
         $"GS/OS: in-place modify currently supports only ProDOS-ordered payloads (image_format=1); got {imageFormat}.");
-
-    var header = new byte[HeaderSize];
-    Buffer.BlockCopy(image, 0, header, 0, HeaderSize);
-
-    var files = new List<(string Name, byte[] Data)>();
-    using (var inner = new MemoryStream(image, HeaderSize, image.Length - HeaderSize, writable: false)) {
-      using var reader = new FileSystem.ProDos.ProDosReader(inner);
-      foreach (var e in reader.Entries) {
-        if (e.IsDirectory) continue;
-        files.Add((e.Name, reader.Extract(e)));
-      }
-    }
-    return (header, files);
+    return image;
   }
+
+  private static Dictionary<string, byte[]> SnapshotByName(byte[] image) {
+    var byName = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+    using var inner = new MemoryStream(image, HeaderSize, image.Length - HeaderSize, writable: false);
+    using var reader = new FileSystem.ProDos.ProDosReader(inner);
+    foreach (var e in reader.Entries) {
+      if (e.IsDirectory) continue;
+      byName[e.Name] = reader.Extract(e);
+    }
+    return byName;
+  }
+
+  // ── Internals ───────────────────────────────────────────────────────────
 
   private static void Rebuild(Stream archive, byte[] originalHeader,
                               Dictionary<string, byte[]> byName) {

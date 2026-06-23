@@ -120,28 +120,54 @@ its own (non-default) `Add`/`Remove`. Whether that own `Add`/`Remove` is genuine
 rather than a read-all → re-create rebuild is verified per format (see the audit below) and
 documented on each descriptor.
 
-Formats corrected from a false R/W claim to WORM under this rule (the verb keeps working via
-rebuild; only the advertised tier changed):
+### WORM → R/W conversions (genuine in-place added)
 
-- **CAB**, **7-Zip** — do not implement `IArchiveModifiable` at all; the `CanModify` flag was
-  entirely unbacked. (Removal is via shrink/rebuild.)
-- **CramFS**, **SquashFS** — compressed *read-only* filesystems; `Add`/`Remove` route through
-  `ModifyRebuilder`.
-- **NTFS**, **Btrfs**, **XFS**, **ReiserFS** — the writers re-pack the whole image on
-  add/remove (NTFS's own code notes *"add equals re-pack here"*; ReiserFS is read-modify-rebuild).
-  Genuine in-place editing of these on-disk trees is not implemented, so they are WORM.
-- **GEMDOS**, **MSA** — add re-emits the inner FAT image via `FatWriter`.
-- **GS/OS (2IMG)**, **MFS-1** — add rebuilds the inner ProDOS/MFS volume via its writer.
-- **Stacker** — add/remove rebuild the whole STACVOL.
-- **OVA**, **PFS0**, **Wrapster** — add/remove re-emit the whole container from the merged
-  entry list.
+These formats were rebuild-backed WORM and have gained a genuine in-place writer, so they
+now advertise `CanModify`. The rebuild is kept only as a structural-edge-case fallback —
+nothing is re-packed in the common case:
 
-Genuinely-R/W formats keep `CanModify`: R/W filesystems with in-place modifiers (FAT/exFAT,
-ext, HFS/HFS+, APFS, F2FS, JFS, UFS, UDF, the log-structured JFFS2/YAFFS2/UBIFS/NILFS2,
-the CVF family, and the retro disk formats), the in-place archive editors (ZIP family, TAR,
-AR, CPIO, XAR, LZH, ARJ, ZOO, PDF, …), byte-identity append (Ghost), the sector-image
-editors (BIN/CUE, CDI, MDF, NRG, CSO), and the disk-image containers that delegate to a R/W
-inner filesystem (QCOW2/VHD/VHDX/VMDK/VDI).
+- **FAT12/16/32** — `FatModifier` allocates free clusters from the FAT, writes the data,
+  links the chain in every FAT copy and inserts a VFAT/8.3 directory entry (encoded by the
+  shared `FatWriter.BuildDirentSlots`, so names round-trip identically). Existing files,
+  their clusters and the boot sector stay byte-identical; the image keeps its length.
+  Remove was already in-place (`FatRemover`).
+- **GEMDOS (Atari ST)** — FAT12 below the 0x60 jump byte; delegates add/remove to
+  `FatModifier` / `FatRemover` (geometry is read from the BPB, so the jump byte is untouched).
+- **GS/OS (2IMG)** — edits the inner ProDOS volume in place via `ProDosModifier` (the 2IMG
+  64-byte header and untouched blocks stay byte-identical).
+
+### Remaining WORM (rebuild-backed; genuine in-place not provided)
+
+The verb still works via the verified rebuild; only the advertised tier stays WORM. Reasons:
+
+- **CramFS**, **SquashFS** — compressed *read-only* filesystems **by design**; in-place R/W
+  is not meaningful. `Add`/`Remove` route through `ModifyRebuilder`.
+- **CAB**, **7-Zip** — solid per-folder / per-block compression: appending a file would
+  require recompressing the containing solid stream, so byte-level in-place is impractical.
+  (Neither implements `IArchiveModifiable`; removal is via shrink/rebuild.)
+- **MSA** — Atari ST disk image with **per-track RLE compression**: any FAT edit changes
+  compressed track lengths, so an honest edit must decompress→modify→recompress (≡ rebuild).
+- **Wrapster**, **PFS0** — directory/header sits at the **start** with absolute offsets, so
+  inserting an entry shifts the entire data region — effectively a full rewrite.
+- **OVA** — a TAR whose `.mf` manifest must carry a SHA-256 of every member; regenerating it
+  already reads all members, and matching the writer's exact manifest + canonical ordering via
+  `TarModifier` is fiddly for a niche format. Deferred (in-place via `TarModifier` is feasible).
+- **MFS-1** — niche Acorn DFS-tier format; genuine in-place is feasible (data never moves,
+  only the two catalog sectors rewrite) but needs bespoke DFS-catalog encoding. Deferred.
+- **NTFS**, **XFS**, **ReiserFS** — genuinely R/W filesystems; in-place add is feasible but
+  large and **conformance-critical** (chkdsk / xfs_repair / reiserfsck must stay clean —
+  MFT/$I30 collation, AG free-space B+trees, S+tree balancing). Deferred to avoid regressing
+  the conformance suites; today their writers re-pack (NTFS's own code notes *"add equals
+  re-pack here"*).
+- **Btrfs** — copy-on-write B-trees: any leaf edit cascades new node copies up to the
+  superblock, so an in-place edit is **indistinguishable from a rebuild**.
+
+Genuinely-R/W formats keep `CanModify`: the above conversions plus R/W filesystems with
+in-place modifiers (exFAT, ext, HFS/HFS+, APFS, F2FS, JFS, UFS, UDF, the log-structured
+JFFS2/YAFFS2/UBIFS/NILFS2, the CVF family, and the retro disk formats), the in-place archive
+editors (ZIP family, TAR, AR, CPIO, XAR, LZH, ARJ, ZOO, PDF, …), byte-identity append
+(Ghost), the sector-image editors (BIN/CUE, CDI, MDF, NRG, CSO), and the disk-image
+containers that delegate to a R/W inner filesystem (QCOW2/VHD/VHDX/VMDK/VDI).
 
 ## Filesystem descriptors
 
