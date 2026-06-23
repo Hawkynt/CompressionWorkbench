@@ -82,11 +82,126 @@ public static class NtfsRemover {
     ApplyFixup(matchCopy);
     ZeroDataAttribute(image, matchCopy, clusterSize);
 
+    // --- Free the file's data clusters in $Bitmap and its record bit in $MFT:$BITMAP so the
+    //     space is reusable and the volume can shrink. Best-effort — the wipe already happened. ---
+    TryFreeDataClustersInBitmap(image, matchCopy, clusterSize, mftOffset, mftRecordSize);
+    TryClearMftBitmapBit(image, mftOffset, mftRecordSize, (uint)matchRecord);
+
     // --- Best-effort: clear this record's index entry in root directory ($INDEX_ROOT of record 5). ---
     TryClearRootIndexEntry(image, mftOffset, mftRecordSize, (uint)matchRecord);
 
     // --- Zero the entire MFT record. Reader skips records without "FILE" signature. ---
     image.AsSpan(recordOffsetFinal, mftRecordSize).Clear();
+  }
+
+  // Clears the $Bitmap bits for the non-resident $DATA clusters of the removed file, so
+  // the space is genuinely freed (reusable by a later in-place add). $Bitmap is record 6's
+  // unnamed non-resident $DATA; its first run LCN gives the bitmap's byte offset.
+  private static void TryFreeDataClustersInBitmap(byte[] image, byte[] record, int clusterSize,
+      long mftOffset, int mftRecordSize) {
+    try {
+      var bmOffset = BitmapByteOffset(image, mftOffset, mftRecordSize, clusterSize);
+      if (bmOffset < 0) return;
+      var firstAttr = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(20));
+      var used = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(24));
+      var pos = (int)firstAttr;
+      while (pos + 16 <= used && pos + 16 <= record.Length) {
+        var t = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(pos));
+        if (t == 0xFFFFFFFF) break;
+        var len = (int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(pos + 4));
+        if (len < 16) break;
+        if (t == 0x80 && record[pos + 9] == 0 && record[pos + 8] != 0) {
+          var runsOff = pos + BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(pos + 32));
+          FreeRunsInBitmap(image, record, runsOff, clusterSize, bmOffset);
+          return;
+        }
+        pos += len;
+      }
+    } catch { /* best effort */ }
+  }
+
+  private static void FreeRunsInBitmap(byte[] image, byte[] record, int offset, int clusterSize, int bmOffset) {
+    long prevLcn = 0;
+    while (offset < record.Length) {
+      var header = record[offset];
+      if (header == 0) break;
+      var lengthBytes = header & 0x0F;
+      var offsetBytes = (header >> 4) & 0x0F;
+      offset++;
+      long length = 0;
+      for (var i = 0; i < lengthBytes; ++i) length |= (long)record[offset + i] << (i * 8);
+      offset += lengthBytes;
+      long delta = 0;
+      for (var i = 0; i < offsetBytes; ++i) delta |= (long)record[offset + i] << (i * 8);
+      if (offsetBytes > 0 && (record[offset + offsetBytes - 1] & 0x80) != 0)
+        for (var i = offsetBytes; i < 8; ++i) delta |= (long)0xFF << (i * 8);
+      offset += offsetBytes;
+      prevLcn += delta;
+      if (length <= 0 || prevLcn < 0) continue;
+      for (long c = prevLcn; c < prevLcn + length; ++c) {
+        var b = bmOffset + (int)(c / 8);
+        if (b >= 0 && b < image.Length) image[b] &= (byte)~(1 << (int)(c % 8));
+      }
+    }
+  }
+
+  private static int BitmapByteOffset(byte[] image, long mftOffset, int mftRecordSize, int clusterSize) {
+    var rec6 = image.AsSpan((int)(mftOffset + 6L * mftRecordSize), mftRecordSize).ToArray();
+    ApplyFixup(rec6);
+    var firstAttr = BinaryPrimitives.ReadUInt16LittleEndian(rec6.AsSpan(20));
+    var used = BinaryPrimitives.ReadUInt32LittleEndian(rec6.AsSpan(24));
+    var pos = (int)firstAttr;
+    while (pos + 16 <= used && pos + 16 <= rec6.Length) {
+      var t = BinaryPrimitives.ReadUInt32LittleEndian(rec6.AsSpan(pos));
+      if (t == 0xFFFFFFFF) break;
+      var len = (int)BinaryPrimitives.ReadUInt32LittleEndian(rec6.AsSpan(pos + 4));
+      if (len < 16) break;
+      if (t == 0x80 && rec6[pos + 9] == 0 && rec6[pos + 8] != 0) {
+        var runsOff = pos + BinaryPrimitives.ReadUInt16LittleEndian(rec6.AsSpan(pos + 32));
+        var lcn = FirstRunLcnLocal(rec6, runsOff);
+        return (int)(lcn * clusterSize);
+      }
+      pos += len;
+    }
+    return -1;
+  }
+
+  // Clears the removed record's bit in $MFT:$BITMAP (record 0's non-resident $BITMAP).
+  private static void TryClearMftBitmapBit(byte[] image, long mftOffset, int mftRecordSize, uint recordNum) {
+    try {
+      var rec0 = image.AsSpan((int)mftOffset, mftRecordSize).ToArray();
+      ApplyFixup(rec0);
+      var firstAttr = BinaryPrimitives.ReadUInt16LittleEndian(rec0.AsSpan(20));
+      var used = BinaryPrimitives.ReadUInt32LittleEndian(rec0.AsSpan(24));
+      var pos = (int)firstAttr;
+      while (pos + 16 <= used && pos + 16 <= rec0.Length) {
+        var t = BinaryPrimitives.ReadUInt32LittleEndian(rec0.AsSpan(pos));
+        if (t == 0xFFFFFFFF) break;
+        var len = (int)BinaryPrimitives.ReadUInt32LittleEndian(rec0.AsSpan(pos + 4));
+        if (len < 16) break;
+        if (t == 0xB0) {
+          if (rec0[pos + 8] == 0) return; // resident bitmap edit would need record-0 re-fixup + mirror; skip
+          var runsOff = pos + BinaryPrimitives.ReadUInt16LittleEndian(rec0.AsSpan(pos + 32));
+          var lcn = FirstRunLcnLocal(rec0, runsOff);
+          var bmByte = (int)(lcn * (BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(11)) * (image[13] == 0 ? 8 : image[13])) + recordNum / 8);
+          if (bmByte >= 0 && bmByte < image.Length) image[bmByte] &= (byte)~(1 << (int)(recordNum % 8));
+          return;
+        }
+        pos += len;
+      }
+    } catch { /* best effort */ }
+  }
+
+  private static long FirstRunLcnLocal(byte[] record, int runsOffset) {
+    var header = record[runsOffset];
+    var lengthBytes = header & 0x0F;
+    var offsetBytes = (header >> 4) & 0x0F;
+    long lcn = 0;
+    var o = runsOffset + 1 + lengthBytes;
+    for (var i = 0; i < offsetBytes; i++) lcn |= (long)record[o + i] << (i * 8);
+    if (offsetBytes > 0 && (record[o + offsetBytes - 1] & 0x80) != 0)
+      for (var i = offsetBytes; i < 8; i++) lcn |= (long)0xFF << (i * 8);
+    return lcn;
   }
 
   /// <summary>

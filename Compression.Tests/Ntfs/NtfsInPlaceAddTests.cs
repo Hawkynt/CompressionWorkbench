@@ -77,6 +77,27 @@ public class NtfsInPlaceAddTests {
   }
 
   [Test]
+  public void Remove_FreesClusters_ThenInPlaceAddReusesThem() {
+    // drop.bin occupies data clusters; after remove those clusters + its MFT record are
+    // freed in $Bitmap/$MFT:$BITMAP, so a subsequent in-place add can reuse the space
+    // (genuine free, not a leak) and the image does not grow.
+    var image = BuildSeed(("keep.txt", Encoding.ASCII.GetBytes("keep")),
+                          ("drop.bin", RandomBytes(8000, 3)));
+    var lengthBefore = image.Length;
+    NtfsRemover.Remove(image, "drop.bin");
+    NtfsInPlaceAdder.AddFile(image, "new.bin", RandomBytes(6000, 9));
+
+    var (names, content) = Read(image);
+    Assert.Multiple(() => {
+      Assert.That(names, Is.EqualTo(new[] { "keep.txt", "new.bin" }), "drop gone, new added, keep survives");
+      Assert.That(content["new.bin"], Is.EqualTo(RandomBytes(6000, 9)));
+      Assert.That(image.Length, Is.EqualTo(lengthBefore), "remove+add must not grow the image");
+    });
+  }
+
+  private static byte[] RandomBytes(int n, int seed) { var b = new byte[n]; new Random(seed).NextBytes(b); return b; }
+
+  [Test]
   public void NestedPath_ThrowsForRebuildFallback() {
     var image = BuildSeed(("seed.txt", Encoding.ASCII.GetBytes("seed")));
     Assert.Throws<NotSupportedException>(() => NtfsInPlaceAdder.AddFile(image, "sub/file.txt", new byte[] { 1 }));
