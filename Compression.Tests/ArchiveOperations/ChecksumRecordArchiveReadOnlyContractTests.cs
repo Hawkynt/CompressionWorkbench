@@ -6,20 +6,21 @@ namespace Compression.Tests.Operations.ChecksumRecord;
 /// <summary>
 /// Locks the honestly-read-only scope of archive formats whose record layout
 /// embeds per-block CRC32 (or equivalent) checksums that cross-reference each
-/// other. Any in-place Add/Remove path must re-checksum the touched headers —
-/// the universal "append a new local file header + payload at end-of-stream"
-/// trick that works for ZIP / ZOO / LHA does not work here without a
-/// format-specific modifier.
+/// other. The universal "append a new local file header + payload at
+/// end-of-stream" in-place trick that works for ZIP / ZOO / LHA does not work
+/// here. These formats therefore stay create-only (WORM) rather than advertise
+/// an in-place editor that would corrupt the checksum chain.
 /// <para>Formats locked R-only by this contract:</para>
 /// <list type="bullet">
 ///   <item><b>Sqx</b> — per-entry MethodHash + archive trailer checksum.</item>
 ///   <item><b>Wim</b> — SHA-1 per resource + integrity table.</item>
 ///   <item><b>Swm</b> — same as WIM, split-volume variant.</item>
 ///   <item><b>Ace</b> — per-record CRC32, HEAD block checksum spans subsequent metadata.</item>
-///   <item><b>Rar</b> — solid block chain CRC32, main-header CRC.</item>
 /// </list>
-/// A future agent that adds an Add path without first shipping a checksum-aware
-/// modifier will trip this contract.
+/// <para>Note: <b>Rar</b> was promoted to R/W — its modify re-creates the archive via
+/// <c>RarWriter</c> (a full repack that recomputes every CRC), so the cross-referencing
+/// concern does not apply to the rebuild path. Adding an in-place (append-style) editor to
+/// any format above without a checksum-aware modifier will trip this contract.</para>
 /// </summary>
 [TestFixture]
 public class ChecksumRecordArchiveReadOnlyContractTests {
@@ -29,7 +30,6 @@ public class ChecksumRecordArchiveReadOnlyContractTests {
     yield return new TestCaseData(new FileFormat.Wim.WimFormatDescriptor()).SetName("Wim");
     yield return new TestCaseData(new FileFormat.Swm.SwmFormatDescriptor()).SetName("Swm");
     yield return new TestCaseData(new FileFormat.Ace.AceFormatDescriptor()).SetName("Ace");
-    yield return new TestCaseData(new FileFormat.Rar.RarFormatDescriptor()).SetName("Rar");
   }
 
   [Test, Category("Contract"), TestCaseSource(nameof(ChecksumRecordDescriptors))]

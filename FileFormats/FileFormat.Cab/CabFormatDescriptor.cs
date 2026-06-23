@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cab;
 
-public sealed class CabFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class CabFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => CabLayoutMap.Enumerate(archive);
 
@@ -32,13 +32,13 @@ public sealed class CabFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Id => "Cab";
   public string DisplayName => "CAB";
   public FormatCategory Category => FormatCategory.Archive;
-  // WORM (Write-Once-Read-Many), NOT R/W: the descriptor does not implement
-  // IArchiveModifiable, so there is no in-place add/remove path at all — a fresh
-  // cabinet is produced from inputs (CanCreate) and removal is via shrink/rebuild.
-  // CanModify must not be advertised. See FormatCapabilities.cs for the WORM vs R/W rule.
+  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract -> edit ->
+  // re-create rebuild (default IArchiveModifiable); CAB folders are solid-compressed, so
+  // the data blocks are rewritten — moving data is acceptable for a read-write archive.
+  // See FormatCapabilities.cs (WORM vs R/W).
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".cab";
   public IReadOnlyList<string> Extensions => [".cab"];

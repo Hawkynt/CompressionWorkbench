@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.SevenZip;
 
-public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema {
+public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -71,13 +71,13 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public string Id => "SevenZip";
   public string DisplayName => "7z";
   public FormatCategory Category => FormatCategory.Archive;
-  // WORM (Write-Once-Read-Many), NOT R/W: the descriptor does not implement
-  // IArchiveModifiable, so there is no in-place add/remove path — a fresh archive is
-  // produced from inputs (CanCreate) and removal is via shrink/rebuild. CanModify must
-  // not be advertised. See FormatCapabilities.cs for the WORM vs R/W rule.
+  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract -> edit ->
+  // re-create rebuild (default IArchiveModifiable); 7z is solid-compressed, so the packed
+  // streams are rewritten — moving data is acceptable for a read-write archive. See
+  // FormatCapabilities.cs (WORM vs R/W).
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".7z";

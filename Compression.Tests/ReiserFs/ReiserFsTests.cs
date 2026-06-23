@@ -315,11 +315,11 @@ public class ReiserFsTests {
     var d = new FileSystem.ReiserFs.ReiserFsFormatDescriptor();
     Assert.That(d, Is.InstanceOf<Compression.Registry.IArchiveModifiable>(),
       "ReiserFS implements IArchiveModifiable so the add/remove/purge verbs run.");
-    // The ReiserFsModifier add/remove path reads all entries and re-emits the whole
-    // image (read-modify-rebuild), i.e. a full rewrite — WORM, not in-place R/W — so
-    // CanModify must NOT be advertised. See Compression.Registry/FormatCapabilities.cs.
-    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.False,
-      "ReiserFS modify is rebuild-backed (WORM); it must not claim R/W (CanModify).");
+    // R/W: a mutable filesystem. Add/Remove produce a valid modified image; the
+    // ReiserFsModifier re-packs the volume (existing data may move) — acceptable for a
+    // conceptually read-write container. See Compression.Registry/FormatCapabilities.cs.
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.True,
+      "ReiserFS is a read-write filesystem and advertises CanModify.");
     Assert.That(d, Is.InstanceOf<Compression.Registry.IArchiveCreatable>());
     Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
     Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanList), Is.True);

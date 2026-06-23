@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Rar;
 
-public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
@@ -19,9 +19,14 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Id => "Rar";
   public string DisplayName => "RAR";
   public FormatCategory Category => FormatCategory.Archive;
+  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract -> edit ->
+  // re-create rebuild (default IArchiveModifiable), re-emitting a valid RAR5 via RarWriter.
+  // The container is repacked (existing data moves) and optional recovery records are not
+  // regenerated — acceptable for a read-write archive (unlike defrag, which must preserve
+  // bytes and is therefore refused above). See FormatCapabilities.cs (WORM vs R/W).
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".rar";

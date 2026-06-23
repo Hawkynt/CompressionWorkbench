@@ -99,75 +99,49 @@ Write capability is a four-level scale (`Compression.Registry.FormatCapabilities
 |-------|-------|---------|
 | Unsupported | — | no descriptor. |
 | Read-Only | `CanList` / `CanExtract` | inspect + extract only. |
-| **WORM** (Write-Once-Read-Many) | `+ CanCreate` | a fresh image is produced from inputs; an existing image is **not** modified in place. |
-| **R/W** | `+ CanModify` | an existing container is edited **in place** (no full rewrite). |
+| **WORM** (Write-Once-Read-Many) | `+ CanCreate` | a fresh image is produced from inputs; an existing instance is not offered for modification. |
+| **R/W** | `+ CanModify` | an existing container can be modified (add / replace / remove), producing a valid result. |
 
-The maintenance verbs (add / remove / purge / defragment / shrink) work for **both**
-WORM and R/W formats — for WORM they are backed by the verified extract → re-create
-rebuild (`RebuildVerb` / `ModifyRebuilder`, surfaced through the default
-`IArchiveModifiable` members or a thin wrapper). **Implementing `IArchiveModifiable`
-makes the verb run; it does not make the format R/W.** A rebuild is a full rewrite, so:
+**R/W means a working modify on an existing container — the edit may be byte-preserving
+in place OR may relayout / re-pack the container (moving existing data).** Both are honest
+R/W for a *conceptually read-write* format; an edit that has to move data is still R/W, not a
+"fake". The maintenance verbs (add / remove / purge / defragment / shrink) are realised either
+by a format-specific modifier or by the verified extract → re-create rebuild (`RebuildVerb` /
+`ModifyRebuilder`, or the default `IArchiveModifiable` members).
 
-> **A format whose modification is only rebuild-backed advertises `CanCreate` (WORM) and
-> must NOT advertise `CanModify` (R/W).** `CanModify` is reserved for a genuine in-place
-> writer that edits the existing bytes — R/W filesystems (FAT/NTFS/ext/HFS+/…), ZIP/TAR/XAR
-> member edits, byte-identity append (Ghost), disk-image containers delegating to a R/W
-> inner filesystem (QCOW2/VHD/VHDX/VMDK/VDI), etc.
+> **`CanModify` is advertised when the format is a mutable container with a working modify
+> path.** It is withheld only from **read-only-by-design** formats (CramFS, SquashFS) and
+> **create-only** formats — even though a rebuild could synthesise a modified copy, those do
+> not present themselves as editable.
 
-`Compression.Tests.Operations.WriteCapabilityHonestyTests` enforces the deterministic half
-for every `CanModify` claimant: the ops must implement `IArchiveModifiable` **and** provide
-its own (non-default) `Add`/`Remove`. Whether that own `Add`/`Remove` is genuinely in-place
-rather than a read-all → re-create rebuild is verified per format (see the audit below) and
-documented on each descriptor.
+`Compression.Tests.Operations.WriteCapabilityHonestyTests` enforces the deterministic half:
+every `CanModify` claimant's ops must implement `IArchiveModifiable` (a real modify path —
+no unbacked flag). That the modify *works* (round-trips) is covered by the registry-driven
+`Generic{Purge,Defrag,Shrink}RoundTripTests`.
 
-### WORM → R/W conversions (genuine in-place added)
+### R/W realisation per format
 
-These formats were rebuild-backed WORM and have gained a genuine in-place writer, so they
-now advertise `CanModify`. The rebuild is kept only as a structural-edge-case fallback —
-nothing is re-packed in the common case:
+- **Byte-preserving in place** (existing data stays put): FAT12/16/32 (`FatModifier`), GEMDOS,
+  GS/OS, exFAT, ext, HFS/HFS+, APFS, F2FS, JFS, UFS, UDF, the log-structured
+  JFFS2/YAFFS2/UBIFS/NILFS2, the CVF family, the retro disk formats; the in-place archive
+  editors (ZIP family, TAR, AR, CPIO, XAR, LZH/LHA, ARJ, ZOO, PDF); byte-identity append
+  (Ghost); the sector-image editors (BIN/CUE, CDI, MDF, NRG, CSO); and the disk-image
+  containers that delegate to a R/W inner filesystem (QCOW2/VHD/VHDX/VMDK/VDI).
+- **Relayout / re-pack** (valid result, existing data may move): **NTFS, XFS, Btrfs, ReiserFS**
+  (the writer re-packs the whole image — add/remove read the entries and re-emit a valid,
+  conformance-shaped image), and **7-Zip, CAB, RAR** (the solid streams are rewritten via the
+  extract → re-create rebuild; RAR re-emits a valid RAR5 via `RarWriter` and recomputes every
+  CRC — so the cross-referencing-checksum concern of an append-style edit does not apply).
 
-- **FAT12/16/32** — `FatModifier` allocates free clusters from the FAT, writes the data,
-  links the chain in every FAT copy and inserts a VFAT/8.3 directory entry (encoded by the
-  shared `FatWriter.BuildDirentSlots`, so names round-trip identically). Existing files,
-  their clusters and the boot sector stay byte-identical; the image keeps its length.
-  Remove was already in-place (`FatRemover`).
-- **GEMDOS (Atari ST)** — FAT12 below the 0x60 jump byte; delegates add/remove to
-  `FatModifier` / `FatRemover` (geometry is read from the BPB, so the jump byte is untouched).
-- **GS/OS (2IMG)** — edits the inner ProDOS volume in place via `ProDosModifier` (the 2IMG
-  64-byte header and untouched blocks stay byte-identical).
+### Stays WORM (create-only / read-only-by-design)
 
-### Remaining WORM (rebuild-backed; genuine in-place not provided)
-
-The verb still works via the verified rebuild; only the advertised tier stays WORM. Reasons:
-
-- **CramFS**, **SquashFS** — compressed *read-only* filesystems **by design**; in-place R/W
-  is not meaningful. `Add`/`Remove` route through `ModifyRebuilder`.
-- **CAB**, **7-Zip** — solid per-folder / per-block compression: appending a file would
-  require recompressing the containing solid stream, so byte-level in-place is impractical.
-  (Neither implements `IArchiveModifiable`; removal is via shrink/rebuild.)
-- **MSA** — Atari ST disk image with **per-track RLE compression**: any FAT edit changes
-  compressed track lengths, so an honest edit must decompress→modify→recompress (≡ rebuild).
-- **Wrapster**, **PFS0** — directory/header sits at the **start** with absolute offsets, so
-  inserting an entry shifts the entire data region — effectively a full rewrite.
-- **OVA** — a TAR whose `.mf` manifest must carry a SHA-256 of every member; regenerating it
-  already reads all members, and matching the writer's exact manifest + canonical ordering via
-  `TarModifier` is fiddly for a niche format. Deferred (in-place via `TarModifier` is feasible).
-- **MFS-1** — niche Acorn DFS-tier format; genuine in-place is feasible (data never moves,
-  only the two catalog sectors rewrite) but needs bespoke DFS-catalog encoding. Deferred.
-- **NTFS**, **XFS**, **ReiserFS** — genuinely R/W filesystems; in-place add is feasible but
-  large and **conformance-critical** (chkdsk / xfs_repair / reiserfsck must stay clean —
-  MFT/$I30 collation, AG free-space B+trees, S+tree balancing). Deferred to avoid regressing
-  the conformance suites; today their writers re-pack (NTFS's own code notes *"add equals
-  re-pack here"*).
-- **Btrfs** — copy-on-write B-trees: any leaf edit cascades new node copies up to the
-  superblock, so an in-place edit is **indistinguishable from a rebuild**.
-
-Genuinely-R/W formats keep `CanModify`: the above conversions plus R/W filesystems with
-in-place modifiers (exFAT, ext, HFS/HFS+, APFS, F2FS, JFS, UFS, UDF, the log-structured
-JFFS2/YAFFS2/UBIFS/NILFS2, the CVF family, and the retro disk formats), the in-place archive
-editors (ZIP family, TAR, AR, CPIO, XAR, LZH, ARJ, ZOO, PDF, …), byte-identity append
-(Ghost), the sector-image editors (BIN/CUE, CDI, MDF, NRG, CSO), and the disk-image
-containers that delegate to a R/W inner filesystem (QCOW2/VHD/VHDX/VMDK/VDI).
+- **CramFS**, **SquashFS** — compressed *read-only* filesystems by design; not presented as editable.
+- **Sqx**, **Wim**, **Swm**, **Ace** — checksum-record archives kept create-only (no in-place
+  editor; an append-style edit would corrupt the cross-referencing checksum chain — see
+  `ChecksumRecordArchiveReadOnlyContractTests`).
+- A handful of niche/append-shift formats (MSA per-track RLE; Wrapster/PFS0 header-at-start;
+  OVA manifest-over-all-members; MFS-1 bespoke catalog) keep the rebuild-backed verb without
+  advertising R/W.
 
 ## Filesystem descriptors
 

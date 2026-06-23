@@ -25,23 +25,22 @@ Write capability is a four-level scale (see `FormatCapabilities`):
 | Tier      | Meaning                                                                          | Capability bits                                   | Interface(s) to implement |
 |-----------|----------------------------------------------------------------------------------|---------------------------------------------------|---------------------------|
 | **R/O**   | List / Extract / Test only. No creation.                                         | `CanList`, `CanExtract`, `CanTest`                | `IArchiveFormatOperations` |
-| **WORM**  | Write-Once-Read-Many: produce a fresh archive/image from inputs; no in-place edit.| `+ CanCreate`                                     | `+ IArchiveCreatable` |
-| **R/W**   | Modify an existing archive **in place**: add / replace / remove entries.          | `+ CanModify` (implies `CanCreate`)               | `+ IArchiveModifiable` |
+| **WORM**  | Write-Once-Read-Many: produce a fresh archive/image from inputs; an existing instance is not offered for modification. | `+ CanCreate`            | `+ IArchiveCreatable` |
+| **R/W**   | Modify an existing archive: add / replace / remove entries, producing a valid result. | `+ CanModify` (implies `CanCreate`)  | `+ IArchiveModifiable` |
 
-**R/W means genuine in-place modification of the existing container** — editing the
-stored bytes directly (O(changed bytes)-ish): R/W filesystem block writes, ZIP/TAR/XAR
-member edits, byte-identity append, the genuine compressed-CVF in-place writers, or a
-disk-image container delegating to a R/W inner filesystem.
+**R/W means a working modify on an existing container.** The edit may be byte-preserving
+in place (R/W filesystem block writes, ZIP/TAR/XAR member edits, byte-identity append, the
+CVF in-place writers, a disk-image container delegating to a R/W inner filesystem) **or** it
+may relayout / re-pack the container, moving existing data (NTFS/XFS/Btrfs/ReiserFS re-pack
+the whole image; 7-Zip/CAB/RAR rewrite their solid streams via the verified extract →
+re-create rebuild). Both are honest R/W for a *conceptually read-write* format — an edit that
+must move data is still R/W, not a fake.
 
-A **rebuild** (read all → repack → write the whole thing) is a full rewrite, i.e. WORM —
-**not** R/W. It is perfectly fine to back the add / replace / remove / purge verbs with the
-verified extract → re-create rebuild (`RebuildVerb` / `ModifyRebuilder`, via the default
-`IArchiveModifiable` members or a thin wrapper) so the verb *works* — but such a format
-advertises `CanCreate` only and **must not** advertise `CanModify`. **Implementing
-`IArchiveModifiable` makes the verb run; it does not make the format R/W.** A format whose
-modification is *only* rebuild-backed is WORM. `WriteCapabilityHonestyTests` enforces this:
-every `CanModify` claimant must implement `IArchiveModifiable` with its own (non-default,
-non-rebuild) `Add`/`Remove`.
+`CanModify` is **withheld** only from **read-only-by-design** formats (CramFS, SquashFS) and
+**create-only** formats (e.g. the checksum-record archives Sqx/Wim/Swm/Ace) — they may still
+back the verbs with a rebuild for convenience, but they do not present themselves as editable.
+`WriteCapabilityHonestyTests` enforces the one hard rule: every `CanModify` claimant must
+implement `IArchiveModifiable` (a real modify path — no unbacked flag).
 
 Single-stream compression formats (gzip, xz, lzma…) are their own axis:
 they implement `IStreamFormatOperations` (Compress/Decompress, plus
@@ -240,7 +239,7 @@ buffer), but is bounded by RAM; override them to handle multi-GB/TB images.
 | `IArchiveFormatOperations` | List / Extract / Test (R/O) |
 | `IArchiveInMemoryExtract`  | temp-free single-entry extraction (nested-archive descent) |
 | `IArchiveCreatable`        | Create (WORM); override `CreateFromStreams` for OOM-free creation |
-| `IArchiveModifiable`       | Add / Replace / Remove + **purge** (Remove-all). Powers the verb; advertise `CanModify` (R/W) **only** with a genuine own in-place `Add`/`Remove` — rebuild-backed stays WORM (see §1). |
+| `IArchiveModifiable`       | Add / Replace / Remove + **purge** (Remove-all). Advertise `CanModify` (R/W) when the format is a mutable container with a working modify — in place **or** relayout/rebuild (see §1); withhold it from read-only-by-design / create-only formats. |
 | `IArchiveDefragmentable`   | **defrag** (with optional `DefragOptions` modes) |
 | `IFilesystemBlockMover`    | true in-place defrag (extent moves, no rebuild) |
 | `IArchiveShrinkable`       | **shrink** (smallest canonical size / tight-pack) |
