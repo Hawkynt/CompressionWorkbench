@@ -25,8 +25,12 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public string Id => "SquashFs";
   public string DisplayName => "SquashFS";
   public FormatCategory Category => FormatCategory.Archive;
+  // WORM (Write-Once-Read-Many), NOT R/W: SquashFS is a compressed, read-only image.
+  // Add/Remove go through the verified extract -> re-create rebuild (ModifyRebuilder),
+  // a full rewrite — the verb works but nothing is modified in place. Advertising
+  // CanModify would falsely claim genuine in-place R/W. See FormatCapabilities.cs.
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".sqfs";
   public IReadOnlyList<string> Extensions => [".sqfs", ".squashfs", ".snap", ".appimage"];

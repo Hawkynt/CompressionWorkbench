@@ -67,10 +67,12 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string Id => "Ntfs";
   public string DisplayName => "NTFS";
   public FormatCategory Category => FormatCategory.Archive;
+  // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
+  // so the verb works via rebuild but nothing is modified in place. CanModify
+  // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
   /// <summary>
   /// Zeros all unused space in the NTFS image: unallocated clusters, the slack

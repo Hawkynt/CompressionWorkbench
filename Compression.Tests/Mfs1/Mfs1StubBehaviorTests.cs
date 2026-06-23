@@ -27,8 +27,8 @@ public class Mfs1StubBehaviorTests {
 
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True,
       "MFS-1 advertises CanCreate via Mfs1Writer (DFS-tier catalog emitter).");
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
-      "MFS-1 advertises CanModify via Mfs1InPlaceModifier.");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
+      "MFS-1 modify re-emits the whole image via Mfs1Writer (rebuild) = WORM; must not claim R/W.");
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>(),
       "MFS-1 implements IArchiveCreatable.");
     Assert.That(d, Is.InstanceOf<IArchiveModifiable>(),

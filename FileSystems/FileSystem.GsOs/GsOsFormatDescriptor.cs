@@ -22,10 +22,12 @@ public sealed class GsOsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string Id => "GsOs";
   public string DisplayName => "Apple IIgs GS/OS (2IMG)";
   public FormatCategory Category => FormatCategory.Archive;
+  // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
+  // so the verb works via rebuild but nothing is modified in place. CanModify
+  // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   // .2mg is owned by FileSystem.ProDos; we register the GS/OS-specific
   // .gsdos extension only to avoid extension routing conflicts.
   public string DefaultExtension => ".gsdos";

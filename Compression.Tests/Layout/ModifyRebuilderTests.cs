@@ -4,9 +4,12 @@ using Compression.Registry;
 namespace Compression.Tests.Layout;
 
 /// <summary>
-/// Smoke tests for the WORM-to-R/W upgrade across the filesystems wired via
-/// <see cref="ModifyRebuilder"/>. Each FS gets a "Add then Read" round-trip
-/// and an "interface present" check. Per-FS edge cases (encoding quirks,
+/// Smoke tests that the add / remove verb is wired across the filesystems that
+/// realise it via <see cref="ModifyRebuilder"/> (or their own modifier). Each FS
+/// gets an "Add then Read" round-trip and an "interface present" check. Note these
+/// rebuild-backed formats are WORM, not R/W — they implement the interface so the
+/// verb runs but do not advertise <c>CanModify</c> (enforced by
+/// <c>WriteCapabilityHonestyTests</c>). Per-FS edge cases (encoding quirks,
 /// max-name-length, etc.) live with the per-FS test fixtures.
 /// </summary>
 [TestFixture]
@@ -34,21 +37,22 @@ public class ModifyRebuilderTests {
   [TestCase("RomFs")]
   [TestCase("T64")]
   [TestCase("Tap")]
-  // ReiserFs / Apfs intentionally excluded — locked WORM (real-FS B-tree
-  // shape; in-flight Add/Remove is multi-week work). Guard tests live in the
-  // per-FS fixtures: ReiserFsTests.Descriptor_IsHonestlyRebuildBased,
-  // ApfsTests.Descriptor_IsHonestlyRebuildBased.
+  // ReiserFs is rebuild-backed WORM (ReiserFsModifier read-modify-rebuilds the whole
+  // image) — its capability is pinned in ReiserFsTests. Apfs, by contrast, edits its
+  // B-tree structures in place (ApfsModifier) and is genuinely R/W.
   // F2fs has its own log-structured Add/Remove (F2fsModifier) — see
   // F2fsModifyTests for the round-trip + overflow tests, and
   // F2fsTests.Descriptor_AdvertisesLogStructuredMutation for the capability lock.
   public void DescriptorImplementsIArchiveModifiable(string formatId) {
     var desc = FormatRegistry.GetById(formatId);
     Assert.That(desc, Is.Not.Null, $"{formatId} descriptor not registered");
+    // This fixture only proves the add/remove verb is WIRED (the interface is present),
+    // not that the format is R/W: some entries here (e.g. CramFs / SquashFs) are
+    // rebuild-backed WORM and deliberately do NOT advertise CanModify. The WORM-vs-R/W
+    // capability honesty is enforced separately by
+    // Compression.Tests.Operations.WriteCapabilityHonestyTests.
     Assert.That(desc, Is.InstanceOf<IArchiveModifiable>(),
-      $"{formatId} should now implement IArchiveModifiable");
-    var caps = desc!.Capabilities;
-    Assert.That(caps.HasFlag(FormatCapabilities.CanModify), Is.True,
-      $"{formatId} should advertise CanModify");
+      $"{formatId} should implement IArchiveModifiable so the verb runs");
   }
 
   // ── Round-trip smoke per FS ──────────────────────────────────────────

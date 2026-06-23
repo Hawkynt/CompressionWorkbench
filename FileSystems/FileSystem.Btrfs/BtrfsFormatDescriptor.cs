@@ -99,9 +99,12 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public string Id => "Btrfs";
   public string DisplayName => "Btrfs Filesystem Image";
   public FormatCategory Category => FormatCategory.Archive;
+  // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
+  // so the verb works via rebuild but nothing is modified in place. CanModify
+  // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".btrfs";
   public IReadOnlyList<string> Extensions => [".btrfs", ".img"];

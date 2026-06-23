@@ -8,11 +8,11 @@ namespace Compression.Tests.GsOs;
 
 /// <summary>
 /// Pins the capability surface for <see cref="GsOsFormatDescriptor"/>. The
-/// Apple IIgs GS/OS 2IMG wrapper was promoted from stub-tier to a real
-/// R/W descriptor (CanCreate via <see cref="GsOsWriter"/>, CanModify via
-/// <see cref="GsOsInPlaceModifier"/>) that emits a 2IMG-wrapped ProDOS
-/// volume and rebuilds the inner payload through ProDosWriter/ProDosReader
-/// on mutation. These tests lock the new capability advertisement and
+/// Apple IIgs GS/OS 2IMG wrapper was promoted from stub-tier to a creatable
+/// WORM descriptor (CanCreate via <see cref="GsOsWriter"/>) that emits a
+/// 2IMG-wrapped ProDOS volume; its add/remove implement the verb by rebuilding
+/// the inner payload through ProDosWriter/ProDosReader (a full rewrite, hence
+/// WORM — it does not advertise CanModify). These tests lock the capability and
 /// preserve the inner-volume List/Extract shape: when the embedded format
 /// is ProDOS-ordered (image_format = 1) the descriptor walks the inner
 /// ProDOS volume; when it isn't, it falls back to the opaque blob entry.
@@ -45,8 +45,10 @@ public class GsOsStubBehaviorTests {
 
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True,
       "GS/OS 2IMG advertises CanCreate via GsOsWriter (2IMG-wrapped ProDOS emitter).");
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
-      "GS/OS 2IMG advertises CanModify via GsOsInPlaceModifier.");
+    // Add/Remove rebuild the whole inner volume via ProDosWriter (read-all -> re-create),
+    // i.e. WORM, not in-place R/W — CanModify must not be advertised.
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
+      "GS/OS 2IMG modify is rebuild-backed (WORM); it must not claim R/W (CanModify).");
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
     Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
   }

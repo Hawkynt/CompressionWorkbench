@@ -1,10 +1,18 @@
 namespace Compression.Registry;
 
 /// <summary>
-/// Opt-in capability: the descriptor can mutate an existing archive in place. Implemented
-/// by R/W filesystems and other formats whose container can be edited without a full
-/// rebuild. Formats that can only be re-created from scratch (ZIP, 7z, TAR, …) do not
-/// implement this — the shrink operation is their replacement for removal.
+/// Opt-in capability: the descriptor exposes add / remove (and thereby the purge verb).
+/// <para>
+/// Implementing this interface makes the verbs <em>work</em>; it does <b>not</b> by itself
+/// entitle the format to advertise <see cref="FormatCapabilities.CanModify"/> (R/W). The
+/// default <see cref="Add"/> / <see cref="Remove"/> below — and any override that delegates
+/// to <c>ModifyRebuilder</c> / <see cref="RebuildVerb"/> — are a verified extract → re-create
+/// <em>rebuild</em>, i.e. a full rewrite of the container. A format whose modification is only
+/// rebuild-backed is WORM: it advertises <see cref="FormatCapabilities.CanCreate"/> and must
+/// NOT advertise <see cref="FormatCapabilities.CanModify"/> (see <see cref="FormatCapabilities"/>).
+/// Reserve <see cref="FormatCapabilities.CanModify"/> for a genuine in-place writer that edits
+/// the existing bytes (R/W filesystems; central-directory / member edits; byte-identity append).
+/// </para>
 /// </summary>
 public interface IArchiveModifiable {
   /// <summary>

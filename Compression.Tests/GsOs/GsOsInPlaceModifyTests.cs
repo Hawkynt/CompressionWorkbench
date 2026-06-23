@@ -124,10 +124,12 @@ public class GsOsInPlaceModifyTests {
   // ── Descriptor interface routing ────────────────────────────────────────
 
   [Test, Category("Spec")]
-  public void Descriptor_AdvertisesCanCreateAndCanModify_AndImplementsInterfaces() {
+  public void Descriptor_AdvertisesCanCreate_IsWormNotRw_AndImplementsInterfaces() {
     var d = new GsOsFormatDescriptor();
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+    // Add/Remove rebuild the inner volume via ProDosWriter (read-all -> re-create) =
+    // WORM, not in-place R/W: CanModify must not be advertised.
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
     Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
   }

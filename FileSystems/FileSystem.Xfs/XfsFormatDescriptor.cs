@@ -118,9 +118,12 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Id => "Xfs";
   public string DisplayName => "XFS";
   public FormatCategory Category => FormatCategory.Archive;
+  // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
+  // so the verb works via rebuild but nothing is modified in place. CanModify
+  // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".xfs";
   public IReadOnlyList<string> Extensions => [".xfs"];

@@ -91,6 +91,58 @@ under `Compression.Tests/Operations/`, which fail loudly on any lossy rebuild.
   No fake/no-op knobs are exposed; every published option is verified by a per-format
   test that the knob takes effect on disk.
 
+## Write capability — WORM vs R/W (an honesty rule)
+
+Write capability is a four-level scale (`Compression.Registry.FormatCapabilities`):
+
+| Level | Flags | Meaning |
+|-------|-------|---------|
+| Unsupported | — | no descriptor. |
+| Read-Only | `CanList` / `CanExtract` | inspect + extract only. |
+| **WORM** (Write-Once-Read-Many) | `+ CanCreate` | a fresh image is produced from inputs; an existing image is **not** modified in place. |
+| **R/W** | `+ CanModify` | an existing container is edited **in place** (no full rewrite). |
+
+The maintenance verbs (add / remove / purge / defragment / shrink) work for **both**
+WORM and R/W formats — for WORM they are backed by the verified extract → re-create
+rebuild (`RebuildVerb` / `ModifyRebuilder`, surfaced through the default
+`IArchiveModifiable` members or a thin wrapper). **Implementing `IArchiveModifiable`
+makes the verb run; it does not make the format R/W.** A rebuild is a full rewrite, so:
+
+> **A format whose modification is only rebuild-backed advertises `CanCreate` (WORM) and
+> must NOT advertise `CanModify` (R/W).** `CanModify` is reserved for a genuine in-place
+> writer that edits the existing bytes — R/W filesystems (FAT/NTFS/ext/HFS+/…), ZIP/TAR/XAR
+> member edits, byte-identity append (Ghost), disk-image containers delegating to a R/W
+> inner filesystem (QCOW2/VHD/VHDX/VMDK/VDI), etc.
+
+`Compression.Tests.Operations.WriteCapabilityHonestyTests` enforces the deterministic half
+for every `CanModify` claimant: the ops must implement `IArchiveModifiable` **and** provide
+its own (non-default) `Add`/`Remove`. Whether that own `Add`/`Remove` is genuinely in-place
+rather than a read-all → re-create rebuild is verified per format (see the audit below) and
+documented on each descriptor.
+
+Formats corrected from a false R/W claim to WORM under this rule (the verb keeps working via
+rebuild; only the advertised tier changed):
+
+- **CAB**, **7-Zip** — do not implement `IArchiveModifiable` at all; the `CanModify` flag was
+  entirely unbacked. (Removal is via shrink/rebuild.)
+- **CramFS**, **SquashFS** — compressed *read-only* filesystems; `Add`/`Remove` route through
+  `ModifyRebuilder`.
+- **NTFS**, **Btrfs**, **XFS**, **ReiserFS** — the writers re-pack the whole image on
+  add/remove (NTFS's own code notes *"add equals re-pack here"*; ReiserFS is read-modify-rebuild).
+  Genuine in-place editing of these on-disk trees is not implemented, so they are WORM.
+- **GEMDOS**, **MSA** — add re-emits the inner FAT image via `FatWriter`.
+- **GS/OS (2IMG)**, **MFS-1** — add rebuilds the inner ProDOS/MFS volume via its writer.
+- **Stacker** — add/remove rebuild the whole STACVOL.
+- **OVA**, **PFS0**, **Wrapster** — add/remove re-emit the whole container from the merged
+  entry list.
+
+Genuinely-R/W formats keep `CanModify`: R/W filesystems with in-place modifiers (FAT/exFAT,
+ext, HFS/HFS+, APFS, F2FS, JFS, UFS, UDF, the log-structured JFFS2/YAFFS2/UBIFS/NILFS2,
+the CVF family, and the retro disk formats), the in-place archive editors (ZIP family, TAR,
+AR, CPIO, XAR, LZH, ARJ, ZOO, PDF, …), byte-identity append (Ghost), the sector-image
+editors (BIN/CUE, CDI, MDF, NRG, CSO), and the disk-image containers that delegate to a R/W
+inner filesystem (QCOW2/VHD/VHDX/VMDK/VDI).
+
 ## Filesystem descriptors
 
 Generated from the live registry (97 filesystem descriptors). **Compact** is the

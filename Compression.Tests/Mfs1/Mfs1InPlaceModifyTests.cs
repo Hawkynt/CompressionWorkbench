@@ -106,10 +106,12 @@ public class Mfs1InPlaceModifyTests {
   // ── Descriptor interface routing ────────────────────────────────────────
 
   [Test, Category("Spec")]
-  public void Descriptor_AdvertisesCanCreateAndCanModify_AndImplementsInterfaces() {
+  public void Descriptor_AdvertisesCanCreate_IsWormNotRw_AndImplementsInterfaces() {
     var d = new Mfs1FormatDescriptor();
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+    // Add/Remove re-emit the whole image via Mfs1Writer (read-all -> re-create) =
+    // WORM, not in-place R/W: CanModify must not be advertised.
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
     Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
   }

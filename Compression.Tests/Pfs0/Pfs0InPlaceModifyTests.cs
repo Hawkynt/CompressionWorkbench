@@ -119,10 +119,13 @@ public class Pfs0InPlaceModifyTests {
   // ── Descriptor interface routing ────────────────────────────────────────
 
   [Test, Category("Spec")]
-  public void Descriptor_AdvertisesCanModify_AndImplementsInterface() {
+  public void Descriptor_ImplementsModifiableInterface_ButIsWormNotRw() {
     var d = new Pfs0FormatDescriptor();
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+    // The verb runs (interface present) ...
     Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
+    // ... but Add/Remove re-emit the whole PFS0 from the merged entry list (rebuild),
+    // i.e. WORM, not in-place R/W: CanModify must not be advertised.
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
   }
 
   [Test, Category("RoundTrip")]

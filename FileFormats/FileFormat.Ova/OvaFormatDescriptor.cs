@@ -29,10 +29,12 @@ public sealed class OvaFormatDescriptor
   public string Id => "Ova";
   public string DisplayName => "OVA/OVF Virtual Appliance";
   public FormatCategory Category => FormatCategory.Archive;
+  // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
+  // so the verb works via rebuild but nothing is modified in place. CanModify
+  // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".ova";
   public IReadOnlyList<string> Extensions => [".ova"];
   public IReadOnlyList<string> CompoundExtensions => [];

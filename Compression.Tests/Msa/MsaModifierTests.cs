@@ -243,10 +243,13 @@ public class MsaModifierTests {
   // ── Descriptor IArchiveModifiable surface ─────────────────────────────
 
   [Test, Category("HappyPath")]
-  public void Descriptor_AdvertisesCanModifyCapability() {
+  public void Descriptor_IsWormNotRw_BecauseModifyRebuilds() {
     var desc = new MsaFormatDescriptor();
-    Assert.That(desc.Capabilities & Compression.Registry.FormatCapabilities.CanModify,
-      Is.EqualTo(Compression.Registry.FormatCapabilities.CanModify));
+    // MSA Add re-emits the whole inner FAT image via FatWriter (read-all -> re-create),
+    // i.e. a full rewrite — WORM, not in-place R/W — so CanModify must not be advertised
+    // (the verb still works via rebuild). See Compression.Registry/FormatCapabilities.cs.
+    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.False);
+    Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveModifiable>());
   }
 
   [Test, Category("HappyPath")]

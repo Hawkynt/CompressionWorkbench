@@ -9,9 +9,12 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Id => "Msa";
   public string DisplayName => "MSA (Magic Shadow Archiver)";
   public FormatCategory Category => FormatCategory.Archive;
+  // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
+  // so the verb works via rebuild but nothing is modified in place. CanModify
+  // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.CanModify;
+    FormatCapabilities.CanTest;
   public string DefaultExtension => ".msa";
   public IReadOnlyList<string> Extensions => [".msa"];
   public IReadOnlyList<string> CompoundExtensions => [];

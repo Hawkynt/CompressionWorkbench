@@ -114,10 +114,13 @@ public class GemdosInPlaceModifyTests {
   // ── Descriptor interface routing ────────────────────────────────────────
 
   [Test, Category("Spec")]
-  public void Descriptor_AdvertisesCanModify_AndImplementsInterface() {
+  public void Descriptor_ImplementsModifiableInterface_ButIsWormNotRw() {
     var d = new GemdosFormatDescriptor();
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+    // The verb runs (interface present) ...
     Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
+    // ... but Add re-emits the whole image via FatWriter (rebuild), so this is WORM:
+    // CanModify must not be advertised. See Compression.Registry/FormatCapabilities.cs.
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
   }
 
   [Test, Category("RoundTrip")]

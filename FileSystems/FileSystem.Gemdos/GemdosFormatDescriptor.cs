@@ -33,9 +33,12 @@ public sealed class GemdosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public string Id => "Gemdos";
   public string DisplayName => "GEMDOS (Atari ST)";
   public FormatCategory Category => FormatCategory.Archive;
+  // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
+  // so the verb works via rebuild but nothing is modified in place. CanModify
+  // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsDirectories |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsDirectories |
     FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".st";
   public IReadOnlyList<string> Extensions => [".st", ".stx", ".dim"];

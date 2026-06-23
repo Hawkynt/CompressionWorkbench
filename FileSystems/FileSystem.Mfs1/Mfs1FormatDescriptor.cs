@@ -42,10 +42,12 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string Id => "Mfs1";
   public string DisplayName => "MFS-1 (Acorn Master File System v1)";
   public FormatCategory Category => FormatCategory.Archive;
+  // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
+  // so the verb works via rebuild but nothing is modified in place. CanModify
+  // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   // ".mfs" is shared with the classic Mac MFS filesystem (FileSystem.Mfs, strong
   // 0xD2D7 magic) whose reader rejects an Acorn MFS-1 image. MFS-1's own boot
   // pattern is a weak 0x0080, so detection is extension-driven; default to the

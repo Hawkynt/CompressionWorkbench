@@ -71,9 +71,13 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public string Id => "SevenZip";
   public string DisplayName => "7z";
   public FormatCategory Category => FormatCategory.Archive;
+  // WORM (Write-Once-Read-Many), NOT R/W: the descriptor does not implement
+  // IArchiveModifiable, so there is no in-place add/remove path — a fresh archive is
+  // produced from inputs (CanCreate) and removal is via shrink/rebuild. CanModify must
+  // not be advertised. See FormatCapabilities.cs for the WORM vs R/W rule.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.CanTest |
     FormatCapabilities.SupportsPassword | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".7z";

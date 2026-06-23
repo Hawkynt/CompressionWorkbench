@@ -8,8 +8,13 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public string Id => "CramFs";
   public string DisplayName => "CramFS";
   public FormatCategory Category => FormatCategory.Archive;
+  // WORM (Write-Once-Read-Many), NOT R/W: CramFS is a compressed, read-only ROM
+  // filesystem. Add/Remove are implemented via the verified extract -> re-create
+  // rebuild (ModifyRebuilder), which is a full rewrite — so the verb works, but the
+  // image is not modified in place. Advertising CanModify would falsely claim genuine
+  // in-place R/W. See Compression.Registry/FormatCapabilities.cs for the WORM vs R/W rule.
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".cramfs";
   public IReadOnlyList<string> Extensions => [".cramfs"];

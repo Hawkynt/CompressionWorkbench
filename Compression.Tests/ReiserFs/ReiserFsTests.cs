@@ -314,9 +314,12 @@ public class ReiserFsTests {
   public void Descriptor_AdvertisesInPlaceModifiable() {
     var d = new FileSystem.ReiserFs.ReiserFsFormatDescriptor();
     Assert.That(d, Is.InstanceOf<Compression.Registry.IArchiveModifiable>(),
-      "ReiserFS must advertise IArchiveModifiable — in-place S+tree leaf mutation is implemented.");
-    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.True,
-      "ReiserFS must flag CanModify now that the in-place modifier is wired.");
+      "ReiserFS implements IArchiveModifiable so the add/remove/purge verbs run.");
+    // The ReiserFsModifier add/remove path reads all entries and re-emits the whole
+    // image (read-modify-rebuild), i.e. a full rewrite — WORM, not in-place R/W — so
+    // CanModify must NOT be advertised. See Compression.Registry/FormatCapabilities.cs.
+    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.False,
+      "ReiserFS modify is rebuild-backed (WORM); it must not claim R/W (CanModify).");
     Assert.That(d, Is.InstanceOf<Compression.Registry.IArchiveCreatable>());
     Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
     Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanList), Is.True);

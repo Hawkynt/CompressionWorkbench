@@ -32,8 +32,11 @@ public class StackerStubBehaviorTests {
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True,
       "Stacker now emits valid STACVOL volumes — must advertise CanCreate.");
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
-      "Stacker now supports add/remove/defrag/purge via rebuild — must advertise CanModify.");
+    // Stacker add/remove/defrag/purge work by rebuilding the whole STACVOL (read-all ->
+    // re-create), i.e. a full rewrite — WORM, not in-place R/W — so CanModify must not be
+    // advertised even though the verbs run. See Compression.Registry/FormatCapabilities.cs.
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
+      "Stacker modify is rebuild-backed (WORM); it must not claim R/W (CanModify).");
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
     Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
   }

@@ -32,9 +32,13 @@ public sealed class CabFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Id => "Cab";
   public string DisplayName => "CAB";
   public FormatCategory Category => FormatCategory.Archive;
+  // WORM (Write-Once-Read-Many), NOT R/W: the descriptor does not implement
+  // IArchiveModifiable, so there is no in-place add/remove path at all — a fresh
+  // cabinet is produced from inputs (CanCreate) and removal is via shrink/rebuild.
+  // CanModify must not be advertised. See FormatCapabilities.cs for the WORM vs R/W rule.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".cab";
   public IReadOnlyList<string> Extensions => [".cab"];

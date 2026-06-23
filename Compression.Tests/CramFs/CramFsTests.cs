@@ -94,10 +94,16 @@ public class CramFsTests {
   [Test, Category("HappyPath")]
   public void Descriptor_ImplementsModifiable() {
     var desc = new CramFsFormatDescriptor();
+    // The verb plumbing is present (add/remove/defragment work via the extract ->
+    // re-create rebuild) ...
     Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveModifiable>());
     Assert.That(desc, Is.InstanceOf<Compression.Registry.IArchiveDefragmentable>());
     Assert.That(desc, Is.InstanceOf<Compression.Registry.IFilesystemExtentMap>());
-    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.True);
+    // ... but CramFS is a compressed, read-only ROM filesystem: the rebuild is a full
+    // rewrite, not in-place modification, so the descriptor advertises WORM (CanCreate)
+    // and must NOT claim R/W (CanModify). See FormatCapabilities.cs for the rule.
+    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanModify), Is.False);
   }
 
   [Test, Category("RoundTrip")]

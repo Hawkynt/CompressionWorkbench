@@ -15,6 +15,17 @@ namespace Compression.Registry;
 /// Most archive formats stop at WORM; true in-place modification is rare because compressed
 /// archive containers don't generally support entry mutation without a full rebuild.
 /// </para>
+/// <para>
+/// <b>Honesty rule — rebuild-backed modification is WORM, not R/W.</b> A format may implement
+/// <see cref="IArchiveModifiable"/> purely to make the add / remove / purge verbs <em>work</em>,
+/// backing them with the verified extract → re-create rebuild (the default <see cref="IArchiveModifiable"/>
+/// members, or <c>ModifyRebuilder</c> / <see cref="RebuildVerb"/>). That is a full rewrite of the
+/// container, so such a format advertises <see cref="CanCreate"/> only and must <b>not</b> set
+/// <see cref="CanModify"/> — the verb still runs, but no in-place R/W is claimed. <see cref="CanModify"/>
+/// is reserved for formats with a genuine in-place writer that edits the existing container
+/// (e.g. ZIP/TAR central-directory edits, FAT/NTFS/ext block writes, byte-identity append).
+/// <c>Compression.Tests.Operations.WriteCapabilityHonestyTests</c> enforces this for every claimant.
+/// </para>
 /// </summary>
 [Flags]
 public enum FormatCapabilities {
