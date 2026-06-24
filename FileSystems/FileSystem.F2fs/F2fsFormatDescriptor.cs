@@ -222,7 +222,10 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       throw new NotSupportedException("F2fs: Add requires a seekable stream.");
 
     var image = ReadAll(archive);
-    var files = inputs.Select(i => (i.ArchiveName, i.ReadContent())).ToList();
+    var files = inputs.Where(i => !i.IsDirectory).Select(i => (i.ArchiveName, i.ReadContent())).ToList();
+    // Replace-by-name: drop any existing entry of the same name first so an update
+    // overwrites rather than leaving a duplicate directory entry.
+    image = F2fsModifier.RemoveFiles(image, files.Select(f => f.ArchiveName).ToList());
     var updated = F2fsModifier.AddFiles(image, files);
     WriteAll(archive, updated);
   }

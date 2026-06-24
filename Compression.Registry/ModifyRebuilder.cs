@@ -59,13 +59,15 @@ public static class ModifyRebuilder {
     foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
       newPayloads.Add((name, data));
 
+    // Match on a path-normalised key so a reader that reports "/name" still dedups
+    // against an input named "name" — otherwise an update leaves a duplicate entry.
     var newNames = new System.Collections.Generic.HashSet<string>(
-      newPayloads.Select(p => p.Name), nameComparer);
+      newPayloads.Select(p => Norm(p.Name)), nameComparer);
 
     var combined = new System.Collections.Generic.List<(string Name, byte[] Data)>(
       existing.Count + newPayloads.Count);
     foreach (var entry in existing) {
-      if (newNames.Contains(entry.Name)) continue;  // replaced
+      if (newNames.Contains(Norm(entry.Name))) continue;  // replaced
       combined.Add(entry);
     }
     combined.AddRange(newPayloads);
@@ -96,10 +98,12 @@ public static class ModifyRebuilder {
 
     archive.Position = 0;
     var existing = new System.Collections.Generic.List<(string Name, byte[] Data)>(readEntries(archive));
-    var toRemove = new System.Collections.Generic.HashSet<string>(entryNames, nameComparer);
+    // Normalise leading-slash so callers may pass either "name" or the reader's "/name".
+    var toRemove = new System.Collections.Generic.HashSet<string>(
+      System.Linq.Enumerable.Select(entryNames, Norm), nameComparer);
     var kept = new System.Collections.Generic.List<(string Name, byte[] Data)>(existing.Count);
     foreach (var entry in existing) {
-      if (toRemove.Contains(entry.Name)) continue;
+      if (toRemove.Contains(Norm(entry.Name))) continue;
       kept.Add(entry);
     }
     var rebuilt = buildImage(kept);
@@ -107,4 +111,8 @@ public static class ModifyRebuilder {
     archive.Write(rebuilt);
     archive.SetLength(rebuilt.Length);
   }
+
+  // Path-normalised name key for add/remove matching: forward slashes, no leading
+  // slash — so a reader reporting "/dir/x" and a caller passing "dir/x" agree.
+  private static string Norm(string name) => name.Replace('\\', '/').TrimStart('/');
 }

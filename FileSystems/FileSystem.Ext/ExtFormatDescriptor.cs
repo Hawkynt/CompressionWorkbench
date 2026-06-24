@@ -315,8 +315,15 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// data blocks are wiped during removal so no forensic trace remains.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    foreach (var name in entryNames)
+    // The in-place remover targets the root directory. Nested-path targets (which the
+    // in-place adder also routes through the rebuild) are deleted via the verified
+    // extract→re-create rebuild so they don't silently no-op.
+    var flat = entryNames.Where(n => !n.Contains('/') && !n.Contains('\\')).ToArray();
+    var nested = entryNames.Where(n => n.Contains('/') || n.Contains('\\')).ToArray();
+    foreach (var name in flat)
       ExtModifier.RemoveFile(archive, name, wipeData: true);
+    if (nested.Length > 0)
+      ExtModifier.Mutate(archive, [], nested);
   }
 
   // ── ILayoutOptimizable ────────────────────────────────────────────────

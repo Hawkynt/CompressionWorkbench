@@ -97,6 +97,9 @@ public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
       var leaf = Path.GetFileName(input.ArchiveName);
+      // Replace-by-name: drop any prior entry first so an update overwrites in place
+      // rather than leaving a duplicate directory record.
+      Ods1Modifier.RemoveFile(archive, leaf);
       Ods1Modifier.AddFile(archive, leaf, input.ReadContent());
     }
   }
