@@ -211,6 +211,96 @@ public class BtrfsExternalConformanceTests {
     Assert.That(rd.Entries.Count(e => !e.IsDirectory), Is.EqualTo(701));
   }
 
+  [Test, Category("OsIntegration")]
+  public void InPlaceAdd_GrowsExtentTreeToMultipleLevels_PassesBtrfsCheck() {
+    if (!HasCommand("btrfs"))
+      Assert.Ignore("btrfs-progs (btrfs) not installed");
+
+    // A base just under the single-leaf extent-tree limit: enough small files to
+    // push the FS tree to ~200 leaves (one TREE_BLOCK EXTENT_ITEM each) so the
+    // extent tree's single leaf is nearly full, plus a real (non-inline) data
+    // extent whose bytes we later prove untouched.
+    var w = new BtrfsWriter();
+    for (var i = 0; i < 7800; i++)
+      w.AddFile($"f{i:D5}.txt", System.Text.Encoding.ASCII.GetBytes($"c{i}"));
+    var bigA = new byte[12000];
+    for (var i = 0; i < bigA.Length; i++) bigA[i] = (byte)(i * 13 + 1);
+    w.AddFile("zz_big_a.bin", bigA);
+    byte[] image;
+    using (var ms = new MemoryStream()) { w.WriteTo(ms); image = ms.ToArray(); }
+
+    var origLength = image.Length;
+    var bigAOffset = FindByteRun(image, bigA);
+    Assert.That(bigAOffset, Is.GreaterThanOrEqualTo(0), "regular data extent not located in base image");
+    var bigASnapshot = image.AsSpan(bigAOffset, bigA.Length).ToArray();
+
+    // Add many regular (data-extent) files in place. Each appends a TREE_BLOCK and
+    // a data EXTENT_ITEM, growing the extent tree past one leaf into a genuine
+    // internal node over leaves — the case that previously fell back to rebuild.
+    // Each file is exactly one sector, so it occupies a single 4 KiB data extent
+    // (keeping total data within the base DATA chunk) yet still contributes its
+    // own data EXTENT_ITEM to the already nearly-full extent leaf.
+    for (var i = 0; i < 24; i++) {
+      var data = new byte[4096];
+      for (var k = 0; k < data.Length; k++) data[k] = (byte)(k * 7 + i);
+      BtrfsInPlaceAdder.AddFile(image, $"inplace-big-{i:D3}.bin", data);
+    }
+
+    // The image must not have grown (genuine in-place: new metadata blocks come
+    // from CoW recycling/free slots, data extents from the existing DATA chunk).
+    Assert.That(image.Length, Is.EqualTo(origLength), "in-place add must not resize the image");
+    // The existing data extent must be byte-identical at its original offset.
+    Assert.That(image.AsSpan(bigAOffset, bigA.Length).ToArray(), Is.EqualTo(bigASnapshot),
+      "an existing data extent was moved or altered by the in-place add");
+
+    // The extent tree must now be a genuine multi-level tree (root above level 0).
+    Assert.That(ExtentTreeLevel(image), Is.GreaterThanOrEqualTo(1),
+      "extent tree did not grow into an internal node — test no longer exercises the multi-level path");
+
+    var imagePath = Path.Combine(this._tmpDir, "inplace-multilevel-extent.btrfs");
+    File.WriteAllBytes(imagePath, image);
+    var result = RunTool("btrfs", $"check --check-data-csum \"{imagePath}\"");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"btrfs check reported errors after multi-level extent-tree in-place add.\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+    Assert.That(result.StdErr + result.StdOut, Does.Not.Contain("ERROR"),
+      $"btrfs check emitted an ERROR.\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+
+    using var rd = new BtrfsReader(new MemoryStream(image));
+    Assert.That(rd.Entries.Count(e => e.Name.StartsWith("inplace-big-")), Is.EqualTo(24));
+    var probe = rd.Entries.Single(e => e.Name == "zz_big_a.bin");
+    Assert.That(rd.Extract(probe).AsSpan(0, bigA.Length).ToArray(), Is.EqualTo(bigA));
+  }
+
+  // Returns the level recorded in the EXTENT_TREE root block header (0 = single
+  // leaf, >=1 = internal node over leaves). Logical == physical in writer output.
+  private static int ExtentTreeLevel(byte[] image) {
+    const int sb = 0x10000;
+    var rootLogical = System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(sb + 0x50));
+    var nri = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan((int)rootLogical + 96));
+    for (uint i = 0; i < nri; i++) {
+      var io = (int)rootLogical + 101 + (int)i * 25;
+      var objId = System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(io));
+      var type = image[io + 8];
+      var doff = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(io + 17));
+      if (objId == 2 && type == 132) { // EXTENT_TREE ROOT_ITEM
+        var bytenr = System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan((int)rootLogical + 101 + doff + 176));
+        return image[(int)bytenr + 100];
+      }
+    }
+    return -1;
+  }
+
+  // Finds the byte offset of a known data-extent payload by matching its first
+  // 64 bytes on a sector boundary within the data region. Returns -1 if absent.
+  private static int FindByteRun(byte[] image, byte[] pattern) {
+    for (var i = 0x30000; i + pattern.Length <= image.Length; i += 4096) {
+      var ok = true;
+      for (var k = 0; k < 64; k++) if (image[i + k] != pattern[k]) { ok = false; break; }
+      if (ok) return i;
+    }
+    return -1;
+  }
+
   // Locates the start of the DATA chunk (the only region holding regular file
   // extents) by reading the largest chunk-tree CHUNK_ITEM mapping. For the writer
   // the DATA chunk is the last chunk, so its physical start is the highest

@@ -9,9 +9,12 @@ namespace FileSystem.Xfs;
 /// in <see cref="XfsModifier"/>. Inserts a small file into the directory tree by
 /// editing only the structures the change touches, never re-packing the image.
 /// <para>
-/// The implementation is geometry-locked to <see cref="XfsWriter"/>'s output
-/// (4 KiB blocks, 256-byte v3 inodes, 2 AGs, all content in AG 0). It handles,
-/// in place and <c>xfs_repair</c>-clean:
+/// The implementation is geometry-driven: block size, inode size, AG layout
+/// (sb_agblklog), inodes-per-block and the directory block size (sb_dirblklog)
+/// are all read from the superblock rather than hardcoded. It assumes
+/// <see cref="XfsWriter"/>'s fixed per-AG metadata layout (AGF/AGI sectors,
+/// bnobt/cntbt/inobt at blocks 1/2/3, all content in AG 0) and v3 (CRC) inodes.
+/// It handles, in place and <c>xfs_repair</c>-clean:
 /// </para>
 /// <list type="bullet">
 ///   <item>claiming a free inode slot from any inobt chunk record, and growing a
@@ -46,9 +49,9 @@ public static class XfsInPlaceAdder {
   private const ushort Dir2DataFreeTag = 0xFFFF;
 
   private const int SectorSize = 512;
-  private const int InodesPerBlock = 16;       // 4096 / 256
   private const int InodesPerChunk = 64;
-  private const int InodeChunkBlocks = InodesPerChunk / InodesPerBlock; // 4
+  // v3 dinode core is a fixed 176 bytes, independent of block/inode size, so the
+  // fork (literal area) always starts at offset 176.
   private const int ForkOffset = 176;          // v3 dinode literal-area offset
   private const int DiCrcOffset = 100;
   private const int Dir3DataHdrSize = 64;
@@ -84,8 +87,13 @@ public static class XfsInPlaceAdder {
       throw new NotSupportedException("XFS in-place add: empty name.");
 
     var geo = ParseSuperblock(image);
-    if (geo.BlockSize != 4096 || geo.InodeSize != 256)
-      throw new NotSupportedException("XFS in-place add: only the writer's 4 KiB/256 B geometry is supported.");
+    // Geometry-driven: block size, inode size, AG layout and directory block size
+    // are all read from the superblock (see ParseSuperblock / Geo). The fixed AG
+    // metadata layout (AGF/AGI sectors, bnobt/cntbt/inobt at blocks 1/2/3, all
+    // content in AG 0) is the XfsWriter contract; v3 (CRC) inodes are required.
+    if (geo.InodeSize < 256 || geo.BlockSize < geo.InodeSize ||
+        (geo.BlockSize % geo.InodeSize) != 0 || geo.BlockSize / geo.InodeSize > InodesPerChunk)
+      throw new NotSupportedException("XFS in-place add: unsupported block/inode geometry.");
 
     var crc = new CrcSet();
 
@@ -155,6 +163,9 @@ public static class XfsInPlaceAdder {
     public int InoPbLog {
       get { var l = 0; for (var v = this.BlockSize / this.InodeSize; v > 1; v >>= 1) l++; return l; }
     }
+    // Geometry-derived inode-packing constants (no longer hardcoded to 16/4).
+    public int InodesPerBlock => this.BlockSize / this.InodeSize;
+    public int InodeChunkBlocks => InodesPerChunk / this.InodesPerBlock;
     public int AgInoLog => this.AgBlkLog + this.InoPbLog;
     public int DirBlockSize => this.BlockSize << this.DirBlkLog;
     public int DirFsBlocks => 1 << this.DirBlkLog;
@@ -188,8 +199,8 @@ public static class XfsInPlaceAdder {
   private static long InodeByteOffset(Geo geo, ulong ino) {
     var agNo = ino >> geo.AgInoLog;
     var agIno = ino & ((1UL << geo.AgInoLog) - 1);
-    var block = agIno / (ulong)InodesPerBlock;
-    var offset = agIno % (ulong)InodesPerBlock;
+    var block = agIno / (ulong)geo.InodesPerBlock;
+    var offset = agIno % (ulong)geo.InodesPerBlock;
     return (long)((agNo * geo.AgBlocks + block) * (ulong)geo.BlockSize + offset * (ulong)geo.InodeSize);
   }
 
@@ -259,10 +270,10 @@ public static class XfsInPlaceAdder {
     // Inode chunks must be aligned to the inode-cluster (sb_inoalignmt) boundary.
     var inoAlign = (int)BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(180));
     if (inoAlign < 1) inoAlign = 1;
-    var chunkStartBlock = AllocateAlignedExtent(image, geo, InodeChunkBlocks, inoAlign, crc);
+    var chunkStartBlock = AllocateAlignedExtent(image, geo, geo.InodeChunkBlocks, inoAlign, crc);
 
     var agNo = geo.RootIno >> geo.AgInoLog;
-    var startAgino = (uint)(chunkStartBlock * InodesPerBlock);
+    var startAgino = (uint)(chunkStartBlock * geo.InodesPerBlock);
     var chunkBaseIno = (agNo << geo.AgInoLog) | startAgino;
 
     // Initialise all 64 slots as valid empty inodes (mode 0, format DEV).
@@ -274,8 +285,16 @@ public static class XfsInPlaceAdder {
     // Claim slot 0; mark the rest free (mask bits 1..63).
     var freeMask = ulong.MaxValue & ~1UL;
 
-    // Insert the inobt record sorted by ir_startino.
+    // Insert the inobt record sorted by ir_startino. The inobt root is the
+    // single leaf at block 3 (XfsWriter contract). A multi-level inobt would
+    // require descend/split logic; in practice it is unreachable here — a single
+    // AG (sb_agblocks blocks) runs out of free space at roughly a few dozen inode
+    // chunks, far below the ~(blocksize-56)/16 records a leaf holds — so it is
+    // left as a verified rebuild fallback rather than untested speculative code.
     var inobtOff = InobtBlock * geo.BlockSize;
+    var inobtLevel = BinaryPrimitives.ReadUInt16BigEndian(image.AsSpan(inobtOff + 4));
+    if (inobtLevel != 0)
+      throw new NotSupportedException("XFS in-place add: multi-level inobt — uses rebuild.");
     var numrecs = BinaryPrimitives.ReadUInt16BigEndian(image.AsSpan(inobtOff + 6));
     int insertAt = numrecs;
     for (var c = 0; c < numrecs; c++) {
@@ -860,7 +879,7 @@ public static class XfsInPlaceAdder {
     if (singleBlock) {
       var phys = AllocateAlignedExtent(image, geo, dirFsBlocks, dirFsBlocks, crc);
       WriteSingleBlockDir(image, geo, ioff, dirIno, phys, packed[0], crc);
-      WriteDirInodeExtents(image, ioff, [(0, (ulong)phys, dirFsBlocks)],
+      WriteDirInodeExtents(image, ioff, geo.InodeSize, [(0, (ulong)phys, dirFsBlocks)],
         byteSize: geo.DirBlockSize, nblocks: dirFsBlocks);
       AddInodeCrc(crc, geo, dirIno);
       return;
@@ -878,7 +897,7 @@ public static class XfsInPlaceAdder {
     for (var db = 0; db < dataDirBlocks; db++)
       extents.Add((db * dirFsBlocks, (ulong)(dataPhys + db * dirFsBlocks), dirFsBlocks));
     extents.Add((geo.Dir2LeafFsBlockOffset, (ulong)leafPhys, dirFsBlocks));
-    WriteDirInodeExtents(image, ioff, extents,
+    WriteDirInodeExtents(image, ioff, geo.InodeSize, extents,
       byteSize: (long)dataDirBlocks * geo.DirBlockSize, nblocks: (dataDirBlocks + 1) * dirFsBlocks);
     AddInodeCrc(crc, geo, dirIno);
   }
@@ -905,16 +924,19 @@ public static class XfsInPlaceAdder {
 
   // ── Layout calculators (mirror XfsWriter) ──
 
-  private const int ShortFormForkCapacity = 256 - 176; // inode literal area (80 B)
+  // Inode literal area available for the short-form fork (everything past the
+  // fixed 176-byte v3 dinode core), derived from the on-disk inode size.
+  private static int ShortFormForkCapacity(Geo geo) => geo.InodeSize - ForkOffset;
 
   private static bool FitsShortForm(Geo geo, List<DirEnt> entries) {
     var total = 6; // sf hdr (count, i8count, 4-byte parent)
     var ftypeLen = geo.HasFtype ? 1 : 0;
+    var cap = ShortFormForkCapacity(geo);
     foreach (var e in entries) {
       total += 3 + Math.Min(Encoding.UTF8.GetByteCount(e.Name), 250) + ftypeLen + 4;
-      if (total > ShortFormForkCapacity) return false;
+      if (total > cap) return false;
     }
-    return total <= ShortFormForkCapacity;
+    return total <= cap;
   }
 
   private static bool FitsSingleBlock(Geo geo, List<DirEnt> entries) {
@@ -1110,7 +1132,7 @@ public static class XfsInPlaceAdder {
     crc.Add(leafByteOff, Dir3LeafCrcOffset, geo.DirBlockSize);
   }
 
-  private static void WriteDirInodeExtents(byte[] image, int ioff,
+  private static void WriteDirInodeExtents(byte[] image, int ioff, int inodeSize,
       IReadOnlyList<(long LogicalFsBlock, ulong PhysFsBlock, int FsBlockCount)> extents,
       long byteSize, int nblocks) {
     image[ioff + 5] = 2; // di_format = extents
@@ -1119,7 +1141,7 @@ public static class XfsInPlaceAdder {
     BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(ioff + 76), (uint)extents.Count);
     var extPos = ioff + ForkOffset;
     // Clear the literal area before writing extents (may have held short-form).
-    image.AsSpan(ioff + ForkOffset, 256 - ForkOffset).Clear();
+    image.AsSpan(ioff + ForkOffset, inodeSize - ForkOffset).Clear();
     foreach (var (logical, phys, count) in extents) {
       var hi = (((ulong)logical & 0x3FFFFFFFFFFFFFUL) << 9) | ((phys >> 43) & 0x1FF);
       var lo = (phys << 21) | ((ulong)count & 0x1FFFFF);

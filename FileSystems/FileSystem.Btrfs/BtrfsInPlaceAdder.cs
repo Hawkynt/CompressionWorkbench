@@ -13,8 +13,10 @@ namespace FileSystem.Btrfs;
 /// every untouched node and every existing data extent byte-identical at its
 /// original offset. The full add pipeline:
 /// <list type="number">
-///   <item>The whole FS tree is read into one flat item list — both the
-///   single-leaf shape and the level-1 internal-node-over-N-leaves shape.</item>
+///   <item>The FS, extent, csum and root trees are each read into one flat,
+///   key-ordered item list with the generic arbitrary-depth descender — a single
+///   leaf, an internal node over leaves, or any deeper tree are all handled, and
+///   every block visited is recorded so the whole tree can be CoW-rebuilt.</item>
 ///   <item>The target parent directory is resolved, creating any missing
 ///   intermediate directory inodes (<c>INODE_ITEM</c>/<c>INODE_REF</c>/parent
 ///   links) for nested targets.</item>
@@ -24,27 +26,34 @@ namespace FileSystem.Btrfs;
 ///   regular <c>EXTENT_DATA</c> item, a data <c>EXTENT_ITEM</c> (with inline
 ///   <c>EXTENT_DATA_REF</c>) in the extent tree, and per-sector CRC-32C
 ///   <c>EXTENT_CSUM</c> items in the csum tree.</item>
-///   <item>The flat FS-tree item set is re-sorted and re-packed into leaves; a
-///   leaf that would overflow the node splits, and an internal index node is
-///   (re)built above the leaves when more than one results.</item>
-///   <item>Every CoW'd metadata block (each FS leaf, the FS internal node, the
-///   extent / csum / root leaves) is allocated — preferring genuinely-free node
-///   slots, then recycling the blocks this operation frees. The extent tree's
-///   tree-block <c>EXTENT_ITEM</c>s are rewritten to match, block-group
-///   accounting and the superblock <c>bytes_used</c> are recomputed.</item>
+///   <item>Each tree's flat item set is re-sorted and re-packed into leaves, then
+///   rebuilt as a B-tree of whatever height its leaf count demands: a single leaf
+///   stays level 0; otherwise internal index levels are stacked until one root
+///   node remains. The tree GROWS in height when its leaves overflow one internal
+///   node — the FS, extent and csum trees are all rebuilt this way.</item>
+///   <item>Every CoW'd metadata block (every leaf and internal node of the FS /
+///   extent / csum / root trees) is allocated — preferring genuinely-free node
+///   slots, then recycling the blocks this operation frees. The extent tree's own
+///   block count is found by a fixed-point that accounts for the TREE_BLOCK
+///   <c>EXTENT_ITEM</c> it must hold for every metadata block (its own included);
+///   block-group accounting and the superblock <c>bytes_used</c> are recomputed.</item>
 ///   <item>The <c>FS_TREE</c> / <c>EXTENT_TREE</c> / <c>CSUM_TREE</c>
-///   <c>ROOT_ITEM</c>s are repointed and the superblock <c>root</c> +
-///   <c>generation</c> bumped; CRC-32C is recomputed for every new block and the
-///   superblock.</item>
+///   <c>ROOT_ITEM</c>s are repointed (with each tree's new root level) and the
+///   superblock <c>root</c> + <c>root_level</c> + <c>generation</c> bumped;
+///   CRC-32C is recomputed for every new block and the superblock.</item>
 /// </list>
 /// <para>
-/// Verified byte-for-byte against <c>btrfs check</c> (incl.
-/// <c>--check-data-csum</c>) for: inline and regular (data-extent) files, nested
-/// sub-directory targets, multi-leaf FS trees (internal root node), leaf splits,
-/// and add-or-replace of existing inline/regular files. Cases still throwing
+/// Verified against <c>btrfs check</c> (incl. <c>--check-data-csum</c>) for:
+/// inline and regular (data-extent) files, nested sub-directory targets,
+/// multi-leaf FS trees (internal root node), leaf splits, add-or-replace of
+/// existing inline/regular files, and a multi-level (internal-node-over-leaves)
+/// extent tree grown in place by adding many data-extent files. The tree-rebuild
+/// path is height-generic, so an FS / extent / csum / root tree of arbitrary
+/// depth is read and re-emitted; an FS tree that overflows one internal node is
+/// grown to the next height by the same code. Cases still throwing
 /// <see cref="NotSupportedException"/> for the rebuild fallback: non-default
-/// node/sector sizes, a multi-level root/extent/csum tree, an FS tree deeper
-/// than one internal node, a full metadata or DATA chunk.
+/// node/sector sizes, a full metadata or DATA chunk (no room to CoW the new
+/// blocks or place the new data extent).
 /// </para>
 /// </summary>
 public static class BtrfsInPlaceAdder {
@@ -124,13 +133,13 @@ public static class BtrfsInPlaceAdder {
 
     var chunkMap = ChunkMap.Build(image, sb);
 
-    // Locate the root-tree leaf (must be a single leaf — level 0).
-    var rootPhys = chunkMap.ToPhysical(sb.RootTreeLogical);
-    if (rootPhys < 0) throw new InvalidDataException("Btrfs in-place add: root tree unreachable.");
-    if (image[rootPhys + 100] != 0)
-      throw new NotSupportedException("Btrfs in-place add: multi-level root tree not handled — use rebuild.");
-
-    var rootItems = ReadLeafItems(image, rootPhys);
+    // Read the root tree (any depth) into one flat item list, remembering every
+    // block it occupies so they can be freed. The root tree is tiny (a ROOT_ITEM
+    // per tree) and from BtrfsWriter output is a single leaf, but it is read with
+    // the generic descender so a previously-grown multi-level root tree is also
+    // CoW'd correctly.
+    var oldRootBlocks = new List<long>();
+    var rootItems = ReadTreeLeaves(image, chunkMap, sb.RootTreeLogical, oldRootBlocks);
 
     var fsRootLogical = FindRootItemBytenr(rootItems, FsTreeObjectId)
       ?? throw new InvalidDataException("Btrfs in-place add: FS_TREE ROOT_ITEM missing.");
@@ -139,31 +148,18 @@ public static class BtrfsInPlaceAdder {
     var csumRootLogical = FindRootItemBytenr(rootItems, CsumTreeObjectId)
       ?? throw new InvalidDataException("Btrfs in-place add: CSUM_TREE ROOT_ITEM missing.");
 
-    // The FS tree may be a single leaf (level 0) or an internal root node over
-    // N leaves (level 1). Read every leaf into one flat item list and remember
-    // which physical blocks the tree currently occupies so they can be freed.
-    var fsPhys = chunkMap.ToPhysical(fsRootLogical);
-    if (fsPhys < 0) throw new InvalidDataException("Btrfs in-place add: FS tree unreachable.");
-    var fsRootLevel = image[fsPhys + 100];
-    if (fsRootLevel > 1)
-      throw new NotSupportedException("Btrfs in-place add: FS tree deeper than one internal node — use rebuild.");
-
+    // Every tree below is read with the generic arbitrary-depth descender:
+    // internal nodes are walked recursively, every leaf is concatenated into one
+    // flat item list, and the physical block of each node visited (internal and
+    // leaf) is appended so the caller can free it when the tree is CoW'd.
     var oldFsBlocks = new List<long>();
-    var fsItems = ReadFsTree(image, chunkMap, fsRootLogical, oldFsBlocks);
+    var fsItems = ReadTreeLeaves(image, chunkMap, fsRootLogical, oldFsBlocks);
 
-    var extentPhys = chunkMap.ToPhysical(extentRootLogical);
-    if (extentPhys < 0) throw new InvalidDataException("Btrfs in-place add: extent tree unreachable.");
-    if (image[extentPhys + 100] != 0)
-      throw new NotSupportedException("Btrfs in-place add: multi-level extent tree not handled — use rebuild.");
+    var oldExtentBlocks = new List<long>();
+    var extentItems = ReadTreeLeaves(image, chunkMap, extentRootLogical, oldExtentBlocks);
 
-    var extentItems = ReadLeafItems(image, extentPhys);
-
-    var csumPhys = chunkMap.ToPhysical(csumRootLogical);
-    if (csumPhys < 0) throw new InvalidDataException("Btrfs in-place add: csum tree unreachable.");
-    if (image[csumPhys + 100] != 0)
-      throw new NotSupportedException("Btrfs in-place add: multi-level csum tree not handled — use rebuild.");
-
-    var csumItems = ReadLeafItems(image, csumPhys);
+    var oldCsumBlocks = new List<long>();
+    var csumItems = ReadTreeLeaves(image, chunkMap, csumRootLogical, oldCsumBlocks);
 
     // Normalise the requested path: split into directory components + leaf name.
     var pathParts = name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -228,152 +224,346 @@ public static class BtrfsInPlaceAdder {
     GrowDirectorySize(fsItems, parentObjectId, nameBytes.Length * 2, nextGen);
 
     SortItems(fsItems);
+    SortItems(csumItems);
 
-    // ── Pack the FS tree into leaves (split when a leaf overflows) ───────────
+    // ── Pack each CoW'd tree into leaves (split when a leaf overflows) ───────
+    // Every tree is rebuilt from its flat item set as a B-tree of whatever height
+    // its leaf count demands: a single leaf stays level 0; otherwise internal
+    // index levels are stacked until one root node remains. The FS, extent, csum
+    // and root trees all use the same generic packer so a tree that has grown
+    // past one internal node is handled — not just the single-internal-node case.
     var fsLeaves = PackIntoLeaves(fsItems);
+    var csumLeaves = PackIntoLeaves(csumItems);
+    var rootLeaves = PackIntoLeaves(rootItems);
 
     // ── Plan metadata-block allocation ──────────────────────────────────────
-    // CoW frees every old FS-tree block plus the old extent/root/csum leaves and
-    // allocates fresh blocks for: each new FS leaf, an FS internal node (when >1
-    // leaf), the new extent leaf, the new root leaf, and the new csum leaf.
-    //
+    // CoW frees every old block of every CoW'd tree (FS / extent / csum / root —
+    // each at whatever depth it currently is) and allocates fresh blocks for the
+    // rebuilt trees. The number of blocks the extent tree itself needs depends on
+    // how many TREE_BLOCK EXTENT_ITEMs it must hold, which in turn counts every
+    // metadata block this operation allocates (including the extent tree's own) —
+    // a circular dependency resolved by the fixed-point loop below.
+    var liveBlocks = new HashSet<long>();
+    AddAllMetadataBlockBytenrs(extentItems, liveBlocks);
+    foreach (var b in oldRootBlocks) liveBlocks.Add(b);
+
+    var freed = new List<long>();
+    freed.AddRange(oldFsBlocks);
+    freed.AddRange(oldExtentBlocks);
+    freed.AddRange(oldCsumBlocks);
+    freed.AddRange(oldRootBlocks);
+
+    var (metaStart, metaLen) = chunkMap.MetadataChunk
+      ?? throw new InvalidDataException("Btrfs in-place add: metadata chunk not found.");
+
+    // Drop the freed trees' old TREE_BLOCK extents up front; the rebuilt trees'
+    // extents are (re)added once their block counts are known.
+    foreach (var b in oldFsBlocks) RemoveTreeBlockExtent(extentItems, b);
+    foreach (var b in oldExtentBlocks) RemoveTreeBlockExtent(extentItems, b);
+    foreach (var b in oldCsumBlocks) RemoveTreeBlockExtent(extentItems, b);
+    foreach (var b in oldRootBlocks) RemoveTreeBlockExtent(extentItems, b);
+
+    // The non-self-referential trees' block counts are fixed by their leaf
+    // counts. The extent tree references every metadata block (its own included),
+    // so its block count is found by a monotone fixed-point: assume a count, size
+    // the extent leaf, recompute, repeat until it stops growing. Each TREE_BLOCK
+    // EXTENT_ITEM is a fixed 51-byte value, so the item *count* — hence the block
+    // count — is independent of the bytenrs assigned later.
+    var fsBlockCount = TreeBlockCount(fsLeaves.Count);
+    var csumBlockCount = TreeBlockCount(csumLeaves.Count);
+
+    // The root tree's leaf count cannot change from re-pointing existing
+    // ROOT_ITEMs (their sizes are fixed), so its block count is final here.
+    var rootBlockCount = TreeBlockCount(rootLeaves.Count);
+
+    // Snapshot the extent items as they stand before the rebuilt trees' own
+    // TREE_BLOCK extents are added (the data extents + block groups + the
+    // never-CoW'd chunk/dev tree blocks). The extent tree's block count is found
+    // by re-running the REAL pack (SortItems → PackIntoLeaves) on this base set
+    // plus the actual TREE_BLOCK items for an assumed metadata-block count,
+    // iterating until the resulting block count stops growing. Because the probe
+    // packs the exact same items the final pack will (real bytenrs, real order),
+    // its leaf count equals the final one — no greedy-packing order skew.
+    var baseExtentItems = new List<Item>(extentItems);
+    var extentBlockCount = 1;
+    var extentLeafCount = 1;
+    while (true) {
+      var totalMetaBlocks = fsBlockCount + csumBlockCount + rootBlockCount + extentBlockCount;
+      var probe = new List<Item>(baseExtentItems);
+      // One 51-byte TREE_BLOCK EXTENT_ITEM per metadata block, with bytenrs spread
+      // across the metadata chunk so they interleave with the base items under the
+      // sort exactly as the real registration will — keeping the probe's greedy
+      // leaf count equal to the final pack's.
+      for (var k = 0; k < totalMetaBlocks; k++) {
+        var bytenr = metaStart + (long)(k % Math.Max(1, (int)(metaLen / NodeSize))) * NodeSize;
+        probe.Add(new Item(bytenr, ExtentItemType, NodeSize, new byte[24 + 18 + 9]));
+      }
+      SortItems(probe);
+      var leaves = PackIntoLeaves(probe).Count;
+      var need = TreeBlockCount(leaves);
+      extentLeafCount = leaves;
+      if (need <= extentBlockCount) break;
+      extentBlockCount = need;
+    }
+
     // The allocator first hands out genuinely-free node slots (true CoW — the old
     // tree stays intact until the superblock flips). When those run out it
     // recycles the blocks this operation is about to free: their contents are
     // already loaded into memory, so reusing their offsets keeps the final image
     // consistent. Untouched metadata (chunk/dev trees) and every data extent are
     // never in the recycle pool, so they remain byte-identical.
-    var liveBlocks = new HashSet<long>();
-    AddAllMetadataBlockBytenrs(extentItems, liveBlocks);
-    liveBlocks.Add(sb.RootTreeLogical);
-
-    var freed = new List<long>();
-    foreach (var b in oldFsBlocks) freed.Add(b);
-    freed.Add(extentRootLogical);
-    freed.Add(csumRootLogical);
-    freed.Add(sb.RootTreeLogical);
-
-    var (metaStart, metaLen) = chunkMap.MetadataChunk
-      ?? throw new InvalidDataException("Btrfs in-place add: metadata chunk not found.");
-
     var alloc = new MetadataAllocator(metaStart, metaLen, liveBlocks, freed);
 
-    var newFsLeafLogical = new long[fsLeaves.Count];
-    for (var i = 0; i < fsLeaves.Count; i++)
-      newFsLeafLogical[i] = alloc.Next();
-    var needFsInternal = fsLeaves.Count > 1;
-    long newFsRootLogical = needFsInternal ? alloc.Next() : newFsLeafLogical[0];
-    var newExtentLogical = alloc.Next();
-    var newCsumLogical = alloc.Next();
-    var newRootLogical = alloc.Next();
+    // Pre-allocate every block the four rebuilt trees will occupy, in a fixed
+    // order, so the extent tree can name them all (including its own) before any
+    // block is serialised. The block→level assignment for each tree is derived
+    // purely from its block list + leaf count by PlanTree.
+    var fsBlocks = AllocBlocks(alloc, fsBlockCount);
+    var extentBlocks = AllocBlocks(alloc, extentBlockCount);
+    var csumBlocks = AllocBlocks(alloc, csumBlockCount);
+    var rootBlocks = AllocBlocks(alloc, rootBlockCount);
 
-    // ── CoW the extent tree: drop old tree-block extents, add the new ones ───
-    foreach (var b in oldFsBlocks) RemoveTreeBlockExtent(extentItems, b);
-    RemoveTreeBlockExtent(extentItems, extentRootLogical);
-    RemoveTreeBlockExtent(extentItems, csumRootLogical);
-    RemoveTreeBlockExtent(extentItems, sb.RootTreeLogical);
+    var fsPlan = PlanTree(fsLeaves, fsBlocks);
+    var csumPlan = PlanTree(csumLeaves, csumBlocks);
+    // The extent + root trees' block→level maps depend only on their block lists
+    // and leaf counts, which are now fixed, so their plans (and thus every
+    // TREE_BLOCK level) are known before the leaves are filled.
+    var extentLevels = LevelMap(extentBlocks, extentLeafCount);
+    var rootPlanLevels = LevelMap(rootBlocks, rootLeaves.Count);
 
-    var fsLeafLevel = (byte)0;
-    var fsRootNewLevel = (byte)(needFsInternal ? 1 : 0);
-    for (var i = 0; i < fsLeaves.Count; i++)
-      AddTreeBlockExtent(extentItems, newFsLeafLogical[i], FsTreeObjectId,
-        needFsInternal ? fsLeafLevel : fsRootNewLevel);
-    if (needFsInternal)
-      AddTreeBlockExtent(extentItems, newFsRootLogical, FsTreeObjectId, 1);
-    AddTreeBlockExtent(extentItems, newExtentLogical, ExtentTreeObjectId, 0);
-    AddTreeBlockExtent(extentItems, newCsumLogical, CsumTreeObjectId, 0);
-    AddTreeBlockExtent(extentItems, newRootLogical, RootTreeObjectId, 0);
+    // ── Register the rebuilt trees' TREE_BLOCK extents in the extent tree ────
+    RegisterTreeBlocks(extentItems, fsPlan.BlockLevels, FsTreeObjectId);
+    RegisterTreeBlocks(extentItems, csumPlan.BlockLevels, CsumTreeObjectId);
+    RegisterTreeBlocks(extentItems, extentLevels, ExtentTreeObjectId);
+    RegisterTreeBlocks(extentItems, rootPlanLevels, RootTreeObjectId);
 
     // Recompute block-group accounting for both the metadata and data chunks.
     RecomputeBlockGroups(extentItems, chunkMap);
 
     SortItems(extentItems);
-    EnsureFits(extentItems, "extent tree");
-
-    SortItems(csumItems);
-    EnsureFits(csumItems, "csum tree");
+    var extentLeavesFinal = PackIntoLeaves(extentItems);
+    // The fixed-point packed the identical item set, so the final leaf count must
+    // equal the planned one; any divergence (e.g. a future change to packing)
+    // would mis-level the extent tree, so fall back rather than emit a bad image.
+    if (extentLeavesFinal.Count != extentLeafCount)
+      throw new NotSupportedException(
+        $"Btrfs in-place add: extent tree leaf count drifted (planned {extentLeafCount}, "
+        + $"got {extentLeavesFinal.Count}) — use rebuild.");
+    var extentPlan = PlanTree(extentLeavesFinal, extentBlocks);
 
     // ── CoW the root tree: repoint FS / EXTENT / CSUM ROOT_ITEMs ─────────────
-    RepointRootItem(rootItems, FsTreeObjectId, newFsRootLogical, nextGen, fsRootNewLevel);
-    RepointRootItem(rootItems, ExtentTreeObjectId, newExtentLogical, nextGen, 0);
-    RepointRootItem(rootItems, CsumTreeObjectId, newCsumLogical, nextGen, 0);
+    RepointRootItem(rootItems, FsTreeObjectId, fsPlan.RootLogical, nextGen, fsPlan.RootLevel);
+    RepointRootItem(rootItems, ExtentTreeObjectId, extentPlan.RootLogical, nextGen, extentPlan.RootLevel);
+    RepointRootItem(rootItems, CsumTreeObjectId, csumPlan.RootLogical, nextGen, csumPlan.RootLevel);
     SortItems(rootItems);
-    EnsureFits(rootItems, "root tree");
+    rootLeaves = PackIntoLeaves(rootItems);
+    var rootPlan = PlanTree(rootLeaves, rootBlocks);
 
     // ── Serialise the new blocks at their freshly allocated offsets ──────────
-    if (needFsInternal) {
-      var keyPtrs = new List<(long objId, byte type, long offset, long blockPtr)>();
-      for (var i = 0; i < fsLeaves.Count; i++) {
-        var leaf = fsLeaves[i];
-        WriteLeaf(image, (int)chunkMap.ToPhysical(newFsLeafLogical[i]), newFsLeafLogical[i],
-          FsTreeObjectId, nextGen, sb, leaf);
-        var first = leaf[0];
-        keyPtrs.Add((first.ObjectId, first.Type, first.Offset, newFsLeafLogical[i]));
-      }
-      WriteInternalNode(image, (int)chunkMap.ToPhysical(newFsRootLogical), newFsRootLogical,
-        FsTreeObjectId, 1, nextGen, sb, keyPtrs);
-    } else {
-      WriteLeaf(image, (int)chunkMap.ToPhysical(newFsLeafLogical[0]), newFsLeafLogical[0],
-        FsTreeObjectId, nextGen, sb, fsLeaves[0]);
-    }
-
-    WriteLeaf(image, (int)chunkMap.ToPhysical(newExtentLogical), newExtentLogical,
-      ExtentTreeObjectId, nextGen, sb, extentItems);
-    WriteLeaf(image, (int)chunkMap.ToPhysical(newCsumLogical), newCsumLogical,
-      CsumTreeObjectId, nextGen, sb, csumItems);
-    WriteLeaf(image, (int)chunkMap.ToPhysical(newRootLogical), newRootLogical,
-      RootTreeObjectId, nextGen, sb, rootItems);
+    WriteTree(image, chunkMap, sb, nextGen, FsTreeObjectId, fsPlan);
+    WriteTree(image, chunkMap, sb, nextGen, ExtentTreeObjectId, extentPlan);
+    WriteTree(image, chunkMap, sb, nextGen, CsumTreeObjectId, csumPlan);
+    WriteTree(image, chunkMap, sb, nextGen, RootTreeObjectId, rootPlan);
 
     // Free the old blocks (zero them so stale tree data never confuses a reader
     // that scans by signature; they are no longer referenced by any tree). Skip
     // any block the allocator recycled into a new node — those already hold
     // freshly serialised, checksummed content.
-    void FreeOldBlock(long logical, long phys) {
+    void FreeOldBlock(long logical) {
       if (alloc.WasHandedOut(logical)) return;
-      image.AsSpan((int)phys, NodeSize).Clear();
+      var phys = chunkMap.ToPhysical(logical);
+      if (phys >= 0) image.AsSpan((int)phys, NodeSize).Clear();
     }
-    foreach (var b in oldFsBlocks) FreeOldBlock(b, chunkMap.ToPhysical(b));
-    FreeOldBlock(sb.RootTreeLogical, rootPhys);
-    FreeOldBlock(extentRootLogical, extentPhys);
-    FreeOldBlock(csumRootLogical, csumPhys);
+    foreach (var b in oldFsBlocks) FreeOldBlock(b);
+    foreach (var b in oldExtentBlocks) FreeOldBlock(b);
+    foreach (var b in oldCsumBlocks) FreeOldBlock(b);
+    foreach (var b in oldRootBlocks) FreeOldBlock(b);
 
     // ── Update + re-checksum the superblock ─────────────────────────────────
     BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(SbOffset + 0x48), nextGen);     // generation
-    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(SbOffset + 0x50), newRootLogical); // root
+    BinaryPrimitives.WriteInt64LittleEndian(image.AsSpan(SbOffset + 0x50), rootPlan.RootLogical); // root
+    image[SbOffset + 0xC6] = rootPlan.RootLevel; // root_level
     UpdateSuperblockBytesUsed(image, extentItems);
     // chunk_root / chunk_root_generation are NOT touched: the chunk tree is not
     // CoW'd by an in-place file add, so it keeps its original generation.
     WriteBlockChecksum(image, SbOffset, SectorSize);
   }
 
-  // ── FS-tree edits ─────────────────────────────────────────────────────────
+  // ── Generic arbitrary-depth tree reading ───────────────────────────────────
 
-  // Reads every leaf of the FS tree into a flat item list. When the root block
-  // is an internal node (level 1), every child leaf is read in key order; the
-  // physical bytenr of each block visited (root + leaves) is appended to
-  // <paramref name="blocks"/> so the caller can free them.
-  private static List<Item> ReadFsTree(byte[] image, ChunkMap chunkMap, long rootLogical, List<long> blocks) {
-    var rootPhys = chunkMap.ToPhysical(rootLogical);
-    if (rootPhys < 0) throw new InvalidDataException("Btrfs in-place add: FS root unreachable.");
-    blocks.Add(rootLogical);
-    if (image[rootPhys + 100] == 0)
-      return ReadLeafItems(image, rootPhys); // single-leaf tree
-
-    // Internal node: walk each key pointer to its leaf.
+  // Reads every leaf of a btrfs B-tree of ANY height into one flat, key-ordered
+  // item list. The root may be a leaf (level 0) or an internal node at any level;
+  // internal nodes are descended recursively in key-pointer order. Every block
+  // visited (internal and leaf) is appended to <paramref name="blocks"/> so the
+  // caller can free the whole tree when it is CoW-rebuilt.
+  private static List<Item> ReadTreeLeaves(byte[] image, ChunkMap chunkMap, long rootLogical, List<long> blocks) {
     var items = new List<Item>();
-    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan((int)rootPhys + 96));
-    for (uint i = 0; i < nritems; i++) {
-      var p = (int)rootPhys + HeaderSize + (int)i * 33;
-      var childLogical = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(p + 17));
-      var childPhys = chunkMap.ToPhysical(childLogical);
-      if (childPhys < 0) throw new InvalidDataException("Btrfs in-place add: FS leaf unreachable.");
-      if (image[childPhys + 100] != 0)
-        throw new NotSupportedException("Btrfs in-place add: FS tree deeper than one internal node — use rebuild.");
-      blocks.Add(childLogical);
-      items.AddRange(ReadLeafItems(image, childPhys));
-    }
+    Descend(rootLogical);
     return items;
+
+    void Descend(long logical) {
+      var phys = chunkMap.ToPhysical(logical);
+      if (phys < 0) throw new InvalidDataException("Btrfs in-place add: tree block unreachable.");
+      blocks.Add(logical);
+      var level = image[(int)phys + 100];
+      if (level == 0) {
+        items.AddRange(ReadLeafItems(image, phys));
+        return;
+      }
+      var nritems = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan((int)phys + 96));
+      for (uint i = 0; i < nritems; i++) {
+        var p = (int)phys + HeaderSize + (int)i * 33;
+        var childLogical = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(p + 17));
+        Descend(childLogical);
+      }
+    }
   }
+
+  // ── Generic arbitrary-depth tree building ───────────────────────────────────
+  //
+  // A btrfs B-tree of any height is rebuilt from a flat, key-sorted item list by
+  // packing the items into leaves and then stacking internal index levels until a
+  // single root node remains. The leaf count fixes the whole shape: with L leaves
+  // and a maximum fan-out of MaxKeyPtrs per internal node, level 1 holds
+  // ceil(L / MaxKeyPtrs) nodes, level 2 holds ceil(that / MaxKeyPtrs), and so on
+  // until one node is left — that node is the root. Every block (leaves first,
+  // then each successive internal level) is drawn IN ORDER from a pre-allocated
+  // block list so the extent tree can name every block (its own included) before
+  // any is serialised.
+
+  // Per-child overhead inside an internal node: key(17)+blockptr(8)+gen(8).
+  private const int KeyPtrSize = 33;
+  private const int MaxKeyPtrs = (NodeSize - HeaderSize) / KeyPtrSize;
+
+  // Total blocks a tree of `leafCount` leaves occupies: the leaves plus every
+  // internal index node needed to fan in to a single root.
+  private static int TreeBlockCount(int leafCount) {
+    if (leafCount <= 1) return 1;
+    var total = leafCount;
+    var level = leafCount;
+    while (level > 1) {
+      level = (level + MaxKeyPtrs - 1) / MaxKeyPtrs;
+      total += level;
+    }
+    return total;
+  }
+
+  // Maps each block in `blocks` to the tree level it occupies for a tree of
+  // `leafCount` leaves: the first `leafCount` blocks are leaves (level 0), the
+  // next ceil(leafCount/MaxKeyPtrs) are level-1 internal nodes, and so on. The
+  // assignment is identical to PlanTree's so the TREE_BLOCK extents' recorded
+  // levels match the block headers PlanTree writes.
+  private static Dictionary<long, byte> LevelMap(List<long> blocks, int leafCount) {
+    var map = new Dictionary<long, byte>();
+    var idx = 0;
+    if (leafCount <= 1) {
+      map[blocks[0]] = 0;
+      return map;
+    }
+    var countThisLevel = leafCount;
+    byte level = 0;
+    while (true) {
+      for (var i = 0; i < countThisLevel; i++)
+        map[blocks[idx++]] = level;
+      if (countThisLevel == 1) break;
+      countThisLevel = (countThisLevel + MaxKeyPtrs - 1) / MaxKeyPtrs;
+      level++;
+    }
+    return map;
+  }
+
+  // A serialisation plan for one rebuilt tree: the root block + its level, and
+  // every block paired with the level it sits at (so the writer stamps the right
+  // header level and the extent tree records the matching tree_block_info.level).
+  private sealed class TreePlan {
+    public required long RootLogical;
+    public required byte RootLevel;
+    public required Dictionary<long, byte> BlockLevels;
+    // Bottom-up: the leaf batches, then each internal level's (key,childPtr) sets.
+    public required List<List<Item>> Leaves;
+    public required List<long> Blocks; // leaves first, then internals, in level order
+    public required int LeafCount;
+  }
+
+  // Plans a tree's full block layout from its packed leaves and pre-allocated
+  // block list. Leaves take blocks[0..L); internal levels take the rest in order.
+  private static TreePlan PlanTree(List<List<Item>> leaves, List<long> blocks) {
+    var leafCount = leaves.Count;
+    return new TreePlan {
+      RootLogical = blocks[TreeBlockCount(leafCount) - 1],
+      RootLevel = RootLevelFor(leafCount),
+      BlockLevels = LevelMap(blocks, leafCount),
+      Leaves = leaves,
+      Blocks = blocks,
+      LeafCount = leafCount,
+    };
+  }
+
+  private static byte RootLevelFor(int leafCount) {
+    if (leafCount <= 1) return 0;
+    byte level = 1;
+    var count = (leafCount + MaxKeyPtrs - 1) / MaxKeyPtrs;
+    while (count > 1) {
+      count = (count + MaxKeyPtrs - 1) / MaxKeyPtrs;
+      level++;
+    }
+    return level;
+  }
+
+  // Registers one TREE_BLOCK EXTENT_ITEM per block of a rebuilt tree, each at the
+  // level the plan assigns it, owned by `ownerRoot`.
+  private static void RegisterTreeBlocks(List<Item> extentItems, Dictionary<long, byte> blockLevels, long ownerRoot) {
+    foreach (var (bytenr, level) in blockLevels)
+      AddTreeBlockExtent(extentItems, bytenr, ownerRoot, level);
+  }
+
+  // Serialises every block of a rebuilt tree at its allocated offset. A
+  // single-leaf tree is one level-0 leaf; otherwise the leaves are written first,
+  // then each successive internal level is built from the lowest key of every
+  // child it indexes, up to the single root node.
+  private static void WriteTree(byte[] image, ChunkMap chunkMap, Superblock sb, long gen, long ownerObjectId, TreePlan plan) {
+    var blocks = plan.Blocks;
+    var leaves = plan.Leaves;
+    var leafCount = leaves.Count;
+
+    if (leafCount <= 1) {
+      WriteLeaf(image, (int)chunkMap.ToPhysical(blocks[0]), blocks[0], ownerObjectId, gen, sb,
+        leaves.Count == 1 ? leaves[0] : []);
+      return;
+    }
+
+    // Write the leaves and capture each one's first key as its index entry.
+    var childEntries = new List<(long objId, byte type, long offset, long blockPtr)>();
+    for (var i = 0; i < leafCount; i++) {
+      var leaf = leaves[i];
+      WriteLeaf(image, (int)chunkMap.ToPhysical(blocks[i]), blocks[i], ownerObjectId, gen, sb, leaf);
+      var first = leaf[0];
+      childEntries.Add((first.ObjectId, first.Type, first.Offset, blocks[i]));
+    }
+
+    // Build internal levels bottom-up. Each level groups the previous level's
+    // child entries into nodes of up to MaxKeyPtrs; the node's own index entry is
+    // its first child's key. The blocks for each level follow the previous level's
+    // in the pre-allocated list.
+    var idx = leafCount;
+    byte level = 1;
+    var current = childEntries;
+    while (true) {
+      var next = new List<(long objId, byte type, long offset, long blockPtr)>();
+      for (var start = 0; start < current.Count; start += MaxKeyPtrs) {
+        var slice = current.GetRange(start, Math.Min(MaxKeyPtrs, current.Count - start));
+        var nodeLogical = blocks[idx++];
+        WriteInternalNode(image, (int)chunkMap.ToPhysical(nodeLogical), nodeLogical,
+          ownerObjectId, level, gen, sb, slice);
+        next.Add((slice[0].objId, slice[0].type, slice[0].offset, nodeLogical));
+      }
+      if (next.Count == 1) break;
+      current = next;
+      level++;
+    }
+  }
+
+  // ── FS-tree edits ─────────────────────────────────────────────────────────
 
   // Resolves the directory inode the new file's parent should live in, creating
   // any missing intermediate directories (INODE_ITEM + back-ref + parent links).
@@ -649,6 +839,14 @@ public static class BtrfsInPlaceAdder {
     }
   }
 
+  // Draws `count` node-sized blocks from the allocator into a list, preserving
+  // hand-out order so a tree's leaves precede its internal nodes.
+  private static List<long> AllocBlocks(MetadataAllocator alloc, int count) {
+    var list = new List<long>(count);
+    for (var i = 0; i < count; i++) list.Add(alloc.Next());
+    return list;
+  }
+
   // ── Leaf (de)serialisation — mirrors BtrfsWriter.WriteLeafNode ──────────────
 
   private sealed class Item {
@@ -676,14 +874,6 @@ public static class BtrfsInPlaceAdder {
       items.Add(new Item(objId, type, keyOffset, data));
     }
     return items;
-  }
-
-  private static void EnsureFits(List<Item> items, string tree) {
-    var need = 0;
-    foreach (var it in items) need += LeafItemHeader + it.Data.Length;
-    if (need > NodeSize - HeaderSize)
-      throw new NotSupportedException(
-        $"Btrfs in-place add: {tree} leaf would overflow a single node ({need} > {NodeSize - HeaderSize}) — use rebuild.");
   }
 
   private static void WriteLeaf(byte[] image, int nodeOff, long bytenr, long ownerObjectId, long gen,

@@ -82,7 +82,7 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
@@ -289,11 +289,24 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// slot, the root dir block, and the file's data blocks are read or written.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs)) {
-      // Replace-by-name semantics — drop any prior entry with the same name first.
-      ExtModifier.RemoveFile(archive, name, wipeData: true);
-      ExtModifier.AddFile(archive, name, data);
+    var files = FormatHelpers.FilesOnly(inputs).ToList();
+    // Genuine in-place add (no whole-image re-pack): touches only the affected
+    // metadata + data blocks. Cases the in-place writer cannot handle yet (htree
+    // directory growth, nested target paths, very fragmented extent layouts) throw
+    // InPlaceUnsupportedException; for those we fall back to a read-then-rebuild so
+    // the modify still yields a valid result.
+    var rebuild = new List<(string Name, byte[] Data)>();
+    foreach (var (name, data) in files) {
+      try {
+        // Replace-by-name semantics — drop any prior entry with the same name first.
+        ExtModifier.RemoveFile(archive, name, wipeData: true);
+        ExtModifier.AddFile(archive, name, data);
+      } catch (ExtModifier.InPlaceUnsupportedException) {
+        rebuild.Add((name, data));
+      }
     }
+    if (rebuild.Count > 0)
+      ExtModifier.Mutate(archive, rebuild, System.Array.Empty<string>());
   }
 
   /// <summary>

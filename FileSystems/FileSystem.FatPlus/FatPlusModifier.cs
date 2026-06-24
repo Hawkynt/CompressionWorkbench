@@ -24,9 +24,16 @@ namespace FileSystem.FatPlus;
 public static class FatPlusModifier {
 
   /// <summary>
-  /// Appends a file to an existing FAT+ image by rebuilding via
-  /// <see cref="FatPlusWriter"/>. Existing files are preserved (including
-  /// their extended sizes). The new file is added with <c>extendedSize = data.Length</c>.
+  /// Appends (or replaces by name) a file in an existing FAT+ image. The common
+  /// case is a genuine in-place edit via <see cref="FatPlusInPlaceAdder"/>: free
+  /// clusters are allocated, the data written into them, the chain linked in
+  /// every FAT copy, a directory entry inserted, and the FAT+ extended-size bits
+  /// patched — existing files, their clusters and the boot sector stay
+  /// byte-identical and the image keeps its length. Structural cases the
+  /// in-place path can't handle (nested target, full root directory,
+  /// insufficient free space) fall back to the verified
+  /// <see cref="FatPlusWriter"/> rebuild, which preserves the existing entries'
+  /// extended sizes.
   /// </summary>
   public static void AddFile(Stream archive, string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(archive);
@@ -34,21 +41,40 @@ public static class FatPlusModifier {
     ArgumentNullException.ThrowIfNull(data);
 
     archive.Position = 0;
-    using var reader = new FatPlusReader(archive, leaveOpen: true);
-    var existing = reader.Entries.Where(e => !e.IsDirectory).ToList();
+    using var ms = new MemoryStream();
+    archive.CopyTo(ms);
+    var original = ms.ToArray();
 
+    // Try the genuine in-place edit on a copy; commit only if it succeeds so a
+    // structural limit leaves the source untouched for the rebuild path.
+    var work = (byte[])original.Clone();
+    var inPlace = true;
+    try {
+      FatPlusInPlaceAdder.AddFile(work, name, data);
+    } catch (Exception ex) when (ex is NotSupportedException or IOException
+                                 or InvalidDataException or InvalidOperationException) {
+      inPlace = false;
+    }
+    if (inPlace) {
+      archive.Position = 0;
+      archive.Write(work, 0, work.Length);
+      archive.SetLength(work.Length);
+      return;
+    }
+
+    // Fallback: verified rebuild from the untouched original. Preserves every
+    // existing entry's declared extended size.
+    using var src = new MemoryStream(original, writable: false);
+    using var reader = new FatPlusReader(src, leaveOpen: true);
+    var existing = reader.Entries.Where(e => !e.IsDirectory).ToList();
     var w = new FatPlusWriter();
-    // For each existing entry: extract its on-disk data (note that for
-    // huge files the extended size may exceed the actual chain bytes, so
-    // we preserve the declared extended size separately from the actual
-    // payload we hand to the writer).
     foreach (var entry in existing) {
       var payload = ExtractPayloadBounded(reader, entry);
       w.AddFile(entry.Name, payload, extendedSize: entry.Size);
     }
     w.AddFile(name, data);
 
-    var totalSectors = (int)(archive.Length / 512);
+    var totalSectors = (int)(original.Length / 512);
     var rebuilt = w.Build(totalSectors: totalSectors);
     archive.Position = 0;
     archive.Write(rebuilt);

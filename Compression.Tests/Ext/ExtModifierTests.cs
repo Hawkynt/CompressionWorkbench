@@ -120,11 +120,28 @@ public class ExtModifierTests {
     Assert.Throws<IOException>(() => ExtModifier.AddFile(ms, "dup.txt", "second"u8.ToArray()));
   }
 
-  [Test, Category("ErrorHandling")]
-  public void AddFile_Oversize_Throws() {
+  [Test, Category("RoundTrip")]
+  public void AddFile_BeyondDirectBlocks_UsesIndirectAndReadsBack() {
+    // 13 KiB needs more than 12 direct blocks at 1 KiB — the in-place writer now
+    // allocates indirect blocks (ext2/3) or extents (ext4) instead of failing.
     using var ms = BuildEmptyImage();
-    var huge = new byte[13 * 1024]; // 13 KiB > 12 direct blocks × 1 KiB
-    Assert.Throws<IOException>(() => ExtModifier.AddFile(ms, "huge.bin", huge));
+    var data = new byte[13 * 1024];
+    for (var i = 0; i < data.Length; ++i) data[i] = (byte)((i * 17 + 3) & 0xFF);
+    ExtModifier.AddFile(ms, "huge.bin", data);
+
+    ms.Position = 0;
+    var reader = new ExtReader(ms);
+    var entry = reader.Entries.Single(e => e.Name == "huge.bin");
+    Assert.That(reader.Extract(entry), Is.EqualTo(data));
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void AddFile_NoFreeBlocks_Throws() {
+    using var ms = BuildEmptyImage();
+    // The 4 MiB default image at 1 KiB blocks can hold ~3900 data blocks; a file
+    // larger than the whole image cannot be allocated and must throw.
+    var tooBig = new byte[8 * 1024 * 1024];
+    Assert.Throws<IOException>(() => ExtModifier.AddFile(ms, "toobig.bin", tooBig));
   }
 
   [Test, Category("Performance")]

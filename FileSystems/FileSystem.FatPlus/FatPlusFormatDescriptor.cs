@@ -28,8 +28,11 @@ namespace FileSystem.FatPlus;
 /// per-file 38-bit size encoding (low 32 bits at <c>DIR_FileSize</c>, high 6
 /// bits in the low 6 bits of <c>DIR_NTRes</c>; top 2 bits of NTRes remain
 /// clear to preserve the Windows NT case-flag convention). Add/Remove operate
-/// in place (Add re-packs via <see cref="FatPlusWriter"/>, Remove patches the
-/// FAT chain + dirent in place). Defragment goes through the standard
+/// genuinely in place via <see cref="FatPlusInPlaceAdder"/> (Add allocates free
+/// clusters, links the chain, inserts the dirent and patches the FAT+
+/// extended-size bits; Remove frees the chain + wipes the dirent), with a
+/// verified <see cref="FatPlusWriter"/> rebuild as the structural-edge-case
+/// fallback. Defragment goes through the standard
 /// <see cref="DefragRebuilder"/> rebuild path.</para>
 /// </remarks>
 public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
@@ -55,9 +58,14 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public string Id => "FatPlus";
   public string DisplayName => "FAT+ Filesystem Image (large-file extension)";
   public FormatCategory Category => FormatCategory.Archive;
+  // R/W: Add/Remove edit the FAT, clusters and directory in place
+  // (FatPlusInPlaceAdder reusing FatModifier/FatRemover, plus the FAT+
+  // extended-size dirent patch); existing files and the boot sector stay
+  // byte-identical. A verified FatPlusWriter rebuild is only a
+  // structural-edge-case fallback.
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".img";
 

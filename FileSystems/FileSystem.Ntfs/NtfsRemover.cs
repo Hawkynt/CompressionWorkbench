@@ -48,12 +48,20 @@ public static class NtfsRemover {
       throw new InvalidDataException("NTFS: MFT offset out of range.");
 
     // --- Scan MFT records starting at record 16 for matching $FILE_NAME ---
-    var maxRecords = (int)((image.Length - mftOffset) / mftRecordSize);
+    // The MFT is NOT necessarily one contiguous extent: an in-place add grows it
+    // with a (possibly non-contiguous) cluster run when the reserved zone fills, so
+    // record N lives wherever $MFT:$DATA's VCN→LCN mapping places it — never assume
+    // mftOffset + N * recordSize. Bound the scan to the MFT's real allocated extent
+    // (falling back to a whole-image bound for a degenerate/unreadable MFT).
+    var slotCount = NtfsInPlaceAdder.MftRecordSlotCount(image);
+    var maxRecords = slotCount > FirstUserRecord
+      ? slotCount
+      : (int)((image.Length - mftOffset) / mftRecordSize);
     var matchRecord = -1;
 
     for (var i = FirstUserRecord; i < maxRecords; ++i) {
-      var recordOffset = (int)(mftOffset + i * mftRecordSize);
-      if (recordOffset + mftRecordSize > image.Length) break;
+      var recordOffset = (int)NtfsInPlaceAdder.MftRecordByteOffset(image, i);
+      if (recordOffset < 0 || recordOffset + mftRecordSize > image.Length) continue;
 
       var span = image.AsSpan(recordOffset, mftRecordSize);
       if (span[0] != (byte)'F' || span[1] != (byte)'I' || span[2] != (byte)'L' || span[3] != (byte)'E')
@@ -77,7 +85,7 @@ public static class NtfsRemover {
       throw new FileNotFoundException($"File '{fileName}' not found in NTFS image.");
 
     // --- Zero the file data (clusters or resident value) BEFORE wiping the MFT record. ---
-    var recordOffsetFinal = (int)(mftOffset + matchRecord * mftRecordSize);
+    var recordOffsetFinal = (int)NtfsInPlaceAdder.MftRecordByteOffset(image, matchRecord);
     var matchCopy = image.AsSpan(recordOffsetFinal, mftRecordSize).ToArray();
     ApplyFixup(matchCopy);
     ZeroDataAttribute(image, matchCopy, clusterSize);
@@ -87,8 +95,14 @@ public static class NtfsRemover {
     TryFreeDataClustersInBitmap(image, matchCopy, clusterSize, mftOffset, mftRecordSize);
     TryClearMftBitmapBit(image, mftOffset, mftRecordSize, (uint)matchRecord);
 
-    // --- Best-effort: clear this record's index entry in root directory ($INDEX_ROOT of record 5). ---
-    TryClearRootIndexEntry(image, mftOffset, mftRecordSize, (uint)matchRecord);
+    // --- Genuinely delete this record's directory index entry. The parent directory
+    //     is taken from the file's own $FILE_NAME (root for top-level files). The
+    //     index is rebuilt and re-USA-fixed via the shared adder machinery so it stays
+    //     consistent on real mkfs.ntfs / Windows directories (which use a different
+    //     update-sequence-array layout than our own writer). ---
+    var parent = ParentRecord(matchCopy);
+    if (!NtfsInPlaceAdder.RemoveIndexEntry(image, parent, (uint)matchRecord) && parent != 5)
+      NtfsInPlaceAdder.RemoveIndexEntry(image, 5, (uint)matchRecord); // fall back to root
 
     // --- Zero the entire MFT record. Reader skips records without "FILE" signature. ---
     image.AsSpan(recordOffsetFinal, mftRecordSize).Clear();
@@ -227,6 +241,31 @@ public static class NtfsRemover {
     }
   }
 
+  // Reads the parent-directory MFT record number from a (fixup-applied) record's
+  // $FILE_NAME attribute. The parent reference is the low 48 bits of the 64-bit
+  // file reference at the start of the $FILE_NAME value. Defaults to root (5).
+  private static uint ParentRecord(byte[] record) {
+    var firstAttrOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(20));
+    var usedSize = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(24));
+    var attrPos = (int)firstAttrOffset;
+    while (attrPos + 16 <= usedSize && attrPos + 16 <= record.Length) {
+      var attrType = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(attrPos));
+      if (attrType == 0xFFFFFFFF) break;
+      var attrLen = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(attrPos + 4));
+      if (attrLen < 16 || attrPos + attrLen > record.Length) break;
+      if (attrType == 0x30) {
+        var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attrPos + 20));
+        var dataStart = attrPos + valueOffset;
+        if (dataStart + 8 <= record.Length) {
+          var parentRef = BinaryPrimitives.ReadInt64LittleEndian(record.AsSpan(dataStart));
+          return (uint)(parentRef & 0x0000FFFFFFFFFFFF);
+        }
+      }
+      attrPos += (int)attrLen;
+    }
+    return 5;
+  }
+
   private static bool TryMatchFileName(byte[] record, string target) {
     var firstAttrOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(20));
     var usedSize = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(24));
@@ -339,78 +378,4 @@ public static class NtfsRemover {
     }
   }
 
-  /// <summary>
-  /// Best-effort zero of the 80-byte index entry inside root-dir record 5's
-  /// $INDEX_ROOT that references <paramref name="targetRecord"/>. Keeps the index
-  /// structurally consistent (end-marker untouched) while leaving no trace of the
-  /// removed file's name. Errors are swallowed — the primary data wipe has
-  /// already happened.
-  /// </summary>
-  private static void TryClearRootIndexEntry(byte[] image, long mftOffset, int mftRecordSize, uint targetRecord) {
-    const uint rootRecordNum = 5;
-    var rootOffset = (int)(mftOffset + rootRecordNum * mftRecordSize);
-    if (rootOffset + mftRecordSize > image.Length) return;
-
-    var rootSpan = image.AsSpan(rootOffset, mftRecordSize);
-    if (rootSpan[0] != (byte)'F' || rootSpan[1] != (byte)'I' || rootSpan[2] != (byte)'L' || rootSpan[3] != (byte)'E')
-      return;
-
-    var rootCopy = rootSpan.ToArray();
-    ApplyFixup(rootCopy);
-
-    var firstAttrOffset = BinaryPrimitives.ReadUInt16LittleEndian(rootCopy.AsSpan(20));
-    var usedSize = BinaryPrimitives.ReadUInt32LittleEndian(rootCopy.AsSpan(24));
-
-    var attrPos = (int)firstAttrOffset;
-    while (attrPos + 16 <= usedSize && attrPos + 16 <= rootCopy.Length) {
-      var attrType = BinaryPrimitives.ReadUInt32LittleEndian(rootCopy.AsSpan(attrPos));
-      if (attrType == 0xFFFFFFFF) break;
-
-      var attrLen = BinaryPrimitives.ReadUInt32LittleEndian(rootCopy.AsSpan(attrPos + 4));
-      if (attrLen < 16 || attrPos + attrLen > rootCopy.Length) break;
-
-      if (attrType != 0x90) { attrPos += (int)attrLen; continue; }
-
-      var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(rootCopy.AsSpan(attrPos + 20));
-      var dataStart = attrPos + valueOffset;
-      if (dataStart + 32 > rootCopy.Length) return;
-
-      // Index root header is 16 bytes; index header follows at dataStart+16 with
-      // entriesOffset (relative to index header start).
-      var entriesOffset = BinaryPrimitives.ReadInt32LittleEndian(rootCopy.AsSpan(dataStart + 16));
-      var totalSize = BinaryPrimitives.ReadInt32LittleEndian(rootCopy.AsSpan(dataStart + 20));
-      var indexStart = dataStart + 16 + entriesOffset;
-      var indexEnd = dataStart + 16 + totalSize;
-
-      // Walk entries. Record matches are zeroed in place in BOTH rootCopy AND image
-      // (image adjusted by attribute-position-within-record offset).
-      while (indexStart + 16 <= indexEnd && indexStart + 16 <= rootCopy.Length) {
-        var mftRef = BinaryPrimitives.ReadInt64LittleEndian(rootCopy.AsSpan(indexStart));
-        var entryLen = BinaryPrimitives.ReadUInt16LittleEndian(rootCopy.AsSpan(indexStart + 8));
-        var flags = BinaryPrimitives.ReadUInt16LittleEndian(rootCopy.AsSpan(indexStart + 12));
-
-        if (entryLen < 16) break;
-
-        var refRecord = (uint)(mftRef & 0x0000FFFFFFFFFFFF);
-        if (refRecord == targetRecord) {
-          // Zero this entry in the image. Preserve entry length + last-entry flag
-          // bytes so the index walker in NtfsReader still advances correctly, but
-          // scrub every other byte (including the filename and MFT ref).
-          var imageEntryOffset = rootOffset + indexStart;
-          if (imageEntryOffset + entryLen <= image.Length) {
-            image.AsSpan(imageEntryOffset, entryLen).Clear();
-            // Restore entryLen at +8 and flags at +12 so index walker doesn't break.
-            BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(imageEntryOffset + 8), entryLen);
-            BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(imageEntryOffset + 12), flags);
-          }
-          return;
-        }
-
-        if ((flags & 0x02) != 0) break; // last entry
-        indexStart += entryLen;
-      }
-
-      return;
-    }
-  }
 }

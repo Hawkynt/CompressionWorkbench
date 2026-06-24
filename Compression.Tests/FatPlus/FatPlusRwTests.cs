@@ -174,6 +174,80 @@ public class FatPlusRwTests {
     }
   }
 
+  [Test, Category("RoundTrip")]
+  public void Add_IsGenuineInPlace_PreservesImageLengthAndExistingClusters() {
+    // Build a FAT+ image with an existing file that occupies real clusters,
+    // then Add a new file. A GENUINE in-place add must (a) keep the image
+    // length identical and (b) leave the existing file's data clusters
+    // byte-for-byte unchanged — a rebuild would re-pack and likely move them.
+    var existingPayload = new byte[8000];
+    new Random(99).NextBytes(existingPayload);
+    var w = new FatPlusWriter();
+    w.AddFile("KEEP.BIN", existingPayload);
+    var image = w.Build();
+    var originalLength = image.Length;
+
+    // Snapshot KEEP.BIN's data region (locate its first cluster via the reader).
+    int keepFirstClusterOffset;
+    using (var ms0 = new MemoryStream(image)) {
+      using var r0 = new FatPlusReader(ms0, leaveOpen: true);
+      var keep = r0.Entries.Single(e => e.Name.Equals("KEEP.BIN", StringComparison.OrdinalIgnoreCase));
+      keepFirstClusterOffset = FirstClusterOffset(image, keep.Name);
+    }
+    var bytesPerSector = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(11));
+    var spc = image[13];
+    var clusterBytes = bytesPerSector * spc;
+    var keepSnapshot = image.AsSpan(keepFirstClusterOffset, clusterBytes).ToArray();
+
+    FatPlusInPlaceAdder.AddFile(image, "ADDED.TXT", "added in place"u8.ToArray());
+
+    Assert.That(image.Length, Is.EqualTo(originalLength),
+      "Genuine in-place add must not change the image length.");
+    Assert.That(image.AsSpan(keepFirstClusterOffset, clusterBytes).ToArray(), Is.EqualTo(keepSnapshot),
+      "Existing file's data cluster must be byte-identical after in-place add (not relocated by a rebuild).");
+
+    using var verify = new MemoryStream(image);
+    using var rd = new FatPlusReader(verify, leaveOpen: true);
+    var byName = rd.Entries.ToDictionary(e => e.Name, StringComparer.OrdinalIgnoreCase);
+    Assert.That(byName.ContainsKey("KEEP.BIN"), Is.True);
+    Assert.That(byName.ContainsKey("ADDED.TXT"), Is.True);
+    Assert.That(rd.Extract(byName["KEEP.BIN"]), Is.EqualTo(existingPayload));
+    Assert.That(rd.Extract(byName["ADDED.TXT"]), Is.EqualTo("added in place"u8.ToArray()));
+  }
+
+  [Test, Category("Spec")]
+  public void Writer_StampsOemSignatureInBackupBootSector() {
+    // The FAT32 backup boot sector (sector 6) must carry the same FAT+ OEM
+    // signature as the primary, otherwise a FAT checker reports a
+    // primary/backup boot-sector difference.
+    var w = new FatPlusWriter();
+    w.AddFile("HELLO.TXT", "hi"u8.ToArray());
+    var image = w.Build();
+    var bytesPerSector = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(11));
+    var bkBootSec = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(50));
+    Assert.That(bkBootSec, Is.GreaterThan(0), "FAT32 image should declare a backup boot sector.");
+    var bkOem = image.AsSpan(bkBootSec * bytesPerSector + 3, 8).ToArray();
+    Assert.That(bkOem, Is.EqualTo(FatPlusReader.OemSignature),
+      "Backup boot sector must mirror the FAT+ OEM signature.");
+  }
+
+  [Test, Category("RoundTrip")]
+  public void InPlaceAdder_EncodesExtendedSizeAbove4GiB() {
+    // The in-place adder must honour the FAT+ 38-bit extended-size encoding for
+    // a declared size > 4 GiB (tiny on-disk payload, huge declared size).
+    var w = new FatPlusWriter();
+    w.AddFile("SEED.TXT", "seed"u8.ToArray());
+    var image = w.Build();
+    const long declared = (1L << 33) + 4242;
+    FatPlusInPlaceAdder.AddFile(image, "HUGE.DAT", [0xEE], extendedSize: declared);
+
+    using var ms = new MemoryStream(image);
+    using var r = new FatPlusReader(ms, leaveOpen: true);
+    var huge = r.Entries.Single(e => e.Name.Equals("HUGE.DAT", StringComparison.OrdinalIgnoreCase));
+    Assert.That(huge.Size, Is.EqualTo(declared),
+      "In-place add must encode the 38-bit FAT+ extended size verbatim.");
+  }
+
   [Test, Category("Descriptor")]
   public void Descriptor_Add_PreservesExtendedSizesOfExistingEntries() {
     // Build an image with a > 4 GiB declared file via FatPlusWriter directly.
@@ -341,6 +415,26 @@ public class FatPlusRwTests {
     var fatSize32 = BinaryPrimitives.ReadInt32LittleEndian(image.AsSpan(36));
     var firstDataSector = reservedSectors + fatCount * fatSize32;
     return firstDataSector * bytesPerSector;
+  }
+
+  /// <summary>
+  /// Resolves the byte offset of the first data cluster of the named file by
+  /// reading its dirent's first-cluster fields and applying the FAT32 geometry.
+  /// </summary>
+  private static int FirstClusterOffset(byte[] image, string name) {
+    var bytesPerSector = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(11));
+    var spc = image[13];
+    var reservedSectors = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(14));
+    var fatCount = image[16];
+    var fatSize32 = BinaryPrimitives.ReadInt32LittleEndian(image.AsSpan(36));
+    var firstDataSector = reservedSectors + fatCount * fatSize32;
+    var rootStart = firstDataSector * bytesPerSector;
+    var entryOff = WalkToFirstShortEntry(image, rootStart); // first file is the seed
+    var lo = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(entryOff + 26));
+    var hi = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(entryOff + 20));
+    var cluster = (hi << 16) | lo;
+    _ = name;
+    return (firstDataSector + (cluster - 2) * spc) * bytesPerSector;
   }
 
   /// <summary>

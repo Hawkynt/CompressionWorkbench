@@ -118,6 +118,85 @@ public class ExFatExternalConformanceTests {
     AssertFsckReportsClean(imagePath);
   }
 
+  // ── In-place modify conformance: add / remove on an existing volume must
+  //    leave it fsck-clean (genuine R/W, no rebuild). ──────────────────────
+
+  [Test]
+  [CancelAfter(60_000)]
+  public void InPlaceAdd_SmallAndMultiCluster_StaysCleanAndReadsBack() {
+    RequireFsckExfat();
+
+    var imagePath = Path.Combine(_tmpDir, "inplace_add.exfat");
+    var writer = new FileSystem.ExFat.ExFatWriter();
+    writer.AddFile("keep.txt", "preserve-me-at-offset"u8.ToArray());
+    File.WriteAllBytes(imagePath, writer.Build(32));
+    AssertFsckReportsClean(imagePath);
+
+    var small = "small-added-in-place"u8.ToArray();
+    var large = FilledBytes(60_000, seed: 17); // ~15 clusters @ 4 KB
+    using (var fs = new FileStream(imagePath, FileMode.Open, FileAccess.ReadWrite)) {
+      FileSystem.ExFat.ExFatModifier.AddFile(fs, "small.txt", small);
+      FileSystem.ExFat.ExFatModifier.AddFile(fs, "large.bin", large);
+    }
+    AssertFsckReportsClean(imagePath);
+
+    using (var fs = File.OpenRead(imagePath)) {
+      var reader = new FileSystem.ExFat.ExFatReader(fs);
+      Assert.Multiple(() => {
+        Assert.That(reader.Extract(reader.Entries.Single(e => e.Name == "small.txt")), Is.EqualTo(small));
+        Assert.That(reader.Extract(reader.Entries.Single(e => e.Name == "large.bin")), Is.EqualTo(large));
+        Assert.That(System.Text.Encoding.ASCII.GetString(
+          reader.Extract(reader.Entries.Single(e => e.Name == "keep.txt"))), Is.EqualTo("preserve-me-at-offset"));
+      });
+    }
+  }
+
+  [Test]
+  [CancelAfter(60_000)]
+  public void InPlaceRemove_FreesClustersAndStaysClean() {
+    RequireFsckExfat();
+
+    var imagePath = Path.Combine(_tmpDir, "inplace_remove.exfat");
+    var writer = new FileSystem.ExFat.ExFatWriter();
+    writer.AddFile("keep.txt", "stays"u8.ToArray());
+    writer.AddFile("gone.bin", FilledBytes(40_000, seed: 3));
+    File.WriteAllBytes(imagePath, writer.Build(32));
+    AssertFsckReportsClean(imagePath);
+
+    using (var fs = new FileStream(imagePath, FileMode.Open, FileAccess.ReadWrite))
+      Assert.That(FileSystem.ExFat.ExFatModifier.RemoveFile(fs, "gone.bin"), Is.True);
+    AssertFsckReportsClean(imagePath);
+
+    using (var fs = File.OpenRead(imagePath)) {
+      var reader = new FileSystem.ExFat.ExFatReader(fs);
+      Assert.That(reader.Entries.Any(e => e.Name == "gone.bin"), Is.False);
+      Assert.That(reader.Entries.Any(e => e.Name == "keep.txt"), Is.True);
+    }
+  }
+
+  [Test]
+  [CancelAfter(120_000)]
+  public void InPlaceAdd_GrowsRootDirectoryAcrossClusters_StaysClean() {
+    RequireFsckExfat();
+
+    // One 4 KB root cluster holds ~128 entries (≈ 42 three-entry files). Adding
+    // 100 files forces the root directory to grow into additional clusters — the
+    // case that must pad the prior cluster's tail so no 0x00 end-marker orphans
+    // the appended clusters.
+    var imagePath = Path.Combine(_tmpDir, "inplace_grow.exfat");
+    File.WriteAllBytes(imagePath, new FileSystem.ExFat.ExFatWriter().Build(32));
+
+    using (var fs = new FileStream(imagePath, FileMode.Open, FileAccess.ReadWrite))
+      for (var i = 0; i < 100; ++i)
+        FileSystem.ExFat.ExFatModifier.AddFile(fs, $"GROW{i:D3}.DAT", FilledBytes(100 + i, seed: i));
+    AssertFsckReportsClean(imagePath);
+
+    using (var fs = File.OpenRead(imagePath)) {
+      var reader = new FileSystem.ExFat.ExFatReader(fs);
+      Assert.That(reader.Entries.Count(e => e.Name.StartsWith("GROW")), Is.EqualTo(100));
+    }
+  }
+
   // ── fsck.exfat plumbing (HasCommand / RunTool style) ─────────────────
 
   private static void RequireFsckExfat() {

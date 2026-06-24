@@ -29,7 +29,7 @@ public static class FatModifier {
   /// paths and <see cref="IOException"/> when the volume or root directory is full —
   /// the signal for the caller to use the rebuild path.
   /// </summary>
-  public static void AddFile(byte[] image, string name, byte[] data, DateTime? modTime = null) {
+  public static void AddFile(byte[] image, string name, byte[] data, DateTime? modTime = null, bool forceLfn = false) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
@@ -69,7 +69,7 @@ public static class FatModifier {
     // Build the directory entry slot blob (LFN + 8.3) exactly as the writer would,
     // then patch in the first cluster + file size.
     var existingShort = CollectShortNames(image, OpenRootDir(image, fs));
-    var slots = FatWriter.BuildDirentSlots(name, existingShort, modTime);
+    var slots = FatWriter.BuildDirentSlots(name, existingShort, modTime, enableLfn: true, attr: 0x20, forceLfn: forceLfn);
     var shortOff = slots.Length - 32;
     var firstCluster = chain.Count == 0 ? 0 : chain[0];
     BinaryPrimitives.WriteUInt16LittleEndian(slots.AsSpan(shortOff + 20), (ushort)((firstCluster >> 16) & 0xFFFF));

@@ -381,7 +381,12 @@ public static class NtfsInPlaceAdder {
   // $MFTMirr (record 1) holds byte-identical copies of MFT records 0..3; ntfs-3g
   // rejects the volume if any differ. Re-sync after editing record 0 (sizes/bitmap).
   private static void SyncMftMirror(byte[] image, Geo geo) {
-    var mirrorRecords = Math.Min(4, MftMirrRecordCount(image, geo));
+    // $MFTMirr mirrors the first N MFT records, where N = $MFTMirr:$DATA size /
+    // record size — exactly one cluster's worth (4 records at a 4 KiB cluster, 16
+    // at 16 KiB, …). ntfsfix compares ALL of them, so mirror the real count, not a
+    // fixed 4: on large-cluster volumes the root dir (record 5) and other low
+    // records we touch fall inside the mirrored span and must stay identical.
+    var mirrorRecords = MftMirrRecordCount(image, geo);
     for (var i = 0; i < mirrorRecords; i++) {
       var src = (int)(geo.MftOffset + (long)i * geo.MftRecordSize);
       var dst = (int)(geo.MftMirrOffset + (long)i * geo.MftRecordSize);
@@ -448,6 +453,29 @@ public static class NtfsInPlaceAdder {
   // The MFT is NOT necessarily contiguous: when it grows past a region already taken
   // by $LogFile/$Bitmap/etc., growth appends a non-contiguous run, so a record's
   // physical location must follow the VCN→LCN mapping, not slot*recordSize.
+  /// <summary>
+  /// Public façade over the run-list-aware MFT record mapping for callers that scan
+  /// the MFT (e.g. <see cref="NtfsRemover"/>). Returns the physical byte offset of
+  /// record <paramref name="slot"/>, following $MFT:$DATA's VCN→LCN run list so a
+  /// grown, non-contiguous MFT (common on real mkfs.ntfs images after several adds)
+  /// is read correctly. Returns -1 when the slot is past the MFT's mapped clusters.
+  /// </summary>
+  public static long MftRecordByteOffset(byte[] image, int slot) {
+    ArgumentNullException.ThrowIfNull(image);
+    return MftRecordOffset(image, ParseBoot(image), slot);
+  }
+
+  /// <summary>
+  /// Number of record slots the MFT's $DATA currently spans (allocated bytes /
+  /// record size). Lets a scanner bound its loop to the MFT's real extent rather
+  /// than the whole image.
+  /// </summary>
+  public static int MftRecordSlotCount(byte[] image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var geo = ParseBoot(image);
+    return (int)(MftDataAllocatedBytes(image, geo) / geo.MftRecordSize);
+  }
+
   private static long MftRecordOffset(byte[] image, Geo geo, int slot) {
     var vcnByte = (long)slot * geo.MftRecordSize;
     var targetCluster = vcnByte / geo.ClusterSize;
@@ -736,6 +764,71 @@ public static class NtfsInPlaceAdder {
 
     // Otherwise spill (or re-pack the existing spill) into a single INDX leaf.
     WriteSpilledIndex(image, geo, dirRecord, dir, rootPos, entries);
+  }
+
+  /// <summary>
+  /// Removes the index entry referencing <paramref name="recordNum"/> from
+  /// <paramref name="dirRecord"/>'s $I30 directory index, then rewrites the index in
+  /// the smallest representation that fits (resident $INDEX_ROOT, or — if it still
+  /// does not fit — a single spilled INDX leaf). The whole directory record is rebuilt
+  /// and re-USA-fixed, so it stays consistent for real mkfs.ntfs / Windows directories
+  /// whose records use a different update-sequence-array layout than our writer. This is
+  /// the structural inverse of <see cref="InsertIndexEntry"/> and is invoked by
+  /// <see cref="NtfsRemover"/>. Returns <c>true</c> if an entry was removed.
+  /// </summary>
+  public static bool RemoveIndexEntry(byte[] image, uint dirRecord, uint recordNum) {
+    ArgumentNullException.ThrowIfNull(image);
+    var geo = ParseBoot(image);
+
+    var dirOff = (int)MftRecordOffset(image, geo, (int)dirRecord);
+    if (dirOff < 0 || dirOff + geo.MftRecordSize > image.Length) return false;
+    var dir = image.AsSpan(dirOff, geo.MftRecordSize).ToArray();
+    ApplyFixup(dir);
+
+    var (rootPos, _) = FindAttr(dir, 0x90, unnamedOnly: false);
+    if (rootPos < 0) return false;
+
+    var entries = CollectDirectoryLeafEntries(image, geo, dir, rootPos);
+    var before = entries.Count;
+    entries.RemoveAll(e => e.Record == recordNum);
+    if (entries.Count == before) return false; // nothing referenced that record
+    entries.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+
+    // If the directory was previously spilled, free its $INDEX_ALLOCATION clusters
+    // first; the rebuild will re-spill (and re-allocate) only if the smaller entry
+    // set still doesn't fit resident.
+    if (TryWriteResidentIndexRoot(image, geo, dirRecord, dir, rootPos, entries)) {
+      FreeStaleIndexAllocation(image, geo, dir);
+      SyncMftMirrorIfMirrored(image, geo, dirRecord);
+      return true;
+    }
+
+    WriteSpilledIndex(image, geo, dirRecord, dir, rootPos, entries);
+    SyncMftMirrorIfMirrored(image, geo, dirRecord);
+    return true;
+  }
+
+  // Re-syncs $MFTMirr only if the just-modified directory record falls within the
+  // mirrored span. On a 4 KiB-cluster volume $MFTMirr covers records 0–3, so editing
+  // the root directory (record 5) needs no mirror update; but on larger clusters the
+  // mirror covers a full cluster of records (0–7 at 8 KiB, 0–15 at 16 KiB, …), so the
+  // root directory IS mirrored and a stale mirror makes ntfsfix's $MFTMirr-vs-$MFT
+  // comparison fail.
+  private static void SyncMftMirrorIfMirrored(byte[] image, Geo geo, uint record) {
+    if (record < (uint)MftMirrRecordCount(image, geo))
+      SyncMftMirror(image, geo);
+  }
+
+  // When a directory that used to spill into $INDEX_ALLOCATION collapses back to a
+  // resident $INDEX_ROOT (after a removal), the INDX leaf clusters it held are no
+  // longer referenced — release them in $Bitmap so the space is reusable. The
+  // resident rebuild already dropped the 0xA0/0xB0 attributes from the record.
+  private static void FreeStaleIndexAllocation(byte[] image, Geo geo, byte[] oldDir) {
+    var (allocPos, _) = FindAttr(oldDir, 0xA0, unnamedOnly: false);
+    if (allocPos < 0 || oldDir[allocPos + 8] == 0) return;
+    var runsOff = allocPos + BinaryPrimitives.ReadUInt16LittleEndian(oldDir.AsSpan(allocPos + 32));
+    foreach (var (lcn, count) in DecodeDataRuns(oldDir, runsOff))
+      FreeClusters(image, geo, lcn, count);
   }
 
   // Reads every FILE_NAME leaf entry (record + name) the directory's $I30 index
@@ -1208,15 +1301,34 @@ public static class NtfsInPlaceAdder {
     }
   }
 
-  // Apply the forward USA fixup (for writing a record) — mirrors NtfsWriter.ApplyUsaFixup.
+  // Apply the forward USA fixup (for writing a record). Reads the record's own
+  // update-sequence-array offset/count from its NTFS_RECORD header instead of
+  // assuming our writer's layout: real mkfs.ntfs / Windows records place the USA
+  // at offset 48 (count 3 for a 1024-byte / 512-sector record), whereas our own
+  // writer uses offset 42. The 16-bit update sequence number is bumped each time
+  // a record is rewritten (a fresh record carries USN 0/1 and is bumped to 1/2),
+  // and the trailing two bytes of every protected 512-byte sector are saved into
+  // the USA before being stamped with the USN. Must be byte-stride agnostic so it
+  // works for either layout and for the actual sector size in the boot record.
   private static void WriteUsaFixup(byte[] record, Geo geo) {
-    const ushort usn = 0x0001;
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(42), usn);
-    var sectors = geo.MftRecordSize / geo.BytesPerSector;
-    for (var s = 0; s < sectors; s++) {
-      var sectorEnd = s * geo.BytesPerSector + 510;
-      var usaSlot = 44 + s * 2;
-      BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(usaSlot), BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(sectorEnd)));
+    var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
+    var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(6));
+    if (usaCount < 2 || usaOffset + usaCount * 2 > record.Length) return;
+
+    // Bump the existing USN (wrapping; 0 and 0xFFFF are reserved sentinels in some
+    // implementations, so skip them on wrap).
+    var usn = (ushort)(BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(usaOffset)) + 1);
+    if (usn is 0 or 0xFFFF) usn = 1;
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(usaOffset), usn);
+
+    // One USA slot per protected sector. Sectors are always 512 bytes for the USA
+    // (the fixup protects each physical 512-byte unit regardless of cluster size).
+    for (var i = 1; i < usaCount; i++) {
+      var sectorEnd = i * 512 - 2;
+      if (sectorEnd + 2 > record.Length) break;
+      var usaSlot = usaOffset + i * 2;
+      BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(usaSlot),
+        BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(sectorEnd)));
       BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(sectorEnd), usn);
     }
   }

@@ -88,6 +88,7 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
   // ── IFilesystemBlockMover delegation ───────────────────────────────────

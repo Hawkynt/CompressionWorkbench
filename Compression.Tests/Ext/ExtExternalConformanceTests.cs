@@ -59,6 +59,124 @@ public class ExtExternalConformanceTests {
     AssertE2fsckClean(image, "indirect-block file");
   }
 
+  // ── In-place ExtModifier add → e2fsck clean (genuine R/W) ──────────────
+
+  // Each case builds an ExtWriter image (single block group at a legal geometry),
+  // performs in-place adds via the modifier (small, large-via-indirect/extent, and
+  // enough small files to force the root directory to grow a second block), then
+  // hands the mutated image to e2fsck. A clean exit proves the in-place writer kept
+  // every bitmap / descriptor / free count / block map consistent.
+
+  [TestCase("ext2")]
+  [TestCase("ext3")]
+  [TestCase("ext4")]
+  [Category("Conformance")]
+  public void InPlaceAdd_SmallAndLarge_PassesE2fsckClean(string version) {
+    var ver = version switch {
+      "ext2" => FileSystem.Ext.ExtWriter.ExtVersion.Ext2,
+      "ext3" => FileSystem.Ext.ExtWriter.ExtVersion.Ext3,
+      _ => FileSystem.Ext.ExtWriter.ExtVersion.Ext4,
+    };
+    var w = new FileSystem.Ext.ExtWriter();
+    w.AddFile("seed.txt", "seed"u8.ToArray());
+    using var ms = new MemoryStream();
+    ms.Write(w.Build(blockSize: 1024, totalBlocks: 8000, ver,
+      journal: ver != FileSystem.Ext.ExtWriter.ExtVersion.Ext2, volumeLabel: "cwbrw", inodeSize: 256));
+
+    FileSystem.Ext.ExtModifier.AddFile(ms, "small.txt", "hello-in-place"u8.ToArray());
+    var large = MakeData(40_000); // > 12 direct blocks at 1 KiB → indirect / extent
+    FileSystem.Ext.ExtModifier.AddFile(ms, "large.bin", large);
+
+    AssertE2fsckClean(ms.ToArray(), $"in-place add {version}");
+
+    ms.Position = 0;
+    var reader = new FileSystem.Ext.ExtReader(ms);
+    Assert.That(reader.Extract(reader.Entries.Single(e => e.Name == "large.bin")), Is.EqualTo(large),
+      "large file must read back byte-identical after in-place add");
+  }
+
+  [TestCase("ext2")]
+  [TestCase("ext4")]
+  [Category("Conformance")]
+  public void InPlaceAdd_ManyFiles_GrowsDirectory_PassesE2fsckClean(string version) {
+    var ver = version == "ext2"
+      ? FileSystem.Ext.ExtWriter.ExtVersion.Ext2
+      : FileSystem.Ext.ExtWriter.ExtVersion.Ext4;
+    var w = new FileSystem.Ext.ExtWriter();
+    w.AddFile("seed.txt", "seed"u8.ToArray());
+    using var ms = new MemoryStream();
+    // 4 KiB blocks → a single block group spans 32768 blocks; 8000 is well within.
+    ms.Write(w.Build(blockSize: 4096, totalBlocks: 8000, ver,
+      journal: ver != FileSystem.Ext.ExtWriter.ExtVersion.Ext2, volumeLabel: "cwbgrow", inodeSize: 256));
+
+    for (var i = 0; i < 60; ++i)
+      FileSystem.Ext.ExtModifier.AddFile(ms, $"file_{i:D3}.dat",
+        System.Text.Encoding.ASCII.GetBytes($"content-of-file-{i:D3}"));
+
+    AssertE2fsckClean(ms.ToArray(), $"dir-growth {version}");
+
+    ms.Position = 0;
+    var reader = new FileSystem.Ext.ExtReader(ms);
+    Assert.That(reader.Entries.Count(e => !e.IsDirectory), Is.EqualTo(61),
+      "all 60 added files plus the seed must be enumerable after directory growth");
+  }
+
+  [Test, Category("Conformance")]
+  public void InPlaceAdd_DoubleIndirectFile_PassesE2fsckClean() {
+    // 600 KiB at 1 KiB blocks exceeds 12 direct + 256 single-indirect blocks,
+    // forcing a double-indirect block map; e2fsck verifies the whole chain.
+    var w = new FileSystem.Ext.ExtWriter();
+    w.AddFile("seed.txt", "seed"u8.ToArray());
+    using var ms = new MemoryStream();
+    ms.Write(w.Build(blockSize: 1024, totalBlocks: 8000,
+      FileSystem.Ext.ExtWriter.ExtVersion.Ext2, journal: false, volumeLabel: "cwbdi", inodeSize: 256));
+
+    var data = MakeData(600_000);
+    FileSystem.Ext.ExtModifier.AddFile(ms, "huge.bin", data);
+
+    AssertE2fsckClean(ms.ToArray(), "double-indirect file");
+    ms.Position = 0;
+    var reader = new FileSystem.Ext.ExtReader(ms);
+    Assert.That(reader.Extract(reader.Entries.Single(e => e.Name == "huge.bin")), Is.EqualTo(data));
+  }
+
+  // ── In-place add against REAL mkfs images (oracle-built, then mutated) ──
+
+  [TestCase("mkfs.ext2", "")]
+  [TestCase("mkfs.ext3", "")]
+  [TestCase("mkfs.ext4", "")]
+  [Category("Conformance")]
+  public void InPlaceAdd_OnRealMkfsImage_PassesE2fsckClean(string mkfsTool, string extraOpts) {
+    if (!IsLinux) Assert.Ignore("mkfs/e2fsck run on Linux only.");
+    if (!HasCommand(mkfsTool)) Assert.Ignore($"{mkfsTool} not installed.");
+    if (!HasCommand("e2fsck")) Assert.Ignore("e2fsck not installed.");
+
+    var imgPath = Path.Combine(_tmpDir, $"real_{mkfsTool.Replace('.', '_')}.img");
+    var mk = RunTool(mkfsTool, $"-F -b 4096 {extraOpts} \"{imgPath}\" 64M");
+    if (mk.ExitCode != 0) Assert.Ignore($"{mkfsTool} failed to build the oracle image:\n{mk.StdErr}");
+
+    var small = "added-by-our-modifier"u8.ToArray();
+    var large = MakeData(200_000);
+    using (var fs = new FileStream(imgPath, FileMode.Open, FileAccess.ReadWrite)) {
+      FileSystem.Ext.ExtModifier.AddFile(fs, "added_small.txt", small);
+      FileSystem.Ext.ExtModifier.AddFile(fs, "added_large.bin", large);
+    }
+
+    var result = RunTool("e2fsck", $"-fn \"{imgPath}\"");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"e2fsck rejected the mutated {mkfsTool} image (exit {result.ExitCode}):\n{result.StdOut}\n{result.StdErr}");
+
+    // Independent read-back via debugfs confirms the oracle sees our content.
+    var stat = RunTool("debugfs", $"-R \"stat /added_large.bin\" \"{imgPath}\"");
+    Assert.That(stat.StdOut, Does.Contain("200000").Or.Contain("Size: 200000"),
+      $"debugfs stat of our added file looks wrong:\n{stat.StdOut}");
+
+    // And our own reader round-trips the large file byte-for-byte.
+    using var rfs = new FileStream(imgPath, FileMode.Open, FileAccess.Read);
+    var reader = new FileSystem.Ext.ExtReader(rfs);
+    Assert.That(reader.Extract(reader.Entries.Single(e => e.Name == "added_large.bin")), Is.EqualTo(large));
+  }
+
   // ── Image builder ──────────────────────────────────────────────────
 
   private static byte[] BuildRepresentativeImage(int forcedBlockSize, int totalBlocks = 0) {

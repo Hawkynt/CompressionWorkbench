@@ -36,7 +36,12 @@ namespace FileSystem.ReiserFs;
 //
 // This handles single-leaf images, leaf split / merge, tree-height growth and
 // collapse (tree_height 2 ↔ 3 ↔ 4…), nested sub-directory targets, replace-by-
-// name and directory removal — all reiserfsck --check clean.
+// name, directory removal and images that span MULTIPLE on-disk bitmap blocks
+// (one bitmap block per BlockSize*8 = 32768 blocks; the first at block 17, every
+// subsequent one at the first block of its region). Block allocation/free scans
+// every bitmap block, new bitmap blocks are materialised + self-marked as the
+// image grows past a region boundary, appended data runs skip the bitmap-block
+// slots, and s_bmap_nr is kept in sync — all reiserfsck --check clean.
 //
 // References: reiserfsprogs reiserfscore/node_formats.c (item head, dir entry,
 // internal node, SD layout), reiserfslib.c (reiserfs_add_entry / hash_value),
@@ -76,6 +81,12 @@ internal static class ReiserFsInPlaceAdder {
   private const int MaxDirectBody = 1024;
 
   private const int BitmapBlock = 17;
+  // One bitmap block covers BlockSize*8 blocks. The FIRST bitmap lives at block
+  // 17 (right after the superblock); every subsequent bitmap N (N>=1) lives at
+  // the first block of its region, i.e. absolute block N*BitmapSpan. Bitmap N
+  // covers blocks [N*BitmapSpan, (N+1)*BitmapSpan). reiserfscore/bitmap.c.
+  private const int BitmapSpan = BlockSize * 8; // 32768 blocks per bitmap block
+  private const int Off_BmapNr = 70;
   private const int LeafPayload = BlockSize - BlockHeadSize;
   // disk_child: le32 dc_block_number + le16 dc_size + le16 reserved.
   private const int DiskChildSize = 8;
@@ -219,28 +230,47 @@ internal static class ReiserFsInPlaceAdder {
   private static byte[] AppendDataBlocks(byte[] image, byte[] data, int blockCountNeeded, byte[] indirectBody) {
     var sb = SuperblockOff;
     var blockCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(sb + Off_BlockCount));
-    var firstDataBlock = blockCount; // append right after the current last block
-    var newTotalBlocks = blockCount + blockCountNeeded;
+
+    // Assign block positions for the data run starting just past the current end.
+    // A position that coincides with a region-boundary BITMAP block
+    // (pos % BitmapSpan == 0, pos > 0) is reserved for that bitmap block and
+    // SKIPPED for data, so the contiguous append "jumps over" any new on-disk
+    // bitmap block. The indirect pointers therefore record the true data-block
+    // numbers (which may be discontiguous around a bitmap block).
+    var dataBlocks = new int[blockCountNeeded];
+    var pos = blockCount;
+    for (var i = 0; i < blockCountNeeded; i++) {
+      while (pos > 0 && pos % BitmapSpan == 0) pos++; // skip bitmap-block slot
+      dataBlocks[i] = pos;
+      pos++;
+    }
+    var newTotalBlocks = blockCountNeeded == 0 ? blockCount : dataBlocks[^1] + 1;
+
     var working = new byte[(long)newTotalBlocks * BlockSize];
     Buffer.BlockCopy(image, 0, working, 0, image.Length);
 
     for (var i = 0; i < blockCountNeeded; i++)
-      BinaryPrimitives.WriteUInt32LittleEndian(indirectBody.AsSpan(i * 4), (uint)(firstDataBlock + i));
+      BinaryPrimitives.WriteUInt32LittleEndian(indirectBody.AsSpan(i * 4), (uint)dataBlocks[i]);
     for (var i = 0; i < blockCountNeeded; i++) {
       var srcOff = i * BlockSize;
       var copyLen = Math.Min(BlockSize, data.Length - srcOff);
       if (copyLen > 0)
-        Array.Copy(data, srcOff, working, (long)(firstDataBlock + i) * BlockSize, copyLen);
+        Array.Copy(data, srcOff, working, (long)dataBlocks[i] * BlockSize, copyLen);
     }
 
-    MarkBitmapRange(working, firstDataBlock, blockCountNeeded, newTotalBlocks);
+    // Create + self-mark any new on-disk bitmap blocks the grown filesystem now
+    // needs (one per BitmapSpan region), then mark every data block used and
+    // tail-fill the final bitmap. Bitmap-block slots were skipped above, so no
+    // data pointer ever lands on one.
+    EnsureBitmapBlocks(working, newTotalBlocks);
+    foreach (var b in dataBlocks)
+      SetBitmapBit(working, b);
+    FinalizeBitmapTail(working, newTotalBlocks);
     BinaryPrimitives.WriteUInt32LittleEndian(working.AsSpan(sb + Off_BlockCount), (uint)newTotalBlocks);
     // The appended blocks lie BEYOND the old block_count, so they were never part
-    // of the free pool — growing block_count by the same amount keeps s_free_blocks
-    // unchanged (every new block is created already-used).
-    var bmapNr = (newTotalBlocks + (BlockSize * 8) - 1) / (BlockSize * 8);
-    if (bmapNr > 1)
-      throw new NotSupportedException("ReiserFS in-place add: image would need more than one bitmap block.");
+    // of the free pool — growing block_count keeps s_free_blocks unchanged (every
+    // new block is created already-used). The freshly-created bitmap blocks are
+    // likewise metadata created already-used.
     return working;
   }
 
@@ -398,11 +428,10 @@ internal static class ReiserFsInPlaceAdder {
   /// </summary>
   private static void ReleaseUnusedPool(byte[] image, Queue<int> pool) {
     if (pool.Count == 0) return;
-    var bmap = image.AsSpan(BitmapBlock * BlockSize, BlockSize);
     var freed = 0;
     while (pool.Count > 0) {
       var b = pool.Dequeue();
-      bmap[b >> 3] &= (byte)~(1 << (b & 7));
+      ClearBitmapBit(image, b);
       freed++;
     }
     AdjustFreeBlocks(image, freed);
@@ -541,36 +570,34 @@ internal static class ReiserFsInPlaceAdder {
   private static int AllocateBlock(ref byte[] image) {
     var sb = SuperblockOff;
     var blockCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(sb + Off_BlockCount));
-    var bmap = image.AsSpan(BitmapBlock * BlockSize, BlockSize);
 
-    // First-fit a free block strictly inside the current filesystem range. Skip
-    // the always-reserved low blocks (boot/sb/bitmap/journal) by scanning the
-    // whole range — those are already marked used so they won't be picked.
+    // First-fit a free block strictly inside the current filesystem range,
+    // scanning EVERY bitmap block (not just the first). Reserved low blocks,
+    // the journal and the bitmap blocks themselves are already marked used so
+    // they will never be picked.
     for (var b = 0; b < blockCount; b++) {
-      if ((bmap[b >> 3] & (1 << (b & 7))) == 0) {
-        bmap[b >> 3] |= (byte)(1 << (b & 7));
+      if (!IsBitmapBitSet(image, b)) {
+        SetBitmapBit(image, b);
         AdjustFreeBlocks(image, -1);
         image.AsSpan(b * BlockSize, BlockSize).Clear();
         return b;
       }
     }
 
-    // No free block — append one at the end of the image.
+    // No free block — append one at the end of the image. If the next slot is a
+    // region-boundary BITMAP block (pos % BitmapSpan == 0, pos > 0), reserve that
+    // slot for the bitmap block and place the formatted block one position later
+    // so the formatted block and the bitmap block never collide.
     var newBlock = blockCount;
-    var newTotal = blockCount + 1;
+    while (newBlock > 0 && newBlock % BitmapSpan == 0) newBlock++;
+    var newTotal = newBlock + 1;
     var grown = new byte[(long)newTotal * BlockSize];
     Buffer.BlockCopy(image, 0, grown, 0, image.Length);
     image = grown;
-    var bmap2 = image.AsSpan(BitmapBlock * BlockSize, BlockSize);
-    bmap2[newBlock >> 3] |= (byte)(1 << (newBlock & 7));
-    for (var bit = newTotal; (bit & 7) != 0; bit++)
-      bmap2[bit >> 3] |= (byte)(1 << (bit & 7));
-    var lastValidByte = (newTotal + 7) / 8;
-    for (var i = lastValidByte; i < BlockSize; i++) bmap2[i] = 0xFF;
+    EnsureBitmapBlocks(image, newTotal);
+    SetBitmapBit(image, newBlock);
+    FinalizeBitmapTail(image, newTotal);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + Off_BlockCount), (uint)newTotal);
-    var bmapNr = (newTotal + (BlockSize * 8) - 1) / (BlockSize * 8);
-    if (bmapNr > 1)
-      throw new NotSupportedException("ReiserFS in-place add: image would need more than one bitmap block.");
     return newBlock;
   }
 
@@ -628,19 +655,79 @@ internal static class ReiserFsInPlaceAdder {
     return key;
   }
 
-  // ── Bitmap ────────────────────────────────────────────────────────────────
+  // ── Bitmap (multi-block aware) ───────────────────────────────────────────
 
-  private static void MarkBitmapRange(byte[] image, int firstBlock, int count, int totalBlocks) {
-    var bmap = image.AsSpan(17 * BlockSize, BlockSize);
-    for (var b = firstBlock; b < firstBlock + count; b++)
-      bmap[b >> 3] |= (byte)(1 << (b & 7));
-    // Tail-fill: bits from totalBlocks to the end of the partial byte, then full
-    // trailing bytes, must all be 1 (reiserfsck "zero bit after last valid bit").
-    for (var b = totalBlocks; (b & 7) != 0; b++)
-      bmap[b >> 3] |= (byte)(1 << (b & 7));
-    var lastValidByte = (totalBlocks + 7) / 8;
+  /// <summary>
+  /// Absolute block number of the on-disk bitmap block that tracks block
+  /// <paramref name="block"/>. Bitmap 0 is at block 17; bitmap N (N>=1) is at
+  /// block N*BitmapSpan.
+  /// </summary>
+  private static int BitmapBlockFor(int block) {
+    var region = block / BitmapSpan;
+    return region == 0 ? BitmapBlock : region * BitmapSpan;
+  }
+
+  /// <summary>Marks block <paramref name="block"/> used in its bitmap.</summary>
+  private static void SetBitmapBit(byte[] image, int block) {
+    var bm = BitmapBlockFor(block);
+    var bit = block % BitmapSpan;
+    image[bm * BlockSize + (bit >> 3)] |= (byte)(1 << (bit & 7));
+  }
+
+  /// <summary>Marks block <paramref name="block"/> free in its bitmap.</summary>
+  private static void ClearBitmapBit(byte[] image, int block) {
+    var bm = BitmapBlockFor(block);
+    var bit = block % BitmapSpan;
+    image[bm * BlockSize + (bit >> 3)] &= (byte)~(1 << (bit & 7));
+  }
+
+  /// <summary>True when block <paramref name="block"/> is marked used.</summary>
+  private static bool IsBitmapBitSet(byte[] image, int block) {
+    var bm = BitmapBlockFor(block);
+    var bit = block % BitmapSpan;
+    return (image[bm * BlockSize + (bit >> 3)] & (1 << (bit & 7))) != 0;
+  }
+
+  /// <summary>
+  /// After growing the filesystem to <paramref name="totalBlocks"/> blocks,
+  /// patches the LAST bitmap block's tail so every bit beyond the filesystem is
+  /// 1 (reiserfsck "zero bit found after the last valid bit"), and updates
+  /// s_bmap_nr. Earlier bitmap blocks are full-coverage and need no tail-fill.
+  /// </summary>
+  private static void FinalizeBitmapTail(byte[] image, int totalBlocks) {
+    var bmapNr = (totalBlocks + BitmapSpan - 1) / BitmapSpan;
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(SuperblockOff + Off_BmapNr), (ushort)bmapNr);
+
+    // The last bitmap block spans [(bmapNr-1)*BitmapSpan .. bmapNr*BitmapSpan).
+    var lastBmRegion = bmapNr - 1;
+    var lastBm = lastBmRegion == 0 ? BitmapBlock : lastBmRegion * BitmapSpan;
+    var bmap = image.AsSpan(lastBm * BlockSize, BlockSize);
+    // Local bit index of the first block PAST the filesystem within this bitmap.
+    var firstFreeLocal = totalBlocks - lastBmRegion * BitmapSpan;
+    // Set the remainder of the partial byte holding the boundary.
+    for (var bit = firstFreeLocal; (bit & 7) != 0 && bit < BitmapSpan; bit++)
+      bmap[bit >> 3] |= (byte)(1 << (bit & 7));
+    var lastValidByte = (firstFreeLocal + 7) / 8;
     for (var i = lastValidByte; i < BlockSize; i++)
       bmap[i] = 0xFF;
+  }
+
+  /// <summary>
+  /// Ensures a real bitmap block exists at each region boundary covered by
+  /// [0, <paramref name="totalBlocks"/>): the bitmap block at N*BitmapSpan
+  /// (N>=1) is itself a metadata block, so it must be present (zeroed) and
+  /// marked used in its own bitmap. Called after the image array has grown to
+  /// hold <paramref name="totalBlocks"/> blocks. New bitmap blocks are created
+  /// already-used and therefore do NOT change s_free_blocks.
+  /// </summary>
+  private static void EnsureBitmapBlocks(byte[] image, int totalBlocks) {
+    var bmapNr = (totalBlocks + BitmapSpan - 1) / BitmapSpan;
+    for (var n = 1; n < bmapNr; n++) {
+      var bmBlock = n * BitmapSpan;
+      // The bitmap block records itself as used (its bit 0).
+      if (!IsBitmapBitSet(image, bmBlock))
+        SetBitmapBit(image, bmBlock);
+    }
   }
 
   // ── Leaf parse / serialise ──────────────────────────────────────────────────
@@ -924,9 +1011,8 @@ internal static class ReiserFsInPlaceAdder {
     }
     items.RemoveAll(x => x.DirId == parentObjId && x.ObjectId == objId);
     if (freed.Count == 0) return;
-    var bmap = image.AsSpan(BitmapBlock * BlockSize, BlockSize);
     foreach (var b in freed) {
-      bmap[b >> 3] &= (byte)~(1 << (b & 7));
+      ClearBitmapBit(image, b);
       if (wipeData) {
         var blkOff = (long)b * BlockSize;
         if (blkOff >= 0 && blkOff + BlockSize <= image.Length)

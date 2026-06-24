@@ -82,8 +82,14 @@ public sealed class FatPlusWriter {
     var image = inner.Build(totalSectors, bytesPerSector, requestedClusterSize,
       volumeLabel: volumeLabel, forcedFatType: 32);
 
-    // (1) OEM signature → "FAT+    ".
+    // (1) OEM signature → "FAT+    " in the primary boot sector AND its FAT32
+    // backup copy (sector BPB_BkBootSec, conventionally 6). FatWriter cloned the
+    // boot sector to the backup before this patch ran, so leaving the backup
+    // un-patched makes fsck.fat report "differences between boot sector and its
+    // backup" at offsets 3..10 — harmless but a genuine inconsistency. Mirror
+    // the OEM bytes into the backup so the two sectors stay identical.
     FatPlusReader.OemSignature.CopyTo(image, 3);
+    PatchBackupOem(image);
 
     // (2) Per-file dirent patch. Walk the root directory in order and patch each
     // short-name entry positionally — the underlying FatWriter writes dirents in
@@ -145,6 +151,22 @@ public sealed class FatPlusWriter {
     foreach (var (name, data, _) in this._files)
       inner.AddFile(name, data);
     return inner;
+  }
+
+  /// <summary>
+  /// Mirrors the <c>"FAT+    "</c> OEM signature into the FAT32 backup boot
+  /// sector so it matches the primary. The backup lives at sector
+  /// <c>BPB_BkBootSec</c> (offset 50, conventionally sector 6); only patched
+  /// when that field is non-zero and the sector is in range.
+  /// </summary>
+  internal static void PatchBackupOem(byte[] image) {
+    var bytesPerSector = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(11));
+    if (bytesPerSector is 0 or > 4096) bytesPerSector = 512;
+    var bkBootSec = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(50));
+    if (bkBootSec == 0) return;
+    var bkOff = bkBootSec * bytesPerSector;
+    if (bkOff + 11 > image.Length) return;
+    FatPlusReader.OemSignature.CopyTo(image.AsSpan(bkOff + 3));
   }
 
   /// <summary>

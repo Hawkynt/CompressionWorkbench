@@ -166,25 +166,46 @@ public static class ExFatModifier {
   // ── Directory walking ────────────────────────────────────────────────
 
   /// <summary>
-  /// Walks the root directory cluster chain looking for a contiguous run of
-  /// <paramref name="entriesNeeded"/> free 32-byte slots (0x00 end-marker or 0xXX-with-bit-7-cleared).
-  /// Returns the absolute file offset to the first slot. If the existing root has
-  /// no room, allocates a new cluster, links it into the FAT, and returns its start.
+  /// Finds where to place a new entry set of <paramref name="entriesNeeded"/> 32-byte
+  /// slots in the root directory, returning the absolute file offset of the first slot.
+  /// <para>
+  /// exFAT directory layout rules this must respect:
+  /// <list type="bullet">
+  ///   <item>The first slot whose type byte is <c>0x00</c> is the <em>end-of-directory</em>
+  ///   marker; no in-use entry may follow it. So an entry set must never be placed in a
+  ///   way that leaves a <c>0x00</c> gap ahead of it.</item>
+  ///   <item>An entry set must lie wholly inside one cluster — a directory's clusters are
+  ///   not necessarily physically adjacent on disk, so a set may not straddle a boundary.</item>
+  /// </list>
+  /// Placement strategy: first try to reuse a run of <em>deleted</em> slots (type byte with
+  /// bit 7 cleared but not <c>0x00</c>) that fits inside a single cluster — those are not
+  /// end-markers, so reuse is safe. Otherwise append at the end-of-directory point. If the
+  /// set does not fit in the remaining slots of the cluster holding that point, allocate a
+  /// fresh cluster, link it onto the FAT chain, place the set at its start, and turn the
+  /// old end-marker into the chain continuation (the old trailing <c>0x00</c> slots become
+  /// the directory tail of an earlier cluster, which is legal only when no in-use entry
+  /// follows them in that cluster — guaranteed here because we append, never inserting a
+  /// gap before live entries).
+  /// </para>
   /// </summary>
   private static long FindFreeRootDirSlots(Stream image, Layout l, BitmapInfo bmp, int entriesNeeded) {
     var slotBuf = new byte[32];
     var rootChain = WalkChain(image, l, l.RootDirCluster);
-    long? runStart = null;
-    var runCount = 0;
+    var slotsPerCluster = l.ClusterSize / 32;
+
+    // Pass 1: reuse a run of deleted (bit-7-cleared, non-zero) slots inside one cluster.
     foreach (var cluster in rootChain) {
       var clusterAbsOff = l.ClusterHeapOffset + (long)(cluster - 2) * l.ClusterSize;
-      for (var off = 0; off < l.ClusterSize; off += 32) {
-        var abs = clusterAbsOff + off;
+      long? runStart = null;
+      var runCount = 0;
+      for (var slot = 0; slot < slotsPerCluster; slot++) {
+        var abs = clusterAbsOff + (long)slot * 32;
         image.Position = abs;
         image.ReadExactly(slotBuf);
         var t = slotBuf[0];
-        var isFree = t == 0x00 || (t & 0x80) == 0;
-        if (isFree) {
+        if (t == 0x00) break; // end-of-directory within this cluster — stop reuse scan here
+        var isDeleted = (t & 0x80) == 0;
+        if (isDeleted) {
           runStart ??= abs;
           runCount++;
           if (runCount >= entriesNeeded) return runStart.Value;
@@ -194,14 +215,60 @@ public static class ExFatModifier {
         }
       }
     }
-    // Not enough room — extend root dir by allocating a new cluster.
+
+    // Pass 2: append at the end-of-directory point. Locate the cluster + slot holding the
+    // first 0x00 marker (or the implicit end past the last fully-used cluster).
+    for (var ci = 0; ci < rootChain.Count; ci++) {
+      var cluster = rootChain[ci];
+      var clusterAbsOff = l.ClusterHeapOffset + (long)(cluster - 2) * l.ClusterSize;
+      for (var slot = 0; slot < slotsPerCluster; slot++) {
+        var abs = clusterAbsOff + (long)slot * 32;
+        image.Position = abs;
+        image.ReadExactly(slotBuf);
+        if (slotBuf[0] != 0x00) continue;
+        // Found end-of-directory at (ci, slot). Does the set fit in the rest of this cluster?
+        if (slotsPerCluster - slot >= entriesNeeded)
+          return abs;
+        // Doesn't fit in this cluster's tail. A non-last directory cluster must not carry
+        // a 0x00 end-marker (fsck stops there and treats everything in later clusters as
+        // orphaned), so fill the [slot, clusterEnd) gap with benign "unused" markers
+        // (type byte 0x05 = bit 7 cleared, non-zero → readers skip, not an end-marker),
+        // then place the set at the start of a fresh appended cluster.
+        FillUnusedSlots(image, abs, slotsPerCluster - slot);
+        return ExtendRootDir(image, l, bmp, rootChain);
+      }
+    }
+
+    // No 0x00 found anywhere — every cluster is packed full. Extend.
+    return ExtendRootDir(image, l, bmp, rootChain);
+  }
+
+  /// <summary>
+  /// Writes <paramref name="count"/> "unused" 32-byte directory slots starting at
+  /// <paramref name="absOffset"/>. Each slot's type byte is set to <c>0x05</c> — bit 7
+  /// (InUse) cleared and a non-zero type code, so an exFAT reader skips it without
+  /// treating it as the <c>0x00</c> end-of-directory marker. Used to pad a non-last
+  /// directory cluster's tail when an entry set is pushed to the next cluster.
+  /// </summary>
+  private static void FillUnusedSlots(Stream image, long absOffset, int count) {
+    var pad = new byte[count * 32];
+    for (var i = 0; i < count; i++)
+      pad[i * 32] = 0x05;
+    image.Position = absOffset;
+    image.Write(pad);
+  }
+
+  /// <summary>
+  /// Allocates one cluster, links it onto the end of the directory chain, zero-fills it,
+  /// and returns its start offset. The fresh cluster's whole span (≤ 4 KB by typical
+  /// geometry, but always ≥ one entry set) holds any single entry set (max 18 × 32 B).
+  /// </summary>
+  private static long ExtendRootDir(Stream image, Layout l, BitmapInfo bmp, List<uint> rootChain) {
     var newClusters = AllocateClusters(image, l, bmp, 1);
     var newCluster = newClusters[0];
-    // Link new cluster onto the end of the root chain.
     var lastRoot = rootChain[^1];
     WriteFatEntry(image, l, lastRoot, newCluster);
     WriteFatEntry(image, l, newCluster, EocMarker);
-    // Zero the new cluster.
     var zero = new byte[l.ClusterSize];
     image.Position = l.ClusterHeapOffset + (long)(newCluster - 2) * l.ClusterSize;
     image.Write(zero);
