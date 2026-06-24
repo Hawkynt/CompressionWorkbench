@@ -222,8 +222,11 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   }
 
   /// <summary>
-  /// Rebuild-style add/replace (see <see cref="BtrfsModifier"/>). Emits a fresh
-  /// <c>btrfs check --readonly</c>-clean image over the old bytes.
+  /// Add/replace via <see cref="BtrfsModifier.AddOrReplace"/>. Small inline files
+  /// targeting the root directory are inserted with genuine copy-on-write in place
+  /// (new FS/extent/root tree blocks for the changed path only; existing data
+  /// extents and untouched nodes stay byte-identical at their offsets; the result
+  /// passes <c>btrfs check</c>). Unhandled shapes fall back to the verified rebuild.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     var toAdd = inputs

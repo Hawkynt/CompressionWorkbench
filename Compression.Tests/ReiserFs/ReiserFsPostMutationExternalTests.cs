@@ -162,6 +162,113 @@ public class ReiserFsPostMutationExternalTests {
     AssertReiserfsckClean(imgPath);
   }
 
+  // ── Genuine in-place proofs (data must NOT be relocated) ─────────────────
+
+  /// <summary>
+  /// Given a seed image whose single existing file is large enough to live in a
+  /// dedicated INDIRECT data block, when a small file is added to the root, then
+  /// the existing file's data block stays byte-identical at the SAME absolute
+  /// offset — proving the add is a genuine in-place S+tree splice, not a rebuild.
+  /// </summary>
+  [Test]
+  public void PostAdd_IndirectFileDataBlock_NotRelocated() {
+    var bigSeed = new byte[8 * 1024];
+    for (var i = 0; i < bigSeed.Length; i++) bigSeed[i] = (byte)(i * 7 + 3);
+    var imgPath = WriteSeedImage("inplace_proof.reiserfs", ("bigseed.bin", bigSeed));
+
+    var before = File.ReadAllBytes(imgPath);
+    var sig = bigSeed.AsSpan(0, 256).ToArray();
+    var offBefore = IndexOf(before, sig);
+    Assert.That(offBefore, Is.GreaterThanOrEqualTo(0), "seed data block locatable before add");
+
+    using (var fs = File.Open(imgPath, FileMode.Open, FileAccess.ReadWrite)) {
+      var d = new FileSystem.ReiserFs.ReiserFsFormatDescriptor();
+      var tmp = Path.GetTempFileName();
+      try {
+        File.WriteAllBytes(tmp, "a small added file"u8.ToArray());
+        ((IArchiveModifiable)d).Add(fs, [new ArchiveInputInfo(tmp, "added.txt", false)]);
+      } finally { File.Delete(tmp); }
+    }
+
+    var after = File.ReadAllBytes(imgPath);
+    var offAfter = IndexOf(after, sig);
+    Assert.Multiple(() => {
+      Assert.That(offAfter, Is.EqualTo(offBefore),
+        "existing INDIRECT file's data block must stay at the same offset (in-place, not rebuilt)");
+      Assert.That(after.AsSpan(offAfter, bigSeed.Length).SequenceEqual(bigSeed), Is.True,
+        "existing file's data block must be byte-identical after the add");
+    });
+    AssertReiserfsckClean(imgPath);
+  }
+
+  /// <summary>
+  /// A small add that fits in the existing root leaf must NOT grow the image —
+  /// the in-place path reuses the leaf's free space instead of re-emitting the
+  /// whole volume.
+  /// </summary>
+  [Test]
+  public void PostAdd_SmallFile_DoesNotGrowImage() {
+    var bigSeed = new byte[8 * 1024];
+    new Random(11).NextBytes(bigSeed);
+    var imgPath = WriteSeedImage("inplace_nogrow.reiserfs", ("bigseed.bin", bigSeed));
+    var sizeBefore = new FileInfo(imgPath).Length;
+
+    using (var fs = File.Open(imgPath, FileMode.Open, FileAccess.ReadWrite)) {
+      var d = new FileSystem.ReiserFs.ReiserFsFormatDescriptor();
+      var tmp = Path.GetTempFileName();
+      try {
+        File.WriteAllBytes(tmp, "tiny"u8.ToArray());
+        ((IArchiveModifiable)d).Add(fs, [new ArchiveInputInfo(tmp, "added.txt", false)]);
+      } finally { File.Delete(tmp); }
+    }
+
+    Assert.That(new FileInfo(imgPath).Length, Is.EqualTo(sizeBefore),
+      "small in-place add reuses leaf free space; image size must be unchanged");
+    AssertReiserfsckClean(imgPath);
+  }
+
+  /// <summary>
+  /// In-place remove of an INDIRECT file frees its data block (the bytes are
+  /// wiped) while the surviving file round-trips and the image is not rebuilt
+  /// (size unchanged). reiserfsck must report clean — including the bitmap
+  /// comparison, which proves the freed block is correctly accounted.
+  /// </summary>
+  [Test]
+  public void PostRemove_IndirectFile_FreesBlockInPlace() {
+    var keep = "KEEP-THIS-FILE-CONTENT"u8.ToArray();
+    var bigDrop = new byte[8 * 1024];
+    for (var i = 0; i < bigDrop.Length; i++) bigDrop[i] = (byte)(i * 5 + 1);
+    var imgPath = WriteSeedImage("inplace_rm.reiserfs", ("keep.txt", keep), ("dropbig.bin", bigDrop));
+    var sizeBefore = new FileInfo(imgPath).Length;
+
+    using (var fs = File.Open(imgPath, FileMode.Open, FileAccess.ReadWrite)) {
+      var d = new FileSystem.ReiserFs.ReiserFsFormatDescriptor();
+      ((IArchiveModifiable)d).Remove(fs, ["dropbig.bin"]);
+    }
+
+    var after = File.ReadAllBytes(imgPath);
+    var sig = bigDrop.AsSpan(0, 256).ToArray();
+    Assert.Multiple(() => {
+      Assert.That(new FileInfo(imgPath).Length, Is.EqualTo(sizeBefore),
+        "in-place remove must not rebuild/shrink the image");
+      Assert.That(IndexOf(after, sig), Is.LessThan(0),
+        "removed INDIRECT file's data block must be wiped");
+      Assert.That(IndexOf(after, keep), Is.GreaterThanOrEqualTo(0),
+        "surviving file's body must remain present");
+    });
+    AssertReiserfsckClean(imgPath);
+  }
+
+  private static int IndexOf(byte[] haystack, byte[] needle) {
+    for (var i = 0; i + needle.Length <= haystack.Length; i++) {
+      var match = true;
+      for (var j = 0; j < needle.Length; j++)
+        if (haystack[i + j] != needle[j]) { match = false; break; }
+      if (match) return i;
+    }
+    return -1;
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────────
 
   private string WriteSeedImage(string name, params (string Name, byte[] Data)[] files) {

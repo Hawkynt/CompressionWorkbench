@@ -229,14 +229,49 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Rebuild-style add/replace (see <see cref="XfsModifier"/>). Emits a fresh
-  /// <c>xfs_repair -n -f</c>-clean image over the old bytes.
+  /// Adds (or replaces by name) files into the root directory of an existing XFS
+  /// image. The common case is a genuine in-place edit via
+  /// <see cref="XfsInPlaceAdder"/>: a free inode slot is claimed from the inobt,
+  /// a data extent is carved from the AGF bnobt/cntbt free space, the file bytes
+  /// and inode core + BMBT extent are written, a short-form entry is appended to
+  /// the root directory, the free counters are decremented and CRC-32C is
+  /// recomputed on every touched v5 metadata block — existing files, their
+  /// inodes and data blocks stay byte-identical at their original offsets (no
+  /// re-pack). Cases the in-place path cannot satisfy — nested sub-directory
+  /// targets, replace-by-name, a non-short-form or full root directory, no free
+  /// inode slot, fragmented/insufficient AG 0 free space — fall back to the
+  /// verified <see cref="XfsModifier"/> rebuild.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     var toAdd = inputs
       .Where(i => !i.IsDirectory)
-      .Select(i => (i.ArchiveName, i.ReadContent()))
+      .Select(i => (Name: i.ArchiveName, Data: i.ReadContent()))
       .ToList();
+
+    archive.Position = 0;
+    using var ms = new MemoryStream();
+    archive.CopyTo(ms);
+    var original = ms.ToArray();
+
+    // Genuine in-place on a working copy; commit only if every input succeeds so
+    // a structural limit leaves the source untouched for the rebuild fallback.
+    var work = (byte[])original.Clone();
+    var inPlace = true;
+    try {
+      foreach (var (name, data) in toAdd)
+        XfsInPlaceAdder.AddFile(work, name, data);
+    } catch (Exception ex) when (ex is NotSupportedException or IOException or InvalidDataException) {
+      inPlace = false;
+    }
+    if (inPlace) {
+      archive.Position = 0;
+      archive.Write(work, 0, work.Length);
+      archive.SetLength(work.Length);
+      return;
+    }
+
+    // Fallback: verified rebuild over the old bytes.
+    archive.Position = 0;
     XfsModifier.AddOrReplace(archive, toAdd);
   }
 

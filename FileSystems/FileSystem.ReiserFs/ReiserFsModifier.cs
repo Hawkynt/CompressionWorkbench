@@ -63,6 +63,31 @@ internal static class ReiserFsModifier {
     if (flat.Length == 0)
       throw new ArgumentException("name is empty", nameof(name));
 
+    // ── Genuine in-place attempt first ────────────────────────────────────────
+    // Try to splice the file into the live S+tree without relocating any other
+    // bytes. ReiserFsInPlaceAdder edits ONLY the structures the change touches
+    // (objectid map, root leaf, bitmap, appended data blocks for INDIRECT
+    // bodies) and throws NotSupportedException for cases it cannot handle
+    // (multi-leaf images, leaf overflow / split, nested paths, replace-by-name).
+    // We run it on an in-memory copy of the current image so a mid-edit failure
+    // never corrupts the stream — only on success do we commit it.
+    image.Position = 0;
+    byte[] current;
+    using (var snapshot = new MemoryStream()) {
+      image.CopyTo(snapshot);
+      current = snapshot.ToArray();
+    }
+    try {
+      var inPlace = ReiserFsInPlaceAdder.AddFile(current, flat, data);
+      image.Position = 0;
+      image.Write(inPlace);
+      image.SetLength(inPlace.Length);
+      return;
+    } catch (NotSupportedException) {
+      // Fall through to the verified rebuild for structural cases the in-place
+      // path does not yet handle.
+    }
+
     image.Position = 0;
     var existing = ReadAllEntries(image);
 
@@ -88,6 +113,28 @@ internal static class ReiserFsModifier {
 
     var flat = name.Replace('\\', '/').Trim('/');
     if (flat.Length == 0) return false;
+
+    // ── Genuine in-place attempt first ────────────────────────────────────────
+    // Drop the file's items + dirent from the live root leaf and free its
+    // INDIRECT data blocks without relocating any surviving bytes. Falls through
+    // to the rebuild for cases the in-place path does not handle.
+    image.Position = 0;
+    byte[] current;
+    using (var snapshot = new MemoryStream()) {
+      image.CopyTo(snapshot);
+      current = snapshot.ToArray();
+    }
+    try {
+      var inPlace = ReiserFsInPlaceAdder.RemoveFile(current, flat, wipeData);
+      image.Position = 0;
+      image.Write(inPlace);
+      image.SetLength(inPlace.Length);
+      return true;
+    } catch (FileNotFoundException) {
+      return false; // name not present — nothing to remove
+    } catch (NotSupportedException) {
+      // Fall through to rebuild for structural cases.
+    }
 
     image.Position = 0;
     var existing = ReadAllEntries(image);

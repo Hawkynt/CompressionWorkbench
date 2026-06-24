@@ -50,14 +50,17 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// ReiserFS v3.6 filesystem image — R/W. The writer emits a real
   /// spec-compliant multi-leaf S+tree image (superblock at +65536, R5-hashed
   /// directory entries, INDIRECT items with dedicated data blocks for file
-  /// bodies &gt; 1 KB, internal pages above leaves). In-place
-  /// <see cref="IArchiveModifiable"/> is implemented via read-modify-rebuild:
-  /// every existing entry is materialised, the requested edit is applied in
-  /// memory, and a fresh image is written back to the stream. This covers
-  /// nested paths, leaf splits and merges, multi-leaf descent, INDIRECT-sized
-  /// bodies, and root tree-height growth — all paths that previously fell back
-  /// to NotSupportedException. The cost is O(image size) per Add / Remove
-  /// rather than O(edit-locality), but the result passes reiserfsck.
+  /// bodies &gt; 1 KB, internal pages above leaves). <see cref="IArchiveModifiable"/>
+  /// Add tries a GENUINE in-place splice first (<see cref="ReiserFsInPlaceAdder"/>):
+  /// for a single-leaf (tree_height 2) image it allocates a fresh objectid,
+  /// inserts the file's STAT_DATA + DIRECT/INDIRECT items plus the R5-hashed
+  /// dirent into the root leaf, appends any INDIRECT data blocks past the tree,
+  /// and updates the bitmap / block counts — leaving every existing INDIRECT
+  /// data block byte-identical at its original offset. Cases the in-place path
+  /// does not handle (multi-leaf descent / split, nested sub-directory targets,
+  /// replace-by-name, leaf overflow) fall back to a read-modify-rebuild via
+  /// <see cref="ReiserFsWriter"/>; Remove always rebuilds. Both paths pass
+  /// reiserfsck.
   /// </summary>
   public string Description => "ReiserFS v3 filesystem image (R/W, full S+tree mutation via rebuild)";
 
