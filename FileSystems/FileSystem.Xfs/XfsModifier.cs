@@ -2,17 +2,17 @@
 namespace FileSystem.Xfs;
 
 /// <summary>
-/// Rebuild-style modifier for XFS images produced by <see cref="XfsWriter"/>.
+/// Rebuild-style modifier for XFS images produced by <see cref="XfsWriter"/> —
+/// the fallback for the genuine in-place editor (<see cref="XfsInPlaceAdder"/>).
 /// <para>
-/// True in-place mutation on XFS would require updating AGF/AGFL free-extent
-/// accounting, mutating bnobt/cntbt B+tree leaves, rewriting the directory
-/// inode's short-form data fork, and recalculating v5 CRC-32C checksums on
-/// every touched metadata block — multi-week work. This class instead uses
-/// the "rebuild" strategy: read all entries via <see cref="XfsReader"/>,
-/// apply the modifications in memory, and emit a fresh image on top of the
-/// old bytes via <see cref="XfsWriter"/>. Observable outcome is identical
-/// (the resulting bytes are spec-compliant and pass <c>xfs_repair -n -f</c>)
-/// and the implementation is trivially correct.
+/// The in-place editor handles the common add/replace cases without re-packing
+/// (free-extent btree carve/rebalance, inode-chunk growth, short-form → block →
+/// leaf directory promotion, nested targets, replace-by-name). The rare cases it
+/// cannot satisfy — node-form directories, a larger directory block size, a
+/// multi-level btree, or content overflowing AG 0 — route here: read all entries
+/// via <see cref="XfsReader"/>, apply the modifications in memory, and emit a
+/// fresh image over the old bytes via <see cref="XfsWriter"/>. The result is
+/// spec-compliant and passes <c>xfs_repair -n -f</c>.
 /// </para>
 /// </summary>
 public static class XfsModifier {

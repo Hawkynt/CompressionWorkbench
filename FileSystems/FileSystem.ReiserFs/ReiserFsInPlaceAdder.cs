@@ -5,45 +5,52 @@ using System.Text;
 namespace FileSystem.ReiserFs;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Genuine in-place ReiserFS v3.6 add.
+// Genuine in-place ReiserFS v3.6 add / remove.
 //
-// Inserts a single file into the ROOT directory by editing ONLY the structures
-// the change touches — it does NOT re-emit the whole image:
-//   * allocates a fresh objectid past the superblock's objectid-map range,
-//   * builds the file's STAT_DATA item and its body item (DIRECT for small
-//     bodies tail-packed inside the formatted leaf, INDIRECT for large bodies
-//     whose payload lives in dedicated data blocks appended past the tree),
-//   * splices those items plus the new R5-hashed directory entry into the leaf
-//     that holds the root directory, re-packing only that leaf's body (item
-//     heads forward, bodies end-backward),
-//   * grows the image (appends data blocks) and flips the corresponding bits in
-//     the on-disk bitmap, bumps s_block_count / s_free_blocks accordingly,
-//   * grows the root SD's sd_size (directory byte size) and the objectid map.
+// Mutates the live S+tree WITHOUT re-emitting the whole image. The superblock
+// identity (UUID, journal, magic, label), every existing object id, and — most
+// importantly — every existing INDIRECT file data block stays byte-identical at
+// its original byte offset. Only the formatted tree blocks (leaves + internal
+// nodes) the edit touches are rewritten, and new data blocks (for INDIRECT
+// bodies) are appended past the end of the image.
 //
-// Every OTHER leaf, every existing item body, and every existing file data
-// block stays byte-identical at its original offset. reiserfsck --check must
-// report the result clean.
+// The pipeline for both Add and Remove:
+//   1. Parse the WHOLE S+tree (descending any internal nodes) into a key-ordered
+//      item list plus the set of formatted tree blocks (a reuse pool).
+//   2. Apply the edit to the item list in memory:
+//        * Add: resolve / CREATE intermediate directory objects for nested
+//          paths (their SD + "."/".." dirents), allocate a fresh objectid, build
+//          the file's STAT_DATA + DIRECT/INDIRECT body items, splice the new
+//          R5-hashed entry into the parent directory (re-chunking the DIRENTRY
+//          items so none exceeds the leaf budget), bump the parent SD size.
+//          On a same-name collision the old object's items + data blocks are
+//          freed first (replace-by-name).
+//        * Remove: resolve the target by path; for a file drop its items and
+//          free its INDIRECT data blocks; for a directory recurse and remove the
+//          whole subtree; drop the parent entry and shrink the parent SD.
+//   3. Re-pack the item list into leaves (greedy first-fit) and rebuild the
+//      internal levels bottom-up, REUSING the tree-block pool first (so a small
+//      edit that still fits one leaf does not grow the image) and allocating /
+//      freeing blocks in the bitmap as the tree grows or shrinks. The superblock
+//      root_block and tree_height are updated to match.
 //
-// Cases this path does NOT handle (the caller falls back to the verified
-// rebuild in ReiserFsModifier):
-//   * tree_height > 2 (multi-leaf images with an internal root) — descent and
-//     internal-node key/disk_child maintenance not implemented here,
-//   * the target leaf would OVERFLOW (no room for the new items) — leaf split +
-//     promotion not implemented here,
-//   * nested sub-directory targets (path contains '/') — would require creating
-//     intermediate directory objects.
-// In all three the adder throws NotSupportedException and the modifier rebuilds.
+// This handles single-leaf images, leaf split / merge, tree-height growth and
+// collapse (tree_height 2 ↔ 3 ↔ 4…), nested sub-directory targets, replace-by-
+// name and directory removal — all reiserfsck --check clean.
 //
 // References: reiserfsprogs reiserfscore/node_formats.c (item head, dir entry,
-// SD layout), reiserfslib.c (reiserfs_add_entry / hash_value), bitmap.c.
-// Field offsets mirror ReiserFsWriter / ReiserFsReader exactly.
+// internal node, SD layout), reiserfslib.c (reiserfs_add_entry / hash_value),
+// bitmap.c. Field offsets mirror ReiserFsWriter / ReiserFsReader exactly.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Genuine in-place add for ReiserFS v3.6 images — inserts a file into the root
-/// directory without relocating any existing data. Throws
-/// <see cref="NotSupportedException"/> for structural cases it does not handle so
-/// the caller can fall back to the rebuild path.
+/// Genuine in-place add / remove for ReiserFS v3.6 images — mutates the live
+/// S+tree (leaf split/merge, internal-node maintenance, tree-height growth,
+/// nested directory creation, replace-by-name, recursive directory removal)
+/// without re-emitting the whole image or relocating existing file data blocks.
+/// Throws <see cref="NotSupportedException"/> for the few structural edge cases
+/// it still defers (over-long names, single item larger than a leaf) so the
+/// caller can fall back to the rebuild path.
 /// </summary>
 internal static class ReiserFsInPlaceAdder {
   private const int SuperblockOff = 65536;
@@ -68,6 +75,12 @@ internal static class ReiserFsInPlaceAdder {
 
   private const int MaxDirectBody = 1024;
 
+  private const int BitmapBlock = 17;
+  private const int LeafPayload = BlockSize - BlockHeadSize;
+  // disk_child: le32 dc_block_number + le16 dc_size + le16 reserved.
+  private const int DiskChildSize = 8;
+  private const int KeySize = 16;
+
   // Item type codes (key offset_v2 top 4 bits).
   private const ulong TypeStatDataV2 = 0UL << 60;
   private const ulong TypeIndirectV2 = 1UL << 60;
@@ -89,96 +102,76 @@ internal static class ReiserFsInPlaceAdder {
     var flat = name.Replace('\\', '/').Trim('/');
     if (flat.Length == 0)
       throw new ArgumentException("name is empty", nameof(name));
-    if (flat.Contains('/'))
-      throw new NotSupportedException("ReiserFS in-place add: nested sub-directory targets use rebuild.");
     if (Encoding.UTF8.GetByteCount(flat) > 200)
       throw new NotSupportedException("ReiserFS in-place add: over-long name uses rebuild.");
 
     var sb = SuperblockOff;
-    var treeHeight = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(sb + Off_TreeHeight));
-    if (treeHeight != 2)
-      throw new NotSupportedException(
-        $"ReiserFS in-place add: tree_height={treeHeight} (multi-leaf) uses rebuild.");
-
     var rootBlock = (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(sb + Off_RootBlock));
-    var blockCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(sb + Off_BlockCount));
-    var leafOff = rootBlock * BlockSize;
-    if (leafOff < 0 || leafOff + BlockSize > image.Length)
+    if ((long)rootBlock * BlockSize < 0 || (long)rootBlock * BlockSize + BlockSize > image.Length)
       throw new NotSupportedException("ReiserFS in-place add: root block out of range.");
 
-    var level = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(leafOff));
-    if (level != 1)
-      throw new NotSupportedException("ReiserFS in-place add: root is not a leaf.");
+    // Parse the WHOLE S+tree into a key-ordered item list plus the reuse pool of
+    // tree blocks. This handles single-leaf, multi-leaf and tall trees uniformly.
+    var (items, treeBlocks) = ParseWholeTree(image, rootBlock);
 
-    // Parse the root leaf's items into an editable list.
-    var items = ParseLeaf(image, leafOff);
+    // Resolve the target directory (creating intermediate directories in place
+    // for nested paths) and the leaf-relative file name.
+    var (parentDirId, parentObjId, leafName) = ResolveOrCreateParent(image, items, flat);
 
-    // Replace-by-name: if the root directory already has an entry with this name,
-    // this path can't cleanly free its blocks/items, so defer to rebuild.
-    var rootDirent = FindRootDirentItem(items);
-    if (rootDirent < 0)
-      throw new NotSupportedException("ReiserFS in-place add: root DIRENTRY item not found.");
-    var existingEntries = ParseDirEntries(items[rootDirent]);
-    if (existingEntries.Any(e => string.Equals(e.Name, flat, StringComparison.Ordinal)))
-      throw new NotSupportedException("ReiserFS in-place add: replace-by-name uses rebuild.");
+    // Replace-by-name: if an entry of this name already exists in the target
+    // directory, drop the old object's items + dirent so the new bytes win.
+    if (FindDirentItem(items, parentDirId, parentObjId) < 0)
+      throw new NotSupportedException("ReiserFS in-place add: target DIRENTRY item not found.");
+    var existingEntries = ReadAllDirEntries(items, parentDirId, parentObjId);
+    var collision = existingEntries.FirstOrDefault(e => string.Equals(e.Name, leafName, StringComparison.Ordinal));
+    if (collision != null) {
+      // Free the colliding object's items (and INDIRECT data blocks) before
+      // re-adding under the same name.
+      RemoveObjectItems(ref image, items, parentObjId, collision.PointedObjId, wipeData: false);
+      existingEntries.RemoveAll(e => string.Equals(e.Name, leafName, StringComparison.Ordinal));
+    }
 
     // Allocate a fresh objectid past the current map range.
     var newObjId = AllocateObjectId(image);
 
-    // Decide DIRECT vs INDIRECT. INDIRECT needs dedicated data blocks appended
-    // to the image; DIRECT bodies tail-pack inside the leaf.
     var useIndirect = data.Length > MaxDirectBody;
     var blockCountNeeded = useIndirect ? (data.Length + BlockSize - 1) / BlockSize : 0;
 
-    // ── Build the new items ──────────────────────────────────────────────────
-    // STAT_DATA for the new file. sd_blocks computed below once placement known.
+    // ── Build the new file's items ─────────────────────────────────────────────
     var sd = new byte[SdV2Size];
     WriteStatDataV2(sd, mode: 0x81A4, nlink: 1, size: (ulong)data.Length,
       blocks: useIndirect ? (uint)(blockCountNeeded * SectorsPerBlock) : 0u);
     var sdItem = new Item {
-      DirId = RootObjectId, ObjectId = newObjId,
+      DirId = parentObjId, ObjectId = newObjId,
       OffsetV2 = TypeStatDataV2 | 0u, KeyFormat = 1, UField = 0, Body = sd, ItemType = 0,
     };
 
     Item? bodyItem = null;
-    byte[]? indirectBody = null; // placeholder pointer array, patched after sizing
+    byte[]? indirectBody = null;
     if (data.Length > 0) {
       if (!useIndirect) {
         bodyItem = new Item {
-          DirId = RootObjectId, ObjectId = newObjId,
+          DirId = parentObjId, ObjectId = newObjId,
           OffsetV2 = TypeDirectV2 | 1u, KeyFormat = 1, UField = 0, Body = data, ItemType = 2,
         };
       } else {
         indirectBody = new byte[blockCountNeeded * 4];
         bodyItem = new Item {
-          DirId = RootObjectId, ObjectId = newObjId,
+          DirId = parentObjId, ObjectId = newObjId,
           OffsetV2 = TypeIndirectV2 | 1u, KeyFormat = 1, UField = 0, Body = indirectBody, ItemType = 1,
         };
       }
     }
 
-    // DIRECT-only files store their tail inside the (shared) leaf — sd_blocks is
-    // one filesystem block per distinct leaf holding the body. Here the body
-    // rides the root leaf → 1 block.
+    // DIRECT-only files store their tail inside a shared leaf → 1 block.
     if (!useIndirect && data.Length > 0)
       BinaryPrimitives.WriteUInt32LittleEndian(sd.AsSpan(SdBlocksOffset), (uint)SectorsPerBlock);
 
-    // ── New dirent into the root DIRENTRY item ─────────────────────────────────
-    // deh points at the child's SD key (dir_id = root objid 2, objectid = new id).
-    var newEntry = new DirEntry(flat, RootObjectId, newObjId, HashValueR5(flat));
-    var mergedEntries = new List<DirEntry>(existingEntries) { newEntry };
-    AssignAscendingOffsets(mergedEntries);
-    var newDirentBody = BuildDirEntryBody(mergedEntries, out var firstOffset);
-
-    // The dirent item must still be the directory's only DIRENTRY item (single
-    // leaf, no spill). If the rebuilt body would exceed the leaf budget the
-    // directory item would have to split — defer to rebuild.
-    var rootDirentItem = items[rootDirent];
-    var dirItemGrowth = newDirentBody.Length - rootDirentItem.Body.Length;
-    items[rootDirent] = rootDirentItem with {
-      Body = newDirentBody, UField = (ushort)mergedEntries.Count,
-      OffsetV2 = TypeDirentryV2 | firstOffset,
+    // ── New dirent into the target directory (chunked across items as needed) ──
+    var mergedEntries = new List<DirEntry>(existingEntries) {
+      new(leafName, parentObjId, newObjId, HashValueR5(leafName)),
     };
+    var dirItemGrowth = ReplaceDirentItems(items, parentDirId, parentObjId, mergedEntries);
 
     // ── Insert the new items in key order ──────────────────────────────────────
     var insertList = new List<Item> { sdItem };
@@ -188,59 +181,231 @@ internal static class ReiserFsInPlaceAdder {
       if (idx < 0) items.Add(it); else items.Insert(idx, it);
     }
 
-    // ── Grow the root SD's sd_size (directory byte count) ───────────────────────
-    var rootSdIdx = items.FindIndex(x => x.ItemType == 0 && x.DirId == RootParentObjectId && x.ObjectId == RootObjectId);
-    if (rootSdIdx >= 0) {
-      var rsd = items[rootSdIdx].Body;
-      if (rsd.Length >= SdSizeOffset + 8) {
-        var oldSize = BinaryPrimitives.ReadUInt64LittleEndian(rsd.AsSpan(SdSizeOffset));
-        var newDirSize = (ulong)((long)oldSize + dirItemGrowth);
-        // sd_blocks for a directory = ceil(dir bytes / 512).
-        var rsdCopy = (byte[])rsd.Clone();
-        BinaryPrimitives.WriteUInt64LittleEndian(rsdCopy.AsSpan(SdSizeOffset), newDirSize);
-        BinaryPrimitives.WriteUInt32LittleEndian(rsdCopy.AsSpan(SdBlocksOffset), (uint)((newDirSize + 511) / 512));
-        items[rootSdIdx] = items[rootSdIdx] with { Body = rsdCopy };
-      }
-    }
-
-    // ── Check the leaf still fits ──────────────────────────────────────────────
-    var payload = 0;
-    foreach (var it in items) payload += it.Body.Length + ItemHeaderSize;
-    if (payload > BlockSize - BlockHeadSize)
-      throw new NotSupportedException(
-        $"ReiserFS in-place add: root leaf would overflow ({payload} > {BlockSize - BlockHeadSize}); split uses rebuild.");
+    // ── Grow the parent directory SD's size / blocks ───────────────────────────
+    UpdateDirSize(items, parentDirId, parentObjId, dirItemGrowth);
 
     // ── Grow the image for INDIRECT data blocks, fill block pointers ────────────
     var working = image;
-    if (useIndirect) {
-      var firstDataBlock = blockCount; // append right after the current last block
-      var newTotalBlocks = blockCount + blockCountNeeded;
-      working = new byte[(long)newTotalBlocks * BlockSize];
-      Buffer.BlockCopy(image, 0, working, 0, image.Length);
+    if (useIndirect)
+      working = AppendDataBlocks(image, data, blockCountNeeded, indirectBody!);
 
-      for (var i = 0; i < blockCountNeeded; i++)
-        BinaryPrimitives.WriteUInt32LittleEndian(indirectBody!.AsSpan(i * 4), (uint)(firstDataBlock + i));
-      for (var i = 0; i < blockCountNeeded; i++) {
-        var srcOff = i * BlockSize;
-        var copyLen = Math.Min(BlockSize, data.Length - srcOff);
-        if (copyLen > 0)
-          Array.Copy(data, srcOff, working, (long)(firstDataBlock + i) * BlockSize, copyLen);
-      }
+    // ── Re-pack the whole tree in place (reusing existing tree blocks) ──────────
+    return RebuildTreeInPlace(working, treeBlocks, items);
+  }
 
-      // Mark the appended data blocks used in the bitmap; bump counters.
-      MarkBitmapRange(working, firstDataBlock, blockCountNeeded, newTotalBlocks);
-      BinaryPrimitives.WriteUInt32LittleEndian(working.AsSpan(sb + Off_BlockCount), (uint)newTotalBlocks);
-      BinaryPrimitives.WriteUInt32LittleEndian(working.AsSpan(sb + Off_FreeBlocks), 0u);
-      // s_bmap_nr stays 1 as long as the image fits a single bitmap block.
-      var bmapNr = (newTotalBlocks + (BlockSize * 8) - 1) / (BlockSize * 8);
-      if (bmapNr > 1)
-        throw new NotSupportedException("ReiserFS in-place add: image would need more than one bitmap block.");
+  /// <summary>
+  /// Updates the (dir_id, objId) directory's stat-data sd_size by
+  /// <paramref name="byteDelta"/> and recomputes sd_blocks = ceil(size / 512).
+  /// </summary>
+  private static void UpdateDirSize(List<Item> items, uint dirId, uint objId, int byteDelta) {
+    var idx = items.FindIndex(x => x.ItemType == 0 && x.DirId == dirId && x.ObjectId == objId);
+    if (idx < 0) return;
+    var rsd = items[idx].Body;
+    if (rsd.Length < SdSizeOffset + 8) return;
+    var oldSize = BinaryPrimitives.ReadUInt64LittleEndian(rsd.AsSpan(SdSizeOffset));
+    var newDirSize = (ulong)((long)oldSize + byteDelta);
+    var rsdCopy = (byte[])rsd.Clone();
+    BinaryPrimitives.WriteUInt64LittleEndian(rsdCopy.AsSpan(SdSizeOffset), newDirSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(rsdCopy.AsSpan(SdBlocksOffset), (uint)((newDirSize + 511) / 512));
+    items[idx] = items[idx] with { Body = rsdCopy };
+  }
+
+  /// <summary>
+  /// Appends <paramref name="blockCountNeeded"/> dedicated data blocks to the end
+  /// of <paramref name="image"/>, writes <paramref name="data"/> into them, fills
+  /// <paramref name="indirectBody"/> with their absolute block numbers, and flips
+  /// the bitmap / superblock counters. Returns the grown image.
+  /// </summary>
+  private static byte[] AppendDataBlocks(byte[] image, byte[] data, int blockCountNeeded, byte[] indirectBody) {
+    var sb = SuperblockOff;
+    var blockCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(sb + Off_BlockCount));
+    var firstDataBlock = blockCount; // append right after the current last block
+    var newTotalBlocks = blockCount + blockCountNeeded;
+    var working = new byte[(long)newTotalBlocks * BlockSize];
+    Buffer.BlockCopy(image, 0, working, 0, image.Length);
+
+    for (var i = 0; i < blockCountNeeded; i++)
+      BinaryPrimitives.WriteUInt32LittleEndian(indirectBody.AsSpan(i * 4), (uint)(firstDataBlock + i));
+    for (var i = 0; i < blockCountNeeded; i++) {
+      var srcOff = i * BlockSize;
+      var copyLen = Math.Min(BlockSize, data.Length - srcOff);
+      if (copyLen > 0)
+        Array.Copy(data, srcOff, working, (long)(firstDataBlock + i) * BlockSize, copyLen);
     }
 
-    // ── Re-pack the root leaf in place ──────────────────────────────────────────
-    WriteLeaf(working.AsSpan(leafOff, BlockSize), items, MaxKey);
-
+    MarkBitmapRange(working, firstDataBlock, blockCountNeeded, newTotalBlocks);
+    BinaryPrimitives.WriteUInt32LittleEndian(working.AsSpan(sb + Off_BlockCount), (uint)newTotalBlocks);
+    // The appended blocks lie BEYOND the old block_count, so they were never part
+    // of the free pool — growing block_count by the same amount keeps s_free_blocks
+    // unchanged (every new block is created already-used).
+    var bmapNr = (newTotalBlocks + (BlockSize * 8) - 1) / (BlockSize * 8);
+    if (bmapNr > 1)
+      throw new NotSupportedException("ReiserFS in-place add: image would need more than one bitmap block.");
     return working;
+  }
+
+  private static int LeafUsedSpace(List<Item> items) {
+    var s = 0;
+    foreach (var it in items) s += it.Body.Length + ItemHeaderSize;
+    return s;
+  }
+
+  // Max children an internal node can index: BLKH + n*KEY + (n+1)*DC <= block.
+  private const int MaxInternalChildren =
+    (BlockSize - BlockHeadSize - DiskChildSize) / (KeySize + DiskChildSize) + 1;
+
+  /// <summary>
+  /// Re-packs the whole item list into a fresh balanced S+tree, REUSING the
+  /// existing tree blocks (and allocating more as needed), then patches the
+  /// superblock root_block / tree_height. Existing INDIRECT data blocks are NOT
+  /// touched — only formatted tree (leaf + internal) blocks are rewritten — so
+  /// file payloads keep their absolute offsets. Returns the (possibly grown)
+  /// image. Used for the multi-leaf / tree-growth add and remove cases that the
+  /// single-leaf splice path cannot service directly.
+  /// </summary>
+  private static byte[] RebuildTreeInPlace(byte[] image, List<int> reusePool, List<Item> items) {
+    var sb = SuperblockOff;
+    var working = image;
+
+    // 1. Pack items into leaves (greedy first-fit, single item never spans).
+    var leaves = PackLeaves(items);
+
+    // 2. Allocate a block for every node we will write (leaves + internal nodes),
+    //    drawing from the reuse pool first so the tree stays the same size when
+    //    it can. We compute the node count per level top-down.
+    var pool = new Queue<int>(reusePool.OrderBy(b => b));
+    int TakeBlock() {
+      if (pool.Count > 0) {
+        var b = pool.Dequeue();
+        working.AsSpan(b * BlockSize, BlockSize).Clear();
+        return b;
+      }
+      return AllocateBlock(ref working);
+    }
+
+    // 3. Assign leaf blocks.
+    var leafBlocks = new int[leaves.Count];
+    for (var i = 0; i < leaves.Count; i++) leafBlocks[i] = TakeBlock();
+
+    // 4. Build the internal levels bottom-up. Each level groups the children of
+    //    the level below into internal nodes of up to MaxInternalChildren.
+    //    `childBlocks` / `childFirstKey` / `childUsed` describe the current
+    //    level's nodes; we stop when a single node remains (the root).
+    var childBlocks = new List<int>(leafBlocks);
+    var childFirstKey = new List<byte[]>();
+    var childUsed = new List<int>();
+    for (var i = 0; i < leaves.Count; i++) {
+      childFirstKey.Add(KeyOf(leaves[i][0]));
+      childUsed.Add(LeafUsedSpace(leaves[i]));
+    }
+
+    var rootBlock = childBlocks[0];
+    var treeHeight = 1; // a lone leaf is height... computed below
+
+    if (childBlocks.Count == 1) {
+      // Single leaf — tree_height = 2, root is the leaf. Write it and return.
+      WriteLeaf(working.AsSpan(leafBlocks[0] * BlockSize, BlockSize), leaves[0], MaxKey);
+      ReleaseUnusedPool(working, pool);
+      BinaryPrimitives.WriteUInt32LittleEndian(working.AsSpan(sb + Off_RootBlock), (uint)leafBlocks[0]);
+      BinaryPrimitives.WriteUInt16LittleEndian(working.AsSpan(sb + Off_TreeHeight), 2);
+      return working;
+    }
+
+    // Write the leaves now (right-delim key = first key of the next leaf).
+    for (var i = 0; i < leaves.Count; i++) {
+      var rdk = i + 1 < leaves.Count ? KeyOf(leaves[i + 1][0]) : MaxKey;
+      WriteLeaf(working.AsSpan(leafBlocks[i] * BlockSize, BlockSize), leaves[i], rdk);
+    }
+
+    treeHeight = 2; // leaves are level 1; at least one internal level above
+    while (childBlocks.Count > 1) {
+      var parentBlocks = new List<int>();
+      var parentFirstKey = new List<byte[]>();
+      var parentUsed = new List<int>();
+
+      var n = childBlocks.Count;
+      var idx = 0;
+      while (idx < n) {
+        var groupSize = Math.Min(MaxInternalChildren, n - idx);
+        // Avoid leaving a single orphan child for the next group when possible.
+        if (n - idx - groupSize == 1 && groupSize > 2) groupSize--;
+
+        var blocksInGroup = childBlocks.GetRange(idx, groupSize);
+        var usedInGroup = childUsed.GetRange(idx, groupSize);
+        var keysInGroup = new byte[groupSize - 1][];
+        for (var k = 0; k < groupSize - 1; k++)
+          keysInGroup[k] = childFirstKey[idx + k + 1];
+
+        var nodeBlk = TakeBlock();
+        WriteInternalNode(working.AsSpan(nodeBlk * BlockSize, BlockSize),
+          [.. blocksInGroup], [.. usedInGroup], keysInGroup);
+
+        parentBlocks.Add(nodeBlk);
+        parentFirstKey.Add(childFirstKey[idx]); // left-delim key propagates up
+        parentUsed.Add(InternalUsedSpace(groupSize));
+        idx += groupSize;
+      }
+
+      childBlocks = parentBlocks;
+      childFirstKey = parentFirstKey;
+      childUsed = parentUsed;
+      treeHeight++;
+    }
+
+    rootBlock = childBlocks[0];
+    ReleaseUnusedPool(working, pool);
+    BinaryPrimitives.WriteUInt32LittleEndian(working.AsSpan(sb + Off_RootBlock), (uint)rootBlock);
+    BinaryPrimitives.WriteUInt16LittleEndian(working.AsSpan(sb + Off_TreeHeight), (ushort)treeHeight);
+    return working;
+  }
+
+  // dc_size for an internal child = used bytes = MAX_CHILD_SIZE - free, where
+  // MAX_CHILD_SIZE = blocksize - BLKH_SIZE. For an internal node that is the
+  // key array + the disk_child array (the block head is excluded).
+  private static int InternalUsedSpace(int childCount) {
+    var keyCount = childCount - 1;
+    return keyCount * KeySize + childCount * DiskChildSize;
+  }
+
+  /// <summary>
+  /// Greedy first-fit packing of a key-ordered item list into leaf-sized groups.
+  /// A single item never spans leaves (DIRENTRY items are entry-chunked and
+  /// DIRECT/INDIRECT bodies always fit one leaf).
+  /// </summary>
+  private static List<List<Item>> PackLeaves(List<Item> items) {
+    var leaves = new List<List<Item>>();
+    var current = new List<Item>();
+    var used = 0;
+    foreach (var it in items) {
+      var cost = it.Body.Length + ItemHeaderSize;
+      if (cost > LeafPayload)
+        throw new NotSupportedException("ReiserFS in-place add: single item exceeds leaf payload.");
+      if (current.Count > 0 && used + cost > LeafPayload) {
+        leaves.Add(current);
+        current = [];
+        used = 0;
+      }
+      current.Add(it);
+      used += cost;
+    }
+    if (current.Count > 0 || leaves.Count == 0) leaves.Add(current);
+    return leaves;
+  }
+
+  /// <summary>
+  /// Any tree blocks left in the reuse pool after re-packing are no longer part
+  /// of the tree: free them in the bitmap and bump the free count.
+  /// </summary>
+  private static void ReleaseUnusedPool(byte[] image, Queue<int> pool) {
+    if (pool.Count == 0) return;
+    var bmap = image.AsSpan(BitmapBlock * BlockSize, BlockSize);
+    var freed = 0;
+    while (pool.Count > 0) {
+      var b = pool.Dequeue();
+      bmap[b >> 3] &= (byte)~(1 << (b & 7));
+      freed++;
+    }
+    AdjustFreeBlocks(image, freed);
   }
 
   /// <summary>
@@ -259,95 +424,81 @@ internal static class ReiserFsInPlaceAdder {
 
     var flat = name.Replace('\\', '/').Trim('/');
     if (flat.Length == 0) throw new FileNotFoundException();
-    if (flat.Contains('/'))
-      throw new NotSupportedException("ReiserFS in-place remove: nested targets use rebuild.");
 
     var sb = SuperblockOff;
-    var treeHeight = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(sb + Off_TreeHeight));
-    if (treeHeight != 2)
-      throw new NotSupportedException("ReiserFS in-place remove: multi-leaf image uses rebuild.");
-
     var rootBlock = (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(sb + Off_RootBlock));
-    var leafOff = rootBlock * BlockSize;
-    if (leafOff < 0 || leafOff + BlockSize > image.Length)
+    if ((long)rootBlock * BlockSize < 0 || (long)rootBlock * BlockSize + BlockSize > image.Length)
       throw new NotSupportedException("ReiserFS in-place remove: root block out of range.");
-    if (BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(leafOff)) != 1)
-      throw new NotSupportedException("ReiserFS in-place remove: root is not a leaf.");
 
-    var items = ParseLeaf(image, leafOff);
-    var direntIdx = FindRootDirentItem(items);
-    if (direntIdx < 0) throw new NotSupportedException("ReiserFS in-place remove: root DIRENTRY not found.");
+    var (items, treeBlocks) = ParseWholeTree(image, rootBlock);
 
-    var entries = ParseDirEntries(items[direntIdx]);
-    var target = entries.FirstOrDefault(e => string.Equals(e.Name, flat, StringComparison.Ordinal));
+    // Resolve the parent directory of the target by walking the path. Missing
+    // intermediate directories mean the entry does not exist.
+    var segments = flat.Split('/', StringSplitOptions.RemoveEmptyEntries);
+    uint curDirId = RootParentObjectId, curObjId = RootObjectId;
+    for (var s = 0; s < segments.Length - 1; s++) {
+      var entries = ReadAllDirEntries(items, curDirId, curObjId);
+      var match = entries.FirstOrDefault(e => string.Equals(e.Name, segments[s], StringComparison.Ordinal));
+      if (match == null) throw new FileNotFoundException(flat);
+      curDirId = curObjId;
+      curObjId = match.PointedObjId;
+    }
+    var parentDirId = curDirId;
+    var parentObjId = curObjId;
+    var leafName = segments[^1];
+
+    var parentEntries = ReadAllDirEntries(items, parentDirId, parentObjId);
+    var target = parentEntries.FirstOrDefault(e => string.Equals(e.Name, leafName, StringComparison.Ordinal));
     if (target == null) throw new FileNotFoundException(flat);
     var objId = target.PointedObjId;
 
-    // The entry must point at a FILE directly parented at root (dir_id == root
-    // objid). A directory target would need recursive removal — defer.
-    var sdIdx = items.FindIndex(x => x.ItemType == 0 && x.DirId == RootObjectId && x.ObjectId == objId);
-    if (sdIdx < 0) throw new NotSupportedException("ReiserFS in-place remove: target SD not at root.");
+    var sdIdx = FindSdItem(items, parentObjId, objId);
+    if (sdIdx < 0) throw new NotSupportedException("ReiserFS in-place remove: target SD not found.");
     var mode = BinaryPrimitives.ReadUInt16LittleEndian(items[sdIdx].Body.AsSpan(0));
-    if ((mode & 0xF000) == 0x4000)
-      throw new NotSupportedException("ReiserFS in-place remove: directory target uses rebuild.");
+    var isDir = (mode & 0xF000) == 0x4000;
 
-    // Collect this object's body items; free any INDIRECT data blocks.
     var working = image;
-    var freedBlocks = new List<int>();
-    foreach (var it in items) {
-      if (it.DirId != RootObjectId || it.ObjectId != objId) continue;
-      if (it.ItemType != 1) continue; // only INDIRECT carries off-tree data blocks
-      for (var p = 0; p + 4 <= it.Body.Length; p += 4) {
-        var ptr = (int)BinaryPrimitives.ReadUInt32LittleEndian(it.Body.AsSpan(p));
-        if (ptr > 0) freedBlocks.Add(ptr);
-      }
+    if (isDir) {
+      // Recursively remove the directory subtree. nlink of the PARENT drops by
+      // one (the removed dir's ".." link is gone).
+      RemoveDirectoryRecursive(ref working, items, parentObjId, objId, wipeData);
+      BumpNlink(items, parentDirId, parentObjId, -1);
+    } else {
+      RemoveObjectItems(ref working, items, parentObjId, objId, wipeData);
     }
 
-    // Drop the object's SD + body items.
-    items.RemoveAll(x => x.DirId == RootObjectId && x.ObjectId == objId);
+    // Drop the entry from the parent directory (re-chunked).
+    parentEntries.RemoveAll(e => string.Equals(e.Name, leafName, StringComparison.Ordinal));
+    var shrink = ReplaceDirentItems(items, parentDirId, parentObjId, parentEntries);
+    UpdateDirSize(items, parentDirId, parentObjId, shrink);
 
-    // Rebuild the dirent item without the target entry.
-    var remaining = entries.Where(e => !ReferenceEquals(e, target)
-      && !(e.PointedObjId == objId && e.PointedDirId == RootObjectId && e.Name == flat)).ToList();
-    AssignAscendingOffsets(remaining);
-    var newDirentBody = BuildDirEntryBody(remaining, out var firstOffset);
-    var oldDirent = items[FindRootDirentItem(items)];
-    var dirItemShrink = oldDirent.Body.Length - newDirentBody.Length;
-    var direntIdx2 = FindRootDirentItem(items);
-    items[direntIdx2] = oldDirent with {
-      Body = newDirentBody, UField = (ushort)remaining.Count,
-      OffsetV2 = TypeDirentryV2 | firstOffset,
-    };
+    return RebuildTreeInPlace(working, treeBlocks, items);
+  }
 
-    // Shrink the root SD size / blocks.
-    var rootSdIdx = items.FindIndex(x => x.ItemType == 0 && x.DirId == RootParentObjectId && x.ObjectId == RootObjectId);
-    if (rootSdIdx >= 0) {
-      var rsd = (byte[])items[rootSdIdx].Body.Clone();
-      var oldSize = BinaryPrimitives.ReadUInt64LittleEndian(rsd.AsSpan(SdSizeOffset));
-      var newDirSize = (ulong)((long)oldSize - dirItemShrink);
-      BinaryPrimitives.WriteUInt64LittleEndian(rsd.AsSpan(SdSizeOffset), newDirSize);
-      BinaryPrimitives.WriteUInt32LittleEndian(rsd.AsSpan(SdBlocksOffset), (uint)((newDirSize + 511) / 512));
-      items[rootSdIdx] = items[rootSdIdx] with { Body = rsd };
+  /// <summary>
+  /// Recursively removes a directory object and every descendant (files and
+  /// sub-directories) from <paramref name="items"/>, freeing all INDIRECT data
+  /// blocks. <paramref name="parentObjId"/> is the removed directory's parent
+  /// objectid; <paramref name="dirObjId"/> is the directory itself.
+  /// </summary>
+  private static void RemoveDirectoryRecursive(
+    ref byte[] image, List<Item> items, uint parentObjId, uint dirObjId, bool wipeData) {
+    // Children live under dir_id == dirObjId. Enumerate this directory's entries
+    // (skipping "." and "..") and recurse / delete each.
+    var entries = ReadAllDirEntries(items, parentObjId, dirObjId);
+    foreach (var e in entries) {
+      if (e.Name is "." or "..") continue;
+      var childObjId = e.PointedObjId;
+      var childSdIdx = FindSdItem(items, dirObjId, childObjId);
+      if (childSdIdx < 0) continue;
+      var childMode = BinaryPrimitives.ReadUInt16LittleEndian(items[childSdIdx].Body.AsSpan(0));
+      if ((childMode & 0xF000) == 0x4000)
+        RemoveDirectoryRecursive(ref image, items, dirObjId, childObjId, wipeData);
+      else
+        RemoveObjectItems(ref image, items, dirObjId, childObjId, wipeData);
     }
-
-    // Free the INDIRECT data blocks in the bitmap (and optionally wipe them).
-    // The image is NOT shrunk: the freed blocks become genuinely free space
-    // (s_free_blocks grows), exactly as the kernel would leave them after a
-    // delete. This keeps every surviving block at its original offset.
-    if (freedBlocks.Count > 0) {
-      var bmap = working.AsSpan(17 * BlockSize, BlockSize);
-      foreach (var b in freedBlocks) {
-        bmap[b >> 3] &= (byte)~(1 << (b & 7));
-        var blkOff = (long)b * BlockSize;
-        if (wipeData && blkOff >= 0 && blkOff + BlockSize <= working.Length)
-          working.AsSpan((int)blkOff, BlockSize).Clear();
-      }
-      var free = BinaryPrimitives.ReadUInt32LittleEndian(working.AsSpan(sb + Off_FreeBlocks));
-      BinaryPrimitives.WriteUInt32LittleEndian(working.AsSpan(sb + Off_FreeBlocks), free + (uint)freedBlocks.Count);
-    }
-
-    WriteLeaf(working.AsSpan(leafOff, BlockSize), items, MaxKey);
-    return working;
+    // Remove the directory's own SD + DIRENTRY items.
+    RemoveObjectItems(ref image, items, parentObjId, dirObjId, wipeData);
   }
 
   // ── Objectid allocation ─────────────────────────────────────────────────────
@@ -376,6 +527,105 @@ internal static class ReiserFsInPlaceAdder {
     // Write the updated boundary back.
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + SuperblockSize + lastIdx * 4), map[lastIdx]);
     return allocated;
+  }
+
+  // ── Block allocation / internal nodes ───────────────────────────────────────
+
+  /// <summary>
+  /// Allocates one fresh formatted block: reuses a free block inside the bitmap
+  /// if one exists, otherwise grows the image by one block at the end. Marks the
+  /// block used, decrements the free count, and zeroes its contents. Returns the
+  /// absolute block number. <paramref name="image"/> may be reassigned to a
+  /// larger array when the image grows.
+  /// </summary>
+  private static int AllocateBlock(ref byte[] image) {
+    var sb = SuperblockOff;
+    var blockCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(sb + Off_BlockCount));
+    var bmap = image.AsSpan(BitmapBlock * BlockSize, BlockSize);
+
+    // First-fit a free block strictly inside the current filesystem range. Skip
+    // the always-reserved low blocks (boot/sb/bitmap/journal) by scanning the
+    // whole range — those are already marked used so they won't be picked.
+    for (var b = 0; b < blockCount; b++) {
+      if ((bmap[b >> 3] & (1 << (b & 7))) == 0) {
+        bmap[b >> 3] |= (byte)(1 << (b & 7));
+        AdjustFreeBlocks(image, -1);
+        image.AsSpan(b * BlockSize, BlockSize).Clear();
+        return b;
+      }
+    }
+
+    // No free block — append one at the end of the image.
+    var newBlock = blockCount;
+    var newTotal = blockCount + 1;
+    var grown = new byte[(long)newTotal * BlockSize];
+    Buffer.BlockCopy(image, 0, grown, 0, image.Length);
+    image = grown;
+    var bmap2 = image.AsSpan(BitmapBlock * BlockSize, BlockSize);
+    bmap2[newBlock >> 3] |= (byte)(1 << (newBlock & 7));
+    for (var bit = newTotal; (bit & 7) != 0; bit++)
+      bmap2[bit >> 3] |= (byte)(1 << (bit & 7));
+    var lastValidByte = (newTotal + 7) / 8;
+    for (var i = lastValidByte; i < BlockSize; i++) bmap2[i] = 0xFF;
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + Off_BlockCount), (uint)newTotal);
+    var bmapNr = (newTotal + (BlockSize * 8) - 1) / (BlockSize * 8);
+    if (bmapNr > 1)
+      throw new NotSupportedException("ReiserFS in-place add: image would need more than one bitmap block.");
+    return newBlock;
+  }
+
+  private static void AdjustFreeBlocks(byte[] image, int delta) {
+    var sb = SuperblockOff;
+    var free = (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(sb + Off_FreeBlocks));
+    free += delta;
+    if (free < 0) free = 0;
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sb + Off_FreeBlocks), (uint)free);
+  }
+
+  /// <summary>
+  /// Writes an internal S+tree node: block_head (blk_level = 2) + a left-delim
+  /// key for every child after the first + one disk_child per child. dc_size is
+  /// the child's used space in bytes (MAX_CHILD_SIZE - free), which reiserfsck's
+  /// bad_path check verifies.
+  /// </summary>
+  private static void WriteInternalNode(
+    Span<byte> blk, int[] childBlocks, int[] childUsedSpace, byte[][] keys) {
+    blk.Clear();
+    var childCount = childBlocks.Length;
+    var keyCount = childCount - 1;
+
+    BinaryPrimitives.WriteUInt16LittleEndian(blk[0..], 2);              // blk_level (internal)
+    BinaryPrimitives.WriteUInt16LittleEndian(blk[2..], (ushort)keyCount);
+    BinaryPrimitives.WriteUInt16LittleEndian(blk[4..], 0);              // blk_free_space
+    BinaryPrimitives.WriteUInt16LittleEndian(blk[6..], 0);             // blk_reserved
+    MaxKey.CopyTo(blk[8..]);                                            // right-delim key (tree root)
+
+    var keysOff = BlockHeadSize;
+    for (var i = 0; i < keyCount; i++)
+      keys[i].AsSpan(0, KeySize).CopyTo(blk[(keysOff + i * KeySize)..]);
+
+    var ptrsOff = keysOff + keyCount * KeySize;
+    for (var i = 0; i < childCount; i++) {
+      var dc = blk[(ptrsOff + i * DiskChildSize)..];
+      BinaryPrimitives.WriteUInt32LittleEndian(dc[0..], (uint)childBlocks[i]); // dc_block_number
+      BinaryPrimitives.WriteUInt16LittleEndian(dc[4..], (ushort)childUsedSpace[i]); // dc_size
+      BinaryPrimitives.WriteUInt16LittleEndian(dc[6..], 0);
+    }
+  }
+
+  /// <summary>Returns the 16-byte on-disk key (dir_id, objectid, offset) of an item.</summary>
+  private static byte[] KeyOf(Item it) {
+    var key = new byte[KeySize];
+    BinaryPrimitives.WriteUInt32LittleEndian(key.AsSpan(0), it.DirId);
+    BinaryPrimitives.WriteUInt32LittleEndian(key.AsSpan(4), it.ObjectId);
+    if (it.KeyFormat == 0) {
+      var (offV1, uniq) = KeyFormat1Bytes(it);
+      BinaryPrimitives.WriteUInt32LittleEndian(key.AsSpan(8), offV1);
+      BinaryPrimitives.WriteUInt32LittleEndian(key.AsSpan(12), uniq);
+    } else {
+      BinaryPrimitives.WriteUInt64LittleEndian(key.AsSpan(8), it.OffsetV2);
+    }
+    return key;
   }
 
   // ── Bitmap ────────────────────────────────────────────────────────────────
@@ -407,6 +657,40 @@ internal static class ReiserFsInPlaceAdder {
     // items parsed from disk so re-serialisation is byte-faithful.
     public uint OffsetV1;
     public uint UniquenessV1;
+  }
+
+  /// <summary>
+  /// Walks the whole S+tree from <paramml name="rootBlock"/>, returning every
+  /// leaf item in key order and the set of formatted tree block numbers (leaves
+  /// and internal nodes) that currently make up the tree. The tree blocks form a
+  /// reuse pool when the tree is re-packed in place.
+  /// </summary>
+  private static (List<Item> Items, List<int> TreeBlocks) ParseWholeTree(byte[] image, int rootBlock) {
+    var items = new List<Item>();
+    var treeBlocks = new List<int>();
+    // Walk depth-first but accumulate leaf items left-to-right by descending in
+    // key order. Internal children are already key-ordered, so an explicit
+    // left-to-right recursion preserves global key order.
+    void Walk(int blockNum) {
+      var off = blockNum * BlockSize;
+      if (off < 0 || off + BlockHeadSize > image.Length) return;
+      treeBlocks.Add(blockNum);
+      var level = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(off));
+      var nr = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(off + 2));
+      if (level > 1) {
+        var ptrsOff = off + BlockHeadSize + nr * KeySize;
+        for (var i = 0; i <= nr; i++) {
+          var p = ptrsOff + i * DiskChildSize;
+          if (p + 4 > image.Length) break;
+          var child = (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(p));
+          if (child > 0) Walk(child);
+        }
+        return;
+      }
+      items.AddRange(ParseLeaf(image, off));
+    }
+    Walk(rootBlock);
+    return (items, treeBlocks);
   }
 
   private static List<Item> ParseLeaf(byte[] image, int leafOff) {
@@ -512,8 +796,146 @@ internal static class ReiserFsInPlaceAdder {
 
   private sealed record DirEntry(string Name, uint PointedDirId, uint PointedObjId, uint DehOffset);
 
-  private static int FindRootDirentItem(List<Item> items) =>
-    items.FindIndex(x => x.ItemType == 3 && x.DirId == RootParentObjectId && x.ObjectId == RootObjectId);
+  // Finds the FIRST DIRENTRY item of the (dirId, objId) directory. A directory
+  // whose entries spill across several DIRENTRY items has more than one; callers
+  // that mutate entries use ReadAllDirEntries + ReplaceDirentItems to re-chunk.
+  private static int FindDirentItem(List<Item> items, uint dirId, uint objId) =>
+    items.FindIndex(x => x.ItemType == 3 && x.DirId == dirId && x.ObjectId == objId);
+
+  private static int FindSdItem(List<Item> items, uint dirId, uint objId) =>
+    items.FindIndex(x => x.ItemType == 0 && x.DirId == dirId && x.ObjectId == objId);
+
+  /// <summary>
+  /// Resolves the directory that will hold the final path segment, creating any
+  /// missing intermediate directory objects (their stat_data + "."/".." dirents)
+  /// in place. Returns the parent directory's key (its own dir_id and objectid)
+  /// and the final leaf name. For a single-segment path this is just the root
+  /// directory (1, 2). Throws when a path component collides with an existing
+  /// FILE (not a directory) or when a target directory's dirent has spilled
+  /// across multiple items (deferred to rebuild).
+  /// </summary>
+  private static (uint ParentDirId, uint ParentObjId, string LeafName) ResolveOrCreateParent(
+    byte[] image, List<Item> items, string flatPath) {
+    var segments = flatPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+    if (segments.Length == 0)
+      throw new ArgumentException("empty path", nameof(flatPath));
+
+    // Walk down from the root, resolving / creating each intermediate dir.
+    uint curDirId = RootParentObjectId, curObjId = RootObjectId; // "/" key
+    for (var s = 0; s < segments.Length - 1; s++) {
+      var seg = segments[s];
+      if (FindDirentItem(items, curDirId, curObjId) < 0)
+        throw new NotSupportedException("ReiserFS in-place add: parent DIRENTRY not found.");
+
+      var entries = ReadAllDirEntries(items, curDirId, curObjId);
+      var match = entries.FirstOrDefault(e => string.Equals(e.Name, seg, StringComparison.Ordinal));
+      if (match != null) {
+        // Existing component — it MUST be a directory.
+        var childObjId = match.PointedObjId;
+        var childSd = FindSdItem(items, curObjId, childObjId);
+        if (childSd < 0)
+          throw new NotSupportedException("ReiserFS in-place add: intermediate component SD missing.");
+        var mode = BinaryPrimitives.ReadUInt16LittleEndian(items[childSd].Body.AsSpan(0));
+        if ((mode & 0xF000) != 0x4000)
+          throw new NotSupportedException("ReiserFS in-place add: path component is a file, not a directory.");
+        curDirId = curObjId;
+        curObjId = childObjId;
+        continue;
+      }
+
+      // Create a new directory object `seg` under (curDirId, curObjId).
+      var newObjId = AllocateObjectId(image);
+      CreateDirectory(items, parentKeyDirId: curDirId, parentObjId: curObjId,
+        newDirObjId: newObjId, name: seg);
+      curDirId = curObjId;
+      curObjId = newObjId;
+    }
+
+    return (curDirId, curObjId, segments[^1]);
+  }
+
+  /// <summary>
+  /// Creates a new EMPTY directory object in place: its stat_data, its DIRENTRY
+  /// item with "." (→ itself) and ".." (→ parent), and a new entry for it in the
+  /// parent directory's DIRENTRY item. Bumps the parent SD's nlink (the new
+  /// subdirectory's ".." adds a link back) and the parent SD's size.
+  /// </summary>
+  private static void CreateDirectory(
+    List<Item> items, uint parentKeyDirId, uint parentObjId, uint newDirObjId, string name) {
+    // New directory's own key is (parentObjId, newDirObjId).
+    var sd = new byte[SdV2Size];
+    var dotEntries = new List<DirEntry> {
+      new(".", parentObjId, newDirObjId, 1),
+      new("..", parentKeyDirId, parentObjId, 2),
+    };
+    AssignAscendingOffsets(dotEntries);
+    var dotBody = BuildDirEntryBody(dotEntries, out var dotFirstOffset);
+    WriteStatDataV2(sd, mode: 0x41ED, nlink: 2, size: (ulong)dotBody.Length,
+      blocks: (uint)SectorsPerBlock);
+    BinaryPrimitives.WriteUInt32LittleEndian(sd.AsSpan(SdBlocksOffset), (uint)((dotBody.Length + 511) / 512));
+
+    var newSdItem = new Item {
+      DirId = parentObjId, ObjectId = newDirObjId,
+      OffsetV2 = TypeStatDataV2 | 0u, KeyFormat = 1, UField = 0, Body = sd, ItemType = 0,
+    };
+    var newDirentItem = new Item {
+      DirId = parentObjId, ObjectId = newDirObjId,
+      OffsetV2 = TypeDirentryV2 | dotFirstOffset, KeyFormat = 0,
+      UField = (ushort)dotEntries.Count, Body = dotBody, ItemType = 3,
+    };
+    foreach (var it in new[] { newSdItem, newDirentItem }) {
+      var idx = items.FindIndex(x => CompareKeys(x, it) > 0);
+      if (idx < 0) items.Add(it); else items.Insert(idx, it);
+    }
+
+    // Add the entry into the parent's directory (chunked across items as needed).
+    var parentEntries = ReadAllDirEntries(items, parentKeyDirId, parentObjId);
+    parentEntries.Add(new DirEntry(name, parentObjId, newDirObjId, HashValueR5(name)));
+    var growth = ReplaceDirentItems(items, parentKeyDirId, parentObjId, parentEntries);
+    UpdateDirSize(items, parentKeyDirId, parentObjId, growth);
+    BumpNlink(items, parentKeyDirId, parentObjId, +1);
+  }
+
+  /// <summary>Adjusts the (dirId, objId) stat-data sd_nlink by <paramref name="delta"/>.</summary>
+  private static void BumpNlink(List<Item> items, uint dirId, uint objId, int delta) {
+    var idx = FindSdItem(items, dirId, objId);
+    if (idx < 0) return;
+    var body = (byte[])items[idx].Body.Clone();
+    var nlink = BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(4));
+    nlink = (uint)((long)nlink + delta);
+    BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(4), nlink);
+    items[idx] = items[idx] with { Body = body };
+  }
+
+  /// <summary>
+  /// Removes all items of object (dirId-of-parent=<paramref name="parentObjId"/>,
+  /// objectid=<paramref name="objId"/>) from the list and frees any INDIRECT
+  /// data blocks in the bitmap (zeroing them when <paramref name="wipeData"/>).
+  /// Used by replace-by-name and remove.
+  /// </summary>
+  private static void RemoveObjectItems(ref byte[] image, List<Item> items, uint parentObjId, uint objId, bool wipeData) {
+    var freed = new List<int>();
+    foreach (var it in items) {
+      if (it.DirId != parentObjId || it.ObjectId != objId || it.ItemType != 1) continue;
+      for (var p = 0; p + 4 <= it.Body.Length; p += 4) {
+        var ptr = (int)BinaryPrimitives.ReadUInt32LittleEndian(it.Body.AsSpan(p));
+        if (ptr > 0) freed.Add(ptr);
+      }
+    }
+    items.RemoveAll(x => x.DirId == parentObjId && x.ObjectId == objId);
+    if (freed.Count == 0) return;
+    var bmap = image.AsSpan(BitmapBlock * BlockSize, BlockSize);
+    foreach (var b in freed) {
+      bmap[b >> 3] &= (byte)~(1 << (b & 7));
+      if (wipeData) {
+        var blkOff = (long)b * BlockSize;
+        if (blkOff >= 0 && blkOff + BlockSize <= image.Length)
+          image.AsSpan((int)blkOff, BlockSize).Clear();
+      }
+    }
+    AdjustFreeBlocks(image, freed.Count);
+  }
+
 
   private static List<DirEntry> ParseDirEntries(Item item) {
     var count = item.UField;
@@ -543,6 +965,60 @@ internal static class ReiserFsInPlaceAdder {
     for (var i = 1; i < entries.Count; i++)
       if (entries[i].DehOffset <= entries[i - 1].DehOffset)
         entries[i] = entries[i] with { DehOffset = entries[i - 1].DehOffset + 1 };
+  }
+
+  // Maximum byte size of one DIRENTRY item body (mirrors ReiserFsWriter): leaf
+  // payload minus one item_head minus headroom for a neighbouring SD item.
+  private const int MaxDirItemBody = BlockSize - BlockHeadSize - ItemHeaderSize - 256;
+
+  /// <summary>
+  /// Replaces every DIRENTRY item of directory (dirId, objId) in
+  /// <paramref name="items"/> with freshly chunked DIRENTRY items built from
+  /// <paramref name="entries"/> (entry offsets reassigned ascending, chunked so
+  /// no item body exceeds <see cref="MaxDirItemBody"/>). Returns the change in
+  /// total directory-item byte size (new minus old) for the SD size update.
+  /// </summary>
+  private static int ReplaceDirentItems(List<Item> items, uint dirId, uint objId, List<DirEntry> entries) {
+    var oldBytes = 0;
+    foreach (var it in items)
+      if (it.ItemType == 3 && it.DirId == dirId && it.ObjectId == objId)
+        oldBytes += it.Body.Length;
+    items.RemoveAll(x => x.ItemType == 3 && x.DirId == dirId && x.ObjectId == objId);
+
+    AssignAscendingOffsets(entries);
+    var newBytes = 0;
+    var start = 0;
+    while (start < entries.Count) {
+      var bodyLen = 0;
+      var end = start;
+      while (end < entries.Count) {
+        var slot = DehSize + RoundUp8(Encoding.UTF8.GetByteCount(entries[end].Name));
+        if (end > start && bodyLen + slot > MaxDirItemBody) break;
+        bodyLen += slot;
+        end++;
+      }
+      var chunk = entries.GetRange(start, end - start);
+      var body = BuildDirEntryBody(chunk, out var firstOffset);
+      newBytes += body.Length;
+      var item = new Item {
+        DirId = dirId, ObjectId = objId,
+        OffsetV2 = TypeDirentryV2 | firstOffset, KeyFormat = 0,
+        UField = (ushort)chunk.Count, Body = body, ItemType = 3,
+      };
+      var idx = items.FindIndex(x => CompareKeys(x, item) > 0);
+      if (idx < 0) items.Add(item); else items.Insert(idx, item);
+      start = end;
+    }
+    return newBytes - oldBytes;
+  }
+
+  /// <summary>Reads every entry of directory (dirId, objId) across all its DIRENTRY items, in key order.</summary>
+  private static List<DirEntry> ReadAllDirEntries(List<Item> items, uint dirId, uint objId) {
+    var result = new List<DirEntry>();
+    foreach (var it in items)
+      if (it.ItemType == 3 && it.DirId == dirId && it.ObjectId == objId)
+        result.AddRange(ParseDirEntries(it));
+    return result;
   }
 
   private static byte[] BuildDirEntryBody(List<DirEntry> sorted, out uint firstOffset) {

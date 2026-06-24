@@ -226,6 +226,15 @@ public sealed class XfsReader : IDisposable {
     if (!isV3 && !isV2) return;
     pos += isV3 ? 64 : 16; // dir3 hdr is 64 bytes; dir2 hdr is 16 bytes
 
+    // Single-block dirs ("XDB3"/"XD2B") embed a leaf index + 8-byte tail at the
+    // block end; the data-entry area stops short of it. The tail's leaf-entry
+    // count lets us compute that boundary so leaf entries aren't misread as data.
+    if (bMagic is Dir3BlockMagic or Dir2BlockMagic && end - 8 >= blockOff) {
+      var leafCount = (int)BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(end - 8));
+      var dataEnd = end - 8 - leafCount * 8;
+      if (dataEnd > blockOff && dataEnd < end) end = dataEnd;
+    }
+
     // dir2 data entry: inumber(8), namelen(1), name(namelen), [ftype(1) when the
     // FTYPE feature is set], tag(2), padded to 8 bytes. An unused (free) region
     // begins with the 0xffff free-tag in the first 2 bytes.
@@ -262,6 +271,11 @@ public sealed class XfsReader : IDisposable {
           IsDirectory = isDir,
           InodeNumber = (long)entIno,
         });
+
+        // Descend into sub-directories so block/leaf-form parents expose their
+        // whole subtree (short-form parents recurse via ReadShortFormDir).
+        if (isDir)
+          ReadDirectory(entIno, fullPath);
       }
 
       // Entry size: 8 (ino) + 1 (namelen) + nameLen + ftype + 2 (tag), aligned to 8.

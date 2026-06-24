@@ -1565,8 +1565,8 @@ public sealed class NtfsWriter {
 
     for (var size = Math.Max(IndexBlockSize, this._clusterSize); size <= 64 * 1024; size *= 2) {
       var usaBytes = (1 + size / BytesPerSector) * 2;
-      var subHeaderOffset = (24 + usaBytes + 7) & ~7;
-      var capacity = size - (subHeaderOffset + 16) - 16;
+      var leafEntriesStart = (40 /*usa_ofs*/ + usaBytes + 7) & ~7;
+      var capacity = size - leafEntriesStart - 16;
       if (capacity <= 0) continue;
       // Worst case one extra leaf from per-block packing rounding.
       var leaves = (totalEntryBytes + capacity - 1) / capacity + 1;
@@ -1649,11 +1649,17 @@ public sealed class NtfsWriter {
 
     var indexBlockSize = this.ChooseIndexBlockSize(indexed, maxPointers);
 
+    // INDEX_BLOCK layout per the NTFS spec / ntfs-3g: NTFS_RECORD (8) + LSN (8) +
+    // index_block_vcn (8) = 24, then the 16-byte INDEX_HEADER sub-header at the
+    // FIXED offset 24, then the update-sequence array at usa_ofs = 0x28 (40), then
+    // the entry stream. ntfs-3g reads allocated_size at the fixed offset 32 and
+    // requires allocated_size + 0x18 == index_block_size, so the sub-header MUST
+    // sit at 24 (not 8-byte-aligned past the USA).
     var usaEntries = 1 + indexBlockSize / BytesPerSector;
-    var indexHeaderOffset = 24; // INDX record header is 24 bytes; USA follows
+    const int subHeaderOffset = 24;
+    const int usaOffset = 40; // 0x28
     var usaBytes = usaEntries * 2;
-    var subHeaderOffset = (indexHeaderOffset + usaBytes + 7) & ~7; // 8-byte aligned index sub-header
-    var leafEntriesStart = subHeaderOffset + 16;                   // after the 16-byte index sub-header
+    var leafEntriesStart = (usaOffset + usaBytes + 7) & ~7;        // entries after the USA, 8-byte aligned
     var leafCapacity = indexBlockSize - leafEntriesStart - 16;     // reserve 16 for the end-marker entry
 
     var leaves = new List<List<(uint Record, string Name)>>();
@@ -1709,9 +1715,10 @@ public sealed class NtfsWriter {
     int entriesStart, int subHeaderOffset, int indexBlockSize) {
     var block = new byte[indexBlockSize];
 
-    // INDX record header.
+    // INDX record header. The USA starts at 0x28 (40), after the 16-byte
+    // INDEX_HEADER sub-header which sits at the fixed offset 24.
     block[0] = (byte)'I'; block[1] = (byte)'N'; block[2] = (byte)'D'; block[3] = (byte)'X';
-    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(4), 24);                                  // USA offset
+    BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(4), 40);                                  // USA offset (0x28)
     BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(6), (ushort)(1 + indexBlockSize / BytesPerSector)); // USA count
     BinaryPrimitives.WriteUInt64LittleEndian(block.AsSpan(8), 0);                                   // LSN
     BinaryPrimitives.WriteInt64LittleEndian(block.AsSpan(16), vcn);                                 // this block's VCN
@@ -1743,7 +1750,7 @@ public sealed class NtfsWriter {
   // sector's trailing two bytes are stashed in the USA and replaced with the USN.
   private static void ApplyIndexBlockUsaFixup(byte[] block) {
     const ushort usn = 0x0001;
-    const int usaOffset = 24;
+    const int usaOffset = 40; // 0x28: USA starts after the 16-byte sub-header at 24
     BinaryPrimitives.WriteUInt16LittleEndian(block.AsSpan(usaOffset), usn);
     var sectors = block.Length / BytesPerSector;
     for (var s = 0; s < sectors; s++) {

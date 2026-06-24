@@ -229,18 +229,22 @@ public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Adds (or replaces by name) files into the root directory of an existing XFS
-  /// image. The common case is a genuine in-place edit via
-  /// <see cref="XfsInPlaceAdder"/>: a free inode slot is claimed from the inobt,
-  /// a data extent is carved from the AGF bnobt/cntbt free space, the file bytes
-  /// and inode core + BMBT extent are written, a short-form entry is appended to
-  /// the root directory, the free counters are decremented and CRC-32C is
-  /// recomputed on every touched v5 metadata block — existing files, their
+  /// Adds (or replaces by name) files into an existing XFS image via a genuine
+  /// in-place edit (<see cref="XfsInPlaceAdder"/>): a free inode slot is claimed
+  /// from the inobt — growing a fresh 64-inode chunk when every chunk is full —
+  /// a data extent is carved from the AGF bnobt/cntbt free space (best-fit across
+  /// a multi-record, fragmented free map), the file bytes and inode core + BMBT
+  /// extent are written, the directory entry is inserted (short-form, or after
+  /// promoting the directory to single-block / leaf form, or into an existing
+  /// block/leaf directory), the free counters are decremented and CRC-32C is
+  /// recomputed on every touched v5 metadata block. Nested sub-directory targets
+  /// are resolved (intermediate directories are created in place when absent) and
+  /// replace-by-name frees the prior inode + extent first. Existing files, their
   /// inodes and data blocks stay byte-identical at their original offsets (no
-  /// re-pack). Cases the in-place path cannot satisfy — nested sub-directory
-  /// targets, replace-by-name, a non-short-form or full root directory, no free
-  /// inode slot, fragmented/insufficient AG 0 free space — fall back to the
-  /// verified <see cref="XfsModifier"/> rebuild.
+  /// re-pack). The few cases the in-place path still cannot satisfy — directories
+  /// large enough to need node-form (da-btree) indexing or a larger directory
+  /// block size, a multi-level free-space/inode btree, or content that no longer
+  /// fits AG 0 — fall back to the verified <see cref="XfsModifier"/> rebuild.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     var toAdd = inputs

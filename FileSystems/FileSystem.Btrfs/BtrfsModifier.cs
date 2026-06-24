@@ -9,14 +9,16 @@ namespace FileSystem.Btrfs;
 /// root-tree blocks for the changed path only, repoints the superblock, bumps the
 /// generation, and recomputes CRC-32C — leaving every untouched node and every
 /// existing data extent byte-identical at its offset (verified with
-/// <c>btrfs check</c>). That path covers the common case of adding/replacing one or
-/// more small (inline, &lt; one sector) files in the root directory of a
-/// single-FS-tree-leaf image.
+/// <c>btrfs check</c>). That path covers adding/replacing inline (&lt; one sector)
+/// and regular (data-extent) files, in the root or in nested sub-directories,
+/// across both single-leaf and multi-leaf (internal-node) FS trees — splitting
+/// leaves as needed and writing genuine per-sector CRC-32C csum-tree entries for
+/// regular extents.
 /// </para>
 /// <para>
-/// Cases the in-place adder does not handle — nested sub-directory targets, files
-/// at/above one sector (regular data extents), multi-leaf FS trees, full metadata
-/// chunks, or non-default node/sector sizes — throw <see cref="NotSupportedException"/>
+/// Cases the in-place adder does not handle — a multi-level root/extent/csum tree,
+/// an FS tree deeper than one internal node, a full metadata or DATA chunk, or
+/// non-default node/sector sizes — throw <see cref="NotSupportedException"/>
 /// and fall back to the verified "rebuild" strategy below: read all entries via
 /// <see cref="BtrfsReader"/>, apply the modifications in memory, and emit a fresh
 /// image over the old bytes via <see cref="BtrfsWriter"/>. <see cref="Remove"/> is

@@ -67,14 +67,23 @@ public sealed class NtfsReader : IDisposable {
     // should scan. Without that bound we would also pick up "FILE"-signatured
     // sectors belonging to $MFTMirr or other mirrored regions and mis-assign
     // them as phantom MFT entries.
+    //
+    // The MFT is NOT necessarily one contiguous extent: in-place growth appends
+    // a (possibly non-contiguous) cluster run to $MFT:$DATA when the original
+    // extent runs out of free record slots. Record N therefore lives wherever
+    // the $DATA VCN→LCN mapping places its byte span — never assume
+    // mftOffset + N * recordSize. We resolve each record's physical offset
+    // through that run list.
     var mftOffset = _mftCluster * _clusterSize;
     var maxRecords = 16;
+    List<DataRun>? mftRuns = null;
 
     if (mftOffset >= 0 && mftOffset + _mftRecordSize <= _data.Length) {
       var rec0 = ReadMftRecord(0, mftOffset);
       if (rec0 != null) {
         _mftRecords[0] = rec0;
         if (!rec0.IsResident && rec0.DataRuns is { Count: > 0 }) {
+          mftRuns = rec0.DataRuns;
           long totalMftBytes = 0;
           foreach (var run in rec0.DataRuns) totalMftBytes += run.ClusterCount * _clusterSize;
           var bounded = (int)(totalMftBytes / _mftRecordSize);
@@ -86,16 +95,19 @@ public sealed class NtfsReader : IDisposable {
       }
     }
 
-    // Hard ceiling: never scan beyond the image.
-    var mftAreaSize = _data.Length - mftOffset;
-    if (mftAreaSize > 0) {
-      var maxFromImage = (int)(mftAreaSize / _mftRecordSize);
-      if (maxRecords > maxFromImage) maxRecords = maxFromImage;
+    // Hard ceiling: never scan past the total bytes the MFT's runs cover (or,
+    // for a degenerate/contiguous MFT, past the image).
+    if (mftRuns == null) {
+      var mftAreaSize = _data.Length - mftOffset;
+      if (mftAreaSize > 0) {
+        var maxFromImage = (int)(mftAreaSize / _mftRecordSize);
+        if (maxRecords > maxFromImage) maxRecords = maxFromImage;
+      }
     }
 
     for (var i = 1; i < maxRecords; i++) {
-      var recordOffset = (long)(mftOffset + i * _mftRecordSize);
-      if (recordOffset + _mftRecordSize > _data.Length) break;
+      var recordOffset = MapMftRecordOffset(i, mftOffset, mftRuns);
+      if (recordOffset < 0 || recordOffset + _mftRecordSize > _data.Length) continue;
 
       var record = ReadMftRecord((uint)i, recordOffset);
       if (record != null)
@@ -112,6 +124,30 @@ public sealed class NtfsReader : IDisposable {
 
     // Enumerate files from root directory (record 5)
     EnumerateDirectory(5, "");
+  }
+
+  // Maps MFT record slot N to its physical byte offset. With no $MFT:$DATA run
+  // list (resident/degenerate MFT) the layout is contiguous from mftOffset; with
+  // a run list the slot's VCN→LCN mapping is followed so non-contiguous growth
+  // extents are read correctly.
+  private long MapMftRecordOffset(int slot, long mftOffset, List<DataRun>? mftRuns) {
+    if (mftRuns == null || mftRuns.Count == 0)
+      return mftOffset + (long)slot * _mftRecordSize;
+
+    var vcnByte = (long)slot * _mftRecordSize;
+    var targetCluster = vcnByte / _clusterSize;
+    var offsetInCluster = vcnByte % _clusterSize;
+
+    long vcn = 0;
+    foreach (var run in mftRuns) {
+      if (run.Sparse) { vcn += run.ClusterCount; continue; }
+      if (targetCluster < vcn + run.ClusterCount) {
+        var lcn = run.Lcn + (targetCluster - vcn);
+        return lcn * _clusterSize + offsetInCluster;
+      }
+      vcn += run.ClusterCount;
+    }
+    return -1; // beyond the MFT's mapped clusters
   }
 
   private MftRecord? ReadMftRecord(uint recordNum, long offset) {
@@ -350,11 +386,11 @@ public sealed class NtfsReader : IDisposable {
 
     ApplyFixup(block);
 
-    // Index sub-header lives right after the USA, 8-byte aligned. Its entries
-    // offset is relative to the sub-header start.
-    var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(4));
-    var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(6));
-    var subHeaderOffset = (usaOffset + usaCount * 2 + 7) & ~7;
+    // The INDEX_HEADER sub-header sits at the fixed offset 24 (immediately after
+    // the 8-byte NTFS_RECORD header + 8-byte LSN + 8-byte index_block_vcn). Its
+    // entries_offset / index_length are relative to that sub-header start. (The
+    // update-sequence array starts at usa_ofs = 0x28, after the sub-header.)
+    const int subHeaderOffset = 24;
     if (subHeaderOffset + 16 > block.Length) return;
 
     var entriesOffset = BinaryPrimitives.ReadInt32LittleEndian(block.AsSpan(subHeaderOffset));

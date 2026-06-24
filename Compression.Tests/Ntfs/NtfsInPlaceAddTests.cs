@@ -98,9 +98,41 @@ public class NtfsInPlaceAddTests {
   private static byte[] RandomBytes(int n, int seed) { var b = new byte[n]; new Random(seed).NextBytes(b); return b; }
 
   [Test]
-  public void NestedPath_ThrowsForRebuildFallback() {
+  public void NestedPath_CreatesIntermediateDirectories_InPlace() {
     var image = BuildSeed(("seed.txt", Encoding.ASCII.GetBytes("seed")));
-    Assert.Throws<NotSupportedException>(() => NtfsInPlaceAdder.AddFile(image, "sub/file.txt", new byte[] { 1 }));
+    NtfsInPlaceAdder.AddFile(image, "a/b/c.txt", Encoding.ASCII.GetBytes("nested-content"));
+    NtfsInPlaceAdder.AddFile(image, "a/b/d.txt", Encoding.ASCII.GetBytes("sibling"));
+
+    using var ms = new MemoryStream(image, false);
+    var r = new NtfsReader(ms);
+    var dirs = r.Entries.Where(e => e.IsDirectory).Select(e => e.Name).ToList();
+    Assert.Multiple(() => {
+      Assert.That(dirs, Does.Contain("a").And.Contain("a/b"), "intermediate directories created");
+      var c = r.Entries.First(e => e.Name == "a/b/c.txt");
+      var d = r.Entries.First(e => e.Name == "a/b/d.txt");
+      Assert.That(r.Extract(c), Is.EqualTo(Encoding.ASCII.GetBytes("nested-content")));
+      Assert.That(r.Extract(d), Is.EqualTo(Encoding.ASCII.GetBytes("sibling")));
+    });
+  }
+
+  [Test]
+  public void ManyFiles_GrowMftAndSpillRootIndex_InPlace() {
+    var image = BuildSeed(("seed.txt", Encoding.ASCII.GetBytes("seed")));
+    var expected = new Dictionary<string, byte[]>();
+    for (var i = 0; i < 80; i++) {
+      var payload = Encoding.ASCII.GetBytes($"payload-{i}");
+      NtfsInPlaceAdder.AddFile(image, $"file{i:D3}.txt", payload);
+      expected[$"file{i:D3}.txt"] = payload;
+    }
+
+    var (names, content) = Read(image);
+    Assert.Multiple(() => {
+      foreach (var (n, p) in expected) {
+        Assert.That(names, Does.Contain(n));
+        Assert.That(content[n], Is.EqualTo(p), $"{n} must round-trip after MFT growth + index spill");
+      }
+      Assert.That(content["seed.txt"], Is.EqualTo(Encoding.ASCII.GetBytes("seed")), "existing file survives");
+    });
   }
 
   [Test]

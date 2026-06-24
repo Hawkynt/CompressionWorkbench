@@ -114,6 +114,103 @@ public class BtrfsExternalConformanceTests {
     Assert.That(rd.Entries.Any(e => e.Name == "data/large.bin"), Is.True);
   }
 
+  [Test, Category("OsIntegration")]
+  public void InPlaceAdd_RegularDataExtent_PassesBtrfsCheckWithDataCsums() {
+    if (!HasCommand("btrfs"))
+      Assert.Ignore("btrfs-progs (btrfs) not installed");
+
+    // Base with an inline file plus a pre-existing regular extent.
+    var w = new BtrfsWriter();
+    w.AddFile("readme.txt", "hello"u8.ToArray());
+    var seed = new byte[9000];
+    for (var i = 0; i < seed.Length; i++) seed[i] = (byte)(i * 13);
+    w.AddFile("data/large.bin", seed);
+    byte[] original;
+    using (var ms = new MemoryStream()) { w.WriteTo(ms); original = ms.ToArray(); }
+
+    var dataChunkStart = FindDataRegionStart(original);
+    // The pre-existing seed extent occupies the start of the DATA chunk.
+    var beforeSeed = original.AsSpan(dataChunkStart, 9216).ToArray();
+
+    var modified = (byte[])original.Clone();
+    var big = new byte[12000];
+    for (var i = 0; i < big.Length; i++) big[i] = (byte)(i * 7);
+    BtrfsInPlaceAdder.AddFile(modified, "added-big.bin", big);
+
+    Assert.That(modified.Length, Is.EqualTo(original.Length), "regular in-place add must not resize");
+    Assert.That(modified.AsSpan(dataChunkStart, 9216).ToArray(), Is.EqualTo(beforeSeed),
+      "the pre-existing data extent must stay byte-identical at its offset (copy-on-write)");
+
+    var imagePath = Path.Combine(this._tmpDir, "inplace-regular.btrfs");
+    File.WriteAllBytes(imagePath, modified);
+
+    // --check-data-csum reads the data and verifies it against the csum tree —
+    // proves the per-sector CRC-32C EXTENT_CSUM items the adder wrote are real.
+    var result = RunTool("btrfs", $"check --check-data-csum \"{imagePath}\"");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"btrfs check --check-data-csum reported errors.\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+    Assert.That(result.StdErr + result.StdOut, Does.Not.Contain("ERROR"),
+      $"btrfs check emitted an ERROR.\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+
+    using var rd = new BtrfsReader(new MemoryStream(modified));
+    var added = rd.Entries.Single(e => e.Name == "added-big.bin");
+    Assert.That(rd.Extract(added).AsSpan(0, big.Length).ToArray(), Is.EqualTo(big));
+    Assert.That(rd.Extract(rd.Entries.Single(e => e.Name == "data/large.bin")).AsSpan(0, seed.Length).ToArray(), Is.EqualTo(seed));
+  }
+
+  [Test, Category("OsIntegration")]
+  public void InPlaceAdd_NestedDirectoryTarget_PassesBtrfsCheck() {
+    if (!HasCommand("btrfs"))
+      Assert.Ignore("btrfs-progs (btrfs) not installed");
+
+    var w = new BtrfsWriter();
+    w.AddFile("readme.txt", "hello"u8.ToArray());
+    byte[] image;
+    using (var ms = new MemoryStream()) { w.WriteTo(ms); image = ms.ToArray(); }
+
+    BtrfsInPlaceAdder.AddFile(image, "sub/dir/added.txt", "nested in place"u8.ToArray());
+
+    var imagePath = Path.Combine(this._tmpDir, "inplace-nested.btrfs");
+    File.WriteAllBytes(imagePath, image);
+    var result = RunTool("btrfs", $"check \"{imagePath}\"");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"btrfs check reported errors after nested in-place add.\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+    Assert.That(result.StdErr + result.StdOut, Does.Not.Contain("ERROR"),
+      $"btrfs check emitted an ERROR.\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+
+    using var rd = new BtrfsReader(new MemoryStream(image));
+    var added = rd.Entries.Single(e => e.Name == "sub/dir/added.txt");
+    Assert.That(System.Text.Encoding.UTF8.GetString(rd.Extract(added)), Is.EqualTo("nested in place"));
+  }
+
+  [Test, Category("OsIntegration")]
+  public void InPlaceAdd_IntoMultiLeafFsTree_PassesBtrfsCheck() {
+    if (!HasCommand("btrfs"))
+      Assert.Ignore("btrfs-progs (btrfs) not installed");
+
+    // ~700 files force the FS tree across many leaves under an internal node.
+    var w = new BtrfsWriter();
+    for (var i = 0; i < 700; i++)
+      w.AddFile($"file{i:D4}", System.Text.Encoding.ASCII.GetBytes($"payload-{i}"));
+    byte[] image;
+    using (var ms = new MemoryStream()) { w.WriteTo(ms); image = ms.ToArray(); }
+
+    BtrfsInPlaceAdder.AddFile(image, "added-into-multileaf.txt", "added across an internal node"u8.ToArray());
+
+    var imagePath = Path.Combine(this._tmpDir, "inplace-multileaf.btrfs");
+    File.WriteAllBytes(imagePath, image);
+    var result = RunTool("btrfs", $"check \"{imagePath}\"");
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"btrfs check reported errors after multi-leaf in-place add.\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+    Assert.That(result.StdErr + result.StdOut, Does.Not.Contain("ERROR"),
+      $"btrfs check emitted an ERROR.\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+
+    using var rd = new BtrfsReader(new MemoryStream(image));
+    var added = rd.Entries.Single(e => e.Name == "added-into-multileaf.txt");
+    Assert.That(System.Text.Encoding.UTF8.GetString(rd.Extract(added)), Is.EqualTo("added across an internal node"));
+    Assert.That(rd.Entries.Count(e => !e.IsDirectory), Is.EqualTo(701));
+  }
+
   // Locates the start of the DATA chunk (the only region holding regular file
   // extents) by reading the largest chunk-tree CHUNK_ITEM mapping. For the writer
   // the DATA chunk is the last chunk, so its physical start is the highest
