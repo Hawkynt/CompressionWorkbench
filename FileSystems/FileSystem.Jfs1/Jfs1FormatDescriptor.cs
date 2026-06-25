@@ -30,7 +30,7 @@ public sealed class Jfs1FormatDescriptor :
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".jfs1";
   public IReadOnlyList<string> Extensions => [".jfs1"];
@@ -109,6 +109,54 @@ public sealed class Jfs1FormatDescriptor :
     if (abs is 1024 or 2048 or 4096) w.SetAggregateBlockSize(abs);
 
     w.WriteTo(output);
+  }
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing JFS1 image via
+  /// <see cref="Jfs1InPlaceModifier"/> — TRUE in-place O(touched bytes) I/O
+  /// (claim a free dinode slot, append a contiguous data extent at EOF, write
+  /// the root dirent). Falls back to a whole-image rebuild only for nested paths
+  /// or inode-table exhaustion.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    try {
+      foreach (var (name, data) in FilesOnly(inputs)) {
+        Jfs1InPlaceModifier.RemoveFile(archive, name, wipeData: true);
+        Jfs1InPlaceModifier.AddFile(archive, name, data);
+      }
+    } catch (IOException) {
+      archive.Position = 0;
+      ModifyRebuilder.Add(archive, inputs,
+        readEntries: stream => {
+          var r = new Jfs1Reader(stream);
+          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+        },
+        buildImage: BuildImage);
+    }
+  }
+
+  /// <summary>Removes the named entries in-place via <see cref="Jfs1InPlaceModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    var leftover = new List<string>();
+    foreach (var name in entryNames) {
+      var leaf = name.Replace('\\', '/').TrimStart('/');
+      if (leaf.Contains('/') || !Jfs1InPlaceModifier.RemoveFile(archive, leaf, wipeData: true))
+        leftover.Add(name);
+    }
+    if (leftover.Count == 0) return;
+    archive.Position = 0;
+    ModifyRebuilder.Remove(archive, leftover.ToArray(),
+      readEntries: stream => {
+        var r = new Jfs1Reader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: BuildImage);
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    var w = new Jfs1Writer();
+    foreach (var (n, d) in files) w.AddFile(n, d);
+    return w.Build();
   }
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => Jfs1ExtentMap.Enumerate(image);

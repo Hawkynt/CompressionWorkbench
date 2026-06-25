@@ -29,9 +29,14 @@ public sealed class ZfsFormatDescriptor :
   public string Id => "Zfs";
   public string DisplayName => "ZFS";
   public FormatCategory Category => FormatCategory.Archive;
+  // R/W: a genuine in-place writer. Add tries copy-on-write in place (new blocks for
+  // the changed path only, advance the uberblock) and falls back to a rebuild for the
+  // shapes the in-place adder does not handle; Remove is rebuild-based. CanModify is
+  // advertised because the in-place add genuinely mutates the image without re-laying
+  // untouched data (verified by ZfsReader round-trip + the CoW-offset proof).
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanTest | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".zfs";
   public IReadOnlyList<string> Extensions => [".zfs", ".zpool"];
@@ -116,19 +121,24 @@ public sealed class ZfsFormatDescriptor :
     DefragRebuilder.Rebuild(archive, options, ReadEntries, files => BuildImage(files, originalSize));
   }
 
-  // ── IArchiveModifiable (rebuild-based add / replace / remove) ──────────
-  // ZFS in-place mutation needs DMU/ZAP/space-map + uberblock advance; instead
-  // we read every file and rebuild a fresh fat-ZAP-capable image with the
-  // writer (keeping the image footprint), the same path the defragmentor uses.
+  // ── IArchiveModifiable (genuine copy-on-write add, rebuild fallback) ────
+  // Add tries a real in-place CoW add via ZfsModifier (new blocks only for the
+  // changed path, then a new uberblock in the next label slot); for shapes the
+  // in-place adder cannot do it falls back to the read-all/rebuild path the
+  // defragmentor uses. Remove is rebuild-based.
 
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    var size = archive.Length;
-    ModifyRebuilder.Add(archive, inputs, ReadEntries, files => BuildImage(files, size));
+    var toAdd = inputs
+      .Where(i => !i.IsDirectory)
+      .Select(i => (i.ArchiveName, i.ReadContent()))
+      .ToList();
+    if (toAdd.Count == 0)
+      return;
+    ZfsModifier.AddOrReplace(archive, toAdd);
   }
 
   public void Remove(Stream archive, string[] entryNames) {
-    var size = archive.Length;
-    ModifyRebuilder.Remove(archive, entryNames, ReadEntries, files => BuildImage(files, size));
+    ZfsModifier.Remove(archive, entryNames);
   }
 
   private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {

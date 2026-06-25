@@ -34,7 +34,7 @@ public sealed class Human68kFormatDescriptor :
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   // .2hd is the X68000 high-density-floppy image extension used by HxC /
   // X68k emulators; unambiguous and unclaimed by other formats here. .dim
@@ -157,6 +157,61 @@ public sealed class Human68kFormatDescriptor :
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());
+  }
+
+  // ── IArchiveModifiable ─────────────────────────────────────────────────
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing Human68k image.
+  /// Tries genuine O(touched bytes) in-place I/O via <see cref="Human68kModifier"/>
+  /// (allocate contiguous free clusters, chain the FAT, write the dirent);
+  /// only when the disk has no room (no free dir slot / no contiguous run)
+  /// does it fall back to a growing rebuild that re-sizes the image.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      Human68kModifier.RemoveFile(archive, name, wipeData: true);
+      if (!Human68kModifier.TryAddFile(archive, name, data))
+        AddViaRebuild(archive, name, data);
+    }
+  }
+
+  /// <summary>Removes the named entries in place: frees the FAT chain, wipes
+  /// the clusters, and marks the dirent deleted (0xE5).</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames)
+      Human68kModifier.RemoveFile(archive, name, wipeData: true);
+  }
+
+  private void AddViaRebuild(Stream archive, string name, byte[] data) {
+    archive.Position = 0;
+    List<(string Name, byte[] Data)> keep;
+    using (var r = new Human68kReader(archive))
+      keep = r.Entries.Where(e => !e.IsDirectory)
+        .Select(e => (e.Name, r.Extract(e))).ToList();
+    var leaf = Leaf(name);
+    keep.RemoveAll(k => Leaf(k.Name).Equals(leaf, StringComparison.OrdinalIgnoreCase));
+    keep.Add((name, data));
+
+    var w = new Human68kWriter();
+    var sizes = keep.Select(k => (long)k.Data.Length).ToList();
+    var layout = Human68kOptimizer.Find(sizes);
+    w.SetSectorsPerCluster(layout.SectorsPerCluster);
+    foreach (var (n, d) in keep) w.AddFile(n, d);
+    var img = w.Build();
+    archive.Position = 0;
+    archive.SetLength(0);
+    archive.Write(img);
+  }
+
+  private static string Leaf(string name) {
+    var s = (name ?? "").Replace('\\', '/');
+    var slash = s.LastIndexOf('/');
+    return slash >= 0 ? s[(slash + 1)..] : s;
   }
 
   // ── IArchiveDefragmentable ─────────────────────────────────────────────

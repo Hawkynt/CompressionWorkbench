@@ -15,6 +15,10 @@ namespace FileSystem.Tux2;
 /// </summary>
 public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
 
+  // ── Synthetic, non-file entries the reader always surfaces ──────────────
+  private static readonly HashSet<string> SyntheticNames =
+    new(StringComparer.OrdinalIgnoreCase) { "FULL.tux2", "metadata.ini" };
+
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
   /// <summary>
@@ -34,7 +38,7 @@ public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".tux2";
   public IReadOnlyList<string> Extensions => [".tux2"];
@@ -80,4 +84,37 @@ public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   public void Defragment(Stream archive, DefragOptions options)
     => throw new NotSupportedException("Tux2 single-phase WORM — defragmentation requires a rewriting writer.");
+
+  // ── IArchiveModifiable (genuine in-place R/W) ───────────────────────────
+  //
+  // Tux2InPlaceModifier appends/overwrites inline records, leaving the header
+  // and all preceding records byte-identical at their original offsets. New
+  // entries are append-only; same-size replaces overwrite data in place;
+  // resize/delete tail-rewrite from the changed record onward (still O(tail)).
+  // The rebuild fallback only fires on a malformed image.
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => Tux2InPlaceModifier.Add(archive, inputs,
+        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage));
+
+  public void Remove(Stream archive, string[] entryNames)
+    => Tux2InPlaceModifier.Remove(archive, entryNames,
+        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage));
+
+  // ── Shared rebuild delegates (exclude the reader's synthetic entries) ────
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    stream.Position = 0;
+    using var ms = new MemoryStream();
+    stream.CopyTo(ms);
+    return Tux2InPlaceModifier.ReadRealEntries(ms.ToArray()).ToList();
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    var w = new Tux2Writer();
+    foreach (var (n, d) in files)
+      if (!SyntheticNames.Contains(n))
+        w.AddFile(n, d);
+    return w.Build();
+  }
 }

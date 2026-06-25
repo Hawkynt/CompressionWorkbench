@@ -195,6 +195,23 @@ public sealed class Gfs2FormatDescriptor
     return Math.Clamp(bytes, 16L * 1024 * 1024, 256L * 1024 * 1024);
   }
 
+  // ── In-place R/W assessment: LEFT REBUILDING (no CanModify) ───────────────
+  //
+  // Genuine O(bytes-changed) in-place add is NOT viable for this writer/reader
+  // pair, so the descriptor keeps the default IArchiveModifiable rebuild path
+  // and does NOT advertise FormatCapabilities.CanModify. Precise reasons:
+  //   • Create() emits an EMPTY volume — it rejects every non-directory input
+  //     ("GFS2 creation produces an empty volume only"), so there is no seeded
+  //     image carrying files to mutate in place.
+  //   • The reader only resolves files whose data is stuffed inline in the
+  //     dinode block (di_height == 0, payload ≤ BlockSize − 232 = 3864 bytes)
+  //     under a single-leaf inline root directory. A real R/W path needs
+  //     ExHash multi-leaf directories + multi-level block indirection
+  //     (di_height > 0) so a file can exceed ~3.8 KB — the documented
+  //     multi-week scope. Without it, round-tripping arbitrary file sizes
+  //     (the CRUD cycle writes 9000-byte payloads) is impossible, so claiming
+  //     R/W would be dishonest.
+
   // Throws NotSupported per project policy — Create makes a fresh empty volume,
   // but in-place modification (defragmentation) is read-only / unsupported.
   public void Defragment(Stream archive)

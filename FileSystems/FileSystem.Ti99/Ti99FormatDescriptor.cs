@@ -28,7 +28,7 @@ public sealed class Ti99FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".tifd";
   public IReadOnlyList<string> Extensions => [".tifd", ".tifiles"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -153,6 +153,82 @@ public sealed class Ti99FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       img = w.BuildSectorDump(tracks, sectors, sides, diskName);
     }
     output.Write(img);
+  }
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing TI-99 sector-dump
+  /// image. Uses <see cref="Ti99Modifier"/> for genuine O(touched bytes)
+  /// in-place I/O — only the VIB (allocation bitmap), the FDIR, the new
+  /// file's FDR sector, and its contiguous data run are touched. TIFiles
+  /// single-file wrappers have no allocation map, so they fall back to a
+  /// full rebuild.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    archive.Position = 0;
+    if (Ti99Modifier.IsSectorDump(archive)) {
+      foreach (var (name, data) in FilesOnly(inputs)) {
+        Ti99Modifier.RemoveFile(archive, name, wipeData: true);
+        Ti99Modifier.AddFile(archive, name, data);
+      }
+      return;
+    }
+    AddViaRebuild(archive, inputs);
+  }
+
+  /// <summary>
+  /// Removes the named entries from an existing TI-99 sector-dump image
+  /// in place: frees the data + FDR sectors in the VIB bitmap, wipes them,
+  /// and clears the FDIR pointer slot. TIFiles wrappers fall back to rebuild.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    archive.Position = 0;
+    if (Ti99Modifier.IsSectorDump(archive)) {
+      foreach (var name in entryNames)
+        Ti99Modifier.RemoveFile(archive, name, wipeData: true);
+      return;
+    }
+    RemoveViaRebuild(archive, entryNames);
+  }
+
+  private void AddViaRebuild(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    archive.Position = 0;
+    using var r = new Ti99Reader(archive);
+    var keep = r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e))).ToList();
+    var adds = FilesOnly(inputs).ToList();
+    var w = new Ti99Writer();
+    foreach (var (n, d) in keep)
+      if (!adds.Any(a => Leaf(a.Name).Equals(Leaf(n), StringComparison.OrdinalIgnoreCase)))
+        w.AddFile(n, d);
+    foreach (var (n, d) in adds) w.AddFile(n, d);
+    var img = w.BuildTifiles();
+    archive.Position = 0;
+    archive.SetLength(0);
+    archive.Write(img);
+  }
+
+  private void RemoveViaRebuild(Stream archive, string[] entryNames) {
+    archive.Position = 0;
+    using var r = new Ti99Reader(archive);
+    var keep = r.Entries.Where(e => !e.IsDirectory)
+      .Where(e => !entryNames.Any(n => Leaf(n).Equals(Leaf(e.Name), StringComparison.OrdinalIgnoreCase)))
+      .Select(e => (e.Name, r.Extract(e))).ToList();
+    var w = new Ti99Writer();
+    foreach (var (n, d) in keep) w.AddFile(n, d);
+    if (keep.Count == 0) return;
+    var img = w.BuildTifiles();
+    archive.Position = 0;
+    archive.SetLength(0);
+    archive.Write(img);
+  }
+
+  private static string Leaf(string name) {
+    var s = (name ?? "").Replace('\\', '/');
+    var slash = s.LastIndexOf('/');
+    return slash >= 0 ? s[(slash + 1)..] : s;
   }
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)

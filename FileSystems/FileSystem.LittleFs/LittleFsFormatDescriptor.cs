@@ -33,7 +33,8 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".littlefs";
   public IReadOnlyList<string> Extensions => [".littlefs", ".lfs"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -143,6 +144,33 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       w.AddFile(input.ArchiveName, input.ReadContent());
     }
     w.WriteTo(output);
+  }
+
+  // ── IArchiveModifiable (genuine in-place) ──────────────────────────────
+
+  /// <summary>
+  /// Genuine in-place add/replace: rewrites only the inactive half of the root
+  /// metadata pair with a fresh commit at <c>revision+1</c> and appends any new
+  /// CTZ / subdirectory blocks past the current block count. The active root half
+  /// and every existing data block stay byte-identical at their offsets — the
+  /// littlefs metadata-pair ping-pong / copy-on-write model. See
+  /// <see cref="LittleFsInPlaceModifier"/>.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    LittleFsInPlaceModifier.Add(archive, inputs);
+  }
+
+  /// <summary>
+  /// Genuine in-place remove: drops the named entries and rewrites the inactive
+  /// root half at <c>revision+1</c>. Existing live blocks stay byte-identical;
+  /// the removed file's data blocks are simply no longer referenced.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    LittleFsInPlaceModifier.Remove(archive, entryNames);
   }
 
   /// <summary>

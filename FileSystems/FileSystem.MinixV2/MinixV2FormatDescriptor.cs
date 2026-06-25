@@ -30,7 +30,7 @@ public sealed class MinixV2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public string DisplayName => "Minix V2 FS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".minix2";
   public IReadOnlyList<string> Extensions => [".minix2"];
@@ -98,6 +98,56 @@ public sealed class MinixV2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     foreach (var (name, data) in FilesOnly(inputs))
       w.AddFile(name, data);
     w.Finish();
+  }
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing Minix v2 image via
+  /// <see cref="MinixV2InPlaceModifier"/> — TRUE in-place O(touched bytes) I/O
+  /// (allocate inode + data zones, append zones at EOF when the image is full,
+  /// write the directory entry). Falls back to a whole-image rebuild only for
+  /// nested paths or payloads beyond the direct + single-indirect ceiling.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    try {
+      foreach (var (name, data) in FilesOnly(inputs)) {
+        MinixV2InPlaceModifier.RemoveFile(archive, name, wipeData: true);
+        MinixV2InPlaceModifier.AddFile(archive, name, data);
+      }
+    } catch (IOException) {
+      archive.Position = 0;
+      ModifyRebuilder.Add(archive, inputs,
+        readEntries: stream => {
+          var r = new MinixV2Reader(stream);
+          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+        },
+        buildImage: BuildImage);
+    }
+  }
+
+  /// <summary>Removes the named entries in-place via <see cref="MinixV2InPlaceModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    var leftover = new List<string>();
+    foreach (var name in entryNames) {
+      var leaf = name.Replace('\\', '/').TrimStart('/');
+      if (leaf.Contains('/') || !MinixV2InPlaceModifier.RemoveFile(archive, leaf, wipeData: true))
+        leftover.Add(name);
+    }
+    if (leftover.Count == 0) return;
+    archive.Position = 0;
+    ModifyRebuilder.Remove(archive, leftover.ToArray(),
+      readEntries: stream => {
+        var r = new MinixV2Reader(stream);
+        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
+      },
+      buildImage: BuildImage);
+  }
+
+  private byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    using var ms = new MemoryStream();
+    using var w = new MinixV2Writer(ms, leaveOpen: true);
+    foreach (var (n, d) in files) w.AddFile(n, d);
+    w.Finish();
+    return ms.ToArray();
   }
 
   public void Defragment(Stream archive)

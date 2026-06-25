@@ -84,9 +84,24 @@ public sealed class Nilfs1Reader : IDisposable {
     this.LastCheckpoint   = BinaryPrimitives.ReadUInt64LittleEndian(sb.Slice(0x38));
 
     // Detect our writer's compact-directory index. When present we enumerate
-    // real file entries; otherwise we fall back to the metadata-surface
-    // behaviour and the image's directory tree is N/A.
-    if (TryParseWriterDirectory()) return;
+    // real file entries — folding the base directory (cno=1) and every appended
+    // log segment ("NILFS1SG") together, highest-cno-per-name wins and tombstones
+    // drop the entry. Otherwise we fall back to the metadata-surface behaviour
+    // and the image's directory tree is N/A.
+    var versions = new Dictionary<string, (ulong Cno, bool Tombstone, byte[] Data)>(StringComparer.Ordinal);
+    if (TryParseWriterDirectory(versions)) {
+      ParseAppendedSegments(versions);
+      foreach (var (name, record) in versions) {
+        if (record.Tombstone) continue;
+        _entries.Add(new Nilfs1Entry {
+          Name = name,
+          Size = record.Data.LongLength,
+          IsDirectory = false,
+          Data = record.Data,
+        });
+      }
+      return;
+    }
 
     var meta = BuildMetadata();
     var sbBytes = _data.AsSpan(SuperblockOffset, Math.Min(SuperblockSize, _data.Length - SuperblockOffset)).ToArray();
@@ -101,7 +116,7 @@ public sealed class Nilfs1Reader : IDisposable {
   /// <see cref="Nilfs1Writer.SegmentStart"/>. Format: 8-byte magic, 8-byte
   /// directory-size, then a sequence of (u32 name_len, name, u64 offset, u64 size).
   /// </summary>
-  private bool TryParseWriterDirectory() {
+  private bool TryParseWriterDirectory(Dictionary<string, (ulong Cno, bool Tombstone, byte[] Data)> versions) {
     if (_data.Length < Nilfs1Writer.SegmentStart + Nilfs1Writer.WriterMagic.Length + 8) return false;
     var seg = _data.AsSpan(Nilfs1Writer.SegmentStart);
     if (!seg.Slice(0, Nilfs1Writer.WriterMagic.Length).SequenceEqual(Nilfs1Writer.WriterMagic)) return false;
@@ -125,14 +140,74 @@ public sealed class Nilfs1Reader : IDisposable {
       cursor += 8;
       if (size < 0 || off < 0 || payloadStart + off + size > _data.Length) break;
       var data = _data.AsSpan(payloadStart + (int)off, (int)size).ToArray();
-      _entries.Add(new Nilfs1Entry {
-        Name = name,
-        Size = size,
-        IsDirectory = false,
-        Data = data,
-      });
+      // Base writer directory is the cno=1 checkpoint; appended segments can
+      // supersede with a higher cno.
+      versions[name] = (Cno: 1ul, Tombstone: false, Data: data);
     }
     return true;
+  }
+
+  /// <summary>
+  /// Walks every appended "NILFS1SG" log segment in the image and folds its
+  /// entries into <paramref name="versions"/>. Higher-cno records supersede
+  /// lower-cno ones; tombstone records mark the entry deleted (the caller drops
+  /// tombstones from the final listing). This is the continuous-snapshot replay
+  /// semantic NILFS v1 shares with NILFS2 — the in-place modifier only ever
+  /// appends these blocks at the tail, never relocating live data.
+  /// </summary>
+  private void ParseAppendedSegments(Dictionary<string, (ulong Cno, bool Tombstone, byte[] Data)> versions) {
+    var magic = Nilfs1Writer.SegmentMagic;
+    var p = Nilfs1Writer.SegmentStart;
+    while (p + magic.Length + 24 <= _data.Length) {
+      if (!_data.AsSpan(p, magic.Length).SequenceEqual(magic)) {
+        ++p;
+        continue;
+      }
+      var hdr = _data.AsSpan(p);
+      var cno = BinaryPrimitives.ReadUInt64LittleEndian(hdr[magic.Length..]);
+      var entryCount = BinaryPrimitives.ReadInt64LittleEndian(hdr[(magic.Length + 8)..]);
+      var dirSize = BinaryPrimitives.ReadInt64LittleEndian(hdr[(magic.Length + 16)..]);
+      var dirStart = p + magic.Length + 24;
+      if (dirSize < 0 || dirStart + dirSize > _data.Length || entryCount < 0 || entryCount > _data.Length) {
+        ++p;
+        continue;
+      }
+      var payloadStart = dirStart + (int)dirSize;
+      var cursor = dirStart;
+      var dirEnd = dirStart + (int)dirSize;
+      var consumedPayload = 0L;
+      var parsedOk = true;
+      for (var i = 0L; i < entryCount; ++i) {
+        if (cursor + 4 > dirEnd) { parsedOk = false; break; }
+        var nameLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(cursor));
+        cursor += 4;
+        if (nameLen <= 0 || cursor + nameLen + 1 + 16 > dirEnd) { parsedOk = false; break; }
+        var name = Encoding.UTF8.GetString(_data.AsSpan(cursor, nameLen));
+        cursor += nameLen;
+        var tombstone = _data[cursor] != 0;
+        cursor += 1;
+        var off = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(cursor));
+        cursor += 8;
+        var size = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(cursor));
+        cursor += 8;
+        if (size < 0 || off < 0) { parsedOk = false; break; }
+        byte[] data;
+        if (tombstone || size == 0) {
+          data = [];
+        } else {
+          if (payloadStart + off + size > _data.Length) { parsedOk = false; break; }
+          data = _data.AsSpan(payloadStart + (int)off, (int)size).ToArray();
+          consumedPayload = Math.Max(consumedPayload, off + size);
+        }
+        if (!versions.TryGetValue(name, out var prev) || cno >= prev.Cno)
+          versions[name] = (Cno: cno, Tombstone: tombstone, Data: data);
+      }
+      if (!parsedOk) {
+        ++p;
+        continue;
+      }
+      p = payloadStart + (int)consumedPayload;
+    }
   }
 
   private byte[] BuildMetadata() {

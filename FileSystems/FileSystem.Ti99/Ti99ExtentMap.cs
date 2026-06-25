@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using Compression.Registry;
 
 namespace FileSystem.Ti99;
@@ -29,13 +30,21 @@ public static class Ti99ExtentMap {
     }
     // Sector-dump: VIB + FDIR + per-FDR sectors are metadata.
     yield return new DefragBlockInfo(0, 2 * Ti99Reader.SectorSize, DefragBlockKind.MetadataReserved);
-    // FDR sectors are 2..(2+FileCount-1) — represent them as one contiguous
-    // metadata-reserved run.
-    if (r.Entries.Count > 0)
-      yield return new DefragBlockInfo(
-        2L * Ti99Reader.SectorSize,
-        (long)r.Entries.Count * Ti99Reader.SectorSize,
-        DefragBlockKind.MetadataReserved);
+    // FDR sectors are listed by the FDIR (sector 1) and need NOT be contiguous
+    // once files have been added/removed in place — reserve each actual FDR
+    // sector individually rather than assuming the writer's dense 2..N layout.
+    image.Position = Ti99Reader.SectorSize;
+    var fdir = new byte[Ti99Reader.SectorSize];
+    try { image.ReadExactly(fdir); } catch { fdir = null!; }
+    if (fdir != null) {
+      for (var i = 0; i < 128; i++) {
+        var fdrSector = BinaryPrimitives.ReadUInt16BigEndian(fdir.AsSpan(i * 2, 2));
+        if (fdrSector == 0) continue;
+        var off = (long)fdrSector * Ti99Reader.SectorSize;
+        if (off + Ti99Reader.SectorSize <= image.Length)
+          yield return new DefragBlockInfo(off, Ti99Reader.SectorSize, DefragBlockKind.MetadataReserved);
+      }
+    }
     foreach (var e in r.Entries) {
       var startOff = (long)e.FirstSector * Ti99Reader.SectorSize;
       var len = (long)Math.Max(1, e.SectorCount) * Ti99Reader.SectorSize;

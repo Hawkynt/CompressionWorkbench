@@ -18,8 +18,8 @@ public sealed class DragonFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public string DisplayName => "DragonFS";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".dfs";
   public IReadOnlyList<string> Extensions => [".dfs"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -61,6 +61,31 @@ public sealed class DragonFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     w.WriteTo(output);
+  }
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing DragonFS image using
+  /// <see cref="DragonFsModifier"/>. The modifier appends new records + data at
+  /// the image tail and relinks the singly-linked chain, so existing files'
+  /// data bytes stay byte-identical at their original offsets — a genuine
+  /// in-place mutation (the image grows only at the end).
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      DragonFsModifier.RemoveFile(archive, name, wipeData: true);
+      DragonFsModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>Removes the named entries in place by blanking their directory
+  /// records (the chain stays intact; the reader skips blank records).</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames)
+      DragonFsModifier.RemoveFile(archive, name, wipeData: true);
   }
 
   public void Defragment(Stream archive)

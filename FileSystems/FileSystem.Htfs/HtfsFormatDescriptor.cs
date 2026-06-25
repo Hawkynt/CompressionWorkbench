@@ -28,7 +28,8 @@ public sealed class HtfsFormatDescriptor :
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.CanTest | FormatCapabilities.CanModify |
+    FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".htfs";
   public IReadOnlyList<string> Extensions => [".htfs", ".s5"];
@@ -99,20 +100,41 @@ public sealed class HtfsFormatDescriptor :
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => HtfsExtentMap.Enumerate(image);
 
+  // ── IArchiveModifiable (true in-place R/W) ──────────────────────────
+  //
+  // HtfsInPlaceModifier claims a free inode slot inside the existing inode-block
+  // region and a fresh contiguous data run appended at image end, inserts the
+  // dirent into the single-block root directory, and bumps s_fsize — leaving
+  // every untouched inode + data block byte-identical. Nested-directory adds and
+  // any case that would need a new inode block or a multi-block root dir fall
+  // back to ModifyRebuilder so the user always gets a working image.
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => HtfsInPlaceModifier.Add(archive, inputs,
+        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage));
+
+  public void Remove(Stream archive, string[] entryNames)
+    => HtfsInPlaceModifier.Remove(archive, entryNames,
+        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage));
+
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new HtfsReader(stream);
-        return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new HtfsWriter();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
+    => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+
+  // ── Shared rebuild delegates ────────────────────────────────────────
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    var r = new HtfsReader(stream);
+    return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e))).ToList();
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    var w = new HtfsWriter();
+    foreach (var (n, d) in files) w.AddFile(n, d);
+    return w.Build();
+  }
 
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);

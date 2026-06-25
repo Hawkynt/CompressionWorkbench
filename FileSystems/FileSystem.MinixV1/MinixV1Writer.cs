@@ -95,6 +95,11 @@ public sealed class MinixV1Writer : IDisposable {
     // --- Layout: block0 boot, block1 superblock, imap, zmap, inode table, data.
     var inodesPerBlock = BlockSize / InodeSize; // 32
     var inodeTableBlocks = (totalInodes + inodesPerBlock - 1) / inodesPerBlock;
+    // Advertise every inode slot the (whole-block) inode table physically holds,
+    // not just the ones in use. The surplus slots are left free in the imap so a
+    // genuine in-place writer can allocate new inodes without re-laying-out the
+    // image — exactly how a real mkfs.minix volume carries spare inodes.
+    var advertisedInodes = inodeTableBlocks * inodesPerBlock;
     const int imapBlocks = 1;
     const int zmapBlocks = 1;
     var firstDataZone = 2 + imapBlocks + zmapBlocks + inodeTableBlocks;
@@ -156,7 +161,7 @@ public sealed class MinixV1Writer : IDisposable {
 
     // --- Superblock at offset 1024 ---
     var sb = disk.AsSpan(SuperblockOff);
-    BinaryPrimitives.WriteUInt16LittleEndian(sb,           (ushort)totalInodes); // s_ninodes
+    BinaryPrimitives.WriteUInt16LittleEndian(sb,           (ushort)advertisedInodes); // s_ninodes
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(2),  (ushort)totalZones);  // s_nzones
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(4),  imapBlocks);          // s_imap_blocks
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(6),  zmapBlocks);          // s_zmap_blocks

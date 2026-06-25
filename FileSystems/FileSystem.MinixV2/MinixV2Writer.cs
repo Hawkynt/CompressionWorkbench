@@ -91,6 +91,10 @@ public sealed class MinixV2Writer : IDisposable {
 
     var inodesPerBlock = BlockSize / InodeSize; // 16
     var inodeTableBlocks = (totalInodes + inodesPerBlock - 1) / inodesPerBlock;
+    // Advertise every physical inode slot in the (whole-block) inode table so a
+    // genuine in-place writer can claim spare inodes without re-laying-out the
+    // image — the surplus slots stay free in the imap, as on a real mkfs volume.
+    var advertisedInodes = inodeTableBlocks * inodesPerBlock;
     const int imapBlocks = 1;
     const int zmapBlocks = 1;
     var firstDataZone = 2 + imapBlocks + zmapBlocks + inodeTableBlocks;
@@ -147,7 +151,7 @@ public sealed class MinixV2Writer : IDisposable {
     // v2 keeps the v1 16-bit s_nzones (0 here) and carries the real zone count
     // in the 32-bit s_zones field at +20.
     var sb = disk.AsSpan(SuperblockOff);
-    BinaryPrimitives.WriteUInt16LittleEndian(sb,           (ushort)totalInodes); // s_ninodes
+    BinaryPrimitives.WriteUInt16LittleEndian(sb,           (ushort)advertisedInodes); // s_ninodes
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(2),  0);                   // s_nzones (v1 field, unused)
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(4),  imapBlocks);          // s_imap_blocks
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(6),  zmapBlocks);          // s_zmap_blocks

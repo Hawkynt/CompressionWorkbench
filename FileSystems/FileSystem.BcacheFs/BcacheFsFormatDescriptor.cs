@@ -134,6 +134,18 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     w.WriteTo(output);
   }
 
+  // ── In-place R/W assessment: LEFT REBUILDING (no CanModify) ───────────────
+  //
+  // Genuine in-place add is impossible here and cannot even be verified: the
+  // writer emits an SB-only image (struct bch_sb + four-copy bch_sb_layout +
+  // members_v2) with NO b-tree — extents/dirents/inodes are never written, and
+  // Create() deliberately puts no file content into the image. There is also
+  // no reader that walks the b-tree object graph, so a round-trip of any added
+  // file is unobservable. The descriptor therefore keeps create-only WORM
+  // semantics and does NOT advertise FormatCapabilities.CanModify; a genuine
+  // R/W path is gated on first building a bcachefs b-tree reader + writer (the
+  // documented multi-week follow-up).
+
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

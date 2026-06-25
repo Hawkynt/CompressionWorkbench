@@ -139,16 +139,17 @@ public class AdvFsTests {
     }
   }
 
-  [Test, Category("ErrorHandling")]
-  public void Defragment_Throws_NotSupported() {
+  [Test, Category("RoundTrip")]
+  public void Defragment_NowSupported_RebuildsAndStaysReadable() {
+    // AdvFs is now genuine R/W (AdvFsInPlaceModifier), so defrag is no longer refused —
+    // it rebuilds the layout and leaves a valid, listable volume.
     var d = new FileSystem.AdvFs.AdvFsFormatDescriptor();
     using var ms = new MemoryStream(BuildMinimal());
-    Assert.That(() => d.Defragment(ms), Throws.TypeOf<NotSupportedException>()
-                                              .With.Message.Contains("read-only"));
+    Assert.DoesNotThrow(() => d.Defragment(ms));
     ms.Position = 0;
-    Assert.That(() => d.Defragment(ms, new DefragOptions()),
-                Throws.TypeOf<NotSupportedException>()
-                      .With.Message.Contains("read-only"));
+    Assert.DoesNotThrow(() => d.List(ms, null));
+    ms.Position = 0;
+    Assert.DoesNotThrow(() => d.Defragment(ms, new DefragOptions()));
   }
 
   [Test, Category("HappyPath")]

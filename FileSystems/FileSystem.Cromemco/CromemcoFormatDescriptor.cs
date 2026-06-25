@@ -29,7 +29,7 @@ public sealed class CromemcoFormatDescriptor :
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".rdos";
   public IReadOnlyList<string> Extensions => [".rdos", ".crom"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -117,6 +117,32 @@ public sealed class CromemcoFormatDescriptor :
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());
+  }
+
+  // ── IArchiveModifiable ─────────────────────────────────────────────────
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing Cromemco RDOS image
+  /// using <see cref="CromemcoModifier"/> for genuine O(touched bytes)
+  /// in-place I/O — only the directory area and the new file's contiguous
+  /// data run are touched.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      CromemcoModifier.RemoveFile(archive, name, wipeData: true);
+      CromemcoModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>Removes the named entries in place: marks the directory entry
+  /// deleted (user code 0xE5) and wipes the data run.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames)
+      CromemcoModifier.RemoveFile(archive, name, wipeData: true);
   }
 
   // ── IArchiveDefragmentable ─────────────────────────────────────────────

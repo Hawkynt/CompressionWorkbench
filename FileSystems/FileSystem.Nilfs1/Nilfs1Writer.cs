@@ -33,9 +33,24 @@ public sealed class Nilfs1Writer {
   /// opaque segment region.</summary>
   internal static readonly byte[] WriterMagic = "NILFS1WB"u8.ToArray();
 
+  /// <summary>
+  /// Magic that prefixes each appended log-segment block written by
+  /// <c>Nilfs1InPlaceModifier</c>. Each appended segment carries a u64 checkpoint
+  /// number + a directory + a payload region; the reader merges all segments by
+  /// highest-cno-per-name, dropping tombstoned entries. This is the
+  /// log-structured continuous-snapshot append NILFS v1 shares with NILFS2.
+  /// </summary>
+  internal static readonly byte[] SegmentMagic = "NILFS1SG"u8.ToArray();
+
   /// <summary>Where the segment begins on disk (right after the 1024 + 1024
   /// boot / superblock region).</summary>
   internal const int SegmentStart = 2048;
+
+  /// <summary>Superblock offset on disk (NILFS v1 spec).</summary>
+  internal const int SuperblockOffsetOnDisk = 1024;
+
+  /// <summary>Offset of <c>s_last_cno</c> within the superblock.</summary>
+  internal const int LastCnoFieldOffset = 0x38;
 
   /// <summary>
   /// Bytes of the superblock covered by the checksum. The <c>nilfs_super_block</c>

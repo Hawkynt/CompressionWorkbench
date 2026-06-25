@@ -35,6 +35,7 @@ public sealed class Gfs1FormatDescriptor :
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".gfs";
@@ -102,6 +103,33 @@ public sealed class Gfs1FormatDescriptor :
       w.AddFile(i.ArchiveName, i.ReadContent());
     }
     w.WriteTo(output);
+  }
+
+  // ── IArchiveModifiable (genuine in-place R/W) ───────────────────────────
+  //
+  // Gfs1InPlaceModifier writes only the changed inode slot(s), the parent dir
+  // block, the appended data run, and sb_size — every untouched block stays
+  // byte-identical at its original offset. Root files and one level of nested
+  // directories are handled in place; deeper trees, a full inode region, or a
+  // full directory block fall back to the rebuild delegate.
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => Gfs1InPlaceModifier.Add(archive, inputs,
+        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage));
+
+  public void Remove(Stream archive, string[] entryNames)
+    => Gfs1InPlaceModifier.Remove(archive, entryNames,
+        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage));
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    var r = new Gfs1Reader(stream);
+    return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e))).ToList();
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    var w = new Gfs1Writer();
+    foreach (var (n, d) in files) w.AddFile(n, d);
+    return w.Build();
   }
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => Gfs1ExtentMap.Enumerate(image);

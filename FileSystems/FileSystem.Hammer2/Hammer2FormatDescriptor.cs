@@ -49,7 +49,7 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify;
   public string DefaultExtension => ".hammer2";
   public IReadOnlyList<string> Extensions => [".hammer2"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -144,6 +144,47 @@ public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     }
 
     writer.WriteTo(output);
+  }
+
+  /// <summary>
+  /// Genuine in-place (copy-on-write) add/replace of files in the labelled PFS
+  /// root: new file inodes + data blocks and the rebuilt labelled-PFS →
+  /// super-root → volume-header chain are appended past the topology high-water,
+  /// leaving every existing file's data byte-identical at its original offset.
+  /// Falls back to the verified rebuild path when the change can't be expressed
+  /// as a single inline/one-indirect blockset (nested-indirect roots, nested
+  /// paths). See <see cref="Hammer2InPlaceModifier"/>.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) =>
+    Hammer2InPlaceModifier.Add(archive, inputs,
+      (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage));
+
+  /// <summary>
+  /// Genuine in-place (copy-on-write) removal of files from the labelled PFS
+  /// root, rebuilding the chain above without disturbing surviving files' data.
+  /// Falls back to the verified rebuild path when out of scope.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) =>
+    Hammer2InPlaceModifier.Remove(archive, entryNames,
+      (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage));
+
+  // Rebuild-fallback delegates: read every file the reader can surface, and
+  // re-emit a fresh image from a file list via the writer.
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream archive) {
+    archive.Position = 0;
+    using var ms = new MemoryStream();
+    archive.CopyTo(ms);
+    foreach (var (name, content) in new Hammer2Reader(ms.ToArray()).ReadAllFiles())
+      yield return (name, content);
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    var writer = new Hammer2Writer();
+    foreach (var (name, data) in files)
+      writer.AddFile(name, data);
+    using var ms = new MemoryStream();
+    writer.WriteTo(ms);
+    return ms.ToArray();
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {

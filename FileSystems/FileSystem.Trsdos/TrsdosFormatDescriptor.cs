@@ -29,7 +29,7 @@ public sealed class TrsdosFormatDescriptor :
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".trsdos";
   public IReadOnlyList<string> Extensions => [".trsdos", ".dmk", ".jv1", ".jv3"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -159,6 +159,34 @@ public sealed class TrsdosFormatDescriptor :
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
     output.Write(w.Build());
+  }
+
+  // ── IArchiveModifiable ─────────────────────────────────────────────────
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing TRSDOS image. Uses
+  /// <see cref="TrsdosModifier"/> for genuine O(touched bytes) in-place I/O —
+  /// only the GAT, the affected directory sector, and the new file's
+  /// granule-aligned data run are touched.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      TrsdosModifier.RemoveFile(archive, name, wipeData: true);
+      TrsdosModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes the named entries in place: frees their granules in the GAT,
+  /// wipes the data, and clears the directory records.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    foreach (var name in entryNames)
+      TrsdosModifier.RemoveFile(archive, name, wipeData: true);
   }
 
   // ── IArchiveDefragmentable ─────────────────────────────────────────────

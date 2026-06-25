@@ -38,7 +38,7 @@ public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".tux3";
   public IReadOnlyList<string> Extensions => [".tux3"];
@@ -93,4 +93,35 @@ public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   public void Defragment(Stream archive, DefragOptions options)
     => throw new NotSupportedException("Tux3 single-version WORM — defragmentation requires a rewriting writer.");
+
+  // ── IArchiveModifiable (genuine in-place R/W) ───────────────────────────
+  //
+  // Tux3InPlaceModifier appends/overwrites inline WORM-table records, keeping
+  // the boot block, superblock, table header and all preceding records
+  // byte-identical, then re-pads to a 4096 boundary and refreshes vol_blocks.
+  // New entries are append-only; same-size replaces overwrite in place;
+  // resize/delete tail-rewrite from the changed record onward.
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => Tux3InPlaceModifier.Add(archive, inputs,
+        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage));
+
+  public void Remove(Stream archive, string[] entryNames)
+    => Tux3InPlaceModifier.Remove(archive, entryNames,
+        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage));
+
+  // ── Shared rebuild delegates (real WORM-table records only) ─────────────
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    stream.Position = 0;
+    using var ms = new MemoryStream();
+    stream.CopyTo(ms);
+    return Tux3InPlaceModifier.ReadRealEntries(ms.ToArray()).ToList();
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    var w = new Tux3Writer();
+    foreach (var (n, d) in files) w.AddFile(n, d);
+    return w.Build();
+  }
 }

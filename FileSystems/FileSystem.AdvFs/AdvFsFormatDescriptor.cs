@@ -28,8 +28,9 @@ namespace FileSystem.AdvFs;
 /// don't carry the cookie will not auto-detect but can still be parsed when
 /// fed to the descriptor directly.
 ///
-/// Create / Modify / Defragment: <see cref="NotSupportedException"/> — the
-/// descriptor is read-only.
+/// Create / Modify: a clean-room AdvFS-WB storage-domain layout with a flat
+/// file table inside RBMT page 0; <see cref="AdvFsInPlaceModifier"/> performs
+/// genuine in-place add/replace/remove against that table.
 ///
 /// References:
 /// <list type="bullet">
@@ -57,7 +58,8 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
+    FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".advfs";
   public IReadOnlyList<string> Extensions => [".advfs"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -147,11 +149,39 @@ public sealed class AdvFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     w.Finish();
   }
 
+  // ── IArchiveModifiable (true in-place R/W) ──────────────────────────
+  //
+  // AdvFsInPlaceModifier appends new payloads to the flat data area, rewrites
+  // only the touched file-table rows inside RBMT page 0, and leaves every other
+  // payload + table row byte-identical. When the file table would overflow the
+  // 8 KB RBMT page (or the header can't be parsed) it falls back to
+  // ModifyRebuilder so the user always gets a working image.
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => AdvFsInPlaceModifier.Add(archive, inputs,
+        (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage));
+
+  public void Remove(Stream archive, string[] entryNames)
+    => AdvFsInPlaceModifier.Remove(archive, entryNames,
+        (a, n) => ModifyRebuilder.Remove(a, n, ReadEntries, BuildImage));
+
   public void Defragment(Stream archive)
-    => throw new NotSupportedException("AdvFs read-only — defragmentation requires a writer.");
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   public void Defragment(Stream archive, DefragOptions options)
-    => throw new NotSupportedException("AdvFs read-only — defragmentation requires a writer.");
+    => DefragRebuilder.Rebuild(archive, options, ReadEntries, BuildImage);
+
+  // ── Shared rebuild delegates ────────────────────────────────────────
+
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    var image = ReadAllBounded(stream);
+    using var ms = new MemoryStream(image, writable: false);
+    var reader = new AdvFsReader(ms);
+    return reader.FileTableEntries.Select(f => (f.Name, reader.ExtractFile(f))).ToList();
+  }
+
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files)
+    => AdvFsWriter.Build(files.Select(f => (f.Name, f.Data)));
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
     if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;

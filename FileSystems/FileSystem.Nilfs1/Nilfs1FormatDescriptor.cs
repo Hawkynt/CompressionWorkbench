@@ -30,8 +30,8 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
-    FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".nilfs1";
   public IReadOnlyList<string> Extensions => [".nilfs1", ".nilfs"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -107,25 +107,40 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     output.Write(img);
   }
 
+  /// <summary>
+  /// Appends a fresh log segment at the tail of the image carrying dirent + data
+  /// blocks for each input, and bumps <c>s_last_cno</c>. The 8-byte cno field is
+  /// the only in-place edit; every other byte of the prior image stays
+  /// byte-identical at its original offset — continuous-snapshot semantic intact.
+  /// Inputs whose name already exists are effectively replaced (the higher cno
+  /// wins on read).
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    Nilfs1InPlaceModifier.Add(archive, inputs);
+  }
+
+  /// <summary>
+  /// Appends a tombstone dirent for each named entry in a fresh log segment and
+  /// bumps <c>s_last_cno</c>. The reader's cno-merge drops the entry from the
+  /// listing; the original data blocks stay byte-identical at their offsets and
+  /// remain addressable as a snapshot of the pre-Remove state.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    Nilfs1InPlaceModifier.Remove(archive, entryNames);
+  }
+
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => Nilfs1ExtentMap.Enumerate(image);
 
   public void Defragment(Stream archive)
-    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+    => throw new NotSupportedException("Nilfs1 R/W is log-structured (append-only segments) — defragmentation would re-pack snapshots, which violates the continuous-snapshot invariant.");
 
-  public void Defragment(Stream archive, DefragOptions options) {
-    DefragRebuilder.Rebuild(archive, options,
-      readEntries: stream => {
-        var r = new Nilfs1Reader(stream);
-        return r.Entries.Where(e => !e.IsDirectory)
-                        .Select(e => (e.Name, r.Extract(e)));
-      },
-      buildImage: files => {
-        var w = new Nilfs1Writer();
-        foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
-      });
-  }
+  public void Defragment(Stream archive, DefragOptions options)
+    => throw new NotSupportedException("Nilfs1 R/W is log-structured (append-only segments) — defragmentation would re-pack snapshots, which violates the continuous-snapshot invariant.");
 
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
