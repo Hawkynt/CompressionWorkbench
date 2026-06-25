@@ -42,11 +42,14 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "RAR archive with solid compression and recovery records. Read + create only — " +
-    "in-place Add/Remove is deferred: solid block chains, per-file CRC32, and the " +
-    "main-header CRC all cross-reference, so any append needs to re-checksum the " +
-    "affected blocks. No RarModifier ships yet, so the descriptor does not " +
-    "advertise CanModify.";
+    "RAR archive with solid compression and recovery records. A pure add of new " +
+    "files to a non-solid/recovery-free, unencrypted RAR5 archive is a genuine " +
+    "O(bytes-added) in-place append: new non-solid FILE blocks are written before a " +
+    "rewritten ENDARC, leaving every existing block byte-identical at its original " +
+    "offset (RarInPlaceAdder). Anything that is not byte-additive — an encryption " +
+    "header, a recovery-record (RR) or quick-open (QO) service block, a name that " +
+    "collides with an existing entry, or a RAR4 archive — plus Remove and same-name " +
+    "update fall back to the verified extract -> re-create rebuild.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new RarReader(stream, password: password);
@@ -133,5 +136,69 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       }
       w.Finish();
     }
+  }
+
+  /// <summary>
+  /// Appends <paramref name="inputs"/> to <paramref name="archive"/>. A pure add of
+  /// new file names to a non-solid/recovery-free, unencrypted RAR5 archive takes the
+  /// genuine in-place append (<see cref="RarInPlaceAdder"/>): new non-solid FILE
+  /// blocks are written before a rewritten ENDARC, leaving every pre-existing block
+  /// byte-identical at its original offset. Any case the append cannot serve
+  /// byte-additively — encryption headers, a recovery-record (RR) or quick-open (QO)
+  /// service block, a RAR4 archive, a directory input, or a name that collides with
+  /// an existing entry — falls back to the verified extract -> re-create rebuild
+  /// (the same WORM rebuild Remove and same-name update always use).
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    // Snapshot the original bytes so a failed/aborted in-place attempt never
+    // leaves the caller's stream half-written.
+    archive.Position = 0;
+    using var original = new MemoryStream();
+    archive.CopyTo(original);
+    var originalBytes = original.ToArray();
+
+    // Directories cannot be appended in place; let the presence of any directory
+    // input route the whole operation through the rebuild.
+    var hasDirectory = false;
+    var newFiles = new List<(string Name, byte[] Data, DateTimeOffset? ModifiedTime)>();
+    foreach (var input in inputs) {
+      if (string.IsNullOrEmpty(input.ArchiveName)) continue;
+      if (input.IsDirectory) { hasDirectory = true; continue; }
+      newFiles.Add((input.ArchiveName, input.ReadContent(), null));
+    }
+
+    if (!hasDirectory && newFiles.Count > 0) {
+      try {
+        using var work = new MemoryStream();
+        work.Write(originalBytes, 0, originalBytes.Length);
+        work.Position = 0;
+        RarInPlaceAdder.Add(work, newFiles);
+
+        var result = work.ToArray();
+        archive.Position = 0;
+        archive.Write(result, 0, result.Length);
+        archive.SetLength(result.Length);
+        archive.Flush();
+        return;
+      } catch (NotSupportedException) {
+        // Restore the untouched original, then take the verified rebuild path.
+        archive.Position = 0;
+        archive.Write(originalBytes, 0, originalBytes.Length);
+        archive.SetLength(originalBytes.Length);
+      }
+    }
+
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      foreach (var input in inputs) {
+        if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName)) continue;
+        var dest = Path.Combine(tmpDir, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
+        var destDir = Path.GetDirectoryName(dest);
+        if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
+        File.WriteAllBytes(dest, input.ReadContent());
+      }
+    });
   }
 }
