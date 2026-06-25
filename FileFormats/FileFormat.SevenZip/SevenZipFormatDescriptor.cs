@@ -22,6 +22,66 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
     new("Password", "Password", FormatOptionKind.String, ""),
   ];
 
+  /// <summary>
+  /// Adds files to the 7z archive. Pure additions of new names are served as a
+  /// genuine O(bytes-added) in-place append: the new files are compressed into one
+  /// fresh solid block written at the old header's byte offset, leaving every
+  /// existing solid block byte-identical at its original position
+  /// (<see cref="SevenZipInPlaceAdder"/>). Anything the append cannot satisfy
+  /// byte-additively — an encoded/encrypted header, a non-trivial packed layout
+  /// (PackPos != 0, a gap, BCJ2 / AES folders), or a name that collides with an
+  /// existing entry (an update touches an existing solid block) — falls back to
+  /// the verified extract → re-create rebuild. Update and remove always use that
+  /// rebuild, since they rewrite existing solid blocks.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    // Snapshot the original bytes so a failed/aborted in-place attempt never
+    // leaves the caller's stream half-written.
+    archive.Position = 0;
+    using var original = new MemoryStream();
+    archive.CopyTo(original);
+    var originalBytes = original.ToArray();
+
+    var newFiles = new List<(string Name, byte[] Data, bool IsDirectory)>();
+    foreach (var input in inputs) {
+      if (string.IsNullOrEmpty(input.ArchiveName)) continue;
+      newFiles.Add((input.ArchiveName, input.IsDirectory ? [] : input.ReadContent(), input.IsDirectory));
+    }
+
+    try {
+      using var work = new MemoryStream();
+      work.Write(originalBytes, 0, originalBytes.Length);
+      work.Position = 0;
+      SevenZipInPlaceAdder.Add(work, newFiles);
+
+      // Commit the in-place result back to the caller's stream.
+      var result = work.ToArray();
+      archive.Position = 0;
+      archive.Write(result, 0, result.Length);
+      archive.SetLength(result.Length);
+      archive.Flush();
+      return;
+    } catch (NotSupportedException) {
+      // Restore the untouched original, then take the verified rebuild path.
+      archive.Position = 0;
+      archive.Write(originalBytes, 0, originalBytes.Length);
+      archive.SetLength(originalBytes.Length);
+    }
+
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      foreach (var input in inputs) {
+        if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName)) continue;
+        var dest = Path.Combine(tmpDir, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
+        var destDir = Path.GetDirectoryName(dest);
+        if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
+        File.WriteAllBytes(dest, input.ReadContent());
+      }
+    });
+  }
+
   /// <summary>Rebuild-based defrag: extracts then re-creates the 7z archive in listing order.</summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
