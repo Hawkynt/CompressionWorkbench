@@ -107,6 +107,40 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
   }
 
+  // ── IArchiveShrinkable: genuine in-place shrink ─────────────────────────
+
+  /// <summary>
+  /// Genuine in-place ext shrink: trims trailing free blocks via
+  /// <see cref="ExtInPlaceShrinker"/> (updating bitmap / descriptors / superblock /
+  /// backups / checksums; every surviving block stays byte-identical). Falls back to
+  /// the <see cref="IArchiveShrinkable"/> default (verified rebuild / copy-through)
+  /// when the in-place path declines — e.g. a target that would need genuine block
+  /// relocation or block-group removal.
+  /// </summary>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    try {
+      input.Position = 0;
+      using var work = new MemoryStream();
+      input.CopyTo(work);
+      var result = ExtInPlaceShrinker.ShrinkToFit(work);
+      if (result.WasReduced) {
+        output.Position = 0;
+        output.SetLength(0);
+        work.Position = 0;
+        work.CopyTo(output);
+        return;
+      }
+    } catch (NotSupportedException) {
+      // fall through to the rebuild/copy-through default
+    } catch (InvalidDataException) {
+      // not an ext image we can parse in place; fall through
+    }
+
+    ((IArchiveShrinkable)this).ShrinkDefault(input, output);
+  }
+
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

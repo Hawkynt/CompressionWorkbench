@@ -27,15 +27,25 @@ public interface IArchiveShrinkable {
   /// (auto-fit) and refuses to emit a lossy result. Formats with a fixed canonical-size
   /// ladder (floppy/disk images) override this to step down standard sizes.</para>
   /// </summary>
-  void Shrink(Stream input, Stream output) {
-    if (this is not IArchiveFormatOperations ops || this is not IArchiveCreatable creator)
-      throw new NotSupportedException(
-        "The default Shrink requires the descriptor to also implement IArchiveFormatOperations + IArchiveCreatable.");
-    // Rebuild into a buffer, then honour the shrink invariant "never grow, never
-    // corrupt": emit the rebuilt image only when it round-tripped AND is actually
-    // smaller; on any rebuild failure (writer limitation, lossy round-trip the
-    // verifier rejected, etc.) fall back to copying the original through
-    // unchanged. Shrink is thus total — it never throws or damages the source.
+  void Shrink(Stream input, Stream output) => this.ShrinkDefault(input, output);
+
+  /// <summary>
+  /// The default rebuild-or-copy-through shrink, exposed so a format-specific
+  /// <see cref="Shrink"/> override (e.g. a genuine in-place shrinker) can fall back to
+  /// it when the in-place path declines an image. Rebuilds into a buffer and emits the
+  /// result only when it round-tripped AND is actually smaller; on any rebuild failure
+  /// it copies the original through unchanged. Shrink is thus total — it never throws
+  /// or damages the source.
+  /// </summary>
+  void ShrinkDefault(Stream input, Stream output) {
+    if (this is not IArchiveFormatOperations ops || this is not IArchiveCreatable creator) {
+      // No rebuild path available: copy through unchanged (never grow, never corrupt).
+      input.Position = 0;
+      output.Position = 0;
+      output.SetLength(0);
+      input.CopyTo(output);
+      return;
+    }
     using var rebuilt = new MemoryStream();
     var useRebuilt = false;
     try {

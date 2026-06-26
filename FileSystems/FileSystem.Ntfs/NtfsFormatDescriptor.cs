@@ -141,6 +141,42 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
   }
 
+  // ── IArchiveShrinkable: genuine in-place shrink ─────────────────────────
+
+  /// <summary>
+  /// Genuine in-place NTFS shrink: relocates only the clusters above the auto-fit
+  /// boundary into free space below it via <see cref="NtfsInPlaceShrinker"/>, trims
+  /// $Bitmap/$Boot, and emits the smaller image. Falls back to the
+  /// <see cref="IArchiveShrinkable"/> default (verified rebuild / copy-through) when
+  /// the in-place path cannot handle the image (e.g. a compressed stream would need
+  /// relocation).
+  /// </summary>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    try {
+      input.Position = 0;
+      using var ms = new MemoryStream();
+      input.CopyTo(ms);
+      var image = ms.ToArray();
+
+      var result = NtfsInPlaceShrinker.ShrinkToFit(image);
+      if (result.WasReduced) {
+        output.Position = 0;
+        output.SetLength(0);
+        output.Write(image, 0, (int)result.NewSize);
+        return;
+      }
+    } catch (NotSupportedException) {
+      // fall through to the rebuild/copy-through default
+    } catch (InvalidDataException) {
+      // not an NTFS image we can parse in place; fall through
+    }
+
+    // Default behaviour: verified rebuild that never grows/corrupts, else copy-through.
+    ((IArchiveShrinkable)this).ShrinkDefault(input, output);
+  }
+
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
