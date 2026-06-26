@@ -139,15 +139,18 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Appends <paramref name="inputs"/> to <paramref name="archive"/>. A pure add of
-  /// new file names to a non-solid/recovery-free, unencrypted RAR5 archive takes the
-  /// genuine in-place append (<see cref="RarInPlaceAdder"/>): new non-solid FILE
-  /// blocks are written before a rewritten ENDARC, leaving every pre-existing block
-  /// byte-identical at its original offset. Any case the append cannot serve
-  /// byte-additively — encryption headers, a recovery-record (RR) or quick-open (QO)
-  /// service block, a RAR4 archive, a directory input, or a name that collides with
-  /// an existing entry — falls back to the verified extract -> re-create rebuild
-  /// (the same WORM rebuild Remove and same-name update always use).
+  /// Appends (or same-name updates) <paramref name="inputs"/> in
+  /// <paramref name="archive"/>. A pure add of new file names to a
+  /// non-solid/recovery-free, unencrypted RAR5 archive takes the genuine in-place
+  /// append (<see cref="RarInPlaceAdder"/>): new non-solid FILE blocks are written
+  /// before a rewritten ENDARC, leaving every pre-existing block byte-identical at
+  /// its original offset. A same-name <em>update</em> is attempted as an in-place
+  /// remove of the old block (<see cref="RarInPlaceRemover"/>, only when the old
+  /// block is not part of a solid run) followed by an in-place add of the new
+  /// content. Any case that cannot be served byte-additively — encryption headers, a
+  /// recovery-record (RR) or quick-open (QO) service block, a RAR4 archive, a
+  /// directory input, or an update whose old block is part of a solid run — falls
+  /// back to the verified extract -> re-create rebuild.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
@@ -171,10 +174,17 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
 
     if (!hasDirectory && newFiles.Count > 0) {
+      // Same-name updates: excise the colliding old block in place (the adder
+      // refuses collisions), then append the new content. A non-byte-additive
+      // case throws and routes the whole operation to the rebuild below.
+      var existing = ExistingNames(originalBytes);
+      var collisions = newFiles.Where(f => existing.Contains(f.Name)).Select(f => f.Name).ToArray();
       try {
         using var work = new MemoryStream();
         work.Write(originalBytes, 0, originalBytes.Length);
         work.Position = 0;
+        if (collisions.Length > 0)
+          RarInPlaceRemover.Remove(work, collisions);
         RarInPlaceAdder.Add(work, newFiles);
 
         var result = work.ToArray();
@@ -200,5 +210,66 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         File.WriteAllBytes(dest, input.ReadContent());
       }
     });
+  }
+
+  /// <summary>
+  /// Removes the named entries from the RAR5 archive. Removing a non-solid FILE
+  /// block from a recovery-free, unencrypted RAR5 archive is a genuine
+  /// O(bytes-shifted) in-place remove: the block's <c>[header + data]</c> range is
+  /// excised and the following blocks (and ENDARC) shift down to close the gap, so
+  /// every surviving block stays byte-identical — the ones before the hole at their
+  /// exact offset, the ones after shifted down (<see cref="RarInPlaceRemover"/>).
+  /// Any case that cannot be served byte-additively — a target that is part of a
+  /// solid run (itself solid, or immediately followed by a solid block that reuses
+  /// its dictionary), an encryption header, a recovery-record (RR) or quick-open
+  /// (QO) service block, or a RAR4 archive — falls back to the verified extract ->
+  /// re-create rebuild.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+
+    archive.Position = 0;
+    using var original = new MemoryStream();
+    archive.CopyTo(original);
+    var originalBytes = original.ToArray();
+
+    try {
+      using var work = new MemoryStream();
+      work.Write(originalBytes, 0, originalBytes.Length);
+      work.Position = 0;
+      RarInPlaceRemover.Remove(work, entryNames);
+
+      var result = work.ToArray();
+      archive.Position = 0;
+      archive.Write(result, 0, result.Length);
+      archive.SetLength(result.Length);
+      archive.Flush();
+      return;
+    } catch (NotSupportedException) {
+      archive.Position = 0;
+      archive.Write(originalBytes, 0, originalBytes.Length);
+      archive.SetLength(originalBytes.Length);
+    }
+
+    var skip = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
+        var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
+        if (skip.Contains(rel) || skip.Contains(Path.GetFileName(rel)))
+          File.Delete(file);
+      }
+    });
+  }
+
+  /// <summary>The non-directory entry names currently present in the RAR archive.</summary>
+  private static HashSet<string> ExistingNames(byte[] archiveBytes) {
+    var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    using var ms = new MemoryStream(archiveBytes, writable: false);
+    using var r = new RarReader(ms, leaveOpen: true);
+    foreach (var e in r.Entries)
+      if (!e.IsDirectory)
+        names.Add(e.Name);
+    return names;
   }
 }

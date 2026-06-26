@@ -23,16 +23,18 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   ];
 
   /// <summary>
-  /// Adds files to the 7z archive. Pure additions of new names are served as a
-  /// genuine O(bytes-added) in-place append: the new files are compressed into one
-  /// fresh solid block written at the old header's byte offset, leaving every
-  /// existing solid block byte-identical at its original position
-  /// (<see cref="SevenZipInPlaceAdder"/>). Anything the append cannot satisfy
-  /// byte-additively — an encoded/encrypted header, a non-trivial packed layout
-  /// (PackPos != 0, a gap, BCJ2 / AES folders), or a name that collides with an
-  /// existing entry (an update touches an existing solid block) — falls back to
-  /// the verified extract → re-create rebuild. Update and remove always use that
-  /// rebuild, since they rewrite existing solid blocks.
+  /// Adds (or same-name updates) files in the 7z archive. Pure additions of new
+  /// names are served as a genuine O(bytes-added) in-place append: the new files
+  /// are compressed into one fresh solid block written at the old header's byte
+  /// offset, leaving every existing solid block byte-identical at its original
+  /// position (<see cref="SevenZipInPlaceAdder"/>). A same-name <em>update</em> is
+  /// attempted as an in-place remove of the old entry (<see cref="SevenZipInPlaceRemover"/>,
+  /// only when it removes a whole folder/solid block) followed by an in-place add
+  /// of the new content — still O(bytes touched), no re-pack of the untouched
+  /// blocks. Anything that cannot be served byte-additively — an encoded/encrypted
+  /// header, a non-trivial packed layout (PackPos != 0, a gap, BCJ2 / AES folders),
+  /// or an update whose old entry is a proper subset of a multi-file solid block —
+  /// falls back to the verified extract → re-create rebuild.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
@@ -51,10 +53,19 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       newFiles.Add((input.ArchiveName, input.IsDirectory ? [] : input.ReadContent(), input.IsDirectory));
     }
 
+    // Names that already exist must be updated, not merely appended; the adder
+    // refuses collisions, so excise the old entries in place first (whole-folder
+    // removal only) before the append. Any non-byte-additive case throws and routes
+    // the whole operation to the rebuild below.
+    var existing = ExistingNames(originalBytes);
+    var collisions = newFiles.Where(f => existing.Contains(f.Name)).Select(f => f.Name).ToArray();
+
     try {
       using var work = new MemoryStream();
       work.Write(originalBytes, 0, originalBytes.Length);
       work.Position = 0;
+      if (collisions.Length > 0)
+        SevenZipInPlaceRemover.Remove(work, collisions);
       SevenZipInPlaceAdder.Add(work, newFiles);
 
       // Commit the in-place result back to the caller's stream.
@@ -80,6 +91,66 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
         File.WriteAllBytes(dest, input.ReadContent());
       }
     });
+  }
+
+  /// <summary>
+  /// Removes the named entries from the 7z archive. A removal that drops one or
+  /// more <b>entire</b> folders (solid blocks), plus any empty-stream entries, is
+  /// served as a genuine O(bytes-shifted) in-place remove: the removed folders'
+  /// packed streams are excised and the packed region is compacted by the gap, so
+  /// every surviving folder's packed stream stays byte-identical (the ones before a
+  /// hole at their exact offset, the ones after shifted down) — no re-pack
+  /// (<see cref="SevenZipInPlaceRemover"/>). A removal that targets a <em>proper
+  /// subset</em> of a multi-file solid block (the survivors would have to be
+  /// recompressed), or an archive with an encoded/encrypted header or a non-trivial
+  /// packed layout, falls back to the verified extract → re-create rebuild.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+
+    archive.Position = 0;
+    using var original = new MemoryStream();
+    archive.CopyTo(original);
+    var originalBytes = original.ToArray();
+
+    try {
+      using var work = new MemoryStream();
+      work.Write(originalBytes, 0, originalBytes.Length);
+      work.Position = 0;
+      SevenZipInPlaceRemover.Remove(work, entryNames);
+
+      var result = work.ToArray();
+      archive.Position = 0;
+      archive.Write(result, 0, result.Length);
+      archive.SetLength(result.Length);
+      archive.Flush();
+      return;
+    } catch (NotSupportedException) {
+      archive.Position = 0;
+      archive.Write(originalBytes, 0, originalBytes.Length);
+      archive.SetLength(originalBytes.Length);
+    }
+
+    var skip = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
+        var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
+        if (skip.Contains(rel) || skip.Contains(Path.GetFileName(rel)))
+          File.Delete(file);
+      }
+    });
+  }
+
+  /// <summary>The non-directory entry names currently present in the 7z archive.</summary>
+  private static HashSet<string> ExistingNames(byte[] archiveBytes) {
+    var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    using var ms = new MemoryStream(archiveBytes, writable: false);
+    using var r = new SevenZipReader(ms, leaveOpen: true);
+    foreach (var e in r.Entries)
+      if (!e.IsDirectory)
+        names.Add(e.Name);
+    return names;
   }
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the 7z archive in listing order.</summary>
