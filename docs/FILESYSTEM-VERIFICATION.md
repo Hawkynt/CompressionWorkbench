@@ -20,14 +20,14 @@ Re-run by `QemuLinuxMountTests` (kernel mounts), `ExternalRetroToolTests` (vinta
 | Tier | Count |
 |------|-------|
 | RW | 9 |
-| RO | 30 |
+| RO | 31 |
 | FSCK | 10 |
 | SPEC | 39 |
-| DETECT | 143 |
+| DETECT | 142 |
 | SIM | 11 |
 | **Total** | **242** |
 
-**49 of 242 formats are proven by a real external tool.** 39 are real formats with no reachable external tool (reader + struct-parity only); 143 are detection-only (no writable image); 11 are simplified/not-tool-validated.
+**50 of 242 formats are proven by a real external tool.** 39 are real formats with no reachable external tool (reader + struct-parity only); 142 are detection-only (no writable image); 11 are simplified/not-tool-validated.
 
 ## RW — 9 filesystems
 
@@ -43,7 +43,7 @@ Re-run by `QemuLinuxMountTests` (kernel mounts), `ExternalRetroToolTests` (vinta
 | Ufs | FileSystem.Ufs | FreeBSD kernel UFS mount r/w + fsck_ffs (qemu) |
 | Xfs | FileSystem.Xfs | Linux kernel xfs mount r/w + xfs_repair |
 
-## RO — 30 filesystems
+## RO — 31 filesystems
 
 | Id | Project | Proof |
 |----|---------|-------|
@@ -66,6 +66,7 @@ Re-run by `QemuLinuxMountTests` (kernel mounts), `ExternalRetroToolTests` (vinta
 | Jfs | FileSystem.Jfs | Linux kernel jfs mount + fsck.jfs (qemu) |
 | Lif | FileSystem.Lif | lifutils LIF volume read by our LifReader |
 | LittleFs | FileSystem.LittleFs | mklittlefs (littlefs v2.11) image read by our LittleFsReader |
+| Nilfs2 | FileSystem.Nilfs2 | Linux kernel nilfs2 mount reads our writer's image byte-exact (host loop-mount); our reader also re-validates a real mkfs.nilfs2 superblock (crc32_le) |
 | Ocfs2 | FileSystem.Ocfs2 | mkfs.ocfs2 + kernel-written image (qemu) read by our Ocfs2 descriptor |
 | Os9Rbf | FileSystem.Os9Rbf | toolshed os9 RBF disk read by our Os9RbfReader |
 | ProDos | FileSystem.ProDos | AppleCommander ProDOS image read by our ProDosReader |
@@ -88,8 +89,8 @@ Re-run by `QemuLinuxMountTests` (kernel mounts), `ExternalRetroToolTests` (vinta
 | Hfs | FileSystem.Hfs | hfsutils hls lists our files |
 | HfsPlus | FileSystem.HfsPlus | fsck.hfsplus + hfsutils |
 | MinixFs | FileSystem.MinixFs | mkfs.minix round-trip |
-| MinixV1 | FileSystem.MinixV1 | mkfs.minix round-trip |
-| MinixV2 | FileSystem.MinixV2 | mkfs.minix round-trip |
+| MinixV1 | FileSystem.MinixV1 | fsck.minix clean on our in-place-modified image + Linux kernel minix mount reads the in-place-added file byte-exact (host loop-mount) |
+| MinixV2 | FileSystem.MinixV2 | fsck.minix clean on our in-place-modified image + Linux kernel minix mount reads the in-place-added file byte-exact (host loop-mount) |
 | Ntfs | FileSystem.Ntfs | ntfs-3g ntfsls/ntfsinfo + ntfsfix |
 | ReiserFs | FileSystem.ReiserFs | reiserfsck + mutate-clean |
 
@@ -137,7 +138,7 @@ Re-run by `QemuLinuxMountTests` (kernel mounts), `ExternalRetroToolTests` (vinta
 | Zfs | FileSystem.Zfs |
 | ZxScl | FileSystem.ZxScl |
 
-## DETECT — 143 filesystems
+## DETECT — 142 filesystems
 
 | Id | Project |
 |----|---------|
@@ -216,7 +217,6 @@ Re-run by `QemuLinuxMountTests` (kernel mounts), `ExternalRetroToolTests` (vinta
 | Ncp | FileSystem.NetFs |
 | Nexfs | FileSystem.NetFs |
 | Nfs | FileSystem.NetFs |
-| Nilfs2 | FileSystem.Nilfs2 |
 | NineP | FileSystem.NetFs |
 | Nss | FileSystem.Nss |
 | Nwfs | FileSystem.Nwfs |
@@ -308,13 +308,15 @@ Re-run by `QemuLinuxMountTests` (kernel mounts), `ExternalRetroToolTests` (vinta
 - **CpcDsk** — cpmtools+libdsk round-trips a CPC `.dsk` but our reader expects a different EDSK geometry.
 - **Pc98** — its NEC IPL stores the FAT BPB at offset 0x80 (not the standard 0x0B), so the kernel msdos driver does not accept it; proving it RO needs either a standard-BPB variant writer or a real PC-98 disk-image oracle (Xenix and Coherent are now proven RO via the sysv driver's detect_xenix / detect_coherent).
 - **DoubleSpace / DriveSpace are now RW** — `GenuineCvfWriter` emits a real MSDBL6.0 CVF the genuine MS-DOS 6.22 DRVSPACE driver (QEMU) mounts and reads byte-exact (single- and multi-cluster files), the driver writes new files our reader recovers byte-exact, and we read real DRVSPACE-created CVFs byte-exact. **DriveSpace3** (Win95 Plus! Pack, MS-LZH codec) still needs a Win95 guest to produce an oracle; **Stacker** is a separate proprietary format (Stac LZS) with no DOS-bundled tool — both remain SPEC pending sourced software.
-- **Reiser4 / BcacheFs / Zfs** — need `reiser4progs` / `bcachefs-tools` / `zdb`.
+- **Reiser4 / BcacheFs / Zfs** — need `reiser4progs` / `bcachefs-tools` / `zdb` (none installable here; ZFS has no kernel module either).
+- **Jfs1** — the only reachable JFS tool/driver is JFS2 (Linux `jfs`). It does NOT accept our JFS1 (OS/2) image: the kernel mount fails (`mount -t jfs` → "wrong fs type, bad superblock"), and `fsck.jfs 1.1.15` reports *"Unable to read primary superblock … Superblock is corrupt"* — it probes the JFS2 superblock offsets (32768/61440) which JFS1 does not use. No JFS1-aware external tool exists in any reachable environment; stays SPEC (reader + struct-parity).
+- **Gfs1** — the only reachable GFS tool/driver is GFS2 (Linux `gfs2`). It rejects our GFS1 image: `mount -t gfs2` fails with kernel log *"gfs2: Unknown on-disk format, unable to mount"* (GFS1 `sb_fmt`/`sb_multihost_format` differ from GFS2). No GFS1-aware tool exists; stays SPEC.
 - **Adfs** — Linux `adfs` driver not in the Alpine guest module set.
 - Remaining SPEC formats — elevate where an extractable third-party tool exists; otherwise none does.
 
 ## How the proofs run
 
-- **Kernel-mount (RW/RO):** `Compression.Tests/QemuLinuxMountTests.cs` boots a headless Alpine guest (`Support/QemuLinuxRunner.cs`), mounts each image with the real kernel, asserts an unforgeable per-fs content marker. UFS/HAMMER/HAMMER2 use the BSD oracle (`Support/QemuRunner.cs`).
+- **Kernel-mount (RW/RO):** `Compression.Tests/QemuLinuxMountTests.cs` boots a headless Alpine guest (`Support/QemuLinuxRunner.cs`), mounts each image with the real kernel, asserts an unforgeable per-fs content marker. UFS/HAMMER/HAMMER2 use the BSD oracle (`Support/QemuRunner.cs`). On a Linux host whose kernel carries the module, `Compression.Tests/KernelMount/InPlaceRwKernelMountTests.cs` loop-mounts our writer's image directly with the host driver (no QEMU) and reads the in-place-added file byte-exact — currently proving MinixV1, MinixV2 (`minix`) and Nilfs2 (`nilfs2`); it skips cleanly when sudo/losetup/mount or the module is unavailable.
 - **Vintage/embedded tools (RO):** `Compression.Tests/ExternalRetroToolTests.cs` drives `xdftool` (amitools), `cbmconvert`, `cpmtools` and `mkfs.cramfs` — the real tool writes a canonical image our reader extracts byte-exact.
 - **fsck/inspect (FSCK):** `ExternalConformance*` / `ExternalFsInteropTests` drive host `e2fsck`, `xfs_repair`, `btrfs check`, `fsck.f2fs/jfs`, `reiserfsck`, `fsck.minix`, `fsck.hfsplus`, `hfsutils`, `ntfs-3g`, `mkudffs`, `unsquashfs`, `mtools`, `qemu-img`.
 - **SPEC:** each filesystem's own reader + on-disk struct-parity unit tests — the only proof possible when no external tool for that format exists anywhere.
