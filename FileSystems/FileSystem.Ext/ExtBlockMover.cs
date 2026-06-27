@@ -272,9 +272,13 @@ public sealed class ExtBlockMover : IFilesystemBlockMover {
         if (off + 12 > node.Length) break;
         var startHi = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(off + 6));
         var startLo = BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(off + 8));
-        var startBlock = (uint)(((long)startHi << 32) | startLo);
-        if (startBlock >= oldFirst && startBlock < oldFirst + (uint)blockCount) {
-          var newStart = newFirst + (startBlock - oldFirst);
+        // 48-bit physical block: keep it 64-bit so the ee_start_hi write below
+        // shifts correctly. A 32-bit value here would make `newStart >> 32` a
+        // no-op (C# masks the shift to 31), writing the LOW 16 bits into
+        // ee_start_hi and producing a wild physical start that fsck rejects.
+        var startBlock = ((long)startHi << 32) | startLo;
+        if (startBlock >= oldFirst && startBlock < (long)oldFirst + blockCount) {
+          var newStart = (long)newFirst + (startBlock - oldFirst);
           BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(off + 6), (ushort)(newStart >> 32));
           BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(off + 8), (uint)(newStart & 0xFFFFFFFF));
           changed = true;
