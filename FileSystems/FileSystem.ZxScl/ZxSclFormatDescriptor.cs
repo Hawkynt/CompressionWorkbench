@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ZxScl;
 
-public sealed class ZxSclFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class ZxSclFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   // Upper bound: max payload (40 tracks x 16 sectors x 256 bytes x 4 layers) + magic/headers/CRC.
   public long? MaxTotalArchiveSize => ZxSclReader.MaxPayloadSize;
@@ -133,6 +133,69 @@ public sealed class ZxSclFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     var crcOffset = archive.Length - 4;
     if (crcOffset > 0)
       yield return new DefragBlockInfo(crcOffset, 4, DefragBlockKind.MetadataReserved, "CRC32");
+  }
+
+  // ── IWipeEmpty ───────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Zero-fills every byte of the SCL image that is not part of the header,
+  /// the directory, a live sector-padded payload region, or the trailing CRC.
+  /// SCL is densely packed by construction (removal physically compacts and
+  /// truncates the stream), so on a well-formed image the only wipeable bytes
+  /// are cluster tips: the slack between a file's true byte length (the
+  /// TR-DOS param2 field of code/data entries) and its 256-byte sector-padded
+  /// region. The wipe is bounded by the archive's own geometry — header +
+  /// directory + Σ(LengthSectors × 256) + 4-byte CRC — never by the raw
+  /// stream length, and the trailing 32-bit checksum is recomputed whenever
+  /// any byte changed so the image stays self-consistent.
+  /// <paramref name="wipeDeletedEntries"/> is accepted for interface parity
+  /// but has nothing extra to do: SCL removal leaves no dead directory slots
+  /// or orphaned payload behind.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+
+    image.Position = 0;
+    using var r = new ZxSclReader(image);
+
+    // The archive's own extent: magic + count byte + directory + payload + CRC.
+    var directoryEnd = 9L + r.Entries.Count * ZxSclReader.HeaderSize;
+    var payloadEnd = directoryEnd;
+    foreach (var e in r.Entries)
+      payloadEnd += e.Size;
+    var imageSize = Math.Min(image.Length, payloadEnd + 4);
+
+    var extents = new List<DefragBlockInfo> {
+      new(0, directoryEnd, DefragBlockKind.MetadataReserved, "Header+Directory"),
+      new(payloadEnd, 4, DefragBlockKind.MetadataReserved, "CRC32"),
+    };
+    // TR-DOS stores only a sector count in the directory; param2 is the true
+    // byte length for code ('C') and data ('D') entries, so only those tips
+    // can be wiped without risking real payload bytes of other entry types.
+    var trueSizes = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+    foreach (var e in r.Entries) {
+      if (e.Size <= 0)
+        continue;
+      extents.Add(new(e.DataOffset, e.Size, DefragBlockKind.Used, e.Name));
+      if (e.FileType is 'C' or 'D' && e.Param2 > 0 && e.Param2 <= e.Size) {
+        // The wiper looks tips up by name; if two entries share a display name
+        // but disagree on length, wiping either could hit real bytes — skip both.
+        if (!trueSizes.TryAdd(e.Name, e.Param2) && trueSizes[e.Name] != e.Param2)
+          trueSizes[e.Name] = -1;
+      } else {
+        trueSizes[e.Name] = -1;
+      }
+    }
+
+    var wiped = UnusedSpaceWiper.Wipe(
+      image, extents, imageSize, wipeClusterTips,
+      wipeClusterTips ? name => trueSizes.TryGetValue(name, out var s) ? s : -1 : null);
+
+    // Any zeroed byte invalidates the trailing sum-of-bytes checksum — re-seal it.
+    if (wiped > 0)
+      ZxSclInPlaceModifier.WriteCrc(image, payloadEnd);
+
+    return wiped;
   }
 
   // ── Shared delegates ─────────────────────────────────────────────────

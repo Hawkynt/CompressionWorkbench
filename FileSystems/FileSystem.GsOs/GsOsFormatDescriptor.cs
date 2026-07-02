@@ -18,7 +18,12 @@ namespace FileSystem.GsOs;
 /// first-match conflict.
 /// </para>
 /// </summary>
-public sealed class GsOsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class GsOsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable {
+  // IArchiveDefragmentable / IArchiveShrinkable use the interface defaults: a
+  // verified extract → re-create rebuild (RebuildVerb) that refuses to commit a
+  // lossy result. ProDOS-ordered payloads round-trip via the inner ProDOS walk;
+  // HFS / DOS-3.3 payloads fail the rebuild verification and leave the image
+  // untouched (defrag throws cleanly, shrink copies through unchanged).
   public string Id => "GsOs";
   public string DisplayName => "Apple IIgs GS/OS (2IMG)";
   public FormatCategory Category => FormatCategory.Archive;

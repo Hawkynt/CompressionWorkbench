@@ -46,6 +46,46 @@ public class StackerGenuineMaintenanceTests {
   }
 
   [Test]
+  public void Shrink_KeepsGenuineLayout_AndPreservesContent() {
+    var d = new StackerFormatDescriptor();
+    var img = MakeGenuine();
+    using var input = new MemoryStream(img);
+    using var output = new MemoryStream();
+
+    d.Shrink(input, output);
+
+    var shrunk = output.ToArray();
+    Assert.That(shrunk.Length, Is.GreaterThan(0).And.LessThanOrEqualTo(img.Length),
+      "shrink must never grow the image");
+    // Must stay a *genuine* STACVOL (not silently converted to the
+    // CompressionWorkbench-only Extended layout).
+    using var gr = new GenuineStackerReader(new MemoryStream(shrunk));
+    Assert.That(gr.Entries.Count(e => !e.IsDirectory), Is.EqualTo(Seed.Length),
+      "shrunk image still parses as a genuine STACVOL with the full file set");
+    var got = ReadAll(d, shrunk);
+    foreach (var (n, data) in Seed) Assert.That(got[n], Is.EqualTo(data), $"{n} survived shrink");
+  }
+
+  [Test]
+  public void Shrink_OnExtendedLayout_IsNonLossy() {
+    var d = new StackerFormatDescriptor();
+    using var created = new MemoryStream();
+    d.Create(created,
+      [.. Seed.Select(s => ArchiveInputInfo.InMemory(s.Name, s.Data))],
+      new FormatCreateOptions());
+    var img = created.ToArray();
+
+    using var input = new MemoryStream(img);
+    using var output = new MemoryStream();
+    d.Shrink(input, output);
+
+    Assert.That(output.Length, Is.GreaterThan(0).And.LessThanOrEqualTo(img.Length),
+      "shrink must never grow the image");
+    var got = ReadAll(d, output.ToArray());
+    foreach (var (n, data) in Seed) Assert.That(got[n], Is.EqualTo(data), $"{n} survived shrink");
+  }
+
+  [Test]
   public void Add_Then_Remove_RoundTrips() {
     var d = new StackerFormatDescriptor();
     using var ms = new MemoryStream(); ms.Write(MakeGenuine()); ms.Position = 0;

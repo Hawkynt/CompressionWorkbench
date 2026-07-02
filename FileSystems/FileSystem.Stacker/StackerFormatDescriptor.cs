@@ -13,7 +13,10 @@ namespace FileSystem.Stacker;
 /// clusters are STORED verbatim or Stac-LZS compressed (RFC 1967/2395).
 /// Detection is by the ASCII "STACKER" banner at file offset 0.
 /// </summary>
-public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+  // IArchiveShrinkable uses the interface default: a verified extract →
+  // re-create rebuild that only replaces the image when the result round-trips
+  // AND is smaller; otherwise the original bytes are copied through unchanged.
   public string Id => "Stacker";
   public string DisplayName => "Stacker CVF";
   public FormatCategory Category => FormatCategory.Archive;
@@ -208,6 +211,38 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
   public void Defragment(Stream archive, DefragOptions options)
     => this.Defragment(archive);
+
+  /// <summary>
+  /// Shrinks the CVF by repacking it through the flavor-preserving rebuild —
+  /// a genuine STACVOL stays a genuine STACVOL (label kept, auto-best
+  /// recompression), an Extended image stays Extended — instead of the
+  /// interface default, whose plain re-create would silently convert a
+  /// driver-compatible genuine volume into the CompressionWorkbench-only
+  /// Extended layout. The rebuilt image is emitted only when it lists the
+  /// same file set AND is smaller; otherwise the original bytes are copied
+  /// through unchanged, so Shrink never corrupts or grows the source.
+  /// </summary>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    var data = ReadAll(input);
+    byte[]? rebuilt;
+    try {
+      rebuilt = Rebuild(data, null, null);
+      // Verify the repack is non-lossy before trusting it: same leaf-name multiset.
+      var before = this.List(new MemoryStream(data), null)
+        .Where(e => !e.IsDirectory).Select(e => LeafLower(e.Name)).Order().ToList();
+      var after = this.List(new MemoryStream(rebuilt), null)
+        .Where(e => !e.IsDirectory).Select(e => LeafLower(e.Name)).Order().ToList();
+      if (!before.SequenceEqual(after))
+        rebuilt = null;
+    } catch {
+      rebuilt = null;
+    }
+    output.Position = 0;
+    output.SetLength(0);
+    output.Write(rebuilt is not null && rebuilt.Length > 0 && rebuilt.Length < data.Length ? rebuilt : data);
+  }
 
   /// <summary>Purges unused space by repacking; returns bytes reclaimed.</summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {

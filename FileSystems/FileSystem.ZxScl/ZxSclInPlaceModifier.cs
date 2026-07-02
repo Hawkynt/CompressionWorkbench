@@ -293,9 +293,11 @@ public static class ZxSclInPlaceModifier {
 
   /// <summary>
   /// Computes the 32-bit little-endian sum of bytes [0 .. preCrcEnd) and writes
-  /// it at offset preCrcEnd (the 4-byte CRC trailer).
+  /// it at offset preCrcEnd (the 4-byte CRC trailer). Internal so other in-place
+  /// mutators (e.g. the unused-space wipe) can re-seal the trailer after
+  /// touching payload bytes.
   /// </summary>
-  private static void WriteCrc(Stream archive, long preCrcEnd) {
+  internal static void WriteCrc(Stream archive, long preCrcEnd) {
     var sum = 0u;
     archive.Position = 0;
     var buf = ArrayPool<byte>.Shared.Rent(64 * 1024);
