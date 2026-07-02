@@ -24,10 +24,10 @@ Re-run by `QemuLinuxMountTests` (kernel mounts), `ExternalRetroToolTests` (vinta
 | FSCK | 10 |
 | SPEC | 39 |
 | DETECT | 142 |
-| SIM | 11 |
-| **Total** | **242** |
+| SIM | 0 |
+| **Total** | **231** |
 
-**50 of 242 formats are proven by a real external tool.** 39 are real formats with no reachable external tool (reader + struct-parity only); 142 are detection-only (no writable image); 11 are simplified/not-tool-validated.
+**50 of 231 formats are proven by a real external tool.** 39 are real formats with no reachable external tool (reader + struct-parity only); 142 are detection-only (no writable image). No simplified/toy writers remain (see the SIM section).
 
 ## RW — 9 filesystems
 
@@ -285,21 +285,15 @@ Re-run by `QemuLinuxMountTests` (kernel mounts), `ExternalRetroToolTests` (vinta
 | ZosZfs | FileSystem.NetFs |
 | ZvmByteFs | FileSystem.NetFs |
 
-## SIM — 11 filesystems
+## SIM — 0 filesystems
 
-| Id | Project |
-|----|---------|
-| AthFs | FileSystem.DiskVariants |
-| Chfs | FileSystem.DiskVariants |
-| Ext3Cow | FileSystem.DiskVariants |
-| Fossil | FileSystem.Fossil |
-| Next3 | FileSystem.DiskVariants |
-| NextFs | FileSystem.DiskVariants |
-| Nova | FileSystem.Nova |
-| SkyFs | FileSystem.DiskVariants |
-| TivoMfs | FileSystem.DiskVariants |
-| Venti | FileSystem.Venti |
-| Yaffs1 | FileSystem.DiskVariants |
+None. The 11 simplified writers this table originally listed (AthFs, Chfs, Ext3Cow,
+Fossil, Next3, NextFs, Nova, SkyFs, TivoMfs, Venti, Yaffs1 — magic-stamp-over-simplified-layout
+experiments in local FileSystem.DiskVariants / FileSystem.Fossil / FileSystem.Nova /
+FileSystem.Venti projects) were never committed to the repository and no longer exist.
+Every filesystem in the codebase today has either a faithful writer (RW/RO/FSCK/SPEC)
+or is honestly detection-only (DETECT); the toy tier is empty. If a simplified writer is
+ever (re)introduced it must be listed here with its caveat.
 
 
 ## Pending proof upgrades
