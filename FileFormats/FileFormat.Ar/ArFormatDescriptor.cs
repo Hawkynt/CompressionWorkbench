@@ -5,6 +5,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ar;
 
+/// <summary>
+/// Unix ar archive — the static-library (.a) and .deb outer container with 60-byte ASCII member headers.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>ar(5)</c> man page (4.4BSD / FreeBSD) — the de-facto format definition (ar was never standardized by POSIX)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Ar_(Unix)</c> — format overview incl. the GNU and BSD long-name extensions</description></item>
+/// </list>
+/// </summary>
 public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the AR archive in listing order.</summary>

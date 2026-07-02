@@ -25,6 +25,13 @@ namespace FileSystem.GlusterFs;
 /// would require walking a live directory tree and reading xattrs,
 /// which is outside the image-stream contract enforced by
 /// <see cref="IArchiveFormatOperations"/>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://docs.gluster.org</c> — official GlusterFS documentation (brick/xattr architecture)</description></item>
+///   <item><description><c>https://github.com/gluster/glusterfs</c> — canonical source</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/GlusterFS</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class GlusterFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

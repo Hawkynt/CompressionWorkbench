@@ -5,6 +5,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.D64;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://unusedino.de/ec64/technical/formats/d64.html</c> — Peter Schepers' D64 format specification (BAM, directory, track/sector layout)</description></item>
+///   <item><description>"Inside Commodore DOS" (Richard Immers &amp; Gerald Neufeld, Datamost, 1984) — the canonical 1541 DOS internals book</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Commodore_1541</c> — Wikipedia overview of the drive whose disks D64 images</description></item>
+/// </list>
+/// </summary>
 public sealed class D64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

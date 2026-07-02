@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Tap;
 
+/// <summary>
+/// ZX Spectrum TAP tape image — length-prefixed blocks as written by the ROM SAVE routine.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://sinclair.wiki.zxnet.co.uk/wiki/TAP_format</c> — Sinclair wiki — TAP format description</description></item>
+///   <item><description>World of Spectrum "File format reference" — long-standing community documentation</description></item>
+/// </list>
+/// </summary>
 public sealed class TapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemBlockMover {
   public string Id => "Tap";
   public string DisplayName => "TAP";

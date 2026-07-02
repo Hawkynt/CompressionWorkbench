@@ -5,6 +5,17 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Ufs;
 
+/// <summary>
+/// R/W descriptor for UFS1 (Berkeley Fast File System) images at the
+/// byte-exact <c>newfs -O1</c> layout.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>McKusick, Joy, Leffler, Fabry — "A Fast File System for UNIX" (ACM TOCS, 1984), the defining FFS paper</description></item>
+///   <item><description><c>https://github.com/freebsd/freebsd-src/tree/main/sys/ufs</c> — canonical implementation (<c>ffs/fs.h</c> on-disk superblock)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Unix_File_System</c> — Wikipedia article</description></item>
+/// </list>
+/// </summary>
 public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
                                           IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints,
                                           IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty,

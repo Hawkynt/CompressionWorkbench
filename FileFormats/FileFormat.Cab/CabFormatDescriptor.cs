@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cab;
 
+/// <summary>
+/// Microsoft Cabinet (CAB) archive — CFHEADER/CFFOLDER/CFFILE structures with MSZIP/Quantum/LZX-compressed folders.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>[MS-CAB]: Cabinet File Format — Microsoft Open Specifications</description></item>
+///   <item><description><c>https://www.cabextract.org.uk/libmspack/</c> — libmspack — maintained open-source CAB implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Cabinet_(file_format)</c> — format overview</description></item>
+/// </list>
+/// </summary>
 public sealed class CabFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => CabLayoutMap.Enumerate(archive);

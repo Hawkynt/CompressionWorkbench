@@ -4,6 +4,17 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Vdfs;
 
+/// <summary>
+/// Descriptor for Gothic-engine VDFS archives (magic "PSVDSC_V2.00", .vdf) —
+/// the virtual-disk container used by Piranha Bytes' ZenGin games.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://gothic-modding-community.github.io/gmc/</c> — Gothic Modding Community documentation</description></item>
+///   <item><description><c>https://github.com/REGoth-project/REGoth</c> — REGoth engine reimplementation — includes a VDFS reader</description></item>
+///   <item><description>VdfsSharp — C# VDFS extractor/creator (GitHub)</description></item>
+/// </list>
+/// </summary>
 public sealed class VdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "Vdfs";
   public string DisplayName => "VDFS";

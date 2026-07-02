@@ -17,6 +17,13 @@ namespace FileFormat.AppImage;
 ///   <item>A synthetic <c>metadata.ini</c> with AppImage type, runtime offset, and architecture.</item>
 ///   <item>Every SquashFS entry, prefixed with <c>filesystem/</c>.</item>
 /// </list>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/AppImage/AppImageSpec</c> — AppImage format specification (type 1 and type 2)</description></item>
+///   <item><description><c>https://appimage.org</c> — project site</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/AppImage</c> — background</description></item>
+/// </list>
 /// </summary>
 public sealed class AppImageFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 

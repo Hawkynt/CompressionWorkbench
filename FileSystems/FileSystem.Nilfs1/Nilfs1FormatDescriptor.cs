@@ -21,6 +21,13 @@ namespace FileSystem.Nilfs1;
 /// in the writer's compact directory ('/' separator). The reader returns the
 /// flat list with subdir prefixes; consumers reconstruct the tree via
 /// <see cref="FormatHelpers.WriteFile(string, string, byte[])"/>.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://nilfs.sourceforge.io/</c> — NILFS project home (covers the original NILFS v1)</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/blob/master/include/uapi/linux/nilfs2_ondisk.h</c> — shared on-disk superblock layout (s_rev_level discriminates v1)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/NILFS</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {

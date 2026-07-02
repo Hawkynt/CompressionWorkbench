@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cdi;
 
+/// <summary>
+/// DiscJuggler CDI disc image (Padus) — track data plus trailing session/track descriptor blocks.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://en.wikipedia.org/wiki/DiscJuggler</c> — background on the creating tool</description></item>
+///   <item><description>CDIrip source — the DiscJuggler layout was reverse-engineered by the disc-preservation community; Padus never published a spec</description></item>
+/// </list>
+/// </summary>
 public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
 
   public void Defragment(Stream archive)

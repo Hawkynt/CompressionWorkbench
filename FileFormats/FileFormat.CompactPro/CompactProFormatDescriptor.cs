@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.CompactPro;
 
+/// <summary>
+/// Compact Pro archive (Bill Goodman / Cyclos) — classic-Mac compressor that rivaled StuffIt in the early 1990s.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/MacPaw/XADMaster</c> — The Unarchiver's XADMaster — open-source Compact Pro reader</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Compact_Pro</c> — format history</description></item>
+/// </list>
+/// </summary>
 public sealed class CompactProFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the Compact Pro archive in listing order.</summary>

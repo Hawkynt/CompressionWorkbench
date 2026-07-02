@@ -5,6 +5,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Bbc;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://beebwiki.mdfs.net/Acorn_DFS_disc_format</c> — BeebWiki's Acorn DFS disc format page, the de-facto on-disk reference (catalog sectors, boot option)</description></item>
+///   <item><description>Acorn "Disc Filing System User Guide" (Acorn Computers) — original vendor documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Disc_Filing_System</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

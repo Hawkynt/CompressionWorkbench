@@ -8,6 +8,12 @@ namespace FileFormat.FontCollection;
 /// 'ttcf' magic) — as <c>FULL.otc</c> + <c>metadata.ini</c> +
 /// <c>fonts/&lt;i&gt;_&lt;name&gt;.{otf,ttf}</c> + <c>glyphs/&lt;i&gt;_&lt;name&gt;/U+XXXX.svg</c>.
 /// CFF-outline members are recognised but produce no glyph SVGs (recorded in metadata).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/typography/opentype/spec/</c> — OpenType specification — the 'ttcf' collection header is defined in the font-file tables chapter</description></item>
+///   <item><description><c>https://developer.apple.com/fonts/TrueType-Reference-Manual/</c> — Apple TrueType Reference Manual</description></item>
+/// </list>
 /// </summary>
 public sealed class OtcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Otc";

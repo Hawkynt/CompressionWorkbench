@@ -11,6 +11,12 @@ namespace FileFormat.Gb;
 /// Game Boy / Game Boy Color ROM. Detected via the fixed Nintendo logo at
 /// offset 0x0104 (48 bytes). Surfaces the full ROM, parsed metadata, the 80-byte
 /// header, and the ROM split into 16 KiB banks. Read-only.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://gbdev.io/pandocs/</c> — Pan Docs — the canonical community Game Boy reference (the cartridge-header chapter documents the 0x0104 logo and header fields)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Game_Boy</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class GbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Gb";

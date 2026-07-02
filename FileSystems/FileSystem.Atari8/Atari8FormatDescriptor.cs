@@ -5,6 +5,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Atari8;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.atarimax.com/jindroush.atari.org/afmtatr.html</c> — ATR file format description (Jindroush archive); the header layout defined by Nick Kennedy's SIO2PC</description></item>
+///   <item><description>Atari DOS 2.0S/2.5 Reference Manual (Atari, Inc.) — VTOC + directory sector layout on the SS/SD 720-sector disk</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Atari_DOS</c> — Wikipedia overview of the Atari 8-bit DOS family</description></item>
+/// </list>
+/// </summary>
 public sealed class Atari8FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

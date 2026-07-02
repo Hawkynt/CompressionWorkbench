@@ -11,6 +11,13 @@ namespace FileSystem.Adfs;
 /// sectors). Create (WORM) emits ADFS-L (640 KiB, old-map) only.
 /// Detected by the "Hugo" or "Nick" directory marker at sector 2 — root dir
 /// magic at file offset 0x200 (old map) or 0x400 (new map).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Acorn "Advanced Disc Filing System User Guide" (Acorn Computers) — the original vendor format documentation</description></item>
+///   <item><description>RISC OS Programmer's Reference Manual, FileCore chapter — new-map (D/E/F) on-disk structures</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Advanced_Disc_Filing_System</c> — Wikipedia overview of the ADFS variants</description></item>
+/// </list>
 /// </summary>
 public sealed class AdfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
 

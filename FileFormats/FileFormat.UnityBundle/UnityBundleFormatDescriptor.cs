@@ -8,6 +8,13 @@ namespace FileFormat.UnityBundle;
 /// that ships serialized Unity assets bundled for runtime loading. Each bundled asset is listed
 /// as a Node entry (path from the internal directory). Storage blocks can be stored, LZMA, or
 /// LZ4/LZ4HC-compressed; all four are supported.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://docs.unity3d.com/Manual/AssetBundlesIntro.html</c> — official Unity AssetBundle documentation</description></item>
+///   <item><description><c>https://github.com/K0lb3/UnityPy</c> — UnityPy — open UnityFS parser</description></item>
+///   <item><description><c>https://github.com/Perfare/AssetStudio</c> — AssetStudio — widely used bundle inspector</description></item>
+/// </list>
 /// </summary>
 public sealed class UnityBundleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "UnityBundle";

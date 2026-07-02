@@ -13,6 +13,13 @@ namespace FileFormat.Ply;
 /// blocks each with one or more <c>property &lt;type&gt; &lt;name&gt;</c> lines.
 /// Header terminates with <c>end_header\n</c>; the body that follows is either ASCII
 /// records or the declared binary layout.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://paulbourke.net/dataformats/ply/</c> — Paul Bourke's classic PLY format description</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/PLY_(file_format)</c> — Wikipedia overview</description></item>
+///   <item><description>Greg Turk, "The PLY Polygon File Format" (Stanford Graphics Lab) — original definition</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// Reference: http://paulbourke.net/dataformats/ply/ — Paul Bourke's classic description.

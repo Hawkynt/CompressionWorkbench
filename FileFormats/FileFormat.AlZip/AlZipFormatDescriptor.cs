@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.AlZip;
 
+/// <summary>
+/// ALZ archive — the proprietary container of ESTsoft's ALZip (Korean shareware archiver).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://kippler.com/win/unalz/</c> — unalz — open-source ALZ extractor, the de-facto format reference</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/ALZip</c> — application background</description></item>
+///   <item><description>The format is proprietary (ESTsoft); no official specification was published</description></item>
+/// </list>
+/// </summary>
 public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the ALZ archive in listing order.</summary>

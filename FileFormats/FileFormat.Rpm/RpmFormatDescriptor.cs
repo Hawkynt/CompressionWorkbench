@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Rpm;
 
+/// <summary>
+/// RPM package — lead + signature header + main header + compressed cpio payload.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/rpm-software-management/rpm</c> — canonical rpm sources (docs/manual describes the package format)</description></item>
+///   <item><description>Edward C. Bailey, "Maximum RPM" — classic format documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/RPM_Package_Manager</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the RPM archive in listing order.</summary>

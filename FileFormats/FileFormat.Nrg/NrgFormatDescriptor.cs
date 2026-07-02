@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Nrg;
 
+/// <summary>
+/// Nero Burning ROM NRG disc image — trailing NER5/NERO footer pointing at a chunked session/track descriptor area.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://cdemu.sourceforge.io</c> — CDEmu / libMirage — its NRG parser is the de-facto format documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/NRG_(file_format)</c> — Wikipedia</description></item>
+///   <item><description>No official specification — proprietary Nero format, reverse-engineered</description></item>
+/// </list>
+/// </summary>
 public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
 
   public void Defragment(Stream archive)

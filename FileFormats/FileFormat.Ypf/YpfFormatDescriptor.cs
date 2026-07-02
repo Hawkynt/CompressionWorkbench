@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ypf;
 
+/// <summary>
+/// YPF resource archive of the YU-RIS / YukaScript visual-novel engine.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/morkt/GARbro</c> — GARbro — implements YPF extraction for the YU-RIS engine</description></item>
+///   <item><description>YU-RIS engine's packaging format; no official spec, reverse-engineered</description></item>
+/// </list>
+/// </summary>
 public sealed class YpfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the YPF archive in listing order.</summary>

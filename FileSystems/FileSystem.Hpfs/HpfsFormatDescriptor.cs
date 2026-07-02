@@ -9,6 +9,13 @@ namespace FileSystem.Hpfs;
 /// R/W descriptor for OS/2 HPFS (High Performance File System) volumes.
 /// Supports: list, extract, create, modify (true in-place at root level via
 /// <see cref="HpfsInPlaceModifier"/>), defragment, extent map.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Ray Duncan, "Design Goals and Implementation of the New High Performance File System" (Microsoft Systems Journal, September 1989) — the original published description</description></item>
+///   <item><description><c>https://docs.kernel.org/filesystems/hpfs.html</c> — Linux kernel HPFS driver documentation; <c>fs/hpfs</c> is the maintained on-disk reference</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/High_Performance_File_System</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// Add/Remove at the root level mutate the image in place — bitmap bits at LBA 24

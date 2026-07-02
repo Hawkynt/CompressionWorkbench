@@ -12,6 +12,13 @@ namespace FileFormat.Pkcs12;
 /// <c>key_NN.der</c>, encrypted/shrouded keys as <c>encrypted_key_NN.der</c>,
 /// and any password-encrypted ContentInfo as a single opaque DER blob.
 /// No decryption is attempted — this is strictly a structural view.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.rfc-editor.org/rfc/rfc7292</c> — RFC 7292 — PKCS #12 v1.1: Personal Information Exchange Syntax</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/PKCS_12</c> — Wikipedia overview</description></item>
+///   <item><description>OpenSSL <c>openssl pkcs12</c> — de-facto reference implementation</description></item>
+/// </list>
 /// </summary>
 public sealed class Pkcs12FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   public string Id => "Pkcs12";

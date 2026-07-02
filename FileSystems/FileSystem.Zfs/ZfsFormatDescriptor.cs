@@ -4,6 +4,19 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Zfs;
 
+/// <summary>
+/// Descriptor for ZFS pool images — four 256 KB vdev labels (NVList +
+/// uberblock ring) around the pool data area; WORM pool writer + reader
+/// round-trip.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Sun Microsystems, "ZFS On-Disk Specification" (2006 draft) — vdev labels, uberblocks, DMU structures</description></item>
+///   <item><description><c>https://github.com/openzfs/zfs</c> — OpenZFS — the maintained implementation</description></item>
+///   <item><description><c>https://openzfs.github.io/openzfs-docs/</c> — OpenZFS documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/ZFS</c> — Wikipedia article</description></item>
+/// </list>
+/// </summary>
 public sealed class ZfsFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
 

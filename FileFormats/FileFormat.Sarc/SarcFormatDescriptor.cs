@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Sarc;
 
+/// <summary>
+/// Nintendo SARC (Sorted ARChive) used across Wii U / 3DS / Switch first-party titles.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://zeldamods.org/wiki/SARC</c> — ZeldaMods wiki — community SARC/SFAT/SFNT layout documentation</description></item>
+///   <item><description>Nintendo's internal archive format; no official spec, structure community-documented</description></item>
+/// </list>
+/// </summary>
 public sealed class SarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the SARC archive in listing order.</summary>

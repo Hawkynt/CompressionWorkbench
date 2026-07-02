@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Mfs;
 
+/// <summary>
+/// R/W descriptor for Classic Macintosh MFS (Macintosh File System) 400 KB
+/// floppy volumes — the flat-directory predecessor of HFS, MDB magic 0xD2D7.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Apple "Inside Macintosh, Volume II" (File Manager chapter, Addison-Wesley 1985) — the canonical MFS description</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Macintosh_File_System</c> — Wikipedia article</description></item>
+/// </list>
+/// </summary>
 public sealed class MfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

@@ -11,6 +11,13 @@ namespace FileFormat.Fmod;
 /// FMOD Sample Bank (.fsb, version 5) surfaced as an archive. Enumerates the individual
 /// sample blobs plus the header / name-table raw sections and summary metadata. Audio
 /// payloads are kept in their native encoded form (Vorbis/XMA/ADPCM/etc.) — no decoding.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.fmod.com</c> — vendor — the FSB5 container is not publicly documented</description></item>
+///   <item><description><c>https://github.com/HearthSim/python-fsb5</c> — python-fsb5 — open-source FSB5 parser, a de-facto format reference</description></item>
+///   <item><description><c>https://github.com/vgmstream/vgmstream</c> — vgmstream — maintained FSB5 support</description></item>
+/// </list>
 /// </summary>
 public sealed class FmodFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Fmod";

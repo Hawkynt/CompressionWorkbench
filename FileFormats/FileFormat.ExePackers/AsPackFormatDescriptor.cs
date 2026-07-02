@@ -14,6 +14,12 @@ namespace FileFormat.ExePackers;
 /// somewhere in the first 64 KB of the file. The compression core itself is
 /// an aPLib-style LZ77, so an <c>"aPLib"</c> marker is occasionally present
 /// near the entry point as well.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://www.aspack.com</c> — official ASPack site (ASPack Software)</description></item>
+///   <item><description><c>https://github.com/horsicq/Detect-It-Easy</c> — Detect It Easy — maintained packer-detection signature database</description></item>
+/// </list>
 /// </summary>
 public sealed class AsPackFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

@@ -15,6 +15,13 @@ namespace FileFormat.Partclone;
 /// delegates to the matching descriptor so the user gets the original files.
 /// Compressed partclone streams (LZ4/zstd) are not handled here — they're a
 /// shell-pipe responsibility upstream of this format.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://partclone.org</c> — official partclone site</description></item>
+///   <item><description><c>https://github.com/Thomas-Tsai/partclone</c> — canonical source — the image header is defined in src/partclone.h</description></item>
+///   <item><description><c>https://clonezilla.org</c> — Clonezilla — primary consumer of partclone images</description></item>
+/// </list>
 /// </summary>
 public sealed class PartcloneFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Partclone";

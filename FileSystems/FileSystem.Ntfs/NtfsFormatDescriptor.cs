@@ -5,6 +5,19 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Ntfs;
 
+/// <summary>
+/// Descriptor for Microsoft NTFS volume images ("NTFS    " boot-sector OEM
+/// magic; $MFT-based metadata) with create, in-place modify and defragment
+/// support.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://flatcap.github.io/linux-ntfs/ntfs/</c> — Linux-NTFS project on-disk structure documentation — the de-facto public NTFS spec</description></item>
+///   <item><description><c>https://github.com/tuxera/ntfs-3g</c> — maintained open-source implementation</description></item>
+///   <item><description><c>https://learn.microsoft.com/en-us/windows-server/storage/file-server/ntfs-overview</c> — Microsoft's NTFS overview</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/NTFS</c> — Wikipedia article</description></item>
+/// </list>
+/// </summary>
 public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

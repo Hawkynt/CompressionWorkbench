@@ -12,6 +12,12 @@ namespace FileFormat.Parquet;
 /// to surface version, row count, row-group count, schema element names and the created-by string.
 /// Surfaces a <c>FULL.parquet</c> passthrough plus a <c>metadata.ini</c> summary. Page-level
 /// decompression and full record decoding are out of scope.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/apache/parquet-format</c> — canonical format specification repository</description></item>
+///   <item><description><c>https://parquet.apache.org</c> — Apache Parquet project documentation</description></item>
+/// </list>
 /// </summary>
 public sealed class ParquetFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

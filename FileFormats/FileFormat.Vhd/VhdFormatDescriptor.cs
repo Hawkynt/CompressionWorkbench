@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Vhd;
 
+/// <summary>
+/// Microsoft VHD virtual hard disk (fixed/dynamic/differencing; 512-byte footer).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Microsoft, "Virtual Hard Disk Image Format Specification" v1.0 (2006, published under the Open Specification Promise)</description></item>
+///   <item><description><c>https://github.com/libyal/libvhdi</c> — libvhdi — open implementation with format documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/VHD_(file_format)</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
   public string Id => "Vhd";
   public string DisplayName => "VHD";

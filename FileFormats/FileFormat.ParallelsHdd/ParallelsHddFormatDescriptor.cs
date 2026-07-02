@@ -21,6 +21,12 @@ namespace FileFormat.ParallelsHdd;
 /// (geometry, block size, in-use block count) and — when the BAT geometry is sane —
 /// a fully reconstructed <c>disk.raw</c> built by walking the BAT block by block.
 /// Read-only; malformed headers degrade to FULL + partial metadata without throwing.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/qemu/qemu/blob/master/docs/interop/parallels.txt</c> — QEMU's independent documentation of the Parallels expanding-disk layout</description></item>
+///   <item><description><c>https://www.qemu.org</c> — QEMU — maintained implementation (parallels block driver)</description></item>
+/// </list>
 /// </summary>
 public sealed class ParallelsHddFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "ParallelsHdd";

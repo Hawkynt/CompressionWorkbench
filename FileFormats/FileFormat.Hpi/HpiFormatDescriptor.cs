@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Hpi;
 
+/// <summary>
+/// Total Annihilation HPI (HAPI) game resource archive with chunked, zlib-subset-compressed entries.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Total Annihilation modding-community HPI format documentation (HPIUtil and successors) — no official Cavedog specification exists</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Total_Annihilation</c> — Wikipedia on the game</description></item>
+/// </list>
+/// </summary>
 public sealed class HpiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

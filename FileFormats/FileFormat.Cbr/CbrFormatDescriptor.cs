@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cbr;
 
+/// <summary>
+/// Comic book archive — a RAR container of sequentially named page images, conventionally suffixed .cbr.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://en.wikipedia.org/wiki/Comic_book_archive</c> — the .cbr/.cbz naming convention</description></item>
+///   <item><description><c>https://www.rarlab.com/technote.htm</c> — RAR 5.x technote — the underlying container format</description></item>
+/// </list>
+/// </summary>
 public sealed class CbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <summary>

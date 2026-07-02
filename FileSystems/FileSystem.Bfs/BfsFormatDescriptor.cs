@@ -11,6 +11,13 @@ namespace FileSystem.Bfs;
 /// create (WORM), modify (via rebuild), and defragment BFS images. The writer
 /// produces a minimal single-AG image with a single B+ tree leaf for the root
 /// directory and direct block_run extents for file data.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>"Practical File System Design with the Be File System" (Dominic Giampaolo, Morgan Kaufmann, 1999) — the canonical BFS on-disk reference by its author</description></item>
+///   <item><description><c>https://github.com/haiku/haiku/tree/master/src/add-ons/kernel/file_systems/bfs</c> — Haiku's maintained BFS implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Be_File_System</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class BfsFormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,

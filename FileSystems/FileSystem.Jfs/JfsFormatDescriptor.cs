@@ -36,6 +36,13 @@ namespace FileSystem.Jfs;
 /// unsupported: inline dtroot leaf split, external dtree leaf split, xtree
 /// root promotion to non-leaf, IAG full / FSIT extent growth.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://jfs.sourceforge.net/project/pub/jfslayout.pdf</c> — "JFS Layout", the official on-disk format document (superblock, dmap/dmapctl, dtree/xtree, IAG)</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/jfs</c> — mainline kernel implementation; jfsutils' <c>fsck.jfs</c> is the conformance gate</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/JFS_(file_system)</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
                                           IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable,

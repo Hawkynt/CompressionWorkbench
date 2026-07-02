@@ -11,6 +11,12 @@ namespace FileSystem.SmartFs;
 /// CONFIG_SMARTFS_FORMAT_SIG). Sector-chain traversal + directory
 /// enumeration are out of scope; this descriptor surfaces the parsed
 /// format sector as metadata plus the raw image.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/apache/nuttx/tree/master/fs/smartfs</c> — reference implementation (Apache NuttX)</description></item>
+///   <item><description>Apache NuttX "SmartFS" documentation and SmartFS Design Document (NuttX project wiki)</description></item>
+/// </list>
 /// </summary>
 public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
   public string Id => "SmartFs";

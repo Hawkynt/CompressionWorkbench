@@ -58,6 +58,12 @@ namespace FileSystem.OneFs;
 /// blocked on (a) Dell EMC publishing the spec and (b) a multi-node ingest
 /// path — neither is in reach.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Dell EMC "PowerScale OneFS Technical Overview" whitepaper — high-level architecture only; no on-disk spec is published</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/OneFS_distributed_file_system</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class OneFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

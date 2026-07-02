@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Rar;
 
+/// <summary>
+/// RAR archive (RAR4 and RAR5 container framing).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.rarlab.com/technote.htm</c> — RAR 5.0 archive format technote (RARLAB, official)</description></item>
+///   <item><description>unrar source distribution (rarlab.com) — de-facto reference for RAR4 decoding</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/RAR_(file_format)</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   public void Defragment(Stream archive)

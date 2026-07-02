@@ -14,6 +14,12 @@ namespace FileFormat.Ewf;
 /// Full sector decompression + segment chaining across multi-file sets is
 /// deferred to a later phase — forensic tooling (libewf, EnCase) can decode
 /// the per-section data directly.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/libyal/libewf</c> — libewf — canonical open-source implementation; its documentation folder carries Joachim Metz's EWF/EWF2 format specs</description></item>
+///   <item><description>ASR Data "Expert Witness Compression Format" — the original format the EnCase .E01 family derives from</description></item>
+/// </list>
 /// </summary>
 public sealed class EwfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Ewf";

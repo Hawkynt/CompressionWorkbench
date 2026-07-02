@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Sar;
 
+/// <summary>
+/// NScripter SAR resource archive (uncompressed entries behind a big-endian index).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/morkt/GARbro</c> — GARbro — implements NScripter SAR extraction</description></item>
+///   <item><description>NScripter engine (Naoki Takahashi) defines the format; ONScripter is the open reimplementation</description></item>
+/// </list>
+/// </summary>
 public sealed class SarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the SAR archive in listing order.</summary>

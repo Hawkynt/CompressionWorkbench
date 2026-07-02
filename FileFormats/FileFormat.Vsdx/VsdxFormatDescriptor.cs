@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Vsdx;
 
+/// <summary>
+/// Microsoft Visio VSDX drawing — an OPC ZIP package.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>[MS-VSDX]: Visio Graphics Service File Format (Microsoft Open Specifications, learn.microsoft.com)</description></item>
+///   <item><description><c>https://ecma-international.org/publications-and-standards/standards/ecma-376/</c> — ECMA-376 Part 2 — Open Packaging Conventions, the container VSDX uses</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Microsoft_Visio</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class VsdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <inheritdoc />

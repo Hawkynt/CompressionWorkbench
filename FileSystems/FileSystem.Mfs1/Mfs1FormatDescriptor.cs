@@ -13,6 +13,13 @@ namespace FileSystem.Mfs1;
 /// systems. The on-disk catalog matches DFS (256-byte sectors, two-sector catalog
 /// at track 0 sectors 0-1, up to 31 entries with 7-char names + 1-char directory),
 /// so MFS-1 is parsed by walking those sectors directly.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://beebwiki.mdfs.net/Acorn_DFS_disc_format</c> — the DFS catalog layout MFS-1 shares (two-sector catalog at track 0)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Disc_Filing_System</c> — Wikipedia article on the DFS family</description></item>
+///   <item><description>Acorn "Disc Filing System User Guide" (vendor manual)</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para><b>Detection</b>: weak — magic is the optional <c>0x00 0x80</c> boot

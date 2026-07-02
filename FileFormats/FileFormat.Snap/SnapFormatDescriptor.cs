@@ -12,6 +12,13 @@ namespace FileFormat.Snap;
 /// <c>meta/snap.yaml</c>. The descriptor parses that manifest to surface
 /// identity metadata in a synthetic <c>metadata.ini</c> entry and then
 /// exposes every SquashFS entry verbatim under its original path.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://snapcraft.io/docs</c> — snapcraft documentation — snap package anatomy (SquashFS + meta/snap.yaml)</description></item>
+///   <item><description><c>https://docs.kernel.org/filesystems/squashfs.html</c> — kernel SquashFS documentation — the container filesystem</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Snap_(software)</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class SnapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 

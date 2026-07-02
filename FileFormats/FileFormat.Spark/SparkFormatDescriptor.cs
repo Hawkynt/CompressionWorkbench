@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Spark;
 
+/// <summary>
+/// RISC OS Spark archive (Acorn/ARM) — ARC-compatible layout with RISC OS file-type extensions.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>David Pilling's Spark / SparkFS (davidpilling.com) — the defining RISC OS archiver</description></item>
+///   <item><description>nspark — portable open unarchiver for Spark/ARC archives</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/ARC_(file_format)</c> — Wikipedia — the base ARC format Spark extends</description></item>
+/// </list>
+/// </summary>
 public sealed class SparkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the Spark archive in listing order.</summary>

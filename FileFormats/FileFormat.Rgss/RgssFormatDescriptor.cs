@@ -5,6 +5,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Rgss;
 
+/// <summary>
+/// RPG Maker XP/VX/VX Ace RGSSAD encrypted resource archive.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/morkt/GARbro</c> — GARbro — game resource browser implementing RGSSAD decryption</description></item>
+///   <item><description>format defined by Enterbrain's RPG Maker runtime (RGSS); no official spec, key schedule reverse-engineered</description></item>
+/// </list>
+/// </summary>
 public sealed class RgssFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>

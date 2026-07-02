@@ -8,6 +8,13 @@ namespace FileFormat.Elf;
 /// Read-only archive view of an ELF executable, shared object, or relocatable object.
 /// Every non-null section is surfaced as an entry under <c>sections/</c>, with
 /// type-specific aliases (<c>interp.txt</c>, <c>symbols.txt</c>, <c>notes/*.bin</c>).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.sco.com/developers/gabi/</c> — System V gABI — the defining ELF specification</description></item>
+///   <item><description><c>https://man7.org/linux/man-pages/man5/elf.5.html</c> — elf(5) man page</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Executable_and_Linkable_Format</c> — format overview</description></item>
+/// </list>
 /// </summary>
 public sealed class ElfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Elf";

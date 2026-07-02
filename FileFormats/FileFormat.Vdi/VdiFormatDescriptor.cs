@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Vdi;
 
+/// <summary>
+/// VirtualBox VDI virtual disk image — block-mapped sparse/fixed disk container.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.virtualbox.org/</c> — VirtualBox — the VDI layout is defined by its open-source Storage/VDI code</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/VDI_(file_format)</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
   public string Id => "Vdi";
   public string DisplayName => "VDI";

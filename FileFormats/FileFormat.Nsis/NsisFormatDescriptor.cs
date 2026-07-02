@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Nsis;
 
+/// <summary>
+/// NSIS (Nullsoft Scriptable Install System) installer archive — PE stub plus compressed installer data.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://nsis.sourceforge.io</c> — official NSIS project site and sources — the installer data layout is defined there</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Nullsoft_Scriptable_Install_System</c> — Wikipedia</description></item>
+///   <item><description><c>https://www.7-zip.org</c> — 7-Zip — widely used independent parser of NSIS installer payloads</description></item>
+/// </list>
+/// </summary>
 public sealed class NsisFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the NSIS data block in listing order.</summary>

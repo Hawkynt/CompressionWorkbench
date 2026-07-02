@@ -10,6 +10,12 @@ namespace FileFormat.Sup;
 /// Pseudo-archive descriptor for Blu-ray PGS (<c>.sup</c>) subtitle bitmap streams.
 /// Each subtitle epoch (PCS through END inclusive) is exposed as one entry, plus a
 /// <c>metadata.ini</c> describing the overall stream.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/mjuhasz/BDSup2Sub</c> — BDSup2Sub — canonical open tool for PGS (.sup) subtitle streams</description></item>
+///   <item><description>PGS is defined in the Blu-ray Disc Read-Only Format specifications (BDA, not public); segment layout community-documented</description></item>
+/// </list>
 /// </summary>
 public sealed class SupFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 

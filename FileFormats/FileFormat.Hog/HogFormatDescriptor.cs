@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Hog;
 
+/// <summary>
+/// Descent / Descent II HOG game-data archive ('DHF' signature + 13-byte-name records).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/dxx-rebirth/dxx-rebirth</c> — DXX-Rebirth — maintained open-source Descent engine and de-facto format reference</description></item>
+///   <item><description>No official specification — documented by the community from the released Descent source code</description></item>
+/// </list>
+/// </summary>
 public sealed class HogFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

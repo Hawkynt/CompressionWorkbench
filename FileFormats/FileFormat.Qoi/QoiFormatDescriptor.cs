@@ -18,6 +18,13 @@ namespace FileFormat.Qoi;
 /// (RGBA, 4 bytes/pixel; Kind="Raw"). Also implements <see cref="IArchiveCreatable"/>:
 /// a single raw RGBA <c>pixels.bin</c> plus a <c>metadata.ini</c> declaring the
 /// geometry is re-encoded into a valid QOI. Round-trip safe.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://qoiformat.org/</c> — official QOI site — one-page specification</description></item>
+///   <item><description><c>https://github.com/phoboslab/qoi</c> — reference implementation by Dominic Szablewski</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/QOI_(image_format)</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class QoiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Qoi";

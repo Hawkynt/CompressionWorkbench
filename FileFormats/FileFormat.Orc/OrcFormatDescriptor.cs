@@ -13,6 +13,12 @@ namespace FileFormat.Orc;
 /// the Footer Protobuf to surface row count, type count and stripe count. Surfaces a
 /// <c>FULL.orc</c> passthrough plus a <c>metadata.ini</c> summary. Stripe-level decompression
 /// and full record decoding are intentionally out of scope.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://orc.apache.org/specification/</c> — Apache ORC file format specification</description></item>
+///   <item><description><c>https://github.com/apache/orc</c> — canonical implementation</description></item>
+/// </list>
 /// </summary>
 public sealed class OrcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

@@ -12,6 +12,12 @@ namespace FileFormat.ExePackers;
 /// unpacker stub renames at least one section so that the name begins with
 /// <c>"MEW"</c> or <c>".MEW"</c> (commonly <c>MEW</c>, <c>MEWF</c>,
 /// <c>.MEW</c>).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>MEW 11 SE by Northfox — distributed through the RE scene; no official documentation survives</description></item>
+///   <item><description><c>https://github.com/horsicq/Detect-It-Easy</c> — Detect It Easy — maintained packer-detection signature database (MEW signatures)</description></item>
+/// </list>
 /// </summary>
 public sealed class MewFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

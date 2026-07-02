@@ -12,6 +12,13 @@ namespace FileSystem.Nwfs386;
 /// <c>0x65</c>. The on-disk format is FAT-like but proprietary; no parser is
 /// attempted — the image is surfaced as a single opaque entry with
 /// metadata.ini noting the partition-type hint.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.win.tue.nl/~aeb/partitions/partition_types-1.html</c> — partition-type catalogue (0x65 = Novell NetWare)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/NetWare_File_System</c> — Wikipedia article</description></item>
+///   <item><description>Novell NetWare 386 internal documentation — the on-disk format was never published</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>Distinct from <c>FileSystem.Nwfs</c>, which detects via the

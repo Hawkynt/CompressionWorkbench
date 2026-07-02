@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.ThumbsDb;
 
+/// <summary>
+/// Windows Thumbs.db thumbnail cache — an OLE2/CFB compound document holding per-image thumbnail streams.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/53989ce4-7b05-4f8d-829b-d08d6148375b</c> — [MS-CFB]: Compound File Binary File Format — the OLE2 container</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Windows_thumbnail_cache</c> — Wikipedia overview</description></item>
+///   <item><description>internal stream layout undocumented by Microsoft; reverse-engineered by the digital-forensics community (e.g. the vinetto tool)</description></item>
+/// </list>
+/// </summary>
 public sealed class ThumbsDbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   public void Defragment(Stream archive)

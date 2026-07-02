@@ -12,6 +12,13 @@ namespace FileSystem.Os9Rbf;
 /// later as OS-9/68000 and OS-9000. The writer emits a 35-track DSDD CoCo
 /// reference geometry (~315 KB); the reader parses any RBF image whose root
 /// directory descriptor is reachable via the identification sector.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Microware "OS-9 Technical Reference" (RBF chapter) — the canonical RBF on-disk description</description></item>
+///   <item><description><c>https://sourceforge.net/projects/nitros9/</c> — NitrOS-9 — maintained open-source OS-9/6809 with an RBF implementation + ToolShed tooling</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/OS-9</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class Os9RbfFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {

@@ -12,6 +12,13 @@ namespace FileFormat.Ai;
 /// - PostScript-based (older): %!PS-Adobe- DSC with a hex-encoded TIFF thumbnail.
 /// Read-only descriptor surfacing the raw file, DSC metadata where applicable,
 /// and a decoded thumbnail when present.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Adobe "Adobe Illustrator File Format Specification" — the PostScript-era AI documentation; CS-era AI is a PDF wrapper</description></item>
+///   <item><description>Adobe TN 5001 "PostScript Language Document Structuring Conventions" — the DSC comments parsed here</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Adobe_Illustrator_Artwork</c> — format history (PostScript-based vs PDF-based flavors)</description></item>
+/// </list>
 /// </summary>
 public sealed class AiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Ai";

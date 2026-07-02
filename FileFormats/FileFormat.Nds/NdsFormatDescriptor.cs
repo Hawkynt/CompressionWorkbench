@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Nds;
 
+/// <summary>
+/// Nintendo DS ROM image — cartridge header, FNT/FAT filesystem and ARM9/ARM7 binaries.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://problemkaputt.de/gbatek.htm</c> — GBATEK (Martin Korth) — canonical DS cartridge-header and filesystem reference</description></item>
+///   <item><description><c>https://github.com/devkitPro/ndstool</c> — ndstool (devkitPro) — maintained ROM build/extract tool</description></item>
+/// </list>
+/// </summary>
 public sealed class NdsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

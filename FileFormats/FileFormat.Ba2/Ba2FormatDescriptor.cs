@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ba2;
 
+/// <summary>
+/// Bethesda Archive v2 (BA2, "BTDX" magic) — asset archive introduced with Fallout 4 (GNRL general and DX10 texture variants).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/Guekka/bsa</c> — bsa — maintained open-source C++ library reading/writing BSA and BA2</description></item>
+///   <item><description>BA2 layout documented by the xEdit/BSArch project and the Fallout 4 modding community — Bethesda never published a spec</description></item>
+/// </list>
+/// </summary>
 public sealed class Ba2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

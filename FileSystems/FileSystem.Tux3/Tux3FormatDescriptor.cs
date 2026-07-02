@@ -13,6 +13,13 @@ namespace FileSystem.Tux3;
 /// table at block 2 that <see cref="Tux3Reader"/> walks. Full
 /// itable/otable/atable B-tree traversal of real linux-tux3 prototype dumps
 /// is out of scope.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/OGAWAHirofumi/linux-tux3</c> — the linux-tux3 prototype tree — canonical source</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Tux3</c> — Wikipedia article</description></item>
+///   <item><description>Daniel Phillips's Tux3 design postings (LKML / tux3 mailing list)</description></item>
+/// </list>
 /// </summary>
 public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
 

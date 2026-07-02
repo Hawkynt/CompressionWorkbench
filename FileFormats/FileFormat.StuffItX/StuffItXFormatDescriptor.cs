@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.StuffItX;
 
+/// <summary>
+/// StuffIt X (.sitx) archive (Aladdin/Smith Micro) — proprietary element-stream container.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/MacPaw/XADMaster</c> — XADMaster (The Unarchiver) — partial open StuffIt X decoder</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/StuffIt</c> — Wikipedia — covers StuffIt X</description></item>
+///   <item><description>proprietary format; the element-stream codecs have no public specification</description></item>
+/// </list>
+/// </summary>
 public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   public void Defragment(Stream archive)

@@ -11,6 +11,12 @@ namespace FileFormat.OneNote;
 /// Detection only — surfaces a <c>FULL.one</c> passthrough plus a <c>metadata.ini</c>
 /// summary identifying the variant (2007 vs 2010+). MS-ONESTORE revision-based packed
 /// object streams are not decoded.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-onestore/</c> — [MS-ONESTORE] OneNote Revision Store File Format — Microsoft Open Specifications</description></item>
+///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-one/</c> — [MS-ONE] OneNote section data structures</description></item>
+/// </list>
 /// </summary>
 public sealed class OneNoteFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

@@ -19,6 +19,12 @@ namespace FileFormat.Stl;
 /// binary files begin with the text "solid"). Surfaces <c>metadata.ini</c> (variant,
 /// triangle count, object name, bounding box) and <c>triangles.bin</c> (raw binary
 /// facet block — for ASCII this is reconstructed from parsed vertices).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>3D Systems, "StereoLithography Interface Specification" (1988) — the original definition</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/STL_(file_format)</c> — Wikipedia — documents both ASCII and binary variants</description></item>
+/// </list>
 /// </summary>
 public sealed class StlFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   /// <summary>Format identifier.</summary>

@@ -12,6 +12,13 @@ namespace FileSystem.OrangeFs;
 /// OrangeFS-native) followed by version, datastream-type, and object-size
 /// fields. The contained object payload is surfaced as a single opaque
 /// entry — semantic resolution requires cluster <c>fs.conf</c>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/waltligon/orangefs</c> — official PVFS/OrangeFS repository (DBPF storage layer)</description></item>
+///   <item><description><c>https://www.kernel.org/doc/html/latest/filesystems/orangefs.html</c> — Linux kernel client documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/OrangeFS</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class OrangeFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
   public string Id => "OrangeFs";

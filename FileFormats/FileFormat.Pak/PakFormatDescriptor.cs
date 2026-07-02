@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Pak;
 
+/// <summary>
+/// id Software Quake PAK resource archive ('PACK' header + 64-byte-entry directory).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/id-Software/Quake</c> — released Quake source — the pakfile code is the canonical definition</description></item>
+///   <item><description>Unofficial Quake Specs (Olivier Montanuy et al.) — long-standing community format documentation</description></item>
+/// </list>
+/// </summary>
 public sealed class PakFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the PAK archive in listing order.</summary>

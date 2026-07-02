@@ -15,6 +15,13 @@ namespace FileFormat.Tds;
 /// nested chunks include <c>0x3D3D</c> (EDIT3DS), <c>0x4000</c> (OBJ_TRIMESH),
 /// <c>0x4100</c> (TRI_MESH), <c>0x4110</c> (TRI_VERTEXPOINT), <c>0x4120</c>
 /// (TRI_FACEL), <c>0x4130</c> (TRI_MATERIAL).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://paulbourke.net/dataformats/3ds/</c> — Paul Bourke's 3DS chunk catalogue</description></item>
+///   <item><description>lib3ds — open 3DS parser, de-facto structural reference</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/.3ds</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// The project is named <c>FileFormat.Tds</c> because .NET project names cannot start

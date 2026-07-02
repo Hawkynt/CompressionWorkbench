@@ -8,6 +8,13 @@ namespace FileSystem.SysV;
 /// <summary>
 /// R/W descriptor for AT&amp;T UNIX System V (s5fs) filesystem images.
 /// Magic <c>0xFD187E20</c> at file offset 1024+504 = 0x5F8.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/torvalds/linux/tree/v6.6/fs/sysv</c> — Linux sysv driver (v6.6 LTS tree; the driver was removed from later kernels)</description></item>
+///   <item><description>Maurice J. Bach, "The Design of the UNIX Operating System" (Prentice Hall, 1986) — s5fs internals</description></item>
+///   <item><description>AT&amp;T "System V Interface Definition"</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>

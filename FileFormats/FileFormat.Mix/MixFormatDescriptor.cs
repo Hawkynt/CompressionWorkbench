@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Mix;
 
+/// <summary>
+/// Westwood Studios MIX archive (Command and Conquer: Tiberian Dawn / Red Alert variant) — header plus CRC-keyed file table.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/OpenRA/OpenRA</c> — OpenRA — maintained open reimplementation with a MIX reader</description></item>
+///   <item><description>XCC Utilities (Olaf van der Spek) — long-standing de-facto MIX reference implementation</description></item>
+///   <item><description>No official specification — community-reverse-engineered</description></item>
+/// </list>
+/// </summary>
 public sealed class MixFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

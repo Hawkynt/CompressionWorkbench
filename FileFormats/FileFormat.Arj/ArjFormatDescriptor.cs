@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Arj;
 
+/// <summary>
+/// ARJ archive (Robert K. Jung, 1991) — DOS-era compressor known for solid multi-volume support.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>ARJ <c>TECHNOTE.TXT</c> — the official format description shipped with the ARJ distribution</description></item>
+///   <item><description><c>https://arj.sourceforge.net</c> — ARJ for Unix — open-source continuation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/ARJ</c> — format history</description></item>
+/// </list>
+/// </summary>
 public sealed class ArjFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

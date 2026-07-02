@@ -7,6 +7,12 @@ namespace FileFormat.Gettext;
 /// Exposes a gettext .po text catalog as an archive of per-message text files.
 /// Matches <see cref="MoFormatDescriptor"/>'s entry layout; only the source-parsing
 /// path differs.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.gnu.org/software/gettext/manual/html_node/PO-Files.html</c> — GNU gettext manual — PO file syntax</description></item>
+///   <item><description><c>https://www.gnu.org/software/gettext/</c> — GNU gettext project</description></item>
+/// </list>
 /// </summary>
 public sealed class PoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Po";

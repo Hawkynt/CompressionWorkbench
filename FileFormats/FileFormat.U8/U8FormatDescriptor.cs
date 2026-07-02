@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.U8;
 
+/// <summary>
+/// Nintendo U8 archive (Wii / Wii U / 3DS) — node table + string pool + aligned file data.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://wiibrew.org/wiki/U8_archive</c> — WiiBrew wiki — community U8 archive documentation</description></item>
+///   <item><description>Wiimms SZS Tools (wszst) — maintained implementation</description></item>
+/// </list>
+/// </summary>
 public sealed class U8FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the U8 archive in listing order.</summary>

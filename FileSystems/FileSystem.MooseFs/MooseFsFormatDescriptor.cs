@@ -18,6 +18,13 @@ namespace FileSystem.MooseFs;
 /// single metadata image. Listing therefore surfaces ONLY synthetic
 /// metadata + per-section raw payloads, never POSIX paths.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/moosefs/moosefs</c> — canonical source (master metadata dump/load code)</description></item>
+///   <item><description><c>https://moosefs.com/</c> — vendor site and documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Moose_File_System</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class MooseFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

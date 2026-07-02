@@ -17,6 +17,13 @@ namespace FileSystem.GsOs;
 /// owned by <c>FileSystem.ProDos</c> (.2mg routing) to avoid a detector
 /// first-match conflict.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Apple II "Universal Disk Image" (2IMG) specification (Apple II emulation community, 1997) — defines the 64-byte header</description></item>
+///   <item><description><c>https://github.com/fadden/CiderPress2</c> — CiderPress II, maintained implementation with 2IMG format documentation</description></item>
+///   <item><description><c>http://fileformats.archiveteam.org/wiki/2IMG</c> — Just Solve the File Format Problem wiki page</description></item>
+/// </list>
 /// </summary>
 public sealed class GsOsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable {
   // IArchiveDefragmentable / IArchiveShrinkable use the interface defaults: a

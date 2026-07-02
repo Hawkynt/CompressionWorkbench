@@ -17,6 +17,13 @@ namespace FileSystem.Ext1;
 /// structural surfacing and round-trip read+write of small WORM images are supported;
 /// vintage pre-1993 Linux disk images and forensic tooling for early Linux installs
 /// are the consumers.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://e2fsprogs.sourceforge.net/ext2intro.html</c> — Card/Ts'o/Tweedie, "Design and Implementation of the Second Extended Filesystem", which documents the original ext it replaced</description></item>
+///   <item><description><c>https://mirrors.edge.kernel.org/pub/linux/kernel/Historic/</c> — historic kernel trees whose <c>fs/ext</c> is the primary source for the 1992 layout</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Extended_file_system</c> — Wikipedia article on the original ext</description></item>
+/// </list>
 /// </summary>
 public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 

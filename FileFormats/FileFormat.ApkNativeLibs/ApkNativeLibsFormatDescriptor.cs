@@ -11,6 +11,12 @@ namespace FileFormat.ApkNativeLibs;
 /// <c>native_libs/&lt;abi&gt;/*.so</c>. Intentionally not registered for magic
 /// detection (all magic signatures are zero-confidence); the caller must route
 /// here explicitly, e.g. <c>cwb list --format ApkNativeLibs foo.apk</c>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://developer.android.com/ndk/guides/abis</c> — Android ABI management — defines the per-ABI native-library directory layout inside an APK</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Apk_(file_format)</c> — APK container overview</description></item>
+/// </list>
 /// </summary>
 public sealed class ApkNativeLibsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 

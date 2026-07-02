@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Cpio;
 
+/// <summary>
+/// cpio archive — Unix copy-in/copy-out container (binary, portable-ASCII odc and newc variants).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html</c> — POSIX pax — defines the cpio interchange headers</description></item>
+///   <item><description><c>cpio(5)</c> man page (libarchive / FreeBSD) — documents the binary, odc, newc and crc variants</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Cpio</c> — format overview</description></item>
+/// </list>
+/// </summary>
 public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the CPIO archive in listing order.</summary>

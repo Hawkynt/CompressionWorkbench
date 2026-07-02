@@ -5,6 +5,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.AppleDos;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description>"Beneath Apple DOS" (Don Worth &amp; Pieter Lechner, Quality Software, 1981) — the canonical DOS 3.3 on-disk reference (VTOC, catalog, track/sector lists)</description></item>
+///   <item><description><c>https://github.com/fadden/CiderPress2</c> — CiderPress II, maintained implementation covering DOS 3.3 disk images</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Apple_DOS</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

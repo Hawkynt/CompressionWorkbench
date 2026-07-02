@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.StuffIt;
 
+/// <summary>
+/// Macintosh StuffIt (SIT) archive — classic Mac compression with resource/data fork entries.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/MacPaw/XADMaster</c> — XADMaster (The Unarchiver) — open StuffIt decoder, the de-facto format reference</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/StuffIt</c> — Wikipedia overview</description></item>
+///   <item><description>Aladdin Systems StuffIt — proprietary; no official spec published</description></item>
+/// </list>
+/// </summary>
 public sealed class StuffItFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the StuffIt archive in listing order.</summary>

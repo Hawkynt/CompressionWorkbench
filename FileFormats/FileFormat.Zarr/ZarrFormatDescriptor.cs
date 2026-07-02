@@ -11,6 +11,13 @@ namespace FileFormat.Zarr;
 /// store used by NumPy/SciPy/xarray; we surface a single <c>.zarray</c> (v2) or
 /// <c>zarr.json</c> (v3) document as <c>FULL.json</c> plus an INI summary.
 /// Detection is by JSON content sniffing (no extension or magic bytes).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://zarr-specs.readthedocs.io/</c> — Zarr storage specifications (v2 and v3)</description></item>
+///   <item><description><c>https://zarr.dev/</c> — Zarr project home</description></item>
+///   <item><description><c>https://github.com/zarr-developers/zarr-specs</c> — specification repository</description></item>
+/// </list>
 /// </summary>
 public sealed class ZarrFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

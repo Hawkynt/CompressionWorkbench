@@ -25,6 +25,12 @@ namespace FileFormat.Td0;
 /// metadata as <c>compression=advanced-lzh</c> with <c>parse_status=partial</c>.
 /// Read-only; malformed input degrades to FULL + partial metadata without
 /// throwing.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Dave Dunfield's TeleDisk .TD0 format notes — the de-facto public spec (Sydex never published one)</description></item>
+///   <item><description><c>https://github.com/brouhaha/wteledsk</c> — wteledsk — open TeleDisk image extractor</description></item>
+/// </list>
 /// </summary>
 public sealed class Td0FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Td0";

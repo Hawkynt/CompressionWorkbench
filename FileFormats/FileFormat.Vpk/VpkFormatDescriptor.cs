@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Vpk;
 
+/// <summary>
+/// Valve Pak (VPK) game resource archive — directory-tree index, optionally split across numbered data packs.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://developer.valvesoftware.com/wiki/VPK</c> — Valve Developer Community — VPK format and tool documentation</description></item>
+///   <item><description><c>https://github.com/ValvePython/vpk</c> — open VPK implementation</description></item>
+/// </list>
+/// </summary>
 public sealed class VpkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the VPK archive in listing order.</summary>

@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Wad;
 
+/// <summary>
+/// Doom WAD (IWAD/PWAD) — the id Software lump-directory game-data archive.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://doomwiki.org/wiki/WAD</c> — Doom Wiki — definitive community WAD documentation</description></item>
+///   <item><description>Matthew S. Fell, "The Unofficial Doom Specs" — the original public format documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Doom_WAD</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class WadFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the WAD archive in listing order.</summary>

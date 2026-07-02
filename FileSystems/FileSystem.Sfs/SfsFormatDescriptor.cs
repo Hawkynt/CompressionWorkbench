@@ -12,6 +12,13 @@ namespace FileSystem.Sfs;
 /// at http://www.xs4all.nl/~hjohn/SFS/ (Amiga SFS spec). Surfaces the parsed
 /// root block as a structured metadata bundle; per-file enumeration would
 /// require walking the object-container B+ tree.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/aros-development-team/AROS/tree/master/rom/filesys/SFS</c> — AROS SFS implementation — maintained open source</description></item>
+///   <item><description>John Hendrikx's original SFS specification (the xs4all.nl page cited above; now web-archived)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Smart_File_System</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>

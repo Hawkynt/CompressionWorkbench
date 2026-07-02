@@ -12,6 +12,13 @@ namespace FileFormat.Dtb;
 /// parses cleanly as a UTF-8 string list is written as a <c>.txt</c> file;
 /// anything else is written as raw bytes. A <c>metadata.ini</c> summarises the
 /// FDT header + memory reservation map.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/devicetree-org/devicetree-specification</c> — Devicetree Specification — defines the flattened (FDT/DTB) encoding</description></item>
+///   <item><description><c>https://www.devicetree.org</c> — devicetree.org portal</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Device_tree</c> — background</description></item>
+/// </list>
 /// </summary>
 public sealed class DtbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 

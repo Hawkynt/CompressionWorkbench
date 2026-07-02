@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Nsa;
 
+/// <summary>
+/// NScripter NSA game-data archive (entry table + data-offset header).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>ONScripter (Ogapee) — the open NScripter engine whose NsaReader is the de-facto format reference</description></item>
+///   <item><description>No official specification — NScripter is proprietary; the container is documented by the visual-novel tooling community</description></item>
+/// </list>
+/// </summary>
 public sealed class NsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

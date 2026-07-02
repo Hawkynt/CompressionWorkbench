@@ -19,6 +19,14 @@ namespace FileSystem.Ubifs;
 /// log-structured invariant (no in-place rewrites until commit-merge) is
 /// preserved. Full TNC / LPT commit pipeline (required for kernel mount) is
 /// multi-week work and remains out of scope.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://www.linux-mtd.infradead.org/doc/ubifs.html</c> — MTD project UBIFS documentation — the canonical design doc</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/blob/master/fs/ubifs/ubifs-media.h</c> — canonical on-disk node formats</description></item>
+///   <item><description><c>https://www.kernel.org/doc/html/latest/filesystems/ubifs.html</c> — kernel documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/UBIFS</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class UbifsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
 

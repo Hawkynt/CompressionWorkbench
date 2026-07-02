@@ -10,6 +10,13 @@ namespace FileFormat.AppleSparse;
 /// bundle is a directory containing <c>Info.plist</c>, <c>Info.bckup</c>,
 /// <c>token</c> and a <c>bands/</c> directory whose hex-named files each
 /// hold one virtual band (default 8 MB).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Apple <c>hdiutil(1)</c> man page — the creating tool; the bundle layout itself is undocumented by Apple</description></item>
+///   <item><description><c>https://github.com/torarnv/sparsebundlefs</c> — sparsebundlefs — open-source FUSE implementation of the band layout</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Sparse_image</c> — background on Apple sparse images/bundles</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>

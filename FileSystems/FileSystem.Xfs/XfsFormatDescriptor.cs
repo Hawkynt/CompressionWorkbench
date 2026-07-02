@@ -4,6 +4,17 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Xfs;
 
+/// <summary>
+/// R/W descriptor for SGI XFS filesystem images ("XFSB" superblock magic)
+/// at <c>mkfs.xfs</c>-faithful defaults.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://mirrors.edge.kernel.org/pub/linux/utils/fs/xfs/docs/xfs_filesystem_structure.pdf</c> — "XFS Algorithms &amp; Data Structures" — the on-disk specification</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/xfs</c> — Linux reference implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/XFS</c> — Wikipedia article</description></item>
+/// </list>
+/// </summary>
 public sealed class XfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   /// <summary>

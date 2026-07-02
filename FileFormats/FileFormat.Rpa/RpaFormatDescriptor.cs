@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Rpa;
 
+/// <summary>
+/// Ren'Py visual-novel resource archive (RPA) — pickle-encoded index, zlib-compressed header.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/renpy/renpy</c> — Ren'Py engine — its loader defines the RPA format</description></item>
+///   <item><description><c>https://github.com/Shizmob/rpatool</c> — rpatool — standalone RPA reader/writer</description></item>
+///   <item><description><c>https://www.renpy.org/</c> — Ren'Py project home</description></item>
+/// </list>
+/// </summary>
 public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IWipeEmpty {
 
   /// <inheritdoc />

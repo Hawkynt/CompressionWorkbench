@@ -5,6 +5,17 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Udf;
 
+/// <summary>
+/// R/W descriptor for UDF 2.01 (Universal Disk Format) volume images per
+/// ECMA-167 and the OSTA UDF profile.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://ecma-international.org/publications-and-standards/standards/ecma-167/</c> — ECMA-167 — the base volume/file structure standard</description></item>
+///   <item><description>OSTA "Universal Disk Format Specification, revision 2.01" (osta.org) — the UDF profile of ECMA-167</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Universal_Disk_Format</c> — Wikipedia article</description></item>
+/// </list>
+/// </summary>
 public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

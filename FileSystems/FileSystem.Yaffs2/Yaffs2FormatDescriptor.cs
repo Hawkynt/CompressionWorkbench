@@ -23,6 +23,13 @@ namespace FileSystem.Yaffs2;
 /// header with <c>parent_obj_id == 0xFFFFFFFE</c> as a tombstone.
 /// </para>
 /// Supports: list, extract, create, in-place modify, defragment, extent map.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://yaffs.net/</c> — project home — hosts "How YAFFS Works" and the spec documents</description></item>
+///   <item><description>Charles Manning, "How YAFFS Works" (yaffs.net documentation)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/YAFFS</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class Yaffs2FormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,

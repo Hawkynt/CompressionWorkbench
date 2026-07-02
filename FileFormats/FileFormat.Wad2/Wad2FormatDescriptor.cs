@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Wad2;
 
+/// <summary>
+/// WAD2 texture/lump archive used by Quake (WAD3 variant used by GoldSrc/Half-Life).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>id Software "Quake Specifications" v3.4 — documents the WAD2 lump directory</description></item>
+///   <item><description><c>https://developer.valvesoftware.com/wiki/WAD</c> — Valve Developer Community — the WAD3 (GoldSrc) variant</description></item>
+/// </list>
+/// </summary>
 public sealed class Wad2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the WAD2 archive in listing order.</summary>

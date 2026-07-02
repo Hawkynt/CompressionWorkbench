@@ -9,6 +9,13 @@ namespace FileFormat.FontCollection;
 /// <c>metadata.ini</c> + per-glyph SVG files under <c>glyphs/&lt;font_name&gt;/</c>.
 /// Composite glyphs and CFF/CFF2 outlines are out of scope for this wave; both are
 /// recorded in <c>metadata.ini</c> with a reason so the gap is visible.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/typography/opentype/spec/</c> — Microsoft OpenType specification (the sfnt table format TrueType shares)</description></item>
+///   <item><description><c>https://developer.apple.com/fonts/TrueType-Reference-Manual/</c> — Apple TrueType Reference Manual</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/TrueType</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class TtfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Ttf";

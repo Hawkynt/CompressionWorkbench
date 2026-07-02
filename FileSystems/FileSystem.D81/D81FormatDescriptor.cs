@@ -5,6 +5,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.D81;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://unusedino.de/ec64/technical/formats/d81.html</c> — Peter Schepers' D81 format specification (header block, BAM, directory)</description></item>
+///   <item><description>Commodore 1581 Disk Drive User's Guide (Commodore, 1987) — original vendor documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Commodore_1581</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class D81FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

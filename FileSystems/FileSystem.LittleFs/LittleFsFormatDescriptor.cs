@@ -11,6 +11,13 @@ namespace FileSystem.LittleFs;
 /// Surfaces the superblock and parsed geometry. Walking the tag-based metadata
 /// pair commit log with CRC validation is intentionally out of scope — that's a
 /// full reference-implementation port. Detection + structural surfacing is the win.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/littlefs-project/littlefs</c> — canonical littlefs source (ARM Mbed lineage)</description></item>
+///   <item><description><c>https://github.com/littlefs-project/littlefs/blob/master/SPEC.md</c> — on-disk format specification</description></item>
+///   <item><description><c>https://github.com/littlefs-project/littlefs/blob/master/DESIGN.md</c> — design document (metadata pairs, CTZ skip-lists)</description></item>
+/// </list>
 /// </summary>
 public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable {
 

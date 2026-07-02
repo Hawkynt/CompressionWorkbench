@@ -11,6 +11,12 @@ namespace FileSystem.Htfs;
 /// OpenServer 5. Now exposes a WORM writer + reader with real nested
 /// subdirectories, defrag/purge/conversion, fileset optimizer, and an options
 /// schema (BlockSize / InodeCount / VolumeLabel).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>SCO OpenServer 5 Development System documentation, <c>sys/fs/htfs/htfs_fs.h</c> — the vendor header defining the on-disk structures (no stable public URL)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/SCO_OpenServer</c> — Wikipedia overview of the host OS</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para><b>Reference</b>: SCO OpenServer Development System docs,

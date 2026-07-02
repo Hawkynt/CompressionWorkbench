@@ -12,6 +12,12 @@ namespace FileFormat.ExePackers;
 /// classic anti-RE crypter whose unpacker stub renames at least one section
 /// to <c>".yC"</c> or <c>"yC"</c> and embeds the literal copyright string
 /// <c>"Yoda's Crypter"</c> (or simply <c>"Yoda's"</c>) somewhere in the file.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://sourceforge.net/projects/yodap/</c> — Yoda's Protector project (Ashkbiz Danehkar) on SourceForge</description></item>
+///   <item><description><c>https://github.com/horsicq/Detect-It-Easy</c> — Detect It Easy — maintained packer-detection signature database</description></item>
+/// </list>
 /// </summary>
 public sealed class YodaCrypterFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

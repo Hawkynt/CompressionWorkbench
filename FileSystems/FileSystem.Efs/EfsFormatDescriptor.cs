@@ -11,6 +11,13 @@ namespace FileSystem.Efs;
 /// filesystem used on IRIX before 5.3 (1994). Surfaces a real WORM writer that
 /// emits a spec-keyed superblock + single-cylinder-group inode table + per-file
 /// single-extent layout, plus defrag/purge/conversion/optimizer wiring.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/efs</c> — Linux kernel EFS driver (read-only), the maintained on-disk reference</description></item>
+///   <item><description>IRIX <c>sys/fs/efs_fs.h</c> — the original SGI header defining the superblock and extent layout</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Extent_File_System</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para><b>Reference</b>: Linux kernel <c>fs/efs/efs_fs_sb.h</c>, IRIX

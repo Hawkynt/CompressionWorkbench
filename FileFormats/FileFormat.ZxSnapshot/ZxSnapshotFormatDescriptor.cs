@@ -11,6 +11,13 @@ namespace FileFormat.ZxSnapshot;
 /// ZX Spectrum snapshot and tape formats: <c>.sna</c>, <c>.z80</c>, <c>.tap</c>, <c>.tzx</c>.
 /// Detects TZX by magic, the rest by size / extension heuristics. Read-only;
 /// compressed Z80 pages are surfaced verbatim, not decompressed.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://sinclair.wiki.zxnet.co.uk/wiki/TAP_format</c> — Sinclair wiki — TAP format (companion SNA/Z80/TZX pages document the snapshot formats)</description></item>
+///   <item><description>World of Spectrum "File format reference" — long-standing community documentation of .sna/.z80/.tap/.tzx</description></item>
+///   <item><description>TZX specification v1.20 — originally maintained at World of Spectrum</description></item>
+/// </list>
 /// </summary>
 public sealed class ZxSnapshotFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "ZxSnapshot";

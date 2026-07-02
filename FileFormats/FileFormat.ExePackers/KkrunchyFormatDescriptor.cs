@@ -12,6 +12,12 @@ namespace FileFormat.ExePackers;
 /// .kkrieger, fr-08, and most early-2000s Farbrausch 64K intros. Its
 /// unpacker stub embeds the literal string <c>"kkrunchy"</c> somewhere in the
 /// packed file.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/farbrausch/fr_public</c> — Farbrausch public source release — includes kkrunchy</description></item>
+///   <item><description>Fabian "ryg" Giesen's kkrunchy write-ups — compressor internals from the author</description></item>
+/// </list>
 /// </summary>
 public sealed class KkrunchyFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

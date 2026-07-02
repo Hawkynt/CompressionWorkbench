@@ -11,6 +11,11 @@ namespace FileSystem.Tfs;
 /// filesystem developed at BBN; the on-disk format is poorly documented
 /// publicly so this descriptor is intentionally detection-only — it emits the
 /// raw image as a single opaque entry rather than guessing layout.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>BBN Laboratories technical reports on Trans-FS — the only substantive documentation; not stably archived online</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para><b>Magic</b>: <c>0x54465301</c> ("TFS\x01") at offset 0.

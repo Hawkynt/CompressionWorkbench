@@ -5,6 +5,17 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ProDos;
 
+/// <summary>
+/// Descriptor for Apple II ProDOS volume images (140 KB / 800 KB) — volume
+/// directory + bitmap layout with seedling/sapling/tree file storage tiers.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://prodos8.com/docs/techref/</c> — ProDOS 8 Technical Reference Manual — volume/directory/storage-tier spec</description></item>
+///   <item><description><c>https://github.com/fadden/CiderPress2</c> — CiderPress II — maintained tooling for ProDOS volumes</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Apple_ProDOS</c> — Wikipedia article</description></item>
+/// </list>
+/// </summary>
 public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

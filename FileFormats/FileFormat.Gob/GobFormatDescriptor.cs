@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Gob;
 
+/// <summary>
+/// LucasArts GOB resource archive used by Star Wars: Jedi Knight (Dark Forces II) and Outlaws.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/luciusDXL/TheForceEngine</c> — The Force Engine — maintained open reimplementation of the Jedi engine, reads GOB containers</description></item>
+///   <item><description>No official specification — community-reverse-engineered LucasArts container</description></item>
+/// </list>
+/// </summary>
 public sealed class GobFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

@@ -10,6 +10,13 @@ namespace FileFormat.Pcap;
 /// a separate archive entry.  To keep listings manageable the first 100 packets
 /// are exposed verbatim; larger captures are tail-truncated and a note is left
 /// in <c>metadata.ini</c>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.tcpdump.org</c> — tcpdump/libpcap project — the pcap-savefile(5) man page documents the capture file layout</description></item>
+///   <item><description><c>https://github.com/the-tcpdump-group/libpcap</c> — canonical implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Pcap</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class PcapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   private const int MaxPackets = 100;

@@ -15,6 +15,12 @@ namespace FileFormat.ExePackers;
 /// <c>"Stripped by ASPACK"</c>). Section names overlap with ASPack
 /// (<c>.aspack</c>, <c>.adata</c>) so the <c>"ASProtect"</c> literal is the
 /// reliable distinguishing fingerprint.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://www.aspack.com</c> — vendor site — ASPack Software publishes both ASPack and ASProtect</description></item>
+///   <item><description><c>https://github.com/horsicq/Detect-It-Easy</c> — Detect It Easy — maintained packer-detection signature database</description></item>
+/// </list>
 /// </summary>
 public sealed class AsProtectFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

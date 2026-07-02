@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Zap;
 
+/// <summary>
+/// Amiga ZAP disk archive — LZ77+RLE backward-bitstream disk packer.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://aminet.net/</c> — Aminet — distribution home of the Amiga ZAP disk archiver</description></item>
+///   <item><description>no formal spec; format known from the tool's own documentation and depacker sources</description></item>
+/// </list>
+/// </summary>
 public sealed class ZapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   public void Defragment(Stream archive)

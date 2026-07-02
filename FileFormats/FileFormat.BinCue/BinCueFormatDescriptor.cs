@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.BinCue;
 
+/// <summary>
+/// BIN/CUE CD-ROM image — raw 2352-byte sector dump (.bin) described by a CDRWIN cue sheet (.cue).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Golden Hawk Technology CDRWIN user manual — the defining cue-sheet documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Cue_sheet_(computing)</c> — cue-sheet syntax overview</description></item>
+///   <item><description>ECMA-130 — CD-ROM sector layout (mode 1 / mode 2 framing)</description></item>
+/// </list>
+/// </summary>
 public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   public void Defragment(Stream archive)

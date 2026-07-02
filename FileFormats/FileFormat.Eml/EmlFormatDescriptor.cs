@@ -14,6 +14,13 @@ namespace FileFormat.Eml;
 ///   <item><description><c>part_NN_*.ext</c> — each MIME part with its transfer-encoding decoded.</description></item>
 ///   <item><description><c>attachments/&lt;name&gt;</c> — parts marked as attachments.</description></item>
 /// </list>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.rfc-editor.org/rfc/rfc5322</c> — RFC 5322 — Internet Message Format (successor of RFC 822)</description></item>
+///   <item><description><c>https://www.rfc-editor.org/rfc/rfc2045</c> — RFC 2045 — MIME part one: message body formats</description></item>
+///   <item><description><c>https://www.rfc-editor.org/rfc/rfc2046</c> — RFC 2046 — MIME part two: media types incl. multipart boundaries</description></item>
+/// </list>
 /// </summary>
 public sealed class EmlFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Eml";

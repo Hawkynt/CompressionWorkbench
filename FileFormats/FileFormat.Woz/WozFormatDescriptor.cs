@@ -19,6 +19,12 @@ namespace FileFormat.Woz;
 /// INFO, a <c>meta.ini</c> from the META key-value block (when present) and the
 /// per-track TRKS blocks under <c>tracks/</c>. Read-only; malformed input degrades
 /// to FULL + partial metadata without throwing.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://applesaucefdc.com/woz/</c> — official WOZ disk image reference (Applesauce, John K. Morris)</description></item>
+///   <item><description>WOZ 1.0 / 2.x reference documents published by the Applesauce project</description></item>
+/// </list>
 /// </summary>
 public sealed class WozFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Woz";

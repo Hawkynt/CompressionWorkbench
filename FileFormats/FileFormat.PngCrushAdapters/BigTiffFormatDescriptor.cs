@@ -5,6 +5,16 @@ using FileFormat.Core;
 
 namespace FileFormat.PngCrushAdapters;
 
+/// <summary>
+/// BigTIFF container (64-bit TIFF variant for files over 4 GB); each IFD is surfaced as one page.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.awaresystems.be/imaging/tiff/bigtiff.html</c> — BigTIFF design description (AWare Systems)</description></item>
+///   <item><description><c>https://libtiff.gitlab.io/libtiff/</c> — libtiff — the reference TIFF/BigTIFF implementation</description></item>
+///   <item><description>Adobe "TIFF Revision 6.0" specification (1992) — the baseline BigTIFF extends</description></item>
+/// </list>
+/// </summary>
 public sealed class BigTiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "BigTiff";
   public string DisplayName => "BigTIFF (large multi-page)";

@@ -12,6 +12,13 @@ namespace FileSystem.Jfs1;
 /// writer + reader with real nested subdirectories, defrag/purge/conversion,
 /// fileset optimizer, and an options schema (BlockSize / AggregateBlockSize /
 /// VolumeLabel).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>IBM "JFS for OS/2 Warp Server for e-business" documentation (1999-2000) — the original vendor documentation of the pre-Linux JFS1 (no stable public URL)</description></item>
+///   <item><description><c>https://jfs.sourceforge.net/</c> — the open-sourced JFS project, useful for contrasting the later JFS2-derived layout</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/JFS_(file_system)</c> — Wikipedia overview of the JFS family</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para><b>Reference</b>: IBM JFS for OS/2 Warp Server documentation

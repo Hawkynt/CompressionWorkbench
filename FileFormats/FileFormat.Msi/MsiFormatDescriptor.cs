@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Msi;
 
+/// <summary>
+/// Microsoft OLE2 Compound File Binary container (MSI installer databases, legacy Office documents).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/</c> — [MS-CFB] Compound File Binary File Format — Microsoft Open Specifications</description></item>
+///   <item><description><c>https://learn.microsoft.com/en-us/windows/win32/msi/windows-installer-portal</c> — Windows Installer documentation portal</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Compound_File_Binary_Format</c> — Wikipedia</description></item>
+/// </list>
+/// </summary>
 public sealed class MsiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   public void Defragment(Stream archive)

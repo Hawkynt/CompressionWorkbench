@@ -11,6 +11,12 @@ namespace FileFormat.ResourceDll;
 /// the structure (a PE without an <c>RT_RCDATA</c> tree yields zero entries rather
 /// than throwing). The <c>.resource.dll</c> compound extension routes file-by-name
 /// dispatch here without claiming all <c>.dll</c> files.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/windows/win32/debug/pe-format</c> — PE/COFF specification — defines the .rsrc resource section</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Portable_Executable</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class ResourceDllFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
 

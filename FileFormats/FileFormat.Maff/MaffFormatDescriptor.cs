@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Maff;
 
+/// <summary>
+/// Mozilla Archive Format (MAFF) — a ZIP container of saved web pages plus RDF metadata.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://en.wikipedia.org/wiki/Mozilla_Archive_Format</c> — Wikipedia</description></item>
+///   <item><description>MAFF specification by the Mozilla Archive Format add-on project (formerly maf.mozdev.org; mozdev has shut down)</description></item>
+/// </list>
+/// </summary>
 public sealed class MaffFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

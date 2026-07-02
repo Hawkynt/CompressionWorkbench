@@ -4,7 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.FreeArc;
 
-/// <summary>Format descriptor for FreeArc compressed archives (.arc).</summary>
+/// <summary>
+/// Format descriptor for FreeArc compressed archives (.arc).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/Bulat-Ziganshin/FA</c> — FreeArc'Next by FreeArc's author, Bulat Ziganshin (the original freearc.org site is defunct)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/FreeArc</c> — Wikipedia overview</description></item>
+///   <item><description>No formal specification — the archive layout is defined by the original FreeArc sources</description></item>
+/// </list>
+/// </summary>
 public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the FreeArc archive in listing order.</summary>

@@ -36,6 +36,13 @@ namespace FileSystem.TFat;
 /// Windows Embedded Compact documentation on the FAT transactional protocol,
 /// supplemented by forensic-literature summaries. The runtime protocol
 /// itself is documented in Microsoft's WinCE TFAT design notes.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Microsoft Windows Embedded CE "TFAT Overview" documentation (archived MSDN)</description></item>
+///   <item><description>Microsoft "FAT: General Overview of On-Disk Format" (fatgen103) — the base FAT layout</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Transaction-Safe_FAT_File_System</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
 

@@ -16,6 +16,13 @@ namespace FileFormat.Collada;
 /// visual_scenes …) plus <c>asset</c> and <c>scene</c>. We surface the full document,
 /// a <c>metadata.ini</c> summary (version + library counts), and one
 /// <c>library_*.xml</c> fragment per top-level library.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.khronos.org/collada/</c> — Khronos COLLADA portal — specification downloads</description></item>
+///   <item><description>ISO/IEC 17506:2012 — COLLADA 1.5 as an international standard</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/COLLADA</c> — format overview</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// Reference: Khronos Collada 1.5.0 / 1.4.1 specification.

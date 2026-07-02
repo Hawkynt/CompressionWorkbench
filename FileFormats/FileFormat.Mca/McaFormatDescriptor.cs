@@ -7,6 +7,12 @@ namespace FileFormat.Mca;
 /// Surfaces a Minecraft region file (<c>.mca</c>) as an archive of per-chunk
 /// decompressed NBT payloads. Each entry is named <c>chunk_X_Z.nbt</c> by its
 /// in-region coordinates (0–31 in each axis). Unused chunk slots are skipped.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://minecraft.wiki/w/Region_file_format</c> — Minecraft Wiki — region/Anvil file layout (locations, timestamps, per-chunk compressed NBT)</description></item>
+///   <item><description>No official Mojang specification — the layout is community-documented</description></item>
+/// </list>
 /// </summary>
 public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Mca";

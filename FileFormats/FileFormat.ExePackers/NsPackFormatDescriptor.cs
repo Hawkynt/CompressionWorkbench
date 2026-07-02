@@ -12,6 +12,12 @@ namespace FileFormat.ExePackers;
 /// renames sections to <c>".nsp0"</c>, <c>".nsp1"</c>, <c>".nsp2"</c>
 /// (sometimes without the leading dot — <c>"nsp1"</c>, <c>"nsp2"</c>).
 /// Many builds also embed the literal <c>"NsPack"</c> in the stub.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>NsPack by North Star / LiuXingPing — commercial distribution ceased; identified via RE-scene documentation</description></item>
+///   <item><description><c>https://github.com/horsicq/Detect-It-Easy</c> — Detect It Easy — maintained packer-detection signature database (NsPack signatures)</description></item>
+/// </list>
 /// </summary>
 public sealed class NsPackFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

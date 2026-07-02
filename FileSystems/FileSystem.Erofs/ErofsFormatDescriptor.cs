@@ -8,6 +8,13 @@ namespace FileSystem.Erofs;
 /// creation produces a minimal uncompressed (FLAT_PLAIN) image via <see cref="ErofsWriter"/>.
 /// Full-fidelity, compressed images remain the job of <c>mkfs.erofs</c>; our writer targets
 /// the round-trippable WORM subset (compact inodes, plain data, nested directories).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://docs.kernel.org/filesystems/erofs.html</c> — Linux kernel EROFS documentation (on-disk overview)</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/erofs</c> — mainline implementation (<c>erofs_fs.h</c> defines the on-disk structures)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/EROFS</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable {
 

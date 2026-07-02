@@ -12,6 +12,12 @@ namespace FileFormat.Leveldb;
 /// metadata.ini, and the data region preceding the metaindex as a single
 /// blob (block-level splitting requires parsing restart arrays which is out
 /// of scope for this page-level surface).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/google/leveldb</c> — canonical implementation — SSTable layout documented in doc/table_format.md</description></item>
+///   <item><description><c>https://github.com/facebook/rocksdb</c> — RocksDB — maintained derivative using the BlockBasedTable variant</description></item>
+/// </list>
 /// </summary>
 public sealed class LeveldbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   // Canonical LevelDB magic (little-endian uint64 0xdb4775248b80fb57) as raw bytes.

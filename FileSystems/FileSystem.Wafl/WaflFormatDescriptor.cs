@@ -26,6 +26,13 @@ namespace FileSystem.Wafl;
 /// investigation record is captured in this XML doc, the metadata.ini
 /// surface, and the README stub-tier table.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Hitz, Lau, Malcolm — "File System Design for an NFS File Server Appliance" (USENIX Winter 1994; NetApp TR-3002), the defining WAFL paper</description></item>
+///   <item><description>NetApp patents WO1994029807 / US6289356 — the published block-layout details</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Write_Anywhere_File_Layout</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

@@ -9,6 +9,12 @@ namespace FileSystem.Gpfs;
 /// Stage 0 detection-only descriptor for IBM Spectrum Scale (GPFS) NSD
 /// descriptor images. Surfaces only a synthetic <c>metadata.ini</c> and
 /// the raw image bytes; no real file-walk is attempted.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.ibm.com/docs/en/storage-scale</c> — IBM Storage Scale (formerly Spectrum Scale / GPFS) official documentation, incl. NSD concepts</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/GPFS</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class GpfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

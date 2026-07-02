@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Tnef;
 
+/// <summary>
+/// Microsoft TNEF (winmail.dat) email attachment container.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>[MS-OXTNEF]: Transport Neutral Encapsulation Format (Microsoft Open Specifications, learn.microsoft.com)</description></item>
+///   <item><description><c>https://github.com/Yeraze/ytnef</c> — ytnef — open TNEF decoder</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Transport_Neutral_Encapsulation_Format</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class TnefFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the TNEF archive in listing order.</summary>

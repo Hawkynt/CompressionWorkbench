@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Arc;
 
+/// <summary>
+/// ARC archive (System Enhancement Associates, 1985) — one of the first PC compression container formats.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/hyc/arc</c> — SEA ARC source (GPL continuation maintained by Howard Chu) — the reference implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/ARC_(file_format)</c> — format history</description></item>
+/// </list>
+/// </summary>
 public sealed class ArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the ARC archive in listing order.</summary>

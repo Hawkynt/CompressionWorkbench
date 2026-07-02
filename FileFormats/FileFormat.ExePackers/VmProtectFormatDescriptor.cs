@@ -13,6 +13,13 @@ namespace FileFormat.ExePackers;
 /// commonly renames sections to <c>".vmp0"</c>, <c>".vmp1"</c>, <c>".vmp2"</c>
 /// and almost always embeds the literal <c>"VMProtect"</c> in the build for
 /// licensing/runtime calls.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://vmpsoft.com</c> — official VMProtect site (VMProtect Software)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/VMProtect</c> — background</description></item>
+///   <item><description><c>https://github.com/horsicq/Detect-It-Easy</c> — Detect It Easy — maintained packer-detection signature database</description></item>
+/// </list>
 /// </summary>
 public sealed class VmProtectFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

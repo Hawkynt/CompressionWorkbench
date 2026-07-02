@@ -10,6 +10,13 @@ namespace FileFormat.Fits;
 /// used for astronomical data.
 /// Surfaces each HDU as a <c>.header</c>/<c>.data</c> pair, plus a passthrough <c>FULL.fits</c>
 /// and a <c>metadata.ini</c> summary.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://fits.gsfc.nasa.gov</c> — NASA/GSFC FITS Support Office — standard documents and conventions registry</description></item>
+///   <item><description>"Definition of the Flexible Image Transport System (FITS)", version 4.0 — IAU FITS Working Group standard</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Flexible_Image_Transport_System</c> — format overview</description></item>
+/// </list>
 /// </summary>
 public sealed class FitsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 

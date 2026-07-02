@@ -17,6 +17,12 @@ namespace FileFormat.Lit;
 /// LZX blocks. It stops at structural surfacing, which is enough to confirm
 /// format + extract header/directory bytes for forensic triage.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://en.wikipedia.org/wiki/Microsoft_Reader</c> — Wikipedia — LIT / Microsoft Reader background</description></item>
+///   <item><description>ConvertLIT ("clit") — the community tool whose source documents the ITOL/ITLS container and DRM levels</description></item>
+/// </list>
 /// </summary>
 public sealed class LitFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Lit";

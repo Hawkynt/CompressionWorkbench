@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.T64;
 
+/// <summary>
+/// Commodore 64 T64 tape container — directory of memory-load records.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Peter Schepers, "C64 File Formats: T64" — the classic reference document</description></item>
+///   <item><description><c>https://vice-emu.sourceforge.io/</c> — VICE emulator — reference implementation reading/writing T64</description></item>
+/// </list>
+/// </summary>
 public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemBlockMover {
   public string Id => "T64";
   public string DisplayName => "T64";

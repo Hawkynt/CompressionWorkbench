@@ -4,6 +4,17 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ReiserFs;
 
+/// <summary>
+/// R/W descriptor for ReiserFS v3.6 filesystem images (superblock at offset
+/// 65536, R5 directory hash, 4 KB blocks).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/torvalds/linux/tree/v6.6/fs/reiserfs</c> — Linux reference implementation (v6.6 LTS tree; the driver was removed from later kernels)</description></item>
+///   <item><description>reiserfsprogs (<c>mkreiserfs</c> / <c>debugreiserfs</c>) — canonical userspace tooling</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/ReiserFS</c> — Wikipedia article</description></item>
+/// </list>
+/// </summary>
 public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

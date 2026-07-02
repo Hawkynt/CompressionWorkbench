@@ -17,6 +17,13 @@ namespace FileSystem.Reiser4;
 /// <list type="bullet">
 ///   <item><description><c>"ReIsEr4"</c> at offset 65536 — master superblock <c>ms_magic[16]</c>.</description></item>
 /// </list>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://archive.kernel.org/oldwiki/reiser4.wiki.kernel.org/</c> — archived Reiser4 wiki (format40 layout, plugin system)</description></item>
+///   <item><description>reiser4progs (<c>mkfs.reiser4</c> / <c>debugfs.reiser4</c>) — canonical userspace tooling</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Reiser4</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
 

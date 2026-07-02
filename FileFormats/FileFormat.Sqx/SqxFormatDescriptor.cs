@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Sqx;
 
+/// <summary>
+/// SQX archive (SpeedProject Squeez / SpeedCommander) with multiple compression algorithms.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>SpeedProject (www.speedproject.de) — vendor of Squeez/SpeedCommander; published the "SQX Archive Format" description</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/SQX</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class SqxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the SQX archive in listing order.</summary>

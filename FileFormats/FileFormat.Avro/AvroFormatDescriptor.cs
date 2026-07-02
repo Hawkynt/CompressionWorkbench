@@ -11,6 +11,12 @@ namespace FileFormat.Avro;
 /// Parses the OCF header (magic, meta map, sync marker) and walks block headers to
 /// surface block/record counts. Surfaces a <c>FULL.avro</c> passthrough plus a
 /// <c>metadata.ini</c> summary. Schema-bound record decoding is out of scope.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://avro.apache.org/docs/current/specification/</c> — Avro specification incl. the Object Container File layout</description></item>
+///   <item><description><c>https://github.com/apache/avro</c> — canonical implementation</description></item>
+/// </list>
 /// </summary>
 public sealed class AvroFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

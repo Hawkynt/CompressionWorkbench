@@ -9,6 +9,13 @@ namespace FileFormat.FirmwareHex;
 /// Pseudo-archive descriptor for Motorola S-Record firmware files (S19/S28/S37).
 /// Decodes the ASCII records into a flat binary and emits <c>firmware.bin</c> +
 /// <c>metadata.ini</c>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Motorola "M68000 Family Programmer's Reference Manual" — S-record appendix (the defining document)</description></item>
+///   <item><description><c>https://srecord.sourceforge.net</c> — SRecord tool suite — thorough format documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/SREC_(file_format)</c> — format overview</description></item>
+/// </list>
 /// </summary>
 public sealed class SRecordFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

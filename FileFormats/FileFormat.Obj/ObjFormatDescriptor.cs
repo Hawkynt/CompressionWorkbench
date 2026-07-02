@@ -13,6 +13,13 @@ namespace FileFormat.Obj;
 /// references) so the emitted slices are geometrically valid on their own. This
 /// mirrors how slicing a multi-frame GIF rebuilds a standalone single-frame GIF.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://paulbourke.net/dataformats/obj/</c> — Paul Bourke's mirror of the Wavefront OBJ specification</description></item>
+///   <item><description>Wavefront Advanced Visualizer manual, Appendix B1 — the original OBJ definition</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Wavefront_.obj_file</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class ObjFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   public string Id => "Obj";

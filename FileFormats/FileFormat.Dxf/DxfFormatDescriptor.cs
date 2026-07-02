@@ -15,6 +15,12 @@ namespace FileFormat.Dxf;
 /// <c>CLASSES</c>, <c>TABLES</c>, <c>BLOCKS</c>, <c>ENTITIES</c>, <c>OBJECTS</c>,
 /// and the document terminates with <c>0/EOF</c>. Binary DXF is proprietary and
 /// ignored here.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Autodesk "DXF Reference" — the official group-code documentation published with each AutoCAD release</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/AutoCAD_DXF</c> — format overview</description></item>
+/// </list>
 /// </summary>
 public sealed class DxfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   /// <summary>Format identifier.</summary>

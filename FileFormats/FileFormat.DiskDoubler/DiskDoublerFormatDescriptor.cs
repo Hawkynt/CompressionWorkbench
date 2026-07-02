@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.DiskDoubler;
 
+/// <summary>
+/// DiskDoubler compressed file (Salient Software, 1989-1993) — classic-Mac per-file compressor.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/MacPaw/XADMaster</c> — The Unarchiver's XADMaster — open-source DiskDoubler decoder</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/DiskDoubler</c> — format history</description></item>
+/// </list>
+/// </summary>
 public sealed class DiskDoublerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   public void Defragment(Stream archive)

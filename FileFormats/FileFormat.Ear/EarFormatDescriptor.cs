@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ear;
 
+/// <summary>
+/// Java EE / Jakarta EE Enterprise Application aRchive (.ear) — ZIP container with META-INF/application.xml and bundled WAR/JAR modules.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://jakarta.ee/specifications/platform/</c> — Jakarta EE Platform specification — defines EAR packaging</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/EAR_(file_format)</c> — format overview</description></item>
+/// </list>
+/// </summary>
 public sealed class EarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

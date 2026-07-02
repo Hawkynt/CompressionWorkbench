@@ -23,6 +23,12 @@ namespace FileFormat.Ova;
 /// the OVF first, then disks, then a freshly generated <c>.mf</c> with correct
 /// SHA-256 lines. When no OVF input is supplied a minimal valid envelope is
 /// synthesised that references each disk's <c>ovf:href</c>.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.dmtf.org/standards/ovf</c> — DMTF Open Virtualization Format standard — OVA is the single-file TAR packaging of an OVF descriptor</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Open_Virtualization_Format</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class OvaFormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {

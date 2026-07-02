@@ -9,6 +9,13 @@ namespace FileFormat.Hdf5;
 /// Read-only, metadata-surfacing descriptor for HDF5. Does not walk the full B-tree /
 /// local-heap / object-header graph; only reads the superblock and does a best-effort
 /// scan for object-header signatures (<c>OHDR</c>) in a bounded prefix of the payload.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/HDFGroup/hdf5</c> — canonical implementation (libhdf5); the on-disk format specification is maintained in its documentation</description></item>
+///   <item><description><c>https://www.hdfgroup.org/solutions/hdf5/</c> — HDF Group HDF5 portal</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Hierarchical_Data_Format</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class Hdf5FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   // HDF5 file signature: 0x89 "HDF" \r \n 0x1A \n

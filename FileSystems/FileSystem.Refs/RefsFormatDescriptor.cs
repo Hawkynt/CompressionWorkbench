@@ -12,6 +12,13 @@ namespace FileSystem.Refs;
 /// plus the raw image. Walking the object table / directory B+trees is explicitly
 /// out of scope — that's a multi-week effort and Microsoft's documentation is
 /// minimal. Detection alone is the primary win here.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/libyal/libfsrefs</c> — reverse-engineered ReFS documentation + reader (libyal)</description></item>
+///   <item><description><c>https://learn.microsoft.com/en-us/windows-server/storage/refs/refs-overview</c> — Microsoft's ReFS overview — no on-disk spec is published</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/ReFS</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class RefsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Refs";

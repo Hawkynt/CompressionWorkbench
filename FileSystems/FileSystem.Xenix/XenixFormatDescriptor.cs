@@ -11,6 +11,13 @@ namespace FileSystem.Xenix;
 /// offset 0x3F8 → file offset 2040), the value the Linux sysv driver matches.
 /// Reads existing Xenix images and emits fresh WORM images via
 /// <see cref="XenixWriter"/>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/torvalds/linux/tree/v6.6/fs/sysv</c> — Linux sysv driver matching the Xenix magic (v6.6 LTS tree; removed from later kernels)</description></item>
+///   <item><description>SCO "XENIX System V" development and operations documentation (vendor manuals)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Xenix</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class XenixFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "Xenix";

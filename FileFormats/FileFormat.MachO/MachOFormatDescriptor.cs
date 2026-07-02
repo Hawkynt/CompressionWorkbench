@@ -10,6 +10,13 @@ namespace FileFormat.MachO;
 /// single-slice binaries expose one entry per <c>LC_SEGMENT</c>/<c>LC_SEGMENT_64</c>
 /// plus synthetic <c>symbols.txt</c>, <c>metadata/uuid.bin</c>, and
 /// <c>metadata/code_signature.bin</c> entries where those load commands are present.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Apple mach-o/loader.h and mach-o/fat.h headers (macOS SDK) — the authoritative structure definitions</description></item>
+///   <item><description><c>https://github.com/apple-oss-distributions/xnu</c> — Apple's published XNU source (EXTERNAL_HEADERS/mach-o)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Mach-O</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class MachOFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "MachO";

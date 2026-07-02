@@ -12,6 +12,12 @@ namespace FileFormat.WordPerfect;
 /// header plus the prefix and document areas carved out by the header's
 /// document-area pointer. Prefix packet structure and document text are not
 /// parsed.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://sourceforge.net/projects/libwpd/</c> — libwpd — open WordPerfect implementation; its documentation is the de-facto format reference</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/WordPerfect</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class WordPerfectFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "WordPerfect";

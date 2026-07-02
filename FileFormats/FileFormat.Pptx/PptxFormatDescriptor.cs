@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Pptx;
 
+/// <summary>
+/// Office Open XML presentation (.pptx) — an OPC ZIP package.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://ecma-international.org/publications-and-standards/standards/ecma-376/</c> — ECMA-376 Office Open XML File Formats (also ISO/IEC 29500)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Office_Open_XML</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class PptxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

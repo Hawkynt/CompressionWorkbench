@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Mhk;
 
+/// <summary>
+/// Cyan / Broderbund Mohawk (MHWK) resource archive used by Myst, Riven and Living Books titles.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/scummvm/scummvm</c> — ScummVM — the Mohawk engine is the de-facto reference implementation</description></item>
+///   <item><description><c>https://wiki.scummvm.org</c> — ScummVM wiki — Mohawk engine and archive documentation</description></item>
+/// </list>
+/// </summary>
 public sealed class MhkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.GodotPck;
 
+/// <summary>
+/// Godot Engine resource pack (.pck, GDPC container).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/godotengine/godot</c> — canonical implementation — the format is defined by core/io/file_access_pack.cpp</description></item>
+///   <item><description><c>https://docs.godotengine.org</c> — Godot Engine documentation (PCK export and loading)</description></item>
+/// </list>
+/// </summary>
 public sealed class GodotPckFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Mdf;
 
+/// <summary>
+/// Alcohol 120% MDF/MDS disc image pair — raw sector data (.mdf) plus a session/track descriptor (.mds).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://cdemu.sourceforge.io</c> — CDEmu / libMirage — its MDS/MDF parser is the de-facto format documentation</description></item>
+///   <item><description>No official specification — proprietary Alcohol Soft format, reverse-engineered</description></item>
+/// </list>
+/// </summary>
 public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
 
   public void Defragment(Stream archive)

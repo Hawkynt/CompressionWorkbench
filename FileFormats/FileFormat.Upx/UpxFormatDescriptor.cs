@@ -16,6 +16,13 @@ namespace FileFormat.Upx;
 /// as a separate entry, plus the UPX packer header bytes, the decompressed
 /// payload (when the compression method is supported), and a metadata.ini
 /// summary of format, method, size, and checksum information.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://upx.github.io/</c> — official UPX site</description></item>
+///   <item><description><c>https://github.com/upx/upx</c> — UPX sources — packer header and stub layout</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/UPX</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>

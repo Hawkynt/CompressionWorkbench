@@ -7,6 +7,13 @@ namespace FileFormat.FontCollection;
 /// Exposes a single-font .otf as <c>FULL.otf</c> + <c>metadata.ini</c> + per-glyph
 /// SVG entries. OTFs with TrueType outlines ('glyf') split per glyph; OTFs with
 /// CFF/CFF2 outlines emit FULL only and record the skip reason in metadata.ini.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/typography/opentype/spec/</c> — OpenType specification (sfnt tables, glyf/CFF outlines)</description></item>
+///   <item><description>ISO/IEC 14496-22 "Open Font Format" — the same specification as an international standard</description></item>
+///   <item><description><c>https://developer.apple.com/fonts/TrueType-Reference-Manual/</c> — Apple TrueType Reference Manual — glyf outline encoding</description></item>
+/// </list>
 /// </summary>
 public sealed class OtfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Otf";

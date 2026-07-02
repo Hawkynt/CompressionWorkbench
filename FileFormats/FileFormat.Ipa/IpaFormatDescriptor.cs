@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ipa;
 
+/// <summary>
+/// Apple iOS application package (.ipa) — a ZIP archive laid out as Payload/AppName.app plus metadata.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://en.wikipedia.org/wiki/.ipa</c> — Wikipedia on the .ipa bundle layout</description></item>
+///   <item><description><c>https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT</c> — PKWARE ZIP APPNOTE — the underlying container format</description></item>
+/// </list>
+/// </summary>
 public sealed class IpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Crx;
 
+/// <summary>
+/// Chrome extension package (CRX3) — "Cr24" magic + version + protobuf SignedData header followed by the ZIP payload.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://chromium.googlesource.com/chromium/src/+/main/components/crx_file/</c> — Chromium crx_file component — <c>crx3.proto</c> defines the header</description></item>
+///   <item><description><c>https://developer.chrome.com/docs/extensions</c> — Chrome extensions documentation portal</description></item>
+/// </list>
+/// </summary>
 public sealed class CrxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

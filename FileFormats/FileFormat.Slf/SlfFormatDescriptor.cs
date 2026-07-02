@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Slf;
 
+/// <summary>
+/// Sir-Tech SLF library archive (Jagged Alliance 2).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/ja2-stracciatella/ja2-stracciatella</c> — JA2 Stracciatella — open Jagged Alliance 2 engine; its SLF reader is the open reference</description></item>
+///   <item><description>Sir-Tech's library format; no official spec</description></item>
+/// </list>
+/// </summary>
 public sealed class SlfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the SLF archive in listing order.</summary>

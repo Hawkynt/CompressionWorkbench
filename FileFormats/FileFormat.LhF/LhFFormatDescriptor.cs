@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.LhF;
 
+/// <summary>
+/// Amiga LhFloppy (LhF) disk archive storing whole floppy tracks with LZ77+Huffman compression.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://aminet.net</c> — Aminet — distribution home of the Amiga disk-archiver tooling</description></item>
+///   <item><description>No published specification — format reverse-engineered from the archiver</description></item>
+/// </list>
+/// </summary>
 public sealed class LhFFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

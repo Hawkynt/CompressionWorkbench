@@ -10,6 +10,12 @@ namespace FileFormat.UefiFv;
 /// Pseudo-archive descriptor for UEFI PI Firmware Volumes (<c>.fv</c>/<c>.fd</c>).
 /// Locates the FV by scanning for the <c>_FVH</c> signature at offset 40 and
 /// emits one entry per FFS file, named <c>{GUID}_{TYPE_TAG}.bin</c>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://uefi.org/specifications</c> — UEFI Platform Initialization (PI) Specification — Volume 3 defines Firmware Volumes and FFS</description></item>
+///   <item><description><c>https://github.com/LongSoft/UEFITool</c> — UEFITool — canonical firmware-volume parser/editor</description></item>
+/// </list>
 /// </summary>
 public sealed class UefiFvFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

@@ -13,6 +13,13 @@ namespace FileFormat.Vhdx;
 /// Remove, and Defragment operations to the detected inner filesystem via
 /// <see cref="VhdxStream"/>. Falls back to structural metadata listing when
 /// the inner FS is not detected or the image uses dynamic/differencing layout.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>[MS-VHDX]: Virtual Hard Disk v2 (VHDX) File Format (Microsoft Open Specifications, learn.microsoft.com)</description></item>
+///   <item><description><c>https://github.com/libyal/libvhdi</c> — libvhdi — open VHD/VHDX implementation with format documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/VHD_(file_format)</c> — Wikipedia overview (covers VHDX)</description></item>
+/// </list>
 /// </summary>
 public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
   public string Id => "Vhdx";

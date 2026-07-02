@@ -3,6 +3,15 @@ using Compression.Registry;
 
 namespace FileFormat.PngCrushAdapters;
 
+/// <summary>
+/// DCX multi-image PCX container — a 1024-entry page-offset table in front of concatenated PCX pages.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>ZSoft "PCX Technical Reference Manual" — defines PCX and the DCX multi-page envelope</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/PCX</c> — Wikipedia PCX article (covers the DCX fax container)</description></item>
+/// </list>
+/// </summary>
 public sealed class DcxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   public string Id => "Dcx";
   public string DisplayName => "DCX (multi-image PCX)";

@@ -31,6 +31,13 @@ namespace FileSystem.Ocfs2;
 /// <para>Modifier scope: root-directory mutations only (subdirectory and
 /// extent-backed root directory paths fall back to the rebuild path). DLM/heartbeat
 /// lockdown and multi-node cluster semantics are out of scope by design.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/torvalds/linux/blob/master/fs/ocfs2/ocfs2_fs.h</c> — canonical on-disk header</description></item>
+///   <item><description><c>https://www.kernel.org/doc/html/latest/filesystems/ocfs2.html</c> — kernel documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/OCFS2</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class Ocfs2FormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,

@@ -5,6 +5,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Ext;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://docs.kernel.org/filesystems/ext4/index.html</c> — the kernel's ext4 on-disk layout documentation (superblock, group descriptors, inodes, extents; ext2/3 are subsets)</description></item>
+///   <item><description><c>https://e2fsprogs.sourceforge.net/ext2intro.html</c> — Card/Ts'o/Tweedie, "Design and Implementation of the Second Extended Filesystem"</description></item>
+///   <item><description><c>https://github.com/tytso/e2fsprogs</c> — e2fsprogs, the canonical userspace implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Ext4</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   /// <summary>

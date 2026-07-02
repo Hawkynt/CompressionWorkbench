@@ -14,6 +14,13 @@ namespace FileSystem.Qnx6;
 /// mutates that layout in place and re-mirrors the superblock to the new tail
 /// after each Add/Remove so the dual-superblock pairing remains byte-identical.
 /// Self-round-trips through <see cref="Qnx6Reader"/>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.kernel.org/doc/html/latest/filesystems/qnx6.html</c> — kernel documentation of the on-disk layout (dual superblocks)</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/qnx6</c> — Linux reference implementation</description></item>
+///   <item><description>QNX Neutrino <c>fs-qnx6.so</c> documentation (QNX Software Systems)</description></item>
+/// </list>
 /// </summary>
 public sealed class Qnx6FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "Qnx6";

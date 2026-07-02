@@ -10,6 +10,12 @@ namespace FileFormat.FirmwareHex;
 /// Pseudo-archive descriptor for Intel HEX firmware files. Decodes the ASCII
 /// records into a flat binary (<c>firmware.bin</c>) and surfaces a
 /// <c>metadata.ini</c> with record count, declared start address, and gap count.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Intel "Hexadecimal Object File Format Specification", Rev. A (1988) — the defining document</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Intel_HEX</c> — record types and checksum rules</description></item>
+/// </list>
 /// </summary>
 public sealed class IntelHexFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

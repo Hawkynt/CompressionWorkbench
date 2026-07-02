@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Vpp;
 
+/// <summary>
+/// Volition Package (VPP v1) — Red Faction 1 / Summoner game archive.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/gibbed/Gibbed.Volition</c> — Gibbed.Volition — community tools for Volition package formats</description></item>
+///   <item><description>Volition's game archive; no official spec, layout community-documented</description></item>
+/// </list>
+/// </summary>
 public sealed class VppFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the VPP archive in listing order.</summary>

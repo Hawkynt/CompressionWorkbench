@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.PackDisk;
 
+/// <summary>
+/// Amiga DCS disk archive — whole-floppy track data compressed with the XPK library.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://aminet.net</c> — Aminet — distribution home of the archiver and the XPK compression library</description></item>
+///   <item><description>XPK master library developer documentation (Amiga) — defines the XPKF container the track data is stored in</description></item>
+///   <item><description>No published specification — reverse-engineered from the tool</description></item>
+/// </list>
+/// </summary>
 public sealed class DcsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
 
   public void Defragment(Stream archive)

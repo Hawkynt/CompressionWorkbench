@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Pbp;
 
+/// <summary>
+/// Sony PSP PBP package (EBOOT.PBP) — 'PBP' magic plus eight offsets to PARAM.SFO, icon/PIC/PMF media and DATA.PSP / DATA.PSAR sections.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/pspdev/pspsdk</c> — PSP homebrew SDK — de-facto reference for the PBP header</description></item>
+///   <item><description>No official Sony specification — structure documented by the PSP homebrew community</description></item>
+/// </list>
+/// </summary>
 public sealed class PbpFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   public void Defragment(Stream archive)

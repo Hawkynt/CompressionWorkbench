@@ -17,6 +17,13 @@ namespace FileFormat.Ipsw;
 /// <para>This is a compound-extension descriptor (<c>.ipsw</c>, <c>.otazip</c>): magic is empty so
 /// it does not steal generic ZIPs. Read-only; the plist and DMG payloads are emitted as raw bytes
 /// — no plist parsing or DMG mounting.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://theapplewiki.com</c> — The Apple Wiki (formerly The iPhone Wiki) — community IPSW documentation</description></item>
+///   <item><description><c>https://github.com/blacktop/ipsw</c> — ipsw — maintained IPSW research and extraction tool</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/IPSW</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap, IArchiveCreatable, IArchiveModifiable {
 

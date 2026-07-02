@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.SevenZip;
 
+/// <summary>
+/// 7-Zip (.7z) archive — LZMA/LZMA2-based container with solid compression and encrypted-header support.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.7-zip.org/7z.html</c> — official 7z format page (Igor Pavlov)</description></item>
+///   <item><description><c>7zFormat.txt</c> in the 7-Zip / LZMA SDK sources — the structural reference</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/7z</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema {
 
   /// <inheritdoc />

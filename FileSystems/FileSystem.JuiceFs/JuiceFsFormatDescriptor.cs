@@ -16,6 +16,12 @@ namespace FileSystem.JuiceFs;
 /// honest treatment.
 /// Surfaces only a synthetic <c>metadata.ini</c> and the raw image bytes;
 /// no real file-walk is attempted.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://juicefs.com</c> — official JuiceFS site and architecture documentation (metadata engine + object-store chunks)</description></item>
+///   <item><description><c>https://github.com/juicedata/juicefs</c> — canonical source</description></item>
+/// </list>
 /// </summary>
 public sealed class JuiceFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

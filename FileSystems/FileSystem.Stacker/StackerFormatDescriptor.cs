@@ -12,6 +12,14 @@ namespace FileSystem.Stacker;
 /// FAT12 volume behind an ASCII banner and a Stacker Control Block (BPB);
 /// clusters are STORED verbatim or Stac-LZS compressed (RFC 1967/2395).
 /// Detection is by the ASCII "STACKER" banner at file offset 0.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/sandsmark/dmsdos</c> — dmsdos driver — the de-facto public documentation of the STACVOL layout and cluster compression</description></item>
+///   <item><description><c>https://www.rfc-editor.org/rfc/rfc1967</c> — LZS-DCP (the Stac LZS algorithm)</description></item>
+///   <item><description><c>https://www.rfc-editor.org/rfc/rfc2395</c> — LZS in IPsec — independent description of the same algorithm</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Stac_Electronics</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
   // IArchiveShrinkable uses the interface default: a verified extract →

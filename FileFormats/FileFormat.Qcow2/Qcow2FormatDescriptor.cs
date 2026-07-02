@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Qcow2;
 
+/// <summary>
+/// QEMU Copy-On-Write v2/v3 (qcow2) disk image — two-level L1/L2 cluster-mapped sparse virtual disk.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>docs/interop/qcow2.rst</c> in the QEMU source tree — the authoritative on-disk specification</description></item>
+///   <item><description><c>https://gitlab.com/qemu-project/qemu</c> — canonical QEMU repository</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Qcow</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
   public string Id => "Qcow2";
   public string DisplayName => "QCOW2";

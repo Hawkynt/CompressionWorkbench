@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Uharc;
 
+/// <summary>
+/// UHARC high-compression archive (PPM/LZP/delta) by Uwe Herklotz.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>UHARC by Uwe Herklotz — closed-source archiver; the bundled UHARC documentation is the only official description</description></item>
+///   <item><description>no public format specification; container layout reverse-engineered from the DOS/Win32 binaries</description></item>
+/// </list>
+/// </summary>
 public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the UHARC archive in listing order.</summary>

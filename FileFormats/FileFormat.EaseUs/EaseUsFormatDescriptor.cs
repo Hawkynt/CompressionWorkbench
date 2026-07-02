@@ -43,6 +43,12 @@ namespace FileFormat.EaseUs;
 /// <c>49 4D 47 46 2C 05 00 00 00 00 02 00</c> is detected and reported
 /// when present.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.easeus.com</c> — vendor — the .pbd container is proprietary and unpublished</description></item>
+///   <item><description>IMGF header / zlib-substream layout recovered by community reverse engineering and binary RE of TBImageExplorer.exe (see remarks above); no public spec exists</description></item>
+/// </list>
 /// </summary>
 public sealed class EaseUsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

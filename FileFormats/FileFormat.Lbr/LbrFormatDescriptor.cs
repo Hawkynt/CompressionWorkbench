@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Lbr;
 
+/// <summary>
+/// CP/M LBR library archive (LU by Gary P. Novosielski) — a directory of stored, uncompressed member files.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>LU library utility documentation (Gary P. Novosielski) — the defining format description</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/LBR_(file_format)</c> — Wikipedia</description></item>
+/// </list>
+/// </summary>
 public sealed class LbrFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

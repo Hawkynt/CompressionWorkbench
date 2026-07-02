@@ -11,6 +11,12 @@ namespace FileFormat.Numpy;
 /// Splits an <c>.npy</c> file into <c>metadata.ini</c> (dtype, shape, header-length,
 /// version, fortran order) and <c>array.bin</c> (the raw payload bytes after the
 /// header).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://numpy.org/doc/stable/reference/generated/numpy.lib.format.html</c> — the NPY format specification (numpy.lib.format)</description></item>
+///   <item><description><c>https://github.com/numpy/numpy</c> — canonical implementation</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// NPY magic is 6 bytes (<c>\x93NUMPY</c>) + 2-byte version + header length,

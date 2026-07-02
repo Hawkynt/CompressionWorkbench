@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.WwiseBnk;
 
+/// <summary>
+/// Audiokinetic Wwise SoundBank (.bnk) — BKHD/DIDX/DATA/HIRC chunked container.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/bnnm/wwiser</c> — wwiser — most complete open .bnk parser (community reverse engineering)</description></item>
+///   <item><description><c>https://github.com/eXpl0it3r/bnkextr</c> — bnkextr — minimal BKHD/DIDX/DATA extractor</description></item>
+///   <item><description><c>https://www.audiokinetic.com/</c> — Audiokinetic — vendor; the bank format itself is not publicly documented</description></item>
+/// </list>
+/// </summary>
 public sealed class WwiseBnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   public string Id => "WwiseBnk";
   public string DisplayName => "Wwise SoundBank";

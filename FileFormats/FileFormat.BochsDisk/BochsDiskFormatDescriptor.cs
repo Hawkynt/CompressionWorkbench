@@ -23,6 +23,12 @@ namespace FileFormat.BochsDisk;
 /// built by walking the catalog and copying each allocated extent's data into the
 /// flat image (unallocated extents read back as zero). Read-only; malformed
 /// headers degrade to FULL + partial metadata.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/bochs-emu/Bochs</c> — canonical Bochs source — <c>iodev/hdimage/hdimage.h</c> defines the redolog header</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Bochs</c> — background</description></item>
+/// </list>
 /// </summary>
 public sealed class BochsDiskFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "BochsDisk";

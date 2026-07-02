@@ -4,6 +4,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.HfsPlus;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://developer.apple.com/library/archive/technotes/tn/tn1150.html</c> — Apple Technical Note TN1150 "HFS Plus Volume Format", the canonical spec (incl. HFSX and the journal)</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/hfsplus</c> — Linux kernel implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/HFS_Plus</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

@@ -11,6 +11,12 @@ namespace FileFormat.ExePackers;
 /// Bellard's LZEXE (1989) was one of the first widely-distributed DOS exe
 /// compressors; the unpacker stub embeds an <c>"LZ91"</c> or <c>"LZ09"</c>
 /// signature near the start of the code section that uniquely identifies it.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://en.wikipedia.org/wiki/LZEXE</c> — format and tool history</description></item>
+///   <item><description>UNLZEXE (Mitugu Kurizono) source — the de-facto documentation of the LZ91/LZ09 stub layout</description></item>
+/// </list>
 /// </summary>
 public sealed class LzExeFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

@@ -11,6 +11,12 @@ namespace FileFormat.Iceberg;
 /// that lives across multiple files; we surface the supplied metadata.json as
 /// <c>FULL.json</c> plus an INI summary of the parsed fields.
 /// Detection is by JSON content sniffing (no extension or magic bytes).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://iceberg.apache.org/spec/</c> — Apache Iceberg table specification</description></item>
+///   <item><description><c>https://github.com/apache/iceberg</c> — canonical implementation</description></item>
+/// </list>
 /// </summary>
 public sealed class IcebergFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

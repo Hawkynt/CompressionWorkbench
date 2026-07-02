@@ -30,6 +30,13 @@ namespace FileSystem.CephFs;
 /// snapshot, (b) the live mon/mds cluster state (osd-map, mds-map, CRUSH-map),
 /// and (c) a BlueStore reader. Even with all three, the result is OSD-level
 /// objects, not CephFS-level paths. Treatment confirmed: stay Stage 0.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://docs.ceph.com/en/latest/cephfs/</c> — official CephFS documentation (MDS, RADOS layout, striping)</description></item>
+///   <item><description><c>https://github.com/ceph/ceph</c> — canonical Ceph source</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Ceph_(software)</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class CephFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

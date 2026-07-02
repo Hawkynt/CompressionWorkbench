@@ -21,6 +21,12 @@ namespace FileFormat.Hfe;
 /// encoding, bitrate, rpm, interface) and the raw per-track blocks under
 /// <c>tracks/</c>. Read-only; malformed input degrades to FULL + partial metadata
 /// without throwing.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://hxc2001.com/</c> — HxC Floppy Emulator project (Jean-François Del Nero) — publisher of the HFE file-format specification</description></item>
+///   <item><description><c>https://github.com/jfdelnero/HxCFloppyEmulator</c> — canonical implementation and conversion tooling</description></item>
+/// </list>
 /// </summary>
 public sealed class HfeFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Hfe";

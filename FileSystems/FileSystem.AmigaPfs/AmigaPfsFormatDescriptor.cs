@@ -18,6 +18,13 @@ namespace FileSystem.AmigaPfs;
 /// Add/Remove against the same shape via <see cref="AmigaPfsModifier"/>; image
 /// is still <em>not</em> FS-UAE/WinUAE mountable (full PFS3aio anode-table /
 /// bitmap / rootinfo emission deferred to a future Stage 2 promotion).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/tonioni/pfs3aio</c> — PFS3 All-In-One source (Toni Wilen), the canonical open-source PFS3 on-disk implementation</description></item>
+///   <item><description>Professional File System 3 by Michiel Pelt (original Aminet release + documentation)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Professional_File_System</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class AmigaPfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
 

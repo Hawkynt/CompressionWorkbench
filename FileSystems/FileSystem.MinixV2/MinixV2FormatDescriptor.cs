@@ -10,6 +10,13 @@ namespace FileSystem.MinixV2;
 /// the original layout with 64-byte inodes, 32-bit zone numbers, and
 /// triple-indirect blocks for large-file support. Magic 0x2468
 /// (14-byte names) or 0x2478 (30-byte names — extended variant).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/torvalds/linux/blob/master/include/uapi/linux/minix_fs.h</c> — canonical on-disk structures (v2 layout + 0x2468/0x2478 magics)</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/minix</c> — Linux reference implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Minix_file_system</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class MinixV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
   /// <summary>

@@ -4,6 +4,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Btrfs;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://btrfs.readthedocs.io/en/latest/dev/On-disk-format.html</c> — official btrfs on-disk format documentation (superblock, chunk/root/fs trees)</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/btrfs</c> — mainline kernel implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Btrfs</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

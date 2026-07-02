@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ha;
 
+/// <summary>
+/// HA archive (Harri Hirvola) with ASC (sliding-window LZ + arithmetic coding) and HSC (context modelling + arithmetic coding) methods.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>HA.DOC shipped with the HA 0.999 archiver (Harri Hirvola) — the canonical format and method description</description></item>
+///   <item><description>No online specification — the format is known from the archiver's released source code</description></item>
+/// </list>
+/// </summary>
 public sealed class HaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the HA archive in listing order.</summary>

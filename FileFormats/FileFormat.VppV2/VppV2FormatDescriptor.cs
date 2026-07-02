@@ -7,6 +7,12 @@ namespace FileFormat.VppV2;
 /// <summary>
 /// Volition Package v2 (Saint's Row 2 era) descriptor — handles <c>.vpp_pc</c> archives with
 /// optional per-entry zlib compression.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/gibbed/Gibbed.Volition</c> — Gibbed.Volition — community tools for Volition package formats</description></item>
+///   <item><description>Volition's package format for Saints Row 2 (.vpp_pc); no official spec, reverse-engineered</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// On-disk magic <c>CE 0A 89 51</c> is shared with VPP v1; both descriptors match the same

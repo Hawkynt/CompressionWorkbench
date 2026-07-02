@@ -9,6 +9,13 @@ namespace FileFormat.NetCdf;
 /// Read-only descriptor for NetCDF Classic (CDF-1, CDF-2, CDF-5). Fires on the
 /// <c>CDF\x01 / CDF\x02 / CDF\x05</c> magic. NetCDF-4 files (HDF5-based) are
 /// handled by the HDF5 descriptor.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.unidata.ucar.edu/software/netcdf/</c> — Unidata NetCDF portal — the classic CDF-1/2/5 format specification lives in its documentation</description></item>
+///   <item><description><c>https://github.com/Unidata/netcdf-c</c> — canonical C implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/NetCDF</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class NetCdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   private static readonly byte[] Magic1 = [(byte)'C', (byte)'D', (byte)'F', 0x01];

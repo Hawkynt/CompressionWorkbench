@@ -19,6 +19,13 @@ namespace FileSystem.Cromemco;
 /// defragment via extract-and-rebuild, free-space wiping driven by the
 /// extent map, and creation-options schema for density/track-count
 /// selection through the Convert Archive dialog.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Cromemco RDOS Instruction Manual (Cromemco Inc.) — the original vendor documentation</description></item>
+///   <item><description><c>https://bitsavers.org/pdf/cromemco/</c> — Bitsavers' scanned Cromemco manual archive</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Cromemco</c> — Wikipedia overview of the machines</description></item>
+/// </list>
 /// </summary>
 public sealed class CromemcoFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,

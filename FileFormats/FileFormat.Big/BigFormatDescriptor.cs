@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Big;
 
+/// <summary>
+/// EA BIG/BIGF archive — resource container used across Electronic Arts titles (Command &amp; Conquer generation and later).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://wiki.multimedia.cx/index.php/Electronic_Arts_Formats</c> — MultimediaWiki — community documentation of EA container formats</description></item>
+///   <item><description>FinalBIG and the EA modding community's unpackers — de-facto references; EA never published a spec</description></item>
+/// </list>
+/// </summary>
 public sealed class BigFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

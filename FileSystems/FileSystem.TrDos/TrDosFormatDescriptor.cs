@@ -5,6 +5,17 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.TrDos;
 
+/// <summary>
+/// Descriptor for ZX Spectrum TR-DOS (Beta Disk interface) .trd disk images —
+/// fixed 640 KB geometry with the catalogue and disk-info sector in track 0.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://sinclair.wiki.zxnet.co.uk/wiki/TR-DOS_filesystem</c> — Sinclair FAQ wiki — TR-DOS filesystem layout</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/TR-DOS</c> — Wikipedia article</description></item>
+///   <item><description>Technology Research "Beta Disk Interface" manual (vendor documentation)</description></item>
+/// </list>
+/// </summary>
 public sealed class TrDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

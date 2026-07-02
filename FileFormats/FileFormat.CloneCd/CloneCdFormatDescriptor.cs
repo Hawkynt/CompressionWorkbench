@@ -18,6 +18,12 @@ namespace FileFormat.CloneCd;
 /// sit next to the <c>.ccd</c> on disk they are also surfaced as data entries.
 /// The raw <c>.ccd</c> never throws on malformed input — it degrades to
 /// <c>parse_status=partial</c>.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://en.wikipedia.org/wiki/CloneCD</c> — background on the creating tool</description></item>
+///   <item><description>CCD control-file layout documented by the disc-preservation community (redump.org guides); Elaborate Bytes never published a spec</description></item>
+/// </list>
 /// </summary>
 public sealed class CloneCdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "CloneCd";

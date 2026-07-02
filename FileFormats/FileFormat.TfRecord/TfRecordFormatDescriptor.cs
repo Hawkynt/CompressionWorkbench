@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.TfRecord;
 
+/// <summary>
+/// TensorFlow TFRecord — a flat sequence of CRC-32C-protected length-prefixed records.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.tensorflow.org/tutorials/load_data/tfrecord</c> — official TFRecord format documentation</description></item>
+///   <item><description><c>https://github.com/tensorflow/tensorflow</c> — TensorFlow sources — record framing defined in the RecordWriter/RecordReader code</description></item>
+/// </list>
+/// </summary>
 public sealed class TfRecordFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the TFRecord stream in listing order.</summary>

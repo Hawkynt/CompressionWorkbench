@@ -26,6 +26,13 @@ namespace FileSystem.Gemdos;
 /// <para><b>Spec.</b> Atari ST Internals (Brückmann, Englisch, Gerits, 1986),
 /// GEMDOS disk format chapter; standard FAT12 spec (FATGEN103) for the BPB
 /// and on-disk layout.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>"Atari ST Internals" (Brückmann, Englisch, Gerits; Abacus/Data Becker, 1986) — GEMDOS disk format chapter, the canonical reference</description></item>
+///   <item><description><c>https://download.microsoft.com/download/1/6/1/161ba512-40e2-4cc9-843a-923143f3456c/fatgen103.doc</c> — Microsoft FATGEN 1.03, the underlying FAT12 layout</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/GEMDOS</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class GemdosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {

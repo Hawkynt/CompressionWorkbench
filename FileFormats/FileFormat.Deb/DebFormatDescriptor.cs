@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Deb;
 
+/// <summary>
+/// Debian binary package (.deb) — an ar archive holding debian-binary, control.tar.* and data.tar.*.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>deb(5)</c> man page (dpkg) — the authoritative format description</description></item>
+///   <item><description><c>https://www.debian.org/doc/debian-policy/</c> — Debian Policy Manual — binary package requirements</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Deb_(file_format)</c> — format overview</description></item>
+/// </list>
+/// </summary>
 public sealed class DebFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <summary>Rebuild-based defrag: extracts the data.tar entries and rebuilds the .deb package.</summary>

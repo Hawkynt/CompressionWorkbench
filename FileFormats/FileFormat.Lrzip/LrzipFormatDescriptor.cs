@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Lrzip;
 
+/// <summary>
+/// Long Range ZIP (lrzip) container, LZMA-compressed subtype — an rzip-style long-range redundancy front end plus a back-end compressor.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/ckolivas/lrzip</c> — canonical implementation (Con Kolivas); the file layout is defined by these sources</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Rzip</c> — Wikipedia on rzip, the long-range scheme lrzip derives from</description></item>
+/// </list>
+/// </summary>
 public sealed class LrzipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
 
   /// <summary>Rebuild-based defrag: decompresses the single payload then re-compresses it.</summary>

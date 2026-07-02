@@ -13,6 +13,13 @@ namespace FileFormat.Mz;
 /// declared image size), and <c>overlay.bin</c> when the file carries more bytes
 /// than the declared image length — a common carrier for installer payloads,
 /// appended data, and SCUMM-era game resources.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://en.wikipedia.org/wiki/DOS_MZ_executable</c> — Wikipedia — MZ header layout</description></item>
+///   <item><description>MS-DOS Programmer's Reference (Microsoft Press) — the original EXE header definition</description></item>
+///   <item><description><c>https://learn.microsoft.com/en-us/windows/win32/debug/pe-format</c> — Microsoft PE/COFF specification — the e_lfanew chain to piggybacked PE images</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// PE/NE/LE/LX executables share the MZ magic; those formats are handled by

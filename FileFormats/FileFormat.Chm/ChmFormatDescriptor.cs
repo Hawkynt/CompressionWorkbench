@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Chm;
 
+/// <summary>
+/// Microsoft Compiled HTML Help (CHM) — ITSF/ITSP container with LZX-compressed content sections.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Matthew Russotto's "Microsoft's HTML Help (.chm) format" — the classic unofficial specification (russotto.net)</description></item>
+///   <item><description><c>https://www.cabextract.org.uk/libmspack/</c> — libmspack — maintained open-source CHM decoder</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Microsoft_Compiled_HTML_Help</c> — format overview</description></item>
+/// </list>
+/// </summary>
 public sealed class ChmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the CHM archive in listing order.</summary>

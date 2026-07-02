@@ -7,6 +7,13 @@ namespace FileFormat.Gettext;
 /// <summary>
 /// Exposes a gettext .mo binary catalog as an archive of per-message text files.
 /// Entry zero with an empty msgid is the catalog metadata header.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.gnu.org/software/gettext/manual/html_node/MO-Files.html</c> — GNU gettext manual — binary MO file layout</description></item>
+///   <item><description><c>https://www.gnu.org/software/gettext/</c> — GNU gettext project</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Gettext</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class MoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Mo";

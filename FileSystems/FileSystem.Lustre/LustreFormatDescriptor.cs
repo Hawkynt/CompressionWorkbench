@@ -18,6 +18,13 @@ namespace FileSystem.Lustre;
 /// images). When opened with an ldiskfs MDT/OST image (recognised by the .ost /
 /// .mdt / .lustre extension), <see cref="LustreReader"/> delegates the file walk
 /// to <c>FileSystem.Ext.ExtReader</c>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.lustre.org/</c> — project home</description></item>
+///   <item><description><c>https://wiki.lustre.org/</c> — Lustre wiki (architecture, ldiskfs/MDT/OST layout)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Lustre_(file_system)</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class LustreFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

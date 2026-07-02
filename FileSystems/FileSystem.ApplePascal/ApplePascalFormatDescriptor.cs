@@ -17,6 +17,13 @@ namespace FileSystem.ApplePascal;
 /// is honest and documented in the writer's xmldoc.</para>
 ///
 /// <para><b>Spec.</b> Apple Pascal Operating System Reference Manual (1980).</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Apple Pascal Operating System Reference Manual (Apple Computer, 1980) — the original vendor spec for the UCSD-Pascal volume layout</description></item>
+///   <item><description><c>https://github.com/fadden/CiderPress2</c> — CiderPress II, maintained implementation covering Apple Pascal volumes</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/UCSD_Pascal</c> — Wikipedia overview of the UCSD p-System family</description></item>
+/// </list>
 /// </summary>
 public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {

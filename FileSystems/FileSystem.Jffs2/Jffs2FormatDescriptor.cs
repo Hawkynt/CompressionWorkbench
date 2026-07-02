@@ -13,6 +13,14 @@ namespace FileSystem.Jffs2;
 /// Supports: list, extract, create, true in-place R/W modify (log-append per
 /// the JFFS2 spec — fresh node at the tail with bumped version, existing
 /// nodes left byte-identical), defragment, extent map.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://sourceware.org/jffs2/</c> — original JFFS2 site (David Woodhouse), incl. the design paper</description></item>
+///   <item><description><c>http://www.linux-mtd.infradead.org/doc/jffs2.html</c> — Linux MTD project's JFFS2 documentation</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/jffs2</c> — mainline implementation (<c>jffs2_fs_i.h</c> / node headers)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/JFFS2</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 

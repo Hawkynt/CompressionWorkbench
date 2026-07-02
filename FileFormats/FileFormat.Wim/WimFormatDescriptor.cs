@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Wim;
 
+/// <summary>
+/// Windows Imaging Format (WIM) — file-based disk image with single-instance resource storage.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Microsoft, "Windows Imaging File Format (WIM)" white paper — the vendor format description</description></item>
+///   <item><description><c>https://wimlib.net/</c> — wimlib — open implementation with detailed format documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Windows_Imaging_Format</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   public void Defragment(Stream archive)

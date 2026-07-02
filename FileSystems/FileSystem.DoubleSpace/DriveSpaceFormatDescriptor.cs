@@ -6,6 +6,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.DoubleSpace;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/sandsmark/dmsdos</c> — dmsdos, the GPL Linux CVF driver whose source + <c>doc/dmsdos.doc</c> are the de-facto on-disk specification (incl. the JM-0-0 cluster codec)</description></item>
+///   <item><description>Microsoft MS-DOS 6.22 documentation (DriveSpace chapter) — original vendor description</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/DriveSpace</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   /// <summary>

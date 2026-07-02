@@ -8,6 +8,12 @@ namespace CompressionWorkbench.FileFormat.Ico;
 /// Pseudo-archive descriptor for Windows CUR cursor bundles. Same on-disk layout as
 /// ICO with the type field set to 2 — directory-entry planes/bitcount fields encode
 /// hotspot X/Y instead of plane count and bit depth.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://en.wikipedia.org/wiki/ICO_(file_format)</c> — Wikipedia — documents ICONDIR / ICONDIRENTRY including the CUR hotspot reuse of the planes/bitcount fields</description></item>
+///   <item><description>"The evolution of the ICO file format" — Raymond Chen, The Old New Thing (Microsoft DevBlogs) series</description></item>
+/// </list>
 /// </summary>
 public sealed class CurFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveWriteConstraints {

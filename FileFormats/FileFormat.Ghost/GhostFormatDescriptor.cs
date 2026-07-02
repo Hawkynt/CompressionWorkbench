@@ -9,6 +9,12 @@ namespace FileFormat.Ghost;
 /// Symantec / Norton Ghost backup-image descriptor — R/W for the
 /// FE EF record container shared across the entire Binary Research →
 /// Symantec → Norton lineage (v4 DOS-era through Ghost 11.x / 12.x).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>No public specification — proprietary Symantec format; record layout reverse-engineered across Ghost 3.0 through 12.x images</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Ghost_(disk_utility)</c> — Wikipedia on the Binary Research / Symantec / Norton lineage</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>

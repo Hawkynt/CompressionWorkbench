@@ -32,6 +32,13 @@ namespace FileSystem.OpenVms;
 /// What it IS is a layout the workbench's own writer, reader and in-place
 /// modifier can round-trip end-to-end through Add / Remove / Replace.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>DEC "Files-11 On-Disk Structure Specification" — the canonical ODS-2 spec (archived at Bitsavers)</description></item>
+///   <item><description>Kirby McCoy, "VMS File System Internals" (Digital Press, 1990)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Files-11</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
 

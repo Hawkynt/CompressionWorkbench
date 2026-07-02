@@ -19,6 +19,13 @@ namespace FileSystem.Ti99;
 /// option: <c>TIFiles</c> = single-file wrapper (the geometry knobs don't
 /// apply); <c>SectorDump</c> = full DSR disk image with VIB + FDIR + FDR per
 /// file + the data area.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.unige.ch/medecine/nouspikel/ti99/disks.htm</c> — Thierry Nouspikel's TI-99/4A Tech Pages — disk structure (VIB/FDIR/FDR)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Texas_Instruments_TI-99/4A</c> — Wikipedia article on the platform</description></item>
+///   <item><description>TIFiles wrapper format description (TI-99/4A community documentation, e.g. Ninerpedia)</description></item>
+/// </list>
 /// </summary>
 public sealed class Ti99FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {

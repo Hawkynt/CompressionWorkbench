@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Xar;
 
+/// <summary>
+/// eXtensible ARchive (XAR) — gzip-compressed XML table of contents + heap; used by Apple installer packages.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/mackyle/xar</c> — maintained xar sources (format documentation in the repository)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Xar_(archiver)</c> — Wikipedia overview</description></item>
+///   <item><description>originally released as an OpenDarwin/Apple open-source project</description></item>
+/// </list>
+/// </summary>
 public sealed class XarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the XAR archive in listing order.</summary>

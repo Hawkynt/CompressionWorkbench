@@ -5,6 +5,16 @@ using FileFormat.Fli;
 
 namespace FileFormat.PngCrushAdapters;
 
+/// <summary>
+/// Autodesk Animator FLI/FLC animation; each frame is surfaced as one image.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.compuphase.com/flic.htm</c> — "The FLIC file format" (CompuPhase) — the classic public format description</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/FLIC_(file_format)</c> — Wikipedia overview</description></item>
+///   <item><description>Autodesk Animator / Animator Pro — the defining tools</description></item>
+/// </list>
+/// </summary>
 public sealed class FliFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Fli";
   public string DisplayName => "FLI/FLC (Autodesk animation)";

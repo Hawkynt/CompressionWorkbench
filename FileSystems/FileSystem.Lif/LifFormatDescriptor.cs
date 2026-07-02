@@ -9,6 +9,13 @@ namespace FileSystem.Lif;
 /// Read+write descriptor for HP LIF (Logical Interchange Format) volumes — a
 /// flat-directory disk format used by the HP Series 80, HP-71/75/85 personal
 /// computers and compatible HP-IL/HP-IB peripherals from the early 1980s.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.hp9845.net/9845/projects/hpdir/</c> — HPDir project; detailed description of the LIF volume/directory layout</description></item>
+///   <item><description><c>https://github.com/bug400/lifutils</c> — lifutils — maintained tooling for LIF media images</description></item>
+///   <item><description>HP-UX <c>lif(4)</c> manual page — HP's own on-disk LIF description</description></item>
+/// </list>
 /// </summary>
 public sealed class LifFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {

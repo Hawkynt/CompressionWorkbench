@@ -11,6 +11,13 @@ namespace FileSystem.Cpm;
 /// entries). Kaypro/Osborne/Amstrad and other manufacturer-specific geometries
 /// are not emitted by the writer; the reader still parses any image that
 /// matches this layout.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>"CP/M 2.2 Operating System Manual" (Digital Research, 1979) — the original vendor documentation of the directory/extent model</description></item>
+///   <item><description><c>http://www.moria.de/~michael/cpmtools/</c> — cpmtools (Michael Haardt), maintained implementation with the diskdefs geometry database</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/CP/M</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class CpmFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {

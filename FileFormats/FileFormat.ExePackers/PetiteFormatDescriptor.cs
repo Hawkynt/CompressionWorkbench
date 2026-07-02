@@ -11,6 +11,12 @@ namespace FileFormat.ExePackers;
 /// (Ian Luck, 1997) was a popular PE compressor in the late 90s; the unpacker
 /// stub embeds a section name beginning with <c>".petite"</c> and a literal
 /// <c>"Petite"</c> ASCII string near the entry point.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.un4seen.com/petite/</c> — official Petite site (Ian Luck / Un4seen Developments)</description></item>
+///   <item><description><c>https://github.com/horsicq/Detect-It-Easy</c> — Detect It Easy — maintained packer-detection signature database</description></item>
+/// </list>
 /// </summary>
 public sealed class PetiteFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

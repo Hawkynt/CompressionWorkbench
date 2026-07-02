@@ -12,6 +12,12 @@ namespace FileFormat.Nifti;
 /// (single-file <c>.nii</c> variant, optionally gzip-framed as <c>.nii.gz</c>).
 /// Emits a <c>metadata.ini</c> with dimensionality + datatype + pixel spacing,
 /// the raw header bytes, and the voxel payload following <c>vox_offset</c>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://nifti.nimh.nih.gov/</c> — official NIfTI DFWG site — nifti1.h / nifti2.h header definitions</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Neuroimaging_Informatics_Technology_Initiative</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// Detects the version via the <c>sizeof_hdr</c> sentinel: 348 → NIfTI-1,

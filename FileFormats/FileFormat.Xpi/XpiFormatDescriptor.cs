@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Xpi;
 
+/// <summary>
+/// Mozilla XPI extension package (ZIP-based) for Firefox/Thunderbird.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://extensionworkshop.com/</c> — Mozilla Extension Workshop — extension packaging documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/XPInstall</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class XpiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

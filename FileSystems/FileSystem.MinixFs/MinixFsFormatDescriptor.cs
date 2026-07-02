@@ -5,6 +5,18 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.MinixFs;
 
+/// <summary>
+/// R/W descriptor for Minix filesystem images (v1/v2/v3 superblock magics) —
+/// the ext-family ancestor used by the Minix teaching OS and early Linux.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/torvalds/linux/blob/master/include/uapi/linux/minix_fs.h</c> — canonical on-disk structures for all versions</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/minix</c> — Linux reference implementation</description></item>
+///   <item><description>Tanenbaum &amp; Woodhull, "Operating Systems: Design and Implementation" — the original Minix FS design</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Minix_file_system</c> — Wikipedia article</description></item>
+/// </list>
+/// </summary>
 public sealed class MinixFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty {
   public string Id => "MinixFs";
   public string DisplayName => "Minix FS";

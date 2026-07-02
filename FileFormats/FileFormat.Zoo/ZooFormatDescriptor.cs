@@ -5,6 +5,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Zoo;
 
+/// <summary>
+/// Zoo archive — early DOS/Unix compressor by Rahul Dhesi (LZW/LZH methods).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://en.wikipedia.org/wiki/Zoo_(file_format)</c> — Wikipedia overview</description></item>
+///   <item><description>Rahul Dhesi's zoo 2.10 sources — the defining implementation (widely mirrored)</description></item>
+/// </list>
+/// </summary>
 public sealed class ZooFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the Zoo archive in listing order.</summary>

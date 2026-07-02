@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Narc;
 
+/// <summary>
+/// Nintendo DS NARC (Nitro Archive) — BTAF/BTNF/GMIF chunks reusing the NitroROM FNT/FAT layout.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://problemkaputt.de/gbatek.htm</c> — GBATEK (Martin Korth) — canonical DS technical reference including the NitroROM FNT/FAT structures</description></item>
+///   <item><description><c>https://github.com/pleonex/tinke</c> — Tinke — community DS resource tool reading NARC</description></item>
+/// </list>
+/// </summary>
 public sealed class NarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

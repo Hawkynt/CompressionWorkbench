@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Umx;
 
+/// <summary>
+/// Unreal Engine 1 UMX music package — tracker modules (S3M/IT/XM/MOD) wrapped in Unreal package serialization.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.gildor.org/</c> — Gildor's UE tools (UE Viewer) — reference for the Unreal package format</description></item>
+///   <item><description>Epic MegaGames Unreal package (UPKG) serialized-object format; music objects embed standard tracker modules</description></item>
+/// </list>
+/// </summary>
 public sealed class UmxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   public void Defragment(Stream archive)

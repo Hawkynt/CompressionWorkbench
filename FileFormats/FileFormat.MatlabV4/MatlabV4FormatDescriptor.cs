@@ -13,6 +13,12 @@ namespace FileFormat.MatlabV4;
 ///
 /// MAT v4 has no global magic; detection is by extension. The MAT v5 descriptor's "MATLAB"
 /// magic claims v5 files first, leaving extension-only fallback to capture v4 files.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.mathworks.com/help/pdf_doc/matlab/matfile_format.pdf</c> — MathWorks "MAT-File Format" — the Level 4 appendix covers this format</description></item>
+///   <item><description><c>https://github.com/scipy/scipy</c> — scipy.io.loadmat — maintained independent implementation</description></item>
+/// </list>
 /// </summary>
 public sealed class MatlabV4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

@@ -12,6 +12,12 @@ namespace FileFormat.Lnk;
 /// Parses the 76-byte ShellLinkHeader, the optional LinkTargetIDList,
 /// LinkInfo block, StringData entries (Name/RelativePath/WorkingDir/Arguments/IconLocation),
 /// and any trailing ExtraData blocks. Writes each as a distinct entry.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-shllink/</c> — [MS-SHLLINK] Shell Link (.LNK) Binary File Format — Microsoft Open Specifications</description></item>
+///   <item><description><c>https://github.com/libyal/liblnk</c> — liblnk (Joachim Metz) — independent implementation with extensive format documentation</description></item>
+/// </list>
 /// </summary>
 public sealed class LnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Lnk";

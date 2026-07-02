@@ -14,6 +14,13 @@ namespace FileSystem.BcacheFs;
 /// accepts. Walking the b-tree object graph (extents/dirents/inodes) and
 /// emitting B-tree nodes are explicitly out of scope — see
 /// <c>Hawkynt.FileFormats.FileSystems/README.md</c> for the full gap statement.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://bcachefs.org</c> — official site, incl. the "Principles of Operation" on-disk documentation</description></item>
+///   <item><description><c>https://github.com/koverstreet/bcachefs</c> — canonical source tree (Kent Overstreet); <c>bcachefs_format.h</c> defines <c>bch_sb</c></description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Bcachefs</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
 

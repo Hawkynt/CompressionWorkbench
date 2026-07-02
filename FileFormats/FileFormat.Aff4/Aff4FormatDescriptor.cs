@@ -21,6 +21,13 @@ namespace FileFormat.Aff4;
 /// Turtle RDF is exposed raw — no full graph reasoning is performed. Detection is
 /// extension-driven (<c>.aff4</c>) so it does not steal generic ZIPs; malformed
 /// input degrades to FULL + partial metadata without throwing.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/aff4/Standard</c> — AFF4 standard specification documents</description></item>
+///   <item><description><c>https://github.com/aff4/pyaff4</c> — pyaff4 — canonical reference implementation</description></item>
+///   <item><description>Cohen, Garfinkel &amp; Schatz, "Extending the Advanced Forensic Format to accommodate multiple data sources, logical evidence, arbitrary information and forensic workflow" (DFRWS 2009) — the defining AFF4 paper</description></item>
+/// </list>
 /// </summary>
 public sealed class Aff4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Aff4";

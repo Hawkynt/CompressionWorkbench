@@ -12,6 +12,12 @@ namespace FileFormat.Sqlite;
 /// Emits the raw pages, the 100-byte database header, a metadata.ini summary,
 /// and a textual dump of the freelist trunk chain. Does NOT decode B-trees or
 /// execute SQL: pure page-level introspection.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.sqlite.org/fileformat2.html</c> — official SQLite database file-format documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/SQLite</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class SqliteFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   private static readonly byte[] Magic = Encoding.ASCII.GetBytes("SQLite format 3\0");

@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Xps;
 
+/// <summary>
+/// XPS / OpenXPS document — an OPC ZIP package (Microsoft / ECMA-388).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://ecma-international.org/publications-and-standards/standards/ecma-388/</c> — ECMA-388 Open XML Paper Specification</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Open_XML_Paper_Specification</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class XpsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <inheritdoc />

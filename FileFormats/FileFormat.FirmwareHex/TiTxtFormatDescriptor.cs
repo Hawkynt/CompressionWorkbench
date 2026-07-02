@@ -11,6 +11,12 @@ namespace FileFormat.FirmwareHex;
 /// terminates the file. Extension is intentionally empty — <c>.txt</c> is far
 /// too ambiguous — so detection relies on the first non-whitespace byte being
 /// <c>@</c>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Texas Instruments MSP430 programming/bootloader guides — define the TI-TXT format (@addr / data / q)</description></item>
+///   <item><description><c>https://srecord.sourceforge.net</c> — SRecord tool suite — documents and converts TI-TXT (srec_ti_txt)</description></item>
+/// </list>
 /// </summary>
 public sealed class TiTxtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

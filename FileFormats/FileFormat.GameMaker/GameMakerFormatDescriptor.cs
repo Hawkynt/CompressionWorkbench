@@ -11,6 +11,13 @@ namespace FileFormat.GameMaker;
 /// GameMaker Studio data file (data.win / game.unx / game.ios). IFF-style FORM container
 /// with typed chunks. Surfaces each chunk as a raw blob plus split PNG textures (TXTR),
 /// WAV/OGG audio (AUDO) and the string table (STRG).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/UnderminersTeam/UndertaleModTool</c> — UndertaleModTool — de-facto reference implementation of the data.win chunk layout</description></item>
+///   <item><description>No official specification — the runtime container is proprietary (YoYo Games) and community-reverse-engineered</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/GameMaker</c> — Wikipedia on the engine</description></item>
+/// </list>
 /// </summary>
 public sealed class GameMakerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "GameMaker";

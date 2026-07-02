@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Bsa;
 
+/// <summary>
+/// Bethesda Softworks Archive (BSA) — asset archive used by The Elder Scrolls (Morrowind through Skyrim) and Fallout 3 / New Vegas.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://en.uesp.net/wiki/Oblivion_Mod:BSA_File_Format</c> — UESP — BSA v103/v104 format documentation</description></item>
+///   <item><description><c>https://en.uesp.net/wiki/Skyrim_Mod:Archive_File_Format</c> — UESP — Skyrim-era v104/v105 archive documentation</description></item>
+///   <item><description><c>https://en.uesp.net/wiki/Morrowind_Mod:BSA_File_Format</c> — UESP — Morrowind v100 variant</description></item>
+/// </list>
+/// </summary>
 public sealed class BsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

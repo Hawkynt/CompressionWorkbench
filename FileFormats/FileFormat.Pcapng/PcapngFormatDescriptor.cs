@@ -11,6 +11,13 @@ namespace FileFormat.Pcapng;
 /// format. Each Enhanced/Simple Packet Block is exposed as its own entry. The first
 /// 100 packets are emitted verbatim; larger captures are tail-truncated and a note
 /// is left in <c>metadata.ini</c>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/pcapng/pcapng</c> — canonical pcapng specification repository (IETF draft source)</description></item>
+///   <item><description>IETF draft-ietf-opsawg-pcapng — the specification text produced from that repository</description></item>
+///   <item><description><c>https://wiki.wireshark.org</c> — Wireshark wiki — pcapng development notes</description></item>
+/// </list>
 /// </summary>
 public sealed class PcapngFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   private const int MaxPackets = 100;

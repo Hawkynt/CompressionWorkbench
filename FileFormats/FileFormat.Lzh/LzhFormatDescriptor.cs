@@ -5,6 +5,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Lzh;
 
+/// <summary>
+/// LHA/LZH archive — the LZSS+Huffman archiver family historically dominant in Japan and on the Amiga.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/jca02266/lha</c> — LHa for UNIX — maintained canonical implementation; header layouts documented in the source tree</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/LHA_(file_format)</c> — Wikipedia</description></item>
+/// </list>
+/// </summary>
 public sealed class LzhFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Apk;
 
+/// <summary>
+/// Android application package (.apk) — a ZIP container holding the manifest, DEX bytecode, resources and native libraries.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://developer.android.com/guide/components/fundamentals</c> — Android application fundamentals (APK packaging)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Apk_(file_format)</c> — format overview</description></item>
+///   <item><description><c>https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT</c> — PKWARE APPNOTE — the underlying ZIP container spec</description></item>
+/// </list>
+/// </summary>
 public sealed class ApkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

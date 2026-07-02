@@ -11,6 +11,13 @@ namespace FileSystem.Fatx;
 /// Read via <see cref="FatxReader"/>, create via <see cref="FatxWriter"/>,
 /// mutate via <see cref="FatxModifier"/> (in-place Add/Remove on the root
 /// directory; sub-directory mutation stays out of scope).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://xboxdevwiki.net/FATX</c> — Xbox Dev Wiki's FATX page, the de-facto community specification</description></item>
+///   <item><description><c>https://github.com/mborgerson/fatx</c> — maintained open-source FATX implementation (fatxfs)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system</c> — Wikipedia's FAT reference, which covers the FATX variant</description></item>
+/// </list>
 /// </summary>
 public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
 

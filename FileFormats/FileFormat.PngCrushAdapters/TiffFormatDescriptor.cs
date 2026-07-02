@@ -3,6 +3,16 @@ using Compression.Registry;
 
 namespace FileFormat.PngCrushAdapters;
 
+/// <summary>
+/// Multi-page TIFF container; each IFD is extracted as its own single-page TIFF with strip/tile data re-based.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Adobe "TIFF Revision 6.0" specification (June 1992) — the canonical format definition</description></item>
+///   <item><description><c>https://libtiff.gitlab.io/libtiff/</c> — libtiff — the reference implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/TIFF</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class TiffFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IFileInternalLayoutMap {
   public string Id => "Tiff";
   public string DisplayName => "TIFF (multi-page)";

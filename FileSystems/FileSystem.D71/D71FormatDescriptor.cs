@@ -5,6 +5,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.D71;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://unusedino.de/ec64/technical/formats/d71.html</c> — Peter Schepers' D71 format specification (double-sided BAM, directory layout)</description></item>
+///   <item><description>Commodore 1571 Disk Drive User's Guide (Commodore, 1985) — original vendor documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Commodore_1571</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class D71FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

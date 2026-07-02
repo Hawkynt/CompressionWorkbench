@@ -21,6 +21,12 @@ namespace FileFormat.Qed;
 /// when the L1/L2 geometry is sane — a fully reconstructed <c>disk.raw</c> built
 /// by walking L1 → L2 → cluster. Read-only; malformed headers degrade to
 /// FULL + partial metadata without throwing.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://wiki.qemu.org/Features/QED</c> — QEMU wiki — QED feature page and specification</description></item>
+///   <item><description><c>docs/interop/qed_spec.rst</c> in the QEMU source tree — on-disk layout</description></item>
+/// </list>
 /// </summary>
 public sealed class QedFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Qed";

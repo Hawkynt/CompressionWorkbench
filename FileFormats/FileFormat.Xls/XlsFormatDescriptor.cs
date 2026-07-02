@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Xls;
 
+/// <summary>
+/// Microsoft Excel 97-2003 (.xls) workbook — BIFF8 streams in an OLE2/CFB compound document.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-xls/cd03cb5f-ca02-4934-a391-bb674cb8aa06</c> — [MS-XLS]: Excel Binary File Format (.xls) Structure (Microsoft Open Specifications)</description></item>
+///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/53989ce4-7b05-4f8d-829b-d08d6148375b</c> — [MS-CFB]: Compound File Binary File Format — the OLE2 container</description></item>
+/// </list>
+/// </summary>
 public sealed class XlsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   public void Defragment(Stream archive)

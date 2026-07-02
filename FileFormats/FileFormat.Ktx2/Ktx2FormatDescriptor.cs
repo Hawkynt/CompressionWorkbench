@@ -9,6 +9,12 @@ namespace FileFormat.Ktx2;
 /// Lists the file as FULL + parsed header metadata + per-mip-level raw blobs +
 /// key/value metadata, without transcoding any supercompressed (Basis/Zstd/ZLIB)
 /// level data.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://registry.khronos.org/KTX/</c> — Khronos KTX registry — hosts the KTX 2.0 specification</description></item>
+///   <item><description><c>https://github.com/KhronosGroup/KTX-Software</c> — reference implementation (libktx and tools)</description></item>
+/// </list>
 /// </summary>
 public sealed class Ktx2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

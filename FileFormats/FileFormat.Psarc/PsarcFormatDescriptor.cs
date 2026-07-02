@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Psarc;
 
+/// <summary>
+/// Sony PlayStation archive (PSARC) used on PS3/PS4/Vita — manifest-named entries behind a compressed table of contents.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>psdevwiki "PlayStation archive (PSARC)" (www.psdevwiki.com) — community on-disk layout notes</description></item>
+///   <item><description>PSARC.EXE from Sony's PlayStation SDKs — the defining (non-public) tool</description></item>
+/// </list>
+/// </summary>
 public sealed class PsarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the PSARC archive in listing order.</summary>

@@ -21,6 +21,12 @@ namespace FileFormat.Imd;
 /// comment, track count, geometry) and per-sector decoded data under
 /// <c>tracks/</c>. Fully tractable — read-only. Malformed input degrades to
 /// FULL + partial metadata without throwing.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>IMD.TXT — ImageDisk documentation by Dave Dunfield, the canonical format description shipped with the tool</description></item>
+///   <item><description><c>https://github.com/jfdelnero/HxCFloppyEmulator</c> — HxC floppy tooling — maintained independent reader/converter for IMD images</description></item>
+/// </list>
 /// </summary>
 public sealed class ImdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Imd";

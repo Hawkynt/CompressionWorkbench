@@ -20,6 +20,12 @@ namespace FileFormat.Bkf;
 /// zero-wiping the rest of that FLB block; the reader's parse loop hits an
 /// unknown DBLK type and skips it.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>"Microsoft Tape Format Specification" v1.00a (Seagate Software, 1998) — the defining MTF document</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/NTBackup</c> — background on the creating tool</description></item>
+/// </list>
 /// </summary>
 public sealed class BkfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveModifiable, IArchiveCreatable {
 

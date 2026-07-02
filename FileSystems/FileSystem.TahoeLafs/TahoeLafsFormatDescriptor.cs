@@ -12,6 +12,13 @@ namespace FileSystem.TahoeLafs;
 /// prefix at offset 0 (0x00000001 immutable, 0x00000002 mutable). The
 /// share payload is surfaced as a single opaque ciphertext entry —
 /// decryption requires the read-cap and is out of scope.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/tahoe-lafs/tahoe-lafs</c> — canonical implementation — share-file layout lives in the source docs</description></item>
+///   <item><description><c>https://tahoe-lafs.org/</c> — project home</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Tahoe-LAFS</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class TahoeLafsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
   public string Id => "TahoeLafs";

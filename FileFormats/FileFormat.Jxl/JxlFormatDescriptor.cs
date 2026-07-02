@@ -13,6 +13,13 @@ namespace FileFormat.Jxl;
 /// with a standard signature box and <c>jxlc</c>/<c>jxlp</c> codestream boxes.
 /// Surfaces the full file, a metadata summary, the (re)assembled codestream,
 /// and any EXIF/XMP/JUMBF metadata boxes. Does not decode the codestream.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://jpeg.org/jpegxl/</c> — JPEG committee JPEG XL page (ISO/IEC 18181; part 2 defines the box-based container)</description></item>
+///   <item><description><c>https://github.com/libjxl/libjxl</c> — libjxl — reference implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/JPEG_XL</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class JxlFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Jxl";

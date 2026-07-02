@@ -4,6 +4,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Apfs;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://developer.apple.com/support/downloads/Apple-File-System-Reference.pdf</c> — Apple File System Reference, the official on-disk format specification</description></item>
+///   <item><description><c>https://github.com/libyal/libfsapfs</c> — libfsapfs, maintained open-source APFS reader with format documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Apple_File_System</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveDefragmentable, IArchiveModifiable,
     IFormatOptionsSchema, ILayoutOptimizable {

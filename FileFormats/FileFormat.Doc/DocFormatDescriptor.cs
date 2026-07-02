@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Doc;
 
+/// <summary>
+/// Microsoft Word 97-2003 binary document (.doc) — WordDocument/table streams inside an OLE2 compound file.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/</c> — [MS-DOC] — Word (.doc) Binary File Format</description></item>
+///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/</c> — [MS-CFB] — Compound File Binary (the OLE2 container)</description></item>
+/// </list>
+/// </summary>
 public sealed class DocFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   public void Defragment(Stream archive)

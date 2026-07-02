@@ -4,6 +4,17 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.RomFs;
 
+/// <summary>
+/// R/W descriptor for Linux ROMFS images — the "-rom1fs-" packed read-only
+/// filesystem used for boot/initrd media.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.kernel.org/doc/html/latest/filesystems/romfs.html</c> — kernel documentation — includes the complete on-disk layout</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/romfs</c> — Linux reference implementation</description></item>
+///   <item><description><c>genromfs</c> — the canonical image-builder tool</description></item>
+/// </list>
+/// </summary>
 public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   /// <summary>

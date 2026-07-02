@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.NuPkg;
 
+/// <summary>
+/// NuGet package (.nupkg) — a ZIP/OPC container with a .nuspec manifest.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/nuget/</c> — Microsoft NuGet documentation portal (package structure, .nuspec)</description></item>
+///   <item><description><c>https://github.com/NuGet/NuGet.Client</c> — canonical client implementation</description></item>
+/// </list>
+/// </summary>
 public sealed class NuPkgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

@@ -19,6 +19,13 @@ namespace FileSystem.Trsdos;
 /// <para>Capabilities: read + write, defragment via extract-and-rebuild,
 /// free-space wiping driven by the extent map, and creation-options
 /// schema for density/track-count selection.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Roy Soltoff, "The Programmer's Guide to LDOS/TRSDOS Version 6" — canonical GAT/directory documentation</description></item>
+///   <item><description><c>https://www.tim-mann.org/trs80.html</c> — Tim Mann's TRS-80 resources (xtrs emulator + format notes)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/TRSDOS</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class TrsdosFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,

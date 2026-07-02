@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.SplitFile;
 
+/// <summary>
+/// Split-file volume set (.001/.002 ...) — raw sequential byte slices joined back into one file.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>de-facto convention (no formal spec): headerless sequential byte splits, popularized by HJSplit and Total Commander</description></item>
+///   <item><description>7-Zip and WinRAR use the same numeric-suffix naming for raw split volumes</description></item>
+/// </list>
+/// </summary>
 public sealed class SplitFileFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
 
   public void Defragment(Stream archive)

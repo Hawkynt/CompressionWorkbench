@@ -16,6 +16,13 @@ namespace FileFormat.Mobi;
 /// decoded HTML. Metadata + cover, which is what most triage use cases want,
 /// works fully.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://wiki.mobileread.com/wiki/MOBI</c> — MobileRead wiki — de-facto MOBI/EXTH format documentation</description></item>
+///   <item><description><c>https://github.com/kovidgoyal/calibre</c> — Calibre — maintained implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Mobipocket</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class MobiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Mobi";

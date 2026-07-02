@@ -43,6 +43,12 @@ internal static class CbmNibbleEntries {
 /// <summary>
 /// Commodore G64 GCR track container (VICE emulator). Detected by the
 /// 8-byte "GCR-1541" ASCII magic at offset 0.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://unusedino.de/ec64/technical/formats/g64.html</c> — Peter Schepers' G64 format specification</description></item>
+///   <item><description><c>https://vice-emu.sourceforge.io</c> — VICE emulator, the origin and maintained implementation of G64</description></item>
+/// </list>
 /// </summary>
 public sealed class G64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable {
   public string Id => "G64";
@@ -85,6 +91,12 @@ public sealed class G64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 /// <summary>
 /// Commodore NIB raw nibble dump (nibtools / ZoomFloppy). No magic header —
 /// detected by file extension only; the typical dump is exactly 84 × 8192 bytes.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>nibtools (Pete Rittwage's C64 Disk Preservation Project) — the tool that defines and produces the de-facto NIB dump layout</description></item>
+///   <item><description><c>http://unusedino.de/ec64/technical/formats/g64.html</c> — Peter Schepers' GCR track documentation (shared with G64)</description></item>
+/// </list>
 /// </summary>
 public sealed class NibFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Nib";

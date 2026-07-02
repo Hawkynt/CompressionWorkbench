@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Grp;
 
+/// <summary>
+/// BUILD engine GRP game resource archive ('KenSilverman' signature + file table), used by Duke Nukem 3D and other BUILD titles.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://moddingwiki.shikadi.net/wiki/GRP_Format</c> — DOS Game Modding Wiki — GRP format layout</description></item>
+///   <item><description><c>https://advsys.net/ken/build.htm</c> — Ken Silverman's BUILD engine page (format author)</description></item>
+///   <item><description><c>https://voidpoint.io/terminx/eduke32</c> — EDuke32 — maintained BUILD engine implementation</description></item>
+/// </list>
+/// </summary>
 public sealed class GrpFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <inheritdoc />

@@ -15,6 +15,13 @@ namespace FileSystem.Qnx4;
 /// place. Scope stays flat-root (29 user files) — past that Add throws
 /// <see cref="NotSupportedException"/>, matching the WORM writer's capacity
 /// guard. Subdirectory emission is still out of scope.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/torvalds/linux/blob/master/include/uapi/linux/qnx4_fs.h</c> — canonical on-disk structures</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/qnx4</c> — Linux reference implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/QNX</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "Qnx4";

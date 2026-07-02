@@ -15,6 +15,12 @@ namespace FileFormat.AndroidOta;
 /// <para>Protobuf parsing is intentionally out of scope: this descriptor surfaces the structural
 /// regions (manifest bytes, signature bytes, data blob) as raw entries so callers can drive their
 /// own parsers downstream.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://source.android.com/docs/core/ota</c> — Android OTA documentation (A/B payload updates)</description></item>
+///   <item><description><c>https://android.googlesource.com/platform/system/update_engine/</c> — update_engine source; <c>update_metadata.proto</c> defines the CrAU payload</description></item>
+/// </list>
 /// </summary>
 public sealed class AndroidOtaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "AndroidOta";

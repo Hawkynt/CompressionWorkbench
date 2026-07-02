@@ -12,6 +12,12 @@ namespace FileFormat.ExePackers;
 /// sections named <c>.MPRESS1</c> and <c>.MPRESS2</c> in PE files; in both
 /// PE and ELF builds the unpacker stub also embeds the literal copyright
 /// strings <c>"MPRESS"</c> / <c>"MATCODE"</c> in the first ~64 KB.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://matcode.com/</c> — MATCODE Software — MPRESS vendor site</description></item>
+///   <item><description><c>https://github.com/horsicq/Detect-It-Easy</c> — Detect It Easy — maintained packer-detection signature database (MPRESS signatures)</description></item>
+/// </list>
 /// </summary>
 public sealed class MPressFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

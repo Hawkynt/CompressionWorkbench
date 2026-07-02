@@ -11,6 +11,13 @@ namespace FileSystem.MinixV1;
 /// (7 direct + 1 indirect + 1 double-indirect), magic 0x137F (14-byte
 /// names) or 0x138F (30-byte names — Coherent variant). Predecessor to
 /// Linux's ext filesystem family.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/torvalds/linux/blob/master/include/uapi/linux/minix_fs.h</c> — canonical on-disk structures (v1 layout + 0x137F/0x138F magics)</description></item>
+///   <item><description>Tanenbaum &amp; Woodhull, "Operating Systems: Design and Implementation" — the original Minix FS design</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Minix_file_system</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class MinixV1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
   /// <summary>

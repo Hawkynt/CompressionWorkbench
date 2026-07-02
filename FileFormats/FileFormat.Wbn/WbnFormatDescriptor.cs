@@ -13,6 +13,12 @@ namespace FileFormat.Wbn;
 /// alongside a <c>metadata.ini</c> summary. Per-resource extraction is intentionally out
 /// of scope — it requires a full CBOR decoder plus HTTP request/response framing to
 /// rebuild the embedded URL tree.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://datatracker.ietf.org/doc/draft-ietf-wpack-bundled-responses/</c> — IETF WPACK "Web Bundles" (Bundled HTTP Responses) draft</description></item>
+///   <item><description><c>https://github.com/WICG/webpackage</c> — WICG web packaging incubation — spec text and reference tooling</description></item>
+/// </list>
 /// </summary>
 public sealed class WbnFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 

@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Tar;
 
+/// <summary>
+/// Unix tape archive (tar) — 512-byte header blocks; ustar/GNU/pax variants; container only, no compression.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html</c> — POSIX pax — defines the ustar header and pax extended headers</description></item>
+///   <item><description><c>https://www.gnu.org/software/tar/manual/</c> — GNU tar manual — GNU extensions (long names, sparse files)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Tar_(computing)</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
 
   /// <inheritdoc />

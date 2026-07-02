@@ -6,6 +6,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ExFat;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/windows/win32/fileio/exfat-specification</c> — Microsoft's official exFAT file system specification</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/exfat</c> — mainline kernel implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/ExFAT</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   /// <summary>

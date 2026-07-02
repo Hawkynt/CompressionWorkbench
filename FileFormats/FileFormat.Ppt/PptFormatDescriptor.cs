@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ppt;
 
+/// <summary>
+/// Microsoft PowerPoint 97-2003 (.ppt) presentation — an OLE2/CFB compound document.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-ppt/6be79dde-33c1-4c1b-8ccc-4b2301c08662</c> — [MS-PPT]: PowerPoint (.ppt) Binary File Format (Microsoft Open Specifications)</description></item>
+///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/53989ce4-7b05-4f8d-829b-d08d6148375b</c> — [MS-CFB]: Compound File Binary File Format — the OLE2 container</description></item>
+/// </list>
+/// </summary>
 public sealed class PptFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   public void Defragment(Stream archive)

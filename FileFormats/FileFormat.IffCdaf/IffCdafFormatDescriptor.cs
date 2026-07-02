@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.IffCdaf;
 
+/// <summary>
+/// Amiga IFF CDAF (Compact Disk Archive Format) — an EA-IFF-85 FORM container carrying FNAM/FDAT chunk pairs per archived file.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>"EA IFF 85: Standard for Interchange Format Files" (Jerry Morrison, Electronic Arts, 1985) — the underlying container standard</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Interchange_File_Format</c> — Wikipedia on IFF</description></item>
+///   <item><description><c>https://aminet.net</c> — Aminet — distribution home of the Amiga CDAF tooling</description></item>
+/// </list>
+/// </summary>
 public sealed class IffCdafFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

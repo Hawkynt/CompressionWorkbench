@@ -6,6 +6,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.DoubleSpace;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/sandsmark/dmsdos</c> — dmsdos, the GPL Linux CVF driver whose source + <c>doc/dmsdos.doc</c> are the de-facto MDBPB/MDFAT/BitFAT on-disk specification</description></item>
+///   <item><description>Microsoft MS-DOS 6 documentation (DoubleSpace chapter) — original vendor description of the compressed volume file</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/DriveSpace</c> — Wikipedia article covering DoubleSpace and its successors</description></item>
+/// </list>
+/// </summary>
 public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
   public string Id => "DoubleSpace";
   public string DisplayName => "DoubleSpace CVF";

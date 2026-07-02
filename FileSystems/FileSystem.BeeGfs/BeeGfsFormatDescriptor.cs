@@ -10,6 +10,13 @@ namespace FileSystem.BeeGfs;
 /// Surfaces only a synthetic <c>metadata.ini</c> and the raw image bytes;
 /// no real file-walk is attempted because a BeeGFS volume has no
 /// standalone on-disk image.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.beegfs.io</c> — official BeeGFS site and documentation portal</description></item>
+///   <item><description><c>https://github.com/ThinkParQ/beegfs</c> — BeeGFS source (ThinkParQ)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/BeeGFS</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class BeeGfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

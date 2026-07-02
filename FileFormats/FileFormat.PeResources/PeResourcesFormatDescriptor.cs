@@ -16,6 +16,13 @@ namespace FileFormat.PeResources;
 /// files are standalone on-disk-format files. <c>RT_BITMAP</c> payloads are wrapped with
 /// a synthesised <c>BITMAPFILEHEADER</c> so extracted <c>.bmp</c> files open in any
 /// image viewer. Other types come out as raw bytes with a type-appropriate extension.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/windows/win32/debug/pe-format</c> — Microsoft PE/COFF specification — .rsrc resource directory layout</description></item>
+///   <item><description>"An In-Depth Look into the Win32 Portable Executable File Format" — Matt Pietrek, MSDN Magazine, 2002</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Portable_Executable</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class PeResourcesFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "PeResources";

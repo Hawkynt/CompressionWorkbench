@@ -61,6 +61,12 @@ namespace FileFormat.Aomei;
 /// <see cref="AomeiWriter.UserDataTypeTag"/> envelope so the project's own
 /// reader can extract them again.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.aomeitech.com</c> — vendor — the .adi/.afi container is proprietary and unpublished</description></item>
+///   <item><description><c>docs/AOMEI_FORMAT_SPEC.md</c> (this repository) — reverse-engineered BIFH/BIFT + BR_STANDARD_HEADER on-disk spec</description></item>
+/// </list>
 /// </summary>
 public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 

@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Dzip;
 
+/// <summary>
+/// DZIP v2 archive ("DZIP" magic) used by Vampire: The Masquerade — Bloodlines; stored and LZSS-compressed entries.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Undocumented Troika Games format; the header/TOC layout was recovered by the Bloodlines modding community's unpacking tools</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Vampire:_The_Masquerade_%E2%80%93_Bloodlines</c> — background on the game</description></item>
+/// </list>
+/// </summary>
 public sealed class DzipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

@@ -10,6 +10,13 @@ namespace FileSystem.Coherent;
 /// numeric magic — it is recognised by the coh_super_block s_fname/s_fpack
 /// volume strings ("noname"/"nopack"), which is exactly how the Linux sysv
 /// driver's detect_coherent() identifies it.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/torvalds/linux/tree/v6.8/fs/sysv</c> — Linux sysv driver (incl. <c>detect_coherent()</c>); pinned at v6.8, the last release before its removal</description></item>
+///   <item><description>Mark Williams Company "COHERENT" manual — original vendor documentation of the filesystem</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Coherent_(operating_system)</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class CoherentFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable {
   public string Id => "Coherent";

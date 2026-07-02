@@ -20,6 +20,13 @@ namespace FileSystem.Cxfs;
 /// <para>Extension-only detection (<c>.cxfs</c>) avoids first-match
 /// collision with the vanilla FileSystem.Xfs descriptor — both share the
 /// same magic bytes.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>SGI "CXFS Administration Guide" (SGI techpubs) — the vendor documentation of the cluster layer</description></item>
+///   <item><description><c>https://mirrors.edge.kernel.org/pub/linux/utils/fs/xfs/docs/xfs_filesystem_structure.pdf</c> — "XFS Algorithms &amp; Data Structures", the on-disk spec CXFS volumes follow</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/CXFS</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class CxfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

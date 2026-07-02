@@ -23,6 +23,13 @@ namespace FileFormat.Par2;
 /// <c>files.ini</c> listing each protected file's name and length parsed from the
 /// FileDesc packets, and one raw entry per packet under <c>packets/NNNN_&lt;type&gt;.bin</c>.
 /// Read-only; malformed input degrades to FULL + partial metadata without throwing.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://parchive.sourceforge.net</c> — Parchive project — hosts the PAR 2.0 specification</description></item>
+///   <item><description><c>https://github.com/Parchive/par2cmdline</c> — par2cmdline — maintained reference implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Parchive</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class Par2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Par2";

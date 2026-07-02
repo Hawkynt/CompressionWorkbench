@@ -5,6 +5,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Psf;
 
+/// <summary>
+/// Portable Sound Format (PSF) — game-music archival container wrapping a compressed program plus tags.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Neill Corlett, "PSF — Portable Sound Format" specification (psf_format.txt) — the defining document</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Portable_Sound_Format</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class PsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
 
   public void Defragment(Stream archive)

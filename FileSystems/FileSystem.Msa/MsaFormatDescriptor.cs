@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Msa;
 
+/// <summary>
+/// Descriptor for Atari ST MSA (Magic Shadow Archiver) disk images — an
+/// RLE-compressed track-image container wrapping a FAT12 floppy filesystem.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/hatari/hatari</c> — Hatari emulator; its MSA disk-image support is the de-facto reference implementation</description></item>
+///   <item><description>Magic Shadow Archiver original documentation (Atari ST, Seimet) — no stable online spec</description></item>
+/// </list>
+/// </summary>
 public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "Msa";
   public string DisplayName => "MSA (Magic Shadow Archiver)";

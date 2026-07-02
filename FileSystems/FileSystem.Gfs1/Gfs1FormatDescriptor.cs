@@ -10,6 +10,12 @@ namespace FileSystem.Gfs1;
 /// Sistina/Red Hat GFS (pre-GFS2) format descriptor. WORM writer + reader with
 /// real nested subdirectories, defrag/purge/conversion, fileset optimizer,
 /// and an options schema (BlockSize / JournalCount / LockProto / LockTable).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://sourceforge.net/projects/opengfs/</c> — OpenGFS, the open continuation of Sistina GFS whose headers define the GFS1 on-disk structures</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Global_File_System_2</c> — Wikipedia article covering GFS history and its GFS2 successor</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para><b>Reference</b>: Sistina GFS / OpenGFS (the pre-Red Hat patches).

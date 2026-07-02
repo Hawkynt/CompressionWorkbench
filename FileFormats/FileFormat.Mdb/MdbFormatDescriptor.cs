@@ -10,6 +10,13 @@ namespace FileFormat.Mdb;
 /// Microsoft Access Jet Red / ACCDB read-only surfacing descriptor.
 /// Emits raw pages, the first-page header, metadata.ini, and (if locatable) the
 /// MSysObjects root-page pointer. Does NOT decode Jet B-trees or rows.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/mdbtools/mdbtools</c> — mdbtools — its HACKING notes are the de-facto Jet on-disk format documentation</description></item>
+///   <item><description>No official specification — the Jet Red / ACCDB page format is proprietary and community-reverse-engineered</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Microsoft_Access</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class MdbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   private static readonly byte[] JetSignature = Encoding.ASCII.GetBytes("Standard Jet DB");

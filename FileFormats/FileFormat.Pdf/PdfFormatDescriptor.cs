@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Pdf;
 
+/// <summary>
+/// PDF document surfaced as an archive: embedded images plus EmbeddedFiles attachments, with in-place attachment R/W via ISO 32000 incremental updates.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf</c> — ISO 32000-1:2008 (PDF 1.7) as republished by Adobe — including the incremental-update and EmbeddedFiles clauses</description></item>
+///   <item><description><c>https://pdfa.org</c> — PDF Association — ISO 32000-2 (PDF 2.0) resources</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/PDF</c> — Wikipedia</description></item>
+/// </list>
+/// </summary>
 public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   public void Defragment(Stream archive)

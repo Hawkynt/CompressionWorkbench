@@ -12,6 +12,12 @@ namespace FileSystem.Tux2;
 /// a single-phase image only (no alpha/beta phases, no version chain) — real
 /// legacy prototype images would need a custom parser matching the specific
 /// snapshot of the in-progress code that produced them.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Daniel Phillips, "The Tux2 Filesystem" (Ottawa Linux Symposium 2002 proceedings) — the defining paper</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Tux3</c> — Wikipedia article covering the phase-tree lineage</description></item>
+/// </list>
 /// </summary>
 public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
 

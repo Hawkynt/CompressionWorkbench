@@ -11,6 +11,12 @@ namespace FileFormat.ExePackers;
 /// commercial DOS exe-compressor by PKWARE (1990); the unpacker stub it
 /// prepends carries the distinctive <c>"PKLITE Copr."</c> copyright string and
 /// a version field at MZ-header offset <c>0x1C</c>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://en.wikipedia.org/wiki/PKLITE</c> — format and tool history</description></item>
+///   <item><description>PKWARE PKLITE documentation (shipped with the product) — describes the compressed-EXE layout and version word at MZ offset 0x1C</description></item>
+/// </list>
 /// </summary>
 public sealed class PkLiteFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

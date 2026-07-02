@@ -100,6 +100,12 @@ namespace FileFormat.Paragon;
 /// file-extension.net, recoveryutility.com, datenrettungtool.de,
 /// openthefile.net, fileinfo.com, file.org, solvusoft.com.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.paragon-software.com</c> — vendor site — the .pbf container is proprietary and undocumented</description></item>
+///   <item><description>No public specification — vendor images parsed from a reverse-engineered header layout</description></item>
+/// </list>
 /// </summary>
 public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 

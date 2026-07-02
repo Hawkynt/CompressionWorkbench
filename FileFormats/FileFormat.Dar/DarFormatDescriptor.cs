@@ -24,6 +24,13 @@ namespace FileFormat.Dar;
 /// <c>member_enumeration=deferred</c> in the metadata). Detection is extension-driven
 /// (<c>.dar</c>) because the slice magic is too weak to claim generic files.
 /// Read-only; malformed input degrades to FULL + partial metadata without throwing.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://dar.linux.free.fr</c> — official DAR site — libdar archive-structure notes</description></item>
+///   <item><description><c>https://github.com/Edrusb/DAR</c> — canonical DAR/libdar source</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Dar_(disk_archiver)</c> — background</description></item>
+/// </list>
 /// </summary>
 public sealed class DarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Dar";

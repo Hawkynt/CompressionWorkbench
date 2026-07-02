@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Vmdk;
 
+/// <summary>
+/// VMware VMDK virtual disk (sparse extents with grain directories/tables).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>VMware, "Virtual Disk Format 5.0" technical note — the vendor VMDK specification</description></item>
+///   <item><description><c>https://github.com/libyal/libvmdk</c> — libvmdk — open implementation with format documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/VMDK</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
   public string Id => "Vmdk";
   public string DisplayName => "VMDK";

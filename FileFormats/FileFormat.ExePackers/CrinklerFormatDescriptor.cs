@@ -12,6 +12,12 @@ namespace FileFormat.ExePackers;
 /// compressor of the demoscene; it produces extremely small, atypically-laid
 /// out PE files (often only 1-2 sections, no real import directory) and
 /// embeds the literal string <c>"Crinkler"</c> somewhere in the file.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/runestubbe/Crinkler</c> — Crinkler source (open-sourced 2020)</description></item>
+///   <item><description><c>http://crinkler.net</c> — official Crinkler site</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// Structural-only detection (small/weird PE) is unreliable, so we require

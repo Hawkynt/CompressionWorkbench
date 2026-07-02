@@ -4,6 +4,19 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.SquashFs;
 
+/// <summary>
+/// R/W descriptor for SquashFS images ("hsqs" magic) — the compressed
+/// read-only filesystem used by live media and embedded Linux; this writer
+/// emits gzip-compressed images.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://dr-emann.github.io/squashfs/</c> — community-written binary-format specification</description></item>
+///   <item><description><c>https://www.kernel.org/doc/html/latest/filesystems/squashfs.html</c> — kernel documentation</description></item>
+///   <item><description><c>https://github.com/plougher/squashfs-tools</c> — canonical mksquashfs/unsquashfs tooling</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/SquashFS</c> — Wikipedia article</description></item>
+/// </list>
+/// </summary>
 public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

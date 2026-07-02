@@ -14,6 +14,13 @@ namespace FileFormat.Dicom;
 /// full file, a metadata summary, a per-element tag dump, the raw PixelData
 /// payload (or encapsulated fragments), and any overlay data. Does not decode
 /// JPEG-compressed pixel data — fragments are surfaced verbatim.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://dicom.nema.org/medical/dicom/current/output/html/part10.html</c> — DICOM PS3.10 — Media Storage and File Format (the Part 10 file layout parsed here)</description></item>
+///   <item><description><c>https://www.dicomstandard.org</c> — DICOM standard portal</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/DICOM</c> — format overview</description></item>
+/// </list>
 /// </summary>
 public sealed class DicomFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   public string Id => "Dicom";

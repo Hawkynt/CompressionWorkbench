@@ -13,6 +13,13 @@ namespace FileFormat.Numpy;
 /// no dedicated magic; its raw magic is the plain ZIP signature) and the
 /// contents are surfaced as-is: one entry per enclosed <c>.npy</c>, plus a
 /// <c>metadata.ini</c> summary of array names and byte sizes.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://numpy.org/doc/stable/reference/generated/numpy.lib.format.html</c> — numpy.lib.format — defines NPZ as a ZIP of .npy members</description></item>
+///   <item><description><c>https://github.com/numpy/numpy</c> — canonical implementation (numpy.savez / numpy.load)</description></item>
+///   <item><description><c>https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT</c> — PKWARE ZIP APPNOTE — the underlying container format</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// We read the ZIP central directory via <see cref="ZipArchive"/> rather than

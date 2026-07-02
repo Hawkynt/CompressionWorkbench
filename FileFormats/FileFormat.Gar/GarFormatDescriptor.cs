@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Gar;
 
+/// <summary>
+/// Nintendo 3DS GAR (Generic Asset Resource) archive as used in Tomodachi Life / Animal Crossing-era titles.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>No official specification — proprietary Nintendo-era container, reverse-engineered by the 3DS modding community</description></item>
+///   <item><description><c>https://github.com/FanTranslatorsInternational/Kuriimu2</c> — Kuriimu2 — fan-translation toolkit covering many 3DS archive containers</description></item>
+/// </list>
+/// </summary>
 public sealed class GarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

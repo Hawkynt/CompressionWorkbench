@@ -8,6 +8,13 @@ namespace FileFormat.AppleSingle;
 /// resource fork + Finder metadata Macs leave alongside files when copied to
 /// non-HFS filesystems (commonly named <c>._foo</c>). Same on-disk layout as
 /// AppleSingle but the data fork lives in the sibling file rather than this one.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.rfc-editor.org/rfc/rfc1740</c> — RFC 1740 — carries the AppleSingle/AppleDouble format description as an appendix</description></item>
+///   <item><description>Apple "AppleSingle/AppleDouble Formats for Foreign Files Developer's Note" (1990) — the defining vendor document</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/AppleSingle_and_AppleDouble_formats</c> — format overview</description></item>
+/// </list>
 /// </summary>
 public sealed class AppleDoubleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

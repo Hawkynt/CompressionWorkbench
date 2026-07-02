@@ -24,6 +24,13 @@ namespace FileSystem.Human68k;
 /// extract-and-rebuild, free-space wiping driven by the extent map, and
 /// creation-options schema for bytes-per-sector / sectors-per-cluster /
 /// total-sectors / volume label.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Sharp / Hudson Soft "Human68k" manuals — the original vendor documentation of the FAT12-derived filesystem</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Human68k</c> — Wikipedia overview</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Sharp_X68000</c> — Wikipedia overview of the host platform</description></item>
+/// </list>
 /// </summary>
 public sealed class Human68kFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,

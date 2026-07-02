@@ -14,6 +14,13 @@ namespace FileFormat.Fla;
 /// ZIP entries are listed flatly by their path inside the archive.
 /// Uses compound extension <c>.fla</c> with empty magic to avoid conflicting
 /// with DOC/ZIP descriptors that own the generic magics.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Adobe "Flash Professional XFL" format documentation (CS5-era) — the ZIP-based variant</description></item>
+///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/</c> — [MS-CFB] — Compound File Binary (the pre-CS4 OLE2 variant's container)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Adobe_Animate</c> — application background</description></item>
+/// </list>
 /// </summary>
 public sealed class FlaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
 

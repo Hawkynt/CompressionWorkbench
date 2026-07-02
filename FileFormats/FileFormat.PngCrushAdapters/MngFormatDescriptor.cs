@@ -5,6 +5,15 @@ using FileFormat.Mng;
 
 namespace FileFormat.PngCrushAdapters;
 
+/// <summary>
+/// Multiple-image Network Graphics (MNG) — PNG-family multi-frame container; each frame is one image.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://www.libpng.org/pub/mng/spec/</c> — MNG 1.0 specification (PNG Development Group)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Multiple-image_Network_Graphics</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class MngFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Mng";
   public string DisplayName => "MNG (multi-image PNG)";

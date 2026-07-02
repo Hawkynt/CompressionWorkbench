@@ -7,6 +7,13 @@ namespace FileSystem.Iso;
 
 /// <summary>
 /// Format descriptor for ISO 9660 optical disc images.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://ecma-international.org/publications-and-standards/standards/ecma-119/</c> — ECMA-119 (the freely available equivalent of ISO 9660), the defining standard</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/isofs</c> — Linux kernel implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/ISO_9660</c> — Wikipedia overview (incl. Joliet / Rock Ridge extensions)</description></item>
+/// </list>
 /// </summary>
 public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 

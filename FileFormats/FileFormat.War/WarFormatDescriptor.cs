@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.War;
 
+/// <summary>
+/// Java Web Application Archive (WAR) — a ZIP/JAR with WEB-INF layout.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://jakarta.ee/specifications/servlet/</c> — Jakarta Servlet specification — defines WAR packaging</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/WAR_(file_format)</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class WarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

@@ -9,6 +9,12 @@ namespace FileFormat.Nes;
 /// <summary>
 /// iNES / NES 2.0 ROM file. Surfaces the full ROM, parsed metadata, and the PRG/CHR
 /// ROM banks as separate files. Read-only.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.nesdev.org/wiki/INES</c> — NESdev wiki — iNES header specification</description></item>
+///   <item><description><c>https://www.nesdev.org/wiki/NES_2.0</c> — NESdev wiki — NES 2.0 header extension</description></item>
+/// </list>
 /// </summary>
 public sealed class NesFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Nes";

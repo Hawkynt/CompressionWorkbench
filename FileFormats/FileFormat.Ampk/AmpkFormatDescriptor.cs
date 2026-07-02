@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ampk;
 
+/// <summary>
+/// AMPK (Amiga Pack) archive with LZHUF-compressed members.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Haruhiko Okumura's <c>lzhuf.c</c> (1988/89) — the LZSS + adaptive-Huffman codec AMPK members use</description></item>
+///   <item><description><c>https://aminet.net</c> — Aminet — the Amiga software archive distributing the original packer; the container layout itself is undocumented</description></item>
+/// </list>
+/// </summary>
 public sealed class AmpkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

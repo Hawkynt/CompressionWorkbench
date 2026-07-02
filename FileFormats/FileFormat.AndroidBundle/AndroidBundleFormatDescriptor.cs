@@ -22,6 +22,13 @@ namespace FileFormat.AndroidBundle;
 /// detection confidence for the ZIP local-file header so Zip/Apk win on ambiguous
 /// inputs.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://developer.android.com/guide/app-bundle</c> — official Android App Bundle documentation</description></item>
+///   <item><description><c>https://github.com/google/bundletool</c> — bundletool — the canonical .aab / .apks tool</description></item>
+///   <item><description><c>https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT</c> — PKWARE APPNOTE — the underlying ZIP container spec</description></item>
+/// </list>
 /// </summary>
 public sealed class AndroidBundleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 

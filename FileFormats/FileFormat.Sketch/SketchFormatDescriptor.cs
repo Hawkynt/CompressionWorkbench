@@ -11,6 +11,12 @@ namespace FileFormat.Sketch;
 /// meta.json, user.json, pages/*.json, previews/preview.png and embedded
 /// image/text-preview assets. Read-only descriptor surfacing the canonical
 /// parts plus a derived metadata.ini.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://developer.sketch.com/file-format/</c> — official Sketch file-format documentation</description></item>
+///   <item><description><c>https://github.com/sketch-hq/sketch-document</c> — sketch-document — official file-format schemas</description></item>
+/// </list>
 /// </summary>
 public sealed class SketchFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {
 

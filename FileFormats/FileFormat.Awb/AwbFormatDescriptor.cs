@@ -8,6 +8,12 @@ namespace FileFormat.Awb;
 /// CRI Audio Wave Bank (AFS2) — used by Capcom (Resident Evil, Monster Hunter), Sega
 /// (Yakuza, Persona 5), and other CRI Middleware titles. Contains raw codec payloads
 /// (HCA, ADX, etc.) which are surfaced verbatim — we do not decode the inner audio.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/vgmstream/vgmstream</c> — vgmstream — implements AFS2/AWB parsing; the de-facto reference</description></item>
+///   <item><description>CRI Middleware never published the AFS2 layout; it was recovered by the VGM ripping community</description></item>
+/// </list>
 /// </summary>
 public sealed class AwbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 

@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Ace;
 
+/// <summary>
+/// ACE archive (Marcel Lemke / WinAce) — proprietary high-ratio DOS/Windows compressor of the late 1990s.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/droe/acefile</c> — acefile — open-source ACE 1.0/2.0 reader/extractor, the de-facto format reference</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/ACE_(compressed_file_format)</c> — format overview and history</description></item>
+///   <item><description>WinAce / unacev2.dll (Marcel Lemke) — the original closed-source implementation; no official spec was ever published</description></item>
+/// </list>
+/// </summary>
 public sealed class AceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the ACE archive in listing order.</summary>

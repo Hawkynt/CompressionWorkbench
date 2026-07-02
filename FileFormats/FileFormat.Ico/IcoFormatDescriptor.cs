@@ -8,6 +8,12 @@ namespace CompressionWorkbench.FileFormat.Ico;
 /// Pseudo-archive descriptor for Windows ICO/CUR icon bundles. Each embedded image
 /// (PNG or DIB) is exposed as its own archive entry; creating a bundle from PNG/BMP
 /// inputs is supported.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://en.wikipedia.org/wiki/ICO_(file_format)</c> — Wikipedia — documents the ICONDIR / ICONDIRENTRY directory and PNG/DIB payloads</description></item>
+///   <item><description>"The evolution of the ICO file format" — Raymond Chen, The Old New Thing (Microsoft DevBlogs) series</description></item>
+/// </list>
 /// </summary>
 public sealed class IcoFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveWriteConstraints {

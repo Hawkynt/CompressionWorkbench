@@ -15,6 +15,13 @@ namespace FileFormat.Msix;
 /// The descriptor surfaces a synthetic <c>metadata.ini</c> summarising identity
 /// and capability declarations parsed from the manifest, followed by every
 /// ZIP entry verbatim.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/windows/msix/</c> — Microsoft MSIX documentation portal</description></item>
+///   <item><description><c>https://github.com/microsoft/msix-packaging</c> — Microsoft MSIX SDK — canonical packaging implementation</description></item>
+///   <item><description><c>https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT</c> — PKWARE ZIP APPNOTE — the underlying container format</description></item>
+/// </list>
 /// </summary>
 public sealed class MsixFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 

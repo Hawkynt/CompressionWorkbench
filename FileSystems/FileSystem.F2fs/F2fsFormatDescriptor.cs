@@ -4,6 +4,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.F2fs;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://docs.kernel.org/filesystems/f2fs.html</c> — Linux kernel F2FS documentation (on-disk layout: SB/CP/SIT/NAT/SSA/main area)</description></item>
+///   <item><description><c>https://www.usenix.org/conference/fast15/technical-sessions/presentation/lee</c> — Lee et al., "F2FS: A New File System for Flash Storage" (USENIX FAST '15), the design paper</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/F2FS</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {
 
   // A F2FS segment is 2 MiB; image size in bytes = segment count × 2 MiB.

@@ -9,6 +9,12 @@ namespace FileSystem.FatPlus;
 /// extension to standard FAT that lifts the per-file 4 GiB size cap to 256 GiB
 /// by repurposing previously-reserved bytes in the 32-byte directory entry to
 /// hold the upper bits of file size.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>FAT+ draft revision 2 (FATPLUS.TXT, Udo Kuhnt / Luchezar Georgiev / Jeremy Davis, 2007) — the defining spec, historically hosted at fdos.org/kernel/fatplus.txt</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system</c> — Wikipedia's FAT reference, which documents the FAT+ extension</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para><b>Specification source.</b> FAT+ draft revision 2/3 (FATPLUS.TXT, 2007)

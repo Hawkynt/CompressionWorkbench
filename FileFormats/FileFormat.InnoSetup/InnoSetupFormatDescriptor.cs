@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.InnoSetup;
 
+/// <summary>
+/// Inno Setup installer package (PE stub + Setup.0 data blob).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://jrsoftware.org/isinfo.php</c> — official Inno Setup site (Jordan Russell)</description></item>
+///   <item><description><c>https://github.com/dscharrer/innoextract</c> — innoextract — de-facto reference for the undocumented installer data layout</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Inno_Setup</c> — Wikipedia</description></item>
+/// </list>
+/// </summary>
 public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
   public string Id => "InnoSetup";
   public string DisplayName => "Inno Setup";

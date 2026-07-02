@@ -10,6 +10,13 @@ namespace FileFormat.M3u8;
 /// Pseudo-archive descriptor for HTTP Live Streaming M3U8 playlists (RFC 8216).
 /// Surfaces the parsed manifest as <c>metadata.ini</c>, <c>playlist.txt</c>
 /// (verbatim source), and <c>segments.txt</c> (one entry per variant or segment).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.rfc-editor.org/rfc/rfc8216</c> — RFC 8216 — HTTP Live Streaming (defines the extended M3U playlist)</description></item>
+///   <item><description><c>https://developer.apple.com/streaming/</c> — Apple HLS portal</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/M3U</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class M3u8FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 

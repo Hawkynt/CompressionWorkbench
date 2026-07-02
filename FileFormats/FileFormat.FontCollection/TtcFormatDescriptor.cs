@@ -12,6 +12,12 @@ namespace FileFormat.FontCollection;
 ///   <item><description><c>fonts/&lt;i&gt;_&lt;name&gt;.{ttf,otf}</c> — sliced standalone member fonts</description></item>
 ///   <item><description><c>glyphs/&lt;i&gt;_&lt;name&gt;/U+XXXX.svg</c> — per-glyph SVG outlines (TrueType only)</description></item>
 /// </list>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/typography/opentype/spec/</c> — OpenType specification — defines the 'ttcf' TrueType Collection header</description></item>
+///   <item><description><c>https://developer.apple.com/fonts/TrueType-Reference-Manual/</c> — Apple TrueType Reference Manual — TrueType Collections and glyf outlines</description></item>
+/// </list>
 /// </summary>
 public sealed class TtcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "Ttc";

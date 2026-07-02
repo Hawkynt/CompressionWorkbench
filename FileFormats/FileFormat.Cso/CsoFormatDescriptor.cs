@@ -15,6 +15,12 @@ namespace FileFormat.Cso;
 ///
 /// <para>This descriptor surfaces each compressed block as a raw blob — it does NOT decompress
 /// the blocks (consumers can further process with zlib for CSO or LZ4 for ZSO).</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/unknownbrackets/maxcso</c> — maxcso — maintained CSO/ZSO tool; its docs describe the CSO v1/v2 and ZSO layouts</description></item>
+///   <item><description>The format originates in PSP homebrew (ciso); there is no official Sony documentation</description></item>
+/// </list>
 /// </summary>
 public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveModifiable {

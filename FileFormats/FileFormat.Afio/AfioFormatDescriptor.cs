@@ -20,6 +20,13 @@ namespace FileFormat.Afio;
 /// <c>1F 8B</c> signature and transparently inflates it on extraction, surfacing
 /// each member as an entry. Read-only (List / Extract); malformed input never
 /// throws — it stops at the last parseable member.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/kholtman/afio</c> — canonical afio source (Koen Holtman); afio(1) documents the archive format</description></item>
+///   <item><description><c>https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html</c> — POSIX pax — defines the portable-ASCII (odc, "070707") cpio header afio derives from</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Cpio</c> — background on the cpio family</description></item>
+/// </list>
 /// </summary>
 public sealed class AfioFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Afio";

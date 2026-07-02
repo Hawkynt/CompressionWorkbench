@@ -13,6 +13,12 @@ namespace FileFormat.Arrow;
 /// approximate schema by string-scanning the Schema message blob. Surfaces a
 /// <c>FULL.arrow</c> passthrough plus a <c>metadata.ini</c> summary. Record-batch buffer
 /// decoding is out of scope.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://arrow.apache.org/docs/format/Columnar.html</c> — Arrow columnar format + IPC (File/Streaming) specification</description></item>
+///   <item><description><c>https://github.com/apache/arrow</c> — canonical implementation</description></item>
+/// </list>
 /// </summary>
 public sealed class ArrowFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

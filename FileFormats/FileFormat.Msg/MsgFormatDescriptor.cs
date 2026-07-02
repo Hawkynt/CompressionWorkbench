@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Msg;
 
+/// <summary>
+/// Microsoft Outlook .msg message — an OLE2/CFB compound file carrying MAPI property streams.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/exchange_server_protocols/ms-oxmsg/</c> — [MS-OXMSG] Outlook Item (.msg) File Format — Microsoft Open Specifications</description></item>
+///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/</c> — [MS-CFB] Compound File Binary File Format — the underlying container</description></item>
+/// </list>
+/// </summary>
 public sealed class MsgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   public void Defragment(Stream archive)

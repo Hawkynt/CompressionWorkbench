@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Pfs0;
 
+/// <summary>
+/// Nintendo Switch PartitionFS (PFS0) archive — the flat file table inside NSP packages.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://switchbrew.org/</c> — Switchbrew wiki — community reverse-engineered Switch format documentation (PFS0/NSP)</description></item>
+///   <item><description><c>https://github.com/SciresM/hactool</c> — hactool — reference extraction tool implementing PFS0</description></item>
+/// </list>
+/// </summary>
 public sealed class Pfs0FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the PFS0 archive in listing order.</summary>

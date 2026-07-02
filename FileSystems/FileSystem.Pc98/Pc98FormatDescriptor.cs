@@ -21,6 +21,12 @@ namespace FileSystem.Pc98;
 /// extract-and-rebuild, free-space wiping driven by the extent map, and
 /// creation-options schema for media type / bytes-per-sector / sectors-per-cluster
 /// / volume label.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Microsoft "FAT: General Overview of On-Disk Format" (fatgen103) — the FAT12/16 layout PC-98 volumes follow</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/PC-9800_series</c> — Wikipedia article on the platform</description></item>
+/// </list>
 /// </summary>
 public sealed class Pc98FormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,

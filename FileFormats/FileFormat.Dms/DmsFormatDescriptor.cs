@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Dms;
 
+/// <summary>
+/// Amiga Disk Masher System (DMS) — track-based floppy-disk archiver ubiquitous in the Amiga scene.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>xDMS by Andre R. de la Rocha — open-source DMS extractor and de-facto format reference</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Disk_Masher_System</c> — format overview</description></item>
+/// </list>
+/// </summary>
 public sealed class DmsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
 
   /// <summary>Rebuild-based defrag: extracts the disk image then re-emits the DMS file.</summary>

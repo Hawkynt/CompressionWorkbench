@@ -4,6 +4,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Zpaq;
 
+/// <summary>
+/// ZPAQ journaling archive with content-defined deduplication and configurable context-mixing compression.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://mattmahoney.net/dc/zpaq.html</c> — official ZPAQ page and Level 2 format specification (Matt Mahoney)</description></item>
+///   <item><description><c>https://github.com/zpaq/zpaq</c> — reference implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/ZPAQ</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the ZPAQ archive in listing order.</summary>

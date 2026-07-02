@@ -10,6 +10,13 @@ namespace FileFormat.NetAssembly;
 /// resource entries under <c>resources/</c>. Detection is extension-based (<c>.dll</c> /
 /// <c>.exe</c>) with a parser sanity check: the CLI header (data-directory index 14) must
 /// be populated or <c>List</c> returns an empty set.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://ecma-international.org/publications-and-standards/standards/ecma-335/</c> — ECMA-335 Common Language Infrastructure — metadata streams and physical layout</description></item>
+///   <item><description><c>https://learn.microsoft.com/en-us/windows/win32/debug/pe-format</c> — Microsoft PE/COFF specification — the PE envelope including the CLI header</description></item>
+///   <item><description><c>https://github.com/dotnet/runtime</c> — .NET runtime — canonical implementation</description></item>
+/// </list>
 /// </summary>
 public sealed class NetAssemblyFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "NetAssembly";

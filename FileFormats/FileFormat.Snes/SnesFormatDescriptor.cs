@@ -11,6 +11,12 @@ namespace FileFormat.Snes;
 /// SNES / Super Famicom ROM file. No magic bytes — detection is by extension.
 /// Surfaces the full ROM, parsed metadata, optional SMC copier header, the ROM body,
 /// and the 64-byte internal header region. Read-only.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://snes.nesdev.org/wiki/ROM_header</c> — SNESdev wiki — internal ROM header layout (LoROM/HiROM/ExHiROM)</description></item>
+///   <item><description><c>https://problemkaputt.de/fullsnes.htm</c> — Martin Korth's "fullsnes" — authoritative SNES hardware/cartridge documentation</description></item>
+/// </list>
 /// </summary>
 public sealed class SnesFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Snes";

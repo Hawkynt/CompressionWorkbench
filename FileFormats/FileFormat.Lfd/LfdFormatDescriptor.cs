@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Lfd;
 
+/// <summary>
+/// LucasArts LFD resource bundle used by X-Wing and TIE Fighter.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/MikeG621/LfdReader</c> — Idmr.LfdReader — community reference implementation with detailed format documentation</description></item>
+///   <item><description>No official specification — community-reverse-engineered LucasArts container</description></item>
+/// </list>
+/// </summary>
 public sealed class LfdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

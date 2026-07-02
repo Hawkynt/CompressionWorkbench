@@ -5,6 +5,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Adf;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://lclevy.free.fr/adflib/adf_info.html</c> — Laurent Clévy's ADF / AmigaDOS (OFS/FFS) on-disk format reference, the de-facto ADF spec</description></item>
+///   <item><description>ADFlib — the reference open-source ADF implementation built on that document</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Amiga_Disk_File</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class AdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

@@ -17,6 +17,13 @@ namespace FileFormat.Pst;
 /// or extract folders/messages — that's a non-trivial reverse-engineering effort
 /// (MS-PST spec, LTP layer, PC/TC tables). Structural surfacing only.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/141923d5-15ab-4ef1-a524-6dce75aae546</c> — [MS-PST]: Outlook Personal Folders (.pst) File Format (Microsoft Open Specifications)</description></item>
+///   <item><description><c>https://github.com/libyal/libpff</c> — libpff — open PST/OST implementation with format documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Personal_Storage_Table</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class PstFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   private const int HeaderSize = 512;

@@ -11,6 +11,12 @@ namespace FileSystem.Rt11;
 /// common filesystem found on PDP-11 disk image dumps. Files are 6.3 RAD-50
 /// encoded names stored contiguously in 512-byte blocks; the writer emits a
 /// canonical RX01 single-density 8" floppy image (~256 KB).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>DEC "RT-11 Volume and File Formats Manual" (AA-PD6PA-TC) — canonical directory/volume spec (archived at Bitsavers)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/RT-11</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class Rt11FormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveWriteConstraints, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {

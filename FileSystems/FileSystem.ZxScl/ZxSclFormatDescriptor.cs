@@ -4,6 +4,17 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.ZxScl;
 
+/// <summary>
+/// Descriptor for ZX Spectrum SCL archives ("SINCLAIR" signature) — the
+/// header+catalogue TR-DOS file container convertible to .trd images.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://sinclair.wiki.zxnet.co.uk/wiki/TR-DOS_filesystem</c> — the TR-DOS catalogue structures the SCL container carries</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/TR-DOS</c> — Wikipedia article — covers the SCL container</description></item>
+///   <item><description>SCL format notes in ZX Spectrum emulator documentation (World of Spectrum formats reference)</description></item>
+/// </list>
+/// </summary>
 public sealed class ZxSclFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   // Upper bound: max payload (40 tracks x 16 sectors x 256 bytes x 4 layers) + magic/headers/CRC.

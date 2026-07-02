@@ -13,6 +13,12 @@ namespace CompressionWorkbench.FileFormat.Ani;
 /// then further unpacks each CUR's sub-images using the CWB ICO/CUR reader, so
 /// every extracted sub-image keeps its native on-disk encoding (PNG or DIB) and
 /// is named with a matching <c>.png</c> / <c>.bmp</c> extension.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://en.wikipedia.org/wiki/ANI_(file_format)</c> — RIFF 'ACON' animated-cursor structure</description></item>
+///   <item><description>Microsoft Windows multimedia SDK — RIFF container and 'anih' header documentation</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// Output naming: <c>frame_NNN/cursor_MM_WxH_hX_hY.{png|bmp}</c>. A

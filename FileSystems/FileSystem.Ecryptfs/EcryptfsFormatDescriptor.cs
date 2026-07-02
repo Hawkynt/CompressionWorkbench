@@ -12,6 +12,13 @@ namespace FileSystem.Ecryptfs;
 /// 4-byte extent-size hint. Decryption requires the user's passphrase +
 /// EFEK packets — out of scope. The encrypted payload is surfaced as a
 /// single opaque entry along with the parsed header metadata.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://docs.kernel.org/filesystems/ecryptfs.html</c> — Linux kernel eCryptfs documentation</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/ecryptfs</c> — mainline implementation (<c>ecryptfs_kernel.h</c> defines the file-header marker + packet layout)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/ECryptfs</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class EcryptfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
   public string Id => "Ecryptfs";

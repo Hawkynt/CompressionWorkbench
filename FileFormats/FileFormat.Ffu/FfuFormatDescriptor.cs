@@ -24,6 +24,12 @@ namespace FileFormat.Ffu;
 /// requires the full store-header v1/v2 disk-location decode); this is documented in
 /// the metadata via <c>chunk_reconstruction=deferred</c>. Read-only; malformed input
 /// degrades to FULL + partial metadata without throwing.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Microsoft "FFU image format" documentation (Windows Hardware manufacturing docs; originally published for Windows Phone imaging)</description></item>
+///   <item><description><c>https://learn.microsoft.com/en-us/windows-hardware/manufacture/</c> — Windows manufacturing documentation portal</description></item>
+/// </list>
 /// </summary>
 public sealed class FfuFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Ffu";

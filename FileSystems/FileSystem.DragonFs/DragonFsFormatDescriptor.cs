@@ -12,6 +12,12 @@ namespace FileSystem.DragonFs;
 /// DFS_ROOT_OFFSET), and lacks an unambiguous fixed magic in original
 /// images — detection is by .dfs extension plus an optional "DragonFS"
 /// ASCII tag at offset 0 for self-produced research images.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/DragonMinded/libdragon</c> — Libdragon source, the origin of DragonFS (<c>dragonfs.c</c> / <c>mkdfs</c> define the format)</description></item>
+///   <item><description><c>https://libdragon.dev</c> — official Libdragon documentation site</description></item>
+/// </list>
 /// </summary>
 public sealed class DragonFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable {
   public string Id => "DragonFs";

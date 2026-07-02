@@ -10,6 +10,12 @@ namespace FileFormat.VobSub;
 /// Pseudo-archive descriptor for VobSub DVD subtitles. The primary file is the textual
 /// <c>.idx</c>; the binary <c>.sub</c> sibling is resolved by replacing the extension.
 /// Each subtitle frame from the <c>.sub</c> is exposed as <c>subtitle_NNN.bin</c>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://sam.zoy.org/writings/dvd/subtitles/</c> — Sam Hocevar's classic DVD subtitle (SPU/RLE) format description</description></item>
+///   <item><description>VobSub / DirectVobSub (Gabest) — the defining tool producing .idx/.sub pairs</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// When invoked without filesystem context (pure stream input), only the parsed index

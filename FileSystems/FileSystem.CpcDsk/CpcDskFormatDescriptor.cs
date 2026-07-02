@@ -5,6 +5,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.CpcDsk;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.cpcwiki.eu/index.php/Format:DSK_disk_image_file_format</c> — CPCWiki's DSK / Extended DSK image format specification</description></item>
+///   <item><description><c>https://www.seasip.info/Unix/LibDsk/</c> — John Elliott's LibDsk, the maintained multi-format floppy-image library incl. CPC DSK</description></item>
+///   <item><description>Amstrad AMSDOS documentation (SOFT 968 firmware guide era) — the filesystem stored inside the image</description></item>
+/// </list>
+/// </summary>
 public sealed class CpcDskFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

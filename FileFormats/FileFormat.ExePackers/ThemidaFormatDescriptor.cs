@@ -15,6 +15,12 @@ namespace FileFormat.ExePackers;
 /// <c>"ThemidaSDK"</c>, or <c>"WinLicense"</c> is frequently left in the
 /// build for licensing/runtime calls. Some builds also leave a
 /// <c>".themida"</c> section name.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.oreans.com/themida.php</c> — official Themida site (Oreans Technologies)</description></item>
+///   <item><description><c>https://github.com/horsicq/Detect-It-Easy</c> — Detect It Easy — maintained packer-detection signature database</description></item>
+/// </list>
 /// </summary>
 public sealed class ThemidaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

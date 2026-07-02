@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Mpq;
 
+/// <summary>
+/// Blizzard MPQ (Mo'PaQ) game archive used by Diablo, StarCraft, WarCraft III and World of Warcraft.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://www.zezula.net/en/mpq/main.html</c> — Ladislav Zezula's MPQ format documentation — the de-facto specification</description></item>
+///   <item><description><c>https://github.com/ladislav-zezula/StormLib</c> — StormLib — maintained reference implementation</description></item>
+/// </list>
+/// </summary>
 public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the MPQ archive in listing order.</summary>

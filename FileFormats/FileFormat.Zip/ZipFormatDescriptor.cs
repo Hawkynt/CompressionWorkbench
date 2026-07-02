@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Zip;
 
+/// <summary>
+/// ZIP archive — the universal container with per-entry compression methods.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT</c> — PKWARE APPNOTE.TXT — the canonical .ZIP file format specification</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/ZIP_(file_format)</c> — Wikipedia overview</description></item>
+///   <item><description>Info-ZIP zip/unzip — long-standing open reference implementations</description></item>
+/// </list>
+/// </summary>
 public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
 
   /// <inheritdoc />

@@ -13,6 +13,12 @@ namespace FileFormat.UImage;
 /// compression is <c>none</c> an additional <c>payload_decompressed.bin</c> is
 /// emitted; for gzip/bzip2/lzma/lzo/lz4/zstd the body is left compressed and the
 /// <c>metadata.ini</c> notes which scheme the caller needs to apply.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://docs.u-boot.org/</c> — U-Boot documentation</description></item>
+///   <item><description><c>https://github.com/u-boot/u-boot</c> — U-Boot sources — <c>include/image.h</c> defines the 64-byte legacy header</description></item>
+/// </list>
 /// </summary>
 public sealed class UImageFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

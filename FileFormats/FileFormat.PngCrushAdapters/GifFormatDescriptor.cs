@@ -11,6 +11,12 @@ namespace FileFormat.PngCrushAdapters;
 /// (<see cref="ColorSpaceSplitter"/>). Frames are decoded to RGBA32 with proper
 /// disposal/composition semantics so animated GIFs surface meaningful per-step
 /// frames, not raw LZW slices.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.w3.org/Graphics/GIF/spec-gif89a.txt</c> — GIF89a specification (CompuServe, hosted by W3C)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/GIF</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// This descriptor lives in <c>FileFormat.PngCrushAdapters</c> because the

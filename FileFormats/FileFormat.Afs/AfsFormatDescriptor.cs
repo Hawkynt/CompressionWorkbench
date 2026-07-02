@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Afs;
 
+/// <summary>
+/// Sega AFS archive ("AFS\0" magic) — audio/data container used by Dreamcast, PS2 and GameCube era titles.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/MaikelChan/AFSPacker</c> — AFSPacker — open-source AFS extractor/creator, the de-facto format reference</description></item>
+///   <item><description>The container was never documented by Sega/CRI; the offset-table layout was recovered by the game-modding community</description></item>
+/// </list>
+/// </summary>
 public sealed class AfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />

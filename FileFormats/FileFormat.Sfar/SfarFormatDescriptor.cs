@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Sfar;
 
+/// <summary>
+/// BioWare SFAR (Sirius File Archive) — Mass Effect 3 DLC container.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/ME3Tweaks/LegendaryExplorer</c> — Legendary Explorer (ME3Tweaks) — modding toolset implementing SFAR</description></item>
+///   <item><description>BioWare's DLC packaging format; no official spec, layout reverse-engineered by the modding community</description></item>
+/// </list>
+/// </summary>
 public sealed class SfarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />

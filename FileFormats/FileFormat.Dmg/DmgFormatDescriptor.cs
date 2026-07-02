@@ -5,6 +5,16 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Dmg;
 
+/// <summary>
+/// Apple disk image (DMG/UDIF) — "koly" trailer + XML plist block map (blkx) with zlib/bzip2/ADC-compressed chunks.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>http://newosxbook.com/DMG.html</c> — Jonathan Levin's UDIF format write-up — the standard unofficial reference (Apple never published a spec)</description></item>
+///   <item><description><c>https://github.com/darlinghq/darling-dmg</c> — darling-dmg — open-source DMG/UDIF implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Apple_Disk_Image</c> — format overview</description></item>
+/// </list>
+/// </summary>
 public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
 
   public void Defragment(Stream archive)

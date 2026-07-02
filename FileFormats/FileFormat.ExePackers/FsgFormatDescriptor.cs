@@ -12,6 +12,12 @@ namespace FileFormat.ExePackers;
 /// emits a single-section binary; the unpacker stub embeds the distinctive
 /// 4-byte ASCII magic <c>"FSG!"</c> usually right at or near the PE entry
 /// point.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>FSG by bart/xt — distributed through the packer scene; no official documentation survives</description></item>
+///   <item><description><c>https://github.com/horsicq/Detect-It-Easy</c> — Detect It Easy — maintained packer-detection signature database (FSG signatures)</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// Detection requires <see cref="PackerScanner.IsPe"/> AND the literal

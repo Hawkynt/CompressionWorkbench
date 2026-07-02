@@ -20,6 +20,12 @@ namespace FileFormat.Dpx;
 /// bit depth, descriptor, orientation, creator) and the image data region (from
 /// offset-to-image-data to EOF) as <c>pixels.bin</c> (Kind="Raw"). Read-only;
 /// malformed input degrades to FULL + partial metadata without throwing.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>SMPTE ST 268 — Digital Moving-Picture Exchange (DPX), the defining standard</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Digital_Picture_Exchange</c> — format overview</description></item>
+/// </list>
 /// </summary>
 public sealed class DpxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Dpx";

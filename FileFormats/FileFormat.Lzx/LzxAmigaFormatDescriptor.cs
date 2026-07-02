@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Lzx;
 
+/// <summary>
+/// Amiga LZX archive (Jonathan Forbes and Tomi Salo) — LZ77+Huffman with merged-file compression groups.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://en.wikipedia.org/wiki/LZX</c> — Wikipedia — covers the Amiga LZX archiver lineage</description></item>
+///   <item><description><c>https://aminet.net</c> — Aminet — home of the original archiver and the unlzx extractor whose source is the de-facto format reference</description></item>
+/// </list>
+/// </summary>
 public sealed class LzxAmigaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the LZX archive in listing order.</summary>

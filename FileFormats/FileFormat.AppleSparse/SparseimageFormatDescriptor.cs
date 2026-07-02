@@ -11,6 +11,12 @@ namespace FileFormat.AppleSparse;
 /// plus a Band Allocation Table (BAT) mapping virtual bands (typically 1 MB
 /// each) to physical bands stored sequentially in the file; unallocated
 /// virtual bands read as zeros.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Apple <c>hdiutil(1)</c> man page — the creating tool; the 'sprs' header + band allocation table are undocumented by Apple and community-reverse-engineered</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Sparse_image</c> — background on Apple sparse images</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>R/W descriptor: <c>Create</c> emits a fresh sparseimage, and

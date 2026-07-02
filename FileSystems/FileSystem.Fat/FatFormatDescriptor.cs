@@ -6,6 +6,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Fat;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://download.microsoft.com/download/1/6/1/161ba512-40e2-4cc9-843a-923143f3456c/fatgen103.doc</c> — Microsoft "FAT32 File System Specification" (FATGEN 1.03), the canonical FAT12/16/32 spec</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system</c> — Wikipedia's detailed on-disk reference incl. vendor variants</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/fat</c> — mainline kernel implementation</description></item>
+/// </list>
+/// </summary>
 public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

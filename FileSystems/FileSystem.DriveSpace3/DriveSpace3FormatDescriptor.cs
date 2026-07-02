@@ -28,6 +28,13 @@ namespace FileSystem.DriveSpace3;
 /// Shares the <c>.cvf</c> extension with DoubleSpace; FormatDetector
 /// disambiguates by magic.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/sandsmark/dmsdos</c> — dmsdos, the GPL Linux CVF driver whose source + <c>doc/dmsdos.doc</c> are the de-facto DriveSpace 3 on-disk specification (5-byte MDFAT, MS LZH codecs)</description></item>
+///   <item><description>Microsoft Plus! for Windows 95 documentation (DriveSpace 3) — original vendor description</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/DriveSpace</c> — Wikipedia overview of the CVF family</description></item>
+/// </list>
 /// </summary>
 public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
   /// <inheritdoc />

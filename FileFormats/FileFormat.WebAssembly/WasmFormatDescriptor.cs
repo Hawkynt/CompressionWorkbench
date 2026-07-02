@@ -11,6 +11,13 @@ namespace FileFormat.WebAssembly;
 /// surfaced as an entry — well-known sections (type, import, function, code …)
 /// get descriptive names, and custom sections (e.g. <c>name</c>, <c>producers</c>,
 /// <c>.debug_info</c>) carry their embedded name in the entry filename.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://webassembly.github.io/spec/core/</c> — WebAssembly Core Specification — binary format chapter</description></item>
+///   <item><description><c>https://webassembly.org/</c> — project home</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/WebAssembly</c> — Wikipedia overview</description></item>
+/// </list>
 /// </summary>
 public sealed class WasmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

@@ -7,6 +7,12 @@ namespace FileFormat.UnrealPak;
 /// Unreal Engine 4/5 <c>.pak</c> archive. Entries are stored or zlib-compressed and are listed
 /// through an index block at the end of the file. Encrypted PAKs and Oodle-compressed entries
 /// are listed but not extracted.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>format defined by Epic's UnrealPak tool / <c>IPlatformFilePak</c> in the Unreal Engine sources (github.com/EpicGames/UnrealEngine, EULA-gated)</description></item>
+///   <item><description><c>https://github.com/panzi/u4pak</c> — u4pak — open reader/packer for UE4 .pak archives</description></item>
+/// </list>
 /// </summary>
 public sealed class UnrealPakFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "UnrealPak";

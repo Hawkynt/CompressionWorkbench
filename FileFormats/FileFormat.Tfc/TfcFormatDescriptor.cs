@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Tfc;
 
+/// <summary>
+/// Unreal Engine 3 Texture File Cache (TFC) as shipped by Mass Effect — opaque compressed texture bundles.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/ME3Tweaks/LegendaryExplorer</c> — Legendary Explorer (ME3Tweaks) — implements Mass Effect TFC handling</description></item>
+///   <item><description>Unreal Engine 3 streamed-texture cache; no official spec</description></item>
+/// </list>
+/// </summary>
 public sealed class TfcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
 
   public void Defragment(Stream archive)

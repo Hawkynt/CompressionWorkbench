@@ -5,6 +5,16 @@ using FileFormat.Core;
 
 namespace FileFormat.PngCrushAdapters;
 
+/// <summary>
+/// Animated PNG (APNG) — PNG with acTL/fcTL/fdAT chunks; each frame is surfaced as one image with disposal/blend applied.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.w3.org/TR/png-3/</c> — W3C PNG Third Edition — APNG folded into the core PNG spec</description></item>
+///   <item><description><c>https://wiki.mozilla.org/APNG_Specification</c> — original Mozilla APNG specification</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/APNG</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class ApngFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Apng";
   public string DisplayName => "APNG (animated PNG)";

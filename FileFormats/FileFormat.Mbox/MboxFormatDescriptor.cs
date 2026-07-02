@@ -9,6 +9,12 @@ namespace FileFormat.Mbox;
 /// Descriptor for the Unix mbox mailbox format.  Each RFC 822 message in the
 /// mailbox is surfaced as a separate <c>.eml</c> entry; the message body is
 /// preserved verbatim (including any "&gt;From " byte-stuffed lines).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.rfc-editor.org/rfc/rfc4155</c> — RFC 4155 — the application/mbox media type and mbox conventions</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Mbox</c> — Wikipedia — mboxo/mboxrd/mboxcl variants</description></item>
+/// </list>
 /// </summary>
 public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable, IArchiveModifiable {
   public string Id => "Mbox";

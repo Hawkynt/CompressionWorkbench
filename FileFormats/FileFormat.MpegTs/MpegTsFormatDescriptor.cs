@@ -10,6 +10,12 @@ namespace FileFormat.MpegTs;
 /// Pseudo-archive descriptor for MPEG-2 Transport Streams. Each detected elementary
 /// stream is exposed as <c>stream_&lt;PID&gt;_&lt;type&gt;.bin</c> containing the
 /// concatenated PES payload bytes for that PID.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.itu.int/rec/T-REC-H.222.0</c> — ITU-T H.222.0 / ISO/IEC 13818-1 — MPEG-2 Systems (transport stream) standard</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/MPEG_transport_stream</c> — Wikipedia</description></item>
+/// </list>
 /// </summary>
 public sealed class MpegTsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 

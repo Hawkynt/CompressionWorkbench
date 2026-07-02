@@ -11,6 +11,12 @@ namespace FileFormat.Fb2;
 /// each <c>binary</c> element (base64-encoded embedded image) decoded to its
 /// content-type-derived extension under <c>images/</c>, plus <c>metadata.ini</c>
 /// carrying title/author/date from the <c>description</c>/<c>title-info</c> block.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/gribuser/fb2</c> — FictionBook 2.x XML schema — the canonical XSD set</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/FictionBook</c> — format overview</description></item>
+/// </list>
 /// </summary>
 public sealed class Fb2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Fb2";

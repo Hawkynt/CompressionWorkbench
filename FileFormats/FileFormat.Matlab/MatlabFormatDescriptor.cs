@@ -11,6 +11,12 @@ namespace FileFormat.Matlab;
 /// and walks top-level data elements (including zlib-wrapped miCOMPRESSED elements),
 /// surfacing each top-level array's name, class, and shape. Surfaces <c>FULL.mat</c>
 /// plus <c>metadata.ini</c>. Numeric data extraction is out of scope.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.mathworks.com/help/pdf_doc/matlab/matfile_format.pdf</c> — MathWorks "MAT-File Format" — official Level 5 specification</description></item>
+///   <item><description><c>https://github.com/scipy/scipy</c> — scipy.io.loadmat — maintained independent implementation</description></item>
+/// </list>
 /// </summary>
 public sealed class MatlabFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

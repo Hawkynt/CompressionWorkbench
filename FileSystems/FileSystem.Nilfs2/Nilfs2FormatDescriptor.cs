@@ -27,6 +27,14 @@ namespace FileSystem.Nilfs2;
 /// Subdirectories and files larger than a direct block map stay in the
 /// writer-private directory for the reader but are not materialised in the
 /// mountable tree; snapshots / multi-checkpoint chains remain out of scope.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://nilfs.sourceforge.io/</c> — NILFS project home</description></item>
+///   <item><description><c>https://www.kernel.org/doc/html/latest/filesystems/nilfs2.html</c> — kernel documentation</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/blob/master/include/uapi/linux/nilfs2_ondisk.h</c> — canonical on-disk structures</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/NILFS</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class Nilfs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable {

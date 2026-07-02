@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Wrapster;
 
+/// <summary>
+/// Wrapster container — arbitrary files disguised as an MP3 (v1/v2/v3) for Napster-era sharing.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Wrapster (ca. 2000) — the defining Napster-era tool; no formal spec ever published</description></item>
+///   <item><description>layout reverse-engineered from the tool's output (fake MP3 framing + embedded file table)</description></item>
+/// </list>
+/// </summary>
 public sealed class WrapsterFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the Wrapster archive in listing order.</summary>

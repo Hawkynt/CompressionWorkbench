@@ -4,6 +4,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Hfs;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description>"Inside Macintosh: Files" (Apple Computer, 1992), chapter "Data Organization on Volumes" — the canonical HFS on-disk specification (MDB, catalog/extents B*-trees)</description></item>
+///   <item><description><c>https://www.mars.org/home/rob/proj/hfs/</c> — hfsutils (Robert Leslie), the classic open-source HFS implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Hierarchical_File_System</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class HfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

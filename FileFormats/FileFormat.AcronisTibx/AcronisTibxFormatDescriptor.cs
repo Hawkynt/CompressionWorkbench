@@ -9,6 +9,13 @@ namespace FileFormat.AcronisTibx;
 ///   Stage-1 R/O metadata descriptor for Acronis True Image <c>.tibx</c> backups (the 2020+
 ///   modern container, distinct from the classic <c>.tib</c> stream-of-records format handled
 ///   by <see cref="T:FileFormat.Acronis.AcronisFormatDescriptor"/>).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.acronis.com</c> — vendor — the .tibx container is proprietary and unpublished</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Acronis_True_Image</c> — product background (classic .tib vs 2020+ .tibx)</description></item>
+///   <item><description>On-disk layout (ARCH page-zero magic, LSM page store) recovered by community reverse engineering; no public specification exists</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 ///   <para>

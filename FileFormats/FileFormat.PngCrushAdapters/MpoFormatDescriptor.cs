@@ -3,6 +3,15 @@ using Compression.Registry;
 
 namespace FileFormat.PngCrushAdapters;
 
+/// <summary>
+/// MPO stereoscopic/multi-picture JPEG container — concatenated JPEG images split by SOI..EOI marker pairs.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>CIPA DC-007 "Multi-Picture Format" — the defining standard (Camera and Imaging Products Association)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Multi_Picture_Object</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class MpoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   public string Id => "Mpo";
   public string DisplayName => "MPO (stereoscopic JPEG)";

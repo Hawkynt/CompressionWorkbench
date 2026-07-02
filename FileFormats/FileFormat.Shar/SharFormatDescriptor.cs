@@ -4,6 +4,15 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Shar;
 
+/// <summary>
+/// Shell archive (shar) — self-extracting Unix shell script carrying files as here-documents.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.gnu.org/software/sharutils/</c> — GNU sharutils — shar/unshar reference implementation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Shar</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class SharFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the SHAR archive in listing order.</summary>

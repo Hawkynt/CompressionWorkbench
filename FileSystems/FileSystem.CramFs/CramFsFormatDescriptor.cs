@@ -4,6 +4,14 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.CramFs;
 
+/// <summary>
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://docs.kernel.org/filesystems/cramfs.html</c> — Linux kernel cramfs documentation</description></item>
+///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/cramfs</c> — mainline implementation (its README documents the on-disk layout)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Cramfs</c> — Wikipedia overview</description></item>
+/// </list>
+/// </summary>
 public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   public string Id => "CramFs";
   public string DisplayName => "CramFS";

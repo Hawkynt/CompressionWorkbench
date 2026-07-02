@@ -12,6 +12,12 @@ namespace FileFormat.Arsc;
 /// <c>RES_TABLE_PACKAGE_TYPE</c> chunk, and surfaces a <c>FULL.arsc</c> passthrough plus a
 /// <c>metadata.ini</c> summary (package count, package id/name list, total type-chunk count,
 /// global string count). All multi-byte integers are little-endian.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://android.googlesource.com/platform/frameworks/base/</c> — AOSP frameworks/base — <c>libs/androidfw/include/androidfw/ResourceTypes.h</c> defines the RES_TABLE chunk structs</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Apk_(file_format)</c> — background (resources.arsc inside APKs)</description></item>
+/// </list>
 /// </summary>
 public sealed class ArscFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

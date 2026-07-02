@@ -12,6 +12,12 @@ namespace FileFormat.ExePackers;
 /// range-coding-based context-mixing exe compressor used by virtually every
 /// modern 4K and 64K Amiga demoscene production. The compressor emits a
 /// distinctive header containing a magic identifier and the original size.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/askeksa/Shrinkler</c> — canonical Shrinkler source (Aske Simon Christensen / Blueberry)</description></item>
+///   <item><description>Amiga hunk-file structure — AmigaDOS Manual (Bantam, 3rd ed.) documents the HUNK container Shrinkler emits</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>

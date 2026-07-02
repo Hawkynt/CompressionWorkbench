@@ -10,6 +10,13 @@ namespace FileFormat.AppleSingle;
 /// Pseudo-archive descriptor for AppleSingle (RFC 1740) container files. Each
 /// entry id (data fork, resource fork, Finder info, dates, real name, …) is
 /// surfaced as a separate archive entry plus a metadata.ini summary.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.rfc-editor.org/rfc/rfc1740</c> — RFC 1740 — carries the AppleSingle/AppleDouble format description as an appendix</description></item>
+///   <item><description>Apple "AppleSingle/AppleDouble Formats for Foreign Files Developer's Note" (1990) — the defining vendor document</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/AppleSingle_and_AppleDouble_formats</c> — format overview</description></item>
+/// </list>
 /// </summary>
 public sealed class AppleSingleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 

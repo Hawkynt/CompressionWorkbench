@@ -9,6 +9,12 @@ namespace FileFormat.Akb;
 /// <summary>
 /// Square Enix AKB audio bank descriptor — surfaces per-entry raw audio payloads plus a synthetic
 /// <c>metadata.ini</c> entry containing bank-wide header fields (sample rate, channel mode, loop points).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/vgmstream/vgmstream</c> — vgmstream — implements AKB parsing; the de-facto reference</description></item>
+///   <item><description>Square Enix never published the AKB layout; header fields were recovered by the VGM ripping community</description></item>
+/// </list>
 /// </summary>
 public sealed class AkbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 

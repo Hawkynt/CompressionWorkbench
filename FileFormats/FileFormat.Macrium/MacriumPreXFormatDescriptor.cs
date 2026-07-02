@@ -39,6 +39,12 @@ namespace FileFormat.Macrium;
 /// inner partition image. The AES-128/192/256 catalog decryptor used by
 /// password-protected backups. Both are tracked as future phases.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.macrium.com</c> — vendor site — the on-disk image format itself is proprietary and undocumented</description></item>
+///   <item><description>No public specification — header layout reverse-engineered from v6-v8 images</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>

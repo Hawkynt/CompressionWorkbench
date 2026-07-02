@@ -15,6 +15,12 @@ namespace FileSystem.Ods1;
 /// contiguous BITMAP run, Remove zeros the header slot + frees its BITMAP
 /// bits + zero-fills its data extent; both recompute the home-block additive
 /// checksums). Self-round-trip gated; no Linux fsck for ODS-1 exists.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>DEC "Files-11 On-Disk Structure Specification" — the canonical ODS-1/ODS-2 spec (archived at Bitsavers)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Files-11</c> — Wikipedia article</description></item>
+/// </list>
 /// </summary>
 public sealed class Ods1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable {
 
