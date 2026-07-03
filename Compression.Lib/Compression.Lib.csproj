@@ -150,6 +150,7 @@
     <ProjectReference Include="..\FileSystems\FileSystem.Sfs\FileSystem.Sfs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.BinCue\FileFormat.BinCue.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.BinHex\FileFormat.BinHex.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.BitRock\FileFormat.BitRock.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.BriefLz\FileFormat.BriefLz.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Brotli\FileFormat.Brotli.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Bsc\FileFormat.Bsc.csproj" />

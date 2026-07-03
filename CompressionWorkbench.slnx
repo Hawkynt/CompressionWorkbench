@@ -71,6 +71,7 @@
     <Project Path="FileSystems/FileSystem.Sfs/FileSystem.Sfs.csproj" />
     <Project Path="FileFormats/FileFormat.BinCue/FileFormat.BinCue.csproj" />
     <Project Path="FileFormats/FileFormat.BinHex/FileFormat.BinHex.csproj" />
+    <Project Path="FileFormats/FileFormat.BitRock/FileFormat.BitRock.csproj" />
     <Project Path="FileFormats/FileFormat.BriefLz/FileFormat.BriefLz.csproj" />
     <Project Path="FileFormats/FileFormat.Brotli/FileFormat.Brotli.csproj" />
     <Project Path="FileFormats/FileFormat.Bsc/FileFormat.Bsc.csproj" />

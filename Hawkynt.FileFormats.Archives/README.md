@@ -17,8 +17,9 @@ archive container in pure managed code, with no native runtime dependency on
 
 - You're writing a tool that needs to **enumerate / extract / write archives** in a wide range
   of formats from a single .NET process
-- You want to **inspect installer payloads** (.msi / .nsis / Inno Setup / .appimage / .snap /
-  .deb / .rpm / .apk / .ipa / .nupkg / .crx / .xpi / etc.) without running the installer
+- You want to **inspect installer payloads** (.msi / .nsis / Inno Setup / BitRock-InstallBuilder /
+  PyInstaller / .appimage / .snap / .deb / .rpm / .apk / .ipa / .nupkg / .crx / .xpi / etc.)
+  without running the installer
 - You're processing **compression streams** without container framing — gzip / bzip2 / xz / zstd /
   lz4 / snappy / brotli / lzma / lzop and the long historical tail (`compress` / `pack` / `arc` /
   `lzh` / `quicklz` / `lzfse` / etc.)
@@ -181,6 +182,7 @@ State legend:
 | `FileFormat.ApkNativeLibs`   | R     | APK native libraries              |
 | `FileFormat.AppImage`        | WORM  | AppImage                          |
 | `FileFormat.Appx`            | WORM  | APPX                              |
+| `FileFormat.BitRock`         | R     | BitRock / InstallBuilder          |
 | `FileFormat.Crate`           | WORM  | Rust Crate                        |
 | `FileFormat.Crx`             | WORM  | CRX (Chrome extension)            |
 | `FileFormat.Deb`             | WORM  | DEB                               |
@@ -193,6 +195,7 @@ State legend:
 | `FileFormat.Msix`            | WORM  | MSIX                              |
 | `FileFormat.Nsis`            | WORM  | NSIS                              |
 | `FileFormat.NuPkg`           | WORM  | NuPkg                             |
+| `FileFormat.PyInstaller`     | R     | PyInstaller onefile               |
 | `FileFormat.Rpm`             | WORM  | RPM                               |
 | `FileFormat.Snap`            | R     | Snap package                      |
 | `FileFormat.War`             | WORM  | WAR                               |

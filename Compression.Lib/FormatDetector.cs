@@ -278,6 +278,11 @@ public static partial class FormatDetector {
         // PyInstaller "onefile" build: the CArchive MEI cookie sits near EOF,
         // after the PE image (and before any appended Authenticode signature).
         if (ContainsBytes(tailSpan, PyInstallerCookie)) return Format.PyInstaller;
+        // BitRock/InstallBuilder: end magic, or compressor id + mk4vfs schema.
+        if (ContainsBytes(tailSpan, "mFC3acAOJrQinu5a"u8)
+            || (ContainsBytes(tailSpan, "bitrock-lzma"u8)
+                && ContainsBytes(tailSpan, "dirs[name:S,parent:I"u8)))
+          return Format.BitRock;
       }
 
       // Beyond the installer-marker scan, a non-PE file is not an installer.
