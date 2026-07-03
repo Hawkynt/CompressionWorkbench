@@ -411,6 +411,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.PackBits\FileFormat.PackBits.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.PackDisk\FileFormat.PackDisk.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.PackIt\FileFormat.PackIt.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Pack200\FileFormat.Pack200.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Pak\FileFormat.Pak.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Paq8\FileFormat.Paq8.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Parquet\FileFormat.Parquet.csproj" />

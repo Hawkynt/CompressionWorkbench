@@ -394,6 +394,7 @@
     <Project Path="FileFormats/FileFormat.PackBits/FileFormat.PackBits.csproj" />
     <Project Path="FileFormats/FileFormat.PackDisk/FileFormat.PackDisk.csproj" />
     <Project Path="FileFormats/FileFormat.PackIt/FileFormat.PackIt.csproj" />
+    <Project Path="FileFormats/FileFormat.Pack200/FileFormat.Pack200.csproj" />
     <Project Path="FileFormats/FileFormat.Pak/FileFormat.Pak.csproj" />
     <Project Path="FileFormats/FileFormat.Paq8/FileFormat.Paq8.csproj" />
     <Project Path="FileFormats/FileFormat.Paragon/FileFormat.Paragon.csproj" />
