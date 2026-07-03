@@ -422,6 +422,7 @@
     <Project Path="FileFormats/FileFormat.Psb/FileFormat.Psb.csproj" />
     <Project Path="FileFormats/FileFormat.Psd/FileFormat.Psd.csproj" />
     <Project Path="FileFormats/FileFormat.Pst/FileFormat.Pst.csproj" />
+    <Project Path="FileFormats/FileFormat.PyInstaller/FileFormat.PyInstaller.csproj" />
     <Project Path="FileFormats/FileFormat.Qcow2/FileFormat.Qcow2.csproj" />
     <Project Path="FileFormats/FileFormat.QuickLz/FileFormat.QuickLz.csproj" />
     <Project Path="FileFormats/FileFormat.Rar/FileFormat.Rar.csproj" />

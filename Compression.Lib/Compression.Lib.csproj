@@ -426,6 +426,7 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Psf\FileFormat.Psf.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Psd\FileFormat.Psd.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Pst\FileFormat.Pst.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.PyInstaller\FileFormat.PyInstaller.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Qcow2\FileFormat.Qcow2.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.QuickLz\FileFormat.QuickLz.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Rar\FileFormat.Rar.csproj" />

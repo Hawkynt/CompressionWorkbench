@@ -275,6 +275,9 @@ public static partial class FormatDetector {
         var tailSpan = tail.AsSpan(0, bytesRead);
         if (ContainsBytes(tailSpan, "NullsoftInst"u8)) return Format.Nsis;
         if (ContainsBytes(tailSpan, "Inno Setup"u8)) return Format.InnoSetup;
+        // PyInstaller "onefile" build: the CArchive MEI cookie sits near EOF,
+        // after the PE image (and before any appended Authenticode signature).
+        if (ContainsBytes(tailSpan, PyInstallerCookie)) return Format.PyInstaller;
       }
 
       // Beyond the installer-marker scan, a non-PE file is not an installer.
@@ -305,6 +308,10 @@ public static partial class FormatDetector {
 
   private static bool ContainsBytes(ReadOnlySpan<byte> haystack, ReadOnlySpan<byte> needle)
     => haystack.IndexOf(needle) >= 0;
+
+  /// <summary>The 8-byte PyInstaller CArchive magic cookie (MEI + version bytes).</summary>
+  private static readonly byte[] PyInstallerCookie =
+    [(byte)'M', (byte)'E', (byte)'I', 0x0C, 0x0B, 0x0A, 0x0B, 0x0E];
 
   // ── Magic byte detection ─────────────────────────────────────────
   // Most signatures come from the registry. A few formats need special
