@@ -14,10 +14,15 @@ public class SfxBuilderTests {
     _tempDir = Path.Combine(Path.GetTempPath(), $"sfx_test_{Guid.NewGuid():N}");
     Directory.CreateDirectory(_tempDir);
     // Create a fake stub (any bytes — the real stub is an exe, but for testing the
-    // SFX layout we just need some bytes at the front)
+    // SFX layout we just need some bytes at the front). The fill must be
+    // DETERMINISTIC: Extract_OffsetPointsIntoStub_FailsGracefully points the
+    // archive offset at these bytes and requires them to stay undetectable as
+    // any archive format. An unseeded random fill made that probabilistic — a
+    // rare draw matches some weak magic, extracts "successfully", and fails the
+    // test flakily (seen once on Windows CI). Fixed seed = reproducible bytes.
     _stubPath = Path.Combine(_tempDir, "stub.exe");
     var stubData = new byte[1024];
-    Random.Shared.NextBytes(stubData);
+    new Random(0x5F3C0DE).NextBytes(stubData);
     File.WriteAllBytes(_stubPath, stubData);
   }
 
