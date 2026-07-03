@@ -50,6 +50,7 @@
     <Project Path="FileFormats/FileFormat.Ar/FileFormat.Ar.csproj" />
     <Project Path="FileFormats/FileFormat.Arc/FileFormat.Arc.csproj" />
     <Project Path="FileFormats/FileFormat.Arsc/FileFormat.Arsc.csproj" />
+    <Project Path="FileFormats/FileFormat.Asar/FileFormat.Asar.csproj" />
     <Project Path="FileSystems/FileSystem.Atari8/FileSystem.Atari8.csproj" />
     <Project Path="FileFormats/FileFormat.Arj/FileFormat.Arj.csproj" />
     <Project Path="FileFormats/FileFormat.Arrow/FileFormat.Arrow.csproj" />
@@ -456,6 +457,7 @@
     <Project Path="FileFormats/FileFormat.Sqlite/FileFormat.Sqlite.csproj" />
     <Project Path="FileFormats/FileFormat.Sqx/FileFormat.Sqx.csproj" />
     <Project Path="FileFormats/FileFormat.Squeeze/FileFormat.Squeeze.csproj" />
+    <Project Path="FileFormats/FileFormat.Srec/FileFormat.Srec.csproj" />
     <Project Path="FileFormats/FileFormat.StuffIt/FileFormat.StuffIt.csproj" />
     <Project Path="FileFormats/FileFormat.StuffItX/FileFormat.StuffItX.csproj" />
     <Project Path="FileFormats/FileFormat.Swf/FileFormat.Swf.csproj" />

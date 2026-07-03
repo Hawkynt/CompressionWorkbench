@@ -27,10 +27,10 @@ Measured on the full grid (8 representative sources x all creatable targets):
 | Bucket | Failing targets | Failing pairs |
 |---|---:|---:|
 | self-rejecting reader | 1 | 8 |
-| single-payload/whole-image target | 22 | 168 |
+| single-payload/whole-image target | 23 | 176 |
 | name/charset/size constraint | 11 | 88 |
 | other | 30 | 241 |
-| **Total** | **64** (+1 pair-specific) | **505** |
+| **Total** | **65** (+1 pair-specific) | **513** |
 
 > Fixed and flipped to enforced-pass: `Svx8` (descriptor class renamed so the
 > source-generated Format enum Id matches its registry Id), `Crate`, `FreeArc`,
@@ -73,6 +73,7 @@ The target collapses an arbitrary file tree into a single stream or whole-image 
 | `Rpm` | RPM package; payload collapses into one payload.cpio member |
 | `Sparseimage` | Apple sparse disk image; one disk.img blob |
 | `SplitFile` | byte-splitter; rejoins to a single 'joined' member, not a tree |
+| `Srec` | Motorola S-record firmware pseudo-archive; writer re-encodes one flat image and re-lists as metadata.ini+firmware.bin, not a file tree |
 | `StuffItX` | writer emits an image that re-lists as 0 files |
 | `SysV` | System V FS image writer emits a whole-image (FULL.htfs) not a tree |
 | `Umx` | Unreal package; writer emits a blob that re-lists as 0 files |
