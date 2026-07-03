@@ -1,15 +1,17 @@
 #pragma warning disable CS1591
+using System.Reflection;
 using Compression.Registry;
 
 namespace Compression.Tests.Sar;
 
 /// <summary>
-/// Locks NScripter SAR as create-only at the modify boundary. The 6-byte
-/// header carries a `uint32 BE data_offset` pointing past the variable-length
-/// index; appending an index entry shifts data_offset and every byte after
-/// it, so pre-existing entry bytes cannot stay at their original on-disk
-/// offsets. SAR advertises CanCreate (stored only) and must not advertise
-/// CanModify.
+/// Locks the modify contract of NScripter SAR. The 6-byte header carries a
+/// `uint32 BE data_offset` pointing past the variable-length index; appending an
+/// index entry shifts data_offset and every byte after it, so a genuine in-place
+/// edit is impossible by header design. The R/W claim is therefore served
+/// exclusively by the verified extract → edit → re-create rebuild (the default
+/// <see cref="IArchiveModifiable"/>), which is honest R/W under the
+/// relayout-allowed policy (see <c>WriteCapabilityHonestyTests</c>).
 /// </summary>
 [TestFixture]
 public class SarWormContractTests {
@@ -22,15 +24,23 @@ public class SarWormContractTests {
   }
 
   [Test, Category("Contract")]
-  public void Descriptor_DoesNotImplementIArchiveModifiable() {
+  public void Descriptor_Backs_CanModify_With_IArchiveModifiable() {
     var desc = new FileFormat.Sar.SarFormatDescriptor();
-    Assert.That(desc, Is.Not.InstanceOf<IArchiveModifiable>());
+    Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
+      "SAR.Capabilities must include CanModify — the rebuild-backed modify path is honest R/W");
+    Assert.That(desc, Is.InstanceOf<IArchiveModifiable>());
   }
 
   [Test, Category("Contract")]
-  public void Descriptor_DoesNotAdvertiseCanModify() {
-    var desc = new FileFormat.Sar.SarFormatDescriptor();
-    Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+  public void Descriptor_DoesNot_Claim_InPlace_Modify() {
+    // data_offset shifts on every index change, so an in-place editor cannot
+    // exist without rewriting the whole data area; the default verified rebuild
+    // must not be overridden by a pretend-in-place path.
+    var t = typeof(FileFormat.Sar.SarFormatDescriptor);
+    Assert.That(t.GetMethod("Add", BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+      [typeof(Stream), typeof(IReadOnlyList<ArchiveInputInfo>)]), Is.Null);
+    Assert.That(t.GetMethod("Remove", BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+      [typeof(Stream), typeof(string[])]), Is.Null);
   }
 
   [Test, Category("Contract")]

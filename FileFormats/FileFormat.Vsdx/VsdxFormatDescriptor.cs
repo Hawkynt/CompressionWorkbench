@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Vsdx;
 
-public sealed class VsdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class VsdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
@@ -30,11 +30,48 @@ public sealed class VsdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       });
   }
 
+  /// <summary>
+  /// Adds (or replaces by name) parts inside an existing VSDX package. Routes to
+  /// <see cref="FileFormat.Zip.ZipModifier"/> for true random-access I/O — only
+  /// the central directory, EOCD, and the appended part's local file header +
+  /// compressed data are read or written; pre-existing entries stay byte-identical.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      FileFormat.Zip.ZipModifier.RemoveFile(archive, name, wipeData: true);
+      FileFormat.Zip.ZipModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>Removes named parts; uses <see cref="FileFormat.Zip.ZipModifier"/>.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames)
+      FileFormat.Zip.ZipModifier.RemoveFile(archive, name, wipeData: true);
+  }
+
+  /// <summary>
+  /// Zeros every dead byte in the package: gaps between entries not covered by a
+  /// live extent in the ZIP layout map. Local headers, entry data, the central
+  /// directory and EOCD are live and preserved. Cluster-tip wiping is N/A (ZIP
+  /// packs entries back to back with no per-file slack).
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = FileFormat.Zip.ZipLayoutMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
+  }
+
   public string Id => "Vsdx";
   public string DisplayName => "Visio Drawing";
   public FormatCategory Category => FormatCategory.Archive;
+  // R/W: a mutable OPC document. Add/Replace/Remove are genuine in-place ZIP edits
+  // (ZipModifier); the package is not signature-sealed. See FormatCapabilities.cs
+  // (WORM vs R/W).
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".vsdx";

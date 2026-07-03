@@ -16,7 +16,7 @@ namespace FileFormat.Msix;
 /// and capability declarations parsed from the manifest, followed by every
 /// ZIP entry verbatim.
 /// </summary>
-public sealed class MsixFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class MsixFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
@@ -43,6 +43,48 @@ public sealed class MsixFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
 
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing MSIX package. Routes to
+  /// <see cref="ZipModifier"/> for true random-access I/O — only the central
+  /// directory, EOCD, and the appended file's local file header + compressed data
+  /// are read or written; pre-existing entries stay byte-identical. The synthetic
+  /// <c>metadata.ini</c> listing entry is a derived view and is skipped. Note that
+  /// editing a signed package invalidates its <c>AppxSignature.p7x</c>; re-signing
+  /// is out of scope.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    foreach (var (name, data) in FilesOnly(inputs)) {
+      if (string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      ZipModifier.RemoveFile(archive, name, wipeData: true);
+      ZipModifier.AddFile(archive, name, data);
+    }
+  }
+
+  /// <summary>
+  /// Removes named entries via <see cref="ZipModifier"/>. The synthetic
+  /// <c>metadata.ini</c> listing entry is a derived view and is skipped.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    foreach (var name in entryNames) {
+      if (string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
+      ZipModifier.RemoveFile(archive, name, wipeData: true);
+    }
+  }
+
+  /// <summary>
+  /// Zeros every dead byte in the package: gaps between entries not covered by a
+  /// live extent in the ZIP layout map. Local headers, entry data, the central
+  /// directory and EOCD are live and preserved. Cluster-tip wiping is N/A (ZIP
+  /// packs entries back to back with no per-file slack).
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = ZipLayoutMap.Enumerate(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
+  }
+
   /// <summary>Unique format identifier.</summary>
   public string Id => "Msix";
 
@@ -52,9 +94,14 @@ public sealed class MsixFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>This format describes an archive container.</summary>
   public FormatCategory Category => FormatCategory.Archive;
 
-  /// <summary>Capabilities supported by this descriptor.</summary>
+  /// <summary>
+  /// Capabilities supported by this descriptor. R/W: a mutable ZIP-based package —
+  /// Add/Replace/Remove are genuine in-place ZIP edits (<see cref="ZipModifier"/>),
+  /// matching the sibling APPX/APK descriptors. See FormatCapabilities.cs (WORM vs R/W).
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
 

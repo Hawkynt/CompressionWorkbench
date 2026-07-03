@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Tnef;
 
-public sealed class TnefFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+public sealed class TnefFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the TNEF archive in listing order.</summary>
   public void Defragment(Stream archive)
@@ -29,8 +29,12 @@ public sealed class TnefFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string Id => "Tnef";
   public string DisplayName => "MS-TNEF (winmail.dat)";
   public FormatCategory Category => FormatCategory.Archive;
+  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
+  // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
+  // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".dat";
   public IReadOnlyList<string> Extensions => [".dat", ".tnef"];

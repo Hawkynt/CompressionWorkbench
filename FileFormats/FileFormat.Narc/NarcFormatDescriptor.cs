@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Narc;
 
-public sealed class NarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class NarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
@@ -19,8 +19,12 @@ public sealed class NarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string Id => "Narc";
   public string DisplayName => "Nintendo NARC";
   public FormatCategory Category => FormatCategory.Archive;
+  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
+  // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
+  // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".narc";
   // .carc is a common variant — same NITRO/BTAF/BTNF/GMIF layout, different extension convention in some games.

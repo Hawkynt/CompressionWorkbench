@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Vpp;
 
-public sealed class VppFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class VppFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the VPP archive in listing order.</summary>
   public void Defragment(Stream archive)
@@ -40,8 +40,12 @@ public sealed class VppFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Id => "Vpp";
   public string DisplayName => "Volition Package (RF1)";
   public FormatCategory Category => FormatCategory.Archive;
+  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
+  // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
+  // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".vpp";
   public IReadOnlyList<string> Extensions => [".vpp"];

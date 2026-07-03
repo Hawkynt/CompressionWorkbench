@@ -5,7 +5,49 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Rgss;
 
-public sealed class RgssFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class RgssFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing RGSS archive via the
+  /// verified extract -> edit -> re-create rebuild. The synthetic
+  /// <c>metadata.ini</c> listing entry (a derived view of the header) is dropped
+  /// from the extracted tree before re-creation so it is not duplicated as a
+  /// real entry.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      DropSyntheticMetadata(tmpDir);
+      foreach (var input in inputs) {
+        if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName)) continue;
+        var dest = Path.Combine(tmpDir, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
+        var destDir = Path.GetDirectoryName(dest);
+        if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
+        File.WriteAllBytes(dest, input.ReadContent());
+      }
+    });
+  }
+
+  /// <summary>
+  /// Removes the named entries via the verified extract -> edit -> re-create
+  /// rebuild, dropping the synthetic <c>metadata.ini</c> the same way
+  /// <see cref="Add"/> does.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    var skip = new HashSet<string>(entryNames ?? [], StringComparer.OrdinalIgnoreCase);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      DropSyntheticMetadata(tmpDir);
+      foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
+        var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
+        if (skip.Contains(rel) || skip.Contains(Path.GetFileName(rel)))
+          File.Delete(file);
+      }
+    });
+  }
+
+  private static void DropSyntheticMetadata(string tmpDir) {
+    var meta = Path.Combine(tmpDir, "metadata.ini");
+    if (File.Exists(meta)) File.Delete(meta);
+  }
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the RGSS archive in listing order.</summary>
   public void Defragment(Stream archive)
@@ -47,8 +89,13 @@ public sealed class RgssFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string Id => "Rgss";
   public string DisplayName => "RPG Maker RGSSAD";
   public FormatCategory Category => FormatCategory.Archive;
+  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
+  // edit -> re-create rebuild (with the synthetic metadata.ini view filtered);
+  // relayouting the container on edit is honest R/W. See FormatCapabilities.cs
+  // (WORM vs R/W).
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".rgssad";
   public IReadOnlyList<string> Extensions => [".rgssad", ".rgss2a", ".rgss3a"];

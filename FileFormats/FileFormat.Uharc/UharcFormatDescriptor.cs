@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Uharc;
 
-public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the UHARC archive in listing order.</summary>
   public void Defragment(Stream archive)
@@ -51,8 +51,12 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public string Id => "Uharc";
   public string DisplayName => "UHARC";
   public FormatCategory Category => FormatCategory.Archive;
+  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
+  // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
+  // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".uha";
   public IReadOnlyList<string> Extensions => [".uha"];
@@ -82,5 +86,19 @@ public sealed class UharcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     using var w = new UharcWriter(output, leaveOpen: true);
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
       w.AddFile(name, data, DateTime.Now);
+  }
+
+  /// <summary>
+  /// Zeros every dead byte in the archive: any byte not covered by a live extent
+  /// in the layout map (headers, entry data and directory structures are live and
+  /// preserved, so the archive still lists and extracts identically). Cluster-tip
+  /// wiping is N/A (entries are stored byte-exact with no per-file slack).
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = this.EnumerateLayout(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 }

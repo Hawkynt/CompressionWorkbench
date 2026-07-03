@@ -4,7 +4,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Nsa;
 
-public sealed class NsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class NsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
@@ -19,8 +19,12 @@ public sealed class NsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Id => "Nsa";
   public string DisplayName => "NSA";
   public FormatCategory Category => FormatCategory.Archive;
+  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
+  // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
+  // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".nsa";
   public IReadOnlyList<string> Extensions => [".nsa"];
@@ -31,14 +35,13 @@ public sealed class NsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "NScripter NSA archive. Read-only by header design: the 6-byte header " +
-    "carries `uint32 BE data_offset` pointing to where the data area starts; " +
-    "the variable-length index between the header and the data area must grow " +
-    "whenever an entry is added, which shifts data_offset and every byte after " +
-    "it — pre-existing entry bytes do not stay at their original on-disk " +
-    "offsets. NSA therefore advertises CanCreate (stored mode only — the LZSS " +
-    "and NBZ decoders have no paired encoders) but does not implement " +
-    "IArchiveModifiable; use Create() to rebuild instead.";
+    "NScripter NSA archive. In-place edits are impossible by header design: the " +
+    "6-byte header carries `uint32 BE data_offset` pointing to where the data " +
+    "area starts; the variable-length index between the header and the data " +
+    "area must grow whenever an entry is added, which shifts data_offset and " +
+    "every byte after it. Modify is therefore served by the verified extract -> " +
+    "edit -> re-create rebuild (stored mode only — the LZSS and NBZ decoders " +
+    "have no paired encoders), relayouting the container on every edit.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new NsaReader(stream, leaveOpen: true);

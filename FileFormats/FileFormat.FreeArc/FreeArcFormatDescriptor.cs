@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.FreeArc;
 
 /// <summary>Format descriptor for FreeArc compressed archives (.arc).</summary>
-public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the FreeArc archive in listing order.</summary>
   public void Defragment(Stream archive)
@@ -45,8 +45,12 @@ public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public FormatCategory Category => FormatCategory.Archive;
 
   /// <inheritdoc/>
+  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
+  // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
+  // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
   /// <inheritdoc/>

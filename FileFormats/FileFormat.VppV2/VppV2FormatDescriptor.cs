@@ -15,7 +15,7 @@ namespace FileFormat.VppV2;
 /// descriptor for older archives. Saint's Row 2 ships <c>.vpp_pc</c>, which differs from v1's
 /// <c>.vpp</c>, so extension-based detection routes correctly without ambiguity.
 /// </remarks>
-public sealed class VppV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class VppV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the VPP v2 archive in listing order.</summary>
   public void Defragment(Stream archive)
@@ -51,8 +51,12 @@ public sealed class VppV2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public string Id => "VppV2";
   public string DisplayName => "Volition VPP v2 (Saint's Row 2)";
   public FormatCategory Category => FormatCategory.Archive;
+  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
+  // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
+  // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".vpp_pc";
   public IReadOnlyList<string> Extensions => [".vpp_pc"];

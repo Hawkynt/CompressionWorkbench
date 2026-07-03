@@ -12,24 +12,24 @@ namespace Compression.Tests.Operations.ChecksumRecord;
 /// an in-place editor that would corrupt the checksum chain.
 /// <para>Formats locked R-only by this contract:</para>
 /// <list type="bullet">
-///   <item><b>Sqx</b> — per-entry MethodHash + archive trailer checksum.</item>
-///   <item><b>Wim</b> — SHA-1 per resource + integrity table.</item>
+///   <item><b>Wim</b> — SHA-1 per resource + integrity table; the listing is
+///   content-addressed (resource_N), so even a rebuild cannot round-trip names.</item>
 ///   <item><b>Swm</b> — same as WIM, split-volume variant.</item>
-///   <item><b>Ace</b> — per-record CRC32, HEAD block checksum spans subsequent metadata.</item>
 /// </list>
-/// <para>Note: <b>Rar</b> was promoted to R/W — its modify re-creates the archive via
-/// <c>RarWriter</c> (a full repack that recomputes every CRC), so the cross-referencing
-/// concern does not apply to the rebuild path. Adding an in-place (append-style) editor to
-/// any format above without a checksum-aware modifier will trip this contract.</para>
+/// <para>Note: <b>Rar</b>, <b>Sqx</b> and <b>Ace</b> were promoted to R/W — their modify
+/// re-creates the archive via the paired writer (a full repack that recomputes every
+/// CRC/hash), so the cross-referencing concern does not apply to the rebuild path; the
+/// round-trip is verified by <c>ArchiveModifyRoundTripTests</c>. Adding an in-place
+/// (append-style) editor to any of them without a checksum-aware modifier is still wrong —
+/// only the rebuild path is blessed. The formats below remain locked because their
+/// listings do not even name-round-trip.</para>
 /// </summary>
 [TestFixture]
 public class ChecksumRecordArchiveReadOnlyContractTests {
 
   private static IEnumerable<TestCaseData> ChecksumRecordDescriptors() {
-    yield return new TestCaseData(new FileFormat.Sqx.SqxFormatDescriptor()).SetName("Sqx");
     yield return new TestCaseData(new FileFormat.Wim.WimFormatDescriptor()).SetName("Wim");
     yield return new TestCaseData(new FileFormat.Swm.SwmFormatDescriptor()).SetName("Swm");
-    yield return new TestCaseData(new FileFormat.Ace.AceFormatDescriptor()).SetName("Ace");
   }
 
   [Test, Category("Contract"), TestCaseSource(nameof(ChecksumRecordDescriptors))]

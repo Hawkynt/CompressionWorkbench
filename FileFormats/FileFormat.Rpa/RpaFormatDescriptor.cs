@@ -5,7 +5,7 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Rpa;
 
-public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap, IArchiveCreatable {
+public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IWipeEmpty {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
@@ -33,8 +33,12 @@ public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string Id => "Rpa";
   public string DisplayName => "Ren'Py Archive";
   public FormatCategory Category => FormatCategory.Archive;
+  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
+  // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
+  // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".rpa";
   public IReadOnlyList<string> Extensions => [".rpa"];
@@ -162,5 +166,19 @@ public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (string.Equals(name, "metadata.ini", StringComparison.OrdinalIgnoreCase)) continue;
       w.AddEntry(name, data);
     }
+  }
+
+  /// <summary>
+  /// Zeros every dead byte in the archive: any byte not covered by a live extent
+  /// in the layout map (headers, entry data and directory structures are live and
+  /// preserved, so the archive still lists and extracts identically). Cluster-tip
+  /// wiping is N/A (entries are stored byte-exact with no per-file slack).
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    image.Position = 0;
+    var imageSize = image.Length;
+    var extents = this.EnumerateLayout(image);
+    return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 }

@@ -4,13 +4,17 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Mpq;
 
-public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the MPQ archive in listing order.</summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  /// <summary>Rebuild-based defrag: extracts then re-creates the MPQ archive per the requested mode.</summary>
+  /// <summary>
+  /// Rebuild-based defrag: extracts then re-creates the MPQ archive per the
+  /// requested mode. The auto-generated <c>(listfile)</c> is excluded from the
+  /// extracted set — the writer regenerates it and refuses it as an explicit input.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
@@ -18,6 +22,7 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         var list = new List<(string Name, byte[] Data)>();
         foreach (var e in r.Entries) {
           if (!e.Exists) continue;
+          if (string.Equals(e.FileName, "(listfile)", StringComparison.OrdinalIgnoreCase)) continue;
           try { list.Add((e.FileName, r.Extract(e))); } catch { /* skip unreadable */ }
         }
         return list;
@@ -48,11 +53,59 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Adds (or replaces by name) files inside an existing MPQ archive via the
+  /// verified extract -> edit -> re-create rebuild. The auto-generated
+  /// <c>(listfile)</c> is dropped from the extracted tree before re-creation
+  /// (the writer regenerates it and refuses it as an explicit input), so entry
+  /// names still round-trip without duplicating the listing.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      DropGeneratedListfile(tmpDir);
+      foreach (var input in inputs) {
+        if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName)) continue;
+        var dest = Path.Combine(tmpDir, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
+        var destDir = Path.GetDirectoryName(dest);
+        if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
+        File.WriteAllBytes(dest, input.ReadContent());
+      }
+    });
+  }
+
+  /// <summary>
+  /// Removes the named entries via the verified extract -> edit -> re-create
+  /// rebuild, dropping the auto-generated <c>(listfile)</c> the same way
+  /// <see cref="Add"/> does.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    var skip = new HashSet<string>(entryNames ?? [], StringComparer.OrdinalIgnoreCase);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      DropGeneratedListfile(tmpDir);
+      foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
+        var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
+        if (skip.Contains(rel) || skip.Contains(Path.GetFileName(rel)))
+          File.Delete(file);
+      }
+    });
+  }
+
+  private static void DropGeneratedListfile(string tmpDir) {
+    foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories))
+      if (Path.GetFileName(file).Equals("(listfile)", StringComparison.OrdinalIgnoreCase))
+        File.Delete(file);
+  }
+
   public string Id => "Mpq";
   public string DisplayName => "MPQ";
   public FormatCategory Category => FormatCategory.Archive;
+  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
+  // edit -> re-create rebuild (with the auto-generated "(listfile)" filtered);
+  // relayouting the container on edit is honest R/W. See FormatCapabilities.cs
+  // (WORM vs R/W).
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".mpq";
   public IReadOnlyList<string> Extensions => [".mpq"];
