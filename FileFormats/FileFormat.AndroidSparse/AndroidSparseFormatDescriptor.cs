@@ -20,6 +20,12 @@ namespace FileFormat.AndroidSparse;
 /// <see cref="Create"/> packs a raw image back into a sparse container, emitting
 /// DONT_CARE for zero block-runs and RAW for everything else. Malformed input
 /// degrades gracefully without throwing.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://android.googlesource.com/platform/system/core/+/refs/heads/main/libsparse/</c> — AOSP libsparse, the reference implementation (img2simg/simg2img)</description></item>
+///   <item><description><c>sparse_format.h</c> in that directory — the defining header for the 28-byte file header and chunk records</description></item>
+/// </list>
 /// </summary>
 public sealed class AndroidSparseFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   public string Id => "AndroidSparse";

@@ -9,6 +9,12 @@ namespace FileFormat.Wheel;
 /// <summary>
 /// Descriptor for a Python <b>wheel</b> distribution (<c>.whl</c>) — a ZIP archive
 /// that obeys the on-disk layout mandated by PEP 427.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://peps.python.org/pep-0427/</c> — PEP 427, the original wheel binary-package specification</description></item>
+///   <item><description><c>https://packaging.python.org/en/latest/specifications/binary-distribution-format/</c> — the living binary-distribution (wheel) format spec that superseded the PEP text</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>
@@ -25,9 +31,6 @@ namespace FileFormat.Wheel;
 /// <c>*.dist-info/METADATA</c> file inside the ZIP. The descriptor adds a parsed
 /// <c>metadata.ini</c> entry at the root summarising the most-used METADATA and
 /// WHEEL fields. The underlying ZIP is read via <see cref="ZipReader"/>.
-/// </para>
-/// <para>
-/// Reference: <see href="https://peps.python.org/pep-0427/"/>.
 /// </para>
 /// </remarks>
 public sealed class WheelFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {

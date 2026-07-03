@@ -16,10 +16,14 @@ namespace FileFormat.Dicom;
 /// Detection: DICM preamble at offset 128 plus presence of tag (0004,1220)
 /// DirectoryRecordSequence. Filename on media is usually "DICOMDIR" with no
 /// extension, occasionally <c>.dcmdir</c>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://dicom.nema.org/medical/dicom/current/output/chtml/part10/chapter_8.html</c> — DICOM PS3.10 chapter 8, "Media Storage Directory" (the defining spec)</description></item>
+///   <item><description><c>https://www.dicomstandard.org/</c> — the DICOM standard home (NEMA/MITA)</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/DICOM</c> — format overview</description></item>
+/// </list>
 /// </summary>
-/// <remarks>
-/// Reference: https://dicom.nema.org/medical/dicom/current/output/chtml/part10/chapter_8.html
-/// </remarks>
 public sealed class DicomDirFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   /// <summary>Format identifier.</summary>
   public string Id => "DicomDir";

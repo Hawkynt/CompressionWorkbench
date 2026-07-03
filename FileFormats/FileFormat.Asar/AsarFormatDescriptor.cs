@@ -8,6 +8,12 @@ namespace FileFormat.Asar;
 /// Descriptor for Electron <c>.asar</c> archives — the concatenated-blob format
 /// Electron apps use to bundle their sources. Backed by a Chromium
 /// <c>Pickle</c>-wrapped JSON directory tree; supports List / Extract / Create.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/electron/asar</c> — canonical tool and format description (README documents the Pickle header + JSON index + concatenated files layout)</description></item>
+///   <item><description>Chromium <c>base/pickle.h</c> — the Pickle serialization the size/header prelude uses</description></item>
+/// </list>
 /// </summary>
 public sealed class AsarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 

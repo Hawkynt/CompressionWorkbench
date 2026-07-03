@@ -71,6 +71,13 @@ namespace FileFormat.Macrium;
 /// community-RE <c>"MR_BACKUP"</c> or <c>"MACX"</c> tag at offset 0 are still
 /// surfaced by the reader, but those tags are not authoritative magic.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/macrium/mrimgx_file_layout</c> — MIT-licensed vendor spec for the Reflect X (.mrimgx/.mrbakx) container</description></item>
+///   <item><description><c>https://www.macrium.com</c> — Paramount Software UK, the format vendor (Reflect knowledge base)</description></item>
+///   <item><description>ccooper21's community reverse-engineering of legacy <c>.mrimg</c> — decompression layer only; no full legacy spec exists</description></item>
+/// </list>
 /// </summary>
 public sealed class MacriumFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 

@@ -95,6 +95,14 @@ namespace FileFormat.Veeam;
 /// surfacing only; consumers should treat extension-based detection
 /// (<c>.vbk</c> / <c>.vib</c> / <c>.vrb</c>) as primary.
 /// </para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/synacktiv/veeam-velociraptor</c> — Synacktiv's 2024 OibSummary-trailer reverse-engineering (Velociraptor artifact pack), the basis of the Stage-1 reader</description></item>
+///   <item><description><c>https://forums.veeam.com/veeam-backup-replication-f2/vdk-file-format-t93873.html</c> — Veeam R&amp;D forum thread describing the chunk layer at block-diagram level</description></item>
+///   <item><description><c>https://github.com/hashcat/hashcat/issues/3623</c> — reverse-engineered key derivation for encrypted jobs</description></item>
+///   <item><description>Veeam Backup &amp; Replication vendor documentation — the container format itself is proprietary and unpublished</description></item>
+/// </list>
 /// </summary>
 public sealed class VeeamFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

@@ -10,6 +10,12 @@ namespace FileFormat.Wacz;
 /// Descriptor for the <b>WACZ</b> (Web Archive Collection Zipped) format — a ZIP
 /// container that wraps one or more WARC files together with a Frictionless-Data
 /// manifest, page index and optional resource bundles.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://specs.webrecorder.net/wacz/1.1.1/</c> — the WACZ 1.1.1 specification (Webrecorder)</description></item>
+///   <item><description><c>https://webrecorder.net</c> — Webrecorder, the format's author and reference tooling (py-wacz, ReplayWeb.page)</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>
@@ -27,9 +33,6 @@ namespace FileFormat.Wacz;
 /// <see cref="ZipReader"/> for the underlying container and adds a parsed metadata
 /// summary entry that surfaces the <c>datapackage.json</c> fields most callers care
 /// about (title, version, software, page count, archive count).
-/// </para>
-/// <para>
-/// Reference: <see href="https://specs.webrecorder.net/wacz/1.1.1/"/>.
 /// </para>
 /// </remarks>
 public sealed class WaczFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {

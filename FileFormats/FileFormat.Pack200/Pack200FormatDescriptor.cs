@@ -8,6 +8,13 @@ namespace FileFormat.Pack200;
 /// <summary>
 /// Format descriptor for Pack200 (JSR-200) archives — the compressed representation
 /// of a set of Java <c>.class</c> files used by <c>pack200</c>/<c>unpack200</c>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://docs.oracle.com/javase/8/docs/technotes/guides/pack200/pack-spec.html</c> — "Pack200: A Packed Class Deployment Format" (the JSR-200 band/coding spec)</description></item>
+///   <item><description><c>https://jcp.org/en/jsr/detail?id=200</c> — JSR 200, "Network Transfer Format for Java Archives"</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Pack200</c> — format overview (removed from the JDK in Java 14)</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// The archive is presented as a read-only collection whose entries are the classes

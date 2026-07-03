@@ -8,6 +8,13 @@ namespace FileFormat.BitRock;
 /// Format descriptor for BitRock / InstallBuilder self-extracting installers.
 /// Detection is content-based (the end magic and mk4vfs schema near EOF), so it
 /// works regardless of file extension.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://installbuilder.com</c> — InstallBuilder (formerly BitRock), the tool that produces these installers; the container layout is undocumented by the vendor</description></item>
+///   <item><description>Jean-Claude Wippler's Metakit (Mk4) file format — the tclkit runtime VFS embedded in the installer stub, reverse-read here as the <c>mk4vfs</c> catalog</description></item>
+///   <item><description>Tcl cookfs archive format — the content region holding the gzip-tar payload components</description></item>
+/// </list>
 /// </summary>
 public sealed class BitRockFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

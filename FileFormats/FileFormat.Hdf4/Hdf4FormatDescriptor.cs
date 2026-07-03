@@ -11,11 +11,16 @@ namespace FileFormat.Hdf4;
 /// Data Descriptor (DD) linked list from the file prefix and emits one entry
 /// per non-empty tag/ref pair, plus a <c>metadata.ini</c> with the detected
 /// magic, total DD count and per-tag histogram.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://www.hdfgroup.org/solutions/hdf4/</c> — The HDF Group's HDF4 page (maintained but deprecated in favour of HDF5)</description></item>
+///   <item><description>"HDF4 Specification and Developer's Guide" (NCSA / The HDF Group) — the defining document for the DD list and tag/ref model</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/Hierarchical_Data_Format</c> — format overview</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
-/// Distinct from HDF5 (handled by <c>FileFormat.Hdf5</c>). HDF4's format is
-/// described in the NCSA HDF4 specification (historical docs at
-/// <c>https://portal.hdfgroup.org/display/HDF4/HDF4</c>).
+/// Distinct from HDF5 (handled by <c>FileFormat.Hdf5</c>).
 /// </remarks>
 public sealed class Hdf4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

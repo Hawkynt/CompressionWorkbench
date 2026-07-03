@@ -19,6 +19,12 @@ namespace FileFormat.Nbi;
 /// the header sector, plus per-segment slices when the descriptor table parses
 /// cleanly. <c>parse_status</c> is <c>ok</c> only when every declared segment fits;
 /// otherwise <c>partial</c>. Read-only; malformed input never throws.</para>
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Jamie Honan, "Draft Net Boot Image Proposal" 0.3 (1997) — the defining NBI layout document, distributed with the netboot and Etherboot packages</description></item>
+///   <item><description>Etherboot project <c>mknbi</c> documentation — the tool that produces NBI images (etherboot.org is no longer reliably reachable)</description></item>
+/// </list>
 /// </summary>
 public sealed class NbiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Nbi";

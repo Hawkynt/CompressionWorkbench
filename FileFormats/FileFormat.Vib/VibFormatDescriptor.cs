@@ -12,6 +12,12 @@ namespace FileFormat.Vib;
 /// signature, and unpack the decompressed payload tree under <c>payload/</c>.
 /// Read-only: re-signing a VIB requires VMware's private keys, so creation is not
 /// offered.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://blogs.vmware.com/vsphere/2011/09/whats-in-a-vib.html</c> — VMware's "What's in a VIB?" (file archive + XML descriptor + signature)</description></item>
+///   <item><description>VMware vSphere / ESXi documentation on VIBs, acceptance levels and <c>esxcli software vib</c> — the vendor reference for producers and consumers</description></item>
+/// </list>
 /// </summary>
 public sealed class VibFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   public string Id => "Vib";

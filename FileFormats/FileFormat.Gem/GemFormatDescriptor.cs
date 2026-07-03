@@ -12,6 +12,13 @@ namespace FileFormat.Gem;
 /// first three entries are <c>metadata.gz</c> (gzipped YAML metadata),
 /// <c>data.tar.gz</c> (gzipped TAR of the gem contents) and
 /// <c>checksums.yaml.gz</c>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://docs.ruby-lang.org/en/3.0/Gem/Format.html</c> — Gem::Format, the canonical package-layout documentation</description></item>
+///   <item><description><c>https://github.com/rubygems/rubygems</c> — RubyGems, the reference implementation that reads and writes .gem files</description></item>
+///   <item><description><c>https://guides.rubygems.org/</c> — RubyGems guides (specification reference, publishing workflow)</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>
@@ -21,9 +28,6 @@ namespace FileFormat.Gem;
 /// dependencies, license) and surfaces them in <c>metadata.ini</c>; it then
 /// inflates the inner <c>data.tar.gz</c> and walks it to expose every payload
 /// file under a <c>data/</c> prefix.
-/// </para>
-/// <para>
-/// Reference: <see href="https://docs.ruby-lang.org/en/3.0/Gem/Format.html"/>.
 /// </para>
 /// </remarks>
 public sealed class GemFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {

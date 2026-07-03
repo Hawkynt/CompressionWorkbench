@@ -11,6 +11,12 @@ namespace FileFormat.Crate;
 /// Descriptor for a Rust <b>crate</b> package (<c>.crate</c>) — a gzipped TAR
 /// containing a single <c>name-version/</c> top-level directory with a
 /// <c>Cargo.toml</c> and the crate's source files.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://doc.rust-lang.org/cargo/reference/registries.html#publish</c> — registry publish API, defining what a <c>.crate</c> upload contains</description></item>
+///   <item><description><c>https://doc.rust-lang.org/cargo/</c> — The Cargo Book (the <c>cargo package</c> command produces these archives)</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>
@@ -20,10 +26,6 @@ namespace FileFormat.Crate;
 /// <c>[package]</c> fields most callers care about (name, version, authors,
 /// description, license, edition) and surfaces a <c>metadata.ini</c> entry
 /// alongside every crate file.
-/// </para>
-/// <para>
-/// Reference:
-/// <see href="https://doc.rust-lang.org/cargo/reference/registries.html#publish"/>.
 /// </para>
 /// </remarks>
 public sealed class CrateFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {

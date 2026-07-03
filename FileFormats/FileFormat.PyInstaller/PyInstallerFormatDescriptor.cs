@@ -9,6 +9,12 @@ namespace FileFormat.PyInstaller;
 /// executable. Detection is by the trailing MEI cookie (see
 /// <c>FormatDetector.DetectInstaller</c>); listing/extraction is delegated to
 /// <see cref="PyInstallerReader"/>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/pyinstaller/pyinstaller</c> — canonical implementation (bootloader sources define the MEI cookie and CArchive TOC)</description></item>
+///   <item><description><c>https://pyinstaller.org/en/stable/advanced-topics.html</c> — official docs on the CArchive / ZlibArchive layout and the bootstrap process</description></item>
+/// </list>
 /// </summary>
 public sealed class PyInstallerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

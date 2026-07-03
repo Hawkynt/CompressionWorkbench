@@ -9,6 +9,13 @@ namespace FileFormat.Swm;
 /// <summary>
 /// Descriptor for a <b>Split WIM</b> (.swm / .swmN) volume — a WIM file that has been
 /// chopped into N pieces for size-limited media (DVD, FAT32, etc.).
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview</c> — Microsoft's WIM/ESD overview (DISM <c>/Split-Image</c> produces .swm sets)</description></item>
+///   <item><description>Microsoft "Windows Imaging File Format (WIM)" whitepaper — defines <c>part_number</c>/<c>total_parts</c> in the shared header</description></item>
+///   <item><description><c>https://wimlib.net</c> — open-source implementation with full split-WIM support</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>
@@ -22,10 +29,6 @@ namespace FileFormat.Swm;
 /// <para>
 /// Detection is extension-only because the underlying magic is shared with WIM and
 /// ESD — declaring a magic signature here would shadow the regular WIM descriptor.
-/// </para>
-/// <para>
-/// Reference: same WIM spec —
-/// <see href="https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview"/>.
 /// </para>
 /// </remarks>
 public sealed class SwmFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap {

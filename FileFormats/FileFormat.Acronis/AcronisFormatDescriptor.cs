@@ -5,6 +5,12 @@ namespace FileFormat.Acronis;
 
 /// <summary>
 /// Format descriptor for Acronis True Image classic .tib backups.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/dennisss/acronis-tib</c> — community reverse-engineering of the .tib record stream (the upstream spec this reader is built on)</description></item>
+///   <item><description>Acronis True Image / Cyber Protect Home Office vendor documentation — the format itself is proprietary and unpublished</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>

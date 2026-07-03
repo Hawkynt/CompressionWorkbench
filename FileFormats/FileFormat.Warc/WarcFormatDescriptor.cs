@@ -5,6 +5,17 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.Warc;
 
+/// <summary>
+/// Descriptor for WARC (Web ARChive, ISO 28500) files — the record-oriented
+/// container web crawlers use to store captured HTTP transactions and metadata.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>ISO 28500:2017 "WARC file format" — the defining standard</description></item>
+///   <item><description><c>https://iipc.github.io/warc-specifications/</c> — IIPC-maintained WARC specifications and proposals</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/WARC_(file_format)</c> — format overview</description></item>
+/// </list>
+/// </summary>
 public sealed class WarcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the WARC archive in listing order.</summary>

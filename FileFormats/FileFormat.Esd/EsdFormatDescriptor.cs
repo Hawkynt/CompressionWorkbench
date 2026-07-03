@@ -11,6 +11,13 @@ namespace FileFormat.Esd;
 /// Descriptor for the Microsoft <b>ESD</b> (Electronic Software Download) format —
 /// the encrypted-CAB / install-image variant of WIM that the Windows Update service
 /// streams down for OS provisioning.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview</c> — Microsoft's WIM/ESD overview</description></item>
+///   <item><description>Microsoft "Windows Imaging File Format (WIM)" whitepaper — the on-disk header / resource-table spec ESD shares</description></item>
+///   <item><description><c>https://wimlib.net</c> — open-source WIM/ESD implementation (LZMS, solid resources)</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// <para>
@@ -28,10 +35,6 @@ namespace FileFormat.Esd;
 /// relies on <c>.esd</c> to win over <c>.wim</c> via the file-extension lookup. Any
 /// resource that fails to decode produces a <c>note</c> entry in
 /// <c>metadata.ini</c> rather than aborting the whole listing.
-/// </para>
-/// <para>
-/// Reference:
-/// <see href="https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/wim-and-esd-windows-image-files-overview"/>.
 /// </para>
 /// </remarks>
 public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {

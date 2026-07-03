@@ -12,13 +12,19 @@ namespace FileFormat.Onnx;
 /// surfaces: <c>metadata.ini</c> (IR version, producer, opsets, input/output
 /// shapes, op counts), <c>ops.txt</c> (one line per graph operation), and one
 /// <c>initializers/{name}.bin</c> per weight tensor.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description><c>https://github.com/onnx/onnx/blob/main/onnx/onnx.proto</c> — the ModelProto schema, the defining document for the on-disk bytes</description></item>
+///   <item><description><c>https://github.com/onnx/onnx</c> — canonical implementation and IR specification</description></item>
+///   <item><description><c>https://onnx.ai</c> — project home (Open Neural Network Exchange)</description></item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// ONNX has no fixed magic — the file starts with protobuf wire-format tags.
 /// The most common first byte pair is <c>0x08 0x01</c> (field 1
 /// <c>ir_version</c>, varint, value 1+), which we register as a very-low-
 /// confidence hint. Primary detection is extension-based.
-/// Reference: <c>https://github.com/onnx/onnx/blob/main/onnx/onnx.proto</c>.
 /// </remarks>
 public sealed class OnnxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 

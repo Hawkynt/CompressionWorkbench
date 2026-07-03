@@ -12,6 +12,13 @@ namespace FileFormat.Srec;
 /// <c>firmware.bin</c> + <c>metadata.ini</c>; <see cref="Create"/> re-encodes a
 /// flat <c>firmware.bin</c> back into S-record text. Sibling of the Intel HEX
 /// descriptor in <c>FileFormat.FirmwareHex</c>.
+///
+/// References:
+/// <list type="bullet">
+///   <item><description>Motorola "M68000 Family Programmer's Reference Manual" — S-record appendix (the defining document)</description></item>
+///   <item><description><c>https://srecord.sourceforge.net</c> — SRecord tool suite — thorough format documentation</description></item>
+///   <item><description><c>https://en.wikipedia.org/wiki/SREC_(file_format)</c> — format overview</description></item>
+/// </list>
 /// </summary>
 public sealed class SrecFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
