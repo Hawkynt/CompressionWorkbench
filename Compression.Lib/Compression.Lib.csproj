@@ -197,6 +197,9 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Dar\FileFormat.Dar.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Par2\FileFormat.Par2.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Ffu\FileFormat.Ffu.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.AndroidSparse\FileFormat.AndroidSparse.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Vib\FileFormat.Vib.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Nbi\FileFormat.Nbi.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.ParallelsHdd\FileFormat.ParallelsHdd.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.D64\FileSystem.D64.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.D71\FileSystem.D71.csproj" />

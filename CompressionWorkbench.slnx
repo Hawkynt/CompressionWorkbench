@@ -109,6 +109,9 @@
     <Project Path="FileFormats/FileFormat.Dar/FileFormat.Dar.csproj" />
     <Project Path="FileFormats/FileFormat.Par2/FileFormat.Par2.csproj" />
     <Project Path="FileFormats/FileFormat.Ffu/FileFormat.Ffu.csproj" />
+    <Project Path="FileFormats/FileFormat.AndroidSparse/FileFormat.AndroidSparse.csproj" />
+    <Project Path="FileFormats/FileFormat.Vib/FileFormat.Vib.csproj" />
+    <Project Path="FileFormats/FileFormat.Nbi/FileFormat.Nbi.csproj" />
     <Project Path="FileFormats/FileFormat.ParallelsHdd/FileFormat.ParallelsHdd.csproj" />
     <Project Path="FileSystems/FileSystem.D64/FileSystem.D64.csproj" />
     <Project Path="FileSystems/FileSystem.D71/FileSystem.D71.csproj" />

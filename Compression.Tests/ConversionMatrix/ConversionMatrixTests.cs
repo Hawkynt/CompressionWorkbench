@@ -107,6 +107,7 @@ public class ConversionMatrixTests {
       { "CpcDsk", "[single-payload/whole-image target] CpcDsk reader exposes raw 512-byte track/sector blocks (T00S0_C1…), not files; padded sectors can't content-match the payload and no AMSDOS/CP/M filesystem layer exists" },
       { "HfsPlus", "[self-rejecting reader] writer output is re-detected as DMG, whose reader rejects it: 'missing koly trailer signature'" },
       // -- bucket: single-payload/whole-image target --
+      { "AndroidSparse", "[single-payload/whole-image target] Android sparse image; Create sparsifies a single raw image and re-lists as metadata.ini+image.raw, not a file tree" },
       { "AndroidOta", "[single-payload/whole-image target] OTA update payload; writer emits a whole-image blob that re-lists as 0 files" },
       { "Awb", "[single-payload/whole-image target] CRI AWB audio bank; writer collapses the tree to a single FULL.amr stream" },
       { "BcacheFs", "[single-payload/whole-image target] bcachefs image writer emits a whole-image (FULL.bcachefs+superblock.bin stub) not a file tree" },
