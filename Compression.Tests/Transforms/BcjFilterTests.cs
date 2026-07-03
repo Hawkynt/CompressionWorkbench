@@ -418,4 +418,153 @@ public class BcjFilterTests {
     var decoded = BcjFilter.DecodeIA64(encoded);
     Assert.That(decoded, Is.EqualTo(data));
   }
+
+  // ---- ARM64 ----
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void EncodeArm64_DecodeArm64_RoundTrip_Random() {
+    var data = new byte[1024];
+    new Random(42).NextBytes(data);
+    var encoded = BcjFilter.EncodeArm64(data);
+    var decoded = BcjFilter.DecodeArm64(encoded);
+    Assert.That(decoded, Is.EqualTo(data));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void EncodeArm64_DecodeArm64_RoundTrip_SimulatedBl() {
+    // ARM64 BL: bits [31:26] == 0x25 (0x94000000 | imm26). Little-endian word.
+    var data = new byte[32];
+    // BL +0x40 (imm26 = 0x10 words): 0x94000010
+    BitConverter.GetBytes(0x94000010u).CopyTo(data, 0);
+    // BL -4 (imm26 = 0x03FFFFFF): 0x97FFFFFF
+    BitConverter.GetBytes(0x97FFFFFFu).CopyTo(data, 16);
+    var encoded = BcjFilter.EncodeArm64(data, startOffset: 0x1000);
+    Assert.That(encoded, Is.Not.EqualTo(data));
+    var decoded = BcjFilter.DecodeArm64(encoded, startOffset: 0x1000);
+    Assert.That(decoded, Is.EqualTo(data));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void EncodeArm64_DecodeArm64_RoundTrip_SimulatedAdrp() {
+    // ARM64 ADRP: (instr & 0x9F000000) == 0x90000000. Small page delta stays in range.
+    var data = new byte[16];
+    // ADRP x0, small immediate (immlo=0, immhi=1): 0x90000020
+    BitConverter.GetBytes(0x90000020u).CopyTo(data, 0);
+    var encoded = BcjFilter.EncodeArm64(data);
+    var decoded = BcjFilter.DecodeArm64(encoded);
+    Assert.That(decoded, Is.EqualTo(data));
+  }
+
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
+  [Test]
+  public void EncodeArm64_DecodeArm64_Empty() {
+    var encoded = BcjFilter.EncodeArm64(ReadOnlySpan<byte>.Empty);
+    Assert.That(encoded, Is.Empty);
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void EncodeArm64_DecodeArm64_WithStartOffset() {
+    var data = new byte[512];
+    new Random(123).NextBytes(data);
+    var encoded = BcjFilter.EncodeArm64(data, startOffset: 0x8000);
+    var decoded = BcjFilter.DecodeArm64(encoded, startOffset: 0x8000);
+    Assert.That(decoded, Is.EqualTo(data));
+  }
+
+  // ---- RISC-V ----
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void EncodeRiscV_DecodeRiscV_RoundTrip_Random() {
+    var data = new byte[1024];
+    new Random(42).NextBytes(data);
+    var encoded = BcjFilter.EncodeRiscV(data);
+    var decoded = BcjFilter.DecodeRiscV(encoded);
+    Assert.That(decoded, Is.EqualTo(data));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void EncodeRiscV_DecodeRiscV_RoundTrip_SimulatedJal() {
+    // JAL ra, +0x100. Opcode byte 0xEF (JAL, rd bit0 set -> rd=x1).
+    var data = new byte[16];
+    // Encode JAL x1 with imm = 0x100 in J-type layout.
+    // Byte0 = 0xEF. rd=x1 -> b1 low nibble 0; put a plausible immediate in b1..b3.
+    data[0] = 0xEF;
+    data[1] = 0x00;
+    data[2] = 0x10;
+    data[3] = 0x00;
+    var encoded = BcjFilter.EncodeRiscV(data, startOffset: 0x2000);
+    var decoded = BcjFilter.DecodeRiscV(encoded, startOffset: 0x2000);
+    Assert.That(decoded, Is.EqualTo(data));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void EncodeRiscV_DecodeRiscV_RoundTrip_SimulatedAuipcPair() {
+    // AUIPC a0, 0x12 ; ADDI a0, a0, 0x100  (opcode 0x17 then a paired 32-bit inst)
+    var data = new byte[24];
+    // AUIPC x10 (rd=10): opcode 0x17, rd in bits [11:7]. 0x00012517
+    BitConverter.GetBytes(0x00012517u).CopyTo(data, 0);
+    // ADDI x10, x10, 0x100 : opcode 0x13, rd=10, rs1=10, imm=0x100 -> 0x10050513
+    BitConverter.GetBytes(0x10050513u).CopyTo(data, 4);
+    var encoded = BcjFilter.EncodeRiscV(data, startOffset: 0x4000);
+    var decoded = BcjFilter.DecodeRiscV(encoded, startOffset: 0x4000);
+    Assert.That(decoded, Is.EqualTo(data));
+  }
+
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
+  [Test]
+  public void EncodeRiscV_DecodeRiscV_Empty() {
+    var encoded = BcjFilter.EncodeRiscV(ReadOnlySpan<byte>.Empty);
+    Assert.That(encoded, Is.Empty);
+  }
+
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
+  [Test]
+  public void EncodeRiscV_DecodeRiscV_ShortData() {
+    var data = new byte[] { 0xEF, 0x00, 0x10, 0x00 };
+    var encoded = BcjFilter.EncodeRiscV(data);
+    Assert.That(encoded, Is.EqualTo(data));
+    var decoded = BcjFilter.DecodeRiscV(encoded);
+    Assert.That(decoded, Is.EqualTo(data));
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void EncodeRiscV_DecodeRiscV_WithStartOffset() {
+    var data = new byte[512];
+    new Random(321).NextBytes(data);
+    var encoded = BcjFilter.EncodeRiscV(data, startOffset: 0x10000);
+    var decoded = BcjFilter.DecodeRiscV(encoded, startOffset: 0x10000);
+    Assert.That(decoded, Is.EqualTo(data));
+  }
+
+  [Category("RoundTrip")]
+  [Test]
+  public void EncodeRiscV_DecodeRiscV_RoundTrip_ManySeeds() {
+    // Bijectivity must hold for arbitrary data (the fake-decode path).
+    for (var seed = 0; seed < 20; ++seed) {
+      var data = new byte[256 + seed];
+      new Random(seed).NextBytes(data);
+      var encoded = BcjFilter.EncodeRiscV(data, startOffset: seed * 2);
+      var decoded = BcjFilter.DecodeRiscV(encoded, startOffset: seed * 2);
+      Assert.That(decoded, Is.EqualTo(data), $"seed {seed}");
+    }
+  }
 }

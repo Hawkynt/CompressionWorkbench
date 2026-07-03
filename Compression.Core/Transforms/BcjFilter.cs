@@ -9,7 +9,7 @@ namespace Compression.Core.Transforms;
 /// Converts relative branch/call/jump target addresses to absolute addresses,
 /// which improves compression by making repeated references to the same function
 /// produce identical byte sequences.
-/// Supports x86, ARM, ARM Thumb, PowerPC, SPARC, and IA-64 (Itanium) architectures.
+/// Supports x86, ARM, ARM Thumb, ARM64, PowerPC, SPARC, IA-64 (Itanium), and RISC-V architectures.
 /// </summary>
 public static class BcjFilter {
   /// <summary>
@@ -208,35 +208,33 @@ public static class BcjFilter {
 
   private static void TransformArmThumb(byte[] data, int startOffset, bool encode) {
     // Thumb BL is a 32-bit instruction encoded as two 16-bit halfwords (little-endian):
-    //   Halfword 1 (bytes [i],[i+1]): 0xF000-0xF7FF → bits 15..11 = 11110, imm10 in bits 10..0
-    //   Halfword 2 (bytes [i+2],[i+3]): 0xF800-0xFFFF → bits 15..11 = 11111, imm11 in bits 10..0
-    // Combined 21-bit offset = (imm10 << 11) | imm11, shifted left 1 for halfword alignment.
+    //   Halfword 1 (bytes [i],[i+1]): high 5 bits 11110 → data[i+1] & 0xF8 == 0xF0
+    //   Halfword 2 (bytes [i+2],[i+3]): high 5 bits 11111 → data[i+3] & 0xF8 == 0xF8
+    // The 22-bit immediate is scaled by 2 (halfword aligned). This is a faithful
+    // port of liblzma armthumb.c and is fully bijective on arbitrary data.
+    var pos = (uint)startOffset;
     for (var i = 0; i + 3 < data.Length; i += 2) {
-      var hw1 = data[i] | (data[i + 1] << 8);
-      var hw2 = data[i + 2] | (data[i + 3] << 8);
-
-      if ((hw1 & 0xF800) != 0xF000 || (hw2 & 0xF800) != 0xF800)
+      if ((data[i + 1] & 0xF8) != 0xF0 || (data[i + 3] & 0xF8) != 0xF8)
         continue;
 
-      var imm10 = hw1 & 0x7FF;
-      var imm11 = hw2 & 0x7FF;
-      var offset = (imm10 << 11) | imm11;
+      var src = (((uint)data[i + 1] & 7) << 19)
+              | ((uint)data[i] << 11)
+              | (((uint)data[i + 3] & 7) << 8)
+              | data[i + 2];
+      src <<= 1;
 
-      // Sign-extend from 21 bits
-      if ((offset & 0x100000) != 0)
-        offset |= unchecked((int)0xFFE00000);
-
-      var currentAddr = (startOffset + i) >> 1; // halfword address
+      uint dest;
+      var here = pos + (uint)i + 4;
       if (encode)
-        offset += currentAddr;
+        dest = here + src;
       else
-        offset -= currentAddr;
+        dest = src - here;
+      dest >>= 1;
 
-      // Write back
-      data[i]     = (byte)(((offset >> 11) & 0xFF));
-      data[i + 1] = (byte)(0xF0 | (((offset >> 11) >> 8) & 0x07));
-      data[i + 2] = (byte)((offset & 0xFF));
-      data[i + 3] = (byte)(0xF8 | ((offset >> 8) & 0x07));
+      data[i + 1] = (byte)(0xF0 | ((dest >> 19) & 0x7));
+      data[i]     = (byte)(dest >> 11);
+      data[i + 3] = (byte)(0xF8 | ((dest >> 8) & 0x7));
+      data[i + 2] = (byte)dest;
 
       i += 2; // skip past the second halfword (loop adds 2)
     }
@@ -489,6 +487,274 @@ public static class BcjFilter {
         data[byteIdx] |= (byte)(1 << bitIdx);
       else
         data[byteIdx] &= (byte)~(1 << bitIdx);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // ARM64 / AArch64 BCJ filter (liblzma filter id 0x0A)
+  // -------------------------------------------------------------------------
+
+  /// <summary>
+  /// Encodes ARM64 (AArch64) machine code by converting relative BL and ADRP
+  /// target addresses to absolute addresses. Matches the liblzma arm64 filter.
+  /// </summary>
+  /// <param name="data">The input data (ARM64 machine code, little-endian words).</param>
+  /// <param name="startOffset">The virtual start address of the data. Defaults to 0.</param>
+  /// <returns>The filtered data with absolute addresses.</returns>
+  public static byte[] EncodeArm64(ReadOnlySpan<byte> data, int startOffset = 0) {
+    if (data.Length < 4)
+      return data.ToArray();
+
+    var result = data.ToArray();
+    TransformArm64(result, (uint)startOffset, encode: true);
+    return result;
+  }
+
+  /// <summary>
+  /// Decodes ARM64 (AArch64) machine code by converting absolute BL and ADRP
+  /// addresses back to relative. Matches the liblzma arm64 filter.
+  /// </summary>
+  /// <param name="data">The filtered data with absolute addresses.</param>
+  /// <param name="startOffset">The virtual start address. Must match the value used during encoding. Defaults to 0.</param>
+  /// <returns>The original data with relative addresses restored.</returns>
+  public static byte[] DecodeArm64(ReadOnlySpan<byte> data, int startOffset = 0) {
+    if (data.Length < 4)
+      return data.ToArray();
+
+    var result = data.ToArray();
+    TransformArm64(result, (uint)startOffset, encode: false);
+    return result;
+  }
+
+  private static void TransformArm64(byte[] data, uint nowPos, bool encode) {
+    // Port of liblzma src/liblzma/simple/arm64.c (public domain / 0BSD).
+    // Words are 4-byte aligned, little-endian.
+    var size = data.Length & ~3;
+    for (var i = 0; i < size; i += 4) {
+      var pc = nowPos + (uint)i;
+      var instr = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(i));
+
+      if ((instr >> 26) == 0x25) {
+        // BL: 26-bit word-relative immediate, +/-128 MiB range.
+        var src = instr;
+        instr = 0x94000000u;
+
+        pc >>= 2;
+        if (!encode)
+          pc = 0u - pc;
+
+        instr |= (src + pc) & 0x03FFFFFFu;
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(i), instr);
+      } else if ((instr & 0x9F000000u) == 0x90000000u) {
+        // ADRP: 21-bit split immediate, page (4 KiB) relative.
+        var src = ((instr >> 29) & 3u) | ((instr >> 3) & 0x001FFFFCu);
+
+        // Only convert values within +/-512 MiB (the liblzma range guard).
+        if (((src + 0x00020000u) & 0x001C0000u) != 0)
+          continue;
+
+        instr &= 0x9000001Fu;
+
+        pc >>= 12;
+        if (!encode)
+          pc = 0u - pc;
+
+        var dest = src + pc;
+        instr |= (dest & 3u) << 29;
+        instr |= (dest & 0x0003FFFCu) << 3;
+        instr |= (0u - (dest & 0x00020000u)) & 0x00E00000u;
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(i), instr);
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // RISC-V BCJ filter (liblzma filter id 0x0B, added in xz 5.6)
+  // -------------------------------------------------------------------------
+
+  /// <summary>
+  /// Encodes RISC-V machine code by converting JAL and AUIPC+inst2 pc-relative
+  /// references to a canonical absolute form. Faithful port of liblzma riscv.c.
+  /// </summary>
+  /// <param name="data">The input data (RISC-V machine code; always little-endian).</param>
+  /// <param name="startOffset">The virtual start address of the data. Rounded down to a multiple of 2. Defaults to 0.</param>
+  /// <returns>The filtered data.</returns>
+  public static byte[] EncodeRiscV(ReadOnlySpan<byte> data, int startOffset = 0) {
+    var result = data.ToArray();
+    RiscVEncode(result, (uint)startOffset & ~1u);
+    return result;
+  }
+
+  /// <summary>
+  /// Decodes RISC-V machine code produced by <see cref="EncodeRiscV"/>.
+  /// Faithful port of liblzma riscv.c.
+  /// </summary>
+  /// <param name="data">The filtered data.</param>
+  /// <param name="startOffset">The virtual start address. Must match the value used during encoding. Defaults to 0.</param>
+  /// <returns>The original data.</returns>
+  public static byte[] DecodeRiscV(ReadOnlySpan<byte> data, int startOffset = 0) {
+    var result = data.ToArray();
+    RiscVDecode(result, (uint)startOffset & ~1u);
+    return result;
+  }
+
+  // (((auipc) << 8) ^ ((inst2) - 3)) & 0xF8003 — non-zero => not an AUIPC pair.
+  private static uint NotAuipcPair(uint auipc, uint inst2)
+    => ((auipc << 8) ^ (inst2 - 3)) & 0xF8003u;
+
+  // ((uint)(((auipc) - 0x3117) << 18) >= ((rs1) & 0x1D)) — true => not special format.
+  private static bool NotSpecialAuipc(uint auipc, uint rs1)
+    => ((auipc - 0x3117u) << 18) >= (rs1 & 0x1Du);
+
+  private static void RiscVEncode(byte[] buffer, uint nowPos) {
+    // Port of liblzma src/liblzma/simple/riscv.c riscv_encode (0BSD).
+    if (buffer.Length < 8)
+      return;
+
+    var size = buffer.Length - 8;
+    // The loop steps by 2 bytes because of the C extension (16-bit instructions).
+    for (var i = 0; i <= size; i += 2) {
+      uint inst = buffer[i];
+
+      if (inst == 0xEF) {
+        // JAL — only rd=x1(ra) or rd=x5(t0) are filtered.
+        uint b1 = buffer[i + 1];
+        if ((b1 & 0x0D) != 0)
+          continue;
+
+        uint b2 = buffer[i + 2];
+        uint b3 = buffer[i + 3];
+        var pc = nowPos + (uint)i;
+
+        var addr = ((b1 & 0xF0u) << 8)
+                 | ((b2 & 0x0Fu) << 16)
+                 | ((b2 & 0x10u) << 7)
+                 | ((b2 & 0xE0u) >> 4)
+                 | ((b3 & 0x7Fu) << 4)
+                 | ((b3 & 0x80u) << 13);
+
+        addr += pc;
+
+        buffer[i + 1] = (byte)((b1 & 0x0F) | ((addr >> 13) & 0xF0));
+        buffer[i + 2] = (byte)(addr >> 9);
+        buffer[i + 3] = (byte)(addr >> 1);
+
+        i += 4 - 2;
+      } else if ((inst & 0x7F) == 0x17) {
+        // AUIPC
+        inst |= (uint)buffer[i + 1] << 8;
+        inst |= (uint)buffer[i + 2] << 16;
+        inst |= (uint)buffer[i + 3] << 24;
+
+        if ((inst & 0xE80) != 0) {
+          // AUIPC rd != x0 and != x2.
+          var inst2 = BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(i + 4));
+
+          if (NotAuipcPair(inst, inst2) != 0) {
+            i += 6 - 2;
+            continue;
+          }
+
+          var addr = inst & 0xFFFFF000u;
+          addr += (inst2 >> 20) - ((inst2 >> 19) & 0x1000u);
+          addr += nowPos + (uint)i;
+
+          inst = 0x17u | (2u << 7) | (inst2 << 12);
+          BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(i), inst);
+          BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(i + 4), addr);
+        } else {
+          // AUIPC rd == x0 or x2 — fake decoding keeps the filter bijective.
+          var fakeRs1 = inst >> 27;
+
+          if (NotSpecialAuipc(inst, fakeRs1)) {
+            i += 4 - 2;
+            continue;
+          }
+
+          var fakeAddr = BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(i + 4));
+          var fakeInst2 = (inst >> 12) | (fakeAddr << 20);
+          inst = 0x17u | (fakeRs1 << 7) | (fakeAddr & 0xFFFFF000u);
+
+          BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(i), inst);
+          BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(i + 4), fakeInst2);
+        }
+
+        i += 8 - 2;
+      }
+    }
+  }
+
+  private static void RiscVDecode(byte[] buffer, uint nowPos) {
+    // Port of liblzma src/liblzma/simple/riscv.c riscv_decode (0BSD).
+    if (buffer.Length < 8)
+      return;
+
+    var size = buffer.Length - 8;
+    for (var i = 0; i <= size; i += 2) {
+      uint inst = buffer[i];
+
+      if (inst == 0xEF) {
+        // JAL
+        uint b1 = buffer[i + 1];
+        if ((b1 & 0x0D) != 0)
+          continue;
+
+        uint b2 = buffer[i + 2];
+        uint b3 = buffer[i + 3];
+        var pc = nowPos + (uint)i;
+
+        var addr = ((b1 & 0xF0u) << 13) | (b2 << 9) | (b3 << 1);
+        addr -= pc;
+
+        buffer[i + 1] = (byte)((b1 & 0x0F) | ((addr >> 8) & 0xF0));
+        buffer[i + 2] = (byte)(((addr >> 16) & 0x0F)
+                             | ((addr >> 7) & 0x10)
+                             | ((addr << 4) & 0xE0));
+        buffer[i + 3] = (byte)(((addr >> 4) & 0x7F) | ((addr >> 13) & 0x80));
+
+        i += 4 - 2;
+      } else if ((inst & 0x7F) == 0x17) {
+        // AUIPC
+        uint inst2;
+        inst |= (uint)buffer[i + 1] << 8;
+        inst |= (uint)buffer[i + 2] << 16;
+        inst |= (uint)buffer[i + 3] << 24;
+
+        if ((inst & 0xE80) != 0) {
+          // AUIPC rd != x0 and != x2 — reverse the "fake" pair.
+          inst2 = BinaryPrimitives.ReadUInt32LittleEndian(buffer.AsSpan(i + 4));
+
+          if (NotAuipcPair(inst, inst2) != 0) {
+            i += 6 - 2;
+            continue;
+          }
+
+          var addr = inst & 0xFFFFF000u;
+          addr += inst2 >> 20;
+
+          inst = 0x17u | (2u << 7) | (inst2 << 12);
+          inst2 = addr;
+        } else {
+          // AUIPC rd == x0 or x2 — reverse the "real" pair.
+          var inst2Rs1 = inst >> 27;
+
+          if (NotSpecialAuipc(inst, inst2Rs1)) {
+            i += 4 - 2;
+            continue;
+          }
+
+          var addr = BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(i + 4));
+          addr -= nowPos + (uint)i;
+
+          inst2 = (inst >> 12) | (addr << 20);
+          inst = 0x17u | (inst2Rs1 << 7) | ((addr + 0x800u) & 0xFFFFF000u);
+        }
+
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(i), inst);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(i + 4), inst2);
+
+        i += 8 - 2;
+      }
     }
   }
 }

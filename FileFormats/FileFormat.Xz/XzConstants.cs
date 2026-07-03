@@ -46,6 +46,12 @@ internal static class XzConstants {
   /// <summary>BCJ SPARC filter ID.</summary>
   public const ulong FilterBcjSparc = 0x09;
 
+  /// <summary>BCJ ARM64 (AArch64) filter ID.</summary>
+  public const ulong FilterBcjArm64 = 0x0A;
+
+  /// <summary>BCJ RISC-V filter ID (xz 5.6+).</summary>
+  public const ulong FilterBcjRiscV = 0x0B;
+
   /// <summary>Returns the check value size in bytes for the given check type.</summary>
   public static int CheckSize(byte checkType) => checkType switch {
     CheckNone => 0,

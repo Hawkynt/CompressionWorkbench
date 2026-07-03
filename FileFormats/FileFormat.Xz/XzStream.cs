@@ -343,6 +343,8 @@ public sealed class XzStream : CompressionStream {
       XzConstants.FilterBcjArm => BcjFilter.DecodeArm(data),
       XzConstants.FilterBcjArmThumb => BcjFilter.DecodeArmThumb(data),
       XzConstants.FilterBcjSparc => BcjFilter.DecodeSparc(data),
+      XzConstants.FilterBcjArm64 => BcjFilter.DecodeArm64(data),
+      XzConstants.FilterBcjRiscV => BcjFilter.DecodeRiscV(data),
       _ => throw new NotSupportedException($"Unsupported XZ filter: 0x{filterId:X}")
     };
   }
@@ -357,6 +359,8 @@ public sealed class XzStream : CompressionStream {
       XzConstants.FilterBcjArm => BcjFilter.EncodeArm(data),
       XzConstants.FilterBcjArmThumb => BcjFilter.EncodeArmThumb(data),
       XzConstants.FilterBcjSparc => BcjFilter.EncodeSparc(data),
+      XzConstants.FilterBcjArm64 => BcjFilter.EncodeArm64(data),
+      XzConstants.FilterBcjRiscV => BcjFilter.EncodeRiscV(data),
       _ => throw new NotSupportedException($"Unsupported XZ filter: 0x{filterId:X}")
     };
   }
