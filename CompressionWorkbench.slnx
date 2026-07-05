@@ -82,8 +82,10 @@
     <Project Path="FileFormats/FileFormat.EaseUs/FileFormat.EaseUs.csproj" />
     <Project Path="FileFormats/FileFormat.Voc/FileFormat.Voc.csproj" />
     <Project Path="FileFormats/FileFormat.Wave64/FileFormat.Wave64.csproj" />
+    <Project Path="FileFormats/FileFormat.Cb7/FileFormat.Cb7.csproj" />
     <Project Path="FileFormats/FileFormat.Cbr/FileFormat.Cbr.csproj" />
     <Project Path="FileFormats/FileFormat.Cbz/FileFormat.Cbz.csproj" />
+    <Project Path="FileFormats/FileFormat.Egg/FileFormat.Egg.csproj" />
     <Project Path="FileFormats/FileFormat.Cdi/FileFormat.Cdi.csproj" />
     <Project Path="FileFormats/FileFormat.Chm/FileFormat.Chm.csproj" />
     <Project Path="FileFormats/FileFormat.Cmix/FileFormat.Cmix.csproj" />

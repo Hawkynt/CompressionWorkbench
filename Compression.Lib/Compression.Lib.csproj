@@ -170,8 +170,10 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Veeam\FileFormat.Veeam.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Voc\FileFormat.Voc.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Wave64\FileFormat.Wave64.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Cb7\FileFormat.Cb7.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cbr\FileFormat.Cbr.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cbz\FileFormat.Cbz.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Egg\FileFormat.Egg.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cdi\FileFormat.Cdi.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Chm\FileFormat.Chm.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Cmix\FileFormat.Cmix.csproj" />
