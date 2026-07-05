@@ -193,7 +193,10 @@ public sealed class Cb7FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DefaultExtension => ".cb7";
   public IReadOnlyList<string> Extensions => [".cb7"];
   public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'7', (byte)'z', 0xBC, 0xAF, 0x27, 0x1C], Confidence: 0.95)];
+  // No magic: a .cb7 is byte-for-byte a 7z archive, so a content scan must resolve to
+  // SevenZip (the real format). Cb7 is identified by extension only, exactly as the
+  // sibling comic wrappers Cbr (RAR) and Cbz (ZIP) declare no signature.
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("lzma2", "LZMA2")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;

@@ -18,10 +18,10 @@ public class Cb7Tests {
     Assert.That(d.Category, Is.EqualTo(FormatCategory.Archive));
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
-    // 7z signature: 37 7A BC AF 27 1C.
-    Assert.That(d.MagicSignatures, Has.Count.EqualTo(1));
-    Assert.That(d.MagicSignatures[0].Bytes[0], Is.EqualTo((byte)'7'));
-    Assert.That(d.MagicSignatures[0].Bytes[2], Is.EqualTo(0xBC));
+    // No magic: .cb7 is byte-identical to a 7z archive, so a content scan resolves to
+    // SevenZip; Cb7 is identified by extension only (as sibling Cbr/Cbz also declare
+    // no signature). Guards against the Cb7-vs-SevenZip scan collision.
+    Assert.That(d.MagicSignatures, Is.Empty);
   }
 
   private static MemoryStream CreateArchive(FileFormat.Cb7.Cb7FormatDescriptor d) {
