@@ -64,6 +64,14 @@ internal static class ApfsConstants {
 
   public const ushort S_IFDIR = 0x4000;
   public const ushort S_IFREG = 0x8000;
+  public const ushort S_IFLNK = 0xA000;
+
+  // Extended-attribute record flags (j_xattr_flags). Embedded xattrs carry their
+  // value inline in the record; a symlink's target lives in the embedded xattr
+  // named "com.apple.fs.symlink".
+  public const ushort XATTR_DATA_STREAM = 0x0001;
+  public const ushort XATTR_DATA_EMBEDDED = 0x0002;
+  public const string SYMLINK_XATTR_NAME = "com.apple.fs.symlink";
 
   // BTOFF_INVALID (ffff) used in TOC for absent entries.
   public const ushort BTOFF_INVALID = 0xFFFF;

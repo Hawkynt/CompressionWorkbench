@@ -33,6 +33,12 @@ public sealed class ExtReader : IDisposable {
   private const ushort ExtMagic = 0xEF53;
   private const ushort InodeModeDir = 0x4000;
   private const ushort InodeModeFile = 0x8000;
+  private const ushort InodeModeSymlink = 0xA000;
+  private const ushort InodeFormatMask = 0xF000;
+  // Fast symlinks store the target inline in the 60-byte i_block[] area (inode
+  // offset 40). ext uses the inline form whenever the target fits in that area,
+  // i.e. i_size < 60; longer ("slow") targets live in the file's data blocks.
+  private const int FastSymlinkMaxLen = 60;
   private const uint ExtentsFlag = 0x80000;
   private const ushort ExtentMagic = 0xF30A;
   private const uint RootInode = 2;
@@ -268,12 +274,17 @@ public sealed class ExtReader : IDisposable {
           // Read inode to get file size and timestamps
           long fileSize = 0;
           DateTime? lastMod = null;
+          var isSymlink = false;
+          string? linkTarget = null;
 
           var inodeData = ReadInode(inodeNum);
           if (inodeData != null) {
             var mode = BinaryPrimitives.ReadUInt16LittleEndian(inodeData);
-            isDir = (mode & InodeModeDir) != 0;
+            isDir = (mode & InodeFormatMask) == InodeModeDir;
+            isSymlink = (mode & InodeFormatMask) == InodeModeSymlink;
             fileSize = BinaryPrimitives.ReadUInt32LittleEndian(inodeData.AsSpan(4));
+            if (isSymlink)
+              linkTarget = ReadSymlinkTarget(inodeData, fileSize);
 
             // mtime at inode offset 16
             var mtime = BinaryPrimitives.ReadUInt32LittleEndian(inodeData.AsSpan(16));
@@ -286,8 +297,11 @@ public sealed class ExtReader : IDisposable {
 
           _entries.Add(new ExtEntry {
             Name = fullPath,
+            // A symlink's own size is the target-path byte length (i_size).
             Size = isDir ? 0 : fileSize,
             IsDirectory = isDir,
+            IsSymlink = isSymlink,
+            LinkTarget = linkTarget,
             LastModified = lastMod,
             Inode = inodeNum,
           });
@@ -304,9 +318,29 @@ public sealed class ExtReader : IDisposable {
     }
   }
 
+  // Decodes an S_IFLNK inode's target path. Fast symlinks (i_size < 60) store the
+  // target inline in the 60-byte i_block[] area at inode offset 40; slow symlinks
+  // store it in the file's data block(s), reached through the normal block/extent
+  // walk. References: linux fs/ext4/symlink.c, e2fsprogs "fast symlink" handling.
+  private string? ReadSymlinkTarget(byte[] inode, long size) {
+    if (size <= 0) return "";
+    if (size > _blockSize * 8L) return null; // implausibly long target — refuse
+    if (size < FastSymlinkMaxLen) {
+      var span = inode.AsSpan(40, Math.Min((int)size, inode.Length - 40));
+      return Encoding.UTF8.GetString(span);
+    }
+    var data = ReadInodeBlocks(inode);
+    var n = (int)Math.Min(size, data.Length);
+    return Encoding.UTF8.GetString(data, 0, n);
+  }
+
   public byte[] Extract(ExtEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
+    // A symlink's on-disk content is its target path; surface exactly those bytes
+    // rather than misreading the inline path text as block pointers.
+    if (entry.IsSymlink)
+      return Encoding.UTF8.GetBytes(entry.LinkTarget ?? "");
     if (entry.Inode == 0) return [];
 
     var inodeData = ReadInode(entry.Inode);

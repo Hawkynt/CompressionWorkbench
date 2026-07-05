@@ -113,22 +113,29 @@ public sealed class UfsReader : IDisposable {
         if (name != "." && name != ".." && !(basePath.Length == 0 && name == ".snap")) {
           var childInodeOff = InodeOffset((int)dino);
           var isDir = false;
+          var isSymlink = false;
+          string? linkTarget = null;
           long size = 0;
           DateTime? mtime = null;
 
           if (childInodeOff + InodeSize <= _data.Length) {
             var mode = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan((int)childInodeOff));
             isDir = (mode & 0xF000) == 0x4000;
+            isSymlink = (mode & 0xF000) == 0xA000;
             size = (long)BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan((int)(childInodeOff + 8)));
             var mt = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan((int)(childInodeOff + 24)));
             if (mt > 0) mtime = DateTimeOffset.FromUnixTimeSeconds(mt).UtcDateTime;
+            if (isSymlink) linkTarget = ReadSymlinkTarget(childInodeOff, size);
           }
 
           var fullPath = string.IsNullOrEmpty(basePath) ? name : $"{basePath}/{name}";
           _entries.Add(new UfsEntry {
             Name = fullPath,
+            // A symlink's own size is the target-path byte length (di_size).
             Size = isDir ? 0 : size,
             IsDirectory = isDir,
+            IsSymlink = isSymlink,
+            LinkTarget = linkTarget,
             LastModified = mtime,
             Inode = (int)dino,
           });
@@ -183,9 +190,32 @@ public sealed class UfsReader : IDisposable {
       ms.Write(_data, (int)off, chunk);
   }
 
+  // UFS1 MAXSYMLINKLEN = (NDADDR + NIADDR) * sizeof(ufs1_daddr_t) = (12 + 3) * 4 = 60.
+  // A "fast" symlink with di_size < 60 stores its target inline in the di_db/di_ib
+  // union (di_shortlink) at inode offset 40; a longer target lives in the file's
+  // data block(s). References: FreeBSD sys/ufs/ufs/dinode.h, sys/ufs/ffs.
+  private const int MaxFastSymlinkLen = 60;
+
+  private string? ReadSymlinkTarget(long inodeOff, long size) {
+    if (size == 0) return "";
+    if (size < 0 || size > 4096) return null;
+    if (size < MaxFastSymlinkLen) {
+      var start = (int)inodeOff + 40;
+      var len = (int)Math.Min(size, _data.Length - start);
+      if (len <= 0) return "";
+      return Encoding.ASCII.GetString(_data, start, len);
+    }
+    var data = ReadInodeData(inodeOff);
+    if (data == null || data.Length == 0) return "";
+    var n = (int)Math.Min(size, data.Length);
+    return Encoding.ASCII.GetString(data, 0, n);
+  }
+
   public byte[] Extract(UfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
+    // A symlink's honest content is its target path text.
+    if (entry.IsSymlink) return Encoding.ASCII.GetBytes(entry.LinkTarget ?? "");
     var inodeOff = InodeOffset(entry.Inode);
     var data = ReadInodeData(inodeOff);
     if (data == null) return [];

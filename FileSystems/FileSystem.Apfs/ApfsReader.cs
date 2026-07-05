@@ -236,6 +236,8 @@ public sealed class ApfsReader : IDisposable {
     var inodeName = new Dictionary<ulong, string>();
     var inodeSize = new Dictionary<ulong, long>();
     var inodeIsDir = new Dictionary<ulong, bool>();
+    var inodeIsLink = new Dictionary<ulong, bool>();
+    var symlinkTarget = new Dictionary<ulong, string>();
     var drec = new List<(ulong Parent, string Name, ulong ChildIno, bool IsDir)>();
     var fileExtent = new Dictionary<ulong, (long Length, ulong PhysBlock)>();
     var inodeTimestamps = new Dictionary<ulong, DateTime>();
@@ -252,6 +254,7 @@ public sealed class ApfsReader : IDisposable {
           var mode = BinaryPrimitives.ReadUInt16LittleEndian(val.AsSpan(80));
           var size = (long)BinaryPrimitives.ReadUInt64LittleEndian(val.AsSpan(84));
           inodeIsDir[oid] = (mode & 0xF000) == S_IFDIR;
+          inodeIsLink[oid] = (mode & 0xF000) == S_IFLNK;
           inodeSize[oid] = size;
           var mtimeNs = BinaryPrimitives.ReadUInt64LittleEndian(val.AsSpan(24));
           if (mtimeNs > 0) {
@@ -279,6 +282,23 @@ public sealed class ApfsReader : IDisposable {
           var paddr = BinaryPrimitives.ReadUInt64LittleEndian(val.AsSpan(8));
           fileExtent[oid] = (len, paddr);
           break;
+
+        case APFS_TYPE_XATTR:
+          // j_xattr_key_t: name_len (u16) @8, name[] @10 (NUL-terminated).
+          // j_xattr_val_t: flags (u16) @0, xdata_len (u16) @2, xdata[] @4.
+          // A symlink's target is the embedded xattr named "com.apple.fs.symlink".
+          if (key.Length < 12 || val.Length < 4) break;
+          var xattrNameLen = BinaryPrimitives.ReadUInt16LittleEndian(key.AsSpan(8));
+          if (xattrNameLen <= 0 || 10 + xattrNameLen > key.Length) break;
+          var xattrName = Encoding.UTF8.GetString(key, 10, xattrNameLen).TrimEnd('\0');
+          if (xattrName != SYMLINK_XATTR_NAME) break;
+          var xattrFlags = BinaryPrimitives.ReadUInt16LittleEndian(val);
+          var xdataLen = BinaryPrimitives.ReadUInt16LittleEndian(val.AsSpan(2));
+          if ((xattrFlags & XATTR_DATA_EMBEDDED) == 0) break; // stream-backed target not inlined here
+          var take = Math.Min(xdataLen, val.Length - 4);
+          if (take <= 0) break;
+          symlinkTarget[oid] = Encoding.UTF8.GetString(val, 4, take).TrimEnd('\0');
+          break;
       }
     }
 
@@ -305,21 +325,31 @@ public sealed class ApfsReader : IDisposable {
 
       foreach (var (name, childIno, drecIsDir) in children) {
         var dir = drecIsDir || inodeIsDir.GetValueOrDefault(childIno, false);
+        var isLink = inodeIsLink.GetValueOrDefault(childIno, false);
         var fullPath = parentPath.Length == 0 ? name : parentPath + "/" + name;
         DateTime? ts = inodeTimestamps.TryGetValue(childIno, out var t) ? t : null;
 
         ulong firstBlock = 0;
         long extentLen = 0;
         var sz = inodeSize.GetValueOrDefault(childIno, 0);
-        if (!dir && fileExtent.TryGetValue(childIno, out var fx)) {
+        if (!dir && !isLink && fileExtent.TryGetValue(childIno, out var fx)) {
           firstBlock = fx.PhysBlock;
           extentLen = fx.Length;
+        }
+
+        string? linkTarget = null;
+        if (isLink) {
+          linkTarget = symlinkTarget.GetValueOrDefault(childIno);
+          // A symlink's own size is the target-path byte length (on-disk truth).
+          if (linkTarget != null) sz = Encoding.UTF8.GetByteCount(linkTarget);
         }
 
         this._entries.Add(new ApfsEntry {
           Name = fullPath,
           Size = sz,
           IsDirectory = dir,
+          IsSymlink = isLink,
+          LinkTarget = linkTarget,
           ObjectId = childIno,
           LastModified = ts,
           FirstBlock = firstBlock,
@@ -338,6 +368,8 @@ public sealed class ApfsReader : IDisposable {
   /// </summary>
   public byte[] Extract(ApfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
+    // A symlink's honest content is its target path text.
+    if (entry.IsSymlink) return Encoding.UTF8.GetBytes(entry.LinkTarget ?? "");
     if (entry.IsDirectory || entry.Size == 0) return [];
     if (entry.FirstBlock == 0) return [];
     var offset = (long)entry.FirstBlock * this._blockSize;

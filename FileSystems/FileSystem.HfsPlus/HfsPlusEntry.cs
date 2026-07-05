@@ -17,6 +17,12 @@ public sealed class HfsPlusEntry {
   /// <summary>Whether this entry is a directory rather than a file.</summary>
   public bool IsDirectory { get; init; }
 
+  /// <summary>Whether this entry is a symbolic link (Finder type 'slnk').</summary>
+  public bool IsSymlink { get; init; }
+
+  /// <summary>The symlink target path (data-fork contents), or null when not a link.</summary>
+  public string? LinkTarget { get; init; }
+
   /// <summary>The Catalog Node ID assigned to this entry.</summary>
   public uint Cnid { get; init; }
 

@@ -64,9 +64,11 @@ public sealed class ErofsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
         Method: "stored",
         IsDirectory: e.IsDirectory,
         IsEncrypted: false,
-        LastModified: null));
+        LastModified: null,
+        IsSymlink: e.IsSymlink,
+        LinkTarget: e.LinkTarget));
     }
-    return result;
+    return SymlinkResolver.Resolve(result);
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {

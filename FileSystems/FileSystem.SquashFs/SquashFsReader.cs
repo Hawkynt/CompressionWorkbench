@@ -448,6 +448,8 @@ public sealed class SquashFsReader : IDisposable {
         return new SquashFsEntry {
           Name           = name,
           FullPath       = fullPath,
+          // The link's own size is the target-path byte length (on-disk truth).
+          Size           = symlinkSize,
           IsSymlink      = true,
           SymlinkTarget  = target,
           ModifiedTime   = modifiedTime,

@@ -59,8 +59,10 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SquashFsReader(stream);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FullPath, e.Size, -1,
-      "squashfs", e.IsDirectory, false, e.ModifiedTime)).ToList();
+    var entries = r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FullPath, e.Size, -1,
+      "squashfs", e.IsDirectory, false, e.ModifiedTime,
+      Kind: null, IsSymlink: e.IsSymlink, LinkTarget: e.SymlinkTarget)).ToList();
+    return SymlinkResolver.Resolve(entries);
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {

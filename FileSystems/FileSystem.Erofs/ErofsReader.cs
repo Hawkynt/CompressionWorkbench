@@ -20,7 +20,8 @@ namespace FileSystem.Erofs;
 /// </para>
 /// </summary>
 public sealed class ErofsReader {
-  public sealed record Entry(string Path, long Size, bool IsDirectory, ulong Nid);
+  public sealed record Entry(string Path, long Size, bool IsDirectory, ulong Nid,
+    bool IsSymlink = false, string? LinkTarget = null);
 
   /// <summary>On-disk superblock magic, little-endian word <c>0xE0F5E1E2</c>.</summary>
   public const uint Magic = 0xE0F5E1E2u;
@@ -82,13 +83,20 @@ public sealed class ErofsReader {
     if (meta is null) return;
     var m = meta.Value;
 
-    var isDir = (m.Mode & 0xF000) == 0x4000; // S_IFDIR
-    var isReg = (m.Mode & 0xF000) == 0x8000; // S_IFREG
-    if (!isDir && !isReg) return; // devices/symlinks/sockets skipped for this pass
+    var isDir = (m.Mode & 0xF000) == 0x4000;  // S_IFDIR
+    var isReg = (m.Mode & 0xF000) == 0x8000;  // S_IFREG
+    var isLink = (m.Mode & 0xF000) == 0xA000; // S_IFLNK
+    if (!isDir && !isReg && !isLink) return;  // devices/sockets skipped for this pass
 
     if (isDir) {
       var dirData = this.ReadInodeData(m);
       this.WalkDirBlock(dirData, pathPrefix, nid);
+    } else if (isLink) {
+      // EROFS stores a symlink's target path as the inode's data (FLAT_INLINE for
+      // the common short-target case); the link's own size is that path's length.
+      var target = Encoding.UTF8.GetString(this.ReadInodeData(m));
+      this._entries.Add(new Entry(pathPrefix.TrimEnd('/'), m.Size, IsDirectory: false, nid,
+        IsSymlink: true, LinkTarget: target));
     } else {
       this._entries.Add(new Entry(pathPrefix.TrimEnd('/'), m.Size, IsDirectory: false, nid));
     }

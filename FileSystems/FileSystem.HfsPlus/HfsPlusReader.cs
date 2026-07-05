@@ -232,7 +232,13 @@ public sealed class HfsPlusReader : IDisposable {
     });
   }
 
-  private static void ParseFileRecord(ReadOnlySpan<byte> nd, int dataOffset, uint parentCnid,
+  // Finder fdType for a HFS+ symbolic link: 'slnk' (the link's target path lives
+  // in its data fork, exactly like a small regular file). References: Apple TN1150
+  // "HFS Plus Volume Format" (HFSPlusCatalogFile.userInfo/FInfo.fdType) and
+  // Darwin xnu bsd/hfs (SYMLINKFILETYPE / SYMLINKCREATOR).
+  private const uint SymlinkFileType = 0x736C6E6B; // 'slnk'
+
+  private void ParseFileRecord(ReadOnlySpan<byte> nd, int dataOffset, uint parentCnid,
       string name, Dictionary<uint, string> dirPaths, List<HfsPlusEntry> entries) {
     // TN1150 HFSPlusCatalogFile (248 bytes):
     //   offset 0:   recordType (int16 BE) = 2 (kHFSPlusFileRecord)
@@ -261,6 +267,10 @@ public sealed class HfsPlusReader : IDisposable {
     var modDateRaw = BinaryPrimitives.ReadUInt32BigEndian(nd[(dataOffset + 16)..]);
     var modDate = modDateRaw > 0 ? HfsEpoch.AddSeconds(modDateRaw) : (DateTime?)null;
 
+    // userInfo (FInfo) sits at record offset 48: fdType (u32 BE) then fdCreator.
+    var fileType = BinaryPrimitives.ReadUInt32BigEndian(nd[(dataOffset + 48)..]);
+    var isSymlink = fileType == SymlinkFileType;
+
     const int dataForkOffset = 88;
     var logicalSize = (long)BinaryPrimitives.ReadUInt64BigEndian(nd[(dataOffset + dataForkOffset)..]);
     // extents[0] starts 16 bytes into the ForkData struct (after logicalSize+clumpSize+totalBlocks).
@@ -270,16 +280,33 @@ public sealed class HfsPlusReader : IDisposable {
     var parentPath = dirPaths.GetValueOrDefault(parentCnid, "");
     var fullPath = parentPath.Length > 0 ? parentPath + "/" + name : name;
 
+    string? linkTarget = null;
+    if (isSymlink)
+      linkTarget = ReadForkText(startBlock, logicalSize);
+
     entries.Add(new HfsPlusEntry {
       Name = name,
       FullPath = fullPath,
       Size = logicalSize,
       IsDirectory = false,
+      IsSymlink = isSymlink,
+      LinkTarget = linkTarget,
       Cnid = cnid,
       LastModified = modDate,
       FirstBlock = startBlock,
       BlockCount = blockCount,
     });
+  }
+
+  // Reads a small data fork (a symlink target) as UTF-8 text from its first extent.
+  private string? ReadForkText(uint startBlock, long logicalSize) {
+    if (logicalSize <= 0 || logicalSize > 4096) return logicalSize == 0 ? "" : null;
+    var offset = (long)startBlock * _blockSize;
+    var length = (int)logicalSize;
+    if (offset < 0 || offset + length > _data.Length)
+      length = (int)Math.Max(0, _data.Length - offset);
+    if (length <= 0) return "";
+    return Encoding.UTF8.GetString(_data, (int)offset, length);
   }
 
   // ── File extraction ─────────────────────────────────────────────────────

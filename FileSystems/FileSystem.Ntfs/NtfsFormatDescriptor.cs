@@ -289,9 +289,11 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new NtfsReader(stream);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, e.LastModified
+    var entries = r.Entries.Select((e, i) => new ArchiveEntryInfo(
+      i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, e.LastModified,
+      Kind: null, IsSymlink: e.IsSymlink, LinkTarget: e.LinkTarget
     )).ToList();
+    return SymlinkResolver.Resolve(entries);
   }
 
   /// <summary>

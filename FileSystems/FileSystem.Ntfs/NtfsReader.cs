@@ -211,6 +211,10 @@ public sealed class NtfsReader : IDisposable {
             mft.IndexAllocationRuns = ParseDataRuns(record, attrPos + dataRunsOffset);
           }
           break;
+        case 0xC0: // $REPARSE_POINT — symbolic links, junctions/mount points
+          if (nonResident == 0)
+            ParseReparsePoint(record, attrPos, mft);
+          break;
       }
 
       attrPos += (int)attrLen;
@@ -289,6 +293,7 @@ public sealed class NtfsReader : IDisposable {
         mft.ResidentData = record.AsSpan(dataStart, (int)valueLen).ToArray();
         mft.DataSize = valueLen;
         mft.IsResident = true;
+        DetectInterixSymlink(mft);
       }
     } else {
       // Non-resident data
@@ -312,6 +317,78 @@ public sealed class NtfsReader : IDisposable {
         mft.DataRuns = ParseDataRuns(record, attrPos + dataRunsOffset);
       }
     }
+  }
+
+  // Reparse tags whose buffer follows the MS-REPARSE symlink layout.
+  private const uint IoReparseTagSymlink = 0xA000000Cu;
+  private const uint IoReparseTagMountPoint = 0xA0000003u; // junction / mount point
+
+  // Decodes a resident $REPARSE_POINT attribute for the two link-bearing tags.
+  // The REPARSE_DATA_BUFFER layout (see MS-FSCC 2.1.2 / ntfs-3g layout.h):
+  //   ReparseTag(u32), ReparseDataLength(u16), Reserved(u16), then a tag-specific
+  //   buffer. For SYMLINK and MOUNT_POINT the buffer starts with
+  //   SubstituteNameOffset(u16), SubstituteNameLength(u16), PrintNameOffset(u16),
+  //   PrintNameLength(u16); SYMLINK adds a Flags(u32) before the PathBuffer, while
+  //   MOUNT_POINT's PathBuffer follows immediately. Both name offsets/lengths are
+  //   byte counts into that PathBuffer of UTF-16LE characters. We prefer the human
+  //   readable print name, falling back to the substitute name (\??\ prefix stripped).
+  private static void ParseReparsePoint(byte[] record, int attrPos, MftRecord mft) {
+    var valueLen = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(attrPos + 16));
+    var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attrPos + 20));
+    var dataStart = attrPos + valueOffset;
+    if (dataStart + 8 > record.Length || valueLen < 8) return;
+
+    var tag = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(dataStart));
+    if (tag != IoReparseTagSymlink && tag != IoReparseTagMountPoint) return;
+
+    var bufStart = dataStart + 8; // past ReparseTag + ReparseDataLength + Reserved
+    if (bufStart + 8 > record.Length) return;
+
+    var substOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(bufStart));
+    var substLength = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(bufStart + 2));
+    var printOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(bufStart + 4));
+    var printLength = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(bufStart + 6));
+
+    var pathBuffer = bufStart + (tag == IoReparseTagSymlink ? 12 : 8);
+
+    string? target = ReadReparseName(record, pathBuffer, printOffset, printLength)
+                     ?? ReadReparseName(record, pathBuffer, substOffset, substLength);
+    if (target == null) return;
+
+    // Strip the NT object-manager prefix that mount points / absolute symlinks carry.
+    if (target.StartsWith(@"\??\", StringComparison.Ordinal))
+      target = target[4..];
+
+    mft.IsSymlink = true;
+    mft.LinkTarget = target;
+  }
+
+  private static string? ReadReparseName(byte[] record, int pathBuffer, int nameOffset, int nameLength) {
+    if (nameLength <= 0) return null;
+    var start = pathBuffer + nameOffset;
+    if (start < 0 || start + nameLength > record.Length) return null;
+    return Encoding.Unicode.GetString(record, start, nameLength);
+  }
+
+  // ntfs-3g (and Services-for-UNIX / Interix) store a POSIX symbolic link not as a
+  // reparse point but as an ordinary file whose $DATA begins with the 8-byte magic
+  // "IntxLNK\1" followed by the UTF-16LE target path. Detect that here so links
+  // created through the ntfs-3g FUSE driver surface with their target. Reference:
+  // ntfs-3g/libntfs-3g reparse.c and the INTX_SYMBOLIC_LINK ("IntxLNK\1") tag.
+  private static readonly byte[] InterixSymlinkMagic =
+    [(byte)'I', (byte)'n', (byte)'t', (byte)'x', (byte)'L', (byte)'N', (byte)'K', 0x01];
+
+  private static void DetectInterixSymlink(MftRecord mft) {
+    var data = mft.ResidentData;
+    if (data == null || data.Length < InterixSymlinkMagic.Length + 2) return;
+    if (!data.AsSpan(0, InterixSymlinkMagic.Length).SequenceEqual(InterixSymlinkMagic)) return;
+
+    var textBytes = data.Length - InterixSymlinkMagic.Length;
+    textBytes -= textBytes % 2; // whole UTF-16 code units only
+    var target = Encoding.Unicode.GetString(data, InterixSymlinkMagic.Length, textBytes)
+      .TrimEnd('\0');
+    mft.IsSymlink = true;
+    mft.LinkTarget = target;
   }
 
   private static void ParseIndexRoot(byte[] record, int attrPos, MftRecord mft) {
@@ -493,10 +570,17 @@ public sealed class NtfsReader : IDisposable {
       if (size == 0 && child.FileNameSize > 0)
         size = child.FileNameSize;
 
+      // A reparse symlink/junction reports its own size as the target-path byte
+      // length (its on-disk $DATA is normally empty), matching the cross-FS policy.
+      if (child.IsSymlink)
+        size = Encoding.UTF8.GetByteCount(child.LinkTarget ?? "");
+
       _entries.Add(new NtfsEntry {
         Name = fullPath,
         Size = size,
         IsDirectory = child.IsDirectory,
+        IsSymlink = child.IsSymlink,
+        LinkTarget = child.LinkTarget,
         LastModified = child.LastModified,
         MftRecord = childRecNum,
       });
@@ -510,6 +594,9 @@ public sealed class NtfsReader : IDisposable {
   public byte[] Extract(NtfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
+    // A reparse symlink's honest content is its target path text.
+    if (entry.IsSymlink)
+      return Encoding.UTF8.GetBytes(entry.LinkTarget ?? "");
 
     if (!_mftRecords.TryGetValue(entry.MftRecord, out var mft))
       return [];
@@ -642,6 +729,8 @@ public sealed class NtfsReader : IDisposable {
     public ushort Flags;
     public DateTime? LastModified;
     public long FileNameSize;
+    public bool IsSymlink;
+    public string? LinkTarget;
 
     // Data attribute
     public bool IsResident;

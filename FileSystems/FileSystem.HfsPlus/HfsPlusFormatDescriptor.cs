@@ -155,8 +155,10 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new HfsPlusReader(stream, leaveOpen: true);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FullPath, e.Size,
-      e.Size, "Stored", e.IsDirectory, false, e.LastModified)).ToList();
+    var entries = r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FullPath, e.Size,
+      e.Size, "Stored", e.IsDirectory, false, e.LastModified,
+      Kind: null, IsSymlink: e.IsSymlink, LinkTarget: e.LinkTarget)).ToList();
+    return SymlinkResolver.Resolve(entries);
   }
 
   /// <summary>
