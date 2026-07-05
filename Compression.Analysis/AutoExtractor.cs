@@ -28,7 +28,7 @@ public sealed class AutoExtractor {
   /// that may have a partition table.
   /// </summary>
   private static readonly HashSet<string> DiskImageFormatIds = new(StringComparer.OrdinalIgnoreCase) {
-    "Vhd", "Vmdk", "Qcow2", "Vdi"
+    "Vhd", "Vhdx", "Vmdk", "Qcow2", "Vdi", "ParallelsHdd", "BochsDisk"
   };
 
   /// <summary>

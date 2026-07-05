@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
+using Compression.Core.DiskImage;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -67,13 +68,29 @@ public sealed class BochsDiskFormatDescriptor : IFormatDescriptor, IArchiveForma
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var fullSize = SafeLength(stream);
-    var h = TryReadHeader(stream);
     var entries = new List<ArchiveEntryInfo> {
       new(0, "FULL.redolog", fullSize, fullSize, "Stored", false, false, null),
       new(1, "metadata.ini", 0, 0, "Stored", false, false, null),
     };
-    if (h.Valid && h.DiskSize > 0 && h.DiskSize <= int.MaxValue)
-      entries.Add(new ArchiveEntryInfo(2, "disk.raw", (long)h.DiskSize, (long)h.DiskSize, "Stored", false, false, null));
+
+    // Route the reconstructed guest disk through the partition-aware lister so
+    // its MBR/GPT/APM partitions and inner filesystems browse — exactly like the
+    // VHD descriptor. The lazy catalog-backed stream avoids materialising the disk.
+    var guest = BochsGuestDiskStream.TryOpen(stream);
+    if (guest != null) {
+      using (guest) {
+        entries.Add(new ArchiveEntryInfo(entries.Count, "disk.raw", guest.Length, guest.Length,
+          "Stored", false, false, null));
+        try {
+          guest.Position = 0;
+          if (PartitionedDiskLister.List(guest, password) is { } partitioned)
+            foreach (var e in partitioned)
+              entries.Add(e with { Index = entries.Count });
+        } catch {
+          // Partition/inner-FS enumeration failed — the raw views above still stand.
+        }
+      }
+    }
     return entries;
   }
 
@@ -85,10 +102,25 @@ public sealed class BochsDiskFormatDescriptor : IFormatDescriptor, IArchiveForma
     if (Wants(files, "metadata.ini"))
       WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes(BuildMetadataIni(h)));
 
-    if (Wants(files, "disk.raw") && h.Valid && h.DiskSize > 0 && h.DiskSize <= int.MaxValue) {
-      var disk = TryReconstruct(stream, h);
-      if (disk != null)
-        WriteFile(outputDir, "disk.raw", disk);
+    var guest = BochsGuestDiskStream.TryOpen(stream);
+    if (guest != null) {
+      using (guest) {
+        // Stream the reconstructed disk straight to disk.raw — no 2 GiB byte[] cap.
+        if (Wants(files, "disk.raw")) {
+          Directory.CreateDirectory(outputDir);
+          using var raw = File.Create(Path.Combine(outputDir, "disk.raw"));
+          guest.Position = 0;
+          guest.CopyTo(raw);
+        }
+
+        // Partition-aware extraction into PartitionN_/ subdirectories.
+        try {
+          guest.Position = 0;
+          PartitionedDiskLister.Extract(guest, outputDir, password, files);
+        } catch {
+          // best effort — the raw views above are already written
+        }
+      }
     }
   }
 
@@ -132,47 +164,6 @@ public sealed class BochsDiskFormatDescriptor : IFormatDescriptor, IArchiveForma
 
   private static BochsHeader Invalid()
     => new(string.Empty, string.Empty, 0, 0, 0, 0, 0, 0, Valid: false);
-
-  // Walk the catalog: catalog[i] is the extent index in the file (not byte offset).
-  // Each extent occupies (bitmap + extent) bytes starting after the catalog;
-  // the data slab follows its bitmap.
-  private static byte[]? TryReconstruct(Stream stream, BochsHeader h) {
-    try {
-      if (h.ExtentBytes == 0 || h.CatalogEntries == 0) return null;
-      if (h.DiskSize == 0 || h.DiskSize > int.MaxValue) return null;
-      var catalogBytes = (long)h.CatalogEntries * 4;
-      if (h.CatalogOffset + catalogBytes > stream.Length) return null;
-
-      stream.Position = h.CatalogOffset;
-      var catBuf = new byte[catalogBytes];
-      if (!TryReadExact(stream, catBuf)) return null;
-
-      var disk = new byte[(int)h.DiskSize];
-      // Extent region starts after the catalog, 512-aligned.
-      var extentRegion = Align512(h.CatalogOffset + catalogBytes);
-      var perExtent = (long)h.BitmapBytes + h.ExtentBytes;
-      if (perExtent <= 0) return null;
-
-      for (var i = 0; i < h.CatalogEntries; ++i) {
-        var slot = BinaryPrimitives.ReadUInt32BigEndian(catBuf.AsSpan(i * 4, 4));
-        if (slot == 0xFFFFFFFFu) continue; // unallocated -> zero
-        var extentFileOffset = extentRegion + slot * perExtent + h.BitmapBytes;
-        var diskOffset = (long)i * h.ExtentBytes;
-        if (diskOffset >= disk.Length) continue;
-        if (extentFileOffset + h.ExtentBytes > stream.Length) continue;
-        var toCopy = (int)Math.Min(h.ExtentBytes, disk.Length - diskOffset);
-        stream.Position = extentFileOffset;
-        var slab = new byte[toCopy];
-        if (!TryReadExact(stream, slab)) continue;
-        Array.Copy(slab, 0, disk, diskOffset, toCopy);
-      }
-      return disk;
-    } catch {
-      return null;
-    }
-  }
-
-  private static long Align512(long v) => (v + 511) & ~511L;
 
   private static string BuildMetadataIni(BochsHeader h) {
     var sb = new StringBuilder();

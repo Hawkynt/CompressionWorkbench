@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
+using Compression.Core.DiskImage;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -64,13 +65,29 @@ public sealed class ParallelsHddFormatDescriptor : IFormatDescriptor, IArchiveFo
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var fullSize = SafeLength(stream);
-    var h = TryReadHeader(stream);
     var entries = new List<ArchiveEntryInfo> {
       new(0, "FULL.hds", fullSize, fullSize, "Stored", false, false, null, Kind: "Track"),
       new(1, "metadata.ini", 0, 0, "Stored", false, false, null, Kind: "Tag"),
     };
-    if (h.Valid && IsReconstructable(h, stream))
-      entries.Add(new ArchiveEntryInfo(2, "disk.raw", DiskBytes(h), DiskBytes(h), "Stored", false, false, null, Kind: "Track"));
+
+    // Route the reconstructed guest disk through the partition-aware lister so
+    // its MBR/GPT/APM partitions and inner filesystems browse — exactly like the
+    // VHD descriptor. The lazy BAT-backed stream avoids materialising the disk.
+    var guest = ParallelsGuestDiskStream.TryOpen(stream);
+    if (guest != null) {
+      using (guest) {
+        entries.Add(new ArchiveEntryInfo(entries.Count, "disk.raw", guest.Length, guest.Length,
+          "Stored", false, false, null, Kind: "Track"));
+        try {
+          guest.Position = 0;
+          if (PartitionedDiskLister.List(guest, password) is { } partitioned)
+            foreach (var e in partitioned)
+              entries.Add(e with { Index = entries.Count });
+        } catch {
+          // Partition/inner-FS enumeration failed — the raw views above still stand.
+        }
+      }
+    }
     return entries;
   }
 
@@ -82,10 +99,25 @@ public sealed class ParallelsHddFormatDescriptor : IFormatDescriptor, IArchiveFo
     if (Wants(files, "metadata.ini"))
       WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes(BuildMetadataIni(h, stream)));
 
-    if (Wants(files, "disk.raw") && h.Valid && IsReconstructable(h, stream)) {
-      var disk = TryReconstruct(stream, h);
-      if (disk != null)
-        WriteFile(outputDir, "disk.raw", disk);
+    var guest = ParallelsGuestDiskStream.TryOpen(stream);
+    if (guest != null) {
+      using (guest) {
+        // Stream the reconstructed disk straight to disk.raw — no 2 GiB byte[] cap.
+        if (Wants(files, "disk.raw")) {
+          Directory.CreateDirectory(outputDir);
+          using var raw = File.Create(Path.Combine(outputDir, "disk.raw"));
+          guest.Position = 0;
+          guest.CopyTo(raw);
+        }
+
+        // Partition-aware extraction into PartitionN_/ subdirectories.
+        try {
+          guest.Position = 0;
+          PartitionedDiskLister.Extract(guest, outputDir, password, files);
+        } catch {
+          // best effort — the raw views above are already written
+        }
+      }
     }
   }
 
@@ -134,39 +166,6 @@ public sealed class ParallelsHddFormatDescriptor : IFormatDescriptor, IArchiveFo
 
   private static HdsHeader Invalid()
     => new(false, string.Empty, 0, 0, 0, 0, 0, 0, 0);
-
-  // Walk the BAT and materialize the full raw disk. Each BAT entry is a start sector;
-  // 0 means the block is unallocated (reads back zero). Returns null when geometry is
-  // implausible (degrade to FULL + metadata only).
-  private static byte[]? TryReconstruct(Stream stream, HdsHeader h) {
-    try {
-      var diskBytes = DiskBytes(h);
-      if (diskBytes <= 0 || diskBytes > int.MaxValue) return null;
-      var blockBytes = (long)h.BlockSizeSectors * SectorSize;
-      if (blockBytes <= 0 || blockBytes > 256L * 1024 * 1024) return null;
-
-      var bat = ReadBat(stream, h);
-      if (bat == null) return null;
-
-      var disk = new byte[diskBytes];
-      for (var blockIndex = 0; blockIndex < bat.Length; ++blockIndex) {
-        var startSector = bat[blockIndex];
-        if (startSector == 0) continue; // unallocated -> zero
-        var srcOffset = (long)startSector * SectorSize;
-        var destOffset = blockIndex * blockBytes;
-        if (destOffset >= diskBytes) break;
-        if (srcOffset + blockBytes > stream.Length) continue;
-        var toCopy = (int)Math.Min(blockBytes, diskBytes - destOffset);
-        stream.Position = srcOffset;
-        var slab = new byte[toCopy];
-        if (!TryReadExact(stream, slab)) continue;
-        Array.Copy(slab, 0, disk, destOffset, toCopy);
-      }
-      return disk;
-    } catch {
-      return null;
-    }
-  }
 
   private static uint[]? ReadBat(Stream stream, HdsHeader h) {
     var byteLen = (long)h.BatEntries * 4;

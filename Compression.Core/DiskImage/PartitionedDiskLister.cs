@@ -24,28 +24,86 @@ public static class PartitionedDiskLister {
     var idx = 0;
     foreach (var part in pt.Partitions) {
       var prefix = MakePartitionPrefix(part);
-      using var window = new PartitionWindowStream(disk, part.StartOffset, part.Size);
 
-      var inner = InnerFsDetector.Detect(window);
-      if (inner is IArchiveFormatOperations ops) {
-        try {
-          window.Position = 0;
-          foreach (var e in ops.List(window, password)) {
-            result.Add(e with { Index = idx++, Name = $"{prefix}/{e.Name}" });
-          }
-          continue;
-        } catch {
-          // inner-FS read failed — fall through to raw partition entry
-        }
-      }
+      // A BSD slice (MBR 0xA5/0xA6/0xA9 or GPT FreeBSD) holds a disklabel that
+      // sub-divides it into filesystem partitions — expand those nested slices
+      // instead of treating the whole slice as one opaque partition.
+      if (TryListBsdSlices(disk, part, prefix, password, pt.Scheme, result, ref idx))
+        continue;
 
-      // No inner FS detected (or list failed) — emit the partition as one raw blob.
-      result.Add(new ArchiveEntryInfo(
-        idx++, $"{prefix}.raw", part.Size, part.Size, "Stored",
-        IsDirectory: false, IsEncrypted: false, LastModified: null,
-        Kind: $"{pt.Scheme}-partition"));
+      ListWindow(disk, part.StartOffset, part.Size, prefix, pt.Scheme, password, result, ref idx);
     }
     return result;
+  }
+
+  /// <summary>
+  /// Lists a single partition window (inner-FS aware) under <paramref name="prefix"/>,
+  /// falling back to a single raw <c>{prefix}.raw</c> blob entry when no inner
+  /// filesystem is recognised.
+  /// </summary>
+  private static void ListWindow(Stream disk, long startOffset, long size, string prefix,
+      string scheme, string? password, List<ArchiveEntryInfo> result, ref int idx) {
+    using var window = new PartitionWindowStream(disk, startOffset, size);
+
+    var inner = InnerFsDetector.Detect(window);
+    if (inner is IArchiveFormatOperations ops) {
+      try {
+        window.Position = 0;
+        foreach (var e in ops.List(window, password))
+          result.Add(e with { Index = idx++, Name = $"{prefix}/{e.Name}" });
+        return;
+      } catch {
+        // inner-FS read failed — fall through to raw partition entry
+      }
+    }
+
+    result.Add(new ArchiveEntryInfo(
+      idx++, $"{prefix}.raw", size, size, "Stored",
+      IsDirectory: false, IsEncrypted: false, LastModified: null,
+      Kind: $"{scheme}-partition"));
+  }
+
+  /// <summary>
+  /// When <paramref name="part"/> carries a BSD disklabel, lists each nested
+  /// disklabel slice under <c>{prefix}/{sliceName}</c> and returns <c>true</c>;
+  /// returns <c>false</c> when the partition is not a BSD-disklabel container.
+  /// </summary>
+  private static bool TryListBsdSlices(Stream disk, PartitionEntry part, string prefix,
+      string? password, string scheme, List<ArchiveEntryInfo> result, ref int idx) {
+    if (!TryReadBsdSlices(disk, part, out var slices))
+      return false;
+
+    foreach (var slice in slices) {
+      var slicePrefix = $"{prefix}/{MakePartitionPrefix(slice)}";
+      ListWindow(disk, slice.StartOffset, slice.Size, slicePrefix, scheme, password, result, ref idx);
+    }
+    return true;
+  }
+
+  /// <summary>
+  /// Probes <paramref name="part"/> for a BSD disklabel and, if present, parses
+  /// its slices as absolute parent-disk offsets. Returns <c>false</c> (and empty)
+  /// when no usable disklabel is found.
+  /// </summary>
+  private static bool TryReadBsdSlices(Stream disk, PartitionEntry part, out List<PartitionEntry> slices) {
+    slices = [];
+    if (part.Size <= 0 || part.StartOffset < 0 || part.StartOffset >= disk.Length)
+      return false;
+    try {
+      using var window = new PartitionWindowStream(disk, part.StartOffset, part.Size);
+      if (!BsdDisklabelParser.IsDisklabel(window))
+        return false;
+      window.Position = 0;
+      var parsed = BsdDisklabelParser.Parse(window, part.StartOffset);
+      // Keep only slices that resolve to a real range on the parent disk.
+      slices = parsed
+        .Where(s => s.StartOffset >= 0 && s.StartOffset < disk.Length && s.Size > 0)
+        .ToList();
+      return slices.Count > 0;
+    } catch {
+      slices = [];
+      return false;
+    }
   }
 
   /// <summary>
@@ -60,32 +118,51 @@ public static class PartitionedDiskLister {
 
     foreach (var part in pt.Partitions) {
       var prefix = MakePartitionPrefix(part);
-      var partFilter = files?.Where(f => f.StartsWith(prefix + "/", StringComparison.Ordinal))
-                              .Select(f => f[(prefix.Length + 1)..]).ToArray();
-      // If a filter was supplied and nothing targets this partition, skip it entirely.
-      if (files != null && (partFilter?.Length ?? 0) == 0 && !files.Contains($"{prefix}.raw")) continue;
 
-      using var window = new PartitionWindowStream(disk, part.StartOffset, part.Size);
-      var partOut = Path.Combine(outputDir, prefix);
-
-      var inner = InnerFsDetector.Detect(window);
-      if (inner is IArchiveFormatOperations ops) {
-        try {
-          window.Position = 0;
-          ops.Extract(window, partOut, password, partFilter);
-          continue;
-        } catch {
-          // fall through to raw dump
-        }
+      // BSD-disklabel container: extract each nested slice under its own subdir.
+      if (TryReadBsdSlices(disk, part, out var slices)) {
+        foreach (var slice in slices)
+          ExtractWindow(disk, slice.StartOffset, slice.Size,
+            $"{prefix}/{MakePartitionPrefix(slice)}", outputDir, password, files);
+        continue;
       }
 
-      // Unrecognised FS or read failure — dump the partition bytes raw.
-      Directory.CreateDirectory(partOut);
-      using var raw = File.Create(Path.Combine(partOut, "raw.bin"));
-      window.Position = 0;
-      window.CopyTo(raw);
+      ExtractWindow(disk, part.StartOffset, part.Size, prefix, outputDir, password, files);
     }
     return true;
+  }
+
+  /// <summary>
+  /// Extracts one partition window (inner-FS aware) into <c>{outputDir}/{prefix}</c>,
+  /// honouring the optional <paramref name="files"/> filter and falling back to a
+  /// raw <c>raw.bin</c> dump when no inner filesystem is recognised.
+  /// </summary>
+  private static void ExtractWindow(Stream disk, long startOffset, long size, string prefix,
+      string outputDir, string? password, string[]? files) {
+    var partFilter = files?.Where(f => f.StartsWith(prefix + "/", StringComparison.Ordinal))
+                            .Select(f => f[(prefix.Length + 1)..]).ToArray();
+    // If a filter was supplied and nothing targets this partition, skip it entirely.
+    if (files != null && (partFilter?.Length ?? 0) == 0 && !files.Contains($"{prefix}.raw")) return;
+
+    using var window = new PartitionWindowStream(disk, startOffset, size);
+    var partOut = Path.Combine(outputDir, prefix);
+
+    var inner = InnerFsDetector.Detect(window);
+    if (inner is IArchiveFormatOperations ops) {
+      try {
+        window.Position = 0;
+        ops.Extract(window, partOut, password, partFilter);
+        return;
+      } catch {
+        // fall through to raw dump
+      }
+    }
+
+    // Unrecognised FS or read failure — dump the partition bytes raw.
+    Directory.CreateDirectory(partOut);
+    using var raw = File.Create(Path.Combine(partOut, "raw.bin"));
+    window.Position = 0;
+    window.CopyTo(raw);
   }
 
   private static string MakePartitionPrefix(PartitionEntry part) {

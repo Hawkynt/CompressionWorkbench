@@ -12,7 +12,7 @@ public static class PartitionTableDetector {
   /// Result of partition table detection, including the scheme used and the discovered partitions.
   /// </summary>
   public sealed class DetectionResult {
-    /// <summary>The partition scheme detected: "GPT", "MBR", or "None".</summary>
+    /// <summary>The partition scheme detected: "GPT", "MBR", "APM", or "None".</summary>
     public required string Scheme { get; init; }
 
     /// <summary>Discovered partitions. Empty if no partition table was found.</summary>
@@ -34,7 +34,8 @@ public static class PartitionTableDetector {
       return new DetectionResult { Scheme = "None", Partitions = [] };
 
     // Read the first 1024 bytes for quick signature checks.
-    var header = new byte[Math.Min(4096, (int)diskData.Length)];
+    // Clamp against Length as long first to avoid overflow on multi-GiB disks.
+    var header = new byte[(int)Math.Min(4096L, diskData.Length)];
     diskData.Position = 0;
     var bytesRead = diskData.Read(header, 0, header.Length);
     diskData.Position = 0;
@@ -64,7 +65,22 @@ public static class PartitionTableDetector {
         if (validPartitions.Count > 0)
           return new DetectionResult { Scheme = "MBR", Partitions = validPartitions };
       } catch {
-        // MBR parsing failed — no partition table.
+        // MBR parsing failed — fall through to APM.
+      }
+    }
+
+    // Try APM (Apple Partition Map). APM disks carry neither an MBR boot
+    // signature nor a GPT header, so this is reached only when both above fail.
+    if (ApmParser.IsApm(header.AsSpan(0, bytesRead))) {
+      try {
+        var apmPartitions = ApmParser.Parse(diskData);
+        var validApm = apmPartitions
+          .Where(p => p.StartOffset >= 0 && p.StartOffset < diskData.Length && p.Size > 0)
+          .ToList();
+        if (validApm.Count > 0)
+          return new DetectionResult { Scheme = "APM", Partitions = validApm };
+      } catch {
+        // APM parsing failed — no partition table.
       }
     }
 
