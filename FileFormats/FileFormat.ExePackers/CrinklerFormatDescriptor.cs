@@ -41,8 +41,8 @@ public sealed class CrinklerFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public string Description =>
     "Crinkler (Mentor & Blueberry) — 4K Win32 PE compressor used in the " +
     "Windows demoscene. Detection by embedded \"Crinkler\" literal in an " +
-    "atypical PE. Decompression delegated to the original Crinkler linker " +
-    "(/REPORT) or to crinkler-disasm.";
+    "atypical PE. Current support is detection and diagnostic artifact output; " +
+    "native Crinkler decompression is not implemented.";
 
   private static ReadOnlySpan<byte> CrinklerLiteralUpper => "Crinkler"u8;
   private static ReadOnlySpan<byte> CrinklerLiteralLower => "crinkler"u8;
@@ -78,8 +78,11 @@ public sealed class CrinklerFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
     var sections = PackerScanner.GetPeSections(bytes);
     return [
+      ("metadata.json", BuildMetadataJson(sections, idx, bytes.Length)),
+      ("diagnostics.json", BuildDiagnosticsJson()),
       ("metadata.ini", BuildMetadata(sections, idx, bytes.Length)),
       ("mz_header.bin", bytes.AsSpan(0, Math.Min(0x40, bytes.Length)).ToArray()),
+      ("original_packed.bin", bytes),
       ("packed_payload.bin", bytes),
     ];
   }
@@ -93,7 +96,69 @@ public sealed class CrinklerFormatDescriptor : IFormatDescriptor, IArchiveFormat
     sb.Append(CultureInfo.InvariantCulture, $"section_count = {sections.Count}\n");
     foreach (var (name, chars) in sections)
       sb.Append(CultureInfo.InvariantCulture, $"section = {name} flags=0x{chars:X8}\n");
-    sb.Append("note = decompression delegated to the Crinkler linker (/REPORT) or crinkler-disasm\n");
+    sb.Append("capability_level = DetectionOnly\n");
+    sb.Append("can_build_memory_image = false\n");
+    sb.Append("can_rebuild_executable = false\n");
+    sb.Append("note = native Crinkler decompression is not implemented\n");
     return Encoding.UTF8.GetBytes(sb.ToString());
   }
+
+  private static byte[] BuildMetadataJson(IReadOnlyList<(string Name, uint Characteristics)> sections,
+      int literalOffset, int totalSize) {
+    var sb = new StringBuilder();
+    sb.AppendLine("{");
+    sb.AppendLine("  \"packer\": \"crinkler\",");
+    sb.AppendLine("  \"container\": \"pe\",");
+    sb.AppendLine("  \"capabilityLevel\": \"DetectionOnly\",");
+    sb.AppendLine("  \"canBuildMemoryImage\": false,");
+    sb.AppendLine("  \"canRebuildExecutable\": false,");
+    sb.Append(CultureInfo.InvariantCulture, $"  \"crinklerLiteralOffset\": {literalOffset},\n");
+    sb.Append(CultureInfo.InvariantCulture, $"  \"fileSize\": {totalSize},\n");
+    sb.AppendLine("  \"sections\": [");
+    for (var i = 0; i < sections.Count; i++) {
+      var (name, chars) = sections[i];
+      sb.Append(CultureInfo.InvariantCulture,
+        $"    {{ \"name\": \"{EscapeJson(name)}\", \"characteristics\": \"0x{chars:X8}\" }}");
+      sb.AppendLine(i + 1 == sections.Count ? "" : ",");
+    }
+    sb.AppendLine("  ],");
+    sb.AppendLine("  \"outputs\": [");
+    sb.AppendLine("    \"metadata.json\",");
+    sb.AppendLine("    \"diagnostics.json\",");
+    sb.AppendLine("    \"metadata.ini\",");
+    sb.AppendLine("    \"mz_header.bin\",");
+    sb.AppendLine("    \"original_packed.bin\",");
+    sb.AppendLine("    \"packed_payload.bin\"");
+    sb.AppendLine("  ]");
+    sb.AppendLine("}");
+    return Encoding.UTF8.GetBytes(sb.ToString());
+  }
+
+  private static byte[] BuildDiagnosticsJson() =>
+    Encoding.UTF8.GetBytes("""
+      {
+        "packer": "crinkler",
+        "container": "pe",
+        "capabilityLevel": "DetectionOnly",
+        "canLocatePayload": false,
+        "canDecompressPayload": false,
+        "canBuildMemoryImage": false,
+        "canRebuildExecutable": false,
+        "warnings": [
+          "Crinkler native decompression is not implemented.",
+          "Crinkler is a compressing linker; a byte-identical pre-Crinkler executable is not generally reconstructable from the packed image."
+        ],
+        "outputs": [
+          "metadata.json",
+          "diagnostics.json",
+          "metadata.ini",
+          "mz_header.bin",
+          "original_packed.bin",
+          "packed_payload.bin"
+        ]
+      }
+      """);
+
+  private static string EscapeJson(string value) =>
+    value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
 }

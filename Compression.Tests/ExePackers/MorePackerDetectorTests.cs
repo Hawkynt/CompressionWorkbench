@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Tests.Support;
 using FileFormat.ExePackers;
 
 namespace Compression.Tests.ExePackers;
@@ -125,8 +126,29 @@ public class MorePackerDetectorTests {
     Encoding.ASCII.GetBytes("Crinkler 2.3").CopyTo(buf.AsSpan(0x300));
     using var ms = new MemoryStream(buf);
     var entries = new CrinklerFormatDescriptor().List(ms, null);
-    Assert.That(entries.Count, Is.GreaterThanOrEqualTo(2));
-    Assert.That(entries.Any(e => e.Name == "packed_payload.bin"), Is.True);
+    var names = entries.Select(e => e.Name).ToArray();
+    Assert.That(names, Does.Contain("metadata.json"));
+    Assert.That(names, Does.Contain("diagnostics.json"));
+    Assert.That(names, Does.Contain("original_packed.bin"));
+    Assert.That(names, Does.Contain("packed_payload.bin"));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Crinkler_ExtractsHonestDiagnostics() {
+    var buf = MinimalPe();
+    Encoding.ASCII.GetBytes("Crinkler 2.3").CopyTo(buf.AsSpan(0x300));
+    using var ms = new MemoryStream(buf);
+    var outDir = Path.Combine(Path.GetTempPath(), "cw-crinkler-" + Guid.NewGuid().ToString("N"));
+    try {
+      new CrinklerFormatDescriptor().Extract(ms, outDir, null, null);
+      var diagnostics = File.ReadAllText(Path.Combine(outDir, "diagnostics.json"));
+      Assert.That(diagnostics, Does.Contain("\"capabilityLevel\": \"DetectionOnly\""));
+      Assert.That(diagnostics, Does.Contain("\"canRebuildExecutable\": false"));
+      Assert.That(File.ReadAllBytes(Path.Combine(outDir, "original_packed.bin")), Is.EqualTo(buf).AsCollection);
+    } finally {
+      if (Directory.Exists(outDir))
+        Directory.Delete(outDir, recursive: true);
+    }
   }
 
   [Test, Category("EdgeCase")]
@@ -137,6 +159,15 @@ public class MorePackerDetectorTests {
   }
 
   // ── kkrunchy ──────────────────────────────────────────────────────────
+
+  [Test, Category("ExternalTool")]
+  public void ExternalCrinklerTool_IsAvailableForFutureOracleChecks() {
+    var crinkler = ExecutablePackerToolCache.GetCrinkler();
+    Assume.That(crinkler, Is.Not.Null, "Set CWB_DOWNLOAD_EXE_PACKER_TOOLS=1 to download the official Crinkler release, or put crinkler on PATH.");
+
+    var output = ExecutablePackerToolCache.Run(crinkler!);
+    Assert.That(output, Does.Contain("CRINKLER").IgnoreCase);
+  }
 
   [Test, Category("HappyPath")]
   public void Kkrunchy_DetectsLiteral() {

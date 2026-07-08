@@ -1,0 +1,115 @@
+#pragma warning disable CS1591
+using System.Globalization;
+using System.Text;
+using Compression.Core.ExecutableUnpacking;
+
+namespace FileFormat.ExePackers;
+
+public sealed class WinUpackExecutablePackerHandler : IExecutablePackerHandler {
+  public string Id => "winupack";
+  public string DisplayName => "WinUpack / Upack packed PE";
+
+  public ExecutableUnpackCapabilities Capabilities =>
+    ExecutableUnpackCapabilities.CanDetect |
+    ExecutableUnpackCapabilities.CanLocatePayload |
+    ExecutableUnpackCapabilities.SupportsPe |
+    ExecutableUnpackCapabilities.SupportsX86;
+
+  public DetectionResult Detect(ReadOnlySpan<byte> image) {
+    if (!PackerScanner.IsPe(image))
+      return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "WinUpack: not a valid PE.", true)]);
+
+    var sections = PackerScanner.GetPeSectionRanges(image);
+    var hasVirtualUpack = sections.Any(s => s.RawSize == 0 && s.VirtualSize > 0 && IsUpackName(s.Name));
+    var hasPayload = sections.Any(s => s.RawSize > 8 && s.RawOffset > 0);
+    if (hasVirtualUpack && hasPayload)
+      return new(true, this.Id, 0.9, []);
+
+    return new(false, this.Id, 0, [
+      new(ExecutableDiagnosticCode.PayloadNotFound, "WinUpack: no virtual .Upack target plus raw payload section was found.", true),
+    ]);
+  }
+
+  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+    var imageBytes = image.ToArray();
+    var info = ExecutableContainerParsers.ParseBestEffort(image);
+    return new(
+      this.Id,
+      imageBytes,
+      detection,
+      info,
+      this.Capabilities,
+      new Dictionary<string, string> {
+        ["packer"] = "WinUpack",
+        ["container"] = info.Container.ToString(),
+        ["architecture"] = info.Architecture.ToString(),
+      });
+  }
+
+  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+    if (packed.OriginalImage.LongLength > options.MaximumInputSize)
+      return new(ExecutableUnpackLevel.DetectionOnly, ExecutableUnpackCapabilities.CanDetect, [], [
+        new(ExecutableDiagnosticCode.PayloadNotFound, "Input exceeds configured executable unpacking size limit.", true),
+      ]);
+
+    var diagnostics = new List<ExecutableDiagnostic>();
+    var artifacts = new List<UnpackArtifact> {
+      new("metadata.json", BuildMetadataJson(packed), "stored"),
+      new("original_packed.bin", packed.OriginalImage, "stored"),
+    };
+
+    var payload = LocatePayload(packed.OriginalImage, out var targetSize);
+    var level = ExecutableUnpackLevel.DetectionOnly;
+    var caps = ExecutableUnpackCapabilities.CanDetect | ExecutableUnpackCapabilities.SupportsPe;
+    if (packed.ImageInfo?.Architecture == CpuArchitecture.X86)
+      caps |= ExecutableUnpackCapabilities.SupportsX86;
+
+    if (payload != null) {
+      artifacts.Add(new("compressed_payload.bin", payload, "winupack"));
+      level = ExecutableUnpackLevel.PayloadLocated;
+      caps |= ExecutableUnpackCapabilities.CanLocatePayload;
+      diagnostics.Add(new(ExecutableDiagnosticCode.UnsupportedCompressionMethod,
+        $"WinUpack payload was located, but the managed transform/decompression path is not yet recoverable. Virtual target size: {targetSize} bytes.",
+        true));
+    } else
+      diagnostics.Add(new(ExecutableDiagnosticCode.PayloadNotFound, "WinUpack payload section could not be located.", true));
+
+    var result = new UnpackResult(level, caps, artifacts, diagnostics);
+    artifacts.Add(new("diagnostics.json", ExecutableDiagnosticsJson.Build(this.Id, packed.ImageInfo, result), "stored"));
+    return result with { Artifacts = artifacts };
+  }
+
+  private static byte[]? LocatePayload(byte[] image, out uint targetSize) {
+    targetSize = 0;
+    var sections = PackerScanner.GetPeSectionRanges(image);
+    var target = sections.FirstOrDefault(s => s.RawSize == 0 && s.VirtualSize > 0 && IsUpackName(s.Name));
+    if (target.VirtualSize == 0)
+      return null;
+    targetSize = target.VirtualSize;
+
+    var payload = sections
+      .Where(s => s.RawSize > 8 && s.RawOffset > 0 && s.RawOffset < image.Length)
+      .OrderByDescending(s => s.RawSize)
+      .FirstOrDefault();
+    if (payload.RawSize == 0 || payload.RawOffset >= image.Length)
+      return null;
+
+    var length = (int)Math.Min(payload.RawSize, (uint)(image.Length - payload.RawOffset));
+    return image.AsSpan((int)payload.RawOffset, length).ToArray();
+  }
+
+  private static bool IsUpackName(string name) =>
+    name.Contains("upack", StringComparison.OrdinalIgnoreCase);
+
+  private static byte[] BuildMetadataJson(PackedExecutable packed) {
+    var sb = new StringBuilder();
+    sb.Append("{\n");
+    sb.Append("  \"packer\": \"winupack\",\n");
+    sb.Append(CultureInfo.InvariantCulture, $"  \"container\": \"{(packed.ImageInfo?.Container.ToString() ?? "unknown").ToLowerInvariant()}\",\n");
+    sb.Append(CultureInfo.InvariantCulture, $"  \"architecture\": \"{(packed.ImageInfo?.Architecture.ToString() ?? "unknown").ToLowerInvariant()}\",\n");
+    sb.Append("  \"compressionCore\": \"unknown/upack-transform\",\n");
+    sb.Append(CultureInfo.InvariantCulture, $"  \"imageSize\": {packed.OriginalImage.LongLength}\n");
+    sb.Append("}\n");
+    return Encoding.UTF8.GetBytes(sb.ToString());
+  }
+}

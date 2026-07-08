@@ -1,0 +1,114 @@
+#pragma warning disable CS1591
+using Compression.Core.ExecutableUnpacking;
+
+namespace FileFormat.ExePackers;
+
+/// <summary>
+/// Real unpack handler for FSG ("Fast, Small, Good") — bart/Xtreeme's minimal
+/// aPLib-based Win32 PE compressor (v1.x–2.0, ~2004), identified by the
+/// <c>"FSG!"</c> marker its ~158-byte stub embeds near the entry point. FSG chose
+/// aPLib specifically (LZMA "too big", NRV "too slow"); the shared
+/// <see cref="AplibSectionPackerHandler"/> carves the aPLib-compressed section
+/// and inflates it.
+/// </summary>
+public sealed class FsgExecutablePackerHandler : AplibSectionPackerHandler {
+  public override string Id => "fsg";
+  public override string DisplayName => "FSG (Fast Small Good) aPLib-packed PE";
+  protected override string PackerLabel => "FSG";
+
+  private static ReadOnlySpan<byte> FsgMagic => "FSG!"u8;
+
+  protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
+    var idx = PackerScanner.IndexOfBounded(image, FsgMagic, 0x4000);
+    return idx >= 0
+      ? (true, 1.0, "")
+      : (false, 0, "FSG: \"FSG!\" marker not found in first 16 KB.");
+  }
+}
+
+/// <summary>
+/// Real unpack handler for ASPack (Solodovnikov, 1998+) — a long-running aPLib-style
+/// Win32 PE compressor whose stub renames a section to <c>.aspack</c> / <c>.adata</c>
+/// and embeds the literal <c>"ASPack"</c> near the start. The shared base attempts an
+/// aPLib decode of the packed section.
+/// </summary>
+public sealed class AsPackExecutablePackerHandler : AplibSectionPackerHandler {
+  public override string Id => "aspack";
+  public override string DisplayName => "ASPack aPLib-packed PE";
+  protected override string PackerLabel => "ASPack";
+
+  protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
+    var sections = PackerScanner.GetPeSections(image);
+    var hasSection = sections.Any(s =>
+      s.Name.Equals(".aspack", StringComparison.OrdinalIgnoreCase) ||
+      s.Name.Equals(".adata", StringComparison.OrdinalIgnoreCase));
+    var hasLiteral = PackerScanner.IndexOfBounded(image, "ASPack"u8, 0x10000) >= 0;
+    if (hasSection || hasLiteral)
+      return (true, hasSection && hasLiteral ? 1.0 : 0.85, "");
+    return (false, 0, "ASPack: neither .aspack/.adata section nor 'ASPack' literal found.");
+  }
+}
+
+/// <summary>
+/// Real unpack handler for PECompact 2 (Bitsum) — an aPLib-capable Win32 PE
+/// compressor whose stub carries a <c>"PEC2"</c> marker and typically renames
+/// sections to <c>.pec1</c>/<c>.pec2</c>. The shared base attempts an aPLib decode
+/// of the packed section (PECompact also supports other codecs via plug-ins, in
+/// which case the handler reports the payload as located but not aPLib-decodable).
+/// </summary>
+public sealed class PeCompactExecutablePackerHandler : AplibSectionPackerHandler {
+  public override string Id => "pecompact";
+  public override string DisplayName => "PECompact aPLib-packed PE";
+  protected override string PackerLabel => "PECompact";
+
+  protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
+    var hasMarker = PackerScanner.IndexOfBounded(image, "PEC2"u8, 0x10000) >= 0
+      || PackerScanner.IndexOfBounded(image, "PECompact2"u8, 0x10000) >= 0;
+    var hasSection = PackerScanner.GetPeSections(image).Any(s => s.Name.StartsWith(".pec", StringComparison.OrdinalIgnoreCase));
+    if (hasMarker || hasSection)
+      return (true, hasMarker && hasSection ? 1.0 : 0.85, "");
+    return (false, 0, "PECompact: no 'PEC2' marker or .pec section found.");
+  }
+}
+
+/// <summary>
+/// Real unpack handler for RLPack (ap0x) — an aPLib/LZMA Win32 PE packer that
+/// embeds the literal <c>"RLPack"</c> and stores the packed image in a
+/// <c>.RLPack</c> / <c>.packed</c> section. The shared base attempts an aPLib decode
+/// (LZMA-mode payloads are reported as located but not aPLib-decodable).
+/// </summary>
+public sealed class RlPackExecutablePackerHandler : AplibSectionPackerHandler {
+  public override string Id => "rlpack";
+  public override string DisplayName => "RLPack aPLib-packed PE";
+  protected override string PackerLabel => "RLPack";
+
+  protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
+    var hasLiteral = PackerScanner.IndexOfBounded(image, "RLPack"u8, 0x10000) >= 0;
+    var hasSection = PackerScanner.GetPeSections(image).Any(s =>
+      s.Name.Equals(".RLPack", StringComparison.OrdinalIgnoreCase));
+    if (hasLiteral || hasSection)
+      return (true, hasLiteral && hasSection ? 1.0 : 0.8, "");
+    return (false, 0, "RLPack: no 'RLPack' literal or .RLPack section found.");
+  }
+}
+
+/// <summary>
+/// Generic fallback for aPLib-compressed PEs whose specific packer we don't
+/// name (JDPack, Packman, and other aPLib-family stubs, or aPLib output from an
+/// unknown tool). Detection is by decode: a PE section that inflates to a
+/// cleanly-terminated, expanding aPLib stream is accepted. Registered last and
+/// at low confidence so a recognized packer (FSG/ASPack/PECompact/RLPack) always
+/// wins when its marker is present.
+/// </summary>
+public sealed class GenericAplibPackedPeHandler : AplibSectionPackerHandler {
+  public override string Id => "aplib_pe";
+  public override string DisplayName => "aPLib-packed PE (generic)";
+  protected override string PackerLabel => "aPLib-packed PE";
+
+  private const long DetectDecodeCap = 64L * 1024 * 1024;
+
+  protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) =>
+    TryFindAplibPayload(image.ToArray(), DetectDecodeCap, out _)
+      ? (true, 0.45, "")
+      : (false, 0, "No PE section inflated to a cleanly-terminated aPLib stream.");
+}

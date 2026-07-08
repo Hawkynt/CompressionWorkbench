@@ -50,6 +50,40 @@ internal static class PackerScanner {
     return names;
   }
 
+  /// <summary>Full raw/virtual layout of a PE section.</summary>
+  public readonly record struct PeSectionRange(string Name, uint RawOffset, uint RawSize, uint VirtualSize, uint Characteristics);
+
+  /// <summary>
+  /// Returns the PE section table with raw file offsets/sizes and virtual sizes,
+  /// or an empty list when the file isn't a valid PE. Unlike
+  /// <see cref="GetPeSections"/> this exposes the on-disk ranges packer handlers
+  /// need to carve section payloads without depending on a full PE parser.
+  /// </summary>
+  public static IReadOnlyList<PeSectionRange> GetPeSectionRanges(ReadOnlySpan<byte> data) {
+    if (!IsPe(data)) return [];
+    var eLfanew = (int)BinaryPrimitives.ReadUInt32LittleEndian(data[0x3C..]);
+    var coff = data[(eLfanew + 4)..];
+    var numSections = BinaryPrimitives.ReadUInt16LittleEndian(coff[2..]);
+    var optHdrSize = BinaryPrimitives.ReadUInt16LittleEndian(coff[16..]);
+    var sectionTableOffset = eLfanew + 24 + optHdrSize;
+    if (sectionTableOffset + numSections * 40 > data.Length) return [];
+
+    var ranges = new List<PeSectionRange>(numSections);
+    for (var i = 0; i < numSections; i++) {
+      var off = sectionTableOffset + i * 40;
+      var nameSpan = data.Slice(off, 8);
+      var terminator = nameSpan.IndexOf((byte)0);
+      if (terminator < 0) terminator = 8;
+      var name = Encoding.ASCII.GetString(nameSpan[..terminator]);
+      var virtualSize = BinaryPrimitives.ReadUInt32LittleEndian(data[(off + 8)..]);
+      var rawSize = BinaryPrimitives.ReadUInt32LittleEndian(data[(off + 16)..]);
+      var rawOffset = BinaryPrimitives.ReadUInt32LittleEndian(data[(off + 20)..]);
+      var chars = BinaryPrimitives.ReadUInt32LittleEndian(data[(off + 36)..]);
+      ranges.Add(new(name, rawOffset, rawSize, virtualSize, chars));
+    }
+    return ranges;
+  }
+
   /// <summary>
   /// Searches <paramref name="data"/> for the supplied byte pattern and returns
   /// the first matching offset (or -1 when not found). Keeps the search bounded

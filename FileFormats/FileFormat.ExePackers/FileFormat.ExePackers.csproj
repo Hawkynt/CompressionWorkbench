@@ -4,6 +4,11 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\FileFormat.Bzip2\FileFormat.Bzip2.csproj" />
+    <ProjectReference Include="..\FileFormat.Gzip\FileFormat.Gzip.csproj" />
+    <ProjectReference Include="..\FileFormat.Xz\FileFormat.Xz.csproj" />
+    <ProjectReference Include="..\FileFormat.Zstd\FileFormat.Zstd.csproj" />
   </ItemGroup>
 </Project>
