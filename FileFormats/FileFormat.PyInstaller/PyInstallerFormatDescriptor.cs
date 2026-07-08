@@ -1,4 +1,6 @@
 #pragma warning disable CS1591
+using System.Globalization;
+using System.Text;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -38,10 +40,18 @@ public sealed class PyInstallerFormatDescriptor : IFormatDescriptor, IArchiveFor
   public string Description => "PyInstaller onefile executable archive";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var reader = new PyInstallerReader(stream);
+    var image = ReadAll(stream);
+    using var imageStream = new MemoryStream(image, writable: false);
+    var reader = new PyInstallerReader(imageStream);
     var toc = reader.ReadToc();
-    var result = new List<ArchiveEntryInfo>(toc.Count);
-    var index = 0;
+    var metadata = BuildMetadataJson(reader, toc, image.LongLength);
+    var diagnostics = BuildDiagnosticsJson(reader, toc);
+    var result = new List<ArchiveEntryInfo>(toc.Count + 3) {
+      new(0, "metadata.json", metadata.LongLength, metadata.LongLength, "stored", false, false, null, Kind: "metadata"),
+      new(1, "diagnostics.json", diagnostics.LongLength, diagnostics.LongLength, "stored", false, false, null, Kind: "diagnostics"),
+      new(2, "original_packed.bin", image.LongLength, image.LongLength, "stored", false, false, null, Kind: "original packed executable"),
+    };
+    var index = 3;
 
     foreach (var entry in toc) {
       var method = entry.IsCompressed ? "zlib" : "stored";
@@ -63,10 +73,18 @@ public sealed class PyInstallerFormatDescriptor : IFormatDescriptor, IArchiveFor
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var reader = new PyInstallerReader(stream);
+    var image = ReadAll(stream);
+    using var imageStream = new MemoryStream(image, writable: false);
+    var reader = new PyInstallerReader(imageStream);
+    var toc = reader.ReadToc();
+
+    WriteArtifact(outputDir, "metadata.json", BuildMetadataJson(reader, toc, image.LongLength), files);
+    WriteArtifact(outputDir, "diagnostics.json", BuildDiagnosticsJson(reader, toc), files);
+    WriteArtifact(outputDir, "original_packed.bin", image, files);
+
     var index = 0;
 
-    foreach (var entry in reader.ReadToc()) {
+    foreach (var entry in toc) {
       var name = EntryFileName(entry, index++);
       if (files != null && !MatchesFilter(name, files))
         continue;
@@ -80,6 +98,20 @@ public sealed class PyInstallerFormatDescriptor : IFormatDescriptor, IArchiveFor
 
       WriteFile(outputDir, name, data);
     }
+  }
+
+  private static byte[] ReadAll(Stream stream) {
+    if (stream is MemoryStream ms)
+      return ms.ToArray();
+    using var copy = new MemoryStream();
+    stream.CopyTo(copy);
+    return copy.ToArray();
+  }
+
+  private static void WriteArtifact(string outputDir, string name, byte[] data, string[]? files) {
+    if (files != null && !MatchesFilter(name, files))
+      return;
+    WriteFile(outputDir, name, data);
   }
 
   private static string EntryFileName(PyInstallerEntry entry, int index) {
@@ -98,4 +130,53 @@ public sealed class PyInstallerFormatDescriptor : IFormatDescriptor, IArchiveFor
     'd' => "dependency",
     _ => "data"
   };
+
+  private static byte[] BuildMetadataJson(PyInstallerReader reader, IReadOnlyList<PyInstallerEntry> toc, long imageSize) {
+    var pyzCount = toc.Count(e => e.TypeCode is 'z' or 'Z');
+    var compressedCount = toc.Count(e => e.IsCompressed);
+    return Encoding.UTF8.GetBytes(
+      $$"""
+      {
+        "packer": "pyinstaller",
+        "container": "onefile-carchive",
+        "capabilityLevel": "PayloadDecompressed",
+        "imageSize": {{imageSize}},
+        "pythonVersion": {{reader.PythonVersion}},
+        "pythonLibraryName": "{{Json(reader.PythonLibraryName)}}",
+        "entryCount": {{toc.Count}},
+        "compressedEntryCount": {{compressedCount}},
+        "pyzArchiveCount": {{pyzCount}}
+      }
+      """);
+  }
+
+  private static byte[] BuildDiagnosticsJson(PyInstallerReader reader, IReadOnlyList<PyInstallerEntry> toc) {
+    var outputs = toc.Select(e => EntryFileName(e, 0)).Distinct(StringComparer.Ordinal).ToArray();
+    var sb = new StringBuilder();
+    sb.AppendLine("{");
+    sb.AppendLine("  \"packer\": \"pyinstaller\",");
+    sb.AppendLine("  \"container\": \"onefile-carchive\",");
+    sb.AppendLine("  \"capabilityLevel\": \"PayloadDecompressed\",");
+    sb.AppendLine("  \"canRebuildExecutable\": false,");
+    sb.Append(CultureInfo.InvariantCulture, $"  \"pythonVersion\": {reader.PythonVersion},\n");
+    sb.AppendLine("  \"warnings\": [");
+    sb.AppendLine("    \"PyInstaller onefile extraction reconstructs bundled archive entries; it does not rebuild the original source project or a runnable unpacked executable.\"");
+    sb.AppendLine("  ],");
+    sb.AppendLine("  \"outputs\": [");
+    sb.AppendLine("    \"metadata.json\",");
+    sb.AppendLine("    \"diagnostics.json\",");
+    sb.AppendLine("    \"original_packed.bin\"");
+    foreach (var output in outputs)
+      sb.Append(CultureInfo.InvariantCulture, $",\n    \"{Json(output)}\"");
+    sb.AppendLine();
+    sb.AppendLine("  ]");
+    sb.AppendLine("}");
+    return Encoding.UTF8.GetBytes(sb.ToString());
+  }
+
+  private static string Json(string value) =>
+    value.Replace("\\", "\\\\", StringComparison.Ordinal)
+      .Replace("\"", "\\\"", StringComparison.Ordinal)
+      .Replace("\r", "\\r", StringComparison.Ordinal)
+      .Replace("\n", "\\n", StringComparison.Ordinal);
 }

@@ -46,6 +46,11 @@ public sealed class UpxReader {
     Confirmed,
   }
 
+  public enum PackerHeaderLayout {
+    Legacy,
+    ModernPe,
+  }
+
   public sealed record PeSection(
     string Name, uint VirtualSize, uint VirtualAddress, uint RawSize, uint RawOffset, uint Characteristics);
 
@@ -65,7 +70,8 @@ public sealed class UpxReader {
     byte Filter,
     byte FilterCto,
     byte NumCto,
-    byte ChecksumType
+    byte ChecksumType,
+    PackerHeaderLayout Layout
   );
 
   /// <summary>Cumulative evidence collected by individual fingerprint checks.</summary>
@@ -144,6 +150,20 @@ public sealed class UpxReader {
   /// </remarks>
   public static byte[]? LocateCompressedPayload(Info info) {
     if (info.Header is not { } h) return null;
+
+    if (h.Layout == PackerHeaderLayout.ModernPe && info.Kind == ContainerKind.Pe) {
+      var packedSection = info.PeSections.FirstOrDefault(s => s.Name == "UPX1" && s.RawSize > 0);
+      if (packedSection is { RawOffset: var rawOffset, RawSize: var rawSize } &&
+          rawOffset <= info.Image.Length &&
+          rawSize <= info.Image.Length - rawOffset &&
+          h.CompressedSize <= rawSize) {
+        var sectionStart = (int)rawOffset;
+        var sectionSlice = new byte[h.CompressedSize];
+        Array.Copy(info.Image, sectionStart, sectionSlice, 0, (int)h.CompressedSize);
+        return sectionSlice;
+      }
+    }
+
     var start = h.Offset - (int)h.CompressedSize;
     if (start < 0 || start + h.CompressedSize > info.Image.Length) return null;
     var slice = new byte[h.CompressedSize];
@@ -270,30 +290,59 @@ public sealed class UpxReader {
     var filterCtoSize = BinaryPrimitives.ReadUInt32LittleEndian(h[28..]);
 
     // Sanity gate — required regardless of magic intact flag.
-    if (uLen == 0 || cLen == 0) return null;
-    if (cLen > uLen) return null;
-    if (uLen > 0x10000000) return null;        // 256 MB cap
-    if (level == 0 || level > 13) return null; // UPX levels are 1..13
-    if (version == 0 || version > 64) return null;
-    if (!IsKnownFormat(format)) return null;
-    if (!IsKnownMethod(method)) return null;
-    if (filterId > 0x100) return null;          // filter ids are small
+    if (IsPlausibleCommonHeader(version, format, method, level)) {
+      if (uLen != 0 && cLen != 0 && cLen <= uLen && uLen <= 0x10000000 && filterId <= 0x100)
+        return new PackerHeader(
+          Offset: pos,
+          MagicIntact: magicIntact,
+          Version: version,
+          Format: format,
+          Method: method,
+          Level: level,
+          UncompressedSize: uLen,
+          CompressedSize: cLen,
+          UncompressedAdler32: uAdler,
+          CompressedAdler32: cAdler,
+          FilterId: filterId,
+          FilterCtoSize: filterCtoSize,
+          Filter: 0, FilterCto: 0, NumCto: 0, ChecksumType: 0,
+          Layout: PackerHeaderLayout.Legacy);
 
-    return new PackerHeader(
-      Offset: pos,
-      MagicIntact: magicIntact,
-      Version: version,
-      Format: format,
-      Method: method,
-      Level: level,
-      UncompressedSize: uLen,
-      CompressedSize: cLen,
-      UncompressedAdler32: uAdler,
-      CompressedAdler32: cAdler,
-      FilterId: filterId,
-      FilterCtoSize: filterCtoSize,
-      Filter: 0, FilterCto: 0, NumCto: 0, ChecksumType: 0);
+      if (magicIntact) {
+        var payloadLen = uAdler;
+        var compressedLen = cAdler;
+        var originalFileLen = filterId;
+        if (payloadLen != 0 &&
+            compressedLen != 0 &&
+            compressedLen <= payloadLen &&
+            payloadLen <= originalFileLen &&
+            originalFileLen <= 0x10000000)
+          return new PackerHeader(
+            Offset: pos,
+            MagicIntact: magicIntact,
+            Version: version,
+            Format: format,
+            Method: method,
+            Level: level,
+            UncompressedSize: payloadLen,
+            CompressedSize: compressedLen,
+            UncompressedAdler32: 0,
+            CompressedAdler32: 0,
+            FilterId: 0,
+            FilterCtoSize: 0,
+            Filter: 0, FilterCto: 0, NumCto: 0, ChecksumType: 0,
+            Layout: PackerHeaderLayout.ModernPe);
+      }
+    }
+
+    return null;
   }
+
+  private static bool IsPlausibleCommonHeader(byte version, byte format, byte method, byte level) =>
+    version is > 0 and <= 64 &&
+    level is > 0 and <= 13 &&
+    IsKnownFormat(format) &&
+    IsKnownMethod(method);
 
   private static bool IsKnownMethod(byte method) =>
     method is >= 2 and <= 10 || method == 14 || method == 15;
@@ -390,9 +439,9 @@ public sealed class UpxReader {
   }
 
   private static DetectionConfidence ClassifyConfidence(DetectionEvidence e) {
-    if (e.PackHeaderFound) return DetectionConfidence.Confirmed;
+    if (e.PackHeaderFound && e.PackHeaderMagicIntact) return DetectionConfidence.Confirmed;
     if (e.SectionNamesMatch || e.ToolingBannerPresent) return DetectionConfidence.Confirmed;
-    if (e.StructuralFingerprintMatch) return DetectionConfidence.Heuristic;
+    if (e.PackHeaderFound || e.StructuralFingerprintMatch) return DetectionConfidence.Heuristic;
     return DetectionConfidence.None;
   }
 

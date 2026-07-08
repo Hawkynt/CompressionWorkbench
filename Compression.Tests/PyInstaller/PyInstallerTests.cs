@@ -242,6 +242,9 @@ public class PyInstallerTests {
 
     var names = listing.Select(e => e.Name).ToList();
     Assert.Multiple(() => {
+      Assert.That(names, Does.Contain("metadata.json"));
+      Assert.That(names, Does.Contain("diagnostics.json"));
+      Assert.That(names, Does.Contain("original_packed.bin"));
       Assert.That(names, Does.Contain("hello.txt"));
       Assert.That(names, Does.Contain("bootstrap"));
       Assert.That(names, Does.Contain("PYZ.pyz"));
@@ -264,6 +267,9 @@ public class PyInstallerTests {
         Assert.That(File.ReadAllBytes(Path.Combine(outDir, "bootstrap")), Is.EqualTo(moduleBody));
         // The PYZ container is written verbatim (its contents are not re-expanded).
         Assert.That(File.ReadAllBytes(Path.Combine(outDir, "PYZ.pyz")), Is.EqualTo(pyzBlob));
+        Assert.That(File.ReadAllText(Path.Combine(outDir, "metadata.json")), Does.Contain("\"packer\": \"pyinstaller\""));
+        Assert.That(File.ReadAllText(Path.Combine(outDir, "diagnostics.json")), Does.Contain("\"canRebuildExecutable\": false"));
+        Assert.That(File.ReadAllBytes(Path.Combine(outDir, "original_packed.bin")), Is.EqualTo(image));
       });
     } finally {
       if (Directory.Exists(outDir)) Directory.Delete(outDir, true);

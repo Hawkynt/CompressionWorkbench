@@ -1,8 +1,14 @@
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using System.Text;
+using Compression.Core.Checksums;
+using Compression.Core.Deflate;
 using Compression.Core.Dictionary.Nrv2b;
 using Compression.Core.Dictionary.Nrv2d;
 using Compression.Core.Dictionary.Nrv2e;
+using Compression.Core.ExecutableUnpacking;
+using Compression.Lib;
+using Compression.Tests.Support;
 using FileFormat.Upx;
 
 namespace Compression.Tests.Upx;
@@ -49,7 +55,7 @@ public class UpxTests {
   private static void PatchPackerHeader(byte[] buf, int offset,
       byte version = 0x04, byte format = 9 /* WIN32_PE */, byte method = 14 /* LZMA */,
       byte level = 8, uint uLen = 0x10000, uint cLen = 0x4000,
-      uint uAdler = 0xABCDEF01, uint cAdler = 0x12345678) {
+      uint uAdler = 0, uint cAdler = 0) {
     UpxReader.PackerMagic.CopyTo(buf.AsSpan(offset));
     buf[offset + 4] = version;
     buf[offset + 5] = format;
@@ -231,7 +237,7 @@ public class UpxTests {
     buf[0x4FE0] = 0; buf[0x4FE1] = 0; buf[0x4FE2] = 0; buf[0x4FE3] = 0;
 
     var info = UpxReader.Read(buf);
-    Assert.That(info.Confidence, Is.EqualTo(UpxReader.DetectionConfidence.Confirmed));
+    Assert.That(info.Confidence, Is.EqualTo(UpxReader.DetectionConfidence.Heuristic));
     Assert.That(info.Header, Is.Not.Null);
     Assert.That(info.Header!.MagicIntact, Is.False, "magic should report as wiped");
     Assert.That(info.Header.Method, Is.EqualTo((byte)2), "method byte should still be readable");
@@ -247,6 +253,20 @@ public class UpxTests {
     Assert.That(info.Evidence.StructuralFingerprintMatch, Is.True);
     Assert.That(info.Evidence.FingerprintScore, Is.GreaterThanOrEqualTo(50));
     Assert.That(info.Evidence.PackHeaderFound, Is.False);
+  }
+
+  [Test, Category("EdgeCase")]
+  public void ExecutableHandler_DoesNotRouteStructuralOnlyHeuristicAsUpxUnpack() {
+    var buf = BuildStructuralUpxPe(["foo", "bar", "baz"], entryRva: 0x9000);
+
+    var info = UpxReader.Read(buf);
+    Assert.That(info.Confidence, Is.EqualTo(UpxReader.DetectionConfidence.Heuristic));
+
+    var handlerDetection = new UpxExecutablePackerHandler().Detect(buf);
+    Assert.That(handlerDetection.IsMatch, Is.False);
+
+    var registryMatch = ExecutablePackerHandlers.DetectBest(buf);
+    Assert.That(registryMatch?.Handler.Id, Is.Not.EqualTo("upx"));
   }
 
   [Test, Category("HappyPath")]
@@ -428,21 +448,200 @@ public class UpxTests {
   }
 
   [Test, Category("EdgeCase")]
-  public void Descriptor_UnsupportedMethod_LeavesNoteInMetadata() {
+  public void Descriptor_DeflateMethod_DecompressesPayload() {
     var buf = BuildStructuralUpxPe(["UPX0", "UPX1", "UPX2"], entryRva: 0x9000);
-    // Method 15 is DEFLATE-packed UPX — still unported, so this surfaces a note.
-    PatchPackerHeader(buf, 0x4FE0, method: 15 /* DEFLATE, not yet supported */);
+    var original = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("UPX-DEFLATE ", 24)));
+    var compressed = DeflateCompressor.Compress(original);
+    compressed.CopyTo(buf.AsSpan(0x1000));
+    PatchPackerHeader(buf, 0x1000 + compressed.Length, method: 15, uLen: (uint)original.Length, cLen: (uint)compressed.Length);
     var tmp = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
     Directory.CreateDirectory(tmp);
     try {
       using var ms = new MemoryStream(buf);
       new UpxFormatDescriptor().Extract(ms, tmp, null, null);
-      var meta = File.ReadAllText(Path.Combine(tmp, "metadata.ini"));
-      Assert.That(meta, Does.Contain("[decompression]"));
-      Assert.That(meta, Does.Contain("DEFLATE"));
-      Assert.That(File.Exists(Path.Combine(tmp, "decompressed_payload.bin")), Is.False);
+      Assert.That(File.ReadAllBytes(Path.Combine(tmp, "decompressed_payload.bin")), Is.EqualTo(original).AsCollection);
     } finally {
       Directory.Delete(tmp, recursive: true);
     }
   }
+
+  [Test, Category("HappyPath")]
+  public void ExecutableHandler_HeaderlessPeUpxSections_ProbeCodecAndBuildArtifacts() {
+    var original = new byte[0x4000];
+    for (var i = 0; i < original.Length; i++)
+      original[i] = (byte)(i % 251);
+    var compressed = Compression.Core.Dictionary.Nrv2e.Nrv2eBuildingBlock.CompressBare(original, refillWidthBytes: 4);
+    var buf = BuildStructuralUpxPe(["UPX0", "UPX1", "UPX2"], entryRva: 0x9000, payload: compressed);
+
+    var handler = new UpxExecutablePackerHandler();
+    var detection = handler.Detect(buf);
+    var result = handler.Unpack(handler.Parse(buf, detection), new());
+
+    Assert.Multiple(() => {
+      Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.RebuiltExecutable));
+      Assert.That(result.Artifacts.Single(a => a.Name == "compressed_payload.bin").Data.Length, Is.EqualTo(0x4000));
+      Assert.That(result.Artifacts.Single(a => a.Name == "decompressed_payload.bin").Data,
+        Is.EqualTo(original).AsCollection);
+      Assert.That(result.Artifacts.Any(a => a.Name == "memory_image.bin"), Is.True);
+      Assert.That(result.Artifacts.Any(a => a.Name == "reconstructed/reconstructed.exe"), Is.True);
+      Assert.That(result.Diagnostics.Any(d => d.Message.Contains("NRV2E_LE32", StringComparison.Ordinal)), Is.True);
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void ExecutableHandler_ReportsCapabilitiesAndBuildsPeArtifacts() {
+    var original = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("synthetic unpacked text section ", 64)));
+    var compressed = Compression.Core.Dictionary.Nrv2b.Nrv2bBuildingBlock.CompressBare(original, refillWidthBytes: 4);
+    var buf = BuildStructuralUpxPe(["UPX0", "UPX1", "UPX2"], entryRva: 0x9000);
+    compressed.CopyTo(buf.AsSpan(0x1000));
+    PatchPackerHeader(buf, 0x1000 + compressed.Length, method: 2, uLen: (uint)original.Length, cLen: (uint)compressed.Length);
+
+    var handler = new UpxExecutablePackerHandler();
+    var detection = handler.Detect(buf);
+    var result = handler.Unpack(handler.Parse(buf, detection), new());
+
+    Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.RebuiltExecutable));
+    Assert.That(result.Capabilities.HasFlag(ExecutableUnpackCapabilities.CanBuildMemoryImage), Is.True);
+    Assert.That(result.Capabilities.HasFlag(ExecutableUnpackCapabilities.CanRebuildExecutable), Is.True);
+    Assert.That(result.Artifacts.Any(a => a.Name == "metadata.json"), Is.True);
+    Assert.That(result.Artifacts.Any(a => a.Name == "diagnostics.json"), Is.True);
+    Assert.That(result.Artifacts.Any(a => a.Name == "memory_image.bin"), Is.True);
+    var rebuilt = result.Artifacts.Single(a => a.Name == "reconstructed/reconstructed.exe").Data;
+    Assert.That(rebuilt[0], Is.EqualTo((byte)'M'));
+    Assert.That(rebuilt[1], Is.EqualTo((byte)'Z'));
+    Assert.That(new PeParser().CanParse(rebuilt), Is.True);
+  }
+
+  [Test, Category("HappyPath")]
+  public void ExecutableHandler_ValidatesLegacyAdlerChecksums_WhenRecorded() {
+    var original = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("UPX checksum validated payload ", 32)));
+    var compressed = Compression.Core.Dictionary.Nrv2b.Nrv2bBuildingBlock.CompressBare(original, refillWidthBytes: 4);
+    var buf = BuildStructuralUpxPe(["UPX0", "UPX1", "UPX2"], entryRva: 0x9000);
+    compressed.CopyTo(buf.AsSpan(0x1000));
+    PatchPackerHeader(buf, 0x1000 + compressed.Length, method: 2,
+      uLen: (uint)original.Length,
+      cLen: (uint)compressed.Length,
+      uAdler: Adler32.Compute(original),
+      cAdler: Adler32.Compute(compressed));
+
+    var handler = new UpxExecutablePackerHandler();
+    var detection = handler.Detect(buf);
+    var result = handler.Unpack(handler.Parse(buf, detection), new());
+
+    Assert.That(result.Artifacts.Any(a => a.Name == "decompressed_payload.bin"), Is.True);
+    Assert.That(result.Diagnostics.Any(d => d.Message.Contains("Adler-32", StringComparison.Ordinal)), Is.False);
+  }
+
+  [Test, Category("EdgeCase")]
+  public void ExecutableHandler_RejectsLegacyAdlerMismatch_WhenRecorded() {
+    var original = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("UPX checksum mismatch payload ", 32)));
+    var compressed = Compression.Core.Dictionary.Nrv2b.Nrv2bBuildingBlock.CompressBare(original, refillWidthBytes: 4);
+    var buf = BuildStructuralUpxPe(["UPX0", "UPX1", "UPX2"], entryRva: 0x9000);
+    compressed.CopyTo(buf.AsSpan(0x1000));
+    PatchPackerHeader(buf, 0x1000 + compressed.Length, method: 2,
+      uLen: (uint)original.Length,
+      cLen: (uint)compressed.Length,
+      uAdler: Adler32.Compute(original),
+      cAdler: Adler32.Compute(compressed) ^ 0x00010000);
+
+    var handler = new UpxExecutablePackerHandler();
+    var detection = handler.Detect(buf);
+    var result = handler.Unpack(handler.Parse(buf, detection), new());
+
+    Assert.That(result.Artifacts.Any(a => a.Name == "decompressed_payload.bin"), Is.False);
+    Assert.That(result.Diagnostics.Any(d => d.Code == ExecutableDiagnosticCode.DecompressionFailed &&
+      d.Message.Contains("compressed Adler-32 mismatch", StringComparison.Ordinal)), Is.True);
+  }
+
+  [Test, Category("HappyPath")]
+  public void ContainerParsers_ParsePeElfAndMachO_IndependentlyFromUpx() {
+    Assert.That(new PeParser().Parse(BuildStructuralUpxPe([".text", ".data", ".rsrc"], entryRva: 0x9000)).Container,
+      Is.EqualTo(ExecutableContainerKind.Pe));
+
+    var elf = new byte[64];
+    elf[0] = 0x7F; elf[1] = (byte)'E'; elf[2] = (byte)'L'; elf[3] = (byte)'F';
+    elf[4] = 2; elf[5] = 1;
+    BinaryPrimitives.WriteUInt16LittleEndian(elf.AsSpan(18), 62);
+    Assert.That(new ElfParser().Parse(elf).Architecture, Is.EqualTo(CpuArchitecture.X64));
+
+    var macho = new byte[32];
+    BinaryPrimitives.WriteUInt32LittleEndian(macho.AsSpan(0), 0xFEEDFACFu);
+    BinaryPrimitives.WriteUInt32LittleEndian(macho.AsSpan(4), 0x01000007);
+    Assert.That(new MachOParser().Parse(macho).Architecture, Is.EqualTo(CpuArchitecture.X64));
+  }
+
+  [Test, Category("ExternalTool"), Explicit("Downloads/runs UPX only when external tool verification is requested.")]
+  public void ExternalUpxTool_IsAvailableForOracleChecks() {
+    var upx = ExecutablePackerToolCache.GetUpx();
+    Assume.That(upx, Is.Not.Null, "Set CWB_DOWNLOAD_EXE_PACKER_TOOLS=1 to download UPX, or put upx on PATH.");
+    var output = ExecutablePackerToolCache.Run(upx!, "--version");
+    Assert.That(output, Does.Contain("UPX"));
+  }
+
+  [Test, Category("ExternalTool"), Explicit("Explores current UPX PE64 metadata generated by the external UPX tool.")]
+  public void ExternalUpxPe64_MetadataBlock_ProvidesPayloadSizes() {
+    var upx = ExecutablePackerToolCache.GetUpx();
+    Assume.That(upx, Is.Not.Null, "Set CWB_DOWNLOAD_EXE_PACKER_TOOLS=1 to download UPX, or put upx on PATH.");
+    Assume.That(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), Is.True, "This PE64 fixture uses Windows system executables.");
+
+    var source = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "where.exe");
+    Assume.That(File.Exists(source), Is.True, "where.exe was not found.");
+
+    var tmp = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+    Directory.CreateDirectory(tmp);
+    try {
+      var packedPath = Path.Combine(tmp, "where.exe");
+      File.Copy(source, packedPath);
+      var packOutput = ExecutablePackerToolCache.Run(upx!, "--force", "-q", packedPath);
+      Assert.That(packOutput, Does.Contain("Packed 1 file"));
+
+      var bytes = File.ReadAllBytes(packedPath);
+      var magicOffset = bytes.AsSpan().IndexOf(UpxReader.PackerMagic);
+      Assert.That(magicOffset, Is.GreaterThanOrEqualTo(0));
+
+      var compressedLength = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(magicOffset + 20));
+      var originalFileSize = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(magicOffset + 24));
+      Assert.That(originalFileSize, Is.EqualTo((uint)new FileInfo(source).Length));
+      Assert.That(compressedLength, Is.GreaterThan(0));
+
+      var info = UpxReader.Read(bytes);
+      Assert.That(info.Header, Is.Not.Null);
+      Assert.That(info.Header!.Layout, Is.EqualTo(UpxReader.PackerHeaderLayout.ModernPe));
+      Assert.That(info.Header.CompressedSize, Is.EqualTo(compressedLength));
+      Assert.That(UpxReader.LocateCompressedPayload(info), Has.Length.EqualTo((int)compressedLength));
+    } finally {
+      Directory.Delete(tmp, recursive: true);
+    }
+  }
+
+  [Test, Category("ExternalTool"), Explicit("Packs a Windows PE64 fixture with upstream UPX and verifies CW reaches the managed unpacking pipeline honestly.")]
+  public void ExternalUpxPe64_ManagedPipeline_EmitsPayloadArtifactsAndDiagnostics() {
+    var upx = ExecutablePackerToolCache.GetUpx();
+    Assume.That(upx, Is.Not.Null, "Set CWB_DOWNLOAD_EXE_PACKER_TOOLS=1 to download UPX, or put upx on PATH.");
+    Assume.That(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), Is.True, "This PE64 fixture uses Windows system executables.");
+
+    var source = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "where.exe");
+    Assume.That(File.Exists(source), Is.True, "where.exe was not found.");
+
+    var tmp = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+    Directory.CreateDirectory(tmp);
+    try {
+      var packedPath = Path.Combine(tmp, "where.exe");
+      File.Copy(source, packedPath);
+      var packOutput = ExecutablePackerToolCache.Run(upx!, "--force", "-q", packedPath);
+      Assert.That(packOutput, Does.Contain("Packed 1 file"));
+
+      var bytes = File.ReadAllBytes(packedPath);
+      var handler = new UpxExecutablePackerHandler();
+      var detection = handler.Detect(bytes);
+      Assert.That(detection.IsMatch, Is.True);
+      var result = handler.Unpack(handler.Parse(bytes, detection), new());
+
+      Assert.That(result.Artifacts.Any(a => a.Name == "compressed_payload.bin"), Is.True);
+      Assert.That(result.Diagnostics.Any(d => d.Code == ExecutableDiagnosticCode.DecompressionFailed), Is.True);
+    } finally {
+      Directory.Delete(tmp, recursive: true);
+    }
+  }
+
 }
