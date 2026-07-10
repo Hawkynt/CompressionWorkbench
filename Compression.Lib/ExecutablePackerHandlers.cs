@@ -36,6 +36,12 @@ public static class ExecutablePackerHandlers {
     new WinUpackExecutablePackerHandler(),
     new GenericNrvPackedPeHandler(),
 
+    // ELF crypters/packers (packing-box campaign)
+    new EzuriExecutablePackerHandler(),
+    new WardExecutablePackerHandler(),
+    new M0dernP4ckerExecutablePackerHandler(),
+    new MidgetPackExecutablePackerHandler(),
+
     // Descriptor-wrapped handlers
     new DescriptorExecutablePackerHandler(new AsProtectFormatDescriptor()),
     new DescriptorExecutablePackerHandler(new CrinklerFormatDescriptor()),

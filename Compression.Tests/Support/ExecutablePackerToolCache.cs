@@ -84,6 +84,26 @@ internal static class ExecutablePackerToolCache {
     return Directory.EnumerateDirectories(extractDir, "gopacker-*", SearchOption.TopDirectoryOnly).FirstOrDefault();
   }
 
+  public static string? GetEzuriSource() => GetGitHubSource("ezuri", "https://github.com/guitmz/ezuri/archive/refs/heads/master.zip", "ezuri-*");
+
+  public static string? GetWardSource() => GetGitHubSource("ward", "https://github.com/ex0dus-0x/ward/archive/refs/heads/main.zip", "ward-*");
+
+  public static string? GetM0dernP4ckerSource() => GetGitHubSource("m0dern_p4cker", "https://github.com/n4sm/m0dern_p4cker/archive/refs/heads/master.zip", "m0dern_p4cker-*");
+
+  public static string? GetMidgetPackSource() => GetGitHubSource("midgetpack", "https://github.com/arisada/midgetpack/archive/refs/heads/master.zip", "midgetpack-*");
+
+  private static string? GetGitHubSource(string id, string url, string directoryPattern) {
+    if (!DownloadsEnabled)
+      return null;
+
+    var archive = Path.Combine(Root, id, "source.zip");
+    Download(url, archive);
+    var extractDir = Path.Combine(Root, id, "source");
+    Directory.CreateDirectory(extractDir);
+    ZipFile.ExtractToDirectory(archive, extractDir, overwriteFiles: true);
+    return Directory.EnumerateDirectories(extractDir, directoryPattern, SearchOption.TopDirectoryOnly).FirstOrDefault();
+  }
+
   public static string? GetOrigamiSource() {
     if (!DownloadsEnabled)
       return null;
