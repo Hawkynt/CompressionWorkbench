@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Diagnostics;
 using Compression.Core.DiskImage;
+using Compression.Core.ExecutableUnpacking;
 using Compression.Lib;
 using Compression.Registry;
 using F = Compression.Lib.FormatDetector.Format;
@@ -9,6 +10,8 @@ var archiveArg = new Argument<FileInfo>("archive") { Description = "Path to the 
 var outputOpt = new Option<DirectoryInfo?>("--output", "-o") { Description = "Output directory" };
 var passwordOpt = new Option<string?>("--password", "-p") { Description = "Password for encrypted archives" };
 var filesArg = new Argument<string[]>("files") { Description = "Specific files to extract", Arity = ArgumentArity.ZeroOrMore };
+var strictRebuildOpt = new Option<bool>("--strict-rebuild") { Description = "For executable packers, fail unless a reconstructed executable artifact can be produced" };
+var bestEffortOpt = new Option<bool>("--best-effort") { Description = "For executable packers, emit all intermediate artifacts even if final rebuild fails" };
 
 // ── list ─────────────────────────────────────────────────────────────
 
@@ -59,18 +62,53 @@ var extractCmd = new Command("extract", """
     cwb extract archive.7z -o output/        Extract all to output/
     cwb extract archive.zip file.txt         Extract specific file
     cwb extract setup.exe -o output/         Extract third-party SFX (7-Zip, WinRAR, etc.)
-  """) { archiveArg, outputOpt, passwordOpt, filesArg };
+  """) { archiveArg, outputOpt, passwordOpt, strictRebuildOpt, bestEffortOpt, filesArg };
 extractCmd.Aliases.Add("x");
 extractCmd.SetAction((ParseResult ctx) => {
   var archive = ctx.GetValue(archiveArg)!;
   var output = ctx.GetValue(outputOpt);
   var password = ctx.GetValue(passwordOpt);
+  var strictRebuild = ctx.GetValue(strictRebuildOpt);
+  var bestEffort = ctx.GetValue(bestEffortOpt);
   var files = ctx.GetValue(filesArg);
 
   if (!archive.Exists) { Console.Error.WriteLine($"File not found: {archive.FullName}"); return 1; }
 
   var outputDir = output?.FullName ?? Directory.GetCurrentDirectory();
   var fileFilter = files is { Length: > 0 } ? files : null;
+
+  if (strictRebuild || bestEffort) {
+    var image = File.ReadAllBytes(archive.FullName);
+    var match = ExecutablePackerHandlers.DetectBest(image);
+    if (match == null) {
+      Console.Error.WriteLine("No supported executable packer was detected.");
+      return 1;
+    }
+
+    Console.Write($"Unpacking {archive.Name} with {match.Handler.DisplayName}...");
+    var swExe = Stopwatch.StartNew();
+    var packed = match.Handler.Parse(image, match.Detection);
+    var result = match.Handler.Unpack(packed, new(StrictRebuild: strictRebuild, BestEffort: bestEffort || !strictRebuild));
+    if (strictRebuild && !result.Capabilities.HasFlag(ExecutableUnpackCapabilities.CanRebuildExecutable)) {
+      Console.Error.WriteLine(" failed");
+      foreach (var d in result.Diagnostics.Where(d => d.IsError))
+        Console.Error.WriteLine($"  {d.Code}: {d.Message}");
+      return 1;
+    }
+
+    var written = 0;
+    foreach (var artifact in result.Artifacts) {
+      if (fileFilter != null && !MatchesArtifactFilter(artifact.Name, fileFilter))
+        continue;
+      WriteUnpackArtifact(outputDir, artifact);
+      written++;
+    }
+    swExe.Stop();
+    Console.WriteLine($" done ({swExe.ElapsedMilliseconds}ms)");
+    Console.WriteLine($"Output: {outputDir}");
+    Console.WriteLine($"Artifacts: {written}  Level: {result.Level}");
+    return 0;
+  }
 
   Console.Write($"Extracting {archive.Name}...");
   var sw = Stopwatch.StartNew();
@@ -355,6 +393,65 @@ infoCmd.SetAction((ParseResult ctx) => {
 });
 
 // ── convert ──────────────────────────────────────────────────────────
+
+var inspectFileArg = new Argument<FileInfo>("file") { Description = "File to inspect" };
+var inspectUnpackCapsOpt = new Option<bool>("--unpack-capabilities") {
+  Description = "Show executable unpacking handler capabilities and best-effort capability level"
+};
+
+var inspectCmd = new Command("inspect", """
+  Inspect file-specific capabilities.
+
+  Example:
+    cwb inspect sample.exe --unpack-capabilities
+  """) { inspectFileArg, inspectUnpackCapsOpt };
+inspectCmd.SetAction((ParseResult ctx) => {
+  var file = ctx.GetValue(inspectFileArg)!;
+  if (!file.Exists) { Console.Error.WriteLine($"File not found: {file.FullName}"); return 1; }
+
+  if (!ctx.GetValue(inspectUnpackCapsOpt)) {
+    Console.Error.WriteLine("Nothing selected. Use --unpack-capabilities.");
+    return 1;
+  }
+
+  var image = File.ReadAllBytes(file.FullName);
+  var match = ExecutablePackerHandlers.DetectBest(image);
+  if (match == null) {
+    Console.WriteLine($"File: {file.Name}");
+    Console.WriteLine("Packer: none detected");
+    Console.WriteLine("Executable unpacking: not supported for this input");
+    return 0;
+  }
+
+  var packed = match.Handler.Parse(image, match.Detection);
+  var result = match.Handler.Unpack(packed, new());
+  var imageInfo = packed.ImageInfo;
+
+  Console.WriteLine($"File: {file.Name}");
+  Console.WriteLine($"Packer: {match.Handler.DisplayName} ({match.Handler.Id})");
+  Console.WriteLine($"Detection confidence: {match.Detection.Confidence:P0}");
+  Console.WriteLine($"Container: {imageInfo?.Container.ToString() ?? "Unknown"}");
+  Console.WriteLine($"Architecture: {imageInfo?.Architecture.ToString() ?? "Unknown"}");
+  Console.WriteLine($"Level: {result.Level}");
+  Console.WriteLine($"Executable rebuild: {CapabilityStatus(result.Capabilities, ExecutableUnpackCapabilities.CanRebuildExecutable)}");
+  Console.WriteLine($"Runnable rebuild: {CapabilityStatus(result.Capabilities, ExecutableUnpackCapabilities.CanProduceRunnableExecutable)}");
+  Console.WriteLine($"Declared capabilities: {DescribeExecutableCapabilities(match.Handler.Capabilities)}");
+  Console.WriteLine($"Achieved capabilities: {DescribeExecutableCapabilities(result.Capabilities)}");
+
+  if (result.Diagnostics.Count > 0) {
+    Console.WriteLine("Diagnostics:");
+    foreach (var d in result.Diagnostics)
+      Console.WriteLine($"  {(d.IsError ? "error" : "warning")}: {d.Code}: {d.Message}");
+  }
+
+  if (result.Artifacts.Count > 0) {
+    Console.WriteLine("Outputs:");
+    foreach (var artifact in result.Artifacts)
+      Console.WriteLine($"  {artifact.Name}");
+  }
+
+  return 0;
+});
 
 var convertInputArg = new Argument<FileInfo>("input") { Description = "Source archive" };
 var convertOutputArg = new Argument<FileInfo>("output") { Description = "Destination archive (format from extension)" };
@@ -2435,7 +2532,7 @@ var root = new RootCommand("""
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, convertCmd, optimizeCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
+  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, inspectCmd, convertCmd, optimizeCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
 };
 
 return root.Parse(args).Invoke();
@@ -2448,6 +2545,35 @@ static string FormatSize(long bytes) => bytes switch {
   < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024):F1} MB",
   _ => $"{bytes / (1024.0 * 1024 * 1024):F2} GB",
 };
+
+static string CapabilityStatus(ExecutableUnpackCapabilities capabilities, ExecutableUnpackCapabilities flag) =>
+  capabilities.HasFlag(flag) ? "supported" : "not supported";
+
+static string DescribeExecutableCapabilities(ExecutableUnpackCapabilities capabilities) {
+  if (capabilities == ExecutableUnpackCapabilities.None) return "none";
+  var names = Enum.GetValues<ExecutableUnpackCapabilities>()
+    .Where(v => v != ExecutableUnpackCapabilities.None && capabilities.HasFlag(v))
+    .Select(v => v.ToString());
+  return string.Join(", ", names);
+}
+
+static void WriteUnpackArtifact(string outputDir, Compression.Core.ExecutableUnpacking.UnpackArtifact artifact) {
+  var root = Path.GetFullPath(outputDir);
+  Directory.CreateDirectory(root);
+  var normalizedName = artifact.Name.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+  var target = Path.GetFullPath(Path.Combine(root, normalizedName));
+  if (!target.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
+      !string.Equals(target, root, StringComparison.OrdinalIgnoreCase))
+    throw new InvalidDataException($"Artifact path escapes output directory: {artifact.Name}");
+  var dir = Path.GetDirectoryName(target);
+  if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+  File.WriteAllBytes(target, artifact.Data);
+}
+
+static bool MatchesArtifactFilter(string name, string[] filters) =>
+  filters.Any(f =>
+    string.Equals(name, f, StringComparison.OrdinalIgnoreCase) ||
+    string.Equals(Path.GetFileName(name), f, StringComparison.OrdinalIgnoreCase));
 
 static void BenchmarkBlock(string name, byte[] data, IBuildingBlock block) {
   try {

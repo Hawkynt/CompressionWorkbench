@@ -20,9 +20,19 @@ public sealed class FsgExecutablePackerHandler : AplibSectionPackerHandler {
 
   protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
     var idx = PackerScanner.IndexOfBounded(image, FsgMagic, 0x4000);
-    return idx >= 0
-      ? (true, 1.0, "")
-      : (false, 0, "FSG: \"FSG!\" marker not found in first 16 KB.");
+    if (idx >= 0)
+      return (true, 1.0, "");
+
+    var sections = PackerScanner.GetPeSections(image);
+    var emptyCount = sections.Count(s => string.IsNullOrWhiteSpace(s.Name));
+    var hasFsgLayout = sections.Count == 3 &&
+      (sections[0].Name.Equals("t", StringComparison.OrdinalIgnoreCase) || emptyCount >= 2) &&
+      sections.Skip(1).Any(s => s.Name.Equals("ta", StringComparison.OrdinalIgnoreCase)) &&
+      sections.Skip(1).Any(s => s.Name.Equals("a", StringComparison.OrdinalIgnoreCase));
+    var hasBlankFsgLayout = sections.Count == 3 && emptyCount >= 2;
+    return hasFsgLayout || hasBlankFsgLayout
+      ? (true, 0.9, "")
+      : (false, 0, "FSG: neither \"FSG!\" marker nor t/ta/a section layout found.");
   }
 }
 
@@ -93,12 +103,82 @@ public sealed class RlPackExecutablePackerHandler : AplibSectionPackerHandler {
 }
 
 /// <summary>
+/// Real unpack handler for Packman - a Win32 PE compressor that marks its
+/// payload section as <c>.PACKMAN</c>. The shared aPLib base handles the
+/// corpus variant whose section contains a clean aPLib stream.
+/// </summary>
+public sealed class PackmanExecutablePackerHandler : AplibSectionPackerHandler {
+  public override string Id => "packman";
+  public override string DisplayName => "Packman aPLib-packed PE";
+  protected override string PackerLabel => "Packman";
+
+  protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
+    var hasLiteral = PackerScanner.IndexOfBounded(image, "PACKMAN"u8, 0x10000) >= 0 ||
+      PackerScanner.IndexOfBounded(image, "Packman"u8, 0x10000) >= 0;
+    var hasSection = PackerScanner.GetPeSections(image).Any(s =>
+      s.Name.Equals(".PACKMAN", StringComparison.OrdinalIgnoreCase));
+    if (hasLiteral || hasSection)
+      return (true, hasLiteral && hasSection ? 1.0 : 0.85, "");
+    return (false, 0, "Packman: no 'PACKMAN' literal or .PACKMAN section found.");
+  }
+}
+
+/// <summary>
+/// Real unpack handler for Enigma Virtual Box corpus outputs. EVB is primarily
+/// a file bundler, but the public Packing Box PE corpus variants include
+/// <c>.enigma1</c>/<c>.enigma2</c> sections whose payload is recovered by the
+/// shared managed aPLib PE pipeline. Full bundled file-tree extraction remains a
+/// separate higher-level target.
+/// </summary>
+public sealed class EnigmaVirtualBoxExecutablePackerHandler : AplibSectionPackerHandler {
+  public override string Id => "enigmavirtualbox";
+  public override string DisplayName => "Enigma Virtual Box aPLib-packed PE";
+  protected override string PackerLabel => "Enigma Virtual Box";
+
+  protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
+    var sections = PackerScanner.GetPeSections(image);
+    var hasEnigma1 = sections.Any(s => s.Name.Equals(".enigma1", StringComparison.OrdinalIgnoreCase));
+    var hasEnigma2 = sections.Any(s => s.Name.Equals(".enigma2", StringComparison.OrdinalIgnoreCase));
+    var hasLiteral = PackerScanner.IndexOfBounded(image, "VirtualBox"u8, 0x200000) >= 0 ||
+      PackerScanner.IndexOfBounded(image, "EVB"u8, 0x200000) >= 0 ||
+      PackerScanner.IndexOfBounded(image, "enigma"u8, 0x200000) >= 0;
+    if (hasEnigma1 && hasEnigma2)
+      return (true, hasLiteral ? 1.0 : 0.92, "");
+    if (hasEnigma2 && hasLiteral)
+      return (true, 0.88, "");
+    return (false, 0, "Enigma Virtual Box: .enigma1/.enigma2 section pair not found.");
+  }
+}
+
+/// <summary>
+/// Real unpack handler for PE-Toy, a Win32 PE packer whose documented shell
+/// layout adds a <c>.petoy</c> section and uses an aPLib payload. The shared
+/// aPLib base carves and inflates the payload and emits a synthetic rebuilt PE
+/// when the decoded image can be mapped.
+/// </summary>
+public sealed class PeToyExecutablePackerHandler : AplibSectionPackerHandler {
+  public override string Id => "petoy";
+  public override string DisplayName => "PE-Toy aPLib-packed PE";
+  protected override string PackerLabel => "PE-Toy";
+
+  protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
+    var hasSection = PackerScanner.GetPeSections(image).Any(s =>
+      s.Name.Equals(".petoy", StringComparison.OrdinalIgnoreCase));
+    var hasLiteral = PackerScanner.IndexOfBounded(image, "petoy"u8, 0x10000) >= 0 ||
+      PackerScanner.IndexOfBounded(image, "PE Toy"u8, 0x10000) >= 0;
+    if (hasSection || hasLiteral)
+      return (true, hasSection && hasLiteral ? 1.0 : 0.9, "");
+    return (false, 0, "PE-Toy: no .petoy section or PE-Toy literal found.");
+  }
+}
+
+/// <summary>
 /// Generic fallback for aPLib-compressed PEs whose specific packer we don't
-/// name (JDPack, Packman, and other aPLib-family stubs, or aPLib output from an
-/// unknown tool). Detection is by decode: a PE section that inflates to a
+/// name (JDPack and other aPLib-family stubs, or aPLib output from an unknown
+/// tool). Detection is by decode: a PE section that inflates to a
 /// cleanly-terminated, expanding aPLib stream is accepted. Registered last and
-/// at low confidence so a recognized packer (FSG/ASPack/PECompact/RLPack) always
-/// wins when its marker is present.
+/// at low confidence so a recognized packer always wins when its marker is
+/// present.
 /// </summary>
 public sealed class GenericAplibPackedPeHandler : AplibSectionPackerHandler {
   public override string Id => "aplib_pe";

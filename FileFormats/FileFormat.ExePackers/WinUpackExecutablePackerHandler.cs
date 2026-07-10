@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 using Compression.Core.ExecutableUnpacking;
@@ -22,7 +23,7 @@ public sealed class WinUpackExecutablePackerHandler : IExecutablePackerHandler {
     var sections = PackerScanner.GetPeSectionRanges(image);
     var hasVirtualUpack = sections.Any(s => s.RawSize == 0 && s.VirtualSize > 0 && IsUpackName(s.Name));
     var hasPayload = sections.Any(s => s.RawSize > 8 && s.RawOffset > 0);
-    if (hasVirtualUpack && hasPayload)
+    if ((hasVirtualUpack && hasPayload) || HasPsLayout(image))
       return new(true, this.Id, 0.9, []);
 
     return new(false, this.Id, 0, [
@@ -83,6 +84,8 @@ public sealed class WinUpackExecutablePackerHandler : IExecutablePackerHandler {
     targetSize = 0;
     var sections = PackerScanner.GetPeSectionRanges(image);
     var target = sections.FirstOrDefault(s => s.RawSize == 0 && s.VirtualSize > 0 && IsUpackName(s.Name));
+    if (target.VirtualSize == 0 && HasPsLayout(image))
+      target = sections.FirstOrDefault();
     if (target.VirtualSize == 0)
       return null;
     targetSize = target.VirtualSize;
@@ -100,6 +103,74 @@ public sealed class WinUpackExecutablePackerHandler : IExecutablePackerHandler {
 
   private static bool IsUpackName(string name) =>
     name.Contains("upack", StringComparison.OrdinalIgnoreCase);
+
+  private static bool HasPsLayout(ReadOnlySpan<byte> image) {
+    var sections = ReadPeSectionLayouts(image);
+    if (sections.Count != 3 || !sections[0].Name.StartsWith("PS", StringComparison.Ordinal))
+      return false;
+
+    var entryPoint = ReadPeEntryPoint(image);
+    if (entryPoint == null)
+      return false;
+
+    var first = sections[0];
+    var firstEnd = first.VirtualAddress + Math.Max(first.VirtualSize, first.RawSize);
+    return entryPoint.Value >= first.VirtualAddress &&
+      entryPoint.Value < firstEnd &&
+      sections[1].RawSize > 8 &&
+      sections[1].RawOffset > 0;
+  }
+
+  private readonly record struct PeSectionLayout(
+    string Name,
+    uint VirtualAddress,
+    uint VirtualSize,
+    uint RawOffset,
+    uint RawSize);
+
+  private static IReadOnlyList<PeSectionLayout> ReadPeSectionLayouts(ReadOnlySpan<byte> image) {
+    if (!PackerScanner.IsPe(image))
+      return [];
+
+    var peOffset = BinaryPrimitives.ReadInt32LittleEndian(image[0x3c..]);
+    if (peOffset < 0 || peOffset + 24 > image.Length)
+      return [];
+
+    var sectionCount = BinaryPrimitives.ReadUInt16LittleEndian(image[(peOffset + 6)..]);
+    var optionalSize = BinaryPrimitives.ReadUInt16LittleEndian(image[(peOffset + 20)..]);
+    var sectionOffset = peOffset + 24 + optionalSize;
+    if (sectionOffset < 0 || sectionOffset + sectionCount * 40 > image.Length)
+      return [];
+
+    var sections = new List<PeSectionLayout>(sectionCount);
+    for (var i = 0; i < sectionCount; i++) {
+      var offset = sectionOffset + i * 40;
+      var nameSpan = image.Slice(offset, 8);
+      var terminator = nameSpan.IndexOf((byte)0);
+      if (terminator < 0)
+        terminator = 8;
+      var name = Encoding.ASCII.GetString(nameSpan[..terminator]);
+      sections.Add(new(
+        name,
+        BinaryPrimitives.ReadUInt32LittleEndian(image[(offset + 12)..]),
+        BinaryPrimitives.ReadUInt32LittleEndian(image[(offset + 8)..]),
+        BinaryPrimitives.ReadUInt32LittleEndian(image[(offset + 20)..]),
+        BinaryPrimitives.ReadUInt32LittleEndian(image[(offset + 16)..])));
+    }
+    return sections;
+  }
+
+  private static uint? ReadPeEntryPoint(ReadOnlySpan<byte> image) {
+    if (image.Length < 0x40 || image[0] != (byte)'M' || image[1] != (byte)'Z')
+      return null;
+    var peOffset = BinaryPrimitives.ReadInt32LittleEndian(image[0x3c..]);
+    if (peOffset < 0 || peOffset + 44 > image.Length)
+      return null;
+    if (image[peOffset] != (byte)'P' || image[peOffset + 1] != (byte)'E' || image[peOffset + 2] != 0 || image[peOffset + 3] != 0)
+      return null;
+    var optionalOffset = peOffset + 24;
+    return BinaryPrimitives.ReadUInt32LittleEndian(image[(optionalOffset + 16)..]);
+  }
 
   private static byte[] BuildMetadataJson(PackedExecutable packed) {
     var sb = new StringBuilder();

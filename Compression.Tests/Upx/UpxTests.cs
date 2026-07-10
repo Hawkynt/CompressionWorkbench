@@ -216,6 +216,15 @@ public class UpxTests {
     return buf;
   }
 
+  private static byte[] BuildMinimalMachO(int cpuType) {
+    const int abi64 = 0x01000000;
+    var is64 = (cpuType & abi64) != 0;
+    var buf = new byte[is64 ? 32 : 28];
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(0), is64 ? 0xFEEDFACFu : 0xFEEDFACEu);
+    BinaryPrimitives.WriteInt32LittleEndian(buf.AsSpan(4), cpuType);
+    return buf;
+  }
+
   [Test, Category("HappyPath")]
   public void Detect_RenamedSections_ButPackHeaderIntact() {
     // Section names wiped to non-UPX, but PackHeader magic is still there.
@@ -568,6 +577,18 @@ public class UpxTests {
     BinaryPrimitives.WriteUInt32LittleEndian(macho.AsSpan(0), 0xFEEDFACFu);
     BinaryPrimitives.WriteUInt32LittleEndian(macho.AsSpan(4), 0x01000007);
     Assert.That(new MachOParser().Parse(macho).Architecture, Is.EqualTo(CpuArchitecture.X64));
+  }
+
+  [Test, Category("HappyPath")]
+  public void MachOParser_TreatsAbi64AsCpuTypeFlag() {
+    Assert.Multiple(() => {
+      Assert.That(new MachOParser().Parse(BuildMinimalMachO(7)).Architecture, Is.EqualTo(CpuArchitecture.X86));
+      Assert.That(new MachOParser().Parse(BuildMinimalMachO(0x01000007)).Architecture, Is.EqualTo(CpuArchitecture.X64));
+      Assert.That(new MachOParser().Parse(BuildMinimalMachO(12)).Architecture, Is.EqualTo(CpuArchitecture.Arm32));
+      Assert.That(new MachOParser().Parse(BuildMinimalMachO(0x0100000C)).Architecture, Is.EqualTo(CpuArchitecture.Arm64));
+      Assert.That(new MachOParser().Parse(BuildMinimalMachO(18)).Architecture, Is.EqualTo(CpuArchitecture.PowerPc32));
+      Assert.That(new MachOParser().Parse(BuildMinimalMachO(0x01000012)).Architecture, Is.EqualTo(CpuArchitecture.PowerPc64));
+    });
   }
 
   [Test, Category("ExternalTool"), Explicit("Downloads/runs UPX only when external tool verification is requested.")]

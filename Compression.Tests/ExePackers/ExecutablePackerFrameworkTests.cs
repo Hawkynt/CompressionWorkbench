@@ -7,6 +7,7 @@ using Compression.Core.Dictionary.Nrv2b;
 using Compression.Core.ExecutableUnpacking;
 using Compression.Core.Streams;
 using Compression.Lib;
+using Compression.Tests.Support;
 using FileFormat.Bzip2;
 using FileFormat.ExePackers;
 using FileFormat.Gzip;
@@ -37,10 +38,22 @@ public class ExecutablePackerFrameworkTests {
   public void Registry_ContainsCurrentRealExecutableUnpackers() {
     var ids = ExecutablePackerHandlers.All.Select(h => h.Id).ToArray();
     Assert.That(ids, Is.SupersetOf(new[] {
-      "upx", "fsg", "aspack", "pecompact", "rlpack",
-      "gzexe", "bzexe", "papaw", "gopacker", "origami", "silent_packer", "huan",
+      "upx", "fsg", "aspack", "pecompact", "rlpack", "packman", "enigmavirtualbox", "petoy",
+      "gzexe", "bzexe", "papaw", "gopacker", "origami", "pypepacker", "silent_packer", "huan",
+      "xor_packer", "hxor", "simpledpack", "yodacrypter", "nspack", "themida",
       "nrv_pe",
     }));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Registry_ExecutablePackerHandlerIds_AreUnique() {
+    var duplicates = ExecutablePackerHandlers.All
+      .GroupBy(h => h.Id)
+      .Where(g => g.Count() > 1)
+      .Select(g => $"{g.Key}:{g.Count()}")
+      .ToArray();
+
+    Assert.That(duplicates, Is.Empty);
   }
 
   [Test, Category("HappyPath")]
@@ -179,11 +192,29 @@ public class ExecutablePackerFrameworkTests {
     });
   }
 
+  [Test, Category("HappyPath")]
+  public void XorPackerHandler_UnpacksEmbeddedPePayload() {
+    var original = MinimalPe();
+    var wrapper = BuildXorPackerWrapper(original, "ABCDEFGHIJKLMNOPQRSTUVWXY");
+
+    var handler = new XorPackerExecutablePackerHandler();
+    var result = Unpack(handler, wrapper);
+
+    Assert.Multiple(() => {
+      Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.RebuiltExecutable));
+      Assert.That(result.Artifacts.Single(a => a.Name == "compressed_payload.txt").Data.Length, Is.GreaterThan(0));
+      Assert.That(result.Artifacts.Single(a => a.Name == "reconstructed/reconstructed.exe").Data,
+        Is.EqualTo(original).AsCollection);
+    });
+  }
+
   private static readonly (string HandlerId, string Marker, string Section)[] AplibPackers = [
     ("fsg", "FSG!", ".fsg"),
     ("aspack", "ASPack", ".aspack"),
     ("pecompact", "PEC2", ".pec1"),
     ("rlpack", "RLPack", ".RLPack"),
+    ("packman", "PACKMAN", ".PACKMAN"),
+    ("enigmavirtualbox", "VirtualBox", ".enigma2"),
   ];
 
   [Test, Category("HappyPath")]
@@ -247,6 +278,46 @@ public class ExecutablePackerFrameworkTests {
       Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.PayloadLocated));
       Assert.That(result.Artifacts.Any(a => a.Name == "compressed_payload.bin"), Is.True);
       Assert.That(result.Artifacts.Any(a => a.Name == "decompressed_payload.bin"), Is.False);
+      Assert.That(result.Diagnostics.Any(d => d.Code == ExecutableDiagnosticCode.DecompressionFailed), Is.True);
+    });
+  }
+
+  [Test, Category("ExternalTool")]
+  public void PackingBoxEnigmaVirtualBoxSample_RebuildsWithNamedHandler() {
+    var root = ExecutablePackerToolCache.GetPackingBoxDatasetPackedRoot();
+    Assume.That(root, Is.Not.Null, "Set CWB_DOWNLOAD_EXE_PACKER_TOOLS=1 to download the Packing Box packed-PE corpus.");
+    var sample = Path.Combine(root!, "Enigma Virtual Box", "enigmavb_7z.exe");
+    Assume.That(File.Exists(sample), Is.True, "Packing Box Enigma Virtual Box sample is not available.");
+
+    var bytes = File.ReadAllBytes(sample);
+    var match = ExecutablePackerHandlers.DetectBest(bytes);
+    Assert.That(match, Is.Not.Null);
+    Assert.That(match!.Handler.Id, Is.EqualTo("enigmavirtualbox"));
+
+    var result = match.Handler.Unpack(match.Handler.Parse(bytes, match.Detection), new());
+    Assert.Multiple(() => {
+      Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.RebuiltExecutable));
+      Assert.That(result.Artifacts.Single(a => a.Name == "decompressed_payload.bin").Data.Length, Is.GreaterThan(0));
+      Assert.That(result.Artifacts.Any(a => a.Name == "reconstructed/reconstructed.exe"), Is.True);
+      Assert.That(result.Capabilities.HasFlag(ExecutableUnpackCapabilities.CanRebuildExecutable), Is.True);
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void FsgHandler_LocatesPayloadCandidates_FromStructuralSectionLayout() {
+    var packed = BuildFsgStructuralPe();
+
+    var match = ExecutablePackerHandlers.DetectBest(packed);
+    Assert.That(match, Is.Not.Null);
+    Assert.That(match!.Handler.Id, Is.EqualTo("fsg"));
+
+    var result = ExecutablePackerHandlers.TryUnpack(packed);
+
+    Assert.Multiple(() => {
+      Assert.That(result, Is.Not.Null);
+      Assert.That(result!.Level, Is.EqualTo(ExecutableUnpackLevel.PayloadLocated));
+      Assert.That(result.Artifacts.Any(a => a.Name == "payload_candidates/candidate_000@0x400.bin"), Is.True);
+      Assert.That(result.Artifacts.Any(a => a.Name == "payload_candidates/candidate_001@0x1800.bin"), Is.True);
       Assert.That(result.Diagnostics.Any(d => d.Code == ExecutableDiagnosticCode.DecompressionFailed), Is.True);
     });
   }
@@ -404,6 +475,40 @@ public class ExecutablePackerFrameworkTests {
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sectionOffset + 40 + 20), rawOffset);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(sectionOffset + 40 + 36), 0xE0000020);
     payload.CopyTo(image.AsSpan(rawOffset));
+    return image;
+  }
+
+  private static byte[] BuildFsgStructuralPe() {
+    const int peOffset = 0x80;
+    const int optionalOffset = peOffset + 24;
+    const int optionalSize = 0xE0;
+    const int sectionOffset = optionalOffset + optionalSize;
+    const int raw1 = 0x400;
+    const int raw2 = 0x1800;
+    var payload1 = new byte[0x1400];
+    var payload2 = new byte[0x200];
+    new Random(0xF500).NextBytes(payload1);
+    new Random(0xF501).NextBytes(payload2);
+
+    var image = new byte[raw2 + payload2.Length];
+    image[0] = (byte)'M'; image[1] = (byte)'Z';
+    BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(0x3C), peOffset);
+    "PE\0\0"u8.CopyTo(image.AsSpan(peOffset));
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 4), 0x14C);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 6), 3);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 20), optionalSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 22), 0x010F);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(optionalOffset), 0x10B);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 16), 0x7000);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 28), 0x00400000);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 32), 0x1000);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(optionalOffset + 36), 0x200);
+
+    WriteSection(image, sectionOffset, "t", 0x6000, 0x1000, 0, 0, 0xC00000E0);
+    WriteSection(image, sectionOffset + 40, "ta", 0x5000, 0x7000, payload1.Length, raw1, 0xC00000E0);
+    WriteSection(image, sectionOffset + 80, "a", 0x1000, 0xC000, payload2.Length, raw2, 0xC00000E0);
+    payload1.CopyTo(image.AsSpan(raw1));
+    payload2.CopyTo(image.AsSpan(raw2));
     return image;
   }
 
@@ -778,5 +883,25 @@ public class ExecutablePackerFrameworkTests {
     iv.CopyTo(image.AsSpan(0x418));
     encrypted.CopyTo(image.AsSpan(0x428));
     return image;
+  }
+
+  private static byte[] BuildXorPackerWrapper(byte[] original, string key) {
+    var stub = MinimalPe();
+    var originalBase64 = Convert.ToBase64String(original);
+    var xoredPayload = XorString(originalBase64, key);
+    var encodedPayload = Convert.ToBase64String(Encoding.UTF8.GetBytes(xoredPayload));
+    var encodedKey = Convert.ToBase64String(Encoding.UTF8.GetBytes(XorString(key, "randomkey")));
+    var settings = Encoding.ASCII.GetBytes("***" + encodedPayload + "|" + encodedKey);
+    var packed = new byte[stub.Length + 1 + settings.Length];
+    stub.CopyTo(packed.AsSpan());
+    settings.CopyTo(packed.AsSpan(stub.Length + 1));
+    return packed;
+  }
+
+  private static string XorString(string data, string key) {
+    var result = new char[data.Length];
+    for (var i = 0; i < data.Length; i++)
+      result[i] = (char)(data[i] ^ key[i % key.Length]);
+    return new string(result);
   }
 }

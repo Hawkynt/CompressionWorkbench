@@ -2,7 +2,9 @@ using System.Buffers.Binary;
 using System.Text;
 using Compression.Core.Crypto;
 using Compression.Core.Deflate;
+using Compression.Core.ExecutableUnpacking;
 using Compression.Core.Streams;
+using Compression.Lib;
 using Compression.Tests.Support;
 using FileFormat.ExePackers;
 using FileFormat.Bzip2;
@@ -487,6 +489,159 @@ public class PackerDetectorTests {
     using var ms = new MemoryStream(MinimalPe());
     Assert.That(() => new HuanFormatDescriptor().List(ms, null),
       Throws.InstanceOf<InvalidDataException>());
+  }
+
+  [Test, Category("ExternalTool")]
+  public void ExternalXorPackerSource_IncludedFixture_ExtractsOriginalExecutable() {
+    var source = ExecutablePackerToolCache.GetXorPackerSource();
+    Assume.That(source, Is.Not.Null, "Set CWB_DOWNLOAD_EXE_PACKER_TOOLS=1 to download the Xor_Packer source archive.");
+
+    var packed = Path.Combine(source!, "xorPacker", "bin", "Debug", "packed_exe.exe");
+    var original = Path.Combine(source!, "xorPacker", "bin", "Debug", "putty.exe");
+    Assume.That(File.Exists(packed), Is.True, "Upstream Xor_Packer packed fixture is not present.");
+    Assume.That(File.Exists(original), Is.True, "Upstream Xor_Packer original fixture is not present.");
+
+    var handler = new XorPackerExecutablePackerHandler();
+    var packedBytes = File.ReadAllBytes(packed);
+    var detection = handler.Detect(packedBytes);
+    Assert.That(detection.IsMatch, Is.True);
+
+    var result = handler.Unpack(handler.Parse(packedBytes, detection), new());
+    Assert.Multiple(() => {
+      Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.RebuiltExecutable));
+      Assert.That(result.Artifacts.Single(a => a.Name == "reconstructed/reconstructed.exe").Data,
+        Is.EqualTo(File.ReadAllBytes(original)).AsCollection);
+    });
+  }
+
+  [Test, Category("ExternalTool")]
+  public void ExternalPyPePackerTool_GeneratedFixture_ExtractsOriginalExecutable() {
+    var python = ExecutablePackerToolCache.GetPython();
+    Assume.That(python, Is.Not.Null, "Set CWB_PYTHON, put python on PATH, or use the bundled portable Python.");
+    var deps = ExecutablePackerToolCache.GetPyPePackerDependencies(python!);
+    Assume.That(deps, Is.Not.Null, "Set CWB_DOWNLOAD_EXE_PACKER_TOOLS=1 to install PyPePacker into the test cache.");
+    var source = ExecutablePackerToolCache.GetPyPePackerSource();
+    Assume.That(source, Is.Not.Null, "Set CWB_DOWNLOAD_EXE_PACKER_TOOLS=1 to download the PyPePacker source archive.");
+
+    var fixtureSource = Path.Combine(TestContext.CurrentContext.WorkDirectory, "testhost.exe");
+    if (!File.Exists(fixtureSource))
+      fixtureSource = Path.Combine(TestContext.CurrentContext.WorkDirectory, "cwb.exe");
+    Assume.That(File.Exists(fixtureSource), Is.True, "A PE apphost fixture is required in the test output directory.");
+
+    var tmp = Path.Combine(TestContext.CurrentContext.WorkDirectory, "third-party-tools", "exe-packers", "pypepacker", "external-test");
+    if (Directory.Exists(tmp))
+      Directory.Delete(tmp, recursive: true);
+    Directory.CreateDirectory(tmp);
+    try {
+      var original = Path.Combine(tmp, "fixture.exe");
+      File.Copy(fixtureSource, original);
+
+      var script = Path.Combine(deps!, "PyPePacker.py");
+      var code = $"import runpy, sys; sys.path.insert(0, r'{deps}'); sys.argv=['PyPePacker.py','fixture.exe','fixture-cmd','TestKey123']; runpy.run_path(r'{script}', run_name='__main__')";
+      var packOutput = ExecutablePackerToolCache.RunInDirectory(python!, tmp, "-c", code);
+      var packed = Path.Combine(tmp, "fixture_packed.exe");
+      Assert.That(File.Exists(packed), Is.True, packOutput);
+
+      var handler = new PyPePackerExecutablePackerHandler();
+      var packedBytes = File.ReadAllBytes(packed);
+      var detection = handler.Detect(packedBytes);
+      Assert.That(detection.IsMatch, Is.True);
+
+      var result = handler.Unpack(handler.Parse(packedBytes, detection), new());
+      Assert.Multiple(() => {
+        Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.RebuiltExecutable));
+        Assert.That(result.Artifacts.Single(a => a.Name == "compressed_payload.py").Data.Length, Is.GreaterThan(0));
+        Assert.That(result.Artifacts.Single(a => a.Name == "reconstructed/reconstructed.exe").Data,
+          Is.EqualTo(File.ReadAllBytes(original)).AsCollection);
+      });
+    } finally {
+      Directory.Delete(tmp, recursive: true);
+    }
+  }
+
+  [Test, Category("ExternalTool")]
+  public void ExternalHxorPackerTool_GeneratedFixture_LocatesTransformedPayload() {
+    var hxor = ExecutablePackerToolCache.GetHxorPacker();
+    Assume.That(hxor, Is.Not.Null, "Set CWB_DOWNLOAD_EXE_PACKER_TOOLS=1 to download the hXOR-Packer release.");
+
+    var fixtureSource = Path.Combine(TestContext.CurrentContext.WorkDirectory, "cwb.exe");
+    if (!File.Exists(fixtureSource))
+      fixtureSource = Path.Combine(TestContext.CurrentContext.WorkDirectory, "testhost.exe");
+    Assume.That(File.Exists(fixtureSource), Is.True, "A PE apphost fixture is required in the test output directory.");
+
+    var tmp = Path.Combine(TestContext.CurrentContext.WorkDirectory, "third-party-tools", "exe-packers", "hxor", "external-test");
+    if (Directory.Exists(tmp))
+      Directory.Delete(tmp, recursive: true);
+    Directory.CreateDirectory(tmp);
+    try {
+      var fixture = Path.Combine(tmp, "fixture.exe");
+      var packed = Path.Combine(tmp, "fixture.hxor.exe");
+      File.Copy(fixtureSource, fixture);
+
+      var packOutput = ExecutablePackerToolCache.RunInDirectory(hxor!.Packer, hxor.WorkingDirectory, fixture, packed, "-c");
+      Assert.That(File.Exists(packed), Is.True, packOutput);
+
+      byte[] bytes;
+      try {
+        bytes = File.ReadAllBytes(packed);
+      } catch (IOException ex) when (ex.Message.Contains("Virus", StringComparison.OrdinalIgnoreCase) ||
+                                    ex.Message.Contains("unerw", StringComparison.OrdinalIgnoreCase) ||
+                                    ex.Message.Contains("potentially unwanted", StringComparison.OrdinalIgnoreCase)) {
+        Assert.Ignore("The hXOR external tool generated a packed PE, but host security blocked reading it: " + ex.Message);
+        return;
+      }
+      var match = ExecutablePackerHandlers.DetectBest(bytes);
+      Assert.That(match, Is.Not.Null);
+      Assert.That(match!.Handler.Id, Is.EqualTo("hxor"));
+
+      var result = match.Handler.Unpack(match.Handler.Parse(bytes, match.Detection), new());
+      Assert.Multiple(() => {
+        Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.PayloadLocated));
+        Assert.That(result.Artifacts.Single(a => a.Name == "compressed_payload.bin").Data.Length, Is.GreaterThan(0));
+        Assert.That(result.Diagnostics.Any(d => d.Code == ExecutableDiagnosticCode.UnsupportedCompressionMethod), Is.True);
+      });
+    } finally {
+      Directory.Delete(tmp, recursive: true);
+    }
+  }
+
+  [Test, Category("ExternalTool")]
+  public void ExternalSimpleDpackTool_GeneratedFixture_LocatesDpackPayload() {
+    var simpleDpack = ExecutablePackerToolCache.GetSimpleDpack();
+    Assume.That(simpleDpack, Is.Not.Null, "Set CWB_DOWNLOAD_EXE_PACKER_TOOLS=1 to download the SimpleDpack release.");
+
+    var fixtureSource = Path.Combine(TestContext.CurrentContext.WorkDirectory, "cwb.exe");
+    if (!File.Exists(fixtureSource))
+      fixtureSource = Path.Combine(TestContext.CurrentContext.WorkDirectory, "testhost.exe");
+    Assume.That(File.Exists(fixtureSource), Is.True, "A PE apphost fixture is required in the test output directory.");
+
+    var tmp = Path.Combine(TestContext.CurrentContext.WorkDirectory, "third-party-tools", "exe-packers", "simpledpack", "external-test");
+    if (Directory.Exists(tmp))
+      Directory.Delete(tmp, recursive: true);
+    Directory.CreateDirectory(tmp);
+    try {
+      var fixture = Path.Combine(tmp, "fixture.exe");
+      var packed = Path.Combine(tmp, "fixture.simpledpack.exe");
+      File.Copy(fixtureSource, fixture);
+
+      var packOutput = ExecutablePackerToolCache.RunInDirectory(simpleDpack!.Packer, simpleDpack.WorkingDirectory, fixture, packed);
+      Assert.That(File.Exists(packed), Is.True, packOutput);
+
+      var bytes = File.ReadAllBytes(packed);
+      var match = ExecutablePackerHandlers.DetectBest(bytes);
+      Assert.That(match, Is.Not.Null);
+      Assert.That(match!.Handler.Id, Is.EqualTo("simpledpack"));
+
+      var result = match.Handler.Unpack(match.Handler.Parse(bytes, match.Detection), new());
+      Assert.Multiple(() => {
+        Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.PayloadLocated));
+        Assert.That(result.Capabilities.HasFlag(ExecutableUnpackCapabilities.SupportsX64), Is.True);
+        Assert.That(result.Artifacts.Single(a => a.Name == "compressed_payload.bin").Data.Length, Is.GreaterThan(0));
+        Assert.That(result.Diagnostics.Any(d => d.Code == ExecutableDiagnosticCode.UnsupportedCompressionMethod), Is.True);
+      });
+    } finally {
+      Directory.Delete(tmp, recursive: true);
+    }
   }
 
   [Test, Category("HappyPath")]

@@ -78,6 +78,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Compression.Core\Hawkynt.Compression.Core.csproj" />
     <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
+    <ProjectReference Include="..\Compression.CLI\Compression.CLI.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
     <ProjectReference Include="..\Compression.Analysis\Compression.Analysis.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Pcm\Codec.Pcm.csproj" />
     <ProjectReference Include="..\Codecs\Codec.ALaw\Codec.ALaw.csproj" />

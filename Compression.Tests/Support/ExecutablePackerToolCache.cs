@@ -9,6 +9,8 @@ internal static class ExecutablePackerToolCache {
   private static readonly string Root = Path.Combine(TestContext.CurrentContext.WorkDirectory, "third-party-tools", "exe-packers");
 
   public sealed record PapawTools(string Papawify, string Stub);
+  public sealed record HxorTools(string Packer, string WorkingDirectory);
+  public sealed record SimpleDpackTools(string Packer, string WorkingDirectory);
 
   public static string? GetUpx() {
     var existing = FindExecutable("upx");
@@ -94,6 +96,74 @@ internal static class ExecutablePackerToolCache {
     return Directory.EnumerateDirectories(extractDir, "Origami-*", SearchOption.TopDirectoryOnly).FirstOrDefault();
   }
 
+  public static string? GetPython() {
+    var configured = Environment.GetEnvironmentVariable("CWB_PYTHON");
+    if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured))
+      return configured;
+    var existing = GetHostTool("python3", "python");
+    if (existing != null)
+      return existing;
+    var portable = @"D:\Agents\ClaudePortable\app\python\python.exe";
+    return File.Exists(portable) ? portable : null;
+  }
+
+  public static string? GetPyPePackerSource() {
+    var root = Path.Combine(Root, "pypepacker");
+    var extractDir = Path.Combine(root, "source");
+    if (Directory.Exists(extractDir)) {
+      var existing = Directory.EnumerateDirectories(extractDir, "PyPePacker-*", SearchOption.TopDirectoryOnly).FirstOrDefault();
+      if (existing != null)
+        return existing;
+    }
+
+    var archive = Path.Combine(root, "main.zip");
+    if (!File.Exists(archive)) {
+      if (!DownloadsEnabled)
+        return null;
+      Download("https://github.com/mauricelambert/PyPePacker/archive/refs/heads/main.zip", archive);
+    }
+
+    Directory.CreateDirectory(extractDir);
+    ZipFile.ExtractToDirectory(archive, extractDir, overwriteFiles: true);
+    return Directory.EnumerateDirectories(extractDir, "PyPePacker-*", SearchOption.TopDirectoryOnly).FirstOrDefault();
+  }
+
+  public static string? GetPyPePackerDependencies(string python) {
+    var deps = Path.Combine(Root, "pypepacker", "pydeps");
+    if (File.Exists(Path.Combine(deps, "PyPePacker.py")) &&
+        File.Exists(Path.Combine(deps, "RC6Encryption.py")) &&
+        File.Exists(Path.Combine(deps, "EntropyEncoding.py")))
+      return deps;
+
+    if (!DownloadsEnabled)
+      return null;
+
+    Directory.CreateDirectory(deps);
+    var output = Run(python, "-m", "pip", "install", "--target", deps, "PyPePacker");
+    return File.Exists(Path.Combine(deps, "PyPePacker.py")) ? deps : null;
+  }
+
+  public static string? GetPeToySource() {
+    var root = Path.Combine(Root, "petoy");
+    var extractDir = Path.Combine(root, "source");
+    if (Directory.Exists(extractDir)) {
+      var existing = Directory.EnumerateDirectories(extractDir, "petoy-*", SearchOption.TopDirectoryOnly).FirstOrDefault();
+      if (existing != null)
+        return existing;
+    }
+
+    var archive = Path.Combine(root, "master.zip");
+    if (!File.Exists(archive)) {
+      if (!DownloadsEnabled)
+        return null;
+      Download("https://github.com/xrw67/petoy/archive/refs/heads/master.zip", archive);
+    }
+
+    Directory.CreateDirectory(extractDir);
+    ZipFile.ExtractToDirectory(archive, extractDir, overwriteFiles: true);
+    return Directory.EnumerateDirectories(extractDir, "petoy-*", SearchOption.TopDirectoryOnly).FirstOrDefault();
+  }
+
   public static string? GetSilentPacker() {
     var existing = FindExecutable("Silent_Packer");
     if (existing != null)
@@ -111,6 +181,87 @@ internal static class ExecutablePackerToolCache {
       // Best-effort for platforms/filesystems that do not expose chmod.
     }
     return File.Exists(tool) ? tool : null;
+  }
+
+  public static HxorTools? GetHxorPacker() {
+    var existing = FindExecutable("packer");
+    if (existing != null &&
+        File.Exists(Path.Combine(Path.GetDirectoryName(existing)!, "unpackerLoadEXE.exe")))
+      return new(existing, Path.GetDirectoryName(existing)!);
+
+    if (!DownloadsEnabled || !RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+      return null;
+
+    var archive = Path.Combine(Root, "hxor", "hXOR-Packer.v0.1.zip");
+    Download("https://github.com/akuafif/hXOR-Packer/releases/download/0.1/hXOR-Packer.v0.1.zip", archive);
+    var extractDir = Path.Combine(Root, "hxor", "tool");
+    Directory.CreateDirectory(extractDir);
+    ZipFile.ExtractToDirectory(archive, extractDir, overwriteFiles: true);
+
+    var packer = FindExecutable("packer", extractDir);
+    if (packer == null)
+      return null;
+    var workingDirectory = Path.GetDirectoryName(packer)!;
+    return File.Exists(Path.Combine(workingDirectory, "unpackerLoadEXE.exe"))
+      ? new(packer, workingDirectory)
+      : null;
+  }
+
+  public static string? GetXorPackerSource() {
+    var root = Path.Combine(Root, "xor_packer");
+    var directExtract = Path.Combine(root, "xorPacker-master");
+    if (Directory.Exists(directExtract))
+      return directExtract;
+
+    var extractDir = Path.Combine(root, "source");
+    if (Directory.Exists(extractDir)) {
+      var existing = Directory.EnumerateDirectories(extractDir, "xorPacker-*", SearchOption.TopDirectoryOnly).FirstOrDefault();
+      if (existing != null)
+        return existing;
+    }
+
+    var archive = Path.Combine(root, "master.zip");
+    if (!File.Exists(archive)) {
+      var legacyArchive = Path.Combine(root, "xorPacker-master.zip");
+      if (File.Exists(legacyArchive))
+        archive = legacyArchive;
+    }
+
+    if (!File.Exists(archive)) {
+      if (!DownloadsEnabled)
+        return null;
+      Download("https://github.com/nqntmqmqmb/xorPacker/archive/refs/heads/master.zip", archive);
+    }
+
+    Directory.CreateDirectory(extractDir);
+    ZipFile.ExtractToDirectory(archive, extractDir, overwriteFiles: true);
+    return Directory.EnumerateDirectories(extractDir, "xorPacker-*", SearchOption.TopDirectoryOnly).FirstOrDefault();
+  }
+
+  public static SimpleDpackTools? GetSimpleDpack() {
+    var existing = FindExecutable("SimpleDpack64");
+    if (existing != null &&
+        File.Exists(Path.Combine(Path.GetDirectoryName(existing)!, "simpledpackshell64.dll")))
+      return new(existing, Path.GetDirectoryName(existing)!);
+
+    if (!DownloadsEnabled || !RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+      return null;
+
+    var dir = Path.Combine(Root, "simpledpack");
+    Directory.CreateDirectory(dir);
+    Download("https://github.com/YuriSizuku/win-SimpleDpack/releases/download/v0.5.3/SimpleDpack.exe",
+      Path.Combine(dir, "SimpleDpack.exe"));
+    Download("https://github.com/YuriSizuku/win-SimpleDpack/releases/download/v0.5.3/SimpleDpack64.exe",
+      Path.Combine(dir, "SimpleDpack64.exe"));
+    Download("https://github.com/YuriSizuku/win-SimpleDpack/releases/download/v0.5.3/simpledpackshell.dll",
+      Path.Combine(dir, "simpledpackshell.dll"));
+    Download("https://github.com/YuriSizuku/win-SimpleDpack/releases/download/v0.5.3/simpledpackshell64.dll",
+      Path.Combine(dir, "simpledpackshell64.dll"));
+
+    var packer = Path.Combine(dir, "SimpleDpack64.exe");
+    return File.Exists(packer) && File.Exists(Path.Combine(dir, "simpledpackshell64.dll"))
+      ? new(packer, dir)
+      : null;
   }
 
   public static string? GetPackerTool(string id, params string[] executableNames) {
@@ -174,6 +325,21 @@ internal static class ExecutablePackerToolCache {
     return Directory.EnumerateDirectories(extractDir, "dataset-packed-pe-main", SearchOption.TopDirectoryOnly)
       .Select(d => Path.Combine(d, "packed"))
       .FirstOrDefault(Directory.Exists);
+  }
+
+  public static string? GetPackingBoxPackersManifest() {
+    var configured = Environment.GetEnvironmentVariable("CWB_PACKING_BOX_PACKERS_YML");
+    if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured))
+      return configured;
+
+    var cached = Path.Combine(Root, "packing-box", "docker-packing-box-packers.yml");
+    if (File.Exists(cached))
+      return cached;
+    if (!DownloadsEnabled)
+      return null;
+
+    Download("https://raw.githubusercontent.com/packing-box/docker-packing-box/main/src/conf/packers.yml", cached);
+    return File.Exists(cached) ? cached : null;
   }
 
   public static string? GetHostTool(params string[] names) {

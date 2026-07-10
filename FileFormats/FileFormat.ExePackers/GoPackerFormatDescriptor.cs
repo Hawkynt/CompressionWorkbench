@@ -24,7 +24,7 @@ public sealed class GoPackerFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => "";
+  public string DefaultExtension => ".bin";
   public IReadOnlyList<string> Extensions => [];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [];

@@ -148,7 +148,7 @@ State columns audited against actual `IArchiveCreatable` / `IArchiveModifiable` 
 | **VobSub (DVD)**                       | R                                      | `.idx` metadata + per-entry slices of the sibling `.sub` PES stream                | `FileFormat.VobSub`                                    |
 | **HLS M3U8**                           | R                                      | segment list with per-variant metadata                                             | `FileFormat.M3u8`                                      |
 | **U-Boot uImage, FDT/DTB, UEFI FV**    | R                                      | firmware header metadata + decompressed payload or per-FFS/property entries        | `FileFormat.UImage`, `FileFormat.Dtb`, `FileFormat.UefiFv` |
-| **Device executable packers**          | R                                      | the packer's `metadata.ini` (detection evidence) + `packed_payload.bin` (or in-process decompressed body for UPX) | `FileFormat.ExePackers`                                |
+| **Device executable packers**          | R                                      | the packer's `metadata.ini` (detection evidence) + `packed_payload.bin`; in-process decompressed body for UPX and the aPLib packers (FSG / ASPack / PECompact / RLPack) — see `docs/EXE-PACKER-COVERAGE.md` | `FileFormat.ExePackers`                                |
 
 ### Honest failure
 
@@ -537,6 +537,7 @@ dotnet test
 - **[ArchiveTeam Just Solve The File Format Problem](http://fileformats.archiveteam.org/wiki/Compression)** — compression format documentation
 - **[7-Zip](https://github.com/ip7z/7zip)** — multi-archiver reference
 - **[Matt Mahoney's data-compression page](https://mattmahoney.net/dc/)** — context-mixing compressors + corpus
+- **[Packing Box](https://github.com/packing-box/awesome-executable-packing)** — curated list of information around executable packers
 
 ## ❤️ Support
 
