@@ -9,8 +9,56 @@ internal static class ExecutablePackerToolCache {
   private static readonly string Root = Path.Combine(TestContext.CurrentContext.WorkDirectory, "third-party-tools", "exe-packers");
 
   public sealed record PapawTools(string Papawify, string Stub);
-  public sealed record HxorTools(string Packer, string WorkingDirectory);
-  public sealed record SimpleDpackTools(string Packer, string WorkingDirectory);
+
+  public sealed record HxorTools(string Packer, string Stub);
+
+  public sealed record SimpleDpackTools(string Exe, string ShellDll);
+
+  /// <summary>
+  /// hXOR-Packer (github.com/rurararura/hXOR-Packer) ships prebuilt binaries
+  /// directly in its repository under <c>Release/</c>: <c>packer.exe</c> and
+  /// the <c>unpackerLoadEXE.exe</c> stub it copies ahead of the packed
+  /// payload. Both are needed on disk in the same directory (the packer
+  /// looks up the stub by its bare relative filename) to produce a real
+  /// packed sample.
+  /// </summary>
+  public static HxorTools? GetHxor() {
+    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return null;
+
+    var dir = Path.Combine(Root, "hxor");
+    var packer = Path.Combine(dir, "packer.exe");
+    var stub = Path.Combine(dir, "unpackerLoadEXE.exe");
+    if (File.Exists(packer) && File.Exists(stub)) return new(packer, stub);
+
+    if (!DownloadsEnabled) return null;
+
+    const string baseUrl = "https://raw.githubusercontent.com/rurararura/hXOR-Packer/master/Release";
+    Download($"{baseUrl}/packer.exe", packer);
+    Download($"{baseUrl}/unpackerLoadEXE.exe", stub);
+    return File.Exists(packer) && File.Exists(stub) ? new(packer, stub) : null;
+  }
+
+  /// <summary>
+  /// SimpleDpack (github.com/YuriSizuku/SimpleDpack) publishes prebuilt
+  /// 32-bit binaries under its companion win-SimpleDpack releases: the
+  /// packer CLI and the shell DLL it loads at pack time (both must sit in
+  /// the same directory).
+  /// </summary>
+  public static SimpleDpackTools? GetSimpleDpack() {
+    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return null;
+
+    var dir = Path.Combine(Root, "simpledpack");
+    var exe = Path.Combine(dir, "SimpleDpack.exe");
+    var dll = Path.Combine(dir, "simpledpackshell.dll");
+    if (File.Exists(exe) && File.Exists(dll)) return new(exe, dll);
+
+    if (!DownloadsEnabled) return null;
+
+    const string baseUrl = "https://github.com/YuriSizuku/win-SimpleDpack/releases/download/v0.5.3";
+    Download($"{baseUrl}/SimpleDpack.exe", exe);
+    Download($"{baseUrl}/simpledpackshell.dll", dll);
+    return File.Exists(exe) && File.Exists(dll) ? new(exe, dll) : null;
+  }
 
   public static string? GetUpx() {
     var existing = FindExecutable("upx");
@@ -203,30 +251,6 @@ internal static class ExecutablePackerToolCache {
     return File.Exists(tool) ? tool : null;
   }
 
-  public static HxorTools? GetHxorPacker() {
-    var existing = FindExecutable("packer");
-    if (existing != null &&
-        File.Exists(Path.Combine(Path.GetDirectoryName(existing)!, "unpackerLoadEXE.exe")))
-      return new(existing, Path.GetDirectoryName(existing)!);
-
-    if (!DownloadsEnabled || !RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-      return null;
-
-    var archive = Path.Combine(Root, "hxor", "hXOR-Packer.v0.1.zip");
-    Download("https://github.com/akuafif/hXOR-Packer/releases/download/0.1/hXOR-Packer.v0.1.zip", archive);
-    var extractDir = Path.Combine(Root, "hxor", "tool");
-    Directory.CreateDirectory(extractDir);
-    ZipFile.ExtractToDirectory(archive, extractDir, overwriteFiles: true);
-
-    var packer = FindExecutable("packer", extractDir);
-    if (packer == null)
-      return null;
-    var workingDirectory = Path.GetDirectoryName(packer)!;
-    return File.Exists(Path.Combine(workingDirectory, "unpackerLoadEXE.exe"))
-      ? new(packer, workingDirectory)
-      : null;
-  }
-
   public static string? GetXorPackerSource() {
     var root = Path.Combine(Root, "xor_packer");
     var directExtract = Path.Combine(root, "xorPacker-master");
@@ -256,32 +280,6 @@ internal static class ExecutablePackerToolCache {
     Directory.CreateDirectory(extractDir);
     ZipFile.ExtractToDirectory(archive, extractDir, overwriteFiles: true);
     return Directory.EnumerateDirectories(extractDir, "xorPacker-*", SearchOption.TopDirectoryOnly).FirstOrDefault();
-  }
-
-  public static SimpleDpackTools? GetSimpleDpack() {
-    var existing = FindExecutable("SimpleDpack64");
-    if (existing != null &&
-        File.Exists(Path.Combine(Path.GetDirectoryName(existing)!, "simpledpackshell64.dll")))
-      return new(existing, Path.GetDirectoryName(existing)!);
-
-    if (!DownloadsEnabled || !RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-      return null;
-
-    var dir = Path.Combine(Root, "simpledpack");
-    Directory.CreateDirectory(dir);
-    Download("https://github.com/YuriSizuku/win-SimpleDpack/releases/download/v0.5.3/SimpleDpack.exe",
-      Path.Combine(dir, "SimpleDpack.exe"));
-    Download("https://github.com/YuriSizuku/win-SimpleDpack/releases/download/v0.5.3/SimpleDpack64.exe",
-      Path.Combine(dir, "SimpleDpack64.exe"));
-    Download("https://github.com/YuriSizuku/win-SimpleDpack/releases/download/v0.5.3/simpledpackshell.dll",
-      Path.Combine(dir, "simpledpackshell.dll"));
-    Download("https://github.com/YuriSizuku/win-SimpleDpack/releases/download/v0.5.3/simpledpackshell64.dll",
-      Path.Combine(dir, "simpledpackshell64.dll"));
-
-    var packer = Path.Combine(dir, "SimpleDpack64.exe");
-    return File.Exists(packer) && File.Exists(Path.Combine(dir, "simpledpackshell64.dll"))
-      ? new(packer, dir)
-      : null;
   }
 
   public static string? GetPackerTool(string id, params string[] executableNames) {

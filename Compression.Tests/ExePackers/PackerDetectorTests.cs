@@ -559,90 +559,10 @@ public class PackerDetectorTests {
     }
   }
 
-  [Test, Category("ExternalTool")]
-  public void ExternalHxorPackerTool_GeneratedFixture_LocatesTransformedPayload() {
-    var hxor = ExecutablePackerToolCache.GetHxorPacker();
-    Assume.That(hxor, Is.Not.Null, "Set CWB_DOWNLOAD_EXE_PACKER_TOOLS=1 to download the hXOR-Packer release.");
-
-    var fixtureSource = Path.Combine(TestContext.CurrentContext.WorkDirectory, "cwb.exe");
-    if (!File.Exists(fixtureSource))
-      fixtureSource = Path.Combine(TestContext.CurrentContext.WorkDirectory, "testhost.exe");
-    Assume.That(File.Exists(fixtureSource), Is.True, "A PE apphost fixture is required in the test output directory.");
-
-    var tmp = Path.Combine(TestContext.CurrentContext.WorkDirectory, "third-party-tools", "exe-packers", "hxor", "external-test");
-    if (Directory.Exists(tmp))
-      Directory.Delete(tmp, recursive: true);
-    Directory.CreateDirectory(tmp);
-    try {
-      var fixture = Path.Combine(tmp, "fixture.exe");
-      var packed = Path.Combine(tmp, "fixture.hxor.exe");
-      File.Copy(fixtureSource, fixture);
-
-      var packOutput = ExecutablePackerToolCache.RunInDirectory(hxor!.Packer, hxor.WorkingDirectory, fixture, packed, "-c");
-      Assert.That(File.Exists(packed), Is.True, packOutput);
-
-      byte[] bytes;
-      try {
-        bytes = File.ReadAllBytes(packed);
-      } catch (IOException ex) when (ex.Message.Contains("Virus", StringComparison.OrdinalIgnoreCase) ||
-                                    ex.Message.Contains("unerw", StringComparison.OrdinalIgnoreCase) ||
-                                    ex.Message.Contains("potentially unwanted", StringComparison.OrdinalIgnoreCase)) {
-        Assert.Ignore("The hXOR external tool generated a packed PE, but host security blocked reading it: " + ex.Message);
-        return;
-      }
-      var match = ExecutablePackerHandlers.DetectBest(bytes);
-      Assert.That(match, Is.Not.Null);
-      Assert.That(match!.Handler.Id, Is.EqualTo("hxor"));
-
-      var result = match.Handler.Unpack(match.Handler.Parse(bytes, match.Detection), new());
-      Assert.Multiple(() => {
-        Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.PayloadLocated));
-        Assert.That(result.Artifacts.Single(a => a.Name == "compressed_payload.bin").Data.Length, Is.GreaterThan(0));
-        Assert.That(result.Diagnostics.Any(d => d.Code == ExecutableDiagnosticCode.UnsupportedCompressionMethod), Is.True);
-      });
-    } finally {
-      Directory.Delete(tmp, recursive: true);
-    }
-  }
-
-  [Test, Category("ExternalTool")]
-  public void ExternalSimpleDpackTool_GeneratedFixture_LocatesDpackPayload() {
-    var simpleDpack = ExecutablePackerToolCache.GetSimpleDpack();
-    Assume.That(simpleDpack, Is.Not.Null, "Set CWB_DOWNLOAD_EXE_PACKER_TOOLS=1 to download the SimpleDpack release.");
-
-    var fixtureSource = Path.Combine(TestContext.CurrentContext.WorkDirectory, "cwb.exe");
-    if (!File.Exists(fixtureSource))
-      fixtureSource = Path.Combine(TestContext.CurrentContext.WorkDirectory, "testhost.exe");
-    Assume.That(File.Exists(fixtureSource), Is.True, "A PE apphost fixture is required in the test output directory.");
-
-    var tmp = Path.Combine(TestContext.CurrentContext.WorkDirectory, "third-party-tools", "exe-packers", "simpledpack", "external-test");
-    if (Directory.Exists(tmp))
-      Directory.Delete(tmp, recursive: true);
-    Directory.CreateDirectory(tmp);
-    try {
-      var fixture = Path.Combine(tmp, "fixture.exe");
-      var packed = Path.Combine(tmp, "fixture.simpledpack.exe");
-      File.Copy(fixtureSource, fixture);
-
-      var packOutput = ExecutablePackerToolCache.RunInDirectory(simpleDpack!.Packer, simpleDpack.WorkingDirectory, fixture, packed);
-      Assert.That(File.Exists(packed), Is.True, packOutput);
-
-      var bytes = File.ReadAllBytes(packed);
-      var match = ExecutablePackerHandlers.DetectBest(bytes);
-      Assert.That(match, Is.Not.Null);
-      Assert.That(match!.Handler.Id, Is.EqualTo("simpledpack"));
-
-      var result = match.Handler.Unpack(match.Handler.Parse(bytes, match.Detection), new());
-      Assert.Multiple(() => {
-        Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.PayloadLocated));
-        Assert.That(result.Capabilities.HasFlag(ExecutableUnpackCapabilities.SupportsX64), Is.True);
-        Assert.That(result.Artifacts.Single(a => a.Name == "compressed_payload.bin").Data.Length, Is.GreaterThan(0));
-        Assert.That(result.Diagnostics.Any(d => d.Code == ExecutableDiagnosticCode.UnsupportedCompressionMethod), Is.True);
-      });
-    } finally {
-      Directory.Delete(tmp, recursive: true);
-    }
-  }
+  // hXOR-Packer and SimpleDpack external-tool round-trips live in
+  // StaticUnpackerTargetsTests, which drive the validated static unpackers
+  // (hXOR byte-exact rebuild; SimpleDpack detect+locate) against the real
+  // published packer binaries.
 
   [Test, Category("HappyPath")]
   public void Petite_DetectsPetiteString() {

@@ -13,26 +13,23 @@ namespace Compression.Tests.ExePackers;
 
 [TestFixture]
 public class MinorExecutablePackerHandlersTests {
+  // Only handlers that use the generic MinorExecutablePackerHandlerBase.Unpack
+  // path (locate section + generic aPLib/NRV decode + synthetic-PE rebuild).
+  // Handlers that override Unpack — Amber (reflective carve), the runtime
+  // protectors (TELock/Themida/Yoda's Protector), MEW/NSPack/Yoda's Crypter/FSG
+  // fallbacks — and the standalone validated unpackers (Eronana/hXOR) are
+  // exercised by their own dedicated tests, not this generic-aPLib parametrized
+  // case.
   private static readonly (string HandlerId, string Marker, string Section)[] MinorPackers = [
     ("alienyze", "Alienyze", ".alien"),
-    ("amber", "amber", ".text"),
     ("beroexepacker", "BeRo", "bero"),
-    ("eronanapacker", "Eronana", ".packer"),
     ("exe32pack", "exe32pack", ".c"),
     ("expressor", "EXpressor", "ex_"),
     ("jdpack", "JDPack", "jd"),
     ("molebox", "Molebox", "mole"),
-    ("mew", "", "MEW"),
     ("neolite", "NeoLite", "neolit"),
-    ("nspack", "NsPack", "nsp1"),
-    ("petoy", "", ".petoy"),
     ("petite", "Petite", ".petite"),
-    ("yodacrypter", "Yoda's", "yC"),
-    ("yodaprotector", "yoda", "yP"),
-    ("themida", "", "themida"),
-    ("telock", "tElock", "tElock"),
-    ("winupackfallback", "Upack", "Upack"),
-    ("fsgfallback", "FSG!", "")
+    ("winupackfallback", "Upack", "Upack")
   ];
 
   [Test, Category("HappyPath")]
@@ -92,8 +89,10 @@ public class MinorExecutablePackerHandlersTests {
 
     Assert.Multiple(() => {
       Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.PayloadLocated));
-      Assert.That(result.Artifacts.Single(a => a.Name == "compressed_payload.bin").Method, Is.EqualTo("amber-section"));
-      Assert.That(result.Artifacts.Single(a => a.Name == "compressed_payload.bin").Data, Is.EqualTo(payload).AsCollection);
+      // No plaintext embedded PE: Amber locates the largest payload-bearing region
+      // as reflective_payload.bin and honestly reports it is obfuscated, not decoded.
+      Assert.That(result.Artifacts.Single(a => a.Name == "reflective_payload.bin").Method, Is.EqualTo("amber-section"));
+      Assert.That(result.Artifacts.Single(a => a.Name == "reflective_payload.bin").Data, Is.EqualTo(payload).AsCollection);
       Assert.That(result.Diagnostics.Any(d => d.Code == ExecutableDiagnosticCode.UnsupportedCompressionMethod), Is.True);
     });
   }
@@ -147,32 +146,19 @@ public class MinorExecutablePackerHandlersTests {
 
     Assert.Multiple(() => {
       Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.PayloadLocated));
-      Assert.That(result.Artifacts.Single(a => a.Name == "compressed_payload.bin").Data, Is.EqualTo(payload).AsCollection);
+      // TELock is a runtime protector: it locates the protected body but never
+      // fabricates a decompression (an empty section name sanitizes to "section").
+      Assert.That(result.Artifacts.Single(a => a.Name == "protected_section_section.bin").Data, Is.EqualTo(payload).AsCollection);
       Assert.That(result.Diagnostics.Any(d => d.Code == ExecutableDiagnosticCode.UnsupportedCompressionMethod), Is.True);
     });
   }
 
-  [Test, Category("HappyPath")]
-  public void HxorHandler_EmitsTransformedPayload_FromFifaRecord() {
-    var payload = Enumerable.Range(0, 3072).Select(i => (byte)(i * 5)).ToArray();
-    var packed = BuildHxorLikePe(payload);
-    var handler = new HxorPackerExecutablePackerHandler();
-
-    var detection = handler.Detect(packed);
-    Assert.That(detection.IsMatch, Is.True);
-
-    var result = handler.Unpack(handler.Parse(packed, detection), new UnpackOptions());
-
-    Assert.Multiple(() => {
-      Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.PayloadLocated));
-      Assert.That(result.Artifacts.Single(a => a.Name == "compressed_payload.bin").Data, Is.EqualTo(payload).AsCollection);
-      Assert.That(result.Artifacts.Any(a => a.Name == "packer_metadata/hxor_payload_record.bin"), Is.True);
-      Assert.That(result.Diagnostics.Any(d => d.Code == ExecutableDiagnosticCode.UnsupportedCompressionMethod), Is.True);
-    });
-  }
+  // hXOR-Packer's validated static unpacker (byte-exact rebuild) is covered in
+  // StaticUnpackerTargetsTests; it keys off the DOS-header e_res2 insert offset,
+  // not a trailing "FIFA" scan, so the old locate-only fixture no longer applies.
 
   [Test, Category("HappyPath")]
-  public void SimpleDpackHandler_EmitsDpackSectionPayload() {
+  public void SimpleDpackHandler_LocatesDpackSectionPayload() {
     var payload = Enumerable.Range(0, 4096).Select(i => (byte)(i * 11)).ToArray();
     var packed = BuildRawPayloadPe(payload, "SimpleDpack", ".dpack");
     var handler = new SimpleDpackExecutablePackerHandler();
@@ -184,7 +170,7 @@ public class MinorExecutablePackerHandlersTests {
 
     Assert.Multiple(() => {
       Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.PayloadLocated));
-      Assert.That(result.Artifacts.Single(a => a.Name == "compressed_payload.bin").Data, Is.EqualTo(payload).AsCollection);
+      Assert.That(result.Artifacts.Single(a => a.Name == "dpack_section.bin").Data, Is.EqualTo(payload).AsCollection);
       Assert.That(result.Diagnostics.Any(d => d.Code == ExecutableDiagnosticCode.UnsupportedCompressionMethod), Is.True);
     });
   }
@@ -270,7 +256,8 @@ public class MinorExecutablePackerHandlersTests {
 
     Assert.Multiple(() => {
       Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.PayloadLocated));
-      Assert.That(result.Artifacts.Single(a => a.Name == "compressed_payload.bin").Data, Is.EqualTo(payload).AsCollection);
+      // Themida is a runtime protector: the ".boot" body is located, never decoded.
+      Assert.That(result.Artifacts.Single(a => a.Name == "protected_section_.boot.bin").Data, Is.EqualTo(payload).AsCollection);
       Assert.That(result.Diagnostics.Any(d => d.Code == ExecutableDiagnosticCode.UnsupportedCompressionMethod), Is.True);
     });
   }
@@ -311,18 +298,6 @@ public class MinorExecutablePackerHandlersTests {
 
   private static byte[] BuildRawPayloadPe(byte[] payload, string marker, string sectionName) =>
     BuildPeWithSection(payload, marker, sectionName, (uint)payload.Length);
-
-  private static byte[] BuildHxorLikePe(byte[] payload) {
-    var stub = BuildPeWithSection("stub"u8.ToArray(), "hXOR Packer", ".text", 0x1000);
-    var record = new byte[0x114];
-    "FIFA"u8.CopyTo(record);
-    "fixture.exe"u8.CopyTo(record.AsSpan(4));
-    var image = new byte[stub.Length + record.Length + payload.Length];
-    stub.CopyTo(image.AsSpan());
-    record.CopyTo(image.AsSpan(stub.Length));
-    payload.CopyTo(image.AsSpan(stub.Length + record.Length));
-    return image;
-  }
 
   private static byte[] BuildTelockLikePe(byte[] payload) {
     var image = BuildPeWithSection(payload, "", "", (uint)payload.Length);

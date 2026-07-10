@@ -123,7 +123,7 @@ public abstract class MinorExecutablePackerHandlerBase : IExecutablePackerHandle
     return result with { Artifacts = artifacts };
   }
 
-  private byte[] BuildMetadataJson(PackedExecutable packed) {
+  protected byte[] BuildMetadataJson(PackedExecutable packed) {
     var sb = new StringBuilder();
     sb.Append("{\n");
     sb.Append(CultureInfo.InvariantCulture, $"  \"packer\": \"{this.Id}\",\n");
@@ -154,6 +154,71 @@ public abstract class MinorExecutablePackerHandlerBase : IExecutablePackerHandle
   }
 }
 
+/// <summary>
+/// Base for runtime protectors (TELock, Yoda's Protector, the Themida fallback,
+/// …) whose original image is only recoverable by executing the anti-debug /
+/// code-virtualization stub under emulation. These handlers honestly stay at
+/// detection + payload-location and deliberately do <b>not</b> run the generic
+/// aPLib/NRV probes: a spuriously "cleanly terminated" stream inside a
+/// protector's encrypted body would fabricate a decompression we cannot
+/// actually perform. Every result carries an explicit runtime-protector
+/// diagnostic so callers never mistake location for unpacking.
+/// </summary>
+public abstract class ProtectorExecutablePackerHandlerBase : MinorExecutablePackerHandlerBase {
+  public override ExecutableUnpackCapabilities Capabilities =>
+    ExecutableUnpackCapabilities.CanDetect |
+    ExecutableUnpackCapabilities.CanLocatePayload |
+    ExecutableUnpackCapabilities.SupportsPe |
+    ExecutableUnpackCapabilities.SupportsX86;
+
+  public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+    var artifacts = new List<UnpackArtifact> {
+      new("metadata.json", this.BuildMetadataJson(packed), "stored"),
+      new("original_packed.bin", packed.OriginalImage, "stored"),
+    };
+    var diagnostics = new List<ExecutableDiagnostic>();
+    var level = ExecutableUnpackLevel.DetectionOnly;
+    var caps = ExecutableUnpackCapabilities.CanDetect;
+
+    foreach (var s in PackerScanner.GetPeSectionRanges(packed.OriginalImage)) {
+      if (s.RawSize == 0 || s.RawOffset >= packed.OriginalImage.Length)
+        continue;
+      if (!this.IsPackerSection(s.Name) && !LooksProtected(s))
+        continue;
+      var len = (int)Math.Min(s.RawSize, (uint)(packed.OriginalImage.Length - s.RawOffset));
+      artifacts.Add(new($"protected_section_{Sanitize(s.Name)}.bin",
+        packed.OriginalImage.AsSpan((int)s.RawOffset, len).ToArray(), "stored"));
+      level = ExecutableUnpackLevel.PayloadLocated;
+      caps |= ExecutableUnpackCapabilities.CanLocatePayload;
+    }
+
+    diagnostics.Add(new(ExecutableDiagnosticCode.UnsupportedCompressionMethod,
+      $"{this.DisplayName}: static full unpack not feasible (runtime protector). The original " +
+      "image is reconstructed only by executing the anti-debug / code-virtualization stub, so the " +
+      "handler stops at payload location; no managed decompression is attempted.", true));
+
+    caps |= ExecutableUnpackCapabilities.SupportsPe;
+    if (packed.ImageInfo?.Architecture == CpuArchitecture.X86) caps |= ExecutableUnpackCapabilities.SupportsX86;
+
+    var result = new UnpackResult(level, caps, artifacts, diagnostics);
+    artifacts.Add(new("diagnostics.json", ExecutableDiagnosticsJson.Build(this.Id, packed.ImageInfo, result), "stored"));
+    return result with { Artifacts = artifacts };
+  }
+
+  /// <summary>An RWX section of a protector still counts as the located protected body.</summary>
+  private static bool LooksProtected(PackerScanner.PeSectionRange s) {
+    const uint rwx = 0x20000000u | 0x40000000u | 0x80000000u;
+    return (s.Characteristics & rwx) == rwx;
+  }
+
+  private static string Sanitize(string value) {
+    var sb = new StringBuilder(value.Length);
+    foreach (var c in value)
+      sb.Append(char.IsLetterOrDigit(c) || c is '_' or '-' or '.' ? c : '_');
+    return sb.Length == 0 ? "section" : sb.ToString();
+  }
+}
+
 public sealed class AlienyzeExecutablePackerHandler : MinorExecutablePackerHandlerBase {
   public override string Id => "alienyze";
   public override string DisplayName => "Alienyze";
@@ -176,31 +241,43 @@ public sealed class AmberExecutablePackerHandler : MinorExecutablePackerHandlerB
     return new(false, this.Id, 0, []);
   }
 
+  /// <summary>
+  /// Amber turns a PE into position-independent shellcode plus an embedded copy
+  /// of the original image that its reflective loader maps at runtime. When that
+  /// embedded copy is stored as a plaintext <c>MZ..PE</c> (the loader relocates it
+  /// in place) we carve and validate it as a real PE. When it is XOR/RC4-obscured
+  /// — the common case — the key lives in the shellcode stub, so we honestly stop
+  /// at locating the payload-bearing region rather than fabricating a decode.
+  /// </summary>
   public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
-    var generic = base.Unpack(packed, options);
-    if (generic.Level >= ExecutableUnpackLevel.PayloadDecompressed)
-      return generic;
-
+    var image = packed.OriginalImage;
     var artifacts = new List<UnpackArtifact> {
       new("metadata.json", this.BuildAmberMetadataJson(packed), "stored"),
-      new("original_packed.bin", packed.OriginalImage, "stored"),
+      new("original_packed.bin", image, "stored"),
     };
     var diagnostics = new List<ExecutableDiagnostic>();
+    var level = ExecutableUnpackLevel.DetectionOnly;
     var caps = ExecutableUnpackCapabilities.CanDetect | ExecutableUnpackCapabilities.SupportsPe;
     if (packed.ImageInfo?.Architecture == CpuArchitecture.X86) caps |= ExecutableUnpackCapabilities.SupportsX86;
 
-    var payload = LocateReflectivePayloadSection(packed.OriginalImage);
-    var level = ExecutableUnpackLevel.DetectionOnly;
-    if (payload is { } p) {
-      artifacts.Add(new("compressed_payload.bin", p.Data, "amber-section"));
+    var embedded = FindEmbeddedPe(image);
+    if (embedded is { } pe) {
+      artifacts.Add(new("embedded_pe.bin", pe, "stored"));
       level = ExecutableUnpackLevel.PayloadLocated;
       caps |= ExecutableUnpackCapabilities.CanLocatePayload;
-      diagnostics.Add(new(ExecutableDiagnosticCode.UnsupportedCompressionMethod,
-        $"Amber reflective-loader payload section '{p.Name}' was located. Managed reflective-loader transform reversal is not implemented.",
-        true));
+      diagnostics.Add(new(ExecutableDiagnosticCode.RunnableRebuildNotGuaranteed,
+        "Amber: a plaintext embedded PE was carved from the reflective payload; " +
+        "runtime relocation/import fix-ups applied by the loader are not replayed."));
     } else {
-      diagnostics.Add(new(ExecutableDiagnosticCode.PayloadNotFound,
-        "Amber was detected, but no large non-standard payload section could be located.", true));
+      var region = LargestPayloadRegion(image);
+      if (region is { } r) {
+        artifacts.Add(new("reflective_payload.bin", image.AsSpan(r.Offset, r.Length).ToArray(), "amber-section"));
+        level = ExecutableUnpackLevel.PayloadLocated;
+        caps |= ExecutableUnpackCapabilities.CanLocatePayload;
+      }
+      diagnostics.Add(new(ExecutableDiagnosticCode.UnsupportedCompressionMethod,
+        "Amber: reflective payload located but the embedded PE is obfuscated (XOR/RC4 keyed by the " +
+        "shellcode stub); static decryption is not feasible without executing the loader.", true));
     }
 
     var result = new UnpackResult(level, caps, artifacts, diagnostics);
@@ -208,22 +285,28 @@ public sealed class AmberExecutablePackerHandler : MinorExecutablePackerHandlerB
     return result with { Artifacts = artifacts };
   }
 
-  private readonly record struct AmberPayload(string Name, byte[] Data);
-
-  private static AmberPayload? LocateReflectivePayloadSection(byte[] image) {
-    var sections = PackerScanner.GetPeSectionRanges(image);
-    var candidate = sections
-      .Where(s => s.RawSize >= 4096 && s.RawOffset > 0 && s.RawOffset < image.Length && !IsCommonPeSection(s.Name))
-      .OrderByDescending(s => s.RawSize)
-      .FirstOrDefault();
-    if (candidate.RawSize == 0)
-      return null;
-    var len = (int)Math.Min(candidate.RawSize, (uint)(image.Length - candidate.RawOffset));
-    return new(candidate.Name, image.AsSpan((int)candidate.RawOffset, len).ToArray());
+  private static byte[]? FindEmbeddedPe(byte[] b) {
+    // Skip the outer image's own PE header; look for a second MZ..PE further in.
+    for (var i = 0x200; i + 0x40 < b.Length; i++) {
+      if (b[i] != 'M' || b[i + 1] != 'Z') continue;
+      var e = BitConverter.ToInt32(b, i + 0x3C);
+      if (e is <= 0 or > 0x1000 || i + e + 4 >= b.Length) continue;
+      if (b[i + e] == 'P' && b[i + e + 1] == 'E' && b[i + e + 2] == 0 && b[i + e + 3] == 0)
+        return b.AsSpan(i, b.Length - i).ToArray();
+    }
+    return null;
   }
 
-  private static bool IsCommonPeSection(string name) =>
-    name is ".text" or ".data" or ".rdata" or ".bss" or ".idata" or ".CRT" or ".tls" or ".rsrc" or ".reloc";
+  private static (int Offset, int Length)? LargestPayloadRegion(byte[] image) {
+    (int Offset, int Length)? best = null;
+    foreach (var s in PackerScanner.GetPeSectionRanges(image)) {
+      if (s.RawSize < 256 || s.RawOffset >= image.Length) continue;
+      var len = (int)Math.Min(s.RawSize, (uint)(image.Length - s.RawOffset));
+      if (best is null || len > best.Value.Length)
+        best = ((int)s.RawOffset, len);
+    }
+    return best;
+  }
 
   private byte[] BuildAmberMetadataJson(PackedExecutable packed) {
     var sb = new StringBuilder();
@@ -246,13 +329,6 @@ public sealed class BeRoExecutablePackerHandler : MinorExecutablePackerHandlerBa
     name.Equals("gu_idata", StringComparison.Ordinal) ||
     name.Equals("gu_rsrc", StringComparison.Ordinal);
   protected override ReadOnlySpan<byte> LiteralSignature => "BeRo"u8;
-}
-
-public sealed class EronanaExecutablePackerHandler : MinorExecutablePackerHandlerBase {
-  public override string Id => "eronanapacker";
-  public override string DisplayName => "Eronana Packer";
-  protected override bool IsPackerSection(string name) => name.Contains("eron", StringComparison.OrdinalIgnoreCase) || name.Equals(".packer", StringComparison.OrdinalIgnoreCase);
-  protected override ReadOnlySpan<byte> LiteralSignature => "Eronana"u8;
 }
 
 public sealed class Exe32packExecutablePackerHandler : MinorExecutablePackerHandlerBase {
@@ -444,7 +520,7 @@ public sealed class PetiteExecutablePackerHandler : MinorExecutablePackerHandler
   }
 }
 
-public sealed class YodaProtectorExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+public sealed class YodaProtectorExecutablePackerHandler : ProtectorExecutablePackerHandlerBase {
   public override string Id => "yodaprotector";
   public override string DisplayName => "Yoda's Protector";
   protected override bool IsPackerSection(string name) => name.Contains("yP", StringComparison.OrdinalIgnoreCase);
@@ -508,129 +584,7 @@ public sealed class YodaCrypterExecutablePackerHandler : MinorExecutablePackerHa
   }
 }
 
-public sealed class HxorPackerExecutablePackerHandler : IExecutablePackerHandler {
-  private const int PayloadRecordSize = 0x114;
-  private static ReadOnlySpan<byte> PayloadRecordMagic => "FIFA"u8;
-
-  public string Id => "hxor";
-  public string DisplayName => "hXOR-Packer";
-
-  public ExecutableUnpackCapabilities Capabilities =>
-    ExecutableUnpackCapabilities.CanDetect |
-    ExecutableUnpackCapabilities.CanLocatePayload |
-    ExecutableUnpackCapabilities.SupportsPe |
-    ExecutableUnpackCapabilities.SupportsX86;
-
-  public DetectionResult Detect(ReadOnlySpan<byte> image) {
-    if (!PackerScanner.IsPe(image))
-      return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Not a valid PE.", true)]);
-
-    var hasStubMarker = image.IndexOf("hXOR Packer"u8) >= 0 || image.IndexOf("hXOR"u8) >= 0;
-    var payload = LocatePayload(image);
-    var match = hasStubMarker && payload != null;
-    return match
-      ? new(true, this.Id, 0.9, [])
-      : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "hXOR stub marker and payload record were not found.", true)]);
-  }
-
-  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
-    var imageBytes = image.ToArray();
-    var info = ExecutableContainerParsers.ParseBestEffort(image);
-    return new(
-      this.Id,
-      imageBytes,
-      detection,
-      info,
-      this.Capabilities,
-      new Dictionary<string, string> {
-        ["packer"] = this.DisplayName,
-        ["container"] = info.Container.ToString(),
-        ["architecture"] = info.Architecture.ToString(),
-      });
-  }
-
-  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
-    var artifacts = new List<UnpackArtifact> {
-      new("metadata.json", BuildMetadataJson(packed), "stored"),
-      new("original_packed.bin", packed.OriginalImage, "stored"),
-    };
-    var diagnostics = new List<ExecutableDiagnostic>();
-    var caps = ExecutableUnpackCapabilities.CanDetect | ExecutableUnpackCapabilities.SupportsPe;
-    if (packed.ImageInfo?.Architecture == CpuArchitecture.X86)
-      caps |= ExecutableUnpackCapabilities.SupportsX86;
-    else if (packed.ImageInfo?.Architecture == CpuArchitecture.X64)
-      caps |= ExecutableUnpackCapabilities.SupportsX64;
-
-    var payload = LocatePayload(packed.OriginalImage);
-    if (payload == null) {
-      diagnostics.Add(new(ExecutableDiagnosticCode.PayloadNotFound,
-        "hXOR was detected, but its appended payload record could not be located.", true));
-      var detectionOnly = new UnpackResult(ExecutableUnpackLevel.DetectionOnly, caps, artifacts, diagnostics);
-      artifacts.Add(new("diagnostics.json", ExecutableDiagnosticsJson.Build(this.Id, packed.ImageInfo, detectionOnly), "stored"));
-      return detectionOnly with { Artifacts = artifacts };
-    }
-
-    artifacts.Add(new("packer_metadata/hxor_payload_record.bin", payload.Value.Record, "stored"));
-    artifacts.Add(new("compressed_payload.bin", payload.Value.Payload, "hxor-transformed"));
-    diagnostics.Add(new(ExecutableDiagnosticCode.UnsupportedCompressionMethod,
-      "hXOR transformed payload was located. Managed Huffman/XOR transform reversal is not implemented yet.",
-      true));
-    caps |= ExecutableUnpackCapabilities.CanLocatePayload;
-
-    var result = new UnpackResult(ExecutableUnpackLevel.PayloadLocated, caps, artifacts, diagnostics);
-    artifacts.Add(new("diagnostics.json", ExecutableDiagnosticsJson.Build(this.Id, packed.ImageInfo, result), "stored"));
-    return result with { Artifacts = artifacts };
-  }
-
-  private readonly record struct HxorPayload(byte[] Record, byte[] Payload);
-
-  private static HxorPayload? LocatePayload(ReadOnlySpan<byte> image) {
-    var marker = image.LastIndexOf(PayloadRecordMagic);
-    if (marker < 0 || marker + PayloadRecordSize >= image.Length)
-      return null;
-
-    var fileName = PackerScanner.ReadAsciiAt(image, marker + PayloadRecordMagic.Length, 252);
-    if (string.IsNullOrWhiteSpace(fileName) || !fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-      return null;
-
-    return new(
-      image.Slice(marker, PayloadRecordSize).ToArray(),
-      image[(marker + PayloadRecordSize)..].ToArray());
-  }
-
-  private byte[] BuildMetadataJson(PackedExecutable packed) {
-    var sb = new StringBuilder();
-    sb.Append("{\n");
-    sb.Append("  \"packer\": \"hxor\",\n");
-    sb.Append(CultureInfo.InvariantCulture, $"  \"container\": \"{(packed.ImageInfo?.Container.ToString() ?? "unknown").ToLowerInvariant()}\",\n");
-    sb.Append(CultureInfo.InvariantCulture, $"  \"architecture\": \"{(packed.ImageInfo?.Architecture.ToString() ?? "unknown").ToLowerInvariant()}\",\n");
-    sb.Append("  \"payloadRecord\": \"FIFA\",\n");
-    sb.Append(CultureInfo.InvariantCulture, $"  \"imageSize\": {packed.OriginalImage.LongLength}\n");
-    sb.Append("}\n");
-    return Encoding.UTF8.GetBytes(sb.ToString());
-  }
-}
-
-public sealed class SimpleDpackExecutablePackerHandler : MinorExecutablePackerHandlerBase {
-  public override string Id => "simpledpack";
-  public override string DisplayName => "SimpleDpack";
-  protected override bool IsPackerSection(string name) => name.Equals(".dpack", StringComparison.OrdinalIgnoreCase);
-  protected override ReadOnlySpan<byte> LiteralSignature => "SimpleDpack"u8;
-
-  public override DetectionResult Detect(ReadOnlySpan<byte> image) {
-    if (!PackerScanner.IsPe(image))
-      return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Not a valid PE.", true)]);
-
-    var sections = PackerScanner.GetPeSections(image);
-    var hasDpackSection = sections.Any(s => s.Name.Equals(".dpack", StringComparison.OrdinalIgnoreCase));
-    var hasMarker = image.IndexOf("SimpleDpack"u8) >= 0 || image.IndexOf("simpledpack"u8) >= 0;
-    return hasDpackSection
-      ? new(true, this.Id, hasMarker ? 0.95 : 0.85, [])
-      : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "SimpleDpack .dpack section was not found.", true)]);
-  }
-}
-
-public sealed class ThemidaExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+public sealed class ThemidaExecutablePackerHandler : ProtectorExecutablePackerHandlerBase {
   public override string Id => "themida";
   public override string DisplayName => "Themida";
   protected override bool IsPackerSection(string name) =>
@@ -650,7 +604,7 @@ public sealed class ThemidaExecutablePackerHandler : MinorExecutablePackerHandle
   }
 }
 
-public sealed class TelockExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+public sealed class TelockExecutablePackerHandler : ProtectorExecutablePackerHandlerBase {
   public override string Id => "telock";
   public override string DisplayName => "TELock";
   protected override bool IsPackerSection(string name) =>
@@ -664,9 +618,24 @@ public sealed class TelockExecutablePackerHandler : MinorExecutablePackerHandler
     var hasLiteral = image.IndexOf("tElock"u8) >= 0 || image.IndexOf("TELock"u8) >= 0;
     var hasSection = sections.Any(s => s.Name.Contains("tElock", StringComparison.OrdinalIgnoreCase));
     if (hasLiteral || hasSection) return new(true, this.Id, 0.85, []);
-    if (HasTelockBlankEntrySection(image))
+    // Purely-structural fallback (blank last section with the entry point inside
+    // it) is a weak signal shared by other blank-sectioned packers. Never let it
+    // swallow an FSG image: FSG's "FSG!" stub marker and its t/ta/a (or blank
+    // three-section) layout must route to the dedicated FSG handler, not here.
+    if (!LooksLikeFsg(image, sections) && HasTelockBlankEntrySection(image))
       return new(true, this.Id, 0.55, []);
     return new(false, this.Id, 0, []);
+  }
+
+  private static bool LooksLikeFsg(ReadOnlySpan<byte> image, IReadOnlyList<(string Name, uint Characteristics)> sections) {
+    if (PackerScanner.IndexOfBounded(image, "FSG!"u8, 0x4000) >= 0)
+      return true;
+    if (sections.Count != 3)
+      return false;
+    var emptyCount = sections.Count(s => string.IsNullOrWhiteSpace(s.Name));
+    var hasTa = sections.Any(s => s.Name.Equals("ta", StringComparison.OrdinalIgnoreCase));
+    var hasA = sections.Any(s => s.Name.Equals("a", StringComparison.OrdinalIgnoreCase));
+    return emptyCount >= 2 || (hasTa && hasA);
   }
 
   private static bool HasTelockBlankEntrySection(ReadOnlySpan<byte> image) {

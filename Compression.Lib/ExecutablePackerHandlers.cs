@@ -25,8 +25,6 @@ public static class ExecutablePackerHandlers {
     new SilentPackerExecutablePackerHandler(),
     new HuanExecutablePackerHandler(),
     new XorPackerExecutablePackerHandler(),
-    new HxorPackerExecutablePackerHandler(),
-    new SimpleDpackExecutablePackerHandler(),
     new YodaCrypterExecutablePackerHandler(),
     new MewExecutablePackerHandler(),
     new PetiteExecutablePackerHandler(),
@@ -35,6 +33,9 @@ public static class ExecutablePackerHandlers {
     new GenericAplibPackedPeHandler(),
     new WinUpackExecutablePackerHandler(),
     new GenericNrvPackedPeHandler(),
+    new HxorExecutablePackerHandler(),
+    new PePackerExecutablePackerHandler(),
+    new SimpleDpackExecutablePackerHandler(),
 
     // ELF crypters/packers (packing-box campaign)
     new EzuriExecutablePackerHandler(),

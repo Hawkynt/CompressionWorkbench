@@ -21,7 +21,10 @@ public sealed class GzexeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => "";
+  // A gzexe file is a POSIX shell script (content/marker-detected, no canonical
+  // extension); ".sh" is the honest suggested-output extension. Extensions stays
+  // empty so it never registers a detection extension that would collide.
+  public string DefaultExtension => ".sh";
   public IReadOnlyList<string> Extensions => [];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [];

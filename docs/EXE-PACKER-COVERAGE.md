@@ -54,7 +54,7 @@ The packer cluster is unlocked by a small set of raw codecs, all clean-room:
 | MPRESS              | Locate  | `.MPRESS1` / `.MPRESS2` payload sections emitted by the `mpress` handler; managed decompression/transform reversal remains. |
 | NSPack              | Locate  | Named `nspack` handler emits `nsp1`/largest `nsp*` payload sections; managed decompression/transform recovery remains. |
 | PEtite              | Locate  | `.petite` packer section is emitted as `compressed_payload.bin`; custom aPLib-ish recovery remains. |
-| Themida             | Locate  | Named `themida` handler emits the `.boot` payload section when present, but static full unpack is not claimed. |
+| Themida             | Detect/Locate | Runtime protector. The `themida` handler emits the `.boot`/protected section as `protected_section_*.bin` when present; it never runs the generic aPLib/NRV probes and never claims a decompression (runtime-protector diagnostic). |
 | Yoda-Crypter        | Locate  | Named `yodacrypter` handler emits the `yC` section as `compressed_payload.bin`; cryptor transform recovery remains. |
 | WinUpack (Ultimate) | Locate  | `.Upack` virtual target plus raw payload section, and the Packing Box `PS...` three-section layout, emitted by the `winupack` handler; managed transform/decompression not yet recovered. |
 | Neolite             | Locate* | Custom LZ payload section emitted by minor handler. *aPLib-mode payloads are caught by the generic aPLib fallback. |
@@ -64,12 +64,12 @@ The packer cluster is unlocked by a small set of raw codecs, all clean-room:
 | EXpressor           | Locate  | Packer section emitted as payload artifact; custom LZ recovery remains. |
 | BeRoEXEPacker       | Locate  | Packer section emitted as payload artifact; LZMA / LZBRR / LZBRS recovery remains. |
 | Alienyze            | Locate  | Packer section emitted as payload artifact; transform recovery remains. |
-| Amber               | Locate  | Reflective-loader payload section emitted as `compressed_payload.bin`; extraction, not decompression. |
+| Amber               | Locate  | Reflective PE loader. Carves a plaintext embedded PE as `embedded_pe.bin` when the loader stores one in the clear, else locates the (XOR/RC4-obscured) reflective payload; extraction, not decryption — the key lives in the shellcode stub. |
 | Enigma Virtual Box  | Unpack* | Named handler recognizes `.enigma1`/`.enigma2`; sampled corpus path inflates through managed aPLib recovery and emits `reconstructed/reconstructed.exe`. Real target remains bundled file-tree extraction. |
 | Molebox             | Locate  | Bundler/virtualizer section payloads emitted; file-tree extraction remains. |
-| Eronana Packer      | Locate  | Packer section emitted as payload artifact; transform recovery remains. |
-| TELock              | Unpack* | TELock handler recognizes the blank entry-section layout; aPLib-mode corpus samples decompress/rebuild, other samples emit the protected payload section. |
-| Yoda-Protector      | Locate  | Protector payload section emitted where present; dump/emulation recovery remains. |
+| Eronana Packer      | Unpack  | Static LZ77 + canonical-Huffman decoder validated byte-for-byte against a real packed sample; restores every stripped section and emits `reconstructed/reconstructed.exe` (RVA-mapped synthetic PE; the true OEP and import-directory RVA are reported in `metadata.json`). |
+| TELock              | Detect/Locate | Runtime protector (anti-debug/virtualization). Recognized by the `tElock` literal or a blank entry-bearing last section (FSG-shaped images are excluded so they route to the FSG handler). Emits the protected body as `protected_section_*.bin`; never runs the generic aPLib/NRV probes and never claims a decompression. |
+| Yoda-Protector      | Detect/Locate | Runtime protector. Emits the protected payload section where present; never claims a decompression (runtime-protector diagnostic; dump/emulation required). |
 
 ## Additional Packing Box packers
 
@@ -88,9 +88,10 @@ corpus slice currently used by the first-sample dataset probe.
 | PE-Toy       | Unpack | PE32 `.petoy` shell-section layout with aPLib payload; CW uses the shared aPLib PE pipeline and emits decompressed payload plus synthetic rebuilt PE for the documented layout. Upstream source fetch is covered. |
 | Silent_Packer| Unpack | ELF64 XOR section-insertion wrapper; CW restores `.text` and entry point for the supported variant. External Linux release fixture test exists. |
 | Huan         | Unpack | PE64 loader with encrypted `.huan` section; CW decrypts the embedded PE payload and emits `reconstructed/reconstructed.exe`. |
-| hXOR-Packer  | Locate | Release-generated PE fixtures are recognized by the hXOR stub marker plus appended `FIFA` payload record; CW emits the transformed payload and reports that Huffman/XOR reversal is not implemented yet. |
+| hXOR-Packer  | Unpack | Locates the appended payload via the DOS-header `e_res2` insert offset and `FIFA` record, then statically reverses the stored (0) and single-byte-XOR (2, MSVCRT-`rand()`-keyed) transforms byte-for-byte and emits `reconstructed/reconstructed.exe`. The bespoke-Huffman modes (1, 3) stay at payload-located with a precise diagnostic. Validated against the real release binaries. |
 | Xor_Packer   | Unpack | .NET PE wrapper with appended Base64/XOR/Base64 settings; CW statically decodes the embedded PE and emits `reconstructed/reconstructed.exe`. Upstream source fixtures are covered. |
-| SimpleDpack  | Locate | Release-generated PE64 fixtures are recognized by the `.dpack` section and SimpleDpack marker; CW emits the transformed section payload and reports that loader transform reversal is not implemented yet. |
+| SimpleDpack  | Locate | Recognized by the `.dpack` section; emits the `.dpack` blob (`dpack_section.bin`) plus the stripped-section RVA/size targets read from the packed PE's own section table. The published v0.5.3 release binary's observed output did not match its documented per-section LZMA container, so no decode is fabricated against an unconfirmed format. |
+| PE-Packer (czs108) | Locate | Recognized by the trailing `.shell` section with all original section names cleared; emits `shell_section.bin`. The additive (+0xCC) section cipher and compact import rewrite are documented, but the byte ranges/offsets they apply to live in a MASM-compiled shell (no prebuilt reference binary, no MASM/MSVC toolchain to pin them), so the transform is not reversed. |
 
 ## Manifest Gaps
 

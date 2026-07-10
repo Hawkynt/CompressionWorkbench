@@ -208,7 +208,8 @@ public sealed class UpxExecutablePackerHandler : IExecutablePackerHandler {
       }
 
       return (data, null);
-    } catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or NotSupportedException) {
+    } catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or NotSupportedException
+        or ArgumentException or IndexOutOfRangeException or OverflowException or EndOfStreamException) {
       return (null, $"UPX {UpxReader.MethodName(h.Method)} decompression failed: {ex.Message}");
     }
   }
@@ -259,7 +260,8 @@ public sealed class UpxExecutablePackerHandler : IExecutablePackerHandler {
         };
         if (data.Length == expectedSize)
           return (data, UpxReader.MethodName(method));
-      } catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or NotSupportedException) {
+      } catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or NotSupportedException
+          or ArgumentException or IndexOutOfRangeException or OverflowException or EndOfStreamException) {
         // Try the next UPX codec variant; a headerless payload has no method byte.
       }
     }

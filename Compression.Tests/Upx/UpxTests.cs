@@ -635,6 +635,53 @@ public class UpxTests {
     }
   }
 
+  [Test, Category("ExternalTool"), Explicit("Packs a PE with real UPX (NRV2B + LZMA) and validates our pipeline against upx -d.")]
+  public void ExternalUpx_ManagedPipelineIsHonest_AndUpxDRoundTripsByteIdentically(
+      [Values("-1", "--lzma")] string method) {
+    var upx = ExecutablePackerToolCache.GetUpx();
+    Assume.That(upx, Is.Not.Null, "Set CWB_DOWNLOAD_EXE_PACKER_TOOLS=1 to download UPX, or put upx on PATH.");
+    Assume.That(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), Is.True, "This PE fixture uses Windows system executables.");
+    var source = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "where.exe");
+    Assume.That(File.Exists(source), Is.True, "where.exe was not found.");
+
+    var tmp = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+    Directory.CreateDirectory(tmp);
+    try {
+      var packed = Path.Combine(tmp, "where.exe");
+      File.Copy(source, packed);
+      Assert.That(ExecutablePackerToolCache.Run(upx!, "--force", "-q", method, packed), Does.Contain("Packed 1 file"));
+      var packedBytes = File.ReadAllBytes(packed);
+
+      // Our managed pipeline must honestly detect + locate the real UPX payload and
+      // must never throw — including for the LZMA method, whose decoder can reject a
+      // stream it cannot frame (regression guard for the broadened exception handling).
+      var handler = new UpxExecutablePackerHandler();
+      var detection = handler.Detect(packedBytes);
+      Assert.That(detection.IsMatch, Is.True, "UPX detection must fire on real UPX output");
+      UnpackResult result = null!;
+      Assert.That(() => result = handler.Unpack(handler.Parse(packedBytes, detection), new()), Throws.Nothing);
+      Assert.That(result.Level, Is.GreaterThanOrEqualTo(ExecutableUnpackLevel.PayloadLocated));
+      Assert.That(result.Artifacts.Any(a => a.Name == "compressed_payload.bin"), Is.True);
+
+      // Reference oracle: upx -d restores a valid PE, and the packed→unpacked→packed→
+      // unpacked round-trip is byte-identical (deterministic), confirming the oracle we
+      // validate detection/location against. (upx -d is not byte-identical to a *signed*
+      // original because UPX drops the authenticode overlay, so we assert idempotency.)
+      var d1 = Path.Combine(tmp, "d1.exe"); File.Copy(packed, d1);
+      Assert.That(ExecutablePackerToolCache.Run(upx!, "-d", "-q", d1), Does.Contain("Unpacked 1 file"));
+      var restored = File.ReadAllBytes(d1);
+      Assert.That(new PeParser().CanParse(restored), Is.True, "upx -d must yield a valid PE");
+
+      var repacked = Path.Combine(tmp, "r.exe"); File.Copy(d1, repacked);
+      ExecutablePackerToolCache.Run(upx!, "--force", "-q", method, repacked);
+      var d2 = Path.Combine(tmp, "d2.exe"); File.Copy(repacked, d2);
+      ExecutablePackerToolCache.Run(upx!, "-d", "-q", d2);
+      Assert.That(File.ReadAllBytes(d2), Is.EqualTo(restored).AsCollection, "upx -d round-trip must be byte-identical");
+    } finally {
+      Directory.Delete(tmp, recursive: true);
+    }
+  }
+
   [Test, Category("ExternalTool"), Explicit("Packs a Windows PE64 fixture with upstream UPX and verifies CW reaches the managed unpacking pipeline honestly.")]
   public void ExternalUpxPe64_ManagedPipeline_EmitsPayloadArtifactsAndDiagnostics() {
     var upx = ExecutablePackerToolCache.GetUpx();

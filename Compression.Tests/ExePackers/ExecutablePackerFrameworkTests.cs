@@ -387,6 +387,142 @@ public class ExecutablePackerFrameworkTests {
       Is.EqualTo(original).AsCollection);
   }
 
+  [Test, Category("HappyPath")]
+  public void MPressHandler_ReportsPreciseRemainingTransform() {
+    var result = ExecutablePackerHandlers.TryUnpack(BuildMPressLikePe())!;
+    var note = result.Diagnostics.Single(d => d.Code == ExecutableDiagnosticCode.UnsupportedCompressionMethod).Message;
+    Assert.Multiple(() => {
+      Assert.That(note, Does.Contain("LZMA"));
+      Assert.That(note, Does.Contain("E8/E9"));
+      Assert.That(result.Capabilities.HasFlag(ExecutableUnpackCapabilities.CanDecompressPayload), Is.False);
+    });
+  }
+
+  // ── Runtime protectors: honest Detect/Locate only ──────────────────────
+  // TELock, Yoda's Protector and the Themida fallback are runtime protectors:
+  // the original image is only recoverable by executing the anti-debug /
+  // virtualization stub under emulation. They must never advertise or produce a
+  // decompressed payload, and must carry an explicit runtime-protector diagnostic.
+
+  private static readonly (string HandlerId, string Section, string? Literal)[] Protectors = [
+    ("telock", "tElock", "tElock"),
+    ("yodaprotector", "yP0", "yoda"),
+    ("themida", "themida", null),
+  ];
+
+  [Test, Category("HappyPath")]
+  public void ProtectorHandlers_StayAtDetectOrLocate_WithRuntimeProtectorDiagnostic(
+      [ValueSource(nameof(Protectors))] (string HandlerId, string Section, string? Literal) p) {
+    var image = BuildProtectorLikePe(p.Section, p.Literal);
+    var handler = ExecutablePackerHandlers.All.Single(h => h.Id == p.HandlerId);
+
+    var detection = handler.Detect(image);
+    Assert.That(detection.IsMatch, Is.True, $"{p.HandlerId} should detect its own sample");
+    var result = handler.Unpack(handler.Parse(image, detection), new());
+
+    Assert.Multiple(() => {
+      Assert.That(result.Level, Is.LessThanOrEqualTo(ExecutableUnpackLevel.PayloadLocated), "no decompression");
+      Assert.That(result.Capabilities.HasFlag(ExecutableUnpackCapabilities.CanDecompressPayload), Is.False);
+      Assert.That(result.Capabilities.HasFlag(ExecutableUnpackCapabilities.CanRebuildExecutable), Is.False);
+      Assert.That(result.Artifacts.Any(a => a.Name == "decompressed_payload.bin"), Is.False);
+      Assert.That(result.Diagnostics.Any(d => d.Message.Contains("runtime protector", StringComparison.OrdinalIgnoreCase)),
+        Is.True, "must flag runtime-protector status");
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void AmberHandler_LocatesPlaintextEmbeddedPe() {
+    var inner = MinimalPeImage();
+    var image = BuildAmberLikePe("Amber", embeddedPe: inner, entropySection: false);
+
+    var handler = new AmberExecutablePackerHandler();
+    var result = Unpack(handler, image);
+
+    Assert.Multiple(() => {
+      Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.PayloadLocated));
+      var carved = result.Artifacts.Single(a => a.Name == "embedded_pe.bin").Data;
+      Assert.That(carved[0], Is.EqualTo((byte)'M'));
+      Assert.That(carved[1], Is.EqualTo((byte)'Z'));
+      Assert.That(new PeParser().CanParse(carved), Is.True);
+    });
+  }
+
+  [Test, Category("EdgeCase")]
+  public void AmberHandler_LocatesEncryptedReflectivePayload_WithHonestDiagnostic() {
+    var image = BuildAmberLikePe("Amber", embeddedPe: null, entropySection: true);
+
+    var handler = new AmberExecutablePackerHandler();
+    var result = Unpack(handler, image);
+
+    Assert.Multiple(() => {
+      Assert.That(result.Level, Is.EqualTo(ExecutableUnpackLevel.PayloadLocated));
+      Assert.That(result.Artifacts.Any(a => a.Name == "reflective_payload.bin"), Is.True);
+      Assert.That(result.Artifacts.Any(a => a.Name == "embedded_pe.bin"), Is.False);
+      Assert.That(result.Capabilities.HasFlag(ExecutableUnpackCapabilities.CanDecompressPayload), Is.False);
+      Assert.That(result.Diagnostics.Any(d => d.Message.Contains("obfuscated", StringComparison.OrdinalIgnoreCase)), Is.True);
+    });
+  }
+
+  private static byte[] MinimalPeImage() {
+    var buf = new byte[0x200];
+    buf[0] = (byte)'M'; buf[1] = (byte)'Z';
+    BinaryPrimitives.WriteInt32LittleEndian(buf.AsSpan(0x3C), 0x80);
+    "PE\0\0"u8.CopyTo(buf.AsSpan(0x80));
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(0x80 + 4), 0x14C);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(0x80 + 20), 0xE0);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(0x80 + 24), 0x10B);
+    return buf;
+  }
+
+  private static byte[] BuildProtectorLikePe(string sectionName, string? literal) {
+    const int peOffset = 0x80;
+    const int optionalOffset = peOffset + 24;
+    const int optionalSize = 0xE0;
+    const int sectionOffset = optionalOffset + optionalSize;
+    const int rawOffset = 0x400;
+    var payload = new byte[0x800];
+    new Random(0x7E).NextBytes(payload);
+
+    var image = new byte[rawOffset + payload.Length];
+    image[0] = (byte)'M'; image[1] = (byte)'Z';
+    if (literal != null) Encoding.ASCII.GetBytes(literal).CopyTo(image.AsSpan(0x40));
+    BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(0x3C), peOffset);
+    "PE\0\0"u8.CopyTo(image.AsSpan(peOffset));
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 4), 0x14C);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 6), 1);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 20), optionalSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 22), 0x010F);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(optionalOffset), 0x10B);
+    // RWX flags so the protector base recognizes it as the located protected body.
+    WriteSection(image, sectionOffset, sectionName, 0x1000, 0x1000, payload.Length, rawOffset, 0xE0000020);
+    payload.CopyTo(image.AsSpan(rawOffset));
+    return image;
+  }
+
+  private static byte[] BuildAmberLikePe(string literal, byte[]? embeddedPe, bool entropySection) {
+    const int peOffset = 0x80;
+    const int optionalOffset = peOffset + 24;
+    const int optionalSize = 0xE0;
+    const int sectionOffset = optionalOffset + optionalSize;
+    const int rawOffset = 0x400;
+    var payload = embeddedPe ?? new byte[0x1000];
+    if (embeddedPe == null && entropySection) new Random(0xA3).NextBytes(payload);
+
+    var image = new byte[rawOffset + payload.Length];
+    image[0] = (byte)'M'; image[1] = (byte)'Z';
+    Encoding.ASCII.GetBytes(literal).CopyTo(image.AsSpan(0x40));
+    BinaryPrimitives.WriteInt32LittleEndian(image.AsSpan(0x3C), peOffset);
+    "PE\0\0"u8.CopyTo(image.AsSpan(peOffset));
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 4), 0x14C);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 6), 1);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 20), optionalSize);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(peOffset + 22), 0x010F);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(optionalOffset), 0x10B);
+    WriteSection(image, sectionOffset, ".rsrc", 0x2000, 0x1000, payload.Length, rawOffset, 0xC0000040);
+    payload.CopyTo(image.AsSpan(rawOffset));
+    return image;
+  }
+
   private static byte[] BuildOriginalImagePayload() {
     // A compressible original image (a small MZ blob padded with structured
     // content) so the aPLib body meaningfully expands, as a real FSG payload does.

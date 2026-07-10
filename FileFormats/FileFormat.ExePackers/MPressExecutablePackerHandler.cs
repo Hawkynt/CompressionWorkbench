@@ -85,7 +85,9 @@ public sealed class MPressExecutablePackerHandler : IExecutablePackerHandler {
 
     if (level == ExecutableUnpackLevel.PayloadLocated)
       diagnostics.Add(new(ExecutableDiagnosticCode.UnsupportedCompressionMethod,
-        "MPRESS payload sections were located. Managed MPRESS decompression/loader transform reversal is not yet implemented.",
+        "MPRESS .MPRESS1 payload located. Remaining transform: MPRESS uses a non-standard LZMA variant " +
+        "(custom range-coder initialization, not bit-compatible with the standard LZMA building block) " +
+        "followed by an E8/E9 x86 (BCJ) call/jump filter; neither is reversible with the current building blocks.",
         true));
 
     caps |= packed.ImageInfo?.Container switch {

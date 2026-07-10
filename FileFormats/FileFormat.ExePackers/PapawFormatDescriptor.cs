@@ -24,7 +24,10 @@ public sealed class PapawFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => "";
+  // A Papaw file is an ELF executable (content/footer-detected, no canonical
+  // extension); ".elf" is the honest suggested-output extension, matching the
+  // sibling ELF wrapper descriptors. Extensions stays empty to avoid collisions.
+  public string DefaultExtension => ".elf";
   public IReadOnlyList<string> Extensions => [];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
