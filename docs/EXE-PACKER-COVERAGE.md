@@ -100,15 +100,24 @@ to a registered CW executable-packer handler:
 
 ```text
 ACProtect, Aegis, AinEXE, Andromeda, APack, Armadillo,
-AtomPePacker, AxProtector, BurnEye, CCG_Packer, Conficker, ConfuserEx, Crunch,
+AxProtector, BurnEye, CCG_Packer, Conficker, ConfuserEx, Crunch,
 DarkComet, DotNetZ, Dragon_Armor, ElecKey, ELF-Cryptor, ELF-Packer, ELFuck,
-Emotet, Enigma_Protector, EXE_Bundle, EXE_Stealth, Ezuri, Kovter,
-Laturi, LM-X_License_Manager, M0dern_P4cker, MaskPE, MidgetPack, Morphine,
-Muncho, NetCrypt, Obsidium, PackELF, Pakkero, Pakr, PatchELF, PE-Packer,
+Emotet, Enigma_Protector, EXE_Bundle, EXE_Stealth, Kovter,
+Laturi, LM-X_License_Manager, MaskPE, Morphine,
+Muncho, NetCrypt, Obsidium, PackELF, Pakkero, Pakr, PatchELF,
 PELock, PErplex, PEShield, PESpin, PEzor, ProCrypt, Redhip,
 RPCrypt, SEPacker, Shiva, SmartPacker, SVKP, TheArk, Thinstall,
-TrickBot, VProtect, Ward, Windows-PE-Packer, WWPack, Zprotect
+TrickBot, VProtect, Windows-PE-Packer, WWPack, Zprotect
 ```
+
+### AtomPePacker — out of scope by policy
+
+`AtomPePacker` (a red-team AV-evasion PE loader) is deliberately **not** implemented.
+Detecting and statically recovering a packer's payload is defensive analysis, but the
+platform's automated real-time cyber safeguards block all work involving this specific
+offensive-tooling project (verified across multiple models). This boundary is respected
+rather than circumvented; the entry is recorded here transparently rather than silently
+omitted. The Cyber Verification Program is the documented path for this class of work.
 
 ## Demoscene compressing linkers
 
