@@ -67,6 +67,7 @@ public static class ExecutablePackerHandlers {
     new TelockExecutablePackerHandler(),
     new WinUpackFallbackExecutablePackerHandler(),
     new FsgFallbackExecutablePackerHandler(),
+    new SquishyExecutablePackerHandler(),
   ]);
 
   public static IReadOnlyList<IExecutablePackerHandler> All => RegisteredHandlers.Value;

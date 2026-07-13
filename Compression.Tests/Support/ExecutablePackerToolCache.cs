@@ -102,6 +102,30 @@ internal static class ExecutablePackerToolCache {
     return FindExecutable("crinkler", extractDir);
   }
 
+  /// <summary>
+  /// squishy (logicoma.io/squishy) publishes prebuilt release zips directly containing the
+  /// packer executable; 0.2.0+ ships an x86-64 build. No source is published, so this is the
+  /// only way to produce a real squishy-packed sample for oracle checks.
+  /// </summary>
+  public static string? GetSquishy() {
+    var existing = FindExecutable("squishy-x64");
+    if (existing != null) return existing;
+    if (!DownloadsEnabled || !RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return null;
+
+    var version = Environment.GetEnvironmentVariable("CWB_SQUISHY_VERSION");
+    if (string.IsNullOrWhiteSpace(version)) version = "0.2.0";
+    var url = Environment.GetEnvironmentVariable("CWB_SQUISHY_ZIP_URL");
+    if (string.IsNullOrWhiteSpace(url))
+      url = $"https://logicoma.io/squishy/releases/squishy-{version}.zip";
+
+    var archive = Path.Combine(Root, $"squishy-{version}.zip");
+    Download(url, archive);
+    var extractDir = Path.Combine(Root, $"squishy-{version}");
+    Directory.CreateDirectory(extractDir);
+    ZipFile.ExtractToDirectory(archive, extractDir, overwriteFiles: true);
+    return FindExecutable("squishy-x64", extractDir);
+  }
+
   public static PapawTools? GetPapaw() {
     var papawify = FindExecutable("papawify-xz");
     var stub = FindExecutable("papaw-xz-x86_64");

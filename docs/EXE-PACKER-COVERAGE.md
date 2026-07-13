@@ -10,8 +10,8 @@ not external-tool delegation.
 The broader Packing Box inventory is audited from
 [`docker-packing-box/src/conf/packers.yml`](https://github.com/packing-box/docker-packing-box/blob/main/src/conf/packers.yml)
 by `DatasetProbe.PackingBoxPackersManifest_IsFetchableAndAuditsRegisteredHandlers`.
-As of the current audit, the manifest has 104 packer entries; 43 are mapped to a
-registered CW executable-packer handler, and 61 remain unmapped.
+As of the current audit, the manifest has 104 packer entries; 44 are mapped to a
+registered CW executable-packer handler, and 60 remain unmapped.
 
 ## Support levels
 
@@ -106,7 +106,7 @@ Emotet, Enigma_Protector, EXE_Bundle, EXE_Stealth, Ezuri, Kovter,
 Laturi, LM-X_License_Manager, M0dern_P4cker, MaskPE, MidgetPack, Morphine,
 Muncho, NetCrypt, Obsidium, PackELF, Pakkero, Pakr, PatchELF, PE-Packer,
 PELock, PErplex, PEShield, PESpin, PEzor, ProCrypt, Redhip,
-RPCrypt, SEPacker, Shiva, SmartPacker, Squishy, SVKP, TheArk, Thinstall,
+RPCrypt, SEPacker, Shiva, SmartPacker, SVKP, TheArk, Thinstall,
 TrickBot, VProtect, Ward, Windows-PE-Packer, WWPack, Zprotect
 ```
 
@@ -115,6 +115,7 @@ TrickBot, VProtect, Ward, Windows-PE-Packer, WWPack, Zprotect
 | Packer   | Level  | Core / notes |
 |----------|--------|--------------|
 | Crinkler | Detect | Descriptor emits `metadata.json`, `diagnostics.json`, and original-image artifacts only. Native decompression and memory-image reconstruction are not implemented yet. Crinkler links the final PE itself, so a byte-identical pre-Crinkler executable is not generally recoverable. |
+| squishy  | Locate | `squishy` handler recognizes the packed PE's single `logicoma`-named section and the "logicoma"/"squished by" credit text squishy embeds in the DOS-stub header, both confirmed against real output from the official squishy-0.1.3 (x86) and squishy-0.2.0 (x86-64) releases (`https://logicoma.io/squishy`); it locates and emits the compressed section as `compressed_payload.bin`. squishy is closed-source and, per its own release notes, codes the payload with an undocumented adaptive context-mixing model (PAQ/LZMA-inspired) plus a state-based disassembler transform — the same non-LZ, no-public-spec category as Crinkler and kkrunchy — so static decompression is not attempted. |
 
 ## Notes on the hard cases
 

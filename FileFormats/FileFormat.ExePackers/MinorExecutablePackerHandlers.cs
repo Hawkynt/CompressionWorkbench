@@ -685,6 +685,85 @@ public sealed class WinUpackFallbackExecutablePackerHandler : MinorExecutablePac
   }
 }
 
+/// <summary>
+/// squishy (Jake "ferris" Taylor / logicoma, 2016+, <c>https://logicoma.io/squishy</c>) is a
+/// closed-source Win32 PE compressor purpose-built for demoscene 64K intros. Its own release
+/// notes describe an adaptive context-mixing coder ("context modeling" drawing on PAQ and LZMA
+/// literature) bootstrapped from "a crinkler-like model", plus a state-based disassembler that
+/// transforms jmp/call instructions ahead of coding — the same closed, non-LZ category as
+/// Crinkler and kkrunchy, not a publicly specified format.
+///
+/// Detection was confirmed against real output from the official releases (squishy-0.1.3, x86,
+/// and squishy-0.2.0, x86-64): the packed PE always has exactly one section literally named
+/// <c>logicoma</c>, and the DOS-stub region ahead of the (deliberately tiny) <c>e_lfanew</c>
+/// embeds the same "logicoma" text in every build, plus an ASCII-art "squished by ...
+/// ferris@logicoma" credit banner starting with 0.2.0.
+/// </summary>
+public sealed class SquishyExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+  public override string Id => "squishy";
+  public override string DisplayName => "squishy";
+  protected override bool IsPackerSection(string name) => name.Equals("logicoma", StringComparison.Ordinal);
+  protected override ReadOnlySpan<byte> LiteralSignature => "logicoma"u8;
+
+  public override DetectionResult Detect(ReadOnlySpan<byte> image) {
+    if (!PackerScanner.IsPe(image))
+      return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Not a valid PE.", true)]);
+
+    var sections = PackerScanner.GetPeSections(image);
+    var hasSection = sections.Any(s => IsPackerSection(s.Name));
+    // The "logicoma"/"squished by" credit text sits in the DOS-stub area ahead of squishy's
+    // own tiny e_lfanew; bound the literal scan to the header so an unrelated file that merely
+    // mentions "logicoma" somewhere in its data section doesn't false-positive.
+    var hasHeaderLiteral =
+      PackerScanner.IndexOfBounded(image, LiteralSignature, 0x400) >= 0 ||
+      PackerScanner.IndexOfBounded(image, "squished by"u8, 0x400) >= 0;
+
+    return hasSection || hasHeaderLiteral
+      ? new(true, this.Id, hasSection ? 0.92 : 0.8, [])
+      : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "squishy signature not found.", true)]);
+  }
+
+  /// <summary>
+  /// squishy's payload is coded by an undocumented, closed context-mixing model — there is no
+  /// public specification or reference decoder to statically reverse it, so this handler never
+  /// runs the generic aPLib/NRV probes (a spurious "clean" decode against a context-mixed stream
+  /// would fabricate a decompression that isn't actually happening). It honestly stops at
+  /// locating the single named payload section.
+  /// </summary>
+  public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+    var artifacts = new List<UnpackArtifact> {
+      new("metadata.json", this.BuildMetadataJson(packed), "stored"),
+      new("original_packed.bin", packed.OriginalImage, "stored"),
+    };
+    var diagnostics = new List<ExecutableDiagnostic>();
+    var level = ExecutableUnpackLevel.DetectionOnly;
+    var caps = ExecutableUnpackCapabilities.CanDetect | ExecutableUnpackCapabilities.SupportsPe;
+
+    foreach (var s in PackerScanner.GetPeSectionRanges(packed.OriginalImage)) {
+      if (!IsPackerSection(s.Name) || s.RawSize == 0 || s.RawOffset >= packed.OriginalImage.Length)
+        continue;
+      var len = (int)Math.Min(s.RawSize, (uint)(packed.OriginalImage.Length - s.RawOffset));
+      artifacts.Add(new("compressed_payload.bin", packed.OriginalImage.AsSpan((int)s.RawOffset, len).ToArray(), "stored"));
+      level = ExecutableUnpackLevel.PayloadLocated;
+      caps |= ExecutableUnpackCapabilities.CanLocatePayload;
+      break;
+    }
+
+    diagnostics.Add(new(ExecutableDiagnosticCode.UnsupportedCompressionMethod,
+      "squishy: closed demoscene compressor; requires its runtime depacker. squishy uses an " +
+      "undocumented adaptive context-mixing coder (PAQ/LZMA-inspired) with a state-based " +
+      "disassembler transform ahead of coding, so no public specification or reference decoder " +
+      "exists to statically reverse the payload.", true));
+
+    if (packed.ImageInfo?.Architecture == CpuArchitecture.X86) caps |= ExecutableUnpackCapabilities.SupportsX86;
+    else if (packed.ImageInfo?.Architecture == CpuArchitecture.X64) caps |= ExecutableUnpackCapabilities.SupportsX64;
+
+    var result = new UnpackResult(level, caps, artifacts, diagnostics);
+    artifacts.Add(new("diagnostics.json", ExecutableDiagnosticsJson.Build(this.Id, packed.ImageInfo, result), "stored"));
+    return result with { Artifacts = artifacts };
+  }
+}
+
 public sealed class FsgFallbackExecutablePackerHandler : MinorExecutablePackerHandlerBase {
   public override string Id => "fsgfallback";
   public override string DisplayName => "FSG";

@@ -346,6 +346,7 @@ public class DatasetProbe {
     ["PyPePacker"] = "pypepacker",
     ["Silent_Packer"] = "silent_packer",
     ["SimpleDpack"] = "simpledpack",
+    ["Squishy"] = "squishy",
     ["Telock"] = "telock",
     ["Themida"] = "themida",
     ["Upack"] = "winupack",
