@@ -78,7 +78,11 @@
   <ItemGroup>
     <ProjectReference Include="..\Compression.Core\Hawkynt.Compression.Core.csproj" />
     <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
-    <ProjectReference Include="..\Compression.CLI\Compression.CLI.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
+    <!-- Compression.CLI builds a win-x64 single-file host (cwb.exe); its deps.json/
+         runtimeconfig.json are publish-only artifacts, so a build-order ProjectReference
+         tries to copy non-existent files (MSB3030) on a clean Release build. The CLI is
+         built by the solution anyway, and ExecutablePackerCliTests locate cwb.exe at the
+         win-x64 path and Assert.Ignore when absent, so no reference is needed here. -->
     <ProjectReference Include="..\Compression.Analysis\Compression.Analysis.csproj" />
     <ProjectReference Include="..\Codecs\Codec.Pcm\Codec.Pcm.csproj" />
     <ProjectReference Include="..\Codecs\Codec.ALaw\Codec.ALaw.csproj" />
