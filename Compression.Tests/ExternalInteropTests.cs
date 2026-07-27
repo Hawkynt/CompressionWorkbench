@@ -8,12 +8,32 @@ namespace Compression.Tests;
 /// <summary>
 /// Tests that verify our format implementations produce output readable by
 /// external system tools and vice versa.
-/// Requires: gzip, bzip2, xz, tar (Git for Windows), 7z.exe
+/// Requires: gzip, bzip2, xz, tar (Git for Windows), 7z
 /// </summary>
 [TestFixture]
 [Category("ExternalInterop")]
 public class ExternalInteropTests {
-  private const string SevenZipPath = @"D:\PortableApps\7-ZipPortable\App\7-Zip64\7z.exe";
+  /// <summary>
+  /// Well-known install locations checked before falling back to PATH. The
+  /// portable entries come first because a developer box with 7-ZipPortable
+  /// usually has no 7z on PATH at all.
+  /// </summary>
+  private static readonly string[] SevenZipCandidates = [
+    @"D:\PortableApps\7-ZipPortable\App\7-Zip64\7z.exe",
+    @"D:\PortableApps\7-ZipPortable\App\7-Zip\7z.exe",
+    @"C:\Program Files\7-Zip\7z.exe",
+    @"C:\Program Files (x86)\7-Zip\7z.exe",
+  ];
+
+  /// <summary>
+  /// Resolved 7-Zip executable, or null when none is installed. `7zz` is the
+  /// official upstream binary name, `7za` the standalone/p7zip one — both are
+  /// accepted so Linux and macOS hosts find a usable binary.
+  /// </summary>
+  private static readonly string? SevenZipPath =
+    SevenZipCandidates.FirstOrDefault(File.Exists)
+    ?? ResolveOnPath("7z") ?? ResolveOnPath("7zz") ?? ResolveOnPath("7za");
+
   private string _tmpDir = null!;
 
   [SetUp]
@@ -468,18 +488,49 @@ public class ExternalInteropTests {
   // ── Helpers ─────────────────────────────────────────────────────────
 
   private static void Run7z(string args) =>
-    RunTool(SevenZipPath, args);
+    RunTool(SevenZipPath!, args);
 
   private static void Require7z() {
-    if (!File.Exists(SevenZipPath))
-      Assert.Ignore($"7-Zip not found at {SevenZipPath}");
+    if (SevenZipPath is null)
+      Assert.Ignore("7-Zip not found — install p7zip / 7-Zip, or put 7z on PATH.");
+  }
+
+  /// <summary>
+  /// Resolves a bare tool name against PATH. Callers pass names like "tar", and
+  /// <see cref="File.Exists"/> alone never matches those — it does no PATH
+  /// lookup, so every such test would skip itself on every platform.
+  /// An argument that already contains a directory separator is taken as-is.
+  /// </summary>
+  private static string? ResolveOnPath(string tool) {
+    if (tool.Contains(Path.DirectorySeparatorChar) || tool.Contains(Path.AltDirectorySeparatorChar))
+      return File.Exists(tool) ? tool : null;
+
+    var pathEnv = Environment.GetEnvironmentVariable("PATH");
+    if (string.IsNullOrEmpty(pathEnv)) return null;
+
+    var exeName = OperatingSystem.IsWindows() && !tool.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+      ? tool + ".exe"
+      : tool;
+
+    foreach (var dir in pathEnv.Split(Path.PathSeparator)) {
+      if (string.IsNullOrWhiteSpace(dir)) continue;
+      string candidate;
+      try {
+        candidate = Path.Combine(dir.Trim(), exeName);
+      } catch {
+        continue; // malformed PATH entry (invalid chars) — ignore it
+      }
+      if (File.Exists(candidate)) return candidate;
+    }
+    return null;
   }
 
   private static (string StdOut, string StdErr, int ExitCode) RunTool(string tool, string args) {
-    if (!File.Exists(tool))
+    var resolved = ResolveOnPath(tool);
+    if (resolved is null)
       Assert.Ignore($"Tool not found: {tool}");
     var psi = new ProcessStartInfo {
-      FileName = tool,
+      FileName = resolved,
       Arguments = args,
       RedirectStandardOutput = true,
       RedirectStandardError = true,
