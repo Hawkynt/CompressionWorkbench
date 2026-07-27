@@ -531,7 +531,6 @@ fs.writeFileSync(process.argv[3], zlib.gzipSync(input));
   }
 
   [TestCaseSource(nameof(VariedPayloads))]
-  [Ignore("Same known limitation as Node_ZlibBrotli_ReadsOurBrotli — our LZ77 Brotli has libbrotli interop issues.")]
   public void Node_ReadsOurBrotli_Varied(byte[] data) {
     var node = FindNode();
     if (node == null) Assert.Ignore("node interpreter not found");
@@ -952,9 +951,10 @@ process.stdout.write(out);
   }
 
   [Test]
-  [Ignore("Known limitation: our clean-room Brotli decoder does not yet fully implement libbrotli's " +
-          "compressed meta-blocks (diverges at byte 8+). Requires full RFC 7932 decoder (Huffman trees, " +
-          "context models, static dictionary). Uncompressed meta-blocks we can decode. TODO Phase 31 §1b.")]
+  [Ignore("Known limitation, decoder side only: we decode .NET BrotliStream output byte-exact " +
+          "(compressed meta-blocks included), but libbrotli at quality 11 emits stream features we " +
+          "mis-decode — output length is right, some literals are wrong. Our ENCODER is fine: node " +
+          "and .NET both read our output byte-exact. TODO Phase 31 §1b.")]
   public void Node_ZlibBrotliCreates_WeRead() {
     var node = FindNode();
     if (node == null) Assert.Ignore("node interpreter not found");

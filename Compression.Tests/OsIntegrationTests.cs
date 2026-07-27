@@ -440,8 +440,6 @@ public class OsIntegrationTests {
   }
 
   [Test]
-  [Ignore("Known limitation: our clean-room Brotli LZ77 encoder has libbrotli interop issues. " +
-          "Self round-trip works. TODO Phase 31 §1b.")]
   public void SystemIOCompression_OurBrotli_ReadByBrotliStream() {
     var data = RepetitiveText;
     var brPath = Path.Combine(_tmpDir, "ours.br");

@@ -467,7 +467,6 @@ public class EndToEndInteropTests {
   // ── Gzip: bidirectional with gzip tool ─────────────────────────────
 
   [Test]
-  [Ignore("Known Gzip CRC-32 bug: our output produces CRC errors with external gzip")]
   public void Gzip_OurOutput_GzipToolReads() {
     var tool = RequireGzip();
     var data = RepetitiveText;
@@ -479,7 +478,6 @@ public class EndToEndInteropTests {
   }
 
   [Test]
-  [Ignore("Known Gzip CRC-32 bug: our reader fails CRC check on valid gzip output")]
   public void Gzip_ToolOutput_WeRead() {
     var tool = RequireGzip();
     var data = RepetitiveText;
@@ -505,7 +503,6 @@ public class EndToEndInteropTests {
   }
 
   [Test]
-  [Ignore("Known Gzip CRC-32 bug: our output produces CRC errors with external gzip")]
   public void Gzip_RandomData_OurOutput_GzipToolReads() {
     var tool = RequireGzip();
     var data = RandomData;
@@ -739,7 +736,6 @@ public class EndToEndInteropTests {
   // ── tar.gz: bidirectional with tar tool ────────────────────────────
 
   [Test]
-  [Ignore("Known Gzip CRC-32 bug: our gzip output produces CRC errors when read by external tar")]
   public void TarGz_OurOutput_TarToolReads() {
     var tool = RequireTar();
     var (_, files) = CreateSourceFiles();
@@ -897,7 +893,6 @@ public class EndToEndInteropTests {
   // ═══════════════════════════════════════════════════════════════════
 
   [Test]
-  [Ignore("Known interop issue: .NET ZipArchive uses compression flags our reader doesn't fully support")]
   public void Zip_CrossValidate_DotNetZipArchive() {
     var (dir, srcFiles) = CreateAllPatternFiles();
 
@@ -932,7 +927,6 @@ public class EndToEndInteropTests {
   }
 
   [Test]
-  [Ignore("Known interop issue: our Gzip output uses format features .NET GZipStream doesn't support")]
   public void Gzip_CrossValidate_DotNetGZipStream() {
     foreach (var (label, data) in new[] {
       ("small", SmallText), ("repetitive", RepetitiveText),
@@ -1089,7 +1083,6 @@ public class EndToEndInteropTests {
 
   [Test]
   [CancelAfter(120_000)]
-  [Ignore("Known Gzip CRC-32 issue with large data")]
   public void Gzip_LargeFile_1MB_RoundTrip() {
     var data = LargeData;
     var gzPath = Path.Combine(_tmpDir, "large.gz");
@@ -1273,7 +1266,6 @@ public class EndToEndInteropTests {
   // ═══════════════════════════════════════════════════════════════════
 
   [Test]
-  [Ignore("Known Gzip CRC-32 bug: our output produces CRC errors with external gzip")]
   public void Gzip_Optimal_OurOutput_GzipToolReads() {
     var tool = RequireGzip();
     var data = RepetitiveText;
