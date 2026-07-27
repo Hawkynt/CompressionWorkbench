@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Compression.Registry;
 using Reg = Compression.Registry.FormatRegistry;
 
@@ -22,6 +23,22 @@ public static partial class FormatDetector {
   private static Dictionary<Format, Format>? _compoundToStream; // TarGz → Gzip
   private static Dictionary<Format, Format>? _streamToCompound; // Gzip → TarGz
 
+  /// <summary>
+  ///   Bytes that must be read for the deepest registered magic signature to be
+  ///   matchable. Derived from the registry rather than hardcoded so that adding a
+  ///   descriptor with a deeper signature widens the probe automatically.
+  ///   Filesystem superblocks sit well past the first sector (ext at 1024,
+  ///   ISO 9660 at 32768, btrfs at 65536), so a fixed 512-byte read silently made
+  ///   those formats undetectable by content.
+  /// </summary>
+  private static int _maxMagicExtent;
+
+  /// <summary>Header size for the cheap first pass; covers the large majority of formats.</summary>
+  private const int FastProbeBytes = 512;
+
+  /// <summary>Upper bound on the deep probe, so a malformed descriptor cannot make us read a whole file.</summary>
+  private const int MaxProbeBytes = 1 << 20;
+
   private static void EnsureRegistryMapped() {
     if (FormatDetector._idToFormat != null)
       return;
@@ -34,6 +51,7 @@ public static partial class FormatDetector {
     var compoundExtToFormat = new Dictionary<string, Format>(StringComparer.OrdinalIgnoreCase);
     var compoundToStream = new Dictionary<Format, Format>();
     var streamToCompound = new Dictionary<Format, Format>();
+    var maxMagicExtent = FastProbeBytes;
 
     foreach (var desc in Reg.All) {
       if (!Enum.TryParse<Format>(desc.Id, out var f)) 
@@ -41,6 +59,12 @@ public static partial class FormatDetector {
 
       idToFormat[desc.Id] = f;
       formatToDesc[f] = desc;
+
+      foreach (var sig in desc.MagicSignatures) {
+        var extent = sig.Offset + sig.Bytes.Length;
+        if (extent > maxMagicExtent)
+          maxMagicExtent = extent;
+      }
 
       // Build extension → format maps
       foreach (var ext in desc.Extensions)
@@ -77,6 +101,41 @@ public static partial class FormatDetector {
     FormatDetector._compoundExtToFormat = compoundExtToFormat;
     FormatDetector._compoundToStream = compoundToStream;
     FormatDetector._streamToCompound = streamToCompound;
+    FormatDetector._maxMagicExtent = Math.Min(maxMagicExtent, MaxProbeBytes);
+  }
+
+  /// <summary>
+  ///   Identifies <paramref name="path"/> by content alone.
+  ///   Probes the first <see cref="FastProbeBytes"/> bytes first — that settles the
+  ///   large majority of formats — and only re-reads out to the deepest registered
+  ///   signature when the cheap pass finds nothing.
+  /// </summary>
+  private static Format DetectByMagicFromFile(string path) {
+    EnsureRegistryMapped();
+    if (!File.Exists(path)) return Format.Unknown;
+
+    try {
+      using var fs = File.OpenRead(path);
+
+      var fast = new byte[FastProbeBytes];
+      var read = fs.ReadAtLeast(fast, fast.Length, throwOnEndOfStream: false);
+      var byFast = DetectByMagic(fast.AsSpan(0, read));
+      if (byFast != Format.Unknown) return byFast;
+
+      // Nothing in the first sector. Widen to the deepest signature the registry
+      // declares, but never past the end of the file.
+      var deep = (int)Math.Min(FormatDetector._maxMagicExtent, fs.Length);
+      if (deep <= read) return Format.Unknown;
+
+      var buffer = new byte[deep];
+      fs.Position = 0;
+      read = fs.ReadAtLeast(buffer, deep, throwOnEndOfStream: false);
+      return DetectByMagic(buffer.AsSpan(0, read));
+    } catch (IOException) {
+      return Format.Unknown;
+    } catch (UnauthorizedAccessException) {
+      return Format.Unknown;
+    }
   }
 
   /// <summary>Get the descriptor for a format, or null if no descriptor exists (Sfx, Iso, Udf).</summary>
@@ -139,15 +198,20 @@ public static partial class FormatDetector {
     if (lower.EndsWith(".sz_") || lower.EndsWith("._"))
       return Format.Szdd;
 
-    // Generic disk-image extension claimed by many filesystems — pick the
-    // most common writable target by default. Without this, the registry's
-    // first-claim-wins map can route ".img" to a niche read-only descriptor
-    // (Bfs alphabetically) which silently fails on Create. Other ambiguous
-    // extensions (.bin, .dd, .raw) are NOT special-cased: .bin belongs to
-    // BinCue (CD images), .dd is dd-image (raw), .raw is generic — those
-    // correctly resolve via the registry to specific descriptors.
-    if (singleExt == ".img")
-      return Format.Fat;
+    // Generic disk-image extension claimed by many filesystems. The extension
+    // carries no information here, so ask the content first — otherwise every
+    // ext4/btrfs/ISO/NTFS image named ".img" is reported as FAT and routed to
+    // the FAT reader, which rejects it. Only when the content says nothing do we
+    // fall back to FAT as the most common writable target; that fallback is what
+    // keeps Create working and stops the registry's first-claim-wins map from
+    // routing ".img" to a niche read-only descriptor (Bfs, alphabetically).
+    // Other ambiguous extensions (.bin, .dd, .raw) are NOT special-cased: .bin
+    // belongs to BinCue (CD images), .dd is dd-image (raw), .raw is generic —
+    // those correctly resolve via the registry to specific descriptors.
+    if (singleExt == ".img") {
+      var img = DetectByMagicFromFile(path);
+      return img != Format.Unknown ? img : Format.Fat;
+    }
 
     // The ".wad" extension is shared by Doom WADs (IWAD/PWAD magic, the "Wad"
     // descriptor) and Quake/Half-Life texture WADs (WAD2/WAD3 magic, the "Wad2"
@@ -357,12 +421,9 @@ public static partial class FormatDetector {
     if (header.Length >= 9 && (header[4] & 0xFE) == 0x10 && header[5] == 0xFB)
       return Format.RefPack;
 
-    // LZMA: byte 0 = properties (typically 0x5D), then 4-byte dict size LE
-    if (header.Length >= 13 && header[0] < 0xE1 && header[0] % 9 < 9) {
-      var dictSize = (uint)(header[1] | (header[2] << 8) | (header[3] << 16) | (header[4] << 24));
-      if (dictSize > 0 && dictSize <= 0x40000000)
-        return Format.Lzma;
-    }
+    // LZMA "alone" header: properties byte, 4-byte dict size LE, 8-byte size LE.
+    if (IsLzmaAloneHeader(header))
+      return Format.Lzma;
 
     // TAR: "ustar" at offset 257
     if (header.Length >= 263
@@ -373,7 +434,81 @@ public static partial class FormatDetector {
       && header[261] == 'r')
       return Format.Tar;
 
+    // FAT has no fixed magic — it is identified by its BIOS Parameter Block.
+    // Checked last so any descriptor with a real signature wins first; NTFS and
+    // exFAT share the same BPB shape but carry "NTFS    "/"EXFAT   " at offset 3
+    // and are therefore already matched above.
+    if (IsFatBootSector(header))
+      return Format.Fat;
+
     return Format.Unknown;
+  }
+
+  /// <summary>
+  ///   Validates an LZMA "alone" (.lzma) header: a properties byte, a 32-bit
+  ///   little-endian dictionary size and a 64-bit little-endian uncompressed size.
+  ///   <para>
+  ///   The format carries no magic, so every field has to be checked or the probe
+  ///   turns into a catch-all. In particular the dictionary size must be one of the
+  ///   sizes an encoder actually emits (2^n, or 2^n + 2^(n-1) as used by xz/lzma):
+  ///   without that, any unrecognized file whose first byte happens to be below
+  ///   0xE1 is claimed as LZMA — which is how BMP, PCX, PGM and PPM were being
+  ///   mis-identified.
+  ///   </para>
+  /// </summary>
+  private static bool IsLzmaAloneHeader(ReadOnlySpan<byte> header) {
+    if (header.Length < 13) return false;
+
+    // props = (pb * 5 + lp) * 9 + lc, so anything at or above 9*5*5 is invalid.
+    if (header[0] >= 225) return false;
+
+    var dictSize = (uint)(header[1] | (header[2] << 8) | (header[3] << 16) | (header[4] << 24));
+
+    // Minimum dictionary is 4 KiB; the reference encoder caps at 1 GiB.
+    if (dictSize < (1u << 12) || dictSize > (1u << 30)) return false;
+
+    // Accept only 2^n and 2^n + 2^(n-1) — the two shapes real encoders write.
+    var isPowerOfTwo = (dictSize & (dictSize - 1)) == 0;
+    var withoutTopBit = dictSize & (dictSize - 1);
+    var isOneAndAHalf = withoutTopBit != 0 && (withoutTopBit & (withoutTopBit - 1)) == 0
+                        && withoutTopBit == (dictSize & ~withoutTopBit) >> 1;
+    if (!isPowerOfTwo && !isOneAndAHalf) return false;
+
+    // Uncompressed size: either the "unknown" sentinel or a plausible length.
+    var uncompressed = BinaryPrimitives.ReadUInt64LittleEndian(header.Slice(5, 8));
+    return uncompressed == ulong.MaxValue || uncompressed < (1UL << 56);
+  }
+
+  /// <summary>
+  ///   Conservative BIOS Parameter Block check for FAT12/16/32 volumes.
+  ///   Every field must be one of the small set of legal values, so a random
+  ///   sector that merely happens to end in 0x55 0xAA (an MBR, for instance) is
+  ///   rejected.
+  /// </summary>
+  private static bool IsFatBootSector(ReadOnlySpan<byte> header) {
+    if (header.Length < 512) return false;
+
+    // Boot signature.
+    if (header[510] != 0x55 || header[511] != 0xAA) return false;
+
+    // Jump instruction: short jump (EB xx 90) or near jump (E9 xx xx).
+    if (header[0] != 0xEB && header[0] != 0xE9) return false;
+
+    // Bytes per sector: a power of two in 512..4096.
+    var bytesPerSector = header[11] | (header[12] << 8);
+    if (bytesPerSector is not (512 or 1024 or 2048 or 4096)) return false;
+
+    // Sectors per cluster: a power of two in 1..128.
+    var sectorsPerCluster = header[13];
+    if (sectorsPerCluster == 0 || (sectorsPerCluster & (sectorsPerCluster - 1)) != 0 || sectorsPerCluster > 128)
+      return false;
+
+    // Reserved sector count is never zero, and there are always 1 or 2 FATs.
+    var reservedSectors = header[14] | (header[15] << 8);
+    if (reservedSectors == 0) return false;
+    if (header[16] is not (1 or 2)) return false;
+
+    return true;
   }
 
   private static bool MatchesMagic(ReadOnlySpan<byte> header, MagicSignature sig) {
@@ -397,12 +532,7 @@ public static partial class FormatDetector {
     var byExt = DetectByExtension(path);
     if (byExt != Format.Unknown) return byExt;
 
-    if (!File.Exists(path)) return Format.Unknown;
-
-    var header = new byte[512];
-    using var fs = File.OpenRead(path);
-    var read = fs.Read(header, 0, header.Length);
-    return DetectByMagic(header.AsSpan(0, read));
+    return DetectByMagicFromFile(path);
   }
 
   /// <summary>
