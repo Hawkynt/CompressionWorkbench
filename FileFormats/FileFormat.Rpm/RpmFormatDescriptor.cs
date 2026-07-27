@@ -94,13 +94,26 @@ public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description => "Red Hat Package Manager archive";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
-    [new(0, "payload.cpio", 0, 0, "cpio", false, false, null)];
+  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    if (stream.CanSeek) stream.Position = 0;
+    var r = new RpmReader(stream);
+    using var payload = r.GetDecompressedPayloadStream();
+    var cpioReader = new FileFormat.Cpio.CpioReader(payload, leaveOpen: true);
+
+    var result = new List<ArchiveEntryInfo>();
+    var index = 0;
+    foreach (var (entry, data) in cpioReader.ReadAll())
+      result.Add(new ArchiveEntryInfo(
+        index++, entry.Name, data.Length, data.Length, "cpio", entry.IsDirectory, false, null));
+
+    return result;
+  }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    if (stream.CanSeek) stream.Position = 0;
     var r = new RpmReader(stream);
-    using var payload = r.GetPayloadStream();
-    var cpioReader = new FileFormat.Cpio.CpioReader(payload);
+    using var payload = r.GetDecompressedPayloadStream();
+    var cpioReader = new FileFormat.Cpio.CpioReader(payload, leaveOpen: true);
     foreach (var (entry, data) in cpioReader.ReadAll()) {
       if (files != null && !MatchesFilter(entry.Name, files)) continue;
       if (entry.IsDirectory) { Directory.CreateDirectory(Path.Combine(outputDir, entry.Name)); continue; }
@@ -120,8 +133,8 @@ public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek) archive.Position = 0;
     var r = new RpmReader(archive);
-    using var payload = r.GetPayloadStream();
-    var cpioReader = new FileFormat.Cpio.CpioReader(payload);
+    using var payload = r.GetDecompressedPayloadStream();
+    var cpioReader = new FileFormat.Cpio.CpioReader(payload, leaveOpen: true);
     foreach (var (entry, data) in cpioReader.ReadAll()) {
       if (entry.IsDirectory) continue;
       if (!string.Equals(entry.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;

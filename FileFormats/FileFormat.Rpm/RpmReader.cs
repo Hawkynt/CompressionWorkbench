@@ -142,6 +142,27 @@ public sealed class RpmReader : IDisposable {
     return result;
   }
 
+  /// <summary>
+  /// Returns the payload already decompressed, ready to be handed to a
+  /// <see cref="CpioReader"/>.
+  /// </summary>
+  /// <remarks>
+  /// Prefer this over <see cref="GetPayloadStream"/> unless you specifically want the
+  /// raw compressed bytes: that method returns the payload still wrapped in its gzip /
+  /// xz / zstd container, and feeding it straight to a cpio parser yields "invalid cpio
+  /// magic" -- or, when the compressed payload is shorter than a 110-byte cpio header,
+  /// an archive that silently appears to be empty.
+  /// </remarks>
+  /// <exception cref="NotSupportedException">
+  /// Thrown when <see cref="PayloadCompressor"/> is not a recognized compressor.
+  /// </exception>
+  /// <exception cref="ObjectDisposedException">Thrown when this reader has been disposed.</exception>
+  public Stream GetDecompressedPayloadStream() {
+    ObjectDisposedException.ThrowIf(this._disposed, this);
+    using var compressed = GetPayloadStream();
+    return DecompressPayload(compressed);
+  }
+
   private Stream DecompressPayload(Stream compressedStream) {
     switch (this.PayloadCompressor) {
       case "gzip": {
