@@ -1037,13 +1037,18 @@ with open(sys.argv[1], 'rb') as src, open(sys.argv[2], 'wb') as dst:
     var szPath = Path.Combine(this._tmpDir, "ours.7z");
     ArchiveOperations.Create(szPath, [new ArchiveInput(srcFile, "file1.txt")], new CompressionOptions());
 
+    // extractall() is the one extraction API stable across py7zr 0.x and 1.x —
+    // readall() was dropped in 1.0, so reading through a temp dir keeps this
+    // test working against whichever py7zr the host happens to ship.
     const string script = """
-import py7zr, sys
+import py7zr, sys, tempfile, os
 with py7zr.SevenZipFile(sys.argv[1]) as z:
     names = z.getnames()
     assert names == ['file1.txt'], f'unexpected names {names}'
-    blobs = z.readall()
-    sys.stdout.buffer.write(blobs['file1.txt'].read())
+    with tempfile.TemporaryDirectory() as td:
+        z.extractall(path=td)
+        with open(os.path.join(td, 'file1.txt'), 'rb') as f:
+            sys.stdout.buffer.write(f.read())
 """;
     var result = this.RunScript(python!, ".py", script, [szPath]);
     AssertSuccess(result, "python py7zr reader");
