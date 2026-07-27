@@ -43,9 +43,10 @@ public sealed class HpfsFormatDescriptor
   public IReadOnlyList<string> Extensions => [".img", ".hpfs"];
   public IReadOnlyList<string> CompoundExtensions => [];
 
-  // Superblock magic at LBA 16 (offset 8192). First 4 bytes are sufficient for detection.
+  // Superblock magic at LBA 16 (offset 8192): 0xF995E849 stored little-endian.
+  // The first 4 bytes are sufficient for detection.
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    new([0xF9, 0x95, 0xE8, 0xF9], Offset: 8192, Confidence: 0.85),
+    new([0x49, 0xE8, 0x95, 0xF9], Offset: 8192, Confidence: 0.85),
   ];
 
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];

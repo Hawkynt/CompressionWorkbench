@@ -24,10 +24,11 @@ namespace FileSystem.Hpfs;
 /// <list type="bullet">
 ///   <item>LBA size: 512 bytes.</item>
 ///   <item>Boot sector at LBA 0.</item>
-///   <item>Superblock at LBA 16, 8-byte magic <c>F9 95 E8 F9 FA 53 E9 F9</c> at offset 0.</item>
+///   <item>Superblock at LBA 16, 8-byte magic <c>49 E8 95 F9 C5 E9 53 FA</c> at offset 0
+///   (0xF995E849 / 0xFA53E9C5 stored little-endian).</item>
 ///   <item>Superblock offset 12 (uint32 LE): root-fnode LBA.</item>
-///   <item>Fnode (512 bytes): magic <c>F7 E4 0A AE</c> at offset 0.</item>
-///   <item>Directory block (2 KiB = 4 LBAs): magic <c>77 E4 0A AE</c> at offset 0.</item>
+///   <item>Fnode (512 bytes): magic <c>AE 0A E4 F7</c> at offset 0 (0xF7E40AAE LE).</item>
+///   <item>Directory block (2 KiB = 4 LBAs): magic <c>AE 0A E4 77</c> at offset 0 (0x77E40AAE LE).</item>
 ///   <item>Dirent: uint16 record-length (off 0), uint16 flags (off 2), uint32 fnode-LBA
 ///   (off 4), uint32 file-size (off 12), byte name-length (off 30), name bytes at offset 31.</item>
 /// </list>
@@ -38,15 +39,18 @@ public sealed class HpfsReader : IDisposable {
   public const int SuperblockLba = 16;
   public const int DirBlockSize = 2048;
 
-  /// <summary>Superblock magic <c>F9 95 E8 F9 FA 53 E9 F9</c>.</summary>
+  /// <summary>
+  /// Superblock magic — the uint32 pair 0xF995E849 / 0xFA53E9C5 stored little-endian,
+  /// i.e. the bytes <c>49 E8 95 F9 C5 E9 53 FA</c>.
+  /// </summary>
   public static readonly byte[] SuperblockMagic =
-    [0xF9, 0x95, 0xE8, 0xF9, 0xFA, 0x53, 0xE9, 0xF9];
+    [0x49, 0xE8, 0x95, 0xF9, 0xC5, 0xE9, 0x53, 0xFA];
 
-  /// <summary>Fnode magic <c>F7 E4 0A AE</c>.</summary>
-  public static readonly byte[] FnodeMagic = [0xF7, 0xE4, 0x0A, 0xAE];
+  /// <summary>Fnode magic 0xF7E40AAE little-endian: <c>AE 0A E4 F7</c>.</summary>
+  public static readonly byte[] FnodeMagic = [0xAE, 0x0A, 0xE4, 0xF7];
 
-  /// <summary>Dirent-block magic <c>77 E4 0A AE</c>.</summary>
-  public static readonly byte[] DirBlockMagic = [0x77, 0xE4, 0x0A, 0xAE];
+  /// <summary>Dirent-block magic 0x77E40AAE little-endian: <c>AE 0A E4 77</c>.</summary>
+  public static readonly byte[] DirBlockMagic = [0xAE, 0x0A, 0xE4, 0x77];
 
   private readonly byte[] _data;
   private readonly List<HpfsEntry> _entries = [];

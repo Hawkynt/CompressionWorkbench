@@ -53,8 +53,9 @@ internal static class HpfsInPlaceModifier {
   private const uint SuperblockLba = 16;
   private const uint BitmapLba = 24;
 
-  private static readonly byte[] FnodeMagic = [0xF7, 0xE4, 0x0A, 0xAE];
-  private static readonly byte[] DirBlockMagic = [0x77, 0xE4, 0x0A, 0xAE];
+  // 0xF7E40AAE / 0x77E40AAE stored little-endian, as HPFS writes them on disk.
+  private static readonly byte[] FnodeMagic = [0xAE, 0x0A, 0xE4, 0xF7];
+  private static readonly byte[] DirBlockMagic = [0xAE, 0x0A, 0xE4, 0x77];
 
   // ── Public API ──────────────────────────────────────────────────────────
 

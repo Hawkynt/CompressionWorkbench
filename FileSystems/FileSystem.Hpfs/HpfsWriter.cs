@@ -53,13 +53,24 @@ internal sealed class HpfsWriter {
   private const uint RootFnodeLba = 18;
   private const uint RootDirLba = 20; // 4 LBAs = 2048 bytes
   private const uint BitmapLba = 24;  // 1 LBA for allocation bitmap
+  private const uint DirBandBitmapLba = 25; // 1 LBA for the directory-band bitmap
   private const uint FirstAllocLba = 32;
 
+  // The root dirent block doubles as the whole directory band. HPFS measures the
+  // band in sectors and requires a 4-sector (one dnode) granularity, which
+  // RootDirLba/DirBlockLbas already satisfy.
+  private const uint DirBandStartLba = RootDirLba;
+  private const uint DirBandSectors = DirBlockLbas;
+
   // Magics
-  private static readonly byte[] SuperblockMagic = [0xF9, 0x95, 0xE8, 0xF9, 0xFA, 0x53, 0xE9, 0xF9];
-  private static readonly byte[] SpareBlockMagic = [0xF9, 0x11, 0xDC, 0x39, 0xFA, 0x93, 0xB8, 0xF9];
-  private static readonly byte[] FnodeMagic = [0xF7, 0xE4, 0x0A, 0xAE];
-  private static readonly byte[] DirBlockMagic = [0x77, 0xE4, 0x0A, 0xAE];
+  // HPFS stores each magic as a little-endian uint32, so the on-disk byte order is
+  // the reverse of the constant as written in the OS/2 / Linux headers:
+  //   superblock 0xF995E849, 0xFA53E9C5   spareblock 0xF9911849, 0xFA5229C5
+  //   fnode      0xF7E40AAE               dirblock   0x77E40AAE
+  private static readonly byte[] SuperblockMagic = [0x49, 0xE8, 0x95, 0xF9, 0xC5, 0xE9, 0x53, 0xFA];
+  private static readonly byte[] SpareBlockMagic = [0x49, 0x18, 0x91, 0xF9, 0xC5, 0x29, 0x52, 0xFA];
+  private static readonly byte[] FnodeMagic = [0xAE, 0x0A, 0xE4, 0xF7];
+  private static readonly byte[] DirBlockMagic = [0xAE, 0x0A, 0xE4, 0x77];
 
   /// <summary>A node in the directory tree assembled before layout.</summary>
   private sealed class TreeNode {
@@ -124,6 +135,7 @@ internal sealed class HpfsWriter {
     WriteSuperblock(image, totalLbas);
     WriteSpareBlock(image);
     WriteBitmap(image, nextLba);
+    WriteDirBandBitmap(image);
 
     // Emit the whole tree (fnodes, dir blocks, file data).
     WriteNode(image, root, parentFnodeLba: RootFnodeLba);
@@ -238,6 +250,29 @@ internal sealed class HpfsWriter {
 
     // Spare block LBA at offset 28
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 28, 4), SpareBlockLba);
+
+    // Directory band (offsets 48/52/56/60). The OS/2 and Linux drivers both reject
+    // the volume unless dir_band_end - dir_band_start + 1 == n_dir_band, so these
+    // four fields have to agree even on a volume whose band holds a single dnode.
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 48, 4), DirBandSectors);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 52, 4), DirBandStartLba);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 56, 4), DirBandStartLba + DirBandSectors - 1);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(off + 60, 4), DirBandBitmapLba);
+  }
+
+  /// <summary>
+  /// Writes the directory-band bitmap: one bit per dnode, 1 = free, matching the
+  /// sector bitmap's polarity. The band holds exactly one dnode (the root dirent
+  /// block), which is in use.
+  /// </summary>
+  private static void WriteDirBandBitmap(byte[] image) {
+    var off = (int)(DirBandBitmapLba * LbaSize);
+    for (var i = off; i < off + LbaSize; i++)
+      image[i] = 0xFF;
+
+    var dnodes = DirBandSectors / DirBlockLbas;
+    for (var i = 0u; i < dnodes; i++)
+      image[off + (int)(i / 8)] &= (byte)~(1 << (int)(i % 8));
   }
 
   private static void WriteSpareBlock(byte[] image) {
