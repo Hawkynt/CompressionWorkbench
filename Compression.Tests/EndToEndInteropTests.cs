@@ -400,6 +400,30 @@ public class EndToEndInteropTests {
     // GameMaker IFF FORM container: writer expects per-chunk binary blobs named
     // "chunks/<TAG>.bin"; arbitrary .txt/.dat names don't satisfy the chunk layout.
     ".win",
+    // Motorola S-record firmware image: addresses one flat address space, not a file
+    // tree. Create folds the inputs into a single "firmware.bin" payload, so only the
+    // first input survives and never under its original name.
+    ".s19",
+    // Android sparse image: Create sparsifies the inputs into one "image.raw" whole-image
+    // blob. Same single-payload class as .s19 — the file tree is gone by design.
+    ".simg",
+    // EWF/EnCase forensic image: Extract surfaces the container's own section chain
+    // (section_NN_<type>.bin) rather than a file tree, because E01 images a device,
+    // not a directory. Arbitrary input filenames cannot survive that.
+    ".e01",
+    // Macintosh MFS volume: a name-synthesizing filesystem that folds names into its
+    // short on-disk form ("repeat.txt" -> "REPEAT."). Payload bytes DO round-trip
+    // intact; only the verbatim-name match fails, so this is a naming constraint.
+    ".mfsd",
+    // QOI is a raw image codec, not a container: Create requires a "pixels.bin" input
+    // holding the raw pixel buffer and rejects arbitrary files outright.
+    ".qoi",
+    // OVA is a tar with a mandated member set: Create requires at least one disk image
+    // or an .ovf descriptor, so loose .txt inputs are rejected.
+    ".ova",
+    // GFS2 creation is empty-volume-only today — the writer raises NotSupportedException
+    // when given files. Honest WORM-shy state; see the FileSystems support table.
+    ".gfs2",
   };
 
   private static IEnumerable<string> RoundTripFormats() {
