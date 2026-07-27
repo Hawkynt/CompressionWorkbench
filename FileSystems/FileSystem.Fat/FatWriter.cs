@@ -1077,9 +1077,15 @@ public sealed class FatWriter {
   /// excess from the write side.
   /// </para>
   /// </remarks>
+  /// <param name="requestedTotalSectors">
+  /// Explicit image size in sectors. When greater than the size the inputs need,
+  /// the volume is grown to it; the surplus is never materialised in memory
+  /// because <see cref="BuildTo"/> sizes the stream and leaves free space sparse.
+  /// Zero (the default) auto-sizes to fit the inputs.
+  /// </param>
   public void BuildToStreaming(Stream output, int bytesPerSector = 512, int requestedClusterSize = 0,
     string? volumeLabel = null, int forcedFatType = 0, bool enableLfn = true, bool transactionFat = false,
-    int requestedRootEntries = 0, bool forceLfn = false) {
+    int requestedRootEntries = 0, bool forceLfn = false, int requestedTotalSectors = 0) {
     ArgumentNullException.ThrowIfNull(output);
     if (!output.CanSeek || !output.CanWrite)
       throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
@@ -1125,6 +1131,11 @@ public sealed class FatWriter {
       var fat32Sectors = reservedSectors + 2 * fatSectors + targetClusters * spc;
       totalSectors = Math.Max(totalSectors, (int)fat32Sectors);
     }
+
+    // An explicit ImageSize wins over the auto-fit size, but never shrinks the
+    // volume below what the inputs actually need.
+    if (requestedTotalSectors > 0)
+      totalSectors = Math.Max(totalSectors, requestedTotalSectors);
 
     // Pass 2: delegate the metadata write to BuildTo. Because PlaceTree
     // skips streaming files in p.DataWrites, the underlying clusters are

@@ -571,19 +571,29 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (picked > 0) clusterBytes = picked;
     }
 
-    if (streaming) {
-      // Streaming path requires a writable+seekable stream; the
-      // CreateFromStreams contract already promises this through the
-      // pipeline. Fall back to the buffered path only on totalSectors
-      // when the explicit ImageSize knob was set — BuildToStreaming
-      // auto-sizes from the streaming inputs' known sizes.
-      if (output.CanSeek) {
-        w.BuildToStreaming(output, requestedClusterSize: clusterBytes, volumeLabel: label,
-                           forcedFatType: forcedFatType, enableLfn: enableLfn, transactionFat: tfat,
-                           requestedRootEntries: rootEntries, forceLfn: forceLfn);
-        return;
-      }
+    // Streaming needs a writable+seekable stream; the CreateFromStreams contract
+    // already promises this through the pipeline. An explicit ImageSize is passed
+    // through so the requested geometry is honoured rather than auto-fitted.
+    if (streaming && output.CanSeek) {
+      w.BuildToStreaming(output, requestedClusterSize: clusterBytes, volumeLabel: label,
+                         forcedFatType: forcedFatType, enableLfn: enableLfn, transactionFat: tfat,
+                         requestedRootEntries: rootEntries, forceLfn: forceLfn,
+                         requestedTotalSectors: totalSectors);
+      return;
     }
+
+    // A fixed size goes through the streaming writer too whenever the target can
+    // seek: Build() materialises the whole volume as one byte[], which caps it at
+    // the ~2 GB array limit and makes every advertised size at or above that
+    // throw. BuildTo() sets the stream length and writes only the metadata
+    // regions, so free space stays sparse and large volumes cost nothing.
+    if (totalSectors > 0 && output.CanSeek) {
+      w.BuildTo(output, totalSectors, requestedClusterSize: clusterBytes, volumeLabel: label,
+                forcedFatType: forcedFatType, enableLfn: enableLfn, transactionFat: tfat,
+                requestedRootEntries: rootEntries, forceLfn: forceLfn);
+      return;
+    }
+
     var disk = totalSectors > 0
       ? w.Build(totalSectors, requestedClusterSize: clusterBytes, volumeLabel: label,
                 forcedFatType: forcedFatType, enableLfn: enableLfn, transactionFat: tfat,
