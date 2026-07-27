@@ -100,8 +100,10 @@ public static class BrotliConstants {
 
   /// <summary>UTF8 context mode lookup table 0 (RFC 7932 Appendix A): context = Lut0[p1] | Lut1[p2].</summary>
   internal static readonly byte[] Utf8ContextLut0 = [
+    // 0x09 TAB, 0x0A LF and 0x0D CR form the "whitespace" context class (4).
+    // Every other control byte is class 0.
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 0, 0, 4, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 4, 4, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     8, 12, 16, 12, 12, 20, 12, 16, 24, 28, 12, 12, 32, 12, 36, 12,
     44, 44, 44, 44, 44, 44, 44, 44, 44, 44, 32, 32, 24, 40, 28, 12,
     12, 48, 52, 52, 52, 48, 52, 52, 52, 48, 52, 52, 52, 52, 52, 48,
