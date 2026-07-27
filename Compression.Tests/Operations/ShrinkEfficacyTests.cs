@@ -28,6 +28,17 @@ public class ShrinkEfficacyTests {
                && PickLargeImageSize(schema) is not null;
       });
 
+  /// <summary>
+  /// Upper bound on the preset this test will pick. The filesystem readers load
+  /// the whole image into a <see cref="MemoryStream"/>, which caps them at ~2 GB,
+  /// and their cluster-offset arithmetic is still 32-bit — so a volume past that
+  /// can be *created* (the FAT writer streams and leaves free space sparse) but
+  /// not read back yet. Shrink round-trips through the reader, so cap the pick
+  /// below that ceiling; 1 GB against a few-byte payload proves the efficacy
+  /// claim just as well as 128 GB would.
+  /// </summary>
+  private const long MaxReadableImageBytes = 1024L * 1024 * 1024;
+
   // Returns (optionKey, largeValue) for an image-size option with a concrete
   // large preset, or null if the format has no usable size knob.
   private static (string Key, string Value)? PickLargeImageSize(IFormatOptionsSchema schema) {
@@ -38,9 +49,10 @@ public class ShrinkEfficacyTests {
       string? best = null; var bestBytes = 0L;
       foreach (var v in allowed) {
         var b = ParseByteSize(v);
+        if (b > MaxReadableImageBytes) continue;
         if (b > bestBytes) { bestBytes = b; best = v; }
       }
-      // Only worth testing when the largest preset is comfortably bigger than our tiny payload.
+      // Only worth testing when the chosen preset is comfortably bigger than our tiny payload.
       if (best != null && bestBytes >= 256 * 1024) return (opt.Key, best);
     }
     return null;
