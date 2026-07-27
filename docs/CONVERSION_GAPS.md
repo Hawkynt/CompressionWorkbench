@@ -38,6 +38,13 @@ Measured on the full grid (8 representative sources x all creatable targets):
 > + `Nsis` (now re-readable; reclassified as name-synthesizing so the matrix
 > content-matches their folded/synthesized entry names). `CpcDsk` moved to the
 > single-payload bucket: its reader has no filesystem layer.
+>
+> Also flipped to enforced-pass (24 pairs): `ExFat` and `Hpfs`, which never
+> "emitted a whole-image" at all — their `.img` output was mis-detected as FAT
+> because detection read only the first 512 bytes and `.img` was hardcoded to
+> FAT, so the re-list ran the wrong reader; and `Rpm`, whose `List` returned a
+> hardcoded `payload.cpio` placeholder while `Extract` fed the still-compressed
+> payload to the cpio parser.
 
 > Most gaps are **target-wide** (the target fails from every one of the 8 sources, so
 > the failing-pair count is `targets x 8`). Pair-specific gaps are listed in their own
@@ -64,13 +71,10 @@ The target collapses an arbitrary file tree into a single stream or whole-image 
 | `CpcDsk` | Amstrad CPC disk image; reader exposes raw 512-byte track/sector blocks (T00S0_C1…) with no AMSDOS/CP/M filesystem layer, so padded sectors can't content-match the payload |
 | `DiskDoubler` | single-fork compressor; carries only one payload (lists 1 file) |
 | `Ewf` | EnCase EWF (.E01) wraps raw media as opaque chunks; the reader surfaces section blobs (volume/sectors/table/...), not the original files |
-| `ExFat` | exFAT image writer emits an empty/whole-image that re-lists as 0 files |
-| `Hpfs` | HPFS image writer emits a whole-image that re-lists as 0 files |
 | `Lrzip` | single-stream long-range compressor; one 'data' member only |
 | `Mp3` | single audio stream; collapses tree to one FULL.mp3 |
 | `Msa` | Atari ST disk image; writer emits one disk.st blob |
 | `Psf` | PlayStation sound format; fixed header.bin+program.bin pair, not a tree |
-| `Rpm` | RPM package; payload collapses into one payload.cpio member |
 | `Sparseimage` | Apple sparse disk image; one disk.img blob |
 | `SplitFile` | byte-splitter; rejoins to a single 'joined' member, not a tree |
 | `Srec` | Motorola S-record firmware pseudo-archive; writer re-encodes one flat image and re-lists as metadata.ini+firmware.bin, not a file tree |
