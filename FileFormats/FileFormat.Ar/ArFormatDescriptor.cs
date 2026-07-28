@@ -74,7 +74,9 @@ public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ArReader(stream);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Data.Length, e.Data.Length,
+    // DataSize, not Data.Length: an entry too large to materialise reports its true
+    // size while Data stays empty.
+    return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.DataSize, e.DataSize,
       "ar", false, false, e.ModifiedTime.DateTime)).ToList();
   }
 
@@ -82,7 +84,8 @@ public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     var r = new ArReader(stream);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, e.Data);
+      using var target = CreateEntryFile(outputDir, e.Name);
+      r.CopyEntryTo(e, target);
     }
   }
 

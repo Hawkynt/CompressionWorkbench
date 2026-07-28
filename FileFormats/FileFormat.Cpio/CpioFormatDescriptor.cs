@@ -96,18 +96,34 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public string Description => "Unix copy-in/copy-out archive format";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    // Header-only walk: ReadAll materialises every entry, so listing an archive
+    // with a multi-gigabyte member would fail for no reason.
     var r = new CpioReader(stream);
-    var all = r.ReadAll();
-    return all.Select((x, i) => new ArchiveEntryInfo(i, x.Entry.Name, x.Entry.FileSize, x.Entry.FileSize,
-      "cpio", x.Entry.IsDirectory, false, DateTimeOffset.FromUnixTimeSeconds(x.Entry.ModificationTime).DateTime)).ToList();
+    var result = new List<ArchiveEntryInfo>();
+    var index = 0;
+    while (r.ReadNextHeader() is { } entry) {
+      result.Add(new ArchiveEntryInfo(index++, entry.Name, entry.FileSize, entry.FileSize,
+        "cpio", entry.IsDirectory, false,
+        DateTimeOffset.FromUnixTimeSeconds(entry.ModificationTime).DateTime));
+      r.CopyCurrentEntryData(null);
+    }
+    return result;
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    // Stream each entry straight to disk: ReadAll materialises every entry, which
+    // an entry larger than an array cannot survive. Skipped entries still have
+    // their data consumed so the reader stays aligned on the next header.
     var r = new CpioReader(stream);
-    foreach (var (entry, data) in r.ReadAll()) {
-      if (files != null && !MatchesFilter(entry.Name, files)) continue;
-      if (entry.IsDirectory) { Directory.CreateDirectory(Path.Combine(outputDir, entry.Name)); continue; }
-      WriteFile(outputDir, entry.Name, data);
+    while (r.ReadNextHeader() is { } entry) {
+      if (files != null && !MatchesFilter(entry.Name, files)) { r.CopyCurrentEntryData(null); continue; }
+      if (entry.IsDirectory) {
+        Directory.CreateDirectory(Path.Combine(outputDir, entry.Name));
+        r.CopyCurrentEntryData(null);
+        continue;
+      }
+      using var target = CreateEntryFile(outputDir, entry.Name);
+      r.CopyCurrentEntryData(target);
     }
   }
 

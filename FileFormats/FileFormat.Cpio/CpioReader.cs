@@ -44,7 +44,28 @@ public sealed class CpioReader : IDisposable {
   /// <returns>The entry, or null if the trailer was reached.</returns>
   public CpioEntry? ReadEntry(out byte[] data) {
     data = [];
+    var entry = this.ReadEntryHeaderOnly();
+    if (entry == null) return null;
 
+    // Read file data
+    if (entry.FileSize > 0) {
+      data = new byte[entry.FileSize];
+      ReadExact(data);
+
+      // Align to 4-byte boundary after data
+      var dataPadding = (4 - (entry.FileSize % 4)) % 4;
+      if (dataPadding > 0)
+        Skip((int)dataPadding);
+    }
+
+    return entry;
+  }
+
+  /// <summary>
+  /// Reads the next entry's header, name and alignment padding, leaving the stream
+  /// positioned at the entry's data. Returns null at the trailer.
+  /// </summary>
+  private CpioEntry? ReadEntryHeaderOnly() {
     // Read the 110-byte fixed header
     var headerBuf = new byte[CpioConstants.NewAsciiHeaderSize];
     if (ReadExact(headerBuf) != headerBuf.Length)
@@ -91,19 +112,45 @@ public sealed class CpioReader : IDisposable {
     if (entry.Name == CpioConstants.Trailer)
       return null;
 
-    // Read file data
-    if (entry.FileSize > 0) {
-      data = new byte[entry.FileSize];
-      ReadExact(data);
-
-      // Align to 4-byte boundary after data
-      var dataPadding = (4 - (entry.FileSize % 4)) % 4;
-      if (dataPadding > 0)
-        Skip((int)dataPadding);
-    }
-
     return entry;
   }
+
+  /// <summary>
+  /// Reads the next entry's header, leaving the stream positioned at its data.
+  /// Returns null at the trailer. Pair with <see cref="CopyCurrentEntryData" />,
+  /// which must be called before the next header even for skipped entries so the
+  /// reader stays aligned.
+  /// </summary>
+  /// <remarks>
+  /// The <c>out byte[]</c> overload cannot carry an entry larger than an array;
+  /// this pair can.
+  /// </remarks>
+  public CpioEntry? ReadNextHeader() => this._current = this.ReadEntryHeaderOnly();
+
+  /// <summary>
+  /// Copies the current entry's data to <paramref name="destination" /> (or discards
+  /// it when null) and consumes the 4-byte alignment padding.
+  /// </summary>
+  public void CopyCurrentEntryData(Stream? destination) {
+    if (this._current is not { } entry) return;
+
+    var remaining = (long)entry.FileSize;
+    if (remaining > 0) {
+      var buffer = new byte[64 * 1024];
+      while (remaining > 0) {
+        var want = (int)Math.Min(buffer.Length, remaining);
+        var read = this._stream.Read(buffer, 0, want);
+        if (read <= 0) break;
+        destination?.Write(buffer, 0, read);
+        remaining -= read;
+      }
+      var dataPadding = (4 - (entry.FileSize % 4)) % 4;
+      if (dataPadding > 0) Skip((int)dataPadding);
+    }
+    this._current = null;
+  }
+
+  private CpioEntry? _current;
 
   private static uint ParseHex(string header, int offset, int length) {
     var hex = header.Substring(offset, length);

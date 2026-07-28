@@ -15,6 +15,33 @@ public sealed class ArReader : IDisposable {
   public IReadOnlyList<ArEntry> Entries => this._entries;
 
   /// <summary>
+  /// Copies <paramref name="entry" />'s bytes to <paramref name="destination" />,
+  /// reading them from the archive when the entry was too large to materialise.
+  /// </summary>
+  public void CopyEntryTo(ArEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+
+    if (entry.IsDataLoaded) {
+      destination.Write(entry.Data, 0, entry.Data.Length);
+      return;
+    }
+    if (entry.DataOffset < 0 || !this._stream.CanSeek)
+      throw new NotSupportedException($"AR entry '{entry.Name}' needs a seekable archive to be read.");
+
+    this._stream.Position = entry.DataOffset;
+    var remaining = entry.DataSize;
+    var buffer = new byte[64 * 1024];
+    while (remaining > 0) {
+      var want = (int)Math.Min(buffer.Length, remaining);
+      var read = this._stream.Read(buffer, 0, want);
+      if (read <= 0) throw new EndOfStreamException("Unexpected end of AR data.");
+      destination.Write(buffer, 0, read);
+      remaining -= read;
+    }
+  }
+
+  /// <summary>
   /// Initializes a new <see cref="ArReader"/> and parses the archive.
   /// </summary>
   /// <param name="stream">A stream containing the ar archive data.</param>
@@ -81,9 +108,18 @@ public sealed class ArReader : IDisposable {
       if (!string.IsNullOrEmpty(rawMode))
         fileMode = Convert.ToInt32(rawMode, 8);
 
-      // Read entry data.
-      var data = new byte[dataSize];
-      this._stream.ReadExactly(data);
+      // Read entry data. An entry larger than an array is recorded by position and
+      // read later through CopyEntryTo, so a multi-gigabyte member does not have to
+      // be materialised just to list the archive.
+      var dataOffset = this._stream.CanSeek ? this._stream.Position : -1;
+      byte[] data;
+      if (dataSize > Array.MaxLength && dataOffset >= 0) {
+        data = [];
+        this._stream.Position = dataOffset + dataSize;
+      } else {
+        data = new byte[dataSize];
+        this._stream.ReadExactly(data);
+      }
 
       // Skip padding byte when data size is odd.
       if (dataSize % 2 != 0)
@@ -105,6 +141,8 @@ public sealed class ArReader : IDisposable {
         GroupId      = gid,
         FileMode     = fileMode,
         Data         = data,
+        DataOffset   = dataOffset,
+        DataSize     = dataSize,
       });
     }
   }
