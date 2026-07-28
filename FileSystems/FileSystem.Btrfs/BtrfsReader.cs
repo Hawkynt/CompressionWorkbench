@@ -405,6 +405,44 @@ public sealed class BtrfsReader : IDisposable {
 
   // ── File extraction ──────────────────────────────────────────────────────
 
+  /// <summary>
+  /// Writes <paramref name="entry" />'s bytes to <paramref name="destination" /> without
+  /// materialising them, truncating to the entry's recorded size. Required for a file
+  /// larger than a byte[] can hold.
+  /// </summary>
+  public void ExtractTo(BtrfsEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+
+    var fsTreeLogical = FindFsTreeRoot();
+    if (fsTreeLogical < 0) return;
+    var fsPhysical = LogicalToPhysical(fsTreeLogical);
+    if (fsPhysical < 0) return;
+
+    var bounded = new BoundedWriter(destination, entry.Size);
+    CollectExtentData(fsPhysical, entry.Inode, bounded);
+  }
+
+  /// <summary>Write-only sink that drops anything past <paramref name="limit" /> bytes.</summary>
+  private sealed class BoundedWriter(Stream inner, long limit) : Stream {
+    private long _written;
+    public override bool CanRead => false;
+    public override bool CanSeek => false;
+    public override bool CanWrite => true;
+    public override long Length => this._written;
+    public override long Position { get => this._written; set => throw new NotSupportedException(); }
+    public override void Flush() => inner.Flush();
+    public override int Read(byte[] b, int o, int c) => throw new NotSupportedException();
+    public override long Seek(long o, SeekOrigin s) => throw new NotSupportedException();
+    public override void SetLength(long v) => throw new NotSupportedException();
+    public override void Write(byte[] b, int o, int c) {
+      if (this._written >= limit) return;
+      var take = (int)Math.Min(c, limit - this._written);
+      inner.Write(b, o, take);
+      this._written += take;
+    }
+  }
+
   public byte[] Extract(BtrfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -427,7 +465,7 @@ public sealed class BtrfsReader : IDisposable {
     return result;
   }
 
-  private void CollectExtentData(long physical, long inodeId, MemoryStream output) {
+  private void CollectExtentData(long physical, long inodeId, Stream output) {
     if (physical < 0 || physical + 101 > _data.Length) return;
     var offset = physical;
 
