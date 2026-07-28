@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.Fat;
 
@@ -10,7 +11,11 @@ namespace FileSystem.Fat;
 /// and directory entry reading with LFN (Long File Name) support.
 /// </summary>
 public sealed class FatReader : IDisposable {
-  private readonly byte[] _data;
+  /// <summary>
+  /// Random-access view over the image. Reading the volume into a byte[] would cap
+  /// FAT32 at the ~2 GB array limit, which no FAT32 volume is obliged to respect.
+  /// </summary>
+  private readonly ImageAccessor _img;
   private readonly List<FatEntry> _entries = [];
 
   public IReadOnlyList<FatEntry> Entries => _entries;
@@ -29,39 +34,39 @@ public sealed class FatReader : IDisposable {
   private int _rootCluster; // FAT32 only
 
   public FatReader(Stream stream, bool leaveOpen = false) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(stream);
+    _img = new ImageAccessor(stream, leaveOpen: true);
     Parse();
   }
 
   private void Parse() {
-    if (_data.Length < 512)
+    if (_img.Length < 512)
       throw new InvalidDataException("FAT: image too small.");
 
     // Check for valid boot sector
-    if (_data[0] != 0xEB && _data[0] != 0xE9 && _data[0] != 0x00)
+    var jump = _img.ReadByte(0);
+    if (jump != 0xEB && jump != 0xE9 && jump != 0x00)
       throw new InvalidDataException("FAT: invalid boot jump.");
 
-    _bytesPerSector = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(11));
+    _bytesPerSector = _img.ReadUInt16(11);
     if (_bytesPerSector is 0 or > 4096) _bytesPerSector = 512;
-    _sectorsPerCluster = _data[13];
+    _sectorsPerCluster = _img.ReadByte(13);
     if (_sectorsPerCluster == 0) _sectorsPerCluster = 1;
-    _reservedSectors = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(14));
-    _fatCount = _data[16];
+    _reservedSectors = _img.ReadUInt16(14);
+    _fatCount = _img.ReadByte(16);
     if (_fatCount == 0) _fatCount = 2;
-    _rootEntryCount = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(17));
+    _rootEntryCount = _img.ReadUInt16(17);
 
-    _totalSectors = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(19));
+    _totalSectors = _img.ReadUInt16(19);
     if (_totalSectors == 0)
-      _totalSectors = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(32));
+      _totalSectors = _img.ReadInt32(32);
 
     // BPB_FATSz16 == 0 is the definitive FAT32 indicator (FAT32 always zeroes this
     // field and stores the FAT size in BPB_FATSz32 at offset 36 instead).
-    var fatSz16 = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(22));
+    var fatSz16 = _img.ReadUInt16(22);
     var isFat32ByBpb = fatSz16 == 0;
     _fatSize = isFat32ByBpb
-      ? BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(36))
+      ? _img.ReadInt32(36)
       : fatSz16;
 
     _rootDirSectors = (_rootEntryCount * 32 + _bytesPerSector - 1) / _bytesPerSector;
@@ -77,13 +82,13 @@ public sealed class FatReader : IDisposable {
       : 32;
 
     if (FatType == 32)
-      _rootCluster = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(44));
+      _rootCluster = _img.ReadInt32(44);
 
     // Read root directory
     if (FatType == 32) {
       ReadDirectory(_rootCluster, "");
     } else {
-      var rootOffset = (_reservedSectors + _fatCount * _fatSize) * _bytesPerSector;
+      var rootOffset = (long)(_reservedSectors + _fatCount * _fatSize) * _bytesPerSector;
       ReadDirectoryFixed(rootOffset, _rootEntryCount, "");
     }
   }
@@ -94,10 +99,9 @@ public sealed class FatReader : IDisposable {
     ReadDirectoryEntries(clusterData, entryCount, path);
   }
 
-  private void ReadDirectoryFixed(int offset, int maxEntries, string path) {
-    var size = maxEntries * 32;
-    if (offset + size > _data.Length) size = _data.Length - offset;
-    ReadDirectoryEntries(_data.AsSpan(offset, size).ToArray(), maxEntries, path);
+  private void ReadDirectoryFixed(long offset, int maxEntries, string path) {
+    var size = (int)Math.Min((long)maxEntries * 32, Math.Max(0, _img.Length - offset));
+    ReadDirectoryEntries(_img.Read(offset, size), maxEntries, path);
   }
 
   private void ReadDirectoryEntries(byte[] dirData, int maxEntries, string path) {
@@ -203,9 +207,11 @@ public sealed class FatReader : IDisposable {
     var seen = new HashSet<int>();
 
     while (cluster >= 2 && !IsEndOfChain(cluster) && seen.Add(cluster)) {
-      var offset = (_firstDataSector + (cluster - 2) * _sectorsPerCluster) * _bytesPerSector;
-      if (offset + clusterSize > _data.Length) break;
-      ms.Write(_data, offset, clusterSize);
+      // 64-bit throughout: on a multi-gigabyte volume the sector-to-byte product
+      // overflows int and silently wraps to a bogus (often negative) offset.
+      var offset = ((long)_firstDataSector + (long)(cluster - 2) * _sectorsPerCluster) * _bytesPerSector;
+      if (offset + clusterSize > _img.Length) break;
+      _img.CopyTo(offset, ms, clusterSize);
       cluster = GetNextCluster(cluster);
     }
 
@@ -213,23 +219,23 @@ public sealed class FatReader : IDisposable {
   }
 
   private int GetNextCluster(int cluster) {
-    var fatOffset = _reservedSectors * _bytesPerSector;
+    var fatOffset = (long)_reservedSectors * _bytesPerSector;
     return FatType switch {
       12 => GetFat12Entry(fatOffset, cluster),
-      16 => fatOffset + cluster * 2 + 2 <= _data.Length
-        ? BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(fatOffset + cluster * 2))
+      16 => fatOffset + (long)cluster * 2 + 2 <= _img.Length
+        ? _img.ReadUInt16(fatOffset + (long)cluster * 2)
         : 0xFFF,
-      32 => fatOffset + cluster * 4 + 4 <= _data.Length
-        ? BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(fatOffset + cluster * 4)) & 0x0FFFFFFF
+      32 => fatOffset + (long)cluster * 4 + 4 <= _img.Length
+        ? _img.ReadInt32(fatOffset + (long)cluster * 4) & 0x0FFFFFFF
         : 0x0FFFFFF8,
       _ => 0
     };
   }
 
-  private int GetFat12Entry(int fatOffset, int cluster) {
-    var bytePos = fatOffset + cluster * 3 / 2;
-    if (bytePos + 2 > _data.Length) return 0xFFF;
-    var val = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(bytePos));
+  private int GetFat12Entry(long fatOffset, int cluster) {
+    var bytePos = fatOffset + (long)cluster * 3 / 2;
+    if (bytePos + 2 > _img.Length) return 0xFFF;
+    var val = _img.ReadUInt16(bytePos);
     return (cluster & 1) != 0 ? val >> 4 : val & 0xFFF;
   }
 
@@ -267,7 +273,7 @@ public sealed class FatReader : IDisposable {
   internal FatChainStream OpenChainStream(FatEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return new FatChainStream(
-      _data, entry.StartCluster, entry.Size,
+      _img, entry.StartCluster, entry.Size,
       FatType, _bytesPerSector, _sectorsPerCluster,
       _reservedSectors, _fatCount, _fatSize, _firstDataSector);
   }

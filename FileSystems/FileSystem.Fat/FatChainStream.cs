@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 
 namespace FileSystem.Fat;
 
@@ -28,7 +29,7 @@ namespace FileSystem.Fat;
 /// </remarks>
 public sealed class FatChainStream : Stream {
 
-  private readonly byte[] _image;
+  private readonly ImageAccessor _image;
   private readonly int _fatType;
   private readonly int _bytesPerSector;
   private readonly int _sectorsPerCluster;
@@ -48,7 +49,7 @@ public sealed class FatChainStream : Stream {
   private bool _disposed;
 
   internal FatChainStream(
-      byte[] image, int startCluster, long logicalSize,
+      ImageAccessor image, int startCluster, long logicalSize,
       int fatType, int bytesPerSector, int sectorsPerCluster,
       int reservedSectors, int fatCount, int fatSize, int firstDataSector) {
     this._image = image;
@@ -102,11 +103,12 @@ public sealed class FatChainStream : Stream {
   private bool LoadNextCluster() {
     if (this._currentCluster < 2 || this.IsEndOfChain(this._currentCluster))
       return false;
-    var offset = (this._firstDataSector + (this._currentCluster - 2) * this._sectorsPerCluster) * this._bytesPerSector;
+    // 64-bit: the sector-to-byte product overflows int past ~2 GB.
+    var offset = ((long)this._firstDataSector + (long)(this._currentCluster - 2) * this._sectorsPerCluster) * this._bytesPerSector;
     var len = this._clusterSize;
     if (offset >= this._image.Length) return false;
-    if (offset + len > this._image.Length) len = this._image.Length - offset;
-    Buffer.BlockCopy(this._image, offset, this._clusterBuffer, 0, len);
+    if (offset + len > this._image.Length) len = (int)(this._image.Length - offset);
+    this._image.Read(offset, this._clusterBuffer.AsSpan(0, len));
     this._clusterBufferLen = len;
     this._clusterBufferPos = 0;
     this._currentCluster = this.GetNextCluster(this._currentCluster);
@@ -114,24 +116,22 @@ public sealed class FatChainStream : Stream {
   }
 
   private int GetNextCluster(int cluster) {
-    var fatOffset = this._reservedSectors * this._bytesPerSector;
+    var fatOffset = (long)this._reservedSectors * this._bytesPerSector;
     switch (this._fatType) {
       case 12: {
-        var bytePos = fatOffset + cluster * 3 / 2;
+        var bytePos = fatOffset + (long)cluster * 3 / 2;
         if (bytePos + 2 > this._image.Length) return 0xFFF;
-        var val = BinaryPrimitives.ReadUInt16LittleEndian(this._image.AsSpan(bytePos));
+        var val = this._image.ReadUInt16(bytePos);
         return (cluster & 1) != 0 ? val >> 4 : val & 0xFFF;
       }
       case 16: {
-        var pos = fatOffset + cluster * 2;
-        return pos + 2 <= this._image.Length
-          ? BinaryPrimitives.ReadUInt16LittleEndian(this._image.AsSpan(pos))
-          : 0xFFFF;
+        var pos = fatOffset + (long)cluster * 2;
+        return pos + 2 <= this._image.Length ? this._image.ReadUInt16(pos) : 0xFFFF;
       }
       case 32: {
-        var pos = fatOffset + cluster * 4;
+        var pos = fatOffset + (long)cluster * 4;
         return pos + 4 <= this._image.Length
-          ? BinaryPrimitives.ReadInt32LittleEndian(this._image.AsSpan(pos)) & 0x0FFFFFFF
+          ? this._image.ReadInt32(pos) & 0x0FFFFFFF
           : 0x0FFFFFF8;
       }
       default: return 0;
