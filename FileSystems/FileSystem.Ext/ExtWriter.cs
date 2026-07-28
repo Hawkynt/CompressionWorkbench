@@ -22,7 +22,7 @@ public sealed class ExtWriter {
   /// by <see cref="BuildToStreaming"/>'s post-stream pass. When null, the
   /// writer behaves identically to before.
   /// </summary>
-  private List<(int FirstBlock, int BlockCount, long Size, Func<Stream> Opener)>? _streamingSink;
+  private List<(IReadOnlyList<int> Blocks, long Size, Func<Stream> Opener)>? _streamingSink;
 
   public void AddFile(string name, byte[] data) => _files.Add((name, data, null, null));
 
@@ -63,6 +63,16 @@ public sealed class ExtWriter {
   /// </summary>
   public byte[] BuildAutoSized(int requestedBlockSize, ExtVersion version, bool journal,
                                string volumeLabel, int inodeSize) {
+    var (blockSize, totalBlocks) = PlanAutoSize(requestedBlockSize, version, journal, inodeSize);
+    return Build(blockSize, totalBlocks, version, journal, volumeLabel, inodeSize);
+  }
+
+  /// <summary>
+  /// Chooses the block size and volume size for the files added. Shared by the
+  /// buffered and the streaming auto-sized builds so both lay out the same volume.
+  /// </summary>
+  private (int BlockSize, int TotalBlocks) PlanAutoSize(int requestedBlockSize, ExtVersion version,
+                                                        bool journal, int inodeSize) {
     var fileSizes = _files.Select(f => f.StreamingSize ?? (long)f.Data.Length).ToList();
 
     var blockSize = requestedBlockSize > 0
@@ -129,9 +139,26 @@ public sealed class ExtWriter {
 
     // A journal costs up to 1024 blocks plus its own pointer blocks.
     var journalBlocks = journal && version is ExtVersion.Ext3 or ExtVersion.Ext4 ? 1100L : 0L;
-    var totalBlocks = (int)Math.Max(4096,
-      (4 + dirBlocks + inodeTableBlocks + dataBlocks + pointerBlocks + journalBlocks) * 11 / 10);
-    return Build(blockSize, totalBlocks, version, journal, volumeLabel, inodeSize);
+
+    // Everything the volume must hold besides per-group metadata.
+    var payloadBlocks = dirBlocks + dataBlocks + pointerBlocks + journalBlocks;
+    var totalBlocks = (int)Math.Max(4096, (payloadBlocks + inodeTableBlocks + 4) * 11 / 10);
+
+    // Each block group carries its own superblock backup, descriptor copy,
+    // bitmaps and inode table, so the volume has to grow to cover them. The
+    // group count follows from the size, so settle it by iterating: three
+    // passes is ample, since each one only adds metadata for the groups the
+    // previous size implied.
+    var neededInodes = 11 + CountDirectories() + _files.Count;
+    for (var pass = 0; pass < 3; ++pass) {
+      var geo = ComputeGeometry(blockSize, totalBlocks, inodeSize, neededInodes);
+      var needed = payloadBlocks + (long)geo.GroupCount * geo.PerGroupMetaBlocks;
+      var want = (int)Math.Max(4096, Math.Min(int.MaxValue / 2, needed * 11 / 10));
+      if (want <= totalBlocks) break;
+      totalBlocks = want;
+    }
+
+    return (blockSize, totalBlocks);
   }
 
   /// <summary>
@@ -189,7 +216,24 @@ public sealed class ExtWriter {
   /// (the flag is ignored for ext2 since it has no journal).</param>
   /// <param name="volumeLabel">Optional volume label (up to 16 ASCII bytes).</param>
   /// <param name="inodeSize">Inode size in bytes — 128 (classic) or 256 (modern).</param>
-  public byte[] Build(int blockSize, int totalBlocks, ExtVersion version, bool journal, string volumeLabel, int inodeSize) {
+  public byte[] Build(int blockSize, int totalBlocks, ExtVersion version, bool journal, string volumeLabel, int inodeSize)
+    => BuildCore(blockSize, totalBlocks, version, journal, volumeLabel, inodeSize).Materialise();
+
+  /// <summary>
+  /// Lays the volume out and writes it straight into a seekable stream. Only the
+  /// blocks the filesystem actually touches are ever resident, so a volume larger
+  /// than a byte[] can address is written without being materialised.
+  /// </summary>
+  public void BuildTo(Stream output, int blockSize, int totalBlocks, ExtVersion version,
+                      bool journal, string volumeLabel, int inodeSize) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildTo requires a writable, seekable stream.", nameof(output));
+    BuildCore(blockSize, totalBlocks, version, journal, volumeLabel, inodeSize).WriteTo(output);
+  }
+
+  private BlockImage BuildCore(int blockSize, int totalBlocks, ExtVersion version, bool journal,
+                               string volumeLabel, int inodeSize) {
     const ushort ExtMagic = 0xEF53;
     // EXT2_GOOD_OLD_FIRST_INO — first inode available for user files on a
     // revision-0 (GOOD_OLD_REV) filesystem. Inodes 1..10 are reserved:
@@ -206,49 +250,85 @@ public sealed class ExtWriter {
     const uint RevLevelDynamic = 1;
     // Journal inode number reserved by the kernel (inode 8 in the
     // boot/reserved range). When HAS_JOURNAL is set the SB advertises this
-    // inode as the journal device; the inode itself stays empty since we
-    // don't emit a real journal — readers that respect the journal still
-    // happily mount because s_state is CLEAN and no recovery is needed.
+    // inode as the journal device.
     const uint JournalInode = 8;
 
     if (inodeSize != 128 && inodeSize != 256)
       throw new ArgumentException($"Invalid inodeSize {inodeSize}; must be 128 or 256.", nameof(inodeSize));
 
-    var firstDataBlock = blockSize == 1024 ? 1u : 0u;
-    // The inode table must hold the reserved inodes plus one inode per directory
-    // and per file; a single block group's inode count is sized to fit them all.
-    var inodesPerGroup = ChooseInodeCount((int)FirstUserInode + CountDirectories() + _files.Count);
-    var inodeTableBlocks = (inodesPerGroup * inodeSize + blockSize - 1) / blockSize;
-    // Metadata layout: SB(1) + BGD(1) + block_bitmap(1) + inode_bitmap(1) +
-    // inode_table(inodeTableBlocks). First free block = after all metadata.
-    var firstFreeBlock = (int)firstDataBlock + 4 + inodeTableBlocks;
-    var disk = new byte[totalBlocks * blockSize];
+    var neededInodes = (int)FirstUserInode + CountDirectories() + _files.Count;
+    var geo = ComputeGeometry(blockSize, totalBlocks, inodeSize, neededInodes);
+    totalBlocks = geo.TotalBlocks;
+    var firstDataBlock = geo.FirstDataBlock;
+    var blocksPerGroup = geo.BlocksPerGroup;
+    var groupCount = geo.GroupCount;
+    var gdtBlocks = geo.GdtBlocks;
+    var inodesPerGroup = geo.InodesPerGroup;
+    var perGroupMeta = geo.PerGroupMetaBlocks;
+
+    var img = new BlockImage(blockSize, (long)totalBlocks * blockSize);
     var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    var sectorsPerBlock = blockSize / 512;
 
-    // --- Block bitmap: mark all metadata blocks up through the inode-table
-    //     tail as used. Bit N in the bitmap refers to block (firstDataBlock
-    //     + N), so blocks 0..firstDataBlock-1 (the boot-area slot on 1 KiB
-    //     filesystems) are implicit and not tracked by any bit. ---
-    var blockBitmapOffset = (int)(firstDataBlock + 2) * blockSize;
-    for (var b = (int)firstDataBlock; b < firstFreeBlock; ++b) {
-      var bitIdx = b - (int)firstDataBlock;
-      disk[blockBitmapOffset + bitIdx / 8] |= (byte)(1 << (bitIdx % 8));
+    // Group g owns blocks [GroupStart(g), GroupStart(g) + blocksPerGroup) and
+    // opens with its own superblock backup, group-descriptor copy, block bitmap,
+    // inode bitmap and inode table. A one-group volume therefore keeps exactly
+    // the layout this writer has always produced.
+    int GroupStart(int g) => firstDataBlock + g * blocksPerGroup;
+    int GroupBlocks(int g) => (int)Math.Min(blocksPerGroup, (long)totalBlocks - GroupStart(g));
+    int BlockBitmapBlock(int g) => GroupStart(g) + 1 + gdtBlocks;
+    int InodeBitmapBlock(int g) => BlockBitmapBlock(g) + 1;
+    int InodeTableBlock(int g) => BlockBitmapBlock(g) + 2;
+
+    void MarkBlockUsed(int block) {
+      var g = (block - firstDataBlock) / blocksPerGroup;
+      var bit = block - GroupStart(g);
+      img.Block(BlockBitmapBlock(g))[bit / 8] |= (byte)(1 << (bit % 8));
     }
 
-    // --- Inode bitmap: inodes 1..(FirstUserInode-1) are all reserved;
-    // inode 2 (root) is actually in use. Bitmap bit i corresponds to
-    // inode (i+1). Set bits for inodes 1..10 so fsck doesn't flag "reserved
+    long InodeOffset(uint inode) {
+      var g = (int)((inode - 1) / (uint)inodesPerGroup);
+      var idx = (int)((inode - 1) % (uint)inodesPerGroup);
+      return (long)InodeTableBlock(g) * blockSize + (long)idx * inodeSize;
+    }
+
+    void MarkInodeUsed(uint inode) {
+      var g = (int)((inode - 1) / (uint)inodesPerGroup);
+      var idx = (int)((inode - 1) % (uint)inodesPerGroup);
+      img.Block(InodeBitmapBlock(g))[idx / 8] |= (byte)(1 << (idx % 8));
+    }
+
+    // Blocks are handed out in ascending order, stepping over each group's own
+    // metadata. A file's blocks are therefore contiguous except where they cross
+    // a group boundary, which the block map expresses without difficulty.
+    var nextBlock = firstDataBlock + perGroupMeta;
+    int AllocBlock() {
+      while (nextBlock < totalBlocks) {
+        var g = (nextBlock - firstDataBlock) / blocksPerGroup;
+        var dataStart = GroupStart(g) + perGroupMeta;
+        if (nextBlock < dataStart) { nextBlock = dataStart; continue; }
+        var block = nextBlock++;
+        MarkBlockUsed(block);
+        return block;
+      }
+      throw new InvalidOperationException(
+        $"ext writer: the {totalBlocks}-block volume has no free block left to allocate.");
+    }
+
+    // --- Every group's metadata is in use from the outset. Bit N of a group's
+    //     block bitmap refers to block GroupStart(g) + N, so the boot-area slot
+    //     on 1 KiB filesystems is implicit and not tracked by any bit. ---
+    for (var g = 0; g < groupCount; ++g)
+      for (var b = GroupStart(g); b < GroupStart(g) + perGroupMeta && b < totalBlocks; ++b)
+        MarkBlockUsed(b);
+
+    // --- Inodes 1..(FirstUserInode-1) are all reserved; inode 2 (root) is
+    // actually in use. Set bits for inodes 1..10 so fsck doesn't flag "reserved
     // inode in use but empty", which is the default mkfs.ext4 behaviour. ---
-    var inodeBitmapOffset = (int)(firstDataBlock + 3) * blockSize;
-    for (var ino = 1u; ino < FirstUserInode; ++ino) {
-      var idx = (int)(ino - 1);
-      disk[inodeBitmapOffset + idx / 8] |= (byte)(1 << (idx % 8));
-    }
+    for (var ino = 1u; ino < FirstUserInode; ++ino)
+      MarkInodeUsed(ino);
 
-    // --- Inode/block allocation cursors ---
-    var inodeTableOffset = (int)(firstDataBlock + 4) * blockSize;
     var nextInode = FirstUserInode;
-    var nextBlock = firstFreeBlock;
 
     // --- Build the directory tree from the (possibly nested) file paths. ---
     // The root directory is inode 2. Every path segment before the final name
@@ -277,18 +357,19 @@ public sealed class ExtWriter {
       dir.Files.Add((leaf, fileInode));
     }
 
+    if (nextInode > (uint)inodesPerGroup * (uint)groupCount)
+      throw new InvalidOperationException(
+        $"ext writer: {nextInode - 1} inodes needed but the volume holds only {(long)inodesPerGroup * groupCount}.");
+
     // --- Mark every allocated inode (directories + files) as used. ---
     var allDirs = new List<DirNode>();
     CollectDirs(root, allDirs);
     foreach (var node in allDirs) {
       if (node.Inode < FirstUserInode) continue; // root (inode 2) reserved-bit is set above
-      var bit = (int)(node.Inode - 1);
-      disk[inodeBitmapOffset + bit / 8] |= (byte)(1 << (bit % 8));
+      MarkInodeUsed(node.Inode);
     }
-    foreach (var fi in fileInodes) {
-      var bit = (int)(fi.Inode - 1);
-      disk[inodeBitmapOffset + bit / 8] |= (byte)(1 << (bit % 8));
-    }
+    foreach (var fi in fileInodes)
+      MarkInodeUsed(fi.Inode);
 
     // --- Lay out each directory's entries across one or more data blocks. ---
     // Records never straddle a block boundary: when the next record would not
@@ -296,7 +377,6 @@ public sealed class ExtWriter {
     // end and the next record opens a fresh block. "." / ".." remain the first
     // two records of the first block. Up to 12 direct blocks are used, after
     // which a singly-indirect block chains the rest.
-    var sectorsPerBlock = blockSize / 512;
     const int MaxDirEntryBytes = 8 + 255 + 3 & ~3; // largest possible single dirent
     var dirBlockLists = new Dictionary<uint, List<int>>();
     foreach (var node in allDirs) {
@@ -336,9 +416,8 @@ public sealed class ExtWriter {
           pos = WriteDirEntry(blockData, pos, inode, name, fileType, blockSize, isLast);
         }
 
-        var blockNum = nextBlock++;
-        MarkBlockUsed(disk, blockBitmapOffset, blockNum, (int)firstDataBlock);
-        blockData.CopyTo(disk, blockNum * blockSize);
+        var blockNum = AllocBlock();
+        blockData.CopyTo(img.Block(blockNum));
         blockList.Add(blockNum);
       }
 
@@ -366,16 +445,15 @@ public sealed class ExtWriter {
       var indirectBlockNum = 0;
       var allocatedBlocks = blockList.Count;
       if (blockList.Count > MaxDirectBlocks) {
-        indirectBlockNum = nextBlock++;
-        MarkBlockUsed(disk, blockBitmapOffset, indirectBlockNum, (int)firstDataBlock);
+        indirectBlockNum = AllocBlock();
         ++allocatedBlocks; // the indirect block itself counts toward i_blocks
-        var indOff = indirectBlockNum * blockSize;
+        var indOff = (long)indirectBlockNum * blockSize;
         for (var p = MaxDirectBlocks; p < blockList.Count; ++p)
-          BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(indOff + (p - MaxDirectBlocks) * 4), (uint)blockList[p]);
+          BinaryPrimitives.WriteUInt32LittleEndian(img.At(indOff + (p - MaxDirectBlocks) * 4, 4), (uint)blockList[p]);
       }
 
-      var dirInodeOffset = inodeTableOffset + (int)(node.Inode - 1) * inodeSize;
-      var dirIno = disk.AsSpan(dirInodeOffset, inodeSize);
+      var dirInodeOffset = InodeOffset(node.Inode);
+      var dirIno = img.At(dirInodeOffset, inodeSize);
       BinaryPrimitives.WriteUInt16LittleEndian(dirIno, 0x4000 | 0x01ED);             // i_mode: directory, 0755
       BinaryPrimitives.WriteUInt32LittleEndian(dirIno[4..], (uint)(blockList.Count * blockSize)); // i_size
       BinaryPrimitives.WriteUInt32LittleEndian(dirIno[8..], now);                    // i_atime
@@ -391,132 +469,121 @@ public sealed class ExtWriter {
     }
 
     // --- File inodes + data blocks ---
-    // Files use up to 12 direct block pointers, then a singly-indirect block
-    // (blockSize/4 further pointers). The indirect block itself counts toward
-    // i_blocks (e2fsck tallies it in the 512-byte sector count).
+    // Files use up to 12 direct block pointers, then the classic single /
+    // double / triple indirect map. Pointer blocks count toward i_blocks
+    // (e2fsck tallies them in the 512-byte sector count).
     foreach (var (fileInode, _, _, data, streamingSize, streamOpener) in fileInodes) {
-      var fileInodeOffset = inodeTableOffset + (int)(fileInode - 1) * inodeSize;
+      var fileInodeOffset = InodeOffset(fileInode);
       var effectiveLength = streamingSize ?? (long)data.Length;
 
       var blocksNeeded = effectiveLength == 0 ? 0 : (int)((effectiveLength + blockSize - 1) / blockSize);
 
       var fileBlocks = new List<int>(blocksNeeded);
-      for (var b = 0; b < blocksNeeded; ++b) {
-        fileBlocks.Add(nextBlock);
-        MarkBlockUsed(disk, blockBitmapOffset, nextBlock, (int)firstDataBlock);
-        ++nextBlock;
-      }
+      for (var b = 0; b < blocksNeeded; ++b)
+        fileBlocks.Add(AllocBlock());
 
-      // Streaming entries leave their data blocks zero; BuildToStreaming
-      // post-fills them from the source in 64 KB chunks. Cluster tail
-      // past `effectiveLength` stays sparse-zero from the disk init.
+      // Streaming entries leave their data blocks unwritten; BuildToStreaming
+      // post-fills them from the source. Block tail past `effectiveLength`
+      // stays sparse-zero.
       if (streamOpener != null) {
         if (this._streamingSink != null && blocksNeeded > 0 && effectiveLength > 0)
-          this._streamingSink.Add((fileBlocks[0], blocksNeeded, effectiveLength, streamOpener));
+          this._streamingSink.Add((fileBlocks, effectiveLength, streamOpener));
       } else {
         var written = 0;
         foreach (var fb in fileBlocks) {
           var toWrite = Math.Min(blockSize, data.Length - written);
-          if (toWrite > 0) Array.Copy(data, written, disk, fb * blockSize, toWrite);
+          if (toWrite > 0) data.AsSpan(written, toWrite).CopyTo(img.Block(fb));
           written += toWrite;
         }
       }
 
-      // Past the first 12 data blocks the classic single/double/triple-indirect
-      // map carries the rest, so a file is no longer capped at one indirect block.
       var fileAllocatedBlocks = fileBlocks.Count;
 
-      var ino = disk.AsSpan(fileInodeOffset, inodeSize);
+      var ino = img.At(fileInodeOffset, inodeSize);
       BinaryPrimitives.WriteUInt16LittleEndian(ino, 0x8000 | 0x01A4);           // i_mode: regular file, 0644
       BinaryPrimitives.WriteUInt32LittleEndian(ino[4..], (uint)effectiveLength); // i_size
       BinaryPrimitives.WriteUInt32LittleEndian(ino[8..], now);                  // i_atime
       BinaryPrimitives.WriteUInt32LittleEndian(ino[12..], now);                 // i_ctime
       BinaryPrimitives.WriteUInt32LittleEndian(ino[16..], now);                 // i_mtime
       BinaryPrimitives.WriteUInt16LittleEndian(ino[26..], 1);                   // i_links_count
-      BinaryPrimitives.WriteUInt32LittleEndian(ino[28..], (uint)(fileAllocatedBlocks * sectorsPerBlock)); // i_blocks (512-byte sectors)
-      fileAllocatedBlocks += WriteInodeBlockMap(disk, fileInodeOffset, fileBlocks, blockSize,
-        ref nextBlock, blockBitmapOffset, (int)firstDataBlock);
+      fileAllocatedBlocks += WriteInodeBlockMap(img, fileInodeOffset, fileBlocks, blockSize, AllocBlock);
       BinaryPrimitives.WriteUInt32LittleEndian(
-        disk.AsSpan(fileInodeOffset + 28), (uint)(fileAllocatedBlocks * sectorsPerBlock)); // i_blocks, incl. pointer blocks
+        img.At(fileInodeOffset + 28, 4), (uint)(fileAllocatedBlocks * sectorsPerBlock)); // i_blocks, incl. pointer blocks
     }
 
     // --- Journal (inode 8) for ext3 / ext4 ───────────────────────────────
     // A HAS_JOURNAL volume must carry a valid jbd2 journal, or e2fsck rejects
     // it with "defektes Journal (Inode 8)". We emit a CLEAN, empty journal:
     // a jbd2 V2 superblock with s_start=0 (nothing to replay) occupying the
-    // first journal block, the rest zeroed. The journal occupies a contiguous
-    // run of data blocks mapped into inode 8 via the classic direct +
-    // single-indirect + double-indirect block map (valid on ext4 too, since the
-    // EXTENTS feature only permits — never requires — per-inode extent maps).
+    // first journal block, the rest zeroed. The journal blocks are mapped into
+    // inode 8 via the classic direct + single-indirect + double-indirect block
+    // map (valid on ext4 too, since the EXTENTS feature only permits — never
+    // requires — per-inode extent maps).
     if (journal && (version == ExtVersion.Ext3 || version == ExtVersion.Ext4)) {
       var ptrsPerBlock = blockSize / 4;
       // Canonical minimum journal length; clamp to the space actually left so a
       // small image still produces a consistent (if short) journal.
       var journalBlocks = Math.Min(1024, Math.Max(64, totalBlocks - nextBlock - 32));
-      var jStart = nextBlock;
+      var journalMap = new List<int>(journalBlocks);
       for (var b = 0; b < journalBlocks; ++b)
-        MarkBlockUsed(disk, blockBitmapOffset, jStart + b, (int)firstDataBlock);
-      nextBlock += journalBlocks;
+        journalMap.Add(AllocBlock());
 
       // jbd2 V2 superblock in the first journal block (all multi-byte fields BE).
-      var jsbOff = (long)jStart * blockSize;
-      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff), 0xc03b3998u);        // h_magic
-      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 4), 4u);             // h_blocktype = SUPERBLOCK_V2
-      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 8), 0u);             // h_sequence
-      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 12), (uint)blockSize); // s_blocksize
-      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 16), (uint)journalBlocks); // s_maxlen
-      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 20), 1u);            // s_first (log starts after SB)
-      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 24), 1u);            // s_sequence (first commit ID)
-      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 28), 0u);            // s_start = 0 → empty/clean
-      BinaryPrimitives.WriteUInt32BigEndian(disk.AsSpan((int)jsbOff + 64), 1u);            // s_nr_users = 1
+      var jsbOff = (long)journalMap[0] * blockSize;
+      BinaryPrimitives.WriteUInt32BigEndian(img.At(jsbOff, 4), 0xc03b3998u);              // h_magic
+      BinaryPrimitives.WriteUInt32BigEndian(img.At(jsbOff + 4, 4), 4u);                   // h_blocktype = SUPERBLOCK_V2
+      BinaryPrimitives.WriteUInt32BigEndian(img.At(jsbOff + 8, 4), 0u);                   // h_sequence
+      BinaryPrimitives.WriteUInt32BigEndian(img.At(jsbOff + 12, 4), (uint)blockSize);     // s_blocksize
+      BinaryPrimitives.WriteUInt32BigEndian(img.At(jsbOff + 16, 4), (uint)journalBlocks); // s_maxlen
+      BinaryPrimitives.WriteUInt32BigEndian(img.At(jsbOff + 20, 4), 1u);                  // s_first (log starts after SB)
+      BinaryPrimitives.WriteUInt32BigEndian(img.At(jsbOff + 24, 4), 1u);                  // s_sequence (first commit ID)
+      BinaryPrimitives.WriteUInt32BigEndian(img.At(jsbOff + 28, 4), 0u);                  // s_start = 0 → empty/clean
+      BinaryPrimitives.WriteUInt32BigEndian(img.At(jsbOff + 64, 4), 1u);                  // s_nr_users = 1
 
       // Map the journal data blocks into inode 8.
-      var jinoOff = inodeTableOffset + (int)(JournalInode - 1) * inodeSize;
+      var jinoOff = InodeOffset(JournalInode);
       var metaBlocks = 0;
 
       // Direct blocks 0..11 (i_block[0..11] at inode offset 40).
       for (var i = 0; i < 12 && i < journalBlocks; ++i)
-        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(jinoOff + 40 + i * 4), (uint)(jStart + i));
+        BinaryPrimitives.WriteUInt32LittleEndian(img.At(jinoOff + 40 + i * 4, 4), (uint)journalMap[i]);
 
       // Single-indirect (i_block[12], offset 88) covers blocks 12..12+ptrs-1.
       if (journalBlocks > 12) {
-        var ind = nextBlock++;
-        MarkBlockUsed(disk, blockBitmapOffset, ind, (int)firstDataBlock);
+        var ind = AllocBlock();
         ++metaBlocks;
         var io = (long)ind * blockSize;
         for (var i = 0; i < ptrsPerBlock && 12 + i < journalBlocks; ++i)
-          BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)io + i * 4), (uint)(jStart + 12 + i));
-        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(jinoOff + 88), (uint)ind); // i_block[12]
+          BinaryPrimitives.WriteUInt32LittleEndian(img.At(io + i * 4, 4), (uint)journalMap[12 + i]);
+        BinaryPrimitives.WriteUInt32LittleEndian(img.At(jinoOff + 88, 4), (uint)ind); // i_block[12]
       }
 
       // Double-indirect (i_block[13], offset 92) covers everything past 12+ptrs.
       var dindFirst = 12 + ptrsPerBlock;
       if (journalBlocks > dindFirst) {
-        var dind = nextBlock++;
-        MarkBlockUsed(disk, blockBitmapOffset, dind, (int)firstDataBlock);
+        var dind = AllocBlock();
         ++metaBlocks;
         var dio = (long)dind * blockSize;
         var remaining = journalBlocks - dindFirst;
         var numInd = (remaining + ptrsPerBlock - 1) / ptrsPerBlock;
         for (var k = 0; k < numInd; ++k) {
-          var ind2 = nextBlock++;
-          MarkBlockUsed(disk, blockBitmapOffset, ind2, (int)firstDataBlock);
+          var ind2 = AllocBlock();
           ++metaBlocks;
-          BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)dio + k * 4), (uint)ind2);
+          BinaryPrimitives.WriteUInt32LittleEndian(img.At(dio + k * 4, 4), (uint)ind2);
           var i2o = (long)ind2 * blockSize;
           for (var i = 0; i < ptrsPerBlock; ++i) {
             var blkIdx = dindFirst + k * ptrsPerBlock + i;
             if (blkIdx >= journalBlocks) break;
-            BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)i2o + i * 4), (uint)(jStart + blkIdx));
+            BinaryPrimitives.WriteUInt32LittleEndian(img.At(i2o + i * 4, 4), (uint)journalMap[blkIdx]);
           }
         }
-        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(jinoOff + 92), (uint)dind); // i_block[13]
+        BinaryPrimitives.WriteUInt32LittleEndian(img.At(jinoOff + 92, 4), (uint)dind); // i_block[13]
       }
 
       // Journal inode metadata: a regular file with mode 0600 (what mke2fs writes
       // for inode 8 — e2fsck rejects the journal if inode 8 has mode 0), one link,
       // size = log length.
-      var jino = disk.AsSpan(jinoOff, inodeSize);
+      var jino = img.At(jinoOff, inodeSize);
       BinaryPrimitives.WriteUInt16LittleEndian(jino, 0x8000 | 0x0180);                      // i_mode = S_IFREG | 0600
       BinaryPrimitives.WriteUInt32LittleEndian(jino[4..], (uint)((long)journalBlocks * blockSize)); // i_size
       BinaryPrimitives.WriteUInt32LittleEndian(jino[8..], now);                             // i_atime
@@ -526,40 +593,63 @@ public sealed class ExtWriter {
       BinaryPrimitives.WriteUInt32LittleEndian(jino[28..], (uint)((journalBlocks + metaBlocks) * sectorsPerBlock)); // i_blocks
     }
 
-    // --- Free-count accounting (what fsck scrutinises) ---
-    // Total inodes = inodesPerGroup; used = (FirstUserInode-1) reserved
-    // inodes + subdirectory inodes (root inode 2 is already among the reserved
-    // slots) + file inodes. The reserved slots are "in use" as far as the inode
-    // bitmap is concerned — their bits are set above.
-    var subdirCount = (uint)(allDirs.Count - 1); // exclude root (inode 2)
-    var usedInodes = (FirstUserInode - 1) + subdirCount + (uint)fileInodes.Count;
-    var freeInodes = (uint)inodesPerGroup - usedInodes;
-    // Used blocks = firstFreeBlock (metadata) + one block per directory + sum of file blocks.
-    var usedBlocks = (uint)nextBlock;
-    var freeBlocks = (uint)totalBlocks - usedBlocks;
-    var usedDirs = (uint)allDirs.Count; // root + every subdirectory only
+    // --- Per-group bitmap padding, free counts and group descriptors ---
+    // Padding at the tail of each bitmap block must be set to 1 per mkfs
+    // convention; fsck flags unset padding as a corruption hint.
+    var dirsPerGroup = new int[groupCount];
+    foreach (var node in allDirs)
+      ++dirsPerGroup[(int)((node.Inode - 1) / (uint)inodesPerGroup)];
+
+    var totalFreeBlocks = 0L;
+    var totalFreeInodes = 0L;
+    var gdtBase = (long)(GroupStart(0) + 1) * blockSize;
+    for (var g = 0; g < groupCount; ++g) {
+      var validBlocks = GroupBlocks(g);
+      var blockBitmap = img.Block(BlockBitmapBlock(g));
+      for (var bit = validBlocks; bit < blockSize * 8; ++bit)
+        blockBitmap[bit / 8] |= (byte)(1 << (bit % 8));
+      var usedBlocks = 0;
+      for (var bit = 0; bit < validBlocks; ++bit)
+        if ((blockBitmap[bit / 8] & (1 << (bit % 8))) != 0) ++usedBlocks;
+      var freeBlocksInGroup = validBlocks - usedBlocks;
+      totalFreeBlocks += freeBlocksInGroup;
+
+      var inodeBitmap = img.Block(InodeBitmapBlock(g));
+      for (var bit = inodesPerGroup; bit < blockSize * 8; ++bit)
+        inodeBitmap[bit / 8] |= (byte)(1 << (bit % 8));
+      var usedInodesInGroup = 0;
+      for (var bit = 0; bit < inodesPerGroup; ++bit)
+        if ((inodeBitmap[bit / 8] & (1 << (bit % 8))) != 0) ++usedInodesInGroup;
+      var freeInodesInGroup = inodesPerGroup - usedInodesInGroup;
+      totalFreeInodes += freeInodesInGroup;
+
+      // Group descriptor: 32 bytes, reserved area zeroed.
+      var bgd = img.At(gdtBase + (long)g * 32, 32);
+      BinaryPrimitives.WriteUInt32LittleEndian(bgd, (uint)BlockBitmapBlock(g));      // bg_block_bitmap
+      BinaryPrimitives.WriteUInt32LittleEndian(bgd[4..], (uint)InodeBitmapBlock(g)); // bg_inode_bitmap
+      BinaryPrimitives.WriteUInt32LittleEndian(bgd[8..], (uint)InodeTableBlock(g));  // bg_inode_table
+      BinaryPrimitives.WriteUInt16LittleEndian(bgd[12..], (ushort)freeBlocksInGroup); // bg_free_blocks_count
+      BinaryPrimitives.WriteUInt16LittleEndian(bgd[14..], (ushort)freeInodesInGroup); // bg_free_inodes_count
+      BinaryPrimitives.WriteUInt16LittleEndian(bgd[16..], (ushort)dirsPerGroup[g]);   // bg_used_dirs_count
+    }
 
     // --- Superblock at offset 1024 ---
-    var sb = disk.AsSpan(1024);
-    BinaryPrimitives.WriteUInt32LittleEndian(sb, (uint)inodesPerGroup);            // s_inodes_count
+    var sb = img.At(1024, 1024);
+    BinaryPrimitives.WriteUInt32LittleEndian(sb, (uint)((long)inodesPerGroup * groupCount)); // s_inodes_count
     BinaryPrimitives.WriteUInt32LittleEndian(sb[4..], (uint)totalBlocks);          // s_blocks_count
     BinaryPrimitives.WriteUInt32LittleEndian(sb[8..], 0);                          // s_r_blocks_count
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[12..], freeBlocks);                // s_free_blocks_count
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[16..], freeInodes);                // s_free_inodes_count
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[20..], firstDataBlock);            // s_first_data_block
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[12..], (uint)totalFreeBlocks);     // s_free_blocks_count
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[16..], (uint)totalFreeInodes);     // s_free_inodes_count
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[20..], (uint)firstDataBlock);      // s_first_data_block
     var logBlockSize = blockSize == 1024 ? 0u : blockSize == 2048 ? 1u : 2u;
     BinaryPrimitives.WriteUInt32LittleEndian(sb[24..], logBlockSize);              // s_log_block_size
     BinaryPrimitives.WriteUInt32LittleEndian(sb[28..], logBlockSize);              // s_log_frag_size (same)
     // s_blocks_per_group is the group's capacity, not the volume's size, and e2fsck
-    // derives its bitmap-padding expectations from it: mke2fs always writes
-    // 8 * blockSize, one block bitmap's worth of bits. This writer emits a single
-    // group, so use the canonical value whenever the volume fits in one -- writing
-    // totalBlocks there made every larger-than-default image flag "padding at the
-    // end of the inode bitmap is not set". A volume beyond one group's capacity
-    // keeps the old value, which mounts but is not something fsck calls tidy.
-    var blocksPerGroup = totalBlocks <= 8 * blockSize ? 8 * blockSize : totalBlocks;
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[32..], (uint)blocksPerGroup);       // s_blocks_per_group
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[36..], (uint)blocksPerGroup);       // s_frags_per_group (matches blocks_per_group)
+    // derives its bitmap-padding expectations from it: one block bitmap's worth of
+    // bits, i.e. 8 * blockSize. A volume needing more than that gets more groups,
+    // never a wider group.
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[32..], (uint)blocksPerGroup);      // s_blocks_per_group
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[36..], (uint)blocksPerGroup);      // s_frags_per_group (matches blocks_per_group)
     BinaryPrimitives.WriteUInt32LittleEndian(sb[40..], (uint)inodesPerGroup);      // s_inodes_per_group
     BinaryPrimitives.WriteUInt32LittleEndian(sb[44..], now);                       // s_mtime
     BinaryPrimitives.WriteUInt32LittleEndian(sb[48..], now);                       // s_wtime
@@ -586,6 +676,9 @@ public sealed class ExtWriter {
     //   ext2 — FILETYPE only (compat/incompat clear of everything else).
     //   ext3 — FILETYPE + HAS_JOURNAL (compat).
     //   ext4 — FILETYPE + HAS_JOURNAL (compat) + EXTENTS (incompat).
+    //   SPARSE_SUPER is intentionally NOT set: this writer places a superblock
+    //   and group-descriptor backup in *every* group, which is what a volume
+    //   without that feature must look like.
     //   64BIT is intentionally NOT set: it mandates 64-byte block group
     //   descriptors and s_desc_size=64, but we emit 32-byte descriptors, so
     //   advertising 64BIT makes dumpe2fs/e2fsck reject the volume with
@@ -619,35 +712,133 @@ public sealed class ExtWriter {
     }
     // Last-mount path at offset 136 (64 bytes) — optional.
 
-    // Journal inode (offset 224) when HAS_JOURNAL is set. The inode itself
-    // stays empty (zeroed) — we don't emit a real journal because the volume
-    // is CLEAN, so no recovery is ever needed.
+    // Journal inode (offset 224) when HAS_JOURNAL is set.
     if ((compatFlags & FeatureCompatHasJournal) != 0)
       BinaryPrimitives.WriteUInt32LittleEndian(sb[224..], JournalInode);             // s_journal_inum
 
-    // --- Padding at the tail of each bitmap block must be set to 1 per
-    //     mkfs convention; fsck flags unset padding as a corruption hint. ---
-    var blockBitmapBits = totalBlocks - (int)firstDataBlock;
-    var blockBitmapBytes = blockSize;
-    for (var bit = blockBitmapBits; bit < blockBitmapBytes * 8; ++bit)
-      disk[blockBitmapOffset + bit / 8] |= (byte)(1 << (bit % 8));
+    // --- Superblock and group-descriptor backups ---
+    // Without SPARSE_SUPER every group opens with a copy of the superblock (at
+    // the group's first block, offset 0) followed by a copy of the descriptor
+    // table. e2fsck needs them to be able to repair a volume whose primary
+    // superblock is gone, and flags their absence outright.
+    if (groupCount > 1) {
+      var primarySuperblock = sb.ToArray();
+      for (var g = 1; g < groupCount; ++g) {
+        var start = GroupStart(g);
+        primarySuperblock.CopyTo(img.Block(start));
+        BinaryPrimitives.WriteUInt16LittleEndian(img.At((long)start * blockSize + 90, 2), (ushort)g); // s_block_group_nr
+        for (var d = 0; d < gdtBlocks; ++d)
+          img.Block(GroupStart(0) + 1 + d).CopyTo(img.Block(start + 1 + d));
+      }
+    }
 
-    var inodeBitmapBits = inodesPerGroup;
-    var inodeBitmapBytes = blockSize;
-    for (var bit = inodeBitmapBits; bit < inodeBitmapBytes * 8; ++bit)
-      disk[inodeBitmapOffset + bit / 8] |= (byte)(1 << (bit % 8));
+    return img;
+  }
 
-    // --- Block Group Descriptor at block (firstDataBlock+1) — 32 bytes, reserved area zeroed ---
-    var bgdOffset = (int)(firstDataBlock + 1) * blockSize;
-    var bgd = disk.AsSpan(bgdOffset, 32);
-    BinaryPrimitives.WriteUInt32LittleEndian(bgd, (uint)(firstDataBlock + 2));     // bg_block_bitmap
-    BinaryPrimitives.WriteUInt32LittleEndian(bgd[4..], (uint)(firstDataBlock + 3)); // bg_inode_bitmap
-    BinaryPrimitives.WriteUInt32LittleEndian(bgd[8..], (uint)(firstDataBlock + 4)); // bg_inode_table
-    BinaryPrimitives.WriteUInt16LittleEndian(bgd[12..], (ushort)freeBlocks);       // bg_free_blocks_count
-    BinaryPrimitives.WriteUInt16LittleEndian(bgd[14..], (ushort)freeInodes);       // bg_free_inodes_count
-    BinaryPrimitives.WriteUInt16LittleEndian(bgd[16..], (ushort)usedDirs);         // bg_used_dirs_count
+  /// <summary>Block-group geometry derived from the block size and the volume size.</summary>
+  private readonly record struct ExtGeometry(
+    int TotalBlocks, int FirstDataBlock, int BlocksPerGroup, int GroupCount,
+    int GdtBlocks, int InodesPerGroup, int InodeTableBlocks, int PerGroupMetaBlocks);
 
-    return disk;
+  /// <summary>
+  /// Works out how many block groups the volume needs and how the per-group
+  /// metadata is sized. A group holds 8 * blockSize blocks because its block
+  /// bitmap is a single block; anything larger takes more groups. Inodes are
+  /// shared evenly across them, so a one-group volume ends up with exactly the
+  /// geometry this writer produced before groups existed.
+  /// </summary>
+  private static ExtGeometry ComputeGeometry(int blockSize, int totalBlocks, int inodeSize, int neededInodes) {
+    var firstDataBlock = blockSize == 1024 ? 1 : 0;
+    var blocksPerGroup = 8 * blockSize;
+    var inodesPerBlock = blockSize / inodeSize;
+    totalBlocks = Math.Max(totalBlocks, firstDataBlock + 64);
+
+    int groupCount = 1, inodesPerGroup = 0, inodeTableBlocks = 0, gdtBlocks = 1, perGroupMeta = 0;
+    for (var pass = 0; pass < 8; ++pass) {
+      groupCount = Math.Max(1, (int)(((long)totalBlocks - firstDataBlock + blocksPerGroup - 1) / blocksPerGroup));
+      inodesPerGroup = ChooseInodeCount((neededInodes + groupCount - 1) / groupCount);
+      inodesPerGroup = Math.Min(8 * blockSize, (inodesPerGroup + inodesPerBlock - 1) / inodesPerBlock * inodesPerBlock);
+      inodeTableBlocks = inodesPerGroup * inodeSize / blockSize;
+      gdtBlocks = (groupCount * 32 + blockSize - 1) / blockSize;
+      // superblock + descriptor table + block bitmap + inode bitmap + inode table
+      perGroupMeta = 1 + gdtBlocks + 2 + inodeTableBlocks;
+
+      // A trailing group with no room for its own metadata is not worth keeping;
+      // dropping it costs a sliver of capacity and leaves every group well-formed.
+      var lastGroupBlocks = (long)totalBlocks - (firstDataBlock + (long)(groupCount - 1) * blocksPerGroup);
+      if (groupCount == 1 || lastGroupBlocks > perGroupMeta) break;
+      totalBlocks = firstDataBlock + (groupCount - 1) * blocksPerGroup;
+    }
+
+    totalBlocks = Math.Max(totalBlocks, firstDataBlock + perGroupMeta + 1);
+    return new ExtGeometry(totalBlocks, firstDataBlock, blocksPerGroup, groupCount,
+                           gdtBlocks, inodesPerGroup, inodeTableBlocks, perGroupMeta);
+  }
+
+  /// <summary>
+  /// Sparse, block-addressed image buffer. Only the blocks the writer actually
+  /// touches are allocated, so laying out a multi-gigabyte volume costs its
+  /// metadata rather than its size — and a volume too large for a byte[] can
+  /// still be written straight to a stream.
+  /// </summary>
+  private sealed class BlockImage(int blockSize, long totalBytes) {
+
+    private readonly Dictionary<int, byte[]> _blocks = [];
+
+    /// <summary>Block size in bytes.</summary>
+    public int BlockSize { get; } = blockSize;
+
+    /// <summary>Declared size of the finished volume.</summary>
+    public long TotalBytes { get; } = totalBytes;
+
+    /// <summary>The whole of <paramref name="block" />, allocated on first touch.</summary>
+    public Span<byte> Block(int block) {
+      if (!this._blocks.TryGetValue(block, out var data))
+        this._blocks[block] = data = new byte[this.BlockSize];
+      return data;
+    }
+
+    /// <summary>
+    /// <paramref name="length" /> bytes at <paramref name="offset" />. Every ext
+    /// structure this writer emits — superblock, group descriptor, inode, block
+    /// pointer — is aligned so that it never crosses a block boundary.
+    /// </summary>
+    public Span<byte> At(long offset, int length) {
+      var within = (int)(offset % this.BlockSize);
+      if (within + length > this.BlockSize)
+        throw new ArgumentOutOfRangeException(nameof(length), "ext writer: a field must not cross a block boundary.");
+      return this.Block((int)(offset / this.BlockSize)).Slice(within, length);
+    }
+
+    /// <summary>Materialises the whole volume.</summary>
+    /// <exception cref="InvalidOperationException">The volume is larger than a byte[] can hold.</exception>
+    public byte[] Materialise() {
+      if (this.TotalBytes > Array.MaxLength)
+        throw new InvalidOperationException(
+          $"ext: a {this.TotalBytes:N0}-byte volume exceeds the array limit; write it to a seekable stream instead.");
+
+      var image = new byte[this.TotalBytes];
+      foreach (var (block, data) in this._blocks) {
+        var offset = (long)block * this.BlockSize;
+        var take = (int)Math.Min(data.Length, this.TotalBytes - offset);
+        if (take > 0) data.AsSpan(0, take).CopyTo(image.AsSpan((int)offset));
+      }
+      return image;
+    }
+
+    /// <summary>Writes the volume from the current position, extending the stream to its full size.</summary>
+    public void WriteTo(Stream output) {
+      var basePosition = output.Position;
+      output.SetLength(basePosition + this.TotalBytes);
+      foreach (var block in this._blocks.Keys.Order()) {
+        var offset = (long)block * this.BlockSize;
+        var take = (int)Math.Min(this.BlockSize, this.TotalBytes - offset);
+        if (take <= 0) continue;
+        output.Position = basePosition + offset;
+        output.Write(this._blocks[block], 0, take);
+      }
+      output.Position = basePosition + this.TotalBytes;
+    }
   }
 
   // Rounds the required inode count up to a sensible group size. The minimal
@@ -681,93 +872,69 @@ public sealed class ExtWriter {
     if (!output.CanSeek || !output.CanWrite)
       throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
 
-    var sink = new List<(int FirstBlock, int BlockCount, long Size, Func<Stream> Opener)>();
+    var sink = new List<(IReadOnlyList<int> Blocks, long Size, Func<Stream> Opener)>();
     this._streamingSink = sink;
-    byte[] disk;
+    BlockImage image;
     try {
-      disk = Build(blockSize, totalBlocks, version, journal, volumeLabel, inodeSize);
+      image = BuildCore(blockSize, totalBlocks, version, journal, volumeLabel, inodeSize);
     } finally {
       this._streamingSink = null;
     }
-    output.SetLength(disk.Length);
     output.Position = 0;
-    output.Write(disk);
+    image.WriteTo(output);
+    StreamEntries(output, sink, blockSize);
+  }
 
-    // Pass 2: stream each entry's bytes into its first allocated block.
-    // The allocation walk above used contiguous block IDs so a single
-    // forward write covers BlockCount blocks (= ceil(size/blockSize)).
-    var buf = new byte[64 * 1024];
-    foreach (var (firstBlock, _, size, opener) in sink) {
-      if (size <= 0) continue;
-      var byteOffset = (long)firstBlock * blockSize;
-      if (byteOffset < 0 || byteOffset >= output.Length) continue;
-      output.Position = byteOffset;
+  /// <summary>
+  /// Pass 2 of a streaming build: copies each entry's bytes into the blocks it
+  /// was allocated. The allocator hands out ascending blocks, so an entry's map
+  /// is contiguous except where it steps over a group's metadata; writing it as
+  /// runs keeps that to one seek per boundary rather than one per block.
+  /// </summary>
+  private static void StreamEntries(Stream output,
+      List<(IReadOnlyList<int> Blocks, long Size, Func<Stream> Opener)> sink, int blockSize) {
+    var buf = new byte[Math.Max(blockSize, 1024 * 1024)];
+    foreach (var (blocks, size, opener) in sink) {
+      if (size <= 0 || blocks.Count == 0) continue;
       using var src = opener();
-      long copied = 0;
-      while (copied < size) {
-        var want = (int)Math.Min(buf.Length, size - copied);
-        var n = src.Read(buf, 0, want);
-        if (n <= 0) break;
-        output.Write(buf, 0, n);
-        copied += n;
+      var remaining = size;
+
+      var runStart = 0;
+      while (runStart < blocks.Count && remaining > 0) {
+        var runEnd = runStart;
+        while (runEnd + 1 < blocks.Count && blocks[runEnd + 1] == blocks[runEnd] + 1) ++runEnd;
+
+        var runBytes = Math.Min(remaining, (long)(runEnd - runStart + 1) * blockSize);
+        output.Position = (long)blocks[runStart] * blockSize;
+        while (runBytes > 0) {
+          var want = (int)Math.Min(buf.Length, runBytes);
+          var n = src.Read(buf, 0, want);
+          if (n <= 0) { remaining = 0; break; }
+          output.Write(buf, 0, n);
+          runBytes -= n;
+          remaining -= n;
+        }
+        runStart = runEnd + 1;
       }
-      // Last-block tail past `size` retains zero from the disk init.
+      // Block tail past `size` retains zero: the writer never wrote those bytes.
     }
     output.Flush();
   }
 
   /// <summary>Two-pass streaming Build with auto-sized geometry.</summary>
   public void BuildToStreamingAutoSized(Stream output, ExtVersion version, bool journal,
-      string volumeLabel, int inodeSize) {
+      string volumeLabel, int inodeSize)
+    => this.BuildToStreamingAutoSized(output, 0, version, journal, volumeLabel, inodeSize);
+
+  /// <summary>Two-pass streaming Build with auto-sized geometry and a caller-chosen block size.</summary>
+  public void BuildToStreamingAutoSized(Stream output, int requestedBlockSize, ExtVersion version,
+      bool journal, string volumeLabel, int inodeSize) {
     ArgumentNullException.ThrowIfNull(output);
     if (!output.CanSeek || !output.CanWrite)
       throw new ArgumentException("BuildToStreamingAutoSized requires a writable, seekable stream.", nameof(output));
 
-    var sink = new List<(int FirstBlock, int BlockCount, long Size, Func<Stream> Opener)>();
-    this._streamingSink = sink;
-    byte[] disk;
-    try {
-      // Auto-sized build reuses the size-aware BuildAutoSized path, which
-      // honours streaming sizes via the StreamingSize fallback above.
-      var bytes = BuildAutoSized();
-      // BuildAutoSized delegates to Build(blockSize, totalBlocks) which
-      // calls our 6-arg Build with defaults. The streaming sink is set
-      // around the call so any in-build streaming-allocation records get
-      // captured automatically.
-      disk = bytes;
-    } finally {
-      this._streamingSink = null;
-    }
-    output.SetLength(disk.Length);
-    output.Position = 0;
-    output.Write(disk);
-
-    var blockSize = ReadBlockSizeFromSuperblock(disk);
-    var buf = new byte[64 * 1024];
-    foreach (var (firstBlock, _, size, opener) in sink) {
-      if (size <= 0) continue;
-      var byteOffset = (long)firstBlock * blockSize;
-      if (byteOffset < 0 || byteOffset >= output.Length) continue;
-      output.Position = byteOffset;
-      using var src = opener();
-      long copied = 0;
-      while (copied < size) {
-        var want = (int)Math.Min(buf.Length, size - copied);
-        var n = src.Read(buf, 0, want);
-        if (n <= 0) break;
-        output.Write(buf, 0, n);
-        copied += n;
-      }
-    }
-    output.Flush();
-  }
-
-  private static int ReadBlockSizeFromSuperblock(byte[] disk) {
-    // Superblock at offset 1024. s_log_block_size at field offset 24 (so
-    // absolute offset 1024+24 = 1048). blockSize = 1024 << s_log_block_size.
-    if (disk.Length < 1052) return 1024;
-    var logBlockSize = BinaryPrimitives.ReadUInt32LittleEndian(disk.AsSpan(1048));
-    return 1024 << (int)logBlockSize;
+    var (blockSize, totalBlocks) = PlanAutoSize(requestedBlockSize, version, journal, inodeSize);
+    this.BuildToStreaming(output, blockSize, totalBlocks, version, journal, volumeLabel, inodeSize);
   }
 
   // Counts the distinct directories (root + every path prefix) the added files imply.
@@ -837,20 +1004,18 @@ public sealed class ExtWriter {
   /// on ext4 too: the EXTENTS feature permits per-inode extent maps, it does not
   /// require them.
   /// </remarks>
-  private static int WriteInodeBlockMap(byte[] disk, int inodeOffset, IReadOnlyList<int> dataBlocks,
-      int blockSize, ref int nextBlock, int blockBitmapOffset, int firstDataBlock) {
+  private static int WriteInodeBlockMap(BlockImage img, long inodeOffset, IReadOnlyList<int> dataBlocks,
+      int blockSize, Func<int> allocBlock) {
     const int directCount = 12;
     var ptrs = blockSize / 4;
     var meta = 0;
-    var alloc = nextBlock;
 
     for (var i = 0; i < directCount && i < dataBlocks.Count; ++i)
-      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(inodeOffset + 40 + i * 4), (uint)dataBlocks[i]);
-    if (dataBlocks.Count <= directCount) { nextBlock = alloc; return meta; }
+      BinaryPrimitives.WriteUInt32LittleEndian(img.At(inodeOffset + 40 + i * 4, 4), (uint)dataBlocks[i]);
+    if (dataBlocks.Count <= directCount) return meta;
 
     int AllocPointerBlock() {
-      var b = alloc++;
-      MarkBlockUsed(disk, blockBitmapOffset, b, firstDataBlock);
+      var b = allocBlock();
       ++meta;
       return b;
     }
@@ -859,11 +1024,11 @@ public sealed class ExtWriter {
     var ind = AllocPointerBlock();
     var indOff = (long)ind * blockSize;
     for (var i = 0; i < ptrs && directCount + i < dataBlocks.Count; ++i)
-      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)indOff + i * 4), (uint)dataBlocks[directCount + i]);
-    BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(inodeOffset + 88), (uint)ind);
+      BinaryPrimitives.WriteUInt32LittleEndian(img.At(indOff + i * 4, 4), (uint)dataBlocks[directCount + i]);
+    BinaryPrimitives.WriteUInt32LittleEndian(img.At(inodeOffset + 88, 4), (uint)ind);
 
     var dindFirst = directCount + ptrs;
-    if (dataBlocks.Count <= dindFirst) { nextBlock = alloc; return meta; }
+    if (dataBlocks.Count <= dindFirst) return meta;
 
     // Double indirect: i_block[13] at inode offset 92.
     var dind = AllocPointerBlock();
@@ -873,18 +1038,18 @@ public sealed class ExtWriter {
     var dindGroups = (dindBlocks + ptrs - 1) / ptrs;
     for (var k = 0; k < dindGroups; ++k) {
       var lvl2 = AllocPointerBlock();
-      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)dindOff + k * 4), (uint)lvl2);
+      BinaryPrimitives.WriteUInt32LittleEndian(img.At(dindOff + k * 4, 4), (uint)lvl2);
       var lvl2Off = (long)lvl2 * blockSize;
       for (var i = 0; i < ptrs; ++i) {
         var idx = dindFirst + k * ptrs + i;
         if (idx >= dindFirst + dindBlocks) break;
-        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)lvl2Off + i * 4), (uint)dataBlocks[idx]);
+        BinaryPrimitives.WriteUInt32LittleEndian(img.At(lvl2Off + i * 4, 4), (uint)dataBlocks[idx]);
       }
     }
-    BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(inodeOffset + 92), (uint)dind);
+    BinaryPrimitives.WriteUInt32LittleEndian(img.At(inodeOffset + 92, 4), (uint)dind);
 
     var tindFirst = dindFirst + (int)dindCapacity;
-    if (dataBlocks.Count <= tindFirst) { nextBlock = alloc; return meta; }
+    if (dataBlocks.Count <= tindFirst) return meta;
 
     // Triple indirect: i_block[14] at inode offset 96.
     var tind = AllocPointerBlock();
@@ -893,28 +1058,22 @@ public sealed class ExtWriter {
     var lvl2Groups = (int)(((long)remaining + (long)ptrs * ptrs - 1) / ((long)ptrs * ptrs));
     for (var g = 0; g < lvl2Groups; ++g) {
       var mid = AllocPointerBlock();
-      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)tindOff + g * 4), (uint)mid);
+      BinaryPrimitives.WriteUInt32LittleEndian(img.At(tindOff + g * 4, 4), (uint)mid);
       var midOff = (long)mid * blockSize;
       for (var k = 0; k < ptrs; ++k) {
         var groupStart = tindFirst + (g * ptrs + k) * ptrs;
         if (groupStart >= dataBlocks.Count) break;
         var leaf = AllocPointerBlock();
-        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)midOff + k * 4), (uint)leaf);
+        BinaryPrimitives.WriteUInt32LittleEndian(img.At(midOff + k * 4, 4), (uint)leaf);
         var leafOff = (long)leaf * blockSize;
         for (var i = 0; i < ptrs; ++i) {
           var idx = groupStart + i;
           if (idx >= dataBlocks.Count) break;
-          BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)leafOff + i * 4), (uint)dataBlocks[idx]);
+          BinaryPrimitives.WriteUInt32LittleEndian(img.At(leafOff + i * 4, 4), (uint)dataBlocks[idx]);
         }
       }
     }
-    BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(inodeOffset + 96), (uint)tind);
-    nextBlock = alloc;
+    BinaryPrimitives.WriteUInt32LittleEndian(img.At(inodeOffset + 96, 4), (uint)tind);
     return meta;
-  }
-
-  private static void MarkBlockUsed(byte[] disk, int bitmapOffset, int blockNum, int firstDataBlock) {
-    var bit = blockNum - firstDataBlock;
-    disk[bitmapOffset + bit / 8] |= (byte)(1 << (bit % 8));
   }
 }

@@ -258,8 +258,20 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new ExtWriter();
-    foreach (var (name, data) in FlatFiles(inputs))
-      w.AddFile(name, data);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Only the length is needed to lay the volume out. Reading a large input
+      // into a byte[] just to hand it over would cap the volume at 2 GB even
+      // though the writer places file data by seek.
+      // Names are flattened to their leaf, as this path has always done.
+      var name = Path.GetFileName(info.ArchiveName);
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(name, bytes);
+      else
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length,
+          () => File.OpenRead(info.FullPath));
+    }
 
     // Resolve the schema-published knobs against the FormatCreateOptions bag,
     // falling back to the schema defaults if the caller didn't fill any in.
@@ -281,7 +293,10 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     // Size the volume to the payload. A fixed 4096-block image is ~16 MB at a
     // 4 KB block, so anything larger overran the buffer instead of growing.
-    output.Write(w.BuildAutoSized(blockSize, version, journal, volumeLabel, inodeSize));
+    if (output.CanSeek)
+      w.BuildToStreamingAutoSized(output, blockSize, version, journal, volumeLabel, inodeSize);
+    else
+      output.Write(w.BuildAutoSized(blockSize, version, journal, volumeLabel, inodeSize));
   }
 
   /// <summary>
@@ -327,7 +342,10 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      // Streamed, not buffered: ext records i_size as a uint32, so an entry can
+      // approach 4 GB -- more than the byte[] Extract returns could hold.
+      using var target = CreateEntryFile(outputDir, e.Name);
+      r.ExtractTo(e, target);
     }
   }
 

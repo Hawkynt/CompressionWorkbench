@@ -113,6 +113,17 @@ public sealed class ExtReader : IDisposable {
   }
 
   private byte[] ReadInodeBlocks(byte[] inode) {
+    using var ms = new MemoryStream();
+    WriteInodeBlocks(inode, ms);
+    return ms.ToArray();
+  }
+
+  /// <summary>
+  /// Walks the inode's block map or extent tree and copies the file's bytes into
+  /// <paramref name="destination" />. Nothing larger than one block is held, so a
+  /// file past what a byte[] can carry is extracted the same way as any other.
+  /// </summary>
+  private void WriteInodeBlocks(byte[] inode, Stream destination) {
     var sizelow = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(4));
     var flags = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(32));
 
@@ -120,13 +131,12 @@ public sealed class ExtReader : IDisposable {
                       (_featureIncompat & (1u << 6)) != 0;
 
     if (usesExtents)
-      return ReadExtentTree(inode, sizelow);
+      ReadExtentTree(inode, sizelow, destination);
     else
-      return ReadBlockPointers(inode, sizelow);
+      ReadBlockPointers(inode, sizelow, destination);
   }
 
-  private byte[] ReadBlockPointers(byte[] inode, uint size) {
-    using var ms = new MemoryStream();
+  private void ReadBlockPointers(byte[] inode, uint size, Stream ms) {
     var remaining = (long)size;
 
     // 12 direct block pointers at inode offset 40
@@ -160,11 +170,9 @@ public sealed class ExtReader : IDisposable {
       if (tindirectBlock != 0)
         ReadIndirectBlock(tindirectBlock, ms, ref remaining, 3);
     }
-
-    return ms.ToArray();
   }
 
-  private void ReadIndirectBlock(uint blockNum, MemoryStream ms, ref long remaining, int level) {
+  private void ReadIndirectBlock(uint blockNum, Stream ms, ref long remaining, int level) {
     if (blockNum == 0 || remaining <= 0) return;
     var offset = (long)blockNum * _blockSize;
     if (offset + _blockSize > _data.Length) return;
@@ -188,23 +196,20 @@ public sealed class ExtReader : IDisposable {
     }
   }
 
-  private byte[] ReadExtentTree(byte[] inode, uint size) {
-    using var ms = new MemoryStream();
+  private void ReadExtentTree(byte[] inode, uint size, Stream ms) {
     var remaining = (long)size;
 
     // Extent header at inode offset 40
     var ehMagic = BinaryPrimitives.ReadUInt16LittleEndian(inode.AsSpan(40));
-    if (ehMagic != ExtentMagic) return [];
+    if (ehMagic != ExtentMagic) return;
 
     var ehEntries = BinaryPrimitives.ReadUInt16LittleEndian(inode.AsSpan(42));
     var ehDepth = BinaryPrimitives.ReadUInt16LittleEndian(inode.AsSpan(46));
 
     ReadExtentNode(inode.AsSpan(40, 60).ToArray(), 0, ehEntries, ehDepth, ms, ref remaining);
-
-    return ms.ToArray();
   }
 
-  private void ReadExtentNode(byte[] nodeData, int headerOffset, int entries, int depth, MemoryStream ms, ref long remaining) {
+  private void ReadExtentNode(byte[] nodeData, int headerOffset, int entries, int depth, Stream ms, ref long remaining) {
     if (depth == 0) {
       // Leaf node - read extents
       for (var i = 0; i < entries && remaining > 0; i++) {
@@ -336,6 +341,27 @@ public sealed class ExtReader : IDisposable {
     var data = ReadInodeBlocks(inode);
     var n = (int)Math.Min(size, data.Length);
     return Encoding.UTF8.GetString(data, 0, n);
+  }
+
+  /// <summary>
+  /// Copies <paramref name="entry" />'s bytes into <paramref name="destination" />
+  /// without buffering the whole file, which an entry approaching ext's 4 GB
+  /// i_size ceiling would not survive.
+  /// </summary>
+  public void ExtractTo(ExtEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return;
+    if (entry.IsSymlink) {
+      var target = Encoding.UTF8.GetBytes(entry.LinkTarget ?? "");
+      destination.Write(target, 0, target.Length);
+      return;
+    }
+    if (entry.Inode == 0) return;
+
+    var inodeData = ReadInode(entry.Inode);
+    if (inodeData == null) return;
+    WriteInodeBlocks(inodeData, destination);
   }
 
   public byte[] Extract(ExtEntry entry) {
