@@ -1141,6 +1141,26 @@ public sealed class FatWriter {
     var totalSectors = (int)Math.Max(32,
       reservedSectorsNeeded + 2 * fatSectorsNeeded + rootSectorsNeeded + dataClustersNeeded * sectorsPerCluster);
 
+    // A forced FAT12/16 volume must end up with a cluster count inside that
+    // variant's range, because that count is what readers classify it by.
+    if (requestedClusterSize <= 0) {
+      var forcedPayload = fileSizes.Sum(s => Math.Max(0L, s)) + dirContentBytes.Sum() + rootDirentBytes;
+      var forcedCluster = ClusterSizeForForcedFatType(forcedFatType, forcedPayload, bytesPerSector);
+      if (forcedCluster > 0 && forcedCluster != clusterBytes) {
+        clusterBytes = forcedCluster;
+        var spcF = Math.Max(1, clusterBytes / bytesPerSector);
+        var clustersF = fileSizes.Sum(s => s <= 0 ? 0L : (s + clusterBytes - 1) / clusterBytes)
+          + dirContentBytes.Sum(b => Math.Max(1L, (b + clusterBytes - 1) / clusterBytes)) + 8;
+        var rootSectorsF = ((requestedRootEntries > 0 ? requestedRootEntries : forcedFatType == 16 ? 512 : 224) * 32
+                            + bytesPerSector - 1) / bytesPerSector;
+        var fatBitsF = forcedFatType == 12 ? 12 : 16;
+        var fatSectorsF = forcedFatType == 12 ? 9L
+          : ((clustersF + 2) * fatBitsF / 8 + bytesPerSector - 1) / bytesPerSector;
+        totalSectors = (int)Math.Max(totalSectors,
+          1 + 2 * fatSectorsF + rootSectorsF + clustersF * spcF);
+      }
+    }
+
     var maxRootEntries = requestedRootEntries > 0 ? requestedRootEntries : 224;
     var needFat32 = forcedFatType == 32
       || (forcedFatType == 0 && rootDirentBytes > maxRootEntries * 32);
@@ -1332,6 +1352,26 @@ public sealed class FatWriter {
     // exactly that minimum plus the data and a safety margin — NOT to an arbitrary
     // large constant. This is what keeps a small file set from ballooning into a
     // needlessly huge image just because long filenames forced FAT32.
+    // A forced FAT12/16 volume must end up with a cluster count inside that
+    // variant's range: readers classify the volume by that count, so forcing
+    // FAT16 over a payload that yields fewer than 4085 clusters produced a BPB
+    // that reads FAT12 while the table holds 16-bit entries.
+    if (requestedClusterSize <= 0) {
+      var forcedPayload = fileSizes.Sum(s => Math.Max(0L, s)) + dirContentBytes.Sum() + rootDirentBytes;
+      var forcedCluster = ClusterSizeForForcedFatType(forcedFatType, forcedPayload, bytesPerSector);
+      if (forcedCluster > 0 && forcedCluster != clusterBytes) {
+        clusterBytes = forcedCluster;
+        var spcF = Math.Max(1, clusterBytes / bytesPerSector);
+        var clustersF = fileSizes.Sum(s => s <= 0 ? 0L : (s + clusterBytes - 1) / clusterBytes)
+          + dirContentBytes.Sum(b => Math.Max(1L, (b + clusterBytes - 1) / clusterBytes)) + 8;
+        var rootSectorsF = ((requestedRootEntries > 0 ? requestedRootEntries : forcedFatType == 16 ? 512 : 224) * 32
+                            + bytesPerSector - 1) / bytesPerSector;
+        var fatSectorsF = forcedFatType == 12 ? 9L
+          : ((clustersF + 2) * 2 + bytesPerSector - 1) / bytesPerSector;
+        totalSectors = (int)Math.Max(totalSectors,
+          1 + 2 * fatSectorsF + rootSectorsF + clustersF * spcF);
+      }
+    }
     var maxRootEntries = requestedRootEntries > 0 ? requestedRootEntries : 224;
     var needFat32 = forcedFatType == 32
       || (forcedFatType == 0 && rootDirentBytes > maxRootEntries * 32);
@@ -1339,6 +1379,20 @@ public sealed class FatWriter {
       const long fat32MinClusters = 65525;
       const long margin = 2048;             // headroom so Build's own FAT-size recompute stays > the minimum
       const int reservedSectors = 32;       // FAT32 convention (boot + FSInfo + backup)
+
+      // The floor is met by using smaller clusters, not by inflating the volume:
+      // a 40 MB payload at an auto-picked 64 KB cluster otherwise demanded a
+      // 4 GB image, which Build could not even allocate.
+      if (requestedClusterSize <= 0) {
+        var payloadClusterBytes = fileSizes.Sum(s => s <= 0 ? 0L : s) + rootDirentBytes;
+        var target = Math.Max(payloadClusterBytes * 3 / 2, 64L * 1024 * 1024);
+        var maxCluster = Math.Max(bytesPerSector, target / (fat32MinClusters + margin));
+        var pick = bytesPerSector;
+        foreach (var candidate in new[] { 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536 })
+          if (candidate >= bytesPerSector && candidate <= maxCluster) pick = candidate;
+        clusterBytes = pick;
+      }
+
       var spc = Math.Max(1, clusterBytes / bytesPerSector);
       var dataClusters = fileSizes.Sum(s => s <= 0 ? 0L : (s + clusterBytes - 1) / clusterBytes)
         + dirContentBytes.Sum(b => Math.Max(1L, (b + clusterBytes - 1) / clusterBytes));
@@ -1543,6 +1597,30 @@ public sealed class FatWriter {
     var denominator = (long)sectorsPerCluster * bytesPerSector * 8 + (long)fatCount * bits;
     var clusters = available * bytesPerSector * 8 / denominator;
     return (int)Math.Max(1, ((clusters + 2) * bits / 8 + bytesPerSector - 1) / bytesPerSector);
+  }
+
+  /// <summary>
+  /// Cluster size that puts the payload inside <paramref name="forcedFatType" />'s
+  /// legal cluster-count range. Readers pick the FAT variant purely from the
+  /// cluster count, so forcing FAT16 over a payload that yields fewer than 4085
+  /// clusters produced a volume whose BPB reads FAT12 while the table holds
+  /// 16-bit entries -- every chain then decodes to nonsense.
+  /// </summary>
+  /// <returns>The cluster size to use, or 0 when no candidate fits.</returns>
+  private static int ClusterSizeForForcedFatType(int forcedFatType, long payloadBytes, int bytesPerSector) {
+    if (forcedFatType is not (12 or 16)) return 0;
+    // Stay clear of the boundaries: Build re-derives the count from its own
+    // geometry, which differs from this estimate by a few clusters.
+    var minClusters = forcedFatType == 16 ? 4085L + 64 : 1L;
+    var maxClusters = forcedFatType == 16 ? 65524L - 64 : 4084L - 64;
+
+    var pick = 0;
+    foreach (var candidate in new[] { 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536 }) {
+      if (candidate < bytesPerSector || candidate % bytesPerSector != 0) continue;
+      var clusters = Math.Max(1, (payloadBytes + candidate - 1) / candidate) + 8;
+      if (clusters >= minClusters && clusters <= maxClusters) pick = candidate;
+    }
+    return pick;
   }
 
 }
