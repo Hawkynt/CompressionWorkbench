@@ -298,6 +298,10 @@ public static class DefragRebuilder {
         // Copy temp → archive atomically (in chunks). archive.SetLength then
         // copy preserves the original stream identity; callers don't have to
         // close + reopen.
+        // Sparse-aware copy: a freshly-rebuilt filesystem image is mostly free
+        // space, and SetLength has already sized the target. Skipping all-zero
+        // blocks leaves holes instead of writing them, so defragmenting a 4 GB
+        // volume costs the megabytes it actually occupies rather than 4 GB.
         var totalWrite = temp.Length;
         archive.SetLength(totalWrite);
         archive.Position = 0;
@@ -306,7 +310,10 @@ public static class DefragRebuilder {
         var copied = 0L;
         int n;
         while ((n = temp.Read(buf, 0, buf.Length)) > 0) {
-          archive.Write(buf, 0, n);
+          if (archive.CanSeek && IsAllZero(buf, n))
+            archive.Position += n;
+          else
+            archive.Write(buf, 0, n);
           copied += n;
           options.OnProgress?.Invoke(new DefragProgressEvent(
             Phase: "writing",
@@ -320,6 +327,15 @@ public static class DefragRebuilder {
     } finally {
       try { System.IO.File.Delete(tempPath); } catch { /* best-effort cleanup */ }
     }
+  }
+
+  /// <summary>
+  /// True when every one of the first <paramref name="count" /> bytes is zero.
+  /// </summary>
+  private static bool IsAllZero(byte[] buffer, int count) {
+    for (var i = 0; i < count; ++i)
+      if (buffer[i] != 0) return false;
+    return true;
   }
 
   /// <summary>

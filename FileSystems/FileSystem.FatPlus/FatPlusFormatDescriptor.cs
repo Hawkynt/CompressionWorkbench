@@ -143,6 +143,13 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       if (picked > 0) clusterBytes = picked;
     }
 
+    // A fixed size streams: Build() materialises the whole volume as one byte[] and
+    // so caps FAT+ at the ~2 GB array limit, while BuildTo leaves free space sparse.
+    if (totalSectors > 0 && output.CanSeek) {
+      w.BuildTo(output, totalSectors, requestedClusterSize: clusterBytes, volumeLabel: label);
+      return;
+    }
+
     var disk = totalSectors > 0
       ? w.Build(totalSectors, requestedClusterSize: clusterBytes, volumeLabel: label)
       : w.BuildAutoSized(requestedClusterSize: clusterBytes, volumeLabel: label);
@@ -164,9 +171,51 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <see cref="FatPlusWriter"/> — preserves existing file extended-size
   /// encodings as reported by <see cref="FatPlusReader"/>.
   /// </summary>
+  /// <summary>
+  /// Applies an edit by reading every surviving entry out of <paramref name="archive" />
+  /// and writing a fresh volume of the same declared size back over it. Used when the
+  /// in-place editor cannot take the volume -- it works on a byte[] of the whole image,
+  /// which a FAT+ volume (a FAT32 extension) is under no obligation to fit.
+  /// </summary>
+  private static void RebuildInPlaceStreaming(
+      Stream archive,
+      IReadOnlyList<(string Name, byte[] Data)> additions,
+      ISet<string>? drop) {
+    var totalSectors = (int)Math.Min(int.MaxValue, archive.Length / 512);
+    var combined = new FatPlusWriter();
+
+    archive.Position = 0;
+    var reader = new FatPlusReader(archive, leaveOpen: true);
+    foreach (var entry in reader.Entries.Where(e => !e.IsDirectory)) {
+      if (drop != null && (drop.Contains(entry.Name) || drop.Contains(Path.GetFileName(entry.Name))))
+        continue;
+      combined.AddFile(entry.Name, reader.Extract(entry));
+    }
+    foreach (var (name, data) in additions)
+      combined.AddFile(name, data);
+
+    archive.Position = 0;
+    archive.SetLength(0);
+    combined.BuildTo(archive, totalSectors);
+  }
+
+  /// <summary>
+  /// Largest volume the byte[]-based in-place editors and buffered rebuild can take.
+  /// </summary>
+  private const long MaxBufferedImageBytes = 1L << 31;
+
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
-      FatPlusModifier.AddFile(archive, name, data);
+    var items = FormatHelpers.FilesOnly(inputs).ToList();
+    try {
+      foreach (var (name, data) in items)
+        FatPlusModifier.AddFile(archive, name, data);
+    } catch (Exception ex) when (ex is not FileNotFoundException
+                                 && ex is NotSupportedException or IOException
+                                 or InvalidDataException or InvalidOperationException) {
+      // FileNotFoundException means the caller asked for something absent -- that is
+      // the answer, not a reason to rebuild.
+      RebuildInPlaceStreaming(archive, items, drop: null);
+    }
   }
 
   /// <summary>
@@ -176,8 +225,14 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// FAT+ afterwards.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    foreach (var name in entryNames)
-      FatPlusModifier.RemoveFile(archive, name);
+    try {
+      foreach (var name in entryNames)
+        FatPlusModifier.RemoveFile(archive, name);
+    } catch (Exception ex) when (ex is not FileNotFoundException
+                                 && ex is NotSupportedException or IOException
+                                 or InvalidDataException or InvalidOperationException) {
+      RebuildInPlaceStreaming(archive, [], new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase));
+    }
   }
 
   /// <summary>
@@ -210,6 +265,29 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       declaredSizes = pre.Entries
         .Where(e => !e.IsDirectory)
         .ToDictionary(e => e.Name, e => e.Size, StringComparer.OrdinalIgnoreCase);
+    }
+
+    // A volume too large to materialise goes through the streaming rebuilder: the
+    // buffered path's buildImage callback returns a byte[] of the whole image, which
+    // caps FAT+ at the ~2 GB array limit.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      FatPlusWriter? streamWriter = null;
+      Stream? target = null;
+      DefragRebuilder.RebuildStreaming(
+        archive,
+        options,
+        readEntries: stream => {
+          using var r = new FatPlusReader(stream, leaveOpen: true);
+          return r.Entries.Where(e => !e.IsDirectory)
+                          .Select(e => (e.Name, r.Extract(e)))
+                          .ToList();
+        },
+        beginWrite: s2 => { streamWriter = new FatPlusWriter(); target = s2; },
+        writeEntry: (name, data) => streamWriter!.AddFile(
+          name, data, extendedSize: declaredSizes.TryGetValue(name, out var d) ? d : data.Length),
+        finishWrite: () => streamWriter!.BuildTo(target!, Math.Max(totalSectors, 200_000)));
+      return;
     }
 
     DefragRebuilder.Rebuild(

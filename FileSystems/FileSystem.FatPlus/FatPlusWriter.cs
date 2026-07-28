@@ -146,6 +146,60 @@ public sealed class FatPlusWriter {
   /// afterwards). Shared by <see cref="Build"/> and
   /// <see cref="PickClusterForFixedImage"/>.
   /// </summary>
+  /// <summary>
+  /// Streams a FAT+ volume to <paramref name="output" />, then applies the FAT+
+  /// patches in place. The volume itself comes from <see cref="FatWriter.BuildTo" />,
+  /// so free space stays sparse and the image is not bounded by what a byte[] holds.
+  /// Only the boot sector and the root-directory region are read back.
+  /// </summary>
+  public void BuildTo(Stream output, int totalSectors, int bytesPerSector = 512,
+    int requestedClusterSize = 0, string? volumeLabel = null) {
+    ArgumentNullException.ThrowIfNull(output);
+    var inner = this.NewInnerWriter();
+    inner.BuildTo(output, totalSectors, bytesPerSector, requestedClusterSize,
+      volumeLabel: volumeLabel, forcedFatType: 32);
+
+    var boot = new byte[512];
+    output.Position = 0;
+    output.ReadExactly(boot, 0, (int)Math.Min(boot.Length, output.Length));
+
+    // (1) OEM signature in the primary boot sector and its FAT32 backup.
+    var bps = BinaryPrimitives.ReadUInt16LittleEndian(boot.AsSpan(11));
+    if (bps is 0 or > 4096) bps = 512;
+    var backupSector = BinaryPrimitives.ReadUInt16LittleEndian(boot.AsSpan(50));
+    if (backupSector is 0 or > 64) backupSector = 6;
+
+    output.Position = 3;
+    output.Write(FatPlusReader.OemSignature);
+    var backupOem = (long)backupSector * bps + 3;
+    if (backupOem + FatPlusReader.OemSignature.Length <= output.Length) {
+      output.Position = backupOem;
+      output.Write(FatPlusReader.OemSignature);
+    }
+
+    // (2) Per-file dirent patch over the root-directory region. Two dirents per
+    // file covers a long-name slot plus its short-name entry, and the loop stops
+    // at the end-of-directory marker regardless.
+    var reservedSectors = BinaryPrimitives.ReadUInt16LittleEndian(boot.AsSpan(14));
+    var fatCount = boot[16] == 0 ? 2 : boot[16];
+    var fatSize32 = BinaryPrimitives.ReadInt32LittleEndian(boot.AsSpan(36));
+    var rootStart = ((long)reservedSectors + (long)fatCount * fatSize32) * bps;
+    if (rootStart >= output.Length) return;
+
+    var windowLen = (int)Math.Min(
+      Math.Max(64 * 1024, (this._files.Count + 4) * 64),
+      output.Length - rootStart);
+    var window = new byte[windowLen];
+    output.Position = rootStart;
+    output.ReadExactly(window, 0, windowLen);
+
+    this.PatchDirentSizes(window, 0, windowLen);
+
+    output.Position = rootStart;
+    output.Write(window, 0, windowLen);
+    output.Flush();
+  }
+
   private FatWriter NewInnerWriter() {
     var inner = new FatWriter();
     foreach (var (name, data, _) in this._files)

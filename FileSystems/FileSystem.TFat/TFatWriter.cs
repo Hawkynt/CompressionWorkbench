@@ -91,6 +91,73 @@ public sealed class TFatWriter {
   /// Post-processes a freshly built FAT image to add the TFAT-specific
   /// detection markers and per-FAT transaction sequence numbers.
   /// </summary>
+  /// <summary>
+  /// Streams a TFAT image to <paramref name="output" />, then stamps the TFAT markers
+  /// in place. Delegates the volume itself to <see cref="FatWriter.BuildTo" />, so free
+  /// space stays sparse and the image is not bounded by what a byte[] can hold.
+  /// </summary>
+  public void BuildTo(Stream output, int totalSectors, int bytesPerSector = 512,
+    int requestedClusterSize = 0, string? volumeLabel = null, int forcedFatType = 0) {
+    ArgumentNullException.ThrowIfNull(output);
+    _inner.BuildTo(output, totalSectors, bytesPerSector, requestedClusterSize,
+      volumeLabel: volumeLabel, forcedFatType: forcedFatType, transactionFat: true);
+    this.StampTfatOnStream(output);
+  }
+
+  /// <summary>
+  /// Applies the same markers as <see cref="StampTfat(byte[])" /> directly to a stream.
+  /// Every site is at a BPB-derived offset, so only the boot sector has to be read back.
+  /// </summary>
+  private void StampTfatOnStream(Stream disk) {
+    var boot = new byte[512];
+    disk.Position = 0;
+    disk.ReadExactly(boot, 0, Math.Min(boot.Length, (int)Math.Min(disk.Length, boot.Length)));
+
+    var bps = BinaryPrimitives.ReadUInt16LittleEndian(boot.AsSpan(11));
+    if (bps is 0 or > 4096) bps = 512;
+    var spc = boot[13] == 0 ? 1 : boot[13];
+    var rsv = BinaryPrimitives.ReadUInt16LittleEndian(boot.AsSpan(14));
+    var rootEntCnt = BinaryPrimitives.ReadUInt16LittleEndian(boot.AsSpan(17));
+    var ts16 = (int)BinaryPrimitives.ReadUInt16LittleEndian(boot.AsSpan(19));
+    var totalSec = ts16 == 0 ? BinaryPrimitives.ReadInt32LittleEndian(boot.AsSpan(32)) : ts16;
+    var fs16 = (int)BinaryPrimitives.ReadUInt16LittleEndian(boot.AsSpan(22));
+    var fatSize = fs16 == 0 ? BinaryPrimitives.ReadInt32LittleEndian(boot.AsSpan(36)) : fs16;
+
+    var rootDirSec = (rootEntCnt * 32 + bps - 1) / bps;
+    var firstDataSec = rsv + 2L * fatSize + rootDirSec;
+    var totalClusters = (totalSec - firstDataSec) / spc;
+    var fatType = totalClusters < 4085 ? 12 : totalClusters < 65525 ? 16 : 32;
+
+    var tagBytes = Encoding.ASCII.GetBytes(fatType switch {
+      12 => "TFAT12  ", 16 => "TFAT16  ", _ => "TFAT32  " });
+    var fsTypeOffset = fatType == 32 ? 82 : 54;
+    var reserved1Offset = fatType == 32 ? 65 : 37;
+
+    void WriteAt(long offset, ReadOnlySpan<byte> bytes) {
+      if (offset < 0 || offset + bytes.Length > disk.Length) return;
+      disk.Position = offset;
+      disk.Write(bytes);
+    }
+
+    WriteAt(fsTypeOffset, tagBytes);
+    WriteAt(reserved1Offset, [0x01]);
+
+    var fat1Off = (long)rsv * bps;
+    var fatRegionLen = (long)fatSize * bps;
+    var seq = new byte[4];
+    BinaryPrimitives.WriteUInt32BigEndian(seq, _initialSequence);
+    WriteAt(fat1Off + fatRegionLen - 4, seq);
+    BinaryPrimitives.WriteUInt32BigEndian(seq, _initialSequence + 1);
+    WriteAt(fat1Off + fatRegionLen + fatRegionLen - 4, seq);
+
+    if (fatType == 32) {
+      var bkOff = 6L * bps;
+      WriteAt(bkOff + fsTypeOffset, tagBytes);
+      WriteAt(bkOff + reserved1Offset, [0x01]);
+    }
+    disk.Flush();
+  }
+
   private byte[] StampTfat(byte[] disk) {
     // Derive FAT parameters from the BPB we just wrote, so we know where the
     // FAT regions live and which extended-BPB layout was used.

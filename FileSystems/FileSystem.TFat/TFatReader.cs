@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.TFat;
@@ -38,7 +39,8 @@ namespace FileSystem.TFat;
 /// plain FAT in the detection markers and the active-FAT selection.</para>
 /// </summary>
 public sealed class TFatReader : IDisposable {
-  private readonly byte[] _data;
+  /// <summary>Random-access view; a TFAT32 volume may exceed what an array can hold.</summary>
+  private readonly ImageAccessor _data;
   private readonly List<TFatEntry> _entries = [];
 
   public IReadOnlyList<TFatEntry> Entries => _entries;
@@ -61,9 +63,8 @@ public sealed class TFatReader : IDisposable {
   private int _fatOffsetBytes; // byte offset of the active FAT
 
   public TFatReader(Stream stream, bool leaveOpen = false) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(stream);
+    _data = new ImageAccessor(stream, leaveOpen: true);
     Parse();
   }
 
@@ -71,26 +72,27 @@ public sealed class TFatReader : IDisposable {
     if (_data.Length < 512)
       throw new InvalidDataException("TFAT: image too small.");
 
-    if (_data[0] != 0xEB && _data[0] != 0xE9 && _data[0] != 0x00)
+    var jump = _data.ReadByte(0);
+    if (jump != 0xEB && jump != 0xE9 && jump != 0x00)
       throw new InvalidDataException("TFAT: invalid boot jump.");
 
-    _bytesPerSector = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(11));
+    _bytesPerSector = _data.ReadUInt16(11);
     if (_bytesPerSector is 0 or > 4096) _bytesPerSector = 512;
-    _sectorsPerCluster = _data[13] == 0 ? 1 : _data[13];
-    _reservedSectors = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(14));
-    _fatCount = _data[16];
+    _sectorsPerCluster = _data.ReadByte(13) == 0 ? 1 : _data.ReadByte(13);
+    _reservedSectors = _data.ReadUInt16(14);
+    _fatCount = _data.ReadByte(16);
     if (_fatCount != 2)
       throw new InvalidDataException($"TFAT: requires exactly 2 FATs, found {_fatCount}.");
 
-    _rootEntryCount = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(17));
+    _rootEntryCount = _data.ReadUInt16(17);
 
-    _totalSectors = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(19));
+    _totalSectors = _data.ReadUInt16(19);
     if (_totalSectors == 0)
-      _totalSectors = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(32));
+      _totalSectors = _data.ReadInt32(32);
 
-    _fatSize = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(22));
+    _fatSize = _data.ReadUInt16(22);
     if (_fatSize == 0)
-      _fatSize = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(36));
+      _fatSize = _data.ReadInt32(36);
 
     _rootDirSectors = (_rootEntryCount * 32 + _bytesPerSector - 1) / _bytesPerSector;
     _firstDataSector = _reservedSectors + _fatCount * _fatSize + _rootDirSectors;
@@ -98,11 +100,11 @@ public sealed class TFatReader : IDisposable {
 
     FatType = _totalDataClusters < 4085 ? 12 : _totalDataClusters < 65525 ? 16 : 32;
 
-    if (!IsTfat(_data, FatType))
+    if (!IsTfat(_data.Read(0, 512), FatType))
       throw new InvalidDataException("TFAT: missing TFAT markers (BS_FilSysType or BS_Reserved1).");
 
     if (FatType == 32)
-      _rootCluster = BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(44));
+      _rootCluster = _data.ReadInt32(44);
 
     // Determine the active FAT by reading per-FAT sequence numbers (stored at
     // the trailing 4 bytes of each FAT region) and pick the larger.
@@ -131,7 +133,7 @@ public sealed class TFatReader : IDisposable {
 
   private uint ReadSequence(int offset) {
     if (offset < 0 || offset + 4 > _data.Length) return 0;
-    return BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(offset));
+    return BinaryPrimitives.ReadUInt32BigEndian(_data.Read(offset, 4));
   }
 
   /// <summary>
@@ -177,10 +179,9 @@ public sealed class TFatReader : IDisposable {
     ReadDirectoryEntries(clusterData, entryCount, path);
   }
 
-  private void ReadDirectoryFixed(int offset, int maxEntries, string path) {
-    var size = maxEntries * 32;
-    if (offset + size > _data.Length) size = _data.Length - offset;
-    ReadDirectoryEntries(_data.AsSpan(offset, size).ToArray(), maxEntries, path);
+  private void ReadDirectoryFixed(long offset, int maxEntries, string path) {
+    var size = (int)Math.Min((long)maxEntries * 32, Math.Max(0, _data.Length - offset));
+    ReadDirectoryEntries(_data.Read(offset, size), maxEntries, path);
   }
 
   private void ReadDirectoryEntries(byte[] dirData, int maxEntries, string path) {
@@ -281,9 +282,10 @@ public sealed class TFatReader : IDisposable {
     var seen = new HashSet<int>();
 
     while (cluster >= 2 && !IsEndOfChain(cluster) && seen.Add(cluster)) {
-      var offset = (_firstDataSector + (cluster - 2) * _sectorsPerCluster) * _bytesPerSector;
+      // 64-bit: the sector-to-byte product overflows int past ~2 GB.
+      var offset = ((long)_firstDataSector + (long)(cluster - 2) * _sectorsPerCluster) * _bytesPerSector;
       if (offset + clusterSize > _data.Length) break;
-      ms.Write(_data, offset, clusterSize);
+      _data.CopyTo(offset, ms, clusterSize);
       cluster = GetNextCluster(cluster);
     }
 
@@ -293,11 +295,11 @@ public sealed class TFatReader : IDisposable {
   private int GetNextCluster(int cluster) {
     return FatType switch {
       12 => GetFat12Entry(cluster),
-      16 => _fatOffsetBytes + cluster * 2 + 2 <= _data.Length
-        ? BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(_fatOffsetBytes + cluster * 2))
+      16 => (long)_fatOffsetBytes + (long)cluster * 2 + 2 <= _data.Length
+        ? _data.ReadUInt16((long)_fatOffsetBytes + (long)cluster * 2)
         : 0xFFF,
-      32 => _fatOffsetBytes + cluster * 4 + 4 <= _data.Length
-        ? BinaryPrimitives.ReadInt32LittleEndian(_data.AsSpan(_fatOffsetBytes + cluster * 4)) & 0x0FFFFFFF
+      32 => (long)_fatOffsetBytes + (long)cluster * 4 + 4 <= _data.Length
+        ? _data.ReadInt32((long)_fatOffsetBytes + (long)cluster * 4) & 0x0FFFFFFF
         : 0x0FFFFFF8,
       _ => 0
     };
@@ -306,7 +308,7 @@ public sealed class TFatReader : IDisposable {
   private int GetFat12Entry(int cluster) {
     var bytePos = _fatOffsetBytes + cluster * 3 / 2;
     if (bytePos + 2 > _data.Length) return 0xFFF;
-    var val = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(bytePos));
+    var val = _data.ReadUInt16(bytePos);
     return (cluster & 1) != 0 ? val >> 4 : val & 0xFFF;
   }
 

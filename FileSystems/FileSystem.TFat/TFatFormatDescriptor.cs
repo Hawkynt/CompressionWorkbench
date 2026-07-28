@@ -128,6 +128,15 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       if (picked > 0) clusterBytes = picked;
     }
 
+    // A fixed size goes through the streaming writer whenever the target can seek:
+    // Build() materialises the whole volume as one byte[] and so caps TFAT at the
+    // ~2 GB array limit, while BuildTo leaves free space sparse.
+    if (totalSectors > 0 && output.CanSeek) {
+      w.BuildTo(output, totalSectors, requestedClusterSize: clusterBytes, volumeLabel: label,
+                forcedFatType: forcedFatType);
+      return;
+    }
+
     var disk = totalSectors > 0
       ? w.Build(totalSectors, requestedClusterSize: clusterBytes, volumeLabel: label,
                 forcedFatType: forcedFatType)
@@ -162,9 +171,46 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// a file whose short name already exists frees the old chain and
   /// re-allocates within the same transaction.
   /// </summary>
+  /// <summary>Largest volume the byte[]-based in-place editors and buffered rebuild can take.</summary>
+  private const long MaxBufferedImageBytes = 1L << 31;
+
+  /// <summary>
+  /// Applies an edit by reading every surviving entry out of <paramref name="archive" />
+  /// and writing a fresh volume of the same declared size back over it. Used when the
+  /// in-place path declines the volume -- notably FAT32, which the TFAT modifier does
+  /// not update in place, and which any volume past 4 GB necessarily is.
+  /// </summary>
+  private static void RebuildInPlaceStreaming(
+      Stream archive,
+      IReadOnlyList<(string Name, byte[] Data)> additions,
+      ISet<string>? drop) {
+    var totalSectors = (int)Math.Min(int.MaxValue, archive.Length / 512);
+    var combined = new TFatWriter();
+
+    archive.Position = 0;
+    var reader = new TFatReader(archive, leaveOpen: true);
+    foreach (var entry in reader.Entries.Where(e => !e.IsDirectory)) {
+      if (drop != null && (drop.Contains(entry.Name) || drop.Contains(Path.GetFileName(entry.Name))))
+        continue;
+      combined.AddFile(entry.Name, reader.Extract(entry));
+    }
+    foreach (var (name, data) in additions)
+      combined.AddFile(name, data);
+
+    archive.Position = 0;
+    archive.SetLength(0);
+    combined.BuildTo(archive, totalSectors);
+  }
+
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    foreach (var (name, data) in FilesOnly(inputs))
-      TFatModifier.AddFile(archive, name, data);
+    var items = FilesOnly(inputs).ToList();
+    try {
+      foreach (var (name, data) in items)
+        TFatModifier.AddFile(archive, name, data);
+    } catch (NotSupportedException) {
+      // The in-place modifier covers FAT12/16 only; rebuild instead.
+      RebuildInPlaceStreaming(archive, items, drop: null);
+    }
   }
 
   /// <summary>
@@ -174,8 +220,13 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// removed bytes remains after commit.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    foreach (var name in entryNames)
-      TFatModifier.RemoveFile(archive, name, wipeData: true);
+    try {
+      foreach (var name in entryNames)
+        TFatModifier.RemoveFile(archive, name, wipeData: true);
+    } catch (NotSupportedException) {
+      // The in-place modifier covers FAT12/16 only; rebuild instead.
+      RebuildInPlaceStreaming(archive, [], new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase));
+    }
   }
 
   public void Defragment(Stream archive)
@@ -188,6 +239,30 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// transactional sequence markers so both FAT copies stay in lock-step.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // Defrag preserves the outer size. Build() defaults to 2880 sectors, so omitting
+    // the sector count silently rewrote any non-floppy volume as a 1.44 MB image.
+    var totalSectors = (int)Math.Min(int.MaxValue, archive.Length / 512);
+
+    // A volume too large to materialise goes through the streaming rebuilder; the
+    // buffered path's buildImage returns a byte[] of the whole image.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      TFatWriter? streamWriter = null;
+      Stream? target = null;
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => {
+          var r = new TFatReader(stream, leaveOpen: true);
+          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e))).ToList();
+        },
+        beginWrite: s2 => { streamWriter = new TFatWriter(); target = s2; },
+        writeEntry: (name, data) => streamWriter!.AddFile(name, data),
+        finishWrite: () => streamWriter!.BuildTo(target!, totalSectors));
+      return;
+    }
+
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new TFatReader(stream);
@@ -196,7 +271,7 @@ public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       buildImage: files => {
         var w = new TFatWriter();
         foreach (var (n, d) in files) w.AddFile(n, d);
-        return w.Build();
+        return w.Build(totalSectors);
       });
   }
 }
