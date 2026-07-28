@@ -225,7 +225,18 @@ public sealed class BtrfsWriter {
     var fsTreeBlocks = fsLeaves.Count == 1 ? 1 : fsLeaves.Count + 1;
     ComputeLayout(fsTreeBlocks);
 
-    var image = new byte[this._totalSize];
+    // Materialise only the region that carries bytes: all metadata sits below
+    // _dataChunkStart and the free tail is zeros, so the volume is written as a
+    // prefix and then extended to its declared size. Allocating _totalSize caps
+    // btrfs at the ~2 GB array limit and costs memory proportional to the volume
+    // rather than its contents. The device item records _totalSize, so the
+    // extension is mandatory -- without it btrfs check reports "block device size
+    // is smaller than total_bytes in device item".
+    var inlineEnd = this._dataChunkStart;
+    foreach (var ext in this._dataExtents)
+      if (ext.StreamOpener == null)
+        inlineEnd = Math.Max(inlineEnd, ext.DiskBytenr + ext.Payload.Length);
+    var image = new byte[Math.Min(this._totalSize, inlineEnd)];
 
     WriteSuperblock(image);
     WriteChunkTree(image);
@@ -248,6 +259,8 @@ public sealed class BtrfsWriter {
     WriteBlockChecksum(image, (int)this._csumTreeOff, NodeSize);
 
     output.Write(image);
+    if (output.CanSeek && this._totalSize > image.Length)
+      output.SetLength(this._totalSize);
   }
 
   // Copies each regular file's payload into its sector-aligned slot in the
@@ -293,7 +306,18 @@ public sealed class BtrfsWriter {
     var fsTreeBlocks = fsLeaves.Count == 1 ? 1 : fsLeaves.Count + 1;
     ComputeLayout(fsTreeBlocks);
 
-    var image = new byte[this._totalSize];
+    // Materialise only the region that carries bytes: all metadata sits below
+    // _dataChunkStart and the free tail is zeros, so the volume is written as a
+    // prefix and then extended to its declared size. Allocating _totalSize caps
+    // btrfs at the ~2 GB array limit and costs memory proportional to the volume
+    // rather than its contents. The device item records _totalSize, so the
+    // extension is mandatory -- without it btrfs check reports "block device size
+    // is smaller than total_bytes in device item".
+    var inlineEnd = this._dataChunkStart;
+    foreach (var ext in this._dataExtents)
+      if (ext.StreamOpener == null)
+        inlineEnd = Math.Max(inlineEnd, ext.DiskBytenr + ext.Payload.Length);
+    var image = new byte[Math.Min(this._totalSize, inlineEnd)];
 
     WriteSuperblock(image);
     WriteChunkTree(image);
@@ -319,9 +343,9 @@ public sealed class BtrfsWriter {
     WriteBlockChecksum(image, (int)this._extentTreeOff, NodeSize);
     WriteBlockChecksum(image, (int)this._csumTreeOff, NodeSize);
 
-    output.SetLength(image.Length);
     output.Position = 0;
     output.Write(image);
+    output.SetLength(this._totalSize);
 
     // Pass 2: stream each regular extent's bytes into its DATA-chunk slot.
     var buf = new byte[64 * 1024];
