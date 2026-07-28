@@ -38,12 +38,31 @@ public sealed class ApfsWriter {
   private const int ObjHeaderSize = 32;
   private const int BtreeInfoSize = 40;
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<FileEntry> _files = [];
   private long _minImageSize = MIN_APFS_IMAGE_SIZE;
   private string _volumeName = "CWB_Volume";
 
+  /// <summary>A file's payload: held inline, or opened on demand when it is too large to hold.</summary>
+  private readonly record struct FileEntry(string Name, long Size, byte[]? Data, Func<Stream>? Opener);
+
   /// <summary>Adds a file to be included in the volume image.</summary>
-  public void AddFile(string name, byte[] data) => this._files.Add((name, data));
+  public void AddFile(string name, byte[] data) {
+    ArgumentNullException.ThrowIfNull(data);
+    this._files.Add(new FileEntry(name, data.LongLength, data, null));
+  }
+
+  /// <summary>
+  /// Adds a file whose bytes are produced on demand. <paramref name="size" /> must
+  /// match what <paramref name="openStream" /> yields; the layout is settled from
+  /// it before a single byte is read, so a file larger than a byte[] can carry is
+  /// placed like any other.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    ArgumentOutOfRangeException.ThrowIfNegative(size);
+    this._files.Add(new FileEntry(name, size, null, openStream));
+  }
 
   /// <summary>
   /// Sets the APFS volume name written to the APSB <c>apfs_volname</c> field
@@ -72,8 +91,16 @@ public sealed class ApfsWriter {
 
     var full = new byte[totalBytes];
     prefix.CopyTo(full, 0);
-    foreach (var (offset, data) in dataWrites)
-      data.CopyTo(full, offset);
+    foreach (var (offset, entry) in dataWrites) {
+      if (entry.Data is { Length: > 0 } inline) { inline.CopyTo(full, offset); continue; }
+      using var src = entry.Opener!();
+      var written = 0L;
+      while (written < entry.Size) {
+        var n = src.Read(full, (int)(offset + written), (int)Math.Min(64 * 1024, entry.Size - written));
+        if (n <= 0) break;
+        written += n;
+      }
+    }
     return full;
   }
 
@@ -91,9 +118,20 @@ public sealed class ApfsWriter {
     output.Position = 0;
     output.Write(prefix);
     output.SetLength(totalBytes);
-    foreach (var (offset, data) in dataWrites) {
+
+    var buffer = new byte[64 * 1024];
+    foreach (var (offset, entry) in dataWrites) {
       output.Position = offset;
-      output.Write(data, 0, data.Length);
+      if (entry.Data is { Length: > 0 } inline) { output.Write(inline, 0, inline.Length); continue; }
+
+      using var src = entry.Opener!();
+      var remaining = entry.Size;
+      while (remaining > 0) {
+        var n = src.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
+        if (n <= 0) break;
+        output.Write(buffer, 0, n);
+        remaining -= n;
+      }
     }
     output.Flush();
   }
@@ -103,7 +141,7 @@ public sealed class ApfsWriter {
   /// Everything this writer emits other than file data lives below the first
   /// data block, so only that prefix has to be materialised.
   /// </summary>
-  private byte[] BuildCore(out List<(long Offset, byte[] Data)> dataWrites, out long totalBytes) {
+  private byte[] BuildCore(out List<(long Offset, FileEntry Entry)> dataWrites, out long totalBytes) {
     // ── Block layout (minimal, single checkpoint) ─────────────────────────
     //   0   — NX superblock
     //   1   — Checkpoint descriptor block #1: checkpoint map
@@ -161,11 +199,11 @@ public sealed class ApfsWriter {
     var fileDataStartBlock = dynamicStartBlock + extraLeafBlocks;
 
     // Compute image size (extra leaf nodes + file data blocks).
-    var fileDataBlocks = 0;
-    foreach (var (_, d) in this._files)
-      fileDataBlocks += (int)((d.Length + BlockSize - 1) / BlockSize);
+    var fileDataBlocks = 0L;
+    foreach (var entry in this._files)
+      fileDataBlocks += (entry.Size + BlockSize - 1) / BlockSize;
     var usedBlocks = fileDataStartBlock + fileDataBlocks;
-    var totalBlocks = Math.Max(usedBlocks + 1, (int)(this._minImageSize / BlockSize));
+    var totalBlocks = Math.Max(usedBlocks + 1, this._minImageSize / BlockSize);
     totalBytes = (long)totalBlocks * BlockSize;
 
     // Only the metadata prefix is materialised; file data is handed back to the
@@ -177,10 +215,10 @@ public sealed class ApfsWriter {
     dataWrites = [];
     var nextDataBlock = (ulong)fileDataStartBlock;
     foreach (var node in tree.Nodes) {
-      if (node.IsDir || node.Data is not { Length: > 0 } data)
+      if (node.IsDir || node.Payload is not { Size: > 0 } payload)
         continue;
-      var blocks = (ulong)((data.Length + BlockSize - 1) / BlockSize);
-      dataWrites.Add(((long)nextDataBlock * BlockSize, data));
+      var blocks = (ulong)((payload.Size + BlockSize - 1) / BlockSize);
+      dataWrites.Add(((long)nextDataBlock * BlockSize, payload));
       node.PhysBlock = nextDataBlock;
       nextDataBlock += blocks;
     }
@@ -689,7 +727,7 @@ public sealed class ApfsWriter {
     public required ulong ParentIno { get; init; }
     public required string Name { get; init; }
     public required bool IsDir { get; init; }
-    public byte[]? Data { get; init; }
+    public FileEntry? Payload { get; init; }
     /// <summary>Direct children (for directory inodes) used to compute nchildren.</summary>
     public int ChildCount { get; set; }
     /// <summary>First physical data block; assigned for non-empty regular files.</summary>
@@ -711,7 +749,7 @@ public sealed class ApfsWriter {
   /// with its own object id and a DIR_REC entry under its parent. The root
   /// directory (oid 2) is the implicit common parent.
   /// </summary>
-  private static FsTree BuildTree(IReadOnlyList<(string Name, byte[] Data)> files) {
+  private static FsTree BuildTree(IReadOnlyList<FileEntry> files) {
     var nodes = new List<FsNode>();
     // Map of directory path (forward-slash, no leading/trailing slash) → inode number.
     // The empty path is the root directory.
@@ -723,8 +761,8 @@ public sealed class ApfsWriter {
     var nextIno = APFS_MIN_USER_INO_NUM;
     var dirCount = 0UL; // does not include the root (counted separately in the superblock)
 
-    foreach (var (rawName, data) in files) {
-      var parts = rawName.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+    foreach (var entry in files) {
+      var parts = entry.Name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
       if (parts.Length == 0)
         continue;
 
@@ -752,7 +790,7 @@ public sealed class ApfsWriter {
       var fileIno = nextIno++;
       ++childCounts[parentIno];
       nodes.Add(new FsNode {
-        Ino = fileIno, ParentIno = parentIno, Name = fileName, IsDir = false, Data = data,
+        Ino = fileIno, ParentIno = parentIno, Name = fileName, IsDir = false, Payload = entry,
       });
     }
 
@@ -794,17 +832,17 @@ public sealed class ApfsWriter {
         BuildDrecValue(node.Ino, isDir: node.IsDir)));
 
       // The node's own inode.
-      var size = node.IsDir ? 0L : (node.Data?.LongLength ?? 0L);
+      var size = node.IsDir ? 0L : (node.Payload?.Size ?? 0L);
       list.Add((node.Ino, APFS_TYPE_INODE, string.Empty,
         BuildInodeKey(node.Ino),
         BuildInodeValue(node.Ino, parentId: node.ParentIno, size: size,
           isDir: node.IsDir, nchildren: node.IsDir ? (uint)node.ChildCount : 1u)));
 
       // FILE_EXTENT for non-empty regular files.
-      if (!node.IsDir && node.Data is { Length: > 0 } data) {
+      if (!node.IsDir && node.Payload is { Size: > 0 } payload) {
         list.Add((node.Ino, APFS_TYPE_FILE_EXTENT, string.Empty,
           BuildFileExtentKey(node.Ino, logicalOffset: 0),
-          BuildFileExtentValue(lengthBytes: (ulong)data.LongLength,
+          BuildFileExtentValue(lengthBytes: (ulong)payload.Size,
             physBlockNum: node.PhysBlock)));
       }
     }

@@ -84,7 +84,9 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      // Streamed, not buffered: an APFS file may exceed what a byte[] can hold.
+      using var target = CreateEntryFile(outputDir, e.Name);
+      r.ExtractTo(e, target);
     }
   }
 
@@ -124,12 +126,45 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var w = new ApfsWriter();
     var label = options?.GetOption("VolumeLabel", "") ?? "";
     if (!string.IsNullOrEmpty(label)) w.SetVolumeName(label);
-    foreach (var (name, data) in FlatFiles(inputs))
-      w.AddFile(name, data);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Names are flattened to their leaf, as this path has always done. Only the
+      // length is needed to lay the volume out, so a large input is handed over as
+      // a stream factory rather than read into a byte[].
+      var name = Path.GetFileName(info.ArchiveName);
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(name, bytes);
+      else
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+    }
     // BuildTo keeps free space sparse and streams file data into place, so the
     // volume is not bounded by what a byte[] can hold.
     if (output.CanSeek) { w.BuildTo(output); return; }
     output.Write(w.Build());
+  }
+
+  /// <summary>
+  /// Streaming creation: each input's length settles the layout, then its bytes
+  /// are copied into the block it was allocated. Nothing larger than one copy
+  /// buffer is resident, so an entry past what a byte[] can hold is placed like
+  /// any other.
+  /// </summary>
+  public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs,
+                                FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    if (!output.CanSeek)
+      throw new ArgumentException("APFS streaming creation requires a seekable output.", nameof(output));
+
+    var w = new ApfsWriter();
+    var label = options?.GetOption("VolumeLabel", "") ?? "";
+    if (!string.IsNullOrEmpty(label)) w.SetVolumeName(label);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      w.AddStreamingFile(Path.GetFileName(input.Name), input.Size, input.OpenStream);
+    }
+    w.BuildTo(output);
   }
 
   public void Defragment(Stream archive)

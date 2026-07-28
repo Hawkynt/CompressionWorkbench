@@ -126,6 +126,24 @@ public sealed class HpfsFormatDescriptor
     w.WriteTo(output);
   }
 
+  /// <summary>
+  /// Streaming creation: each input's length settles the layout, then its bytes
+  /// are copied into the sectors it was allocated, so an entry past what a byte[]
+  /// can hold never has to be materialised.
+  /// </summary>
+  public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs,
+                                FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+
+    var w = new HpfsWriter();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      w.AddStreamingFile(input.Name, input.Size, input.OpenStream);
+    }
+    w.WriteTo(output);
+  }
+
   // ── IArchiveModifiable (true in-place via HpfsInPlaceModifier) ────────
 
   /// <summary>

@@ -362,6 +362,26 @@ public sealed class ApfsReader : IDisposable {
   }
 
   /// <summary>
+  /// Copies an entry's bytes into <paramref name="destination" /> a block at a
+  /// time. An APFS file may be far larger than the byte[] <see cref="Extract" />
+  /// returns could hold.
+  /// </summary>
+  public void ExtractTo(ApfsEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsSymlink) {
+      var target = Encoding.UTF8.GetBytes(entry.LinkTarget ?? "");
+      destination.Write(target, 0, target.Length);
+      return;
+    }
+    if (entry.IsDirectory || entry.Size == 0 || entry.FirstBlock == 0) return;
+
+    var offset = (long)entry.FirstBlock * this._blockSize;
+    if (offset < 0 || offset + entry.Size > this._data.Length) return;
+    this._data.CopyTo(offset, destination, entry.Size);
+  }
+
+  /// <summary>
   /// Extracts the raw data of a file entry by resolving its file-extent
   /// record's physical block number.
   /// </summary>

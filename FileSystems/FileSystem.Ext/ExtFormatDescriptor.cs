@@ -329,7 +329,9 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       ? options.GetOptionInt("BlockSize", 4096)
       : w.SelectOptimalBlockSize(inodeSize);
     if (output.CanSeek) {
-      w.BuildToStreaming(output, blockSize, totalBlocks: 4096, version, journal, volumeLabel, inodeSize);
+      // Auto-sized, not a fixed 4096 blocks: that is ~16 MB at a 4 KB block, so
+      // any payload beyond it ran the allocator out of blocks.
+      w.BuildToStreamingAutoSized(output, blockSize, version, journal, volumeLabel, inodeSize);
       return;
     }
     // Size the volume to the payload. A fixed 4096-block image is ~16 MB at a
