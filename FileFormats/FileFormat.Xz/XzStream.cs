@@ -94,9 +94,14 @@ public sealed class XzStream : CompressionStream {
       this._headerRead = true;
     }
 
-    if (this._decompressedData == null || this._decompressPos >= this._decompressedData.Length) {
-      this._finished = true;
-      return 0;
+    // Current stream drained: a .xz file may hold several streams back to back
+    // (that is how a large payload is written without buffering all of it), so
+    // continue into the next one when present.
+    while (this._decompressedData == null || this._decompressPos >= this._decompressedData.Length) {
+      if (!this.TryStartNextStream()) {
+        this._finished = true;
+        return 0;
+      }
     }
 
     var available = this._decompressedData.Length - this._decompressPos;
@@ -106,9 +111,23 @@ public sealed class XzStream : CompressionStream {
     return toCopy;
   }
 
+  /// <summary>
+  /// Input accumulated before a complete .xz stream is emitted. The encoder holds
+  /// the whole stream in memory, so without a cap a large payload both exhausts
+  /// the array limit and scales memory with the input.
+  /// </summary>
+  private const long StreamFlushThreshold = 64L * 1024 * 1024;
+
   /// <inheritdoc />
   protected override void CompressBlock(byte[] buffer, int offset, int count) {
     this._compressBuffer!.Write(buffer, offset, count);
+
+    // .xz files may hold concatenated streams, so closing the current one and
+    // starting another is a valid continuation that xz(1) reads back as one file.
+    if (this._compressBuffer.Length >= StreamFlushThreshold) {
+      this.FinishCompression();
+      this._compressBuffer.SetLength(0);
+    }
   }
 
   /// <inheritdoc />
@@ -212,6 +231,39 @@ public sealed class XzStream : CompressionStream {
         break;
       default:
         throw new NotSupportedException($"Check type 0x{this._checkType:X2} not supported.");
+    }
+  }
+
+  /// <summary>
+  /// Consumes the stream padding and header of a following .xz stream when one is
+  /// present, decoding it into the serve buffer. Returns false at end of input.
+  /// </summary>
+  private bool TryStartNextStream() {
+    if (!InnerStream.CanSeek) return false;
+
+    // Streams are separated by padding to a 4-byte multiple, then the 6-byte magic.
+    Span<byte> magic = stackalloc byte[6];
+    while (true) {
+      var start = InnerStream.Position;
+      var read = 0;
+      while (read < magic.Length) {
+        var n = InnerStream.Read(magic[read..]);
+        if (n <= 0) return false;
+        read += n;
+      }
+
+      // Skip 4-byte zero padding blocks between streams.
+      if (magic[0] == 0 && magic[1] == 0 && magic[2] == 0 && magic[3] == 0) {
+        InnerStream.Position = start + 4;
+        continue;
+      }
+
+      for (var i = 0; i < XzConstants.StreamHeaderMagic.Length; ++i)
+        if (magic[i] != XzConstants.StreamHeaderMagic[i]) return false;
+
+      InnerStream.Position = start;
+      DecompressAll();
+      return this._decompressedData is { Length: > 0 };
     }
   }
 

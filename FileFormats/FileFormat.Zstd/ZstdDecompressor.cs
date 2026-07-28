@@ -18,10 +18,11 @@ internal sealed class ZstdDecompressor {
   private int _outputAvailable;
   private bool _finished;
   private bool _lastBlockSeen;
-  private readonly bool _verifyChecksum;
+  private bool _verifyChecksum;
 
-  private readonly SlidingWindow _window;
-  private readonly XxHash64 _hasher;
+  private readonly ZstdDictionary? _dictionary;
+  private SlidingWindow _window;
+  private XxHash64 _hasher;
   private int[] _repeatOffsets;
   private ZstdHuffmanLiterals.HuffTable? _huffmanTable;
   private FseTable? _prevLlTable;
@@ -36,6 +37,11 @@ internal sealed class ZstdDecompressor {
   /// <exception cref="InvalidDataException">The frame header is invalid.</exception>
   public ZstdDecompressor(Stream input, ZstdDictionary? dictionary = null) {
     this._input = input;
+    this._dictionary = dictionary;
+    this._window = null!;
+    this._hasher = null!;
+    this._repeatOffsets = [1, 4, 8];
+    this._outputBuffer = [];
 
     // Read frame magic
     Span<byte> magicBuf = stackalloc byte[4];
@@ -43,6 +49,21 @@ internal sealed class ZstdDecompressor {
     var magic = BinaryPrimitives.ReadUInt32LittleEndian(magicBuf);
     if (magic != ZstdConstants.FrameMagic)
       throw new InvalidDataException($"Invalid Zstandard frame magic: 0x{magic:X8}");
+
+    this.BeginFrame(dictionary);
+  }
+
+  /// <summary>
+  /// Reads the frame header that follows an already-consumed frame magic and resets
+  /// the per-frame decode state.
+  /// </summary>
+  /// <remarks>
+  /// A .zst file is a <em>sequence</em> of frames, not necessarily one. The encoder
+  /// emits a new frame every so often when streaming, so stopping at the first one
+  /// would truncate the output.
+  /// </remarks>
+  private void BeginFrame(ZstdDictionary? dictionary) {
+    var input = this._input;
 
     // Read frame header
     var header = ZstdFrameHeader.Read(input, out _);
@@ -64,6 +85,7 @@ internal sealed class ZstdDecompressor {
     this._outputBuffer = [];
     this._outputPos = 0;
     this._outputAvailable = 0;
+    this._lastBlockSeen = false;
 
     // Apply dictionary: prepopulate window and set repeat offsets
     if (dictionary != null) {
@@ -104,8 +126,10 @@ internal sealed class ZstdDecompressor {
         continue;
       }
 
-      // If we've seen the last block and the buffer is exhausted, we're done
+      // Frame exhausted: continue into the next frame when one follows, since a
+      // .zst file may hold a sequence of them.
       if (this._lastBlockSeen) {
+        if (this.TryStartNextFrame()) continue;
         this._finished = true;
         break;
       }
@@ -115,6 +139,25 @@ internal sealed class ZstdDecompressor {
     }
 
     return totalRead;
+  }
+
+  /// <summary>
+  /// Consumes a following frame magic when one is present, resetting per-frame state.
+  /// Returns false at end of input, or when the next bytes are not a frame magic.
+  /// </summary>
+  private bool TryStartNextFrame() {
+    Span<byte> magicBuf = stackalloc byte[4];
+    var read = 0;
+    while (read < 4) {
+      var n = this._input.Read(magicBuf[read..]);
+      if (n <= 0) return false;
+      read += n;
+    }
+    if (BinaryPrimitives.ReadUInt32LittleEndian(magicBuf) != ZstdConstants.FrameMagic)
+      return false;
+
+    this.BeginFrame(this._dictionary);
+    return true;
   }
 
   /// <summary>

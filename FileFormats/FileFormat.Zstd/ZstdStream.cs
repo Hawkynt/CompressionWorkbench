@@ -56,14 +56,33 @@ public sealed class ZstdStream : CompressionStream {
     return this._decompressor.Read(buffer, offset, count);
   }
 
+  /// <summary>
+  /// Input accumulated per frame before one is emitted. ZstdCompressor holds the
+  /// whole frame in memory, so without a cap a large payload both exhausts the
+  /// array limit and scales memory with the input.
+  /// </summary>
+  private const long FrameFlushThreshold = 64L * 1024 * 1024;
+
+  private long _pendingFrameBytes;
+
   /// <inheritdoc />
   protected override void CompressBlock(byte[] buffer, int offset, int count) {
     if (!this._initialized) {
       this._compressor = new ZstdCompressor(InnerStream, this._compressionLevel, this._dictionary);
       this._initialized = true;
+      this._pendingFrameBytes = 0;
     }
 
     this._compressor!.Write(buffer.AsSpan(offset, count));
+    this._pendingFrameBytes += count;
+
+    // A .zst file is a sequence of frames, so closing the current one and opening
+    // another is a valid continuation that every compliant decoder concatenates.
+    if (this._pendingFrameBytes >= FrameFlushThreshold) {
+      this._compressor.Finish();
+      this._compressor = new ZstdCompressor(InnerStream, this._compressionLevel, this._dictionary);
+      this._pendingFrameBytes = 0;
+    }
   }
 
   /// <inheritdoc />
