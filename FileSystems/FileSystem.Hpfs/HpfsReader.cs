@@ -245,6 +245,23 @@ public sealed class HpfsReader : IDisposable {
     return _data.ReadUInt32(off + 0xC4 + 8);
   }
 
+  /// <summary>
+  /// Copies <paramref name="entry" />'s bytes into <paramref name="destination" />,
+  /// a block at a time. HPFS records a file size as a uint32, so an entry can be
+  /// up to 4 GB — more than <see cref="Extract" /> can return in an array.
+  /// </summary>
+  public void ExtractTo(HpfsEntry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory) return;
+    if (entry.IsBtreeFile) return;  // scope cut: B-tree allocation not yet supported
+    if (entry.DataLba == 0 || entry.Size == 0) return;
+
+    var off = LbaOffset(entry.DataLba);
+    if (off < 0 || off + entry.Size > _data.Length) return;
+    _data.CopyTo(off, destination, entry.Size);
+  }
+
   public byte[] Extract(HpfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];

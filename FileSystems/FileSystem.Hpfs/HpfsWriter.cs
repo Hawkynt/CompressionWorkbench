@@ -30,7 +30,7 @@ namespace FileSystem.Hpfs;
 /// </summary>
 internal sealed class HpfsWriter {
 
-  private readonly List<(string Name, byte[] Data)> _files = [];
+  private readonly List<(string Name, long Size, byte[]? Data, Func<Stream>? Opener)> _files = [];
 
   internal const int LbaSize = 512;
   internal const int DirBlockLbas = 4; // 2048 bytes per dir block
@@ -76,7 +76,13 @@ internal sealed class HpfsWriter {
   private sealed class TreeNode {
     public required string Name;
     public bool IsDirectory;
-    public byte[] Data = [];
+
+    // A file's payload is either held inline or opened on demand. Streaming keeps
+    // a multi-gigabyte volume off the heap: the writer only ever needs the length
+    // up front, and copies the bytes straight into the output at layout time.
+    public byte[]? Data;
+    public Func<Stream>? Opener;
+    public long DataLength;
 
     // Children of a directory, keyed by lower-cased segment name (HPFS is
     // case-insensitive but case-preserving; dirents are sorted by name).
@@ -104,18 +110,103 @@ internal sealed class HpfsWriter {
     ArgumentNullException.ThrowIfNull(data);
     if (string.IsNullOrEmpty(Path.GetFileName(name.Replace('\\', '/'))))
       throw new ArgumentException("File name must not be empty.", nameof(name));
-    _files.Add((name, data));
+    _files.Add((name, data.LongLength, data, null));
+  }
+
+  /// <summary>
+  /// Adds a file whose bytes are produced on demand. <paramref name="size" /> must
+  /// match what <paramref name="openStream" /> yields; the layout is computed from
+  /// it before a single byte is read.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    ArgumentOutOfRangeException.ThrowIfNegative(size);
+    if (string.IsNullOrEmpty(Path.GetFileName(name.Replace('\\', '/'))))
+      throw new ArgumentException("File name must not be empty.", nameof(name));
+    _files.Add((name, size, null, openStream));
   }
 
   /// <summary>Builds the HPFS image and returns the raw bytes.</summary>
+  /// <exception cref="InvalidOperationException">The volume is larger than a byte[] can hold.</exception>
   public byte[] Build() {
+    var prefix = BuildCore(out var dataWrites, out var totalBytes);
+    if (totalBytes > Array.MaxLength)
+      throw new InvalidOperationException(
+        $"HPFS: a {totalBytes:N0}-byte volume exceeds the array limit; use WriteTo with a seekable stream.");
+
+    var image = new byte[totalBytes];
+    prefix.CopyTo(image.AsSpan());
+    foreach (var (offset, node) in dataWrites) {
+      if (node.Data is { Length: > 0 } inline) {
+        inline.CopyTo(image.AsSpan((int)offset));
+        continue;
+      }
+      using var src = node.Opener!();
+      var written = 0L;
+      while (written < node.DataLength) {
+        var n = src.Read(image, (int)(offset + written), (int)Math.Min(64 * 1024, node.DataLength - written));
+        if (n <= 0) break;
+        written += n;
+      }
+    }
+    return image;
+  }
+
+  /// <summary>Writes the image to a stream.</summary>
+  /// <remarks>
+  /// A seekable target gets the metadata prefix followed by each file's bytes
+  /// placed at its own offset, so nothing larger than one copy buffer is ever
+  /// resident. Only a non-seekable target has to materialise the whole volume.
+  /// </remarks>
+  public void WriteTo(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek) {
+      var data = Build();
+      output.Write(data, 0, data.Length);
+      return;
+    }
+
+    var prefix = BuildCore(out var dataWrites, out var totalBytes);
+    var basePosition = output.Position;
+    output.Write(prefix, 0, prefix.Length);
+    output.SetLength(basePosition + totalBytes);
+
+    var buffer = new byte[64 * 1024];
+    foreach (var (offset, node) in dataWrites) {
+      output.Position = basePosition + offset;
+      if (node.Data is { Length: > 0 } inline) {
+        output.Write(inline, 0, inline.Length);
+        continue;
+      }
+
+      using var src = node.Opener!();
+      var remaining = node.DataLength;
+      while (remaining > 0) {
+        var n = src.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
+        if (n <= 0) break;
+        output.Write(buffer, 0, n);
+        remaining -= n;
+      }
+    }
+    output.Position = basePosition + totalBytes;
+  }
+
+  /// <summary>
+  /// Lays the volume out and materialises everything except file payloads: boot
+  /// sector, superblock, bitmaps, fnodes and dirent blocks. Metadata is allocated
+  /// before any file data, so it forms a prefix whose size depends on the file
+  /// count rather than on the volume size.
+  /// </summary>
+  /// <param name="dataWrites">Where each file's bytes belong, in image order.</param>
+  /// <param name="totalBytes">Full size of the finished volume.</param>
+  private byte[] BuildCore(out List<(long Offset, TreeNode Node)> dataWrites, out long totalBytes) {
     var root = BuildTree();
 
-    // Layout pass: assign LBAs depth-first. For each directory we reserve an
-    // fnode (1 LBA) and a dirent block (DirBlockLbas). For each file we reserve
-    // an fnode (1 LBA) and its data (rounded up to whole LBAs). The root's fnode
-    // and dirent block sit at their fixed LBAs; everything else flows from
-    // FirstAllocLba.
+    // Layout pass one: fnodes and dirent blocks. For each directory we reserve an
+    // fnode (1 LBA) and a dirent block (DirBlockLbas); for each file an fnode. The
+    // root's fnode and dirent block sit at their fixed LBAs; everything else flows
+    // from FirstAllocLba.
     var nextLba = FirstAllocLba;
     root.FnodeLba = RootFnodeLba;
     root.DirBlockLba = RootDirLba;
@@ -126,10 +217,17 @@ internal sealed class HpfsWriter {
       root.LeafBlockLbas.Add(nextLba);
       nextLba += DirBlockLbas;
     }
-    AssignLbas(root, ref nextLba, isRoot: true);
+    AssignMetadataLbas(root, ref nextLba);
+    var metadataLbas = nextLba;
+
+    // Layout pass two: file data, after all metadata.
+    dataWrites = [];
+    AssignDataLbas(root, ref nextLba, dataWrites);
 
     var totalLbas = Math.Max(nextLba, 128u); // minimum 64 KB image
-    var image = new byte[(long)totalLbas * LbaSize];
+    totalBytes = (long)totalLbas * LbaSize;
+
+    var image = new byte[(long)Math.Max(metadataLbas, 128u) * LbaSize];
 
     WriteBootSector(image);
     WriteSuperblock(image, totalLbas);
@@ -137,23 +235,17 @@ internal sealed class HpfsWriter {
     WriteBitmap(image, nextLba);
     WriteDirBandBitmap(image);
 
-    // Emit the whole tree (fnodes, dir blocks, file data).
+    // Emit the whole tree (fnodes, dir blocks); file data is left to the caller.
     WriteNode(image, root, parentFnodeLba: RootFnodeLba);
 
     return image;
-  }
-
-  /// <summary>Writes the image to a stream.</summary>
-  public void WriteTo(Stream output) {
-    var data = Build();
-    output.Write(data, 0, data.Length);
   }
 
   /// <summary>Assembles the flat file list into a directory tree.</summary>
   private TreeNode BuildTree() {
     var root = new TreeNode { Name = "", IsDirectory = true };
 
-    foreach (var (rawName, data) in _files) {
+    foreach (var (rawName, size, data, opener) in _files) {
       var normalized = rawName.Replace('\\', '/').Trim('/');
       var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
       if (segments.Length == 0) continue;
@@ -171,33 +263,47 @@ internal sealed class HpfsWriter {
 
       var leaf = segments[^1];
       // Last writer wins on a name clash; ignore a file colliding with a dir.
-      cursor.Children[leaf] = new TreeNode { Name = leaf, IsDirectory = false, Data = data };
+      cursor.Children[leaf] = new TreeNode {
+        Name = leaf, IsDirectory = false, Data = data, Opener = opener, DataLength = size,
+      };
     }
 
     return root;
   }
 
-  /// <summary>Depth-first LBA assignment for the whole tree.</summary>
-  private void AssignLbas(TreeNode node, ref uint nextLba, bool isRoot) {
+  /// <summary>Depth-first LBA assignment for fnodes and dirent blocks only.</summary>
+  private void AssignMetadataLbas(TreeNode node, ref uint nextLba) {
     foreach (var child in node.Children.Values) {
       child.FnodeLba = nextLba++;
-      if (child.IsDirectory) {
-        child.DirBlockLba = nextLba;
+      if (!child.IsDirectory) continue;
+
+      child.DirBlockLba = nextLba;
+      nextLba += DirBlockLbas;
+      // If the child's own children overflow one dirent block, reserve extra
+      // leaf dirent blocks so the directory becomes a 2-level B-tree.
+      var extraLeaves = CountOverflowLeaves(child);
+      for (var i = 0; i < extraLeaves; i++) {
+        child.LeafBlockLbas.Add(nextLba);
         nextLba += DirBlockLbas;
-        // If the child's own children overflow one dirent block, reserve extra
-        // leaf dirent blocks so the directory becomes a 2-level B-tree.
-        var extraLeaves = CountOverflowLeaves(child);
-        for (var i = 0; i < extraLeaves; i++) {
-          child.LeafBlockLbas.Add(nextLba);
-          nextLba += DirBlockLbas;
-        }
-        AssignLbas(child, ref nextLba, isRoot: false);
-      } else {
-        var dataLbas = (uint)((child.Data.Length + LbaSize - 1) / LbaSize);
-        child.DataLenLbas = dataLbas;
-        child.DataLba = nextLba;
-        nextLba += dataLbas;
       }
+      AssignMetadataLbas(child, ref nextLba);
+    }
+  }
+
+  /// <summary>Depth-first LBA assignment for file data, run after all metadata.</summary>
+  private static void AssignDataLbas(TreeNode node, ref uint nextLba, List<(long Offset, TreeNode Node)> dataWrites) {
+    foreach (var child in node.Children.Values) {
+      if (child.IsDirectory) {
+        AssignDataLbas(child, ref nextLba, dataWrites);
+        continue;
+      }
+
+      var dataLbas = (uint)((child.DataLength + LbaSize - 1) / LbaSize);
+      child.DataLenLbas = dataLbas;
+      child.DataLba = nextLba;
+      nextLba += dataLbas;
+      if (child.DataLength > 0)
+        dataWrites.Add(((long)child.DataLba * LbaSize, child));
     }
   }
 
@@ -211,8 +317,6 @@ internal sealed class HpfsWriter {
         WriteNode(image, child, parentFnodeLba: node.FnodeLba);
     } else {
       WriteFileFnode(image, node.FnodeLba, node.DataLba, node.DataLenLbas, parentFnodeLba);
-      if (node.Data.Length > 0)
-        Buffer.BlockCopy(node.Data, 0, image, (int)(node.DataLba * LbaSize), node.Data.Length);
     }
   }
 
@@ -448,7 +552,7 @@ internal sealed class HpfsWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(cursor + 2, 2), flags);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(cursor + 4, 4), child.FnodeLba);
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(cursor + 12, 4),
-      child.IsDirectory ? 0u : (uint)child.Data.Length);
+      child.IsDirectory ? 0u : (uint)Math.Min(child.DataLength, uint.MaxValue));
     image[cursor + 30] = (byte)nameBytes.Length;
     nameBytes.CopyTo(image.AsSpan(cursor + 31, nameBytes.Length));
 

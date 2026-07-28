@@ -207,9 +207,10 @@ public class HpfsInPlaceModifyTests {
     Assert.That(changed, Does.Contain((int)RootDirLba));
 
     // KEEP.TXT's fnode + data sectors must stay byte-identical.
-    // Layout: writer assigns fnodes/data depth-first sorted by name.
-    // After sorting: DELETE.TXT (fnode=32, data=33), KEEP.TXT (fnode=34, data=35).
-    Assert.That(changed, Does.Not.Contain(34),
+    // Layout: the writer allocates all fnodes first, then all file data, both
+    // depth-first sorted by name. After sorting: fnodes DELETE.TXT=32,
+    // KEEP.TXT=33; data DELETE.TXT=34, KEEP.TXT=35.
+    Assert.That(changed, Does.Not.Contain(33),
       "Surviving file's FNODE must stay byte-identical");
     Assert.That(changed, Does.Not.Contain(35),
       "Surviving file's data must stay byte-identical");
@@ -406,8 +407,8 @@ public class HpfsInPlaceModifyTests {
     Assert.That(after, Has.Length.EqualTo(before.Length),
       "In-place Remove must preserve total image size");
     var changed = ChangedSectors(before, after);
-    // KEEP.TXT survives at LBA 34/35.
-    Assert.That(changed, Does.Not.Contain(34));
+    // KEEP.TXT survives: fnode at LBA 33 (second of the two fnodes), data at 35.
+    Assert.That(changed, Does.Not.Contain(33));
     Assert.That(changed, Does.Not.Contain(35));
   }
 

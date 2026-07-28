@@ -69,7 +69,10 @@ public sealed class HpfsFormatDescriptor
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
       if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+      // Streamed, not buffered: an HPFS file may be up to 4 GB, which no byte[]
+      // returned by Extract could hold.
+      using var target = CreateEntryFile(outputDir, e.Name);
+      r.ExtractTo(e, target);
     }
   }
 
@@ -109,8 +112,17 @@ public sealed class HpfsFormatDescriptor
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new HpfsWriter();
-    foreach (var (name, data) in FilesOnly(inputs))
-      w.AddFile(name, data);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Only the length is needed to lay the volume out; reading a multi-gigabyte
+      // input into a byte[] just to hand it over would cap the volume at 2 GB.
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(info.ArchiveName, bytes);
+      else
+        w.AddStreamingFile(info.ArchiveName, new FileInfo(info.FullPath).Length,
+          () => File.OpenRead(info.FullPath));
+    }
     w.WriteTo(output);
   }
 
