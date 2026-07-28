@@ -47,6 +47,12 @@ public sealed class LustreReader : IDisposable {
   private readonly List<LustreEntry> _entries = [];
   private ExtReader? _extReader;
 
+  /// <summary>
+  /// Backing stream for <see cref="_extReader" />. ExtReader reads the image on
+  /// demand rather than copying it, so the stream has to outlive it.
+  /// </summary>
+  private MemoryStream? _extStream;
+
   public IReadOnlyList<LustreEntry> Entries => _entries;
   public string Tag { get; private set; } = "";
   public uint TrailingWord { get; private set; }
@@ -117,10 +123,10 @@ public sealed class LustreReader : IDisposable {
     this.ValidHeader = true;
     this.Tag = "ldiskfs";
 
-    // Delegate the file walk to ExtReader.
-    using (var s = new MemoryStream(_data, writable: false)) {
-      _extReader = new ExtReader(s);
-    }
+    // Delegate the file walk to ExtReader. The stream is kept open for the
+    // reader's lifetime and disposed alongside it.
+    _extStream = new MemoryStream(_data, writable: false);
+    _extReader = new ExtReader(_extStream);
 
     // Synthetic metadata first.
     var meta = BuildLdiskfsMetadata();
@@ -186,5 +192,7 @@ public sealed class LustreReader : IDisposable {
 
   public void Dispose() {
     _extReader?.Dispose();
+    _extStream?.Dispose();
+    _extStream = null;
   }
 }
