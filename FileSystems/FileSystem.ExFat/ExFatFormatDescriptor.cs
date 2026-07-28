@@ -243,6 +243,13 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     var clusterBytes = ParseExFatClusterSize(specific?.GetValueOrDefault("ClusterSize"));
     var volumeLabel = options.GetOption("VolumeLabel", "");
 
+    // BuildTo keeps free space sparse, so an explicitly-sized volume costs only its
+    // contents and is not bounded by what a byte[] can hold.
+    if (sizeMB > 0 && output.CanSeek) {
+      w.BuildTo(output, sizeMB, clusterBytes, volumeLabel);
+      return;
+    }
+
     var disk = sizeMB > 0
       ? w.Build(sizeMB, clusterBytes, volumeLabel)
       : w.BuildAutoSized(clusterBytes, volumeLabel);
@@ -285,6 +292,13 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       w.BuildToStreaming(output, clusterBytes, volumeLabel);
       return;
     }
+    // BuildTo keeps free space sparse, so an explicitly-sized volume costs only its
+    // contents and is not bounded by what a byte[] can hold.
+    if (sizeMB > 0 && output.CanSeek) {
+      w.BuildTo(output, sizeMB, clusterBytes, volumeLabel);
+      return;
+    }
+
     var disk = sizeMB > 0
       ? w.Build(sizeMB, clusterBytes, volumeLabel)
       : w.BuildAutoSized(clusterBytes, volumeLabel);

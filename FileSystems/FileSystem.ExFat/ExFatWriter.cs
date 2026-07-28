@@ -55,7 +55,7 @@ public sealed class ExFatWriter {
   /// <param name="volumeLabel">Volume label written into the root directory as a Volume Label
   /// Directory Entry (type 0x83). Null/empty still emits the entry with character count 0.</param>
   public byte[] BuildAutoSized(int requestedClusterBytes = 0, string? volumeLabel = null)
-    => BuildAutoSizedCore(requestedClusterBytes, volumeLabel, out _);
+    => Materialise(BuildAutoSizedCore(requestedClusterBytes, volumeLabel, out _));
 
   private byte[] BuildAutoSizedCore(int requestedClusterBytes, string? volumeLabel, out DirNode builtTree) {
     var fileSizes = _files.Select(f => f.StreamingSize ?? (long)f.Data.Length).ToList();
@@ -97,7 +97,48 @@ public sealed class ExFatWriter {
   /// Directory Entry (type 0x83). Null/empty still emits the entry with character count 0
   /// to match Windows format.com behaviour.</param>
   public byte[] Build(int totalSizeMB = 8, int requestedClusterBytes = 0, string? volumeLabel = null)
-    => BuildCore(totalSizeMB, requestedClusterBytes, volumeLabel, out _);
+    => Materialise(BuildCore(totalSizeMB, requestedClusterBytes, volumeLabel, out _));
+
+  /// <summary>
+  /// Declared volume size in bytes of the most recent build. <see cref="BuildCore" />
+  /// materialises only the written prefix, so a caller holding that prefix must extend
+  /// its output to this length; the free space past the prefix is sparse zeros.
+  /// </summary>
+  public long DeclaredVolumeBytes { get; private set; }
+
+  /// <summary>
+  /// Expands a written prefix to the full declared volume, for callers that need a
+  /// complete in-memory image.
+  /// </summary>
+  /// <exception cref="NotSupportedException">
+  /// The volume is larger than a single array can hold. Use
+  /// <see cref="BuildTo(Stream,int,int,string)" />, which never materialises free space.
+  /// </exception>
+  private byte[] Materialise(byte[] prefix) {
+    var declared = this.DeclaredVolumeBytes;
+    if (declared <= prefix.Length) return prefix;
+    if (declared > Array.MaxLength)
+      throw new NotSupportedException(
+        $"An exFAT volume of {declared:N0} bytes cannot be materialised in memory; " +
+        "use BuildTo(Stream, ...) so the free space stays sparse.");
+    var full = new byte[declared];
+    prefix.CopyTo(full, 0);
+    return full;
+  }
+
+  /// <summary>
+  /// Writes the volume to <paramref name="output" />, emitting only the region that
+  /// actually carries data and then extending the stream to the declared size. Free
+  /// space costs nothing, so volumes far past the in-memory limit are producible.
+  /// </summary>
+  public void BuildTo(Stream output, int totalSizeMB = 8, int requestedClusterBytes = 0,
+                      string? volumeLabel = null) {
+    ArgumentNullException.ThrowIfNull(output);
+    var prefix = BuildCore(totalSizeMB, requestedClusterBytes, volumeLabel, out _);
+    output.Write(prefix);
+    if (output.CanSeek && this.DeclaredVolumeBytes > prefix.Length)
+      output.SetLength(this.DeclaredVolumeBytes);
+  }
 
   /// <summary>
   /// Two-pass streaming Build: pass 1 derives cluster geometry from the
@@ -134,7 +175,9 @@ public sealed class ExFatWriter {
       throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
 
     var disk = BuildAutoSizedCore(requestedClusterBytes, volumeLabel, out var builtTree);
-    output.SetLength(disk.Length);
+    // BuildAutoSizedCore returns only the written prefix; the volume must be extended
+    // to the size its VBR declares or fsck reports "too large sector count".
+    output.SetLength(Math.Max(disk.Length, this.DeclaredVolumeBytes));
     output.Position = 0;
     output.Write(disk);
 
@@ -190,7 +233,10 @@ public sealed class ExFatWriter {
     const int fatOffsetSectors = 24;
     const int fatCount = 1;
 
-    var totalBytes = totalSizeMB * 1024 * 1024;
+    // 64-bit: totalSizeMB * 1024 * 1024 overflows int at 2 GB, and exFAT volumes
+    // routinely run far past that -- it is the format of choice for large removable
+    // media precisely because FAT32 cannot.
+    var totalBytes = (long)totalSizeMB * 1024 * 1024;
     var totalSectors = totalBytes / bytesPerSector;
 
     // First-pass FAT sizing, then fix-up once we know final cluster count.
@@ -199,39 +245,73 @@ public sealed class ExFatWriter {
     var clusterCount = (totalSectors - clusterHeapOffsetSectors) / sectorsPerCluster;
 
     var fatBytesNeeded = (clusterCount + 2) * 4;
-    fatLengthSectors = ((int)fatBytesNeeded + bytesPerSector - 1) / bytesPerSector;
+    fatLengthSectors = (int)((fatBytesNeeded + bytesPerSector - 1) / bytesPerSector);
     clusterHeapOffsetSectors = fatOffsetSectors + fatLengthSectors;
     clusterCount = (totalSectors - clusterHeapOffsetSectors) / sectorsPerCluster;
 
-    var disk = new byte[totalBytes];
+    // Everything this writer emits -- both boot regions, the FAT, the allocation
+    // bitmap, the up-case table, the directory tree and the file data -- lives in a
+    // prefix at the start of the volume; nothing is written near the end. So only
+    // that prefix is materialised, and the caller extends the file to totalBytes.
+    // Allocating totalBytes instead would cap exFAT at the ~2 GB array limit while
+    // wasting memory proportional to the volume rather than to its contents.
+    // The allocation bitmap holds one bit per cluster and so grows with the volume;
+    // its clusters sit between the root directory and the up-case table, and the
+    // materialised prefix has to cover them.
+    var bitmapSizeBytes = (int)((clusterCount + 7) / 8);
+    var bitmapClusterCount = (uint)Math.Max(1, (bitmapSizeBytes + clusterSize - 1) / clusterSize);
+
+    var dataClusters = _files.Sum(f => {
+      var sz = f.StreamingSize ?? (long)f.Data.Length;
+      return sz <= 0 ? 1L : (sz + clusterSize - 1) / clusterSize;
+    });
+    // root dir + allocation bitmap + up-case table, one cluster per directory
+    // (bounded above by the file count), the data itself, and headroom.
+    var metaClusters = 8L + bitmapClusterCount + _files.Count + dataClusters;
+    var heapStart = (long)clusterHeapOffsetSectors * bytesPerSector;
+    var prefixBytes = Math.Min(totalBytes, heapStart + (metaClusters + 16) * clusterSize);
+    if (prefixBytes < heapStart + clusterSize) prefixBytes = Math.Min(totalBytes, heapStart + clusterSize);
+
+    this.DeclaredVolumeBytes = totalBytes;
+    var disk = new byte[prefixBytes];
     var nowStamp = BuildExFatTimestamp(DateTime.UtcNow);
     var volumeSerial = unchecked((uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds());
 
-    // Cluster 2 = root dir, 3 = alloc bitmap, 4 = upcase. Single-cluster chains for each.
+    // Cluster 2 = root dir, then the allocation bitmap, then the up-case table.
+    // The bitmap holds one bit per cluster, so it outgrows a single cluster as
+    // soon as the volume exceeds clusterSize * 8 clusters -- 128 MB at a 4 KB
+    // cluster. Pinning it to one cluster made every larger volume overlap the
+    // up-case table, which chkdsk/fsck.exfat reports as "cluster is already
+    // allocated for the other file". Size its chain from the cluster count.
     var fatOffset = fatOffsetSectors * bytesPerSector;
+    const uint bitmapCluster = 3u;
+    var bitmapSize = bitmapSizeBytes;
+    var bitmapClusters = bitmapClusterCount;
+    var upcaseCluster = bitmapCluster + bitmapClusters;
+
     BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(fatOffset), 0xFFFFFFF8);    // media type
     BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(fatOffset + 4), EocMarker); // reserved
     BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(fatOffset + 2 * 4), EocMarker); // root EOC
-    BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(fatOffset + 3 * 4), EocMarker); // bitmap EOC
-    BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(fatOffset + 4 * 4), EocMarker); // upcase EOC
+    // Bitmap chain: each cluster points at the next, the last one terminates.
+    for (var i = 0u; i < bitmapClusters; ++i) {
+      var entry = bitmapCluster + i;
+      var next = i + 1 < bitmapClusters ? entry + 1 : EocMarker;
+      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(fatOffset + (int)entry * 4), next);
+    }
+    BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(fatOffset + (int)upcaseCluster * 4), EocMarker);
 
-    var nextCluster = 5u;
+    var nextCluster = upcaseCluster + 1;
     var clusterHeapOffset = clusterHeapOffsetSectors * bytesPerSector;
 
-    // --- Up-Case Table (cluster 4): minimal ASCII identity with upper-case transform. ---
+    // --- Up-Case Table: minimal ASCII identity with upper-case transform. ---
     const int upcaseEntries = 128;
     const int upcaseBytes = upcaseEntries * 2;
-    const uint upcaseCluster = 4u;
     var upcaseOffset = clusterHeapOffset + (int)(upcaseCluster - 2) * clusterSize;
     for (var i = 0; i < upcaseEntries; ++i) {
       var ch = (ushort)(i >= 'a' && i <= 'z' ? i - 32 : i);
       BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(upcaseOffset + i * 2), ch);
     }
     var upcaseChecksum = TableChecksum(disk.AsSpan(upcaseOffset, upcaseBytes));
-
-    // --- Allocation Bitmap (cluster 3) — filled once all clusters are known. ---
-    const uint bitmapCluster = 3u;
-    var bitmapSize = ((int)clusterCount + 7) / 8;
 
     // --- Directory tree ---
     // Files whose name carries '/' path separators belong inside a directory
@@ -246,7 +326,7 @@ public sealed class ExFatWriter {
     // subdirectory chains starts after bitmap (3) and upcase (4). The volume
     // label, if any, lives as a 0x83 entry inside the root's entry region —
     // WriteDirectory emits it ahead of the Bitmap / UpCase / file entries.
-    nextCluster = 5u;
+    nextCluster = upcaseCluster + 1;
     WriteDirectory(root, 2u, disk, clusterHeapOffset, clusterSize, fatOffset,
       nowStamp, ref nextCluster,
       bitmapCluster, bitmapSize, upcaseCluster, upcaseBytes, upcaseChecksum,
@@ -296,7 +376,7 @@ public sealed class ExFatWriter {
   private static void WriteVbr(byte[] disk, int offset, int bytesPerSector,
     int bytesPerSectorShift, int sectorsPerClusterShift,
     int fatOffsetSectors, int fatLengthSectors, int clusterHeapOffsetSectors,
-    uint clusterCount, int totalSectors, int fatCount, uint volumeSerial, byte percentInUse) {
+    uint clusterCount, long totalSectors, int fatCount, uint volumeSerial, byte percentInUse) {
     disk[offset] = 0xEB; disk[offset + 1] = 0x76; disk[offset + 2] = 0x90;
     Encoding.ASCII.GetBytes("EXFAT   ").CopyTo(disk, offset + 3);
     BinaryPrimitives.WriteUInt64LittleEndian(disk.AsSpan(offset + 64), 0);               // PartitionOffset

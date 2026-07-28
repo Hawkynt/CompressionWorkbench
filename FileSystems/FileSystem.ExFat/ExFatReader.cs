@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.ExFat;
@@ -9,7 +10,12 @@ namespace FileSystem.ExFat;
 /// (File 0x85 + Stream Extension 0xC0 + File Name 0xC1). Supports subdirectories.
 /// </summary>
 public sealed class ExFatReader : IDisposable {
-  private readonly byte[] _data;
+  /// <summary>
+  /// Random-access view over the volume. exFAT exists precisely to carry volumes
+  /// past FAT32's limits, so reading one into a byte[] would cap the reader well
+  /// below the sizes the format is used for.
+  /// </summary>
+  private readonly ImageAccessor _data;
   private readonly List<ExFatEntry> _entries = [];
 
   public IReadOnlyList<ExFatEntry> Entries => _entries;
@@ -24,9 +30,8 @@ public sealed class ExFatReader : IDisposable {
   private uint _rootDirCluster;
 
   public ExFatReader(Stream stream, bool leaveOpen = false) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(stream);
+    _data = new ImageAccessor(stream, leaveOpen: true);
     Parse();
   }
 
@@ -35,26 +40,26 @@ public sealed class ExFatReader : IDisposable {
       throw new InvalidDataException("exFAT: image too small.");
 
     // Validate "EXFAT   " signature at offset 3
-    var sig = Encoding.ASCII.GetString(_data, 3, 8);
+    var sig = Encoding.ASCII.GetString(_data.Read(3, 8));
     if (sig != "EXFAT   ")
       throw new InvalidDataException("exFAT: invalid signature.");
 
     // Boot signature at 510-511
-    if (_data[510] != 0x55 || _data[511] != 0xAA)
+    if (_data.ReadByte(510) != 0x55 || _data.ReadByte(511) != 0xAA)
       throw new InvalidDataException("exFAT: missing boot signature.");
 
     // Parse VBR fields
-    var bytesPerSectorShift = _data[108];
-    var sectorsPerClusterShift = _data[109];
+    var bytesPerSectorShift = _data.ReadByte(108);
+    var sectorsPerClusterShift = _data.ReadByte(109);
     _bytesPerSector = 1 << bytesPerSectorShift;
     _sectorsPerCluster = 1 << sectorsPerClusterShift;
     _clusterSize = _bytesPerSector * _sectorsPerCluster;
 
-    var fatOffsetSectors = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(80));
-    var fatLengthSectors = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(84));
-    var clusterHeapOffsetSectors = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(88));
-    _clusterCount = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(92));
-    _rootDirCluster = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(96));
+    var fatOffsetSectors = _data.ReadUInt32(80);
+    var fatLengthSectors = _data.ReadUInt32(84);
+    var clusterHeapOffsetSectors = _data.ReadUInt32(88);
+    _clusterCount = _data.ReadUInt32(92);
+    _rootDirCluster = _data.ReadUInt32(96);
 
     _fatOffset = fatOffsetSectors * (uint)_bytesPerSector;
     _fatLengthBytes = fatLengthSectors * (uint)_bytesPerSector;
@@ -147,7 +152,7 @@ public sealed class ExFatReader : IDisposable {
     while (cluster >= 2 && cluster <= _clusterCount + 1 && seen.Add(cluster)) {
       var offset = _clusterHeapOffset + (long)(cluster - 2) * _clusterSize;
       if (offset + _clusterSize > _data.Length) break;
-      ms.Write(_data, (int)offset, _clusterSize);
+      _data.CopyTo(offset, ms, _clusterSize);
       cluster = GetNextCluster(cluster);
     }
 
@@ -155,10 +160,10 @@ public sealed class ExFatReader : IDisposable {
   }
 
   private uint GetNextCluster(uint cluster) {
-    var pos = _fatOffset + cluster * 4;
+    // 64-bit: the FAT of a large exFAT volume sits far past the int range.
+    var pos = (long)_fatOffset + (long)cluster * 4;
     if (pos + 4 > _data.Length) return 0xFFFFFFF8;
-    var val = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan((int)pos));
-    return val;
+    return _data.ReadUInt32(pos);
   }
 
   private static bool IsEndOfChain(uint cluster) => cluster >= 0xFFFFFFF8;
