@@ -167,7 +167,13 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Shrink(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
+    // The in-place shrinker works on a byte[] of the whole volume, so it is only
+    // reachable for volumes that fit in one. Larger ones go straight to the rebuild
+    // path below, which streams both halves.
     try {
+      if (!input.CanSeek || input.Length > MaxBufferedImageBytes)
+        throw new NotSupportedException("volume too large for the in-place shrinker");
+
       input.Position = 0;
       using var ms = new MemoryStream();
       input.CopyTo(ms);
@@ -184,6 +190,8 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       // fall through to the rebuild/copy-through default
     } catch (InvalidDataException) {
       // not an NTFS image we can parse in place; fall through
+    } catch (IOException) {
+      // buffering the volume failed (too long for a MemoryStream); fall through
     }
 
     // Default behaviour: verified rebuild that never grows/corrupts, else copy-through.
@@ -349,8 +357,17 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // requested (falling back to the writer defaults when 0). Auto image size →
     // BuildAutoSized, which co-optimises cluster + MFT record size for the
     // payload (honouring any explicit cluster/MFT request).
+    // BuildTo keeps free space sparse, so an explicitly-sized volume costs only its
+    // contents and is not bounded by what a byte[] can hold.
+    if (totalSize > 0 && output.CanSeek) {
+      w.BuildTo(output, totalSize,
+                clusterSize   > 0 ? clusterSize   : 4096,
+                mftRecordSize > 0 ? mftRecordSize : 1024);
+      return;
+    }
+
     var disk = totalSize > 0
-      ? w.Build(totalSize,
+      ? w.Build((int)totalSize,
                 clusterSize   > 0 ? clusterSize   : 4096,
                 mftRecordSize > 0 ? mftRecordSize : 1024)
       : w.BuildAutoSized(clusterSize, mftRecordSize);
@@ -396,7 +413,7 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       return;
     }
     var disk = totalSize > 0
-      ? w.Build(totalSize,
+      ? w.Build((int)totalSize,
                 clusterSize   > 0 ? clusterSize   : 4096,
                 mftRecordSize > 0 ? mftRecordSize : 1024)
       : w.BuildAutoSized(clusterSize, mftRecordSize);
@@ -416,13 +433,15 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   // Parses the NTFS image-size labels ("16 MB".."16 GB"); "Auto …" → 0.
-  private static int ParseImageSizeBytes(string? s) => s?.Trim() switch {
-    "16 MB"  => 16  * 1024 * 1024,
-    "64 MB"  => 64  * 1024 * 1024,
-    "256 MB" => 256 * 1024 * 1024,
-    "1 GB"   => 1024 * 1024 * 1024,
-    "4 GB"   => int.MaxValue,            // capped at int range; writer rounds to clusters
-    "16 GB"  => int.MaxValue,            // capped at int range
+  private static long ParseImageSizeBytes(string? s) => s?.Trim() switch {
+    "16 MB"  => 16L  * 1024 * 1024,
+    "64 MB"  => 64L  * 1024 * 1024,
+    "256 MB" => 256L * 1024 * 1024,
+    "1 GB"   => 1024L * 1024 * 1024,
+    // Reported at their true size: the writer takes a 64-bit length and streams,
+    // so these no longer have to be clamped to what an int (or an array) can hold.
+    "4 GB"   => 4L  * 1024 * 1024 * 1024,
+    "16 GB"  => 16L * 1024 * 1024 * 1024,
     _        => 0,                       // "Auto (fit to files)" or unknown → auto-size
   };
 
@@ -447,7 +466,47 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// spilling out of the resident $INDEX_ROOT, or nested sub-directory targets — fall back
   /// to the verified <see cref="NtfsWriter"/> rebuild.
   /// </summary>
+  /// <summary>
+  /// Largest volume the in-place editors can work on. NtfsModifier and NtfsRemover
+  /// mutate a byte[] copy of the whole volume; past this the edit is applied by a
+  /// streaming rebuild instead -- correct, just not in-place.
+  /// </summary>
+  private const long MaxBufferedImageBytes = 1L << 31;
+
+  /// <summary>
+  /// Applies an edit by reading every surviving entry out of <paramref name="archive" />
+  /// and writing a fresh volume of the same declared size back over it. Memory scales
+  /// with the content, not with the volume.
+  /// </summary>
+  private static void RebuildInPlaceStreaming(
+      Stream archive,
+      IReadOnlyList<(string Name, byte[] Data)> additions,
+      ISet<string>? drop) {
+    var declaredBytes = archive.Length;
+    var combined = new NtfsWriter();
+
+    archive.Position = 0;
+    var reader = new NtfsReader(archive, leaveOpen: true);
+    foreach (var entry in reader.Entries.Where(e => !e.IsDirectory)) {
+      if (drop != null && (drop.Contains(entry.Name) || drop.Contains(Path.GetFileName(entry.Name))))
+        continue;
+      combined.AddFile(entry.Name, reader.Extract(entry));
+    }
+    foreach (var (name, data) in additions)
+      combined.AddFile(name, data);
+
+    // Every entry is materialised above, so the source is no longer needed.
+    archive.Position = 0;
+    archive.SetLength(0);
+    combined.BuildTo(archive, declaredBytes);
+  }
+
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
+      RebuildInPlaceStreaming(archive, FormatHelpers.FilesOnly(inputs).ToList(), drop: null);
+      return;
+    }
+
     archive.Position = 0;
     using var ms = new MemoryStream();
     archive.CopyTo(ms);
@@ -490,6 +549,11 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// recovery of the removed content is possible from the resulting bytes.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
+      RebuildInPlaceStreaming(archive, [], new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase));
+      return;
+    }
+
     archive.Position = 0;
     using var ms = new MemoryStream();
     archive.CopyTo(ms);

@@ -330,7 +330,87 @@ public sealed class NtfsWriter {
   /// MFT record size in bytes — a power of two (512/1024/2048/4096).
   /// </param>
   /// <returns>Complete NTFS image as byte array.</returns>
-  public byte[] Build(int totalSize, int clusterSize, int mftRecordSize) {
+  public byte[] Build(int totalSize, int clusterSize, int mftRecordSize)
+    => Materialise(this.BuildCore(totalSize, clusterSize, mftRecordSize));
+
+  /// <summary>Declared volume size in bytes of the most recent build.</summary>
+  public long DeclaredVolumeBytes { get; private set; }
+
+  /// <summary>Byte offset of $MFTMirr, and the length mirrored there.</summary>
+  private long _mirrorOffset, _mirrorSourceOffset;
+  private int _mirrorLength;
+
+  /// <summary>Byte offset of the backup boot sector (the volume's last sector).</summary>
+  private long _backupBootOffset;
+
+  /// <summary>
+  /// Expands a written prefix into a complete in-memory volume, for callers that
+  /// need one, applying the two regions that live outside the prefix.
+  /// </summary>
+  /// <exception cref="NotSupportedException">
+  /// The volume exceeds what one array can hold. Use
+  /// <see cref="BuildTo(Stream,long,int,int)" />, which keeps free space sparse.
+  /// </exception>
+  private byte[] Materialise(byte[] prefix) {
+    var declared = this.DeclaredVolumeBytes;
+    if (declared <= prefix.Length) return prefix;
+    if (declared > Array.MaxLength)
+      throw new NotSupportedException(
+        $"An NTFS volume of {declared:N0} bytes cannot be materialised in memory; " +
+        "use BuildTo(Stream, ...) so the free space stays sparse.");
+
+    var full = new byte[declared];
+    prefix.CopyTo(full, 0);
+    this.ApplyOutOfPrefixRegions(full.AsSpan(), prefix);
+    return full;
+  }
+
+  /// <summary>
+  /// Writes $MFTMirr and the backup boot sector, which sit at the volume's midpoint
+  /// and last sector respectively and so fall outside the materialised prefix.
+  /// </summary>
+  private void ApplyOutOfPrefixRegions(Span<byte> full, byte[] prefix) {
+    if (this._mirrorLength > 0
+        && this._mirrorOffset + this._mirrorLength <= full.Length
+        && this._mirrorSourceOffset + this._mirrorLength <= prefix.Length)
+      prefix.AsSpan((int)this._mirrorSourceOffset, this._mirrorLength)
+            .CopyTo(full[(int)this._mirrorOffset..]);
+
+    if (this._backupBootOffset + BytesPerSector <= full.Length && prefix.Length >= BytesPerSector)
+      prefix.AsSpan(0, BytesPerSector).CopyTo(full[(int)this._backupBootOffset..]);
+  }
+
+  /// <summary>
+  /// Writes the volume to <paramref name="output" />: the populated prefix, then the
+  /// declared length, then the two regions that live past the prefix. Free space costs
+  /// nothing, so volumes far beyond the in-memory limit are producible.
+  /// </summary>
+  public void BuildTo(Stream output, long totalSize, int clusterSize = DefaultClusterSize,
+                      int mftRecordSize = DefaultMftRecordSize) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildTo requires a writable, seekable stream.", nameof(output));
+
+    var prefix = this.BuildCore(totalSize, clusterSize, mftRecordSize);
+    output.Position = 0;
+    output.Write(prefix);
+    output.SetLength(Math.Max(prefix.Length, this.DeclaredVolumeBytes));
+
+    if (this._mirrorLength > 0
+        && this._mirrorOffset + this._mirrorLength <= this.DeclaredVolumeBytes
+        && this._mirrorSourceOffset + this._mirrorLength <= prefix.Length) {
+      output.Position = this._mirrorOffset;
+      output.Write(prefix, (int)this._mirrorSourceOffset, this._mirrorLength);
+    }
+
+    if (this._backupBootOffset + BytesPerSector <= this.DeclaredVolumeBytes && prefix.Length >= BytesPerSector) {
+      output.Position = this._backupBootOffset;
+      output.Write(prefix, 0, BytesPerSector);
+    }
+    output.Flush();
+  }
+
+  private byte[] BuildCore(long totalSize, int clusterSize, int mftRecordSize) {
     ValidateGeometry(clusterSize, mftRecordSize);
     this._clusterSize = clusterSize;
     this._sectorsPerCluster = clusterSize / BytesPerSector;
@@ -343,7 +423,7 @@ public sealed class NtfsWriter {
     if (totalSize % this._clusterSize != 0)
       totalSize += this._clusterSize - totalSize % this._clusterSize;
 
-    var disk = new byte[totalSize];
+    this.DeclaredVolumeBytes = totalSize;
     var totalSectors = totalSize / BytesPerSector;
     var totalClusters = totalSize / this._clusterSize;
 
@@ -372,7 +452,9 @@ public sealed class NtfsWriter {
 
     // $MFTMirr lives at roughly the middle of the volume in real NTFS so a
     // single bad sector can't take out both copies; we honour that.
-    var mftMirrCluster = totalClusters / 2;
+    // Cluster indices stay 32-bit: even a 2 TB volume at a 4 KB cluster needs only
+    // 2^29 of them, and the layout helpers thread nextCluster as ref int.
+    var mftMirrCluster = (int)(totalClusters / 2);
     if (mftMirrCluster <= nextCluster) mftMirrCluster = nextCluster;
     var mftMirrClusters = (4 * this._mftRecordSize + this._clusterSize - 1) / this._clusterSize;
     // Reserve that region before placing other files.
@@ -387,7 +469,7 @@ public sealed class NtfsWriter {
 
     var bitmapBytes = (totalClusters + 7) / 8;
     var bitmapCluster = nextCluster;
-    var bitmapClusters = (bitmapBytes + this._clusterSize - 1) / this._clusterSize;
+    var bitmapClusters = (int)((bitmapBytes + this._clusterSize - 1) / this._clusterSize);
     nextCluster += bitmapClusters;
 
     // $MFT's own $BITMAP attribute (type 0xB0) — tracks which MFT records are
@@ -450,6 +532,20 @@ public sealed class NtfsWriter {
       dir.IndexAllocClusterCount = clusters;
       nextCluster += clusters;
     }
+
+    // Every cluster is now placed, so the volume's populated region ends at
+    // nextCluster. Materialise only that: $MFTMirr sits at the volume midpoint and
+    // the backup boot sector at its last sector, both of which BuildTo/Materialise
+    // write separately. Allocating totalSize instead would cap NTFS at the ~2 GB
+    // array limit and burn memory proportional to the volume rather than its
+    // contents. The two Array.Copy sites for those regions are already bounds-
+    // guarded, so they simply no-op here.
+    var populatedBytes = Math.Min(totalSize, ((long)nextCluster + 2) * this._clusterSize);
+    this._mirrorSourceOffset = mftOffset;
+    this._mirrorLength = 4 * this._mftRecordSize;
+    this._mirrorOffset = (long)mftMirrCluster * this._clusterSize;
+    this._backupBootOffset = (totalSectors - 1) * BytesPerSector;
+    var disk = new byte[populatedBytes];
 
     // --- Boot sector (VBR) ---------------------------------------------------
     WriteBootSector(disk, totalSectors, mftStartCluster, mftMirrCluster, volumeSerial);
@@ -794,24 +890,23 @@ public sealed class NtfsWriter {
   /// Entry CONTENTS of non-resident files never travel through a byte[]
   /// inside the writer — that's the bar the fuzz harness checks.</para>
   /// </remarks>
-  public void BuildToStreaming(Stream output, int totalSize) {
+  public void BuildToStreaming(Stream output, long totalSize) {
     ArgumentNullException.ThrowIfNull(output);
     if (!output.CanSeek || !output.CanWrite)
       throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
 
     var sink = new List<(int StartCluster, int ClusterCount, long Size, Func<Stream> Opener)>();
     this._streamingSink = sink;
-    byte[] disk;
     int clusterSize;
     try {
-      disk = this.Build(totalSize);
+      // BuildTo emits the populated prefix, extends the stream to the declared
+      // size and places $MFTMirr and the backup boot sector, all without
+      // materialising the free space.
+      this.BuildTo(output, totalSize);
       clusterSize = this._clusterSize;
     } finally {
       this._streamingSink = null;
     }
-    output.SetLength(disk.Length);
-    output.Position = 0;
-    output.Write(disk);
 
     var buf = new byte[64 * 1024];
     foreach (var (startCluster, _, size, opener) in sink) {

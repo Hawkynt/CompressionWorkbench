@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Ntfs;
@@ -10,7 +11,11 @@ namespace FileSystem.Ntfs;
 /// non-resident data extraction with data run decoding.
 /// </summary>
 public sealed class NtfsReader : IDisposable {
-  private readonly byte[] _data;
+  /// <summary>
+  /// Random-access view over the volume. NTFS volumes are routinely far larger than
+  /// an array can hold, so the image is never copied into one.
+  /// </summary>
+  private readonly ImageAccessor _data;
   private readonly List<NtfsEntry> _entries = [];
 
   public IReadOnlyList<NtfsEntry> Entries => _entries;
@@ -26,9 +31,8 @@ public sealed class NtfsReader : IDisposable {
   private readonly Dictionary<uint, MftRecord> _mftRecords = [];
 
   public NtfsReader(Stream stream, bool leaveOpen = false) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(stream);
+    _data = new ImageAccessor(stream, leaveOpen: true);
     Parse();
   }
 
@@ -37,27 +41,27 @@ public sealed class NtfsReader : IDisposable {
       throw new InvalidDataException("NTFS: image too small.");
 
     // Validate boot sector jump
-    if (_data[0] != 0xEB || _data[1] != 0x52 || _data[2] != 0x90)
+    if (_data.ReadByte(0) != 0xEB || _data.ReadByte(1) != 0x52 || _data.ReadByte(2) != 0x90)
       throw new InvalidDataException("NTFS: invalid boot jump.");
 
     // Validate OEM ID
-    var oem = Encoding.ASCII.GetString(_data, 3, 8);
+    var oem = Encoding.ASCII.GetString(_data.Read(3, 8));
     if (oem != "NTFS    ")
       throw new InvalidDataException("NTFS: invalid OEM ID.");
 
     // Validate boot signature
-    if (_data[510] != 0x55 || _data[511] != 0xAA)
+    if (_data.ReadByte(510) != 0x55 || _data.ReadByte(511) != 0xAA)
       throw new InvalidDataException("NTFS: invalid boot signature.");
 
-    _bytesPerSector = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(11));
+    _bytesPerSector = _data.ReadUInt16(11);
     if (_bytesPerSector == 0) _bytesPerSector = 512;
-    _sectorsPerCluster = _data[13];
+    _sectorsPerCluster = _data.ReadByte(13);
     if (_sectorsPerCluster == 0) _sectorsPerCluster = 8;
     _clusterSize = _bytesPerSector * _sectorsPerCluster;
-    _mftCluster = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(48));
+    _mftCluster = (long)_data.ReadUInt64(48);
 
     // MFT record size from clusters-per-MFT-record field
-    var clustersPerRecord = (sbyte)_data[64];
+    var clustersPerRecord = (sbyte)_data.ReadByte(64);
     _mftRecordSize = clustersPerRecord < 0
       ? 1 << (-clustersPerRecord)
       : clustersPerRecord * _clusterSize;
@@ -151,7 +155,7 @@ public sealed class NtfsReader : IDisposable {
   }
 
   private MftRecord? ReadMftRecord(uint recordNum, long offset) {
-    var span = _data.AsSpan((int)offset, _mftRecordSize);
+    var span = _data.Read(offset, _mftRecordSize).AsSpan();
 
     // Check "FILE" signature
     if (span[0] != (byte)'F' || span[1] != (byte)'I' || span[2] != (byte)'L' || span[3] != (byte)'E')
@@ -457,7 +461,7 @@ public sealed class NtfsReader : IDisposable {
   // Reads one INDX block: validates the magic, undoes USA fixups, then walks its
   // index entries adding each non-zero MFT reference to refs.
   private void ReadIndexBlock(long offset, int blockSize, List<uint> refs) {
-    var block = _data.AsSpan((int)offset, blockSize).ToArray();
+    var block = _data.Read(offset, blockSize);
     if (block[0] != (byte)'I' || block[1] != (byte)'N' || block[2] != (byte)'D' || block[3] != (byte)'X')
       return;
 
@@ -626,7 +630,7 @@ public sealed class NtfsReader : IDisposable {
         runBytes = (int)Math.Max(0, _data.Length - clusterOffset);
 
       if (runBytes > 0)
-        ms.Write(_data, (int)clusterOffset, runBytes);
+        _data.CopyTo(clusterOffset, ms, runBytes);
     }
 
     var result = ms.ToArray();
@@ -684,7 +688,7 @@ public sealed class NtfsReader : IDisposable {
           var byteOffset = (run.Lcn + withinRunStart) * _clusterSize;
           var byteLen = take * _clusterSize;
           if (byteOffset >= 0 && byteOffset + byteLen <= _data.Length)
-            realBytes.Write(_data, (int)byteOffset, (int)byteLen);
+            _data.CopyTo(byteOffset, realBytes, byteLen);
         }
         collected += take;
         if (withinRunStart + take >= run.ClusterCount) {
