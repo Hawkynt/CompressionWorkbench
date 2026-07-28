@@ -54,12 +54,27 @@ public sealed class ExtWriter {
   /// slack + metadata overhead, and the block count sized to exactly hold the files.
   /// </summary>
   /// <param name="requestedBlockSize">Block size in bytes (0 = auto-select).</param>
-  public byte[] BuildAutoSized(int requestedBlockSize = 0) {
+  public byte[] BuildAutoSized(int requestedBlockSize = 0)
+    => this.BuildAutoSized(requestedBlockSize, ExtVersion.Ext2, journal: false, volumeLabel: "", inodeSize: 128);
+
+  /// <summary>
+  /// Auto-sizes the volume to the files added, honouring the requested version,
+  /// journal, label and inode size.
+  /// </summary>
+  public byte[] BuildAutoSized(int requestedBlockSize, ExtVersion version, bool journal,
+                               string volumeLabel, int inodeSize) {
     var fileSizes = _files.Select(f => f.StreamingSize ?? (long)f.Data.Length).ToList();
 
     var blockSize = requestedBlockSize > 0
       ? requestedBlockSize
       : this.SelectOptimalBlockSize();
+
+    // A single block group holds 8 * blockSize blocks, so the larger the block the
+    // larger the volume this writer can express. Step up when the payload needs it.
+    var totalPayload = fileSizes.Sum();
+    foreach (var candidate in BlockSizeCandidates)
+      if (candidate > blockSize && totalPayload * 12 / 10 > (long)8 * blockSize * blockSize)
+        blockSize = candidate;
 
     // Distinct directories implied by the nested paths (the root plus every
     // path prefix), and the number of entries (children) each holds — a
@@ -95,10 +110,28 @@ public sealed class ExtWriter {
 
     // Inode table must hold the reserved inodes, every directory and every file.
     var inodeCount = ChooseInodeCount(dirPaths.Count + _files.Count);
-    var inodeTableBlocks = (inodeCount * 128 + blockSize - 1) / blockSize;
+    var inodeTableBlocks = ((long)inodeCount * Math.Max(128, inodeSize) + blockSize - 1) / blockSize;
     var dataBlocks = fileSizes.Sum(s => s <= 0 ? 0L : (s + blockSize - 1) / blockSize);
-    var totalBlocks = (int)Math.Max(4096, (4 + dirBlocks + inodeTableBlocks + dataBlocks) * 11 / 10);
-    return Build(blockSize, totalBlocks);
+
+    // Pointer blocks for the single/double/triple-indirect map. A file needing n
+    // data blocks past the first twelve costs roughly n/ptrs level-1 blocks plus
+    // n/ptrs^2 level-2 blocks; budgeting for them keeps the auto-sized image from
+    // coming up short once a file outgrows its direct pointers.
+    var ptrsPerBlock = Math.Max(1, blockSize / 4);
+    var pointerBlocks = fileSizes.Sum(s => {
+      if (s <= 0) return 0L;
+      var n = (s + blockSize - 1) / blockSize - 12;
+      if (n <= 0) return 0L;
+      var lvl1 = (n + ptrsPerBlock - 1) / ptrsPerBlock;
+      var lvl2 = (lvl1 + ptrsPerBlock - 1) / ptrsPerBlock;
+      return lvl1 + lvl2 + 2; // + the double- and triple-indirect roots
+    });
+
+    // A journal costs up to 1024 blocks plus its own pointer blocks.
+    var journalBlocks = journal && version is ExtVersion.Ext3 or ExtVersion.Ext4 ? 1100L : 0L;
+    var totalBlocks = (int)Math.Max(4096,
+      (4 + dirBlocks + inodeTableBlocks + dataBlocks + pointerBlocks + journalBlocks) * 11 / 10);
+    return Build(blockSize, totalBlocks, version, journal, volumeLabel, inodeSize);
   }
 
   /// <summary>
@@ -132,7 +165,7 @@ public sealed class ExtWriter {
   /// Legacy two-argument <c>Build()</c> overload — emits the historical
   /// minimal ext2 layout (dynamic-rev superblock with FILETYPE only, 128-byte
   /// inodes, no journal, no extents, no 64BIT). Kept byte-compatible with the
-  /// upstream writer so <see cref="ExtModifier"/>, <see cref="BuildAutoSized"/>,
+  /// upstream writer so <see cref="ExtModifier"/>, <see cref="BuildAutoSized(int)"/>,
   /// the external-conformance tests, and the version detector (which classifies
   /// the image by feature flags) all observe the same ext2
   /// baseline this writer has always produced. The verbose <c>Build(int, int,
@@ -361,18 +394,11 @@ public sealed class ExtWriter {
     // Files use up to 12 direct block pointers, then a singly-indirect block
     // (blockSize/4 further pointers). The indirect block itself counts toward
     // i_blocks (e2fsck tallies it in the 512-byte sector count).
-    const int MaxDirectFileBlocks = 12;
-    var filerPointersPerBlock = blockSize / 4;
-    var maxFileBlocks = MaxDirectFileBlocks + filerPointersPerBlock;
     foreach (var (fileInode, _, _, data, streamingSize, streamOpener) in fileInodes) {
       var fileInodeOffset = inodeTableOffset + (int)(fileInode - 1) * inodeSize;
       var effectiveLength = streamingSize ?? (long)data.Length;
 
       var blocksNeeded = effectiveLength == 0 ? 0 : (int)((effectiveLength + blockSize - 1) / blockSize);
-      if (blocksNeeded > maxFileBlocks)
-        throw new InvalidOperationException(
-          $"ext2 writer supports direct + singly-indirect blocks only " +
-          $"(max {maxFileBlocks * blockSize} bytes per file at {blockSize}-byte blocks).");
 
       var fileBlocks = new List<int>(blocksNeeded);
       for (var b = 0; b < blocksNeeded; ++b) {
@@ -396,17 +422,9 @@ public sealed class ExtWriter {
         }
       }
 
-      // Past the first 12 data blocks, a singly-indirect block holds the rest.
-      var fileIndirectBlockNum = 0;
+      // Past the first 12 data blocks the classic single/double/triple-indirect
+      // map carries the rest, so a file is no longer capped at one indirect block.
       var fileAllocatedBlocks = fileBlocks.Count;
-      if (fileBlocks.Count > MaxDirectFileBlocks) {
-        fileIndirectBlockNum = nextBlock++;
-        MarkBlockUsed(disk, blockBitmapOffset, fileIndirectBlockNum, (int)firstDataBlock);
-        ++fileAllocatedBlocks; // the indirect block itself counts toward i_blocks
-        var indOff = fileIndirectBlockNum * blockSize;
-        for (var p = MaxDirectFileBlocks; p < fileBlocks.Count; ++p)
-          BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(indOff + (p - MaxDirectFileBlocks) * 4), (uint)fileBlocks[p]);
-      }
 
       var ino = disk.AsSpan(fileInodeOffset, inodeSize);
       BinaryPrimitives.WriteUInt16LittleEndian(ino, 0x8000 | 0x01A4);           // i_mode: regular file, 0644
@@ -416,11 +434,10 @@ public sealed class ExtWriter {
       BinaryPrimitives.WriteUInt32LittleEndian(ino[16..], now);                 // i_mtime
       BinaryPrimitives.WriteUInt16LittleEndian(ino[26..], 1);                   // i_links_count
       BinaryPrimitives.WriteUInt32LittleEndian(ino[28..], (uint)(fileAllocatedBlocks * sectorsPerBlock)); // i_blocks (512-byte sectors)
-      var fileDirectCount = Math.Min(MaxDirectFileBlocks, fileBlocks.Count);
-      for (var b = 0; b < fileDirectCount; ++b)
-        BinaryPrimitives.WriteUInt32LittleEndian(ino[(40 + b * 4)..], (uint)fileBlocks[b]); // direct blocks 0..11
-      if (fileIndirectBlockNum != 0)
-        BinaryPrimitives.WriteUInt32LittleEndian(ino[88..], (uint)fileIndirectBlockNum);    // singly-indirect pointer
+      fileAllocatedBlocks += WriteInodeBlockMap(disk, fileInodeOffset, fileBlocks, blockSize,
+        ref nextBlock, blockBitmapOffset, (int)firstDataBlock);
+      BinaryPrimitives.WriteUInt32LittleEndian(
+        disk.AsSpan(fileInodeOffset + 28), (uint)(fileAllocatedBlocks * sectorsPerBlock)); // i_blocks, incl. pointer blocks
     }
 
     // --- Journal (inode 8) for ext3 / ext4 ───────────────────────────────
@@ -533,8 +550,16 @@ public sealed class ExtWriter {
     var logBlockSize = blockSize == 1024 ? 0u : blockSize == 2048 ? 1u : 2u;
     BinaryPrimitives.WriteUInt32LittleEndian(sb[24..], logBlockSize);              // s_log_block_size
     BinaryPrimitives.WriteUInt32LittleEndian(sb[28..], logBlockSize);              // s_log_frag_size (same)
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[32..], (uint)totalBlocks);         // s_blocks_per_group
-    BinaryPrimitives.WriteUInt32LittleEndian(sb[36..], (uint)totalBlocks);         // s_frags_per_group
+    // s_blocks_per_group is the group's capacity, not the volume's size, and e2fsck
+    // derives its bitmap-padding expectations from it: mke2fs always writes
+    // 8 * blockSize, one block bitmap's worth of bits. This writer emits a single
+    // group, so use the canonical value whenever the volume fits in one -- writing
+    // totalBlocks there made every larger-than-default image flag "padding at the
+    // end of the inode bitmap is not set". A volume beyond one group's capacity
+    // keeps the old value, which mounts but is not something fsck calls tidy.
+    var blocksPerGroup = totalBlocks <= 8 * blockSize ? 8 * blockSize : totalBlocks;
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[32..], (uint)blocksPerGroup);       // s_blocks_per_group
+    BinaryPrimitives.WriteUInt32LittleEndian(sb[36..], (uint)blocksPerGroup);       // s_frags_per_group (matches blocks_per_group)
     BinaryPrimitives.WriteUInt32LittleEndian(sb[40..], (uint)inodesPerGroup);      // s_inodes_per_group
     BinaryPrimitives.WriteUInt32LittleEndian(sb[44..], now);                       // s_mtime
     BinaryPrimitives.WriteUInt32LittleEndian(sb[48..], now);                       // s_wtime
@@ -796,6 +821,98 @@ public sealed class ExtWriter {
   // caller-supplied absolute block number must be biased by firstDataBlock
   // before indexing — otherwise every bit is off by one and e2fsck reports a
   // block-bitmap difference plus a wrong free-block count.
+
+  /// <summary>
+  /// Maps <paramref name="dataBlocks" /> into an inode's block map: twelve direct
+  /// pointers, then single-, double- and triple-indirect blocks, allocating each
+  /// pointer block from the free pool and marking it used.
+  /// </summary>
+  /// <returns>
+  /// How many pointer blocks were consumed. They count toward i_blocks, which
+  /// e2fsck tallies in 512-byte sectors.
+  /// </returns>
+  /// <remarks>
+  /// Files were previously limited to direct + single-indirect, capping one file
+  /// at 12 + blockSize/4 blocks -- 274 KB at a 1 KB block. The classic map is valid
+  /// on ext4 too: the EXTENTS feature permits per-inode extent maps, it does not
+  /// require them.
+  /// </remarks>
+  private static int WriteInodeBlockMap(byte[] disk, int inodeOffset, IReadOnlyList<int> dataBlocks,
+      int blockSize, ref int nextBlock, int blockBitmapOffset, int firstDataBlock) {
+    const int directCount = 12;
+    var ptrs = blockSize / 4;
+    var meta = 0;
+    var alloc = nextBlock;
+
+    for (var i = 0; i < directCount && i < dataBlocks.Count; ++i)
+      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(inodeOffset + 40 + i * 4), (uint)dataBlocks[i]);
+    if (dataBlocks.Count <= directCount) { nextBlock = alloc; return meta; }
+
+    int AllocPointerBlock() {
+      var b = alloc++;
+      MarkBlockUsed(disk, blockBitmapOffset, b, firstDataBlock);
+      ++meta;
+      return b;
+    }
+
+    // Single indirect: i_block[12] at inode offset 88.
+    var ind = AllocPointerBlock();
+    var indOff = (long)ind * blockSize;
+    for (var i = 0; i < ptrs && directCount + i < dataBlocks.Count; ++i)
+      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)indOff + i * 4), (uint)dataBlocks[directCount + i]);
+    BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(inodeOffset + 88), (uint)ind);
+
+    var dindFirst = directCount + ptrs;
+    if (dataBlocks.Count <= dindFirst) { nextBlock = alloc; return meta; }
+
+    // Double indirect: i_block[13] at inode offset 92.
+    var dind = AllocPointerBlock();
+    var dindOff = (long)dind * blockSize;
+    var dindCapacity = (long)ptrs * ptrs;
+    var dindBlocks = (int)Math.Min(dataBlocks.Count - dindFirst, dindCapacity);
+    var dindGroups = (dindBlocks + ptrs - 1) / ptrs;
+    for (var k = 0; k < dindGroups; ++k) {
+      var lvl2 = AllocPointerBlock();
+      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)dindOff + k * 4), (uint)lvl2);
+      var lvl2Off = (long)lvl2 * blockSize;
+      for (var i = 0; i < ptrs; ++i) {
+        var idx = dindFirst + k * ptrs + i;
+        if (idx >= dindFirst + dindBlocks) break;
+        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)lvl2Off + i * 4), (uint)dataBlocks[idx]);
+      }
+    }
+    BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(inodeOffset + 92), (uint)dind);
+
+    var tindFirst = dindFirst + (int)dindCapacity;
+    if (dataBlocks.Count <= tindFirst) { nextBlock = alloc; return meta; }
+
+    // Triple indirect: i_block[14] at inode offset 96.
+    var tind = AllocPointerBlock();
+    var tindOff = (long)tind * blockSize;
+    var remaining = dataBlocks.Count - tindFirst;
+    var lvl2Groups = (int)(((long)remaining + (long)ptrs * ptrs - 1) / ((long)ptrs * ptrs));
+    for (var g = 0; g < lvl2Groups; ++g) {
+      var mid = AllocPointerBlock();
+      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)tindOff + g * 4), (uint)mid);
+      var midOff = (long)mid * blockSize;
+      for (var k = 0; k < ptrs; ++k) {
+        var groupStart = tindFirst + (g * ptrs + k) * ptrs;
+        if (groupStart >= dataBlocks.Count) break;
+        var leaf = AllocPointerBlock();
+        BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)midOff + k * 4), (uint)leaf);
+        var leafOff = (long)leaf * blockSize;
+        for (var i = 0; i < ptrs; ++i) {
+          var idx = groupStart + i;
+          if (idx >= dataBlocks.Count) break;
+          BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)leafOff + i * 4), (uint)dataBlocks[idx]);
+        }
+      }
+    }
+    BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(inodeOffset + 96), (uint)tind);
+    nextBlock = alloc;
+    return meta;
+  }
+
   private static void MarkBlockUsed(byte[] disk, int bitmapOffset, int blockNum, int firstDataBlock) {
     var bit = blockNum - firstDataBlock;
     disk[bitmapOffset + bit / 8] |= (byte)(1 << (bit % 8));

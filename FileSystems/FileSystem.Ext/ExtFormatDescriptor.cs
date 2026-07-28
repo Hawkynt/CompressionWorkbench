@@ -279,7 +279,9 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       ? options.GetOptionInt("BlockSize", 4096)
       : w.SelectOptimalBlockSize(inodeSize);
 
-    output.Write(w.Build(blockSize, totalBlocks: 4096, version, journal, volumeLabel, inodeSize));
+    // Size the volume to the payload. A fixed 4096-block image is ~16 MB at a
+    // 4 KB block, so anything larger overran the buffer instead of growing.
+    output.Write(w.BuildAutoSized(blockSize, version, journal, volumeLabel, inodeSize));
   }
 
   /// <summary>
@@ -315,7 +317,9 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       w.BuildToStreaming(output, blockSize, totalBlocks: 4096, version, journal, volumeLabel, inodeSize);
       return;
     }
-    output.Write(w.Build(blockSize, totalBlocks: 4096, version, journal, volumeLabel, inodeSize));
+    // Size the volume to the payload. A fixed 4096-block image is ~16 MB at a
+    // 4 KB block, so anything larger overran the buffer instead of growing.
+    output.Write(w.BuildAutoSized(blockSize, version, journal, volumeLabel, inodeSize));
   }
 
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
