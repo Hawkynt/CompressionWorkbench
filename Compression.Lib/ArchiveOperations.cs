@@ -760,9 +760,15 @@ public static class ArchiveOperations {
   // ── Stream helpers ──────────────────────────────────────────────
 
   private static void ExtractStream(string inputPath, string outputDir, F format) {
-    var data = DecompressFile(inputPath, format);
+    // Decompress straight to the destination. Going through a byte[] capped
+    // extraction at the array limit, which a gzip/xz/zstd stream is under no
+    // obligation to respect -- an 11 MB archive can hold gigabytes.
     var outputName = StripCompressionExtension(inputPath);
-    File.WriteAllBytes(Path.Combine(outputDir, Path.GetFileName(outputName)), data);
+    var target = Path.Combine(outputDir, Path.GetFileName(outputName));
+    AtomicFileWriter.WriteAtomic(target, outFs => {
+      using var inFs = File.OpenRead(inputPath);
+      DecompressStreamPair(inFs, outFs, format);
+    });
   }
 
   private static void CompressStream(string inputPath, string outputPath, F format, MethodSpec method = default) {
