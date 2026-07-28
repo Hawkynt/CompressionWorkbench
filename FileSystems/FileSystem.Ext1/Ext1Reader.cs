@@ -106,12 +106,22 @@ public sealed class Ext1Reader : IDisposable {
   }
 
   private byte[] ReadInodeBlocks(byte[] inode) {
-    var sizelow = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(4));
-    return this.ReadBlockPointers(inode, sizelow);
+    using var ms = new MemoryStream();
+    this.WriteInodeBlocks(inode, ms);
+    return ms.ToArray();
   }
 
-  private byte[] ReadBlockPointers(byte[] inode, uint size) {
-    using var ms = new MemoryStream();
+  /// <summary>
+  /// Walks the inode's block map and copies the file's bytes into
+  /// <paramref name="destination" />. Nothing larger than one block is held, so a
+  /// file past what a byte[] can carry is read the same way as any other.
+  /// </summary>
+  private void WriteInodeBlocks(byte[] inode, Stream destination) {
+    var sizelow = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(4));
+    this.ReadBlockPointers(inode, sizelow, destination);
+  }
+
+  private void ReadBlockPointers(byte[] inode, uint size, Stream ms) {
     var remaining = (long)size;
 
     // 12 direct block pointers at inode offset 40
@@ -142,11 +152,9 @@ public sealed class Ext1Reader : IDisposable {
       if (tindirectBlock != 0)
         this.ReadIndirectBlock(tindirectBlock, ms, ref remaining, 3);
     }
-
-    return ms.ToArray();
   }
 
-  private void ReadIndirectBlock(uint blockNum, MemoryStream ms, ref long remaining, int level) {
+  private void ReadIndirectBlock(uint blockNum, Stream ms, ref long remaining, int level) {
     if (blockNum == 0 || remaining <= 0) return;
     var offset = (long)blockNum * this._blockSize;
     if (offset + this._blockSize > this._data.Length) return;
@@ -219,6 +227,20 @@ public sealed class Ext1Reader : IDisposable {
       }
       offset += recLen;
     }
+  }
+
+  /// <summary>
+  /// Copies <paramref name="entry" />'s bytes into <paramref name="destination" />
+  /// without buffering the whole file, which an entry approaching ext1's 4 GB
+  /// i_size ceiling would not survive.
+  /// </summary>
+  public void ExtractTo(Ext1Entry entry, Stream destination) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ArgumentNullException.ThrowIfNull(destination);
+    if (entry.IsDirectory || entry.Inode == 0) return;
+    var inodeData = this.ReadInode(entry.Inode);
+    if (inodeData == null) return;
+    this.WriteInodeBlocks(inodeData, destination);
   }
 
   public byte[] Extract(Ext1Entry entry) {

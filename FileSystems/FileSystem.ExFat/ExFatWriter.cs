@@ -261,7 +261,11 @@ public sealed class ExFatWriter {
     var bitmapSizeBytes = (int)((clusterCount + 7) / 8);
     var bitmapClusterCount = (uint)Math.Max(1, (bitmapSizeBytes + clusterSize - 1) / clusterSize);
 
+    // Only inline payloads land in the prefix. A streaming entry's bytes are
+    // copied in by seek afterwards, so counting its clusters here pulled the
+    // whole volume back into the buffer and overflowed it past 2 GB.
     var dataClusters = _files.Sum(f => {
+      if (f.StreamOpener != null) return 0L;
       var sz = f.StreamingSize ?? (long)f.Data.Length;
       return sz <= 0 ? 1L : (sz + clusterSize - 1) / clusterSize;
     });

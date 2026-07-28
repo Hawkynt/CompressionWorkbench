@@ -97,7 +97,7 @@ public sealed class NtfsWriter {
   /// <summary>
   /// Streaming-allocations side-effect: when non-null, every non-resident
   /// streaming entry's (startCluster, clusterCount, size, opener) is
-  /// appended so <see cref="BuildToStreaming"/> can post-fill clusters
+  /// appended so <see cref="BuildToStreaming(Stream,long)"/> can post-fill clusters
   /// from each source after metadata is committed. Resident streaming
   /// entries (size ≤ ResidentThreshold) are buffered inside the MFT
   /// record by the streaming wrapper before <see cref="Build(int)"/> runs.
@@ -229,7 +229,7 @@ public sealed class NtfsWriter {
   /// Adds a streaming file: <paramref name="size"/> drives MFT-record +
   /// cluster sizing in pass 1; bytes are pulled from
   /// <paramref name="openStream"/> in pass 2 of
-  /// <see cref="BuildToStreaming"/>. Files larger than the resident
+  /// <see cref="BuildToStreaming(Stream,long)"/>. Files larger than the resident
   /// threshold (~700 bytes) get a single-run non-resident $DATA whose
   /// clusters are filled from the source via 64 KB chunks; smaller files
   /// remain resident and are buffered up-front (the size-clamped bounded
@@ -262,6 +262,18 @@ public sealed class NtfsWriter {
   /// <param name="requestedMftRecordSize">MFT record size in bytes (0 = auto-select).</param>
   /// <returns>Complete NTFS image as byte array.</returns>
   public byte[] BuildAutoSized(int requestedClusterSize = 0, int requestedMftRecordSize = 0) {
+    var (total, clusterSize, mftRecordSize) = this.PlanAutoSize(requestedClusterSize, requestedMftRecordSize);
+    return this.Build((int)Math.Min(total, int.MaxValue), clusterSize, mftRecordSize);
+  }
+
+  /// <summary>
+  /// Volume size, cluster size and MFT-record size an auto-sized build would use
+  /// for the files added. The size is a long: clamping it to int for
+  /// <see cref="Build(int,int,int)" /> is exactly what capped an auto-sized
+  /// volume at 2 GB, and the streaming path needs no such clamp.
+  /// </summary>
+  public (long TotalSize, int ClusterSize, int MftRecordSize) PlanAutoSize(
+      int requestedClusterSize = 0, int requestedMftRecordSize = 0) {
     var fileSizes = this._files.Select(f => f.StreamingSize ?? (long)f.Data.Length).ToList();
     var fileCount = this._files.Count;
 
@@ -313,9 +325,8 @@ public sealed class NtfsWriter {
       + mftBytes;
     var total = (overhead + dataBytes) * 11 / 10; // 10 % headroom
     if (total < 4 * 1024 * 1024) total = 4 * 1024 * 1024; // never smaller than the default
-    if (total > int.MaxValue) total = int.MaxValue;
 
-    return this.Build((int)total, clusterSize, mftRecordSize);
+    return (total, clusterSize, mftRecordSize);
   }
 
   /// <summary>
@@ -491,6 +502,8 @@ public sealed class NtfsWriter {
     // no $DATA, so only file nodes consume clusters; small files stay resident
     // inside their MFT record. Cluster runs are recorded back onto the node.
     var fileNodes = treeNodes.Where(n => !n.IsDirectory).ToList();
+    // Highest cluster whose content the prefix must actually carry.
+    var lastInlineCluster = nextCluster;
     foreach (var node in fileNodes) {
       var effLen = node.EffectiveLength;
       if (effLen <= ResidentThreshold) {
@@ -502,6 +515,9 @@ public sealed class NtfsWriter {
       // expects.
       if (this._compressFiles && node.StreamOpener == null && node.Data != null) {
         this.LayoutCompressedFile(node, ref nextCluster, mftMirrCluster, mftMirrClusters);
+        // Compressed content is written into the buffer like any other inline
+        // data, so the prefix has to reach past it.
+        lastInlineCluster = nextCluster;
         continue;
       }
 
@@ -514,6 +530,10 @@ public sealed class NtfsWriter {
       node.StartCluster = nextCluster;
       node.ClusterCount = clusters;
       nextCluster += clusters;
+      // A streaming entry's clusters are filled by seek after the prefix is
+      // written, so they do not have to be inside it. Counting them made the
+      // prefix as large as the volume, which is what overflowed past 2 GB.
+      if (node.StreamOpener == null) lastInlineCluster = nextCluster;
     }
 
     // Reserve clusters for directories whose child index does not fit in the
@@ -529,6 +549,7 @@ public sealed class NtfsWriter {
       if (nextCluster < mftMirrCluster && nextCluster + clusters > mftMirrCluster)
         nextCluster = mftMirrCluster + mftMirrClusters;
       dir.IndexAllocStartCluster = nextCluster;
+      lastInlineCluster = Math.Max(lastInlineCluster, nextCluster + clusters);
       dir.IndexAllocClusterCount = clusters;
       nextCluster += clusters;
     }
@@ -540,7 +561,9 @@ public sealed class NtfsWriter {
     // array limit and burn memory proportional to the volume rather than its
     // contents. The two Array.Copy sites for those regions are already bounds-
     // guarded, so they simply no-op here.
-    var populatedBytes = Math.Min(totalSize, ((long)nextCluster + 2) * this._clusterSize);
+    // + 8 clusters of slack so the late $AttrDef spill branch (and anything else
+    // allocated after the buffer is sized) still lands inside it.
+    var populatedBytes = Math.Min(totalSize, ((long)Math.Max(lastInlineCluster, 0) + 8) * this._clusterSize);
     this._mirrorSourceOffset = mftOffset;
     this._mirrorLength = 4 * this._mftRecordSize;
     this._mirrorOffset = (long)mftMirrCluster * this._clusterSize;
@@ -890,7 +913,11 @@ public sealed class NtfsWriter {
   /// Entry CONTENTS of non-resident files never travel through a byte[]
   /// inside the writer — that's the bar the fuzz harness checks.</para>
   /// </remarks>
-  public void BuildToStreaming(Stream output, long totalSize) {
+  public void BuildToStreaming(Stream output, long totalSize)
+    => this.BuildToStreaming(output, totalSize, DefaultClusterSize, 1024);
+
+  /// <inheritdoc cref="BuildToStreaming(Stream,long)" />
+  public void BuildToStreaming(Stream output, long totalSize, int clusterSizeBytes, int mftRecordSize) {
     ArgumentNullException.ThrowIfNull(output);
     if (!output.CanSeek || !output.CanWrite)
       throw new ArgumentException("BuildToStreaming requires a writable, seekable stream.", nameof(output));
@@ -902,7 +929,7 @@ public sealed class NtfsWriter {
       // BuildTo emits the populated prefix, extends the stream to the declared
       // size and places $MFTMirr and the backup boot sector, all without
       // materialising the free space.
-      this.BuildTo(output, totalSize);
+      this.BuildTo(output, totalSize, clusterSizeBytes, mftRecordSize);
       clusterSize = this._clusterSize;
     } finally {
       this._streamingSink = null;
@@ -933,38 +960,14 @@ public sealed class NtfsWriter {
     if (!output.CanSeek || !output.CanWrite)
       throw new ArgumentException("BuildToStreamingAutoSized requires a writable, seekable stream.", nameof(output));
 
-    var sink = new List<(int StartCluster, int ClusterCount, long Size, Func<Stream> Opener)>();
-    this._streamingSink = sink;
-    byte[] disk;
-    int clusterSize;
-    try {
-      disk = this.BuildAutoSized();
-      clusterSize = this._clusterSize;
-    } finally {
-      this._streamingSink = null;
-    }
-    output.SetLength(disk.Length);
-    output.Position = 0;
-    output.Write(disk);
-
-    var buf = new byte[64 * 1024];
-    foreach (var (startCluster, _, size, opener) in sink) {
-      if (size <= 0) continue;
-      var clusterOffset = (long)startCluster * clusterSize;
-      if (clusterOffset < 0 || clusterOffset >= output.Length) continue;
-      output.Position = clusterOffset;
-      using var src = opener();
-      long copied = 0;
-      while (copied < size) {
-        var want = (int)Math.Min(buf.Length, size - copied);
-        var n = src.Read(buf, 0, want);
-        if (n <= 0) break;
-        output.Write(buf, 0, n);
-        copied += n;
-      }
-    }
-    output.Flush();
+    // Size the volume first, then stream it. Going through BuildAutoSized would
+    // materialise the whole thing, capping an auto-sized volume at 2 GB even
+    // though every other step of this path is streaming.
+    var (total, clusterSize, mftRecordSize) = this.PlanAutoSize();
+    this.BuildToStreaming(output, total, clusterSize, mftRecordSize);
   }
+
+
 
   // Materialises the directory tree from the flat (slashed-name, data) list.
   // The root directory is MFT record 5 and is not part of the returned node

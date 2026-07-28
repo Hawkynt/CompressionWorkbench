@@ -193,29 +193,36 @@ public class Ext1WriterTests {
     Assert.That(magic, Is.EqualTo((ushort)0xEF51));
   }
 
-  [Test, Category("ErrorHandling")]
-  public void Writer_FileTooLarge_Throws() {
+  [Test, Category("HappyPath")]
+  public void Writer_FilePastDirectBlocks_RoundTrips() {
+    // 13 KiB needs more than the 12 direct blocks a 1 KiB-block inode holds, so
+    // this only survives if the single-indirect map is written and read back.
     var w = new Ext1Writer();
-    var huge = new byte[13 * 1024]; // 13 KiB > 12 direct blocks × 1 KiB
-    w.AddFile("huge.bin", huge);
-    Assert.Throws<InvalidOperationException>(() => w.Build());
+    var payload = new byte[13 * 1024];
+    for (var i = 0; i < payload.Length; ++i) payload[i] = (byte)(i * 31 + 7);
+    w.AddFile("huge.bin", payload);
+
+    using var ms = new MemoryStream(w.Build());
+    using var r = new Ext1Reader(ms);
+    var entry = r.Entries.Single(e => !e.IsDirectory);
+    Assert.That(entry.Size, Is.EqualTo(payload.Length));
+    Assert.That(r.Extract(entry), Is.EqualTo(payload));
   }
 
   [Test, Category("HappyPath")]
-  public void WriteConstraints_RejectDirectoryAndOversize() {
+  public void WriteConstraints_RejectDirectory_AcceptLargeFile() {
     var d = new Ext1FormatDescriptor();
     // Directory entry is rejected.
     var dirInput = new ArchiveInputInfo("/tmp/dir", "dir", true);
     Assert.That(d.CanAccept(dirInput, out var dirReason), Is.False);
     Assert.That(dirReason, Does.Contain("flat WORM").IgnoreCase.Or.Contain("directory").IgnoreCase);
 
-    // Oversize file is rejected.
+    // A file past the direct blocks is accepted — the block map reaches it.
     var tmp = Path.Combine(Path.GetTempPath(), "ext1cons_" + Guid.NewGuid().ToString("N") + ".bin");
     File.WriteAllBytes(tmp, new byte[13 * 1024]);
     try {
       var input = new ArchiveInputInfo(tmp, "huge.bin", false);
-      Assert.That(d.CanAccept(input, out var reason), Is.False);
-      Assert.That(reason, Does.Contain("12 KiB"));
+      Assert.That(d.CanAccept(input, out var reason), Is.True, reason);
     } finally {
       try { File.Delete(tmp); } catch { /* ignore */ }
     }

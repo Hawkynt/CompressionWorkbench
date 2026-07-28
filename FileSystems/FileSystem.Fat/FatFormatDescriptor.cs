@@ -519,6 +519,16 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    // A seekable target takes the streaming route: the writer then places file
+    // data by seek instead of holding it, so the volume is bounded by the disk
+    // rather than by what a byte[] can address.
+    if (output.CanSeek && TotalInputBytes(inputs) > StreamingCreateThreshold) {
+      this.CreateFromStreams(output, AsStreamingInputs(inputs), options);
+      return;
+    }
+
     var w = new FatWriter();
     foreach (var input in inputs.Where(i => !i.IsDirectory))
       w.AddFile(input.ArchiveName, input.ReadContent(),
@@ -574,6 +584,10 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     // Streaming needs a writable+seekable stream; the CreateFromStreams contract
     // already promises this through the pipeline. An explicit ImageSize is passed
     // through so the requested geometry is honoured rather than auto-fitted.
+    // Streaming inputs go through the streaming writer. A buffered create stays
+    // on Build()/BuildAutoSized(), which is what honours the minimal-geometry and
+    // format-specific knobs; Create() diverts a large payload to the streaming
+    // path before it ever gets here.
     if (streaming && output.CanSeek) {
       w.BuildToStreaming(output, requestedClusterSize: clusterBytes, volumeLabel: label,
                          forcedFatType: forcedFatType, enableLfn: enableLfn, transactionFat: tfat,
@@ -820,4 +834,46 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
   }
+  /// <summary>
+  /// Turns buffered inputs into streaming ones. Only a length is needed to lay a
+  /// volume out; reading each input into a byte[] first caps the volume at what
+  /// an array can hold even though the writer places file data by seek.
+  /// </summary>
+  private static List<Compression.Registry.Streaming.StreamingArchiveInput> AsStreamingInputs(
+      IReadOnlyList<ArchiveInputInfo> inputs) {
+    var result = new List<Compression.Registry.Streaming.StreamingArchiveInput>();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      var size = info.InMemoryContent?.LongLength
+                 ?? (File.Exists(info.FullPath) ? new FileInfo(info.FullPath).Length : 0L);
+      result.Add(new Compression.Registry.Streaming.StreamingArchiveInput(
+        info.ArchiveName, size, false,
+        () => info.InMemoryContent is { } bytes
+          ? new MemoryStream(bytes, writable: false)
+          : File.OpenRead(info.FullPath)));
+    }
+    return result;
+  }
+
+  /// <summary>
+  /// Payload above which creation takes the streaming route. Below it the
+  /// buffered writer is used, which is what honours the format-specific options
+  /// (NTFS compression, explicit geometry) the streaming path cannot express.
+  /// </summary>
+  private const long StreamingCreateThreshold = 1024L * 1024 * 1024;
+
+  /// <summary>Total bytes the inputs will contribute to the volume.</summary>
+  private static long TotalInputBytes(IReadOnlyList<ArchiveInputInfo> inputs) {
+    var total = 0L;
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      try {
+        total += i.InMemoryContent?.LongLength
+                 ?? (File.Exists(i.FullPath) ? new FileInfo(i.FullPath).Length : 0L);
+      } catch { /* unreadable input — the writer will report it */ }
+    }
+    return total;
+  }
+
 }

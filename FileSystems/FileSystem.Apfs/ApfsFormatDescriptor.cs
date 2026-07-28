@@ -176,8 +176,35 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// supported. The writer always emits a fresh contiguous-from-start image
   /// with valid Fletcher-64 checksums and a populated FS-tree B-tree.
   /// </summary>
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options, ReadEntries, files => BuildImage(files, archive.Length));
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // A volume too large to materialise goes through the streaming rebuilder;
+    // BuildImage returns a byte[] of the whole image, which Build() refuses to
+    // produce once the volume passes the array limit.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      var minSize = archive.Length;
+      ApfsWriter? streamWriter = null;
+      Stream? target = null;
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => ReadEntries(stream).ToList(),
+        beginWrite: s2 => {
+          streamWriter = new ApfsWriter();
+          streamWriter.SetMinImageSize(minSize);
+          target = s2;
+        },
+        writeEntry: (name, data) => streamWriter!.AddFile(name, data),
+        finishWrite: () => streamWriter!.BuildTo(target!));
+      return;
+    }
+
+    DefragRebuilder.Rebuild(archive, options, ReadEntries, files => BuildImage(files, archive.Length));
+  }
+
+  /// <summary>Largest volume a defrag will rebuild through a byte[].</summary>
+  private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
 
   /// <summary>
   /// Adds files to the volume in place via <see cref="ApfsModifier"/>. Supports

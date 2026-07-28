@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Ext;
@@ -151,7 +152,7 @@ public sealed class ExtWriter {
     // previous size implied.
     var neededInodes = 11 + CountDirectories() + _files.Count;
     for (var pass = 0; pass < 3; ++pass) {
-      var geo = ComputeGeometry(blockSize, totalBlocks, inodeSize, neededInodes);
+      var geo = ExtBlockGroupGeometry.Compute(blockSize, totalBlocks, inodeSize, neededInodes);
       var needed = payloadBlocks + (long)geo.GroupCount * geo.PerGroupMetaBlocks;
       var want = (int)Math.Max(4096, Math.Min(int.MaxValue / 2, needed * 11 / 10));
       if (want <= totalBlocks) break;
@@ -232,7 +233,7 @@ public sealed class ExtWriter {
     BuildCore(blockSize, totalBlocks, version, journal, volumeLabel, inodeSize).WriteTo(output);
   }
 
-  private BlockImage BuildCore(int blockSize, int totalBlocks, ExtVersion version, bool journal,
+  private SparseBlockImage BuildCore(int blockSize, int totalBlocks, ExtVersion version, bool journal,
                                string volumeLabel, int inodeSize) {
     const ushort ExtMagic = 0xEF53;
     // EXT2_GOOD_OLD_FIRST_INO — first inode available for user files on a
@@ -257,7 +258,7 @@ public sealed class ExtWriter {
       throw new ArgumentException($"Invalid inodeSize {inodeSize}; must be 128 or 256.", nameof(inodeSize));
 
     var neededInodes = (int)FirstUserInode + CountDirectories() + _files.Count;
-    var geo = ComputeGeometry(blockSize, totalBlocks, inodeSize, neededInodes);
+    var geo = ExtBlockGroupGeometry.Compute(blockSize, totalBlocks, inodeSize, neededInodes);
     totalBlocks = geo.TotalBlocks;
     var firstDataBlock = geo.FirstDataBlock;
     var blocksPerGroup = geo.BlocksPerGroup;
@@ -266,7 +267,7 @@ public sealed class ExtWriter {
     var inodesPerGroup = geo.InodesPerGroup;
     var perGroupMeta = geo.PerGroupMetaBlocks;
 
-    var img = new BlockImage(blockSize, (long)totalBlocks * blockSize);
+    var img = new SparseBlockImage(blockSize, (long)totalBlocks * blockSize);
     var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     var sectorsPerBlock = blockSize / 512;
 
@@ -735,112 +736,6 @@ public sealed class ExtWriter {
     return img;
   }
 
-  /// <summary>Block-group geometry derived from the block size and the volume size.</summary>
-  private readonly record struct ExtGeometry(
-    int TotalBlocks, int FirstDataBlock, int BlocksPerGroup, int GroupCount,
-    int GdtBlocks, int InodesPerGroup, int InodeTableBlocks, int PerGroupMetaBlocks);
-
-  /// <summary>
-  /// Works out how many block groups the volume needs and how the per-group
-  /// metadata is sized. A group holds 8 * blockSize blocks because its block
-  /// bitmap is a single block; anything larger takes more groups. Inodes are
-  /// shared evenly across them, so a one-group volume ends up with exactly the
-  /// geometry this writer produced before groups existed.
-  /// </summary>
-  private static ExtGeometry ComputeGeometry(int blockSize, int totalBlocks, int inodeSize, int neededInodes) {
-    var firstDataBlock = blockSize == 1024 ? 1 : 0;
-    var blocksPerGroup = 8 * blockSize;
-    var inodesPerBlock = blockSize / inodeSize;
-    totalBlocks = Math.Max(totalBlocks, firstDataBlock + 64);
-
-    int groupCount = 1, inodesPerGroup = 0, inodeTableBlocks = 0, gdtBlocks = 1, perGroupMeta = 0;
-    for (var pass = 0; pass < 8; ++pass) {
-      groupCount = Math.Max(1, (int)(((long)totalBlocks - firstDataBlock + blocksPerGroup - 1) / blocksPerGroup));
-      inodesPerGroup = ChooseInodeCount((neededInodes + groupCount - 1) / groupCount);
-      inodesPerGroup = Math.Min(8 * blockSize, (inodesPerGroup + inodesPerBlock - 1) / inodesPerBlock * inodesPerBlock);
-      inodeTableBlocks = inodesPerGroup * inodeSize / blockSize;
-      gdtBlocks = (groupCount * 32 + blockSize - 1) / blockSize;
-      // superblock + descriptor table + block bitmap + inode bitmap + inode table
-      perGroupMeta = 1 + gdtBlocks + 2 + inodeTableBlocks;
-
-      // A trailing group with no room for its own metadata is not worth keeping;
-      // dropping it costs a sliver of capacity and leaves every group well-formed.
-      var lastGroupBlocks = (long)totalBlocks - (firstDataBlock + (long)(groupCount - 1) * blocksPerGroup);
-      if (groupCount == 1 || lastGroupBlocks > perGroupMeta) break;
-      totalBlocks = firstDataBlock + (groupCount - 1) * blocksPerGroup;
-    }
-
-    totalBlocks = Math.Max(totalBlocks, firstDataBlock + perGroupMeta + 1);
-    return new ExtGeometry(totalBlocks, firstDataBlock, blocksPerGroup, groupCount,
-                           gdtBlocks, inodesPerGroup, inodeTableBlocks, perGroupMeta);
-  }
-
-  /// <summary>
-  /// Sparse, block-addressed image buffer. Only the blocks the writer actually
-  /// touches are allocated, so laying out a multi-gigabyte volume costs its
-  /// metadata rather than its size — and a volume too large for a byte[] can
-  /// still be written straight to a stream.
-  /// </summary>
-  private sealed class BlockImage(int blockSize, long totalBytes) {
-
-    private readonly Dictionary<int, byte[]> _blocks = [];
-
-    /// <summary>Block size in bytes.</summary>
-    public int BlockSize { get; } = blockSize;
-
-    /// <summary>Declared size of the finished volume.</summary>
-    public long TotalBytes { get; } = totalBytes;
-
-    /// <summary>The whole of <paramref name="block" />, allocated on first touch.</summary>
-    public Span<byte> Block(int block) {
-      if (!this._blocks.TryGetValue(block, out var data))
-        this._blocks[block] = data = new byte[this.BlockSize];
-      return data;
-    }
-
-    /// <summary>
-    /// <paramref name="length" /> bytes at <paramref name="offset" />. Every ext
-    /// structure this writer emits — superblock, group descriptor, inode, block
-    /// pointer — is aligned so that it never crosses a block boundary.
-    /// </summary>
-    public Span<byte> At(long offset, int length) {
-      var within = (int)(offset % this.BlockSize);
-      if (within + length > this.BlockSize)
-        throw new ArgumentOutOfRangeException(nameof(length), "ext writer: a field must not cross a block boundary.");
-      return this.Block((int)(offset / this.BlockSize)).Slice(within, length);
-    }
-
-    /// <summary>Materialises the whole volume.</summary>
-    /// <exception cref="InvalidOperationException">The volume is larger than a byte[] can hold.</exception>
-    public byte[] Materialise() {
-      if (this.TotalBytes > Array.MaxLength)
-        throw new InvalidOperationException(
-          $"ext: a {this.TotalBytes:N0}-byte volume exceeds the array limit; write it to a seekable stream instead.");
-
-      var image = new byte[this.TotalBytes];
-      foreach (var (block, data) in this._blocks) {
-        var offset = (long)block * this.BlockSize;
-        var take = (int)Math.Min(data.Length, this.TotalBytes - offset);
-        if (take > 0) data.AsSpan(0, take).CopyTo(image.AsSpan((int)offset));
-      }
-      return image;
-    }
-
-    /// <summary>Writes the volume from the current position, extending the stream to its full size.</summary>
-    public void WriteTo(Stream output) {
-      var basePosition = output.Position;
-      output.SetLength(basePosition + this.TotalBytes);
-      foreach (var block in this._blocks.Keys.Order()) {
-        var offset = (long)block * this.BlockSize;
-        var take = (int)Math.Min(this.BlockSize, this.TotalBytes - offset);
-        if (take <= 0) continue;
-        output.Position = basePosition + offset;
-        output.Write(this._blocks[block], 0, take);
-      }
-      output.Position = basePosition + this.TotalBytes;
-    }
-  }
-
   // Rounds the required inode count up to a sensible group size. The minimal
   // writer keeps a single block group, so the inode count is simply sized to
   // hold every reserved/dir/file inode with headroom, never below the classic 128.
@@ -874,7 +769,7 @@ public sealed class ExtWriter {
 
     var sink = new List<(IReadOnlyList<int> Blocks, long Size, Func<Stream> Opener)>();
     this._streamingSink = sink;
-    BlockImage image;
+    SparseBlockImage image;
     try {
       image = BuildCore(blockSize, totalBlocks, version, journal, volumeLabel, inodeSize);
     } finally {
@@ -1004,7 +899,7 @@ public sealed class ExtWriter {
   /// on ext4 too: the EXTENTS feature permits per-inode extent maps, it does not
   /// require them.
   /// </remarks>
-  private static int WriteInodeBlockMap(BlockImage img, long inodeOffset, IReadOnlyList<int> dataBlocks,
+  private static int WriteInodeBlockMap(SparseBlockImage img, long inodeOffset, IReadOnlyList<int> dataBlocks,
       int blockSize, Func<int> allocBlock) {
     const int directCount = 12;
     var ptrs = blockSize / 4;

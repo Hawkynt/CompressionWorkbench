@@ -162,7 +162,7 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public long? MaxTotalArchiveSize => 4L * 1024 * 1024;
   public long? MinTotalArchiveSize => 4L * 1024 * 1024;
   public string AcceptedInputsDescription =>
-    "ext1 WORM: ≤117 files, each ≤12 KiB (single-group rev-0 layout, direct blocks only).";
+    "ext1 WORM: flat root directory, each file ≤ 4 GiB (rev-0 layout; i_size is a uint32).";
 
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     if (input.IsDirectory) {
@@ -171,8 +171,10 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
     try {
       var size = input.InMemoryContent?.LongLength ?? new FileInfo(input.FullPath).Length;
-      if (size > 12 * 1024) {
-        reason = $"file '{input.ArchiveName}' exceeds the 12 KiB direct-block limit.";
+      // The block map reaches far past the direct pointers now; what a rev-0
+      // inode cannot express is a size that does not fit i_size, a uint32.
+      if (size > uint.MaxValue) {
+        reason = $"file '{input.ArchiveName}' exceeds the 4 GiB an ext1 inode can record.";
         return false;
       }
     } catch { /* size unknown — accept and let writer decide */ }
@@ -182,6 +184,11 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
+    // Same reason as Extract: ReadAll stops at HeaderReadCap, so a larger volume
+    // has to be walked in place or its entries come back empty.
+    if (stream.CanSeek && stream.Length > HeaderReadCap)
+      return ListStreaming(stream);
+
     byte[] image;
     try {
       image = ReadAll(stream);
@@ -226,10 +233,47 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     var w = new Ext1Writer();
-    foreach (var (name, data) in FlatFiles(inputs))
-      w.AddFile(name, data);
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      // Names are flattened to their leaf: ext1 as written here has a flat root.
+      // Only the length is needed to lay the volume out, so a large input is
+      // handed over as a stream factory rather than read into a byte[].
+      var name = Path.GetFileName(info.ArchiveName);
+      if (info.InMemoryContent is { } bytes)
+        w.AddFile(name, bytes);
+      else
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+    }
     var blockSize = options.GetOptionInt("BlockSize", 1024);
-    w.WriteTo(output, blockSize);
+    // Sized to the payload rather than to the canonical 4 MiB footprint, which
+    // WriteTo still emits: anything larger than that used to run the allocator dry.
+    var totalBlocks = w.PlanTotalBlocks(blockSize);
+    if (output.CanSeek)
+      w.BuildTo(output, blockSize, totalBlocks);
+    else
+      output.Write(w.Build(blockSize, totalBlocks));
+  }
+
+  /// <summary>
+  /// Streaming creation: each input's length settles the layout, then its bytes
+  /// are copied into the blocks it was allocated, so an entry past what a byte[]
+  /// can hold never has to be materialised.
+  /// </summary>
+  public void CreateFromStreams(Stream output, IEnumerable<Compression.Registry.Streaming.StreamingArchiveInput> inputs,
+                                FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    if (!output.CanSeek)
+      throw new ArgumentException("ext1 streaming creation requires a seekable output.", nameof(output));
+
+    var w = new Ext1Writer();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      w.AddStreamingFile(Path.GetFileName(input.Name), input.Size, input.OpenStream);
+    }
+    var blockSize = options.GetOptionInt("BlockSize", 1024);
+    w.BuildTo(output, blockSize, w.PlanTotalBlocks(blockSize));
   }
 
   public void Defragment(Stream archive)
@@ -237,11 +281,31 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <summary>
   /// Mode-aware ext1 defragmentor via read-extract-rebuild dispatch through
-  /// <see cref="DefragRebuilder"/>. The writer always emits a fresh
-  /// contiguous-from-start single-group rev-0 layout with the canonical
-  /// 4 MiB image footprint (1024-byte blocks × 4096).
+  /// <see cref="DefragRebuilder"/>. The writer emits a fresh contiguous-from-start
+  /// rev-0 layout at the source volume's own block size and block count -- the
+  /// canonical 4 MiB footprint WriteTo produces only fits a few megabytes, so
+  /// rebuilding into it dropped everything a larger volume held.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    var (blockSize, totalBlocks) = ReadGeometry(archive);
+
+    // A volume too large to materialise goes through the streaming rebuilder.
+    if (archive.CanSeek && archive.Length > int.MaxValue / 2
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      Ext1Writer? streamWriter = null;
+      Stream? target = null;
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => {
+          var r = new Ext1Reader(stream);
+          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e))).ToList();
+        },
+        beginWrite: s2 => { streamWriter = new Ext1Writer(); target = s2; },
+        writeEntry: (name, data) => streamWriter!.AddFile(name, data),
+        finishWrite: () => streamWriter!.BuildTo(target!, blockSize, totalBlocks));
+      return;
+    }
+
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new Ext1Reader(stream);
@@ -250,13 +314,37 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       buildImage: files => {
         var w = new Ext1Writer();
         foreach (var (n, d) in files) w.AddFile(n, d);
-        using var ms = new MemoryStream();
-        w.WriteTo(ms);
-        return ms.ToArray();
+        return w.Build(blockSize, totalBlocks);
       });
   }
 
+  /// <summary>Block size and block count declared by the volume's own superblock.</summary>
+  private static (int BlockSize, int TotalBlocks) ReadGeometry(Stream archive) {
+    var position = archive.Position;
+    try {
+      var sb = new byte[1024];
+      archive.Position = 1024;
+      archive.ReadExactly(sb);
+      var logBlockSize = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(24));
+      var blockSize = 1024 << (int)Math.Min(logBlockSize, 2);
+      var totalBlocks = (int)Math.Min(int.MaxValue, BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(4)));
+      return (blockSize, Math.Max(totalBlocks, 4 * 1024 * 1024 / blockSize));
+    } catch {
+      return (1024, 4096);
+    } finally {
+      archive.Position = position;
+    }
+  }
+
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    // A seekable image is walked in place. ReadAll stops at HeaderReadCap, so
+    // buffering silently truncated anything larger -- and FULL.ext1 would double
+    // the image in memory on top of that.
+    if (stream.CanSeek && stream.Length > HeaderReadCap) {
+      ExtractStreaming(stream, outputDir, files);
+      return;
+    }
+
     byte[] image;
     try {
       image = ReadAll(stream);
@@ -384,4 +472,63 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       };
     }
   }
+  /// <summary>
+  /// Extraction for an image too large to buffer: FULL.ext1 is copied through,
+  /// and each entry is streamed straight out of the volume.
+  /// </summary>
+  private static void ExtractStreaming(Stream stream, string outputDir, string[]? files) {
+    // TryParse indexes from the start of the image, so hand it the leading 2 KB.
+    var head = new byte[2048];
+    stream.Position = 0;
+    stream.ReadExactly(head);
+    var parsed = Ext1Superblock.TryParse(head);
+
+    if (files == null || files.Length == 0 || MatchesFilter("FULL.ext1", files)) {
+      stream.Position = 0;
+      using var full = CreateEntryFile(outputDir, "FULL.ext1");
+      stream.CopyTo(full);
+    }
+    WriteIfMatch(outputDir, "metadata.ini", BuildMetadata(parsed), files);
+    if (parsed.Valid)
+      WriteIfMatch(outputDir, "superblock.bin", parsed.RawBytes, files);
+
+    if (!parsed.Valid) return;
+    try {
+      stream.Position = 0;
+      using var reader = new Ext1Reader(stream);
+      foreach (var e in reader.Entries) {
+        if (e.IsDirectory) continue;
+        if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
+        using var target = CreateEntryFile(outputDir, e.Name);
+        reader.ExtractTo(e, target);
+      }
+    } catch { /* synthetic / unwalkable image — surface entries are enough */ }
+  }
+
+  /// <summary>Listing for an image too large to buffer: the volume is walked in place.</summary>
+  private static List<ArchiveEntryInfo> ListStreaming(Stream stream) {
+    var entries = new List<ArchiveEntryInfo>();
+    var head = new byte[2048];
+    stream.Position = 0;
+    stream.ReadExactly(head);
+    var parsed = Ext1Superblock.TryParse(head);
+
+    entries.Add(new ArchiveEntryInfo(0, "FULL.ext1", stream.Length, stream.Length, "stored", false, false, null));
+    entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
+    if (parsed.Valid)
+      entries.Add(new ArchiveEntryInfo(2, "superblock.bin", parsed.RawBytes.LongLength, parsed.RawBytes.LongLength, "stored", false, false, null));
+    if (!parsed.Valid) return entries;
+
+    try {
+      stream.Position = 0;
+      using var reader = new Ext1Reader(stream);
+      var idx = entries.Count;
+      foreach (var e in reader.Entries) {
+        if (e.IsDirectory) continue;
+        entries.Add(new ArchiveEntryInfo(idx++, e.Name, e.Size, e.Size, "stored", false, false, e.LastModified));
+      }
+    } catch { /* best-effort; reader failure leaves only surface entries */ }
+    return entries;
+  }
+
 }

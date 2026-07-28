@@ -131,7 +131,10 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(output);
     try {
       input.Position = 0;
-      using var work = new MemoryStream();
+      // A scratch file rather than a MemoryStream: the in-place shrinker needs a
+      // writable copy of the whole volume, and a MemoryStream cannot hold one
+      // past 2 GB ("Stream was too long").
+      using var work = CreateScratchStream();
       input.CopyTo(work);
       var result = ExtInPlaceShrinker.ShrinkToFit(work);
       if (result.WasReduced) {
@@ -472,4 +475,13 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     target.Write(image);
     options.OnProgress?.Invoke(image.Length, image.Length);
   }
+  /// <summary>
+  /// A writable scratch stream that is not bounded by what a byte[] can hold.
+  /// Deleted on close.
+  /// </summary>
+  private static FileStream CreateScratchStream()
+    => new(Path.Combine(Path.GetTempPath(), "cwb_ext_" + Guid.NewGuid().ToString("N") + ".tmp"),
+           FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 64 * 1024,
+           FileOptions.DeleteOnClose);
+
 }

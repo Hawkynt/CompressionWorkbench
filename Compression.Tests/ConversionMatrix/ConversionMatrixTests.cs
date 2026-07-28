@@ -177,7 +177,6 @@ public class ConversionMatrixTests {
   // from one). Keyed "Source|Target", case-insensitive.
   private static readonly Dictionary<string, string> KnownGapPairs =
     new(StringComparer.OrdinalIgnoreCase) {
-      { "SevenZip|FatPlus", "[other] FAT+ read-back truncates DATA.BIN to 14 B from a SevenZip source only (pair-specific content mismatch)" },
     };
 
   /// <summary>

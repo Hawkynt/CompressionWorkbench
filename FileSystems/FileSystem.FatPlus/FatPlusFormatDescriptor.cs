@@ -125,8 +125,13 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new FatPlusWriter();
-    foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))
-      w.AddFile(name, data);
+    // Streaming inputs: only a length is needed to lay the volume out, and the
+    // writer places file data by seek. Reading each input into a byte[] first
+    // capped the volume at what an array can hold.
+    var streaming = TotalInputBytes(inputs) > StreamingCreateThreshold;
+    foreach (var (name, size, open) in AsStreamingInputs(inputs))
+      if (streaming) w.AddStreamingFile(name, size, open);
+      else using (var src = open()) { using var ms = new MemoryStream(); src.CopyTo(ms); w.AddFile(name, ms.ToArray()); }
 
     var specific = options.FormatSpecific;
     var totalSectors = ParseImageSizeSectors(specific?.GetValueOrDefault("ImageSize"));
@@ -147,6 +152,13 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     // so caps FAT+ at the ~2 GB array limit, while BuildTo leaves free space sparse.
     if (totalSectors > 0 && output.CanSeek) {
       w.BuildTo(output, totalSectors, requestedClusterSize: clusterBytes, volumeLabel: label);
+      return;
+    }
+
+    // An auto-sized volume goes the same way: BuildAutoSized materialises the
+    // whole thing, so a payload past the array limit could not be built at all.
+    if (output.CanSeek && streaming) {
+      w.BuildToStreamingAutoSized(output, requestedClusterSize: clusterBytes, volumeLabel: label);
       return;
     }
 
@@ -320,4 +332,45 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
         return w.Build(totalSectors: Math.Max(totalSectors, 200_000));
       });
   }
+  /// <summary>
+  /// Turns buffered inputs into streaming ones. Only a length is needed to lay a
+  /// volume out; reading each input into a byte[] first caps the volume at what
+  /// an array can hold even though the writer places file data by seek.
+  /// </summary>
+  private static List<(string Name, long Size, Func<Stream> Open)> AsStreamingInputs(
+      IReadOnlyList<ArchiveInputInfo> inputs) {
+    var result = new List<(string, long, Func<Stream>)>();
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      var info = i;
+      var size = info.InMemoryContent?.LongLength
+                 ?? (File.Exists(info.FullPath) ? new FileInfo(info.FullPath).Length : 0L);
+      result.Add((Path.GetFileName(info.ArchiveName), size,
+        () => info.InMemoryContent is { } bytes
+          ? new MemoryStream(bytes, writable: false)
+          : File.OpenRead(info.FullPath)));
+    }
+    return result;
+  }
+
+  /// <summary>
+  /// Payload above which creation takes the streaming route. Below it the
+  /// buffered writer is used, which is what honours the format-specific options
+  /// (NTFS compression, explicit geometry) the streaming path cannot express.
+  /// </summary>
+  private const long StreamingCreateThreshold = 1024L * 1024 * 1024;
+
+  /// <summary>Total bytes the inputs will contribute to the volume.</summary>
+  private static long TotalInputBytes(IReadOnlyList<ArchiveInputInfo> inputs) {
+    var total = 0L;
+    foreach (var i in inputs) {
+      if (i.IsDirectory) continue;
+      try {
+        total += i.InMemoryContent?.LongLength
+                 ?? (File.Exists(i.FullPath) ? new FileInfo(i.FullPath).Length : 0L);
+      } catch { /* unreadable input — the writer will report it */ }
+    }
+    return total;
+  }
+
 }

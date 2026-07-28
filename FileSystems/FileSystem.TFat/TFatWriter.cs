@@ -40,6 +40,22 @@ public sealed class TFatWriter {
   public void AddFile(string name, byte[] data) => _inner.AddFile(name, data);
 
   /// <summary>
+  /// Adds a file whose bytes are produced on demand; the layout is settled from
+  /// <paramref name="size" /> before any are read.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream)
+    => _inner.AddStreamingFile(name, size, openStream);
+
+  /// <summary>Auto-sized streaming build; the TFAT post-pass re-stamps both FAT copies.</summary>
+  public void BuildToStreamingAutoSized(Stream output, int bytesPerSector = 512, int requestedClusterSize = 0,
+      string? volumeLabel = null, int forcedFatType = 0) {
+    ArgumentNullException.ThrowIfNull(output);
+    _inner.BuildToStreaming(output, bytesPerSector, requestedClusterSize, volumeLabel,
+                            forcedFatType, enableLfn: true, transactionFat: true);
+    this.StampTfatOnStream(output);
+  }
+
+  /// <summary>
   /// Builds the TFAT image. <paramref name="totalSectors"/> defaults to 2880
   /// (a 1.44 MB image) which yields FAT12; for FAT32 testing pass a larger
   /// value (e.g. 131072 for ~64 MB).
@@ -99,8 +115,12 @@ public sealed class TFatWriter {
   public void BuildTo(Stream output, int totalSectors, int bytesPerSector = 512,
     int requestedClusterSize = 0, string? volumeLabel = null, int forcedFatType = 0) {
     ArgumentNullException.ThrowIfNull(output);
-    _inner.BuildTo(output, totalSectors, bytesPerSector, requestedClusterSize,
-      volumeLabel: volumeLabel, forcedFatType: forcedFatType, transactionFat: true);
+    // BuildToStreaming rather than BuildTo: the latter only lays out the volume
+    // and never post-fills the clusters of entries added as stream factories, so
+    // every such file came back empty.
+    _inner.BuildToStreaming(output, bytesPerSector, requestedClusterSize,
+      volumeLabel: volumeLabel, forcedFatType: forcedFatType, enableLfn: true,
+      transactionFat: true, requestedTotalSectors: totalSectors);
     this.StampTfatOnStream(output);
   }
 

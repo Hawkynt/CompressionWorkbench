@@ -79,8 +79,21 @@ public static class ExtExtentMap {
       bgInodeTable[g] = BinaryPrimitives.ReadUInt32LittleEndian(bgdEntry.AsSpan(8));
     }
 
-    yield return new DefragBlockInfo(bgdtOffset, blockSize, DefragBlockKind.MetadataReserved,
-      FileName: "ext group descriptor table");
+    // The descriptor table is as many blocks as the group count needs, not one.
+    var gdtBlocks = (int)(((long)groupCount * 32 + blockSize - 1) / blockSize);
+    yield return new DefragBlockInfo(bgdtOffset, (long)gdtBlocks * blockSize,
+      DefragBlockKind.MetadataReserved, FileName: "ext group descriptor table");
+
+    // Without SPARSE_SUPER every group past the first opens with a superblock
+    // and descriptor-table backup. They are not reachable from the directory
+    // tree, so anything that treats unreported space as free would overwrite
+    // exactly what e2fsck needs to repair the volume.
+    for (uint g = 1; g < groupCount; g++) {
+      var groupStart = (long)(firstDataBlock + g * blocksPerGroup) * blockSize;
+      if (groupStart + (long)(1 + gdtBlocks) * blockSize > image.Length) break;
+      yield return new DefragBlockInfo(groupStart, (long)(1 + gdtBlocks) * blockSize,
+        DefragBlockKind.MetadataReserved, FileName: $"ext superblock backup (group {g})");
+    }
 
     var inodeTableBlocks = (int)((inodesPerGroup * (uint)inodeSize + (uint)blockSize - 1) / (uint)blockSize);
     for (uint g = 0; g < groupCount; g++) {
@@ -116,7 +129,23 @@ public static class ExtExtentMap {
         yield return ext;
       }
     }
+
+    // The journal (inode 8 by default) hangs off the superblock rather than the
+    // directory tree, so nothing above has accounted for its blocks.
+    var featureCompat = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(92));
+    if ((featureCompat & FeatureCompatHasJournal) != 0) {
+      var journalInode = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(224));
+      if (journalInode == 0) journalInode = 8;
+      var journalSize = DirSizeFromInodeStream(cache, blockSize, inodeSize, inodesPerGroup, bgInodeTable, journalInode);
+      foreach (var ext in EnumerateFileExtentsStream(cache, blockSize, inodeSize, featureIncompat,
+                 inodesPerGroup, bgInodeTable, journalInode, journalSize, "ext journal")) {
+        yield return ext with { Kind = DefragBlockKind.MetadataReserved };
+      }
+    }
   }
+
+  /// <summary>EXT4_FEATURE_COMPAT_HAS_JOURNAL.</summary>
+  private const uint FeatureCompatHasJournal = 0x0004;
 
   private static long DirSizeFromInodeStream(SectorCache cache, int blockSize, int inodeSize,
       uint inodesPerGroup, uint[] bgInodeTable, uint inodeNum) {
@@ -309,27 +338,25 @@ public static class ExtExtentMap {
       result.AddRange(coalesce.Add(bn, Math.Min(remaining, blockSize)));
       remaining -= blockSize;
     }
-    if (remaining > 0) {
-      var ind = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(88));
-      if (ind != 0)
-        result.AddRange(WalkIndirectMaterialisedStream(cache, blockSize, ind, coalesce, 1, ref remaining));
-    }
-    if (remaining > 0) {
-      var ind = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(92));
-      if (ind != 0)
-        result.AddRange(WalkIndirectMaterialisedStream(cache, blockSize, ind, coalesce, 2, ref remaining));
-    }
-    if (remaining > 0) {
-      var ind = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(96));
-      if (ind != 0)
-        result.AddRange(WalkIndirectMaterialisedStream(cache, blockSize, ind, coalesce, 3, ref remaining));
+    // The pointer blocks of the classic block map are part of the file's
+    // footprint. Leaving them out marks them free, so a wipe zeroes the map and
+    // a defrag relocates data on top of it -- either way the file past its
+    // twelfth block is gone.
+    for (var level = 1; level <= 3 && remaining > 0; ++level) {
+      var ind = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(84 + level * 4));
+      if (ind == 0) continue;
+      result.AddRange(coalesce.Flush());
+      result.Add(new DefragBlockInfo((long)ind * blockSize, blockSize,
+        DefragBlockKind.MetadataReserved, FileName: $"{name} (block map)"));
+      result.AddRange(WalkIndirectMaterialisedStream(cache, blockSize, ind, coalesce, level, ref remaining, result));
     }
     result.AddRange(coalesce.Flush());
     return result;
   }
 
+  /// <param name="pointerBlocks">Collects the pointer blocks met on the way down, which belong to the file as much as its data does.</param>
   private static List<DefragBlockInfo> WalkIndirectMaterialisedStream(SectorCache cache, int blockSize, uint blockNum,
-      RunBuilder coalesce, int level, ref long remaining) {
+      RunBuilder coalesce, int level, ref long remaining, List<DefragBlockInfo> pointerBlocks) {
     var emitted = new List<DefragBlockInfo>();
     if (blockNum == 0 || remaining <= 0) return emitted;
     var off = (long)blockNum * blockSize;
@@ -344,7 +371,10 @@ public static class ExtExtentMap {
         emitted.AddRange(coalesce.Add(ptr, Math.Min(local, blockSize)));
         local -= blockSize;
       } else {
-        emitted.AddRange(WalkIndirectMaterialisedStream(cache, blockSize, ptr, coalesce, level - 1, ref local));
+        emitted.AddRange(coalesce.Flush());
+        pointerBlocks.Add(new DefragBlockInfo((long)ptr * blockSize, blockSize,
+          DefragBlockKind.MetadataReserved, FileName: coalesce.Name + " (block map)"));
+        emitted.AddRange(WalkIndirectMaterialisedStream(cache, blockSize, ptr, coalesce, level - 1, ref local, pointerBlocks));
       }
     }
     remaining = local;
@@ -408,6 +438,9 @@ public static class ExtExtentMap {
       this._blockSize = blockSize;
       this._name = name;
     }
+
+    /// <summary>The file these runs belong to.</summary>
+    public string Name => this._name;
 
     public IEnumerable<DefragBlockInfo> Add(uint blockNum, long byteLenInThisBlock) {
       if (this._runStart < 0) {

@@ -183,23 +183,39 @@ public sealed class HpfsFormatDescriptor
   public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options)
-    => DefragRebuilder.Rebuild(archive, options, ReadFileEntries, BuildImage);
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // A volume too large to materialise goes through the streaming rebuilder;
+    // BuildImage returns a byte[] of the whole image, which Build() refuses to
+    // produce once the volume passes the array limit.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      HpfsWriter? streamWriter = null;
+      Stream? target = null;
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => ReadFileEntries(stream).ToList(),
+        beginWrite: s2 => { streamWriter = new HpfsWriter(); target = s2; },
+        writeEntry: (name, data) => streamWriter!.AddFile(name, data),
+        finishWrite: () => streamWriter!.WriteTo(target!));
+      return;
+    }
+
+    DefragRebuilder.Rebuild(archive, options, ReadFileEntries, BuildImage);
+  }
+
+  /// <summary>Largest volume a defrag will rebuild through a byte[].</summary>
+  private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
 
   // ── IFilesystemExtentMap ──────────────────────────────────────────────
 
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
-    byte[] data;
-    try {
-      image.Position = 0;
-      using var ms = new MemoryStream();
-      image.CopyTo(ms);
-      data = ms.ToArray();
-    } catch {
-      return [];
-    }
-
-    return EnumerateExtentsCore(data);
+    ArgumentNullException.ThrowIfNull(image);
+    // Walked from the stream, never copied into a byte[]. Buffering a volume past
+    // the array limit threw, and the empty list that came back reads as "the whole
+    // volume is free" -- so a wipe zeroed every byte of it.
+    return EnumerateExtentsCore(image);
   }
 
   // ── IWipeEmpty ─────────────────────────────────────────────────────────
@@ -238,11 +254,20 @@ public sealed class HpfsFormatDescriptor
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
   }
 
-  private static List<DefragBlockInfo> EnumerateExtentsCore(byte[] data) {
+  private static List<DefragBlockInfo> EnumerateExtentsCore(Stream image) {
     var result = new List<DefragBlockInfo>();
     const int lbaSize = HpfsReader.LbaSize;
 
-    if (data.Length < (HpfsReader.SuperblockLba + 1) * lbaSize) return result;
+    var length = image.CanSeek ? image.Length : 0;
+    if (length < (HpfsReader.SuperblockLba + 1) * lbaSize) return result;
+
+    uint ReadLba(long offset) {
+      if (offset + 4 > length) return 0;
+      Span<byte> four = stackalloc byte[4];
+      image.Position = offset;
+      image.ReadExactly(four);
+      return BinaryPrimitives.ReadUInt32LittleEndian(four);
+    }
 
     // Boot sector
     result.Add(new DefragBlockInfo(0, lbaSize, DefragBlockKind.MetadataReserved, "Boot sector"));
@@ -256,38 +281,41 @@ public sealed class HpfsFormatDescriptor
 
     // Root fnode
     try {
-      var rootFnodeLba = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(sbOff + 12, 4));
-      var rootFnodeOff = (long)rootFnodeLba * lbaSize;
-      if (rootFnodeOff + lbaSize <= data.Length) {
+      var rootFnodeOff = (long)ReadLba(sbOff + 12) * lbaSize;
+      if (rootFnodeOff + lbaSize <= length) {
         result.Add(new DefragBlockInfo(rootFnodeOff, lbaSize, DefragBlockKind.MetadataReserved, "Root Fnode"));
 
         // Root dir block
-        if (rootFnodeOff + 0xC4 + 12 <= data.Length) {
-          var rootDirLba = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)rootFnodeOff + 0xC4 + 8, 4));
-          var rootDirOff = (long)rootDirLba * lbaSize;
-          if (rootDirOff + HpfsReader.DirBlockSize <= data.Length)
-            result.Add(new DefragBlockInfo(rootDirOff, HpfsReader.DirBlockSize, DefragBlockKind.MetadataReserved, "Root DirBlock"));
-        }
+        var rootDirOff = (long)ReadLba(rootFnodeOff + 0xC4 + 8) * lbaSize;
+        if (rootDirOff + HpfsReader.DirBlockSize <= length)
+          result.Add(new DefragBlockInfo(rootDirOff, HpfsReader.DirBlockSize, DefragBlockKind.MetadataReserved, "Root DirBlock"));
       }
     } catch {
       // Malformed — return what we have
     }
 
-    // File extents from reader
+    // File extents from reader. Directories carry a dirent block that has to be
+    // reported too -- it is as much part of the volume as any file's data.
     try {
-      using var ms = new MemoryStream(data);
-      using var r = new HpfsReader(ms);
+      image.Position = 0;
+      using var r = new HpfsReader(image);
       foreach (var entry in r.Entries) {
-        if (entry.IsDirectory || entry.IsBtreeFile) continue;
+        if (entry.IsBtreeFile) continue;
         if (entry.FnodeLba > 0) {
           var fnodeOff = (long)entry.FnodeLba * lbaSize;
-          if (fnodeOff + lbaSize <= data.Length)
+          if (fnodeOff + lbaSize <= length)
             result.Add(new DefragBlockInfo(fnodeOff, lbaSize, DefragBlockKind.MetadataReserved, $"Fnode: {entry.Name}"));
+        }
+        if (entry.IsDirectory) {
+          var dirOff = (long)entry.DataLba * lbaSize;
+          if (entry.DataLba > 0 && dirOff + HpfsReader.DirBlockSize <= length)
+            result.Add(new DefragBlockInfo(dirOff, HpfsReader.DirBlockSize, DefragBlockKind.MetadataReserved, $"DirBlock: {entry.Name}"));
+          continue;
         }
         if (entry.DataLba > 0 && entry.Size > 0) {
           var dataOff = (long)entry.DataLba * lbaSize;
           var dataLen = ((entry.Size + lbaSize - 1) / lbaSize) * lbaSize;
-          if (dataOff + dataLen <= data.Length)
+          if (dataOff + dataLen <= length)
             result.Add(new DefragBlockInfo(dataOff, Math.Min(dataLen, entry.Size), DefragBlockKind.Used, entry.Name));
         }
       }
@@ -295,9 +323,11 @@ public sealed class HpfsFormatDescriptor
       // Best-effort
     }
 
-    // Bitmap
-    if (data.Length >= 25 * lbaSize)
+    // Allocation bitmap and directory-band bitmap.
+    if (length >= 26 * lbaSize) {
       result.Add(new DefragBlockInfo(24 * lbaSize, lbaSize, DefragBlockKind.MetadataReserved, "Bitmap"));
+      result.Add(new DefragBlockInfo(25 * lbaSize, lbaSize, DefragBlockKind.MetadataReserved, "DirBand bitmap"));
+    }
 
     return result;
   }

@@ -147,7 +147,6 @@ Targets that work from most sources but fail from a specific source.
 
 | Source -> Target | Bucket | Reason |
 |---|---|---|
-| `SevenZip` -> `FatPlus` | other | FAT+ read-back truncates DATA.BIN to 14 B from a SevenZip source only (pair-specific content mismatch) |
 
 ---
 

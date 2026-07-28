@@ -78,6 +78,30 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// MemoryStream sized to the original.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    // A volume too large to materialise goes through the streaming rebuilder;
+    // the buffered path's buildImage returns a byte[] of the whole image.
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes
+        && options.Mode is DefragMode.ConsolidateAtStart or DefragMode.FillHolesLazy) {
+      BtrfsWriter? streamWriter = null;
+      Stream? target = null;
+      DefragRebuilder.RebuildStreaming(archive, options,
+        readEntries: stream => {
+          var r = new BtrfsReader(stream);
+          return r.Entries.Where(e => !e.IsDirectory).Select(e => (e.Name, r.Extract(e))).ToList();
+        },
+        beginWrite: s2 => { streamWriter = new BtrfsWriter(); target = s2; },
+        // AddStreamingFile, not AddFile: an inline payload is materialised inside
+        // the image buffer, which is precisely what a multi-gigabyte volume cannot
+        // afford. As a stream it is placed by seek instead.
+        writeEntry: (name, data) => streamWriter!.AddStreamingFile(
+          name, data.LongLength, () => new MemoryStream(data, writable: false)),
+        finishWrite: () => streamWriter!.BuildToStreaming(target!));
+      return;
+    }
+
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
         var r = new BtrfsReader(stream);
@@ -91,6 +115,9 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
         return ms.ToArray();
       });
   }
+
+  /// <summary>Largest volume a defrag will rebuild through a byte[].</summary>
+  private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
 
   // WORM-minimal writer constraints: a single leaf node holds ≤64 file
   // tuples (INODE_ITEM + DIR_INDEX + inline EXTENT_DATA). No chunk tree is

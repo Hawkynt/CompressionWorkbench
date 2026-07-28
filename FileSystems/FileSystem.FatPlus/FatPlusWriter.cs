@@ -35,7 +35,7 @@ namespace FileSystem.FatPlus;
 /// </remarks>
 public sealed class FatPlusWriter {
 
-  private readonly List<(string Name, byte[] Data, long ExtendedSize)> _files = [];
+  private readonly List<(string Name, byte[]? Data, long ExtendedSize, long Size, Func<Stream>? Opener)> _files = [];
 
   /// <summary>
   /// Adds a file to the image.
@@ -53,7 +53,22 @@ public sealed class FatPlusWriter {
     if (size < 0 || size >= 1L << 38)
       throw new ArgumentOutOfRangeException(nameof(extendedSize),
         "FAT+ extended size must fit in 38 bits (0 .. 256 GiB − 1).");
-    this._files.Add((name, data, size));
+    this._files.Add((name, data, size, data.LongLength, null));
+  }
+
+  /// <summary>
+  /// Adds a file whose bytes are produced on demand. <paramref name="size" /> must
+  /// match what <paramref name="openStream" /> yields; the layout is settled from
+  /// it before a byte is read, so a payload past what a byte[] holds is placed
+  /// like any other.
+  /// </summary>
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+    ArgumentNullException.ThrowIfNull(name);
+    ArgumentNullException.ThrowIfNull(openStream);
+    if (size < 0 || size >= 1L << 38)
+      throw new ArgumentOutOfRangeException(nameof(size),
+        "FAT+ extended size must fit in 38 bits (0 .. 256 GiB - 1).");
+    this._files.Add((name, null, size, size, openStream));
   }
 
   /// <summary>
@@ -117,11 +132,19 @@ public sealed class FatPlusWriter {
     // Size to the actual payload (data + ~50 % headroom for directory entries and
     // cluster-tail slack), but never below the FAT32 floor so the FAT+ extension
     // stays meaningful.
-    var totalDataBytes = this._files.Sum(f => (long)f.Data.Length);
+    return this.Build(this.PlanTotalSectors(bytesPerSector), bytesPerSector, requestedClusterSize, volumeLabel);
+  }
+
+  /// <summary>
+  /// Sector count a volume needs to hold the files added: the payload plus ~50 %
+  /// headroom for directory entries and cluster-tail slack, never below the FAT32
+  /// floor so the FAT+ extension stays meaningful.
+  /// </summary>
+  public int PlanTotalSectors(int bytesPerSector = 512) {
+    var totalDataBytes = this._files.Sum(f => f.Size);
     var neededBytes = totalDataBytes * 3 / 2 + 16L * 1024 * 1024;
     var neededSectors = (neededBytes + bytesPerSector - 1) / bytesPerSector;
-    var totalSectors = (int)Math.Min(int.MaxValue, Math.Max(200_000L, neededSectors));
-    return this.Build(totalSectors, bytesPerSector, requestedClusterSize, volumeLabel);
+    return (int)Math.Min(int.MaxValue, Math.Max(200_000L, neededSectors));
   }
 
   /// <summary>
@@ -156,9 +179,39 @@ public sealed class FatPlusWriter {
     int requestedClusterSize = 0, string? volumeLabel = null) {
     ArgumentNullException.ThrowIfNull(output);
     var inner = this.NewInnerWriter();
-    inner.BuildTo(output, totalSectors, bytesPerSector, requestedClusterSize,
-      volumeLabel: volumeLabel, forcedFatType: 32);
+    // FAT+ is always FAT32, and FAT32 needs at least 65525 clusters. Left on Auto,
+    // the writer picks a cluster size for the payload and then grows the volume
+    // until that floor is met -- a 40 MB payload came out as a 4 GB volume. Pick
+    // the cluster size against the intended size instead, so the floor is met by
+    // using smaller clusters rather than by inflating the image.
+    if (requestedClusterSize <= 0) {
+      const long fat32MinClusters = 65525 + 2048; // the floor plus the writer's margin
+      var maxCluster = (long)totalSectors * bytesPerSector / fat32MinClusters;
+      var picked = bytesPerSector;
+      foreach (var candidate in new[] { 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536 })
+        if (candidate >= bytesPerSector && candidate <= maxCluster) picked = candidate;
+      requestedClusterSize = picked;
+    }
 
+    // BuildToStreaming rather than BuildTo: the latter only lays out the volume
+    // and never post-fills the clusters of entries added as stream factories, so
+    // every such file came back empty.
+    inner.BuildToStreaming(output, bytesPerSector, requestedClusterSize,
+      volumeLabel: volumeLabel, forcedFatType: 32, requestedTotalSectors: totalSectors);
+    this.PatchFatPlusOnStream(output);
+  }
+
+  /// <summary>
+  /// Streams an auto-sized FAT+ volume, sized to the files added, then applies the
+  /// FAT+ patches in place.
+  /// </summary>
+  public void BuildToStreamingAutoSized(Stream output, int bytesPerSector = 512,
+    int requestedClusterSize = 0, string? volumeLabel = null)
+    => this.BuildTo(output, this.PlanTotalSectors(bytesPerSector), bytesPerSector,
+                    requestedClusterSize, volumeLabel);
+
+  /// <summary>Applies the FAT+ OEM signature and per-dirent extended sizes to a built volume.</summary>
+  private void PatchFatPlusOnStream(Stream output) {
     var boot = new byte[512];
     output.Position = 0;
     output.ReadExactly(boot, 0, (int)Math.Min(boot.Length, output.Length));
@@ -202,8 +255,11 @@ public sealed class FatPlusWriter {
 
   private FatWriter NewInnerWriter() {
     var inner = new FatWriter();
-    foreach (var (name, data, _) in this._files)
-      inner.AddFile(name, data);
+    foreach (var (name, data, _, size, opener) in this._files)
+      if (opener == null)
+        inner.AddFile(name, data!);
+      else
+        inner.AddStreamingFile(name, size, opener);
     return inner;
   }
 

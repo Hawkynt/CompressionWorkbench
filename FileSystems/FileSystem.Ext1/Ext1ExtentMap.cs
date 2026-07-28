@@ -67,8 +67,20 @@ public static class Ext1ExtentMap {
       bgInodeTable[g] = BinaryPrimitives.ReadUInt32LittleEndian(bgdEntry.AsSpan(8));
     }
 
-    yield return new DefragBlockInfo(bgdtOffset, blockSize, DefragBlockKind.MetadataReserved,
-      FileName: "ext1 group descriptor table");
+    // The descriptor table is as many blocks as the group count needs, not one.
+    var gdtBlocks = (int)(((long)groupCount * 32 + blockSize - 1) / blockSize);
+    yield return new DefragBlockInfo(bgdtOffset, (long)gdtBlocks * blockSize,
+      DefragBlockKind.MetadataReserved, FileName: "ext1 group descriptor table");
+
+    // Every group past the first opens with a superblock and descriptor-table
+    // backup. They are not reachable from the directory tree, so anything
+    // treating unreported space as free would overwrite them.
+    for (uint g = 1; g < groupCount; g++) {
+      var groupStart = (long)(firstDataBlock + g * blocksPerGroup) * blockSize;
+      if (groupStart + (long)(1 + gdtBlocks) * blockSize > cache.Length) break;
+      yield return new DefragBlockInfo(groupStart, (long)(1 + gdtBlocks) * blockSize,
+        DefragBlockKind.MetadataReserved, FileName: $"ext1 superblock backup (group {g})");
+    }
 
     var inodeTableBlocks = (int)((inodesPerGroup * (uint)InodeSize + (uint)blockSize - 1) / (uint)blockSize);
     for (uint g = 0; g < groupCount; g++) {
@@ -220,27 +232,25 @@ public static class Ext1ExtentMap {
       result.AddRange(coalesce.Add(bn, Math.Min(remaining, blockSize)));
       remaining -= blockSize;
     }
-    if (remaining > 0) {
-      var ind = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(88));
-      if (ind != 0)
-        result.AddRange(WalkIndirect(cache, blockSize, ind, coalesce, 1, ref remaining));
-    }
-    if (remaining > 0) {
-      var ind = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(92));
-      if (ind != 0)
-        result.AddRange(WalkIndirect(cache, blockSize, ind, coalesce, 2, ref remaining));
-    }
-    if (remaining > 0) {
-      var ind = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(96));
-      if (ind != 0)
-        result.AddRange(WalkIndirect(cache, blockSize, ind, coalesce, 3, ref remaining));
+    // The pointer blocks of the block map belong to the file as much as its data
+    // does. Leaving them out marks them free, so a wipe zeroes the map and a
+    // defrag relocates data on top of it -- either way the file past its twelfth
+    // block is gone.
+    for (var level = 1; level <= 3 && remaining > 0; ++level) {
+      var ind = BinaryPrimitives.ReadUInt32LittleEndian(inode.AsSpan(84 + level * 4));
+      if (ind == 0) continue;
+      result.AddRange(coalesce.Flush());
+      result.Add(new DefragBlockInfo((long)ind * blockSize, blockSize,
+        DefragBlockKind.MetadataReserved, FileName: $"{name} (block map)"));
+      result.AddRange(WalkIndirect(cache, blockSize, ind, coalesce, level, ref remaining, result));
     }
     result.AddRange(coalesce.Flush());
     return result;
   }
 
+  /// <param name="pointerBlocks">Collects the pointer blocks met on the way down.</param>
   private static List<DefragBlockInfo> WalkIndirect(SectorCache cache, int blockSize, uint blockNum,
-      RunBuilder coalesce, int level, ref long remaining) {
+      RunBuilder coalesce, int level, ref long remaining, List<DefragBlockInfo> pointerBlocks) {
     var emitted = new List<DefragBlockInfo>();
     if (blockNum == 0 || remaining <= 0) return emitted;
     var off = (long)blockNum * blockSize;
@@ -255,7 +265,10 @@ public static class Ext1ExtentMap {
         emitted.AddRange(coalesce.Add(ptr, Math.Min(local, blockSize)));
         local -= blockSize;
       } else {
-        emitted.AddRange(WalkIndirect(cache, blockSize, ptr, coalesce, level - 1, ref local));
+        emitted.AddRange(coalesce.Flush());
+        pointerBlocks.Add(new DefragBlockInfo((long)ptr * blockSize, blockSize,
+          DefragBlockKind.MetadataReserved, FileName: coalesce.Name + " (block map)"));
+        emitted.AddRange(WalkIndirect(cache, blockSize, ptr, coalesce, level - 1, ref local, pointerBlocks));
       }
     }
     remaining = local;
@@ -268,6 +281,9 @@ public static class Ext1ExtentMap {
     private long _runStart = -1;
     private long _runEnd = -1;
     private long _runByteLen;
+
+    /// <summary>The file these runs belong to.</summary>
+    public string Name => this._name;
 
     public RunBuilder(int blockSize, string name) {
       this._blockSize = blockSize;

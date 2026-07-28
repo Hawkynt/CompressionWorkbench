@@ -118,7 +118,8 @@ public sealed class FatWriter {
       if (requestedClusterSize <= 0) sectorsPerCluster = 4;
       rootEntryCount = requestedRootEntries > 0 ? requestedRootEntries : 512;
       rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
-      fatSize = (totalSectors * 2 / bytesPerSector) + 1;
+      fatSize = SizeFatTable(16, totalSectors, reservedSectors, fatCount, rootDirSectors,
+                             sectorsPerCluster, bytesPerSector);
       firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
     } else if (fatType == 12 && requestedRootEntries > 0) {
       // FAT12 custom root entry count: recompute rootDirSectors and firstDataSector.
@@ -375,7 +376,8 @@ public sealed class FatWriter {
       if (requestedClusterSize <= 0) sectorsPerCluster = 4;
       rootEntryCount = requestedRootEntries > 0 ? requestedRootEntries : 512;
       rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
-      fatSize = (totalSectors * 2 / bytesPerSector) + 1;
+      fatSize = SizeFatTable(16, totalSectors, reservedSectors, fatCount, rootDirSectors,
+                             sectorsPerCluster, bytesPerSector);
       firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
     } else if (fatType == 12 && requestedRootEntries > 0) {
       rootEntryCount = requestedRootEntries;
@@ -1112,8 +1114,32 @@ public sealed class FatWriter {
     long RoundUpToCluster(long bytes) => bytes <= 0 ? 0 : ((bytes + clusterBytes - 1) / clusterBytes) * clusterBytes;
     var clusterAlignedFiles = fileSizes.Sum(s => RoundUpToCluster(s));
     var clusterAlignedDirs = dirContentBytes.Sum(b => Math.Max((long)clusterBytes, RoundUpToCluster(b)));
-    var neededBytes = clusterAlignedFiles + clusterAlignedDirs + 8L * clusterBytes + 65536;
-    var totalSectors = Math.Max(32, (int)((neededBytes + bytesPerSector - 1) / bytesPerSector));
+    // The FAT tables and (FAT12/16) the fixed root directory live inside the
+    // volume, so the cluster heap has to be sized on top of them. A flat byte
+    // slack used to stand in for that; it covered a small volume's metadata but
+    // not a large one's, so the last chain ran past the declared cluster count --
+    // fsck.fat reports "cluster N out of range" and anything that trusts the
+    // count treats those clusters as free.
+    var payloadBytes = clusterAlignedFiles + clusterAlignedDirs + 8L * clusterBytes + 65536;
+    var dataClustersNeeded = Math.Max(1, (payloadBytes + clusterBytes - 1) / clusterBytes);
+    var sectorsPerCluster = Math.Max(1, clusterBytes / bytesPerSector);
+    var provisionalType = forcedFatType is 12 or 16 or 32 ? forcedFatType
+      : dataClustersNeeded < 4085 ? 12
+      : dataClustersNeeded < 65525 ? 16
+      : 32;
+    // FAT12 keeps the 9-sector floppy convention the geometry code below writes;
+    // sizing the volume for a computed table left the heap short of what the
+    // writer then reserved.
+    var fatEntryBits = provisionalType == 12 ? 12 : provisionalType == 16 ? 16 : 32;
+    var fatSectorsNeeded = provisionalType == 12
+      ? 9L
+      : ((dataClustersNeeded + 2) * fatEntryBits / 8 + bytesPerSector - 1) / bytesPerSector;
+    var rootSectorsNeeded = provisionalType == 32 ? 0
+      : ((long)(requestedRootEntries > 0 ? requestedRootEntries : provisionalType == 16 ? 512 : 224) * 32
+         + bytesPerSector - 1) / bytesPerSector;
+    var reservedSectorsNeeded = provisionalType == 32 ? 32L : 1L;
+    var totalSectors = (int)Math.Max(32,
+      reservedSectorsNeeded + 2 * fatSectorsNeeded + rootSectorsNeeded + dataClustersNeeded * sectorsPerCluster);
 
     var maxRootEntries = requestedRootEntries > 0 ? requestedRootEntries : 224;
     var needFat32 = forcedFatType == 32
@@ -1342,7 +1368,11 @@ public sealed class FatWriter {
   /// </summary>
   public int PickClusterForFixedImage(
       int totalSectors, int bytesPerSector, int forcedFatType, int requestedRootEntries, bool enableLfn) {
-    var fileSizes = _files.Select(f => (long)f.Data.Length).ToList();
+    // Streaming entries have no byte[] to measure, but their declared size is
+    // exactly what the geometry must cover — leaving them out let the optimiser
+    // size the volume as if it were empty.
+    var fileSizes = _files.Select(f => (long)f.Data.Length)
+      .Concat(_streamingFiles.Select(f => f.Size)).ToList();
 
     int best = 0;
     long bestCost = long.MaxValue;
@@ -1494,4 +1524,25 @@ public sealed class FatWriter {
         BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(pos), (uint)value & 0x0FFFFFFFu);
     }
   }
+  /// <summary>
+  /// Sectors per FAT for a volume of <paramref name="totalSectors" />. A FAT entry
+  /// covers a whole cluster, so the table is sized from the cluster count the
+  /// remaining space yields -- sizing it from the sector count over-allocated it by
+  /// the sectors-per-cluster factor (10 MB instead of 83 KB at a 64 KB cluster),
+  /// which ate the tail of the cluster heap and left the last file's chain running
+  /// past the volume's declared cluster count.
+  /// </summary>
+  private static int SizeFatTable(int fatType, long totalSectors, int reservedSectors, int fatCount,
+      int rootDirSectors, int sectorsPerCluster, int bytesPerSector) {
+    var bits = fatType == 12 ? 12 : fatType == 16 ? 16 : 32;
+    var available = totalSectors - reservedSectors - rootDirSectors;
+    if (available <= 0) return 1;
+
+    // available = fatCount * fatSectors + clusters * sectorsPerCluster, with
+    // fatSectors ~ clusters * bits / 8 / bytesPerSector. Solved for clusters.
+    var denominator = (long)sectorsPerCluster * bytesPerSector * 8 + (long)fatCount * bits;
+    var clusters = available * bytesPerSector * 8 / denominator;
+    return (int)Math.Max(1, ((clusters + 2) * bits / 8 + bytesPerSector - 1) / bytesPerSector);
+  }
+
 }
