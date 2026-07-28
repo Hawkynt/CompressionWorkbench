@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Ext;
@@ -10,7 +11,11 @@ namespace FileSystem.Ext;
 /// block pointers (ext2/3) and extent trees (ext4).
 /// </summary>
 public sealed class ExtReader : IDisposable {
-  private readonly byte[] _data;
+  /// <summary>
+  /// Random-access view. An ext2/3/4 volume is routinely far larger than an array,
+  /// so the image is never copied into one.
+  /// </summary>
+  private readonly ImageAccessor _data;
   private readonly List<ExtEntry> _entries = [];
 
   public IReadOnlyList<ExtEntry> Entries => _entries;
@@ -44,9 +49,8 @@ public sealed class ExtReader : IDisposable {
   private const uint RootInode = 2;
 
   public ExtReader(Stream stream, bool leaveOpen = false) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(stream);
+    _data = new ImageAccessor(stream, leaveOpen: true);
     Parse();
   }
 
@@ -55,7 +59,7 @@ public sealed class ExtReader : IDisposable {
       throw new InvalidDataException("ext: image too small for superblock.");
 
     // Read superblock at offset 1024
-    var sb = _data.AsSpan(SuperblockOffset);
+    var sb = _data.Read(SuperblockOffset, 1024).AsSpan();
     var magic = BinaryPrimitives.ReadUInt16LittleEndian(sb.Slice(56));
     if (magic != ExtMagic)
       throw new InvalidDataException($"ext: invalid magic 0x{magic:X4}, expected 0xEF53.");
@@ -81,7 +85,7 @@ public sealed class ExtReader : IDisposable {
       var bgOffset = bgdtOffset + g * 32;
       if (bgOffset + 32 > _data.Length) break;
       _bgInodeTableBlock[g] = BinaryPrimitives.ReadUInt32LittleEndian(
-        _data.AsSpan((int)bgOffset + 8));
+        _data.Read(bgOffset + 8, 8).AsSpan());
     }
 
     // Read root directory (inode 2)
@@ -105,7 +109,7 @@ public sealed class ExtReader : IDisposable {
     var offset = (long)tableBlock * _blockSize + (long)index * _inodeSize;
 
     if (offset + _inodeSize > _data.Length) return null;
-    return _data.AsSpan((int)offset, _inodeSize).ToArray();
+    return _data.Read(offset, _inodeSize);
   }
 
   private byte[] ReadInodeBlocks(byte[] inode) {
@@ -132,7 +136,7 @@ public sealed class ExtReader : IDisposable {
       var toRead = (int)Math.Min(remaining, _blockSize);
       var offset = (long)blockNum * _blockSize;
       if (offset + toRead > _data.Length) break;
-      ms.Write(_data, (int)offset, toRead);
+      _data.CopyTo(offset, ms, toRead);
       remaining -= toRead;
     }
 
@@ -169,14 +173,14 @@ public sealed class ExtReader : IDisposable {
 
     for (var i = 0; i < pointersPerBlock && remaining > 0; i++) {
       var ptr = BinaryPrimitives.ReadUInt32LittleEndian(
-        _data.AsSpan((int)offset + i * 4));
+        _data.Read(offset + i * 4, 4).AsSpan());
       if (ptr == 0) break;
 
       if (level == 1) {
         var toRead = (int)Math.Min(remaining, _blockSize);
         var dataOff = (long)ptr * _blockSize;
         if (dataOff + toRead > _data.Length) break;
-        ms.Write(_data, (int)dataOff, toRead);
+        _data.CopyTo(dataOff, ms, toRead);
         remaining -= toRead;
       } else {
         ReadIndirectBlock(ptr, ms, ref remaining, level - 1);
@@ -220,7 +224,7 @@ public sealed class ExtReader : IDisposable {
           var blockOff = (startBlock + b) * _blockSize;
           if (blockOff + _blockSize > _data.Length) break;
           var toRead = (int)Math.Min(remaining, _blockSize);
-          ms.Write(_data, (int)blockOff, toRead);
+          _data.CopyTo(blockOff, ms, toRead);
           remaining -= toRead;
         }
       }
@@ -238,7 +242,7 @@ public sealed class ExtReader : IDisposable {
         var blockOff = leafBlock * _blockSize;
         if (blockOff + _blockSize > _data.Length) break;
 
-        var childNode = _data.AsSpan((int)blockOff, _blockSize).ToArray();
+        var childNode = _data.Read(blockOff, _blockSize);
         var childMagic = BinaryPrimitives.ReadUInt16LittleEndian(childNode);
         if (childMagic != ExtentMagic) continue;
 

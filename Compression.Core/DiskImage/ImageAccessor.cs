@@ -121,6 +121,13 @@ public sealed class ImageAccessor : IDisposable {
     return BinaryPrimitives.ReadUInt32LittleEndian(b);
   }
 
+  /// <summary>Reads a little-endian signed 64-bit value.</summary>
+  public long ReadInt64(long offset) {
+    Span<byte> b = stackalloc byte[8];
+    this.Read(offset, b);
+    return BinaryPrimitives.ReadInt64LittleEndian(b);
+  }
+
   /// <summary>Reads a little-endian unsigned 64-bit value.</summary>
   public ulong ReadUInt64(long offset) {
     Span<byte> b = stackalloc byte[8];

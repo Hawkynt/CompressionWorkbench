@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Btrfs;
@@ -27,7 +28,11 @@ public sealed class BtrfsReader : IDisposable {
   private const long FsTreeObjectId = 5;
   private const long FirstFreeObjectId = 256;
 
-  private readonly byte[] _data;
+  /// <summary>
+  /// Random-access view. A btrfs volume is routinely far larger than an array, and
+  /// its physical offsets are 64-bit, so the image is never copied into one.
+  /// </summary>
+  private readonly ImageAccessor _data;
   private readonly List<BtrfsEntry> _entries = [];
   private readonly Dictionary<long, long> _inodeSizes = new();
 
@@ -44,9 +49,8 @@ public sealed class BtrfsReader : IDisposable {
   public IReadOnlyList<BtrfsEntry> Entries => _entries;
 
   public BtrfsReader(Stream stream, bool leaveOpen = false) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(stream);
+    _data = new ImageAccessor(stream, leaveOpen: true);
     Parse();
   }
 
@@ -66,15 +70,15 @@ public sealed class BtrfsReader : IDisposable {
       throw new InvalidDataException("Btrfs: image too small for superblock.");
 
     // Validate magic at superblock + 0x40
-    if (!_data.AsSpan(sbOffset + 0x40, 8).SequenceEqual(Magic))
+    if (!_data.Read(sbOffset + 0x40, 8).AsSpan().SequenceEqual(Magic))
       throw new InvalidDataException("Btrfs: invalid magic.");
 
     // Parse superblock fields at canonical offsets
-    _rootTreeLogical = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(sbOffset + 0x50));
-    _chunkTreeLogical = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(sbOffset + 0x58));
-    _sectorSize = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(sbOffset + 0x90));
-    _nodeSize = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(sbOffset + 0x94));
-    _sysChunkArraySize = (int)BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(sbOffset + 0xA0));
+    _rootTreeLogical = _data.ReadInt64(sbOffset + 0x50);
+    _chunkTreeLogical = _data.ReadInt64(sbOffset + 0x58);
+    _sectorSize = _data.ReadUInt32(sbOffset + 0x90);
+    _nodeSize = _data.ReadUInt32(sbOffset + 0x94);
+    _sysChunkArraySize = (int)_data.ReadUInt32(sbOffset + 0xA0);
 
     if (_nodeSize == 0 || _nodeSize > 65536)
       _nodeSize = 16384;
@@ -101,7 +105,7 @@ public sealed class BtrfsReader : IDisposable {
 
   // ── Chunk map ────────────────────────────────────────────────────────────
 
-  private void ParseSysChunkArray(int offset) {
+  private void ParseSysChunkArray(long offset) {
     var end = offset + _sysChunkArraySize;
     if (end > _data.Length) end = _data.Length;
 
@@ -109,20 +113,20 @@ public sealed class BtrfsReader : IDisposable {
     while (pos + 48 < end) {
       // Key: objectid(8) + type(1) + offset(8) = 17 bytes
       // The offset in the key is the logical address
-      var logicalAddr = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(pos + 9));
+      var logicalAddr = _data.ReadInt64(pos + 9);
       pos += 17; // skip key
 
       if (pos + 48 > end) break;
 
       // Chunk item: length(8), owner(8), stripe_len(8), type(8), io_align(4),
       //             io_width(4), sector_size(4), num_stripes(2), sub_stripes(2)
-      var chunkLength = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(pos));
-      var numStripes = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(pos + 44));
+      var chunkLength = _data.ReadInt64(pos);
+      var numStripes = _data.ReadUInt16(pos + 44);
       pos += 48; // chunk item header
 
       if (numStripes > 0 && pos + 32 <= end) {
         // First stripe: devid(8) + offset(8) + dev_uuid(16)
-        var physicalOffset = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(pos + 8));
+        var physicalOffset = _data.ReadInt64(pos + 8);
         _chunkMap.Add((logicalAddr, physicalOffset, chunkLength));
       }
 
@@ -140,18 +144,18 @@ public sealed class BtrfsReader : IDisposable {
 
   private void ReadChunkTreeNode(long physical) {
     if (physical < 0 || physical + 101 > _data.Length) return;
-    var offset = (int)physical;
+    var offset = physical;
 
     // btrfs_header: nritems (u32) at offset 96, level (u8) at offset 100.
-    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset + 96));
-    var level = _data[offset + 100];
+    var nritems = _data.ReadUInt32(offset + 96);
+    var level = _data.ReadByte(offset + 100);
 
     if (level > 0) {
       // Internal node: key(17) + blockptr(8) + generation(8) = 33 bytes per item
       for (uint i = 0; i < nritems && i < 1000; i++) {
         var itemOff = offset + 101 + (int)i * 33;
         if (itemOff + 33 > _data.Length) break;
-        var childLogical = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(itemOff + 17));
+        var childLogical = _data.ReadInt64(itemOff + 17);
         var childPhysical = LogicalToPhysical(childLogical);
         if (childPhysical >= 0)
           ReadChunkTreeNode(childPhysical);
@@ -162,12 +166,12 @@ public sealed class BtrfsReader : IDisposable {
         var itemOff = offset + 101 + (int)i * 25;
         if (itemOff + 25 > _data.Length) break;
 
-        var keyObjId = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(itemOff));
-        var keyType = _data[itemOff + 8];
-        var keyOffset = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(itemOff + 9));
+        var keyObjId = _data.ReadInt64(itemOff);
+        var keyType = _data.ReadByte(itemOff + 8);
+        var keyOffset = _data.ReadInt64(itemOff + 9);
 
-        var dataOffset = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(itemOff + 17));
-        var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(itemOff + 21));
+        var dataOffset = _data.ReadUInt32(itemOff + 17);
+        var dataSize = _data.ReadUInt32(itemOff + 21);
 
         if (keyType != ChunkItem) continue;
 
@@ -175,11 +179,11 @@ public sealed class BtrfsReader : IDisposable {
         var dataPos = offset + 101 + (int)dataOffset;
         if (dataPos < 0 || dataPos + 48 > _data.Length) continue;
 
-        var chunkLength = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(dataPos));
-        var numStripes = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(dataPos + 44));
+        var chunkLength = _data.ReadInt64(dataPos);
+        var numStripes = _data.ReadUInt16(dataPos + 44);
 
         if (numStripes > 0 && dataPos + 48 + 32 <= _data.Length) {
-          var physOff = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(dataPos + 48 + 8));
+          var physOff = _data.ReadInt64(dataPos + 48 + 8);
           // Only add if not already mapped
           var logical = keyOffset;
           if (LogicalToPhysical(logical) < 0)
@@ -229,18 +233,18 @@ public sealed class BtrfsReader : IDisposable {
 
   private long FindFsTreeInNode(long physical) {
     if (physical < 0 || physical + 101 > _data.Length) return -1;
-    var offset = (int)physical;
+    var offset = physical;
 
     // btrfs_header: nritems (u32) at offset 96, level (u8) at offset 100.
-    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset + 96));
-    var level = _data[offset + 100];
+    var nritems = _data.ReadUInt32(offset + 96);
+    var level = _data.ReadByte(offset + 100);
 
     if (level > 0) {
       // Internal node: search children
       for (uint i = 0; i < nritems && i < 1000; i++) {
         var itemOff = offset + 101 + (int)i * 33;
         if (itemOff + 33 > _data.Length) break;
-        var childLogical = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(itemOff + 17));
+        var childLogical = _data.ReadInt64(itemOff + 17);
         var childPhysical = LogicalToPhysical(childLogical);
         var result = FindFsTreeInNode(childPhysical);
         if (result >= 0) return result;
@@ -251,12 +255,12 @@ public sealed class BtrfsReader : IDisposable {
         var itemOff = offset + 101 + (int)i * 25;
         if (itemOff + 25 > _data.Length) break;
 
-        var keyObjId = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(itemOff));
-        var keyType = _data[itemOff + 8];
+        var keyObjId = _data.ReadInt64(itemOff);
+        var keyType = _data.ReadByte(itemOff + 8);
 
         if (keyObjId == FsTreeObjectId && keyType == RootItem) {
-          var dataOffset = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(itemOff + 17));
-          var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(itemOff + 21));
+          var dataOffset = _data.ReadUInt32(itemOff + 17);
+          var dataSize = _data.ReadUInt32(itemOff + 21);
 
           var dataPos = offset + 101 + (int)dataOffset;
           if (dataPos < 0 || dataPos + 176 > _data.Length) continue;
@@ -265,7 +269,7 @@ public sealed class BtrfsReader : IDisposable {
           // the bytenr (logical address of the FS tree root) is at offset 176
           // Actually, ROOT_ITEM structure: inode (160 bytes) + generation(8) + root_dirid(8)
           // + bytenr(8) at offset 176
-          var fsRoot = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(dataPos + 176));
+          var fsRoot = _data.ReadInt64(dataPos + 176);
           return fsRoot;
         }
       }
@@ -283,17 +287,17 @@ public sealed class BtrfsReader : IDisposable {
 
   private void CollectInodeSizesInNode(long physical) {
     if (physical < 0 || physical + 101 > _data.Length) return;
-    var offset = (int)physical;
+    var offset = physical;
 
     // btrfs_header: nritems (u32) at offset 96, level (u8) at offset 100.
-    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset + 96));
-    var level = _data[offset + 100];
+    var nritems = _data.ReadUInt32(offset + 96);
+    var level = _data.ReadByte(offset + 100);
 
     if (level > 0) {
       for (uint i = 0; i < nritems && i < 1000; i++) {
         var itemOff = offset + 101 + (int)i * 33;
         if (itemOff + 33 > _data.Length) break;
-        var childLogical = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(itemOff + 17));
+        var childLogical = _data.ReadInt64(itemOff + 17);
         var childPhysical = LogicalToPhysical(childLogical);
         CollectInodeSizesInNode(childPhysical);
       }
@@ -302,19 +306,19 @@ public sealed class BtrfsReader : IDisposable {
         var itemOff = offset + 101 + (int)i * 25;
         if (itemOff + 25 > _data.Length) break;
 
-        var keyObjId = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(itemOff));
-        var keyType = _data[itemOff + 8];
+        var keyObjId = _data.ReadInt64(itemOff);
+        var keyType = _data.ReadByte(itemOff + 8);
 
         if (keyType != InodeItem) continue;
 
-        var dataOffset = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(itemOff + 17));
-        var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(itemOff + 21));
+        var dataOffset = _data.ReadUInt32(itemOff + 17);
+        var dataSize = _data.ReadUInt32(itemOff + 21);
 
         var dataPos = offset + 101 + (int)dataOffset;
         if (dataPos < 0 || dataPos + 24 > _data.Length) continue;
 
         // INODE_ITEM: size is at offset 16 (int64 LE)
-        var size = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(dataPos + 16));
+        var size = _data.ReadInt64(dataPos + 16);
         _inodeSizes[keyObjId] = size;
       }
     }
@@ -348,17 +352,17 @@ public sealed class BtrfsReader : IDisposable {
   private void CollectDirItems(long physical, long dirObjectId,
       List<(string name, long childInode, bool isDir)> results) {
     if (physical < 0 || physical + 101 > _data.Length) return;
-    var offset = (int)physical;
+    var offset = physical;
 
     // btrfs_header: nritems (u32) at offset 96, level (u8) at offset 100.
-    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset + 96));
-    var level = _data[offset + 100];
+    var nritems = _data.ReadUInt32(offset + 96);
+    var level = _data.ReadByte(offset + 100);
 
     if (level > 0) {
       for (uint i = 0; i < nritems && i < 1000; i++) {
         var itemOff = offset + 101 + (int)i * 33;
         if (itemOff + 33 > _data.Length) break;
-        var childLogical = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(itemOff + 17));
+        var childLogical = _data.ReadInt64(itemOff + 17);
         var childPhysical = LogicalToPhysical(childLogical);
         CollectDirItems(childPhysical, dirObjectId, results);
       }
@@ -367,13 +371,13 @@ public sealed class BtrfsReader : IDisposable {
         var itemOff = offset + 101 + (int)i * 25;
         if (itemOff + 25 > _data.Length) break;
 
-        var keyObjId = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(itemOff));
-        var keyType = _data[itemOff + 8];
+        var keyObjId = _data.ReadInt64(itemOff);
+        var keyType = _data.ReadByte(itemOff + 8);
 
         if (keyObjId != dirObjectId || keyType != DirIndex) continue;
 
-        var dataOffset = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(itemOff + 17));
-        var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(itemOff + 21));
+        var dataOffset = _data.ReadUInt32(itemOff + 17);
+        var dataSize = _data.ReadUInt32(itemOff + 21);
 
         var dataPos = offset + 101 + (int)dataOffset;
         if (dataPos < 0 || dataPos + 30 > _data.Length) continue;
@@ -385,12 +389,12 @@ public sealed class BtrfsReader : IDisposable {
         // name_len: 2 bytes (offset 27)
         // type: 1 byte (offset 29)
         // name: name_len bytes (offset 30)
-        var childInode = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(dataPos));
-        var nameLen = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(dataPos + 27));
-        var dirType = _data[dataPos + 29];
+        var childInode = _data.ReadInt64(dataPos);
+        var nameLen = _data.ReadUInt16(dataPos + 27);
+        var dirType = _data.ReadByte(dataPos + 29);
 
         if (dataPos + 30 + nameLen > _data.Length) continue;
-        var name = Encoding.UTF8.GetString(_data, dataPos + 30, nameLen);
+        var name = Encoding.UTF8.GetString(_data.Read(dataPos + 30, nameLen));
 
         // type: 1=regular file, 2=directory
         var isDir = dirType == 2;
@@ -425,36 +429,36 @@ public sealed class BtrfsReader : IDisposable {
 
   private void CollectExtentData(long physical, long inodeId, MemoryStream output) {
     if (physical < 0 || physical + 101 > _data.Length) return;
-    var offset = (int)physical;
+    var offset = physical;
 
     // btrfs_header: nritems (u32) at offset 96, level (u8) at offset 100.
-    var nritems = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset + 96));
-    var level = _data[offset + 100];
+    var nritems = _data.ReadUInt32(offset + 96);
+    var level = _data.ReadByte(offset + 100);
 
     if (level > 0) {
       for (uint i = 0; i < nritems && i < 1000; i++) {
         var itemOff = offset + 101 + (int)i * 33;
         if (itemOff + 33 > _data.Length) break;
-        var childLogical = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(itemOff + 17));
+        var childLogical = _data.ReadInt64(itemOff + 17);
         var childPhysical = LogicalToPhysical(childLogical);
         CollectExtentData(childPhysical, inodeId, output);
       }
     } else {
       // Collect EXTENT_DATA items sorted by file offset (key.offset)
-      var extents = new SortedList<long, (int dataPos, int dataSize)>();
+      var extents = new SortedList<long, (long dataPos, int dataSize)>();
 
       for (uint i = 0; i < nritems && i < 1000; i++) {
         var itemOff = offset + 101 + (int)i * 25;
         if (itemOff + 25 > _data.Length) break;
 
-        var keyObjId = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(itemOff));
-        var keyType = _data[itemOff + 8];
-        var keyOffset = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(itemOff + 9));
+        var keyObjId = _data.ReadInt64(itemOff);
+        var keyType = _data.ReadByte(itemOff + 8);
+        var keyOffset = _data.ReadInt64(itemOff + 9);
 
         if (keyObjId != inodeId || keyType != ExtentData) continue;
 
-        var dataOffset = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(itemOff + 17));
-        var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(itemOff + 21));
+        var dataOffset = _data.ReadUInt32(itemOff + 17);
+        var dataSize = _data.ReadUInt32(itemOff + 21);
 
         var dataPos = offset + 101 + (int)dataOffset;
         if (dataPos < 0 || dataPos + 21 > _data.Length) continue;
@@ -465,21 +469,21 @@ public sealed class BtrfsReader : IDisposable {
       foreach (var (fileOffset, (dataPos, dataSize)) in extents) {
         // EXTENT_DATA: generation(8) + ram_bytes(8) + compression(1) + encryption(1)
         //              + other_encoding(2) + type(1) = 21 bytes header
-        var compression = _data[dataPos + 16];
-        var extentType = _data[dataPos + 20];
+        var compression = _data.ReadByte(dataPos + 16);
+        var extentType = _data.ReadByte(dataPos + 20);
 
         if (extentType == 0) {
           // Inline extent: data follows the 21-byte header
           var inlineLen = dataSize - 21;
           if (inlineLen > 0 && dataPos + 21 + inlineLen <= _data.Length)
-            output.Write(_data, dataPos + 21, inlineLen);
+            _data.CopyTo(dataPos + 21, output, inlineLen);
         } else if (extentType == 1 && compression == 0) {
           // Regular (non-compressed) extent
           if (dataPos + 53 > _data.Length) continue;
-          var diskBytenr = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(dataPos + 21));
-          var diskNumBytes = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(dataPos + 29));
-          var extOffset = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(dataPos + 37));
-          var numBytes = BinaryPrimitives.ReadInt64LittleEndian(_data.AsSpan(dataPos + 45));
+          var diskBytenr = _data.ReadInt64(dataPos + 21);
+          var diskNumBytes = _data.ReadInt64(dataPos + 29);
+          var extOffset = _data.ReadInt64(dataPos + 37);
+          var numBytes = _data.ReadInt64(dataPos + 45);
 
           if (diskBytenr == 0) {
             // Sparse extent — write zeros
@@ -487,7 +491,7 @@ public sealed class BtrfsReader : IDisposable {
           } else {
             var extPhysical = LogicalToPhysical(diskBytenr);
             if (extPhysical >= 0 && extPhysical + extOffset + numBytes <= _data.Length) {
-              output.Write(_data, (int)(extPhysical + extOffset), (int)numBytes);
+              _data.CopyTo(extPhysical + extOffset, output, numBytes);
             }
           }
         }

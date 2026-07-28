@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 
 namespace FileSystem.Ext1;
@@ -22,7 +23,8 @@ namespace FileSystem.Ext1;
 /// </para>
 /// </summary>
 public sealed class Ext1Reader : IDisposable {
-  private readonly byte[] _data;
+  /// <summary>Random-access view; the image is never copied into an array.</summary>
+  private readonly ImageAccessor _data;
   private readonly List<Ext1Entry> _entries = [];
 
   public IReadOnlyList<Ext1Entry> Entries => this._entries;
@@ -46,9 +48,8 @@ public sealed class Ext1Reader : IDisposable {
   private const uint RootInode = 2;
 
   public Ext1Reader(Stream stream) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    this._data = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(stream);
+    this._data = new ImageAccessor(stream, leaveOpen: true);
     this.Parse();
   }
 
@@ -56,7 +57,7 @@ public sealed class Ext1Reader : IDisposable {
     if (this._data.Length < SuperblockOffset + 264)
       throw new InvalidDataException("ext1: image too small for superblock.");
 
-    var sb = this._data.AsSpan(SuperblockOffset);
+    var sb = this._data.Read(SuperblockOffset, 1024).AsSpan();
     var magic = BinaryPrimitives.ReadUInt16LittleEndian(sb.Slice(56));
     if (magic != Ext1Magic)
       throw new InvalidDataException($"ext1: invalid magic 0x{magic:X4}, expected 0xEF51.");
@@ -78,7 +79,7 @@ public sealed class Ext1Reader : IDisposable {
       var bgOffset = bgdtOffset + g * 32;
       if (bgOffset + 32 > this._data.Length) break;
       this._bgInodeTableBlock[g] = BinaryPrimitives.ReadUInt32LittleEndian(
-        this._data.AsSpan((int)bgOffset + 8));
+        this._data.Read(bgOffset + 8, 8).AsSpan());
     }
 
     var rootInodeData = this.ReadInode(RootInode);
@@ -101,7 +102,7 @@ public sealed class Ext1Reader : IDisposable {
     var offset = (long)tableBlock * this._blockSize + (long)index * InodeSize;
 
     if (offset + InodeSize > this._data.Length) return null;
-    return this._data.AsSpan((int)offset, InodeSize).ToArray();
+    return this._data.Read(offset, InodeSize);
   }
 
   private byte[] ReadInodeBlocks(byte[] inode) {
@@ -120,7 +121,7 @@ public sealed class Ext1Reader : IDisposable {
       var toRead = (int)Math.Min(remaining, this._blockSize);
       var offset = (long)blockNum * this._blockSize;
       if (offset + toRead > this._data.Length) break;
-      ms.Write(this._data, (int)offset, toRead);
+      this._data.CopyTo(offset, ms, toRead);
       remaining -= toRead;
     }
 
@@ -152,13 +153,13 @@ public sealed class Ext1Reader : IDisposable {
 
     var pointersPerBlock = this._blockSize / 4;
     for (var i = 0; i < pointersPerBlock && remaining > 0; i++) {
-      var ptr = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan((int)offset + i * 4));
+      var ptr = this._data.ReadUInt32(offset + i * 4);
       if (ptr == 0) break;
       if (level == 1) {
         var toRead = (int)Math.Min(remaining, this._blockSize);
         var dataOff = (long)ptr * this._blockSize;
         if (dataOff + toRead > this._data.Length) break;
-        ms.Write(this._data, (int)dataOff, toRead);
+        this._data.CopyTo(dataOff, ms, toRead);
         remaining -= toRead;
       } else
         this.ReadIndirectBlock(ptr, ms, ref remaining, level - 1);
