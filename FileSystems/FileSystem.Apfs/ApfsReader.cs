@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using Compression.Core.DiskImage;
 using System.Text;
 using static FileSystem.Apfs.ApfsConstants;
 
@@ -15,7 +16,8 @@ public sealed class ApfsReader : IDisposable {
   private const uint NxMagicLE = 0x4253584E; // "NXSB" stored LE
   private const uint ApsbMagicLE = 0x42535041; // "APSB" stored LE
 
-  private readonly byte[] _data;
+  /// <summary>Random-access view; an APFS container is not bounded by what an array holds.</summary>
+  private readonly ImageAccessor _data;
   private readonly List<ApfsEntry> _entries = [];
   private uint _blockSize = DEFAULT_BLOCK_SIZE;
 
@@ -23,10 +25,7 @@ public sealed class ApfsReader : IDisposable {
 
   public ApfsReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    this._data = ms.ToArray();
-    if (!leaveOpen) stream.Dispose();
+    this._data = new ImageAccessor(stream, leaveOpen: true);
     this.Parse();
   }
 
@@ -34,7 +33,7 @@ public sealed class ApfsReader : IDisposable {
     var off = blockNum * this._blockSize;
     if (off < 0 || off + this._blockSize > this._data.Length)
       throw new InvalidDataException($"APFS: block {blockNum} out of range.");
-    return this._data.AsSpan((int)off, (int)this._blockSize);
+    return this._data.Read(off, (int)this._blockSize).AsSpan();
   }
 
   private void Parse() {
@@ -42,11 +41,11 @@ public sealed class ApfsReader : IDisposable {
       throw new InvalidDataException("APFS: image too small.");
 
     // NX superblock at block 0.
-    var nxMagic = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(32));
+    var nxMagic = this._data.ReadUInt32(32);
     if (nxMagic != NxMagicLE)
       throw new InvalidDataException("APFS: invalid container superblock magic.");
 
-    this._blockSize = BinaryPrimitives.ReadUInt32LittleEndian(this._data.AsSpan(36));
+    this._blockSize = this._data.ReadUInt32(36);
     if (this._blockSize == 0) this._blockSize = DEFAULT_BLOCK_SIZE;
 
     // Read container OMAP phys address. The spec has `nx_omap_oid` at offset 160
@@ -62,7 +61,7 @@ public sealed class ApfsReader : IDisposable {
 
     // Container OMAP points to its B-tree root. From that tree we find APSB
     // (volume superblock) via the nx_fs_oid[0] entry at NXSB +184.
-    var apsbVirtOid = BinaryPrimitives.ReadUInt64LittleEndian(this._data.AsSpan(184));
+    var apsbVirtOid = this._data.ReadUInt64(184);
     if (apsbVirtOid == 0) return;
 
     var apsbPhys = this.ResolveOidViaOmap(ctrOmapPhys, apsbVirtOid);
@@ -87,7 +86,7 @@ public sealed class ApfsReader : IDisposable {
 
   private ulong ResolveCtrOmapPhys() {
     // Writer-stamped physical hint at offset 3072 of NXSB (unused spec area).
-    var hint = BinaryPrimitives.ReadUInt64LittleEndian(this._data.AsSpan(3072));
+    var hint = this._data.ReadUInt64(3072);
     if (hint > 0 && (long)hint * this._blockSize + this._blockSize <= this._data.Length) {
       // Verify it's actually an OMAP object.
       var span = this.BlockSpan((long)hint);
@@ -98,7 +97,7 @@ public sealed class ApfsReader : IDisposable {
     // Fallback: scan for any OMAP-typed block.
     var blockCount = this._data.Length / this._blockSize;
     for (long b = 0; b < blockCount; b++) {
-      var span = this._data.AsSpan((int)(b * this._blockSize), (int)this._blockSize);
+      var span = this._data.Read(b * this._blockSize, (int)this._blockSize).AsSpan();
       var type = BinaryPrimitives.ReadUInt32LittleEndian(span[24..]) & OBJECT_TYPE_MASK;
       if (type == OBJECT_TYPE_OMAP)
         return (ulong)b;
@@ -376,7 +375,7 @@ public sealed class ApfsReader : IDisposable {
     if (offset < 0 || offset + entry.Size > this._data.Length)
       return [];
     var result = new byte[entry.Size];
-    Buffer.BlockCopy(this._data, (int)offset, result, 0, (int)entry.Size);
+    this._data.Read(offset, (int)entry.Size).CopyTo(result, 0);
     return result;
   }
 

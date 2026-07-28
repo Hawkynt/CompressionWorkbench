@@ -126,6 +126,9 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     if (!string.IsNullOrEmpty(label)) w.SetVolumeName(label);
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
+    // BuildTo keeps free space sparse and streams file data into place, so the
+    // volume is not bounded by what a byte[] can hold.
+    if (output.CanSeek) { w.BuildTo(output); return; }
     output.Write(w.Build());
   }
 

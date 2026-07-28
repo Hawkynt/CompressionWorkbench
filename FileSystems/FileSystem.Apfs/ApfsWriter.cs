@@ -60,7 +60,50 @@ public sealed class ApfsWriter {
   public void SetMinImageSize(long bytes) => this._minImageSize = bytes;
 
   /// <summary>Builds and returns the complete APFS image.</summary>
+  /// <exception cref="NotSupportedException">
+  /// The volume is larger than one array can hold. Use <see cref="BuildTo" />,
+  /// which keeps free space sparse and streams file data into place.
+  /// </exception>
   public byte[] Build() {
+    var prefix = BuildCore(out var dataWrites, out var totalBytes);
+    if (totalBytes > Array.MaxLength)
+      throw new NotSupportedException(
+        $"An APFS volume of {totalBytes:N0} bytes cannot be materialised in memory; use BuildTo(Stream).");
+
+    var full = new byte[totalBytes];
+    prefix.CopyTo(full, 0);
+    foreach (var (offset, data) in dataWrites)
+      data.CopyTo(full, offset);
+    return full;
+  }
+
+  /// <summary>
+  /// Writes the volume to <paramref name="output" />: the metadata prefix, then the
+  /// declared length, then each file's bytes at its allocated offset. Free space costs
+  /// nothing, so a volume past the in-memory limit is producible.
+  /// </summary>
+  public void BuildTo(Stream output) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (!output.CanSeek || !output.CanWrite)
+      throw new ArgumentException("BuildTo requires a writable, seekable stream.", nameof(output));
+
+    var prefix = BuildCore(out var dataWrites, out var totalBytes);
+    output.Position = 0;
+    output.Write(prefix);
+    output.SetLength(totalBytes);
+    foreach (var (offset, data) in dataWrites) {
+      output.Position = offset;
+      output.Write(data, 0, data.Length);
+    }
+    output.Flush();
+  }
+
+  /// <summary>
+  /// Builds the metadata prefix and reports where each file's bytes belong.
+  /// Everything this writer emits other than file data lives below the first
+  /// data block, so only that prefix has to be materialised.
+  /// </summary>
+  private byte[] BuildCore(out List<(long Offset, byte[] Data)> dataWrites, out long totalBytes) {
     // ── Block layout (minimal, single checkpoint) ─────────────────────────
     //   0   — NX superblock
     //   1   — Checkpoint descriptor block #1: checkpoint map
@@ -123,16 +166,21 @@ public sealed class ApfsWriter {
       fileDataBlocks += (int)((d.Length + BlockSize - 1) / BlockSize);
     var usedBlocks = fileDataStartBlock + fileDataBlocks;
     var totalBlocks = Math.Max(usedBlocks + 1, (int)(this._minImageSize / BlockSize));
-    var disk = new byte[(long)totalBlocks * BlockSize];
+    totalBytes = (long)totalBlocks * BlockSize;
+
+    // Only the metadata prefix is materialised; file data is handed back to the
+    // caller to place, so the buffer scales with the metadata rather than the
+    // volume and is not bounded by what an array can hold.
+    var disk = new byte[(long)fileDataStartBlock * BlockSize];
 
     // Allocate file data blocks and record extents (one per regular file node).
+    dataWrites = [];
     var nextDataBlock = (ulong)fileDataStartBlock;
     foreach (var node in tree.Nodes) {
       if (node.IsDir || node.Data is not { Length: > 0 } data)
         continue;
       var blocks = (ulong)((data.Length + BlockSize - 1) / BlockSize);
-      var dst = (long)nextDataBlock * BlockSize;
-      Array.Copy(data, 0, disk, dst, data.Length);
+      dataWrites.Add(((long)nextDataBlock * BlockSize, data));
       node.PhysBlock = nextDataBlock;
       nextDataBlock += blocks;
     }

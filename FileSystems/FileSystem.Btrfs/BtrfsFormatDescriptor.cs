@@ -187,6 +187,25 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new BtrfsWriter();
+
+    // A seekable target goes through the streaming writer, which places each
+    // file's bytes by seek in a second pass. WriteTo has to hold every payload in
+    // the image buffer, so a volume whose contents exceed the array limit cannot
+    // be built that way -- and the contents, not the volume, are what blow it.
+    if (output.CanSeek) {
+      foreach (var i in inputs) {
+        if (i.IsDirectory) continue;
+        var info = i;
+        var size = info.InMemoryContent?.LongLength
+                   ?? (File.Exists(info.FullPath) ? new FileInfo(info.FullPath).Length : 0);
+        w.AddStreamingFile(info.ArchiveName, size, () => info.InMemoryContent is { } bytes
+          ? new MemoryStream(bytes, writable: false)
+          : File.OpenRead(info.FullPath));
+      }
+      w.BuildToStreaming(output);
+      return;
+    }
+
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
       w.AddFile(i.ArchiveName, i.ReadContent());
