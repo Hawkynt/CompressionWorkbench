@@ -675,7 +675,53 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// in-place path does not handle (nested sub-directory targets, a full root directory,
   /// insufficient free space) fall back to the verified <see cref="FatWriter"/> rebuild.
   /// </summary>
+  /// <summary>
+  /// Largest image the in-place editors can work on. FatModifier and FatRemover
+  /// mutate a byte[] copy of the whole volume, which a FAT32 image is under no
+  /// obligation to fit in. Past this, the edit is applied by a streaming rebuild
+  /// instead -- correct, just not in-place.
+  /// </summary>
+  private const long MaxBufferedImageBytes = 1L << 31;
+
+  /// <summary>
+  /// Applies an edit by reading every surviving entry out of <paramref name="archive" />
+  /// and writing a fresh volume of the same declared size back over it. Used when the
+  /// image is too large to buffer; memory scales with the content, not the volume.
+  /// </summary>
+  private static void RebuildInPlaceStreaming(
+      Stream archive,
+      IReadOnlyList<(string Name, byte[] Data, DateTime? Mtime)> additions,
+      ISet<string>? drop) {
+    var totalSectors = (int)Math.Min(int.MaxValue, archive.Length / 512);
+    var combined = new FatWriter();
+
+    archive.Position = 0;
+    var reader = new FatReader(archive, leaveOpen: true);
+    foreach (var entry in reader.Entries.Where(e => !e.IsDirectory)) {
+      if (drop != null && (drop.Contains(entry.Name) || drop.Contains(Path.GetFileName(entry.Name))))
+        continue;
+      combined.AddFile(entry.Name, reader.Extract(entry));
+    }
+    foreach (var (name, data, mtime) in additions)
+      combined.AddFile(name, data, mtime);
+
+    // Every entry is materialised above, so the source is no longer needed and the
+    // stream can be rewritten in place.
+    archive.Position = 0;
+    archive.SetLength(0);
+    combined.BuildTo(archive, totalSectors);
+  }
+
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    var items0 = inputs.Where(i => !i.IsDirectory)
+      .Select(i => (Name: i.ArchiveName, Data: i.ReadContent(),
+                    Mtime: i.InMemoryContent != null ? (DateTime?)null : File.GetLastWriteTime(i.FullPath)))
+      .ToList();
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
+      RebuildInPlaceStreaming(archive, items0, drop: null);
+      return;
+    }
+
     archive.Position = 0;
     using var ms = new MemoryStream();
     archive.CopyTo(ms);
@@ -724,6 +770,11 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// of the removed content is possible from the resulting bytes.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    if (archive.CanSeek && archive.Length > MaxBufferedImageBytes) {
+      RebuildInPlaceStreaming(archive, [], new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase));
+      return;
+    }
+
     archive.Position = 0;
     using var ms = new MemoryStream();
     archive.CopyTo(ms);
